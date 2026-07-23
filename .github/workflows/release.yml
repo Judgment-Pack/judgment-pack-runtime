@@ -216,6 +216,10 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job intentionally has no repository checkout (it only consumes
+          # the packaged artifact), so `gh` cannot infer the repository from a
+          # git remote. Set it explicitly.
+          GH_REPO: ${{ github.repository }}
         run: |
           shopt -s nullglob
           assets=(dist/*.tar.gz dist/*.zip dist/checksums.txt)
