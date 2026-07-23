@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +13,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -121,14 +119,7 @@ func (a *App) versionCommand() *cobra.Command {
 			if err != nil {
 				return a.operational("version", format, result.ExitInternal, "JPS-ARTIFACT-INTEGRITY", "Bundled artifact metadata is unavailable.")
 			}
-			output := result.Version{
-				OutputVersion:      result.OutputVersion,
-				Tool:               result.CurrentTool(),
-				Command:            "version",
-				Status:             "valid",
-				SupportedSpecs:     artifacts.SupportedVersions(),
-				ArtifactProvenance: set.Lock().Source.Kind,
-			}
+			output := describe.Runtime(set, "version")
 			if format == "json" {
 				if err := writeJSON(a.out, output); err != nil {
 					return &handledExit{code: result.ExitIO}
@@ -271,23 +262,11 @@ func (a *App) schemaCommand() *cobra.Command {
 				}
 				writtenTo = writeTarget
 			}
-			var schemaDocument map[string]any
-			if err := json.Unmarshal(schemaBytes, &schemaDocument); err != nil {
+			output, err := describe.Schema(set, args[0], "spec schema", schemaBytes)
+			if err != nil {
 				return a.operational("spec schema", format, result.ExitInternal, "JPS-ARTIFACT-SCHEMA", "Bundled schema metadata is invalid.")
 			}
-			sum := sha256.Sum256(schemaBytes)
-			output := result.Schema{
-				OutputVersion: result.OutputVersion,
-				Tool:          result.CurrentTool(),
-				Command:       "spec schema",
-				Status:        "valid",
-				SpecVersion:   args[0],
-				SchemaID:      stringFrom(schemaDocument["$id"]),
-				Bytes:         len(schemaBytes),
-				SHA256:        hex.EncodeToString(sum[:]),
-				Provenance:    set.Lock().Source.Kind,
-				WrittenTo:     writtenTo,
-			}
+			output.WrittenTo = writtenTo
 			if err := a.renderSchema(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}
@@ -374,11 +353,6 @@ func validationExit(status string) int {
 	default:
 		return result.ExitInternal
 	}
-}
-
-func stringFrom(value any) string {
-	text, _ := value.(string)
-	return text
 }
 
 func requestedFormat(args []string) string {
