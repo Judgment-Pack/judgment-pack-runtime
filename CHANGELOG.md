@@ -4,6 +4,8 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+## 0.0.1 - 2026-07-23
+
 - Establish `judgment-pack-runtime` as the vendor-neutral reference runtime for the Judgment Pack
   Specification (JPS) under the `Judgment-Pack` organization. This project originated as the
   `protoss-cli` reference validator and was renamed and relocated to a vendor-neutral home; it is a
