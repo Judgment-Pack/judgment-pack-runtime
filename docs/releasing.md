@@ -5,8 +5,9 @@ independent: a CLI release may consume a JPS release, but it never creates or ch
 
 ## Prerequisites
 
-- The intended JPS artifacts have already been committed and published under an immutable tag in
-  `protossai/judgment-pack-spec`.
+- The intended JPS artifacts have already been committed to `Judgment-Pack/judgment-pack-spec` and
+  are reachable by an immutable reference: either a published tag or a full-length commit digest.
+  Prefer a tag when one carries the intended artifacts.
 - GitHub Release Immutability is enabled for this repository.
 - `main` is clean, pushed, and passing CI.
 - The GitHub CLI is authenticated with permission to push and manage releases.
@@ -30,8 +31,8 @@ env GO111MODULE=on go run ./tools/sync-spec-artifacts \
 ```
 
 Review every imported file and `lock.json`. The lock must contain the official repository URL,
-`immutable-git-ref`, the tag, its exact commit, `worktreeDirty: false`, and the expected bundle
-digest. Update the embedded registry only when adding a new specification version.
+`immutable-git-ref`, the immutable reference used, its exact commit, `worktreeDirty: false`, and the
+expected bundle digest. Update the embedded registry only when adding a new specification version.
 
 ## Validate locally
 

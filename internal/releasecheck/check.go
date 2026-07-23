@@ -9,7 +9,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 )
 
-const specificationRepository = "https://github.com/protossai/judgment-pack-spec"
+const specificationRepository = "https://github.com/Judgment-Pack/judgment-pack-spec"
 
 var (
 	versionTagPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)

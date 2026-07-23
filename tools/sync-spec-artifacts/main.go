@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-const sourceRepository = "https://github.com/protossai/judgment-pack-spec"
+const sourceRepository = "https://github.com/Judgment-Pack/judgment-pack-spec"
 
 var fullCommitPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
