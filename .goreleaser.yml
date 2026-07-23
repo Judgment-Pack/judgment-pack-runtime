@@ -67,6 +67,7 @@ archives:
           - zip
     files:
       - LICENSE
+      - NOTICE
       - README.md
       - THIRD_PARTY_NOTICES
 

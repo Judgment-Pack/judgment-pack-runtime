@@ -1,0 +1,14 @@
+judgment-pack (Judgment Pack reference runtime)
+Copyright 2026 Brian Jin
+
+This product embeds unmodified specification artifacts from the Judgment Pack
+Specification: the JSON Schema, the conformance manifest and its schema, and the
+conformance case corpus.
+
+  Judgment Pack Specification
+  Copyright 2026 Brian Jin
+  https://github.com/Judgment-Pack/judgment-pack-spec
+  Licensed under the Apache License, Version 2.0.
+
+The exact embedded revision and per-file SHA-256 digests are recorded in
+internal/artifacts/jps/<version>/lock.json.

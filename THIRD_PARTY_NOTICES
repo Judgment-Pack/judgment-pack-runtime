@@ -1,11 +1,26 @@
 judgment-pack third-party notices
 ================================
 
-This distribution contains the following Go modules. Versions are recorded in
-go.mod and go.sum.
+This distribution contains third-party material of two kinds: specification
+artifacts embedded into the binary at build time, and Go modules. The embedded
+artifacts appear in neither go.mod nor go.sum and are listed first below. Go
+module versions are recorded in go.mod and go.sum.
 
-Apache License 2.0 components
------------------------------
+Judgment Pack Specification — Apache License 2.0
+-------------------------------------------------
+
+Copyright 2026 Brian Jin
+https://github.com/Judgment-Pack/judgment-pack-spec
+
+This distribution embeds unmodified specification artifacts compiled into the
+binary from internal/artifacts/jps/ — schema.json, manifest.json,
+manifest.schema.json, and the conformance case corpus. They are licensed under
+the Apache License, Version 2.0; a copy is in the accompanying LICENSE file, and
+the required attribution is in NOTICE. The exact upstream revision and per-file
+SHA-256 digests are recorded in the bundled lock.json.
+
+Apache License 2.0 components (Go modules)
+------------------------------------------
 
 - github.com/santhosh-tekuri/jsonschema/v6
 - github.com/spf13/cobra
