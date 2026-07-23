@@ -2,15 +2,15 @@
   "formatVersion": 1,
   "specVersion": "0.1.0-draft",
   "source": {
-    "repository": "https://github.com/protossai/judgment-pack-spec",
+    "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
     "kind": "immutable-git-ref",
-    "baseCommit": "80958f50c851e9809cb8036a23622391cf437c99",
-    "ref": "v0.1.0-draft",
+    "baseCommit": "5df1f5502a61eed2ce7509d03b00e3d387558183",
+    "ref": "5df1f5502a61eed2ce7509d03b00e3d387558183",
     "worktreeDirty": false
   },
   "bundleDigest": {
     "algorithm": "sha256-length-prefixed-v1",
-    "value": "507cba8dbe43b70481ae22d48d083423ef08aee22366055ef6ea1dc7dce213c7"
+    "value": "abc3d3371db5be6c0b63639d399fbe42e3f3e136a162d8d6c2b50503634bbe70"
   },
   "files": [
     {
@@ -255,13 +255,13 @@
     },
     {
       "path": "manifest.schema.json",
-      "bytes": 3611,
-      "sha256": "fa3f55f53712253551d6374ff3f06621e936b56c04dabd399703bbb05285c740"
+      "bytes": 3579,
+      "sha256": "f073bde8f6f2189edd0334c81c03fecfacf8fae2bd49305a788c75550dcbc2c5"
     },
     {
       "path": "schema.json",
-      "bytes": 14307,
-      "sha256": "81f6986edc8d2bbf6f49c28a9bbec4f9054f7c72cab5a5028130e01d2e7274d8"
+      "bytes": 14268,
+      "sha256": "c65c559db33d19d2f327858635266fca7fcc049fb75083a7a8d47517e27224fc"
     }
   ]
 }

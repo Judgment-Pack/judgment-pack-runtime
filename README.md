@@ -201,12 +201,14 @@ The lock records the source repository, exact commit/ref and source state, plus 
 metadata for all 50 imported files. A development snapshot remains visibly labelled
 `unreleased-local-snapshot` and cannot pass the release gate.
 
-> **Provenance note.** The embedded bundle is currently pinned to the specification's pre-neutral
-> upstream tag (`protossai/judgment-pack-spec@v0.1.0-draft`), whose schema `$id`s still use the
-> pre-neutralization URLs. Re-vendoring to a neutral, digest-locked spec tag is a reviewed
-> follow-up, tracked in [CHANGELOG.md](CHANGELOG.md), pending the specification project publishing
-> one. Because validation is fully offline and never dereferences a `$id`, this affects provenance
-> labelling only, not validation behavior.
+> **Provenance note.** The embedded bundle is pinned to an exact commit of
+> `Judgment-Pack/judgment-pack-spec` rather than to a tag. The specification's only tag,
+> `v0.1.0-draft`, carries schema `$id`s under a temporary repository-hosted URL; the permanent
+> `https://judgmentpack.org/schema/` identifiers exist on `main` but cannot be published under a
+> second tag, because the specification's release tooling requires the tag string to equal
+> `specVersion`. Pinning the commit is an explicitly supported immutable reference here — the
+> release gate accepts a full-length commit digest — and the pin moves to a tag once the
+> specification publishes a version carrying the permanent identifiers.
 
 Artifact bundle and conformance-corpus digests use `sha256-length-prefixed-v1`: each sorted path and
 file body is encoded as an unsigned 64-bit big-endian byte length followed by those exact bytes.

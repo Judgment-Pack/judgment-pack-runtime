@@ -10,6 +10,16 @@ All notable changes to tagged releases are documented here.
 - Record the embedded specification bundle in `THIRD_PARTY_NOTICES`. The bundle is Apache-2.0
   material from a separate project and appears in neither `go.mod` nor `go.sum`, so the previous
   Go-modules-only framing omitted it.
+- Re-vendor the embedded specification bundle from `Judgment-Pack/judgment-pack-spec`, replacing the
+  pre-neutralization pin. The two schema `$id` values now carry the permanent
+  `https://judgmentpack.org/schema/` identifiers. Machine-visible: `spec schema` reports a new
+  `schemaId`, `sha256`, and `bytes`, and the bundle digest changes. No validation behavior changes
+  and all 47 conformance cases still pass — the corpus is byte-identical to the previous pin.
+- Pin the bundle to an exact commit rather than a tag. The specification's release tooling requires
+  a tag string to equal `specVersion`, so the permanent identifiers on its `main` branch cannot be
+  republished under a second `0.1.0-draft` tag. The release gate already treats a full-length commit
+  digest as an immutable reference; the pin moves back to a tag once a specification version
+  carrying those identifiers is published.
 
 ## 0.0.1 - 2026-07-23
 
@@ -30,9 +40,11 @@ All notable changes to tagged releases are documented here.
 
 ### Known follow-ups
 
-- The embedded specification bundle is still pinned to the pre-neutralization upstream tag
-  (`protossai/judgment-pack-spec@v0.1.0-draft`). Re-vendoring to a neutral, digest-locked spec tag
-  is pending the specification project publishing one.
+- The embedded specification bundle is pinned to the pre-neutralization upstream tag
+  (`v0.1.0-draft`), whose schema `$id` values use temporary repository-hosted URLs. (Resolved in
+  Unreleased by re-vendoring from `Judgment-Pack/judgment-pack-spec` at an exact commit. The
+  original entry attributed the delay to the specification project not having published a neutral
+  tag; the permanent identifiers were in fact already on its `main` branch.)
 - No `GOVERNANCE`/`MAINTAINERS`/`CODEOWNERS` files exist yet. (The `NOTICE` file is added in
   Unreleased. `LICENSE` is deliberately left byte-identical to the canonical Apache-2.0 text: its
   appendix is a template for marking your own files, not a field to fill, and editing it costs a

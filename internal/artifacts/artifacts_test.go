@@ -8,10 +8,10 @@ func TestEmbeddedReleaseArtifactIntegrityAndProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	lock := set.Lock()
-	if lock.Source.Repository != "https://github.com/protossai/judgment-pack-spec" ||
+	if lock.Source.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" ||
 		lock.Source.Kind != "immutable-git-ref" ||
-		lock.Source.BaseCommit != "80958f50c851e9809cb8036a23622391cf437c99" ||
-		lock.Source.Ref != "v0.1.0-draft" ||
+		lock.Source.BaseCommit != "5df1f5502a61eed2ce7509d03b00e3d387558183" ||
+		lock.Source.Ref != "5df1f5502a61eed2ce7509d03b00e3d387558183" ||
 		lock.Source.WorktreeDirty {
 		t.Fatalf("embedded artifacts must remain pinned to the approved JPS release: %#v", lock.Source)
 	}
