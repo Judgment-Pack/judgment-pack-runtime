@@ -1,0 +1,267 @@
+{
+  "formatVersion": 1,
+  "specVersion": "0.1.0-draft",
+  "source": {
+    "repository": "https://github.com/protossai/judgment-pack-spec",
+    "kind": "immutable-git-ref",
+    "baseCommit": "80958f50c851e9809cb8036a23622391cf437c99",
+    "ref": "v0.1.0-draft",
+    "worktreeDirty": false
+  },
+  "bundleDigest": {
+    "algorithm": "sha256-length-prefixed-v1",
+    "value": "507cba8dbe43b70481ae22d48d083423ef08aee22366055ef6ea1dc7dce213c7"
+  },
+  "files": [
+    {
+      "path": "cases/carrier/duplicate-root-member.json",
+      "bytes": 619,
+      "sha256": "820f21208171b565f1f657b2df35362c2f2944c6a1d544d99e785e7a804f8f64"
+    },
+    {
+      "path": "cases/carrier/malformed-json.json",
+      "bytes": 90,
+      "sha256": "5b95431ef57806a0c43949b6a0f2cbbaaa2726510d4fd094810de75f4d5367a3"
+    },
+    {
+      "path": "cases/semantic/dangling-applicability-evidence.json",
+      "bytes": 753,
+      "sha256": "9efcf5f1370ed0ad1ba0fbdbfd9b25f3432f7153733cdac8b78d69b681f2fd37"
+    },
+    {
+      "path": "cases/semantic/dangling-evidence-ref.json",
+      "bytes": 705,
+      "sha256": "67526f29cb01b588804d44743a4158b88d45166ca32c093917d70f8f01f74572"
+    },
+    {
+      "path": "cases/semantic/dangling-exception-evidence.json",
+      "bytes": 947,
+      "sha256": "9fd4637b85d88d2bf09fe821f9ca40c443c4084a33bdfdd43bf035205186049e"
+    },
+    {
+      "path": "cases/semantic/dangling-exception-outcome.json",
+      "bytes": 900,
+      "sha256": "65f6846565930446326775c3cdcf834e3a0cfa45a44a35fd030d10417a1ed2e8"
+    },
+    {
+      "path": "cases/semantic/dangling-exception-source-ref.json",
+      "bytes": 909,
+      "sha256": "3f8a24630088c0f051a8b2ff9dc443bf0eca1c1d703295ff3e50843401d9e5e3"
+    },
+    {
+      "path": "cases/semantic/dangling-exception-target.json",
+      "bytes": 906,
+      "sha256": "30465fc74ab67cf6a55f33cd55d7bdd3e033d9699574a058e61b941ce5df3a37"
+    },
+    {
+      "path": "cases/semantic/dangling-fallback-outcome.json",
+      "bytes": 678,
+      "sha256": "93d1f82ec13112483e77b2db741ac78b9ba1bc7925de5774b0ff6339cc0e8f01"
+    },
+    {
+      "path": "cases/semantic/dangling-nested-evidence-present.json",
+      "bytes": 1035,
+      "sha256": "5706114bc118531dff467c4180ed733f099f8278931bb7ae6cda1527609cba27"
+    },
+    {
+      "path": "cases/semantic/dangling-rule-outcome.json",
+      "bytes": 630,
+      "sha256": "b7c9c1d2acf0b551f35e6b02632c8908a77d3086d27165ac90bcab2fbac2d1e4"
+    },
+    {
+      "path": "cases/semantic/dangling-source-ref.json",
+      "bytes": 669,
+      "sha256": "101129b60feff5073ef7c734cae34462e0b990aba87b21f107c66ba5924a63f0"
+    },
+    {
+      "path": "cases/semantic/duplicate-evidence-id.json",
+      "bytes": 844,
+      "sha256": "820e86d5b928092f29011a7be09cb5ff35fc5918e13eb8ec2ac12abaa8ea1e8f"
+    },
+    {
+      "path": "cases/semantic/duplicate-exception-id.json",
+      "bytes": 1049,
+      "sha256": "ae52ecbf4e07fbc29e3ecea9b39b62f65c270ae37e07985da2c061b6230c161a"
+    },
+    {
+      "path": "cases/semantic/duplicate-outcome-id.json",
+      "bytes": 654,
+      "sha256": "20c3db9cdb85e87bbf6348ca2fb16b3f2e9c5281fc68c8831190dffd177750b4"
+    },
+    {
+      "path": "cases/semantic/duplicate-rule-id.json",
+      "bytes": 841,
+      "sha256": "c27852d9a90b171c53b0197f18e0cf56d62a0322df7a686513a07054033acaa0"
+    },
+    {
+      "path": "cases/semantic/duplicate-source-id.json",
+      "bytes": 935,
+      "sha256": "e9121e953ee01dfa3d0cbcd7789e90feb0ccbaad12f3fc066809c693984b04b6"
+    },
+    {
+      "path": "cases/semantic/missing-required-extension-value.json",
+      "bytes": 748,
+      "sha256": "03b66aba12b40b247ab2bc6651ad070187954a47536c8e3995914d1d61f9452b"
+    },
+    {
+      "path": "cases/semantic/required-extension-unsupported.json",
+      "bytes": 861,
+      "sha256": "21602e507e55d7dc4138d7e9b393783c202492778397556edd37f5e2d89e12c1"
+    },
+    {
+      "path": "cases/semantic/wrong-kind-rule-outcome.json",
+      "bytes": 845,
+      "sha256": "1ae656191c1a20b1c6705da9751cceb742dd99d9d00656da459bf7f6755534e3"
+    },
+    {
+      "path": "cases/structural/empty-any-condition.json",
+      "bytes": 597,
+      "sha256": "767ea2ace94caf70afd4329101f4eb034591f3aabb6a2d1978cf4165d8a0368e"
+    },
+    {
+      "path": "cases/structural/empty-escalation-triggers.json",
+      "bytes": 738,
+      "sha256": "1bd00ba19035a49a9f8b0c6d1bed245392196b9fe471421f88d57b8abe8e0f68"
+    },
+    {
+      "path": "cases/structural/empty-rules.json",
+      "bytes": 389,
+      "sha256": "aaf8b43da81388a417a8d26f47627abb9f30eb78d1a65cbf3dd9b9f5bb43bc81"
+    },
+    {
+      "path": "cases/structural/force-outcome-missing-outcome.json",
+      "bytes": 891,
+      "sha256": "7c5004c75a1d0e241db6f9348abe26a067aa18224a018ffc607360ba70f0a409"
+    },
+    {
+      "path": "cases/structural/invalid-created-at.json",
+      "bytes": 659,
+      "sha256": "e0420e81aa6f78752f9be6a8085b6c1b55a2a79cccdc9857d59f3112e836513d"
+    },
+    {
+      "path": "cases/structural/invalid-fact-path.json",
+      "bytes": 681,
+      "sha256": "0bcc6c1c2c238c2ba8c601c790c6f0b2507785300ca904708e883e23f43fa900"
+    },
+    {
+      "path": "cases/structural/invalid-in-operand.json",
+      "bytes": 723,
+      "sha256": "4b03d61f7684adfa1e4d7c9afa3545ff88ff958ac22c2d15840fa3002e43ceac"
+    },
+    {
+      "path": "cases/structural/invalid-local-id.json",
+      "bytes": 609,
+      "sha256": "16ac057dd73051a5745c84946514752f9ef97c3c0b04caaffa693f0d22153b0f"
+    },
+    {
+      "path": "cases/structural/invalid-ordered-decimal.json",
+      "bytes": 743,
+      "sha256": "87457a0c94af248942b84a32dbdde3f15b53163b9f916872e3d36793e161603e"
+    },
+    {
+      "path": "cases/structural/invalid-pack-version.json",
+      "bytes": 618,
+      "sha256": "08b4a378a10cece990283863492d235eecd97faebe5b4866a67ce91a91f9aabd"
+    },
+    {
+      "path": "cases/structural/invalid-published-date.json",
+      "bytes": 802,
+      "sha256": "56ce562c9570ff5fb43128eaace64281110a99c227981b8c081f68b7124018fd"
+    },
+    {
+      "path": "cases/structural/invalid-spec-version.json",
+      "bytes": 646,
+      "sha256": "555dedfa42f579a60c544901436e3b4256b371182c4418d21f85969ed5157dbc"
+    },
+    {
+      "path": "cases/structural/missing-decision.json",
+      "bytes": 473,
+      "sha256": "d3b8243e6a78879f6ddfc6f714fe1f355a008e0b1c1c723cd39b590fb8669f99"
+    },
+    {
+      "path": "cases/structural/relative-pack-id.json",
+      "bytes": 583,
+      "sha256": "b61df029808207675bcdc81508c8b6bea841f24f404863adf355dffdf9bef030"
+    },
+    {
+      "path": "cases/structural/reserved-extension-name.json",
+      "bytes": 699,
+      "sha256": "c81ea4b4a82b5b794098e929c402013337adf1d6a940333b90061ac26535da55"
+    },
+    {
+      "path": "cases/structural/too-few-outcomes.json",
+      "bytes": 561,
+      "sha256": "1e0b39685c3e5aea6e68669ed4f6d23206bceb237dd5971807aed2a786faf6bb"
+    },
+    {
+      "path": "cases/structural/unknown-decision-member.json",
+      "bytes": 646,
+      "sha256": "8d58c0bf1a7e23b3b0ff7ba75bd7822012ac5c5621ef6732b8b861d8cb8354f6"
+    },
+    {
+      "path": "cases/structural/unknown-root-member.json",
+      "bytes": 639,
+      "sha256": "75289f0e215423d5dda01878d1949c682be4f784a119c23d3d7d2a278d5657cb"
+    },
+    {
+      "path": "cases/structural/unqualified-extension.json",
+      "bytes": 666,
+      "sha256": "f0189412806729014da39736bf6ce1bf0772a891eaf813efcda35db068e5385e"
+    },
+    {
+      "path": "cases/valid/condition-branches.json",
+      "bytes": 1490,
+      "sha256": "488bc39efb898c9610ac94de02cc285f3dc3782c9bb253f47868eb9e4e072fb1"
+    },
+    {
+      "path": "cases/valid/exception-escalate.json",
+      "bytes": 849,
+      "sha256": "c0d83d9aa6c89d9bb8aae6edfefeb406ce1c4d21cb0447e385b57bc952b5979a"
+    },
+    {
+      "path": "cases/valid/exception-force-outcome.json",
+      "bytes": 872,
+      "sha256": "747b6bbf9f2bd5c7091fc9e07c37cce3c28daa256d4eaf2354eff8dd611ad744"
+    },
+    {
+      "path": "cases/valid/exception-suppress-rule.json",
+      "bytes": 890,
+      "sha256": "c162316c0fe7a81a425f26a581bc1ecf079f61ed376cc3c09a95e41ef991052b"
+    },
+    {
+      "path": "cases/valid/hostile-optional-extension-value.json",
+      "bytes": 925,
+      "sha256": "f47979407feba12236b23185daebc60fcf6cba10cb00c3bb112a4783480a7966"
+    },
+    {
+      "path": "cases/valid/minimal-expense-approval.json",
+      "bytes": 4944,
+      "sha256": "713a5f5375e28c6c1bd34219530575715966dbe4a67bc8e226df14bd6db3c4b6"
+    },
+    {
+      "path": "cases/valid/minimal-literal.json",
+      "bytes": 611,
+      "sha256": "516a9d6c92052b291f7e065d514ba89169975e50c216b9b4f59b729a274a52dd"
+    },
+    {
+      "path": "cases/valid/required-extension-supported.json",
+      "bytes": 873,
+      "sha256": "0cc0f44af24987e009d9978712cd47ac184e2e2933e4e851d85292b3e4a11a44"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 18492,
+      "sha256": "a88722b34cf7b408a30fa10bcf91aef2f54285419cc60476ffcaaf37025d7f97"
+    },
+    {
+      "path": "manifest.schema.json",
+      "bytes": 3611,
+      "sha256": "fa3f55f53712253551d6374ff3f06621e936b56c04dabd399703bbb05285c740"
+    },
+    {
+      "path": "schema.json",
+      "bytes": 14307,
+      "sha256": "81f6986edc8d2bbf6f49c28a9bbec4f9054f7c72cab5a5028130e01d2e7274d8"
+    }
+  ]
+}

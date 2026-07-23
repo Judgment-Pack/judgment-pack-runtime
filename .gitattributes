@@ -1,0 +1,3 @@
+# Release-pinned artifacts are verified byte-for-byte and must never undergo
+# checkout-time line-ending conversion.
+internal/artifacts/jps/** -text

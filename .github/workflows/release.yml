@@ -1,0 +1,238 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing exact SemVer tag to validate without drafting
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Verify and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Validate release tag syntax
+        shell: bash
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag is not exact SemVer: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Check out tagged source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          # Release binaries use one reviewed, supported toolchain. The go.mod
+          # directive remains the source-compatibility floor tested by CI.
+          go-version: 1.26.5
+          cache-dependency-path: go.sum
+
+      - name: Check formatting
+        run: |
+          go fmt ./...
+          git diff --exit-code
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Run bundled conformance suite
+        run: go run ./cmd/judgment-pack spec test-conformance --quiet
+
+      - name: Verify tag and immutable specification provenance
+        run: go run ./tools/check-release --tag "${RELEASE_TAG}"
+
+      - name: Normalize archive file timestamps
+        shell: bash
+        run: |
+          source_date_epoch="$(git show -s --format=%ct "${RELEASE_TAG}^{commit}")"
+          touch --date="@${source_date_epoch}" LICENSE README.md THIRD_PARTY_NOTICES
+
+      - name: Package without publishing
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.17.0
+          args: release --clean --skip=publish
+
+      - name: Verify packaged checksums
+        working-directory: dist
+        run: sha256sum --check checksums.txt
+
+      - name: Upload release archives for native smoke tests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dist
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke-unix:
+    name: ${{ matrix.os }} release archive
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Download packaged archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Verify and smoke-test native archive
+        shell: bash
+        run: |
+          case "$(uname -s)" in
+            Darwin) release_os="darwin"; checksum_command=(shasum -a 256 --check) ;;
+            Linux) release_os="linux"; checksum_command=(sha256sum --check) ;;
+            *) echo "Unsupported runner OS: $(uname -s)" >&2; exit 1 ;;
+          esac
+
+          case "$(uname -m)" in
+            arm64|aarch64) release_arch="arm64" ;;
+            x86_64) release_arch="amd64" ;;
+            *) echo "Unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          release_version="${RELEASE_TAG#v}"
+          archive="judgment-pack_${release_version}_${release_os}_${release_arch}.tar.gz"
+          destination="${RUNNER_TEMP}/judgment-pack-release-smoke"
+
+          (cd dist && "${checksum_command[@]}" checksums.txt)
+          mkdir -p "${destination}"
+          tar -xzf "dist/${archive}" -C "${destination}"
+          test "$("${destination}/judgment-pack" --version)" = "judgment-pack ${release_version}"
+          "${destination}/judgment-pack" spec test-conformance --quiet
+
+  smoke-windows:
+    name: windows-latest release archive
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Download packaged archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Verify and smoke-test native archive
+        shell: pwsh
+        run: |
+          $releaseVersion = $env:RELEASE_TAG.Substring(1)
+          $archive = "judgment-pack_${releaseVersion}_windows_amd64.zip"
+          $archivePath = Join-Path "dist" $archive
+          $checksumLine = Get-Content "dist/checksums.txt" |
+            Where-Object { $_ -match "[ *]$([regex]::Escape($archive))$" }
+
+          if (-not $checksumLine) {
+            throw "No checksum found for $archive"
+          }
+
+          $expected = ($checksumLine -split "\s+")[0].ToLowerInvariant()
+          $actual = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Checksum mismatch for $archive"
+          }
+
+          $destination = Join-Path $env:RUNNER_TEMP "judgment-pack-release-smoke"
+          Expand-Archive -Path $archivePath -DestinationPath $destination
+          $binary = Join-Path $destination "judgment-pack.exe"
+          $reportedVersion = & $binary --version
+          if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "judgment-pack $releaseVersion") {
+            throw "Unexpected version output: $reportedVersion"
+          }
+
+          & $binary spec test-conformance --quiet
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled conformance suite failed"
+          }
+
+  attest-and-draft:
+    name: Attest and draft release
+    if: github.event_name == 'push'
+    needs:
+      - package
+      - smoke-unix
+      - smoke-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download smoke-tested archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Attest release archives
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-checksums: dist/checksums.txt
+
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          assets=(dist/*.tar.gz dist/*.zip dist/checksums.txt)
+          if (( ${#assets[@]} != 7 )); then
+            echo "Expected six archives and checksums.txt, found ${#assets[@]} files" >&2
+            exit 1
+          fi
+
+          release_args=(
+            "${RELEASE_TAG}"
+            "${assets[@]}"
+            --draft
+            --generate-notes
+            --title "judgment-pack ${RELEASE_TAG}"
+            --verify-tag
+          )
+          if [[ "${RELEASE_TAG}" == *-* ]]; then
+            release_args+=(--prerelease)
+          fi
+
+          gh release create "${release_args[@]}"

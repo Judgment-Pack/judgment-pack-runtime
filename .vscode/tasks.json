@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "judgment-pack: Build CLI",
+      "type": "process",
+      "command": "go",
+      "args": ["build", "-trimpath", "-o", "${workspaceFolder}/bin/judgment-pack", "./cmd/judgment-pack"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "GO111MODULE": "on",
+          "CGO_ENABLED": "0"
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "judgment-pack: Test CLI",
+      "type": "process",
+      "command": "go",
+      "args": ["test", "./..."],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "GO111MODULE": "on"
+        }
+      },
+      "group": "test",
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "judgment-pack: Run JPS conformance",
+      "type": "process",
+      "command": "go",
+      "args": ["run", "./cmd/judgment-pack", "spec", "test-conformance"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "GO111MODULE": "on"
+        }
+      },
+      "dependsOn": "judgment-pack: Test CLI",
+      "problemMatcher": ["$go"]
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/goreleaser/goreleaser/v2.17.0/www/docs/static/schema.json
+version: 2
+
+project_name: judgment-pack
+
+builds:
+  - id: judgment-pack
+    main: ./cmd/judgment-pack
+    binary: judgment-pack
+    env:
+      - CGO_ENABLED=0
+      - GO111MODULE=on
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/Judgment-Pack/judgment-pack-runtime/internal/result.CLIVersion={{ .Version }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goamd64:
+      - v1
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  # Short-alias binary built from the same entrypoint. Bundled into the same
+  # per-platform archive as `judgment-pack`, so the archive count is unchanged.
+  - id: jpack
+    main: ./cmd/judgment-pack
+    binary: jpack
+    env:
+      - CGO_ENABLED=0
+      - GO111MODULE=on
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/Judgment-Pack/judgment-pack-runtime/internal/result.CLIVersion={{ .Version }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goamd64:
+      - v1
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: judgment-pack-archives
+    ids:
+      - judgment-pack
+      - jpack
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+      - THIRD_PARTY_NOTICES
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^chore:"
+      - "^docs:"
+      - "^test:"
+
+release:
+  draft: true
+  prerelease: auto
+  name_template: "judgment-pack {{ .Tag }}"
