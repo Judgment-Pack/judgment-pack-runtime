@@ -69,18 +69,22 @@ binary. A release build must report the tag version without the leading `v`.
    without publishing them. Included file timestamps are normalized to the tagged commit for
    reproducible archives. The workflow uploads the six archives and `checksums.txt` as one
    short-lived workflow artifact. Native Linux, macOS, and Windows jobs verify and run archives
-   from that exact artifact. Only after all native smoke tests pass does the final job attest the
-   archives and create the draft GitHub release. No maintainer PAT or repository secret is used.
-   To diagnose or revalidate an existing tag without creating a release, manually dispatch the same
-   workflow; manual runs stop after the native smoke tests:
+   from that exact artifact. Only after all native smoke tests pass does the attest-and-draft job
+   attest the archives and create the draft GitHub release. The workflow then pauses at the
+   `production` environment gate, awaiting maintainer approval before the publish job runs. No
+   maintainer PAT or repository secret is used. To diagnose or revalidate an existing tag without
+   creating a release, manually dispatch the same workflow; manual runs stop after the native smoke
+   tests:
 
    ```bash
    gh workflow run release.yml --field tag=<cli-tag>
    ```
 
-5. Review the successful workflow, generated notes, checksums, attestations, and draft assets.
-6. Publish the draft. With Release Immutability enabled, publishing
-   locks the tag and assets.
+5. Review the drafted release on the Releases page — generated notes, checksums, attestations, and
+   the six archives.
+6. Approve the pending `production` deployment on the release run. The publish job then flips the
+   draft to public (a prerelease tag is never marked latest). With Release Immutability enabled,
+   publishing locks the tag and assets.
 
 Do not move or reuse a released tag. Fixes require a new version.
 

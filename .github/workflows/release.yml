@@ -193,7 +193,6 @@ jobs:
       - smoke-unix
       - smoke-windows
     runs-on: ubuntu-latest
-    environment: production
     timeout-minutes: 10
     permissions:
       contents: write
@@ -241,3 +240,27 @@ jobs:
           fi
 
           gh release create "${release_args[@]}"
+
+  publish:
+    name: Publish release
+    if: github.event_name == 'push'
+    needs: attest-and-draft
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the reviewed draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # No checkout in this job; tell gh which repository to target.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          publish_args=("${RELEASE_TAG}" --draft=false)
+          # A prerelease (tag contains a hyphen) must not be marked latest.
+          if [[ "${RELEASE_TAG}" != *-* ]]; then
+            publish_args+=(--latest)
+          fi
+          gh release edit "${publish_args[@]}"
