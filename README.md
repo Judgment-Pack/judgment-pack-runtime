@@ -36,8 +36,8 @@ specification and the prefix of its provisional diagnostic codes.
 
 Download the archive for your operating system and architecture from
 [GitHub Releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases). Each archive
-includes the `judgment-pack` and `jpack` binaries, README, Apache-2.0 license, and third-party
-notices.
+includes the `judgment-pack` and `jpack` binaries, README, Apache-2.0 license, attribution notice,
+and third-party notices.
 
 Asset names follow this pattern:
 
