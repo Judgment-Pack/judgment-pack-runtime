@@ -61,3 +61,11 @@ and nearby-version substitution are forbidden.
 Development builds report version `0.0.0-dev`. GoReleaser injects the exact tag version into
 official binaries through a Go linker flag; source builds without that release metadata remain
 development builds.
+
+## Decisions
+
+This document describes the runtime as it is. The cross-cutting decisions behind it -- why the layout
+is idiomatic Go rather than a `packages/` monorepo, why language plurality lives at the wire, why MCP
+is the integration surface -- are recorded as architecture decision records in
+[`docs/adr/`](adr/README.md). Implementation decisions are ADRs; normative, cross-implementation
+proposals belong to the specification's RFC process instead.
