@@ -17,15 +17,28 @@ Today the agent drives the command-line binary directly. A first-class MCP surfa
 
 ## What you need
 
-- A `judgment-pack` binary (built below, or a tagged release).
+- A `judgment-pack` binary (installed or built below).
 - Any agent client that can run a shell command and read and write files, configured with **your
   own** model API key. The runtime holds no key, opens no network connection, and evaluates nothing,
-  so the key lives entirely in the client. Examples: Claude Code, Cline, Continue.
+  so the key lives entirely in the client. Any of the many such clients works — for example Claude
+  Code, Cline, Cursor, or Continue.
 
-## Build the validator
+## Get the validator
 
-The module builds with a currently supported Go toolchain. If `go env GO111MODULE` reports `off`,
-force module mode:
+Either install a released binary or build from source.
+
+**Install a tagged release.** Download the archive for your operating system and architecture from
+the repository's [GitHub Releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases)
+and put the binary on your `PATH`. Each archive also ships a `jpack` short alias.
+
+```bash
+tar -xzf judgment-pack_<version>_<os>_<arch>.tar.gz   # on Windows, expand the .zip instead
+install -m 0755 judgment-pack "$HOME/.local/bin/judgment-pack"
+judgment-pack version
+```
+
+**Build from source.** With a currently supported Go toolchain, from a checkout of this repository.
+If `go env GO111MODULE` reports `off`, force module mode as shown:
 
 ```bash
 env GO111MODULE=on go build -o ~/.local/bin/judgment-pack ./cmd/judgment-pack
@@ -64,8 +77,9 @@ result as a scannable summary; `spec schema 0.1.0-draft --write -` prints the ex
 
 ## Brief the agent
 
-Give the agent these instructions -- save them as `.clinerules` in the workspace, or paste them into
-the client's custom-instructions or first message. Replace `<spec>` with the path to a
+Give the agent these instructions however your client accepts project instructions -- a rules file
+(for example Cline's `.clinerules` or Cursor's `.cursorrules`), the client's custom-instructions
+setting, or simply the agent's first message. Replace `<spec>` with the path to a
 `judgment-pack-spec` checkout.
 
 ```markdown
