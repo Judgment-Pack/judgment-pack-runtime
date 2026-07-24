@@ -20,6 +20,9 @@ All notable changes to tagged releases are documented here.
   republished under a second `0.1.0-draft` tag. The release gate already treats a full-length commit
   digest as an immutable reference; the pin moves back to a tag once a specification version
   carrying those identifiers is published.
+- Pin the machine contract in tests: `outputVersion`, `tool.name`, the six exit classes, and the
+  four envelope members every JSON payload carries. These were previously enforced only by
+  convention, so a rename or an accidental version bump passed silently.
 
 ## 0.0.1 - 2026-07-23
 
