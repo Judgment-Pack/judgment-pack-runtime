@@ -1,13 +1,13 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-24
 deciders: Brian Jin
 ---
 
 # MCP is the runtime's integration and testing surface
 
-> **Stub.** The direction and the constraints below are settled; the server itself is not built.
-> Acceptance is gated on the Phase 0 review described under "Decision outcome".
+> **Accepted.** Phase 0 passed and Phase 1 is built: `internal/mcp` is a hand-rolled stdio MCP
+> server wired as the `judgment-pack mcp` subcommand.
 
 ## Context and problem statement
 
@@ -36,9 +36,9 @@ Chosen direction: **A**, reached in two phases so the premise is proven before c
 - **Phase 0 (proven first, no Go): option C as a warm-up.** An agent in the reference client shells
   out to `judgment-pack spec validate` to pressure-test whether the runtime's diagnostics are good
   enough to close an authoring loop. Review the result, *then* decide Phase 1.
-- **Phase 1 (pending review): the MCP server.** Fill the `internal/mcp` seam as a `judgment-pack
-  mcp` subcommand over stdio, wrapping the existing engine (`validate`, `test_conformance`,
-  `get_schema`, `describe_runtime`) and evaluating nothing.
+- **Phase 1 (built): the MCP server.** `internal/mcp` is a `judgment-pack mcp` subcommand over
+  stdio, wrapping the existing engine as the `validate`, `test_conformance`, `get_schema`, and
+  `describe_runtime` tools, and evaluating nothing.
 
 Settled constraints, regardless of phase:
 
@@ -48,8 +48,14 @@ Settled constraints, regardless of phase:
 - **Examples:** read from a `judgment-pack-spec` checkout; the runtime does not vendor example
   packs, because the specification owns them.
 
-Deferred: the MCP Go library choice (official `go-sdk` vs. `mark3labs/mcp-go`) — decided at
-implementation time, not now.
+Implementation: **hand-rolled, no SDK.** Both Go MCP SDKs (`modelcontextprotocol/go-sdk`,
+`mark3labs/mcp-go`) require a Go 1.25 toolchain and pull heavy dependencies — including `oauth2`,
+which a keyless offline server never uses — conflicting with this runtime's minimal, offline,
+Go 1.21 posture. The MCP surface here is small (four read-only tools over stdio), so the server
+speaks MCP's newline-delimited JSON-RPC directly and adds zero dependencies. An SDK belongs in a
+future commercial, authenticated API/MCP service (a separate layer per
+[0002](0002-language-plurality-at-the-wire.md) and the repository boundary), not in the public
+offline runtime.
 
 ### Consequences
 
@@ -57,7 +63,7 @@ implementation time, not now.
 - Good, because it realizes [0002](0002-language-plurality-at-the-wire.md): all-language access
   from one Go wire surface.
 - Bad, because testing depends on a third-party client's behavior and setup.
-- Revisit / promote to `accepted` after the Phase 0 review decides Phase 1.
+- Revisit if a commercial, authenticated MCP/API surface is needed; that is a separate service, not this runtime (see the implementation note above).
 
 ## More information
 

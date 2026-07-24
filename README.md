@@ -27,10 +27,14 @@ judgment-pack version
 judgment-pack spec validate <pack-or->
 judgment-pack spec test-conformance [suite]
 judgment-pack spec schema <spec-version>
+judgment-pack mcp
 ```
 
 The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the
 specification and the prefix of its provisional diagnostic codes.
+
+The `mcp` command serves the same offline operations to a Model Context Protocol client over stdio,
+so an agent can validate documents as a tool call; see [docs/agent-testing.md](docs/agent-testing.md).
 
 ## Install a tagged release
 
