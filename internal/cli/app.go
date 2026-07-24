@@ -16,6 +16,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/mcp"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
@@ -89,7 +90,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.SetVersionTemplate("judgment-pack {{.Version}}\n")
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.pretty, "pretty", false, "indent JSON output")
-	root.AddCommand(a.versionCommand(), a.specCommand())
+	root.AddCommand(a.versionCommand(), a.specCommand(), a.mcpCommand())
 	return root
 }
 
@@ -105,6 +106,22 @@ func (a *App) specCommand() *cobra.Command {
 	}
 	spec.AddCommand(a.validateCommand(), a.testConformanceCommand(), a.schemaCommand())
 	return spec
+}
+
+func (a *App) mcpCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "Serve the offline validator to an MCP client over stdio",
+		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools; it holds no credential, opens no network connection, and evaluates nothing.",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			server := mcp.NewServer(a.engine, a.runner)
+			if err := server.Serve(a.in, a.out, a.errOut); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			return nil
+		},
+	}
 }
 
 func (a *App) versionCommand() *cobra.Command {
