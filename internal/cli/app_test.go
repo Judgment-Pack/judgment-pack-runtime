@@ -194,3 +194,77 @@ func first(value string, count int) string {
 	}
 	return value[:count]
 }
+
+func TestPrettyFlagIndentsJSONOutput(t *testing.T) {
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := set.Case("valid/minimal-literal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	validPath := writeFixture(t, valid)
+	code, stdout, stderr := runTest(t, []string{"spec", "validate", validPath, "--format", "json", "--pretty"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if strings.Count(stdout, "\n") < 2 {
+		t.Fatalf("pretty JSON should span multiple lines: %q", stdout)
+	}
+	var output map[string]any
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output["status"] != "valid" {
+		t.Fatalf("unexpected result: %#v", output)
+	}
+}
+
+func TestInputSizeAndReadErrorsUseDistinctCodes(t *testing.T) {
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := set.Case("valid/minimal-literal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	validPath := writeFixture(t, valid)
+
+	// A byte limit below the document size reports a dedicated resource code,
+	// distinct from a generic unreadable-input failure.
+	code, stdout, stderr := runTest(t, []string{"spec", "validate", validPath, "--max-bytes", "10", "--format", "json"}, "")
+	if code != 4 || stderr != "" {
+		t.Fatalf("oversized: exit=%d stderr=%q", code, stderr)
+	}
+	if got := diagnosticCode(t, stdout); got != "JPS-RESOURCE-INPUT-BYTE-LIMIT" {
+		t.Fatalf("oversized input should report the byte-limit code, got %q", got)
+	}
+
+	// A genuinely unreadable input keeps the generic read code.
+	missing := filepath.Join(t.TempDir(), "absent.json")
+	code, stdout, stderr = runTest(t, []string{"spec", "validate", missing, "--format", "json"}, "")
+	if code != 4 || stderr != "" {
+		t.Fatalf("missing: exit=%d stderr=%q", code, stderr)
+	}
+	if got := diagnosticCode(t, stdout); got != "JPS-INPUT-READ" {
+		t.Fatalf("missing input should report the generic read code, got %q", got)
+	}
+}
+
+func diagnosticCode(t *testing.T, jsonOutput string) string {
+	t.Helper()
+	var output struct {
+		Diagnostics []struct {
+			Code string `json:"code"`
+		} `json:"diagnostics"`
+	}
+	if err := json.Unmarshal([]byte(jsonOutput), &output); err != nil {
+		t.Fatalf("decode: %v (output %q)", err, jsonOutput)
+	}
+	if len(output.Diagnostics) != 1 {
+		t.Fatalf("expected exactly one diagnostic, got %d: %q", len(output.Diagnostics), jsonOutput)
+	}
+	return output.Diagnostics[0].Code
+}

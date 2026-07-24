@@ -26,6 +26,7 @@ type App struct {
 	errOut io.Writer
 	engine *validation.Engine
 	runner *conformance.Runner
+	pretty bool
 }
 
 type handledExit struct {
@@ -40,7 +41,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 	if err != nil {
 		message := "Bundled JPS artifacts failed their integrity check."
 		if requestedFormat(args) == "json" {
-			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPS-ARTIFACT-INTEGRITY", message)) != nil {
+			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPS-ARTIFACT-INTEGRITY", message), false) != nil {
 				return result.ExitIO
 			}
 		} else {
@@ -58,7 +59,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 		}
 		message := display.Sanitize(err.Error())
 		if requestedFormat(args) == "json" {
-			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPR-INVOCATION-ARGUMENTS", message)) != nil {
+			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPR-INVOCATION-ARGUMENTS", message), false) != nil {
 				return result.ExitIO
 			}
 		} else {
@@ -87,6 +88,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.SetErr(a.errOut)
 	root.SetVersionTemplate("judgment-pack {{.Version}}\n")
 	root.CompletionOptions.DisableDefaultCmd = true
+	root.PersistentFlags().BoolVar(&a.pretty, "pretty", false, "indent JSON output")
 	root.AddCommand(a.versionCommand(), a.specCommand())
 	return root
 }
@@ -121,7 +123,7 @@ func (a *App) versionCommand() *cobra.Command {
 			}
 			output := describe.Runtime(set, "version")
 			if format == "json" {
-				if err := writeJSON(a.out, output); err != nil {
+				if err := a.writeJSON(output); err != nil {
 					return &handledExit{code: result.ExitIO}
 				}
 			} else {
@@ -160,6 +162,9 @@ func (a *App) validateCommand() *cobra.Command {
 			}
 			data, err := a.readPack(args[0], maxBytes)
 			if err != nil {
+				if errors.Is(err, fssecure.ErrTooLarge) {
+					return a.operational("spec validate", format, result.ExitIO, "JPS-RESOURCE-INPUT-BYTE-LIMIT", fmt.Sprintf("Input exceeds the %d-byte limit.", maxBytes))
+				}
 				return a.operational("spec validate", format, result.ExitIO, "JPS-INPUT-READ", "Input could not be read as one bounded regular file or standard input stream.")
 			}
 			output, operational := a.engine.Validate(data, validation.Options{Through: through, Limits: carrier.DefaultLimits()})
@@ -291,7 +296,7 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, errors.New("input exceeds byte limit")
+		return nil, fssecure.ErrTooLarge
 	}
 	return data, nil
 }
