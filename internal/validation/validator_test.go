@@ -430,3 +430,108 @@ func TestNestedOperandErrorsAreNotMaskedByCompositeShape(t *testing.T) {
 		t.Fatalf("composite should not report a generic shape error when its children have specific errors: %#v", actual.Diagnostics)
 	}
 }
+
+func TestEnumDiagnosticListsAllowedValues(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	document["rules"].([]any)[0].(map[string]any)["onUnknown"] = "bogus-mode"
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-ENUM", "/rules/0/onUnknown")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("expected an enum diagnostic at /rules/0/onUnknown: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "escalate") {
+		t.Fatalf("enum message should list the allowed values: %q", message)
+	}
+}
+
+func TestLocalIDDiagnosticNamesValueAndExample(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	document["outcomes"].([]any)[0].(map[string]any)["id"] = "Bad Id"
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-LOCAL-ID", "/outcomes/0/id")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("expected a local-id diagnostic at /outcomes/0/id: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "Bad Id") || !strings.Contains(message, "needs-review") {
+		t.Fatalf("local-id message should name the offending value and give an example: %q", message)
+	}
+}
+
+func TestArityDiagnosticStatesMinimumAndActual(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	document["outcomes"] = document["outcomes"].([]any)[:1] // one outcome; the minimum is two
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-COLLECTION-ARITY", "/outcomes")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("expected a collection-arity diagnostic at /outcomes: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "at least 2") || !strings.Contains(message, "has 1") {
+		t.Fatalf("arity message should state the required minimum and the actual count: %q", message)
+	}
+}
+
+func TestBadConditionOpIsConsistentAndNamesValidOps(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same mistake -- an op that selects no condition branch -- must report
+	// the same code and location regardless of sibling members, list the valid
+	// ops, and never spuriously flag the op member itself.
+	for _, when := range []map[string]any{
+		{"op": "maybe"},
+		{"op": "maybe", "value": true},
+		{"op": "maybe", "conditions": []any{map[string]any{"op": "literal", "value": true}}},
+	} {
+		document := validDocument(t)
+		document["rules"].([]any)[0].(map[string]any)["when"] = when
+		actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+		message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-CONDITION-SHAPE", "/rules/0/when")
+		if actual.Status != "invalid" || !ok {
+			t.Fatalf("bad op %v should report CONDITION-SHAPE at /rules/0/when: %#v", when, actual.Diagnostics)
+		}
+		if !strings.Contains(message, "fact") || !strings.Contains(message, "evidence-present") {
+			t.Fatalf("condition-shape message should list the valid op values: %q", message)
+		}
+		if hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-SCHEMA", "/rules/0/when/op") {
+			t.Fatalf("a bad op must not spuriously flag the op member: %#v", actual.Diagnostics)
+		}
+	}
+}
+
+func TestValidConditionOpIsNotSpuriouslyFlagged(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// op "all" is valid, but the object is shaped like a "not" (has "condition").
+	// The losing branch's op-const failure must not leak onto the valid op; the
+	// object's real errors must still surface.
+	document := validDocument(t)
+	document["rules"].([]any)[0].(map[string]any)["when"] = map[string]any{
+		"op":        "all",
+		"condition": map[string]any{"op": "literal", "value": true},
+	}
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	if actual.Status != "invalid" {
+		t.Fatalf("expected invalid: %#v", actual)
+	}
+	if hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-SCHEMA", "/rules/0/when/op") {
+		t.Fatalf("a valid op must not be flagged: %#v", actual.Diagnostics)
+	}
+	if !hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-REQUIRED-MEMBER", "/rules/0/when/conditions") {
+		t.Fatalf("the matched branch's real errors should surface: %#v", actual.Diagnostics)
+	}
+}

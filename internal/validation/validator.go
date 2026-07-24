@@ -332,7 +332,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		handled = true
 		code := patternCode(typed.Want)
 		if code != "JPS-STRUCTURE-EXTENSION-NAME" {
-			add(code, location, structuralMessage(code))
+			add(code, location, patternMessage(code, typed))
 		}
 	case *kind.MinItems:
 		handled = true
@@ -342,7 +342,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		} else if last(location) == "triggers" {
 			code = "JPS-STRUCTURE-ESCALATION-TRIGGERS"
 		}
-		add(code, location, structuralMessage(code))
+		add(code, location, arityMessage(code, typed))
 	case *kind.Type:
 		handled = true
 		switch {
@@ -360,7 +360,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		}
 	case *kind.Enum:
 		handled = true
-		add("JPS-STRUCTURE-ENUM", location, "Value is not one of the allowed values.")
+		add("JPS-STRUCTURE-ENUM", location, enumMessage(typed))
 	case *kind.MinLength:
 		handled = true
 		add("JPS-STRUCTURE-MIN-LENGTH", location, "String is shorter than the required minimum length.")
@@ -377,7 +377,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 			relevantCauses = append(relevantCauses, cause)
 		}
 		if len(relevantCauses) == 0 {
-			add("JPS-STRUCTURE-CONDITION-SHAPE", location, "Condition does not match one declared condition shape.")
+			add("JPS-STRUCTURE-CONDITION-SHAPE", location, "Condition does not match one declared shape; its op must be one of: literal, all, any, not, fact, evidence-present.")
 			return
 		}
 		for _, cause := range relevantCauses {
@@ -444,6 +444,63 @@ func structuralMessage(code string) string {
 	}
 }
 
+// enumMessage lists the allowed values so an author does not have to open the
+// schema to learn them.
+func enumMessage(typed *kind.Enum) string {
+	allowed := make([]string, 0, len(typed.Want))
+	for _, value := range typed.Want {
+		allowed = append(allowed, stringifyValue(value))
+	}
+	if len(allowed) == 0 {
+		return "Value is not one of the allowed values."
+	}
+	return "Value is not one of the allowed values: " + joinCapped(allowed, 12) + "."
+}
+
+func stringifyValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return fmt.Sprint(value)
+}
+
+// patternMessage names the offending value and gives a concrete example rather
+// than dumping the grammar regex, for each pattern-constrained member.
+func patternMessage(code string, typed *kind.Pattern) string {
+	switch code {
+	case "JPS-STRUCTURE-LOCAL-ID":
+		return fmt.Sprintf("Local identifier %q has an invalid shape; use lowercase words joined by single hyphens, for example %q.", typed.Got, "needs-review")
+	case "JPS-STRUCTURE-PACK-VERSION":
+		return fmt.Sprintf("Pack version %q has an invalid shape; use MAJOR.MINOR.PATCH, for example %q.", typed.Got, "1.0.0")
+	case "JPS-STRUCTURE-FACT-PATH":
+		return fmt.Sprintf("Fact path %q is not a valid JSON Pointer; it must be empty or begin with %q, for example %q.", typed.Got, "/", "/amount")
+	case "JPS-STRUCTURE-DECIMAL-OPERAND":
+		return fmt.Sprintf("Ordered comparison operand %q must be a decimal string, for example %q.", typed.Got, "5000")
+	default:
+		return fmt.Sprintf("Value %q does not satisfy the required pattern.", typed.Got)
+	}
+}
+
+// arityMessage states the required minimum and the actual count for a
+// too-short collection.
+func arityMessage(code string, typed *kind.MinItems) string {
+	switch code {
+	case "JPS-STRUCTURE-CONDITION-ARITY":
+		return fmt.Sprintf("Condition needs at least %d child condition%s but has %d.", typed.Want, plural(typed.Want), typed.Got)
+	case "JPS-STRUCTURE-ESCALATION-TRIGGERS":
+		return fmt.Sprintf("Escalation needs at least %d trigger%s but has %d.", typed.Want, plural(typed.Want), typed.Got)
+	default:
+		return fmt.Sprintf("Collection needs at least %d item%s but has %d.", typed.Want, plural(typed.Want), typed.Got)
+	}
+}
+
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
+}
+
 func last(values []string) string {
 	if len(values) == 0 {
 		return ""
@@ -498,12 +555,19 @@ func typeMessage(typed *kind.Type) string {
 // more than one invalid child collapses to a single generic shape error and
 // loses the specific, well-located diagnostics for each child.
 func branchRejectedByDiscriminator(cause *jsonschema.ValidationError) bool {
-	if _, isGroup := cause.ErrorKind.(*kind.Group); !isGroup {
-		return false
+	// A losing branch that failed on its op discriminator directly, as a single
+	// bare failure rather than a group -- otherwise that lone op-const/enum
+	// failure leaks out as a diagnostic anchored at an op that is actually valid.
+	if discriminatorMismatch(cause) {
+		return true
 	}
-	for _, sub := range cause.Causes {
-		if discriminatorMismatch(sub) {
-			return true
+	// A losing branch whose failures were grouped, one of which is the op
+	// discriminator.
+	if _, isGroup := cause.ErrorKind.(*kind.Group); isGroup {
+		for _, sub := range cause.Causes {
+			if discriminatorMismatch(sub) {
+				return true
+			}
 		}
 	}
 	return false
