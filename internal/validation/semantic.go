@@ -27,34 +27,34 @@ func semanticDiagnostics(root map[string]any) ([]result.Diagnostic, bool) {
 	sources := idSet(root, "sources")
 
 	for index, rule := range objectList(root["rules"]) {
-		if !unresolved(diagnostics, stringValue(rule["outcome"]), outcomes, []string{"rules", fmt.Sprint(index), "outcome"}, "JPS-SEMANTIC-UNRESOLVED-OUTCOME", "Outcome reference does not resolve.") {
+		if !unresolved(diagnostics, stringValue(rule["outcome"]), outcomes, []string{"rules", fmt.Sprint(index), "outcome"}, "JPS-SEMANTIC-UNRESOLVED-OUTCOME", "outcome") {
 			return diagnostics.sorted(), diagnostics.truncated
 		}
 		for refIndex, reference := range stringList(rule["evidenceRequirementRefs"]) {
-			if !unresolved(diagnostics, reference, evidence, []string{"rules", fmt.Sprint(index), "evidenceRequirementRefs", fmt.Sprint(refIndex)}, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "Evidence requirement reference does not resolve.") {
+			if !unresolved(diagnostics, reference, evidence, []string{"rules", fmt.Sprint(index), "evidenceRequirementRefs", fmt.Sprint(refIndex)}, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "evidence requirement") {
 				return diagnostics.sorted(), diagnostics.truncated
 			}
 		}
 		for refIndex, reference := range stringList(rule["sourceRefs"]) {
-			if !unresolved(diagnostics, reference, sources, []string{"rules", fmt.Sprint(index), "sourceRefs", fmt.Sprint(refIndex)}, "JPS-SEMANTIC-UNRESOLVED-SOURCE", "Source reference does not resolve.") {
+			if !unresolved(diagnostics, reference, sources, []string{"rules", fmt.Sprint(index), "sourceRefs", fmt.Sprint(refIndex)}, "JPS-SEMANTIC-UNRESOLVED-SOURCE", "source") {
 				return diagnostics.sorted(), diagnostics.truncated
 			}
 		}
 		if !walkCondition(rule["when"], []string{"rules", fmt.Sprint(index), "when"}, func(reference string, location []string) bool {
-			return unresolved(diagnostics, reference, evidence, location, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "Evidence requirement reference does not resolve.")
+			return unresolved(diagnostics, reference, evidence, location, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "evidence requirement")
 		}) {
 			return diagnostics.sorted(), diagnostics.truncated
 		}
 	}
 
 	if fallback, ok := root["fallbackOutcome"].(string); ok {
-		if !unresolved(diagnostics, fallback, outcomes, []string{"fallbackOutcome"}, "JPS-SEMANTIC-UNRESOLVED-OUTCOME", "Outcome reference does not resolve.") {
+		if !unresolved(diagnostics, fallback, outcomes, []string{"fallbackOutcome"}, "JPS-SEMANTIC-UNRESOLVED-OUTCOME", "outcome") {
 			return diagnostics.sorted(), diagnostics.truncated
 		}
 	}
 	if applicability, ok := root["applicability"]; ok {
 		if !walkCondition(applicability, []string{"applicability"}, func(reference string, location []string) bool {
-			return unresolved(diagnostics, reference, evidence, location, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "Evidence requirement reference does not resolve.")
+			return unresolved(diagnostics, reference, evidence, location, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "evidence requirement")
 		}) {
 			return diagnostics.sorted(), diagnostics.truncated
 		}
@@ -62,22 +62,22 @@ func semanticDiagnostics(root map[string]any) ([]result.Diagnostic, bool) {
 
 	for index, exception := range objectList(root["exceptions"]) {
 		if target, ok := exception["targetRule"].(string); ok {
-			if !unresolved(diagnostics, target, rules, []string{"exceptions", fmt.Sprint(index), "targetRule"}, "JPS-SEMANTIC-UNRESOLVED-RULE", "Rule reference does not resolve.") {
+			if !unresolved(diagnostics, target, rules, []string{"exceptions", fmt.Sprint(index), "targetRule"}, "JPS-SEMANTIC-UNRESOLVED-RULE", "rule") {
 				return diagnostics.sorted(), diagnostics.truncated
 			}
 		}
 		if outcome, ok := exception["outcome"].(string); ok {
-			if !unresolved(diagnostics, outcome, outcomes, []string{"exceptions", fmt.Sprint(index), "outcome"}, "JPS-SEMANTIC-UNRESOLVED-OUTCOME", "Outcome reference does not resolve.") {
+			if !unresolved(diagnostics, outcome, outcomes, []string{"exceptions", fmt.Sprint(index), "outcome"}, "JPS-SEMANTIC-UNRESOLVED-OUTCOME", "outcome") {
 				return diagnostics.sorted(), diagnostics.truncated
 			}
 		}
 		for refIndex, reference := range stringList(exception["sourceRefs"]) {
-			if !unresolved(diagnostics, reference, sources, []string{"exceptions", fmt.Sprint(index), "sourceRefs", fmt.Sprint(refIndex)}, "JPS-SEMANTIC-UNRESOLVED-SOURCE", "Source reference does not resolve.") {
+			if !unresolved(diagnostics, reference, sources, []string{"exceptions", fmt.Sprint(index), "sourceRefs", fmt.Sprint(refIndex)}, "JPS-SEMANTIC-UNRESOLVED-SOURCE", "source") {
 				return diagnostics.sorted(), diagnostics.truncated
 			}
 		}
 		if !walkCondition(exception["when"], []string{"exceptions", fmt.Sprint(index), "when"}, func(reference string, location []string) bool {
-			return unresolved(diagnostics, reference, evidence, location, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "Evidence requirement reference does not resolve.")
+			return unresolved(diagnostics, reference, evidence, location, "JPS-SEMANTIC-UNRESOLVED-EVIDENCE", "evidence requirement")
 		}) {
 			return diagnostics.sorted(), diagnostics.truncated
 		}
@@ -126,11 +126,46 @@ func idSet(root map[string]any, collection string) map[string]bool {
 	return output
 }
 
-func unresolved(diagnostics *diagnosticCollector, reference string, targets map[string]bool, location []string, code, message string) bool {
+func unresolved(diagnostics *diagnosticCollector, reference string, targets map[string]bool, location []string, code, noun string) bool {
 	if !targets[reference] {
-		return diagnostics.add(result.ErrorDiagnostic(code, "semantic", carrier.Pointer(location), message))
+		return diagnostics.add(result.ErrorDiagnostic(code, "semantic", carrier.Pointer(location), unresolvedMessage(noun, reference, targets)))
 	}
 	return true
+}
+
+// unresolvedMessage names the reference that did not resolve and the ids that
+// were actually declared, so an author can see both the mistake and the valid
+// choices without opening the document elsewhere.
+func unresolvedMessage(noun, reference string, targets map[string]bool) string {
+	base := fmt.Sprintf("%s reference %q does not resolve to a declared %s.", capitalize(noun), reference, noun)
+	declared := sortedKeys(targets)
+	if len(declared) == 0 {
+		return base + fmt.Sprintf(" No %s ids are declared.", noun)
+	}
+	return base + fmt.Sprintf(" Declared %s ids: %s.", noun, joinCapped(declared, 12))
+}
+
+func sortedKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func joinCapped(values []string, limit int) string {
+	if len(values) <= limit {
+		return strings.Join(values, ", ")
+	}
+	return strings.Join(values[:limit], ", ") + fmt.Sprintf(" (and %d more)", len(values)-limit)
+}
+
+func capitalize(text string) string {
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
 }
 
 func walkCondition(value any, location []string, visit func(string, []string) bool) bool {

@@ -345,11 +345,14 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		add(code, location, structuralMessage(code))
 	case *kind.Type:
 		handled = true
-		code := "JPS-STRUCTURE-TYPE"
-		if last(location) == "value" && contains(typed.Want, "array") {
-			code = "JPS-STRUCTURE-IN-OPERAND"
+		switch {
+		case comparisonOperandValue(location) && contains(typed.Want, "array"):
+			add("JPS-STRUCTURE-IN-OPERAND", location, structuralMessage("JPS-STRUCTURE-IN-OPERAND"))
+		case comparisonOperandValue(location) && contains(typed.Want, "string"):
+			add("JPS-STRUCTURE-DECIMAL-OPERAND", location, structuralMessage("JPS-STRUCTURE-DECIMAL-OPERAND"))
+		default:
+			add("JPS-STRUCTURE-TYPE", location, typeMessage(typed))
 		}
-		add(code, location, structuralMessage(code))
 	case *kind.Const:
 		if last(location) == "specVersion" {
 			handled = true
@@ -366,17 +369,18 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		add("JPS-STRUCTURE-UNIQUE-ITEMS", location, "Array items must be unique.")
 	case *kind.OneOf:
 		handled = true
-		directCauses := make([]*jsonschema.ValidationError, 0, len(validationError.Causes))
+		relevantCauses := make([]*jsonschema.ValidationError, 0, len(validationError.Causes))
 		for _, cause := range validationError.Causes {
-			if _, irrelevantBranch := cause.ErrorKind.(*kind.Group); !irrelevantBranch {
-				directCauses = append(directCauses, cause)
+			if branchRejectedByDiscriminator(cause) {
+				continue
 			}
+			relevantCauses = append(relevantCauses, cause)
 		}
-		if len(directCauses) == 0 {
+		if len(relevantCauses) == 0 {
 			add("JPS-STRUCTURE-CONDITION-SHAPE", location, "Condition does not match one declared condition shape.")
 			return
 		}
-		for _, cause := range directCauses {
+		for _, cause := range relevantCauses {
 			collectStructural(cause, diagnostics)
 		}
 		return
@@ -422,7 +426,7 @@ func structuralMessage(code string) string {
 	case "JPS-STRUCTURE-FACT-PATH":
 		return "Fact path is not a valid JSON Pointer."
 	case "JPS-STRUCTURE-DECIMAL-OPERAND":
-		return "Ordered comparison operand is not a valid decimal string."
+		return "Ordered comparison operand must be a decimal string, for example \"5000\"."
 	case "JPS-STRUCTURE-EXTENSION-NAME":
 		return "Extension name must use an allowed reverse-domain namespace."
 	case "JPS-STRUCTURE-CONDITION-ARITY":
@@ -452,6 +456,69 @@ func contains(values []string, wanted string) bool {
 		if value == wanted {
 			return true
 		}
+	}
+	return false
+}
+
+// comparisonOperandValue reports whether an instance location denotes the
+// "value" operand of a fact comparison condition, as opposed to another member
+// that happens to be named "value" (such as a source locator value). Only a
+// comparison operand should carry an operator-specific diagnostic.
+func comparisonOperandValue(location []string) bool {
+	n := len(location)
+	if n < 2 || location[n-1] != "value" {
+		return false
+	}
+	switch location[n-2] {
+	case "when", "applicability", "condition":
+		return true
+	}
+	return n >= 3 && location[n-3] == "conditions"
+}
+
+// typeMessage names the expected and actual JSON types so an author does not
+// have to consult the schema to learn what a member should have been.
+func typeMessage(typed *kind.Type) string {
+	want := strings.Join(typed.Want, " or ")
+	switch {
+	case want == "":
+		return "Value has the wrong JSON type."
+	case typed.Got == "":
+		return fmt.Sprintf("Value must be of type %s.", want)
+	default:
+		return fmt.Sprintf("Value must be of type %s, but is %s.", want, typed.Got)
+	}
+}
+
+// branchRejectedByDiscriminator reports whether a oneOf branch failed solely
+// because its "op" discriminator did not match, which makes its remaining
+// errors noise from an alternative the author never intended. A branch whose op
+// matched but that failed deeper is kept, even when the schema library groups
+// several of its sub-failures together -- otherwise a composite condition with
+// more than one invalid child collapses to a single generic shape error and
+// loses the specific, well-located diagnostics for each child.
+func branchRejectedByDiscriminator(cause *jsonschema.ValidationError) bool {
+	if _, isGroup := cause.ErrorKind.(*kind.Group); !isGroup {
+		return false
+	}
+	for _, sub := range cause.Causes {
+		if discriminatorMismatch(sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// discriminatorMismatch reports whether a sub-error is a failure of the "op"
+// discriminator itself: a wrong constant or enum value at op, or a missing op
+// member. Only the branches whose op did not match produce these.
+func discriminatorMismatch(ve *jsonschema.ValidationError) bool {
+	switch ve.ErrorKind.(type) {
+	case *kind.Const, *kind.Enum:
+		return last(ve.InstanceLocation) == "op"
+	}
+	if required, ok := ve.ErrorKind.(*kind.Required); ok {
+		return contains(required.Missing, "op")
 	}
 	return false
 }

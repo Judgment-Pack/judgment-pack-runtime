@@ -194,3 +194,29 @@ func first(value string, count int) string {
 	}
 	return value[:count]
 }
+
+func TestPrettyFlagIndentsJSONOutput(t *testing.T) {
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := set.Case("valid/minimal-literal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	validPath := writeFixture(t, valid)
+	code, stdout, stderr := runTest(t, []string{"spec", "validate", validPath, "--format", "json", "--pretty"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if strings.Count(stdout, "\n") < 2 {
+		t.Fatalf("pretty JSON should span multiple lines: %q", stdout)
+	}
+	var output map[string]any
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output["status"] != "valid" {
+		t.Fatalf("unexpected result: %#v", output)
+	}
+}

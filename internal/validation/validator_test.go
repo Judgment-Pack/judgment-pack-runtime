@@ -316,3 +316,117 @@ func hasDiagnostic(diagnostics []result.Diagnostic, code, location string) bool 
 	}
 	return false
 }
+
+func diagnosticMessage(diagnostics []result.Diagnostic, code, location string) (string, bool) {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == code && diagnostic.InstancePath == location {
+			return diagnostic.Message, true
+		}
+	}
+	return "", false
+}
+
+func TestTypeDiagnosticNamesExpectedType(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	document["title"] = float64(7)
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-TYPE", "/title")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("expected a type diagnostic at /title: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "string") {
+		t.Fatalf("type diagnostic should name the expected type: %q", message)
+	}
+}
+
+func TestNumericOrderedOperandReportsDecimalDiagnostic(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	rule := document["rules"].([]any)[0].(map[string]any)
+	rule["when"] = map[string]any{
+		"op": "fact", "path": "/amount", "operator": "greater-than", "value": float64(5000),
+	}
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-DECIMAL-OPERAND", "/rules/0/when/value")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("a numeric ordered operand should report the decimal-operand diagnostic, not a generic type error: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "decimal string") {
+		t.Fatalf("decimal-operand message should teach the requirement: %q", message)
+	}
+}
+
+func TestSourceLocatorValueStaysGenericType(t *testing.T) {
+	// A member named "value" that is not a comparison operand (here a source
+	// locator value) must keep the generic type diagnostic, not be misreported
+	// as an operand-specific one.
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	document["sources"] = []any{
+		map[string]any{
+			"id":      "s1",
+			"title":   "Example source",
+			"locator": map[string]any{"kind": "uri", "value": float64(3)},
+		},
+	}
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	if actual.Status != "invalid" || !hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-TYPE", "/sources/0/locator/value") {
+		t.Fatalf("a locator value type error should stay a generic type diagnostic: %#v", actual.Diagnostics)
+	}
+}
+
+func TestUnresolvedReferenceNamesOffendingIDAndDeclaredSet(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	document["rules"].([]any)[0].(map[string]any)["outcome"] = "does-not-exist"
+	actual := validateDocument(t, engine, document, Options{Through: "semantic", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-SEMANTIC-UNRESOLVED-OUTCOME", "/rules/0/outcome")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("expected an unresolved-outcome diagnostic: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, `"does-not-exist"`) || !strings.Contains(message, "Declared outcome ids:") {
+		t.Fatalf("unresolved message should name the offending id and the declared set: %q", message)
+	}
+}
+
+func TestNestedOperandErrorsAreNotMaskedByCompositeShape(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	rule := document["rules"].([]any)[0].(map[string]any)
+	rule["when"] = map[string]any{
+		"op": "all",
+		"conditions": []any{
+			map[string]any{"op": "fact", "path": "/a", "operator": "greater-than", "value": float64(5)},
+			map[string]any{"op": "fact", "path": "/b", "operator": "less-than", "value": float64(9)},
+		},
+	}
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	if actual.Status != "invalid" {
+		t.Fatalf("expected invalid: %#v", actual)
+	}
+	// Both nested operands must report at their own paths, not collapse to a
+	// single generic shape error at the composite condition.
+	if !hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-DECIMAL-OPERAND", "/rules/0/when/conditions/0/value") ||
+		!hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-DECIMAL-OPERAND", "/rules/0/when/conditions/1/value") {
+		t.Fatalf("both nested operand errors should surface at their own paths: %#v", actual.Diagnostics)
+	}
+	if hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-CONDITION-SHAPE", "/rules/0/when") {
+		t.Fatalf("composite should not report a generic shape error when its children have specific errors: %#v", actual.Diagnostics)
+	}
+}

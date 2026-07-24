@@ -26,6 +26,7 @@ type App struct {
 	errOut io.Writer
 	engine *validation.Engine
 	runner *conformance.Runner
+	pretty bool
 }
 
 type handledExit struct {
@@ -40,7 +41,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 	if err != nil {
 		message := "Bundled JPS artifacts failed their integrity check."
 		if requestedFormat(args) == "json" {
-			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPS-ARTIFACT-INTEGRITY", message)) != nil {
+			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPS-ARTIFACT-INTEGRITY", message), false) != nil {
 				return result.ExitIO
 			}
 		} else {
@@ -58,7 +59,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 		}
 		message := display.Sanitize(err.Error())
 		if requestedFormat(args) == "json" {
-			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPR-INVOCATION-ARGUMENTS", message)) != nil {
+			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPR-INVOCATION-ARGUMENTS", message), false) != nil {
 				return result.ExitIO
 			}
 		} else {
@@ -87,6 +88,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.SetErr(a.errOut)
 	root.SetVersionTemplate("judgment-pack {{.Version}}\n")
 	root.CompletionOptions.DisableDefaultCmd = true
+	root.PersistentFlags().BoolVar(&a.pretty, "pretty", false, "indent JSON output")
 	root.AddCommand(a.versionCommand(), a.specCommand())
 	return root
 }
@@ -121,7 +123,7 @@ func (a *App) versionCommand() *cobra.Command {
 			}
 			output := describe.Runtime(set, "version")
 			if format == "json" {
-				if err := writeJSON(a.out, output); err != nil {
+				if err := a.writeJSON(output); err != nil {
 					return &handledExit{code: result.ExitIO}
 				}
 			} else {

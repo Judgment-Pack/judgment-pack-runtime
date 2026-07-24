@@ -10,10 +10,17 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
-func writeJSON(writer io.Writer, value any) error {
+func writeJSON(writer io.Writer, value any, pretty bool) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetEscapeHTML(false)
+	if pretty {
+		encoder.SetIndent("", "  ")
+	}
 	return encoder.Encode(value)
+}
+
+func (a *App) writeJSON(value any) error {
+	return writeJSON(a.out, value, a.pretty)
 }
 
 func (a *App) operational(command, format string, exitCode int, code, message string) error {
@@ -22,7 +29,7 @@ func (a *App) operational(command, format string, exitCode int, code, message st
 		status = "unsupported"
 	}
 	if format == "json" {
-		if err := writeJSON(a.out, result.NewOperationalResult(command, status, code, message)); err != nil {
+		if err := a.writeJSON(result.NewOperationalResult(command, status, code, message)); err != nil {
 			return &handledExit{code: result.ExitIO}
 		}
 	} else if status == "unsupported" {
@@ -35,7 +42,7 @@ func (a *App) operational(command, format string, exitCode int, code, message st
 
 func (a *App) renderValidation(format string, output result.Validation) error {
 	if format == "json" {
-		return writeJSON(a.out, output)
+		return a.writeJSON(output)
 	}
 	if output.Status == "valid" {
 		if output.ValidationScope.FullDocumentConformance {
@@ -61,7 +68,7 @@ func (a *App) renderValidation(format string, output result.Validation) error {
 
 func (a *App) renderSuite(format string, output result.Suite) error {
 	if format == "json" {
-		return writeJSON(a.out, output)
+		return a.writeJSON(output)
 	}
 	if output.Status == "valid" {
 		fmt.Fprintf(a.out, "passed: %d/%d conformance cases matched expectations\n", output.Summary.Passed, output.Summary.Total)
@@ -83,7 +90,7 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 
 func (a *App) renderSchema(format string, output result.Schema) error {
 	if format == "json" {
-		return writeJSON(a.out, output)
+		return a.writeJSON(output)
 	}
 	fmt.Fprintf(a.out, "JPS schema %s\n", display.Sanitize(output.SpecVersion))
 	fmt.Fprintf(a.out, "id: %s\n", display.Sanitize(output.SchemaID))
