@@ -12,8 +12,9 @@ generic Draft 2020-12 validator rather than an agent. Why the runtime, rather th
 the integration and testing surface is recorded in
 [ADR-0003](adr/0003-mcp-integration-and-testing-surface.md).
 
-Today the agent drives the command-line binary directly. A first-class MCP surface is future work
-(ADR-0003); the loop below needs only the CLI.
+The agent drives the command-line binary directly below. The runtime also ships an MCP server
+(`judgment-pack mcp`, see ADR-0003) exposing the same operations as tools to any MCP client; the
+CLI loop here needs neither an SDK nor a running server.
 
 ## What you need
 

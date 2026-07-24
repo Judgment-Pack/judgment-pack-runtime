@@ -268,3 +268,19 @@ func diagnosticCode(t *testing.T, jsonOutput string) string {
 	}
 	return output.Diagnostics[0].Code
 }
+
+func TestMCPSubcommandRespondsToInitialize(t *testing.T) {
+	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n"
+	code, stdout, stderr := runTest(t, []string{"mcp"}, input)
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var response map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &response); err != nil {
+		t.Fatalf("undecodable response %q: %v", stdout, err)
+	}
+	result, ok := response["result"].(map[string]any)
+	if !ok || result["protocolVersion"] != "2025-06-18" {
+		t.Fatalf("unexpected initialize response: %#v", response)
+	}
+}
