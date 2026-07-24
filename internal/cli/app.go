@@ -162,6 +162,9 @@ func (a *App) validateCommand() *cobra.Command {
 			}
 			data, err := a.readPack(args[0], maxBytes)
 			if err != nil {
+				if errors.Is(err, fssecure.ErrTooLarge) {
+					return a.operational("spec validate", format, result.ExitIO, "JPS-RESOURCE-INPUT-BYTE-LIMIT", fmt.Sprintf("Input exceeds the %d-byte limit.", maxBytes))
+				}
 				return a.operational("spec validate", format, result.ExitIO, "JPS-INPUT-READ", "Input could not be read as one bounded regular file or standard input stream.")
 			}
 			output, operational := a.engine.Validate(data, validation.Options{Through: through, Limits: carrier.DefaultLimits()})
@@ -293,7 +296,7 @@ func readBounded(reader io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, errors.New("input exceeds byte limit")
+		return nil, fssecure.ErrTooLarge
 	}
 	return data, nil
 }
