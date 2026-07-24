@@ -8,6 +8,7 @@ import (
 	"io"
 	"unicode/utf8"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
@@ -45,6 +46,7 @@ type parser struct {
 	decoder *json.Decoder
 	limits  Limits
 	nodes   int
+	data    []byte
 }
 
 func Decode(data []byte, limits Limits) (any, *Failure) {
@@ -53,7 +55,7 @@ func Decode(data []byte, limits Limits) (any, *Failure) {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	p := parser{decoder: decoder, limits: limits}
+	p := parser{decoder: decoder, limits: limits, data: data}
 	value, failure := p.value(nil, 0)
 	if failure != nil {
 		return nil, failure
@@ -71,7 +73,7 @@ func (p *parser) value(location []string, depth int) (any, *Failure) {
 	p.nodes++
 	token, err := p.decoder.Token()
 	if err != nil {
-		return nil, invalid("JPS-CARRIER-INVALID-JSON", Pointer(location), "Input is not valid complete JSON.")
+		return nil, p.invalidJSON(Pointer(location), "", err)
 	}
 	switch typed := token.(type) {
 	case json.Delim:
@@ -84,7 +86,7 @@ func (p *parser) value(location []string, depth int) (any, *Failure) {
 		case '[':
 			return p.array(location, depth+1)
 		default:
-			return nil, invalid("JPS-CARRIER-INVALID-JSON", Pointer(location), "Input contains an unexpected JSON delimiter.")
+			return nil, p.invalidJSON(Pointer(location), "unexpected JSON delimiter", nil)
 		}
 	case string:
 		if len(typed) > p.limits.MaxStringBytes {
@@ -99,7 +101,7 @@ func (p *parser) value(location []string, depth int) (any, *Failure) {
 	case bool, nil:
 		return typed, nil
 	default:
-		return nil, invalid("JPS-CARRIER-INVALID-JSON", Pointer(location), "Input contains a value outside the JSON data model.")
+		return nil, p.invalidJSON(Pointer(location), "value outside the JSON data model", nil)
 	}
 }
 
@@ -108,11 +110,11 @@ func (p *parser) object(location []string, depth int) (map[string]any, *Failure)
 	for p.decoder.More() {
 		token, err := p.decoder.Token()
 		if err != nil {
-			return nil, invalid("JPS-CARRIER-INVALID-JSON", Pointer(location), "Input contains an incomplete JSON object.")
+			return nil, p.invalidJSON(Pointer(location), "", err)
 		}
 		key, ok := token.(string)
 		if !ok {
-			return nil, invalid("JPS-CARRIER-INVALID-JSON", Pointer(location), "Input contains an invalid JSON object member.")
+			return nil, p.invalidJSON(Pointer(location), "object member name is not a string", nil)
 		}
 		memberLocation := appendLocation(location, key)
 		if len(key) > p.limits.MaxStringBytes {
@@ -128,7 +130,7 @@ func (p *parser) object(location []string, depth int) (map[string]any, *Failure)
 		value[key] = item
 	}
 	if token, err := p.decoder.Token(); err != nil || token != json.Delim('}') {
-		return nil, invalid("JPS-CARRIER-INVALID-JSON", Pointer(location), "Input contains an incomplete JSON object.")
+		return nil, p.invalidJSON(Pointer(location), "expected the end of the object", err)
 	}
 	return value, nil
 }
@@ -144,7 +146,7 @@ func (p *parser) array(location []string, depth int) ([]any, *Failure) {
 		value = append(value, item)
 	}
 	if token, err := p.decoder.Token(); err != nil || token != json.Delim(']') {
-		return nil, invalid("JPS-CARRIER-INVALID-JSON", Pointer(location), "Input contains an incomplete JSON array.")
+		return nil, p.invalidJSON(Pointer(location), "expected the end of the array", err)
 	}
 	return value, nil
 }
@@ -181,4 +183,36 @@ func invalid(code, location, message string) *Failure {
 
 func resource(code, location, message string) *Failure {
 	return &Failure{Resource: true, Diagnostic: result.ErrorDiagnostic(code, "operation", location, message)}
+}
+
+// invalidJSON reports a carrier parse failure with its line, column, and byte
+// offset, preserving (and sanitizing) the decoder's own reason when one is
+// available so an author can find and fix the exact spot.
+func (p *parser) invalidJSON(location, detail string, err error) *Failure {
+	offset := p.decoder.InputOffset()
+	line, column := lineColumn(p.data, offset)
+	message := fmt.Sprintf("Input is not valid JSON at line %d, column %d (byte offset %d)", line, column, offset)
+	if err != nil {
+		detail = display.Sanitize(err.Error())
+	}
+	if detail != "" {
+		message += ": " + detail
+	}
+	return invalid("JPS-CARRIER-INVALID-JSON", location, message+".")
+}
+
+func lineColumn(data []byte, offset int64) (int, int) {
+	if offset > int64(len(data)) {
+		offset = int64(len(data))
+	}
+	line, column := 1, 1
+	for index := int64(0); index < offset; index++ {
+		if data[index] == '\n' {
+			line++
+			column = 1
+		} else {
+			column++
+		}
+	}
+	return line, column
 }

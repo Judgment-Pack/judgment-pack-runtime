@@ -1,6 +1,9 @@
 package carrier
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDuplicateMemberReportsNestedPointer(t *testing.T) {
 	_, failure := Decode([]byte(`{"outer":{"a":1,"\u0061":2}}`), DefaultLimits())
@@ -22,5 +25,21 @@ func TestDepthLimitIsOperational(t *testing.T) {
 	_, failure := Decode([]byte(`[[[]]]`), limits)
 	if failure == nil || !failure.Resource || failure.Diagnostic.Code != "JPS-RESOURCE-DEPTH-LIMIT" {
 		t.Fatalf("unexpected failure: %#v", failure)
+	}
+}
+
+func TestMissingCommaReportsLocationAndCause(t *testing.T) {
+	// A missing comma between members is a parse error; the diagnostic should
+	// carry a line, column, and byte offset rather than a vague "incomplete
+	// object" message.
+	_, failure := Decode([]byte("{\n  \"a\": 1\n  \"b\": 2\n}"), DefaultLimits())
+	if failure == nil || failure.Resource || failure.Diagnostic.Code != "JPS-CARRIER-INVALID-JSON" {
+		t.Fatalf("expected a carrier invalid-JSON failure: %#v", failure)
+	}
+	message := failure.Diagnostic.Message
+	for _, want := range []string{"line", "column", "byte offset"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("carrier message should include %q: %q", want, message)
+		}
 	}
 }
