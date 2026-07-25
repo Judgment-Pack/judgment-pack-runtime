@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## 0.1.0-rc.1 - 2026-07-25
+## 0.1.0 - 2026-07-25
 
 - Add a `NOTICE` file identifying Brian Jin as the copyright holder and carrying
   the attribution required for the embedded Judgment Pack Specification artifacts, and ship it in
