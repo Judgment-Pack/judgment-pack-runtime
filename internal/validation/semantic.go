@@ -342,3 +342,54 @@ func appendLocation(location []string, parts ...string) []string {
 	output := append([]string(nil), location...)
 	return append(output, parts...)
 }
+
+// exceptionShapeDiagnostics reports, at the offending member, an exception whose
+// operands do not match its declared effect: a missing required operand or a
+// present forbidden one. It mirrors the schema's effect rules exactly, so it
+// never fires on a document the schema accepts, which lets the opaque
+// schema-level allOf/not failure be suppressed in favor of these located,
+// effect-named messages.
+func exceptionShapeDiagnostics(root map[string]any, diagnostics *diagnosticCollector) {
+	effects := map[string]struct {
+		required  []string
+		forbidden []string
+	}{
+		"suppress-rule": {required: []string{"targetRule"}, forbidden: []string{"outcome"}},
+		"force-outcome": {required: []string{"outcome"}, forbidden: []string{"targetRule"}},
+		"escalate":      {forbidden: []string{"outcome", "targetRule"}},
+	}
+	for _, indexed := range indexedObjects(root["exceptions"]) {
+		effect, ok := indexed.object["effect"].(string)
+		if !ok {
+			continue
+		}
+		rule, known := effects[effect]
+		if !known {
+			continue
+		}
+		for _, member := range rule.required {
+			if _, present := indexed.object[member]; !present {
+				if !diagnostics.add(result.ErrorDiagnostic(
+					"JPS-STRUCTURE-EXCEPTION-SHAPE",
+					"structural",
+					carrier.Pointer([]string{"exceptions", fmt.Sprint(indexed.index), member}),
+					fmt.Sprintf("The %q effect requires the %q operand.", effect, member),
+				)) {
+					return
+				}
+			}
+		}
+		for _, member := range rule.forbidden {
+			if _, present := indexed.object[member]; present {
+				if !diagnostics.add(result.ErrorDiagnostic(
+					"JPS-STRUCTURE-EXCEPTION-SHAPE",
+					"structural",
+					carrier.Pointer([]string{"exceptions", fmt.Sprint(indexed.index), member}),
+					fmt.Sprintf("The %q effect does not allow the %q operand.", effect, member),
+				)) {
+					return
+				}
+			}
+		}
+	}
+}
