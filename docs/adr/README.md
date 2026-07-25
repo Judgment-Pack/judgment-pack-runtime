@@ -31,5 +31,6 @@ when** it became that way. architecture.md links out to the relevant ADR rather 
 | [0000](0000-record-decisions-with-madr.md)               | Record runtime decisions with MADR-format ADRs                                  | accepted |
 | [0001](0001-idiomatic-go-single-module-layout.md)        | Idiomatic Go single-module layout; no `packages/` umbrella                      | accepted |
 | [0002](0002-language-plurality-at-the-wire.md)           | Language plurality lives at the wire and in thin clients, not polyglot packages | accepted |
-| [0003](0003-mcp-integration-and-testing-surface.md)      | MCP is the runtime's integration and testing surface                            | proposed |
+| [0003](0003-mcp-integration-and-testing-surface.md)      | MCP is the runtime's integration and testing surface                            | accepted |
 | [0004](0004-defer-http-api.md)                           | Defer the HTTP API until validation-as-a-service is needed                      | proposed |
+| [0005](0005-single-jps-diagnostic-code-prefix.md)        | Use a single `JPS-` prefix for diagnostic codes                                 | accepted |

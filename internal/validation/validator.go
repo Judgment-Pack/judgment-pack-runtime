@@ -226,6 +226,7 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 		}
 	}
 	extensionNameDiagnostics(root, structuralCollector)
+	exceptionShapeDiagnostics(root, structuralCollector)
 	if schemaErr != nil && len(structuralCollector.items) == 0 {
 		structuralCollector.addError("JPS-STRUCTURE-SCHEMA", "structural", "", "Structural validation failed.")
 	}
@@ -243,6 +244,17 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 		return output, nil
 	}
 
+	// Populate the extensions summary before the semantic gate so it reflects
+	// the document's declared requirements even when the document is invalid at
+	// the semantic layer. The unsupported-status decision below still runs only
+	// after semantic passes, so status precedence is unchanged.
+	required := requiredExtensions(root)
+	supported := uniqueSorted(options.SupportedExtensions)
+	unsupported := difference(required, supported)
+	output.Extensions.Required = required
+	output.Extensions.Supported = supported
+	output.Extensions.Unsupported = unsupported
+
 	semantic, semanticTruncated := semanticDiagnostics(root)
 	if len(semantic) > 0 {
 		output.Status = "invalid"
@@ -253,12 +265,6 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	}
 	output.Layers = append(output.Layers, result.Layer{Name: "semantic", Status: "passed"})
 
-	required := requiredExtensions(root)
-	supported := uniqueSorted(options.SupportedExtensions)
-	unsupported := difference(required, supported)
-	output.Extensions.Required = required
-	output.Extensions.Supported = supported
-	output.Extensions.Unsupported = unsupported
 	if len(unsupported) > 0 {
 		output.Status = "unsupported"
 		collector := newDiagnosticCollector()
@@ -305,13 +311,12 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 	case *kind.Required:
 		handled = true
 		for _, missing := range typed.Missing {
-			code := "JPS-STRUCTURE-REQUIRED-MEMBER"
-			message := "Required member is missing."
+			// A missing effect-conditional operand is reported precisely, naming
+			// the effect, by exceptionShapeDiagnostics; suppress it here.
 			if contains(location, "exceptions") && (missing == "outcome" || missing == "targetRule") {
-				code = "JPS-STRUCTURE-EXCEPTION-SHAPE"
-				message = "Exception operands do not match its declared effect."
+				continue
 			}
-			if !add(code, append(location, missing), message) {
+			if !add("JPS-STRUCTURE-REQUIRED-MEMBER", append(location, missing), "Required member is missing.") {
 				return
 			}
 		}
@@ -385,9 +390,13 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		}
 		return
 	case *kind.Not, *kind.AllOf:
-		if contains(location, "exceptions") && len(validationError.Causes) == 0 {
+		// The exception effect/operand constraints (an allOf of if/then/not) fail
+		// opaquely at the exception object. exceptionShapeDiagnostics reports them
+		// precisely at the offending member, so suppress the schema-level failure
+		// here. Guard on the exception object itself so a condition allOf nested
+		// inside an exception's "when" still reports normally.
+		if n := len(location); n >= 2 && location[n-2] == "exceptions" {
 			handled = true
-			add("JPS-STRUCTURE-EXCEPTION-SHAPE", location, "Exception operands do not match its declared effect.")
 		}
 	case *kind.Schema, *kind.Reference, *kind.Group:
 		handled = true
@@ -473,7 +482,7 @@ func patternMessage(code string, typed *kind.Pattern) string {
 	case "JPS-STRUCTURE-PACK-VERSION":
 		return fmt.Sprintf("Pack version %q has an invalid shape; use MAJOR.MINOR.PATCH, for example %q.", typed.Got, "1.0.0")
 	case "JPS-STRUCTURE-FACT-PATH":
-		return fmt.Sprintf("Fact path %q is not a valid JSON Pointer; it must be empty or begin with %q, for example %q.", typed.Got, "/", "/amount")
+		return fmt.Sprintf("Fact path %q is not a valid JSON Pointer; it must be empty or begin with %q, and any %q must be escaped as %q or %q, for example %q.", typed.Got, "/", "~", "~0", "~1", "/amount")
 	case "JPS-STRUCTURE-DECIMAL-OPERAND":
 		return fmt.Sprintf("Ordered comparison operand %q must be a decimal string, for example %q.", typed.Got, "5000")
 	default:

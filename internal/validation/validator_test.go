@@ -535,3 +535,126 @@ func TestValidConditionOpIsNotSpuriouslyFlagged(t *testing.T) {
 		t.Fatalf("the matched branch's real errors should surface: %#v", actual.Diagnostics)
 	}
 }
+
+func exceptionDocument(t *testing.T, exception map[string]any) map[string]any {
+	t.Helper()
+	document := validDocument(t)
+	document["exceptions"] = []any{exception}
+	return document
+}
+
+func TestExceptionForbiddenOperandIsNamedAndLocated(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// suppress-rule requires targetRule and forbids outcome; give it both.
+	document := exceptionDocument(t, map[string]any{
+		"id": "ex", "description": "an exception",
+		"when":       map[string]any{"op": "literal", "value": true},
+		"effect":     "suppress-rule",
+		"targetRule": "some-rule",
+		"outcome":    "some-outcome",
+		"onUnknown":  "ignore",
+	})
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-EXCEPTION-SHAPE", "/exceptions/0/outcome")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("a forbidden operand should be flagged at its member: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "suppress-rule") || !strings.Contains(message, "does not allow") {
+		t.Fatalf("message should name the effect and that the operand is not allowed: %q", message)
+	}
+	if hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-EXCEPTION-SHAPE", "/exceptions/0") {
+		t.Fatalf("must not report a generic diagnostic anchored at the parent exception: %#v", actual.Diagnostics)
+	}
+}
+
+func TestExceptionMissingOperandNamesEffect(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// force-outcome requires outcome; omit it.
+	document := exceptionDocument(t, map[string]any{
+		"id": "ex", "description": "an exception",
+		"when":      map[string]any{"op": "literal", "value": true},
+		"effect":    "force-outcome",
+		"onUnknown": "ignore",
+	})
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-EXCEPTION-SHAPE", "/exceptions/0/outcome")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("a missing operand should be flagged at its member: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "force-outcome") || !strings.Contains(message, "requires") {
+		t.Fatalf("message should name the effect and that the operand is required: %q", message)
+	}
+}
+
+func TestEscalateForbidsBothOperandsAtEachMember(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := exceptionDocument(t, map[string]any{
+		"id": "ex", "description": "an exception",
+		"when":       map[string]any{"op": "literal", "value": true},
+		"effect":     "escalate",
+		"outcome":    "o",
+		"targetRule": "r",
+		"onUnknown":  "ignore",
+	})
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	if !hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-EXCEPTION-SHAPE", "/exceptions/0/outcome") ||
+		!hasDiagnostic(actual.Diagnostics, "JPS-STRUCTURE-EXCEPTION-SHAPE", "/exceptions/0/targetRule") {
+		t.Fatalf("escalate should flag both forbidden operands at their own members: %#v", actual.Diagnostics)
+	}
+}
+
+func TestFactPathDiagnosticMentionsTildeEscape(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	// A path that begins with "/" but has an invalid "~" escape: the message
+	// must not tell the author to do what they already did, and must name the
+	// ~0/~1 escape rule.
+	document["rules"].([]any)[0].(map[string]any)["when"] = map[string]any{
+		"op": "fact", "path": "/a~2b", "operator": "equals", "value": "x",
+	}
+	actual := validateDocument(t, engine, document, Options{Through: "structural", Limits: carrier.DefaultLimits()})
+	message, ok := diagnosticMessage(actual.Diagnostics, "JPS-STRUCTURE-FACT-PATH", "/rules/0/when/path")
+	if actual.Status != "invalid" || !ok {
+		t.Fatalf("expected a fact-path diagnostic at /rules/0/when/path: %#v", actual.Diagnostics)
+	}
+	if !strings.Contains(message, "~0") || !strings.Contains(message, "~1") {
+		t.Fatalf("fact-path message should name the ~0/~1 escape rule: %q", message)
+	}
+}
+
+func TestExtensionsSummaryPopulatedOnSemanticInvalid(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := validDocument(t)
+	// A declared required extension with no value slot fails at the semantic
+	// layer; the extensions summary must still list the declared requirement.
+	document["metadata"] = map[string]any{"requiredExtensions": []any{"com.example.review-policy"}}
+	actual := validateDocument(t, engine, document, Options{Through: "semantic", Limits: carrier.DefaultLimits()})
+	if actual.Status != "invalid" ||
+		!hasDiagnostic(actual.Diagnostics, "JPS-SEMANTIC-MISSING-REQUIRED-EXTENSION", "/metadata/requiredExtensions/0") {
+		t.Fatalf("expected a semantic missing-required-extension failure: %#v", actual.Diagnostics)
+	}
+	found := false
+	for _, extension := range actual.Extensions.Required {
+		if extension == "com.example.review-policy" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("extensions.required must list the declared requirement even on a semantic-invalid document: %#v", actual.Extensions.Required)
+	}
+}

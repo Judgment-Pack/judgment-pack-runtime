@@ -60,7 +60,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 		}
 		message := display.Sanitize(err.Error())
 		if requestedFormat(args) == "json" {
-			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPR-INVOCATION-ARGUMENTS", message), false) != nil {
+			if writeJSON(out, result.NewOperationalError(requestedCommand(args), "JPS-INVOCATION-ARGUMENTS", message), false) != nil {
 				return result.ExitIO
 			}
 		} else {
@@ -132,7 +132,7 @@ func (a *App) versionCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if err := validateFormat(format); err != nil {
-				return a.operational("version", format, result.ExitInvocation, "JPR-INVOCATION-FORMAT", err.Error())
+				return a.operational("version", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
 			}
 			set, err := artifacts.Load(artifacts.DraftVersion)
 			if err != nil {
@@ -166,16 +166,16 @@ func (a *App) validateCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateCommonOptions(format, quiet); err != nil {
-				return a.operational("spec validate", format, result.ExitInvocation, "JPR-INVOCATION-OPTIONS", err.Error())
+				return a.operational("spec validate", format, result.ExitInvocation, "JPS-INVOCATION-OPTIONS", err.Error())
 			}
 			if through != "carrier" && through != "structural" && through != "semantic" {
-				return a.operational("spec validate", format, result.ExitInvocation, "JPR-INVOCATION-THROUGH", "--through must be carrier, structural, or semantic.")
+				return a.operational("spec validate", format, result.ExitInvocation, "JPS-INVOCATION-THROUGH", "--through must be carrier, structural, or semantic.")
 			}
 			if maxBytes <= 0 || maxBytes > carrier.HardMaxBytes {
-				return a.operational("spec validate", format, result.ExitInvocation, "JPR-INVOCATION-MAX-BYTES", "--max-bytes must be positive and cannot exceed the hard 10 MiB limit.")
+				return a.operational("spec validate", format, result.ExitInvocation, "JPS-INVOCATION-MAX-BYTES", "--max-bytes must be positive and cannot exceed the hard 10 MiB limit.")
 			}
 			if args[0] != "-" && (strings.Contains(args[0], "://") || fssecure.IsRemotePath(args[0])) {
-				return a.operational("spec validate", format, result.ExitInvocation, "JPR-INVOCATION-INPUT", "URL inputs are not supported; use one local file or standard input.")
+				return a.operational("spec validate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL inputs are not supported; use one local file or standard input.")
 			}
 			data, err := a.readPack(args[0], maxBytes)
 			if err != nil {
@@ -216,7 +216,7 @@ func (a *App) testConformanceCommand() *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateCommonOptions(format, quiet); err != nil {
-				return a.operational("spec test-conformance", format, result.ExitInvocation, "JPR-INVOCATION-OPTIONS", err.Error())
+				return a.operational("spec test-conformance", format, result.ExitInvocation, "JPS-INVOCATION-OPTIONS", err.Error())
 			}
 			suite := ""
 			if len(args) == 1 {
@@ -255,13 +255,13 @@ func (a *App) schemaCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
-				return a.operational("spec schema", format, result.ExitInvocation, "JPR-INVOCATION-FORMAT", err.Error())
+				return a.operational("spec schema", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
 			}
 			if writeTarget == "-" && format == "json" {
-				return a.operational("spec schema", format, result.ExitInvocation, "JPR-INVOCATION-STDOUT", "--write - cannot be combined with --format json.")
+				return a.operational("spec schema", format, result.ExitInvocation, "JPS-INVOCATION-STDOUT", "--write - cannot be combined with --format json.")
 			}
 			if writeTarget != "" && writeTarget != "-" && fssecure.IsRemotePath(writeTarget) {
-				return a.operational("spec schema", format, result.ExitInvocation, "JPR-INVOCATION-OUTPUT", "Remote filesystem output paths are not supported.")
+				return a.operational("spec schema", format, result.ExitInvocation, "JPS-INVOCATION-OUTPUT", "Remote filesystem output paths are not supported.")
 			}
 			set, err := artifacts.Load(args[0])
 			if err != nil {

@@ -23,6 +23,20 @@ All notable changes to tagged releases are documented here.
 - Pin the machine contract in tests: `outputVersion`, `tool.name`, the six exit classes, and the
   four envelope members every JSON payload carries. These were previously enforced only by
   convention, so a rename or an accidental version bump passed silently.
+- Add a `judgment-pack mcp` subcommand: a hand-rolled, dependency-free Model Context Protocol server
+  over stdio that exposes the offline validation, conformance, and description operations as MCP
+  tools. It holds no credential, opens no network connection, and evaluates nothing. See ADR-0003.
+- Make validator diagnostics self-sufficient. Structural and carrier messages now name the offending
+  value and the fix — the allowed enum values, the identifier grammar with an example, the required
+  and actual collection counts, the valid condition `op` values, the exact effect/operand mismatch for
+  an exception, and (for carrier parse errors) the line, column, and byte offset with the decoder's
+  reason. Messages and provisional codes only; all 47 conformance cases still pass and the
+  machine-output contract is unchanged.
+- Unify diagnostic code prefixes under `JPS-`. The CLI-invocation codes previously prefixed `JPR-`
+  are now `JPS-INVOCATION-*`; the process exit class, not the prefix, carries the error category.
+  Codes remain provisional. See ADR-0005.
+- Populate the `extensions` summary in `spec validate` JSON output even when a document is invalid at
+  the semantic layer, so a declared required extension is no longer dropped from the summary.
 
 ## 0.0.1 - 2026-07-23
 
