@@ -45,8 +45,11 @@ Settled constraints, regardless of phase:
 - **Transport:** stdio — no ports, no auth.
 - **Keys:** the API key lives in the client, never in the runtime.
 - **Reference client:** Cline (open-source, in-IDE, edits files and speaks MCP).
-- **Examples:** read from a `judgment-pack-spec` checkout; the runtime does not vendor example
-  packs, because the specification owns them.
+- **Examples:** the runtime does not vendor *authored* example packs -- the specification owns those.
+  It may, however, surface read-only the valid conformance fixtures it *already embeds and
+  digest-locks* (as `get_schema` already surfaces the embedded schema); those are version-pinned
+  corpus fixtures, not authored templates. See
+  [0006](0006-authoring-lifecycle-in-the-client.md).
 
 Implementation: **hand-rolled, no SDK.** Both Go MCP SDKs (`modelcontextprotocol/go-sdk`,
 `mark3labs/mcp-go`) require a Go 1.25 toolchain and pull heavy dependencies — including `oauth2`,
