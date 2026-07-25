@@ -103,6 +103,35 @@ func (a *App) renderSchema(format string, output result.Schema) error {
 	return nil
 }
 
+func (a *App) renderExamples(format string, output result.Examples) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "JPS examples %s (%s)\n", display.Sanitize(output.SpecVersion), display.Sanitize(output.Provenance))
+	fmt.Fprintln(a.out, "version-pinned conformance fixtures, not authored templates")
+	for _, example := range output.Examples {
+		fmt.Fprintf(a.out, "- %s: %s [%s]\n", display.Sanitize(example.Name), display.Sanitize(example.Focus), display.Sanitize(example.SpecSection))
+	}
+	return nil
+}
+
+func (a *App) renderExample(format string, output result.Example) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "JPS example %s\n", display.Sanitize(output.Name))
+	fmt.Fprintf(a.out, "focus: %s\n", display.Sanitize(output.Focus))
+	fmt.Fprintf(a.out, "spec: %s\n", display.Sanitize(output.SpecSection))
+	fmt.Fprintf(a.out, "sha256: %s\n", output.SHA256)
+	fmt.Fprintf(a.out, "bytes: %d\n", output.Bytes)
+	fmt.Fprintf(a.out, "kind: %s\n", display.Sanitize(output.Kind))
+	fmt.Fprintf(a.out, "artifacts: %s\n", display.Sanitize(output.Provenance))
+	if output.WrittenTo != "" {
+		fmt.Fprintf(a.out, "written: %s\n", display.Sanitize(output.WrittenTo))
+	}
+	return nil
+}
+
 func joinNonEmpty(values ...string) string {
 	output := []string{}
 	for _, value := range values {

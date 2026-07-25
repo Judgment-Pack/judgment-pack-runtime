@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+	"strings"
 )
 
 const DraftVersion = "0.1.0-draft"
@@ -116,6 +117,91 @@ func (s *Set) Case(relative string) ([]byte, error) {
 func (s *Set) File(relative string) (FileLock, bool) {
 	item, ok := s.files[relative]
 	return item, ok
+}
+
+// ExampleInfo describes one bundled valid example: its stable name (the case
+// file stem), the one-line focus from the manifest, and the specification
+// section it exercises. It is metadata only; Example returns the bytes.
+type ExampleInfo struct {
+	Name        string
+	Focus       string
+	SpecSection string
+}
+
+// UnknownExampleError reports a request for an example name that is not one of
+// the bundled valid examples.
+type UnknownExampleError struct {
+	Name string
+}
+
+func (e *UnknownExampleError) Error() string {
+	return "unknown example: " + e.Name
+}
+
+// Examples enumerates the bundled valid conformance cases as examples, sorted
+// by name. These are the digest-locked fixtures the set already embeds, offered
+// read-only; they are version-pinned corpus fixtures, not authored templates.
+func (s *Set) Examples() ([]ExampleInfo, error) {
+	manifestBytes, err := s.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	var manifest struct {
+		Cases []struct {
+			Path        string `json:"path"`
+			Focus       string `json:"focus"`
+			SpecSection string `json:"specSection"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, err
+	}
+	examples := make([]ExampleInfo, 0, len(manifest.Cases))
+	for _, entry := range manifest.Cases {
+		name, ok := exampleName(entry.Path)
+		if !ok {
+			continue
+		}
+		examples = append(examples, ExampleInfo{Name: name, Focus: entry.Focus, SpecSection: entry.SpecSection})
+	}
+	sort.Slice(examples, func(i, j int) bool { return examples[i].Name < examples[j].Name })
+	return examples, nil
+}
+
+// Example returns one bundled valid example's document bytes and metadata by
+// name. The name is resolved against the enumerated examples, never used to
+// build a path from caller input, so it cannot escape the embedded valid-case
+// set; an unknown name yields *UnknownExampleError.
+func (s *Set) Example(name string) ([]byte, ExampleInfo, error) {
+	examples, err := s.Examples()
+	if err != nil {
+		return nil, ExampleInfo{}, err
+	}
+	for _, example := range examples {
+		if example.Name == name {
+			data, err := s.Case("valid/" + name + ".json")
+			if err != nil {
+				return nil, ExampleInfo{}, err
+			}
+			return data, example, nil
+		}
+	}
+	return nil, ExampleInfo{}, &UnknownExampleError{Name: name}
+}
+
+// exampleName maps a manifest case path to a stable example name and reports
+// whether the path is a valid, single-segment case under valid/.
+func exampleName(casePath string) (string, bool) {
+	const prefix = "valid/"
+	const suffix = ".json"
+	if !strings.HasPrefix(casePath, prefix) || !strings.HasSuffix(casePath, suffix) {
+		return "", false
+	}
+	name := casePath[len(prefix) : len(casePath)-len(suffix)]
+	if name == "" || strings.ContainsRune(name, '/') {
+		return "", false
+	}
+	return name, true
 }
 
 func (s *Set) verify() error {

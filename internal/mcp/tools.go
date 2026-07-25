@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -58,6 +60,27 @@ func toolDefinitions() []map[string]any {
 				"properties":           map[string]any{},
 			},
 		},
+		{
+			"name":        "list_examples",
+			"description": "List the bundled valid JPS example documents: version-pinned conformance fixtures the runtime embeds and digest-locks, offered read-only as starting points for authoring. They are not authored templates. Use get_example to fetch one by name.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties":           map[string]any{},
+			},
+		},
+		{
+			"name":        "get_example",
+			"description": "Return one bundled valid JPS example document by name, as JSON text, with its digest and byte size. These are version-pinned conformance fixtures, not authored templates; copy one into a document of your own to start authoring, then validate. Call list_examples for the available names.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"name"},
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string", "description": "The example name, as reported by list_examples (for example, minimal-expense-approval)."},
+				},
+			},
+		},
 	}
 }
 
@@ -78,6 +101,10 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolGetSchema(params.Arguments), nil
 	case "describe_runtime":
 		return s.toolDescribeRuntime(), nil
+	case "list_examples":
+		return s.toolListExamples(), nil
+	case "get_example":
+		return s.toolGetExample(params.Arguments), nil
 	default:
 		return nil, &rpcError{Code: codeInvalidParams, Message: "Unknown tool: " + params.Name}
 	}
@@ -163,6 +190,49 @@ func (s *Server) toolDescribeRuntime() any {
 		return toolError("The bundled artifact metadata is unavailable.")
 	}
 	return toolResult(describe.Runtime(set, "mcp describe_runtime"))
+}
+
+func (s *Server) toolListExamples() any {
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		return toolError("The bundled artifact metadata is unavailable.")
+	}
+	output, err := describe.Examples(set, "mcp list_examples")
+	if err != nil {
+		return toolError("The bundled examples are unavailable.")
+	}
+	return toolResult(output)
+}
+
+func (s *Server) toolGetExample(rawArgs json.RawMessage) any {
+	var args struct {
+		Name string `json:"name"`
+	}
+	if len(rawArgs) > 0 {
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return toolError(`The "get_example" arguments must be an object with a string "name".`)
+		}
+	}
+	if args.Name == "" {
+		return toolError(`The "name" argument is required; call list_examples for the available names.`)
+	}
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		return toolError("The bundled artifact metadata is unavailable.")
+	}
+	meta, data, err := describe.Example(set, args.Name, "mcp get_example")
+	if err != nil {
+		var unknown *artifacts.UnknownExampleError
+		if errors.As(err, &unknown) {
+			return toolError(fmt.Sprintf("No bundled example is named %q; call list_examples for the available names.", args.Name))
+		}
+		return toolError("The bundled example is unavailable.")
+	}
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": string(data)}},
+		"structuredContent": meta,
+		"isError":           false,
+	}
 }
 
 // toolResult wraps a versioned core payload as an MCP tool result: the payload

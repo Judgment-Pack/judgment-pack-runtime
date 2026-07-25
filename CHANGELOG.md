@@ -37,6 +37,12 @@ All notable changes to tagged releases are documented here.
   Codes remain provisional. See ADR-0005.
 - Populate the `extensions` summary in `spec validate` JSON output even when a document is invalid at
   the semantic layer, so a declared required extension is no longer dropped from the summary.
+- Surface the embedded valid conformance fixtures read-only: `list_examples` / `get_example` MCP
+  tools and a `spec examples [name] [--write …]` CLI command. They give a filesystem-less client a
+  conformant starting point for Create, return the exact digest-locked bytes the bundle embeds, and
+  label every payload `kind: version-pinned-conformance-fixture` so a fixture is never mistaken for
+  an authored template. Read-only, offline, keyless, dependency-free. See ADR-0006 and the new
+  `docs/authoring-lifecycle.md`.
 
 ## 0.0.1 - 2026-07-23
 

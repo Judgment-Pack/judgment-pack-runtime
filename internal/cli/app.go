@@ -104,7 +104,7 @@ func (a *App) specCommand() *cobra.Command {
 			return command.Help()
 		},
 	}
-	spec.AddCommand(a.validateCommand(), a.testConformanceCommand(), a.schemaCommand())
+	spec.AddCommand(a.validateCommand(), a.testConformanceCommand(), a.schemaCommand(), a.examplesCommand())
 	return spec
 }
 
@@ -300,6 +300,72 @@ func (a *App) schemaCommand() *cobra.Command {
 	return command
 }
 
+func (a *App) examplesCommand() *cobra.Command {
+	format := "human"
+	writeTarget := ""
+	command := &cobra.Command{
+		Use:   "examples [name]",
+		Short: "List or print bundled valid JPS example documents",
+		Long:  "List the valid, version-pinned example documents this CLI embeds, or print one by name. These are digest-locked conformance fixtures from the specification, offered read-only as authoring starting points -- not authored templates. With no name, list them; with a name, show its metadata, or write its exact bytes with --write.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if err := validateFormat(format); err != nil {
+				return a.operational("spec examples", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			set, err := artifacts.Load(artifacts.DraftVersion)
+			if err != nil {
+				return a.operational("spec examples", format, result.ExitInternal, "JPS-ARTIFACT-INTEGRITY", "Bundled artifact metadata is unavailable.")
+			}
+			if len(args) == 0 {
+				if writeTarget != "" {
+					return a.operational("spec examples", format, result.ExitInvocation, "JPS-INVOCATION-OUTPUT", "--write requires an example name.")
+				}
+				output, err := describe.Examples(set, "spec examples")
+				if err != nil {
+					return a.operational("spec examples", format, result.ExitInternal, "JPS-ARTIFACT-MANIFEST", "Bundled example catalog is unavailable.")
+				}
+				if err := a.renderExamples(format, output); err != nil {
+					return &handledExit{code: result.ExitIO}
+				}
+				return nil
+			}
+			if writeTarget == "-" && format == "json" {
+				return a.operational("spec examples", format, result.ExitInvocation, "JPS-INVOCATION-STDOUT", "--write - cannot be combined with --format json.")
+			}
+			if writeTarget != "" && writeTarget != "-" && fssecure.IsRemotePath(writeTarget) {
+				return a.operational("spec examples", format, result.ExitInvocation, "JPS-INVOCATION-OUTPUT", "Remote filesystem output paths are not supported.")
+			}
+			output, data, err := describe.Example(set, args[0], "spec examples")
+			if err != nil {
+				var unknown *artifacts.UnknownExampleError
+				if errors.As(err, &unknown) {
+					return a.operational("spec examples", format, result.ExitUnsupported, "JPS-CAPABILITY-EXAMPLE", "No bundled example has that name; run spec examples to list the available names.")
+				}
+				return a.operational("spec examples", format, result.ExitInternal, "JPS-ARTIFACT-CASE", "Bundled example is unavailable.")
+			}
+			if writeTarget == "-" {
+				if _, err := a.out.Write(data); err != nil {
+					return &handledExit{code: result.ExitIO}
+				}
+				return nil
+			}
+			if writeTarget != "" {
+				if err := writeNewFile(writeTarget, data); err != nil {
+					return a.operational("spec examples", format, result.ExitIO, "JPS-EXAMPLE-WRITE", "Example destination must be a new writable file.")
+				}
+				output.WrittenTo = writeTarget
+			}
+			if err := a.renderExample(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&writeTarget, "write", writeTarget, "write the example's exact bytes to a new file or -")
+	return command
+}
+
 func (a *App) readPack(argument string, limit int64) ([]byte, error) {
 	if argument == "-" {
 		return readBounded(a.in, limit)
@@ -395,7 +461,7 @@ func requestedCommand(args []string) string {
 			continue
 		}
 		switch args[index+1] {
-		case "validate", "test-conformance", "schema":
+		case "validate", "test-conformance", "schema", "examples":
 			return "spec " + args[index+1]
 		default:
 			return "spec"

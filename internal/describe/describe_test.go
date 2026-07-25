@@ -3,6 +3,7 @@ package describe
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
@@ -78,5 +79,64 @@ func TestSchemaRejectsNonObjectBytes(t *testing.T) {
 	set := loadSet(t)
 	if _, err := Schema(set, artifacts.DraftVersion, "spec schema", []byte("not a schema")); err == nil {
 		t.Fatal("expected an error for bytes that are not a JSON object")
+	}
+}
+
+func TestExamplesCatalogIsLabeledAndNonEmpty(t *testing.T) {
+	set := loadSet(t)
+	catalog, err := Examples(set, "spec examples")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Examples) == 0 {
+		t.Fatal("the bundled example catalog must not be empty")
+	}
+	if catalog.Kind != result.ExampleKind {
+		t.Errorf("kind = %q, want the fixture label %q", catalog.Kind, result.ExampleKind)
+	}
+	if catalog.SpecVersion != set.Lock().SpecVersion {
+		t.Errorf("specVersion = %q, want the lock's %q", catalog.SpecVersion, set.Lock().SpecVersion)
+	}
+	if catalog.Provenance != set.Lock().Source.Kind {
+		t.Errorf("provenance = %q, want the lock's %q", catalog.Provenance, set.Lock().Source.Kind)
+	}
+}
+
+// The reported size and digest must describe the exact bundled bytes the tool
+// returns, and those bytes must match what the artifact set holds.
+func TestExampleDescribesTheExactBundledBytes(t *testing.T) {
+	set := loadSet(t)
+	described, data, err := Example(set, "minimal-literal", "spec examples")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := set.Case("valid/minimal-literal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(want) {
+		t.Fatal("Example returned bytes that differ from the embedded fixture")
+	}
+	if described.Bytes != len(want) {
+		t.Errorf("bytes = %d, want %d", described.Bytes, len(want))
+	}
+	sum := sha256.Sum256(want)
+	if wantDigest := hex.EncodeToString(sum[:]); described.SHA256 != wantDigest {
+		t.Errorf("sha256 = %q, want %q", described.SHA256, wantDigest)
+	}
+	if described.Kind != result.ExampleKind {
+		t.Errorf("kind = %q, want %q", described.Kind, result.ExampleKind)
+	}
+	if described.WrittenTo != "" {
+		t.Errorf("writtenTo = %q, want empty; it is the caller's action, not the artifact's", described.WrittenTo)
+	}
+}
+
+func TestExampleRejectsUnknownName(t *testing.T) {
+	set := loadSet(t)
+	_, _, err := Example(set, "no-such-example", "spec examples")
+	var unknown *artifacts.UnknownExampleError
+	if !errors.As(err, &unknown) {
+		t.Fatalf("expected *artifacts.UnknownExampleError, got %v", err)
 	}
 }
