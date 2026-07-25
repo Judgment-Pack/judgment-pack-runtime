@@ -49,7 +49,9 @@ decision outcome, fetches a locator, loads an extension, or authorizes an action
 - `internal/conformance` validates suite metadata and safely runs pinned cases.
 - `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads.
 - `internal/result` defines machine output version 1 and exit classes.
+- `internal/describe` composes the machine descriptions the CLI and MCP server share, so neither drifts.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
+- `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.
 
 ## Version independence
@@ -69,3 +71,7 @@ is idiomatic Go rather than a `packages/` monorepo, why language plurality lives
 is the integration surface -- are recorded as architecture decision records in
 [`docs/adr/`](adr/README.md). Implementation decisions are ADRs; normative, cross-implementation
 proposals belong to the specification's RFC process instead.
+
+The create / read / update / delete authoring loop this runtime supports -- and why it lives in the
+client rather than in a runtime store -- is walked end to end in
+[authoring-lifecycle.md](authoring-lifecycle.md).

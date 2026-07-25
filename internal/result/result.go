@@ -160,6 +160,44 @@ type Version struct {
 	ArtifactProvenance string   `json:"artifactProvenance"`
 }
 
+// ExampleKind labels the example payloads: the bundled examples are the
+// runtime's digest-locked conformance fixtures surfaced read-only, not authored
+// templates. It appears in-band so a consumer never mistakes one for a template.
+const ExampleKind = "version-pinned-conformance-fixture"
+
+type ExampleSummary struct {
+	Name        string `json:"name"`
+	Focus       string `json:"focus"`
+	SpecSection string `json:"specSection"`
+}
+
+type Examples struct {
+	OutputVersion string           `json:"outputVersion"`
+	Tool          Tool             `json:"tool"`
+	Command       string           `json:"command"`
+	Status        string           `json:"status"`
+	SpecVersion   string           `json:"specVersion"`
+	Provenance    string           `json:"provenance"`
+	Kind          string           `json:"kind"`
+	Examples      []ExampleSummary `json:"examples"`
+}
+
+type Example struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	SpecVersion   string `json:"specVersion"`
+	Name          string `json:"name"`
+	Focus         string `json:"focus"`
+	SpecSection   string `json:"specSection"`
+	Bytes         int    `json:"bytes"`
+	SHA256        string `json:"sha256"`
+	Provenance    string `json:"provenance"`
+	Kind          string `json:"kind"`
+	WrittenTo     string `json:"writtenTo,omitempty"`
+}
+
 type OperationalError struct {
 	OutputVersion string       `json:"outputVersion"`
 	Tool          Tool         `json:"tool"`

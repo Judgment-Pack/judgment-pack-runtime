@@ -57,6 +57,61 @@ func Schema(set *artifacts.Set, specVersion, command string, schemaBytes []byte)
 	}, nil
 }
 
+// Examples composes the catalog of bundled valid examples: the digest-locked
+// conformance fixtures the set embeds, offered read-only. They are
+// version-pinned corpus fixtures, not authored templates; the Kind field says
+// so in-band.
+func Examples(set *artifacts.Set, command string) (result.Examples, error) {
+	infos, err := set.Examples()
+	if err != nil {
+		return result.Examples{}, err
+	}
+	summaries := make([]result.ExampleSummary, 0, len(infos))
+	for _, info := range infos {
+		summaries = append(summaries, result.ExampleSummary{
+			Name:        info.Name,
+			Focus:       info.Focus,
+			SpecSection: info.SpecSection,
+		})
+	}
+	return result.Examples{
+		OutputVersion: result.OutputVersion,
+		Tool:          result.CurrentTool(),
+		Command:       command,
+		Status:        "valid",
+		SpecVersion:   set.Lock().SpecVersion,
+		Provenance:    set.Lock().Source.Kind,
+		Kind:          result.ExampleKind,
+		Examples:      summaries,
+	}, nil
+}
+
+// Example composes metadata for one bundled valid example and returns that
+// example's exact bundled document bytes alongside it. The reported size and
+// digest describe those exact bytes. An unknown name yields
+// *artifacts.UnknownExampleError from the underlying set.
+func Example(set *artifacts.Set, name, command string) (result.Example, []byte, error) {
+	data, info, err := set.Example(name)
+	if err != nil {
+		return result.Example{}, nil, err
+	}
+	sum := sha256.Sum256(data)
+	return result.Example{
+		OutputVersion: result.OutputVersion,
+		Tool:          result.CurrentTool(),
+		Command:       command,
+		Status:        "valid",
+		SpecVersion:   set.Lock().SpecVersion,
+		Name:          info.Name,
+		Focus:         info.Focus,
+		SpecSection:   info.SpecSection,
+		Bytes:         len(data),
+		SHA256:        hex.EncodeToString(sum[:]),
+		Provenance:    set.Lock().Source.Kind,
+		Kind:          result.ExampleKind,
+	}, data, nil
+}
+
 func stringFrom(value any) string {
 	text, _ := value.(string)
 	return text
