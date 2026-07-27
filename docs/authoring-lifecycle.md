@@ -12,7 +12,8 @@ The runtime is a **stateless oracle**: `bytes -> result`. Every step below consu
 > *Is what you now hold conformant?*
 
 It cannot distinguish Create from Update, because both arrive as "validate this document." It keeps
-no store, holds no credential, opens no network connection, and evaluates nothing. So the authoring
+no store, holds no credential, and opens no network connection; its one evaluation surface is the
+explicitly EXPERIMENTAL `experimental_evaluate` (ADR-0007), which claims no conformance. So the authoring
 loop — the part that holds a document, edits it, saves it, and deletes it — lives entirely in the
 **client**. That is the whole of ADR-0006, and everything here follows from it.
 
@@ -167,8 +168,9 @@ remains.
 - No store: it never saves, names, lists, overwrites, or deletes user content.
 - No credential and no network: the client owns the key; the server opens no connection.
 - No path over the wire: MCP documents are values (text), never references to the server's filesystem.
-- No evaluation: it validates conformance; it never resolves a condition, chooses an outcome, or
-  authorizes anything.
+- No evaluation in the authoring loop: validation never resolves a condition, chooses an outcome,
+  or authorizes anything. The separate `experimental_evaluate` tool evaluates experimentally, says
+  so in every payload, and still authorizes nothing.
 
 ## See also
 

@@ -132,6 +132,50 @@ func (a *App) renderExample(format string, output result.Example) error {
 	return nil
 }
 
+func (a *App) renderEvaluation(format string, output result.Evaluation) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintln(a.out, "EXPERIMENTAL evaluation (no conformance claim; JPS 0.1.0-draft defines no evaluator conformance)")
+	switch output.Disposition.Kind {
+	case "outcome":
+		fmt.Fprintf(a.out, "disposition: outcome %s\n", display.Sanitize(output.Disposition.OutcomeID))
+	default:
+		fmt.Fprintf(a.out, "disposition: %s (%s)\n", display.Sanitize(output.Disposition.Kind), display.Sanitize(strings.Join(output.Disposition.Reasons, ", ")))
+	}
+	if output.Disposition.Handoff.State == "requested" {
+		if target := output.Disposition.Handoff.Target; target != nil {
+			fmt.Fprintf(a.out, "handoff: requested -> %s %q\n", display.Sanitize(target.Kind), display.Sanitize(target.Name))
+		} else {
+			fmt.Fprintln(a.out, "handoff: requested (no declared destination)")
+		}
+	}
+	for _, entry := range output.Trace {
+		note := entry.Condition
+		if entry.Suppressed {
+			note = "suppressed"
+		}
+		if entry.Skipped {
+			note = "skipped (forced outcome)"
+		}
+		detail := ""
+		if entry.Effect != "" {
+			detail = " effect=" + entry.Effect
+		}
+		if entry.Outcome != "" {
+			detail += " outcome=" + entry.Outcome
+		}
+		if entry.OnUnknown != "" {
+			detail += " onUnknown=" + entry.OnUnknown
+		}
+		fmt.Fprintf(a.out, "trace: %s %s: %s%s\n", display.Sanitize(entry.Stage), display.Sanitize(entry.ID), display.Sanitize(note), display.Sanitize(detail))
+	}
+	if output.Artifact != nil {
+		fmt.Fprintf(a.out, "artifacts: %s · sha256 %s\n", display.Sanitize(output.Artifact.Provenance), output.Artifact.BundleDigest)
+	}
+	return nil
+}
+
 func joinNonEmpty(values ...string) string {
 	output := []string{}
 	for _, value := range values {

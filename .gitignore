@@ -12,6 +12,8 @@
 .idea/
 
 # Local AI-assistant configuration and state.
+# .mcp.json is each contributor's client wiring, not project source; see docs/mcp-clients.md.
+/.mcp.json
 /.agent/
 /.agents/
 /.ai/

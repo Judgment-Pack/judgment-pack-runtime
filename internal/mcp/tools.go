@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,11 +9,13 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
 // toolDefinitions is the tools/list payload. Every tool wraps a read-only core
-// operation and evaluates nothing.
+// operation; all evaluate nothing except experimental_evaluate, the one
+// explicitly EXPERIMENTAL evaluator (ADR-0007), which claims no conformance.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
 		{
@@ -81,6 +84,21 @@ func toolDefinitions() []map[string]any {
 				},
 			},
 		},
+		{
+			"name":        "experimental_evaluate",
+			"description": "EXPERIMENTAL (ADR-0007): apply the JPS Core §§7-8 experiment, as pinned by spec RFC 0006 (Draft), to one conformant pack and one facts document, returning a disposition (kind, reasons, handoff) and a trace. This claims NO evaluator conformance — JPS 0.1.0-draft forbids such claims — authorizes nothing, executes nothing, and may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"pack", "facts"},
+				"properties": map[string]any{
+					"pack":                 map[string]any{"type": "string", "description": "The JPS document to evaluate, as JSON text. It must have full document conformance; a non-conformant pack is refused."},
+					"facts":                map[string]any{"type": "string", "description": "One JSON facts document, as JSON text; fact.path pointers resolve against it."},
+					"evidence":             map[string]any{"type": "string", "description": "Optional tri-state evidence availability, as JSON text: an object mapping declared evidence-requirement ids to \"present\", \"absent\", or \"unknown\". An omitted id is unknown."},
+					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports."},
+				},
+			},
+		},
 	}
 }
 
@@ -105,6 +123,8 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolListExamples(), nil
 	case "get_example":
 		return s.toolGetExample(params.Arguments), nil
+	case "experimental_evaluate":
+		return s.toolExperimentalEvaluate(params.Arguments), nil
 	default:
 		return nil, &rpcError{Code: codeInvalidParams, Message: "Unknown tool: " + params.Name}
 	}
@@ -233,6 +253,41 @@ func (s *Server) toolGetExample(rawArgs json.RawMessage) any {
 		"structuredContent": meta,
 		"isError":           false,
 	}
+}
+
+// toolExperimentalEvaluate runs the experimental §§7-8 evaluator (ADR-0007).
+// An evaluation failure — a non-conformant pack, a malformed input, an
+// undeclared evidence key — is an in-band tool error; a produced disposition
+// of any kind is a successful call.
+func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
+	var args struct {
+		Pack                string   `json:"pack"`
+		Facts               string   `json:"facts"`
+		Evidence            string   `json:"evidence"`
+		SupportedExtensions []string `json:"supported_extensions"`
+	}
+	if len(rawArgs) > 0 {
+		// Strict decoding honors the declared additionalProperties: false — a
+		// misspelled key (say "evidnce") must be an error, not a silently
+		// different disposition.
+		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil {
+			return toolError(`The "experimental_evaluate" arguments must be an object with string "pack" and "facts", optional string "evidence", and optional "supported_extensions" (an array of strings); unknown keys are rejected.`)
+		}
+	}
+	if args.Pack == "" {
+		return toolError(`The "pack" argument is required: pass the JPS document as JSON text.`)
+	}
+	if args.Facts == "" {
+		return toolError(`The "facts" argument is required: pass one JSON facts document as JSON text.`)
+	}
+	evaluator := evaluation.NewEngine(s.engine)
+	output, failure := evaluator.Evaluate([]byte(args.Pack), []byte(args.Facts), []byte(args.Evidence), args.SupportedExtensions, "mcp experimental_evaluate")
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	return toolResult(output)
 }
 
 // toolResult wraps a versioned core payload as an MCP tool result: the payload

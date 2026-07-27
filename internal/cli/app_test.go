@@ -436,3 +436,41 @@ func TestMCPSubcommandRespondsToInitialize(t *testing.T) {
 		t.Fatalf("unexpected initialize response: %#v", response)
 	}
 }
+
+// The experimental evaluate command produces a labeled disposition and exits 0
+// for any produced disposition; its invocation guards use the standard codes.
+func TestExperimentalEvaluateCommand(t *testing.T) {
+	pack := filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json")
+	dir := t.TempDir()
+	facts := filepath.Join(dir, "facts.json")
+	if err := os.WriteFile(facts, []byte(`{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evidence := filepath.Join(dir, "evidence.json")
+	if err := os.WriteFile(evidence, []byte(`{"intake-form":"present","sponsor-endorsement":"present"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--evidence", evidence, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var output map[string]any
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output["experimental"] != true || output["conformanceClaim"] != "none" {
+		t.Fatalf("evaluation output must be labeled experimental with no claim: %v", output)
+	}
+	disposition := output["disposition"].(map[string]any)
+	if disposition["kind"] != "outcome" || disposition["outcomeId"] != "decline-redirect" {
+		t.Fatalf("disposition = %v", disposition)
+	}
+
+	// --facts is required.
+	code, stdout, _ = runTest(t, []string{"experimental", "evaluate", pack, "--format", "json"}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("missing --facts must be an invocation error, got exit=%d", code)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-INVOCATION-FACTS")
+}
