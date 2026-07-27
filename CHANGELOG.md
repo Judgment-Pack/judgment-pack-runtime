@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.2.0 - 2026-07-27
 
 - Add an EXPERIMENTAL evaluator (ADR-0007): `judgment-pack experimental evaluate` and the
   `experimental_evaluate` MCP tool apply the JPS Core §§7–8 experiment, as pinned by the
