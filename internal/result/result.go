@@ -198,6 +198,70 @@ type Example struct {
 	WrittenTo     string `json:"writtenTo,omitempty"`
 }
 
+// --- experimental evaluation (ADR-0007; spec RFC 0006) ---
+
+// EvaluationClaim is carried by every experimental-evaluation payload so the
+// output can never be mistaken for a conformance claim: JPS 0.1.0-draft §3.4
+// forbids evaluator-conformance claims outright.
+const EvaluationClaim = "none"
+
+// HandoffTarget echoes the pack's declared escalation target when a handoff is
+// requested.
+type HandoffTarget struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// Handoff reports whether the evaluation requests a human handoff. A direct
+// exception escalation on a pack with no escalation object is a requested
+// handoff with no Core-defined destination: state "requested", target absent.
+type Handoff struct {
+	State  string         `json:"state"`
+	Target *HandoffTarget `json:"target,omitempty"`
+}
+
+// Disposition is the portable evaluation result proposed by spec RFC 0006:
+// kind ("outcome", "not-applicable", or "unresolved"), the outcome id exactly
+// when kind is "outcome", a deduplicated sorted reason set (empty exactly when
+// kind is "outcome"), and the handoff axis.
+type Disposition struct {
+	Kind      string   `json:"kind"`
+	OutcomeID string   `json:"outcomeId,omitempty"`
+	Reasons   []string `json:"reasons"`
+	Handoff   Handoff  `json:"handoff"`
+}
+
+// TraceEntry records one exception or rule evaluation. The trace is
+// informative: §8 requires an unknown that resolution ignored to remain
+// visible, and permits recording contributing ids.
+type TraceEntry struct {
+	Stage      string `json:"stage"`
+	ID         string `json:"id"`
+	Condition  string `json:"condition"`
+	Effect     string `json:"effect,omitempty"`
+	Outcome    string `json:"outcome,omitempty"`
+	Suppressed bool   `json:"suppressed,omitempty"`
+	OnUnknown  string `json:"onUnknown,omitempty"`
+	Skipped    bool   `json:"skipped,omitempty"`
+}
+
+// Evaluation is the experimental-evaluation envelope. Experimental and
+// ConformanceClaim are always set so no consumer can read the payload as a
+// standard: this surface may change or be removed without compatibility
+// promise (ADR-0007).
+type Evaluation struct {
+	OutputVersion    string       `json:"outputVersion"`
+	Tool             Tool         `json:"tool"`
+	Command          string       `json:"command"`
+	Status           string       `json:"status"`
+	Experimental     bool         `json:"experimental"`
+	ConformanceClaim string       `json:"conformanceClaim"`
+	SpecVersion      string       `json:"specVersion"`
+	Disposition      Disposition  `json:"disposition"`
+	Trace            []TraceEntry `json:"trace"`
+	Artifact         *Artifact    `json:"artifact,omitempty"`
+}
+
 type OperationalError struct {
 	OutputVersion string       `json:"outputVersion"`
 	Tool          Tool         `json:"tool"`

@@ -1,0 +1,354 @@
+package evaluation
+
+import (
+	"encoding/json"
+	"reflect"
+	"testing"
+)
+
+func TestDecimalCompare(t *testing.T) {
+	cases := []struct {
+		fact, operand any
+		want          int
+		comparable    bool
+	}{
+		{"100", "99", 1, true},
+		{"99", "100", -1, true},
+		{"5000", "5000", 0, true},
+		{"5000.00", "5000", 0, true}, // mathematical value, not lexical
+		{"-0.5", "0", -1, true},
+		{json.Number("100"), "99", 0, false}, // JSON numbers are not decimals (RFC 0006)
+		{"0100", "99", 0, false},             // leading zero not admitted
+		{"1e3", "99", 0, false},              // exponent not admitted
+		{"+1", "1", 0, false},                // leading plus not admitted
+		{"1.", "1", 0, false},                // fraction needs digits
+		{true, "1", 0, false},
+		{nil, "1", 0, false},
+	}
+	for _, testCase := range cases {
+		got, comparable := decimalCompare(testCase.fact, testCase.operand)
+		if comparable != testCase.comparable || (comparable && got != testCase.want) {
+			t.Errorf("decimalCompare(%v, %v) = (%d, %v), want (%d, %v)",
+				testCase.fact, testCase.operand, got, comparable, testCase.want, testCase.comparable)
+		}
+	}
+}
+
+func TestResolvePointer(t *testing.T) {
+	document := map[string]any{
+		"a":   map[string]any{"b/c": "slash", "~d": "tilde"},
+		"arr": []any{"zero", "one"},
+	}
+	cases := []struct {
+		pointer  string
+		want     any
+		resolved bool
+	}{
+		{"", document, true},
+		{"/a/b~1c", "slash", true},
+		{"/a/~0d", "tilde", true},
+		{"/arr/0", "zero", true},
+		{"/arr/1", "one", true},
+		{"/arr/2", nil, false},  // out of range
+		{"/arr/01", nil, false}, // leading zero
+		{"/arr/-", nil, false},  // past-the-end never resolves
+		{"/missing", nil, false},
+		{"/arr/0/x", nil, false}, // traversal into a non-container
+		{"a", nil, false},        // no leading slash
+	}
+	for _, testCase := range cases {
+		got, resolved := resolvePointer(document, testCase.pointer)
+		if resolved != testCase.resolved {
+			t.Errorf("resolvePointer(%q) resolved = %v, want %v", testCase.pointer, resolved, testCase.resolved)
+			continue
+		}
+		if resolved && !reflect.DeepEqual(got, testCase.want) {
+			t.Errorf("resolvePointer(%q) = %v, want %v", testCase.pointer, got, testCase.want)
+		}
+	}
+}
+
+func TestJSONEqualIsTypePreserving(t *testing.T) {
+	cases := []struct {
+		a, b         any
+		want         bool
+		determinable bool
+	}{
+		{json.Number("5.0"), json.Number("5"), true, true}, // mathematical value
+		{json.Number("5"), "5", false, true},               // no coercion across types
+		{"5", json.Number("5"), false, true},
+		{true, "true", false, true},
+		{nil, nil, true, true},
+		{[]any{json.Number("1"), "x"}, []any{json.Number("1.0"), "x"}, true, true},
+		{[]any{"x", "y"}, []any{"y", "x"}, false, true}, // arrays compare in order
+		{map[string]any{"a": json.Number("1"), "b": "z"}, map[string]any{"b": "z", "a": json.Number("1.00")}, true, true},
+		{map[string]any{"a": "1"}, map[string]any{"a": "1", "b": "2"}, false, true},
+		// A representable-vs-unrepresentable pair is undeterminable, never a
+		// silent false (spec §7.4: incomparable values produce unknown)...
+		{json.Number("1e999999999"), json.Number("2e999999999"), false, false},
+		{[]any{json.Number("1e999999999")}, []any{json.Number("2e999999999")}, false, false},
+		// ...but identical tokens are equal regardless of representability.
+		{json.Number("1e999999999"), json.Number("1e999999999"), true, true},
+		// A definite mismatch elsewhere still decides the comparison.
+		{[]any{json.Number("1e999999999"), "x"}, []any{json.Number("2e999999999"), "y"}, false, true},
+	}
+	for _, testCase := range cases {
+		got, determinable := jsonEqual(testCase.a, testCase.b)
+		if determinable != testCase.determinable || (determinable && got != testCase.want) {
+			t.Errorf("jsonEqual(%v, %v) = (%v, %v), want (%v, %v)", testCase.a, testCase.b, got, determinable, testCase.want, testCase.determinable)
+		}
+	}
+}
+
+func TestThreeValuedOperators(t *testing.T) {
+	facts := map[string]any{"known": "yes"}
+	unknownFact := map[string]any{"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}
+	trueFact := map[string]any{"op": "fact", "path": "/known", "operator": "equals", "value": "yes"}
+	falseFact := map[string]any{"op": "fact", "path": "/known", "operator": "equals", "value": "no"}
+
+	cases := []struct {
+		name string
+		node map[string]any
+		want tri
+	}{
+		{"all-false-beats-unknown", map[string]any{"op": "all", "conditions": []any{unknownFact, falseFact}}, triFalse},
+		{"all-unknown", map[string]any{"op": "all", "conditions": []any{unknownFact, trueFact}}, triUnknown},
+		{"all-true", map[string]any{"op": "all", "conditions": []any{trueFact, trueFact}}, triTrue},
+		{"any-true-beats-unknown", map[string]any{"op": "any", "conditions": []any{unknownFact, trueFact}}, triTrue},
+		{"any-unknown", map[string]any{"op": "any", "conditions": []any{unknownFact, falseFact}}, triUnknown},
+		{"any-false", map[string]any{"op": "any", "conditions": []any{falseFact, falseFact}}, triFalse},
+		{"not-unknown-stays-unknown", map[string]any{"op": "not", "condition": unknownFact}, triUnknown},
+		{"not-true", map[string]any{"op": "not", "condition": trueFact}, triFalse},
+		{"literal", map[string]any{"op": "literal", "value": true}, triTrue},
+		{"in-no-match-is-false", map[string]any{"op": "fact", "path": "/known", "operator": "in", "value": []any{"a", "b"}}, triFalse},
+		{"in-match", map[string]any{"op": "fact", "path": "/known", "operator": "in", "value": []any{"yes"}}, triTrue},
+		{"ordered-number-fact-unknown", map[string]any{"op": "fact", "path": "/known", "operator": "greater-than", "value": "1"}, triUnknown},
+	}
+	for _, testCase := range cases {
+		if got := evalCondition(testCase.node, facts, map[string]tri{}); got != testCase.want {
+			t.Errorf("%s = %v, want %v", testCase.name, got, testCase.want)
+		}
+	}
+}
+
+// Resolver edges exercised directly, without the validation gate, so states no
+// conformant single pack can combine are still pinned.
+func TestResolverEdges(t *testing.T) {
+	base := func() map[string]any {
+		return map[string]any{
+			"outcomes": []any{
+				map[string]any{"id": "a"}, map[string]any{"id": "b"},
+			},
+		}
+	}
+
+	t.Run("direct-escalation-without-escalation-object", func(t *testing.T) {
+		pack := base()
+		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": true}, "outcome": "a", "onUnknown": "ignore"}}
+		pack["exceptions"] = []any{map[string]any{"id": "x", "when": map[string]any{"op": "literal", "value": true}, "effect": "escalate", "onUnknown": "ignore"}}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"exception-escalation"}) {
+			t.Fatalf("direct escalation must be unresolved: %+v", disposition)
+		}
+		if disposition.Handoff.State != "requested" || disposition.Handoff.Target != nil {
+			t.Fatalf("a direct request without an escalation object has no Core-defined destination: %+v", disposition.Handoff)
+		}
+	})
+
+	t.Run("conflicting-forced-outcomes", func(t *testing.T) {
+		pack := base()
+		pack["exceptions"] = []any{
+			map[string]any{"id": "x1", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "a", "onUnknown": "ignore"},
+			map[string]any{"id": "x2", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "b", "onUnknown": "ignore"},
+		}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"conflict"}) {
+			t.Fatalf("incompatible forced outcomes must conflict: %+v", disposition)
+		}
+	})
+
+	t.Run("suppressed-rule-restores-fallback", func(t *testing.T) {
+		pack := base()
+		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": true}, "outcome": "a", "onUnknown": "ignore"}}
+		pack["exceptions"] = []any{map[string]any{"id": "x", "when": map[string]any{"op": "literal", "value": true}, "effect": "suppress-rule", "targetRule": "r", "onUnknown": "ignore"}}
+		pack["fallbackOutcome"] = "b"
+		disposition, trace := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Kind != "outcome" || disposition.OutcomeID != "b" {
+			t.Fatalf("with the only rule suppressed the fallback applies: %+v", disposition)
+		}
+		found := false
+		for _, entry := range trace {
+			if entry.Stage == "rule" && entry.ID == "r" && entry.Suppressed {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the suppressed rule must stay visible in the trace: %+v", trace)
+		}
+	})
+
+	t.Run("no-match-without-fallback", func(t *testing.T) {
+		pack := base()
+		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": false}, "outcome": "a", "onUnknown": "ignore"}}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"no-match"}) {
+			t.Fatalf("no rule and no fallback is no-match: %+v", disposition)
+		}
+	})
+
+	t.Run("unknown-rule-ignore-does-not-block-fallback", func(t *testing.T) {
+		pack := base()
+		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}, "outcome": "a", "onUnknown": "ignore"}}
+		pack["fallbackOutcome"] = "b"
+		disposition, trace := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Kind != "outcome" || disposition.OutcomeID != "b" {
+			t.Fatalf("an ignored unknown must not block the fallback: %+v", disposition)
+		}
+		visible := false
+		for _, entry := range trace {
+			if entry.Stage == "rule" && entry.Condition == "unknown" && entry.OnUnknown == "ignore" {
+				visible = true
+			}
+		}
+		if !visible {
+			t.Fatalf("an ignored unknown stays visible in the trace: %+v", trace)
+		}
+	})
+
+	t.Run("unknown-rule-escalate-blocks-fallback", func(t *testing.T) {
+		pack := base()
+		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}, "outcome": "a", "onUnknown": "escalate"}}
+		pack["fallbackOutcome"] = "b"
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"unknown"}) {
+			t.Fatalf("an escalating unknown blocks both candidate and fallback: %+v", disposition)
+		}
+	})
+
+	t.Run("retains-both-unknown-and-conflict", func(t *testing.T) {
+		pack := base()
+		pack["rules"] = []any{
+			map[string]any{"id": "r1", "when": map[string]any{"op": "literal", "value": true}, "outcome": "a", "onUnknown": "ignore"},
+			map[string]any{"id": "r2", "when": map[string]any{"op": "literal", "value": true}, "outcome": "b", "onUnknown": "ignore"},
+			map[string]any{"id": "r3", "when": map[string]any{"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}, "outcome": "a", "onUnknown": "escalate"},
+		}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if !reflect.DeepEqual(disposition.Reasons, []string{"conflict", "unknown"}) {
+			t.Fatalf("neither unknown nor conflict is discarded: %+v", disposition)
+		}
+	})
+}
+
+// evidence-present maps the tri-state availability directly (§7.5): present is
+// true, absent is false, unknown or undeclared is unknown.
+func TestEvidencePresentTriState(t *testing.T) {
+	evidence := map[string]tri{"a": triTrue, "b": triFalse, "c": triUnknown}
+	cases := []struct {
+		name string
+		want tri
+	}{{"a", triTrue}, {"b", triFalse}, {"c", triUnknown}, {"undeclared", triUnknown}}
+	for _, testCase := range cases {
+		node := map[string]any{"op": "evidence-present", "evidenceRequirement": testCase.name}
+		if got := evalCondition(node, nil, evidence); got != testCase.want {
+			t.Errorf("evidence-present(%s) = %v, want %v", testCase.name, got, testCase.want)
+		}
+	}
+}
+
+// Ordered comparison at the condition level: decimal strings decide, JSON
+// numbers and non-grammar strings degrade to unknown, and undeterminable
+// number equality degrades to unknown rather than false.
+func TestOrderedAndUndeterminableConditions(t *testing.T) {
+	facts := map[string]any{
+		"amount": "150",
+		"count":  json.Number("150"),
+		"huge":   json.Number("1e999999999"),
+	}
+	cases := []struct {
+		name string
+		node map[string]any
+		want tri
+	}{
+		{"decimal-string-greater", map[string]any{"op": "fact", "path": "/amount", "operator": "greater-than", "value": "100"}, triTrue},
+		{"decimal-string-not-less", map[string]any{"op": "fact", "path": "/amount", "operator": "less-than", "value": "100"}, triFalse},
+		{"json-number-ordered-unknown", map[string]any{"op": "fact", "path": "/count", "operator": "greater-than", "value": "100"}, triUnknown},
+		{"huge-number-equals-unknown", map[string]any{"op": "fact", "path": "/huge", "operator": "equals", "value": json.Number("2e999999999")}, triUnknown},
+		{"huge-number-not-equals-unknown", map[string]any{"op": "fact", "path": "/huge", "operator": "not-equals", "value": json.Number("2e999999999")}, triUnknown},
+		{"huge-identical-token-equal", map[string]any{"op": "fact", "path": "/huge", "operator": "equals", "value": json.Number("1e999999999")}, triTrue},
+		{"in-with-undeterminable-member", map[string]any{"op": "fact", "path": "/huge", "operator": "in", "value": []any{json.Number("2e999999999"), "x"}}, triUnknown},
+	}
+	for _, testCase := range cases {
+		if got := evalCondition(testCase.node, facts, map[string]tri{}); got != testCase.want {
+			t.Errorf("%s = %v, want %v", testCase.name, got, testCase.want)
+		}
+	}
+}
+
+// §8.1: the configured target is requested only when a retained reason appears
+// in escalation.triggers — except a direct exception escalation, which is a
+// request regardless of the trigger list.
+func TestHandoffTriggerMatching(t *testing.T) {
+	base := func() map[string]any {
+		return map[string]any{
+			"outcomes": []any{map[string]any{"id": "a"}, map[string]any{"id": "b"}},
+			"rules": []any{
+				map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": false}, "outcome": "a", "onUnknown": "ignore"},
+			},
+		}
+	}
+
+	t.Run("reason-not-in-triggers-means-no-handoff", func(t *testing.T) {
+		pack := base() // no fallback -> unresolved{no-match}
+		pack["escalation"] = map[string]any{
+			"triggers": []any{"conflict"},
+			"target":   map[string]any{"kind": "human-role", "name": "Reviewer"},
+		}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if !reflect.DeepEqual(disposition.Reasons, []string{"no-match"}) {
+			t.Fatalf("expected no-match: %+v", disposition)
+		}
+		if disposition.Handoff.State != "none" {
+			t.Fatalf("no-match is not in the trigger list, so no handoff is configured: %+v", disposition.Handoff)
+		}
+	})
+
+	t.Run("matching-trigger-echoes-target", func(t *testing.T) {
+		pack := base()
+		pack["escalation"] = map[string]any{
+			"triggers": []any{"no-match"},
+			"target":   map[string]any{"kind": "team", "name": "Intake board"},
+		}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Handoff.State != "requested" || disposition.Handoff.Target == nil ||
+			disposition.Handoff.Target.Kind != "team" || disposition.Handoff.Target.Name != "Intake board" {
+			t.Fatalf("a matching trigger must echo the declared target exactly: %+v", disposition.Handoff)
+		}
+	})
+
+	t.Run("direct-escalation-ignores-trigger-list", func(t *testing.T) {
+		pack := base()
+		pack["exceptions"] = []any{
+			map[string]any{"id": "x", "when": map[string]any{"op": "literal", "value": true}, "effect": "escalate", "onUnknown": "ignore"},
+		}
+		pack["escalation"] = map[string]any{
+			"triggers": []any{"conflict"}, // exception-escalation is deliberately absent
+			"target":   map[string]any{"kind": "human-role", "name": "Escalation desk"},
+		}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Handoff.State != "requested" || disposition.Handoff.Target == nil || disposition.Handoff.Target.Name != "Escalation desk" {
+			t.Fatalf("a direct request uses the configured target regardless of the trigger list: %+v", disposition.Handoff)
+		}
+	})
+
+	t.Run("escalate-takes-precedence-over-force", func(t *testing.T) {
+		pack := base()
+		pack["exceptions"] = []any{
+			map[string]any{"id": "force", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "b", "onUnknown": "ignore"},
+			map[string]any{"id": "esc", "when": map[string]any{"op": "literal", "value": true}, "effect": "escalate", "onUnknown": "ignore"},
+		}
+		disposition, _ := resolve(pack, map[string]any{}, map[string]tri{})
+		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"exception-escalation"}) {
+			t.Fatalf("a direct escalation takes precedence over a compatible forced outcome: %+v", disposition)
+		}
+	})
+}

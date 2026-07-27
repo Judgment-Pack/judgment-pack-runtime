@@ -38,8 +38,10 @@ required-extension capability check
 one result model ──► human or versioned JSON renderer
 ```
 
-Each layer stops when the preceding layer fails. No layer evaluates a condition, resolves a
-decision outcome, fetches a locator, loads an extension, or authorizes an action.
+Each layer stops when the preceding layer fails. No validation layer evaluates a condition,
+resolves a decision outcome, fetches a locator, loads an extension, or authorizes an action;
+evaluation exists only behind the explicitly experimental surface of
+[ADR-0007](adr/0007-experimental-evaluator.md).
 
 ## Packages
 
@@ -50,6 +52,7 @@ decision outcome, fetches a locator, loads an extension, or authorizes an action
 - `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads.
 - `internal/result` defines machine output version 1 and exit classes.
 - `internal/describe` composes the machine descriptions the CLI and MCP server share, so neither drifts.
+- `internal/evaluation` implements the EXPERIMENTAL, non-conformance-claiming JPS §§7–8 evaluator (ADR-0007).
 - `internal/cli` owns commands, streams, and human/JSON rendering.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.

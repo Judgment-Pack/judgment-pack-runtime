@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -100,13 +102,13 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 		tool := entry.(map[string]any)
 		advertised[tool["name"].(string)] = tool
 	}
-	for _, want := range []string{"validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example"} {
+	for _, want := range []string{"validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example", "experimental_evaluate"} {
 		if _, ok := advertised[want]; !ok {
 			t.Fatalf("tools/list must advertise %q; got %v", want, advertised)
 		}
 	}
-	if len(advertised) != 6 {
-		t.Fatalf("expected 6 distinct tools, got %d", len(advertised))
+	if len(advertised) != 7 {
+		t.Fatalf("expected 7 distinct tools, got %d", len(advertised))
 	}
 	required := advertised["get_example"]["inputSchema"].(map[string]any)["required"].([]any)
 	if len(required) != 1 || required[0] != "name" {
@@ -226,5 +228,42 @@ func TestExampleToolsSurfaceEmbeddedFixtures(t *testing.T) {
 	unknown := responses[2]["result"].(map[string]any)
 	if unknown["isError"] != true {
 		t.Fatalf("an unknown example name should be an in-band tool error: %#v", unknown)
+	}
+}
+
+// experimental_evaluate is labeled, produces a disposition for a conformant
+// pack, and refuses a non-conformant pack as an in-band tool error.
+func TestExperimentalEvaluateTool(t *testing.T) {
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := `{"request":{"type":"one-time-extract","completeness":"incomplete","appropriateness":"pass","embargoedInformationToUnauthorizedRecipients":false}}`
+	evidence := `{"intake-form":"present","sponsor-endorsement":"present"}`
+	input := strings.Join([]string{
+		message(t, 1, "tools/call", map[string]any{"name": "experimental_evaluate", "arguments": map[string]any{"pack": string(pack), "facts": facts, "evidence": evidence}}),
+		message(t, 2, "tools/call", map[string]any{"name": "experimental_evaluate", "arguments": map[string]any{"pack": `{"specVersion":"0.1.0-draft"}`, "facts": `{}`}}),
+	}, "")
+	responses := runServer(t, input)
+
+	evaluated := responses[0]["result"].(map[string]any)
+	if evaluated["isError"] != false {
+		t.Fatalf("a produced disposition is a successful call: %#v", evaluated)
+	}
+	structured := evaluated["structuredContent"].(map[string]any)
+	if structured["experimental"] != true || structured["conformanceClaim"] != "none" {
+		t.Fatalf("the payload must be labeled experimental with no claim: %#v", structured)
+	}
+	disposition := structured["disposition"].(map[string]any)
+	if disposition["kind"] != "outcome" || disposition["outcomeId"] != "clarify-return" {
+		t.Fatalf("disposition = %#v", disposition)
+	}
+
+	refused := responses[1]["result"].(map[string]any)
+	if refused["isError"] != true {
+		t.Fatalf("a non-conformant pack must be an in-band tool error: %#v", refused)
+	}
+	if text := refused["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "document conformance") {
+		t.Fatalf("the refusal must be self-sufficient: %q", text)
 	}
 }

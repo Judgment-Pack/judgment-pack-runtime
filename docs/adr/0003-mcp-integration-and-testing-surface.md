@@ -8,6 +8,10 @@ deciders: Brian Jin
 
 > **Accepted.** Phase 0 passed and Phase 1 is built: `internal/mcp` is a hand-rolled stdio MCP
 > server wired as the `judgment-pack mcp` subcommand.
+>
+> **Amended by [0007](0007-experimental-evaluator.md):** the surface gains exactly one explicitly
+> experimental evaluation tool (`experimental_evaluate`); the validation tools still evaluate
+> nothing.
 
 ## Context and problem statement
 

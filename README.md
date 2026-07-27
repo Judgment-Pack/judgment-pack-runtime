@@ -12,10 +12,13 @@ schemas, and conformance corpus are owned by the separate
 [`judgment-pack-spec`](https://github.com/Judgment-Pack/judgment-pack-spec) repository, and any
 independent implementation that passes the published conformance corpus is equally valid.
 
-The runtime **validates documents**. It does not evaluate rules, choose an outcome, fetch a source,
-authorize an action, or establish truth, organizational authority, safety, or operational fitness.
-This matches the scope of JPS `0.1.0-draft`, which defines carrier, structural, and semantic
-document conformance only and defines no evaluator conformance class.
+The runtime **validates documents**. It does not fetch a source, authorize an action, or establish
+truth, organizational authority, safety, or operational fitness. This matches the scope of JPS
+`0.1.0-draft`, which defines carrier, structural, and semantic document conformance only and
+defines no evaluator conformance class. Its one evaluation surface is explicitly EXPERIMENTAL:
+`judgment-pack experimental evaluate` (and the `experimental_evaluate` MCP tool) runs the
+specification's §§7–8 experiment per [ADR-0007](docs/adr/0007-experimental-evaluator.md), claims
+no conformance, and may change or be removed without compatibility promise.
 
 The command binary is `judgment-pack`; release archives also ship a `jpack` short alias for the
 same program.
@@ -27,14 +30,18 @@ judgment-pack version
 judgment-pack spec validate <pack-or->
 judgment-pack spec test-conformance [suite]
 judgment-pack spec schema <spec-version>
+judgment-pack spec examples [name]
 judgment-pack mcp
+judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL; no conformance claim)
 ```
 
 The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the
 specification and the prefix of its provisional diagnostic codes.
 
 The `mcp` command serves the same offline operations to a Model Context Protocol client over stdio,
-so an agent can validate documents as a tool call; see [docs/agent-testing.md](docs/agent-testing.md).
+so an agent can validate documents as a tool call; see
+[docs/mcp-clients.md](docs/mcp-clients.md) for per-client setup and
+[docs/agent-testing.md](docs/agent-testing.md) for the agent-driven testing protocol.
 
 ## Install a tagged release
 

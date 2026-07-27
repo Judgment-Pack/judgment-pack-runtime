@@ -2,6 +2,17 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- Add an EXPERIMENTAL evaluator (ADR-0007): `judgment-pack experimental evaluate` and the
+  `experimental_evaluate` MCP tool apply the JPS Core §§7–8 experiment, as pinned by the
+  specification's RFC 0006 (Draft), to one conformant pack, one facts document, and an optional
+  tri-state evidence-availability input, returning a disposition (kind, reasons, handoff) and a
+  trace. It claims NO evaluator conformance — JPS `0.1.0-draft` forbids such claims — authorizes
+  nothing, evaluates only fully conformant packs, and may change or be removed without
+  compatibility promise. The nine walked instances committed in RFC 0006's appendix run as this
+  surface's acceptance tests. Validation behavior, claims, and exit classes are unchanged.
+
 ## 0.1.0 - 2026-07-25
 
 - Add a `NOTICE` file identifying Brian Jin as the copyright holder and carrying

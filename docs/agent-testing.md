@@ -20,8 +20,9 @@ CLI loop here needs neither an SDK nor a running server.
 
 - A `judgment-pack` binary (installed or built below).
 - Any agent client that can run a shell command and read and write files, configured with **your
-  own** model API key. The runtime holds no key, opens no network connection, and evaluates nothing,
-  so the key lives entirely in the client. Any of the many such clients works — for example Claude
+  own** model API key. The runtime holds no key and opens no network connection — the key lives
+  entirely in the client. (Its only evaluation surface is the explicitly experimental,
+  non-conformance-claiming evaluator of ADR-0007.) Any of the many such clients works — for example Claude
   Code, Cline, Cursor, or Continue.
 
 ## Get the validator

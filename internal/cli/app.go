@@ -15,6 +15,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/mcp"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -75,7 +76,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "judgment-pack",
 		Short:         "Judgment Pack Specification tooling",
-		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions.",
+		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental namespace is the one exception: it evaluates experimentally, claims no conformance, and may change without notice.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       result.CLIVersion,
@@ -90,8 +91,95 @@ func (a *App) rootCommand() *cobra.Command {
 	root.SetVersionTemplate("judgment-pack {{.Version}}\n")
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.pretty, "pretty", false, "indent JSON output")
-	root.AddCommand(a.versionCommand(), a.specCommand(), a.mcpCommand())
+	root.AddCommand(a.versionCommand(), a.specCommand(), a.mcpCommand(), a.experimentalCommand())
 	return root
+}
+
+func (a *App) experimentalCommand() *cobra.Command {
+	experimental := &cobra.Command{
+		Use:   "experimental",
+		Short: "Experimental operations that claim no conformance and may change or vanish",
+		Long:  "Experimental operations (ADR-0007). Nothing under this command claims any JPS conformance; JPS 0.1.0-draft §3.4 forbids evaluator-conformance claims outright. Behavior may change or be removed without compatibility promise.",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return command.Help()
+		},
+	}
+	experimental.AddCommand(a.evaluateCommand())
+	return experimental
+}
+
+func (a *App) evaluateCommand() *cobra.Command {
+	format := "human"
+	factsPath := ""
+	evidencePath := ""
+	supported := []string{}
+	command := &cobra.Command{
+		Use:   "evaluate <pack-or->",
+		Short: "EXPERIMENTAL: apply the JPS §§7-8 experiment to one pack; no conformance claim",
+		Long:  "Apply the experimental JPS Core §§7-8 resolution model, as pinned by the specification's RFC 0006 (Draft), to one conformant pack and one facts document. The result is a disposition, not a conformance claim, an authorization, or an executed action; producing any disposition exits 0.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if err := validateFormat(format); err != nil {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			if factsPath == "" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FACTS", "--facts is required: one JSON facts document (a file path, or - for standard input).")
+			}
+			if args[0] == "-" && factsPath == "-" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The pack and the facts document cannot both be standard input.")
+			}
+			if evidencePath == "-" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The evidence document cannot be standard input; pass a file path.")
+			}
+			for _, input := range []string{args[0], factsPath, evidencePath} {
+				if input != "" && input != "-" && (strings.Contains(input, "://") || fssecure.IsRemotePath(input)) {
+					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
+				}
+			}
+			pack, err := a.readPack(args[0], carrier.HardMaxBytes)
+			if err != nil {
+				return a.evaluateReadFailure(format, "pack", err)
+			}
+			facts, err := a.readPack(factsPath, carrier.HardMaxBytes)
+			if err != nil {
+				return a.evaluateReadFailure(format, "facts", err)
+			}
+			var evidence []byte
+			if evidencePath != "" {
+				evidence, err = fssecure.ReadRegular(evidencePath, carrier.HardMaxBytes)
+				if err != nil {
+					return a.evaluateReadFailure(format, "evidence", err)
+				}
+				if len(evidence) == 0 {
+					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-EVALUATION-INPUT-JSON", "The evidence file is empty; supply a JSON object, or omit --evidence to treat every requirement as unknown.")
+				}
+			}
+			evaluator := evaluation.NewEngine(a.engine)
+			output, failure := evaluator.Evaluate(pack, facts, evidence, supported, "experimental evaluate")
+			if failure != nil {
+				return a.operational("experimental evaluate", format, failure.ExitCode, failure.Code, failure.Message)
+			}
+			if err := a.renderEvaluation(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&factsPath, "facts", factsPath, "JSON facts document: a file path, or - for standard input (required)")
+	command.Flags().StringVar(&evidencePath, "evidence", evidencePath, "optional tri-state evidence availability: {\"<requirement-id>\": \"present\"|\"absent\"|\"unknown\"}")
+	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports (repeatable)")
+	return command
+}
+
+// evaluateReadFailure reports a failed evaluation-input read, keeping the
+// byte-limit case as informative as spec validate's.
+func (a *App) evaluateReadFailure(format, name string, err error) error {
+	if errors.Is(err, fssecure.ErrTooLarge) {
+		return a.operational("experimental evaluate", format, result.ExitIO, "JPS-RESOURCE-INPUT-BYTE-LIMIT", fmt.Sprintf("The %s input exceeds the hard %d-byte limit.", name, carrier.HardMaxBytes))
+	}
+	return a.operational("experimental evaluate", format, result.ExitIO, "JPS-INPUT-READ", fmt.Sprintf("The %s input could not be read as one bounded regular file or standard input stream.", name))
 }
 
 func (a *App) specCommand() *cobra.Command {
@@ -111,8 +199,8 @@ func (a *App) specCommand() *cobra.Command {
 func (a *App) mcpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
-		Short: "Serve the offline validator to an MCP client over stdio",
-		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools; it holds no credential, opens no network connection, and evaluates nothing.",
+		Short: "Serve the offline validator and one experimental tool to an MCP client over stdio",
+		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus one explicitly EXPERIMENTAL evaluation tool (experimental_evaluate; ADR-0007) that claims no conformance. It holds no credential, opens no network connection, and authorizes nothing.",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			server := mcp.NewServer(a.engine, a.runner)
@@ -456,15 +544,23 @@ func requestedFormat(args []string) string {
 }
 
 func requestedCommand(args []string) string {
+	// One scan, first command group wins, so an operand that happens to spell a
+	// group name (for example a file called "spec") cannot relabel the command.
 	for index, argument := range args {
-		if argument != "spec" || index+1 >= len(args) {
-			continue
-		}
-		switch args[index+1] {
-		case "validate", "test-conformance", "schema", "examples":
-			return "spec " + args[index+1]
-		default:
+		switch argument {
+		case "spec":
+			if index+1 < len(args) {
+				switch args[index+1] {
+				case "validate", "test-conformance", "schema", "examples":
+					return "spec " + args[index+1]
+				}
+			}
 			return "spec"
+		case "experimental":
+			if index+1 < len(args) && args[index+1] == "evaluate" {
+				return "experimental evaluate"
+			}
+			return "experimental"
 		}
 	}
 	for _, argument := range args {
