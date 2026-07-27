@@ -35,4 +35,4 @@ when** it became that way. architecture.md links out to the relevant ADR rather 
 | [0004](0004-decline-http-api.md)                         | Permanently decline an in-runtime HTTP API                                      | accepted |
 | [0005](0005-single-jps-diagnostic-code-prefix.md)        | Use a single `JPS-` prefix for diagnostic codes                                 | accepted |
 | [0006](0006-authoring-lifecycle-in-the-client.md)        | The authoring lifecycle lives in the client; the runtime is a stateless oracle  | accepted |
-| [0007](0007-experimental-evaluator.md)                   | Ship an experimental evaluator behind an explicit experimental surface          | proposed |
+| [0007](0007-experimental-evaluator.md)                   | Ship an experimental evaluator behind an explicit experimental surface          | accepted |

@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-27
 deciders: Brian Jin
 ---
 
 # Ship an experimental evaluator behind an explicit experimental surface
 
-> **Proposed.** Implement JPS Core's §§7–8 experiment — as pinned by the specification's
+> **Accepted.** Implemented as JPS Core's §§7–8 experiment — as pinned by the specification's
 > [RFC 0006 (Draft)](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0006-evaluator-conformance.md)
 > — as `judgment-pack experimental evaluate` and the `experimental_evaluate` MCP tool, claiming no
 > evaluator conformance.
