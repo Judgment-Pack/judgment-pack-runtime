@@ -24,6 +24,19 @@ when** it became that way. architecture.md links out to the relevant ADR rather 
 3. On merge, set `status: accepted`. ADRs are immutable once accepted: a later change is a **new**
    ADR that supersedes the old one (which is then marked `superseded by NNNN`), never an edit.
 
+## Review of material ADRs
+
+A **material** ADR — one that changes a public surface, a documented claim, or
+conformance-relevant behavior — additionally follows the interim review regime recorded in the
+specification repository's
+[`GOVERNANCE.md`](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/GOVERNANCE.md#interim-review-regime):
+a recorded adversarial review by a model from a different vendor than any model that assisted the
+drafting, with a written maintainer disposition for each finding, on the pull request that makes
+the decision (ADRs are immutable once accepted, so the review attaches to the pull request, not
+the ADR text). This applies to work opened after 2026-07-27. Model review substitutes for review
+breadth while the project has a single maintainer; it is not decision authority, and following it
+confers no conformance status on anything.
+
 ## Index
 
 | #                                                        | Decision                                                                        | Status   |
