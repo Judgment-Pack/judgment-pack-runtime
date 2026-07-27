@@ -27,6 +27,22 @@ gitignored in this repository. Copy a snippet, don't commit one.
 None of these evaluate, decide, or authorize anything, except `experimental_evaluate`, which
 evaluates experimentally and says so in every payload.
 
+## The prompts
+
+The server also serves three **method prompts** (MCP `prompts` capability) — static, versioned,
+non-normative guidance that your client's model executes with your key. In Claude Code they appear
+as slash commands (`/mcp__judgment-pack__author_pack`, `…test_pack`, `…fix_pack`); other clients
+surface them differently or not at all, and everything works without them.
+
+| Prompt | Guides |
+| --- | --- |
+| `author_pack` | Encoding one policy decision: the create → validate → evaluate loop, the resolution-model shapes that avoid conflicts, the decimal-string and `onUnknown` rules, the prepared-facts ledger |
+| `test_pack` | Probing a pack's logic with an instance matrix (per-outcome, conflict, unknown, missing-evidence, not-applicable, forced-outcome, ordered-comparison rows) |
+| `fix_pack` | Repairing a non-conformant pack from the validator's diagnostics, in carrier → structural → semantic order |
+
+Following a prompt does not make a pack conformant — only validation decides that — and the
+documents you produce are yours; the runtime stores and interprets nothing (ADR-0008).
+
 ## Claude Code
 
 One command, from any directory:

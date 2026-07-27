@@ -2,6 +2,17 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- Add the MCP `prompts` capability (ADR-0008): three non-normative authoring-method prompts —
+  `author_pack`, `test_pack`, `fix_pack` — served as static, versioned text that the client's model
+  executes with the client's key. The server still calls no model, holds no key, and opens no
+  network connection; serving a prompt is read-only, like `get_schema`. Method content distills the
+  expressiveness studies: the resolution-model shapes that avoid conflicts, the `onUnknown`
+  discipline, the decimal-string rule for ordered comparisons, the prepared-facts ledger, and the
+  instance-matrix logic probe. Following a prompt does not make a pack conformant, and no prompt
+  interprets any policy.
+
 ## 0.2.0 - 2026-07-27
 
 - Add an EXPERIMENTAL evaluator (ADR-0007): `judgment-pack experimental evaluate` and the

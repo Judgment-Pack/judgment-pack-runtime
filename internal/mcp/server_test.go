@@ -267,3 +267,69 @@ func TestExperimentalEvaluateTool(t *testing.T) {
 		t.Fatalf("the refusal must be self-sufficient: %q", text)
 	}
 }
+
+// The prompts surface (ADR-0008) serves non-normative authoring method as
+// static text: capability advertised, three prompts listed with their
+// arguments, argument text echoed verbatim into the rendered prompt, and the
+// non-normative disclaimer present in every rendering.
+func TestPromptsSurface(t *testing.T) {
+	input := strings.Join([]string{
+		message(t, 1, "initialize", map[string]any{"protocolVersion": "2025-06-18"}),
+		message(t, -1, "notifications/initialized", nil),
+		message(t, 2, "prompts/list", nil),
+		message(t, 3, "prompts/get", map[string]any{"name": "author_pack", "arguments": map[string]any{"policy": "Employees may expense meals under 50 dollars."}}),
+		message(t, 4, "prompts/get", map[string]any{"name": "no_such_prompt"}),
+	}, "")
+	responses := runServer(t, input)
+
+	capabilities := responses[0]["result"].(map[string]any)["capabilities"].(map[string]any)
+	if _, ok := capabilities["prompts"]; !ok {
+		t.Fatalf("initialize must advertise the prompts capability: %#v", capabilities)
+	}
+
+	prompts := responses[1]["result"].(map[string]any)["prompts"].([]any)
+	names := map[string]bool{}
+	for _, entry := range prompts {
+		names[entry.(map[string]any)["name"].(string)] = true
+	}
+	for _, want := range []string{"author_pack", "test_pack", "fix_pack"} {
+		if !names[want] {
+			t.Fatalf("prompts/list must include %q: %v", want, names)
+		}
+	}
+	if len(names) != 3 {
+		t.Fatalf("expected exactly 3 prompts, got %d", len(names))
+	}
+
+	rendered := responses[2]["result"].(map[string]any)
+	text := rendered["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "Employees may expense meals under 50 dollars.") {
+		t.Fatalf("the policy argument must be echoed verbatim into the prompt")
+	}
+	for _, marker := range []string{"non-normative", "validate", "onUnknown"} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("author_pack rendering must contain %q", marker)
+		}
+	}
+
+	if _, isError := responses[3]["error"]; !isError {
+		t.Fatalf("an unknown prompt must be a JSON-RPC error: %#v", responses[3])
+	}
+}
+
+// Every prompt renders with no arguments at all, and every rendering carries
+// the no-claim disclaimer -- the guardrail that the method text can never be
+// read as the runtime blessing a pack.
+func TestEveryPromptRendersWithDisclaimer(t *testing.T) {
+	for _, name := range []string{"author_pack", "test_pack", "fix_pack"} {
+		responses := runServer(t, message(t, 1, "prompts/get", map[string]any{"name": name}))
+		result := responses[0]["result"].(map[string]any)
+		text := result["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+		if !strings.Contains(text, "does not make a\npack conformant") && !strings.Contains(text, "does not make a pack conformant") {
+			t.Fatalf("%s must carry the non-normative disclaimer", name)
+		}
+		if len(text) < 500 {
+			t.Fatalf("%s rendering suspiciously short: %d bytes", name, len(text))
+		}
+	}
+}
