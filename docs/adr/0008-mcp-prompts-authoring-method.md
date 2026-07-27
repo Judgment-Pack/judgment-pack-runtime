@@ -1,12 +1,12 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-27
 deciders: Brian Jin
 ---
 
 # Serve authoring method as MCP prompts; the intelligence stays in the client
 
-> **Proposed.** The MCP server gains the protocol's `prompts` capability with three non-normative
+> **Accepted.** The MCP server gained the protocol's `prompts` capability with three non-normative
 > method prompts — `author_pack`, `test_pack`, `fix_pack` — served as static, versioned text that
 > the client's model executes with the client's key.
 
