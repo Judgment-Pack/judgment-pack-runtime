@@ -24,18 +24,38 @@ when** it became that way. architecture.md links out to the relevant ADR rather 
 3. On merge, set `status: accepted`. ADRs are immutable once accepted: a later change is a **new**
    ADR that supersedes the old one (which is then marked `superseded by NNNN`), never an edit.
 
-## Review of material ADRs
+## Review of material decisions
 
-A **material** ADR — one that changes a public surface, a documented claim, or
-conformance-relevant behavior — additionally follows the interim review regime recorded in the
+A **material** decision in this runtime follows the interim review regime recorded in the
 specification repository's
-[`GOVERNANCE.md`](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/GOVERNANCE.md#interim-review-regime):
-a recorded adversarial review by a model from a different vendor than any model that assisted the
-drafting, with a written maintainer disposition for each finding, on the pull request that makes
-the decision (ADRs are immutable once accepted, so the review attaches to the pull request, not
-the ADR text). This applies to work opened after 2026-07-27. Model review substitutes for review
-breadth while the project has a single maintainer; it is not decision authority, and following it
-confers no conformance status on anything.
+[`GOVERNANCE.md`](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/GOVERNANCE.md#interim-review-regime)
+and designed in
+[RFC 0009](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0009-interim-review-regime.md).
+A decision is material when it changes a public surface, a documented claim, conformance-relevant
+behavior, the security posture, or a dependency boundary. The trigger is the decision, not the
+paperwork: a material decision made without an ADR is still material, and skipping the ADR does not
+skip the review.
+
+Such a decision requires a recorded adversarial review by a model from a **different vendor** than
+any model that assisted the drafting, with a written maintainer disposition for each finding, on the
+pull request that makes the decision. *Vendor* means the organization that controls the model's
+weights and training — the developer, not the API host and not a reseller; hosted copies of the same
+model share lineage and count as the same vendor. *Assisted the drafting* means generated or revised
+text that survives in the merged artifact; applying an accepted finding in one's own words does not
+make the reviewer a drafter, while adopting reviewer-generated text verbatim is noted in the record.
+ADRs are written after the decision and are immutable once accepted, so the review attaches to the
+pull request, not to the ADR text.
+
+This applies to every pull request merged after 2026-07-27 that makes a material decision, including
+one that supersedes an existing ADR. The specification repository's `GOVERNANCE.md` governs only that
+repository; this section is what places this runtime under the obligation, and it binds from the
+commit that merged it.
+
+There is no per-pull-request ADR-impact declaration. Materiality is classified by the maintainer, who
+is also the author — the weak point of this arrangement, stated rather than papered over — and the
+classification is contestable on the pull request. Model review substitutes for review breadth while
+the project has a single maintainer; it is not decision authority, and following it confers no
+conformance status on anything.
 
 ## Index
 
