@@ -41,21 +41,37 @@ any model that assisted the drafting, with a written maintainer disposition for 
 pull request that makes the decision. *Vendor* means the organization that controls the model's
 weights and training — the developer, not the API host and not a reseller; hosted copies of the same
 model share lineage and count as the same vendor. *Assisted the drafting* means generated or revised
-text that survives in the merged artifact; applying an accepted finding in one's own words does not
-make the reviewer a drafter, while adopting reviewer-generated text verbatim is noted in the record.
-ADRs are written after the decision and are immutable once accepted, so the review attaches to the
-pull request, not to the ADR text.
+text that survives in the merged artifact, or planning, analysis, structure, or design choices
+supplied by a model and relied on to produce it; paraphrase does not launder assistance, so a model
+that shaped the outline or settled a design question assisted the drafting even when none of its
+sentences survive. Applying an accepted finding in one's own words does not make the reviewer a
+drafter, while adopting reviewer-generated text verbatim is noted in the record. ADRs are written
+after the decision and are immutable once accepted, so the review attaches to the pull request, not
+to the ADR text.
 
-This applies to every pull request merged after 2026-07-27 that makes a material decision, including
-one that supersedes an existing ADR. The specification repository's `GOVERNANCE.md` governs only that
-repository; this section is what places this runtime under the obligation, and it binds from the
-commit that merged it.
+This applies to the pull request merging this section and every pull request merged after it that
+makes a material decision, including one that supersedes an existing ADR. The test is
+commit-relative, not date-relative; this section was merged 2026-07-27. The specification
+repository's `GOVERNANCE.md` governs only that repository; this section is what places this runtime
+under the obligation.
 
-There is no per-pull-request ADR-impact declaration. Materiality is classified by the maintainer, who
-is also the author — the weak point of this arrangement, stated rather than papered over — and the
-classification is contestable on the pull request. Model review substitutes for review breadth while
-the project has a single maintainer; it is not decision authority, and following it confers no
-conformance status on anything.
+Every pull request in this repository states its impact in the description, on one line:
+
+```
+Material-decision impact: none | public-surface | documented-claim | conformance | security | dependency
+```
+
+Exactly one value. Anything other than `none` carries a link to the cross-vendor review recorded on
+that pull request. `none` is a claim, not a formality: it is the author classifying their own change,
+and it is wrong whenever the change turns out to be material.
+
+Materiality is classified by the maintainer, who is also the author — the weak point of this
+arrangement, stated rather than papered over. The declaration does not fix that; a checkbox its own
+author ticks measures the author's care, not the change. What it removes is silence. The
+classification is explicit, dated, attached to the diff, and contestable on the pull request, and
+omitting the ADR and the review no longer omits the classification with them. Model review
+substitutes for review breadth while the project has a single maintainer; it is not decision
+authority, and following it confers no conformance status on anything.
 
 ## Index
 
