@@ -12,6 +12,10 @@ deciders: Brian Jin
 > **Amended by [0007](0007-experimental-evaluator.md):** the surface gains exactly one explicitly
 > experimental evaluation tool (`experimental_evaluate`); the validation tools still evaluate
 > nothing.
+>
+> **Amended by [0008](0008-mcp-prompts-authoring-method.md):** the surface gains the protocol's
+> `prompts` capability — non-normative authoring-method text served statically; the client's model
+> executes it.
 
 ## Context and problem statement
 

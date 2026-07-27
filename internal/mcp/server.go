@@ -104,6 +104,11 @@ func (s *Server) handle(request *rpcRequest) (map[string]any, bool) {
 	case "tools/call":
 		res, rerr := s.callTool(request.Params)
 		return s.reply(request, res, rerr)
+	case "prompts/list":
+		return s.reply(request, map[string]any{"prompts": listPrompts()}, nil)
+	case "prompts/get":
+		res, rerr := getPrompt(request.Params)
+		return s.reply(request, res, rerr)
 	default:
 		if len(request.ID) == 0 {
 			return nil, false // ignore unknown notifications
@@ -139,7 +144,7 @@ func (s *Server) initializeResult(rawParams json.RawMessage) map[string]any {
 	}
 	return map[string]any{
 		"protocolVersion": version,
-		"capabilities":    map[string]any{"tools": map[string]any{}},
+		"capabilities":    map[string]any{"tools": map[string]any{}, "prompts": map[string]any{}},
 		"serverInfo": map[string]any{
 			"name":    result.CLIName,
 			"version": result.CLIVersion,
