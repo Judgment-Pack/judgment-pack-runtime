@@ -86,7 +86,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL (ADR-0007): apply the JPS Core §§7-8 experiment, as pinned by spec RFC 0006 (Draft), to one conformant pack and one facts document, returning a disposition (kind, reasons, handoff) and a trace. This claims NO evaluator conformance — JPS 0.1.0-draft forbids such claims — authorizes nothing, executes nothing, and may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. This claims NO evaluator conformance of any kind, authorizes nothing, executes nothing, and may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -285,9 +285,19 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	evaluator := evaluation.NewEngine(s.engine)
 	output, failure := evaluator.Evaluate([]byte(args.Pack), []byte(args.Facts), []byte(args.Evidence), args.SupportedExtensions, "mcp experimental_evaluate")
 	if failure != nil {
-		return toolError(failure.Message)
+		return toolError(evaluationFailureMessage(failure))
 	}
 	return toolResult(output)
+}
+
+// evaluationFailureMessage names the JPS §8.4 evaluation-error class and phase
+// beside this runtime's finer code, so a calling model reads the same coarse
+// identity the CLI reports rather than a message it has to classify itself.
+func evaluationFailureMessage(failure *evaluation.Failure) string {
+	if failure.Class == "" {
+		return failure.Message
+	}
+	return fmt.Sprintf("%s (evaluation error class: %s; phase: %s; code: %s)", failure.Message, failure.Class, failure.Phase, failure.Code)
 }
 
 // toolResult wraps a versioned core payload as an MCP tool result: the payload

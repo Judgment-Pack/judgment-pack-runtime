@@ -43,6 +43,32 @@ resolves a decision outcome, fetches a locator, loads an extension, or authorize
 evaluation exists only behind the explicitly experimental surface of
 [ADR-0007](adr/0007-experimental-evaluator.md).
 
+That surface has its own flow, which the evaluator class of JPS Core `0.2.0-draft` fixes
+([ADR-0010](adr/0010-evaluator-aligned-to-core-0.2.0-draft.md)):
+
+```text
+§8.2 input preflight, in this order and complete before resolution begins
+   pack ──► facts document ──► evidence-availability document ──► required-extension set
+        │
+        ▼
+§8 resolution over the admitted inputs
+        │
+        ├──► §8.3 portable disposition ──► RFC 8785 canonical bytes (internal/jcs)
+        │
+        └──► §8.4 evaluation error ──► one class, no disposition at all
+```
+
+The preflight order is also §8.4's error precedence — `pack-not-conformant`, `malformed-input`,
+`unsupported-required-extension`, `resource-exhaustion` — so the first failure encountered is the one
+reported, and an input error is never overtaken by a result. Every surface reports the byte limit
+inside that preflight rather than at the read, so an oversized input is classed and ordered like any
+other preflight condition. The contract is applied to a pack of either bundled version, so a payload
+names both the pack's `specVersion` and the contract's `evaluatorSpecVersion`. Alignment to that class
+is not a claim under it: JPS §3.4.1 defines the single form an evaluator-conformance claim may take,
+this runtime makes none, and whether it ever will is a later ADR's question, not ADR-0010's.
+`experimental evaluate-corpus` runs the bundled evaluation corpus and reports row results labelled as
+exactly that.
+
 ## Packages
 
 - `internal/carrier` performs bounded strict JSON decoding and JSON Pointer tracking.
@@ -52,7 +78,8 @@ evaluation exists only behind the explicitly experimental surface of
 - `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads.
 - `internal/result` defines machine output version 1 and exit classes.
 - `internal/describe` composes the machine descriptions the CLI and MCP server share, so neither drifts.
-- `internal/evaluation` implements the EXPERIMENTAL, non-conformance-claiming JPS §§7–8 evaluator (ADR-0007), and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts.
+- `internal/evaluation` implements the EXPERIMENTAL, non-conformance-claiming JPS §§7–8 evaluator (ADR-0007), aligned to the §§8.2–8.4 evaluator class of Core `0.2.0-draft` (ADR-0010), plus the bundled evaluation-corpus runner; and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts.
+- `internal/jcs` canonicalizes the one value JPS §8.3 compares byte for byte, the portable disposition, over the strings, arrays, and objects a disposition is made of and nothing else.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.

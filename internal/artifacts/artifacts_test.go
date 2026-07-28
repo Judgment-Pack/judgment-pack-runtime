@@ -99,3 +99,70 @@ func TestExampleReturnsBytesAndRejectsUnknownNames(t *testing.T) {
 		}
 	}
 }
+
+// Both drafts are bundled and load independently, and each verifies against its
+// own lock. The evaluation corpus exists only in the version whose Core defines
+// the evaluator conformance class.
+func TestEveryBundledVersionLoads(t *testing.T) {
+	versions := SupportedVersions()
+	if len(versions) != 2 || versions[0] != DraftVersion || versions[1] != EvaluatorDraftVersion {
+		t.Fatalf("SupportedVersions = %v, want %v", versions, []string{DraftVersion, EvaluatorDraftVersion})
+	}
+	for _, version := range versions {
+		set, err := Load(version)
+		if err != nil {
+			t.Fatalf("load %s: %v", version, err)
+		}
+		if set.Lock().SpecVersion != version {
+			t.Fatalf("lock names %q, want %q", set.Lock().SpecVersion, version)
+		}
+		if set.Lock().Source.Kind != "immutable-git-ref" || set.Lock().Source.WorktreeDirty {
+			t.Fatalf("%s must be bundled from an immutable, clean source: %+v", version, set.Lock().Source)
+		}
+		if _, err := set.Schema(); err != nil {
+			t.Fatalf("%s schema: %v", version, err)
+		}
+	}
+	if _, err := Load("9.9.9-draft"); err == nil {
+		t.Fatal("an unbundled version must not load")
+	}
+}
+
+func TestEvaluationCorpusIsBundledOnlyWhereItIsPublished(t *testing.T) {
+	older, err := Load(DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if older.HasEvaluationCorpus() {
+		t.Fatalf("JPS %s publishes no evaluation corpus", DraftVersion)
+	}
+	if _, err := older.EvaluationManifest(); err == nil {
+		t.Fatal("reading an unbundled corpus manifest must fail")
+	}
+
+	newer, err := Load(EvaluatorDraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !newer.HasEvaluationCorpus() {
+		t.Fatalf("JPS %s publishes an evaluation corpus", EvaluatorDraftVersion)
+	}
+	for _, read := range []func() ([]byte, error){
+		newer.EvaluationManifest,
+		newer.EvaluationManifestSchema,
+		func() ([]byte, error) { return newer.EvaluationPack("packs/data-request-intake-triage.json") },
+	} {
+		data, err := read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) == 0 {
+			t.Fatal("a bundled corpus artifact must not be empty")
+		}
+	}
+	// A path the lock does not record is refused, so a corpus fixture cannot be
+	// read from outside the digest-locked set.
+	if _, err := newer.EvaluationPack("packs/../../schema.json"); err == nil {
+		t.Fatal("an unrecorded path must be refused")
+	}
+}

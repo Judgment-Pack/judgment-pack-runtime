@@ -1,6 +1,7 @@
 package evaluation
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -31,11 +32,12 @@ type resolver struct {
 	trace            []result.TraceEntry
 }
 
-// resolve produces the RFC 0006 disposition and the informative trace. The
-// third result is an evaluation error rather than a disposition: exhausting the
-// draft RFC 0008 work budget interrupts §8 wherever it happens, and no partial
-// disposition is reported.
-func resolve(pack map[string]any, facts any, eval *evaluator) (result.Disposition, []result.TraceEntry, *Failure) {
+// resolve produces the §8.3 disposition, the configured escalation target when
+// one is requested, and the informative trace. The target is reported beside the
+// disposition and never inside it (§8.3). The last result is an evaluation error
+// rather than a disposition: exhausting the draft RFC 0008 work budget interrupts
+// §8 wherever it happens, and no partial disposition is reported.
+func resolve(pack map[string]any, facts any, eval *evaluator) (result.Disposition, *result.HandoffTarget, []result.TraceEntry, *Failure) {
 	r := &resolver{pack: pack, facts: facts, eval: eval, reasons: map[string]bool{}}
 
 	// Step 1: omitted applicability is the literal value true. False is a
@@ -44,16 +46,16 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 	if condition, present := pack["applicability"]; present {
 		applicability = r.eval.evaluate(condition, facts)
 		if r.eval.exceeded {
-			return result.Disposition{}, r.trace, workLimitFailure(r.eval)
+			return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
 		}
 	}
 	switch applicability {
 	case triFalse:
 		r.reasons[reasonNotApplicable] = true
-		return r.disposition("not-applicable", ""), r.trace, nil
+		return r.dispose("not-applicable", "")
 	case triUnknown:
 		r.reasons[reasonUnknown] = true
-		return r.disposition("unresolved", ""), r.trace, nil
+		return r.dispose("unresolved", "")
 	}
 
 	// Step 2, as pinned by RFC 0006: missing-required-evidence iff any
@@ -96,7 +98,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 		effect, _ := exception["effect"].(string)
 		verdict := r.eval.evaluate(exception["when"], facts)
 		if r.eval.exceeded {
-			return result.Disposition{}, r.trace, workLimitFailure(r.eval)
+			return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
 		}
 		entry := result.TraceEntry{Stage: "exception", ID: id, Condition: verdict.String()}
 		switch verdict {
@@ -134,7 +136,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 		r.reasons[reasonConflict] = true
 	}
 	if len(r.reasons) > 0 {
-		return r.disposition("unresolved", ""), r.trace, nil
+		return r.dispose("unresolved", "")
 	}
 
 	// Step 6: one compatible forced outcome, no blocking state: produce it
@@ -147,7 +149,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 					r.trace = append(r.trace, result.TraceEntry{Stage: "rule", ID: id, Condition: "not-evaluated", Skipped: true})
 				}
 			}
-			return r.disposition("outcome", outcome), r.trace, nil
+			return r.dispose("outcome", outcome)
 		}
 	}
 
@@ -167,7 +169,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 		}
 		verdict := r.eval.evaluate(rule["when"], facts)
 		if r.eval.exceeded {
-			return result.Disposition{}, r.trace, workLimitFailure(r.eval)
+			return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
 		}
 		entry := result.TraceEntry{Stage: "rule", ID: id, Condition: verdict.String()}
 		switch verdict {
@@ -189,62 +191,87 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 		r.reasons[reasonConflict] = true
 	}
 	if len(r.reasons) > 0 {
-		return r.disposition("unresolved", ""), r.trace, nil
+		return r.dispose("unresolved", "")
 	}
 
 	// Step 9: one distinct outcome and no blocking reason: produce it.
 	if len(candidates) == 1 {
 		for outcome := range candidates {
-			return r.disposition("outcome", outcome), r.trace, nil
+			return r.dispose("outcome", outcome)
 		}
 	}
 
 	// Step 10: no true rule contributed an outcome. Use the fallback when
 	// declared; otherwise unresolved with reason no-match.
 	if fallback, ok := r.pack["fallbackOutcome"].(string); ok {
-		return r.disposition("outcome", fallback), r.trace, nil
+		return r.dispose("outcome", fallback)
 	}
 	r.reasons[reasonNoMatch] = true
-	return r.disposition("unresolved", ""), r.trace, nil
+	return r.dispose("unresolved", "")
 }
 
-// disposition assembles the RFC 0006 result: sorted deduplicated reasons and
-// the §8.1 handoff axis. An outcome result retains no reasons and requests no
+// dispose returns one resolution's §8.3 disposition, the configured escalation
+// target when a handoff is requested, and the trace, in the shape resolve's
+// callers return.
+func (r *resolver) dispose(kind, outcomeID string) (result.Disposition, *result.HandoffTarget, []result.TraceEntry, *Failure) {
+	disposition, target := r.disposition(kind, outcomeID)
+	return disposition, target, r.trace, nil
+}
+
+// disposition assembles the portable disposition of §8.3: the result kind, the
+// outcome id exactly when the kind is an outcome, the retained reason set sorted
+// and duplicate-free, and the handoff object with its state and the reasons that
+// triggered a request. An outcome result retains no reasons and requests no
 // handoff.
-func (r *resolver) disposition(kind, outcomeID string) result.Disposition {
+//
+// The second result is the pack's configured escalation target, reported beside
+// the disposition and never inside it: §8.3 keeps the target out, because
+// carrying a copy would let a disposition disagree with the pack it came from,
+// and a requested handoff is a request rather than evidence that one occurred.
+func (r *resolver) disposition(kind, outcomeID string) (result.Disposition, *result.HandoffTarget) {
 	disposition := result.Disposition{Kind: kind, OutcomeID: outcomeID, Reasons: []string{}, Handoff: result.Handoff{State: "none"}}
 	if kind == "outcome" {
-		return disposition
+		return disposition, nil
 	}
 	for reason := range r.reasons {
 		disposition.Reasons = append(disposition.Reasons, reason)
 	}
 	sort.Strings(disposition.Reasons)
 
+	// §8.1 and §8.3: triggeredBy is every retained reason the pack names as a
+	// trigger, plus exception-escalation when a true exception made a direct
+	// request. It is always a subset of the retained reason set, and it is
+	// smaller than that set whenever escalation.triggers does not name every
+	// retained reason.
 	escalation, _ := r.pack["escalation"].(map[string]any)
-	triggered := false
+	triggeredBy := []string{}
 	if escalation != nil {
 		for _, trigger := range asArray(escalation["triggers"]) {
-			if name, ok := trigger.(string); ok && r.reasons[name] {
-				triggered = true
-				break
+			name, ok := trigger.(string)
+			if ok && r.reasons[name] && !slices.Contains(triggeredBy, name) {
+				triggeredBy = append(triggeredBy, name)
 			}
 		}
 	}
-	// §8.1: a direct exception escalation is a request regardless of the
-	// trigger list, using the configured target when one exists; without an
-	// escalation object it remains a request with no Core-defined destination.
-	if r.directEscalation || triggered {
-		disposition.Handoff.State = "requested"
-		if escalation != nil {
-			if target, ok := escalation["target"].(map[string]any); ok {
-				kind, _ := target["kind"].(string)
-				name, _ := target["name"].(string)
-				disposition.Handoff.Target = &result.HandoffTarget{Kind: kind, Name: name}
-			}
+	// A direct exception escalation is a request regardless of the trigger list,
+	// using the configured target when one exists; without an escalation object
+	// it remains a request with no Core-defined destination.
+	if r.directEscalation && !slices.Contains(triggeredBy, reasonExceptionEscalation) {
+		triggeredBy = append(triggeredBy, reasonExceptionEscalation)
+	}
+	if len(triggeredBy) == 0 {
+		return disposition, nil
+	}
+	sort.Strings(triggeredBy)
+	disposition.Handoff = result.Handoff{State: "requested", TriggeredBy: triggeredBy}
+	if escalation != nil {
+		if target, ok := escalation["target"].(map[string]any); ok {
+			targetKind, _ := target["kind"].(string)
+			targetName, _ := target["name"].(string)
+			return disposition, &result.HandoffTarget{Kind: targetKind, Name: targetName}
 		}
 	}
-	return disposition
+	return disposition, nil
 }
 
 func asArray(value any) []any {

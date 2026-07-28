@@ -26,7 +26,45 @@ func Runtime(set *artifacts.Set, command string) result.Version {
 		Command:            command,
 		Status:             "valid",
 		SupportedSpecs:     artifacts.SupportedVersions(),
-		ArtifactProvenance: set.Lock().Source.Kind,
+		ArtifactProvenance: bundledProvenance(set),
+	}
+}
+
+// bundledProvenance describes every bundled version rather than only the one
+// passed. The payload carries one provenance string for a list of supported
+// versions, so reporting the given set's kind alone would hide a development
+// snapshot bundled for another version. When the locks disagree, the
+// least-trusted kind is reported, which is the one a release gate acts on.
+func bundledProvenance(set *artifacts.Set) string {
+	provenance := set.Lock().Source.Kind
+	for _, version := range artifacts.SupportedVersions() {
+		other, err := artifacts.Load(version)
+		if err != nil {
+			// Unreachable in practice: every surface reaching here has already
+			// loaded and verified every bundled version. A version that cannot be
+			// loaded at all is not evidence about provenance either way.
+			continue
+		}
+		if kind := other.Lock().Source.Kind; provenanceRank(kind) > provenanceRank(provenance) {
+			provenance = kind
+		}
+	}
+	return provenance
+}
+
+// provenanceRank orders the artifact source kinds the importer mints, most
+// trusted first, so bundledProvenance reports the least-trusted kind among the
+// bundles rather than whichever one it happened to visit last. A kind this
+// runtime does not know is ranked below both: an unrecognized provenance is not
+// evidence of a trustworthy one, and a release gate should see it.
+func provenanceRank(kind string) int {
+	switch kind {
+	case "immutable-git-ref":
+		return 0
+	case "unreleased-local-snapshot":
+		return 1
+	default:
+		return 2
 	}
 }
 

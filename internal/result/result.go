@@ -1,5 +1,12 @@
 package result
 
+import (
+	"errors"
+	"slices"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
+)
+
 const (
 	OutputVersion = "1"
 	CLIName       = "judgment-pack"
@@ -205,30 +212,163 @@ type Example struct {
 // forbids evaluator-conformance claims outright.
 const EvaluationClaim = "none"
 
+// EvaluatorSpecVersion names the exact JPS Core version whose evaluator contract
+// this runtime's experimental evaluator applies: the §8.2 input preflight, the
+// §8.3 portable disposition, and the §8.4 error classes and their precedence.
+//
+// It is reported independently of the pack's own specVersion, and every
+// evaluation payload carries both, because they are two different facts. The
+// contract is applied to a pack of either bundled version whatever that pack
+// declares, and §11 is explicit that these semantics "existed for no consumer
+// under 0.1.0-draft" — so a payload naming only the pack's 0.1.0-draft would read
+// as a 0.1.0-draft disposition, which is not a thing that exists. Naming the
+// contract's version is not a claim under it: §3.4.1 defines the only form an
+// evaluator-conformance claim may take, and this runtime makes none.
+const EvaluatorSpecVersion = "0.2.0-draft"
+
 // HandoffTarget echoes the pack's declared escalation target when a handoff is
-// requested.
+// requested. It is reported beside the disposition and never inside it: §8.3
+// keeps the configured target out of the disposition object, so a disposition
+// can never disagree with the pack it came from.
 type HandoffTarget struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
 }
 
-// Handoff reports whether the evaluation requests a human handoff. A direct
-// exception escalation on a pack with no escalation object is a requested
-// handoff with no Core-defined destination: state "requested", target absent.
+// Handoff is the disposition's handoff object (§8.3): the state, and — exactly
+// when the state is "requested" — the non-empty subset of the retained reasons
+// that triggered the request. A direct exception escalation on a pack with no
+// escalation object is a requested handoff with no Core-defined destination.
 type Handoff struct {
-	State  string         `json:"state"`
-	Target *HandoffTarget `json:"target,omitempty"`
+	State       string   `json:"state"`
+	TriggeredBy []string `json:"triggeredBy,omitempty"`
 }
 
-// Disposition is the portable evaluation result proposed by spec RFC 0006:
-// kind ("outcome", "not-applicable", or "unresolved"), the outcome id exactly
-// when kind is "outcome", a deduplicated sorted reason set (empty exactly when
-// kind is "outcome"), and the handoff axis.
+// Disposition is the portable disposition of JPS Core §8.3: kind ("outcome",
+// "not-applicable", or "unresolved"), the outcome id exactly when kind is
+// "outcome", the retained reason set as a sorted duplicate-free array (empty
+// exactly when kind is "outcome"), and the handoff object. It carries these
+// members and no others.
+//
+// It serializes as its own RFC 8785 canonical form, so the disposition member of
+// any JSON payload this runtime writes without --pretty is the byte sequence
+// §8.3 requires two implementations to agree on, with no second serializer to
+// drift from. Under --pretty the member order and both sets are still canonical,
+// but the payload's indentation reaches inside this member too, so those exact
+// bytes are not present: §8.3 requires canonicalization "where a byte comparison
+// is required", and a byte comparison must recanonicalize either side it did not
+// itself produce.
 type Disposition struct {
 	Kind      string   `json:"kind"`
 	OutcomeID string   `json:"outcomeId,omitempty"`
 	Reasons   []string `json:"reasons"`
 	Handoff   Handoff  `json:"handoff"`
+}
+
+// Canonical returns the disposition's RFC 8785 canonicalization: members ordered
+// by name, both sets serialized as sorted duplicate-free arrays, an absent
+// outcomeId or triggeredBy omitted rather than written as null, and no
+// whitespace. Sorting happens here as well as at the source of the sets, so a
+// caller cannot produce a non-canonical byte sequence by assembling a
+// disposition itself.
+//
+// It refuses a value that is not a legal §8.3 disposition rather than serializing
+// one. Three of that section's rules are iff rules a Go struct cannot express —
+// outcomeId is present iff kind is "outcome", reasons is empty iff kind is
+// "outcome", and triggeredBy is present iff the handoff state is "requested" — so
+// the one place canonicalization lives is also the place that holds a caller to
+// them. The engine builds no such value; an exported type can be handed one.
+func (d Disposition) Canonical() ([]byte, error) {
+	if err := d.validate(); err != nil {
+		return nil, err
+	}
+	handoff := map[string]any{"state": d.Handoff.State}
+	if len(d.Handoff.TriggeredBy) > 0 {
+		handoff["triggeredBy"] = sortedSet(d.Handoff.TriggeredBy)
+	}
+	object := map[string]any{
+		"kind":    d.Kind,
+		"reasons": sortedSet(d.Reasons),
+		"handoff": handoff,
+	}
+	if d.OutcomeID != "" {
+		object["outcomeId"] = d.OutcomeID
+	}
+	return jcs.Encode(object)
+}
+
+// MarshalJSON writes the canonical form of §8.3.
+func (d Disposition) MarshalJSON() ([]byte, error) {
+	return d.Canonical()
+}
+
+// validate holds one disposition to the three iff rules of §8.3. Each is a rule
+// about a member's presence, which is why none of them can be a struct tag: an
+// omitempty tag omits an empty value, and §8.3 makes an empty value in these
+// positions illegal rather than absent.
+func (d Disposition) validate() error {
+	if d.Kind == "outcome" {
+		if d.OutcomeID == "" {
+			return errors.New("§8.3: outcomeId must be present when kind is \"outcome\"")
+		}
+		if len(d.Reasons) > 0 {
+			return errors.New("§8.3: reasons is empty if and only if kind is \"outcome\"")
+		}
+	} else {
+		if d.OutcomeID != "" {
+			return errors.New("§8.3: outcomeId must be absent when kind is not \"outcome\"")
+		}
+		if len(d.Reasons) == 0 {
+			return errors.New("§8.3: reasons is empty if and only if kind is \"outcome\"")
+		}
+	}
+	if (d.Handoff.State == "requested") != (len(d.Handoff.TriggeredBy) > 0) {
+		return errors.New("§8.3: handoff.triggeredBy is present, and non-empty, if and only if state is \"requested\"")
+	}
+	return nil
+}
+
+// sortedSet is one §8.3 reason set as it must be serialized: ascending by
+// Unicode code point, duplicate-free, and an empty set as an empty array.
+func sortedSet(values []string) []string {
+	output := make([]string, 0, len(values))
+	for _, value := range values {
+		if !slices.Contains(output, value) {
+			output = append(output, value)
+		}
+	}
+	slices.Sort(output)
+	return output
+}
+
+// Evaluation-error classes of JPS Core §8.4, in the fixed precedence order that
+// section requires: the first class that applies to one evaluation's inputs is
+// the class reported. An evaluation error is never a disposition.
+const (
+	ClassPackNotConformant            = "pack-not-conformant"
+	ClassMalformedInput               = "malformed-input"
+	ClassUnsupportedRequiredExtension = "unsupported-required-extension"
+	ClassResourceExhaustion           = "resource-exhaustion"
+)
+
+// Evaluation-error phases of JPS Core §8.4: a limit reached while admitting an
+// input (§8.2) belongs to the preflight, and one reached while evaluating an
+// admitted input belongs to the evaluation.
+const (
+	PhasePreflight  = "preflight"
+	PhaseEvaluation = "evaluation"
+)
+
+// EvaluationError names the §8.4 class of an evaluation error and the phase it
+// was reached in. It is the coarse, portable identity of the failure; the
+// diagnostic beside it keeps this runtime's finer JPS-* code, which is the
+// detail and not the class. EvaluatorSpecVersion names the Core version whose
+// §8.4 contract assigned the class, which is a fact about this evaluator and not
+// about the pack that was refused.
+type EvaluationError struct {
+	Class                string `json:"class"`
+	Phase                string `json:"phase"`
+	EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
 }
 
 // TraceEntry records one exception or rule evaluation. The trace is
@@ -263,30 +403,99 @@ type DraftPrototype struct {
 // ConformanceClaim are always set so no consumer can read the payload as a
 // standard: this surface may change or be removed without compatibility
 // promise (ADR-0007).
+// SpecVersion is the version the evaluated pack declares; EvaluatorSpecVersion is
+// the version of the evaluator contract applied to it (§8.2–§8.4). The two are
+// independent, and both are always present: a pack declaring 0.1.0-draft is
+// evaluated under the 0.2.0-draft contract, and §11 says those semantics existed
+// for no consumer under 0.1.0-draft, so the pack's version alone would misdescribe
+// the payload.
 type Evaluation struct {
-	OutputVersion    string          `json:"outputVersion"`
-	Tool             Tool            `json:"tool"`
-	Command          string          `json:"command"`
-	Status           string          `json:"status"`
-	Experimental     bool            `json:"experimental"`
-	ConformanceClaim string          `json:"conformanceClaim"`
-	SpecVersion      string          `json:"specVersion"`
-	DraftPrototype   *DraftPrototype `json:"draftPrototype,omitempty"`
-	Disposition      Disposition     `json:"disposition"`
-	Trace            []TraceEntry    `json:"trace"`
-	Artifact         *Artifact       `json:"artifact,omitempty"`
+	OutputVersion        string          `json:"outputVersion"`
+	Tool                 Tool            `json:"tool"`
+	Command              string          `json:"command"`
+	Status               string          `json:"status"`
+	Experimental         bool            `json:"experimental"`
+	ConformanceClaim     string          `json:"conformanceClaim"`
+	SpecVersion          string          `json:"specVersion"`
+	EvaluatorSpecVersion string          `json:"evaluatorSpecVersion"`
+	DraftPrototype       *DraftPrototype `json:"draftPrototype,omitempty"`
+	Disposition          Disposition     `json:"disposition"`
+	HandoffTarget        *HandoffTarget  `json:"handoffTarget,omitempty"`
+	Trace                []TraceEntry    `json:"trace"`
+	Artifact             *Artifact       `json:"artifact,omitempty"`
+}
+
+// EvaluationCorpusLabel labels every evaluation-corpus run this runtime
+// reports. Running the corpus published for a specification version is not a
+// claim against it: JPS §3.4.1 defines exactly one form of
+// evaluator-conformance claim, this runtime makes none, and whether it ever will
+// is a separate decision this surface does not take.
+const EvaluationCorpusLabel = "corpus results, no conformance claim"
+
+// EvaluationCorpusCase is one evaluation-corpus row's result. Expected and
+// actual are the RFC 8785 canonical dispositions compared byte for byte — both
+// produced by the same canonicalizer, so the comparison is disposition equality
+// as §8.3 defines it and not raw equality of what the manifest stores — or the
+// §8.4 class and phase for a row that expects an error instead of a disposition.
+type EvaluationCorpusCase struct {
+	ID                 string `json:"id"`
+	Origin             string `json:"origin"`
+	SpecSection        string `json:"specSection"`
+	Status             string `json:"status"`
+	Expected           string `json:"expected"`
+	Actual             string `json:"actual"`
+	ExpectedErrorClass string `json:"expectedErrorClass,omitempty"`
+	ActualErrorClass   string `json:"actualErrorClass,omitempty"`
+	ExpectedErrorPhase string `json:"expectedErrorPhase,omitempty"`
+	ActualErrorPhase   string `json:"actualErrorPhase,omitempty"`
+	Detail             string `json:"detail,omitempty"`
+}
+
+// EvaluationCorpus is one run of the evaluation corpus bundled for an exact
+// specification version. Like every experimental-evaluation payload it carries
+// Experimental and ConformanceClaim, and it additionally carries Label so no
+// reader can take a passing run for the claim of §3.4.1.
+type EvaluationCorpus struct {
+	OutputVersion    string                 `json:"outputVersion"`
+	Tool             Tool                   `json:"tool"`
+	Command          string                 `json:"command"`
+	Status           string                 `json:"status"`
+	Experimental     bool                   `json:"experimental"`
+	ConformanceClaim string                 `json:"conformanceClaim"`
+	Label            string                 `json:"label"`
+	SpecVersion      string                 `json:"specVersion"`
+	SuiteVersion     string                 `json:"suiteVersion"`
+	CorpusStatus     string                 `json:"corpusStatus"`
+	CorpusLabel      string                 `json:"corpusLabel"`
+	Provenance       string                 `json:"provenance"`
+	Summary          SuiteSummary           `json:"summary"`
+	Cases            []EvaluationCorpusCase `json:"cases"`
 }
 
 type OperationalError struct {
-	OutputVersion string       `json:"outputVersion"`
-	Tool          Tool         `json:"tool"`
-	Command       string       `json:"command"`
-	Status        string       `json:"status"`
-	Diagnostics   []Diagnostic `json:"diagnostics"`
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	// EvaluationError is present exactly when the failure is an evaluation error
+	// of JPS Core §8.4, naming its class and phase. Its absence means the failure
+	// is an ordinary operational refusal — a bad invocation, an unreadable input,
+	// an internal fault — which §8.4 does not classify.
+	EvaluationError *EvaluationError `json:"evaluationError,omitempty"`
+	Diagnostics     []Diagnostic     `json:"diagnostics"`
 }
 
 func NewOperationalError(command, code, message string) OperationalError {
 	return NewOperationalResult(command, "error", code, message)
+}
+
+// NewEvaluationError reports one JPS Core §8.4 evaluation error: the class and
+// phase in band, and this runtime's finer diagnostic code beside them. No
+// disposition accompanies it, ever.
+func NewEvaluationError(command, status, class, phase, code, message string) OperationalError {
+	output := NewOperationalResult(command, status, code, message)
+	output.EvaluationError = &EvaluationError{Class: class, Phase: phase, EvaluatorSpecVersion: EvaluatorSpecVersion}
+	return output
 }
 
 func NewOperationalResult(command, status, code, message string) OperationalError {

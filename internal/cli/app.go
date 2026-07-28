@@ -99,14 +99,50 @@ func (a *App) experimentalCommand() *cobra.Command {
 	experimental := &cobra.Command{
 		Use:   "experimental",
 		Short: "Experimental operations that claim no conformance and may change or vanish",
-		Long:  "Experimental operations (ADR-0007). Nothing under this command claims any JPS conformance; JPS 0.1.0-draft §3.4 forbids evaluator-conformance claims outright. Behavior may change or be removed without compatibility promise.",
+		Long:  "Experimental operations (ADR-0007, ADR-0010). Nothing under this command claims any JPS conformance. The evaluator is aligned to the evaluator class of JPS Core 0.2.0-draft -- the §8.2 input preflight, the §8.3 portable disposition, and the §8.4 error classes -- and that contract is applied to a pack of either bundled version, whatever the pack itself declares, so every payload names the contract's own version as evaluatorSpecVersion beside the pack's specVersion. Alignment is not a claim: §3.4.1 defines the only form an evaluator-conformance claim may take, this runtime makes none, and whether it ever will is a separate decision. Behavior may change or be removed without compatibility promise.",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()
 		},
 	}
-	experimental.AddCommand(a.evaluateCommand())
+	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand())
 	return experimental
+}
+
+// evaluateCorpusCommand runs the bundled evaluation corpus of the specification
+// version that publishes one. It exists so a harness can drive the rows this
+// runtime's evaluator is aligned to; it reports results and claims nothing, and
+// the payload says as much in band on every run.
+func (a *App) evaluateCorpusCommand() *cobra.Command {
+	format := "human"
+	specVersion := ""
+	command := &cobra.Command{
+		Use:   "evaluate-corpus",
+		Short: "EXPERIMENTAL: run the bundled JPS evaluation corpus; results only, no conformance claim",
+		Long:  "Run the evaluation corpus bundled for one exact JPS version through the experimental evaluator and report every row: the RFC 8785 canonical disposition compared byte for byte against the row's, or the expected JPS §8.4 error class and phase. This reports corpus results and NOTHING else. It is not an evaluator-conformance claim, it does not make one, and JPS §3.4.1 defines the only form such a claim could take; whether this runtime ever makes one is a separate decision. A mismatching row decides nothing by itself -- §3.4 makes a divergence as likely to be a defect in the row as in this implementation.",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if err := validateFormat(format); err != nil {
+				return a.operational("experimental evaluate-corpus", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			evaluator := evaluation.NewEngine(a.engine)
+			output, failure := evaluator.RunCorpus(specVersion, "experimental evaluate-corpus")
+			if failure != nil {
+				return a.evaluationFailure("experimental evaluate-corpus", format, failure)
+			}
+			if err := a.renderEvaluationCorpus(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			code := result.ExitSuccess
+			if output.Status == "mismatch" {
+				code = result.ExitInvalid
+			}
+			return &handledExit{code: code}
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&specVersion, "spec-version", specVersion, "exact JPS version whose evaluation corpus to run; defaults to "+artifacts.EvaluatorDraftVersion)
+	return command
 }
 
 func (a *App) evaluateCommand() *cobra.Command {
@@ -118,7 +154,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
 		Short: "EXPERIMENTAL: apply the JPS §§7-8 experiment to one pack; no conformance claim",
-		Long:  "Apply the experimental JPS Core §§7-8 resolution model, as pinned by the specification's RFC 0006 (Draft), to one conformant pack and one facts document. The result is a disposition, not a conformance claim, an authorization, or an executed action; producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version and every evaluation payload produced this way says so in band.",
+		Long:  "Apply the experimental JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all. The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The §8.2-8.4 contract is JPS Core 0.2.0-draft's and is applied whichever bundled version the pack declares; the payload names both versions. It is not a conformance claim, an authorization, or an executed action; producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version and every evaluation payload produced this way says so in band.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
@@ -138,22 +174,35 @@ func (a *App) evaluateCommand() *cobra.Command {
 					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
 				}
 			}
-			pack, err := a.readPack(args[0], carrier.HardMaxBytes)
+			// An oversized input is reported to the engine rather than refused
+			// here: the byte limit is a §8.2 preflight condition whose §8.4 class
+			// and place in the fixed order the engine assigns. Refusing it at the
+			// read would report a failure with no class at all, and would let the
+			// facts document's limit outrank the pack's conformance.
+			oversized := []string{}
+			pack, packOversized, err := a.readEvaluationInput(args[0])
 			if err != nil {
-				return a.evaluateReadFailure(format, "pack", err)
+				return a.evaluateReadFailure(format, "pack")
 			}
-			facts, err := a.readPack(factsPath, carrier.HardMaxBytes)
+			if packOversized {
+				oversized = append(oversized, "pack")
+			}
+			facts, factsOversized, err := a.readEvaluationInput(factsPath)
 			if err != nil {
-				return a.evaluateReadFailure(format, "facts", err)
+				return a.evaluateReadFailure(format, "facts")
+			}
+			if factsOversized {
+				oversized = append(oversized, "facts")
 			}
 			var evidence []byte
 			if evidencePath != "" {
-				evidence, err = fssecure.ReadRegular(evidencePath, carrier.HardMaxBytes)
+				evidenceOversized := false
+				evidence, evidenceOversized, err = a.readEvaluationInput(evidencePath)
 				if err != nil {
-					return a.evaluateReadFailure(format, "evidence", err)
+					return a.evaluateReadFailure(format, "evidence")
 				}
-				if len(evidence) == 0 {
-					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-EVALUATION-INPUT-JSON", "The evidence file is empty; supply a JSON object, or omit --evidence to treat every requirement as unknown.")
+				if evidenceOversized {
+					oversized = append(oversized, "evidence")
 				}
 			}
 			evaluator := evaluation.NewEngine(a.engine)
@@ -161,9 +210,14 @@ func (a *App) evaluateCommand() *cobra.Command {
 				Command:             "experimental evaluate",
 				SupportedExtensions: supported,
 				RFC0008Quantifiers:  quantifiers,
+				// An empty --evidence file is a supplied document, not an omitted one:
+				// §8.2's absence is the omitted document, and empty bytes are a
+				// malformed input the preflight reaches in its own place in the order.
+				EvidenceSupplied: evidencePath != "",
+				OversizedInputs:  oversized,
 			})
 			if failure != nil {
-				return a.operational("experimental evaluate", format, failure.ExitCode, failure.Code, failure.Message)
+				return a.evaluationFailure("experimental evaluate", format, failure)
 			}
 			if err := a.renderEvaluation(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}
@@ -179,12 +233,31 @@ func (a *App) evaluateCommand() *cobra.Command {
 	return command
 }
 
-// evaluateReadFailure reports a failed evaluation-input read, keeping the
-// byte-limit case as informative as spec validate's.
-func (a *App) evaluateReadFailure(format, name string, err error) error {
+// readEvaluationInput reads one evaluation input and reports an oversized one
+// rather than refusing it.
+//
+// The byte limit belongs to the §8.2 preflight: reaching it means the input was
+// never admitted, which §8.4 classes as pack-not-conformant for the pack and
+// malformed-input for the facts or evidence document, in that fixed order. A
+// bounded read that stopped at the limit therefore returns no bytes and the
+// oversized marker, and the engine reaches the limit at that input's own place
+// in the preflight. Every other read failure is an operational one — the file is
+// not a readable bounded regular file — which §8.4 does not class at all.
+func (a *App) readEvaluationInput(argument string) ([]byte, bool, error) {
+	data, err := a.readPack(argument, carrier.HardMaxBytes)
 	if errors.Is(err, fssecure.ErrTooLarge) {
-		return a.operational("experimental evaluate", format, result.ExitIO, "JPS-RESOURCE-INPUT-BYTE-LIMIT", fmt.Sprintf("The %s input exceeds the hard %d-byte limit.", name, carrier.HardMaxBytes))
+		return nil, true, nil
 	}
+	if err != nil {
+		return nil, false, err
+	}
+	return data, false, nil
+}
+
+// evaluateReadFailure reports a failed evaluation-input read. An input above the
+// byte limit does not reach here: readEvaluationInput hands that condition to the
+// engine, which reports it as the §8.4 evaluation error it is.
+func (a *App) evaluateReadFailure(format, name string) error {
 	return a.operational("experimental evaluate", format, result.ExitIO, "JPS-INPUT-READ", fmt.Sprintf("The %s input could not be read as one bounded regular file or standard input stream.", name))
 }
 
@@ -563,8 +636,11 @@ func requestedCommand(args []string) string {
 			}
 			return "spec"
 		case "experimental":
-			if index+1 < len(args) && args[index+1] == "evaluate" {
-				return "experimental evaluate"
+			if index+1 < len(args) {
+				switch args[index+1] {
+				case "evaluate", "evaluate-corpus":
+					return "experimental " + args[index+1]
+				}
 			}
 			return "experimental"
 		}

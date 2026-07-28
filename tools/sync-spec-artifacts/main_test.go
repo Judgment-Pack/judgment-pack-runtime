@@ -34,3 +34,22 @@ func TestImmutableRevisionSpecRejectsNonExactRefs(t *testing.T) {
 		})
 	}
 }
+
+// The evaluation corpus contributes one manifest, one schema, and one pack
+// fixture per named path. Only a single-segment path under packs/ is imported,
+// so a manifest cannot direct the import at anything else.
+func TestValidateEvaluationPackPath(t *testing.T) {
+	for _, accepted := range []string{"packs/data-request-intake-triage.json", "packs/a1.json"} {
+		if err := validateEvaluationPackPath(accepted); err != nil {
+			t.Errorf("%q must be accepted: %v", accepted, err)
+		}
+	}
+	for _, rejected := range []string{
+		"", "packs/../schema.json", "../packs/a.json", "packs/nested/a.json",
+		"packs/A.json", "packs/a.yaml", "/packs/a.json", "packs\\a.json", "cases/valid/a.json",
+	} {
+		if err := validateEvaluationPackPath(rejected); err == nil {
+			t.Errorf("%q must be rejected", rejected)
+		}
+	}
+}

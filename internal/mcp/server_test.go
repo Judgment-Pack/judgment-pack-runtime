@@ -263,8 +263,14 @@ func TestExperimentalEvaluateTool(t *testing.T) {
 	if refused["isError"] != true {
 		t.Fatalf("a non-conformant pack must be an in-band tool error: %#v", refused)
 	}
-	if text := refused["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "document conformance") {
+	text := refused["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(text, "document conformance") {
 		t.Fatalf("the refusal must be self-sufficient: %q", text)
+	}
+	// The refusal names the JPS §8.4 evaluation-error class, so a calling model
+	// reads the same coarse identity the CLI reports.
+	if !strings.Contains(text, "evaluation error class: pack-not-conformant") || !strings.Contains(text, "phase: preflight") {
+		t.Fatalf("the refusal must name its §8.4 class: %q", text)
 	}
 }
 

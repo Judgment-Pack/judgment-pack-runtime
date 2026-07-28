@@ -10,11 +10,23 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 )
 
-const DraftVersion = "0.1.0-draft"
+// DraftVersion is the specification version every surface selects when a caller
+// names none. EvaluatorDraftVersion is the newer bundled draft, whose Core adds
+// the evaluator conformance class (§3.4) and publishes the evaluation corpus
+// (§3.4.1); bundling it changes no default and claims nothing.
+const (
+	DraftVersion          = "0.1.0-draft"
+	EvaluatorDraftVersion = "0.2.0-draft"
+)
+
+// evaluationManifestPath is the bundled evaluation corpus's index, relative to
+// one artifact set's root.
+const evaluationManifestPath = "evaluation/manifest.json"
 
 //go:embed jps
 var embedded embed.FS
@@ -61,14 +73,14 @@ func (e *UnsupportedVersionError) Error() string {
 }
 
 func SupportedVersions() []string {
-	return []string{DraftVersion}
+	return []string{DraftVersion, EvaluatorDraftVersion}
 }
 
 func Load(version string) (*Set, error) {
-	if version != DraftVersion {
+	if !slices.Contains(SupportedVersions(), version) {
 		return nil, &UnsupportedVersionError{Version: version}
 	}
-	root := path.Join("jps", DraftVersion)
+	root := path.Join("jps", version)
 	lockBytes, err := embedded.ReadFile(path.Join(root, "lock.json"))
 	if err != nil {
 		return nil, fmt.Errorf("read embedded artifact lock: %w", err)
@@ -112,6 +124,37 @@ func (s *Set) ManifestSchema() ([]byte, error) {
 
 func (s *Set) Case(relative string) ([]byte, error) {
 	return s.Read(path.Join("cases", relative))
+}
+
+// HasEvaluationCorpus reports whether this set bundles the evaluation corpus of
+// JPS §3.4.1. A specification version whose Core defines no evaluator class
+// publishes none.
+func (s *Set) HasEvaluationCorpus() bool {
+	_, recorded := s.files[evaluationManifestPath]
+	return recorded
+}
+
+// EvaluationManifest returns the bundled evaluation-corpus manifest bytes.
+func (s *Set) EvaluationManifest() ([]byte, error) {
+	return s.Read(evaluationManifestPath)
+}
+
+// EvaluationManifestSchema returns the schema the evaluation-corpus manifest is
+// carried by.
+func (s *Set) EvaluationManifestSchema() ([]byte, error) {
+	return s.Read(path.Join("evaluation", "manifest.schema.json"))
+}
+
+// EvaluationPack returns one evaluation-corpus pack fixture by its manifest
+// path, which is always a single file directly under packs/. Anything else is
+// refused before a path is built, so a manifest cannot reach an artifact outside
+// the corpus even though every read is also checked against the lock.
+func (s *Set) EvaluationPack(relative string) ([]byte, error) {
+	name, ok := strings.CutPrefix(relative, "packs/")
+	if !ok || name == "" || strings.ContainsRune(name, '/') || !strings.HasSuffix(name, ".json") {
+		return nil, fmt.Errorf("not an evaluation-corpus pack path: %s", relative)
+	}
+	return s.Read(path.Join("evaluation", "packs", name))
 }
 
 func (s *Set) File(relative string) (FileLock, bool) {
