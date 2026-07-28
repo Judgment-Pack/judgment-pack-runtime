@@ -24,10 +24,12 @@ func corpusPack(t *testing.T, name string) []byte {
 
 // extensionPack is a semantically conforming pack that requires one extension
 // capability. Requiring a capability is not a defect in the pack: it is §8.2's
-// fourth preflight step that fails when the caller does not support it.
+// fourth preflight step that fails when the caller does not support it. It comes
+// from the evaluator contract's own bundle, because the evaluator admits only a
+// pack declaring that version (§11, declaredSpecVersion).
 func extensionPack(t *testing.T) []byte {
 	t.Helper()
-	set, err := artifacts.Load(artifacts.DraftVersion)
+	set, err := artifacts.Load(artifacts.EvaluatorDraftVersion)
 	if err != nil {
 		t.Fatal(err)
 	}

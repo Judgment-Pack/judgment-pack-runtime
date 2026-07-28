@@ -164,12 +164,14 @@ func (a *App) renderExample(format string, output result.Example) error {
 
 // renderEvaluationCorpus reports one evaluation-corpus run. The label leads the
 // human output for the same reason it is carried in the JSON: a reader who sees
-// only the pass count must not read a claim into it.
+// only the pass count must not read the claim into it. Corpus results are the
+// claim's required evidence and are not exhaustive evidence of it (§3.4.1), and
+// the label says where the claim itself is.
 func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorpus) error {
 	if format == "json" {
 		return a.writeJSON(output)
 	}
-	fmt.Fprintf(a.out, "EXPERIMENTAL evaluation corpus: %s\n", output.Label)
+	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE evaluation corpus: %s\n", output.Label)
 	if output.Status == "passed" {
 		fmt.Fprintf(a.out, "passed: %d/%d corpus rows matched their expectation\n", output.Summary.Passed, output.Summary.Total)
 	} else {
@@ -199,7 +201,7 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 	if format == "json" {
 		return a.writeJSON(output)
 	}
-	fmt.Fprintln(a.out, "EXPERIMENTAL evaluation (no conformance claim of any kind)")
+	fmt.Fprintln(a.out, "EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)")
 	if prototype := output.DraftPrototype; prototype != nil {
 		// The two wordings mirror the JSON marker's own: a pack that used no
 		// draft operator is a plain pack the published validator accepts, and

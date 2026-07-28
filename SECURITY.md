@@ -27,6 +27,12 @@ Resource-limit failures are operational errors rather than document-invalid resu
 validation establishes only the carrier, structural, and semantic document layers reported in the
 result.
 
+The evaluator bounds the work an admitted input can require, not only the input's size: an evaluation
+above the documented evaluation-work limit is refused with the JPS §8.4 `resource-exhaustion` error and
+no disposition, never processed partway. Both of that class's §10 limits — the work limit and the
+collection-size bound — are stated in the README's
+[experimental evaluation section](README.md#the-two-10-limits-of-the-claimed-class).
+
 Local input files are opened without following a final symlink where the operating system supports
 that primitive, then checked as the same regular file before reading. Suite descendants are also
 checked for traversal and symlinks. These checks do not make a directory safe against a different

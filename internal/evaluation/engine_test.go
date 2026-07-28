@@ -164,8 +164,8 @@ func TestRFC0006AppendixInstances(t *testing.T) {
 			if failure != nil {
 				t.Fatalf("evaluation failed: %s: %s", failure.Code, failure.Message)
 			}
-			if !output.Experimental || output.ConformanceClaim != result.EvaluationClaim {
-				t.Fatalf("evaluation must be labeled experimental with no claim: %+v", output)
+			if !output.Experimental || output.ConformanceClaimReference != result.EvaluationClaimReference {
+				t.Fatalf("evaluation must be labeled experimental and reference the claim document rather than restate a claim: %+v", output)
 			}
 			disposition := output.Disposition
 			if disposition.Kind != testCase.wantKind {
@@ -253,6 +253,64 @@ func TestNonConformantPackIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(failure.Message, "JPS-") {
 		t.Fatalf("the refusal must name the first diagnostic: %q", failure.Message)
+	}
+}
+
+// Only a pack declaring the evaluator contract's own specVersion is evaluated.
+// §11 makes the declared value exact and requires an unedited 0.1.0-draft pack to
+// be re-declared "before an implementation claiming this draft evaluates it", so
+// the refusal is the pack's own §8.4 class in the preflight phase, and the message
+// carries the whole remedy: one edit, the specVersion string. The same pack
+// re-declared — one member changed and nothing else — evaluates to the same
+// disposition, which is what makes the gate a version gate and not a rejection of
+// the pack's content.
+func TestOnlyTheContractsOwnSpecVersionIsEvaluated(t *testing.T) {
+	engine := newTestEngine(t)
+	facts := factsJSON(t, "data-access", "complete", "hard-fail", boolPtr(false))
+	evidence := []byte(`{"intake-form":"present","sponsor-endorsement":"present"}`)
+
+	declared, failure := engine.EvaluateWith(intakePack(t), facts, evidence, Options{Command: "test", EvidenceSupplied: true})
+	if failure != nil {
+		t.Fatalf("the bundled fixture declares %s and must evaluate: %+v", result.EvaluatorSpecVersion, failure)
+	}
+
+	for _, other := range []string{"0.1.0-draft", artifacts.DraftVersion} {
+		var document map[string]any
+		if err := json.Unmarshal(intakePack(t), &document); err != nil {
+			t.Fatal(err)
+		}
+		// Exactly the one edit §11 describes, in reverse.
+		document["specVersion"] = other
+		redeclared, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		output, failure := engine.EvaluateWith(redeclared, facts, evidence, Options{Command: "test", EvidenceSupplied: true})
+		if failure == nil {
+			t.Fatalf("a pack declaring %q must not be evaluated: %+v", other, output.Disposition)
+		}
+		if failure.Class != result.ClassPackNotConformant || failure.Phase != result.PhasePreflight {
+			t.Fatalf("class/phase = %q/%q, want %q/%q", failure.Class, failure.Phase, result.ClassPackNotConformant, result.PhasePreflight)
+		}
+		if failure.Code != "JPS-EVALUATION-PACK-SPEC-VERSION" || failure.ExitCode != result.ExitInvalid {
+			t.Fatalf("failure = %+v", failure)
+		}
+		if output.Status != "" || output.Disposition.Kind != "" {
+			t.Fatalf("a refused evaluation carries no disposition: %+v", output)
+		}
+		// The message states the rule and the remedy, so the refusal is actionable
+		// without reading the specification alongside it.
+		for _, required := range []string{"§11", "re-declared", "one edit", "specVersion", other, result.EvaluatorSpecVersion} {
+			if !strings.Contains(failure.Message, required) {
+				t.Fatalf("the refusal must cite %q: %q", required, failure.Message)
+			}
+		}
+	}
+
+	// The gate is about the declared version and nothing else: re-declaring the
+	// refused pack restores the identical disposition.
+	if _, err := declared.Disposition.Canonical(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -377,7 +435,7 @@ func TestMissingEvidenceBlocksForcedOutcome(t *testing.T) {
 // evaluated with it — errors are not dispositions, and the capability comes
 // from the caller's supported set.
 func TestRequiredExtensionCapabilityGate(t *testing.T) {
-	set, err := artifacts.Load(artifacts.DraftVersion)
+	set, err := artifacts.Load(artifacts.EvaluatorDraftVersion)
 	if err != nil {
 		t.Fatal(err)
 	}

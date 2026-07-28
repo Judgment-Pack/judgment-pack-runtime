@@ -15,8 +15,10 @@ import (
 )
 
 // toolDefinitions is the tools/list payload. Every tool wraps a read-only core
-// operation; all evaluate nothing except experimental_evaluate, the one
-// explicitly EXPERIMENTAL evaluator (ADR-0007), which claims no conformance.
+// operation; all evaluate nothing except experimental_evaluate, the evaluator on
+// this runtime's experimental surface (ADR-0007). No description here states a
+// conformance claim: the claim is stated, in full and only, in CONFORMANCE.md
+// (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
 		{
@@ -87,7 +89,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. This claims NO evaluator conformance of any kind, authorizes nothing, executes nothing, and may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,

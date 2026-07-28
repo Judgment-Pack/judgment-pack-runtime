@@ -12,8 +12,11 @@ The runtime is a **stateless oracle**: `bytes -> result`. Every step below consu
 > *Is what you now hold conformant?*
 
 It cannot distinguish Create from Update, because both arrive as "validate this document." It keeps
-no store, holds no credential, and opens no network connection; its one evaluation surface is the
-explicitly EXPERIMENTAL `experimental_evaluate` (ADR-0007), which claims no conformance. So the authoring
+no store, holds no credential, and opens no network connection; its one evaluation surface is
+`experimental_evaluate` (ADR-0007), whose surface stability is experimental and whose conformance claim
+is stated, in full and only, in [`CONFORMANCE.md`](../CONFORMANCE.md) — a claim about the evaluator, not
+about any pack it reads.
+So the authoring
 loop — the part that holds a document, edits it, saves it, and deletes it — lives entirely in the
 **client**. That is the whole of ADR-0006, and everything here follows from it.
 

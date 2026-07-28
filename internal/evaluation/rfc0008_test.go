@@ -18,7 +18,7 @@ import (
 // only the thing it is about.
 func draftPack(when, onUnknown string) []byte {
 	return []byte(fmt.Sprintf(`{
-  "specVersion": "0.1.0-draft",
+  "specVersion": "0.2.0-draft",
   "id": "https://example.invalid/judgment-packs/rfc0008-row",
   "version": "0.1.0",
   "title": "Synthetic draft RFC 0008 row",
@@ -254,7 +254,7 @@ func TestRFC0008OptInGate(t *testing.T) {
 func TestRFC0008AggregatesInEveryConditionPosition(t *testing.T) {
 	engine := newTestEngine(t)
 	pack := []byte(`{
-  "specVersion": "0.1.0-draft",
+  "specVersion": "0.2.0-draft",
   "id": "https://example.invalid/judgment-packs/rfc0008-positions",
   "version": "0.1.0",
   "title": "Synthetic draft RFC 0008 condition positions",
@@ -472,18 +472,19 @@ func TestRFC0008WorkLimitIsConfigurable(t *testing.T) {
 	pack := draftPack(`{"op":"every","path":"/list","where":{"op":"fact","path":"/ok","operator":"equals","value":true}}`, "escalate")
 	facts := []byte(`{"list":[{"ok":true},{"ok":true},{"ok":true}]}`)
 
-	// The charge is 12 for the aggregate — its node, the six-unit compile of
+	// One unit for §8's own iteration over the pack's single rule, charged before
+	// step 1. Then 12 for the aggregate — its node, the six-unit compile of
 	// "/list" and the five-unit walk — then 10 for the first element, whose
 	// "/ok" is compiled there and whose boolean is charged on both sides of the
-	// comparison, and 6 for each of the other two: 34 exactly.
-	if _, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(34)); failure != nil {
+	// comparison, and 6 for each of the other two: 35 exactly.
+	if _, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(35)); failure != nil {
 		t.Fatalf("a budget equal to the charge must not trip: %+v", failure)
 	}
-	_, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(33))
+	_, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(34))
 	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
 		t.Fatalf("a budget one unit short must trip: %+v", failure)
 	}
-	if !strings.Contains(failure.Message, "33") {
+	if !strings.Contains(failure.Message, "34") {
 		t.Fatalf("the error must name the configured limit: %q", failure.Message)
 	}
 
@@ -570,7 +571,7 @@ func TestRFC0008SuppressedRuleIsNeverCharged(t *testing.T) {
 	engine := newTestEngine(t)
 	pack := func(suppressWhen string) []byte {
 		return []byte(fmt.Sprintf(`{
-  "specVersion": "0.1.0-draft",
+  "specVersion": "0.2.0-draft",
   "id": "https://example.invalid/judgment-packs/rfc0008-suppression",
   "version": "0.1.0",
   "title": "Synthetic draft RFC 0008 suppression row",
@@ -612,12 +613,15 @@ func TestRFC0008SuppressedRuleIsNeverCharged(t *testing.T) {
 	}
 	facts := []byte(fmt.Sprintf(`{"list":[%s]}`, strings.Join(elements, ",")))
 
-	// The exception's literal costs one unit; the rule's aggregate would cost
-	// 136. A budget of one unit therefore admits the whole evaluation exactly
-	// when the suppressed rule is never charged.
-	output, failure := engine.EvaluateWith(pack(`{"op":"literal","value":true}`), facts, nil, draftOptions(1))
+	// Two units for §8's iteration over the one rule and the one exception, one
+	// more for the exception's literal, and the rule's aggregate would cost 136.
+	// A budget of three units therefore admits the whole evaluation exactly when
+	// the suppressed rule's condition is never charged — its own iteration is
+	// charged either way, which is what makes the three units three rather than
+	// one.
+	output, failure := engine.EvaluateWith(pack(`{"op":"literal","value":true}`), facts, nil, draftOptions(3))
 	if failure != nil {
-		t.Fatalf("a suppressed rule must cost nothing: %+v", failure)
+		t.Fatalf("a suppressed rule's condition must cost nothing: %+v", failure)
 	}
 	if output.Disposition.Kind != "outcome" || output.Disposition.OutcomeID != "did-not-hold" {
 		t.Fatalf("disposition = %+v", output.Disposition)
@@ -625,7 +629,7 @@ func TestRFC0008SuppressedRuleIsNeverCharged(t *testing.T) {
 
 	// With the suppression withheld the rule is reached and the same budget is
 	// exhausted, so the row above turns on §8's path and not on the numbers.
-	_, failure = engine.EvaluateWith(pack(`{"op":"literal","value":false}`), facts, nil, draftOptions(1))
+	_, failure = engine.EvaluateWith(pack(`{"op":"literal","value":false}`), facts, nil, draftOptions(3))
 	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
 		t.Fatalf("an evaluated rule must be charged: %+v", failure)
 	}

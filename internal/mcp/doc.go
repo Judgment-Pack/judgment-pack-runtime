@@ -6,8 +6,11 @@
 // an MCP client reaches exactly the same offline core the CLI reaches, over
 // JSON-RPC on stdio instead of argv. The validation tools evaluate no
 // condition and resolve no outcome; the one exception is experimental_evaluate
-// (ADR-0007), which runs the explicitly EXPERIMENTAL, non-conformance-claiming
-// evaluation package and says so in every payload.
+// (ADR-0007), which runs the evaluation package on this runtime's experimental
+// surface. Nothing in this package states a conformance claim: the claim is stated,
+// in full and only, in CONFORMANCE.md, and every payload carries a reference to
+// that file beside the contract version applied
+// (result.EvaluationClaimReference, result.EvaluatorSpecVersion).
 //
 // The server speaks MCP's newline-delimited JSON-RPC 2.0 stdio framing directly,
 // without a third-party SDK, to keep the runtime's dependency set minimal and

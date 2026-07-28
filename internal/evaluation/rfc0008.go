@@ -132,31 +132,21 @@ func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
 	}
 }
 
-// workLimitFailure is the explicit evaluation error RFC 0008 requires when the
-// budget is exhausted. It is an error, never a disposition: the charge is
-// complete before any element is evaluated, so an exhausted budget means no
-// disposition was ever entitled to exist.
-func workLimitFailure(e *evaluator) *Failure {
-	return &Failure{
-		Class: result.ClassResourceExhaustion,
-		Phase: result.PhaseEvaluation,
-		Code:  "JPS-RESOURCE-EVALUATION-WORK-LIMIT",
-		Message: fmt.Sprintf(
-			"The evaluation exceeds this runtime's draft RFC 0008 evaluation-work limit of %d units. The charge is computed before any element is evaluated and does not depend on element order, so no disposition is produced.",
-			e.budget),
-		ExitCode: result.ExitIO,
-	}
-}
-
 // draftPrototype builds the in-band marker every draft-grammar evaluation
-// carries. It states the one thing a reader must not miss: this pack is not
+// carries. It states the two things a reader must not miss: this pack is not
 // valid under the published specification, and the operators it uses are a
 // prototype of an open proposal that may never be accepted.
+//
+// The exclusion is written as a contract fact about the class, not as a statement
+// about a claim: packs using these operators are not inputs the JPS Core
+// 0.2.0-draft evaluator class defines, which is a property of the class the
+// specification publishes. The note says that and points at CONFORMANCE.md; it
+// neither denies a claim nor restates any part of one.
 func draftPrototype(packRoot map[string]any, specVersion string) *result.DraftPrototype {
 	operators := rfc0008Operators(packRoot)
 	note := fmt.Sprintf(
-		"Draft RFC 0008 (bounded collection quantifiers) prototype. The operators are a draft-RFC prototype, not part of JPS %s; a pack using one is NOT valid under it and spec validate rejects it. Nothing here claims conformance of any kind.",
-		specVersion)
+		"Draft RFC 0008 (bounded collection quantifiers) prototype. The operators are a draft-RFC prototype, not part of JPS %s; a pack using one is NOT valid under it and spec validate rejects it. Packs using these operators are not inputs the JPS Core %s evaluator class defines — that class describes conforming packs of that exact specVersion, which this is not — so this result is evidence for nothing about any requirement of that class; see CONFORMANCE.md.",
+		specVersion, result.EvaluatorSpecVersion)
 	if len(operators) == 0 {
 		note = fmt.Sprintf(
 			"Draft RFC 0008 (bounded collection quantifiers) prototype was enabled, but this pack uses no draft operator, so it remains a plain JPS %s pack.",

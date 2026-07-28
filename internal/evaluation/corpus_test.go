@@ -10,9 +10,11 @@ import (
 
 // The bundled evaluation corpus runs in full, and every row's expected
 // disposition is compared to this evaluator's as RFC 8785 canonical bytes — the
-// comparison §8.3 defines. Passing every row is evidence an
-// evaluator-conformance claim would require (§3.4); it is not a claim, and this
-// test asserts nothing beyond the rows.
+// comparison §8.3 defines. Passing every row is the evidence §3.4 requires of the
+// claim this runtime makes (CONFORMANCE.md) and is not that claim: this test
+// asserts nothing beyond the rows, and §3.4.1 is explicit that the rows are not
+// exhaustive evidence of the claim either. A regression here is a failing row, and
+// a failing row blocks the claim.
 //
 // A failing row does not decide who is wrong: §3.4 makes a divergence as likely
 // to be a defect in the row as in this implementation, and the failure message
@@ -30,8 +32,8 @@ func TestBundledEvaluationCorpus(t *testing.T) {
 	if output.Summary.Total != 20 {
 		t.Fatalf("the %s corpus has twenty rows, got %d", artifacts.EvaluatorDraftVersion, output.Summary.Total)
 	}
-	if !output.Experimental || output.ConformanceClaim != result.EvaluationClaim || output.Label != result.EvaluationCorpusLabel {
-		t.Fatalf("a corpus run states in band that it claims nothing: %+v", output)
+	if !output.Experimental || output.ConformanceClaimReference != result.EvaluationClaimReference || output.Label != result.EvaluationCorpusLabel {
+		t.Fatalf("a corpus run references the claim it is evidence for, in band, and states none itself: %+v", output)
 	}
 	for _, item := range output.Cases {
 		if item.Status != "passed" {

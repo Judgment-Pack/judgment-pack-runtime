@@ -8,7 +8,11 @@ import "encoding/json"
 // under 0.1.0-draft, and spec validate rejects it unchanged.
 
 // DefaultWorkBudget is this runtime's §10 evaluation-work limit for one
-// evaluation under the draft grammar, in the work units charged below. It is a
+// evaluation under the draft grammar, in the work units charged below. The Core
+// path has its own, far larger limit and its own collection-size determination
+// (DefaultCoreWorkLimit, CoreCollectionSizeLimit); this one is smaller because
+// the draft grammar is the only condition form with runtime fan-out, which is
+// what a budget in the tens of thousands has to bound. It is a
 // runtime choice, not a portable one: RFC 0008 leaves the common limit open, so
 // two evaluators may pick different numbers and an above-limit input is not
 // portable between them. The number is set so the RFC's own attack sketch — an
@@ -179,6 +183,16 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 
 // evaluate charges one whole condition tree and only then evaluates it.
 //
+// One model serves both paths. It was written for the draft RFC 0008 grammar,
+// whose aggregates make an evaluation-work limit unavoidable, and it is charged
+// on the ordinary Core path too, against DefaultCoreWorkLimit rather than
+// DefaultWorkBudget: §10 requires the class to define an evaluation-work limit,
+// and a model that already prices both sides of every comparison prices Core's
+// conditions correctly as the special case with no aggregates in it. The clauses
+// below that mention exists, every, or uniform are simply unreachable without the
+// opt-in, since no bundled schema admits those operators and the pack is refused
+// as non-conformant before a condition is charged.
+//
 // The accounting model, stated in full, is the candidate RFC 0008 leaves open.
 // It is the third candidate, and each predecessor was broken by a demonstrated
 // attack rather than retired on taste. The first charged a flat unit per node,
@@ -265,11 +279,20 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 //     members arrive in; it bounds the pass whichever one is. The evaluator
 //     then spends less than the bound — it canonicalizes each value once, so a
 //     comparison compares canonical forms — but the charge is the bound.
+//   - Per §8 iteration — resolve charges one unit per authored evidence
+//     requirement, exception, and rule, once and before step 1, whether or not §8
+//     reaches that member's condition. Visiting a member is a step even when no
+//     condition is evaluated: §8 step 2 walks every requirement without
+//     evaluating anything, and a suppressed or step-6-skipped rule is still
+//     visited and still recorded in the trace. Charging it up front keeps the
+//     term order-independent and complete before the walk begins, and it is the
+//     only charge a condition-tree walk cannot express.
 //   - Composition — sibling aggregates add, since the charge is a sum over the
 //     tree; the budget accumulates across every condition of one evaluation.
 //     A condition §8 never reaches is never charged: a suppressed rule, every
 //     rule after a step-6 forced outcome, and everything after a false or
-//     unknown applicability. The total is therefore a property of the §8 path
+//     unknown applicability. Its one-unit iteration is charged, and its condition
+//     is not. The total is therefore a property of the §8 path
 //     rather than of pack and facts alone — but §8 fixes that path, so it is
 //     the same path, and the same total, for every evaluator that follows it.
 //
@@ -288,11 +311,9 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 // report — so this returns unknown only to unwind, and the caller checks
 // exceeded before reading the value.
 func (e *evaluator) evaluate(node any, root any) tri {
-	if e.quantifiers {
-		e.preflight(node, root)
-		if e.exceeded {
-			return triUnknown
-		}
+	e.preflight(node, root)
+	if e.exceeded {
+		return triUnknown
 	}
 	return e.condition(node, root)
 }

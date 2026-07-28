@@ -128,7 +128,10 @@ func buildTestPack(args map[string]string) string {
 	var b strings.Builder
 	b.WriteString("Probe the LOGIC of a judgment pack you hold, using the experimental_evaluate tool.\n")
 	b.WriteString("Validation proved the pack well-formed; this session tests whether it decides what its\n")
-	b.WriteString("author intended. The evaluator is experimental and claims no conformance.\n\n")
+	b.WriteString("author intended. The evaluator's surface is experimental and may change; its conformance\n")
+	b.WriteString("claim is stated, in full and only, in CONFORMANCE.md, and whatever it says there says\n")
+	b.WriteString("nothing about whether this pack decides well. Only a pack declaring specVersion\n")
+	b.WriteString("0.2.0-draft is evaluated (JPS §11: re-declaring is one edit, the specVersion string).\n\n")
 	if pack := strings.TrimSpace(args["pack"]); pack != "" {
 		b.WriteString("The pack under test:\n\n---\n" + pack + "\n---\n\n")
 	}
