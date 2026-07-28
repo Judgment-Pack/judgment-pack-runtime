@@ -4,12 +4,20 @@ This file is the whole of this runtime's conformance claim. No other file, comma
 sentence in this repository makes one, and no other form of claim is definable: Judgment Pack
 Specification Core §3.4.1 permits exactly one, and forbids every other.
 
-Every other surface is **reference-only**. The CLI help, the MCP tool descriptions, the README, the
-architecture notes, and the `conformanceClaimReference` member of every evaluation payload say where
-the claim is — this file — and state no part of it. That is deliberate rather than terse: §3.4.1 fixes
-the entire form a claim may take, so a surface that named the class and the version while omitting the
-corpus version, the results, and the every-row statement would be making the partial claim §3.4.1
-forbids. The claim is stated, in full and only, here.
+Every other surface is **reference-only**: the CLI help, the MCP tool descriptions and rendered
+prompts, the `conformanceClaimReference` member of every evaluation payload, the draft-RFC prototype
+note, the README, the architecture notes, the CHANGELOG entry for this change, and the decision record
+itself. Each says where the claim is — this file — and states no part of it. That is deliberate rather
+than terse: §3.4.1 fixes the entire form a claim may take, so a surface that named the class and the
+version while omitting the corpus version, the results, and the every-row statement would be making the
+partial claim §3.4.1 forbids. The rule is enforced rather than intended: a test walks those surfaces,
+the maintained prose, and the rendered prompts, and fails on a denial, on a claiming sentence, or on any
+statement that assembles the class, the exact version, and the corpus version or its results together
+(`internal/cli/app_test.go`). Two dated records are outside that walk and say so on their face:
+[ADR-0007](docs/adr/0007-experimental-evaluator.md) and
+[ADR-0010](docs/adr/0010-evaluator-aligned-to-core-0.2.0-draft.md) recorded, accurately for the posture
+each recorded, that nothing was claimed; released CHANGELOG sections are dated the same way. Neither is
+a statement about this claim, and neither is edited to match it.
 
 Decision record: [ADR-0011](docs/adr/0011-first-evaluator-conformance-claim.md).
 
@@ -26,20 +34,26 @@ comparison, byte for byte after RFC 8785 canonicalization of both sides. **Every
 applies: the corpus's own `errata.md` records no erratum for this `suiteVersion`, so "every row" means
 every row.
 
-The claim is **effective as of the commit that merges this file to `main`**, and every release built
-from that history carries it thereafter. There is one activation point and no second one: §3.4.1
-attaches a claim to an implementation and an exact `specVersion`, and requires no tag, no release, and
-no publication step, so the source that satisfies the class is the thing that claims — a development
-build from this history makes the same claim its released artifacts do, which is why every such build
-emits the same reference to this file. Anyone can reproduce its evidence offline:
+The claim is **effective as of the commit that merges this file to `main`**, and **builds from that
+activating commit and its descendants carry it until it is withdrawn or replaced — here, in this
+file.** Persistence is not unconditional inheritance: a descendant commit that edits this file
+withdraws or replaces the claim for every build from that commit onward, so what any build carries is
+what this file says at the commit it was built from. There is one activation point and no second one:
+§3.4.1 attaches a claim to an implementation and an exact `specVersion`, and requires no tag, no
+release, and no publication step, so the source that satisfies the class is the thing that claims — a
+development build from this history makes the same claim its released artifacts do, which is why every
+such build emits the same reference to this file. Anyone can reproduce its evidence offline:
 
 ```bash
 judgment-pack experimental evaluate-corpus --spec-version 0.2.0-draft --format json
 ```
 
-The claim covers this runtime's evaluator on every surface that reaches it: `experimental evaluate`,
-`experimental evaluate-corpus`, and the `experimental_evaluate` MCP tool. Every input any of them
-admits declares `specVersion` `0.2.0-draft`, and nothing else is evaluated at all — the evaluator's
+The claim applies to **conforming Core-class inputs reaching this runtime's one shared evaluator**
+through the three surfaces that reach it — `experimental evaluate`, `experimental evaluate-corpus`, and
+the `experimental_evaluate` MCP tool — and **not to draft-RFC prototype inputs**, which this class does
+not define at all and which the last exclusion below states. One evaluator sits behind all three, so a
+surface selects what reaches it rather than carrying a claim of its own. Every input any of them admits
+declares `specVersion` `0.2.0-draft`, and nothing else is evaluated at all — the evaluator's
 admitted version scope and this claim's version scope are the same set, for the reason §11 gives
 below. The `experimental` namespace
 names the **stability** of that surface — it may change or be removed without a compatibility promise —
@@ -62,16 +76,22 @@ and evaluation-work limits, and makes reaching one of them during an evaluation 
   smaller budget of 100,000 units.
 
   The number is derived in code from the carrier's byte cap rather than chosen: it is exactly twice
-  10 MiB, the largest input this runtime admits, and `limits.go` computes it from that constant so the
-  two cannot drift. What that buys, stated exactly: **one full read of every admitted byte always
-  fits** — every unit is backed by at least one byte of an admitted input, two documents reach an
-  evaluation, and each is admitted under the same cap, so reading the whole pack once and the whole
-  facts document once cannot exceed the limit. What it does not buy: **a single maximal cross-document
-  comparison sits at the boundary and may be refused.** One comparison between a near-cap authored
-  value and a near-cap selected value charges both sides and so approaches the same total with §8's
-  fixed per-node and per-iteration charges still to pay; that input is refused as
-  `resource-exhaustion`, and §10 permits it. This runtime does not claim that only amplification is
-  refused.
+  10 MiB, the per-document byte cap every admitted input passes, and `limits.go` computes it from that
+  constant so the two cannot drift. That ratio is an **arithmetic fact about two numbers**, and nothing
+  more: **it gives no guarantee about any whole evaluation**, and none is stated here. Two reasons, both
+  structural: three documents may be admitted rather than two — the pack, the facts document, and an
+  optional evidence-availability document — each under the same cap; and a work unit is charged per
+  *use* rather than once per admitted byte, since the bytes of a pointer and of a selected value are
+  charged again every time a condition reads them, with §8's fixed per-node and per-iteration charges
+  on top. An earlier statement of this claim inferred from the ratio that "one full read of every
+  admitted byte always fits", and that a single maximal cross-document comparison therefore sits
+  exactly at the boundary; **both are withdrawn** — the premise bounds nothing under that charge model,
+  and neither statement was exercised against an admitted input through the accounting path
+  ([ADR-0011](docs/adr/0011-first-evaluator-conformance-claim.md) records the correction). What the
+  limit refuses in practice is amplification — the same large selected value re-read once per candidate
+  or once per condition — and this runtime does not claim that only amplification is refused. Reaching
+  it is `resource-exhaustion` and §10 permits that: the limit is documented, it is not portable, and an
+  input above it is outside the portable claim.
 - **Collection-size limit: 250,000 members** — the carrier's parsed-node cap, which every input is
   admitted under, so no admitted document contains a larger collection and every collection this
   evaluator traverses comes from an admitted document. Because the bound is enforced while *admitting*

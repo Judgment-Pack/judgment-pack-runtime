@@ -89,23 +89,35 @@ Settled constraints:
     it is `resource-exhaustion` in the `evaluation` phase, with no disposition and no partial state.
 
     The number is **derived in code, not written down**: `limits.go` computes it as twice
-    `carrier.HardMaxBytes`, the carrier's byte cap, so at the current 10 MiB cap it is 20,971,520 units
-    and there is no independent constant to drift from the cap it is derived from. The derivation is
-    stated exactly, and it guarantees exactly one thing: **one full read of every admitted byte always
-    fits**, since every unit is backed by at least one byte of an admitted input, two documents reach an
-    evaluation, and each is admitted under the same cap. It does **not** guarantee that a single
-    non-amplified evaluation always fits: **a single maximal cross-document comparison sits at the
-    boundary and may be refused**, because one comparison between a near-cap authored value and a
-    near-cap selected value charges both sides and so approaches the same total with §8's fixed
-    per-node and per-iteration charges still to pay. That input is refused as `resource-exhaustion`,
-    which §10 permits — the limit is documented, it is not portable, and an input above it is outside the
-    portable claim. The earlier draft of this record said the limit was "about twice the largest
+    `carrier.HardMaxBytes`, the carrier's per-document byte cap, so at the current 10 MiB cap it is
+    20,971,520 units and there is no independent constant to drift from the cap it is derived from. That
+    derivation is **the whole of what is stated about the ratio**: it is an arithmetic relation between
+    two numbers, and it guarantees nothing about a whole evaluation.
+
+    **Correction, recorded rather than quietly dropped.** Two earlier drafts of this record made two
+    successive overstatements about that ratio. The first said the limit was "about twice the largest
     admissible input", that such an evaluation "is therefore never refused", and that "what it refuses is
-    amplification"; the arithmetic behind the first was wrong (twice 10 MiB is 20,971,520, not
-    20,000,000) and the other two overstated the guarantee, so all three are **withdrawn** in favor of
-    the two sentences above. Amplification is still what the limit refuses in practice — the same large
-    selected value re-read once per candidate or once per condition — and Core has no runtime fan-out, so
-    a generous default is safe: every row of the bundled corpus charges under 1,000 units.
+    amplification": the arithmetic was wrong (twice 10 MiB is 20,971,520, not 20,000,000) and the last
+    two overstated what a limit can promise. The second replaced them with a guarantee that **one full
+    read of every admitted byte always fits**, inferred from "every unit is backed by at least one byte
+    of an admitted input", plus the paired boundary sentence that **a single maximal cross-document
+    comparison therefore sits exactly at the boundary**. Both of those are now **withdrawn** too, for
+    the reviewer's reasons, which are sound: (1) an evaluation admits *three* documents, not two — pack,
+    facts, and an optional evidence-availability document — each under the same cap, so the admitted
+    bytes alone can exceed twice the cap; (2) "each unit is backed by a byte" is not a one-to-one bound,
+    because the bytes of a pointer and of a selected value are charged again on every use, alongside the
+    per-node and §8 per-iteration charges, so the number of units is not bounded by the inputs' length;
+    and (3) the row that stood behind the guarantee proved only the identity `2C == C+C` — it exercised
+    no admitted input and no actual charge, so the boundary sentence was unverified as well. The
+    identity row is deleted with the guarantee (`limits_test.go` keeps the derivation relation);
+    proving a statement of that shape would need near-cap conformant pack, facts, and evidence fixtures
+    driven through the real accounting path, and this record does not assert one in the meantime.
+    What is left is the derivation, the documented number, and behavior measured rather than inferred:
+    amplification is what the limit refuses in practice — the same large selected value re-read once per
+    candidate or once per condition — Core has no runtime fan-out, and every row of the bundled corpus
+    charges under 1,000 units, which measures those rows and bounds nothing beyond them. Reaching the
+    limit is `resource-exhaustion`, which §10 permits: the limit is documented, it is not portable, and
+    an input above it is outside the portable claim.
   - **Collection-size limit**, 250,000 members — the carrier's parsed-node cap. This is a
     determination, recorded rather than reimplemented: the cap is a whole-document budget, so no
     admitted document contains a larger collection, and every collection a Core evaluation traverses
@@ -143,13 +155,15 @@ Settled constraints:
   admit-either-version rule that followed from it, and nothing else in 0010. ADR-0010 stays immutable and
   is not marked superseded: it recorded the right decision for the posture it recorded, and this record
   is the later decision that changes the posture.
-- **The claim, in §3.4.1's form and nowhere else:** [`CONFORMANCE.md`](../../CONFORMANCE.md), at the
-  repository root, naming the class, the exact `specVersion` `0.2.0-draft`, the corpus `suiteVersion`
-  `0.2.0-draft`, the results obtained, and in its own words that every row of that corpus version
-  passed. A root file rather than a README section, because a claim has to be findable and citable as
-  one document with one scope: the README is a tour of a tool and would bury it between install
-  instructions and exit codes, and an auditor looks for `CONFORMANCE.md`. The README links to it and
-  keeps the limits and the behavior.
+- **The statement itself lives in [`CONFORMANCE.md`](../../CONFORMANCE.md) at the repository root, and
+  this record reproduces no part of it.** §3.4.1 fixes the entire form such a statement may take, so
+  every element of it — the class, the exact version scope, the corpus, the results, and the exclusions —
+  is written there and nowhere else, this record included: a record that enumerated the elements would
+  be a second, partial instance of a form that admits no parts. What this record decides is *that* the
+  file is written and *where*: a root file rather than a README section, because it has to be findable
+  and citable as one document with one scope — the README is a tour of a tool and would bury it between
+  install instructions and exit codes, and an auditor looks for `CONFORMANCE.md`. The README links to it
+  and keeps the limits and the behavior.
 - **Every other surface is reference-only, and none of them restates the claim.** §3.4.1 fixes the whole
   form a claim may take, so a surface naming the class and the version while omitting the corpus version,
   the results, and the every-row statement would be making the partial claim §3.4.1 forbids — the defect
@@ -179,20 +193,21 @@ Settled constraints:
   surfaces and an unconditional in-band value; that is two activation points, and it is withdrawn.
   Releases carry the claim thereafter because they are built from this history, not because a tag
   activates anything.
-- **The evidence, complete:** the bundled twenty-row corpus of `suiteVersion` `0.2.0-draft` passes
-  20/20, compared as §8.3 defines the comparison — the RFC 8785 canonical bytes of both sides, through
-  the same canonicalizer. Corroboration, which §3.4.1 forbids substituting for corpus results and which
-  is therefore recorded as corroboration: the clean-room Python evaluator in the evaluator-experiments
-  repository, derived from the `0.2.0-draft` text alone under the barrier its `CLEAN-ROOM-PROTOCOL.md`
-  states, reproduces all twenty rows, and the committed driver records **20/20 byte-agreement between
-  the two implementations** (`harness/CLASS-AGREEMENT.md`, 2026-07-28). The alignment those runs test
+- **What the evidence had to be, with the results themselves left to `CONFORMANCE.md`.** The basis is
+  the run of the corpus published for the exact version named, compared as §8.3 defines the comparison —
+  the RFC 8785 canonical bytes of both sides, through the same canonicalizer — and the file records the
+  result of that run. §3.4.1 forbids substituting agreement with another implementation for corpus
+  results, so the clean-room Python evaluator in the evaluator-experiments repository — derived from the
+  `0.2.0-draft` text alone under the barrier its `CLEAN-ROOM-PROTOCOL.md` states — and the committed
+  driver's byte-agreement record (`harness/CLASS-AGREEMENT.md`, 2026-07-28) are recorded there as
+  corroboration only, and are not what anything rests on. The alignment those runs test
   was adversarially reviewed twice over before it merged: two internal adversarial verifier passes
   inside the drafting workflow, which absorbed thirteen findings before review, and the recorded
   cross-vendor round on pull request #27 (OpenAI `gpt-5.6-sol`, reviewed SHA `27d6204`) which returned
   one blocker, one major, and three minor findings — every one accepted and implemented — and an
   unusually deep verified-sound list including an independent RFC 8785 cross-check and a byte-comparison
   of default behavior against `main`.
-- **The limits of that evidence, stated at the same volume as the result.** The corpus is a *seed*
+- **The limits of that evidence, quoted rather than summarized, and at the length the result gets.** The corpus is a *seed*
   corpus of twenty rows with a gap list its own README publishes — `conformance/evaluation/README.md`
   as published with `suiteVersion` `0.2.0-draft`, of which this runtime bundles the manifest, that
   manifest's schema, and the four pack fixtures rather than the prose — and the biggest gaps are quoted
@@ -226,12 +241,14 @@ Settled constraints:
   in that record; the labeling discipline behind it is kept and inverted rather than dropped, since a
   surface that overstates the claim — including one that restates part of it — is the same defect in the
   other direction.
-- **The draft-RFC prototype is outside the claim, stated precisely rather than by denial.** The
-  `draftPrototype` note said "Nothing here claims conformance of any kind", which contradicted the same
-  payload's own reference to a claim. It now states the actual scope: the `0.2.0-draft` claim does not
-  cover the RFC 0008 operators, and a pack using one is not an input the claimed class defines — so the
-  result falls outside the claim's scope rather than being an exception to a requirement inside it, which
-  is what §3.4.1 forbids claiming.
+- **The draft-RFC prototype note becomes a contract fact about the class, not a statement about a
+  claim.** The note used to deny conformance of any kind, which contradicted the same payload's own
+  reference to the claim file. It does not replace that denial with a scope sentence about the claim
+  either — saying what a claim excludes states part of the claim, and §3.4.1 admits no parts. What it
+  states instead is a property of the class the specification publishes: packs using RFC 0008 operators
+  are not inputs the JPS Core `0.2.0-draft` evaluator class defines, so such a result is evidence for
+  nothing about any requirement of that class, and the note points at `CONFORMANCE.md` for anything
+  further.
 
 This record **supersedes two determinations of earlier records and nothing else in them.** From
 [ADR-0010](0010-evaluator-aligned-to-core-0.2.0-draft.md): the rejection of its option D, and the
@@ -240,10 +257,13 @@ contract, its two-versions-in-band reporting, its output shape, and its error cl
 unchanged. From [ADR-0007](0007-experimental-evaluator.md): its consequence that this evaluator "claims
 no conformance", carried in its summary note and in the `"conformanceClaim": "none"` envelope it
 specified — that consequence only. Everything else 0007 decided stands: the experimental surface, its
-naming, its inputs and outputs, errors-are-not-dispositions, and its scope limits. Both records stay
-**immutable and accepted**; neither file is edited and neither is marked superseded or deprecated, since
-each recorded the right decision for the posture it recorded. The ADR index annotates 0007's row so a
-reader arriving there is not misled about its claim posture. ADR-0010's own `status` flip from
+naming, its inputs and outputs, errors-are-not-dispositions, and its scope limits. **Neither file is
+edited and neither is marked superseded or deprecated**, since each recorded the right decision for the
+posture it recorded; each keeps the status it actually holds — 0007 `accepted`, 0010 still `proposed` —
+and this is partial supersession, which `docs/adr/README.md` now defines as a determination-level
+relation the index carries as an annotation rather than as a record-level status. The ADR index
+annotates both rows accordingly: 0007's claim posture and 0010's claim-scope determination are each
+noted as superseded by this record, so a reader arriving at either is not misled. ADR-0010's own `status` flip from
 `proposed` to `accepted` on merge is its own follow-up docs change — the flow `docs/adr/README.md` step 3
 describes, which this repository has always carried out in a dedicated commit (ADR-0007's and ADR-0008's
 each did) — so this record neither performs nor depends on it, and 0011 lands `proposed` in the pull

@@ -41,8 +41,9 @@ every row of that corpus version passed — so this README states no part of it 
 other surface: a partial restatement would be the partial claim §3.4.1 forbids. Read that file for the
 claim, its version scope, its evidence, and everything it does not assert, which includes anything at
 all about a pack, its facts, or the wisdom of acting on a disposition (§3.5).
-`judgment-pack experimental evaluate-corpus` runs the bundled evaluation corpus and reports its rows:
-that claim's required, non-exhaustive evidence.
+`judgment-pack experimental evaluate-corpus` runs the bundled evaluation corpus and reports its rows —
+the evidence §3.4.1 requires of a claim of this class, and explicitly not exhaustive evidence of one;
+see [CONFORMANCE.md](CONFORMANCE.md).
 
 That command carries one further opt-in, `--rfc0008-quantifiers`, which is a **draft-RFC
 prototype** per [ADR-0009](docs/adr/0009-draft-rfc-quantifier-prototype.md): it admits the
@@ -66,8 +67,8 @@ judgment-pack spec schema <spec-version>
 judgment-pack spec examples [name]
 judgment-pack mcp
 judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
-judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; outside the claim)
-judgment-pack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the claim's evidence)
+judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
+judgment-pack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 ```
 
 The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the
@@ -307,18 +308,21 @@ rather than a disposition. Both are defined here and enforced in
   phase with no disposition at all.
 
   The number is **derived in code** from the carrier's byte cap rather than chosen: it is exactly twice
-  10 MiB, the largest input this runtime admits, and `limits.go` computes it from that constant so the
-  two cannot drift. Stated exactly, that guarantees one thing and not more: **one full read of every
-  admitted byte always fits** — every unit is backed by at least one byte of an admitted input, two
-  documents reach an evaluation, and each is admitted under the same cap, so reading the whole pack once
-  and the whole facts document once cannot exceed the limit. But **a single maximal cross-document
-  comparison sits at the boundary and may be refused**: one comparison between a near-cap authored value
-  and a near-cap selected value charges both sides, approaching the same total with §8's fixed
-  per-node and per-iteration charges still to pay, and such an input is refused as
-  `resource-exhaustion`. This runtime does not claim that only amplification is refused. Amplification
-  is what the limit refuses in practice — the same large selected value re-read once per `in` candidate
-  or once per condition — and against a 100 KB facts document the limit still admits about two hundred
-  whole-document comparisons. Every row of the bundled evaluation corpus charges under 1,000 units.
+  10 MiB, the per-document byte cap every admitted input passes, and `limits.go` computes it from that
+  constant so the two cannot drift. That ratio is an **arithmetic fact about two numbers**, and nothing
+  more: **it gives no guarantee about any whole evaluation.** Three documents may be admitted rather
+  than two — the pack, the facts document, and an optional evidence-availability document — each under
+  the same cap; and a unit is charged per *use* rather than once per admitted byte, since the bytes of a
+  pointer and of a selected value are charged again every time a condition reads them, with §8's fixed
+  per-node and per-iteration charges on top. An earlier version of this section inferred from the ratio
+  that "one full read of every admitted byte always fits" and that a single maximal cross-document
+  comparison therefore sits exactly at the boundary; **both are withdrawn** — the premise bounds nothing
+  under that charge model, and neither was exercised against an admitted input through the accounting
+  path (ADR-0011 records the correction). Amplification is what the limit refuses in practice — the same
+  large selected value re-read once per `in` candidate or once per condition — and this runtime does not
+  claim that only amplification is refused. Against a 100 KB facts document the limit still admits about
+  two hundred whole-document comparisons, and every row of the bundled evaluation corpus charges under
+  1,000 units: measurements of those inputs, not bounds on inputs no row contains.
   Callers may configure a lower limit per evaluation; the draft-RFC prototype has its own, smaller
   budget of 100,000 units (ADR-0009).
 - **Collection-size limit: 250,000 members** — the 250,000-node carrier cap above, stated as the §10

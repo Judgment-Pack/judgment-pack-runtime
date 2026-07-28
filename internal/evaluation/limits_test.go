@@ -203,26 +203,22 @@ func TestCoreCollectionSizeLimitIsEnforcedAtAdmission(t *testing.T) {
 	}
 }
 
-// The work limit is derived from the carrier's byte cap and not chosen, and the
-// derivation is exactly the one documented: twice the largest admissible input, so
-// one full read of every admitted byte fits and a single maximal cross-document
-// comparison does not. A row that only checked the number would let the constant
-// drift from the cap it is derived from.
+// The work limit is derived from the carrier's byte cap and not chosen: the
+// derivation relation is what this row holds, so the constant cannot drift from the
+// cap it comes from.
+//
+// It asserts nothing beyond that relation, deliberately. An earlier version of this
+// row also checked that twice the cap is not less than the cap plus itself and not
+// more than it — an identity, 2C == C+C, which held for every C and exercised no
+// admitted input and no actual charge. It was there to stand in for a "one full read
+// of every admitted byte always fits" guarantee that limits.go no longer states,
+// because the charge model re-charges pointer bytes and selected values per use and
+// admits a third document; proving anything of that shape needs near-cap pack,
+// facts, and evidence fixtures driven through the real accounting path, not
+// arithmetic on the two constants. The identity is gone with the guarantee.
 func TestCoreWorkLimitIsDerivedFromTheCarrierByteCap(t *testing.T) {
 	if want := int(2 * carrier.HardMaxBytes); DefaultCoreWorkLimit != want {
 		t.Fatalf("DefaultCoreWorkLimit = %d, want exactly twice the carrier byte cap (%d)", DefaultCoreWorkLimit, want)
-	}
-	// One full read of the pack plus one of the facts document: each is admitted
-	// under the byte cap and each unit is backed by at least one byte, so the sum of
-	// the two admissible lengths is at most the limit and never above it.
-	if int64(DefaultCoreWorkLimit) < carrier.HardMaxBytes+carrier.HardMaxBytes {
-		t.Fatalf("one full read of every admitted byte must fit: %d < %d", DefaultCoreWorkLimit, carrier.HardMaxBytes*2)
-	}
-	// And no more than that is claimed: a comparison charging both a near-cap
-	// authored value and a near-cap selected value reaches the same total with §8's
-	// fixed charges still to pay, so it sits at the boundary rather than inside it.
-	if int64(DefaultCoreWorkLimit) > carrier.HardMaxBytes+carrier.HardMaxBytes {
-		t.Fatalf("the limit is exactly twice the cap, so the boundary case is at the boundary: %d > %d", DefaultCoreWorkLimit, carrier.HardMaxBytes*2)
 	}
 }
 

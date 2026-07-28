@@ -41,34 +41,39 @@ import (
 // A work unit is one visited condition node, one §8 iteration over an authored
 // rule, exception, or evidence requirement, one step of a pointer resolution, or
 // one byte of a path, a member name, or a scalar token a comparison has to read.
-// Every unit is backed by at least one byte of an admitted input, so reading one
-// whole admitted document through once charges at most its length in units. Two
-// documents reach an evaluation — the pack and the facts document — and each is
-// admitted under the same byte cap, which is what twice that cap buys and what it
-// does not:
 //
-//   - One full read of every admitted byte always fits. Reading the whole pack
-//     once and the whole facts document once charges at most HardMaxBytes +
-//     HardMaxBytes units, which is this limit, so an evaluation that reads each of
-//     its inputs through once is never refused for work.
-//   - A single maximal cross-document comparison sits exactly at the boundary and
-//     may be refused. One comparison between a near-cap authored value and a
-//     near-cap selected value charges both sides, so it approaches the same total
-//     with the fixed per-node and per-iteration charges of §8 still to pay, and
-//     those charges push it over. Such an input is refused as resource-exhaustion,
-//     with no disposition, and §10 permits that: the limit is documented, it is not
-//     portable, and an input above it is outside the portable claim.
+// The ratio is an arithmetic fact and nothing else: this default is exactly twice
+// the per-document carrier byte cap, computed here from that cap. It buys no
+// guarantee about a whole evaluation, and none is offered:
 //
-// So the guarantee is the first bullet and not more than it. What this limit
-// mainly refuses in practice is amplification — Core conditions have no runtime
-// fan-out, and the one place a small condition can buy large work is the value its
-// pointer selects, once per candidate of an in condition or once per condition
-// over the same large value — but "only amplification is refused" would be false,
-// and it is not claimed. Against a 100 KB facts document the limit admits about
-// two hundred whole-document comparisons; against the values a hand-authored pack
-// compares it is unreachable. Every row of the bundled evaluation corpus charges
-// under 1,000 units, four orders of magnitude inside this limit
-// (TestCoreWorkLimitNeverTripsOnTheCorpus).
+//   - Three documents may be admitted, not two — the pack, the facts document, and
+//     an optional evidence-availability document — each under the same byte cap, so
+//     the admitted bytes of one evaluation can already exceed twice that cap.
+//   - A unit is charged per *use*, not once per admitted byte. The bytes of a
+//     pointer and of a selected value are charged again each time a condition reads
+//     them, and the per-node and per-iteration charges of §8 are charged on top, so
+//     one admitted byte can cost many units and the count is not bounded by the
+//     input's length.
+//
+// An earlier draft of this comment inferred from "every unit is backed by at least
+// one byte of an admitted input" that one full read of every admitted byte always
+// fits, and that a single maximal cross-document comparison therefore sits exactly
+// at the boundary. Both statements are **withdrawn**: the premise bounds nothing,
+// because the charge model re-charges the same bytes and admits a third document,
+// and neither statement was ever exercised against an admitted input through the
+// real accounting path. What remains is the derivation — which keeps the number
+// from drifting from the cap it comes from — and the measured behavior below.
+//
+// What this limit mainly refuses in practice is amplification: Core conditions have
+// no runtime fan-out, and the one place a small condition can buy large work is the
+// value its pointer selects, once per candidate of an in condition or once per
+// condition over the same large value. "Only amplification is refused" would be
+// false, and it is not claimed either. Against a 100 KB facts document the limit
+// admits roughly two hundred whole-document comparisons; against the values a
+// hand-authored pack compares it is unreachable. Every row of the bundled
+// evaluation corpus charges under 1,000 units, four orders of magnitude inside this
+// limit (TestCoreWorkLimitNeverTripsOnTheCorpus), which is a measurement rather
+// than a bound on inputs no row contains.
 const DefaultCoreWorkLimit = int(2 * carrier.HardMaxBytes)
 
 // CoreCollectionSizeLimit is this runtime's §10 collection-size limit on the

@@ -70,8 +70,9 @@ the collection-size limit of `internal/evaluation/limits.go` — and reaching th
 `resource-exhaustion` on the ordinary Core path, not only under the draft-RFC opt-in. The conformance
 claim for this evaluator is stated, in full and only, in [`CONFORMANCE.md`](../CONFORMANCE.md) (ADR-0011);
 this document states no part of it and every payload carries a reference to that file rather than a
-claim. `experimental evaluate-corpus` runs the bundled evaluation corpus and reports row results, which
-§3.4.1 makes that claim's required and non-exhaustive evidence rather than the claim.
+claim. `experimental evaluate-corpus` runs the bundled evaluation corpus and reports row results: the
+evidence §3.4.1 requires of a claim of this class, non-exhaustive by that section's own terms, and not a
+claim — see [`CONFORMANCE.md`](../CONFORMANCE.md).
 
 ## Packages
 

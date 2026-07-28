@@ -135,14 +135,17 @@ func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
 // draftPrototype builds the in-band marker every draft-grammar evaluation
 // carries. It states the two things a reader must not miss: this pack is not
 // valid under the published specification, and the operators it uses are a
-// prototype of an open proposal that may never be accepted — and therefore that
-// the claim in CONFORMANCE.md does not cover this result, because a pack using a
-// draft operator is not an input the claimed class defines. The note is precise
-// about that scope rather than denying a claim this runtime makes elsewhere.
+// prototype of an open proposal that may never be accepted.
+//
+// The exclusion is written as a contract fact about the class, not as a statement
+// about a claim: packs using these operators are not inputs the JPS Core
+// 0.2.0-draft evaluator class defines, which is a property of the class the
+// specification publishes. The note says that and points at CONFORMANCE.md; it
+// neither denies a claim nor restates any part of one.
 func draftPrototype(packRoot map[string]any, specVersion string) *result.DraftPrototype {
 	operators := rfc0008Operators(packRoot)
 	note := fmt.Sprintf(
-		"Draft RFC 0008 (bounded collection quantifiers) prototype. The operators are a draft-RFC prototype, not part of JPS %s; a pack using one is NOT valid under it and spec validate rejects it. The evaluator-conformance claim in CONFORMANCE.md, made against JPS Core %s, does not cover these operators: a pack using one is not an input the claimed class defines, so this result falls outside that claim's scope rather than being an exception to any requirement inside it.",
+		"Draft RFC 0008 (bounded collection quantifiers) prototype. The operators are a draft-RFC prototype, not part of JPS %s; a pack using one is NOT valid under it and spec validate rejects it. Packs using these operators are not inputs the JPS Core %s evaluator class defines — that class describes conforming packs of that exact specVersion, which this is not — so this result is evidence for nothing about any requirement of that class; see CONFORMANCE.md.",
 		specVersion, result.EvaluatorSpecVersion)
 	if len(operators) == 0 {
 		note = fmt.Sprintf(

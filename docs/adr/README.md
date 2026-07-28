@@ -24,6 +24,11 @@ when** it became that way. architecture.md links out to the relevant ADR rather 
 3. On merge, set `status: accepted`. ADRs are immutable once accepted: a later change is a **new**
    ADR that supersedes the old one (which is then marked `superseded by NNNN`), never an edit.
 
+**Partial supersession.** A later ADR may supersede a **named determination** of an earlier record
+without superseding the record: the earlier record keeps its own status and its text is not edited,
+and the index row for it carries the annotation naming what was superseded and by which record.
+Record-level `superseded by NNNN` is for a record no longer in force as a whole.
+
 ## Review of material decisions
 
 A **material** decision in this runtime follows the interim review regime recorded in the
@@ -101,5 +106,5 @@ authority, and following it confers no conformance status on anything.
 | [0007](0007-experimental-evaluator.md)                   | Ship an experimental evaluator behind an explicit experimental surface          | accepted; claim posture superseded by [0011](0011-first-evaluator-conformance-claim.md) |
 | [0008](0008-mcp-prompts-authoring-method.md)             | Serve authoring method as MCP prompts; the intelligence stays in the client     | accepted |
 | [0009](0009-draft-rfc-quantifier-prototype.md)           | Prototype spec RFC 0008 quantifiers behind an opt-in experimental flag          | proposed |
-| [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md)    | Retarget the experimental evaluator at 0.2.0-draft's evaluator class; claim nothing | proposed |
+| [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md)    | Retarget the experimental evaluator at 0.2.0-draft's evaluator class; claim nothing | proposed; claim-scope determination superseded by [0011](0011-first-evaluator-conformance-claim.md) |
 | [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | proposed |

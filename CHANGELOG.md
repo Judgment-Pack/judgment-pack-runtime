@@ -4,19 +4,16 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- **Claim evaluator conformance against JPS Core `0.2.0-draft`** (ADR-0011), in the one form §3.4.1
-  permits and in one place only: the new root [`CONFORMANCE.md`](CONFORMANCE.md), which names the class,
-  the exact `specVersion`, the corpus `suiteVersion` `0.2.0-draft`, the results obtained — **every one of
-  its twenty rows passed**, no erratum cited because none exists — and, at the same length, what the
-  claim does not assert. The evidence: the bundled corpus 20/20 byte-exact, a clean-room Python lineage
-  independently reproducing all twenty rows, and 20/20 byte-agreement between the two implementations;
-  both trace to one maintainer's direction, so that agreement corroborates rather than independently
-  confirms, and the corpus is a twenty-row seed whose own gap list the ADR quotes. The claim is scoped
-  to one exact version and is not inherited (§11), asserts compliance for every input this evaluator
-  admits and not merely the ones it ran, and asserts nothing whatever about a pack, its facts, its
-  evidence, an authorization, or the wisdom of acting on a disposition (§3.5). The claim is **effective
-  as of the commit that merges `CONFORMANCE.md` to `main`**, and releases built from that history carry it
-  thereafter: §3.4.1 requires no tag, so there is one activation point and no release condition.
+- **Take the §3.4.1 conformance decision, and add the root [`CONFORMANCE.md`](CONFORMANCE.md) it is
+  stated in** (ADR-0011). This entry is **reference-only**, deliberately: §3.4.1 fixes the entire form
+  such a statement may take, so the class, the version scope, the corpus, the results, the evidence and
+  its limits, the activation point, and everything not asserted are in that file and in no other
+  sentence in this repository — a partial restatement here would be the partial form §3.4.1 forbids.
+  Read `CONFORMANCE.md` for all of it; what follows is what changed in this runtime to make the
+  decision takeable, and each item is a change to behavior, output, or documentation rather than a
+  restatement of the file. Activation is not release-conditional — §3.4.1 requires no tag — so a
+  development build from this history behaves exactly like a released one, and `CONFORMANCE.md` states
+  where activation begins and how long it persists.
   - **Breaking: the evaluator now evaluates only a pack declaring `specVersion` `0.2.0-draft`.** §11
     makes the declared value exact — an unedited `0.1.0-draft` pack "must be re-declared before an
     implementation claiming this draft evaluates it" — so a pack declaring any other version is refused
@@ -38,10 +35,11 @@ All notable changes to tagged releases are documented here.
     requirement, exception, and rule, charged before §8 step 1. Each condition tree's charge completes
     before any predicate in it runs, so an exhausted limit is an explicit `resource-exhaustion` error in
     the `evaluation` phase with no disposition and no partial state, never a truncated result. The
-    number is **derived in code** as twice the carrier's 10 MiB byte cap, so it cannot drift from it, and
-    the guarantee is stated exactly: one full read of every admitted byte always fits, while a single
-    maximal cross-document comparison sits at the boundary and may be refused. Every row of the bundled
-    corpus charges under 1,000 units.
+    number is **derived in code** as twice the carrier's 10 MiB per-document byte cap, so it cannot
+    drift from it. That ratio is an arithmetic fact about two numbers and **gives no whole-evaluation
+    guarantee**: three documents may be admitted, and a unit is charged per use rather than once per
+    admitted byte. Every row of the bundled corpus charges under 1,000 units, which measures those rows
+    and bounds nothing else.
   - The **collection-size limit is the carrier's 250,000-node cap**, documented as the §10 limit it is
     rather than duplicated as a second mechanism: every input is admitted under that cap, so no admitted
     document holds a larger collection and Core constructs none of its own. Reaching it is
@@ -55,7 +53,14 @@ All notable changes to tagged releases are documented here.
     stated, in full and only, in `CONFORMANCE.md`, and no sentence outside that file states any part of
     it. That is §3.4.1's requirement and not a style choice: it fixes the entire form a claim may take, so
     a surface naming the class and the version while omitting the corpus version, the results, and the
-    every-row statement would be making a partial claim §3.4.1 forbids.
+    every-row statement would be making a partial claim §3.4.1 forbids. The rule is **enforced over the
+    maintained prose too**, not only over the runtime's output: the inventory test walks this CHANGELOG's
+    Unreleased section, the README, every document under `docs/`, the decision record, and the *rendered*
+    MCP prompts, and it fails on an assembled claim — one statement holding the class, the exact version,
+    and the corpus version or its results — as well as on a claiming or denying phrase. Two dated records
+    (ADR-0007, ADR-0010) and released sections of this file are outside the walk, since neither is a
+    statement about the current posture and rewriting decision history to match one would be the worse
+    defect.
   - **Breaking, with `outputVersion` incremented from `"1"` to `"2"` on every payload.** The in-band
     `conformanceClaim` member — which carried `"none"` — is **removed** and replaced by
     `conformanceClaimReference`, whose value is the fixed string `"CONFORMANCE.md"`: a locator, not a
@@ -83,7 +88,7 @@ All notable changes to tagged releases are documented here.
 - Align the EXPERIMENTAL evaluator to the evaluator conformance class of Core `0.2.0-draft`
   (ADR-0010), under the `experimental` namespace and claiming nothing *as that change landed* — JPS
   §3.4.1 defines the one form an evaluator-conformance claim may take, and taking that decision was
-  left to a separate ADR, which the entry below is. The contract is applied to a
+  left to a separate ADR, which the entry above is. The contract is applied to a
   pack of either bundled version whatever that pack declares, so every evaluation payload and every
   `evaluationError` now names the contract's own version in a new `evaluatorSpecVersion` member beside
   the pack's `specVersion`: §11 says these semantics existed for no consumer under `0.1.0-draft`, so a
@@ -120,7 +125,7 @@ All notable changes to tagged releases are documented here.
     oversized facts document no longer outranks a non-conformant pack. `resource-exhaustion` is the one
     class of the evaluation phase, and as this change left it, it was reached only by the
     `--rfc0008-quantifiers` work budget — no evaluation-work charge was levied on the Core path at all.
-    The conformance-claim entry below closes that gap in the same release, so the `resource-exhaustion`
+    The conformance-claim entry above closes that gap in the same release, so the `resource-exhaustion`
     a consumer sees is the Core path's too. Both surfaces report the same envelope: an `experimental_evaluate` refusal
     is an in-band MCP tool error whose `structuredContent` is the `evaluationError` payload the CLI
     writes, so the class, the phase, and `evaluatorSpecVersion` are machine-readable there too rather
@@ -137,11 +142,11 @@ All notable changes to tagged releases are documented here.
   exact specification version and reports every row: the disposition compared as §8.3 defines
   disposition equality — both sides through the same canonicalizer, so a set's stored order is not a
   difference — or the expected §8.4 class and phase. Its output is labelled as corpus results in both
-  formats and a mismatch exits 1. **A run is not the claim**: §3.4.1 makes corpus results the required
-  and non-exhaustive evidence for the one claim it permits, and that claim is `CONFORMANCE.md`'s (see
-  the entry below). The bundled `suiteVersion` `0.2.0-draft` corpus runs clean in this build, 20 rows
-  and 20 passed; run the verb for the current result, since a mismatching row would decide nothing by
-  itself (§3.4). The verb is CLI only; the MCP surface does not expose it.
+  formats and a mismatch exits 1. **A run is not a claim**: §3.4.1 makes corpus results the required
+  and non-exhaustive evidence a statement of that class rests on, and this repository states one in full
+  and only in `CONFORMANCE.md` (see the entry above). Run the verb for the current result rather than
+  reading one out of a changelog, since a mismatching row would decide nothing by itself (§3.4). The
+  verb is CLI only; the MCP surface does not expose it.
 
 ## 0.3.0 - 2026-07-28
 
