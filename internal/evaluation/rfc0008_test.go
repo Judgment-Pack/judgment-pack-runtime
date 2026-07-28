@@ -504,13 +504,15 @@ func TestRFC0008WorkLimitIsConfigurable(t *testing.T) {
 // comparison pass per member — 2,204,711 units for the 400 members below, which
 // the default budget refused. Deciding equality on the tokens removes both the
 // quadratic and the unknown: one representative absorbs the members, the charge
-// is a sum over them, and the collection produces a disposition.
+// is a sum over them plus one reread of the largest value per comparison, and
+// the collection produces a disposition.
 func TestRFC0008HugeNumericTokensAreLinearAndDecided(t *testing.T) {
 	engine := newTestEngine(t)
 	pack := draftPack(`{"op":"uniform","path":"/list","at":"/cabin"}`, "escalate")
 	// Distinct values, each a fourteen-byte token — 1001e999999999 and its
 	// siblings — so every member costs the same and the arithmetic below is by
-	// hand: six units to step the compiled "/cabin" and fifteen for the token.
+	// hand: six units to step the compiled "/cabin", fifteen for the token, and
+	// fifteen for the one comparison the member takes part in.
 	facts := func(members int) string {
 		items := make([]string, 0, members)
 		for index := 1; index <= members; index++ {
@@ -521,19 +523,23 @@ func TestRFC0008HugeNumericTokensAreLinearAndDecided(t *testing.T) {
 	const condition = `{"op":"uniform","path":"/list","at":"/cabin"}`
 
 	// Linear, with no quadratic term hiding in it: doubling the members adds
-	// exactly one per-member charge per added member.
+	// exactly one per-member charge and one reread per added member. The reread
+	// term is (n-1) times the largest resolved value, and every value here is
+	// the same fifteen units, so each further member adds six to step "/cabin",
+	// fifteen for its own token, and fifteen for the comparison it takes part
+	// in — a constant per member, not a term that grows with the collection.
 	small, large := chargeOf(t, condition, facts(200)), chargeOf(t, condition, facts(400))
-	if want := 200 * (6 + 15); large-small != want {
+	if want := 200 * (6 + 15 + 15); large-small != want {
 		t.Fatalf("charges %d and %d differ by %d; 200 further members must cost %d", small, large, large-small, want)
 	}
 
-	// 8,419 units for the 400 members, against the default 100,000: the
+	// 14,404 units for the 400 members, against the default 100,000: the
 	// collection is evaluated rather than refused, and it decides — the tokens
 	// are pairwise unequal, so clause 3 makes the rule false and the pack falls
 	// back rather than escalating an unknown.
 	output, failure := engine.EvaluateWith(pack, []byte(facts(400)), nil, draftOptions(0))
 	if failure != nil {
-		t.Fatalf("400 members at 21 units apiece must fit the default budget: %+v", failure)
+		t.Fatalf("400 members at 36 units apiece must fit the default budget: %+v", failure)
 	}
 	if output.Disposition.Kind != "outcome" || output.Disposition.OutcomeID != "did-not-hold" {
 		t.Fatalf("disposition = %+v; distinct huge tokens are unequal, not unknown", output.Disposition)

@@ -72,22 +72,34 @@ Settled constraints:
   in full in the code — a work unit, a preflight charge complete before any element of a condition
   tree is evaluated and invariant under any permutation of the elements, ragged nesting charged as
   Σᵢ|Bᵢ|, Boolean branches a short-circuiting evaluator never reaches charged anyway, deep equality
-  charged by the size of both values compared, `uniform` charged per member — one pass, since §7.4
-  equality is total and one representative absorbs the members — siblings additive. A unit is
+  charged by the size of both values compared, `uniform` charged per member *plus a reread term*,
+  siblings additive. That term is `(n-1) × max` over the `n` resolved `at`-values, and it is what
+  the per-member charge alone missed: §7.4 equality is total, so one representative absorbs the
+  members it equals and there are `n-1` comparisons rather than `n²/2`, but the representative is
+  itself one of the values and each of those comparisons can read the whole of it — one long token
+  among short equal ones was work proportional to `long × members` priced at `long + members`. The
+  maximum is taken over the *set* of resolved values rather than over the elected representative, so
+  the term bounds the pass whichever member is elected and is the same number under any permutation.
+  The evaluator spends less than the bound, canonicalizing each value's number tokens once so that
+  repeated comparisons compare canonical forms, but the charge is the bound. A unit is
   byte-sensitive wherever the processing it stands for is: a pointer costs its path's bytes to
   compile — charged before the scan runs, and once per distinct authored pointer, because the
-  compiled form is then cached — plus its token bytes per resolution, a scalar costs its token
-  length, and `evidence-present` costs the bytes of the requirement id it looks up, so a long path,
-  a long operand, or a long identifier cannot buy unbounded work for one flat unit. Both *sides* of
-  a comparison are priced, which is why the preflight resolves a `fact`'s pointer and not only an
-  aggregate's: the operand is the half the pack's author wrote, and charging it alone left the half
+  compiled form is then cached — plus one step per reference token and those tokens' bytes per
+  resolution, so a pointer of a hundred empty reference tokens costs a hundred traversals rather
+  than one; a scalar costs its token length, and `evidence-present` costs the bytes of the
+  requirement id it looks up, so a long path, a long operand, or a long identifier cannot buy
+  unbounded work for one flat unit. Both *sides* of a comparison are priced, which is why the
+  preflight resolves a `fact`'s pointer and not only an aggregate's: the operand is the half the
+  pack's author wrote, and charging it alone left the half
   the facts document supplies free — a two-byte operand compared against a megabyte of runtime JSON,
   once per element. A `fact` therefore costs its pointer plus the value that pointer selected plus
   the authored operand, and `in` charges the selected value once per candidate. This is the third
   candidate model, and each predecessor was retired by a demonstrated attack — the flat pointer
-  charge, then the unpriced selected value — rather than by taste. The charge is *not*
-  duplication-invariant: a duplicated element is one more element and is charged like one. Only the
-  condition's value is duplication-invariant, and only while both inputs fit the limits, which is
+  charge, then the unpriced selected value — rather than by taste; the third has since been repaired
+  twice under the same discipline, once for the unpriced repeated representative comparison above
+  and once for the flat per-resolution pointer step. The charge is *not* duplication-invariant: a
+  duplicated element is one more element and is charged like one. Only the condition's value is
+  duplication-invariant, and only while both inputs fit the limits, which is
   what RFC 0008's result-invariance wording says. Exhaustion is an explicit evaluation error
   (`JPS-RESOURCE-EVALUATION-WORK-LIMIT`), never a disposition. The budget is also this runtime's §10
   collection-size limit, which RFC 0008 raises to a MUST: the bound is derived, not a second knob.
@@ -98,8 +110,12 @@ Settled constraints:
   work-limit failure is reported through the ordinary operational-error envelope, which carries no
   `draftPrototype` member and names the draft codes instead.
 - **What does not change:** `spec validate`, the conformance corpus, the exit classes, the MCP
-  surface, and the evaluator without the flag. No conformance claim of any kind is made or implied;
-  Core §3.4 forbids one under `0.1.0-draft` whatever is implemented.
+  surface, and the evaluator without the flag — with one exception, which the CHANGELOG records as
+  its own entry: the §7.4 equality decision above applies unconditionally, flag or no flag, so an
+  `equals`, `not-equals`, or `in` over a pair of numbers no arithmetic type can hold now decides
+  where the experimental evaluator previously produced `unknown`. Everything else the flag buys is
+  behind the flag. No conformance claim of any kind is made or implied; Core §3.4 forbids one under
+  `0.1.0-draft` whatever is implemented.
 
 This is a decision under [0007](0007-experimental-evaluator.md)'s umbrella, not an amendment to it:
 the surface, the labeling discipline, and the no-claim posture are ADR-0007's, and this record adds

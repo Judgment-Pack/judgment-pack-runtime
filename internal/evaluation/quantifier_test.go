@@ -3,6 +3,7 @@ package evaluation
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -471,12 +472,13 @@ func TestRFC0008DuplicationRaisesTheChargeAndKeepsTheValue(t *testing.T) {
 //
 // Two quantities recur, so they are stated once here rather than in every row.
 // A pointer costs 1+len(path) the first time this evaluation compiles it and
-// 1+Σlen(token) for each resolution, so "/ok" costs 4+3 = 7 on first use and 3
-// on every later one, "/list" costs 6+5 = 11 then 5, "/value" and "/cabin" cost
-// 7+6 = 13 then 6, "/rows" costs 6+5 = 11 then 5, "/cells" costs 7+6 = 13 then
-// 6, "/fare" costs 6+5 = 11 then 5, and "/missing" costs 9+8 = 17. A scalar
-// value costs 1 plus its token length, so true costs 1, "Y" costs 2, and the
-// number 1 costs 2.
+// max(1,tokens)+Σlen(token) for each resolution — one traversal per reference
+// token, empty ones included — so the single-token "/ok" costs 4+3 = 7 on first
+// use and 3 on every later one, "/list" costs 6+5 = 11 then 5, "/value" and
+// "/cabin" cost 7+6 = 13 then 6, "/rows" costs 6+5 = 11 then 5, "/cells" costs
+// 7+6 = 13 then 6, "/fare" costs 6+5 = 11 then 5, and "/missing" costs 9+8 =
+// 17. A scalar value costs 1 plus its token length, so true costs 1, "Y" costs
+// 2, and the number 1 costs 2.
 //
 // A fact charges both sides of its comparison: the operand its author wrote and
 // the value its pointer selected. Every row over a resolving fact therefore
@@ -497,6 +499,14 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 			facts:     `{"ok":true}`,
 			want:      10,
 			why:       "one node, the compile and one resolution of \"/ok\" (7), one unit for the boolean it selected, and one for the boolean operand",
+		},
+		{
+			name:      "pointer-costs-one-step-per-reference-token-including-empty-ones",
+			condition: `{"op":"fact","path":"/a////b","operator":"equals","value":true}`,
+			facts:     `{"a":{"":{"":{"":{"b":true}}}}}`,
+			want:      18,
+			why: "one node, 8 to compile the seven-byte path, and 7 to resolve it — five reference tokens, three of them empty, is five map traversals over two bytes of token — plus one unit for the boolean selected and one for the operand; " +
+				"charging a flat step would have priced those five traversals at three units",
 		},
 		{
 			name:      "fact-charges-the-selected-value-as-well-as-the-operand",
@@ -588,22 +598,24 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 			name:      "uniform-charges-members-and-selected-values",
 			condition: `{"op":"uniform","path":"/list","at":"/fare"}`,
 			facts:     `{"list":[{"fare":{"code":"Y"}},{"fare":{"code":"Y"}},{}]}`,
-			want:      47,
-			why:       "12 for the aggregate, 11 then 5 then 5 for the three resolutions of \"/fare\", and 7 for each of the two objects that resolved: the object, its four-byte member name, and the two-unit string",
+			want:      54,
+			why: "12 for the aggregate, 11 then 5 then 5 for the three resolutions of \"/fare\", 7 for each of the two objects that resolved (the object, its four-byte member name, and the two-unit string), " +
+				"and a reread term of 7: two values resolved, so the representative is compared once, and that comparison can read all 7 units of the larger of them — the third member resolves nothing and joins neither term",
 		},
 		{
-			name:      "uniform-charges-one-pass-over-its-selected-values",
+			name:      "uniform-charges-a-reread-of-the-largest-value-per-comparison",
 			condition: `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			facts:     `{"list":[{"cabin":1},{"cabin":2},{"cabin":3}]}`,
-			want:      43,
-			why:       "12 for the aggregate, 13 then 6 then 6 for \"/cabin\", and two units for each one-digit number; one representative absorbs the members, so one pass is the whole cost",
+			want:      47,
+			why:       "12 for the aggregate, 13 then 6 then 6 for \"/cabin\", two units for each one-digit number, and (3-1)×2 = 4 for the two comparisons the representative takes part in",
 		},
 		{
-			name:      "uniform-charges-a-long-numeric-token-by-its-bytes",
+			name:      "uniform-charges-a-long-numeric-token-by-its-bytes-and-by-its-rereads",
 			condition: `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			facts:     `{"list":[{"cabin":1e999999999},{"cabin":2},{"cabin":3}]}`,
-			want:      53,
-			why:       "the 43 above with the first value's eleven-character token costing 12 rather than 2; equality reads that token byte by byte, and reads it once, so the ten extra units are the whole difference",
+			want:      77,
+			why: "the 47 above with the first value's eleven-character token costing 12 rather than 2 (ten extra units in the per-member term) and the reread term rising from (3-1)×2 to (3-1)×12 (twenty more): " +
+				"the long token is read once per member however the members are ordered, because the maximum is taken over the set and not over whichever member happens to be elected",
 		},
 	}
 
@@ -827,6 +839,124 @@ func TestRFC0008LongEvidenceRequirementIdIsChargedByItsLength(t *testing.T) {
 	_, failure := engine.EvaluateWith(pack(long), []byte(facts), nil, draftOptions(0))
 	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
 		t.Fatalf("a thousand-character requirement id over the same 200 elements must be refused: %+v", failure)
+	}
+}
+
+// The adversarial empty-token pointer row. A resolution loops once per
+// reference token and a reference token may be empty, so "////…" performs one
+// map traversal per token over no token bytes at all: a charge of one flat step
+// plus the token bytes priced a hundred traversals at one unit — on every
+// resolution, and a where resolves once per element. The step count is now the
+// token count, so the charge is what the loop does.
+func TestRFC0008EmptyReferenceTokensAreChargedPerStep(t *testing.T) {
+	const elements = 1_000
+	items := make([]string, 0, elements)
+	for index := 0; index < elements; index++ {
+		items = append(items, `{}`)
+	}
+	facts := fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ","))
+	condition := func(path string) string {
+		return fmt.Sprintf(
+			`{"op":"exists","path":"/list","where":{"op":"fact","path":%q,"operator":"equals","value":true}}`, path)
+	}
+	// A hundred empty reference tokens against one, both carrying zero token
+	// bytes: the pointers differ in traversals and in nothing else.
+	const tokens = 100
+	one, hundred := "/", strings.Repeat("/", tokens)
+
+	oneCharge := chargeOf(t, condition(one), facts)
+	hundredCharge := chargeOf(t, condition(hundred), facts)
+	// 99 further steps on each of the 1,000 resolutions, and 99 further path
+	// bytes on the single compile: 3,014 units against 102,113.
+	if want := (tokens - 1) * (elements + 1); hundredCharge-oneCharge != want {
+		t.Fatalf("charges %d and %d differ by %d; each further reference token must cost a step per resolution (%d)",
+			oneCharge, hundredCharge, hundredCharge-oneCharge, want)
+	}
+
+	// And the difference decides admission: the one-token pointer evaluates and
+	// the hundred-token one is refused rather than walked 100,000 times.
+	engine := newTestEngine(t)
+	if _, failure := engine.EvaluateWith(draftPack(condition(one), "escalate"), []byte(facts), nil, draftOptions(0)); failure != nil {
+		t.Fatalf("a one-token pointer over %d elements must evaluate: %+v", elements, failure)
+	}
+	_, failure := engine.EvaluateWith(draftPack(condition(hundred), "escalate"), []byte(facts), nil, draftOptions(0))
+	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
+		t.Fatalf("a hundred-token pointer over the same %d elements must be refused: %+v", elements, failure)
+	}
+}
+
+// The adversarial uniform row, and the fourth defect of the class the long
+// pointer, the unpriced selected value, and the flat pointer step belong to.
+// uniform elects one representative and compares it against every other member,
+// so the representative is read once per member: one 80,001-byte token among
+// 999 short tokens of the same value is work proportional to long×members, and
+// the per-member charge alone came to long+members — 94,013 units against the
+// default 100,000, admitted, with one permutation taking milliseconds and the
+// other hundreds of times longer. The reread term prices those comparisons at
+// (n-1)×max, so the input is refused, in either order and with the same error.
+func TestRFC0008UniformRepeatedRepresentativeComparisonIsCharged(t *testing.T) {
+	engine := newTestEngine(t)
+	const condition = `{"op":"uniform","path":"/list","at":"/cabin"}`
+	pack := draftPack(condition, "escalate")
+	// The long token and the short one denote the same value, so no clause-3
+	// counterexample can cut the pass short: every member is compared, and
+	// every comparison is against the long representative in one order or the
+	// short-then-long representative in the other.
+	facts := func(long, short string, copies int, longFirst bool) string {
+		items := make([]string, 0, copies+1)
+		for index := 0; index < copies; index++ {
+			items = append(items, fmt.Sprintf(`{"cabin":%s}`, short))
+		}
+		if longFirst {
+			items = append([]string{fmt.Sprintf(`{"cabin":%s}`, long)}, items...)
+		} else {
+			items = append(items, fmt.Sprintf(`{"cabin":%s}`, long))
+		}
+		return fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ","))
+	}
+
+	// 10^80000 written out in full, against 999 copies of 1e80000.
+	huge := "1" + strings.Repeat("0", 80_000)
+	first := facts(huge, "1e80000", 999, true)
+	last := facts(huge, "1e80000", 999, false)
+	if firstCharge, lastCharge := chargeOf(t, condition, first), chargeOf(t, condition, last); firstCharge != lastCharge {
+		t.Fatalf("the two permutations charge %d and %d; the charge must not depend on the order", firstCharge, lastCharge)
+	}
+	_, firstFailure := engine.EvaluateWith(pack, []byte(first), nil, draftOptions(0))
+	_, lastFailure := engine.EvaluateWith(pack, []byte(last), nil, draftOptions(0))
+	if firstFailure == nil || lastFailure == nil {
+		t.Fatalf("both permutations must be refused: %+v / %+v", firstFailure, lastFailure)
+	}
+	if firstFailure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
+		t.Fatalf("exhaustion must be the work limit: %+v", firstFailure)
+	}
+	if !reflect.DeepEqual(firstFailure, lastFailure) {
+		t.Fatalf("the two permutations must produce the same error:\n first=%+v\n  last=%+v", firstFailure, lastFailure)
+	}
+
+	// The same shape small enough to afford: identical charges and identical
+	// dispositions in both orders, so the refusal above turns on the size and
+	// not on the permutation. 12 for the aggregate, 13 then nine 6s for
+	// "/cabin", 302 for the 301-byte token and 6 for each of the nine
+	// five-byte ones, and a reread term of (10-1)×302.
+	small := "1" + strings.Repeat("0", 300)
+	smallFirst := facts(small, "1e300", 9, true)
+	smallLast := facts(small, "1e300", 9, false)
+	firstCharge, lastCharge := chargeOf(t, condition, smallFirst), chargeOf(t, condition, smallLast)
+	if want := 12 + 13 + 9*6 + 302 + 9*6 + 9*302; firstCharge != want || lastCharge != want {
+		t.Fatalf("charges %d and %d, want %d in both orders", firstCharge, lastCharge, want)
+	}
+	firstOutput, firstFailure := engine.EvaluateWith(pack, []byte(smallFirst), nil, draftOptions(0))
+	lastOutput, lastFailure := engine.EvaluateWith(pack, []byte(smallLast), nil, draftOptions(0))
+	if firstFailure != nil || lastFailure != nil {
+		t.Fatalf("the affordable variant must evaluate in both orders: %+v / %+v", firstFailure, lastFailure)
+	}
+	if !reflect.DeepEqual(firstOutput.Disposition, lastOutput.Disposition) {
+		t.Fatalf("permuted members must produce one disposition: %+v / %+v", firstOutput.Disposition, lastOutput.Disposition)
+	}
+	// 10^300 and 1e300 are one value, so uniform is true and the rule fires.
+	if firstOutput.Disposition.Kind != "outcome" || firstOutput.Disposition.OutcomeID != "held" {
+		t.Fatalf("disposition = %+v; the members are equal, so uniform holds", firstOutput.Disposition)
 	}
 }
 

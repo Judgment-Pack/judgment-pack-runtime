@@ -47,8 +47,10 @@ const (
 	// unitPointerScan is the fixed part of compiling one authored pointer; its
 	// variable part is the path's byte length.
 	unitPointerScan = 1
-	// unitPointerStep is the fixed part of one resolution of an already
-	// compiled pointer; its variable part is the bytes of its reference tokens.
+	// unitPointerStep is one step of a resolution of an already compiled
+	// pointer: one traversal per reference token, and one for a pointer with no
+	// tokens, which still selects the root. The variable part of a resolution
+	// is the bytes of those tokens.
 	unitPointerStep = 1
 	// unitValue is the fixed part of one JSON node of a value; a scalar's
 	// variable part is its token length and an object member's is its name.
@@ -112,6 +114,13 @@ func (e *evaluator) quantify(node map[string]any, root any) tri {
 // order the members arrive. Clause 3 still dominates clause 4 — a member whose
 // at is missing is skipped rather than answered, and the unknown it earns is
 // only reached when the whole pass found no counterexample.
+//
+// The representative is compared against every other resolved member, so each
+// value is canonicalized (canonicalNumbers) once as it is resolved rather than
+// normalized inside each comparison. Both are the same equality; the difference
+// is that one long token among many short equal ones is then read once instead
+// of once per member. The accounting model reserves the comparisons either way
+// — see the reread term on evaluate — but a bound is not a reason to spend it.
 func (e *evaluator) uniform(node map[string]any, root any) tri {
 	at, ok := node["at"].(string)
 	if !ok {
@@ -132,6 +141,7 @@ func (e *evaluator) uniform(node map[string]any, root any) tri {
 			missing = true
 			continue
 		}
+		value = canonicalNumbers(value)
 		if !elected {
 			representative, elected = value, true
 			continue
@@ -209,10 +219,14 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 //     1 + len(path) and is charged, and performed, at most once per distinct
 //     authored pointer in one evaluation, because the compiled form is cached
 //     and reused. Each resolution of the compiled form then costs
-//     1 + Σ len(token): one step per reference token, plus the token bytes that
-//     step hashes or compares against the document. A path a where resolves
-//     once per element is therefore scanned once and stepped per element, and
-//     the charge says exactly that.
+//     max(1, tokens) + Σ len(token): one step per reference token, plus the
+//     token bytes that step hashes or compares against the document. The steps
+//     are counted rather than folded into the bytes, because a reference
+//     token can be empty and still cost a lookup — "/a////b" is five traversals
+//     over two bytes of token — and the floor of one is the resolution that
+//     walks no token at all, which still selects the root. A path a where
+//     resolves once per element is therefore scanned once and stepped per
+//     element, and the charge says exactly that.
 //   - Per value — a scalar costs 1 plus its token length: a string its
 //     characters, a number its digits, and a boolean or null nothing beyond the
 //     1. A container costs 1 plus its members, and an object member also costs
@@ -234,11 +248,23 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 //   - Per aggregate — exists and every cost 1 plus their path resolution plus
 //     the sum of their where's cost over the elements actually present, so a
 //     ragged nesting costs Σᵢ|Bᵢ| and never |A|×|B|; uniform, which has no
-//     where, costs 1 plus its path resolution plus, per member, one resolution
-//     of at and the size of the value that resolution selected. One pass over
-//     the members is the whole of it: §7.4 equality is total, so one
-//     representative absorbs every member it equals and the comparison count is
-//     linear in the members however exotic their values are.
+//     where, costs 1 plus its path resolution plus two terms over its members.
+//     The first is per member: one resolution of at and the size of the value
+//     that resolution selected, which pays for the single pass that reads each
+//     value once. The second is the reread term, (n-1)×max over the n resolved
+//     values, which pays for the comparisons. §7.4 equality is total, so one
+//     representative absorbs every member it equals and the comparison count
+//     stays linear — but the representative is one of the values and it is
+//     compared against each of the other n-1, and any of those comparisons can
+//     read the whole of it, so the sum of the values is not a bound on the pass
+//     and the earlier "one pass is the whole cost" claim was wrong: one long
+//     token among short equal ones was work proportional to long×members priced
+//     at long+members. The term is a maximum over the resolved values rather
+//     than the elected representative's size precisely so that it does not
+//     depend on which member is elected, and therefore not on the order the
+//     members arrive in; it bounds the pass whichever one is. The evaluator
+//     then spends less than the bound — it canonicalizes each value once, so a
+//     comparison compares canonical forms — but the charge is the bound.
 //   - Composition — sibling aggregates add, since the charge is a sum over the
 //     tree; the budget accumulates across every condition of one evaluation.
 //     A condition §8 never reaches is never charged: a suppressed rule, every
@@ -291,6 +317,13 @@ func (e *evaluator) charge(units int) bool {
 // reference token plus the bytes that step reads. Reserving before resolving is
 // the whole point: an authored path long enough to be expensive to scan is
 // refused by the budget rather than scanned and then billed for.
+//
+// The step count is the token count and not a flat one, because a resolution
+// loops once per token whatever the tokens weigh: a pointer of a hundred empty
+// reference tokens ("////…") carries no token bytes at all and still performs a
+// hundred map traversals on every one of its resolutions. Charging the bytes
+// alone priced that at one unit per resolution. The floor of one is the empty
+// pointer, whose single "resolution" selects the root.
 func (e *evaluator) chargePointer(path string) bool {
 	compiled, scanned := e.pointers[path]
 	if !scanned {
@@ -299,7 +332,11 @@ func (e *evaluator) chargePointer(path string) bool {
 		}
 		compiled = e.compiled(path)
 	}
-	return e.charge(unitPointerStep + compiled.bytes)
+	steps := len(compiled.tokens)
+	if steps < 1 {
+		steps = 1
+	}
+	return e.charge(steps*unitPointerStep + compiled.bytes)
 }
 
 // preflight charges one condition tree under the model documented on evaluate.
@@ -382,22 +419,39 @@ func (e *evaluator) preflight(node any, root any) {
 		}
 		at, _ := condition["at"].(string)
 		members, _ := e.selectArray(condition, root)
-		// One resolution of at and one comparison per member is the whole cost:
-		// §7.4 equality is total, so a single representative absorbs the
-		// members that equal it and no member is ever compared twice. The
-		// charge is a sum over the members, so it is the same under any
-		// permutation of them.
+		// Two terms. The first is one resolution of at per member plus the size
+		// of the value it selected: the single pass that reads each value once.
+		// The second is the reread term below, which prices the comparisons.
+		resolvedValues, largest := 0, 0
 		for _, member := range members {
 			// The member's at is reserved before it is resolved, exactly as the
 			// aggregate's own path was.
 			if !e.chargePointer(at) {
 				return
 			}
-			if value, resolved := e.resolve(member, at); resolved {
-				if !e.charge(valueUnits(value)) {
-					return
-				}
+			value, resolved := e.resolve(member, at)
+			if !resolved {
+				continue
 			}
+			units := valueUnits(value)
+			resolvedValues++
+			if units > largest {
+				largest = units
+			}
+			if !e.charge(units) {
+				return
+			}
+		}
+		// §7.4 equality is total, so one elected representative absorbs every
+		// member equal to it and there are n-1 comparisons rather than n²/2 —
+		// but the representative is a value like any other, and each of those
+		// comparisons can read the whole of it. Charging one reread of the
+		// largest resolved value per comparison bounds the pass whichever
+		// member is elected, which is also what keeps the term independent of
+		// the members' order: the count and the maximum are properties of the
+		// set. Both are unchanged by any permutation, so the total is.
+		if resolvedValues > 1 {
+			e.charge((resolvedValues - 1) * largest)
 		}
 	default:
 		// literal and any operand shape §7 does not define.

@@ -384,6 +384,12 @@ func jsonEqual(a, b any) bool {
 // forms agree — same sign, same significant digits, same adjusted exponent —
 // so 1e3, 1000, and 1.0e3 are one value and -0 is 0.
 //
+// Identical tokens are settled on the strings, before either is normalized.
+// That short-circuit is what makes a canonicalized value (canonicalNumbers)
+// cheap to compare repeatedly: equal numbers reach it as byte-identical tokens,
+// so a caller that compares one value against many pays one normalization per
+// value rather than one per comparison.
+//
 // Deciding it this way is what makes equality total. Materializing the values
 // (big.Rat) answers the same question only for the values the machine can
 // hold: 1e999999999 against 2e999999999 would need a gigabyte of digits to
@@ -472,6 +478,71 @@ func normalizeNumber(token string) numberNormalForm {
 	form.exponent.Add(form.exponent, big.NewInt(int64(len(digits)-significant)))
 	form.digits = digits[:significant]
 	return form
+}
+
+// token writes a normal form back out as the one JSON number token that denotes
+// its value: "0" for zero, the significant digits alone when they need no
+// scaling, and the digits followed by "e" and the power of ten otherwise. It is
+// injective on normal forms — two tokens denote the same number exactly when
+// their canonical tokens are byte-identical — and normalizing a canonical token
+// reproduces the same form, so canonicalizing twice changes nothing. Its length
+// is within a small constant of the token it came from: the digits are a subset
+// of the original's and the exponent is at most the original's exponent digits
+// plus the fraction's length.
+func (n numberNormalForm) token() string {
+	if n.digits == "" {
+		return "0" // Zero, which has neither a sign nor an exponent.
+	}
+	text := n.digits
+	if n.negative {
+		text = "-" + text
+	}
+	if n.exponent.Sign() == 0 {
+		return text
+	}
+	return text + "e" + n.exponent.String()
+}
+
+// canonicalNumbers deep-copies a value with every number token replaced by the
+// canonical token of its normal form, leaving every other leaf as it is. It
+// costs one normalization per number, once, and it is what stops a value that
+// is compared many times from being normalized once per comparison: afterwards
+// two equal numbers are byte-identical tokens, which numbersEqual settles on
+// the strings before it normalizes anything.
+//
+// §7.4 equality is unchanged by it, in both directions: canonicalization maps
+// equal values to identical tokens and unequal values to different ones, so a
+// comparison between canonical forms answers exactly what a comparison between
+// the original tokens answers. uniform is the caller — it compares one elected
+// representative against every other member, which is the shape that turns a
+// per-comparison normalization into a reread of the longest token per member.
+//
+// A token outside the JSON number grammar has no normal form and is returned
+// untouched, so it goes on comparing equal to an identical token and to nothing
+// else.
+func canonicalNumbers(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		items := make([]any, len(typed))
+		for index, item := range typed {
+			items[index] = canonicalNumbers(item)
+		}
+		return items
+	case map[string]any:
+		members := make(map[string]any, len(typed))
+		for name, item := range typed {
+			members[name] = canonicalNumbers(item)
+		}
+		return members
+	case json.Number:
+		form := normalizeNumber(typed.String())
+		if form.malformed {
+			return typed
+		}
+		return json.Number(form.token())
+	default:
+		return value
+	}
 }
 
 // decimalPattern is the §2.2 decimal grammar: an optional minus, an integer
