@@ -9,8 +9,10 @@
 `judgment-pack` is the vendor-neutral **reference runtime** for the Judgment Pack Specification
 (JPS). It is a reference implementation, not the only valid one: the normative specification,
 schemas, and conformance corpus are owned by the separate
-[`judgment-pack-spec`](https://github.com/Judgment-Pack/judgment-pack-spec) repository, and any
-independent implementation that passes the published conformance corpus is equally valid.
+[`judgment-pack-spec`](https://github.com/Judgment-Pack/judgment-pack-spec) repository, and an
+independent implementation is judged against the complete normative requirements of the conformance
+class it claims — not against this runtime. Results from the corpus published for the exact version
+it names are required evidence for such a claim and are not exhaustive evidence of it (§3.4.1).
 
 The runtime **validates documents**. It does not fetch a source, authorize an action, or establish
 truth, organizational authority, safety, or operational fitness. It bundles two specification

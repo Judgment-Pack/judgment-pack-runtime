@@ -36,10 +36,12 @@ All notable changes to tagged releases are documented here.
     canonical and the exact bytes do not appear; §8.3 requires canonicalization where a byte comparison
     is required, so a comparison recanonicalizes either side it did not produce. `handoff` gains
     `triggeredBy`, the retained reasons that triggered a request, present exactly when the state is
-    `requested`. Canonicalization is also the one place that refuses a disposition §8.3 forbids, so
-    none of that section's three presence rules can be violated by a value assembled outside the
-    engine. **Breaking for a consumer of the experimental payload:** the disposition no longer echoes
-    the pack's escalation target, which §8.3 keeps out of it; the target moved to a sibling
+    `requested`. Canonicalization is also the one place that refuses a disposition §8.3 forbids, so no
+    value assembled outside the engine can violate any invariant that section states about the
+    disposition alone: the `kind`, `handoff.state`, and reason vocabularies, its three presence rules,
+    the exact reason set of a `not-applicable` result, and `triggeredBy` being a subset of `reasons`.
+    **Breaking for a consumer of the experimental payload:** the disposition no longer echoes the
+    pack's escalation target, which §8.3 keeps out of it; the target moved to a sibling
     `handoffTarget` member. Human output is unchanged prose, now naming the triggering reasons.
   - **§8.4 error contract.** Every refused evaluation reports exactly one of the four Core classes in
     band, as a new `evaluationError` member carrying `class` and `phase`, with no disposition at all;
@@ -53,7 +55,18 @@ All notable changes to tagged releases are documented here.
     oversized facts document no longer outranks a non-conformant pack. `resource-exhaustion` is the one
     class of the evaluation phase, and in this runtime it is reached only by the
     `--rfc0008-quantifiers` work budget: no evaluation-work charge is levied on the Core path, which
-    the README now states.
+    the README now states. Both surfaces report the same envelope: an `experimental_evaluate` refusal
+    is an in-band MCP tool error whose `structuredContent` is the `evaluationError` payload the CLI
+    writes, so the class, the phase, and `evaluatorSpecVersion` are machine-readable there too rather
+    than sentences a client has to classify itself.
+  - **§8.2 on the MCP surface.** `experimental_evaluate` now decodes each document argument's presence
+    separately from its value, so the two meanings §8.2 gives an absent and an empty evidence document
+    stay apart on the wire: omitting the key is the implicit empty object and evaluates, while a key
+    present with an empty string is a supplied document and is `malformed-input`. A present-but-empty
+    `pack` or `facts` likewise enters the preflight — `pack-not-conformant` and `malformed-input` —
+    instead of being reported as an unclassified missing argument, an absent required key stays an
+    invocation failure with no class, and an explicit `null` is rejected as the argument-type error the
+    declared string schema makes it.
 - Add `judgment-pack experimental evaluate-corpus`, which runs the bundled evaluation corpus for one
   exact specification version and reports every row: the disposition compared as §8.3 defines
   disposition equality — both sides through the same canonicalizer, so a set's stored order is not a

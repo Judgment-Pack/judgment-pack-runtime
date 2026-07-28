@@ -2,6 +2,7 @@ package result
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
@@ -273,11 +274,22 @@ type Disposition struct {
 // disposition itself.
 //
 // It refuses a value that is not a legal §8.3 disposition rather than serializing
-// one. Three of that section's rules are iff rules a Go struct cannot express —
-// outcomeId is present iff kind is "outcome", reasons is empty iff kind is
-// "outcome", and triggeredBy is present iff the handoff state is "requested" — so
-// the one place canonicalization lives is also the place that holds a caller to
-// them. The engine builds no such value; an exported type can be handed one.
+// one, enforcing every invariant that section states about the disposition alone:
+// the three enumerated vocabularies (kind, handoff.state, and the reason set's
+// members), the three iff rules a Go struct cannot express — outcomeId is present
+// iff kind is "outcome", reasons is empty iff kind is "outcome", and triggeredBy
+// is present iff the handoff state is "requested" — the exact reason set of a
+// not-applicable result, and triggeredBy being a subset of reasons. The one place
+// canonicalization lives is therefore also the place that holds a caller to them.
+// The engine builds no illegal value; an exported type can be handed one.
+//
+// The one §8.3 requirement it cannot enforce is the one that is not about the
+// disposition alone: that outcomeId "MUST name a declared outcome of the pack
+// evaluated" is a fact about a pack this type never sees, so it stays where the
+// pack is — the engine names only ids it read from the pack, and semantic
+// validation has already refused a pack whose rules name an undeclared outcome.
+// Whether the handoff state agrees with the pack's escalation object (§8.1) is
+// pack-dependent in the same way and is likewise the engine's.
 func (d Disposition) Canonical() ([]byte, error) {
 	if err := d.validate(); err != nil {
 		return nil, err
@@ -302,28 +314,77 @@ func (d Disposition) MarshalJSON() ([]byte, error) {
 	return d.Canonical()
 }
 
-// validate holds one disposition to the three iff rules of §8.3. Each is a rule
-// about a member's presence, which is why none of them can be a struct tag: an
-// omitempty tag omits an empty value, and §8.3 makes an empty value in these
-// positions illegal rather than absent.
+// The three closed vocabularies of §8.3. A value outside any of them is not a
+// disposition at all: "no other value is admitted" is that section's own wording
+// for the reason set, and kind and handoff.state are stated as enumerations.
+// The evaluation engine has its own constants for the reasons it produces; these
+// are the gate every disposition passes on its way to bytes, whoever built it.
+var (
+	dispositionKinds   = []string{"outcome", "not-applicable", "unresolved"}
+	handoffStates      = []string{"none", "requested"}
+	dispositionReasons = []string{
+		"not-applicable",
+		"missing-required-evidence",
+		"unknown",
+		"conflict",
+		"no-match",
+		"exception-escalation",
+	}
+)
+
+// validate holds one disposition to every §8.3 invariant that is about the
+// disposition alone: the three closed vocabularies, the three presence iff rules,
+// the exact reason set of a not-applicable result, and triggeredBy ⊆ reasons.
+//
+// None of the presence rules can be a struct tag: an omitempty tag omits an empty
+// value, and §8.3 makes an empty value in those positions illegal rather than
+// absent. The reason set is compared as a set, since duplicates in the assembled
+// value are the caller's and not a difference in the disposition.
 func (d Disposition) validate() error {
+	if !slices.Contains(dispositionKinds, d.Kind) {
+		return fmt.Errorf("§8.3: kind must be \"outcome\", \"not-applicable\", or \"unresolved\"; got %q", d.Kind)
+	}
+	if !slices.Contains(handoffStates, d.Handoff.State) {
+		return fmt.Errorf("§8.3: handoff.state must be \"requested\" or \"none\"; got %q", d.Handoff.State)
+	}
+	reasons := sortedSet(d.Reasons)
+	for _, reason := range reasons {
+		if !slices.Contains(dispositionReasons, reason) {
+			return fmt.Errorf("§8.3: %q is not a reason the disposition admits", reason)
+		}
+	}
 	if d.Kind == "outcome" {
 		if d.OutcomeID == "" {
 			return errors.New("§8.3: outcomeId must be present when kind is \"outcome\"")
 		}
-		if len(d.Reasons) > 0 {
+		if len(reasons) > 0 {
 			return errors.New("§8.3: reasons is empty if and only if kind is \"outcome\"")
 		}
 	} else {
 		if d.OutcomeID != "" {
 			return errors.New("§8.3: outcomeId must be absent when kind is not \"outcome\"")
 		}
-		if len(d.Reasons) == 0 {
+		if len(reasons) == 0 {
 			return errors.New("§8.3: reasons is empty if and only if kind is \"outcome\"")
 		}
 	}
+	// §8.3: "When kind is not-applicable its one member is not-applicable." A
+	// not-applicable result carrying any other reason, or another reason beside it,
+	// is a different result reported under that kind.
+	if d.Kind == "not-applicable" && (len(reasons) != 1 || reasons[0] != "not-applicable") {
+		return errors.New("§8.3: the reason set of a not-applicable result is exactly {\"not-applicable\"}")
+	}
 	if (d.Handoff.State == "requested") != (len(d.Handoff.TriggeredBy) > 0) {
 		return errors.New("§8.3: handoff.triggeredBy is present, and non-empty, if and only if state is \"requested\"")
+	}
+	// §8.3: triggeredBy "is always a subset of reasons". With reasons empty exactly
+	// when kind is "outcome", this is also what makes an outcome with a requested
+	// handoff illegal rather than merely unproduced: it would name a trigger the
+	// retained reason set does not contain.
+	for _, trigger := range d.Handoff.TriggeredBy {
+		if !slices.Contains(reasons, trigger) {
+			return fmt.Errorf("§8.3: handoff.triggeredBy must be a subset of reasons; %q is not a retained reason", trigger)
+		}
 	}
 	return nil
 }

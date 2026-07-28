@@ -14,6 +14,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -271,6 +272,163 @@ func TestExperimentalEvaluateTool(t *testing.T) {
 	// reads the same coarse identity the CLI reports.
 	if !strings.Contains(text, "evaluation error class: pack-not-conformant") || !strings.Contains(text, "phase: preflight") {
 		t.Fatalf("the refusal must name its §8.4 class: %q", text)
+	}
+	// And it carries that identity machine-readably, in the shared envelope, beside
+	// the text: class, phase, and the version of the evaluator contract that
+	// assigned them.
+	assertEvaluationError(t, refused, "pack-not-conformant", "preflight")
+}
+
+// assertEvaluationError holds one refused MCP evaluation to the §8.4 contract:
+// an in-band tool error whose structuredContent is the shared evaluation-error
+// envelope naming the class, the phase, and the evaluator's contract version,
+// with this runtime's finer JPS-* code beside them as the detail and no
+// disposition anywhere in the payload.
+func assertEvaluationError(t *testing.T, refused map[string]any, class, phase string) {
+	t.Helper()
+	if refused["isError"] != true {
+		t.Fatalf("a refused evaluation must be an in-band tool error: %#v", refused)
+	}
+	structured, ok := refused["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("a refused evaluation must carry the structured envelope: %#v", refused)
+	}
+	evaluationError, ok := structured["evaluationError"].(map[string]any)
+	if !ok {
+		t.Fatalf("the envelope must carry evaluationError: %#v", structured)
+	}
+	if evaluationError["class"] != class || evaluationError["phase"] != phase {
+		t.Fatalf("evaluationError = %#v, want class %q phase %q", evaluationError, class, phase)
+	}
+	if evaluationError["evaluatorSpecVersion"] != result.EvaluatorSpecVersion {
+		t.Fatalf("evaluationError.evaluatorSpecVersion = %v, want %q", evaluationError["evaluatorSpecVersion"], result.EvaluatorSpecVersion)
+	}
+	if structured["command"] != "mcp experimental_evaluate" {
+		t.Fatalf("the envelope must name this surface: %v", structured["command"])
+	}
+	diagnostics, ok := structured["diagnostics"].([]any)
+	if !ok || len(diagnostics) == 0 {
+		t.Fatalf("the envelope must keep this runtime's finer code as the detail: %#v", structured)
+	}
+	if code := diagnostics[0].(map[string]any)["code"].(string); !strings.HasPrefix(code, "JPS-") {
+		t.Fatalf("diagnostic code = %q, want a JPS-* code", code)
+	}
+	// An evaluation error is never a disposition, in any member of the payload.
+	encoded, err := json.Marshal(refused)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"disposition"`) {
+		t.Fatalf("a refused evaluation must carry no disposition: %s", encoded)
+	}
+}
+
+// §8.2 gives an omitted evidence document and a supplied empty one two different
+// meanings, and §8.4 classes the difference. The MCP surface must keep them
+// apart: omitted is the implicit empty object and evaluates, present-but-empty is
+// malformed-input, an explicit null violates the declared string schema and is an
+// argument error, and a present empty pack or facts document enters the preflight
+// rather than being reported as an unclassified missing argument.
+func TestExperimentalEvaluateDistinguishesOmittedFromEmptyDocuments(t *testing.T) {
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This pack declares two required evidence requirements, so an omitted evidence
+	// document leaves both unknown and the evaluation is unresolved rather than an
+	// outcome — which is what makes the omitted case visibly different from the
+	// supplied one in the first test above.
+	facts := `{"request":{"type":"one-time-extract","completeness":"incomplete","appropriateness":"pass","embargoedInformationToUnauthorizedRecipients":false}}`
+	call := func(id int, arguments map[string]any) string {
+		return message(t, id, "tools/call", map[string]any{"name": "experimental_evaluate", "arguments": arguments})
+	}
+	responses := runServer(t, strings.Join([]string{
+		call(1, map[string]any{"pack": string(pack), "facts": facts}),
+		call(2, map[string]any{"pack": string(pack), "facts": facts, "evidence": ""}),
+		call(3, map[string]any{"pack": string(pack), "facts": facts, "evidence": nil}),
+		call(4, map[string]any{"pack": string(pack), "facts": facts, "evidence": `{"no-such-requirement":"present"}`}),
+		call(5, map[string]any{"pack": string(pack), "facts": facts, "evidence": `{"intake-form":"present","sponsor-endorsement":"present"}`}),
+		call(6, map[string]any{"pack": "", "facts": facts}),
+		call(7, map[string]any{"pack": string(pack), "facts": ""}),
+		call(8, map[string]any{"facts": facts}),
+		call(9, map[string]any{"pack": string(pack)}),
+	}, ""))
+	if len(responses) != 9 {
+		t.Fatalf("expected 9 responses, got %d", len(responses))
+	}
+	results := make([]map[string]any, 0, len(responses))
+	for _, response := range responses {
+		results = append(results, response["result"].(map[string]any))
+	}
+
+	// 1. Omitted: the implicit empty object of §8.2, which is not an error. Every
+	// declared requirement is unknown, so this pack's required evidence is unknown
+	// and the disposition is unresolved.
+	omitted := results[0]
+	if omitted["isError"] != false {
+		t.Fatalf("an omitted evidence document is not an error (§8.2): %#v", omitted)
+	}
+	disposition := omitted["structuredContent"].(map[string]any)["disposition"].(map[string]any)
+	if disposition["kind"] != "unresolved" {
+		t.Fatalf("with no evidence document every requirement is unknown: %#v", disposition)
+	}
+
+	// 2. Present but empty: a supplied document that is not a JSON text, which the
+	// preflight classes malformed-input rather than treating as an absence.
+	assertEvaluationError(t, results[1], "malformed-input", "preflight")
+	if text := results[1]["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "empty") {
+		t.Fatalf("the refusal must say the supplied document was empty: %q", text)
+	}
+
+	// 3. Explicit null: the declared input schema says string, so this is an
+	// argument-type failure and never a silent omission.
+	null := results[2]
+	if null["isError"] != true {
+		t.Fatalf("an explicit null violates the declared string schema: %#v", null)
+	}
+	if text := null["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "must be a JSON string") {
+		t.Fatalf("a null argument must be reported as an argument-type error: %q", text)
+	}
+	if _, structured := null["structuredContent"]; structured {
+		t.Fatalf("a bad argument never became an evaluation, so §8.4 does not class it: %#v", null)
+	}
+
+	// 4. Malformed: an undeclared member name is malformed-input (§8.2).
+	assertEvaluationError(t, results[3], "malformed-input", "preflight")
+
+	// 5. Valid: a supplied document naming declared requirements resolves an outcome.
+	supplied := results[4]
+	if supplied["isError"] != false {
+		t.Fatalf("a valid evidence document is a successful call: %#v", supplied)
+	}
+	if kind := supplied["structuredContent"].(map[string]any)["disposition"].(map[string]any)["kind"]; kind != "outcome" {
+		t.Fatalf("disposition kind = %v, want outcome", kind)
+	}
+
+	// 6. An empty pack is a supplied document that is not a conforming pack: §8.4's
+	// pack-not-conformant, reached at the pack's own place in the preflight.
+	assertEvaluationError(t, results[5], "pack-not-conformant", "preflight")
+
+	// 7. An empty facts document is malformed-input, not an unclassified "argument
+	// required" error.
+	assertEvaluationError(t, results[6], "malformed-input", "preflight")
+
+	// 8-9. An absent required key never became an evaluation: an invocation failure
+	// with no §8.4 class at all.
+	for _, absent := range []struct {
+		index    int
+		argument string
+	}{{7, "pack"}, {8, "facts"}} {
+		missing, argument := results[absent.index], absent.argument
+		if missing["isError"] != true {
+			t.Fatalf("a missing %q argument must be an in-band tool error: %#v", argument, missing)
+		}
+		if _, structured := missing["structuredContent"]; structured {
+			t.Fatalf("a missing %q argument is not an evaluation error: %#v", argument, missing)
+		}
+		if text := missing["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, argument) {
+			t.Fatalf("the refusal must name the missing argument: %q", text)
+		}
 	}
 }
 

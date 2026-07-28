@@ -111,8 +111,12 @@ this record rather than withdrawn.
   implementations can agree on, with this runtime's `JPS-*` codes surviving as the detail §8.4 admits.
 - Bad, because a consumer of the experimental payload breaks on the moved escalation target. That is
   what the experimental namespace is for.
-- Bad, because being one corpus run away from the permitted claim and not making it is a position that
-  has to be explained repeatedly; mitigated by carrying the label in band on every run.
+- Bad, because a runtime that runs the bundled corpus clean and still claims nothing sits close enough
+  to the permitted claim to be misread as making it, which is a position that has to be explained
+  repeatedly. It is not that claim: as recorded above, the §10 evaluation-phase requirements this class
+  imposes are deliberately unmet on the Core path, so a clean corpus run is required evidence and not
+  the claim. Mitigated by carrying the no-claim label in band on every run and disclosing the gap
+  rather than papering over it.
 - Revisit when the claim question is taken up — as its own ADR, with the §10 evaluation-phase limits
   defined first — or when a later `specVersion` republishes the class or the corpus.
 

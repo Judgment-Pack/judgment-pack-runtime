@@ -213,23 +213,25 @@ func TestEvaluationErrorPayloadNamesTheClass(t *testing.T) {
 // is the correspondence: every exported field of both types must appear, by its
 // JSON name, in the canonical form of a fully populated value.
 func TestEveryDispositionMemberReachesTheCanonicalForm(t *testing.T) {
-	populated := Disposition{
+	// No single value carries every member: §8.3 makes outcomeId and a non-empty
+	// reasons set mutually exclusive, and triggeredBy is a non-empty subset of
+	// reasons, so a disposition carrying outcomeId can carry neither. Each type's
+	// members are therefore canonicalized from the legal value that carries them and
+	// the two results are read together. Assembling one illegal value carrying all
+	// four would test nothing: Canonical refuses it.
+	outcome := Disposition{
 		Kind:      "outcome",
 		OutcomeID: "proceed",
 		Reasons:   []string{},
-		Handoff:   Handoff{State: "requested", TriggeredBy: []string{"conflict"}},
+		Handoff:   Handoff{State: "none"},
 	}
-	// A fully populated value is not a legal §8.3 one — outcomeId and a non-empty
-	// reasons set are mutually exclusive, as are an outcome and a requested
-	// handoff in this runtime's engine — so each type's members are canonicalized
-	// from the legal value that carries them and the two results are read together.
 	unresolved := Disposition{
 		Kind:    "unresolved",
 		Reasons: []string{"conflict"},
 		Handoff: Handoff{State: "requested", TriggeredBy: []string{"conflict"}},
 	}
 	encoded := map[string]string{}
-	for _, disposition := range []Disposition{populated, unresolved} {
+	for _, disposition := range []Disposition{outcome, unresolved} {
 		canonical, err := disposition.Canonical()
 		if err != nil {
 			t.Fatal(err)
@@ -254,13 +256,54 @@ func TestEveryDispositionMemberReachesTheCanonicalForm(t *testing.T) {
 }
 
 // Canonical is the one place canonicalization lives, so it is also the place that
-// refuses a disposition §8.3 does not admit. Each value below violates one of
-// that section's three presence rules, and none of them may be serialized.
+// refuses a disposition §8.3 does not admit. Each value below violates one
+// invariant that section states about the disposition alone — a vocabulary, a
+// presence rule, the not-applicable reason set, or the subset rule — and none of
+// them may be serialized.
 func TestCanonicalRefusesADispositionSection83Forbids(t *testing.T) {
 	for _, testCase := range []struct {
 		name        string
 		disposition Disposition
 	}{
+		{
+			name:        "a kind outside the enumeration",
+			disposition: Disposition{Kind: "escalated", Reasons: []string{"conflict"}, Handoff: Handoff{State: "none"}},
+		},
+		{
+			name:        "an empty kind",
+			disposition: Disposition{Reasons: []string{"conflict"}, Handoff: Handoff{State: "none"}},
+		},
+		{
+			name:        "a handoff state outside the enumeration",
+			disposition: Disposition{Kind: "unresolved", Reasons: []string{"conflict"}, Handoff: Handoff{State: "pending"}},
+		},
+		{
+			name:        "an empty handoff state",
+			disposition: Disposition{Kind: "unresolved", Reasons: []string{"conflict"}, Handoff: Handoff{}},
+		},
+		{
+			name:        "a reason outside the vocabulary",
+			disposition: Disposition{Kind: "unresolved", Reasons: []string{"needs-review"}, Handoff: Handoff{State: "none"}},
+		},
+		{
+			name:        "a not-applicable result carrying another reason beside its own",
+			disposition: Disposition{Kind: "not-applicable", Reasons: []string{"not-applicable", "unknown"}, Handoff: Handoff{State: "none"}},
+		},
+		{
+			name:        "a not-applicable result whose one reason is a different one",
+			disposition: Disposition{Kind: "not-applicable", Reasons: []string{"unknown"}, Handoff: Handoff{State: "none"}},
+		},
+		{
+			name:        "a trigger that is not a retained reason",
+			disposition: Disposition{Kind: "unresolved", Reasons: []string{"conflict"}, Handoff: Handoff{State: "requested", TriggeredBy: []string{"no-match"}}},
+		},
+		{
+			// An outcome retains no reasons, so any trigger at all is outside the
+			// retained set: §8.3's subset rule is what makes this illegal rather than
+			// merely something this runtime's engine never produces.
+			name:        "an outcome with a requested handoff",
+			disposition: Disposition{Kind: "outcome", OutcomeID: "proceed", Reasons: []string{}, Handoff: Handoff{State: "requested", TriggeredBy: []string{"conflict"}}},
+		},
 		{
 			name:        "an outcome with no outcomeId",
 			disposition: Disposition{Kind: "outcome", Reasons: []string{}, Handoff: Handoff{State: "none"}},
