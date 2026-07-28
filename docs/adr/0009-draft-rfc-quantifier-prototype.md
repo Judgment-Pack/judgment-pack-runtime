@@ -1,5 +1,5 @@
 ---
-status: proposed # proposed | accepted | deprecated | superseded by NNNN
+status: accepted
 date: 2026-07-27
 deciders: Brian Jin
 ---

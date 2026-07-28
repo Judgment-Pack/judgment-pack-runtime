@@ -309,17 +309,25 @@ func claimProse(t *testing.T) []claimSurface {
 	return surfaces
 }
 
-// unreleasedSection is the CHANGELOG's Unreleased section: everything above the
-// first released heading.
+// unreleasedSection is the CHANGELOG's maintained section: Unreleased when one
+// exists, else the topmost version section. On a release commit "Unreleased"
+// has just been renamed to the new version, but that text is still this
+// change's live prose until the tag exists, so it is scanned rather than
+// exempted — the guard must not go blind at exactly the moment a release PR
+// touches the most words.
 func unreleasedSection(t *testing.T, changelog string) string {
 	t.Helper()
 	start := strings.Index(changelog, "## Unreleased")
 	if start < 0 {
-		t.Fatal("the CHANGELOG has no Unreleased section to scan")
+		start = strings.Index(changelog, "\n## ")
+		if start < 0 {
+			t.Fatal("the CHANGELOG has no section to scan")
+		}
+		start++
 	}
 	rest := changelog[start:]
-	if end := strings.Index(rest, "\n## "); end >= 0 {
-		return rest[:end]
+	if end := strings.Index(rest[3:], "\n## "); end >= 0 {
+		return rest[:end+3]
 	}
 	return rest
 }
