@@ -20,6 +20,15 @@ All notable changes to tagged releases are documented here.
   the flag refuses one for the same reason, the MCP surface does not expose the flag, and everything
   the draft grammar does not add is still held to full document conformance through the pack's Core
   projection. The operators belong to an open proposal that may never be accepted.
+- Make §7.4 equality total in the EXPERIMENTAL evaluator. JSON numbers are compared as normalized
+  tokens — sign, significant digits, adjusted exponent — rather than through arbitrary-precision
+  arithmetic, so `1e3`, `1000`, and `1.0e3` are one value, `-0` equals `0`, and a pair no arithmetic
+  type can hold (`1e999999999` against `2e999999999`) compares `false` instead of degrading to
+  `unknown`. `equals`, `not-equals`, and `in` therefore always decide, and `uniform` needs no arm
+  beyond RFC 0008's five clauses: an evaluator's inability to represent an admitted value is a
+  resource condition, not a semantics two implementations would have to agree on. Ordered comparison
+  is unchanged — still defined only over §2.2 decimal strings — and `spec validate`, the conformance
+  corpus, and the exit classes are untouched.
 - Add the MCP `prompts` capability (ADR-0008): three non-normative authoring-method prompts —
   `author_pack`, `test_pack`, `fix_pack` — served as static, versioned text that the client's model
   executes with the client's key. The server still calls no model, holds no key, and opens no

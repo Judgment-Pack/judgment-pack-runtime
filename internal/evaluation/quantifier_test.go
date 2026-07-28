@@ -249,11 +249,11 @@ func TestRFC0008PermutationAndDuplicateInvariance(t *testing.T) {
 // uniform's five clauses, applied in order, one row each, plus the §7.4
 // equality rows the RFC pins and a permutation of every one of them.
 //
-// The rows whose names carry "undeterminable" are the exception to the
-// "conformance" in this function's name, and are grouped and labelled below as
-// such: RFC 0008's five clauses do not decide a pair of resolved values whose
-// §7.4 equality is indeterminate, so those rows pin this runtime's proposed
-// amendment rather than the RFC as published. See the note on uniform.
+// Every row is conformance to the five clauses as published; none pins an
+// extension of them. The rows over numbers no arithmetic type can hold are
+// where that used to be in doubt: they are ordinary clause 3 and clause 5 rows,
+// because §7.4 equality is total and decides them on the tokens. See the note
+// on uniform.
 func TestRFC0008UniformConformanceRows(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -269,24 +269,26 @@ func TestRFC0008UniformConformanceRows(t *testing.T) {
 		{"clause-3-beats-clause-4", `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			`{"list":[{"cabin":1},{"cabin":2},{}]}`, triFalse},
 
-		// Indeterminate §7.4 equality between two resolved values. RFC 0008's
-		// five clauses are silent here — clause 3 pins known inequality, clause
-		// 4 pins an at that fails to resolve, and neither covers a resolved pair
-		// the arithmetic cannot compare — so these rows state this runtime's
-		// behavior and the amendment it proposes, not conformance to the
-		// published clauses. The behavior: an incomparable value is not a
-		// counterexample, it must not hide one either (the determinable unequal
-		// pair still decides, in whichever order the members arrive, which keeps
-		// clause 3 dominant), and where no counterexample survives the result is
-		// the same unknown clause 4 gives a missing at.
-		{"amendment-known-inequality-still-beats-an-undeterminable-at-value", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+		// Numbers past every arithmetic type, under the same two clauses as any
+		// other value. Equality is decided on the tokens, so an at-value of
+		// 1e999999999 is a counterexample against 2e999999999 exactly as 1 is
+		// against 2, and 1e999999999 confirms 1.0e999999999 exactly as 1000
+		// confirms 1e3. No row here is unknown: unknown is what a missing at
+		// earns (clause 4), not what an expensive number earns.
+		{"clause-3-huge-token-against-small-ones", `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			`{"list":[{"cabin":1e999999999},{"cabin":1},{"cabin":2}]}`, triFalse},
-		{"amendment-undeterminable-at-value-among-equals-is-unknown", `{"op":"uniform","path":"/list","at":"/cabin"}`,
-			`{"list":[{"cabin":1e999999999},{"cabin":1},{"cabin":1}]}`, triUnknown},
-		{"amendment-all-at-values-undeterminable-is-unknown", `{"op":"uniform","path":"/list","at":"/cabin"}`,
-			`{"list":[{"cabin":1e999999999},{"cabin":2e999999999}]}`, triUnknown},
-		{"amendment-undeterminable-inside-a-composite-at-value", `{"op":"uniform","path":"/list","at":"/seats"}`,
+		{"clause-3-huge-token-differs-from-its-equal-neighbours", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+			`{"list":[{"cabin":1e999999999},{"cabin":1},{"cabin":1}]}`, triFalse},
+		{"clause-3-distinct-huge-tokens-are-unequal", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+			`{"list":[{"cabin":1e999999999},{"cabin":2e999999999}]}`, triFalse},
+		{"clause-3-huge-token-inside-a-composite-at-value", `{"op":"uniform","path":"/list","at":"/seats"}`,
 			`{"list":[{"seats":[1,1e999999999]},{"seats":[2,1e999999999]}]}`, triFalse},
+		{"clause-5-equal-huge-tokens-written-differently", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+			`{"list":[{"cabin":1e999999999},{"cabin":1.0e999999999},{"cabin":10e999999998}]}`, triTrue},
+		{"clause-5-equal-numbers-written-differently", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+			`{"list":[{"cabin":1000},{"cabin":1e3},{"cabin":1.0e3}]}`, triTrue},
+		{"clause-5-signed-zero-is-one-value", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+			`{"list":[{"cabin":-0},{"cabin":0},{"cabin":0.0e10}]}`, triTrue},
 
 		{"clause-4-missing-at-among-equals", `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			`{"list":[{"cabin":"economy"},{"cabin":"economy"},{}]}`, triUnknown},
@@ -431,9 +433,10 @@ func TestRFC0008DuplicationRaisesTheChargeAndKeepsTheValue(t *testing.T) {
 	onceCharge := chargeOf(t, condition, once)
 	twiceCharge := chargeOf(t, condition, twice)
 	// Each duplicate costs a fact node, one step of the already-compiled "/ok",
-	// and the boolean operand: five units apiece, ten for the two.
-	if twiceCharge-onceCharge != 10 {
-		t.Fatalf("duplicating two elements raised the charge from %d to %d; the model says it must rise by 10", onceCharge, twiceCharge)
+	// the boolean it selects, and the boolean operand: six units apiece, twelve
+	// for the two.
+	if twiceCharge-onceCharge != 12 {
+		t.Fatalf("duplicating two elements raised the charge from %d to %d; the model says it must rise by 12", onceCharge, twiceCharge)
 	}
 	if twiceCharge <= onceCharge {
 		t.Fatalf("duplication must raise the charge: %d then %d", onceCharge, twiceCharge)
@@ -474,6 +477,11 @@ func TestRFC0008DuplicationRaisesTheChargeAndKeepsTheValue(t *testing.T) {
 // 6, "/fare" costs 6+5 = 11 then 5, and "/missing" costs 9+8 = 17. A scalar
 // value costs 1 plus its token length, so true costs 1, "Y" costs 2, and the
 // number 1 costs 2.
+//
+// A fact charges both sides of its comparison: the operand its author wrote and
+// the value its pointer selected. Every row over a resolving fact therefore
+// carries a summand the facts document supplies, and a row whose pointer does
+// not resolve carries none.
 func TestRFC0008WorkChargeModel(t *testing.T) {
 	const elementPredicate = `{"op":"fact","path":"/ok","operator":"equals","value":true}`
 	cases := []struct {
@@ -487,22 +495,43 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 			name:      "fact-node-and-pointer",
 			condition: elementPredicate,
 			facts:     `{"ok":true}`,
-			want:      9,
-			why:       "one node, the compile and one resolution of \"/ok\" (7), and one unit for the boolean operand",
+			want:      10,
+			why:       "one node, the compile and one resolution of \"/ok\" (7), one unit for the boolean it selected, and one for the boolean operand",
 		},
 		{
-			name:      "deep-equality-charged-by-operand-size",
+			name:      "fact-charges-the-selected-value-as-well-as-the-operand",
+			condition: `{"op":"fact","path":"/value","operator":"equals","value":"gold"}`,
+			facts:     `{"value":"platinum"}`,
+			want:      28,
+			why:       "one node, 13 for \"/value\", 9 for the eight-character string the pointer selected, and 5 for the four-character operand; the runtime side is the larger one here and is priced like the authored side",
+		},
+		{
+			name:      "fact-whose-pointer-does-not-resolve-charges-no-selected-value",
+			condition: `{"op":"fact","path":"/value","operator":"equals","value":"gold"}`,
+			facts:     `{"other":"platinum"}`,
+			want:      19,
+			why:       "one node, 13 for the lookup that failed, and 5 for the operand; nothing was selected, so nothing is charged for it",
+		},
+		{
+			name:      "deep-equality-charged-by-both-sides",
 			condition: `{"op":"fact","path":"/value","operator":"equals","value":{"a":[1,2,3]}}`,
 			facts:     `{"value":{"a":[1,2,3]}}`,
-			want:      23,
-			why:       "one node, 13 for \"/value\", and 9 for the operand: the object (1) plus its member name (1) plus the array (1) plus three two-unit number tokens",
+			want:      32,
+			why:       "one node, 13 for \"/value\", and 9 twice — for the selected value and for the operand — where 9 is the object (1) plus its member name (1) plus the array (1) plus three two-unit number tokens",
 		},
 		{
-			name:      "in-operand-charged-by-size",
+			name:      "in-charges-the-selected-value-once-per-candidate",
 			condition: `{"op":"fact","path":"/value","operator":"in","value":["a","b","c","d"]}`,
 			facts:     `{"value":"a"}`,
-			want:      23,
-			why:       "one node, 13 for \"/value\", and 9 for the operand: the array (1) plus four one-character strings at two units each",
+			want:      31,
+			why:       "one node, 13 for \"/value\", 9 for the operand (the array plus four one-character strings at two units each), and the two-unit selected value once per candidate: 8",
+		},
+		{
+			name:      "evidence-present-charges-its-requirement-id",
+			condition: `{"op":"evidence-present","evidenceRequirement":"intake-form"}`,
+			facts:     `{}`,
+			want:      12,
+			why:       "one node plus the eleven bytes of the id every lookup hashes",
 		},
 		{
 			name:      "unresolved-aggregate-path-costs-its-lookup",
@@ -529,15 +558,15 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 			name:      "per-element-predicate",
 			condition: `{"op":"exists","path":"/list","where":` + elementPredicate + `}`,
 			facts:     `{"list":[{"ok":true},{"ok":false},{}]}`,
-			want:      31,
-			why:       "12 for the aggregate, 9 for the first element, and 5 for each of the other two: \"/ok\" is scanned once and stepped three times",
+			want:      33,
+			why:       "12 for the aggregate, 10 for the first element, 6 for the second, and 5 for the third, whose \"/ok\" selects nothing: \"/ok\" is scanned once and stepped three times",
 		},
 		{
 			name:      "boolean-subtree-charges-branches-never-reached",
 			condition: `{"op":"any","conditions":[{"op":"literal","value":true},{"op":"exists","path":"/list","where":` + elementPredicate + `}]}`,
 			facts:     `{"list":[{"ok":true},{"ok":false},{}]}`,
-			want:      33,
-			why:       "the any node, the literal that short-circuits it, and the whole 31-unit aggregate the evaluator never reaches",
+			want:      35,
+			why:       "the any node, the literal that short-circuits it, and the whole 33-unit aggregate the evaluator never reaches",
 		},
 		{
 			name: "sibling-aggregates-add",
@@ -545,15 +574,15 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 				`{"op":"exists","path":"/list","where":` + elementPredicate + `},` +
 				`{"op":"every","path":"/list","where":` + elementPredicate + `}]}`,
 			facts: `{"list":[{"ok":true},{"ok":false},{}]}`,
-			want:  53,
-			why:   "the all node, the first aggregate at 31, and the second at 21 because both its pointers are already compiled; no single product bounds them",
+			want:  57,
+			why:   "the all node, the first aggregate at 33, and the second at 23 because both its pointers are already compiled; no single product bounds them",
 		},
 		{
 			name:      "ragged-nesting-sums-inner-lengths",
 			condition: `{"op":"exists","path":"/rows","where":{"op":"every","path":"/cells","where":` + elementPredicate + `}}`,
 			facts:     `{"rows":[{"cells":[{"ok":true}]},{"cells":[{"ok":true},{"ok":true}]},{"cells":[{"ok":true},{"ok":true},{"ok":true}]}]}`,
-			want:      74,
-			why:       "12 for the outer aggregate, 14 then 7 then 7 for the three inner ones, 9 for the first cell, and 5 for each of the other five",
+			want:      80,
+			why:       "12 for the outer aggregate, 14 then 7 then 7 for the three inner ones, 10 for the first cell, and 6 for each of the other five",
 		},
 		{
 			name:      "uniform-charges-members-and-selected-values",
@@ -563,18 +592,18 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 			why:       "12 for the aggregate, 11 then 5 then 5 for the three resolutions of \"/fare\", and 7 for each of the two objects that resolved: the object, its four-byte member name, and the two-unit string",
 		},
 		{
-			name:      "uniform-charges-no-extra-pass-without-an-undeterminable-value",
+			name:      "uniform-charges-one-pass-over-its-selected-values",
 			condition: `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			facts:     `{"list":[{"cabin":1},{"cabin":2},{"cabin":3}]}`,
 			want:      43,
-			why:       "12 for the aggregate, 13 then 6 then 6 for \"/cabin\", and two units for each one-digit number; an ordinary collection pays for one comparison pass and no more",
+			why:       "12 for the aggregate, 13 then 6 then 6 for \"/cabin\", and two units for each one-digit number; one representative absorbs the members, so one pass is the whole cost",
 		},
 		{
-			name:      "uniform-charges-a-pass-per-undeterminable-value",
+			name:      "uniform-charges-a-long-numeric-token-by-its-bytes",
 			condition: `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			facts:     `{"list":[{"cabin":1e999999999},{"cabin":2},{"cabin":3}]}`,
-			want:      69,
-			why:       "the 43 above with the first value's token costing 12 rather than 2 (a ten-unit difference), plus one further pass over the 16 units of selected value, since one value can create a second representative",
+			want:      53,
+			why:       "the 43 above with the first value's eleven-character token costing 12 rather than 2; equality reads that token byte by byte, and reads it once, so the ten extra units are the whole difference",
 		},
 	}
 
@@ -676,6 +705,131 @@ func TestRFC0008LongDecimalOperandIsChargedByItsLength(t *testing.T) {
 	}
 }
 
+// The adversarial selected-value row, and the second defect of the same class
+// as the long pointer. An authored operand says nothing about the value it is
+// compared against: a two-byte operand can be compared, once per element,
+// against as much runtime JSON as the carrier admits, and a model that charged
+// only what the author wrote priced the one half of the comparison an attacker
+// does not supply. Both shapes below are charged by their bytes, per element,
+// and a facts document whose selected values are long enough to be expensive is
+// refused under the same budget that admits the short one.
+func TestRFC0008LongSelectedValueIsChargedByItsLength(t *testing.T) {
+	engine := newTestEngine(t)
+	const elements = 200
+	const longWidth = 1_000
+	shapes := []struct {
+		name    string
+		element func(width int) string
+		operand string
+	}{
+		{"string", func(width int) string { return fmt.Sprintf(`{"blob":%q}`, strings.Repeat("a", width)) }, `"a"`},
+		{"number", func(width int) string { return fmt.Sprintf(`{"blob":%s}`, strings.Repeat("9", width)) }, `9`},
+	}
+	for _, shape := range shapes {
+		t.Run(shape.name, func(t *testing.T) {
+			facts := func(width int) string {
+				items := make([]string, 0, elements)
+				for index := 0; index < elements; index++ {
+					items = append(items, shape.element(width))
+				}
+				return fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ","))
+			}
+			condition := fmt.Sprintf(
+				`{"op":"exists","path":"/list","where":{"op":"fact","path":"/blob","operator":"equals","value":%s}}`,
+				shape.operand)
+			short, long := facts(1), facts(longWidth)
+
+			// The operand is one byte wide in both runs, so the difference is
+			// the selected values' difference and nothing else.
+			shortCharge := chargeOf(t, condition, short)
+			longCharge := chargeOf(t, condition, long)
+			if want := elements * (longWidth - 1); longCharge-shortCharge != want {
+				t.Fatalf("charges %d and %d differ by %d; a selected value must cost its length per element (%d)",
+					shortCharge, longCharge, longCharge-shortCharge, want)
+			}
+
+			// And the difference decides admission: the 200 one-byte
+			// comparisons run, the 200 thousand-byte ones are refused.
+			pack := draftPack(condition, "escalate")
+			if _, failure := engine.EvaluateWith(pack, []byte(short), nil, draftOptions(0)); failure != nil {
+				t.Fatalf("one-byte selected values over 200 elements must evaluate: %+v", failure)
+			}
+			_, failure := engine.EvaluateWith(pack, []byte(long), nil, draftOptions(0))
+			if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
+				t.Fatalf("thousand-byte selected values over the same 200 elements must be refused: %+v", failure)
+			}
+		})
+	}
+}
+
+// The adversarial evidence-requirement row. evidence-present was charged as one
+// flat node however long the identifier it looks up, so a where could hash a
+// long id once per element for one unit per element — the flat-unit defect
+// again, in the one node shape that had kept it. The id's bytes are now charged
+// like any other name a lookup reads.
+func TestRFC0008LongEvidenceRequirementIdIsChargedByItsLength(t *testing.T) {
+	engine := newTestEngine(t)
+	const elements = 200
+	items := make([]string, 0, elements)
+	for index := 0; index < elements; index++ {
+		items = append(items, `{}`)
+	}
+	facts := fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ","))
+	condition := func(id string) string {
+		return fmt.Sprintf(
+			`{"op":"exists","path":"/list","where":{"op":"evidence-present","evidenceRequirement":%q}}`, id)
+	}
+	// Both are localIds the schema admits; only their lengths differ.
+	short, long := "e", strings.Repeat("e", 1_000)
+
+	shortCharge := chargeOf(t, condition(short), facts)
+	longCharge := chargeOf(t, condition(long), facts)
+	if want := elements * (len(long) - len(short)); longCharge-shortCharge != want {
+		t.Fatalf("charges %d and %d differ by %d; a requirement id looked up per element must cost its length per element (%d)",
+			shortCharge, longCharge, longCharge-shortCharge, want)
+	}
+
+	// The pack declares the requirement, so both runs are conformant packs that
+	// differ only in the identifier's length — and the long one is refused.
+	pack := func(id string) []byte {
+		return []byte(fmt.Sprintf(`{
+  "specVersion": "0.1.0-draft",
+  "id": "https://example.invalid/judgment-packs/rfc0008-evidence-id",
+  "version": "0.1.0",
+  "title": "Synthetic draft RFC 0008 evidence-identifier row",
+  "description": "Invented content for specification testing; it authorizes nothing.",
+  "decision": {
+    "intent": "Exercise the work charge of an evidence-present inside a where.",
+    "question": "Was the identifier charged by its length?"
+  },
+  "outcomes": [
+    {"id": "held", "label": "Held"},
+    {"id": "did-not-hold", "label": "Did not hold"}
+  ],
+  "evidenceRequirements": [
+    {"id": %q, "description": "Declared so the reference resolves.", "required": false}
+  ],
+  "rules": [
+    {
+      "id": "the-rule",
+      "description": "Looks the requirement up once per element.",
+      "when": %s,
+      "outcome": "held",
+      "onUnknown": "ignore"
+    }
+  ],
+  "fallbackOutcome": "did-not-hold"
+}`, id, condition(id)))
+	}
+	if _, failure := engine.EvaluateWith(pack(short), []byte(facts), nil, draftOptions(0)); failure != nil {
+		t.Fatalf("a one-character requirement id over 200 elements must evaluate: %+v", failure)
+	}
+	_, failure := engine.EvaluateWith(pack(long), []byte(facts), nil, draftOptions(0))
+	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
+		t.Fatalf("a thousand-character requirement id over the same 200 elements must be refused: %+v", failure)
+	}
+}
+
 // A ragged outer array costs the sum of its inner lengths, never the product of
 // the outer length with any single inner length — the row the RFC states as
 // Σᵢ|Bᵢ| rather than |A|×|B|.
@@ -696,9 +850,9 @@ func TestRFC0008RaggedNestingIsNotAProduct(t *testing.T) {
 	rectangularCharge := chargeOf(t, condition, rectangular)
 	// Σ|Bᵢ| = 6 cells against |A|×max|B| = 9: the ragged charge must be the
 	// sum, which is exactly three cells cheaper. A cell after the first costs
-	// five units — its fact node, one step of the already-compiled "/ok", and
-	// the boolean operand — so the difference is 15.
-	if rectangularCharge-raggedCharge != 15 {
-		t.Fatalf("ragged %d and rectangular %d must differ by the three absent cells (15 units)", raggedCharge, rectangularCharge)
+	// six units — its fact node, one step of the already-compiled "/ok", the
+	// boolean it selects, and the boolean operand — so the difference is 18.
+	if rectangularCharge-raggedCharge != 18 {
+		t.Fatalf("ragged %d and rectangular %d must differ by the three absent cells (18 units)", raggedCharge, rectangularCharge)
 	}
 }

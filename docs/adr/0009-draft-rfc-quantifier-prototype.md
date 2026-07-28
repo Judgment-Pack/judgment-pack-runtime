@@ -51,14 +51,19 @@ Settled constraints:
 - **Semantics:** RFC 0008's Specification section as written — the current condition root and its
   restoration per level, `uniform`'s `at` rooted in each member, the empty-array values (`exists`
   false, `every` true) as pinned choices, `uniform`'s five ordered clauses with clause 3 before
-  clause 4, and short-circuiting on the dominant value only, never on `unknown`. One case is this
-  runtime's own rather than the RFC's, and is not claimed as conformance: the five clauses do not
-  say what `uniform` produces for two *resolved* `at` values whose §7.4 equality is indeterminate —
-  clause 3 pins known inequality and clause 4 pins an `at` that fails to resolve, and neither covers
-  it. This runtime produces `unknown`, as clause 4 does for a missing `at`, after clause 3 so a
-  known counterexample still dominates. An amendment folding indeterminate equality into clause 4 in
-  that order is proposed to the RFC; until it is adopted the behavior is a documented extension of
-  the five clauses, pinned by tests named as such.
+  clause 4, and short-circuiting on the dominant value only, never on `unknown`. The five clauses
+  need no sixth arm, and this record no longer proposes one. An earlier revision produced `unknown`
+  for two *resolved* `at` values whose §7.4 equality the arithmetic could not settle, and proposed
+  folding that case into clause 4 as an RFC amendment; the proposal is withdrawn, because §7.4
+  equality is *total* over carrier-valid JSON once it is decided the right way. Numbers are compared
+  as normalized tokens — sign, significant digits, adjusted exponent — which settles `1e999999999`
+  against `2e999999999` in twenty bytes rather than the gigabyte materializing them would need, and
+  makes `1e3 == 1000 == 1.0e3` and `-0 == 0` fall out of the same rule. An implementation's
+  inability to represent an admitted value is a resource condition, reported as an error; it is not
+  a semantics, and pinning one would have made a disposition depend on the evaluator's number type
+  rather than on the documents — the Python prototype, comparing the same pair by value, already
+  answered `false` where this runtime answered `unknown`. Ordering is untouched: it remains defined
+  only over §2.2 decimal strings, where "incomparable values produce unknown" still applies.
 - **Grammar:** the aggregate-depth bound of two, structural rather than syntactic, enforced by a
   depth-indexed check whose declarative twin is committed as a testdata schema artifact. That check
   owns aggregate shape and depth and nothing else; the Core validity of a `where` is delegated to
@@ -67,11 +72,20 @@ Settled constraints:
   in full in the code — a work unit, a preflight charge complete before any element of a condition
   tree is evaluated and invariant under any permutation of the elements, ragged nesting charged as
   Σᵢ|Bᵢ|, Boolean branches a short-circuiting evaluator never reaches charged anyway, deep equality
-  charged by value size, `uniform` charged per member, siblings additive. A unit is byte-sensitive
-  wherever the processing it stands for is: a pointer costs its path's bytes to compile — charged
-  before the scan runs, and once per distinct authored pointer, because the compiled form is then
-  cached — plus its token bytes per resolution, and a scalar costs its token length, so a long path
-  or a long decimal operand cannot buy unbounded work for one flat unit. The charge is *not*
+  charged by the size of both values compared, `uniform` charged per member — one pass, since §7.4
+  equality is total and one representative absorbs the members — siblings additive. A unit is
+  byte-sensitive wherever the processing it stands for is: a pointer costs its path's bytes to
+  compile — charged before the scan runs, and once per distinct authored pointer, because the
+  compiled form is then cached — plus its token bytes per resolution, a scalar costs its token
+  length, and `evidence-present` costs the bytes of the requirement id it looks up, so a long path,
+  a long operand, or a long identifier cannot buy unbounded work for one flat unit. Both *sides* of
+  a comparison are priced, which is why the preflight resolves a `fact`'s pointer and not only an
+  aggregate's: the operand is the half the pack's author wrote, and charging it alone left the half
+  the facts document supplies free — a two-byte operand compared against a megabyte of runtime JSON,
+  once per element. A `fact` therefore costs its pointer plus the value that pointer selected plus
+  the authored operand, and `in` charges the selected value once per candidate. This is the third
+  candidate model, and each predecessor was retired by a demonstrated attack — the flat pointer
+  charge, then the unpriced selected value — rather than by taste. The charge is *not*
   duplication-invariant: a duplicated element is one more element and is charged like one. Only the
   condition's value is duplication-invariant, and only while both inputs fit the limits, which is
   what RFC 0008's result-invariance wording says. Exhaustion is an explicit evaluation error

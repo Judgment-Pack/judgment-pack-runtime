@@ -75,34 +75,58 @@ func TestResolvePointer(t *testing.T) {
 	}
 }
 
+// §7.4 equality, including its totality: every pair below is equal or unequal,
+// and no pair is anything else. The rows carrying numbers no machine word or
+// big.Rat can hold are the point — they are decided on the tokens, so the
+// answer is a property of the two numbers rather than of the arithmetic that
+// happened to be available.
 func TestJSONEqualIsTypePreserving(t *testing.T) {
 	cases := []struct {
-		a, b         any
-		want         bool
-		determinable bool
+		a, b any
+		want bool
 	}{
-		{json.Number("5.0"), json.Number("5"), true, true}, // mathematical value
-		{json.Number("5"), "5", false, true},               // no coercion across types
-		{"5", json.Number("5"), false, true},
-		{true, "true", false, true},
-		{nil, nil, true, true},
-		{[]any{json.Number("1"), "x"}, []any{json.Number("1.0"), "x"}, true, true},
-		{[]any{"x", "y"}, []any{"y", "x"}, false, true}, // arrays compare in order
-		{map[string]any{"a": json.Number("1"), "b": "z"}, map[string]any{"b": "z", "a": json.Number("1.00")}, true, true},
-		{map[string]any{"a": "1"}, map[string]any{"a": "1", "b": "2"}, false, true},
-		// A representable-vs-unrepresentable pair is undeterminable, never a
-		// silent false (spec §7.4: incomparable values produce unknown)...
-		{json.Number("1e999999999"), json.Number("2e999999999"), false, false},
-		{[]any{json.Number("1e999999999")}, []any{json.Number("2e999999999")}, false, false},
-		// ...but identical tokens are equal regardless of representability.
-		{json.Number("1e999999999"), json.Number("1e999999999"), true, true},
+		{json.Number("5.0"), json.Number("5"), true}, // mathematical value
+		{json.Number("5"), "5", false},               // no coercion across types
+		{"5", json.Number("5"), false},
+		{true, "true", false},
+		{nil, nil, true},
+		{[]any{json.Number("1"), "x"}, []any{json.Number("1.0"), "x"}, true},
+		{[]any{"x", "y"}, []any{"y", "x"}, false}, // arrays compare in order
+		{map[string]any{"a": json.Number("1"), "b": "z"}, map[string]any{"b": "z", "a": json.Number("1.00")}, true},
+		{map[string]any{"a": "1"}, map[string]any{"a": "1", "b": "2"}, false},
+		// Normal forms: an exponent, a shifted point, and a signed zero are
+		// notations, not values.
+		{json.Number("1e3"), json.Number("1000"), true},
+		{json.Number("1000"), json.Number("1.0e3"), true},
+		{json.Number("-0"), json.Number("0"), true},
+		{json.Number("0.0e10"), json.Number("-0.000"), true},
+		{json.Number("1.23e4"), json.Number("12300"), true},
+		{json.Number("1E+3"), json.Number("1000"), true},
+		{json.Number("1e-2"), json.Number("0.01"), true},
+		{json.Number("0e999999999"), json.Number("-0"), true},
+		{json.Number("-1.5"), json.Number("1.5"), false},
+		{json.Number("1e3"), json.Number("1e4"), false},
+		{json.Number("1e-2"), json.Number("0.1"), false},
+		// Numbers past every arithmetic type still compare exactly, in both
+		// directions: unequal ones are unequal...
+		{json.Number("1e999999999"), json.Number("2e999999999"), false},
+		{json.Number("1e999999999"), json.Number("1e999999998"), false},
+		{[]any{json.Number("1e999999999")}, []any{json.Number("2e999999999")}, false},
+		// ...and equal ones are equal, whether the tokens match or not.
+		{json.Number("1e999999999"), json.Number("1e999999999"), true},
+		{json.Number("1e999999999"), json.Number("1.0e999999999"), true},
+		{json.Number("10e999999998"), json.Number("1e999999999"), true},
+		{json.Number("-1e999999999"), json.Number("1e999999999"), false},
 		// A definite mismatch elsewhere still decides the comparison.
-		{[]any{json.Number("1e999999999"), "x"}, []any{json.Number("2e999999999"), "y"}, false, true},
+		{[]any{json.Number("1e999999999"), "x"}, []any{json.Number("2e999999999"), "y"}, false},
 	}
 	for _, testCase := range cases {
-		got, determinable := jsonEqual(testCase.a, testCase.b)
-		if determinable != testCase.determinable || (determinable && got != testCase.want) {
-			t.Errorf("jsonEqual(%v, %v) = (%v, %v), want (%v, %v)", testCase.a, testCase.b, got, determinable, testCase.want, testCase.determinable)
+		if got := jsonEqual(testCase.a, testCase.b); got != testCase.want {
+			t.Errorf("jsonEqual(%v, %v) = %v, want %v", testCase.a, testCase.b, got, testCase.want)
+		}
+		// Equality is symmetric, which a normal-form comparison must not lose.
+		if got := jsonEqual(testCase.b, testCase.a); got != testCase.want {
+			t.Errorf("jsonEqual(%v, %v) = %v, want %v", testCase.b, testCase.a, got, testCase.want)
 		}
 	}
 }
@@ -284,10 +308,12 @@ func TestEvidencePresentTriState(t *testing.T) {
 	}
 }
 
-// Ordered comparison at the condition level: decimal strings decide, JSON
-// numbers and non-grammar strings degrade to unknown, and undeterminable
-// number equality degrades to unknown rather than false.
-func TestOrderedAndUndeterminableConditions(t *testing.T) {
+// The two comparison families at the condition level, and the line between
+// them. Ordered comparison is defined only over §2.2 decimal strings, so a JSON
+// number or a non-grammar string degrades to unknown; equality is total, so
+// every equals, not-equals, and in below decides — including over numbers no
+// arithmetic type can hold, which produce false or true and never unknown.
+func TestOrderedAndEqualityConditions(t *testing.T) {
 	facts := map[string]any{
 		"amount": "150",
 		"count":  json.Number("150"),
@@ -301,10 +327,12 @@ func TestOrderedAndUndeterminableConditions(t *testing.T) {
 		{"decimal-string-greater", map[string]any{"op": "fact", "path": "/amount", "operator": "greater-than", "value": "100"}, triTrue},
 		{"decimal-string-not-less", map[string]any{"op": "fact", "path": "/amount", "operator": "less-than", "value": "100"}, triFalse},
 		{"json-number-ordered-unknown", map[string]any{"op": "fact", "path": "/count", "operator": "greater-than", "value": "100"}, triUnknown},
-		{"huge-number-equals-unknown", map[string]any{"op": "fact", "path": "/huge", "operator": "equals", "value": json.Number("2e999999999")}, triUnknown},
-		{"huge-number-not-equals-unknown", map[string]any{"op": "fact", "path": "/huge", "operator": "not-equals", "value": json.Number("2e999999999")}, triUnknown},
+		{"huge-number-equals-false", map[string]any{"op": "fact", "path": "/huge", "operator": "equals", "value": json.Number("2e999999999")}, triFalse},
+		{"huge-number-not-equals-true", map[string]any{"op": "fact", "path": "/huge", "operator": "not-equals", "value": json.Number("2e999999999")}, triTrue},
 		{"huge-identical-token-equal", map[string]any{"op": "fact", "path": "/huge", "operator": "equals", "value": json.Number("1e999999999")}, triTrue},
-		{"in-with-undeterminable-member", map[string]any{"op": "fact", "path": "/huge", "operator": "in", "value": []any{json.Number("2e999999999"), "x"}}, triUnknown},
+		{"huge-equal-under-a-different-token", map[string]any{"op": "fact", "path": "/huge", "operator": "equals", "value": json.Number("1.0e999999999")}, triTrue},
+		{"in-over-huge-tokens-decides-false", map[string]any{"op": "fact", "path": "/huge", "operator": "in", "value": []any{json.Number("2e999999999"), "x"}}, triFalse},
+		{"in-over-huge-tokens-decides-true", map[string]any{"op": "fact", "path": "/huge", "operator": "in", "value": []any{json.Number("2e999999999"), json.Number("10e999999998")}}, triTrue},
 	}
 	for _, testCase := range cases {
 		if got := evalCondition(testCase.node, facts, map[string]tri{}); got != testCase.want {

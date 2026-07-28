@@ -173,37 +173,20 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	operand := condition["value"]
 	switch condition["operator"] {
 	case "equals":
-		equal, determinable := jsonEqual(value, operand)
-		if !determinable {
-			return triUnknown
-		}
-		return triFromBool(equal)
+		return triFromBool(jsonEqual(value, operand))
 	case "not-equals":
-		// §7.4: not-equals is the Boolean inverse of equals only when equality
-		// can be determined.
-		equal, determinable := jsonEqual(value, operand)
-		if !determinable {
-			return triUnknown
-		}
-		return triFromBool(!equal)
+		// §7.4: equality is total over carrier-valid JSON, so not-equals is
+		// simply its Boolean inverse.
+		return triFromBool(!jsonEqual(value, operand))
 	case "in":
 		items, ok := operand.([]any)
 		if !ok {
 			return triUnknown
 		}
-		sawUndeterminable := false
 		for _, item := range items {
-			equal, determinable := jsonEqual(value, item)
-			if !determinable {
-				sawUndeterminable = true
-				continue
-			}
-			if equal {
+			if jsonEqual(value, item) {
 				return triTrue
 			}
-		}
-		if sawUndeterminable {
-			return triUnknown
 		}
 		return triFalse
 	case "greater-than", "greater-than-or-equal", "less-than", "less-than-or-equal":
@@ -344,83 +327,151 @@ func arrayIndex(token string, length int) (int, bool) {
 
 // jsonEqual is §7.4's type-preserving JSON equality: no coercion between
 // types; numbers compare by mathematical value; arrays in order; objects by
-// member name and value regardless of order. The second result reports
-// whether equality could be determined at all: a syntactically valid JSON
-// number the arithmetic cannot represent (for example an exponent beyond
-// big.Rat's range) makes the comparison undeterminable rather than silently
-// false — §7.4: "incomparable values ... produce unknown".
-func jsonEqual(a, b any) (bool, bool) {
+// member name and value regardless of order.
+//
+// It is total over carrier-valid JSON. Every pair of decoded values is equal
+// or unequal, and there is no third answer: numbers are decided on their
+// tokens (numbersEqual), which needs no arithmetic type big enough to hold
+// them, so an evaluator's inability to represent a value never becomes a
+// semantics that another evaluator would have to reproduce. §7.4's
+// "incomparable values ... produce unknown" governs the ordered comparisons
+// (decimalCompare), which are defined only over §2.2 decimal strings and are
+// untouched by this.
+func jsonEqual(a, b any) bool {
 	switch left := a.(type) {
 	case nil:
-		return b == nil, true
+		return b == nil
 	case bool:
 		right, ok := b.(bool)
-		return ok && left == right, true
+		return ok && left == right
 	case string:
 		right, ok := b.(string)
-		return ok && left == right, true
+		return ok && left == right
 	case json.Number:
 		right, ok := b.(json.Number)
-		if !ok {
-			return false, true
-		}
-		if left.String() == right.String() {
-			// Identical tokens are equal regardless of representability.
-			return true, true
-		}
-		leftRat, leftOK := new(big.Rat).SetString(left.String())
-		rightRat, rightOK := new(big.Rat).SetString(right.String())
-		if !leftOK || !rightOK {
-			return false, false
-		}
-		return leftRat.Cmp(rightRat) == 0, true
+		return ok && numbersEqual(left, right)
 	case []any:
 		right, ok := b.([]any)
 		if !ok || len(left) != len(right) {
-			return false, true
+			return false
 		}
-		sawUndeterminable := false
-		for i := range left {
-			equal, determinable := jsonEqual(left[i], right[i])
-			if !determinable {
-				sawUndeterminable = true
-				continue
-			}
-			if !equal {
-				return false, true
+		for index := range left {
+			if !jsonEqual(left[index], right[index]) {
+				return false
 			}
 		}
-		if sawUndeterminable {
-			return false, false
-		}
-		return true, true
+		return true
 	case map[string]any:
 		right, ok := b.(map[string]any)
 		if !ok || len(left) != len(right) {
-			return false, true
+			return false
 		}
-		sawUndeterminable := false
 		for key, value := range left {
 			other, present := right[key]
-			if !present {
-				return false, true
-			}
-			equal, determinable := jsonEqual(value, other)
-			if !determinable {
-				sawUndeterminable = true
-				continue
-			}
-			if !equal {
-				return false, true
+			if !present || !jsonEqual(value, other) {
+				return false
 			}
 		}
-		if sawUndeterminable {
-			return false, false
-		}
-		return true, true
+		return true
 	default:
-		return false, true
+		return false
 	}
+}
+
+// numbersEqual decides §7.4 equality between two JSON number tokens by
+// mathematical value, in one pass over each token and without materializing
+// either value. Two tokens denote the same number exactly when their normal
+// forms agree — same sign, same significant digits, same adjusted exponent —
+// so 1e3, 1000, and 1.0e3 are one value and -0 is 0.
+//
+// Deciding it this way is what makes equality total. Materializing the values
+// (big.Rat) answers the same question only for the values the machine can
+// hold: 1e999999999 against 2e999999999 would need a gigabyte of digits to
+// settle by arithmetic and settles in twenty bytes on the tokens. The earlier
+// arithmetic-based path reported such a pair as undeterminable and let uniform
+// and fact produce unknown from it, which made a disposition depend on the
+// evaluator's number type rather than on the documents. Inability is a
+// resource condition, not a semantics.
+func numbersEqual(left, right json.Number) bool {
+	if left.String() == right.String() {
+		return true
+	}
+	return normalizeNumber(left.String()).equals(normalizeNumber(right.String()))
+}
+
+// numberNormalForm is one JSON number token reduced to the unique triple that
+// identifies its value: the sign, the significant digits with every leading
+// and trailing zero stripped, and the power of ten those digits are scaled by.
+// Zero has no significant digits, which is what makes -0, 0, and 0.0e10 one
+// value whatever their signs and exponents. The exponent is arbitrary-precision
+// because the token's is — but it is the exponent that is materialized, never
+// the value, so its cost is the token's length and not the number's magnitude.
+//
+// malformed marks a token outside the JSON number grammar. The carrier cannot
+// produce one; a hand-built json.Number can, and it compares equal to nothing
+// but an identical token.
+type numberNormalForm struct {
+	negative  bool
+	digits    string
+	exponent  *big.Int
+	malformed bool
+}
+
+func (n numberNormalForm) equals(other numberNormalForm) bool {
+	if n.malformed || other.malformed {
+		return false
+	}
+	if n.digits == "" || other.digits == "" {
+		// Zero, which has no sign and no exponent to disagree about.
+		return n.digits == other.digits
+	}
+	return n.negative == other.negative && n.digits == other.digits && n.exponent.Cmp(other.exponent) == 0
+}
+
+// normalizeNumber computes that normal form in one pass over the token: split
+// off the sign, the exponent, and the fraction; concatenate the integer and
+// fraction digits into the significand; charge the exponent one power of ten
+// for every fraction digit it absorbed; then strip the leading zeros, which
+// carry no value, and the trailing zeros, each of which is one more power of
+// ten.
+func normalizeNumber(token string) numberNormalForm {
+	form := numberNormalForm{exponent: new(big.Int)}
+	rest := token
+	if strings.HasPrefix(rest, "-") {
+		form.negative, rest = true, rest[1:]
+	}
+	mantissa, exponent := rest, ""
+	if index := strings.IndexAny(rest, "eE"); index >= 0 {
+		mantissa, exponent = rest[:index], rest[index+1:]
+	}
+	integer, fraction := mantissa, ""
+	if index := strings.IndexByte(mantissa, '.'); index >= 0 {
+		integer, fraction = mantissa[:index], mantissa[index+1:]
+	}
+	if exponent != "" {
+		if _, ok := form.exponent.SetString(exponent, 10); !ok {
+			return numberNormalForm{malformed: true}
+		}
+	}
+	digits := integer + fraction
+	for index := 0; index < len(digits); index++ {
+		if digits[index] < '0' || digits[index] > '9' {
+			return numberNormalForm{malformed: true}
+		}
+	}
+	form.exponent.Sub(form.exponent, big.NewInt(int64(len(fraction))))
+	leading := 0
+	for leading < len(digits) && digits[leading] == '0' {
+		leading++
+	}
+	digits = digits[leading:]
+	significant := len(digits)
+	for significant > 0 && digits[significant-1] == '0' {
+		significant--
+	}
+	form.exponent.Add(form.exponent, big.NewInt(int64(len(digits)-significant)))
+	form.digits = digits[:significant]
+	return form
 }
 
 // decimalPattern is the §2.2 decimal grammar: an optional minus, an integer

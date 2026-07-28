@@ -1,9 +1,6 @@
 package evaluation
 
-import (
-	"encoding/json"
-	"math/big"
-)
+import "encoding/json"
 
 // Draft RFC 0008 (bounded collection quantifiers) semantics and their work
 // accounting. Nothing here is reachable unless the caller opts in: the
@@ -16,17 +13,19 @@ import (
 // two evaluators may pick different numbers and an above-limit input is not
 // portable between them. The number is set so the RFC's own attack sketch — an
 // aggregate over 10³ elements each carrying an aggregate over 10³ — is refused
-// with room to spare: with the short paths that sketch implies it charges about
-// 5·10⁶ units against this budget of 100,000, a factor of about 50, while every
-// collection a hand-authored pack plausibly quantifies over fits.
+// with room to spare: with the short paths and small values that sketch implies
+// it charges about 6·10⁶ units against this budget of 100,000, a factor of
+// about 60, while every collection a hand-authored pack plausibly quantifies
+// over fits.
 //
 // It is also this runtime's §10 collection-size limit, which RFC 0008's uplift
 // raises to a MUST alongside the evaluation-work one. No second knob states it,
 // because the work budget already implies it: an aggregate whose where costs c
 // units admits at most (budget - aggregate cost)/c elements, so the cheapest
 // possible where (a one-unit literal) bounds one aggregate at just under
-// 100,000 elements and an ordinary fact predicate over a short pointer — five
-// units — bounds it at about 20,000. The document that carries those elements
+// 100,000 elements and an ordinary fact predicate over a short pointer, a
+// boolean selected and a boolean authored — six units — bounds it at about
+// 16,000. The document that carries those elements
 // is bounded independently by the carrier layer's byte limit
 // (carrier.HardMaxBytes) and nesting depth (carrier.DefaultLimits), which apply
 // to the facts input before any condition is charged.
@@ -39,10 +38,10 @@ const DefaultWorkBudget = 100_000
 //
 // The byte-proportional half is load-bearing rather than pedantic. A pointer
 // resolution scans, splits, and unescapes its whole path; a member lookup
-// hashes the member name; numeric equality and decimal ordering parse whole
-// tokens. Charging a flat unit for any of those would let one condition node
-// buy unbounded processing, and the budget would bound the shape of the work
-// rather than its amount.
+// hashes the member name, including an evidence requirement's; numeric equality
+// normalizes whole tokens and decimal ordering parses them. Charging a flat
+// unit for any of those would let one condition node buy unbounded processing,
+// and the budget would bound the shape of the work rather than its amount.
 const (
 	unitNode = 1
 	// unitPointerScan is the fixed part of compiling one authored pointer; its
@@ -98,32 +97,21 @@ func (e *evaluator) quantify(node map[string]any, root any) tri {
 // dominates missing data; (4) otherwise an at that fails to resolve in any
 // member — including a singleton — is unknown; (5) otherwise true.
 //
-// Clause 3 is checked against a set of representatives rather than over every
-// pair. Determinable §7.4 equality is transitive over the values it can
-// determine, so one representative stands for every value equal to it and a
-// counterexample against it is a counterexample against them all.
-// Determinability itself is not transitive, though: two members can be
-// determinably unequal while both are undeterminable against a third (an
-// unrepresentable number). One representative would lose that counterexample
-// and make the answer depend on which member came first, so a value
-// undeterminable against every current representative becomes a further
-// representative instead of being discarded. The set grows only for a value no
-// current representative can be compared with, so an ordinary collection keeps
-// exactly one representative and the single linear pass the preflight charges;
-// the passes a growing set costs are charged in advance too, per the accounting
-// model on evaluate.
+// The five clauses are the whole of it, and they need no sixth arm. §7.4
+// equality is total over carrier-valid JSON — jsonEqual decides numbers on
+// their tokens rather than on an arithmetic type that has to hold them — so
+// there is no resolved pair whose comparison is "indeterminate" and no third
+// thing for a clause to say about one. An implementation that cannot compare
+// two admitted values has a resource problem, which is an error, not a
+// disposition; it is not a semantics, and pinning one would have made the
+// result depend on the evaluator's number type instead of on the documents.
 //
-// One case is this runtime's own, not the RFC's. A pair whose equality §7.4
-// cannot determine at all — two resolved values carrying a number the
-// arithmetic cannot represent — is neither a counterexample nor a confirmation,
-// and RFC 0008's five clauses do not say what it produces: clause 3 pins known
-// inequality, clause 4 pins an at that fails to resolve, and neither covers a
-// resolved pair whose comparison is indeterminate. This runtime treats it
-// exactly as clause 4 treats a missing at, which keeps unknown uniform across
-// both ways of not knowing and leaves clause 3's known counterexample dominant.
-// An amendment folding indeterminate equality into clause 4, ordered after
-// clause 3, is proposed to the RFC; until it is adopted this is a documented
-// extension of the five clauses rather than conformance to them.
+// One representative therefore suffices for clause 3: total equality is
+// transitive, so every member equal to the first stands for it and the first
+// member that differs is a counterexample against all of them, in whatever
+// order the members arrive. Clause 3 still dominates clause 4 — a member whose
+// at is missing is skipped rather than answered, and the unknown it earns is
+// only reached when the whole pass found no counterexample.
 func (e *evaluator) uniform(node map[string]any, root any) tri {
 	at, ok := node["at"].(string)
 	if !ok {
@@ -136,39 +124,24 @@ func (e *evaluator) uniform(node map[string]any, root any) tri {
 	if len(members) == 0 {
 		return triTrue // clause 2
 	}
-	values := make([]any, 0, len(members))
-	missing := false
+	var representative any
+	elected, missing := false, false
 	for _, member := range members {
 		value, resolved := e.resolve(member, at)
 		if !resolved {
 			missing = true
 			continue
 		}
-		values = append(values, value)
-	}
-	representatives := make([]any, 0, 1)
-	undeterminable := false
-	for _, value := range values {
-		absorbed := false
-		for _, representative := range representatives {
-			equal, determinable := jsonEqual(representative, value)
-			if !determinable {
-				undeterminable = true
-				continue
-			}
-			if !equal {
-				return triFalse // clause 3
-			}
-			absorbed = true
+		if !elected {
+			representative, elected = value, true
+			continue
 		}
-		if !absorbed {
-			representatives = append(representatives, value)
+		if !jsonEqual(representative, value) {
+			return triFalse // clause 3
 		}
 	}
-	if missing || undeterminable {
-		// clause 4 for a missing at; the proposed amendment to it, documented
-		// above, for an indeterminate comparison between resolved values.
-		return triUnknown
+	if missing {
+		return triUnknown // clause 4
 	}
 	return triTrue // clause 5
 }
@@ -196,7 +169,15 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 
 // evaluate charges one whole condition tree and only then evaluates it.
 //
-// The accounting model, stated in full, is the candidate RFC 0008 leaves open:
+// The accounting model, stated in full, is the candidate RFC 0008 leaves open.
+// It is the third candidate, and each predecessor was broken by a demonstrated
+// attack rather than retired on taste. The first charged a flat unit per node,
+// and a megabyte-long authored pointer resolved once per element bought
+// unbounded scanning for two units apiece. The second made authored bytes
+// count — paths and operands — and left the runtime values a condition
+// actually reads unpriced, so a two-byte operand compared against a megabyte
+// of facts, once per element, was again free. This one prices both sides:
+// every authored operand and every selected value.
 //
 //   - Work unit — one visited condition node, one step of a pointer
 //     resolution, or one byte of a path, an object member name, or a scalar
@@ -205,13 +186,24 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 //     path, a string, or a numeric token would bound the number of nodes an
 //     evaluation touches while leaving the processing per node unbounded, which
 //     is not a limit at all.
-//   - Preflight — charge walks the tree without evaluating any predicate. It
-//     does resolve aggregate paths, because an aggregate's cost is its element
-//     count and no cheaper approximation is honest; every such resolution is
-//     charged before it is performed, so a pointer that fails to resolve still
-//     costs what it took to look it up, an unresolved or non-array aggregate
-//     path costs that lookup and nothing more, and a path too long to afford is
-//     refused with its bytes still unread.
+//   - Preflight — charge walks the tree without evaluating any predicate, but
+//     it does resolve pointers, including a fact's. An aggregate's cost is its
+//     element count and a comparison's cost is the size of the value its
+//     pointer selected; neither has an honest cheaper approximation, and a
+//     model that priced only what the author wrote would price only the half
+//     of a comparison an attacker does not control. Every resolution is charged
+//     before it is performed, so a pointer that fails to resolve still costs
+//     what it took to look it up, an unresolved or non-array aggregate path
+//     costs that lookup and nothing more, an unresolved fact path costs its
+//     lookup and its authored operand, and a path too long to afford is refused
+//     with its bytes still unread. Measuring a resolved value is the one step
+//     that runs before its own charge is known — its size cannot be charged
+//     until it is known — and it is bounded anyway: the charge lands
+//     immediately after, so the preflight stops within one selected value of
+//     the budget. A charged resolution is performed twice, once to price it and
+//     once to evaluate it, and a charged value is walked twice for the same
+//     reason; the budget bounds the work up to that constant factor of two,
+//     which is what a work unit is for.
 //   - Per pointer — resolving an authored pointer costs two things. Compiling
 //     it — reading its bytes, splitting it, decoding its escapes — costs
 //     1 + len(path) and is charged, and performed, at most once per distinct
@@ -227,20 +219,26 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 //     its name's bytes, because comparing objects looks names up. This is what
 //     a deep equality or an in over that value can cost at most, since §7.4
 //     equality descends only where both sides have the same shape.
-//   - Per node — literal and evidence-present cost 1; not and all/any cost 1
-//     plus their children, every branch included, so a branch a short-circuiting
-//     evaluator never reaches is still charged; fact costs 1 plus its pointer
-//     plus the size of its authored operand, which bounds both deep equality and
-//     in — and bounds a long decimal or numeric operand by its token length
-//     rather than pretending it is one unit.
+//   - Per node — literal costs 1; evidence-present costs 1 plus the bytes of
+//     the requirement id, which every one of its lookups hashes and which a
+//     where inside an aggregate looks up once per element; not and all/any cost
+//     1 plus their children, every branch included, so a branch a
+//     short-circuiting evaluator never reaches is still charged; fact costs 1
+//     plus its pointer, plus the size of the value that pointer selected, plus
+//     the size of its authored operand. Both sides, because a comparison reads
+//     both and only one of them is authored — and each by its bytes, so a long
+//     decimal or numeric token is not pretended to be one unit on either side.
+//     in charges the selected value once per candidate, since each candidate
+//     can be compared against the whole of it, and the candidate array's own
+//     size once.
 //   - Per aggregate — exists and every cost 1 plus their path resolution plus
 //     the sum of their where's cost over the elements actually present, so a
 //     ragged nesting costs Σᵢ|Bᵢ| and never |A|×|B|; uniform, which has no
 //     where, costs 1 plus its path resolution plus, per member, one resolution
-//     of at and the size of the value that resolution selected, plus — only
-//     when some selected value carries a number §7.4 cannot compare — one
-//     further pass over every selected value for each such value, which is what
-//     bounds the extra comparisons an undeterminable value forces.
+//     of at and the size of the value that resolution selected. One pass over
+//     the members is the whole of it: §7.4 equality is total, so one
+//     representative absorbs every member it equals and the comparison count is
+//     linear in the members however exotic their values are.
 //   - Composition — sibling aggregates add, since the charge is a sum over the
 //     tree; the budget accumulates across every condition of one evaluation.
 //     A condition §8 never reaches is never charged: a suppressed rule, every
@@ -337,7 +335,28 @@ func (e *evaluator) preflight(node any, root any) {
 		if !e.chargePointer(path) {
 			return
 		}
-		e.charge(valueUnits(condition["value"]))
+		// The resolution the pointer charge just paid for is performed here, so
+		// the value the comparison will actually read can be priced. Charging
+		// the authored operand alone would price the half of the comparison the
+		// author wrote and leave the half the facts document supplies free,
+		// which is the same defect the flat pointer charge had.
+		selected := 0
+		if value, resolved := e.resolve(root, path); resolved {
+			selected = valueUnits(value)
+		}
+		// in compares the selected value against each candidate in turn, and
+		// each of those comparisons can read all of it.
+		comparisons := 1
+		if condition["operator"] == "in" {
+			comparisons = len(asArray(condition["value"]))
+		}
+		e.charge(comparisons*selected + valueUnits(condition["value"]))
+	case "evidence-present":
+		// The lookup hashes the requirement id, and a where does it once per
+		// element, so the id's bytes are charged like any other name a lookup
+		// reads.
+		name, _ := condition["evidenceRequirement"].(string)
+		e.charge(unitNode + len(name))
 	case "exists", "every":
 		if !e.charge(unitNode) {
 			return
@@ -363,7 +382,11 @@ func (e *evaluator) preflight(node any, root any) {
 		}
 		at, _ := condition["at"].(string)
 		members, _ := e.selectArray(condition, root)
-		opaque, selected := 0, 0
+		// One resolution of at and one comparison per member is the whole cost:
+		// §7.4 equality is total, so a single representative absorbs the
+		// members that equal it and no member is ever compared twice. The
+		// charge is a sum over the members, so it is the same under any
+		// permutation of them.
 		for _, member := range members {
 			// The member's at is reserved before it is resolved, exactly as the
 			// aggregate's own path was.
@@ -371,61 +394,15 @@ func (e *evaluator) preflight(node any, root any) {
 				return
 			}
 			if value, resolved := e.resolve(member, at); resolved {
-				units := valueUnits(value)
-				selected += units
-				if bearsUnrepresentableNumber(value) {
-					opaque++
-				}
-				if !e.charge(units) {
+				if !e.charge(valueUnits(value)) {
 					return
 				}
 			}
 		}
-		// The one comparison per member charged above is the whole cost only
-		// while §7.4 can compare what it is given. A value it cannot compare
-		// becomes a further representative (see uniform), and each further
-		// representative costs one more comparison against every member, so a
-		// value that may create one is charged a pass over every selected value
-		// in advance. Both factors are sums over the members, so the charge is
-		// still the same under any permutation, and an ordinary collection —
-		// where no value carries a number the arithmetic cannot represent — is
-		// charged nothing extra.
-		if opaque > 0 {
-			e.charge(opaque * selected)
-		}
 	default:
-		// literal, evidence-present, and any operand shape §7 does not define.
+		// literal and any operand shape §7 does not define.
 		e.charge(unitNode)
 	}
-}
-
-// bearsUnrepresentableNumber reports whether a value carries, anywhere within
-// it, a syntactically valid JSON number the arithmetic cannot represent. Such a
-// number is the only thing that makes a §7.4 comparison undeterminable, so it
-// is the only thing that can grow uniform's representative set: two values that
-// both are free of one always compare determinably, so at most one
-// representative is. The preflight uses it to charge the extra comparison
-// passes in advance, which is what keeps the charge an honest bound on the
-// work rather than a linear guess at a quadratic worst case.
-func bearsUnrepresentableNumber(value any) bool {
-	switch typed := value.(type) {
-	case json.Number:
-		_, representable := new(big.Rat).SetString(typed.String())
-		return !representable
-	case []any:
-		for _, item := range typed {
-			if bearsUnrepresentableNumber(item) {
-				return true
-			}
-		}
-	case map[string]any:
-		for _, item := range typed {
-			if bearsUnrepresentableNumber(item) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // valueUnits is the size of a value in work units: a container costs one plus
@@ -435,11 +412,13 @@ func bearsUnrepresentableNumber(value any) bool {
 // a deep equality or an in over that value can cost at most, since §7.4
 // equality descends only where both sides have the same shape.
 //
-// The token length is not decoration. §7.4 equality on numbers parses both
-// tokens with arbitrary-precision arithmetic and RFC 0006's ordered comparison
-// parses two decimal strings, so a long operand compared once per element is
-// work proportional to its length times the element count; charging one unit
-// per scalar would have priced that at one unit per element.
+// The token length is not decoration. §7.4 equality on numbers normalizes both
+// tokens byte by byte and RFC 0006's ordered comparison parses two decimal
+// strings, so a long value compared once per element is work proportional to
+// its length times the element count; charging one unit per scalar would have
+// priced that at one unit per element. It applies to whichever side is long:
+// the operand the author wrote and the value the pointer selected are charged
+// by the same function for the same reason.
 func valueUnits(value any) int {
 	switch typed := value.(type) {
 	case []any:

@@ -473,16 +473,17 @@ func TestRFC0008WorkLimitIsConfigurable(t *testing.T) {
 	facts := []byte(`{"list":[{"ok":true},{"ok":true},{"ok":true}]}`)
 
 	// The charge is 12 for the aggregate — its node, the six-unit compile of
-	// "/list" and the five-unit walk — then 9 for the first element, whose
-	// "/ok" is compiled there, and 5 for each of the other two: 31 exactly.
-	if _, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(31)); failure != nil {
+	// "/list" and the five-unit walk — then 10 for the first element, whose
+	// "/ok" is compiled there and whose boolean is charged on both sides of the
+	// comparison, and 6 for each of the other two: 34 exactly.
+	if _, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(34)); failure != nil {
 		t.Fatalf("a budget equal to the charge must not trip: %+v", failure)
 	}
-	_, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(30))
+	_, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(33))
 	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
 		t.Fatalf("a budget one unit short must trip: %+v", failure)
 	}
-	if !strings.Contains(failure.Message, "30") {
+	if !strings.Contains(failure.Message, "33") {
 		t.Fatalf("the error must name the configured limit: %q", failure.Message)
 	}
 
@@ -496,41 +497,60 @@ func TestRFC0008WorkLimitIsConfigurable(t *testing.T) {
 	}
 }
 
-// uniform's clause 3 has to look past a value §7.4 cannot compare to find a
-// counterexample behind it, which costs one comparison pass per such value. The
-// facts document is untrusted, so that cost is charged before any comparison
-// runs: a collection built entirely out of numbers the arithmetic cannot
-// represent is refused by the work limit rather than run, while a collection
-// small enough to be honest work still produces its disposition.
-func TestRFC0008UndeterminableUniformIsChargedBeforeItRuns(t *testing.T) {
+// A collection of numbers no arithmetic type can hold is ordinary work, and the
+// charge says so. This row used to be the quadratic one: an arithmetic-based
+// equality could not compare such values, every member became another
+// representative of uniform's clause 3, and the preflight had to reserve one
+// comparison pass per member — 2,204,711 units for the 400 members below, which
+// the default budget refused. Deciding equality on the tokens removes both the
+// quadratic and the unknown: one representative absorbs the members, the charge
+// is a sum over them, and the collection produces a disposition.
+func TestRFC0008HugeNumericTokensAreLinearAndDecided(t *testing.T) {
 	engine := newTestEngine(t)
 	pack := draftPack(`{"op":"uniform","path":"/list","at":"/cabin"}`, "escalate")
-	facts := func(members int) []byte {
+	// Distinct values, each a fourteen-byte token — 1001e999999999 and its
+	// siblings — so every member costs the same and the arithmetic below is by
+	// hand: six units to step the compiled "/cabin" and fifteen for the token.
+	facts := func(members int) string {
 		items := make([]string, 0, members)
 		for index := 1; index <= members; index++ {
-			// Distinct tokens, none of them representable, so every pair is
-			// undeterminable and every member becomes a representative.
-			items = append(items, fmt.Sprintf(`{"cabin":%de999999999}`, index))
+			items = append(items, fmt.Sprintf(`{"cabin":1%03de999999999}`, index))
 		}
-		return []byte(fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ",")))
+		return fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ","))
+	}
+	const condition = `{"op":"uniform","path":"/list","at":"/cabin"}`
+
+	// Linear, with no quadratic term hiding in it: doubling the members adds
+	// exactly one per-member charge per added member.
+	small, large := chargeOf(t, condition, facts(200)), chargeOf(t, condition, facts(400))
+	if want := 200 * (6 + 15); large-small != want {
+		t.Fatalf("charges %d and %d differ by %d; 200 further members must cost %d", small, large, large-small, want)
 	}
 
-	// 1,410 units for ten members: comfortably inside the default budget, and
-	// unknown because no pair resolves either way.
-	output, failure := engine.EvaluateWith(pack, facts(10), nil, draftOptions(0))
+	// 8,419 units for the 400 members, against the default 100,000: the
+	// collection is evaluated rather than refused, and it decides — the tokens
+	// are pairwise unequal, so clause 3 makes the rule false and the pack falls
+	// back rather than escalating an unknown.
+	output, failure := engine.EvaluateWith(pack, []byte(facts(400)), nil, draftOptions(0))
 	if failure != nil {
-		t.Fatalf("a small collection must still evaluate: %+v", failure)
+		t.Fatalf("400 members at 21 units apiece must fit the default budget: %+v", failure)
 	}
-	if output.Disposition.Kind != "unresolved" {
-		t.Fatalf("disposition = %+v", output.Disposition)
+	if output.Disposition.Kind != "outcome" || output.Disposition.OutcomeID != "did-not-hold" {
+		t.Fatalf("disposition = %+v; distinct huge tokens are unequal, not unknown", output.Disposition)
 	}
 
-	// 2,204,711 units for 400 members — dominated by the 400 further comparison
-	// passes over 5,492 units of selected value — against the default 100,000:
-	// refused before the first of the 160,000 comparisons is attempted.
-	if _, failure := engine.EvaluateWith(pack, facts(400), nil, draftOptions(0)); failure == nil ||
-		failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
-		t.Fatalf("the quadratic comparison must be charged, not run: %+v", failure)
+	// The same members written as one repeated value are equal, which is the
+	// other half of determinacy: uniform is true rather than unknown.
+	equal := make([]string, 0, 400)
+	for index := 0; index < 400; index++ {
+		equal = append(equal, `{"cabin":1.0e999999999}`)
+	}
+	output, failure = engine.EvaluateWith(pack, []byte(fmt.Sprintf(`{"list":[%s]}`, strings.Join(equal, ","))), nil, draftOptions(0))
+	if failure != nil {
+		t.Fatalf("400 equal members must fit the default budget too: %+v", failure)
+	}
+	if output.Disposition.Kind != "outcome" || output.Disposition.OutcomeID != "held" {
+		t.Fatalf("disposition = %+v; equal huge tokens are equal, not unknown", output.Disposition)
 	}
 }
 
@@ -587,7 +607,7 @@ func TestRFC0008SuppressedRuleIsNeverCharged(t *testing.T) {
 	facts := []byte(fmt.Sprintf(`{"list":[%s]}`, strings.Join(elements, ",")))
 
 	// The exception's literal costs one unit; the rule's aggregate would cost
-	// 116. A budget of one unit therefore admits the whole evaluation exactly
+	// 136. A budget of one unit therefore admits the whole evaluation exactly
 	// when the suppressed rule is never charged.
 	output, failure := engine.EvaluateWith(pack(`{"op":"literal","value":true}`), facts, nil, draftOptions(1))
 	if failure != nil {
