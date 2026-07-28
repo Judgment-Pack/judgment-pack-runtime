@@ -472,15 +472,17 @@ func TestRFC0008WorkLimitIsConfigurable(t *testing.T) {
 	pack := draftPack(`{"op":"every","path":"/list","where":{"op":"fact","path":"/ok","operator":"equals","value":true}}`, "escalate")
 	facts := []byte(`{"list":[{"ok":true},{"ok":true},{"ok":true}]}`)
 
-	// The charge is 2 for the aggregate plus 3 per element: 11 units exactly.
-	if _, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(11)); failure != nil {
+	// The charge is 12 for the aggregate — its node, the six-unit compile of
+	// "/list" and the five-unit walk — then 9 for the first element, whose
+	// "/ok" is compiled there, and 5 for each of the other two: 31 exactly.
+	if _, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(31)); failure != nil {
 		t.Fatalf("a budget equal to the charge must not trip: %+v", failure)
 	}
-	_, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(10))
+	_, failure := engine.EvaluateWith(pack, facts, nil, draftOptions(30))
 	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
 		t.Fatalf("a budget one unit short must trip: %+v", failure)
 	}
-	if !strings.Contains(failure.Message, "10") {
+	if !strings.Contains(failure.Message, "30") {
 		t.Fatalf("the error must name the configured limit: %q", failure.Message)
 	}
 
@@ -513,7 +515,7 @@ func TestRFC0008UndeterminableUniformIsChargedBeforeItRuns(t *testing.T) {
 		return []byte(fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ",")))
 	}
 
-	// 2 + 10·2 + 10·10 = 122 units: comfortably inside the default budget, and
+	// 1,410 units for ten members: comfortably inside the default budget, and
 	// unknown because no pair resolves either way.
 	output, failure := engine.EvaluateWith(pack, facts(10), nil, draftOptions(0))
 	if failure != nil {
@@ -523,8 +525,9 @@ func TestRFC0008UndeterminableUniformIsChargedBeforeItRuns(t *testing.T) {
 		t.Fatalf("disposition = %+v", output.Disposition)
 	}
 
-	// 2 + 400·2 + 400·400 = 160,802 units against the default 100,000: refused
-	// before the first of the 160,000 comparisons is attempted.
+	// 2,204,711 units for 400 members — dominated by the 400 further comparison
+	// passes over 5,492 units of selected value — against the default 100,000:
+	// refused before the first of the 160,000 comparisons is attempted.
 	if _, failure := engine.EvaluateWith(pack, facts(400), nil, draftOptions(0)); failure == nil ||
 		failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
 		t.Fatalf("the quadratic comparison must be charged, not run: %+v", failure)
@@ -584,8 +587,8 @@ func TestRFC0008SuppressedRuleIsNeverCharged(t *testing.T) {
 	facts := []byte(fmt.Sprintf(`{"list":[%s]}`, strings.Join(elements, ",")))
 
 	// The exception's literal costs one unit; the rule's aggregate would cost
-	// 2 + 20*3 = 62. A budget of one unit therefore admits the whole evaluation
-	// exactly when the suppressed rule is never charged.
+	// 116. A budget of one unit therefore admits the whole evaluation exactly
+	// when the suppressed rule is never charged.
 	output, failure := engine.EvaluateWith(pack(`{"op":"literal","value":true}`), facts, nil, draftOptions(1))
 	if failure != nil {
 		t.Fatalf("a suppressed rule must cost nothing: %+v", failure)
@@ -666,11 +669,16 @@ func TestRFC0008RaggedUnknownUnderBothPolicies(t *testing.T) {
 	}
 }
 
-// The equivalence check the RFC asks any implementation to run, on the census
-// shapes a quantifier actually reaches: A6's exists over segments carrying a
-// cancelledByAirline boolean, and R3/R5's every over items carrying an
-// availability field. A prepared-boolean pack and its quantifier twin must
-// produce identical dispositions from the facts each is given.
+// The equivalence check the RFC asks any implementation to run, on all three
+// census facts a quantifier actually reaches, each as its own pair of packs:
+// A6:/reservation/anySegmentCancelledByAirline as an exists over segments
+// carrying a cancelledByAirline boolean, R3:/modification/allNewItemsAvailable
+// as an every over the modification's items, and
+// R5:/request/allNewItemsAvailable as an every over the request's new items.
+// R3 and R5 are separate rooms with separate facts, so they are separate
+// artifacts here rather than one pack read twice. A prepared-boolean pack and
+// its quantifier twin must produce identical dispositions from the facts each is
+// given.
 func TestRFC0008EquivalenceWithPreparedBooleanPacks(t *testing.T) {
 	engine := newTestEngine(t)
 	read := func(name string) []byte {
@@ -685,6 +693,8 @@ func TestRFC0008EquivalenceWithPreparedBooleanPacks(t *testing.T) {
 	airlineQuantifier := read("airline-cancellation-quantifier.json")
 	itemsPrepared := read("item-availability-prepared.json")
 	itemsQuantifier := read("item-availability-quantifier.json")
+	exchangePrepared := read("exchange-item-availability-prepared.json")
+	exchangeQuantifier := read("exchange-item-availability-quantifier.json")
 
 	cases := []struct {
 		name            string
@@ -777,6 +787,55 @@ func TestRFC0008EquivalenceWithPreparedBooleanPacks(t *testing.T) {
 			quantifierFacts: `{"modification":{"items":[{"availability":"available"},{}]}}`,
 			wantKind:        "unresolved",
 		},
+		{
+			name:            "r5-every-new-item-available",
+			prepared:        exchangePrepared,
+			preparedFacts:   `{"request":{"allNewItemsAvailable":true}}`,
+			quantifier:      exchangeQuantifier,
+			quantifierFacts: `{"request":{"newItems":[{"availability":"available"},{"availability":"available"}]}}`,
+			wantKind:        "outcome",
+			wantOutcome:     "exchange-allowed",
+		},
+		{
+			name:            "r5-one-new-item-unavailable",
+			prepared:        exchangePrepared,
+			preparedFacts:   `{"request":{"allNewItemsAvailable":false}}`,
+			quantifier:      exchangeQuantifier,
+			quantifierFacts: `{"request":{"newItems":[{"availability":"discontinued"},{"availability":"available"}]}}`,
+			wantKind:        "outcome",
+			wantOutcome:     "exchange-refused",
+		},
+		{
+			// The same vacuous-truth agreement R3 needs, in the other room: a
+			// producer computing allNewItemsAvailable over an empty exchange
+			// request also reports true.
+			name:            "r5-no-new-items-requested",
+			prepared:        exchangePrepared,
+			preparedFacts:   `{"request":{"allNewItemsAvailable":true}}`,
+			quantifier:      exchangeQuantifier,
+			quantifierFacts: `{"request":{"newItems":[]}}`,
+			wantKind:        "outcome",
+			wantOutcome:     "exchange-allowed",
+		},
+		{
+			// R5's own residue records what the prepared boolean loses here: one
+			// item without an availability makes the whole boolean unresolved,
+			// and the quantifier is no better at saying which item it was.
+			name:            "r5-one-new-item-missing-availability",
+			prepared:        exchangePrepared,
+			preparedFacts:   `{"request":{}}`,
+			quantifier:      exchangeQuantifier,
+			quantifierFacts: `{"request":{"newItems":[{"availability":"available"},{}]}}`,
+			wantKind:        "unresolved",
+		},
+		{
+			name:            "r5-fact-absent-on-both-sides",
+			prepared:        exchangePrepared,
+			preparedFacts:   `{"request":{}}`,
+			quantifier:      exchangeQuantifier,
+			quantifierFacts: `{"request":{}}`,
+			wantKind:        "unresolved",
+		},
 	}
 
 	for _, testCase := range cases {
@@ -813,8 +872,9 @@ func TestRFC0008EquivalenceWithPreparedBooleanPacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, pack := range map[string][]byte{
-		"airline-cancellation-quantifier": airlineQuantifier,
-		"item-availability-quantifier":    itemsQuantifier,
+		"airline-cancellation-quantifier":       airlineQuantifier,
+		"item-availability-quantifier":          itemsQuantifier,
+		"exchange-item-availability-quantifier": exchangeQuantifier,
 	} {
 		output, operational := validator.Validate(pack, validation.Options{Through: "semantic", Limits: carrier.DefaultLimits()})
 		if operational != nil || output.Status != "invalid" {
@@ -822,8 +882,9 @@ func TestRFC0008EquivalenceWithPreparedBooleanPacks(t *testing.T) {
 		}
 	}
 	for name, pack := range map[string][]byte{
-		"airline-cancellation-prepared": airlinePrepared,
-		"item-availability-prepared":    itemsPrepared,
+		"airline-cancellation-prepared":       airlinePrepared,
+		"item-availability-prepared":          itemsPrepared,
+		"exchange-item-availability-prepared": exchangePrepared,
 	} {
 		output, operational := validator.Validate(pack, validation.Options{Through: "semantic", Limits: carrier.DefaultLimits()})
 		if operational != nil || output.Status != "valid" {

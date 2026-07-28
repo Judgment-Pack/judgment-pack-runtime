@@ -118,7 +118,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
 		Short: "EXPERIMENTAL: apply the JPS §§7-8 experiment to one pack; no conformance claim",
-		Long:  "Apply the experimental JPS Core §§7-8 resolution model, as pinned by the specification's RFC 0006 (Draft), to one conformant pack and one facts document. The result is a disposition, not a conformance claim, an authorization, or an executed action; producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version and the result says so in band.",
+		Long:  "Apply the experimental JPS Core §§7-8 resolution model, as pinned by the specification's RFC 0006 (Draft), to one conformant pack and one facts document. The result is a disposition, not a conformance claim, an authorization, or an executed action; producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version and every evaluation payload produced this way says so in band.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
@@ -175,7 +175,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command.Flags().StringVar(&factsPath, "facts", factsPath, "JSON facts document: a file path, or - for standard input (required)")
 	command.Flags().StringVar(&evidencePath, "evidence", evidencePath, "optional tri-state evidence availability: {\"<requirement-id>\": \"present\"|\"absent\"|\"unknown\"}")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports (repeatable)")
-	command.Flags().BoolVar(&quantifiers, "rfc0008-quantifiers", quantifiers, "DRAFT-RFC PROTOTYPE: admit the spec's RFC 0008 (Draft) collection quantifiers -- exists, every, uniform -- in conditions. A pack using them is NOT valid under any published JPS version; spec validate rejects it, and every result produced this way is labeled a draft-RFC prototype")
+	command.Flags().BoolVar(&quantifiers, "rfc0008-quantifiers", quantifiers, "DRAFT-RFC PROTOTYPE: admit the spec's RFC 0008 (Draft) collection quantifiers -- exists, every, uniform -- in conditions. A pack using them is NOT valid under any published JPS version; spec validate rejects it, and every successful evaluation payload produced this way is labeled a draft-RFC prototype (a refusal is reported as an operational error and carries no such label)")
 	return command
 }
 

@@ -1,0 +1,38 @@
+{
+  "specVersion": "0.1.0-draft",
+  "id": "https://example.invalid/judgment-packs/exchange-item-availability-prepared",
+  "version": "0.1.0",
+  "title": "Synthetic exchange item availability check (prepared boolean)",
+  "description": "Synthetic re-encoding of census fact R5:/request/allNewItemsAvailable, scoped to the availability conjunct a quantifier reaches. Invented content for specification testing; it authorizes nothing. This twin reads the prepared boolean a producer supplies.",
+  "decision": {
+    "intent": "Decide whether a requested item exchange may proceed on availability grounds alone.",
+    "question": "Is every requested new item available?"
+  },
+  "outcomes": [
+    {
+      "id": "exchange-allowed",
+      "label": "Exchange allowed",
+      "description": "Every requested new item is available."
+    },
+    {
+      "id": "exchange-refused",
+      "label": "Exchange refused",
+      "description": "At least one requested new item is not available."
+    }
+  ],
+  "rules": [
+    {
+      "id": "all-new-items-available",
+      "description": "Every requested new item is available in the catalog.",
+      "when": {
+        "op": "fact",
+        "path": "/request/allNewItemsAvailable",
+        "operator": "equals",
+        "value": true
+      },
+      "outcome": "exchange-allowed",
+      "onUnknown": "escalate"
+    }
+  ],
+  "fallbackOutcome": "exchange-refused"
+}

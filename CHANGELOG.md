@@ -9,10 +9,12 @@ All notable changes to tagged releases are documented here.
   ADR-0007's experimental umbrella). The flag admits three condition operators — `exists`, `every`,
   and `uniform` — with the RFC's element re-rooting, its pinned empty-array values, its
   aggregate-depth bound of two, and a candidate work-accounting model the RFC itself leaves open.
-  Every result produced this way carries a new output member, `draftPrototype`, naming the operators
-  used and stating that a pack using one is NOT valid under any published JPS version. Three
-  diagnostic codes are minted, `codeStability: "provisional"` like every other:
-  `JPS-EVALUATION-RFC0008-GRAMMAR`, `JPS-EVALUATION-RFC0008-DEPTH`/`-SHAPE`, and
+  Every successful evaluation payload produced this way carries a new output member,
+  `draftPrototype`, naming the operators used and stating that a pack using one is NOT valid under
+  any published JPS version; a refusal carries no such member, because a grammar or work-limit
+  failure is reported through the ordinary operational-error envelope. Four diagnostic codes are
+  minted, `codeStability: "provisional"` like every other: `JPS-EVALUATION-RFC0008-GRAMMAR`,
+  `JPS-EVALUATION-RFC0008-DEPTH`, `JPS-EVALUATION-RFC0008-SHAPE`, and
   `JPS-RESOURCE-EVALUATION-WORK-LIMIT`. **No conformance claim and no validation behavior changes**:
   `spec validate` is untouched and still rejects every pack using an operator, the evaluator without
   the flag refuses one for the same reason, the MCP surface does not expose the flag, and everything

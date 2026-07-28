@@ -47,6 +47,12 @@ type evaluator struct {
 	budget      int
 	charged     int
 	exceeded    bool
+	// pointers memoizes the compiled form of every authored pointer this
+	// evaluation has resolved, keyed by the pointer text as the pack wrote it.
+	// Compiling scans the path's bytes; the cache is what makes a per-element
+	// resolution cost its steps rather than a fresh scan, and the accounting
+	// model on evaluate charges each scan exactly once to match.
+	pointers map[string]compiledPointer
 }
 
 // condition evaluates one node against the current condition root: the runtime
@@ -80,7 +86,7 @@ func (e *evaluator) condition(node any, root any) tri {
 			return triUnknown
 		}
 	case "fact":
-		return evalFact(condition, root)
+		return e.evalFact(condition, root)
 	case "evidence-present":
 		name, ok := condition["evidenceRequirement"].(string)
 		if !ok {
@@ -155,12 +161,12 @@ func (e *evaluator) any(children any, root any) tri {
 // everywhere except inside a draft RFC 0008 where, which is the whole of that
 // RFC's amendment to §7.4. A pointer that does not resolve, an unsupported
 // operand shape, or an incomparable ordered pair produces unknown.
-func evalFact(condition map[string]any, root any) tri {
+func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	path, ok := condition["path"].(string)
 	if !ok {
 		return triUnknown
 	}
-	value, resolved := resolvePointer(root, path)
+	value, resolved := e.resolve(root, path)
 	if !resolved {
 		return triUnknown
 	}
@@ -220,20 +226,51 @@ func evalFact(condition map[string]any, root any) tri {
 	}
 }
 
-// resolvePointer resolves an RFC 6901 JSON Pointer against a decoded JSON
-// document. The empty string selects the root. It reports false for any
-// pointer that does not resolve, including an invalid array traversal and the
-// "-" past-the-end token.
-func resolvePointer(document any, pointer string) (any, bool) {
+// compiledPointer is an authored RFC 6901 pointer with its bytes already read:
+// the escape-decoded reference tokens, in order, and the number of bytes those
+// tokens carry. Compiling is the part of a resolution whose cost is the path's
+// length; walking the compiled tokens against a document is the part whose cost
+// is the tokens'. Separating them is what lets one scan be charged once and
+// each of many per-element resolutions be charged for what it actually does.
+type compiledPointer struct {
+	tokens []string
+	// bytes is the total length of the decoded tokens: what one resolution
+	// hashes or compares against the document it walks.
+	bytes int
+	// rooted reports a syntactically usable pointer: the empty string, or one
+	// beginning with "/". Anything else resolves against nothing.
+	rooted bool
+}
+
+// compilePointer scans one authored pointer. This is the byte-length-sensitive
+// step: it reads every byte of the path, splits it, and decodes the ~1 and ~0
+// escapes. The accounting model charges it before it runs.
+func compilePointer(pointer string) compiledPointer {
 	if pointer == "" {
-		return document, true
+		return compiledPointer{rooted: true}
 	}
 	if !strings.HasPrefix(pointer, "/") {
+		return compiledPointer{}
+	}
+	raw := strings.Split(pointer[1:], "/")
+	compiled := compiledPointer{tokens: make([]string, 0, len(raw)), rooted: true}
+	for _, token := range raw {
+		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+		compiled.tokens = append(compiled.tokens, token)
+		compiled.bytes += len(token)
+	}
+	return compiled
+}
+
+// resolve walks a compiled pointer against a decoded JSON document. The empty
+// pointer selects the root. It reports false for any pointer that does not
+// resolve, including an invalid array traversal and the "-" past-the-end token.
+func (p compiledPointer) resolve(document any) (any, bool) {
+	if !p.rooted {
 		return nil, false
 	}
 	current := document
-	for _, token := range strings.Split(pointer[1:], "/") {
-		token = strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+	for _, token := range p.tokens {
 		switch container := current.(type) {
 		case map[string]any:
 			value, ok := container[token]
@@ -252,6 +289,35 @@ func resolvePointer(document any, pointer string) (any, bool) {
 		}
 	}
 	return current, true
+}
+
+// resolve resolves one authored pointer against a document through the
+// evaluator's compiled-pointer cache, so an authored path is scanned once per
+// evaluation however many elements it is later resolved against. It charges
+// nothing: under the draft grammar every resolution it performs was already
+// reserved by the preflight, and without the draft grammar there is no budget.
+func (e *evaluator) resolve(document any, pointer string) (any, bool) {
+	return e.compiled(pointer).resolve(document)
+}
+
+// compiled returns the cached compilation of an authored pointer, scanning it
+// if this evaluation has not seen it before.
+func (e *evaluator) compiled(pointer string) compiledPointer {
+	if compiled, scanned := e.pointers[pointer]; scanned {
+		return compiled
+	}
+	compiled := compilePointer(pointer)
+	if e.pointers == nil {
+		e.pointers = map[string]compiledPointer{}
+	}
+	e.pointers[pointer] = compiled
+	return compiled
+}
+
+// resolvePointer resolves an RFC 6901 JSON Pointer against a decoded JSON
+// document without a cache, for callers that resolve one pointer once.
+func resolvePointer(document any, pointer string) (any, bool) {
+	return compilePointer(pointer).resolve(document)
 }
 
 // arrayIndex parses an RFC 6901 array-reference token: decimal digits with no

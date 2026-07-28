@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 )
@@ -197,7 +198,10 @@ func TestRFC0008EmptyArrayOverridesElementInvariantEvidence(t *testing.T) {
 
 // Element order carries no meaning: within the limits, a permutation or a
 // duplicated element cannot change the result. Permitted short-circuiting on
-// the dominant value must not make it change either.
+// the dominant value must not make it change either. This is a claim about the
+// condition's value only; the work charge is invariant under permutation but
+// not under duplication, which
+// TestRFC0008DuplicationRaisesTheChargeAndKeepsTheValue pins separately.
 func TestRFC0008PermutationAndDuplicateInvariance(t *testing.T) {
 	const where = `{"op":"fact","path":"/ok","operator":"equals","value":true}`
 	elements := []string{`{"ok":true}`, `{"ok":false}`, `{}`}
@@ -244,6 +248,12 @@ func TestRFC0008PermutationAndDuplicateInvariance(t *testing.T) {
 
 // uniform's five clauses, applied in order, one row each, plus the §7.4
 // equality rows the RFC pins and a permutation of every one of them.
+//
+// The rows whose names carry "undeterminable" are the exception to the
+// "conformance" in this function's name, and are grouped and labelled below as
+// such: RFC 0008's five clauses do not decide a pair of resolved values whose
+// §7.4 equality is indeterminate, so those rows pin this runtime's proposed
+// amendment rather than the RFC as published. See the note on uniform.
 func TestRFC0008UniformConformanceRows(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -259,16 +269,23 @@ func TestRFC0008UniformConformanceRows(t *testing.T) {
 		{"clause-3-beats-clause-4", `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			`{"list":[{"cabin":1},{"cabin":2},{}]}`, triFalse},
 
-		// A value §7.4 cannot compare at all is not a counterexample, and it must
-		// not hide one either: the determinable unequal pair still decides, in
-		// whichever order the members arrive.
-		{"clause-3-beats-an-undeterminable-at-value", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+		// Indeterminate §7.4 equality between two resolved values. RFC 0008's
+		// five clauses are silent here — clause 3 pins known inequality, clause
+		// 4 pins an at that fails to resolve, and neither covers a resolved pair
+		// the arithmetic cannot compare — so these rows state this runtime's
+		// behavior and the amendment it proposes, not conformance to the
+		// published clauses. The behavior: an incomparable value is not a
+		// counterexample, it must not hide one either (the determinable unequal
+		// pair still decides, in whichever order the members arrive, which keeps
+		// clause 3 dominant), and where no counterexample survives the result is
+		// the same unknown clause 4 gives a missing at.
+		{"amendment-known-inequality-still-beats-an-undeterminable-at-value", `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			`{"list":[{"cabin":1e999999999},{"cabin":1},{"cabin":2}]}`, triFalse},
-		{"undeterminable-at-value-among-equals", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+		{"amendment-undeterminable-at-value-among-equals-is-unknown", `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			`{"list":[{"cabin":1e999999999},{"cabin":1},{"cabin":1}]}`, triUnknown},
-		{"all-at-values-undeterminable", `{"op":"uniform","path":"/list","at":"/cabin"}`,
+		{"amendment-all-at-values-undeterminable-is-unknown", `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			`{"list":[{"cabin":1e999999999},{"cabin":2e999999999}]}`, triUnknown},
-		{"undeterminable-inside-a-composite-at-value", `{"op":"uniform","path":"/list","at":"/seats"}`,
+		{"amendment-undeterminable-inside-a-composite-at-value", `{"op":"uniform","path":"/list","at":"/seats"}`,
 			`{"list":[{"seats":[1,1e999999999]},{"seats":[2,1e999999999]}]}`, triFalse},
 
 		{"clause-4-missing-at-among-equals", `{"op":"uniform","path":"/list","at":"/cabin"}`,
@@ -379,9 +396,12 @@ func chargeOf(t *testing.T, condition, facts string) int {
 	return evaluator.charged
 }
 
-// The charge is a sum over the elements present, so it is identical under any
-// permutation or duplication of them — the property that makes short-circuiting
-// safe, since it cannot change whether the limit was exceeded.
+// The charge is a sum over the elements present and over the distinct authored
+// pointers the tree names, and neither summand depends on the order elements
+// arrive in, so the charge is identical under any permutation of them — the
+// property that makes short-circuiting safe, since it cannot change whether the
+// limit was exceeded. The pointer cache does not weaken it: whichever element
+// happens to be preflighted first pays the one scan, and the total is the same.
 func TestRFC0008WorkChargeIsOrderIndependent(t *testing.T) {
 	const condition = `{"op":"exists","path":"/list","where":{"op":"fact","path":"/ok","operator":"equals","value":true}}`
 	arrangements := []string{
@@ -397,10 +417,63 @@ func TestRFC0008WorkChargeIsOrderIndependent(t *testing.T) {
 	}
 }
 
+// Duplication is not permutation, and the accounting model does not claim it
+// is. A duplicated element is one more element and is charged like any other,
+// so the charge strictly increases; what survives duplication is the condition's
+// value, and only while both inputs remain within the limits, which is what RFC
+// 0008's result-invariance wording actually says.
+func TestRFC0008DuplicationRaisesTheChargeAndKeepsTheValue(t *testing.T) {
+	const where = `{"op":"fact","path":"/ok","operator":"equals","value":true}`
+	const condition = `{"op":"every","path":"/list","where":` + where + `}`
+	const once = `{"list":[{"ok":true},{"ok":false}]}`
+	const twice = `{"list":[{"ok":true},{"ok":false},{"ok":false},{"ok":true}]}`
+
+	onceCharge := chargeOf(t, condition, once)
+	twiceCharge := chargeOf(t, condition, twice)
+	// Each duplicate costs a fact node, one step of the already-compiled "/ok",
+	// and the boolean operand: five units apiece, ten for the two.
+	if twiceCharge-onceCharge != 10 {
+		t.Fatalf("duplicating two elements raised the charge from %d to %d; the model says it must rise by 10", onceCharge, twiceCharge)
+	}
+	if twiceCharge <= onceCharge {
+		t.Fatalf("duplication must raise the charge: %d then %d", onceCharge, twiceCharge)
+	}
+
+	// Both fit the budget, so the value is unchanged — the invariance the RFC
+	// states, and the only one duplication has.
+	first := draftEval(t, condition, once, map[string]tri{})
+	second := draftEval(t, condition, twice, map[string]tri{})
+	if first != second || first != triFalse {
+		t.Fatalf("duplication changed the value: %v then %v, want false", first, second)
+	}
+
+	// And the increase is not cosmetic: a budget the un-duplicated input fits
+	// refuses the duplicated one, which is precisely why the charge cannot be
+	// called duplication-invariant.
+	engine := newTestEngine(t)
+	pack := draftPack(condition, "escalate")
+	if _, failure := engine.EvaluateWith(pack, []byte(once), nil, draftOptions(onceCharge)); failure != nil {
+		t.Fatalf("a budget equal to the charge must admit the un-duplicated input: %+v", failure)
+	}
+	_, failure := engine.EvaluateWith(pack, []byte(twice), nil, draftOptions(onceCharge))
+	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
+		t.Fatalf("the same budget must refuse the duplicated input: %+v", failure)
+	}
+}
+
 // The accounting model's per-shape obligations, each as one row with the exact
 // charge the model produces. Stating the numbers rather than an inequality is
 // the point: an accounting model that cannot be recomputed by hand is not a
 // model.
+//
+// Two quantities recur, so they are stated once here rather than in every row.
+// A pointer costs 1+len(path) the first time this evaluation compiles it and
+// 1+Σlen(token) for each resolution, so "/ok" costs 4+3 = 7 on first use and 3
+// on every later one, "/list" costs 6+5 = 11 then 5, "/value" and "/cabin" cost
+// 7+6 = 13 then 6, "/rows" costs 6+5 = 11 then 5, "/cells" costs 7+6 = 13 then
+// 6, "/fare" costs 6+5 = 11 then 5, and "/missing" costs 9+8 = 17. A scalar
+// value costs 1 plus its token length, so true costs 1, "Y" costs 2, and the
+// number 1 costs 2.
 func TestRFC0008WorkChargeModel(t *testing.T) {
 	const elementPredicate = `{"op":"fact","path":"/ok","operator":"equals","value":true}`
 	cases := []struct {
@@ -414,57 +487,57 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 			name:      "fact-node-and-pointer",
 			condition: elementPredicate,
 			facts:     `{"ok":true}`,
-			want:      3,
-			why:       "one node, one pointer resolution, one scalar operand",
+			want:      9,
+			why:       "one node, the compile and one resolution of \"/ok\" (7), and one unit for the boolean operand",
 		},
 		{
 			name:      "deep-equality-charged-by-operand-size",
 			condition: `{"op":"fact","path":"/value","operator":"equals","value":{"a":[1,2,3]}}`,
 			facts:     `{"value":{"a":[1,2,3]}}`,
-			want:      7,
-			why:       "one node, one pointer, and five JSON nodes of operand: the object, the array, and three numbers",
+			want:      23,
+			why:       "one node, 13 for \"/value\", and 9 for the operand: the object (1) plus its member name (1) plus the array (1) plus three two-unit number tokens",
 		},
 		{
 			name:      "in-operand-charged-by-size",
 			condition: `{"op":"fact","path":"/value","operator":"in","value":["a","b","c","d"]}`,
 			facts:     `{"value":"a"}`,
-			want:      7,
-			why:       "one node, one pointer, and five JSON nodes of operand: the array and four strings",
+			want:      23,
+			why:       "one node, 13 for \"/value\", and 9 for the operand: the array (1) plus four one-character strings at two units each",
 		},
 		{
 			name:      "unresolved-aggregate-path-costs-its-lookup",
 			condition: `{"op":"exists","path":"/missing","where":` + elementPredicate + `}`,
 			facts:     `{"list":[]}`,
-			want:      2,
-			why:       "the node and the pointer that failed to resolve, and nothing more",
+			want:      18,
+			why:       "the node and the compile-and-resolve of the pointer that failed to resolve (17), and nothing more",
 		},
 		{
 			name:      "non-array-aggregate-path-costs-its-lookup",
 			condition: `{"op":"exists","path":"/value","where":` + elementPredicate + `}`,
 			facts:     `{"value":"not an array"}`,
-			want:      2,
-			why:       "the node and the pointer, with no elements to charge for",
+			want:      14,
+			why:       "the node and \"/value\" (13), with no elements to charge for",
 		},
 		{
 			name:      "empty-array-costs-only-the-aggregate",
 			condition: `{"op":"every","path":"/list","where":` + elementPredicate + `}`,
 			facts:     `{"list":[]}`,
-			want:      2,
-			why:       "the node and the pointer; the vacuous value costs no predicate",
+			want:      12,
+			why:       "the node and \"/list\" (11); the vacuous value costs no predicate",
 		},
 		{
 			name:      "per-element-predicate",
 			condition: `{"op":"exists","path":"/list","where":` + elementPredicate + `}`,
 			facts:     `{"list":[{"ok":true},{"ok":false},{}]}`,
-			want:      11,
-			why:       "two for the aggregate plus three units for each of three elements",
+			want:      31,
+			why:       "12 for the aggregate, 9 for the first element, and 5 for each of the other two: \"/ok\" is scanned once and stepped three times",
 		},
 		{
 			name:      "boolean-subtree-charges-branches-never-reached",
 			condition: `{"op":"any","conditions":[{"op":"literal","value":true},{"op":"exists","path":"/list","where":` + elementPredicate + `}]}`,
 			facts:     `{"list":[{"ok":true},{"ok":false},{}]}`,
-			want:      13,
-			why:       "the any node, the literal that short-circuits it, and the whole aggregate the evaluator never reaches",
+			want:      33,
+			why:       "the any node, the literal that short-circuits it, and the whole 31-unit aggregate the evaluator never reaches",
 		},
 		{
 			name: "sibling-aggregates-add",
@@ -472,36 +545,36 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 				`{"op":"exists","path":"/list","where":` + elementPredicate + `},` +
 				`{"op":"every","path":"/list","where":` + elementPredicate + `}]}`,
 			facts: `{"list":[{"ok":true},{"ok":false},{}]}`,
-			want:  23,
-			why:   "the all node plus two aggregates of eleven; no single product bounds them",
+			want:  53,
+			why:   "the all node, the first aggregate at 31, and the second at 21 because both its pointers are already compiled; no single product bounds them",
 		},
 		{
 			name:      "ragged-nesting-sums-inner-lengths",
 			condition: `{"op":"exists","path":"/rows","where":{"op":"every","path":"/cells","where":` + elementPredicate + `}}`,
 			facts:     `{"rows":[{"cells":[{"ok":true}]},{"cells":[{"ok":true},{"ok":true}]},{"cells":[{"ok":true},{"ok":true},{"ok":true}]}]}`,
-			want:      26,
-			why:       "two for the outer aggregate, two for each of three inner aggregates, and three units for each of the six cells",
+			want:      74,
+			why:       "12 for the outer aggregate, 14 then 7 then 7 for the three inner ones, 9 for the first cell, and 5 for each of the other five",
 		},
 		{
 			name:      "uniform-charges-members-and-selected-values",
 			condition: `{"op":"uniform","path":"/list","at":"/fare"}`,
 			facts:     `{"list":[{"fare":{"code":"Y"}},{"fare":{"code":"Y"}},{}]}`,
-			want:      9,
-			why:       "two for the aggregate, one pointer per member, and two JSON nodes for each of the two values that resolved",
+			want:      47,
+			why:       "12 for the aggregate, 11 then 5 then 5 for the three resolutions of \"/fare\", and 7 for each of the two objects that resolved: the object, its four-byte member name, and the two-unit string",
 		},
 		{
 			name:      "uniform-charges-no-extra-pass-without-an-undeterminable-value",
 			condition: `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			facts:     `{"list":[{"cabin":1},{"cabin":2},{"cabin":3}]}`,
-			want:      8,
-			why:       "two for the aggregate and two per member; an ordinary collection pays for one comparison pass and no more",
+			want:      43,
+			why:       "12 for the aggregate, 13 then 6 then 6 for \"/cabin\", and two units for each one-digit number; an ordinary collection pays for one comparison pass and no more",
 		},
 		{
 			name:      "uniform-charges-a-pass-per-undeterminable-value",
 			condition: `{"op":"uniform","path":"/list","at":"/cabin"}`,
 			facts:     `{"list":[{"cabin":1e999999999},{"cabin":2},{"cabin":3}]}`,
-			want:      11,
-			why:       "the eight above plus one further pass over the three selected values, since one value can create a second representative",
+			want:      69,
+			why:       "the 43 above with the first value's token costing 12 rather than 2 (a ten-unit difference), plus one further pass over the 16 units of selected value, since one value can create a second representative",
 		},
 	}
 
@@ -511,6 +584,95 @@ func TestRFC0008WorkChargeModel(t *testing.T) {
 				t.Fatalf("charge = %d, want %d (%s)", got, testCase.want, testCase.why)
 			}
 		})
+	}
+}
+
+// The adversarial pointer row. A depth-two aggregate over tens of thousands of
+// elements whose inner path is a valid megabyte-long pointer used to cost two
+// units per element and scan a megabyte per element anyway: 60,002 units
+// charged against a 100,000-unit budget for tens of gigabytes of processing,
+// which is the whole defect. The charge is now byte-sensitive and is reserved
+// before the scan, so the budget refuses the input with the path's bytes still
+// unread.
+//
+// Both halves are asserted, because they fail differently. Under a flat pointer
+// charge the input is not refused at all, which the code assertion catches; the
+// wall clock then catches a charge that is byte-sensitive but levied after the
+// scan rather than before it. The clock bound is deliberately loose — this
+// refusal is milliseconds' work and the unbounded version is tens of seconds.
+func TestRFC0008LongUnresolvedPointerIsRefusedBeforeItIsScanned(t *testing.T) {
+	engine := newTestEngine(t)
+	// One byte under the carrier's per-string limit, so the pack still decodes
+	// and the refusal is the work limit rather than a resource limit on input.
+	innerPath := "/" + strings.Repeat("a", 1<<20-1)
+	condition := fmt.Sprintf(
+		`{"op":"exists","path":"/list","where":{"op":"exists","path":%q,"where":{"op":"fact","path":"/ok","operator":"equals","value":true}}}`,
+		innerPath)
+	const count = 60_000
+	elements := make([]string, 0, count)
+	for index := 0; index < count; index++ {
+		elements = append(elements, `{}`)
+	}
+	facts := []byte(fmt.Sprintf(`{"list":[%s]}`, strings.Join(elements, ",")))
+
+	start := time.Now()
+	_, failure := engine.EvaluateWith(draftPack(condition, "escalate"), facts, nil, draftOptions(0))
+	elapsed := time.Since(start)
+
+	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
+		t.Fatalf("a megabyte-long pointer over %d elements must be refused by the work limit: %+v", count, failure)
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("the refusal took %s; the budget must stop this before the path is scanned, not after", elapsed)
+	}
+
+	// The same shape with a pointer short enough to afford is not refused, so
+	// the row above turns on the path's length and not on the element count.
+	short := `{"op":"exists","path":"/list","where":{"op":"exists","path":"/a","where":{"op":"fact","path":"/ok","operator":"equals","value":true}}}`
+	if _, failure := engine.EvaluateWith(draftPack(short, "escalate"), []byte(`{"list":[{},{}]}`), nil, draftOptions(0)); failure != nil {
+		t.Fatalf("the same shape over a short pointer must still evaluate: %+v", failure)
+	}
+}
+
+// The adversarial operand row. A long decimal operand is parsed once per
+// element by RFC 0006's ordered comparison, so it costs its token length per
+// element rather than one unit per element, and a token long enough to make
+// that expensive is refused rather than run.
+func TestRFC0008LongDecimalOperandIsChargedByItsLength(t *testing.T) {
+	const elements = 200
+	items := make([]string, 0, elements)
+	for index := 0; index < elements; index++ {
+		items = append(items, `{"amount":"7"}`)
+	}
+	facts := fmt.Sprintf(`{"list":[%s]}`, strings.Join(items, ","))
+	condition := func(operand string) string {
+		return fmt.Sprintf(
+			`{"op":"exists","path":"/list","where":{"op":"fact","path":"/amount","operator":"greater-than","value":%q}}`,
+			operand)
+	}
+	const longOperand = 1_000
+	short := "5"
+	long := strings.Repeat("9", longOperand)
+
+	shortCharge := chargeOf(t, condition(short), facts)
+	longCharge := chargeOf(t, condition(long), facts)
+	// Every element pays the operand's bytes, so the difference is the token
+	// lengths' difference times the element count and nothing else.
+	if want := elements * (len(long) - len(short)); longCharge-shortCharge != want {
+		t.Fatalf("charges %d and %d differ by %d; a per-element operand must cost its length per element (%d)",
+			shortCharge, longCharge, longCharge-shortCharge, want)
+	}
+
+	// And the difference is load-bearing: the short operand fits the default
+	// budget and the long one does not, so the 200,000 decimal parses the long
+	// one would force are refused rather than performed.
+	engine := newTestEngine(t)
+	if _, failure := engine.EvaluateWith(draftPack(condition(short), "escalate"), []byte(facts), nil, draftOptions(0)); failure != nil {
+		t.Fatalf("a one-digit operand over 200 elements must evaluate: %+v", failure)
+	}
+	_, failure := engine.EvaluateWith(draftPack(condition(long), "escalate"), []byte(facts), nil, draftOptions(0))
+	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
+		t.Fatalf("a thousand-digit operand over the same 200 elements must be refused: %+v", failure)
 	}
 }
 
@@ -533,8 +695,10 @@ func TestRFC0008RaggedNestingIsNotAProduct(t *testing.T) {
 	raggedCharge := chargeOf(t, condition, ragged)
 	rectangularCharge := chargeOf(t, condition, rectangular)
 	// Σ|Bᵢ| = 6 cells against |A|×max|B| = 9: the ragged charge must be the
-	// sum, which is exactly three cells (nine units) cheaper.
-	if rectangularCharge-raggedCharge != 9 {
-		t.Fatalf("ragged %d and rectangular %d must differ by the three absent cells (9 units)", raggedCharge, rectangularCharge)
+	// sum, which is exactly three cells cheaper. A cell after the first costs
+	// five units — its fact node, one step of the already-compiled "/ok", and
+	// the boolean operand — so the difference is 15.
+	if rectangularCharge-raggedCharge != 15 {
+		t.Fatalf("ragged %d and rectangular %d must differ by the three absent cells (15 units)", raggedCharge, rectangularCharge)
 	}
 }

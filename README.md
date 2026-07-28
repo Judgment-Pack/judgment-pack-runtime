@@ -25,8 +25,9 @@ prototype** per [ADR-0009](docs/adr/0009-draft-rfc-quantifier-prototype.md): it 
 collection quantifiers `exists`, `every`, and `uniform` proposed by the specification's RFC 0008
 (Draft). Those operators belong to no published JPS version. A pack using one is **not valid** under
 JPS `0.1.0-draft`, `spec validate` rejects it, the evaluator without the flag refuses it, and every
-result produced under the flag says so in band through a `draftPrototype` member. The flag is CLI
-only; the MCP tool does not expose it.
+successful evaluation payload produced under the flag says so in band through a `draftPrototype`
+member — a refusal is an operational error and carries none. The flag is CLI only; the MCP tool does
+not expose it.
 
 The command binary is `judgment-pack`; release archives also ship a `jpack` short alias for the
 same program.
