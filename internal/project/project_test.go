@@ -55,6 +55,9 @@ func mustLoad(t *testing.T, configPath string) *Project {
 	if failure != nil {
 		t.Fatalf("load: %s: %s", failure.Code, failure.Message)
 	}
+	// Windows refuses to remove a directory somebody holds open, so an unclosed
+	// handle fails t.TempDir's cleanup there; Unix merely leaks the descriptor.
+	t.Cleanup(func() { _ = loaded.Close() })
 	return loaded
 }
 

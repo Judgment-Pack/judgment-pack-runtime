@@ -248,8 +248,17 @@ func TestRootIsTheDirectoryOpenedNotItsPathname(t *testing.T) {
 		t.Fatalf("Dir must report the pathname it was opened on: %q", root.Dir())
 	}
 	// A different directory takes over the pathname. The handle still reads the
-	// directory it was opened on.
+	// directory it was opened on. Windows expresses the same containment the
+	// other way around: an open directory cannot be renamed at all, so the
+	// pathname can never be retargeted while the handle is held.
 	if err := os.Rename(dir, filepath.Join(base, "moved")); err != nil {
+		if runtime.GOOS == "windows" {
+			data, readErr := root.Read("pack.json", 1024)
+			if readErr != nil || string(data) != `{"in":true}` {
+				t.Fatalf("the held handle must keep reading its directory: data=%q err=%v", data, readErr)
+			}
+			return
+		}
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
