@@ -63,11 +63,14 @@ The preflight order is also §8.4's error precedence — `pack-not-conformant`, 
 reported, and an input error is never overtaken by a result. Every surface reports the byte limit
 inside that preflight rather than at the read, so an oversized input is classed and ordered like any
 other preflight condition. The contract is applied to a pack of either bundled version, so a payload
-names both the pack's `specVersion` and the contract's `evaluatorSpecVersion`. Alignment to that class
-is not a claim under it: JPS §3.4.1 defines the single form an evaluator-conformance claim may take,
-this runtime makes none, and whether it ever will is a later ADR's question, not ADR-0010's.
-`experimental evaluate-corpus` runs the bundled evaluation corpus and reports row results labelled as
-exactly that.
+names both the pack's `specVersion` and the contract's `evaluatorSpecVersion`. The evaluation phase also
+carries the two limits §10 requires of the class — the evaluation-work limit and the collection-size
+limit of `internal/evaluation/limits.go` — and reaching the work limit is `resource-exhaustion` on the
+ordinary Core path, not only under the draft-RFC opt-in. This runtime **claims** evaluator conformance
+against that exact `specVersion`, in the single form JPS §3.4.1 permits and in one place only:
+[`CONFORMANCE.md`](../CONFORMANCE.md), decided by ADR-0011. `experimental evaluate-corpus` runs the
+bundled evaluation corpus and reports row results, which §3.4.1 makes that claim's required and
+non-exhaustive evidence rather than the claim.
 
 ## Packages
 

@@ -76,7 +76,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "judgment-pack",
 		Short:         "Judgment Pack Specification tooling",
-		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental namespace is the one exception: it evaluates experimentally, claims no conformance, and may change without notice.",
+		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental namespace is the one exception: it evaluates, under one exact contract this runtime claims evaluator conformance to (CONFORMANCE.md, JPS §3.4.1), on a surface that may change without notice. No command authorizes anything.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       result.CLIVersion,
@@ -98,8 +98,8 @@ func (a *App) rootCommand() *cobra.Command {
 func (a *App) experimentalCommand() *cobra.Command {
 	experimental := &cobra.Command{
 		Use:   "experimental",
-		Short: "Experimental operations that claim no conformance and may change or vanish",
-		Long:  "Experimental operations (ADR-0007, ADR-0010). Nothing under this command claims any JPS conformance. The evaluator is aligned to the evaluator class of JPS Core 0.2.0-draft -- the §8.2 input preflight, the §8.3 portable disposition, and the §8.4 error classes -- and that contract is applied to a pack of either bundled version, whatever the pack itself declares, so every payload names the contract's own version as evaluatorSpecVersion beside the pack's specVersion. Alignment is not a claim: §3.4.1 defines the only form an evaluator-conformance claim may take, this runtime makes none, and whether it ever will is a separate decision. Behavior may change or be removed without compatibility promise.",
+		Short: "Experimental-surface operations: the evaluator, which may change or vanish",
+		Long:  "Experimental operations (ADR-0007, ADR-0010, ADR-0011). \"Experimental\" here is a stability statement and not a conformance one: this surface may change or be removed without compatibility promise. The evaluator implements the evaluator conformance class of JPS Core 0.2.0-draft -- the §8.2 input preflight, the §8.3 portable disposition, the §8.4 error classes, and the §10 limits -- and this runtime claims evaluator conformance against that exact specVersion and the evaluation corpus published for it, in the one form §3.4.1 permits and only there: see CONFORMANCE.md for the claim and its exact scope. The contract is applied to a pack of either bundled version, whatever the pack itself declares, so every payload names the contract's own version as evaluatorSpecVersion beside the pack's specVersion; nothing is claimed under 0.1.0-draft, which defines no evaluator class. The claim asserts nothing about any pack, any facts, any evidence, or the consequences of acting on a disposition (§3.5).",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()
@@ -111,15 +111,16 @@ func (a *App) experimentalCommand() *cobra.Command {
 
 // evaluateCorpusCommand runs the bundled evaluation corpus of the specification
 // version that publishes one. It exists so a harness can drive the rows this
-// runtime's evaluator is aligned to; it reports results and claims nothing, and
-// the payload says as much in band on every run.
+// runtime's claim cites: the run produces results, which §3.4.1 makes the
+// required and non-exhaustive evidence for that claim rather than the claim
+// itself, and every payload points at CONFORMANCE.md in band.
 func (a *App) evaluateCorpusCommand() *cobra.Command {
 	format := "human"
 	specVersion := ""
 	command := &cobra.Command{
 		Use:   "evaluate-corpus",
-		Short: "EXPERIMENTAL: run the bundled JPS evaluation corpus; results only, no conformance claim",
-		Long:  "Run the evaluation corpus bundled for one exact JPS version through the experimental evaluator and report every row: the RFC 8785 canonical disposition compared byte for byte against the row's, or the expected JPS §8.4 error class and phase. This reports corpus results and NOTHING else. It is not an evaluator-conformance claim, it does not make one, and JPS §3.4.1 defines the only form such a claim could take; whether this runtime ever makes one is a separate decision. A mismatching row decides nothing by itself -- §3.4 makes a divergence as likely to be a defect in the row as in this implementation.",
+		Short: "EXPERIMENTAL SURFACE: run the bundled JPS evaluation corpus; results, the claim's evidence",
+		Long:  "Run the evaluation corpus bundled for one exact JPS version through this runtime's evaluator and report every row: the RFC 8785 canonical disposition compared byte for byte against the row's, or the expected JPS §8.4 error class and phase. This reports corpus results. Those results are the required evidence for the evaluator-conformance claim in CONFORMANCE.md and are not that claim and not exhaustive evidence of it (§3.4.1): the corpus is a version-pinned seed corpus with a published gap list, so passing every row demonstrates nothing directly about an input no row contains. A mismatching row decides nothing by itself -- §3.4 makes a divergence as likely to be a defect in the row as in this implementation, and only a project-issued erratum can excuse a row.",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if err := validateFormat(format); err != nil {
@@ -153,8 +154,8 @@ func (a *App) evaluateCommand() *cobra.Command {
 	quantifiers := false
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
-		Short: "EXPERIMENTAL: apply the JPS §§7-8 experiment to one pack; no conformance claim",
-		Long:  "Apply the experimental JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all. The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The §8.2-8.4 contract is JPS Core 0.2.0-draft's and is applied whichever bundled version the pack declares; the payload names both versions. It is not a conformance claim, an authorization, or an executed action; producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version and every evaluation payload produced this way says so in band.",
+		Short: "EXPERIMENTAL SURFACE: apply the JPS §§7-8 resolution model to one pack",
+		Long:  "Apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all, including a reached §10 evaluation-work limit (resource-exhaustion, evaluation phase). The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The §§8.2-8.4 contract is JPS Core 0.2.0-draft's and is applied whichever bundled version the pack declares; the payload names both versions. This runtime claims evaluator conformance against that exact version in the one form §3.4.1 permits (CONFORMANCE.md); one run of it is a result and not the claim, and neither the claim nor the result is an authorization, an executed action, or any statement about whether the pack, the facts, or acting on the disposition is correct (§3.5). Producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version, is not an input the claimed class describes, and every evaluation payload produced this way says so in band.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
@@ -279,7 +280,7 @@ func (a *App) mcpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve the offline validator and one experimental tool to an MCP client over stdio",
-		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus one explicitly EXPERIMENTAL evaluation tool (experimental_evaluate; ADR-0007) that claims no conformance. It holds no credential, opens no network connection, and authorizes nothing.",
+		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus one evaluation tool on this runtime's experimental surface (experimental_evaluate; ADR-0007, ADR-0011), whose evaluator carries the §3.4.1 claim of CONFORMANCE.md and whose surface may still change without notice. It holds no credential, opens no network connection, and authorizes nothing.",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			server := mcp.NewServer(a.engine, a.runner)

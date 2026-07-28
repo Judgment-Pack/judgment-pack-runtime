@@ -21,7 +21,8 @@ const (
 // resolver walks §8 over one conformant pack. It is a pure function of its
 // inputs: the decoded pack, the decoded facts document, and the tri-state
 // presence of every declared evidence requirement, which the evaluator carries
-// along with the running work charge of the draft RFC 0008 opt-in.
+// along with the running charge against this evaluation's §10 evaluation-work
+// limit.
 type resolver struct {
 	pack  map[string]any
 	facts any
@@ -35,10 +36,22 @@ type resolver struct {
 // resolve produces the §8.3 disposition, the configured escalation target when
 // one is requested, and the informative trace. The target is reported beside the
 // disposition and never inside it (§8.3). The last result is an evaluation error
-// rather than a disposition: exhausting the draft RFC 0008 work budget interrupts
-// §8 wherever it happens, and no partial disposition is reported.
+// rather than a disposition: reaching this evaluation's §10 evaluation-work limit
+// interrupts §8 wherever it happens, and no partial disposition is reported.
 func resolve(pack map[string]any, facts any, eval *evaluator) (result.Disposition, *result.HandoffTarget, []result.TraceEntry, *Failure) {
 	r := &resolver{pack: pack, facts: facts, eval: eval, reasons: map[string]bool{}}
+
+	// §8's own iteration, charged once and before step 1. Every authored evidence
+	// requirement, exception, and rule is one step of the walk below whether or
+	// not its condition is evaluated: step 2 inspects every requirement without
+	// evaluating anything, and a suppressed or step-6-skipped rule is still
+	// visited and still recorded in the trace. Charging the three counts up front
+	// keeps the term independent of the order §8 reaches them in and complete
+	// before the walk starts, which is the same discipline every condition tree's
+	// charge follows.
+	if !eval.charge(len(asArray(pack["evidenceRequirements"])) + len(asArray(pack["exceptions"])) + len(asArray(pack["rules"]))) {
+		return result.Disposition{}, nil, nil, workLimitFailure(eval)
+	}
 
 	// Step 1: omitted applicability is the literal value true. False is a
 	// terminal not-applicable result; unknown produces unresolved and stops.

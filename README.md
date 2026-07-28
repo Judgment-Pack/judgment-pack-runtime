@@ -20,17 +20,21 @@ versions, `0.1.0-draft` and `0.2.0-draft`, and validates a document against the 
 document declares; `0.1.0-draft` defines carrier, structural, and semantic document conformance
 only, and `0.2.0-draft` changes no part of the document format.
 
-Its one evaluation surface is explicitly EXPERIMENTAL: `judgment-pack experimental evaluate` (and
-the `experimental_evaluate` MCP tool) applies the specification's §§7–8 resolution model per
-[ADR-0007](docs/adr/0007-experimental-evaluator.md), and may change or be removed without
-compatibility promise. That surface is **aligned**, per
-[ADR-0010](docs/adr/0010-evaluator-aligned-to-core-0.2.0-draft.md), to the evaluator conformance class
-Core `0.2.0-draft` adds — the §8.2 input preflight, the §8.3 portable disposition with its RFC 8785
-byte agreement, and the §8.4 error classes and their fixed precedence — and alignment is not a
-claim. **This runtime claims no evaluator conformance.** JPS §3.4.1 defines exactly one form such a
-claim may take; making one is a separate decision that no command, payload, or sentence here takes.
-`judgment-pack experimental evaluate-corpus` runs the bundled evaluation corpus and reports its
-rows, labelled `corpus results, no conformance claim`.
+Its one evaluation surface is `judgment-pack experimental evaluate` (and the `experimental_evaluate`
+MCP tool), which applies the specification's §§7–8 resolution model per
+[ADR-0007](docs/adr/0007-experimental-evaluator.md). The `experimental` namespace is a **stability**
+statement: this surface may change or be removed without compatibility promise. It is not a statement
+about conformance. That evaluator implements the evaluator conformance class Core `0.2.0-draft` adds —
+the §8.2 input preflight, the §8.3 portable disposition with its RFC 8785 byte agreement, the §8.4
+error classes and their fixed precedence, and the §10 limits — per
+[ADR-0010](docs/adr/0010-evaluator-aligned-to-core-0.2.0-draft.md) and
+[ADR-0011](docs/adr/0011-first-evaluator-conformance-claim.md), and **this runtime claims evaluator
+conformance against that exact `specVersion`**. JPS §3.4.1 defines exactly one form such a claim may
+take, and this runtime makes it in exactly one place: **[CONFORMANCE.md](CONFORMANCE.md)**, which names
+the class, the version, the corpus version, the results, and — as §3.5 requires — what the claim does
+not assert, which includes anything at all about a pack, its facts, or the wisdom of acting on a
+disposition. `judgment-pack experimental evaluate-corpus` runs the bundled evaluation corpus and
+reports its rows: the claim's required, non-exhaustive evidence.
 
 That command carries one further opt-in, `--rfc0008-quantifiers`, which is a **draft-RFC
 prototype** per [ADR-0009](docs/adr/0009-draft-rfc-quantifier-prototype.md): it admits the
@@ -53,9 +57,9 @@ judgment-pack spec test-conformance [suite]
 judgment-pack spec schema <spec-version>
 judgment-pack spec examples [name]
 judgment-pack mcp
-judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL; no conformance claim)
-judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE)
-judgment-pack experimental evaluate-corpus   (EXPERIMENTAL; corpus results, no conformance claim)
+judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; outside the claim)
+judgment-pack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the claim's evidence)
 ```
 
 The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the
@@ -70,8 +74,8 @@ so an agent can validate documents as a tool call; see
 
 Download the archive for your operating system and architecture from
 [GitHub Releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases). Each archive
-includes the `judgment-pack` and `jpack` binaries, README, Apache-2.0 license, attribution notice,
-and third-party notices.
+includes the `judgment-pack` and `jpack` binaries, README, the `CONFORMANCE.md` claim that release
+makes, Apache-2.0 license, attribution notice, and third-party notices.
 
 Asset names follow this pattern:
 
@@ -165,8 +169,10 @@ Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimen
 row is compared by disposition equality as §8.3 defines it — both the row's expectation and the
 produced disposition go through the same RFC 8785 canonicalizer, so a set's stored order is not a
 difference — or by its expected §8.4 error class and phase.
-This reports results and claims nothing; a mismatching row decides nothing by itself, because §3.4
-makes a divergence as likely to be a defect in the row as in this implementation:
+This reports results: the required, non-exhaustive evidence for the claim in
+[CONFORMANCE.md](CONFORMANCE.md), and not that claim. A mismatching row decides nothing by itself,
+because §3.4 makes a divergence as likely to be a defect in the row as in this implementation, and only
+a project-issued erratum can excuse a row:
 
 ```bash
 ./bin/judgment-pack experimental evaluate-corpus
@@ -208,16 +214,19 @@ downloaded, installed, or executed during validation.
 
 ## Experimental evaluation behavior
 
-The evaluator is aligned to the evaluator conformance class of JPS Core `0.2.0-draft` and claims
-nothing under it.
+The evaluator implements the evaluator conformance class of JPS Core `0.2.0-draft`, and this runtime
+claims conformance to it against that exact version. The claim, its evidence, and everything it does
+not assert are in [CONFORMANCE.md](CONFORMANCE.md); this section is the behavior.
 
 That contract is applied to a pack of **either** bundled version, whatever the pack itself declares:
 the §8.2 preflight, the §8.3 disposition shape, and the §8.4 error classes are `0.2.0-draft`'s, and
 §11 says those semantics "existed for no consumer under `0.1.0-draft`". Every evaluation payload
 therefore names both versions — `specVersion` is the pack's own, and `evaluatorSpecVersion` is the
 contract's — so a `0.1.0-draft` pack's result is never read as a `0.1.0-draft` disposition, which is
-not a thing that exists. A refusal names it too, on `evaluationError.evaluatorSpecVersion`. Naming the
-version is not a claim under it.
+not a thing that exists. A refusal names it too, on `evaluationError.evaluatorSpecVersion`. The claim is
+against `0.2.0-draft` alone and is not inherited by any other version (§11): a `0.1.0-draft` pack is
+evaluated under this contract, and nothing is claimed under `0.1.0-draft`, which defines no evaluator
+class.
 
 **Inputs are admitted before anything is resolved (§8.2).** They are validated in one order — the
 pack, then the facts document, then the evidence-availability document, then the pack's
@@ -253,7 +262,7 @@ above:
 | `pack-not-conformant` | the pack input is not a semantically conforming document, at any layer |
 | `malformed-input` | an input failed the preflight: unusable JSON, a non-object or invalid evidence document, an undeclared evidence key, or a document limit reached while admitting an input |
 | `unsupported-required-extension` | the pack requires a capability this caller does not support |
-| `resource-exhaustion` | a documented limit was reached while evaluating an admitted input — which, in this runtime, means the `--rfc0008-quantifiers` work budget and nothing else |
+| `resource-exhaustion` | a documented §10 limit was reached while evaluating an admitted input: this runtime's evaluation-work limit, on the ordinary Core path as well as under `--rfc0008-quantifiers` |
 
 The phase split is the one §10 draws: a limit reached while *admitting* an input is
 `malformed-input`, because the input was refused rather than partly processed, and
@@ -262,18 +271,42 @@ This runtime's admission limits are the carrier limits listed under [security
 defaults](#security-defaults). The 250,000-node cap is one of them, and its §10 category is stated
 rather than left implicit: it is a budget over the whole parsed document, so it is a document-size
 limit like bytes and depth, reached while admitting an input, and it is reported as
-`malformed-input` in the `preflight` phase.
+`malformed-input` in the `preflight` phase. It is *also* this evaluator's collection-size bound, for the
+reason the next section gives: a collection of n members is n+1 parsed nodes, so a document-size budget
+over nodes bounds every collection inside it.
 
-Two limits §10 asks an implementation claiming the class to define and document are stated here
-exactly, including where this runtime does not have one. **No evaluation-work charge is levied outside
-`--rfc0008-quantifiers`**: the 100,000-unit budget belongs to that flag's accounting model (ADR-0009)
-and is charged only under it, so ordinary Core condition evaluation charges no work at all and
-`resource-exhaustion` is reachable only under that opt-in. **No per-collection size limit is enforced
-during evaluation on the Core path** either; a collection is bounded only at admission, by the carrier
-limits above. Limits are not portable: two implementations may set different ones, and an input above
-either is outside the portable claim (§10). Being able to reach a class is not the same as satisfying
-§10's define-and-document requirement for the class — this runtime claims nothing under §3.4, and the
-gap is stated here rather than closed.
+### The two §10 limits of the claimed class
+
+§10 requires an implementation claiming this class to define and document at least its collection-size
+and evaluation-work limits, and makes reaching one of them during an evaluation `resource-exhaustion`
+rather than a disposition. Both are defined here and enforced in
+[`internal/evaluation/limits.go`](internal/evaluation/limits.go):
+
+- **Evaluation-work limit: 20,000,000 work units per evaluation.** A unit is one visited condition
+  node, one §8 iteration over an authored evidence requirement, exception, or rule, one step of a
+  pointer resolution, or one byte of a path, an object member name, or a scalar token that a comparison
+  has to read. The charge for each condition tree is complete before any predicate in it runs and §8's
+  own iteration is charged before step 1, so the total does not depend on evaluation order and an
+  exhausted limit never truncates a disposition — it produces `resource-exhaustion` in the `evaluation`
+  phase with no disposition at all. The number is derived from the admission limits: every unit is
+  backed by at least one byte of an admitted input and an input is at most 10 MiB, so this limit is
+  about twice the largest admissible input: one full read of the pack plus one of the facts document is
+  never refused. What it refuses is amplification — the same
+  large selected value re-read once per `in` candidate or once per condition. Every row of the bundled
+  evaluation corpus charges under 1,000 units. Callers may configure a lower limit per evaluation; the
+  draft-RFC prototype has its own, smaller budget of 100,000 units (ADR-0009).
+- **Collection-size limit: 250,000 members** — the 250,000-node carrier cap above, stated as the §10
+  limit it is. Every input is admitted under that cap, so no admitted document holds a larger
+  collection, and every collection this evaluator traverses comes from an admitted document: Core
+  constructs none of its own and has no operator that iterates one. Because the bound is enforced while
+  *admitting* an input, reaching it is `malformed-input` in the `preflight` phase — §2.1 refuses such a
+  document whole rather than processing part of it — which is stricter than an evaluation-phase check of
+  the same bound, not weaker. That is why this runtime documents the determination instead of adding a
+  second mechanism that could only report what the preflight already refuses.
+
+Limits are not portable: two implementations may set different ones, and an input above either is
+outside the portable claim (§10). The evaluation corpus therefore keeps every case well inside any
+plausible limit rather than probing one.
 
 ## Process contract
 

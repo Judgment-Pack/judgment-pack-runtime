@@ -1,15 +1,19 @@
-// Package evaluation implements the JPS Core §§7–8 resolution model behind an
+// Package evaluation implements the JPS Core §§7–10 evaluator contract behind an
 // explicitly experimental surface (ADR-0007).
 //
-// It is aligned to the evaluator class Core 0.2.0-draft defines: the input
-// preflight of §8.2, the portable disposition of §8.3 with its RFC 8785
-// byte-agreement, and the four error classes and fixed precedence of §8.4.
-// Alignment is not a claim. This runtime claims no evaluator conformance —
-// §3.4.1 defines exactly one form such a claim may take, and making one is a
-// separate decision no part of this surface takes — and it may change or be
-// removed without compatibility promise. The contract is applied to a pack of
+// It implements the evaluator class Core 0.2.0-draft defines: the input preflight
+// of §8.2, the portable disposition of §8.3 with its RFC 8785 byte-agreement, the
+// four error classes and fixed precedence of §8.4, and the §10 limits of limits.go.
+// This runtime claims evaluator conformance against that exact specVersion and the
+// evaluation corpus published for it, in the one form §3.4.1 permits and in one
+// place only — CONFORMANCE.md, decided by ADR-0011. The claim is about this
+// implementation and about nothing else: not the pack, not the facts, not the
+// evidence, and not the consequences of acting on a disposition (§3.5). The
+// surface may still change or be removed without compatibility promise, which is
+// what "experimental" names here. The contract is applied to a pack of
 // either bundled version, whatever that pack declares, so every payload names
-// the contract's own version (result.EvaluatorSpecVersion) beside the pack's.
+// the contract's own version (result.EvaluatorSpecVersion) beside the pack's;
+// nothing is claimed under 0.1.0-draft, which defines no evaluator class.
 //
 // Evaluation is a pure function of its inputs: a conformant pack, one facts
 // document, the tri-state availability of declared evidence, and the
@@ -21,10 +25,15 @@
 // bounded by the carrier limits — 10 MiB per input document, 250,000 parsed
 // nodes, depth 128, 1 MiB strings — and reaching one of those refuses the input
 // rather than processing part of it, which is malformed-input in the preflight
-// phase. No evaluation-work charge is levied on the ordinary Core path at all:
-// work accounting belongs to the draft RFC 0008 model (Options.RFC0008Quantifiers,
-// ADR-0009) and is charged only under that opt-in, so resource-exhaustion — the
-// one class of the evaluation phase — is reachable only there.
+// phase. The evaluation phase has the two limits §10 requires of the class,
+// stated and derived in limits.go: an evaluation-work limit charged over every
+// condition node, §8 iteration, pointer resolution, and compared byte
+// (DefaultCoreWorkLimit, configurable per evaluation), and a collection-size
+// limit that is the carrier's parsed-node cap because every collection this path
+// traverses comes from a document admitted under it (CoreCollectionSizeLimit).
+// Reaching the work limit is resource-exhaustion, the one class of the evaluation
+// phase, and it is reachable on the ordinary Core path and not only under the
+// draft RFC 0008 opt-in, which has its own smaller budget (ADR-0009).
 package evaluation
 
 import (
@@ -68,9 +77,12 @@ type Options struct {
 	// so every evaluation made under this opt-in is labeled a draft-RFC
 	// prototype in its output.
 	RFC0008Quantifiers bool
-	// WorkBudget overrides DefaultWorkBudget. Zero or negative selects
-	// DefaultWorkBudget. It applies only under the draft grammar, which is what
-	// makes an evaluation-work limit load-bearing.
+	// WorkBudget overrides this evaluation's §10 evaluation-work limit. Zero or
+	// negative selects the default for the path in force: DefaultCoreWorkLimit on
+	// the Core path, and the draft grammar's smaller DefaultWorkBudget under the
+	// opt-in. A caller that configures a lower limit has configured its own limit,
+	// and an input above it is refused with the resource-exhaustion error of §8.4
+	// rather than evaluated to a disposition.
 	WorkBudget int
 	// EvidenceSupplied says the caller supplied an evidence-availability document,
 	// which is what tells an empty document apart from an omitted one. §8.2 makes an
@@ -91,6 +103,18 @@ type Options struct {
 // runtime's byte limit before it could be presented in full.
 func (o Options) oversized(name string) bool {
 	return slices.Contains(o.OversizedInputs, name)
+}
+
+// workLimit is the §10 evaluation-work limit in force for this evaluation: the
+// caller's, or the documented default of the path it selected.
+func (o Options) workLimit() int {
+	if o.WorkBudget > 0 {
+		return o.WorkBudget
+	}
+	if o.RFC0008Quantifiers {
+		return DefaultWorkBudget
+	}
+	return DefaultCoreWorkLimit
 }
 
 // Engine evaluates conformant packs. It wraps the validation engine so a pack
@@ -160,14 +184,10 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 		return result.Evaluation{}, unsupportedExtensions
 	}
 
-	budget := options.WorkBudget
-	if budget <= 0 {
-		budget = DefaultWorkBudget
-	}
 	disposition, target, trace, failure := resolve(packRoot, factsDocument, &evaluator{
 		evidence:    presence,
 		quantifiers: options.RFC0008Quantifiers,
-		budget:      budget,
+		budget:      options.workLimit(),
 	})
 	if failure != nil {
 		return result.Evaluation{}, failure

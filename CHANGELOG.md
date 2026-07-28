@@ -4,6 +4,41 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Claim evaluator conformance against JPS Core `0.2.0-draft`** (ADR-0011), in the one form §3.4.1
+  permits and in one place only: the new root [`CONFORMANCE.md`](CONFORMANCE.md), which names the class,
+  the exact `specVersion`, the corpus `suiteVersion` `0.2.0-draft`, the results obtained — **every one of
+  its twenty rows passed**, no erratum cited because none exists — and, at the same length, what the
+  claim does not assert. The evidence: the bundled corpus 20/20 byte-exact, a clean-room Python lineage
+  independently reproducing all twenty rows, and 20/20 byte-agreement between the two implementations;
+  both trace to one maintainer's direction, so that agreement corroborates rather than independently
+  confirms, and the corpus is a twenty-row seed whose own gap list the ADR quotes. The claim is scoped
+  to one exact version and is not inherited (§11), asserts compliance for every input this evaluator
+  admits and not merely the ones it ran, and asserts nothing whatever about a pack, its facts, its
+  evidence, an authorization, or the wisdom of acting on a disposition (§3.5).
+  - **The §10 limits the class requires are supplied first**, which is the precondition ADR-0010
+    deferred and named. `resource-exhaustion` is now reachable on the ordinary Core path and not only
+    under `--rfc0008-quantifiers`: an **evaluation-work limit of 20,000,000 units** per evaluation
+    (`DefaultCoreWorkLimit`, configurable per evaluation) is charged over every condition node, §8
+    iteration, pointer resolution, and compared byte, using the accounting model the draft-RFC prototype
+    already documented — so one model now serves both paths, plus one unit per authored evidence
+    requirement, exception, and rule, charged before §8 step 1. Each condition tree's charge completes
+    before any predicate in it runs, so an exhausted limit is an explicit `resource-exhaustion` error in
+    the `evaluation` phase with no disposition and no partial state, never a truncated result. The
+    number is derived from the admission limits rather than picked, and every row of the bundled corpus
+    charges under 1,000 units.
+  - The **collection-size limit is the carrier's 250,000-node cap**, documented as the §10 limit it is
+    rather than duplicated as a second mechanism: every input is admitted under that cap, so no admitted
+    document holds a larger collection and Core constructs none of its own. Reaching it is
+    `malformed-input` in the `preflight` phase, which is §10's own phase split and stricter than an
+    evaluation-phase check of the same bound.
+  - **The `experimental` namespace stays and no command is renamed**; what changes is what it says.
+    "Experimental" now means only what it always meant about stability — this surface may change or be
+    removed without compatibility promise — and the blanket no-claim wording is replaced by a pointer to
+    the claim and its exact scope on every surface it appeared on: the CLI help, the human output header,
+    the corpus label, the MCP tool descriptions, the `test_pack` prompt, the README, and the docs.
+    **Breaking for a consumer of the experimental payload:** the in-band `conformanceClaim` member was
+    `"none"` and is now `"evaluator-conformance:0.2.0-draft"`, naming the claim and the exact version it
+    is scoped to.
 - Bundle JPS `0.2.0-draft` alongside `0.1.0-draft`, imported from the specification tag
   `v0.2.0-draft` with the maintainer tool. The new bundle adds the evaluation corpus of §3.4.1 — its
   manifest, that manifest's schema, and the four pack fixtures its twenty rows name — which the
@@ -16,9 +51,9 @@ All notable changes to tagged releases are documented here.
   the runtime description now describes every bundle, so a development snapshot in a
   non-default version can no longer hide behind the default version's provenance.
 - Align the EXPERIMENTAL evaluator to the evaluator conformance class of Core `0.2.0-draft`
-  (ADR-0010), still under the `experimental` namespace and still **claiming nothing** — JPS §3.4.1
-  defines the one form an evaluator-conformance claim may take, this runtime makes none, and whether it
-  ever will is a separate decision a later ADR takes, not this change. The contract is applied to a
+  (ADR-0010), under the `experimental` namespace and claiming nothing *as that change landed* — JPS
+  §3.4.1 defines the one form an evaluator-conformance claim may take, and taking that decision was
+  left to a separate ADR, which the entry below is. The contract is applied to a
   pack of either bundled version whatever that pack declares, so every evaluation payload and every
   `evaluationError` now names the contract's own version in a new `evaluatorSpecVersion` member beside
   the pack's `specVersion`: §11 says these semantics existed for no consumer under `0.1.0-draft`, so a
@@ -53,9 +88,10 @@ All notable changes to tagged releases are documented here.
     byte limit on every surface: the CLI reports an oversized input inside the preflight instead of
     refusing it at the read, so it carries a class and takes its place in the fixed order — an
     oversized facts document no longer outranks a non-conformant pack. `resource-exhaustion` is the one
-    class of the evaluation phase, and in this runtime it is reached only by the
-    `--rfc0008-quantifiers` work budget: no evaluation-work charge is levied on the Core path, which
-    the README now states. Both surfaces report the same envelope: an `experimental_evaluate` refusal
+    class of the evaluation phase, and as this change left it, it was reached only by the
+    `--rfc0008-quantifiers` work budget — no evaluation-work charge was levied on the Core path at all.
+    The conformance-claim entry below closes that gap in the same release, so the `resource-exhaustion`
+    a consumer sees is the Core path's too. Both surfaces report the same envelope: an `experimental_evaluate` refusal
     is an in-band MCP tool error whose `structuredContent` is the `evaluationError` payload the CLI
     writes, so the class, the phase, and `evaluatorSpecVersion` are machine-readable there too rather
     than sentences a client has to classify itself.
@@ -70,13 +106,12 @@ All notable changes to tagged releases are documented here.
 - Add `judgment-pack experimental evaluate-corpus`, which runs the bundled evaluation corpus for one
   exact specification version and reports every row: the disposition compared as §8.3 defines
   disposition equality — both sides through the same canonicalizer, so a set's stored order is not a
-  difference — or the expected §8.4 class and phase. Its output is labelled `corpus results, no
-  conformance claim` in both formats, and a mismatch exits 1. **This is not an
-  evaluator-conformance claim and does not make one**; §3.4.1 defines the only form such a claim may
-  take, and whether this runtime ever makes one is a separate decision. With that said: the bundled
-  `suiteVersion` `0.2.0-draft` corpus runs clean in this build, 20 rows and 20 passed — evidence a
-  claim would require, not a claim — and run the verb for the current result, since a mismatching row
-  would decide nothing by itself (§3.4). The verb is CLI only; the MCP surface does not expose it.
+  difference — or the expected §8.4 class and phase. Its output is labelled as corpus results in both
+  formats and a mismatch exits 1. **A run is not the claim**: §3.4.1 makes corpus results the required
+  and non-exhaustive evidence for the one claim it permits, and that claim is `CONFORMANCE.md`'s (see
+  the entry below). The bundled `suiteVersion` `0.2.0-draft` corpus runs clean in this build, 20 rows
+  and 20 passed; run the verb for the current result, since a mismatching row would decide nothing by
+  itself (§3.4). The verb is CLI only; the MCP surface does not expose it.
 
 ## 0.3.0 - 2026-07-28
 

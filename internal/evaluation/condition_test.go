@@ -7,10 +7,21 @@ import (
 )
 
 // evalCondition applies §7's experimental interpretation, as pinned by spec
-// RFC 0006, to one condition node, with no draft grammar and no work budget:
-// the surface every row in this file is written against.
+// RFC 0006, to one condition node, with no draft grammar and no work charge: the
+// surface every row in this file is written against. It calls condition rather
+// than evaluate, so a row states the §7 verdict alone; the limit the engine
+// charges around it is coreEvaluator's and is exercised in limits_test.go.
 func evalCondition(node any, facts any, evidence map[string]tri) tri {
 	return (&evaluator{evidence: evidence}).condition(node, facts)
+}
+
+// coreEvaluator is one Core-path evaluator with this runtime's documented §10
+// evaluation-work limit in force, which is what the engine builds. The limit is
+// stated rather than left at the zero value because a zero budget is exhausted by
+// the first unit charged: every §8 walk is metered, so an unmetered evaluator is
+// not a lighter version of the real one but a refused evaluation.
+func coreEvaluator() *evaluator {
+	return &evaluator{evidence: map[string]tri{}, budget: DefaultCoreWorkLimit}
 }
 
 func TestDecimalCompare(t *testing.T) {
@@ -199,7 +210,7 @@ func TestResolverEdges(t *testing.T) {
 		pack := base()
 		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": true}, "outcome": "a", "onUnknown": "ignore"}}
 		pack["exceptions"] = []any{map[string]any{"id": "x", "when": map[string]any{"op": "literal", "value": true}, "effect": "escalate", "onUnknown": "ignore"}}
-		disposition, target, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, target, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"exception-escalation"}) {
 			t.Fatalf("direct escalation must be unresolved: %+v", disposition)
 		}
@@ -217,7 +228,7 @@ func TestResolverEdges(t *testing.T) {
 			map[string]any{"id": "x1", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "a", "onUnknown": "ignore"},
 			map[string]any{"id": "x2", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "b", "onUnknown": "ignore"},
 		}
-		disposition, _, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"conflict"}) {
 			t.Fatalf("incompatible forced outcomes must conflict: %+v", disposition)
 		}
@@ -228,7 +239,7 @@ func TestResolverEdges(t *testing.T) {
 		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": true}, "outcome": "a", "onUnknown": "ignore"}}
 		pack["exceptions"] = []any{map[string]any{"id": "x", "when": map[string]any{"op": "literal", "value": true}, "effect": "suppress-rule", "targetRule": "r", "onUnknown": "ignore"}}
 		pack["fallbackOutcome"] = "b"
-		disposition, _, trace, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, trace, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Kind != "outcome" || disposition.OutcomeID != "b" {
 			t.Fatalf("with the only rule suppressed the fallback applies: %+v", disposition)
 		}
@@ -246,7 +257,7 @@ func TestResolverEdges(t *testing.T) {
 	t.Run("no-match-without-fallback", func(t *testing.T) {
 		pack := base()
 		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": false}, "outcome": "a", "onUnknown": "ignore"}}
-		disposition, _, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"no-match"}) {
 			t.Fatalf("no rule and no fallback is no-match: %+v", disposition)
 		}
@@ -256,7 +267,7 @@ func TestResolverEdges(t *testing.T) {
 		pack := base()
 		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}, "outcome": "a", "onUnknown": "ignore"}}
 		pack["fallbackOutcome"] = "b"
-		disposition, _, trace, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, trace, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Kind != "outcome" || disposition.OutcomeID != "b" {
 			t.Fatalf("an ignored unknown must not block the fallback: %+v", disposition)
 		}
@@ -275,7 +286,7 @@ func TestResolverEdges(t *testing.T) {
 		pack := base()
 		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}, "outcome": "a", "onUnknown": "escalate"}}
 		pack["fallbackOutcome"] = "b"
-		disposition, _, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"unknown"}) {
 			t.Fatalf("an escalating unknown blocks both candidate and fallback: %+v", disposition)
 		}
@@ -288,7 +299,7 @@ func TestResolverEdges(t *testing.T) {
 			map[string]any{"id": "r2", "when": map[string]any{"op": "literal", "value": true}, "outcome": "b", "onUnknown": "ignore"},
 			map[string]any{"id": "r3", "when": map[string]any{"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}, "outcome": "a", "onUnknown": "escalate"},
 		}
-		disposition, _, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if !reflect.DeepEqual(disposition.Reasons, []string{"conflict", "unknown"}) {
 			t.Fatalf("neither unknown nor conflict is discarded: %+v", disposition)
 		}
@@ -363,7 +374,7 @@ func TestHandoffTriggerMatching(t *testing.T) {
 			"triggers": []any{"conflict"},
 			"target":   map[string]any{"kind": "human-role", "name": "Reviewer"},
 		}
-		disposition, _, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if !reflect.DeepEqual(disposition.Reasons, []string{"no-match"}) {
 			t.Fatalf("expected no-match: %+v", disposition)
 		}
@@ -378,7 +389,7 @@ func TestHandoffTriggerMatching(t *testing.T) {
 			"triggers": []any{"no-match"},
 			"target":   map[string]any{"kind": "team", "name": "Intake board"},
 		}
-		disposition, target, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, target, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Handoff.State != "requested" || !reflect.DeepEqual(disposition.Handoff.TriggeredBy, []string{"no-match"}) {
 			t.Fatalf("a matching trigger must be named by triggeredBy: %+v", disposition.Handoff)
 		}
@@ -396,7 +407,7 @@ func TestHandoffTriggerMatching(t *testing.T) {
 			"triggers": []any{"conflict"}, // exception-escalation is deliberately absent
 			"target":   map[string]any{"kind": "human-role", "name": "Escalation desk"},
 		}
-		disposition, target, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, target, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Handoff.State != "requested" || !reflect.DeepEqual(disposition.Handoff.TriggeredBy, []string{"exception-escalation"}) {
 			t.Fatalf("a direct request is triggered by exception-escalation even when the trigger list omits it: %+v", disposition.Handoff)
 		}
@@ -411,7 +422,7 @@ func TestHandoffTriggerMatching(t *testing.T) {
 			map[string]any{"id": "force", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "b", "onUnknown": "ignore"},
 			map[string]any{"id": "esc", "when": map[string]any{"op": "literal", "value": true}, "effect": "escalate", "onUnknown": "ignore"},
 		}
-		disposition, _, _, _ := resolve(pack, map[string]any{}, &evaluator{evidence: map[string]tri{}})
+		disposition, _, _, _ := resolve(pack, map[string]any{}, coreEvaluator())
 		if disposition.Kind != "unresolved" || !reflect.DeepEqual(disposition.Reasons, []string{"exception-escalation"}) {
 			t.Fatalf("a direct escalation takes precedence over a compatible forced outcome: %+v", disposition)
 		}

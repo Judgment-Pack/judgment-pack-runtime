@@ -22,10 +22,12 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `get_schema` | The exact bundled JSON Schema, with digest |
 | `describe_runtime` | Versions and artifact provenance |
 | `list_examples` / `get_example` | The embedded valid fixtures, read-only |
-| `experimental_evaluate` | EXPERIMENTAL (ADR-0007): the §§7–8 experiment; claims no conformance |
+| `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 
 None of these evaluate, decide, or authorize anything, except `experimental_evaluate`, which
-evaluates experimentally and says so in every payload.
+evaluates. Its payload names the contract version it applied and the claim this runtime makes against
+it; that claim is about this implementation and not about the pack, the facts, or the wisdom of acting
+on a disposition (JPS §3.5).
 
 ## The prompts
 

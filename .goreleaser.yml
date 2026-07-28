@@ -66,6 +66,7 @@ archives:
         formats:
           - zip
     files:
+      - CONFORMANCE.md
       - LICENSE
       - NOTICE
       - README.md

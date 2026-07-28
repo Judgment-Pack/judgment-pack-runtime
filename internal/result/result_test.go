@@ -2,10 +2,47 @@ package result
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+// The in-band claim value and the claim document are one statement in two places,
+// so they are held to each other. §3.4.1 scopes a claim to one exact specVersion
+// and §11 makes it non-inheritable, which means a bumped EvaluatorSpecVersion is
+// not a version bump but a claim this runtime has not yet earned: this test fails
+// until CONFORMANCE.md is restated for the new version, with that version's corpus
+// run. The document must also say the two things §3.4.1 requires in the claim's own
+// words — that every row passed, and that corpus results are not exhaustive
+// evidence — rather than leaving either to a reader's inference.
+func TestConformanceClaimDocumentAgreesWithTheInBandValue(t *testing.T) {
+	claim, err := os.ReadFile(filepath.Join("..", "..", "CONFORMANCE.md"))
+	if err != nil {
+		t.Fatalf("the claim is one document, and it must exist: %v", err)
+	}
+	// Line wrapping is a typesetting choice; the sentence is the claim.
+	document := strings.Join(strings.Fields(string(claim)), " ")
+	if want := "evaluator-conformance:" + EvaluatorSpecVersion; EvaluationClaim != want {
+		t.Fatalf("the in-band claim names the contract version it is made against: got %q, want %q", EvaluationClaim, want)
+	}
+	for _, required := range []string{
+		"evaluator conformance",
+		EvaluatorSpecVersion,
+		"suiteVersion",
+		"passed",
+		"not exhaustive evidence",
+		"§3.4.1",
+	} {
+		if !strings.Contains(document, required) {
+			t.Fatalf("CONFORMANCE.md must state %q in the claim's own words", required)
+		}
+	}
+	if !strings.Contains(document, "Every row of `suiteVersion` `"+EvaluatorSpecVersion+"` passed.") {
+		t.Fatal("§3.4.1 requires the claim to state, in its own words, that every row of the named corpus version passed")
+	}
+}
 
 // The values below are the machine-facing contract: consumers branch on the
 // exit status and on outputVersion. Changing any of them is a compatibility

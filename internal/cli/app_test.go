@@ -25,6 +25,44 @@ func TestHelpUsesSpecNamespace(t *testing.T) {
 	}
 }
 
+// Every CLI surface that used to deny a claim now points at the one this runtime
+// makes, and none of them denies it any more: the blanket "claims no conformance"
+// wording was accurate only while the §10 requirement was unmet (ADR-0010), and
+// after ADR-0011 it would be false in the other direction. "EXPERIMENTAL" survives
+// as the stability statement it always was, and no command is renamed.
+func TestExperimentalSurfacesNameTheClaimRatherThanDenyIt(t *testing.T) {
+	surfaces := [][]string{
+		{"--help"},
+		{"experimental", "--help"},
+		{"experimental", "evaluate", "--help"},
+		{"experimental", "evaluate-corpus", "--help"},
+		{"mcp", "--help"},
+	}
+	for _, args := range surfaces {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			code, stdout, stderr := runTest(t, args, "")
+			if code != 0 || stderr != "" {
+				t.Fatalf("exit=%d stderr=%q", code, stderr)
+			}
+			if !strings.Contains(stdout, "CONFORMANCE.md") {
+				t.Fatalf("the surface must say where the claim and its scope are: %q", stdout)
+			}
+			for _, stale := range []string{"claims no conformance", "no conformance claim", "claims nothing", "makes none"} {
+				if strings.Contains(stdout, stale) {
+					t.Fatalf("the no-claim wording is no longer true (%q): %q", stale, stdout)
+				}
+			}
+		})
+	}
+	// The command names are unchanged: the namespace is stability, not conformance.
+	_, stdout, _ := runTest(t, []string{"experimental", "--help"}, "")
+	for _, verb := range []string{"evaluate", "evaluate-corpus"} {
+		if !strings.Contains(stdout, verb) {
+			t.Fatalf("%q must still be spelled the same: %q", verb, stdout)
+		}
+	}
+}
+
 func TestValidateJSONContractAndExitCodes(t *testing.T) {
 	set, err := artifacts.Load(artifacts.DraftVersion)
 	if err != nil {
@@ -460,8 +498,13 @@ func TestExperimentalEvaluateCommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
 		t.Fatal(err)
 	}
-	if output["experimental"] != true || output["conformanceClaim"] != "none" {
-		t.Fatalf("evaluation output must be labeled experimental with no claim: %v", output)
+	// The payload names the surface's stability and the one claim this runtime
+	// makes, against the exact version §3.4.1 scopes a claim to (CONFORMANCE.md).
+	if output["experimental"] != true || output["conformanceClaim"] != result.EvaluationClaim {
+		t.Fatalf("evaluation output must name the surface and the claim: %v", output)
+	}
+	if output["conformanceClaim"] != "evaluator-conformance:0.2.0-draft" || output["evaluatorSpecVersion"] != "0.2.0-draft" {
+		t.Fatalf("the claim is scoped to one exact specVersion: %v", output)
 	}
 	disposition := output["disposition"].(map[string]any)
 	if disposition["kind"] != "outcome" || disposition["outcomeId"] != "decline-redirect" {
@@ -588,23 +631,25 @@ func TestExperimentalEvaluateRFC0008QuantifierFlag(t *testing.T) {
 }
 
 // The experimental corpus verb runs the bundled evaluation corpus and labels the
-// run as results only. Nothing it prints may read as a conformance claim: JPS
-// §3.4.1 defines the only form such a claim may take, and this runtime makes
-// none.
-func TestExperimentalEvaluateCorpusReportsResultsAndClaimsNothing(t *testing.T) {
+// run as results: §3.4.1 makes them the required and non-exhaustive evidence for
+// the claim in CONFORMANCE.md, so the output points at that claim and never
+// restates it as a verdict on the rows it just ran.
+func TestExperimentalEvaluateCorpusReportsResultsAndPointsAtTheClaim(t *testing.T) {
 	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate-corpus"}, "")
 	if code != result.ExitSuccess || stderr != "" {
 		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
 	}
-	if !strings.Contains(stdout, "corpus results, no conformance claim") {
-		t.Fatalf("the run must be labeled results-only: %q", stdout)
+	if !strings.Contains(stdout, result.EvaluationCorpusLabel) || !strings.Contains(stdout, "CONFORMANCE.md") {
+		t.Fatalf("the run must be labeled results and name where the claim is: %q", stdout)
 	}
 	if !strings.Contains(stdout, "passed: 20/20 corpus rows matched their expectation") {
 		t.Fatalf("every bundled row must run: %q", stdout)
 	}
-	for _, forbidden := range []string{"conformant", "conformance claim of", "claims conformance", "is evaluator conforming"} {
+	// A passing run is evidence, not the claim, and not a verdict about a pack.
+	// The claim's own wording lives in one file; nothing here may overstate it.
+	for _, forbidden := range []string{"conformant", "claims conformance", "is evaluator conforming", "proves", "authorized"} {
 		if strings.Contains(stdout, forbidden) {
-			t.Fatalf("corpus output must not imply a claim (%q): %q", forbidden, stdout)
+			t.Fatalf("corpus output must not overstate the claim (%q): %q", forbidden, stdout)
 		}
 	}
 
@@ -634,8 +679,8 @@ func TestExperimentalEvaluateCorpusReportsResultsAndClaimsNothing(t *testing.T) 
 	if output.Status != "passed" || output.Summary.Total != 20 || output.Summary.Passed != 20 {
 		t.Fatalf("summary = %+v status=%q", output.Summary, output.Status)
 	}
-	if !output.Experimental || output.ConformanceClaim != "none" || output.Label != result.EvaluationCorpusLabel {
-		t.Fatalf("the payload must claim nothing in band: %+v", output)
+	if !output.Experimental || output.ConformanceClaim != result.EvaluationClaim || output.Label != result.EvaluationCorpusLabel {
+		t.Fatalf("the payload must name the claim and label the run as its evidence: %+v", output)
 	}
 	if output.SpecVersion != artifacts.EvaluatorDraftVersion || output.SuiteVersion != artifacts.EvaluatorDraftVersion {
 		t.Fatalf("the corpus must name its own version: %+v", output)

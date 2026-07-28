@@ -128,7 +128,8 @@ func buildTestPack(args map[string]string) string {
 	var b strings.Builder
 	b.WriteString("Probe the LOGIC of a judgment pack you hold, using the experimental_evaluate tool.\n")
 	b.WriteString("Validation proved the pack well-formed; this session tests whether it decides what its\n")
-	b.WriteString("author intended. The evaluator is experimental and claims no conformance.\n\n")
+	b.WriteString("author intended. The evaluator's surface is experimental and may change; its conformance\n")
+	b.WriteString("claim is CONFORMANCE.md's and says nothing about whether this pack decides well.\n\n")
 	if pack := strings.TrimSpace(args["pack"]); pack != "" {
 		b.WriteString("The pack under test:\n\n---\n" + pack + "\n---\n\n")
 	}

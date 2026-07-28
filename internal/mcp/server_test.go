@@ -252,8 +252,11 @@ func TestExperimentalEvaluateTool(t *testing.T) {
 		t.Fatalf("a produced disposition is a successful call: %#v", evaluated)
 	}
 	structured := evaluated["structuredContent"].(map[string]any)
-	if structured["experimental"] != true || structured["conformanceClaim"] != "none" {
-		t.Fatalf("the payload must be labeled experimental with no claim: %#v", structured)
+	if structured["experimental"] != true || structured["conformanceClaim"] != result.EvaluationClaim {
+		t.Fatalf("the payload must name the surface and the one claim this runtime makes: %#v", structured)
+	}
+	if structured["conformanceClaim"] != "evaluator-conformance:0.2.0-draft" {
+		t.Fatalf("the claim is scoped to one exact specVersion: %#v", structured)
 	}
 	disposition := structured["disposition"].(map[string]any)
 	if disposition["kind"] != "outcome" || disposition["outcomeId"] != "clarify-return" {

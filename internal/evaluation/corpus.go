@@ -11,11 +11,12 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
-// The evaluation corpus of JPS §3.4.1, run against this runtime's experimental
-// evaluator. Running it produces results and nothing else: §3.4.1 defines
-// exactly one form of evaluator-conformance claim, this runtime makes none, and
-// every payload here says so (result.EvaluationCorpusLabel). A passing run is
-// evidence a claim would require, not a claim, and not a decision to make one.
+// The evaluation corpus of JPS §3.4.1, run against this runtime's evaluator.
+// Running it produces results: §3.4.1 makes those results the required evidence
+// for the one permitted claim and not exhaustive evidence of it, and the claim
+// itself is one document with one scope (CONFORMANCE.md, ADR-0011), which every
+// payload here points at rather than restates (result.EvaluationCorpusLabel). A
+// passing run is that evidence; it is not the claim.
 
 // corpusManifest is the case carrier of the bundled evaluation corpus. facts,
 // evidenceAvailability, and expectedDisposition are kept as raw bytes: the

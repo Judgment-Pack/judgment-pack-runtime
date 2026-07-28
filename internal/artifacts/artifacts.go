@@ -18,7 +18,10 @@ import (
 // DraftVersion is the specification version every surface selects when a caller
 // names none. EvaluatorDraftVersion is the newer bundled draft, whose Core adds
 // the evaluator conformance class (§3.4) and publishes the evaluation corpus
-// (§3.4.1); bundling it changes no default and claims nothing.
+// (§3.4.1); bundling it changes no default. It is also the exact version this
+// runtime's evaluator-conformance claim is made against, and a claim is not
+// inherited by any other version (§11, CONFORMANCE.md), so bundling a third
+// version would claim nothing by itself either.
 const (
 	DraftVersion          = "0.1.0-draft"
 	EvaluatorDraftVersion = "0.2.0-draft"

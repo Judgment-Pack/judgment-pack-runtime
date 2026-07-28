@@ -208,10 +208,19 @@ type Example struct {
 
 // --- experimental evaluation (ADR-0007; spec RFC 0006) ---
 
-// EvaluationClaim is carried by every experimental-evaluation payload so the
-// output can never be mistaken for a conformance claim: JPS 0.1.0-draft §3.4
-// forbids evaluator-conformance claims outright.
-const EvaluationClaim = "none"
+// EvaluationClaim is carried by every experimental-evaluation payload and names
+// the one evaluator-conformance claim this runtime makes: the §3.4.1 claim
+// against the evaluator class of JPS Core 0.2.0-draft and the evaluation corpus
+// published for that exact specVersion (CONFORMANCE.md, ADR-0011). It was "none"
+// until that claim was made, and it names the version because a claim attaches to
+// one exact specVersion and is not inherited by any other (§11).
+//
+// It is a fact about this implementation, not about this payload's inputs. The
+// claim asserts compliance with §§7-10 for every input this evaluator admits; it
+// asserts nothing about the pack, the facts, the evidence, or the consequences of
+// acting on the disposition beside it (§3.5), and corpus results are its required
+// and non-exhaustive evidence (§3.4.1).
+const EvaluationClaim = "evaluator-conformance:0.2.0-draft"
 
 // EvaluatorSpecVersion names the exact JPS Core version whose evaluator contract
 // this runtime's experimental evaluator applies: the §8.2 input preflight, the
@@ -222,9 +231,11 @@ const EvaluationClaim = "none"
 // contract is applied to a pack of either bundled version whatever that pack
 // declares, and §11 is explicit that these semantics "existed for no consumer
 // under 0.1.0-draft" — so a payload naming only the pack's 0.1.0-draft would read
-// as a 0.1.0-draft disposition, which is not a thing that exists. Naming the
-// contract's version is not a claim under it: §3.4.1 defines the only form an
-// evaluator-conformance claim may take, and this runtime makes none.
+// as a 0.1.0-draft disposition, which is not a thing that exists. It is also the
+// exact version this runtime's §3.4.1 claim is made against (EvaluationClaim,
+// CONFORMANCE.md), and it is the version scope of that claim: a pack declaring
+// 0.1.0-draft is evaluated under this contract, and nothing is claimed under
+// 0.1.0-draft, which defines no evaluator class.
 const EvaluatorSpecVersion = "0.2.0-draft"
 
 // HandoffTarget echoes the pack's declared escalation target when a handoff is
@@ -486,12 +497,13 @@ type Evaluation struct {
 	Artifact             *Artifact       `json:"artifact,omitempty"`
 }
 
-// EvaluationCorpusLabel labels every evaluation-corpus run this runtime
-// reports. Running the corpus published for a specification version is not a
-// claim against it: JPS §3.4.1 defines exactly one form of
-// evaluator-conformance claim, this runtime makes none, and whether it ever will
-// is a separate decision this surface does not take.
-const EvaluationCorpusLabel = "corpus results, no conformance claim"
+// EvaluationCorpusLabel labels every evaluation-corpus run this runtime reports.
+// A run is results, and the claim those results are evidence for is one document
+// with one scope: §3.4.1 makes corpus results required evidence for the claim and
+// not exhaustive evidence of it, so a passing run neither is the claim nor
+// exhausts it. The label points at the claim rather than denying one, which is
+// what it did before ADR-0011.
+const EvaluationCorpusLabel = "corpus results, the required evidence for the claim in CONFORMANCE.md"
 
 // EvaluationCorpusCase is one evaluation-corpus row's result. Expected and
 // actual are the RFC 8785 canonical dispositions compared byte for byte — both

@@ -132,22 +132,6 @@ func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
 	}
 }
 
-// workLimitFailure is the explicit evaluation error RFC 0008 requires when the
-// budget is exhausted. It is an error, never a disposition: the charge is
-// complete before any element is evaluated, so an exhausted budget means no
-// disposition was ever entitled to exist.
-func workLimitFailure(e *evaluator) *Failure {
-	return &Failure{
-		Class: result.ClassResourceExhaustion,
-		Phase: result.PhaseEvaluation,
-		Code:  "JPS-RESOURCE-EVALUATION-WORK-LIMIT",
-		Message: fmt.Sprintf(
-			"The evaluation exceeds this runtime's draft RFC 0008 evaluation-work limit of %d units. The charge is computed before any element is evaluated and does not depend on element order, so no disposition is produced.",
-			e.budget),
-		ExitCode: result.ExitIO,
-	}
-}
-
 // draftPrototype builds the in-band marker every draft-grammar evaluation
 // carries. It states the one thing a reader must not miss: this pack is not
 // valid under the published specification, and the operators it uses are a

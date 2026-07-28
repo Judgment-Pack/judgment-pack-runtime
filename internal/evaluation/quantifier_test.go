@@ -453,13 +453,15 @@ func TestRFC0008DuplicationRaisesTheChargeAndKeepsTheValue(t *testing.T) {
 
 	// And the increase is not cosmetic: a budget the un-duplicated input fits
 	// refuses the duplicated one, which is precisely why the charge cannot be
-	// called duplication-invariant.
+	// called duplication-invariant. The budget is the condition's charge plus the
+	// one unit §8's iteration over the pack's single rule costs, which chargeOf
+	// does not see because it charges a condition tree and not a §8 walk.
 	engine := newTestEngine(t)
 	pack := draftPack(condition, "escalate")
-	if _, failure := engine.EvaluateWith(pack, []byte(once), nil, draftOptions(onceCharge)); failure != nil {
+	if _, failure := engine.EvaluateWith(pack, []byte(once), nil, draftOptions(onceCharge+1)); failure != nil {
 		t.Fatalf("a budget equal to the charge must admit the un-duplicated input: %+v", failure)
 	}
-	_, failure := engine.EvaluateWith(pack, []byte(twice), nil, draftOptions(onceCharge))
+	_, failure := engine.EvaluateWith(pack, []byte(twice), nil, draftOptions(onceCharge+1))
 	if failure == nil || failure.Code != "JPS-RESOURCE-EVALUATION-WORK-LIMIT" {
 		t.Fatalf("the same budget must refuse the duplicated input: %+v", failure)
 	}
