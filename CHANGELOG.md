@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.4.0 - 2026-07-28
 
 - **Add the `jpack.json` project convention** (ADR-0012), a **non-normative convention of this
   runtime** and not part of the Judgment Pack Specification. It gives a project one name per decision

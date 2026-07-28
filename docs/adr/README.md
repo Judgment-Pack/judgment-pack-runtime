@@ -105,7 +105,7 @@ authority, and following it confers no conformance status on anything.
 | [0006](0006-authoring-lifecycle-in-the-client.md)        | The authoring lifecycle lives in the client; the runtime is a stateless oracle  | accepted |
 | [0007](0007-experimental-evaluator.md)                   | Ship an experimental evaluator behind an explicit experimental surface          | accepted; claim posture superseded by [0011](0011-first-evaluator-conformance-claim.md) |
 | [0008](0008-mcp-prompts-authoring-method.md)             | Serve authoring method as MCP prompts; the intelligence stays in the client     | accepted |
-| [0009](0009-draft-rfc-quantifier-prototype.md)           | Prototype spec RFC 0008 quantifiers behind an opt-in experimental flag          | proposed |
-| [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md)    | Retarget the experimental evaluator at 0.2.0-draft's evaluator class; claim nothing | proposed; claim-scope determination superseded by [0011](0011-first-evaluator-conformance-claim.md) |
-| [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | proposed |
-| [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec | proposed |
+| [0009](0009-draft-rfc-quantifier-prototype.md)           | Prototype spec RFC 0008 quantifiers behind an opt-in experimental flag          | accepted |
+| [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md)    | Retarget the experimental evaluator at 0.2.0-draft's evaluator class; claim nothing | accepted; claim-scope determination superseded by 0011 |
+| [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | accepted |
+| [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec | accepted |
