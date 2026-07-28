@@ -65,11 +65,20 @@ judgment-pack spec validate <pack-or->
 judgment-pack spec test-conformance [suite]
 judgment-pack spec schema <spec-version>
 judgment-pack spec examples [name]
+judgment-pack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
+judgment-pack packs validate [--id X]
+judgment-pack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+judgment-pack packs schema
 judgment-pack mcp
 judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+judgment-pack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
 judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
 judgment-pack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 ```
+
+The pack argument and `--pack-id` are mutually exclusive: one pack, one source, and supplying both
+or neither is an invocation error rather than a precedence rule. `--pack-id` honors `--config` and
+`JPACK_CONFIG` like every other command that reads a configuration.
 
 The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the
 specification and the prefix of its provisional diagnostic codes.
@@ -337,6 +346,83 @@ rather than a disposition. Both are defined here and enforced in
 Limits are not portable: two implementations may set different ones, and an input above either is
 outside the portable claim (§10). The evaluation corpus therefore keeps every case well inside any
 plausible limit rather than probing one.
+
+## The `jpack.json` project convention
+
+A project that owns several packs needs a name for each one that works the same from a shell, from
+CI, and from an agent's tool call. `jpack.json` is that index — and it is a **convention of this
+runtime, not part of the Judgment Pack Specification** ([ADR-0012](docs/adr/0012-jpack-project-convention.md)).
+No other implementation is obliged to understand it, and a project that never writes one loses
+nothing: every command still takes a pack by path, and every MCP tool still takes one as text.
+
+```json
+{
+  "configVersion": "1",
+  "packs": {
+    "expense-approval": {
+      "path": "packs/expense-approval-1.2.0.pack.json",
+      "matrix": "packs/expense-approval.matrix.json",
+      "description": "May this expense be reimbursed without a manager's sign-off?",
+      "expectedVersion": "1.2.0",
+      "facts": { "/expense/amountUsd": { "source": "Snowflake FINANCE.EXPENSES", "hint": "amount_usd as a decimal string" } },
+      "evidence": { "itemised-receipt": { "source": "SharePoint /Finance/Receipts" } }
+    }
+  }
+}
+```
+
+The file is selected by `--config`, then `JPACK_CONFIG`, then `./jpack.json`. Its schema is closed
+and printable with `judgment-pack packs schema`: every member it does not name is rejected.
+`configVersion` is a single integer as a string, on the `outputVersion` precedent rather than
+semantic versioning, and `"1"` is the only accepted value.
+
+There is **no templating, no target or environment blocks, and no selection**. A templated pack was
+never the pack anyone reviewed; environments are one file per environment by convention
+(`jpack.staging.json`, `--config`); and choosing which decision to ask is the application's, because
+applicability is not authorization. Approval is your pull request — there is no approval state in
+the file.
+
+**A pack's identity is stated once, in the pack document's `id` and `version` members.** Everything
+else that names a version is a validated reference to that statement, never a second one:
+`expectedVersion` is a pin `packs validate` compares; the optional `<decision-id>-<semver>.pack.json`
+filename is cross-checked when followed and skipped when not; and the `packId` and `packVersion`
+members on every evaluation payload are echoes read off the document that was evaluated. Any of the
+three may disagree with the document, and a disagreement is an error — none of them can win one.
+
+The `facts` and `evidence` hints are non-normative guidance for an agent gathering inputs: they say,
+in your words, where a value is held. **The runtime never reads a source** — it holds no credential
+and opens no network connection — and every file the convention names is read through a reader
+rooted at the configuration's own directory. Containment is two checks and neither substitutes for
+the other: a lexical one refuses an absolute or escaping path before anything is read, and
+canonicalizing the containing directory at read time refuses a path that reaches outside through a
+symlinked component, which a lexical check cannot see. Every surface that reaches a pack through the
+configuration applies both, `--pack-id` included.
+
+Four commands and one CI line:
+
+```bash
+judgment-pack packs list                                  # the resolved inventory
+judgment-pack packs validate && judgment-pack packs test  # the CI gate
+```
+
+`packs validate` reports six named checks per pack — path containment, document validation, the
+`expectedVersion` pin, the filename cross-check, the hint keys, and matrix well-formedness — each as
+`passed`, `failed`, or `skipped`. `packs test` runs each pack's instance matrix through the experimental
+evaluator and compares every row the way the bundled evaluation corpus is compared: the RFC 8785
+canonical §8.3 disposition byte for byte, or the expected §8.4 error class and phase. Rows use the
+same case-carrier shape that corpus uses. Both commands exit `1` on any failure, a pack with no
+matrix is reported *skipped* rather than passed, and a `packs test` run in which no row ran at all
+is reported *skipped* and exits `1`: a green gate over zero rows would say a project was tested when
+nothing was.
+
+From a shell, `judgment-pack experimental evaluate --pack-id expense-approval --facts facts.json`
+reaches the same pack by the same name. Over MCP the same inventory is `list_packs`, one document is
+`get_pack`, and `experimental_evaluate` accepts `pack_id` instead of pasted `pack` text. With no configuration,
+`list_packs` answers empty with an explanation of where the runtime looked, rather than failing.
+
+[docs/building-with-packs.md](docs/building-with-packs.md) is the builder's guide: the packs-as-code
+lifecycle, the three-owner model (the application selects, the agent gathers and never invents, the
+pack judges), hints in practice, and the data-sufficiency-as-another-pack pattern.
 
 ## Process contract
 

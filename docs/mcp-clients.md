@@ -22,6 +22,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `get_schema` | The exact bundled JSON Schema, with digest |
 | `describe_runtime` | Versions and artifact provenance |
 | `list_examples` / `get_example` | The embedded valid fixtures, read-only |
+| `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 
 None of these evaluate, decide, or authorize anything, except `experimental_evaluate`, which
@@ -30,6 +31,51 @@ member pointing at [`CONFORMANCE.md`](../CONFORMANCE.md), where the conformance 
 and only; no tool description, and no line of this document, states any part of it. Whatever that claim
 says, it is about this implementation and not about the pack, the facts, or the wisdom of acting on a
 disposition (JPS §3.5). It evaluates only a pack declaring `specVersion` `0.2.0-draft` (§11).
+
+### The project tools
+
+`list_packs` and `get_pack` read the [`jpack.json` project
+convention](../README.md#the-jpackjson-project-convention) — this runtime's convention, not part of
+the specification ([ADR-0012](adr/0012-jpack-project-convention.md)). `list_packs` returns the
+resolved, token-cheap inventory: the project's decision id, the pack document's own id and version,
+the description, the ids of the evidence the pack requires, whether an instance matrix exists, and
+the project's non-normative hints about where each fact and each piece of evidence is held.
+`get_pack { pack_id }` returns one document, read-only and unaltered — and a document that was read
+and did not decode is served with a status saying so and a `detail`, rather than as a valid document
+with empty identity members. `experimental_evaluate` accepts `pack_id` in place of `pack`; the two are
+mutually exclusive, and supplying both is refused rather than given a precedence rule. That exclusion
+is stated in both property descriptions and enforced by the server, and deliberately not advertised as
+a composed schema keyword: every tool's `inputSchema` here is a flat object, so a client or a bridge
+that re-emits these schemas into a provider's function-declaration format has nothing to drop or
+reject.
+
+The server reads the file named by `JPACK_CONFIG`, or `jpack.json` in the directory it was launched
+in. There is no path argument over the wire, for the reason no tool takes a document by path: a
+long-lived endpoint whose answers depend on the client's idea of the server's filesystem is not
+portable across client topologies (ADR-0006). Set it per server if the launch directory is not the
+project root:
+
+```json
+{
+  "mcpServers": {
+    "judgment-pack": {
+      "type": "stdio",
+      "command": "judgment-pack",
+      "args": ["mcp"],
+      "env": { "JPACK_CONFIG": "/abs/path/to/jpack.json" }
+    }
+  }
+}
+```
+
+With no configuration, `list_packs` answers **empty with an explanation of where the runtime
+looked** — a project that does not use the convention is an ordinary project, and pack text still
+works everywhere. Every file is read through a reader rooted at the configuration's own directory;
+a configured path that leaves it is refused. The hints are text the project wrote: this server holds
+no credential, opens no connection, and never reads a source one names. Gathering those values is
+the client's, with the client's own access — and a value you cannot source is reported `unknown`
+rather than guessed, so the pack can escalate instead of deciding on an invention.
+[building-with-packs.md](building-with-packs.md) is the full guide.
 
 ## The prompts
 

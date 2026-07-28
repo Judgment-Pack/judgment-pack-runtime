@@ -10,6 +10,8 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
@@ -88,14 +90,44 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		{
-			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"name":        "list_packs",
+			"description": "List the packs this project declares in its jpack.json, resolved: the project's decision id, the pack document's own id and version, the description, the ids of the evidence the pack requires, whether an instance matrix exists, and the project's non-normative hints about where each fact and each piece of evidence is held. The convention is this runtime's (ADR-0012) and is not part of the Judgment Pack Specification. Reading it is how you learn what a project can decide without fetching a pack; call get_pack for one document. The configuration is the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in, and an absent configuration is an empty answer with an explanation rather than an error. The hints are the project's own words about where to look: this server holds no credential, opens no network connection, and never reads a source one names. Gathering those values is yours to do with your own access -- and a value you cannot source is reported unknown rather than guessed, so the pack can escalate instead of deciding on an invention.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
-				"required":             []string{"pack", "facts"},
+				"properties":           map[string]any{},
+			},
+		},
+		{
+			"name":        "get_pack",
+			"description": "Return one pack document this project declares in its jpack.json, by its decision id, as JSON text, with the document's own id and version, its declared specVersion, its digest, and its byte size. The document is the project's own file, served unaltered and read-only; this server stores nothing and returns nothing you did not already have on disk. Call list_packs for the available decision ids. The file is read through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"pack_id"},
 				"properties": map[string]any{
-					"pack":                 map[string]any{"type": "string", "description": "The JPS document to evaluate, as JSON text. It must have full document conformance; a non-conformant pack is refused."},
+					"pack_id": map[string]any{"type": "string", "description": "The project's decision id, as reported by list_packs (for example, expense-approval)."},
+				},
+			},
+		},
+		{
+			"name":        "experimental_evaluate",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"facts"},
+				// The pack arrives one way or the other, never both and never neither.
+				// That rule is stated in the two property descriptions and enforced by
+				// the handler, which reports a violation as the argument error it is; it
+				// is deliberately not advertised as a composed schema keyword. Every tool
+				// schema here is a flat object, because a bridge that re-emits these
+				// schemas into a provider's function-declaration format (docs/mcp-clients.md)
+				// commonly drops or rejects a composed keyword, and a rule enforced in one
+				// place beats a rule advertised in a form a client may not carry.
+				"properties": map[string]any{
+					"pack":                 map[string]any{"type": "string", "description": "The JPS document to evaluate, as JSON text. It must have full document conformance; a non-conformant pack is refused. Mutually exclusive with pack_id."},
+					"pack_id":              map[string]any{"type": "string", "description": "A decision id declared in the project's jpack.json, resolved to that pack's document. Mutually exclusive with pack; call list_packs for the available ids."},
 					"facts":                map[string]any{"type": "string", "description": "One JSON facts document, as JSON text; fact.path pointers resolve against it."},
 					"evidence":             map[string]any{"type": "string", "description": "Optional tri-state evidence availability, as JSON text: an object mapping declared evidence-requirement ids to \"present\", \"absent\", or \"unknown\". An omitted id is unknown. Omit this key entirely to supply no document at all, which makes every declared requirement unknown; a key present with an empty string is a supplied empty document, which is not a JSON text and is refused as malformed-input."},
 					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports."},
@@ -126,6 +158,10 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolListExamples(), nil
 	case "get_example":
 		return s.toolGetExample(params.Arguments), nil
+	case "list_packs":
+		return s.toolListPacks(), nil
+	case "get_pack":
+		return s.toolGetPack(params.Arguments), nil
 	case "experimental_evaluate":
 		return s.toolExperimentalEvaluate(params.Arguments), nil
 	default:
@@ -258,6 +294,76 @@ func (s *Server) toolGetExample(rawArgs json.RawMessage) any {
 	}
 }
 
+// The project-convention surfaces (ADR-0012). Everything they read goes through
+// a reader rooted at the configuration's own directory, and the configuration is
+// located the same way on every call: JPACK_CONFIG when it is set, otherwise
+// jpack.json in the directory the server was launched in. The server has no flag
+// for it, because a long-lived wire endpoint that took a path from the client
+// would make its answers depend on the client's idea of the server's filesystem
+// — the same reason no tool here accepts a document by path (ADR-0006).
+
+// toolListPacks reports the resolved inventory of the project this server was
+// launched in.
+//
+// A missing configuration is an empty inventory carrying its own explanation,
+// not a tool error: a project that does not use the convention is an ordinary
+// project, and a model told "error" will retry, while a model told "no
+// configuration was found at X, pass documents directly" will do the right
+// thing. A configuration that exists and is broken is a tool error, because that
+// is a defect someone has to fix.
+func (s *Server) toolListPacks() any {
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return toolResult(project.EmptyInventory(configPath, "mcp list_packs"))
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	return toolResult(loaded.Inventory("mcp list_packs"))
+}
+
+// toolGetPack serves one declared pack document by decision id, exactly as
+// get_example serves a bundled fixture: the bytes as text content, the metadata
+// as structured content. The document is the project's own and is returned
+// unaltered.
+func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
+	var args struct {
+		PackID json.RawMessage `json:"pack_id"`
+	}
+	if len(rawArgs) > 0 {
+		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil {
+			return toolError(`The "get_pack" arguments must be an object with a string "pack_id"; unknown keys are rejected.`)
+		}
+	}
+	packID, present, argumentError := textArgument("pack_id", args.PackID)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	if !present || packID == "" {
+		return toolError(`The "pack_id" argument is required: pass a decision id, and call list_packs for the available ids.`)
+	}
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return toolError(project.EmptyInventory(configPath, "mcp get_pack").Note)
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	meta, data, failure := loaded.Document(packID, "mcp get_pack")
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": string(data)}},
+		"structuredContent": meta,
+		"isError":           false,
+	}
+}
+
 // evaluateCommand names this surface in every payload it produces, exactly as
 // the describe package's command strings do.
 const evaluateCommand = "mcp experimental_evaluate"
@@ -273,6 +379,7 @@ const evaluateCommand = "mcp experimental_evaluate"
 // key.
 type evaluateArguments struct {
 	Pack                json.RawMessage `json:"pack"`
+	PackID              json.RawMessage `json:"pack_id"`
 	Facts               json.RawMessage `json:"facts"`
 	Evidence            json.RawMessage `json:"evidence"`
 	SupportedExtensions []string        `json:"supported_extensions"`
@@ -322,10 +429,14 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
-			return toolError(`The "experimental_evaluate" arguments must be an object with string "pack" and "facts", optional string "evidence", and optional "supported_extensions" (an array of strings); unknown keys are rejected.`)
+			return toolError(`The "experimental_evaluate" arguments must be an object with a string "facts", exactly one of string "pack" and string "pack_id", optional string "evidence", and optional "supported_extensions" (an array of strings); unknown keys are rejected.`)
 		}
 	}
 	pack, packPresent, argumentError := textArgument("pack", args.Pack)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	packID, packIDPresent, argumentError := textArgument("pack_id", args.PackID)
 	if argumentError != "" {
 		return toolError(argumentError)
 	}
@@ -337,8 +448,25 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	if argumentError != "" {
 		return toolError(argumentError)
 	}
-	if !packPresent {
-		return toolError(`The "pack" argument is required: pass the JPS document as JSON text.`)
+	// One pack, one source. Presence is what decides, exactly as it does for the
+	// evidence document: a key present with an empty string is a supplied value
+	// and is classed as one, and omitting the key is the only form absence takes.
+	if packPresent && packIDPresent {
+		return toolError(`The "pack" and "pack_id" arguments are mutually exclusive: pass the pack as JSON text, or name one declared in the project's jpack.json.`)
+	}
+	if !packPresent && !packIDPresent {
+		return toolError(`A pack is required: pass the JPS document as JSON text in "pack", or a project decision id in "pack_id".`)
+	}
+	oversized := []string{}
+	if packIDPresent {
+		resolved, packOversized, toolFailure := resolvePackID(packID)
+		if toolFailure != nil {
+			return toolFailure
+		}
+		pack = resolved
+		if packOversized {
+			oversized = append(oversized, "pack")
+		}
 	}
 	if !factsPresent {
 		return toolError(`The "facts" argument is required: pass one JSON facts document as JSON text.`)
@@ -351,11 +479,50 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		// string included: §8.2's absence is the omitted document, and empty bytes are
 		// the malformed-input error the preflight reaches in its own place in the order.
 		EvidenceSupplied: evidenceSupplied,
+		OversizedInputs:  oversized,
 	})
 	if failure != nil {
 		return evaluationToolError(evaluateCommand, failure)
 	}
 	return toolResult(output)
+}
+
+// resolvePackID reads one declared pack's document for the evaluation surface,
+// through the same rooted reader every project read uses. It reports the
+// document text, whether the read stopped at the byte limit, and a tool error.
+//
+// A failure here is an argument failure and never an evaluation error: the call
+// never reached the §8.2 preflight, so §8.4 classes nothing about it, and it is
+// reported as an ordinary tool error exactly as a missing argument is. The byte
+// limit is the one exception, and it is not an exception to that reasoning: an
+// oversized input is a §8.2 preflight condition whose §8.4 class and place in the
+// fixed order the engine assigns, so it is handed to the engine exactly as the
+// CLI's bounded reads hand it over. One byte-limit boundary for every surface
+// means the wire cannot class the same oversized pack differently from the shell.
+func resolvePackID(packID string) (string, bool, map[string]any) {
+	if packID == "" {
+		return "", false, toolError(`The "pack_id" argument is present but empty: pass a decision id, and call list_packs for the available ids.`)
+	}
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return "", false, toolError(project.EmptyInventory(configPath, "mcp experimental_evaluate").Note)
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return "", false, toolError(failure.Message)
+	}
+	entry, ok := loaded.Entry(packID)
+	if !ok {
+		return "", false, toolError(loaded.UnknownPackFailure(packID).Message)
+	}
+	data, err := loaded.ReadPack(entry)
+	if errors.Is(err, fssecure.ErrTooLarge) {
+		return "", true, nil
+	}
+	if err != nil {
+		return "", false, toolError(project.ReadFailureMessage(entry.Path, err))
+	}
+	return string(data), false, nil
 }
 
 // evaluationToolError reports one refused evaluation on this surface. The

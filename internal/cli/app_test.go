@@ -54,18 +54,38 @@ func claimSurfaces(t *testing.T) []claimSurface {
 	t.Helper()
 	surfaces := []claimSurface{}
 
-	for _, args := range [][]string{
-		{"--help"},
-		{"experimental", "--help"},
-		{"experimental", "evaluate", "--help"},
-		{"experimental", "evaluate-corpus", "--help"},
-		{"mcp", "--help"},
+	// Every help text a user can reach that speaks about this runtime's posture.
+	// mustReference is per row rather than blanket: a help text that never mentions
+	// the evaluator has nothing to point at, and requiring the reference there would
+	// push the claim document's name onto surfaces that are not about it. The
+	// forbidden-phrase scans below apply to all of them either way, which is what
+	// makes adding a row cheap and forgetting to add one the visible failure.
+	for _, surface := range []struct {
+		args          []string
+		mustReference bool
+	}{
+		{args: []string{"--help"}, mustReference: true},
+		{args: []string{"experimental", "--help"}, mustReference: true},
+		{args: []string{"experimental", "evaluate", "--help"}, mustReference: true},
+		{args: []string{"experimental", "evaluate-corpus", "--help"}, mustReference: true},
+		{args: []string{"mcp", "--help"}, mustReference: true},
+		// The project convention (ADR-0012). Only the two that speak about the
+		// evaluator have to say where the claim is stated.
+		{args: []string{"packs", "--help"}, mustReference: true},
+		{args: []string{"packs", "test", "--help"}, mustReference: true},
+		{args: []string{"packs", "list", "--help"}},
+		{args: []string{"packs", "validate", "--help"}},
+		{args: []string{"packs", "schema", "--help"}},
 	} {
-		code, stdout, stderr := runTest(t, args, "")
+		code, stdout, stderr := runTest(t, surface.args, "")
 		if code != 0 || stderr != "" {
-			t.Fatalf("%v: exit=%d stderr=%q", args, code, stderr)
+			t.Fatalf("%v: exit=%d stderr=%q", surface.args, code, stderr)
 		}
-		surfaces = append(surfaces, claimSurface{name: "cli " + strings.Join(args, " "), text: stdout, mustReference: true})
+		surfaces = append(surfaces, claimSurface{
+			name:          "cli " + strings.Join(surface.args, " "),
+			text:          stdout,
+			mustReference: surface.mustReference,
+		})
 	}
 
 	// The MCP descriptions a client actually receives, from a real tools/list
@@ -488,8 +508,31 @@ func TestTheClaimScansReachWhatGotPastThem(t *testing.T) {
 // permitted posture outside CONFORMANCE.md is a reference to it.
 func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 	inventory := claimSurfaces(t)
-	if len(inventory) < 20 {
+	if len(inventory) < 30 {
 		t.Fatalf("the inventory is thinner than the surfaces that exist: %d entries", len(inventory))
+	}
+	// The surfaces added with the project convention are in the inventory by name.
+	// A count floor alone would be satisfied by any thirty surfaces; naming these
+	// is what fails when a new user-facing text is added and not inventoried. The
+	// MCP rows arrive from a live tools/list response, so their presence here also
+	// proves the walk reaches a tool added after this test was written.
+	named := map[string]bool{}
+	for _, surface := range inventory {
+		named[surface.name] = true
+	}
+	for _, required := range []string{
+		"cli packs --help",
+		"cli packs list --help",
+		"cli packs validate --help",
+		"cli packs test --help",
+		"cli packs schema --help",
+		"mcp tools/list list_packs",
+		"mcp tools/list get_pack",
+		"prose docs/building-with-packs.md",
+	} {
+		if !named[required] {
+			t.Fatalf("the inventory must include %q; it has %v", required, named)
+		}
 	}
 	for _, surface := range inventory {
 		t.Run(surface.name, func(t *testing.T) {

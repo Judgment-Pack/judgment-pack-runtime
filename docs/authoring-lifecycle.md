@@ -180,5 +180,6 @@ remains.
 - [ADR-0006 — the authoring lifecycle lives in the client](adr/0006-authoring-lifecycle-in-the-client.md)
 - [ADR-0003 — MCP is the integration and testing surface](adr/0003-mcp-integration-and-testing-surface.md)
 - [ADR-0004 — permanently decline an in-runtime HTTP API](adr/0004-decline-http-api.md)
+- [building-with-packs.md](building-with-packs.md) — owning several packs in a project over time
 - [agent-testing.md](agent-testing.md) — the agent-driven authoring protocol
 - [architecture.md](architecture.md) — the runtime as it is

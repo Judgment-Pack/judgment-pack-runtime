@@ -197,6 +197,146 @@ func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorp
 	return nil
 }
 
+// renderPackInventory reports one project's resolved inventory. The two names a
+// row carries are printed as two names: the project's decision id leads the
+// line, and the pack document's own id and version follow it in parentheses, so
+// no reader takes the short id for the pack's identity.
+func (a *App) renderPackInventory(format string, output result.PackInventory) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	if output.Status == "none" {
+		fmt.Fprintln(a.out, display.Sanitize(output.Note))
+		return nil
+	}
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	if len(output.Packs) == 0 {
+		fmt.Fprintln(a.out, "no packs declared")
+		return nil
+	}
+	for _, pack := range output.Packs {
+		// Three different things leave the identity empty and they call for three
+		// different fixes, so the label is keyed off the detail rather than off the
+		// missing id: a file that could not be obtained carries one, and a document
+		// that was read and simply states no id does not. Sending a reader to look
+		// for a missing file that is sitting right there is the confusion the
+		// three-way read-failure message exists to prevent.
+		identity := "no id declared"
+		switch {
+		case pack.PackID != "":
+			identity = display.Sanitize(pack.PackID) + " " + display.Sanitize(pack.PackVersion)
+		case pack.Detail != "":
+			identity = "document unreadable"
+		}
+		fmt.Fprintf(a.out, "- %s (%s): %s\n", display.Sanitize(pack.ID), identity, display.Sanitize(pack.Path))
+		if pack.Description != "" {
+			fmt.Fprintf(a.out, "  %s\n", display.Sanitize(pack.Description))
+		}
+		fmt.Fprintf(a.out, "  matrix: %s · expectedVersion: %s\n", matrixLabel(pack), expectedVersionLabel(pack))
+		if pack.Detail != "" {
+			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(pack.Detail))
+		}
+	}
+	return nil
+}
+
+func matrixLabel(pack result.PackSummary) string {
+	if pack.MatrixPath == "" {
+		return "none"
+	}
+	return display.Sanitize(pack.MatrixPath)
+}
+
+func expectedVersionLabel(pack result.PackSummary) string {
+	if pack.ExpectedVersion == "" {
+		return display.Sanitize(pack.ExpectedVersionStatus)
+	}
+	return display.Sanitize(pack.ExpectedVersion) + " (" + display.Sanitize(pack.ExpectedVersionStatus) + ")"
+}
+
+// renderPackValidation reports every check, passed and skipped ones included. A
+// report that printed only failures would let a project believe a check ran when
+// the configuration never asked for it.
+func (a *App) renderPackValidation(format string, output result.PackValidation) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	if output.Status == "valid" {
+		fmt.Fprintf(a.out, "valid: %d/%d configured packs passed every check\n", output.Summary.Passed, output.Summary.Total)
+	} else {
+		fmt.Fprintf(a.out, "invalid: %d/%d configured packs failed a check\n", output.Summary.Failed, output.Summary.Total)
+	}
+	for _, pack := range output.Packs {
+		fmt.Fprintf(a.out, "- %s [%s]: %s\n", display.Sanitize(pack.ID), display.Sanitize(pack.Status), display.Sanitize(pack.Path))
+		for _, check := range pack.Checks {
+			line := fmt.Sprintf("  %s: %s", display.Sanitize(check.Name), display.Sanitize(check.Status))
+			if check.Detail != "" {
+				line += " — " + display.Sanitize(check.Detail)
+			}
+			fmt.Fprintln(a.out, line)
+		}
+	}
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	return nil
+}
+
+// renderPackTest reports one project matrix run. The label leads the output for
+// the same reason the corpus label does: a reader who sees only a pass count
+// must not read anything about this runtime's conformance into it.
+func (a *App) renderPackTest(format string, output result.PackTest) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE project matrix: %s\n", output.Label)
+	switch output.Status {
+	case "passed":
+		fmt.Fprintf(a.out, "passed: %d/%d matrix rows matched their expectation\n", output.Summary.Passed, output.Summary.Total)
+	case "skipped":
+		// No row ran, which is reported as its own outcome rather than as a pass over
+		// zero rows: nothing here was tested, and the exit code says so.
+		fmt.Fprintln(a.out, "skipped: no matrix row ran, because no selected pack declares a matrix")
+	default:
+		fmt.Fprintf(a.out, "mismatch: %d/%d matrix rows did not match their expectation\n", output.Summary.Mismatched, output.Summary.Total)
+	}
+	for _, pack := range output.Packs {
+		fmt.Fprintf(a.out, "- %s [%s]: %d/%d\n", display.Sanitize(pack.ID), display.Sanitize(pack.Status), pack.Summary.Passed, pack.Summary.Total)
+		if pack.Detail != "" {
+			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(pack.Detail))
+		}
+		for _, row := range pack.Rows {
+			if row.Status != "mismatch" {
+				continue
+			}
+			fmt.Fprintf(a.out, "  %s: %s\n", display.Sanitize(row.ID), display.Sanitize(row.Detail))
+			if row.Expected != "" || row.Actual != "" {
+				fmt.Fprintf(a.out, "    expected: %s\n", display.Sanitize(row.Expected))
+				fmt.Fprintf(a.out, "    actual:   %s\n", display.Sanitize(row.Actual))
+			}
+			if row.ExpectedErrorClass != "" || row.ActualErrorClass != "" {
+				fmt.Fprintf(a.out, "    expected class: %s / actual class: %s\n", display.Sanitize(row.ExpectedErrorClass), display.Sanitize(row.ActualErrorClass))
+			}
+		}
+	}
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	fmt.Fprintln(a.out, "A mismatching row is a statement about the pack and the row, not about this runtime.")
+	return nil
+}
+
+func (a *App) renderConfigSchema(format string, output result.ConfigSchema) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "jpack.json schema (configVersion %s)\n", display.Sanitize(output.ConfigVersion))
+	fmt.Fprintf(a.out, "id: %s\n", display.Sanitize(output.SchemaID))
+	fmt.Fprintf(a.out, "sha256: %s\n", output.SHA256)
+	fmt.Fprintf(a.out, "bytes: %d\n", output.Bytes)
+	fmt.Fprintf(a.out, "kind: %s\n", display.Sanitize(output.Kind))
+	if output.WrittenTo != "" {
+		fmt.Fprintf(a.out, "written: %s\n", display.Sanitize(output.WrittenTo))
+	}
+	return nil
+}
+
 func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 	if format == "json" {
 		return a.writeJSON(output)
