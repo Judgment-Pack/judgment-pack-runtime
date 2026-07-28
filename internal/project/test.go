@@ -53,10 +53,14 @@ func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result
 		}
 		output.Packs = append(output.Packs, entry)
 	}
-	// Zero rows over at least one selected pack is not a pass. A mismatch already
-	// found stands: a pack whose matrix would not load has failed, which is a
-	// stronger statement than "nothing ran".
-	if output.Status == "passed" && len(selected) > 0 && output.Summary.Total == 0 {
+	// Zero rows is not a pass, however few packs were selected. An empty packs
+	// object is the case a selection-size guard would let through, and it is the
+	// worst one: a project that configures nothing would report a clean run over
+	// nothing at all. What makes a pass a pass is that a row ran and matched, so
+	// the condition is about rows and nothing else. A mismatch already found
+	// stands: a pack whose matrix would not load has failed, which is a stronger
+	// statement than "nothing ran".
+	if output.Status == "passed" && output.Summary.Total == 0 {
 		output.Status = "skipped"
 	}
 	return output, nil

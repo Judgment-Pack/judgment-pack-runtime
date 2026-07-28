@@ -9,7 +9,6 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
-	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 )
 
 // MatrixVersion is the one matrixVersion value this runtime accepts, on the same
@@ -42,7 +41,7 @@ type Matrix struct {
 // what packs test answers, and a matrix that cannot be read as rows has no
 // answer to give.
 func (p *Project) LoadMatrix(entry Pack) (Matrix, error) {
-	data, err := fssecure.ReadWithin(p.Root, entry.Matrix, MaxMatrixBytes)
+	data, err := p.root.Read(entry.Matrix, MaxMatrixBytes)
 	if err != nil {
 		return Matrix{}, errors.New(ReadFailureMessage(entry.Matrix, err))
 	}

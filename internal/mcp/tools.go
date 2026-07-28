@@ -320,6 +320,7 @@ func (s *Server) toolListPacks() any {
 	if failure != nil {
 		return toolError(failure.Message)
 	}
+	defer loaded.Close()
 	return toolResult(loaded.Inventory("mcp list_packs"))
 }
 
@@ -353,6 +354,7 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 	if failure != nil {
 		return toolError(failure.Message)
 	}
+	defer loaded.Close()
 	meta, data, failure := loaded.Document(packID, "mcp get_pack")
 	if failure != nil {
 		return toolError(failure.Message)
@@ -511,6 +513,7 @@ func resolvePackID(packID string) (string, bool, map[string]any) {
 	if failure != nil {
 		return "", false, toolError(failure.Message)
 	}
+	defer loaded.Close()
 	entry, ok := loaded.Entry(packID)
 	if !ok {
 		return "", false, toolError(loaded.UnknownPackFailure(packID).Message)

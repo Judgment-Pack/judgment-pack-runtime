@@ -7,6 +7,10 @@ import (
 	"os"
 )
 
+// nonBlockingOpen is not portable to a platform this package makes no assumption
+// about, so the open carries no extra flag and the regular-file check stands alone.
+const nonBlockingOpen = 0
+
 func openRegular(filePath string) (*os.File, error) {
 	file, err := os.Open(filePath)
 	if err != nil {

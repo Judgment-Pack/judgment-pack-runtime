@@ -299,11 +299,13 @@ A workable agent loop: `list_packs` → the application (not the model) names th
 gather each hinted fact, reporting `unknown` for anything you could not source → `experimental_evaluate`
 → read the disposition, and hand a `requested` handoff to a human.
 
-Every file the server reads goes through a reader rooted at the configuration's own directory. A
-configured path that leaves that directory is refused, and by two checks that catch two different
-escapes: a lexical one at configuration time, and canonicalizing the containing directory at read
-time, which is what catches an escape through a symlinked component. The server stays read-only,
-keyless, and offline.
+Every file the server reads goes through a reader bound to a handle held open on the configuration's
+own directory. A configured path that leaves that directory is refused, and by two checks that catch
+two different escapes: a lexical one at configuration time, and resolution against the held directory
+at read time, which is what catches an escape through a symlinked component. Because the second is a
+handle rather than a pathname, containment holds through the open itself — there is no moment between
+"this path is inside the project" and "open it" for the directory structure to be rearranged
+underneath the answer. The server stays read-only, keyless, and offline.
 
 ## When the data isn't good enough: another pack
 

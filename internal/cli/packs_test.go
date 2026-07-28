@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -261,6 +263,81 @@ func TestPacksTestDoesNotReportACleanRunOverZeroRows(t *testing.T) {
 	if code != result.ExitInvalid || !strings.Contains(stdout, "skipped: no matrix row ran") {
 		t.Fatalf("the human surface must say no row ran: exit=%d %q", code, stdout)
 	}
+
+	// A project that configures no pack at all is the same failure reached
+	// earlier: the schema requires at least one, so an empty packs object never
+	// becomes a run. Both refusals matter and neither replaces the other — the
+	// schema stops a configuration nobody can have meant, and the runner's
+	// zero-row demotion stops a green result over nothing however the selection
+	// came to be empty.
+	emptyConfig := writeProjectFixture(t, `{"configVersion":"1","packs":{}}`, nil)
+	code, stdout, stderr = runTest(t, []string{"packs", "test", "--config", emptyConfig, "--format", "json"}, "")
+	if code == result.ExitSuccess {
+		t.Fatalf("a project declaring no packs must not exit 0: stdout=%q stderr=%q", stdout, stderr)
+	}
+	if !strings.Contains(stdout+stderr, "JPS-PROJECT-CONFIG-SCHEMA") {
+		t.Fatalf("an empty packs object must be refused by the schema: stdout=%q stderr=%q", stdout, stderr)
+	}
+	// The same configuration is refused identically by the surfaces that read it
+	// for anything else, so an empty project is never half-usable.
+	if code, _, _ := runTest(t, []string{"packs", "validate", "--config", emptyConfig, "--format", "json"}, ""); code == result.ExitSuccess {
+		t.Fatal("packs validate must refuse a project declaring no packs")
+	}
+	if code, _, _ := runTest(t, []string{"packs", "list", "--config", emptyConfig, "--format", "json"}, ""); code == result.ExitSuccess {
+		t.Fatal("packs list must refuse a project declaring no packs")
+	}
+}
+
+// One byte-limit boundary for every surface, and one reader behind it.
+//
+// A pack reached by decision id is read through the project's own directory
+// handle rather than handed back as a path for the generic reader to open, so
+// the oversized case has to be reported by that read and not by the read it
+// replaced. It is a §8.2 preflight condition the engine classes — pack-not-
+// conformant — and not an unclassified read failure. The MCP surface asserts the
+// same thing about the same file; this is the shell half of that pair.
+func TestAnOversizedPackReachedByIdIsClassedLikeAnyOtherOversizedPack(t *testing.T) {
+	// One byte past the documented hard limit is the whole of what makes it
+	// oversized; the content beyond the opening brace never has to be JSON.
+	bulk := string(append(append([]byte(`{"pad":"`), bytes.Repeat([]byte("x"), int(carrier.HardMaxBytes))...), []byte(`"}`)...))
+	configPath := writeProjectFixture(t, `{"configVersion":"1","packs":{"huge":{"path":"packs/huge.json"}}}`,
+		map[string]string{"packs/huge.json": bulk})
+	facts := filepath.Join(filepath.Dir(configPath), "facts.json")
+	if err := os.WriteFile(facts, []byte(`{"request":{"type":"data-access"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	packPath := filepath.Join(filepath.Dir(configPath), "packs", "huge.json")
+	byID, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--pack-id", "huge", "--config", configPath, "--facts", facts, "--format", "json"}, "")
+	if stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", byID, stderr)
+	}
+	byPath, viaPath, _ := runTest(t, []string{"experimental", "evaluate", packPath, "--facts", facts, "--format", "json"}, "")
+
+	// The same file, named two ways, is refused identically. Naming it by id must
+	// not change the class, the code, or the exit: the id is a way of finding the
+	// pack, not a different contract for reading it.
+	if byID != byPath || stdout != viaPath {
+		t.Fatalf("by id (exit=%d) and by path (exit=%d) must agree:\n  id:   %s\n  path: %s", byID, byPath, first(stdout, 300), first(viaPath, 300))
+	}
+
+	var output struct {
+		EvaluationError *struct {
+			Class string `json:"class"`
+			Phase string `json:"phase"`
+		} `json:"evaluationError"`
+		Disposition any `json:"disposition"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.EvaluationError == nil || output.EvaluationError.Class != result.ClassPackNotConformant || output.EvaluationError.Phase != "preflight" {
+		t.Fatalf("an oversized pack reached by id is the classed preflight condition, not an unclassified read failure: %q", first(stdout, 400))
+	}
+	if output.Disposition != nil {
+		t.Fatalf("an evaluation error carries no disposition: %q", first(stdout, 400))
+	}
+	assertDiagnosticCode(t, stdout, "JPS-RESOURCE-INPUT-BYTE-LIMIT")
 }
 
 // A hint key nothing else ever resolves is checked against the pack document,

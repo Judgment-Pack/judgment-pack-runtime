@@ -21,13 +21,15 @@
 //   - Selection stays with the application. This configuration lists packs; it
 //     does not choose one for a request. Choosing is the application's, and the
 //     pack itself judges whether it applies.
-//   - Every file access is rooted at the configuration's own directory through
-//     internal/fssecure, and a declared path that escapes that directory is
-//     refused when the configuration is validated and again when the file is read.
-//     Containment is two checks — the lexical one and the canonicalized containing
-//     directory — with one implementation, fssecure.ResolveWithin; no surface here
-//     or elsewhere stops at the lexical half, including one that wants the resolved
-//     path rather than the bytes.
+//   - Every file access is bound to a handle held open on the configuration's own
+//     directory through internal/fssecure, and a declared path that escapes that
+//     directory is refused when the configuration is validated and again when the
+//     file is read. Containment is two checks — the lexical one, and resolution
+//     against the handle — and the second is a handle rather than a pathname so
+//     that containment holds through the open instead of only up to it. No surface
+//     here or elsewhere stops at the lexical half, and none hands back a pathname
+//     for something else to open: a caller that wants a pack by decision id gets
+//     the bytes, read through this project's own handle.
 //
 // The hints a configuration may carry are guidance for an agent gathering inputs.
 // This runtime never acts on one: it holds no credential, opens no network
@@ -141,6 +143,15 @@ type Config struct {
 // Project is one loaded configuration together with the directory every path in
 // it resolves against — the configuration file's own directory, and the root of
 // every read this package performs.
+//
+// That directory is held open, not remembered as a pathname. The handle is opened
+// before the configuration is read and the configuration is read through it, so
+// the root is by construction the directory the configuration bytes came out of:
+// there is no second derivation that could name a different directory, and no
+// later rearrangement of the pathname can move the root a pack read is bounded
+// by. Root is the same directory as a string, for messages only.
+//
+// A loaded Project owns an open descriptor. Close it.
 type Project struct {
 	ConfigPath string
 	Root       string
@@ -148,6 +159,16 @@ type Project struct {
 	// IDs are the configured decision ids in sorted order, so every report this
 	// package produces is ordered the same way on every run and in every process.
 	IDs []string
+
+	root *fssecure.Root
+}
+
+// Close releases the project's directory handle.
+func (p *Project) Close() error {
+	if p == nil {
+		return nil
+	}
+	return p.root.Close()
 }
 
 // Locate reports the configuration path a surface should use: the caller's
@@ -175,12 +196,24 @@ func Exists(configPath string) bool {
 
 // Load reads and validates one configuration.
 //
-// The order of the checks is deliberate. The version is read before the schema
-// runs, so a configuration written for a later version of this convention is
-// told exactly that instead of being buried in schema diagnostics about members
-// this version does not know. The schema runs before anything is resolved, so a
-// misspelled member is never read as an absent one. Path containment is checked
-// last, once there are paths to check, and it is checked again at every read.
+// The root is established first, by opening the configuration's own directory,
+// and the configuration is then read through that handle. This order is what
+// makes the root and the configuration one fact rather than two: deriving the
+// root from the pathname *after* reading the bytes is a second, independent
+// resolution, and an intermediate component retargeted between the two would
+// leave a project whose pack reads are bounded by a directory the configuration
+// never came from. Every later read — packs, matrices, the containment check
+// packs validate reports — goes through this same handle.
+//
+// The order of the remaining checks is deliberate. The version is read before the
+// schema runs, so a configuration written for a later version of this convention
+// is told exactly that instead of being buried in schema diagnostics about
+// members this version does not know. The schema runs before anything is
+// resolved, so a misspelled member is never read as an absent one. Path
+// containment is checked last, once there are paths to check, and it is checked
+// again at every read.
+//
+// A returned Project holds the directory open; the caller closes it.
 func Load(configPath string) (*Project, *Failure) {
 	if fssecure.IsRemotePath(configPath) {
 		return nil, &Failure{
@@ -189,7 +222,33 @@ func Load(configPath string) (*Project, *Failure) {
 			ExitCode: result.ExitIO,
 		}
 	}
-	data, err := fssecure.ReadRegular(configPath, MaxConfigBytes)
+	configDir, configName := filepath.Split(configPath)
+	if configDir == "" {
+		configDir = "."
+	}
+	root, err := fssecure.OpenRoot(configDir)
+	if err != nil {
+		return nil, &Failure{
+			Code:     "JPS-PROJECT-CONFIG-READ",
+			Message:  fmt.Sprintf("No project configuration could be read as one bounded regular file at %s. Pass --config, set %s, or add a %s at the project root.", display.Sanitize(configPath), ConfigEnv, DefaultConfigName),
+			ExitCode: result.ExitIO,
+		}
+	}
+	loaded, failure := loadThrough(root, configPath, configName)
+	if failure != nil {
+		// The Project was never built, so nothing will close the handle it would
+		// have owned.
+		root.Close()
+		return nil, failure
+	}
+	return loaded, nil
+}
+
+// loadThrough reads and checks the configuration named by configName through an
+// already-open root. Every refusal here abandons the load, which is why its one
+// caller owns closing the handle.
+func loadThrough(root *fssecure.Root, configPath, configName string) (*Project, *Failure) {
+	data, err := root.Read(configName, MaxConfigBytes)
 	if err != nil {
 		if errors.Is(err, fssecure.ErrTooLarge) {
 			return nil, &Failure{
@@ -212,7 +271,7 @@ func Load(configPath string) (*Project, *Failure) {
 			ExitCode: result.ExitInvocation,
 		}
 	}
-	root, ok := document.(map[string]any)
+	documentRoot, ok := document.(map[string]any)
 	if !ok {
 		return nil, &Failure{
 			Code:     "JPS-PROJECT-CONFIG-SCHEMA",
@@ -220,7 +279,7 @@ func Load(configPath string) (*Project, *Failure) {
 			ExitCode: result.ExitInvalid,
 		}
 	}
-	if failure := declaredConfigVersion(configPath, root); failure != nil {
+	if failure := declaredConfigVersion(configPath, documentRoot); failure != nil {
 		return nil, failure
 	}
 	compiled, err := validation.CompileSchema(schemaBytes, SchemaID)
@@ -246,14 +305,6 @@ func Load(configPath string) (*Project, *Failure) {
 			ExitCode: result.ExitInternal,
 		}
 	}
-	absolute, err := filepath.Abs(configPath)
-	if err != nil {
-		return nil, &Failure{
-			Code:     "JPS-PROJECT-CONFIG-PATH",
-			Message:  fmt.Sprintf("The project configuration path %s could not be resolved.", display.Sanitize(configPath)),
-			ExitCode: result.ExitIO,
-		}
-	}
 	ids := make([]string, 0, len(config.Packs))
 	for id := range config.Packs {
 		ids = append(ids, id)
@@ -261,9 +312,12 @@ func Load(configPath string) (*Project, *Failure) {
 	sort.Strings(ids)
 	return &Project{
 		ConfigPath: configPath,
-		Root:       filepath.Dir(absolute),
-		Config:     config,
-		IDs:        ids,
+		// The handle's own directory, not a second derivation from configPath: the
+		// string and the handle must not be able to disagree.
+		Root:   root.Dir(),
+		Config: config,
+		IDs:    ids,
+		root:   root,
 	}, nil
 }
 
@@ -351,9 +405,18 @@ func (p *Project) selection(id string) ([]string, *Failure) {
 	return []string{id}, nil
 }
 
-// ReadPack reads one configured pack document through the rooted reader.
+// ReadPack reads one configured pack document through the project's own
+// directory handle, which is the only way anything here reaches a declared path.
 func (p *Project) ReadPack(entry Pack) ([]byte, error) {
-	return fssecure.ReadWithin(p.Root, entry.Path, carrier.HardMaxBytes)
+	return p.root.Read(entry.Path, carrier.HardMaxBytes)
+}
+
+// Contains reports whether one declared path is inside the project, without
+// reading it — the containment question packs validate answers before it has
+// read anything. It is decided against the same handle every read uses, so the
+// check and the read cannot be about two different directories.
+func (p *Project) Contains(relative string) error {
+	return p.root.Contains(relative)
 }
 
 // ReadFailureMessage turns one failure to obtain a configured file into a

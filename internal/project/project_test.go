@@ -274,10 +274,11 @@ func TestASymlinkedComponentEscapeFailsTheContainmentCheck(t *testing.T) {
 	if _, err := loaded.ReadPack(entry); !errors.Is(err, fssecure.ErrOutsideRoot) {
 		t.Fatalf("the read must be refused as outside the root: %v", err)
 	}
-	// Resolving the path without reading it is the same refusal: a caller that
-	// wants the path rather than the bytes gets all the containment a read gets.
-	if _, err := fssecure.ResolveWithin(loaded.Root, entry.Path); !errors.Is(err, fssecure.ErrOutsideRoot) {
-		t.Fatalf("resolving must be refused as outside the root: %v", err)
+	// Asking the containment question without reading is the same refusal, and it
+	// is asked of the same directory handle the read is bounded by: a surface that
+	// wants the verdict rather than the bytes gets all the containment a read gets.
+	if err := loaded.Contains(entry.Path); !errors.Is(err, fssecure.ErrOutsideRoot) {
+		t.Fatalf("the containment check must be refused as outside the root: %v", err)
 	}
 	if _, _, docFailure := loaded.Document("escaped", "mcp get_pack"); docFailure == nil {
 		t.Fatal("serving the document must be refused as well")
@@ -479,6 +480,33 @@ func TestMatrixWellFormednessIsCheckedBeforeAnyRowRuns(t *testing.T) {
 	}
 	if run.Status != "passed" || run.Summary.Total != 1 {
 		t.Fatalf("a run with a row that passed is a pass: %+v", run)
+	}
+}
+
+// The demotion is about rows, not about how many packs were selected.
+//
+// The schema refuses an empty packs object, so this state cannot be reached
+// through a configuration — which is exactly why it is asserted here, against
+// the runner directly. A guard that additionally required a non-empty selection
+// would report a clean run over zero rows for a project that configures nothing,
+// and it would do so silently the moment anything else produced an empty
+// selection. Two independent refusals, and this is the one that does not depend
+// on the schema being right.
+func TestAnEmptySelectionIsNotACleanRun(t *testing.T) {
+	empty := &Project{
+		ConfigPath: "jpack.json",
+		Config:     Config{ConfigVersion: ConfigVersion, Packs: map[string]Pack{}},
+		IDs:        []string{},
+	}
+	run, failure := empty.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Status != "skipped" {
+		t.Fatalf("a run over no packs at all must not report passed: %+v", run)
+	}
+	if run.Summary.Total != 0 || len(run.Packs) != 0 {
+		t.Fatalf("nothing ran, and the report must say exactly that: %+v", run)
 	}
 }
 

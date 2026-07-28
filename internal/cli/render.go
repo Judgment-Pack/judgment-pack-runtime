@@ -293,8 +293,11 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 		fmt.Fprintf(a.out, "passed: %d/%d matrix rows matched their expectation\n", output.Summary.Passed, output.Summary.Total)
 	case "skipped":
 		// No row ran, which is reported as its own outcome rather than as a pass over
-		// zero rows: nothing here was tested, and the exit code says so.
-		fmt.Fprintln(a.out, "skipped: no matrix row ran, because no selected pack declares a matrix")
+		// zero rows: nothing here was tested, and the exit code says so. The wording
+		// covers both ways of running nothing — packs that declare no matrix, and no
+		// selected pack at all — because a sentence naming only the first would be
+		// false for a project that configures none.
+		fmt.Fprintln(a.out, "skipped: no matrix row ran, because no selected pack declares a matrix (or no pack was selected)")
 	default:
 		fmt.Fprintf(a.out, "mismatch: %d/%d matrix rows did not match their expectation\n", output.Summary.Mismatched, output.Summary.Total)
 	}

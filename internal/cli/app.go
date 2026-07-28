@@ -176,12 +176,16 @@ func (a *App) evaluateCommand() *cobra.Command {
 			if packArgument == "" && packID == "" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-PACK-ID", "A pack is required: pass a file path (or - for standard input), or --pack-id to resolve one through the project's jpack.json.")
 			}
+			// A pack named by id is read here, through the project's directory
+			// handle, and never becomes a pathname the generic reader opens again.
+			var packFromID []byte
+			packIDOversized := false
 			if packID != "" {
-				resolved, failure := a.resolvePackID(configPath, packID, format)
+				data, oversized, failure := a.resolvePackID(configPath, packID, format)
 				if failure != nil {
 					return failure
 				}
-				packArgument = resolved
+				packFromID, packIDOversized = data, oversized
 			}
 			if factsPath == "" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FACTS", "--facts is required: one JSON facts document (a file path, or - for standard input).")
@@ -203,9 +207,13 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// read would report a failure with no class at all, and would let the
 			// facts document's limit outrank the pack's conformance.
 			oversized := []string{}
-			pack, packOversized, err := a.readEvaluationInput(packArgument)
-			if err != nil {
-				return a.evaluateReadFailure(format, "pack")
+			pack, packOversized := packFromID, packIDOversized
+			if packID == "" {
+				var err error
+				pack, packOversized, err = a.readEvaluationInput(packArgument)
+				if err != nil {
+					return a.evaluateReadFailure(format, "pack")
+				}
 			}
 			if packOversized {
 				oversized = append(oversized, "pack")
@@ -258,39 +266,45 @@ func (a *App) evaluateCommand() *cobra.Command {
 	return command
 }
 
-// resolvePackID turns one decision id into the pack file's path, through the
-// project configuration and its rooted reader.
+// resolvePackID reads the pack a decision id names, through the project
+// configuration's own directory handle.
 //
-// It returns a path rather than the bytes so the evaluation path below is
-// unchanged: the same bounded read, the same oversized-input handling, and the
-// same §8.2 preflight apply whether the pack was named by path or by id. What it
-// must not do is hand back a path that was only checked lexically. fssecure's
-// containment rule is three checks, and this path takes all three: ResolveWithin
-// refuses an escaping path and one that reaches outside through a symlinked
-// intermediate component, and it returns the canonicalized target the bounded
-// read below opens with O_NOFOLLOW. Resolving here and opening the declared path
-// instead would apply the two halves of the rule to two different files.
-func (a *App) resolvePackID(configPath, packID, format string) (string, error) {
+// It returns the bytes, not a path. A path would have to be opened again by
+// somebody else, and that second open is a different operation on a filesystem
+// that may have changed in between — exactly the gap the handle-bound reader
+// exists to close. Handing back a pathname here would put containment and the
+// read on two different files and make this the one pack access in the runtime
+// that does not go through project.ReadPack; the MCP surface already returns
+// bytes for the same reason.
+//
+// The oversized case is reported rather than refused, because the byte limit is a
+// §8.2 preflight condition the engine classes: a pack over the limit is the same
+// non-admission whether it was named by path or by id.
+func (a *App) resolvePackID(configPath, packID, format string) ([]byte, bool, error) {
 	loaded, failure := project.Load(project.Locate(configPath))
 	if failure != nil {
-		return "", a.projectFailure("experimental evaluate", format, failure)
+		return nil, false, a.projectFailure("experimental evaluate", format, failure)
 	}
+	defer loaded.Close()
 	entry, ok := loaded.Entry(packID)
 	if !ok {
-		return "", a.projectFailure("experimental evaluate", format, loaded.UnknownPackFailure(packID))
+		return nil, false, a.projectFailure("experimental evaluate", format, loaded.UnknownPackFailure(packID))
 	}
-	resolved, err := fssecure.ResolveWithin(loaded.Root, entry.Path)
+	data, err := loaded.ReadPack(entry)
 	if errors.Is(err, fssecure.ErrOutsideRoot) {
-		return "", a.operational("experimental evaluate", format, result.ExitIO, "JPS-PROJECT-PACK-PATH",
+		return nil, false, a.operational("experimental evaluate", format, result.ExitIO, "JPS-PROJECT-PACK-PATH",
 			fmt.Sprintf("The path declared for %q resolves outside the configuration's own directory, which no configured path may.", display.Sanitize(packID)))
 	}
-	if err != nil {
-		// The path is inside the project and could not be resolved to a file there —
-		// a missing directory, an unreadable one — which is the ordinary read failure
-		// every other evaluation input reports, and not an escape.
-		return "", a.evaluateReadFailure(format, "pack")
+	if errors.Is(err, fssecure.ErrTooLarge) {
+		return nil, true, nil
 	}
-	return resolved, nil
+	if err != nil {
+		// The path is inside the project and no file there could be read — a missing
+		// directory, an unreadable one — which is the ordinary read failure every
+		// other evaluation input reports, and not an escape.
+		return nil, false, a.evaluateReadFailure(format, "pack")
+	}
+	return data, false, nil
 }
 
 // readEvaluationInput reads one evaluation input and reports an oversized one

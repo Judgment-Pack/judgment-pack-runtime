@@ -150,7 +150,8 @@ archive when you need an accurately reported runtime version.
 
 ## Build and try it locally
 
-Go 1.21 or newer is required to build from source.
+Go 1.24 or newer is required to build from source: `internal/fssecure` binds every project file
+read to a directory handle through `os.Root`, which is a Go 1.24 standard-library type.
 
 If an older WSL setup has persisted `GO111MODULE=off`, clear it once with
 `go env -u GO111MODULE`. The commands below explicitly enable module mode as a compatibility
@@ -391,12 +392,17 @@ three may disagree with the document, and a disagreement is an error — none of
 
 The `facts` and `evidence` hints are non-normative guidance for an agent gathering inputs: they say,
 in your words, where a value is held. **The runtime never reads a source** — it holds no credential
-and opens no network connection — and every file the convention names is read through a reader
-rooted at the configuration's own directory. Containment is two checks and neither substitutes for
-the other: a lexical one refuses an absolute or escaping path before anything is read, and
-canonicalizing the containing directory at read time refuses a path that reaches outside through a
-symlinked component, which a lexical check cannot see. Every surface that reaches a pack through the
-configuration applies both, `--pack-id` included.
+and opens no network connection — and every file the convention names is read through a reader bound
+to a handle held open on the configuration's own directory. Containment is two checks and neither
+substitutes for the other: a lexical one refuses an absolute or escaping path before anything is
+read, and resolving against the held directory at read time refuses a path that reaches outside
+through a symlinked component, which a lexical check cannot see. The second is a handle rather than a
+pathname so that containment holds *through* the open: a path that is checked and then opened by
+pathname can have an intermediate directory swapped for an outward symlink in between, and resolving
+against the handle makes that impossible rather than unlikely. A final component that is a symlink is
+refused whatever it points at, and only a regular file is read. Every surface that reaches a pack
+through the configuration takes this one reader, `--pack-id` included, and none of them is handed a
+pathname to open for itself.
 
 Four commands and one CI line:
 

@@ -56,9 +56,11 @@ All notable changes to tagged releases are documented here.
   - **`experimental evaluate --pack-id X`** resolves one decision id through the configuration
     (honoring `--config` and `JPACK_CONFIG`). It is mutually exclusive with the pack argument;
     supplying both, or neither, is an invocation error rather than a precedence rule. It is documented
-    in the README command block and in the builder's guide, and it resolves through the same rooted
-    reader every other project read uses — the lexical containment check *and* the canonicalized
-    containing directory, with the bounded read that follows opening the canonicalized target.
+    in the README command block and in the builder's guide, and it reads through the same rooted
+    reader every other project read uses. It yields the pack's *bytes*, never a pathname for the
+    generic reader to open again: a returned pathname would have to be reopened as a second
+    operation on a filesystem that may have changed in between, which is precisely the interval the
+    handle-bound reader below exists to remove.
   - **New MCP tools `list_packs` and `get_pack`**, and an optional `pack_id` argument on
     `experimental_evaluate` (mutually exclusive with `pack`, with the same presence and null-rejection
     discipline the existing arguments have). The server reads `JPACK_CONFIG` or the directory it was
@@ -78,15 +80,31 @@ All notable changes to tagged releases are documented here.
     resolves a hint key, `packs validate` checks it against the pack document: an `evidence` key must
     be a declared evidence-requirement id, and a `facts` pointer must be one some condition reads or an
     ancestor of one. A misspelled key is a failed check rather than an instruction an agent follows.
-  - **Every file access is rooted at the configuration's own directory** through the new
-    `fssecure.Resolve`, `fssecure.ResolveWithin`, and `fssecure.ReadWithin`. A path that escapes is
-    refused **twice**: when the configuration is validated, before anything is read, and again at read
-    time, where canonicalizing the containing directory catches an escape through a symlinked
-    component that a lexical check cannot see. There is one implementation of those two checks and
-    every surface that reaches a pack through the configuration takes it, including the one that needs
-    the resolved path rather than the bytes; `packs validate` reports its containment check on the same
-    two, so a symlinked-component escape fails the check named for containment rather than the one
-    after it.
+  - **Every file access is bound to a handle held open on the configuration's own directory** through
+    the new `fssecure.Relative` and `fssecure.Root`. A path that escapes is refused **twice**: when the
+    configuration is validated, before anything is read, and again at read time, where resolution
+    against the handle catches an escape through a symlinked component that a lexical check cannot
+    see. The read-time half is a handle rather than a pathname so that **containment holds through the
+    open and not merely up to it** — a pathname checked and then opened leaves an interval in which an
+    intermediate directory component can be swapped for a symlink pointing out of the root, and the
+    open follows it, with a post-hoc check on the opened file unable to notice. `internal/fssecure`
+    opens the project directory once, at load, and resolves every later read relative to that handle
+    through Go's `os.Root`. A final component that is a symlink is still refused whatever it points at,
+    and only a regular file is read. Every surface that reaches a pack through the configuration takes
+    this one reader — none is handed a pathname to open itself — and `packs validate` asks its
+    containment question of the same handle, so a symlinked-component escape fails the check named for
+    containment rather than the one after it. The project's root is the handle's own directory rather
+    than a second derivation from the configuration path, so the root and the configuration bytes
+    cannot describe two different directories.
+  - **The minimum Go version is now 1.24** (from 1.21). `os.Root` is the standard library's
+    handle-bound opener and is the containment primitive above; hand-rolling one per platform to keep
+    an older floor would be reimplementing a security primitive for no gain. The release workflow
+    continues to pin its own supported toolchain independently.
+  - **A configuration must declare at least one pack.** The schema's `packs` object carries
+    `minProperties: 1`, and the test runner independently demotes any run that executed zero rows to
+    `skipped` regardless of how many packs were selected. Either alone would leave a hole: without the
+    schema constraint an empty project is a valid configuration, and without the runner's demotion any
+    other route to an empty selection reports a clean run over nothing.
   - New documentation: [`docs/building-with-packs.md`](docs/building-with-packs.md), the builder's
     guide — the packs-as-code lifecycle, the three-owner model (the application selects, the agent
     gathers and never invents, the pack judges, with `not-applicable` as the misrouting net), hints in

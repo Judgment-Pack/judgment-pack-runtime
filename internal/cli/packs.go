@@ -80,6 +80,7 @@ func (a *App) packsListCommand() *cobra.Command {
 			if failure != nil {
 				return failure
 			}
+			defer loaded.Close()
 			if err := a.renderPackInventory(format, loaded.Inventory("packs list")); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}
@@ -103,7 +104,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 			"configuration that fails either is refused before a single pack is read. Each declared pack is then " +
 			"checked in six named steps, and every step is reported with its status so a reader can tell a check " +
 			"that passed from one that was never asked for: the declared path resolves inside the configuration's " +
-			"own directory, lexically and after the containing directory is canonicalized; the pack document " +
+			"own directory, lexically and when resolved against the handle held open on that directory; the pack document " +
 			"validates through the semantic layer, exactly as spec validate reports it; an expectedVersion pin, " +
 			"when the entry carries one, equals the version the pack document declares; the filename, when it " +
 			"follows the optional <decision-id>-<semver>.pack.json convention, names the configuration's key and " +
@@ -122,6 +123,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 			if failure != nil {
 				return failure
 			}
+			defer loaded.Close()
 			output, projectFailure := loaded.Validate(a.engine, id, "packs validate")
 			if projectFailure != nil {
 				return a.projectFailure("packs validate", format, projectFailure)
@@ -175,6 +177,7 @@ func (a *App) packsTestCommand() *cobra.Command {
 			if failure != nil {
 				return failure
 			}
+			defer loaded.Close()
 			output, projectFailure := loaded.Test(evaluation.NewEngine(a.engine), id, "packs test")
 			if projectFailure != nil {
 				return a.projectFailure("packs test", format, projectFailure)

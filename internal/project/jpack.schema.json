@@ -13,8 +13,9 @@
       "const": "1"
     },
     "packs": {
-      "description": "The project's packs, keyed by decision id. The key is the project's own name for one decision; the pack document's id member is the pack's identity and is not this key.",
+      "description": "The project's packs, keyed by decision id. The key is the project's own name for one decision; the pack document's id member is the pack's identity and is not this key. At least one pack is required: a configuration declaring none describes no project, and accepting it would let a test run report a clean result over zero rows. The runner demotes a zero-row run to \"skipped\" regardless, so this constraint is the earlier of two independent refusals rather than the only one.",
       "type": "object",
+      "minProperties": 1,
       "propertyNames": { "$ref": "#/$defs/decisionId" },
       "additionalProperties": { "$ref": "#/$defs/pack" }
     }
@@ -25,7 +26,7 @@
       "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
     },
     "relativePath": {
-      "description": "A path relative to this configuration file's own directory, which it must resolve inside. Two different checks say so and neither substitutes for the other: a lexical check refuses an absolute or escaping path before anything is read, and at read time the containing directory is canonicalized -- which is what catches a path reaching outside through a symlinked component, since a lexical check cannot see one -- and the file is opened without following a final symlink.",
+      "description": "A path relative to this configuration file's own directory, which it must resolve inside. Two different checks say so and neither substitutes for the other: a lexical check refuses an absolute or escaping path before anything is read, and at read time the path is resolved against a handle held open on that directory -- which is what catches a path reaching outside through a symlinked component, since a lexical check cannot see one, and what keeps containment true through the open rather than only up to it. A final component that is a symlink is refused whatever it points at, and only a regular file is read.",
       "type": "string",
       "minLength": 1
     },

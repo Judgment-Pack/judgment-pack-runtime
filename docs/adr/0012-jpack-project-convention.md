@@ -144,19 +144,40 @@ Settled determinations:
   `unknown` deliberately, and a gathering step that fills the hole first turns an escalation into an
   outcome nobody made.
 
-- **Every file access is `fssecure`-rooted at the configuration's own directory, and an escaping path
-  is refused twice.** Once when the configuration is validated, before anything is read, and again at
-  every read. Both are necessary and neither substitutes for the other: a check only at read time
-  would let `packs validate` report a clean project no surface can use, and a lexical check alone
-  would follow a symlinked directory out of the root. The read-time check canonicalizes the containing
-  directory and the existing `O_NOFOLLOW` open refuses a final symlink, so the three checks catch three
-  different escapes. The corollary is what the implementation is held to: **no surface may stop at the
-  lexical half.** A caller that needs the resolved path rather than the bytes — the evaluator reaching
-  a pack by decision id — takes `fssecure.ResolveWithin`, which is the lexical check plus the
-  canonicalized directory and returns the canonicalized target the bounded read then opens; there is
-  one implementation of those two checks, and `ReadWithin` is it plus the open. `packs validate`
-  reports the containment check on the same two, so the named check states the containment truth
-  rather than the lexical half of it.
+- **Every file access is bound to a directory *handle* on the configuration's own directory, and an
+  escaping path is refused twice.** Once when the configuration is validated, before anything is
+  read, and again at every read. Both are necessary and neither substitutes for the other: a check
+  only at read time would let `packs validate` report a clean project no surface can use, and a
+  lexical check alone would follow a symlinked directory out of the root.
+
+  The read-time half is a handle and not a pathname, and that is the substance of this
+  determination rather than an implementation note. Containment decided against a pathname is a
+  statement about the filesystem as it was, and the open that follows acts on the filesystem as it
+  is; in between, an intermediate directory component can be renamed away and replaced with a
+  symlink pointing out of the root, and the open follows it. Re-checking the opened file afterward
+  does not catch that, because the file that was opened really is the file the pathname then named.
+  So `internal/fssecure` opens the project directory once, at load, and resolves every later read
+  relative to that handle through Go's `os.Root`: the root a read is bounded by is the directory
+  that was opened, not whatever its pathname denotes at the moment of the read, and rearranging
+  components afterward cannot widen it. The window is removed rather than narrowed, which is why
+  this is stated as containment holding *through* the open. It is also why the module's minimum Go
+  version is 1.24 — `os.Root` is the standard library's handle-bound opener, and hand-rolling one
+  per platform to keep an older floor would be reimplementing a security primitive for no gain.
+
+  Two checks remain about *what* is read rather than where it is; both are resolved through the same
+  handle and both fail closed. A final component that is a symlink is refused even when it points
+  inside the root, and anything that is not a regular file is refused.
+
+  The corollary is what the implementation is held to: **no surface may stop at the lexical half,
+  and no surface may hand back a pathname for something else to open.** A pathname returned from a
+  containment check reintroduces the interval the handle exists to remove, so a caller reaching a
+  pack by decision id — `experimental evaluate --pack-id`, on both the CLI and MCP — receives the
+  bytes read through the project's own handle. `packs validate` asks its containment question of
+  that same handle, so the named check states the containment truth rather than the lexical half of
+  it, and cannot describe a different directory from the one the read is bounded by. The project's
+  root is likewise the handle's own directory rather than a second derivation from the
+  configuration path: the configuration is read *through* the handle, so the root and the bytes are
+  one fact and cannot disagree.
 
 - **The MCP surface stays read-only, keyless, and offline.** `list_packs` and `get_pack` read; nothing
   writes. The server takes no configuration path over the wire — it uses `JPACK_CONFIG` or the
@@ -229,9 +250,9 @@ Settled determinations:
 ## More information
 
 Implementation: `internal/project` (the loader, the closed schema in `jpack.schema.json`, the
-inventory, the checks, and the matrix carrier), `internal/fssecure/root.go` (`Resolve`,
-`ResolveWithin`, and `ReadWithin` — the lexical check, the lexical check plus the canonicalized
-containing directory, and both plus the `O_NOFOLLOW` open), `internal/cli/packs.go` and the `--pack-id`
+inventory, the checks, and the matrix carrier), `internal/fssecure/root.go` (`Relative`, the lexical
+check usable before the file exists; and `Root`, the directory handle every project read is resolved
+against, with `Contains`, `Open`, and `Read` on it), `internal/cli/packs.go` and the `--pack-id`
 flag in `internal/cli/app.go`, `internal/mcp/tools.go` (`list_packs`, `get_pack`, and the `pack_id`
 argument), and `evaluation.MatrixCase` / `Engine.RunCase` in `internal/evaluation/corpus.go`, which
 is the row machinery the bundled corpus and a project matrix now share. Builder guide:

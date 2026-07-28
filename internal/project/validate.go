@@ -89,13 +89,12 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 // check reads that file, and reporting five more failures about a file this
 // runtime refuses to open would say the same thing five times.
 //
-// Containment is decided by the same two checks a read applies —
-// fssecure.ResolveWithin, which is the lexical refusal plus the canonicalized
-// containing directory — so the named check reports the containment truth rather
-// than the lexical half of it. A path that escapes only through a symlinked
-// component would otherwise be reported as having passed containment and then
-// failed to be read, which is a named check asserting the opposite of what
-// happened.
+// Containment is decided against the project's own directory handle — the same
+// handle the read below is bounded by — so the named check reports the
+// containment truth rather than the lexical half of it. A path that escapes only
+// through a symlinked component would otherwise be reported as having passed
+// containment and then failed to be read, which is a named check asserting the
+// opposite of what happened.
 func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack) result.PackValidationEntry {
 	report := result.PackValidationEntry{ID: id, Path: entry.Path, Status: "valid", Checks: []result.PackCheck{}}
 	add := func(name, status, detail string) {
@@ -108,7 +107,7 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 	// Only an escape fails this check. A path inside the project whose directory
 	// is missing or unreadable is contained, and the read below reports it as the
 	// read failure it is.
-	if _, err := fssecure.ResolveWithin(p.Root, entry.Path); errors.Is(err, fssecure.ErrOutsideRoot) {
+	if err := p.Contains(entry.Path); errors.Is(err, fssecure.ErrOutsideRoot) {
 		add(CheckPathInsideRoot, result.PackCheckFailed, ReadFailureMessage(entry.Path, err))
 		for _, name := range documentChecks {
 			add(name, result.PackCheckSkipped, "The pack path was refused, so this check had nothing to read.")

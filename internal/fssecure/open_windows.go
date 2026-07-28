@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+// nonBlockingOpen has no Windows equivalent: the FIFO case it guards against on
+// Unix does not arise here, and os.Root rejects an unsupported flag.
+const nonBlockingOpen = 0
+
 func openRegular(filePath string) (*os.File, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
