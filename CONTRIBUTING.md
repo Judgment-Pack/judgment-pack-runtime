@@ -15,6 +15,10 @@ env GO111MODULE=on CGO_ENABLED=0 go build -trimpath ./cmd/judgment-pack
 Changes should include focused tests for human and JSON output, exit status, input limits, and
 adversarial behavior. Never add a runtime fetch of mutable specification branches.
 
+Every pull request carries a one-line `Material-decision impact:` declaration, and material
+decisions require the recorded cross-vendor review described in
+[docs/adr/README.md](docs/adr/README.md#review-of-material-decisions).
+
 Material command or output changes should first describe compatibility, migration, automation,
 security, privacy, and authority consequences in an issue. Release version increments and
 prereleases follow [VERSIONING.md](VERSIONING.md).
