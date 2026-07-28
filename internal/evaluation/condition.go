@@ -35,11 +35,27 @@ func triFromBool(value bool) tri {
 	return triFalse
 }
 
-// evalCondition applies §7's experimental interpretation, as pinned by spec
-// RFC 0006, to one condition node. The pack has full document conformance, so
-// node shapes are schema-guaranteed; anything unexpected still degrades to
-// unknown ("unsupported operators or operand shapes ... produce unknown").
-func evalCondition(node any, facts any, evidence map[string]tri) tri {
+// evaluator interprets condition trees. It carries the evidence tri-state and,
+// when the caller opted into the draft RFC 0008 grammar, the work budget that
+// grammar makes load-bearing. One evaluator serves one evaluation, so the
+// budget is charged across the whole pack rather than per condition.
+type evaluator struct {
+	evidence map[string]tri
+	// quantifiers admits the draft RFC 0008 aggregates and turns on the work
+	// accounting they require. Without it nothing about §7 changes.
+	quantifiers bool
+	budget      int
+	charged     int
+	exceeded    bool
+}
+
+// condition evaluates one node against the current condition root: the runtime
+// facts document at the top level and, under draft RFC 0008, the selected
+// element inside a quantifier's where. The pack has full document conformance,
+// so node shapes are schema-guaranteed; anything unexpected still degrades to
+// unknown ("unsupported operators or operand shapes ... produce unknown"),
+// which is also what an aggregate op does when the caller did not opt in.
+func (e *evaluator) condition(node any, root any) tri {
 	condition, ok := node.(map[string]any)
 	if !ok {
 		return triUnknown
@@ -51,11 +67,11 @@ func evalCondition(node any, facts any, evidence map[string]tri) tri {
 		}
 		return triUnknown
 	case "all":
-		return evalAll(condition["conditions"], facts, evidence)
+		return e.all(condition["conditions"], root)
 	case "any":
-		return evalAny(condition["conditions"], facts, evidence)
+		return e.any(condition["conditions"], root)
 	case "not":
-		switch evalCondition(condition["condition"], facts, evidence) {
+		switch e.condition(condition["condition"], root) {
 		case triTrue:
 			return triFalse
 		case triFalse:
@@ -64,32 +80,42 @@ func evalCondition(node any, facts any, evidence map[string]tri) tri {
 			return triUnknown
 		}
 	case "fact":
-		return evalFact(condition, facts)
+		return evalFact(condition, root)
 	case "evidence-present":
 		name, ok := condition["evidenceRequirement"].(string)
 		if !ok {
 			return triUnknown
 		}
-		presence, declared := evidence[name]
+		presence, declared := e.evidence[name]
 		if !declared {
 			return triUnknown
 		}
 		return presence
+	case "exists", "every":
+		if !e.quantifiers {
+			return triUnknown
+		}
+		return e.quantify(condition, root)
+	case "uniform":
+		if !e.quantifiers {
+			return triUnknown
+		}
+		return e.uniform(condition, root)
 	default:
 		return triUnknown
 	}
 }
 
-// evalAll is strong three-valued conjunction (§7.1): false if any child is
+// all is strong three-valued conjunction (§7.1): false if any child is
 // false, true if every child is true, unknown otherwise.
-func evalAll(children any, facts any, evidence map[string]tri) tri {
+func (e *evaluator) all(children any, root any) tri {
 	items, ok := children.([]any)
 	if !ok {
 		return triUnknown
 	}
 	sawUnknown := false
 	for _, item := range items {
-		switch evalCondition(item, facts, evidence) {
+		switch e.condition(item, root) {
 		case triFalse:
 			return triFalse
 		case triUnknown:
@@ -102,16 +128,16 @@ func evalAll(children any, facts any, evidence map[string]tri) tri {
 	return triTrue
 }
 
-// evalAny is strong three-valued disjunction (§7.2): true if any child is
+// any is strong three-valued disjunction (§7.2): true if any child is
 // true, false if every child is false, unknown otherwise.
-func evalAny(children any, facts any, evidence map[string]tri) tri {
+func (e *evaluator) any(children any, root any) tri {
 	items, ok := children.([]any)
 	if !ok {
 		return triUnknown
 	}
 	sawUnknown := false
 	for _, item := range items {
-		switch evalCondition(item, facts, evidence) {
+		switch e.condition(item, root) {
 		case triTrue:
 			return triTrue
 		case triUnknown:
@@ -124,15 +150,17 @@ func evalAny(children any, facts any, evidence map[string]tri) tri {
 	return triFalse
 }
 
-// evalFact selects a value from the facts document by RFC 6901 pointer and
-// applies the declared operator (§7.4). A pointer that does not resolve, an
-// unsupported operand shape, or an incomparable ordered pair produces unknown.
-func evalFact(condition map[string]any, facts any) tri {
+// evalFact selects a value from the current condition root by RFC 6901 pointer
+// and applies the declared operator (§7.4). The root is the facts document
+// everywhere except inside a draft RFC 0008 where, which is the whole of that
+// RFC's amendment to §7.4. A pointer that does not resolve, an unsupported
+// operand shape, or an incomparable ordered pair produces unknown.
+func evalFact(condition map[string]any, root any) tri {
 	path, ok := condition["path"].(string)
 	if !ok {
 		return triUnknown
 	}
-	value, resolved := resolvePointer(facts, path)
+	value, resolved := resolvePointer(root, path)
 	if !resolved {
 		return triUnknown
 	}

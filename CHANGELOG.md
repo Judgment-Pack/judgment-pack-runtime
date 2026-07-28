@@ -4,6 +4,20 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Add a DRAFT-RFC PROTOTYPE of the specification's RFC 0008 (Draft), bounded collection quantifiers,
+  behind the new `judgment-pack experimental evaluate --rfc0008-quantifiers` flag (ADR-0009, under
+  ADR-0007's experimental umbrella). The flag admits three condition operators — `exists`, `every`,
+  and `uniform` — with the RFC's element re-rooting, its pinned empty-array values, its
+  aggregate-depth bound of two, and a candidate work-accounting model the RFC itself leaves open.
+  Every result produced this way carries a new output member, `draftPrototype`, naming the operators
+  used and stating that a pack using one is NOT valid under any published JPS version. Three
+  diagnostic codes are minted, `codeStability: "provisional"` like every other:
+  `JPS-EVALUATION-RFC0008-GRAMMAR`, `JPS-EVALUATION-RFC0008-DEPTH`/`-SHAPE`, and
+  `JPS-RESOURCE-EVALUATION-WORK-LIMIT`. **No conformance claim and no validation behavior changes**:
+  `spec validate` is untouched and still rejects every pack using an operator, the evaluator without
+  the flag refuses one for the same reason, the MCP surface does not expose the flag, and everything
+  the draft grammar does not add is still held to full document conformance through the pack's Core
+  projection. The operators belong to an open proposal that may never be accepted.
 - Add the MCP `prompts` capability (ADR-0008): three non-normative authoring-method prompts —
   `author_pack`, `test_pack`, `fix_pack` — served as static, versioned text that the client's model
   executes with the client's key. The server still calls no model, holds no key, and opens no
