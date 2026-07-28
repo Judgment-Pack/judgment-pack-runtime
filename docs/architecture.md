@@ -62,15 +62,16 @@ The preflight order is also §8.4's error precedence — `pack-not-conformant`, 
 `unsupported-required-extension`, `resource-exhaustion` — so the first failure encountered is the one
 reported, and an input error is never overtaken by a result. Every surface reports the byte limit
 inside that preflight rather than at the read, so an oversized input is classed and ordered like any
-other preflight condition. The contract is applied to a pack of either bundled version, so a payload
-names both the pack's `specVersion` and the contract's `evaluatorSpecVersion`. The evaluation phase also
-carries the two limits §10 requires of the class — the evaluation-work limit and the collection-size
-limit of `internal/evaluation/limits.go` — and reaching the work limit is `resource-exhaustion` on the
-ordinary Core path, not only under the draft-RFC opt-in. This runtime **claims** evaluator conformance
-against that exact `specVersion`, in the single form JPS §3.4.1 permits and in one place only:
-[`CONFORMANCE.md`](../CONFORMANCE.md), decided by ADR-0011. `experimental evaluate-corpus` runs the
-bundled evaluation corpus and reports row results, which §3.4.1 makes that claim's required and
-non-exhaustive evidence rather than the claim.
+other preflight condition. Only a pack declaring `specVersion` `0.2.0-draft` is evaluated — §11 makes the
+declared value exact, so any other version is refused as `pack-not-conformant` in the preflight — and a
+payload still names both the pack's `specVersion` and the contract's `evaluatorSpecVersion`. The
+evaluation phase also carries the two limits §10 requires of the class — the evaluation-work limit and
+the collection-size limit of `internal/evaluation/limits.go` — and reaching the work limit is
+`resource-exhaustion` on the ordinary Core path, not only under the draft-RFC opt-in. The conformance
+claim for this evaluator is stated, in full and only, in [`CONFORMANCE.md`](../CONFORMANCE.md) (ADR-0011);
+this document states no part of it and every payload carries a reference to that file rather than a
+claim. `experimental evaluate-corpus` runs the bundled evaluation corpus and reports row results, which
+§3.4.1 makes that claim's required and non-exhaustive evidence rather than the claim.
 
 ## Packages
 
@@ -79,9 +80,9 @@ non-exhaustive evidence rather than the claim.
 - `internal/validation` compiles offline schemas and performs semantic checks.
 - `internal/conformance` validates suite metadata and safely runs pinned cases.
 - `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads.
-- `internal/result` defines machine output version 1 and exit classes.
+- `internal/result` defines machine output version 2 and exit classes.
 - `internal/describe` composes the machine descriptions the CLI and MCP server share, so neither drifts.
-- `internal/evaluation` implements the EXPERIMENTAL, non-conformance-claiming JPS §§7–8 evaluator (ADR-0007), aligned to the §§8.2–8.4 evaluator class of Core `0.2.0-draft` (ADR-0010), plus the bundled evaluation-corpus runner; and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts.
+- `internal/evaluation` implements the EXPERIMENTAL JPS §§7–8 evaluator (ADR-0007), aligned to the §§8.2–8.4 evaluator class of Core `0.2.0-draft` (ADR-0010) and admitting only packs that declare that version, plus the bundled evaluation-corpus runner; and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts and which the claim in `CONFORMANCE.md` does not cover.
 - `internal/jcs` canonicalizes the one value JPS §8.3 compares byte for byte, the portable disposition, over the strings, arrays, and objects a disposition is made of and nothing else.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.

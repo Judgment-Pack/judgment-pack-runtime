@@ -18,7 +18,7 @@ import (
 // only the thing it is about.
 func draftPack(when, onUnknown string) []byte {
 	return []byte(fmt.Sprintf(`{
-  "specVersion": "0.1.0-draft",
+  "specVersion": "0.2.0-draft",
   "id": "https://example.invalid/judgment-packs/rfc0008-row",
   "version": "0.1.0",
   "title": "Synthetic draft RFC 0008 row",
@@ -254,7 +254,7 @@ func TestRFC0008OptInGate(t *testing.T) {
 func TestRFC0008AggregatesInEveryConditionPosition(t *testing.T) {
 	engine := newTestEngine(t)
 	pack := []byte(`{
-  "specVersion": "0.1.0-draft",
+  "specVersion": "0.2.0-draft",
   "id": "https://example.invalid/judgment-packs/rfc0008-positions",
   "version": "0.1.0",
   "title": "Synthetic draft RFC 0008 condition positions",
@@ -571,7 +571,7 @@ func TestRFC0008SuppressedRuleIsNeverCharged(t *testing.T) {
 	engine := newTestEngine(t)
 	pack := func(suppressWhen string) []byte {
 		return []byte(fmt.Sprintf(`{
-  "specVersion": "0.1.0-draft",
+  "specVersion": "0.2.0-draft",
   "id": "https://example.invalid/judgment-packs/rfc0008-suppression",
   "version": "0.1.0",
   "title": "Synthetic draft RFC 0008 suppression row",

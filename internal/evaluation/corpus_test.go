@@ -32,8 +32,8 @@ func TestBundledEvaluationCorpus(t *testing.T) {
 	if output.Summary.Total != 20 {
 		t.Fatalf("the %s corpus has twenty rows, got %d", artifacts.EvaluatorDraftVersion, output.Summary.Total)
 	}
-	if !output.Experimental || output.ConformanceClaim != result.EvaluationClaim || output.Label != result.EvaluationCorpusLabel {
-		t.Fatalf("a corpus run names the claim it is evidence for, in band: %+v", output)
+	if !output.Experimental || output.ConformanceClaimReference != result.EvaluationClaimReference || output.Label != result.EvaluationCorpusLabel {
+		t.Fatalf("a corpus run references the claim it is evidence for, in band, and states none itself: %+v", output)
 	}
 	for _, item := range output.Cases {
 		if item.Status != "passed" {

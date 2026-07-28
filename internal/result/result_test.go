@@ -9,38 +9,140 @@ import (
 	"testing"
 )
 
-// The in-band claim value and the claim document are one statement in two places,
-// so they are held to each other. §3.4.1 scopes a claim to one exact specVersion
-// and §11 makes it non-inheritable, which means a bumped EvaluatorSpecVersion is
-// not a version bump but a claim this runtime has not yet earned: this test fails
-// until CONFORMANCE.md is restated for the new version, with that version's corpus
-// run. The document must also say the two things §3.4.1 requires in the claim's own
-// words — that every row passed, and that corpus results are not exhaustive
-// evidence — rather than leaving either to a reader's inference.
-func TestConformanceClaimDocumentAgreesWithTheInBandValue(t *testing.T) {
+// The in-band member is a locator and not a claim, so what is held to
+// CONFORMANCE.md is the *reference*: its value must be that file's path and
+// nothing that reads as a claim. §3.4.1 fixes the entire form a claim may take, so
+// a payload member naming a class and a version would carry part of that form and
+// omit the rest — a partial claim that section forbids.
+func TestTheInBandMemberIsAReferenceAndNotAClaim(t *testing.T) {
+	if EvaluationClaimReference != "CONFORMANCE.md" {
+		t.Fatalf("the in-band member locates the claim document: got %q, want %q", EvaluationClaimReference, "CONFORMANCE.md")
+	}
+	// A locator carries no fragment of the claim's form: no class name, no version,
+	// no corpus version, no verdict.
+	for _, forbidden := range []string{"conformance:", "evaluator-conformance", EvaluatorSpecVersion, "passed", "claim"} {
+		if strings.Contains(strings.ToLower(EvaluationClaimReference), strings.ToLower(forbidden)) {
+			t.Fatalf("the in-band reference must state no part of the claim, and it contains %q: %q", forbidden, EvaluationClaimReference)
+		}
+	}
+	if _, err := os.Stat(filepath.Join("..", "..", EvaluationClaimReference)); err != nil {
+		t.Fatalf("the reference must locate a file that exists: %v", err)
+	}
+
+	// Both evaluation payloads carry it under the member name that says what it is,
+	// and neither carries the old conformanceClaim member: its removal is the break
+	// OutputVersion "2" accounts for.
+	for _, payload := range []struct {
+		name  string
+		value any
+	}{
+		{"Evaluation", Evaluation{
+			OutputVersion:             OutputVersion,
+			Tool:                      CurrentTool(),
+			Command:                   "experimental evaluate",
+			Status:                    "evaluated",
+			Experimental:              true,
+			ConformanceClaimReference: EvaluationClaimReference,
+			SpecVersion:               EvaluatorSpecVersion,
+			EvaluatorSpecVersion:      EvaluatorSpecVersion,
+			Disposition:               Disposition{Kind: "outcome", OutcomeID: "proceed", Reasons: []string{}, Handoff: Handoff{State: "none"}},
+			Trace:                     []TraceEntry{},
+		}},
+		{"EvaluationCorpus", EvaluationCorpus{
+			OutputVersion:             OutputVersion,
+			Tool:                      CurrentTool(),
+			Command:                   "experimental evaluate-corpus",
+			Status:                    "passed",
+			Experimental:              true,
+			ConformanceClaimReference: EvaluationClaimReference,
+			Label:                     EvaluationCorpusLabel,
+		}},
+	} {
+		encoded, err := json.Marshal(payload.value)
+		if err != nil {
+			t.Fatalf("%s: %v", payload.name, err)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(encoded, &decoded); err != nil {
+			t.Fatalf("%s: %v", payload.name, err)
+		}
+		if decoded["conformanceClaimReference"] != EvaluationClaimReference {
+			t.Errorf("%s must carry conformanceClaimReference = %q: %s", payload.name, EvaluationClaimReference, encoded)
+		}
+		if _, present := decoded["conformanceClaim"]; present {
+			t.Errorf("%s must not carry the removed conformanceClaim member: %s", payload.name, encoded)
+		}
+	}
+}
+
+// The claim document is held to §3.4.1's whole form, atomically: the required
+// parts must sit together in the claim section rather than anywhere in the file, so
+// a stray mention elsewhere cannot satisfy the requirement. §3.4.1 scopes a claim
+// to one exact specVersion and §11 makes it non-inheritable, which means a bumped
+// EvaluatorSpecVersion is not a version bump but a claim this runtime has not yet
+// earned: this test fails until CONFORMANCE.md is restated for the new version,
+// with that version's corpus run.
+func TestConformanceClaimSectionCarriesTheWholeFormOfSection341(t *testing.T) {
 	claim, err := os.ReadFile(filepath.Join("..", "..", "CONFORMANCE.md"))
 	if err != nil {
 		t.Fatalf("the claim is one document, and it must exist: %v", err)
 	}
 	// Line wrapping is a typesetting choice; the sentence is the claim.
 	document := strings.Join(strings.Fields(string(claim)), " ")
-	if want := "evaluator-conformance:" + EvaluatorSpecVersion; EvaluationClaim != want {
-		t.Fatalf("the in-band claim names the contract version it is made against: got %q, want %q", EvaluationClaim, want)
+
+	// The claim section is "## The claim" up to the next heading. Everything §3.4.1
+	// requires must be inside it, together.
+	const heading = "## The claim "
+	start := strings.Index(document, heading)
+	if start < 0 {
+		t.Fatalf("CONFORMANCE.md must carry the claim in a %q section", strings.TrimSpace(heading))
 	}
-	for _, required := range []string{
-		"evaluator conformance",
-		EvaluatorSpecVersion,
-		"suiteVersion",
-		"passed",
-		"not exhaustive evidence",
-		"§3.4.1",
+	section := document[start+len(heading):]
+	if next := strings.Index(section, "## "); next >= 0 {
+		section = section[:next]
+	}
+
+	for _, required := range []struct {
+		what string
+		text string
+	}{
+		{"the class §3.4 defines", "evaluator conformance"},
+		{"the exact specVersion", "against Core **`" + EvaluatorSpecVersion + "`** — the exact `specVersion`"},
+		{"the corpus version, named as the manifest names it", "`suiteVersion` is **`" + EvaluatorSpecVersion + "`**"},
+		{"the results obtained", "all twenty rows passed"},
+		{"every row of that corpus version passed, in the claim's own words", "**Every row of `suiteVersion` `" + EvaluatorSpecVersion + "` passed.**"},
 	} {
+		if !strings.Contains(section, required.text) {
+			t.Fatalf("the claim section must state %s: %q not found in\n%s", required.what, required.text, section)
+		}
+	}
+
+	// No claim under another version, anywhere in the file: §3.4.1 forbids a claim
+	// under a specVersion whose corpus was not run, and §11 forbids inheritance in
+	// either direction. Every other bundled version is checked by name.
+	for _, other := range []string{"0.1.0-draft", "0.3.0-draft", "1.0.0"} {
+		if other == EvaluatorSpecVersion {
+			continue
+		}
+		for _, shape := range []string{
+			"claims **evaluator conformance** as JPS Core `" + other + "`",
+			"against Core **`" + other + "`**",
+			"`suiteVersion` is **`" + other + "`**",
+			"Every row of `suiteVersion` `" + other + "` passed",
+			"evaluator-conformance:" + other,
+		} {
+			if strings.Contains(document, shape) {
+				t.Fatalf("CONFORMANCE.md must claim nothing under %q, and it contains %q", other, shape)
+			}
+		}
+	}
+
+	// The two statements §3.4.1 requires beyond the form itself, in the claim's own
+	// words rather than left to a reader's inference.
+	for _, required := range []string{"not exhaustive evidence", "§3.4.1"} {
 		if !strings.Contains(document, required) {
 			t.Fatalf("CONFORMANCE.md must state %q in the claim's own words", required)
 		}
-	}
-	if !strings.Contains(document, "Every row of `suiteVersion` `"+EvaluatorSpecVersion+"` passed.") {
-		t.Fatal("§3.4.1 requires the claim to state, in its own words, that every row of the named corpus version passed")
 	}
 }
 
@@ -50,8 +152,11 @@ func TestConformanceClaimDocumentAgreesWithTheInBandValue(t *testing.T) {
 // effect of an unrelated edit, so they are pinned by literal here.
 
 func TestOutputVersionIsPinned(t *testing.T) {
-	if OutputVersion != "1" {
-		t.Fatalf("outputVersion is part of the machine contract: got %q, want %q", OutputVersion, "1")
+	// "2" since ADR-0011: the evaluation payloads' conformanceClaim member became
+	// conformanceClaimReference, which breaks a consumer that read the old name, and
+	// VERSIONING.md requires that break to increment this protocol version.
+	if OutputVersion != "2" {
+		t.Fatalf("outputVersion is part of the machine contract: got %q, want %q", OutputVersion, "2")
 	}
 	if CLIName != "judgment-pack" {
 		t.Fatalf("tool.name is part of the machine contract: got %q", CLIName)
@@ -103,8 +208,8 @@ func TestEveryPayloadCarriesTheCommonEnvelope(t *testing.T) {
 				t.Errorf("%s payload is missing the %q member: %s", payload.name, member, encoded)
 			}
 		}
-		if decoded["outputVersion"] != "1" {
-			t.Errorf("%s payload reports outputVersion %v, want \"1\"", payload.name, decoded["outputVersion"])
+		if decoded["outputVersion"] != OutputVersion {
+			t.Errorf("%s payload reports outputVersion %v, want %q", payload.name, decoded["outputVersion"], OutputVersion)
 		}
 	}
 }

@@ -4,16 +4,20 @@
 // It implements the evaluator class Core 0.2.0-draft defines: the input preflight
 // of §8.2, the portable disposition of §8.3 with its RFC 8785 byte-agreement, the
 // four error classes and fixed precedence of §8.4, and the §10 limits of limits.go.
-// This runtime claims evaluator conformance against that exact specVersion and the
-// evaluation corpus published for it, in the one form §3.4.1 permits and in one
-// place only — CONFORMANCE.md, decided by ADR-0011. The claim is about this
-// implementation and about nothing else: not the pack, not the facts, not the
-// evidence, and not the consequences of acting on a disposition (§3.5). The
-// surface may still change or be removed without compatibility promise, which is
-// what "experimental" names here. The contract is applied to a pack of
-// either bundled version, whatever that pack declares, so every payload names
-// the contract's own version (result.EvaluatorSpecVersion) beside the pack's;
-// nothing is claimed under 0.1.0-draft, which defines no evaluator class.
+// The conformance claim for this evaluator is stated, in full and only, in
+// CONFORMANCE.md (ADR-0011); nothing in this package restates it, and every payload
+// carries a reference to that file rather than a claim of its own
+// (result.EvaluationClaimReference). The surface may still change or be removed
+// without compatibility promise, which is what "experimental" names here.
+//
+// Only a pack declaring specVersion 0.2.0-draft is evaluated. §11 makes the
+// declared value exact and says an unedited 0.1.0-draft pack "must be re-declared
+// before an implementation claiming this draft evaluates it", so a pack declaring
+// any other version is refused as pack-not-conformant in the preflight phase
+// (declaredSpecVersion) rather than evaluated under a contract it has not opted
+// into. Every payload still names the contract's own version
+// (result.EvaluatorSpecVersion) beside the pack's, because they are two facts and
+// a consumer should read the applied contract rather than infer it.
 //
 // Evaluation is a pure function of its inputs: a conformant pack, one facts
 // document, the tri-state availability of declared evidence, and the
@@ -160,6 +164,12 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 	if failure != nil {
 		return result.Evaluation{}, failure
 	}
+	// The version gate is part of admitting the pack, so it precedes the facts
+	// document and every later step, and its class is the pack's own:
+	// pack-not-conformant, which §8.4 orders first in any case.
+	if failure := declaredSpecVersion(validated.SpecVersion); failure != nil {
+		return result.Evaluation{}, failure
+	}
 
 	if failure := byteLimit("facts", facts, result.ClassMalformedInput, options.oversized("facts")); failure != nil {
 		return result.Evaluation{}, failure
@@ -196,17 +206,17 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 		trace = []result.TraceEntry{}
 	}
 	evaluation := result.Evaluation{
-		OutputVersion:        result.OutputVersion,
-		Tool:                 result.CurrentTool(),
-		Command:              options.Command,
-		Status:               "evaluated",
-		Experimental:         true,
-		ConformanceClaim:     result.EvaluationClaim,
-		SpecVersion:          validated.SpecVersion,
-		EvaluatorSpecVersion: result.EvaluatorSpecVersion,
-		Disposition:          disposition,
-		HandoffTarget:        target,
-		Trace:                trace,
+		OutputVersion:             result.OutputVersion,
+		Tool:                      result.CurrentTool(),
+		Command:                   options.Command,
+		Status:                    "evaluated",
+		Experimental:              true,
+		ConformanceClaimReference: result.EvaluationClaimReference,
+		SpecVersion:               validated.SpecVersion,
+		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		Disposition:               disposition,
+		HandoffTarget:             target,
+		Trace:                     trace,
 	}
 	if options.RFC0008Quantifiers {
 		evaluation.DraftPrototype = draftPrototype(packRoot, validated.SpecVersion)
@@ -280,6 +290,39 @@ func packNotConformant(validated result.Validation) *Failure {
 		Code:     "JPS-EVALUATION-PACK-NOT-CONFORMANT",
 		Message:  fmt.Sprintf("The pack is not evaluated because its document conformance status is %q; evaluation requires a fully conformant pack. Run spec validate for the complete report.%s", validated.Status, detail),
 		ExitCode: exitCode,
+	}
+}
+
+// declaredSpecVersion holds every evaluated pack to the one specVersion this
+// evaluator's contract belongs to, which is the version scope of the claim in
+// CONFORMANCE.md.
+//
+// §11 is the requirement, not a preference: "Because the value is exact (§4), an
+// unedited 0.1.0-draft pack is not structurally conforming to 0.2.0-draft and must
+// be re-declared before an implementation claiming this draft evaluates it." The
+// claim in CONFORMANCE.md is made against that draft, so a pack declaring any other
+// version has not opted into the §§7–8 semantics this evaluator applies, and
+// evaluating it anyway would apply the claimed contract to an input the claim's own
+// version scope does not cover. There is no second, unclaimed legacy path: one evaluator, one
+// admitted version.
+//
+// The refusal is the pack's own §8.4 class — pack-not-conformant, in the preflight
+// phase, since a document declaring another version is not structurally conforming
+// to this one — and the message states the whole remedy, because the remedy really
+// is one edit: §11 says 0.2.0-draft "changes no part of the document format", so
+// re-declaring changes the specVersion string and nothing else in the document.
+func declaredSpecVersion(specVersion string) *Failure {
+	if specVersion == result.EvaluatorSpecVersion {
+		return nil
+	}
+	return &Failure{
+		Class: result.ClassPackNotConformant,
+		Phase: result.PhasePreflight,
+		Code:  "JPS-EVALUATION-PACK-SPEC-VERSION",
+		Message: fmt.Sprintf(
+			"The pack is not evaluated because it declares specVersion %q and this evaluator applies the JPS Core %s evaluator contract, whose conformance claim is stated in CONFORMANCE.md. JPS §11 makes the declared value exact: an unedited %s pack is not structurally conforming to %s and must be re-declared before an implementation claiming this draft evaluates it. Re-declaring is one edit — the specVersion string — and nothing else in the document changes, because §11 says %s changes no part of the document format: every member, every cross-field rule, and every document-conformance verdict of §§3.1-3.3 stays the same. The %s schema remains published, and spec validate still validates the pack as it stands.",
+			specVersion, result.EvaluatorSpecVersion, specVersion, result.EvaluatorSpecVersion, result.EvaluatorSpecVersion, specVersion),
+		ExitCode: result.ExitInvalid,
 	}
 }
 

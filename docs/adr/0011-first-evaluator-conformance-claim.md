@@ -62,11 +62,14 @@ description of an implementation that did not meet §3.4 — and once it is met,
 direction. Research-preview maturity is an argument for stating the claim's scope exactly, which
 §3.4.1's own form and §3.5 already require, not for withholding it.
 
-**C is rejected as circular.** An external implementation compares itself against the corpus and,
-where the corpus is silent, against a reference claimant. Waiting for an external claimant before
-claiming leaves both parties waiting for the other; the clean-room Python lineage in the
-evaluator-experiments repository is not that external claimant either, since it traces to the same
-maintainer's direction.
+**C is rejected as circular.** An external implementation is judged against the complete normative
+contract — §§7–10, with §1.1 making the specification control where the evaluation corpus is silent or
+disagrees — and against the corpus published for the exact version it names. No implementation is the
+thing another is measured against: this runtime's output can corroborate or contradict another's
+diagnostically, and it is never the deciding reference. So waiting for an external claimant would
+change nothing about what either party is judged against, while leaving both waiting for the other; the
+clean-room Python lineage in the evaluator-experiments repository is not that external claimant either,
+since it traces to the same maintainer's direction.
 
 **D is rejected because it would be a false claim.** §3.4 names the §10 limits as a requirement of the
 class, not as a recommendation; claiming with `resource-exhaustion` unreachable on the Core path would
@@ -76,7 +79,7 @@ Settled constraints:
 
 - **The §10 limits, supplied here, are the discharged precondition.** Both are defined, documented, and
   enforced on the ordinary Core path before the claim is made:
-  - **Evaluation-work limit**, `DefaultCoreWorkLimit` = 20,000,000 units per evaluation, configurable
+  - **Evaluation-work limit**, `DefaultCoreWorkLimit` = 20,971,520 units per evaluation, configurable
     per evaluation exactly as the draft-RFC prototype's budget is (ADR-0009). The accounting model is
     the one that prototype already documented — a unit is one visited condition node, one step of a
     pointer resolution, or one byte of a path, member name, or scalar token a comparison reads — now
@@ -84,12 +87,25 @@ Settled constraints:
     exception, or rule, charged before step 1 because §8 step 2 walks requirements without evaluating
     anything and a suppressed rule is still visited and still traced. One model, both paths. Reaching
     it is `resource-exhaustion` in the `evaluation` phase, with no disposition and no partial state.
-    The number is derived from the admission limits rather than picked: a unit is backed by at least one
-    byte of an admitted input and the carrier admits at most 10 MiB per input, so this limit is about
-    twice the largest admissible input — one full read of the pack plus one of the facts document, which
-    is therefore never refused — and what it refuses is amplification: the
-    same large selected value re-read once per candidate or once per condition. Core has no runtime
-    fan-out, so a generous default is safe: every row of the bundled corpus charges under 1,000 units.
+
+    The number is **derived in code, not written down**: `limits.go` computes it as twice
+    `carrier.HardMaxBytes`, the carrier's byte cap, so at the current 10 MiB cap it is 20,971,520 units
+    and there is no independent constant to drift from the cap it is derived from. The derivation is
+    stated exactly, and it guarantees exactly one thing: **one full read of every admitted byte always
+    fits**, since every unit is backed by at least one byte of an admitted input, two documents reach an
+    evaluation, and each is admitted under the same cap. It does **not** guarantee that a single
+    non-amplified evaluation always fits: **a single maximal cross-document comparison sits at the
+    boundary and may be refused**, because one comparison between a near-cap authored value and a
+    near-cap selected value charges both sides and so approaches the same total with §8's fixed
+    per-node and per-iteration charges still to pay. That input is refused as `resource-exhaustion`,
+    which §10 permits — the limit is documented, it is not portable, and an input above it is outside the
+    portable claim. The earlier draft of this record said the limit was "about twice the largest
+    admissible input", that such an evaluation "is therefore never refused", and that "what it refuses is
+    amplification"; the arithmetic behind the first was wrong (twice 10 MiB is 20,971,520, not
+    20,000,000) and the other two overstated the guarantee, so all three are **withdrawn** in favor of
+    the two sentences above. Amplification is still what the limit refuses in practice — the same large
+    selected value re-read once per candidate or once per condition — and Core has no runtime fan-out, so
+    a generous default is safe: every row of the bundled corpus charges under 1,000 units.
   - **Collection-size limit**, 250,000 members — the carrier's parsed-node cap. This is a
     determination, recorded rather than reimplemented: the cap is a whole-document budget, so no
     admitted document contains a larger collection, and every collection a Core evaluation traverses
@@ -100,6 +116,33 @@ Settled constraints:
     A second mechanism could only report what the preflight already refuses, so none was added. This
     extends ADR-0010's determination that the node cap is a document-size limit rather than
     contradicting it: it is both, and where it is enforced decides the class.
+- **The admitted version scope equals the claim's version scope, and the gate is in code.** Only a pack
+  declaring `specVersion` `0.2.0-draft` is evaluated. A pack declaring any other value — `0.1.0-draft`
+  included — is refused as `pack-not-conformant` in the `preflight` phase
+  (`JPS-EVALUATION-PACK-SPEC-VERSION`), with a message that cites §11's re-declaration rule and states
+  the whole remedy: **one edit, the `specVersion` string**, and nothing else in the document, because §11
+  says `0.2.0-draft` changes no part of the document format. There is **no legacy path**: no second
+  evaluator, no unclaimed mode, one admitted version.
+
+  This is required, not chosen. §11: "Because the value is exact (§4), an unedited `0.1.0-draft` pack is
+  not structurally conforming to `0.2.0-draft` and must be re-declared before an implementation claiming
+  this draft evaluates it." The moment this runtime claims this draft, evaluating an unedited
+  `0.1.0-draft` pack applies the claimed contract to an input §11 says has not opted into it — and the
+  claim asserts §§7–10 compliance for **every input the implementation admits**, so an admitted input the
+  claim's version scope does not cover falsifies the claim rather than sitting harmlessly beside it.
+  Naming the two versions separately in the payload does not repair that: it describes the mismatch
+  accurately instead of refusing it.
+
+  **This reverses ADR-0010's contrary determination, explicitly.** 0010 considered exactly this behavior
+  as its option D — "Align, and refuse to evaluate any pack that does not declare `0.2.0-draft`" —
+  called it "spec-faithful", and rejected it "because it would refuse every pack the runtime has today
+  for no gain in honesty that naming the two versions separately does not already buy". That reasoning
+  was sound only while nothing was claimed, which is the state 0010 recorded; once a claim exists the
+  gain is exactly the honesty of the claim, and 0010's option D becomes the only behavior consistent with
+  it. So this record **supersedes that determination of 0010's** — option D's rejection, and the
+  admit-either-version rule that followed from it, and nothing else in 0010. ADR-0010 stays immutable and
+  is not marked superseded: it recorded the right decision for the posture it recorded, and this record
+  is the later decision that changes the posture.
 - **The claim, in §3.4.1's form and nowhere else:** [`CONFORMANCE.md`](../../CONFORMANCE.md), at the
   repository root, naming the class, the exact `specVersion` `0.2.0-draft`, the corpus `suiteVersion`
   `0.2.0-draft`, the results obtained, and in its own words that every row of that corpus version
@@ -107,6 +150,35 @@ Settled constraints:
   one document with one scope: the README is a tour of a tool and would bury it between install
   instructions and exit codes, and an auditor looks for `CONFORMANCE.md`. The README links to it and
   keeps the limits and the behavior.
+- **Every other surface is reference-only, and none of them restates the claim.** §3.4.1 fixes the whole
+  form a claim may take, so a surface naming the class and the version while omitting the corpus version,
+  the results, and the every-row statement would be making the partial claim §3.4.1 forbids — the defect
+  is not that such a surface says too much but that it says part of a form that admits no parts. So the
+  in-band member is a **locator**: `conformanceClaimReference`, whose value is the string
+  `CONFORMANCE.md`, replacing the `conformanceClaim` member that carried `"none"` under ADR-0007 and
+  ADR-0010. The CLI help, the human output header, the corpus label, the MCP tool descriptions, the
+  `test_pack` prompt, the README, and the architecture notes each say where the claim is stated — "in
+  full and only, in `CONFORMANCE.md`" — and no sentence outside that file says this runtime claims
+  anything. The version scope a consumer needs in band stays in band as `evaluatorSpecVersion`, which is
+  a fact about the contract applied and not a claim about conformance to it.
+- **The machine-output protocol version is incremented with it.** Renaming an in-band member breaks a
+  consumer that read the old name, and `VERSIONING.md` requires a change that breaks machine-output
+  compatibility to increment that protocol version deliberately. `outputVersion` therefore goes from
+  `"1"` to `"2"` on every payload this runtime writes, and the CHANGELOG entry for this change carries
+  the migration: read `conformanceClaimReference` where `conformanceClaim` was read, expect the fixed
+  value `CONFORMANCE.md`, and branch on `evaluatorSpecVersion` for the contract version. Bumping the
+  protocol version for every payload rather than only the evaluation payloads is deliberate: one protocol
+  version describes one output contract, and a consumer that must inspect which payload it holds to know
+  whether the version applies has no protocol version at all.
+- **The claim has one activation point: the merge of `CONFORMANCE.md` to `main`.** §3.4.1 attaches a
+  claim to an implementation and an exact `specVersion` and requires no tag, no release, and no
+  publication step, so the source that satisfies the class is the thing that claims — and a development
+  build from this history emits the same reference to the same claim its released artifacts do, which is
+  the behavior a release-conditional claim could not honestly produce. The earlier draft of this record
+  paired a release-conditional effective date in `CONFORMANCE.md` with unconditional present-tense
+  surfaces and an unconditional in-band value; that is two activation points, and it is withdrawn.
+  Releases carry the claim thereafter because they are built from this history, not because a tag
+  activates anything.
 - **The evidence, complete:** the bundled twenty-row corpus of `suiteVersion` `0.2.0-draft` passes
   20/20, compared as §8.3 defines the comparison — the RFC 8785 canonical bytes of both sides, through
   the same canonicalizer. Corroboration, which §3.4.1 forbids substituting for corpus results and which
@@ -146,29 +218,47 @@ Settled constraints:
 - **The `experimental` namespace stays, and stops meaning what it no longer means.** No command is
   renamed: `experimental evaluate`, `experimental evaluate-corpus`, and `experimental_evaluate` keep
   their names, and the namespace goes on meaning that the surface may change or be removed without a
-  compatibility promise — a stability statement, which is orthogonal to conformance. What is replaced is
-  the blanket no-claim language on every surface it appeared on: the in-band `conformanceClaim` member,
-  which was `"none"`, now names the claim and its exact version; the corpus label, the CLI help, the
-  human output header, the MCP tool descriptions and prompts, the README, and the CHANGELOG point at
-  `CONFORMANCE.md` and its scope instead of denying a claim this runtime now makes. This reverses
-  ADR-0010's "The non-claim is a constraint, not a caveat" and nothing else in that record; the labeling
-  discipline behind it is kept and inverted rather than dropped, since a surface that overstates the
-  claim is the same defect in the other direction.
+  compatibility promise — a stability statement, which is orthogonal to conformance. What is removed is
+  the blanket no-claim language on every surface it appeared on: the in-band member, the corpus label, the
+  CLI help, the human output header, the MCP tool descriptions and prompts, the README, the draft-RFC
+  prototype note, and the CHANGELOG now reference `CONFORMANCE.md` instead of denying a claim this
+  runtime makes. This reverses ADR-0010's "The non-claim is a constraint, not a caveat" and nothing else
+  in that record; the labeling discipline behind it is kept and inverted rather than dropped, since a
+  surface that overstates the claim — including one that restates part of it — is the same defect in the
+  other direction.
+- **The draft-RFC prototype is outside the claim, stated precisely rather than by denial.** The
+  `draftPrototype` note said "Nothing here claims conformance of any kind", which contradicted the same
+  payload's own reference to a claim. It now states the actual scope: the `0.2.0-draft` claim does not
+  cover the RFC 0008 operators, and a pack using one is not an input the claimed class defines — so the
+  result falls outside the claim's scope rather than being an exception to a requirement inside it, which
+  is what §3.4.1 forbids claiming.
 
-This record **extends** ADR-0010 and does not supersede it: 0010's contract, its two-versions-in-band
-rule, its output shape, and its error classes are all in force unchanged, and the only constraint of
-0010's that this record reverses is the no-claim posture whose own precondition 0010 named. Nothing
-here marks 0010 superseded or deprecated. Its `status` flip from `proposed` to `accepted` on merge is
-its own follow-up docs change — the flow `docs/adr/README.md` step 3 describes, which this repository
-has always carried out in a dedicated commit (ADR-0007's and ADR-0008's each did) — so this record
-neither performs nor depends on it, and 0011 lands `proposed` in the pull request that makes the
-decision, like every record before it.
+This record **supersedes two determinations of earlier records and nothing else in them.** From
+[ADR-0010](0010-evaluator-aligned-to-core-0.2.0-draft.md): the rejection of its option D, and the
+admit-either-version rule that followed from it, now reversed by the version gate above; 0010's
+contract, its two-versions-in-band reporting, its output shape, and its error classes are all in force
+unchanged. From [ADR-0007](0007-experimental-evaluator.md): its consequence that this evaluator "claims
+no conformance", carried in its summary note and in the `"conformanceClaim": "none"` envelope it
+specified — that consequence only. Everything else 0007 decided stands: the experimental surface, its
+naming, its inputs and outputs, errors-are-not-dispositions, and its scope limits. Both records stay
+**immutable and accepted**; neither file is edited and neither is marked superseded or deprecated, since
+each recorded the right decision for the posture it recorded. The ADR index annotates 0007's row so a
+reader arriving there is not misled about its claim posture. ADR-0010's own `status` flip from
+`proposed` to `accepted` on merge is its own follow-up docs change — the flow `docs/adr/README.md` step 3
+describes, which this repository has always carried out in a dedicated commit (ADR-0007's and ADR-0008's
+each did) — so this record neither performs nor depends on it, and 0011 lands `proposed` in the pull
+request that makes the decision, like every record before it. That is also why the claim's activation
+point is the merge and not this file's `status`: merging is the event that makes the source claim, and
+the `status` flip records the decision in the commit that follows it.
 
 ### Consequences
 
-- Good, because the class becomes claimable in fact and not only in principle: an implementer now has a
-  reference claimant to compare against, with the exact `specVersion`, the corpus version, and the
-  documented limits all named in one citable file.
+- Good, because the class becomes claimable in fact and not only in principle: an implementer can see
+  the class claimed by someone, with the exact `specVersion`, the corpus version, and the documented
+  limits all named in one citable file. What an implementer is judged against is unchanged by that — the
+  complete normative contract of §§7–10, with §1.1 making the specification control where the corpus is
+  silent. This runtime's output is diagnostic corroboration when two implementations differ, never the
+  deciding reference, and §3.4 forbids this claimant from adjudicating a divergence in any case.
 - Good, because closing the §10 gap made the runtime better regardless of the claim.
   `resource-exhaustion` was previously unreachable outside a draft-RFC opt-in, which meant an ordinary
   Core evaluation had no bound on the work one small condition could buy over a large admitted value;
@@ -184,11 +274,17 @@ decision, like every record before it.
 - Bad, because a claim is a standing obligation on a `0.x` specification. `0.2.0-draft` may be
   superseded by a breaking version; the claim will then be stale by construction until this runtime runs
   the new corpus, and a reader who sees `CONFORMANCE.md` without reading its version scope will
-  over-read it. Mitigated by naming the exact version in the claim, in `evaluatorSpecVersion` on every
-  payload, and in the in-band `conformanceClaim` value itself.
-- Bad, because replacing the in-band `"none"` is a breaking change for any consumer that asserted on
-  it. That is what the experimental namespace is for, and the value now says something true instead of
-  something false.
+  over-read it. Mitigated by naming the exact version in the claim, by `evaluatorSpecVersion` on every
+  payload, and by the version gate, which refuses to evaluate a pack outside that scope at all.
+- Bad, because replacing the in-band `"none"` with a differently named member is a breaking change for
+  any consumer that asserted on it, and it costs a protocol-version increment across every payload of
+  every command (`outputVersion` `"1"` → `"2"`), including commands this decision does not otherwise
+  touch. That is the price of one protocol version describing one output contract, and the experimental
+  namespace is what makes the evaluation half of it changeable at all.
+- Bad, because the version gate refuses inputs this runtime accepted yesterday: every `0.1.0-draft` pack
+  in existence, including this repository's own fixtures, must be re-declared to be evaluated. The cost is
+  real and it is one edit per pack (§11), document validation is unaffected, and the alternative was a
+  claim contradicted by its own admitted inputs.
 - Revisit when a later `specVersion` republishes the class or the corpus (a fresh run and a restated
   claim, not an inherited one), when a row of `suiteVersion` `0.2.0-draft` is found to fail, when the
   corpus's gap list closes enough to change what the evidence is worth, or when an independent
@@ -199,12 +295,16 @@ decision, like every record before it.
 Contract source: JPS Core `0.2.0-draft` §§3.4, 3.4.1, 3.5, 8.2, 8.3, 8.4, 10, 11, the
 `conformance/evaluation/` corpus, its `README.md` gap list, and its `errata.md` (no errata for this
 `suiteVersion`). The claim: [`CONFORMANCE.md`](../../CONFORMANCE.md). Implementation of the limits:
-`internal/evaluation/limits.go` (both limits and the one error), `internal/evaluation/quantifier.go`
-(the accounting model, now charged on both paths), `internal/evaluation/resolve.go` (§8's own
-iteration), with `internal/evaluation/limits_test.go` covering reachability at the documented default,
-configurability, the §8 charge, the admission-phase collection bound, and the corpus's headroom.
-Extends [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md); the draft-RFC opt-in and its own budget
-are [0009](0009-draft-rfc-quantifier-prototype.md)'s. Corroborating runs: the evaluator-experiments
+`internal/evaluation/limits.go` (both limits and the one error, the work limit derived from
+`carrier.HardMaxBytes`), `internal/evaluation/quantifier.go` (the accounting model, now charged on both
+paths), `internal/evaluation/resolve.go` (§8's own iteration), with
+`internal/evaluation/limits_test.go` covering reachability at the documented default, configurability,
+the §8 charge, the admission-phase collection bound, and the corpus's headroom. The version gate:
+`declaredSpecVersion` in `internal/evaluation/engine.go`. The in-band reference:
+`result.EvaluationClaimReference` and `result.OutputVersion` in `internal/result/result.go`.
+Supersedes two determinations of [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md) and
+[0007](0007-experimental-evaluator.md) as stated above, and otherwise extends 0010; the draft-RFC opt-in
+and its own budget are [0009](0009-draft-rfc-quantifier-prototype.md)'s. Corroborating runs: the evaluator-experiments
 repository's `harness/CLASS-AGREEMENT.md` and its clean-room Python lineage. The cross-vendor
 adversarial review this decision requires attaches to the pull request, not to this file
 (`docs/adr/README.md`, "Review of material decisions").

@@ -86,25 +86,30 @@ func inCondition(candidates int) string {
 // carrier's 250,000, and about 1 MB against 10 MiB — so this is the evaluation
 // phase and not the preflight, which is exactly the distinction §10 draws.
 //
-// The collection measures 200,001 units, so 90 candidates charge about 18·10⁶
-// and evaluate, while 101 charge about 20.2·10⁶ and are refused. One condition
-// either side of DefaultCoreWorkLimit, so the row pins the default rather than a
-// configured budget.
+// The two candidate counts are derived from DefaultCoreWorkLimit rather than
+// written down, because that limit is itself derived from the carrier's byte cap:
+// a row that hard-coded either number would pass or fail on the cap's value. The
+// collection measures 200,001 units and an in condition re-reads it once per
+// candidate, so one count either side of limit/200,001 brackets the default — which
+// is what pins the default rather than a configured budget.
 func TestCoreWorkLimitIsReachableAtTheDocumentedDefault(t *testing.T) {
 	engine := newTestEngine(t)
 	facts := membersFacts(200_000)
+	const collectionUnits = 200_001
+	inside := DefaultCoreWorkLimit/collectionUnits - 1
+	outside := DefaultCoreWorkLimit/collectionUnits + 1
 
-	output, failure := engine.Evaluate(corePack(inCondition(90), 0), facts, nil, nil, "test")
+	output, failure := engine.Evaluate(corePack(inCondition(inside), 0), facts, nil, nil, "test")
 	if failure != nil {
-		t.Fatalf("18 million units is inside the default limit: %+v", failure)
+		t.Fatalf("%d candidates (about %d units) is inside the default limit of %d: %+v", inside, inside*collectionUnits, DefaultCoreWorkLimit, failure)
 	}
 	if output.Disposition.Kind != "outcome" || output.Disposition.OutcomeID != "did-not-hold" {
 		t.Fatalf("disposition = %+v; a collection is in no scalar candidate", output.Disposition)
 	}
 
-	output, failure = engine.Evaluate(corePack(inCondition(101), 0), facts, nil, nil, "test")
+	output, failure = engine.Evaluate(corePack(inCondition(outside), 0), facts, nil, nil, "test")
 	if failure == nil {
-		t.Fatalf("20.2 million units must exhaust the default limit, got %+v", output.Disposition)
+		t.Fatalf("%d candidates (about %d units) must exhaust the default limit of %d, got %+v", outside, outside*collectionUnits, DefaultCoreWorkLimit, output.Disposition)
 	}
 	if failure.Class != result.ClassResourceExhaustion || failure.Phase != result.PhaseEvaluation {
 		t.Fatalf("class/phase = %q/%q, want %q/%q", failure.Class, failure.Phase, result.ClassResourceExhaustion, result.PhaseEvaluation)
@@ -195,6 +200,29 @@ func TestCoreCollectionSizeLimitIsEnforcedAtAdmission(t *testing.T) {
 	// above turns on the cap and not on the shape.
 	if _, failure := engine.Evaluate(pack, membersFacts(1_000), nil, nil, "test"); failure != nil {
 		t.Fatalf("a thousand-member collection is ordinary input: %+v", failure)
+	}
+}
+
+// The work limit is derived from the carrier's byte cap and not chosen, and the
+// derivation is exactly the one documented: twice the largest admissible input, so
+// one full read of every admitted byte fits and a single maximal cross-document
+// comparison does not. A row that only checked the number would let the constant
+// drift from the cap it is derived from.
+func TestCoreWorkLimitIsDerivedFromTheCarrierByteCap(t *testing.T) {
+	if want := int(2 * carrier.HardMaxBytes); DefaultCoreWorkLimit != want {
+		t.Fatalf("DefaultCoreWorkLimit = %d, want exactly twice the carrier byte cap (%d)", DefaultCoreWorkLimit, want)
+	}
+	// One full read of the pack plus one of the facts document: each is admitted
+	// under the byte cap and each unit is backed by at least one byte, so the sum of
+	// the two admissible lengths is at most the limit and never above it.
+	if int64(DefaultCoreWorkLimit) < carrier.HardMaxBytes+carrier.HardMaxBytes {
+		t.Fatalf("one full read of every admitted byte must fit: %d < %d", DefaultCoreWorkLimit, carrier.HardMaxBytes*2)
+	}
+	// And no more than that is claimed: a comparison charging both a near-cap
+	// authored value and a near-cap selected value reaches the same total with §8's
+	// fixed charges still to pay, so it sits at the boundary rather than inside it.
+	if int64(DefaultCoreWorkLimit) > carrier.HardMaxBytes+carrier.HardMaxBytes {
+		t.Fatalf("the limit is exactly twice the cap, so the boundary case is at the boundary: %d > %d", DefaultCoreWorkLimit, carrier.HardMaxBytes*2)
 	}
 }
 

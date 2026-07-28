@@ -252,11 +252,19 @@ func TestExperimentalEvaluateTool(t *testing.T) {
 		t.Fatalf("a produced disposition is a successful call: %#v", evaluated)
 	}
 	structured := evaluated["structuredContent"].(map[string]any)
-	if structured["experimental"] != true || structured["conformanceClaim"] != result.EvaluationClaim {
-		t.Fatalf("the payload must name the surface and the one claim this runtime makes: %#v", structured)
+	if structured["experimental"] != true || structured["conformanceClaimReference"] != result.EvaluationClaimReference {
+		t.Fatalf("the payload must name the surface and reference the claim document: %#v", structured)
 	}
-	if structured["conformanceClaim"] != "evaluator-conformance:0.2.0-draft" {
-		t.Fatalf("the claim is scoped to one exact specVersion: %#v", structured)
+	// The member is a locator and not a claim, and the removed one is gone: that
+	// removal is the machine-output break outputVersion "2" accounts for.
+	if structured["conformanceClaimReference"] != "CONFORMANCE.md" {
+		t.Fatalf("the in-band reference is the claim document's path: %#v", structured)
+	}
+	if _, present := structured["conformanceClaim"]; present {
+		t.Fatalf("the payload must not carry the removed conformanceClaim member: %#v", structured)
+	}
+	if structured["outputVersion"] != result.OutputVersion || structured["evaluatorSpecVersion"] != result.EvaluatorSpecVersion {
+		t.Fatalf("the payload must name the protocol version and the contract version: %#v", structured)
 	}
 	disposition := structured["disposition"].(map[string]any)
 	if disposition["kind"] != "outcome" || disposition["outcomeId"] != "clarify-return" {

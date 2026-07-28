@@ -25,9 +25,11 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 
 None of these evaluate, decide, or authorize anything, except `experimental_evaluate`, which
-evaluates. Its payload names the contract version it applied and the claim this runtime makes against
-it; that claim is about this implementation and not about the pack, the facts, or the wisdom of acting
-on a disposition (JPS §3.5).
+evaluates. Its payload names the contract version it applied and carries a `conformanceClaimReference`
+member pointing at [`CONFORMANCE.md`](../CONFORMANCE.md), where the conformance claim is stated in full
+and only; no tool description, and no line of this document, states any part of it. Whatever that claim
+says, it is about this implementation and not about the pack, the facts, or the wisdom of acting on a
+disposition (JPS §3.5). It evaluates only a pack declaring `specVersion` `0.2.0-draft` (§11).
 
 ## The prompts
 

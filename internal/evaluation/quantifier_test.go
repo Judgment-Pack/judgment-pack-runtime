@@ -807,7 +807,7 @@ func TestRFC0008LongEvidenceRequirementIdIsChargedByItsLength(t *testing.T) {
 	// differ only in the identifier's length — and the long one is refused.
 	pack := func(id string) []byte {
 		return []byte(fmt.Sprintf(`{
-  "specVersion": "0.1.0-draft",
+  "specVersion": "0.2.0-draft",
   "id": "https://example.invalid/judgment-packs/rfc0008-evidence-id",
   "version": "0.1.0",
   "title": "Synthetic draft RFC 0008 evidence-identifier row",

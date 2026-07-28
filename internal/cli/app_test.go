@@ -25,40 +25,200 @@ func TestHelpUsesSpecNamespace(t *testing.T) {
 	}
 }
 
-// Every CLI surface that used to deny a claim now points at the one this runtime
-// makes, and none of them denies it any more: the blanket "claims no conformance"
-// wording was accurate only while the §10 requirement was unmet (ADR-0010), and
-// after ADR-0011 it would be false in the other direction. "EXPERIMENTAL" survives
-// as the stability statement it always was, and no command is renamed.
-func TestExperimentalSurfacesNameTheClaimRatherThanDenyIt(t *testing.T) {
-	surfaces := [][]string{
+// claimSurface is one inventoried surface. mustReference marks the surfaces that
+// speak about this runtime's evaluator and therefore have to say where the claim is
+// stated; the forbidden-phrase scans apply to every surface either way, so a new
+// surface that starts denying or restating the claim fails wherever it is added.
+type claimSurface struct {
+	name          string
+	text          string
+	mustReference bool
+}
+
+// claimSurfaces is the inventory of public surfaces that mention this runtime's
+// conformance posture, gathered from the surfaces themselves rather than from a
+// list of strings: the CLI help texts, the *actual* MCP tools/list descriptions as
+// a client receives them, and the in-band draft-RFC prototype note. Adding a
+// surface without adding it here is the failure mode this inventory exists to make
+// visible, so each entry is produced by running the thing.
+func claimSurfaces(t *testing.T) []claimSurface {
+	t.Helper()
+	surfaces := []claimSurface{}
+
+	for _, args := range [][]string{
 		{"--help"},
 		{"experimental", "--help"},
 		{"experimental", "evaluate", "--help"},
 		{"experimental", "evaluate-corpus", "--help"},
 		{"mcp", "--help"},
+	} {
+		code, stdout, stderr := runTest(t, args, "")
+		if code != 0 || stderr != "" {
+			t.Fatalf("%v: exit=%d stderr=%q", args, code, stderr)
+		}
+		surfaces = append(surfaces, claimSurface{name: "cli " + strings.Join(args, " "), text: stdout, mustReference: true})
 	}
-	for _, args := range surfaces {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			code, stdout, stderr := runTest(t, args, "")
-			if code != 0 || stderr != "" {
-				t.Fatalf("exit=%d stderr=%q", code, stderr)
+
+	// The MCP descriptions a client actually receives, from a real tools/list
+	// response over the same stdio transport a client uses. Reading the Go
+	// definitions instead would test a value rather than a surface.
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
+	code, stdout, stderr := runTest(t, []string{"mcp"}, input)
+	if code != 0 || stderr != "" {
+		t.Fatalf("mcp tools/list: exit=%d stderr=%q", code, stderr)
+	}
+	var listed struct {
+		Result struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &listed); err != nil {
+		t.Fatalf("undecodable tools/list response %q: %v", stdout, err)
+	}
+	if len(listed.Result.Tools) == 0 {
+		t.Fatalf("tools/list returned no tool: %q", stdout)
+	}
+	evaluationTool := false
+	for _, tool := range listed.Result.Tools {
+		if tool.Description == "" {
+			t.Fatalf("tool %q has no description", tool.Name)
+		}
+		// Only the evaluation tool speaks about the evaluator, so only it must carry
+		// the reference; the other descriptions are inventoried for the phrase scans,
+		// which is where a stray denial would otherwise hide.
+		surfaces = append(surfaces, claimSurface{
+			name:          "mcp tools/list " + tool.Name,
+			text:          tool.Description,
+			mustReference: tool.Name == "experimental_evaluate",
+		})
+		if tool.Name == "experimental_evaluate" {
+			evaluationTool = true
+		}
+	}
+	if !evaluationTool {
+		t.Fatalf("the inventory must include the evaluation tool's own description: %q", stdout)
+	}
+
+	// The in-band prototype note, read off a real payload: it is the surface that
+	// carried a direct contradiction of the same payload's claim reference.
+	pack := filepath.Join("..", "evaluation", "testdata", "rfc0008", "airline-cancellation-quantifier.json")
+	facts := filepath.Join(t.TempDir(), "facts.json")
+	if err := os.WriteFile(facts, []byte(`{"reservation":{"segments":[{"cancelledByAirline":false},{"cancelledByAirline":true}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--rfc0008-quantifiers", "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("prototype evaluation: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var prototype struct {
+		DraftPrototype *struct {
+			Note string `json:"note"`
+		} `json:"draftPrototype"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &prototype); err != nil {
+		t.Fatal(err)
+	}
+	if prototype.DraftPrototype == nil || prototype.DraftPrototype.Note == "" {
+		t.Fatalf("a draft-grammar evaluation must carry its in-band note: %q", stdout)
+	}
+	surfaces = append(surfaces, claimSurface{
+		name:          "payload draftPrototype.note",
+		text:          prototype.DraftPrototype.Note,
+		mustReference: true,
+	})
+
+	return surfaces
+}
+
+// Every public surface in the inventory is reference-only: it says where the claim
+// is stated and states no part of it, and none of them denies a claim either.
+//
+// Both directions are failures. The blanket "claims no conformance" wording was
+// accurate only while the §10 requirement was unmet (ADR-0010) and after ADR-0011
+// would be false; a surface that restates the claim is the same defect inverted,
+// because §3.4.1 fixes the entire form a claim may take and a surface naming the
+// class and the version while omitting the corpus version, the results, and the
+// every-row statement makes the partial claim that section forbids. So the only
+// permitted posture outside CONFORMANCE.md is a reference to it.
+func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
+	// Denials, case-folded and in the variants that actually occurred: the
+	// case-sensitive scan this replaces missed "Nothing here claims conformance of
+	// any kind" in the prototype note.
+	denials := []string{
+		"claims no conformance",
+		"claim no conformance",
+		"no conformance claim",
+		"nothing here claims",
+		"nothing claims",
+		"claims nothing",
+		"claims none",
+		"makes none",
+		"non-conformance-claiming",
+		"conformanceclaim\": \"none\"",
+		"claims conformance of any kind",
+	}
+	// Restatements: any sentence that makes the claim outside CONFORMANCE.md, and
+	// any fragment of §3.4.1's form appearing as a claim.
+	restatements := []string{
+		"this runtime claims",
+		"the runtime claims",
+		"runtime claims evaluator conformance",
+		"claims evaluator conformance",
+		"claims conformance to it",
+		"evaluator-conformance:",
+	}
+
+	inventory := claimSurfaces(t)
+	if len(inventory) < 12 {
+		t.Fatalf("the inventory is thinner than the surfaces that exist: %d entries", len(inventory))
+	}
+	for _, surface := range inventory {
+		t.Run(surface.name, func(t *testing.T) {
+			folded := strings.ToLower(surface.text)
+			if surface.mustReference && !strings.Contains(surface.text, "CONFORMANCE.md") {
+				t.Fatalf("the surface must say where the claim is stated: %q", surface.text)
 			}
-			if !strings.Contains(stdout, "CONFORMANCE.md") {
-				t.Fatalf("the surface must say where the claim and its scope are: %q", stdout)
+			for _, denial := range denials {
+				if strings.Contains(folded, denial) {
+					t.Fatalf("no surface may deny the claim (%q): %q", denial, surface.text)
+				}
 			}
-			for _, stale := range []string{"claims no conformance", "no conformance claim", "claims nothing", "makes none"} {
-				if strings.Contains(stdout, stale) {
-					t.Fatalf("the no-claim wording is no longer true (%q): %q", stale, stdout)
+			for _, restatement := range restatements {
+				if strings.Contains(folded, restatement) {
+					t.Fatalf("no surface outside CONFORMANCE.md may state the claim (%q): %q", restatement, surface.text)
 				}
 			}
 		})
 	}
+
 	// The command names are unchanged: the namespace is stability, not conformance.
 	_, stdout, _ := runTest(t, []string{"experimental", "--help"}, "")
 	for _, verb := range []string{"evaluate", "evaluate-corpus"} {
 		if !strings.Contains(stdout, verb) {
 			t.Fatalf("%q must still be spelled the same: %q", verb, stdout)
+		}
+	}
+}
+
+// The claim document is the one place exempt from the rule above, and it must in
+// fact make the claim: the inventory test would otherwise pass on a repository that
+// references a file stating nothing. The document's own §3.4.1 form is asserted in
+// internal/result; this row is the exemption's other half.
+func TestTheClaimDocumentIsTheOnePlaceThatStatesTheClaim(t *testing.T) {
+	document, err := os.ReadFile(filepath.Join("..", "..", result.EvaluationClaimReference))
+	if err != nil {
+		t.Fatalf("every surface references this file, so it must exist: %v", err)
+	}
+	text := strings.Join(strings.Fields(string(document)), " ")
+	if !strings.Contains(text, "claims **evaluator conformance**") {
+		t.Fatalf("%s must state the claim it is referenced for", result.EvaluationClaimReference)
+	}
+	for _, denial := range []string{"claims no conformance", "no conformance claim"} {
+		if strings.Contains(strings.ToLower(text), denial) {
+			t.Fatalf("%s must not deny the claim it makes (%q)", result.EvaluationClaimReference, denial)
 		}
 	}
 }
@@ -498,13 +658,17 @@ func TestExperimentalEvaluateCommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
 		t.Fatal(err)
 	}
-	// The payload names the surface's stability and the one claim this runtime
-	// makes, against the exact version §3.4.1 scopes a claim to (CONFORMANCE.md).
-	if output["experimental"] != true || output["conformanceClaim"] != result.EvaluationClaim {
-		t.Fatalf("evaluation output must name the surface and the claim: %v", output)
+	// The payload names the surface's stability and references the claim document;
+	// it states no part of the claim itself (§3.4.1), and it names the exact contract
+	// version applied.
+	if output["experimental"] != true || output["conformanceClaimReference"] != result.EvaluationClaimReference {
+		t.Fatalf("evaluation output must name the surface and reference the claim document: %v", output)
 	}
-	if output["conformanceClaim"] != "evaluator-conformance:0.2.0-draft" || output["evaluatorSpecVersion"] != "0.2.0-draft" {
-		t.Fatalf("the claim is scoped to one exact specVersion: %v", output)
+	if output["conformanceClaimReference"] != "CONFORMANCE.md" || output["evaluatorSpecVersion"] != "0.2.0-draft" {
+		t.Fatalf("the in-band member is a locator, beside the exact contract version: %v", output)
+	}
+	if _, present := output["conformanceClaim"]; present {
+		t.Fatalf("the removed conformanceClaim member must be gone (outputVersion %q): %v", result.OutputVersion, output)
 	}
 	disposition := output["disposition"].(map[string]any)
 	if disposition["kind"] != "outcome" || disposition["outcomeId"] != "decline-redirect" {
@@ -594,7 +758,7 @@ func TestExperimentalEvaluateRFC0008QuantifierFlag(t *testing.T) {
 	if marker < 0 || disposition < 0 || marker > disposition {
 		t.Fatalf("the prototype marker must precede the disposition: %q", stdout)
 	}
-	if !strings.Contains(stdout, "NOT valid under JPS 0.1.0-draft") {
+	if !strings.Contains(stdout, "NOT valid under JPS "+artifacts.EvaluatorDraftVersion) {
 		t.Fatalf("the human marker must name the specification version it is not valid under: %q", stdout)
 	}
 
@@ -614,7 +778,7 @@ func TestExperimentalEvaluateRFC0008QuantifierFlag(t *testing.T) {
 	if !strings.Contains(stdout, "DRAFT-RFC PROTOTYPE") || strings.Contains(stdout, "NOT valid") {
 		t.Fatalf("a pack using no draft operator must not be called invalid: %q", stdout)
 	}
-	if !strings.Contains(stdout, "uses no draft operator and remains a plain JPS 0.1.0-draft pack") {
+	if !strings.Contains(stdout, "uses no draft operator and remains a plain JPS "+artifacts.EvaluatorDraftVersion+" pack") {
 		t.Fatalf("the human marker must say the pack is unchanged by the flag: %q", stdout)
 	}
 	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", corePack, "--facts", coreFacts, "--rfc0008-quantifiers", "--format", "json"}, "")
@@ -658,13 +822,13 @@ func TestExperimentalEvaluateCorpusReportsResultsAndPointsAtTheClaim(t *testing.
 		t.Fatalf("exit=%d stderr=%q", code, stderr)
 	}
 	var output struct {
-		Status           string `json:"status"`
-		Experimental     bool   `json:"experimental"`
-		ConformanceClaim string `json:"conformanceClaim"`
-		Label            string `json:"label"`
-		SpecVersion      string `json:"specVersion"`
-		SuiteVersion     string `json:"suiteVersion"`
-		Summary          struct {
+		Status                    string `json:"status"`
+		Experimental              bool   `json:"experimental"`
+		ConformanceClaimReference string `json:"conformanceClaimReference"`
+		Label                     string `json:"label"`
+		SpecVersion               string `json:"specVersion"`
+		SuiteVersion              string `json:"suiteVersion"`
+		Summary                   struct {
 			Total, Passed, Mismatched int
 		} `json:"summary"`
 		Cases []struct {
@@ -679,8 +843,8 @@ func TestExperimentalEvaluateCorpusReportsResultsAndPointsAtTheClaim(t *testing.
 	if output.Status != "passed" || output.Summary.Total != 20 || output.Summary.Passed != 20 {
 		t.Fatalf("summary = %+v status=%q", output.Summary, output.Status)
 	}
-	if !output.Experimental || output.ConformanceClaim != result.EvaluationClaim || output.Label != result.EvaluationCorpusLabel {
-		t.Fatalf("the payload must name the claim and label the run as its evidence: %+v", output)
+	if !output.Experimental || output.ConformanceClaimReference != result.EvaluationClaimReference || output.Label != result.EvaluationCorpusLabel {
+		t.Fatalf("the payload must reference the claim document and label the run as its evidence: %+v", output)
 	}
 	if output.SpecVersion != artifacts.EvaluatorDraftVersion || output.SuiteVersion != artifacts.EvaluatorDraftVersion {
 		t.Fatalf("the corpus must name its own version: %+v", output)
@@ -820,40 +984,74 @@ func TestOversizedEvaluationInputIsAClassifiedPreflightError(t *testing.T) {
 }
 
 // The evaluator contract version is named in band and independently of the pack's
-// own: a pack declaring 0.1.0-draft is evaluated under the 0.2.0-draft contract,
-// and §11 says those semantics existed for no consumer under 0.1.0-draft, so the
-// pack's version alone would misdescribe the payload.
-func TestEvaluationNamesTheEvaluatorContractVersion(t *testing.T) {
-	set, err := artifacts.Load(artifacts.DraftVersion)
-	if err != nil {
-		t.Fatal(err)
-	}
-	valid, err := set.Case("valid/minimal-literal.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	packPath := writeFixture(t, valid)
+// own, and the two must agree for the pack to be evaluated at all: §11 makes the
+// declared value exact, so a pack declaring 0.1.0-draft is refused rather than
+// evaluated under the 0.2.0-draft contract, on this surface as in the engine.
+func TestEvaluationNamesTheEvaluatorContractVersionAndAdmitsOnlyThatVersion(t *testing.T) {
 	facts := filepath.Join(t.TempDir(), "facts.json")
 	if err := os.WriteFile(facts, []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", packPath, "--facts", facts, "--format", "json"}, "")
-	if code != 0 || stderr != "" {
-		t.Fatalf("exit=%d stderr=%q", code, stderr)
-	}
-	var output struct {
-		SpecVersion          string `json:"specVersion"`
-		EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
-	}
-	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
-		t.Fatal(err)
-	}
-	if output.SpecVersion != artifacts.DraftVersion {
-		t.Fatalf("specVersion is the pack's own: got %q", output.SpecVersion)
-	}
-	if output.EvaluatorSpecVersion != artifacts.EvaluatorDraftVersion {
-		t.Fatalf("evaluatorSpecVersion is the contract's: got %q", output.EvaluatorSpecVersion)
+	// The same fixture from each bundle: identical but for the one member §11 says
+	// re-declaration edits.
+	for _, version := range []string{artifacts.EvaluatorDraftVersion, artifacts.DraftVersion} {
+		set, err := artifacts.Load(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		valid, err := set.Case("valid/minimal-literal.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		packPath := writeFixture(t, valid)
+		code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", packPath, "--facts", facts, "--format", "json"}, "")
+
+		if version != artifacts.EvaluatorDraftVersion {
+			if code != result.ExitInvalid {
+				t.Fatalf("a pack declaring %s must be refused: exit=%d stdout=%q", version, code, stdout)
+			}
+			assertDiagnosticCode(t, stdout, "JPS-EVALUATION-PACK-SPEC-VERSION")
+			var refusal struct {
+				EvaluationError *struct {
+					Class string `json:"class"`
+					Phase string `json:"phase"`
+				} `json:"evaluationError"`
+				Diagnostics []struct {
+					Message string `json:"message"`
+				} `json:"diagnostics"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &refusal); err != nil {
+				t.Fatal(err)
+			}
+			if refusal.EvaluationError == nil || refusal.EvaluationError.Class != "pack-not-conformant" || refusal.EvaluationError.Phase != "preflight" {
+				t.Fatalf("the refusal must name its §8.4 class in band: %q", stdout)
+			}
+			// The remedy travels with the refusal: §11's rule, and the one edit.
+			for _, required := range []string{"§11", "re-declared", "one edit"} {
+				if !strings.Contains(refusal.Diagnostics[0].Message, required) {
+					t.Fatalf("the refusal must cite %q: %q", required, refusal.Diagnostics[0].Message)
+				}
+			}
+			continue
+		}
+
+		if code != 0 || stderr != "" {
+			t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+		}
+		var output struct {
+			SpecVersion          string `json:"specVersion"`
+			EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			t.Fatal(err)
+		}
+		if output.SpecVersion != artifacts.EvaluatorDraftVersion {
+			t.Fatalf("specVersion is the pack's own: got %q", output.SpecVersion)
+		}
+		if output.EvaluatorSpecVersion != artifacts.EvaluatorDraftVersion {
+			t.Fatalf("evaluatorSpecVersion is the contract's: got %q", output.EvaluatorSpecVersion)
+		}
 	}
 }
 

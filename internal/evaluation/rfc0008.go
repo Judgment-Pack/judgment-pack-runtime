@@ -133,14 +133,17 @@ func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
 }
 
 // draftPrototype builds the in-band marker every draft-grammar evaluation
-// carries. It states the one thing a reader must not miss: this pack is not
+// carries. It states the two things a reader must not miss: this pack is not
 // valid under the published specification, and the operators it uses are a
-// prototype of an open proposal that may never be accepted.
+// prototype of an open proposal that may never be accepted — and therefore that
+// the claim in CONFORMANCE.md does not cover this result, because a pack using a
+// draft operator is not an input the claimed class defines. The note is precise
+// about that scope rather than denying a claim this runtime makes elsewhere.
 func draftPrototype(packRoot map[string]any, specVersion string) *result.DraftPrototype {
 	operators := rfc0008Operators(packRoot)
 	note := fmt.Sprintf(
-		"Draft RFC 0008 (bounded collection quantifiers) prototype. The operators are a draft-RFC prototype, not part of JPS %s; a pack using one is NOT valid under it and spec validate rejects it. Nothing here claims conformance of any kind.",
-		specVersion)
+		"Draft RFC 0008 (bounded collection quantifiers) prototype. The operators are a draft-RFC prototype, not part of JPS %s; a pack using one is NOT valid under it and spec validate rejects it. The evaluator-conformance claim in CONFORMANCE.md, made against JPS Core %s, does not cover these operators: a pack using one is not an input the claimed class defines, so this result falls outside that claim's scope rather than being an exception to any requirement inside it.",
+		specVersion, result.EvaluatorSpecVersion)
 	if len(operators) == 0 {
 		note = fmt.Sprintf(
 			"Draft RFC 0008 (bounded collection quantifiers) prototype was enabled, but this pack uses no draft operator, so it remains a plain JPS %s pack.",

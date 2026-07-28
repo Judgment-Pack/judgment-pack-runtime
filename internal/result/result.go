@@ -8,8 +8,16 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
 
+// OutputVersion is the machine-output protocol version of every payload this
+// runtime writes. VERSIONING.md makes it a protocol version and not the CLI
+// release version, and requires a change that breaks machine-output
+// compatibility to increment it deliberately. It became "2" when the
+// experimental-evaluation payloads replaced their conformanceClaim member with
+// the conformanceClaimReference member of this file (ADR-0011): a consumer that
+// read the old member name finds no member of that name, which is a break and
+// not an added field. The CHANGELOG entry for that change carries the migration.
 const (
-	OutputVersion = "1"
+	OutputVersion = "2"
 	CLIName       = "judgment-pack"
 )
 
@@ -208,34 +216,43 @@ type Example struct {
 
 // --- experimental evaluation (ADR-0007; spec RFC 0006) ---
 
-// EvaluationClaim is carried by every experimental-evaluation payload and names
-// the one evaluator-conformance claim this runtime makes: the §3.4.1 claim
-// against the evaluator class of JPS Core 0.2.0-draft and the evaluation corpus
-// published for that exact specVersion (CONFORMANCE.md, ADR-0011). It was "none"
-// until that claim was made, and it names the version because a claim attaches to
-// one exact specVersion and is not inherited by any other (§11).
+// EvaluationClaimReference is carried by every experimental-evaluation payload,
+// and it is a locator rather than a claim: the conformance claim is stated, in
+// full and only, in CONFORMANCE.md, and this member says where to read it
+// (ADR-0011).
 //
-// It is a fact about this implementation, not about this payload's inputs. The
-// claim asserts compliance with §§7-10 for every input this evaluator admits; it
-// asserts nothing about the pack, the facts, the evidence, or the consequences of
-// acting on the disposition beside it (§3.5), and corpus results are its required
-// and non-exhaustive evidence (§3.4.1).
-const EvaluationClaim = "evaluator-conformance:0.2.0-draft"
+// It is deliberately not a restatement. §3.4.1 fixes the entire form a claim may
+// take — the class, one exact specVersion, the corpus version, the results
+// obtained, and in the claim's own words that every row of that corpus version
+// passed — so a payload member naming only a class and a version would carry part
+// of that form and omit the rest, which is the partial claim §3.4.1 forbids. The
+// payload therefore points at the one document that carries all of it and asserts
+// nothing about conformance itself. The version scope a consumer needs in band is
+// EvaluatorSpecVersion, which is a fact about the contract this evaluator applied
+// and not a claim about conformance to it.
+//
+// The member was "none" under ADR-0007 and ADR-0010, when denying a claim was
+// accurate; it is now a reference, and its member name changed with its meaning
+// (conformanceClaimReference, OutputVersion "2").
+const EvaluationClaimReference = "CONFORMANCE.md"
 
 // EvaluatorSpecVersion names the exact JPS Core version whose evaluator contract
 // this runtime's experimental evaluator applies: the §8.2 input preflight, the
 // §8.3 portable disposition, and the §8.4 error classes and their precedence.
 //
 // It is reported independently of the pack's own specVersion, and every
-// evaluation payload carries both, because they are two different facts. The
-// contract is applied to a pack of either bundled version whatever that pack
-// declares, and §11 is explicit that these semantics "existed for no consumer
-// under 0.1.0-draft" — so a payload naming only the pack's 0.1.0-draft would read
-// as a 0.1.0-draft disposition, which is not a thing that exists. It is also the
-// exact version this runtime's §3.4.1 claim is made against (EvaluationClaim,
-// CONFORMANCE.md), and it is the version scope of that claim: a pack declaring
-// 0.1.0-draft is evaluated under this contract, and nothing is claimed under
-// 0.1.0-draft, which defines no evaluator class.
+// evaluation payload carries both, because they are two different facts even
+// though this evaluator now requires them to be equal: §11 makes the declared
+// value exact, so a pack must declare this version to be evaluated at all, and a
+// pack declaring any other is refused as pack-not-conformant in the preflight
+// phase (evaluation.declaredSpecVersion). Keeping both members means a consumer
+// reads the contract that was applied from the payload rather than inferring it
+// from the pack, and it survives a later version that admits more than one.
+//
+// It is also the exact version the claim in CONFORMANCE.md is made against, and
+// therefore the version scope of that claim: nothing is claimed under
+// 0.1.0-draft, which defines no evaluator class and under which §3.4.1 forbids
+// such a claim outright.
 const EvaluatorSpecVersion = "0.2.0-draft"
 
 // HandoffTarget echoes the pack's declared escalation target when a handoff is
@@ -471,30 +488,29 @@ type DraftPrototype struct {
 	Note                      string   `json:"note"`
 }
 
-// Evaluation is the experimental-evaluation envelope. Experimental and
-// ConformanceClaim are always set so no consumer can read the payload as a
-// standard: this surface may change or be removed without compatibility
-// promise (ADR-0007).
+// Evaluation is the experimental-evaluation envelope. Experimental is always
+// true so no consumer can read the payload as a standard: this surface may change
+// or be removed without compatibility promise (ADR-0007).
+// ConformanceClaimReference is always set and always the same locator; it makes
+// no claim, and the claim it locates is CONFORMANCE.md's alone.
 // SpecVersion is the version the evaluated pack declares; EvaluatorSpecVersion is
-// the version of the evaluator contract applied to it (§8.2–§8.4). The two are
-// independent, and both are always present: a pack declaring 0.1.0-draft is
-// evaluated under the 0.2.0-draft contract, and §11 says those semantics existed
-// for no consumer under 0.1.0-draft, so the pack's version alone would misdescribe
-// the payload.
+// the version of the evaluator contract applied to it (§8.2–§8.4). Both are always
+// present, and this evaluator requires them to agree: §11 makes the declared value
+// exact, so a pack declaring another version is refused rather than evaluated.
 type Evaluation struct {
-	OutputVersion        string          `json:"outputVersion"`
-	Tool                 Tool            `json:"tool"`
-	Command              string          `json:"command"`
-	Status               string          `json:"status"`
-	Experimental         bool            `json:"experimental"`
-	ConformanceClaim     string          `json:"conformanceClaim"`
-	SpecVersion          string          `json:"specVersion"`
-	EvaluatorSpecVersion string          `json:"evaluatorSpecVersion"`
-	DraftPrototype       *DraftPrototype `json:"draftPrototype,omitempty"`
-	Disposition          Disposition     `json:"disposition"`
-	HandoffTarget        *HandoffTarget  `json:"handoffTarget,omitempty"`
-	Trace                []TraceEntry    `json:"trace"`
-	Artifact             *Artifact       `json:"artifact,omitempty"`
+	OutputVersion             string          `json:"outputVersion"`
+	Tool                      Tool            `json:"tool"`
+	Command                   string          `json:"command"`
+	Status                    string          `json:"status"`
+	Experimental              bool            `json:"experimental"`
+	ConformanceClaimReference string          `json:"conformanceClaimReference"`
+	SpecVersion               string          `json:"specVersion"`
+	EvaluatorSpecVersion      string          `json:"evaluatorSpecVersion"`
+	DraftPrototype            *DraftPrototype `json:"draftPrototype,omitempty"`
+	Disposition               Disposition     `json:"disposition"`
+	HandoffTarget             *HandoffTarget  `json:"handoffTarget,omitempty"`
+	Trace                     []TraceEntry    `json:"trace"`
+	Artifact                  *Artifact       `json:"artifact,omitempty"`
 }
 
 // EvaluationCorpusLabel labels every evaluation-corpus run this runtime reports.
@@ -526,23 +542,23 @@ type EvaluationCorpusCase struct {
 
 // EvaluationCorpus is one run of the evaluation corpus bundled for an exact
 // specification version. Like every experimental-evaluation payload it carries
-// Experimental and ConformanceClaim, and it additionally carries Label so no
-// reader can take a passing run for the claim of §3.4.1.
+// Experimental and ConformanceClaimReference, and it additionally carries Label so
+// no reader can take a passing run for the claim of §3.4.1.
 type EvaluationCorpus struct {
-	OutputVersion    string                 `json:"outputVersion"`
-	Tool             Tool                   `json:"tool"`
-	Command          string                 `json:"command"`
-	Status           string                 `json:"status"`
-	Experimental     bool                   `json:"experimental"`
-	ConformanceClaim string                 `json:"conformanceClaim"`
-	Label            string                 `json:"label"`
-	SpecVersion      string                 `json:"specVersion"`
-	SuiteVersion     string                 `json:"suiteVersion"`
-	CorpusStatus     string                 `json:"corpusStatus"`
-	CorpusLabel      string                 `json:"corpusLabel"`
-	Provenance       string                 `json:"provenance"`
-	Summary          SuiteSummary           `json:"summary"`
-	Cases            []EvaluationCorpusCase `json:"cases"`
+	OutputVersion             string                 `json:"outputVersion"`
+	Tool                      Tool                   `json:"tool"`
+	Command                   string                 `json:"command"`
+	Status                    string                 `json:"status"`
+	Experimental              bool                   `json:"experimental"`
+	ConformanceClaimReference string                 `json:"conformanceClaimReference"`
+	Label                     string                 `json:"label"`
+	SpecVersion               string                 `json:"specVersion"`
+	SuiteVersion              string                 `json:"suiteVersion"`
+	CorpusStatus              string                 `json:"corpusStatus"`
+	CorpusLabel               string                 `json:"corpusLabel"`
+	Provenance                string                 `json:"provenance"`
+	Summary                   SuiteSummary           `json:"summary"`
+	Cases                     []EvaluationCorpusCase `json:"cases"`
 }
 
 type OperationalError struct {
