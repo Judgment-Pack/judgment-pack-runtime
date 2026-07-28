@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.3.0 - 2026-07-28
 
 - Add a DRAFT-RFC PROTOTYPE of the specification's RFC 0008 (Draft), bounded collection quantifiers,
   behind the new `judgment-pack experimental evaluate --rfc0008-quantifiers` flag (ADR-0009, under
