@@ -2,6 +2,82 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- Bundle JPS `0.2.0-draft` alongside `0.1.0-draft`, imported from the specification tag
+  `v0.2.0-draft` with the maintainer tool. The new bundle adds the evaluation corpus of §3.4.1 — its
+  manifest, that manifest's schema, and the four pack fixtures its twenty rows name — which the
+  import tool now carries for any specification version that publishes one. `spec validate` accepts a
+  pack declaring either version and still selects the schema by the version the document itself
+  declares; `spec schema`, `spec test-conformance --spec-version`, `version`, `get_schema`, and
+  `describe_runtime` all reach both. **No default changes**: every surface that selects a version for
+  a caller who named none still selects `0.1.0-draft`. The release gate now verifies the lock of
+  every bundled version rather than only the default one, and the one `artifactProvenance` string in
+  the runtime description now describes every bundle, so a development snapshot in a
+  non-default version can no longer hide behind the default version's provenance.
+- Align the EXPERIMENTAL evaluator to the evaluator conformance class of Core `0.2.0-draft`
+  (ADR-0010), still under the `experimental` namespace and still **claiming nothing** — JPS §3.4.1
+  defines the one form an evaluator-conformance claim may take, this runtime makes none, and whether it
+  ever will is a separate decision a later ADR takes, not this change. The contract is applied to a
+  pack of either bundled version whatever that pack declares, so every evaluation payload and every
+  `evaluationError` now names the contract's own version in a new `evaluatorSpecVersion` member beside
+  the pack's `specVersion`: §11 says these semantics existed for no consumer under `0.1.0-draft`, so a
+  payload carrying only the pack's version would read as a `0.1.0-draft` disposition, which does not
+  exist. Three normative sections are implemented:
+  - **§8.2 input preflight.** Inputs are admitted in Core's order — pack, facts, evidence,
+    required-extension set — and the preflight completes before §8 step 1, so no result can outrace
+    an input error: a pack whose applicability is false, presented with an evidence document carrying
+    an undeclared key, is now the input error rather than the `not-applicable` disposition. An omitted
+    evidence document is the implicit empty object, the only form its absence takes.
+  - **§8.3 portable disposition.** Under `--format json` without `--pretty`, the `disposition` member
+    is now written in its RFC 8785 canonical form, produced by a new stdlib-only `internal/jcs` encoder
+    over the strings, arrays, and objects a disposition is made of. `--pretty` indents the whole
+    payload and reaches inside that member too, so under it the member order and both sets stay
+    canonical and the exact bytes do not appear; §8.3 requires canonicalization where a byte comparison
+    is required, so a comparison recanonicalizes either side it did not produce. `handoff` gains
+    `triggeredBy`, the retained reasons that triggered a request, present exactly when the state is
+    `requested`. Canonicalization is also the one place that refuses a disposition §8.3 forbids, so no
+    value assembled outside the engine can violate any invariant that section states about the
+    disposition alone: the `kind`, `handoff.state`, and reason vocabularies, its three presence rules,
+    the exact reason set of a `not-applicable` result, and `triggeredBy` being a subset of `reasons`.
+    **Breaking for a consumer of the experimental payload:** the disposition no longer echoes the
+    pack's escalation target, which §8.3 keeps out of it; the target moved to a sibling
+    `handoffTarget` member. Human output is unchanged prose, now naming the triggering reasons.
+  - **§8.4 error contract.** Every refused evaluation reports exactly one of the four Core classes in
+    band, as a new `evaluationError` member carrying `class` and `phase`, with no disposition at all;
+    the existing `JPS-*` codes stay beside the class as the finer detail. The classes are evaluated in
+    Core's fixed order, which is the preflight order, so an unsupported required extension is now
+    reported as `unsupported-required-extension` rather than folded into
+    `JPS-EVALUATION-PACK-NOT-CONFORMANT`, and a malformed input outranks it on the same inputs.
+    Reaching a limit while admitting an input is `malformed-input`, and that now includes the input
+    byte limit on every surface: the CLI reports an oversized input inside the preflight instead of
+    refusing it at the read, so it carries a class and takes its place in the fixed order — an
+    oversized facts document no longer outranks a non-conformant pack. `resource-exhaustion` is the one
+    class of the evaluation phase, and in this runtime it is reached only by the
+    `--rfc0008-quantifiers` work budget: no evaluation-work charge is levied on the Core path, which
+    the README now states. Both surfaces report the same envelope: an `experimental_evaluate` refusal
+    is an in-band MCP tool error whose `structuredContent` is the `evaluationError` payload the CLI
+    writes, so the class, the phase, and `evaluatorSpecVersion` are machine-readable there too rather
+    than sentences a client has to classify itself.
+  - **§8.2 on the MCP surface.** `experimental_evaluate` now decodes each document argument's presence
+    separately from its value, so the two meanings §8.2 gives an absent and an empty evidence document
+    stay apart on the wire: omitting the key is the implicit empty object and evaluates, while a key
+    present with an empty string is a supplied document and is `malformed-input`. A present-but-empty
+    `pack` or `facts` likewise enters the preflight — `pack-not-conformant` and `malformed-input` —
+    instead of being reported as an unclassified missing argument, an absent required key stays an
+    invocation failure with no class, and an explicit `null` is rejected as the argument-type error the
+    declared string schema makes it.
+- Add `judgment-pack experimental evaluate-corpus`, which runs the bundled evaluation corpus for one
+  exact specification version and reports every row: the disposition compared as §8.3 defines
+  disposition equality — both sides through the same canonicalizer, so a set's stored order is not a
+  difference — or the expected §8.4 class and phase. Its output is labelled `corpus results, no
+  conformance claim` in both formats, and a mismatch exits 1. **This is not an
+  evaluator-conformance claim and does not make one**; §3.4.1 defines the only form such a claim may
+  take, and whether this runtime ever makes one is a separate decision. With that said: the bundled
+  `suiteVersion` `0.2.0-draft` corpus runs clean in this build, 20 rows and 20 passed — evidence a
+  claim would require, not a claim — and run the verb for the current result, since a mismatching row
+  would decide nothing by itself (§3.4). The verb is CLI only; the MCP surface does not expose it.
+
 ## 0.3.0 - 2026-07-28
 
 - Add a DRAFT-RFC PROTOTYPE of the specification's RFC 0008 (Draft), bounded collection quantifiers,

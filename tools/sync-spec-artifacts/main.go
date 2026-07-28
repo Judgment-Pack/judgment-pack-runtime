@@ -22,12 +22,26 @@ import (
 
 const sourceRepository = "https://github.com/Judgment-Pack/judgment-pack-spec"
 
-var fullCommitPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+var (
+	fullCommitPattern     = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+	evaluationPackPattern = regexp.MustCompile(`^packs/[a-z0-9][a-z0-9-]*\.json$`)
+)
 
 type manifest struct {
 	SpecVersion string `json:"specVersion"`
 	Cases       []struct {
 		Path string `json:"path"`
+	} `json:"cases"`
+}
+
+// evaluationManifest is the evaluation corpus index. It appears only in
+// specification versions that define the evaluator conformance class, so its
+// absence is not an error; each case names one pack fixture under packs/.
+type evaluationManifest struct {
+	SuiteVersion string `json:"suiteVersion"`
+	SpecVersion  string `json:"specVersion"`
+	Cases        []struct {
+		Pack string `json:"pack"`
 	} `json:"cases"`
 }
 
@@ -132,6 +146,12 @@ func run(source, destination, sourceRef string, allowDirty bool) error {
 		})
 	}
 
+	evaluationFiles, err := evaluationCorpusFiles(sourceRoot, suite.SpecVersion)
+	if err != nil {
+		return err
+	}
+	files = append(files, evaluationFiles...)
+
 	for index := range files {
 		if files[index].data == nil {
 			files[index].data, err = readRegular(files[index].sourcePath)
@@ -186,6 +206,61 @@ func run(source, destination, sourceRef string, allowDirty bool) error {
 		return err
 	}
 	fmt.Printf("Imported JPS %s (%d files, %s)\n", suite.SpecVersion, len(files), lock.BundleDigest.Value)
+	return nil
+}
+
+// evaluationCorpusFiles lists the evaluation-corpus artifacts to import: the
+// manifest, its schema, and every pack fixture a case names. A specification
+// version that publishes no evaluation corpus contributes nothing, which is how
+// an older version whose Core defines no evaluator class still imports.
+func evaluationCorpusFiles(sourceRoot, specVersion string) ([]importFile, error) {
+	root := filepath.Join(sourceRoot, "conformance", "evaluation")
+	manifestPath := filepath.Join(root, "manifest.json")
+	if _, err := os.Lstat(manifestPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	manifestBytes, err := readRegular(manifestPath)
+	if err != nil {
+		return nil, err
+	}
+	var corpus evaluationManifest
+	if err := json.Unmarshal(manifestBytes, &corpus); err != nil {
+		return nil, fmt.Errorf("decode evaluation manifest: %w", err)
+	}
+	if corpus.SuiteVersion == "" || len(corpus.Cases) == 0 {
+		return nil, errors.New("evaluation manifest does not identify a non-empty corpus")
+	}
+	if corpus.SpecVersion != specVersion {
+		return nil, fmt.Errorf("evaluation corpus targets JPS %s, not %s", corpus.SpecVersion, specVersion)
+	}
+	files := []importFile{
+		{sourcePath: manifestPath, targetPath: path.Join("evaluation", "manifest.json"), data: manifestBytes},
+		{sourcePath: filepath.Join(root, "manifest.schema.json"), targetPath: path.Join("evaluation", "manifest.schema.json")},
+	}
+	seen := map[string]bool{}
+	for _, item := range corpus.Cases {
+		if err := validateEvaluationPackPath(item.Pack); err != nil {
+			return nil, err
+		}
+		if seen[item.Pack] {
+			continue
+		}
+		seen[item.Pack] = true
+		files = append(files, importFile{
+			sourcePath: filepath.Join(root, filepath.FromSlash(item.Pack)),
+			targetPath: path.Join("evaluation", item.Pack),
+		})
+	}
+	return files, nil
+}
+
+func validateEvaluationPackPath(value string) error {
+	if !evaluationPackPattern.MatchString(value) || strings.ContainsAny(value, "\\\x00") || path.IsAbs(value) || path.Clean(value) != value {
+		return fmt.Errorf("unsafe pack path in evaluation manifest: %q", value)
+	}
 	return nil
 }
 

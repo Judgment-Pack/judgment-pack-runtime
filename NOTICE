@@ -2,8 +2,9 @@ judgment-pack (Judgment Pack reference runtime)
 Copyright 2026 Brian Jin
 
 This product embeds unmodified specification artifacts from the Judgment Pack
-Specification: the JSON Schema, the conformance manifest and its schema, and the
-conformance case corpus.
+Specification: the JSON Schema, the conformance manifest and its schema, the
+conformance case corpus, and — for a specification version that publishes one —
+the evaluation corpus, its manifest schema, and the pack fixtures it names.
 
   Judgment Pack Specification
   Copyright 2026 Brian Jin

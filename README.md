@@ -9,16 +9,28 @@
 `judgment-pack` is the vendor-neutral **reference runtime** for the Judgment Pack Specification
 (JPS). It is a reference implementation, not the only valid one: the normative specification,
 schemas, and conformance corpus are owned by the separate
-[`judgment-pack-spec`](https://github.com/Judgment-Pack/judgment-pack-spec) repository, and any
-independent implementation that passes the published conformance corpus is equally valid.
+[`judgment-pack-spec`](https://github.com/Judgment-Pack/judgment-pack-spec) repository, and an
+independent implementation is judged against the complete normative requirements of the conformance
+class it claims — not against this runtime. Results from the corpus published for the exact version
+it names are required evidence for such a claim and are not exhaustive evidence of it (§3.4.1).
 
 The runtime **validates documents**. It does not fetch a source, authorize an action, or establish
-truth, organizational authority, safety, or operational fitness. This matches the scope of JPS
-`0.1.0-draft`, which defines carrier, structural, and semantic document conformance only and
-defines no evaluator conformance class. Its one evaluation surface is explicitly EXPERIMENTAL:
-`judgment-pack experimental evaluate` (and the `experimental_evaluate` MCP tool) runs the
-specification's §§7–8 experiment per [ADR-0007](docs/adr/0007-experimental-evaluator.md), claims
-no conformance, and may change or be removed without compatibility promise.
+truth, organizational authority, safety, or operational fitness. It bundles two specification
+versions, `0.1.0-draft` and `0.2.0-draft`, and validates a document against the exact version that
+document declares; `0.1.0-draft` defines carrier, structural, and semantic document conformance
+only, and `0.2.0-draft` changes no part of the document format.
+
+Its one evaluation surface is explicitly EXPERIMENTAL: `judgment-pack experimental evaluate` (and
+the `experimental_evaluate` MCP tool) applies the specification's §§7–8 resolution model per
+[ADR-0007](docs/adr/0007-experimental-evaluator.md), and may change or be removed without
+compatibility promise. That surface is **aligned**, per
+[ADR-0010](docs/adr/0010-evaluator-aligned-to-core-0.2.0-draft.md), to the evaluator conformance class
+Core `0.2.0-draft` adds — the §8.2 input preflight, the §8.3 portable disposition with its RFC 8785
+byte agreement, and the §8.4 error classes and their fixed precedence — and alignment is not a
+claim. **This runtime claims no evaluator conformance.** JPS §3.4.1 defines exactly one form such a
+claim may take; making one is a separate decision that no command, payload, or sentence here takes.
+`judgment-pack experimental evaluate-corpus` runs the bundled evaluation corpus and reports its
+rows, labelled `corpus results, no conformance claim`.
 
 That command carries one further opt-in, `--rfc0008-quantifiers`, which is a **draft-RFC
 prototype** per [ADR-0009](docs/adr/0009-draft-rfc-quantifier-prototype.md): it admits the
@@ -43,6 +55,7 @@ judgment-pack spec examples [name]
 judgment-pack mcp
 judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL; no conformance claim)
 judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE)
+judgment-pack experimental evaluate-corpus   (EXPERIMENTAL; corpus results, no conformance claim)
 ```
 
 The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the
@@ -140,17 +153,32 @@ Standard input is accepted explicitly with `-`:
 ./bin/judgment-pack spec validate --format json - < pack.json
 ```
 
-Run the exact bundled JPS `v0.1.0-draft` corpus:
+Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an exact bundled version:
 
 ```bash
 ./bin/judgment-pack spec test-conformance
 ./bin/judgment-pack spec test-conformance --format json
+./bin/judgment-pack spec test-conformance --spec-version 0.2.0-draft
+```
+
+Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimental evaluator. Every
+row is compared by disposition equality as §8.3 defines it — both the row's expectation and the
+produced disposition go through the same RFC 8785 canonicalizer, so a set's stored order is not a
+difference — or by its expected §8.4 error class and phase.
+This reports results and claims nothing; a mismatching row decides nothing by itself, because §3.4
+makes a divergence as likely to be a defect in the row as in this implementation:
+
+```bash
+./bin/judgment-pack experimental evaluate-corpus
+./bin/judgment-pack experimental evaluate-corpus --format json
+./bin/judgment-pack experimental evaluate-corpus --spec-version 0.2.0-draft
 ```
 
 Inspect or copy the bundled schema without network access:
 
 ```bash
 ./bin/judgment-pack spec schema 0.1.0-draft
+./bin/judgment-pack spec schema 0.2.0-draft
 ./bin/judgment-pack spec schema 0.1.0-draft --write schema.json
 ./bin/judgment-pack spec schema 0.1.0-draft --write -
 ```
@@ -177,6 +205,75 @@ an unqualified “valid document” message.
 The public MVP supports no JPS extensions. A structurally and semantically conforming document that
 requires an extension is therefore reported as `unsupported`. Extension code is never discovered,
 downloaded, installed, or executed during validation.
+
+## Experimental evaluation behavior
+
+The evaluator is aligned to the evaluator conformance class of JPS Core `0.2.0-draft` and claims
+nothing under it.
+
+That contract is applied to a pack of **either** bundled version, whatever the pack itself declares:
+the §8.2 preflight, the §8.3 disposition shape, and the §8.4 error classes are `0.2.0-draft`'s, and
+§11 says those semantics "existed for no consumer under `0.1.0-draft`". Every evaluation payload
+therefore names both versions — `specVersion` is the pack's own, and `evaluatorSpecVersion` is the
+contract's — so a `0.1.0-draft` pack's result is never read as a `0.1.0-draft` disposition, which is
+not a thing that exists. A refusal names it too, on `evaluationError.evaluatorSpecVersion`. Naming the
+version is not a claim under it.
+
+**Inputs are admitted before anything is resolved (§8.2).** They are validated in one order — the
+pack, then the facts document, then the evidence-availability document, then the pack's
+`metadata.requiredExtensions` against the caller's `--supported-extension` set — and that validation
+finishes before §8 step 1 runs. An omitted `--evidence` document is the implicit empty object, which
+makes every declared requirement `unknown`; that is the only form its absence takes, and it is not an
+error. An evidence input that is not a JSON object, names an undeclared requirement, or carries a
+value outside `present`, `absent`, and `unknown` is refused.
+
+**A produced result is the portable disposition (§8.3).** Under `--format json` without `--pretty`
+the `disposition` member is written in its RFC 8785 canonical form: members ordered by name, both sets
+sorted and duplicate-free, absent members omitted rather than serialized as `null`, and no whitespace.
+`--pretty` indents the whole payload and that indentation reaches inside this member too, so the member
+order and both sets stay canonical but those exact bytes are not present. §8.3 requires
+canonicalization "where a byte comparison is required", so a byte comparison against another
+implementation must recanonicalize either side it did not itself produce; under `--pretty` it must.
+The pack's configured escalation target is reported beside the disposition, in `handoffTarget`, never
+inside it. Human output is unchanged prose.
+
+**A refusal is an evaluation error, and never a disposition (§8.4).** Every evaluation this runtime
+refuses reports exactly one class in band — `evaluationError.class`, with `evaluationError.phase` and
+`evaluationError.evaluatorSpecVersion` — and no disposition at all, not even a partial one. That
+includes every §8.2 preflight condition on every surface: a document above the byte limit and an empty
+supplied evidence document are classed and ordered like any other, not refused ahead of the preflight.
+The finer `JPS-*` code stays beside the class as its detail. An invocation that never became an
+evaluation — a missing flag, an input this runtime could not read as a bounded regular file — is an
+ordinary operational error and carries no class, because §8.4 classes evaluation conditions and leaves
+transport undefined. The four classes are evaluated in Core's fixed order, which is the preflight order
+above:
+
+| Class | Reached when |
+| --- | --- |
+| `pack-not-conformant` | the pack input is not a semantically conforming document, at any layer |
+| `malformed-input` | an input failed the preflight: unusable JSON, a non-object or invalid evidence document, an undeclared evidence key, or a document limit reached while admitting an input |
+| `unsupported-required-extension` | the pack requires a capability this caller does not support |
+| `resource-exhaustion` | a documented limit was reached while evaluating an admitted input — which, in this runtime, means the `--rfc0008-quantifiers` work budget and nothing else |
+
+The phase split is the one §10 draws: a limit reached while *admitting* an input is
+`malformed-input`, because the input was refused rather than partly processed, and
+`resource-exhaustion` is reserved for a limit reached while *evaluating* an input already admitted.
+This runtime's admission limits are the carrier limits listed under [security
+defaults](#security-defaults). The 250,000-node cap is one of them, and its §10 category is stated
+rather than left implicit: it is a budget over the whole parsed document, so it is a document-size
+limit like bytes and depth, reached while admitting an input, and it is reported as
+`malformed-input` in the `preflight` phase.
+
+Two limits §10 asks an implementation claiming the class to define and document are stated here
+exactly, including where this runtime does not have one. **No evaluation-work charge is levied outside
+`--rfc0008-quantifiers`**: the 100,000-unit budget belongs to that flag's accounting model (ADR-0009)
+and is charged only under it, so ordinary Core condition evaluation charges no work at all and
+`resource-exhaustion` is reachable only under that opt-in. **No per-collection size limit is enforced
+during evaluation on the Core path** either; a collection is bounded only at admission, by the carrier
+limits above. Limits are not portable: two implementations may set different ones, and an input above
+either is outside the portable claim (§10). Being able to reach a class is not the same as satisfying
+§10's define-and-document requirement for the class — this runtime claims nothing under §3.4, and the
+gap is stated here rather than closed.
 
 ## Process contract
 
@@ -216,20 +313,23 @@ See [SECURITY.md](SECURITY.md) for reporting and boundary details.
 
 ## Artifact provenance
 
-Runtime validation uses only files embedded in the binary and verified against
-[`internal/artifacts/jps/0.1.0-draft/lock.json`](internal/artifacts/jps/0.1.0-draft/lock.json).
-The lock records the source repository, exact commit/ref and source state, plus SHA-256 and size
-metadata for all 50 imported files. A development snapshot remains visibly labelled
-`unreleased-local-snapshot` and cannot pass the release gate.
+Runtime validation uses only files embedded in the binary and verified against one lock per bundled
+specification version:
+[`internal/artifacts/jps/0.1.0-draft/lock.json`](internal/artifacts/jps/0.1.0-draft/lock.json) and
+[`internal/artifacts/jps/0.2.0-draft/lock.json`](internal/artifacts/jps/0.2.0-draft/lock.json).
+Each lock records the source repository, exact commit/ref and source state, plus SHA-256 and size
+metadata for every imported file — 50 for `0.1.0-draft`, and 56 for `0.2.0-draft`, whose bundle adds
+the evaluation corpus of §3.4.1 (its manifest, that manifest's schema, and the four pack fixtures its
+rows name). The release gate checks every bundle: a development snapshot remains visibly labelled
+`unreleased-local-snapshot` and cannot pass it.
 
-> **Provenance note.** The embedded bundle is pinned to an exact commit of
-> `Judgment-Pack/judgment-pack-spec` rather than to a tag. The specification's only tag,
-> `v0.1.0-draft`, carries schema `$id`s under a temporary repository-hosted URL; the permanent
-> `https://judgmentpack.org/schema/` identifiers exist on `main` but cannot be published under a
-> second tag, because the specification's release tooling requires the tag string to equal
-> `specVersion`. Pinning the commit is an explicitly supported immutable reference here — the
-> release gate accepts a full-length commit digest — and the pin moves to a tag once the
-> specification publishes a version carrying the permanent identifiers.
+> **Provenance note.** The `0.2.0-draft` bundle is pinned to the specification tag `v0.2.0-draft`.
+> The `0.1.0-draft` bundle stays pinned to an exact commit rather than to its tag: the `v0.1.0-draft`
+> tag carries schema `$id`s under a temporary repository-hosted URL, while the permanent
+> `https://judgmentpack.org/schema/` identifiers landed after it, and the specification's release
+> tooling requires the tag string to equal `specVersion`, so they cannot be published under a second
+> `0.1.0-draft` tag. A full-length commit digest is an explicitly supported immutable reference here,
+> and the release gate accepts it.
 
 Artifact bundle and conformance-corpus digests use `sha256-length-prefixed-v1`: each sorted path and
 file body is encoded as an unsigned 64-bit big-endian byte length followed by those exact bytes.

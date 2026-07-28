@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -583,5 +584,284 @@ func TestExperimentalEvaluateRFC0008QuantifierFlag(t *testing.T) {
 	}
 	if output.DraftPrototype == nil || !output.DraftPrototype.PackValidUnderSpecVersion || len(output.DraftPrototype.Operators) != 0 {
 		t.Fatalf("the JSON marker must agree with the human one: %+v", output.DraftPrototype)
+	}
+}
+
+// The experimental corpus verb runs the bundled evaluation corpus and labels the
+// run as results only. Nothing it prints may read as a conformance claim: JPS
+// §3.4.1 defines the only form such a claim may take, and this runtime makes
+// none.
+func TestExperimentalEvaluateCorpusReportsResultsAndClaimsNothing(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate-corpus"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "corpus results, no conformance claim") {
+		t.Fatalf("the run must be labeled results-only: %q", stdout)
+	}
+	if !strings.Contains(stdout, "passed: 20/20 corpus rows matched their expectation") {
+		t.Fatalf("every bundled row must run: %q", stdout)
+	}
+	for _, forbidden := range []string{"conformant", "conformance claim of", "claims conformance", "is evaluator conforming"} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("corpus output must not imply a claim (%q): %q", forbidden, stdout)
+		}
+	}
+
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate-corpus", "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var output struct {
+		Status           string `json:"status"`
+		Experimental     bool   `json:"experimental"`
+		ConformanceClaim string `json:"conformanceClaim"`
+		Label            string `json:"label"`
+		SpecVersion      string `json:"specVersion"`
+		SuiteVersion     string `json:"suiteVersion"`
+		Summary          struct {
+			Total, Passed, Mismatched int
+		} `json:"summary"`
+		Cases []struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+			Actual string `json:"actual"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Status != "passed" || output.Summary.Total != 20 || output.Summary.Passed != 20 {
+		t.Fatalf("summary = %+v status=%q", output.Summary, output.Status)
+	}
+	if !output.Experimental || output.ConformanceClaim != "none" || output.Label != result.EvaluationCorpusLabel {
+		t.Fatalf("the payload must claim nothing in band: %+v", output)
+	}
+	if output.SpecVersion != artifacts.EvaluatorDraftVersion || output.SuiteVersion != artifacts.EvaluatorDraftVersion {
+		t.Fatalf("the corpus must name its own version: %+v", output)
+	}
+	// Each row reports the canonical bytes it produced, which is what a harness
+	// in another project compares against its own implementation.
+	for _, item := range output.Cases {
+		if item.Status != "passed" || !strings.HasPrefix(item.Actual, `{"handoff":`) {
+			t.Fatalf("row %s = %+v", item.ID, item)
+		}
+	}
+
+	// A version whose Core defines no evaluator class publishes no corpus.
+	code, stdout, _ = runTest(t, []string{"experimental", "evaluate-corpus", "--spec-version", artifacts.DraftVersion, "--format", "json"}, "")
+	if code != result.ExitUnsupported {
+		t.Fatalf("expected an unsupported result, got exit=%d: %q", code, stdout)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-CAPABILITY-EVALUATION-CORPUS")
+}
+
+// A refused evaluation names its JPS §8.4 class and phase in band and carries no
+// disposition at all. The finer JPS-* code stays beside the class as its detail.
+func TestExperimentalEvaluateReportsTheEvaluationErrorClass(t *testing.T) {
+	pack := filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json")
+	dir := t.TempDir()
+	facts := filepath.Join(dir, "facts.json")
+	if err := os.WriteFile(facts, []byte(`{"request":{"type":"data-access"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evidence := filepath.Join(dir, "evidence.json")
+	if err := os.WriteFile(evidence, []byte(`{"not-a-requirement":"present"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--evidence", evidence, "--format", "json"}, "")
+	if code != result.ExitInvocation || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var output struct {
+		Status          string `json:"status"`
+		EvaluationError *struct {
+			Class string `json:"class"`
+			Phase string `json:"phase"`
+		} `json:"evaluationError"`
+		Disposition any `json:"disposition"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.EvaluationError == nil || output.EvaluationError.Class != "malformed-input" || output.EvaluationError.Phase != "preflight" {
+		t.Fatalf("the payload must name the §8.4 class and phase: %q", stdout)
+	}
+	if output.Disposition != nil {
+		t.Fatalf("an evaluation error carries no disposition: %q", stdout)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-EVALUATION-EVIDENCE-KEY")
+
+	code, _, stderr = runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--evidence", evidence}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("exit=%d", code)
+	}
+	if !strings.Contains(stderr, "evaluation error: malformed-input (preflight phase; JPS-EVALUATION-EVIDENCE-KEY)") {
+		t.Fatalf("human output must name the class: %q", stderr)
+	}
+}
+
+// The byte limit is a §8.2 preflight condition, not a read failure, so the CLI
+// hands an oversized input to the engine instead of refusing it first. §8.4 then
+// classes it and orders it: an oversized facts document is malformed-input, and a
+// non-conformant pack presented with one is still pack-not-conformant, which the
+// old read-time refusal reported as an unclassified failure.
+func TestOversizedEvaluationInputIsAClassifiedPreflightError(t *testing.T) {
+	pack := filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json")
+	dir := t.TempDir()
+	oversized := filepath.Join(dir, "facts.json")
+	// One byte past the documented hard limit is the whole of what makes it
+	// oversized; the content beyond the opening brace never has to be JSON.
+	bulk := append([]byte(`{"pad":"`), bytes.Repeat([]byte("x"), int(carrier.HardMaxBytes))...)
+	if err := os.WriteFile(oversized, append(bulk, []byte(`"}`)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	notConformant := filepath.Join(dir, "pack.json")
+	if err := os.WriteFile(notConformant, []byte(`{"specVersion":"0.2.0-draft"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, testCase := range []struct {
+		name      string
+		pack      string
+		wantClass string
+		wantCode  string
+		wantExit  int
+	}{
+		{
+			name:      "a conformant pack with an oversized facts document",
+			pack:      pack,
+			wantClass: "malformed-input",
+			wantCode:  "JPS-RESOURCE-INPUT-BYTE-LIMIT",
+			wantExit:  result.ExitIO,
+		},
+		{
+			name:      "a non-conformant pack outranks the oversized facts document",
+			pack:      notConformant,
+			wantClass: "pack-not-conformant",
+			wantCode:  "JPS-EVALUATION-PACK-NOT-CONFORMANT",
+			wantExit:  result.ExitInvalid,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", testCase.pack, "--facts", oversized, "--format", "json"}, "")
+			if code != testCase.wantExit || stderr != "" {
+				t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, first(stdout, 400))
+			}
+			var output struct {
+				EvaluationError *struct {
+					Class                string `json:"class"`
+					Phase                string `json:"phase"`
+					EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
+				} `json:"evaluationError"`
+				Disposition any `json:"disposition"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+				t.Fatal(err)
+			}
+			if output.EvaluationError == nil || output.EvaluationError.Class != testCase.wantClass || output.EvaluationError.Phase != "preflight" {
+				t.Fatalf("the payload must name the §8.4 class and phase: %q", first(stdout, 400))
+			}
+			if output.EvaluationError.EvaluatorSpecVersion != artifacts.EvaluatorDraftVersion {
+				t.Fatalf("the class came from the %s contract: %q", artifacts.EvaluatorDraftVersion, first(stdout, 400))
+			}
+			if output.Disposition != nil {
+				t.Fatalf("an evaluation error carries no disposition: %q", first(stdout, 400))
+			}
+			assertDiagnosticCode(t, stdout, testCase.wantCode)
+		})
+	}
+}
+
+// The evaluator contract version is named in band and independently of the pack's
+// own: a pack declaring 0.1.0-draft is evaluated under the 0.2.0-draft contract,
+// and §11 says those semantics existed for no consumer under 0.1.0-draft, so the
+// pack's version alone would misdescribe the payload.
+func TestEvaluationNamesTheEvaluatorContractVersion(t *testing.T) {
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := set.Case("valid/minimal-literal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	packPath := writeFixture(t, valid)
+	facts := filepath.Join(t.TempDir(), "facts.json")
+	if err := os.WriteFile(facts, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", packPath, "--facts", facts, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var output struct {
+		SpecVersion          string `json:"specVersion"`
+		EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.SpecVersion != artifacts.DraftVersion {
+		t.Fatalf("specVersion is the pack's own: got %q", output.SpecVersion)
+	}
+	if output.EvaluatorSpecVersion != artifacts.EvaluatorDraftVersion {
+		t.Fatalf("evaluatorSpecVersion is the contract's: got %q", output.EvaluatorSpecVersion)
+	}
+}
+
+// --format json writes the disposition as the exact RFC 8785 canonical bytes §8.3
+// compares. --pretty re-indents the whole payload, and encoding/json re-indents a
+// Marshaler's output too, so those exact bytes are not present under it: the
+// member order and both sets survive, the whitespace does not. Both halves are
+// pinned here because both are documented, and §8.3 requires canonicalization
+// where a byte comparison is required — so a comparison recanonicalizes.
+func TestPrettyKeepsDispositionMemberOrderButNotItsCanonicalBytes(t *testing.T) {
+	pack := filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json")
+	dir := t.TempDir()
+	facts := filepath.Join(dir, "facts.json")
+	if err := os.WriteFile(facts, []byte(`{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, plain, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var produced struct {
+		Disposition result.Disposition `json:"disposition"`
+	}
+	if err := json.Unmarshal([]byte(plain), &produced); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := produced.Disposition.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plain, string(canonical)) {
+		t.Fatalf("the canonical bytes must appear verbatim without --pretty: %s not in %s", canonical, plain)
+	}
+
+	code, pretty, stderr := runTest(t, []string{"--pretty", "experimental", "evaluate", pack, "--facts", facts, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if strings.Contains(pretty, string(canonical)) {
+		t.Fatal("--pretty re-indents the disposition, so the documented caveat is what holds; if this now passes, the caveat can be dropped")
+	}
+	var indented struct {
+		Disposition result.Disposition `json:"disposition"`
+	}
+	if err := json.Unmarshal([]byte(pretty), &indented); err != nil {
+		t.Fatal(err)
+	}
+	recanonicalized, err := indented.Disposition.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(recanonicalized) != string(canonical) {
+		t.Fatalf("recanonicalizing the --pretty payload must recover the same bytes: %s, want %s", recanonicalized, canonical)
 	}
 }

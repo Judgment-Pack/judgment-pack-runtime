@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
@@ -38,6 +39,35 @@ func (a *App) operational(command, format string, exitCode int, code, message st
 		fmt.Fprintln(a.errOut, "error:", display.Sanitize(message))
 	}
 	return &handledExit{code: exitCode}
+}
+
+// evaluationFailure reports one refused evaluation. When the refusal is an
+// evaluation error of JPS Core §8.4 it names the class and the phase in band —
+// as the evaluationError member in JSON, on its own line in human output — with
+// this runtime's finer diagnostic code beside them as the detail §8.4 admits. A
+// refusal §8.4 does not classify is reported as any other operational error.
+// No disposition accompanies either.
+func (a *App) evaluationFailure(command, format string, failure *evaluation.Failure) error {
+	if failure.Class == "" {
+		return a.operational(command, format, failure.ExitCode, failure.Code, failure.Message)
+	}
+	status := "error"
+	if failure.ExitCode == result.ExitUnsupported {
+		status = "unsupported"
+	}
+	if format == "json" {
+		if err := a.writeJSON(result.NewEvaluationError(command, status, failure.Class, failure.Phase, failure.Code, failure.Message)); err != nil {
+			return &handledExit{code: result.ExitIO}
+		}
+		return &handledExit{code: failure.ExitCode}
+	}
+	stream := a.errOut
+	if status == "unsupported" {
+		stream = a.out
+	}
+	fmt.Fprintf(stream, "%s: %s\n", status, display.Sanitize(failure.Message))
+	fmt.Fprintf(stream, "evaluation error: %s (%s phase; %s)\n", failure.Class, failure.Phase, failure.Code)
+	return &handledExit{code: failure.ExitCode}
 }
 
 func (a *App) renderValidation(format string, output result.Validation) error {
@@ -132,11 +162,44 @@ func (a *App) renderExample(format string, output result.Example) error {
 	return nil
 }
 
+// renderEvaluationCorpus reports one evaluation-corpus run. The label leads the
+// human output for the same reason it is carried in the JSON: a reader who sees
+// only the pass count must not read a claim into it.
+func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorpus) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "EXPERIMENTAL evaluation corpus: %s\n", output.Label)
+	if output.Status == "passed" {
+		fmt.Fprintf(a.out, "passed: %d/%d corpus rows matched their expectation\n", output.Summary.Passed, output.Summary.Total)
+	} else {
+		fmt.Fprintf(a.out, "mismatch: %d/%d corpus rows did not match their expectation\n", output.Summary.Mismatched, output.Summary.Total)
+	}
+	for _, item := range output.Cases {
+		if item.Status != "mismatch" {
+			continue
+		}
+		fmt.Fprintf(a.out, "- %s [%s]: %s\n", display.Sanitize(item.ID), display.Sanitize(item.SpecSection), display.Sanitize(item.Detail))
+		if item.Expected != "" || item.Actual != "" {
+			fmt.Fprintf(a.out, "  expected: %s\n", display.Sanitize(item.Expected))
+			fmt.Fprintf(a.out, "  actual:   %s\n", display.Sanitize(item.Actual))
+		}
+		if item.ExpectedErrorClass != "" || item.ActualErrorClass != "" {
+			fmt.Fprintf(a.out, "  expected class: %s / actual class: %s\n", display.Sanitize(item.ExpectedErrorClass), display.Sanitize(item.ActualErrorClass))
+		}
+	}
+	fmt.Fprintf(a.out, "JPS %s · corpus %s (%s, %s) · %s\n",
+		display.Sanitize(output.SpecVersion), display.Sanitize(output.SuiteVersion),
+		display.Sanitize(output.CorpusStatus), display.Sanitize(output.CorpusLabel), display.Sanitize(output.Provenance))
+	fmt.Fprintln(a.out, "A mismatching row decides nothing by itself: a divergence is as likely to be a defect in the row as in this implementation.")
+	return nil
+}
+
 func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 	if format == "json" {
 		return a.writeJSON(output)
 	}
-	fmt.Fprintln(a.out, "EXPERIMENTAL evaluation (no conformance claim; JPS 0.1.0-draft defines no evaluator conformance)")
+	fmt.Fprintln(a.out, "EXPERIMENTAL evaluation (no conformance claim of any kind)")
 	if prototype := output.DraftPrototype; prototype != nil {
 		// The two wordings mirror the JSON marker's own: a pack that used no
 		// draft operator is a plain pack the published validator accepts, and
@@ -156,10 +219,11 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		fmt.Fprintf(a.out, "disposition: %s (%s)\n", display.Sanitize(output.Disposition.Kind), display.Sanitize(strings.Join(output.Disposition.Reasons, ", ")))
 	}
 	if output.Disposition.Handoff.State == "requested" {
-		if target := output.Disposition.Handoff.Target; target != nil {
-			fmt.Fprintf(a.out, "handoff: requested -> %s %q\n", display.Sanitize(target.Kind), display.Sanitize(target.Name))
+		triggers := display.Sanitize(strings.Join(output.Disposition.Handoff.TriggeredBy, ", "))
+		if target := output.HandoffTarget; target != nil {
+			fmt.Fprintf(a.out, "handoff: requested -> %s %q (triggered by %s)\n", display.Sanitize(target.Kind), display.Sanitize(target.Name), triggers)
 		} else {
-			fmt.Fprintln(a.out, "handoff: requested (no declared destination)")
+			fmt.Fprintf(a.out, "handoff: requested (no declared destination; triggered by %s)\n", triggers)
 		}
 	}
 	for _, entry := range output.Trace {

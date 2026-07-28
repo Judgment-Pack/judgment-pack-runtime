@@ -10,6 +10,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -86,7 +87,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL (ADR-0007): apply the JPS Core §§7-8 experiment, as pinned by spec RFC 0006 (Draft), to one conformant pack and one facts document, returning a disposition (kind, reasons, handoff) and a trace. This claims NO evaluator conformance — JPS 0.1.0-draft forbids such claims — authorizes nothing, executes nothing, and may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. This claims NO evaluator conformance of any kind, authorizes nothing, executes nothing, and may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -94,7 +95,7 @@ func toolDefinitions() []map[string]any {
 				"properties": map[string]any{
 					"pack":                 map[string]any{"type": "string", "description": "The JPS document to evaluate, as JSON text. It must have full document conformance; a non-conformant pack is refused."},
 					"facts":                map[string]any{"type": "string", "description": "One JSON facts document, as JSON text; fact.path pointers resolve against it."},
-					"evidence":             map[string]any{"type": "string", "description": "Optional tri-state evidence availability, as JSON text: an object mapping declared evidence-requirement ids to \"present\", \"absent\", or \"unknown\". An omitted id is unknown."},
+					"evidence":             map[string]any{"type": "string", "description": "Optional tri-state evidence availability, as JSON text: an object mapping declared evidence-requirement ids to \"present\", \"absent\", or \"unknown\". An omitted id is unknown. Omit this key entirely to supply no document at all, which makes every declared requirement unknown; a key present with an empty string is a supplied empty document, which is not a JSON text and is refused as malformed-input."},
 					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports."},
 				},
 			},
@@ -255,17 +256,63 @@ func (s *Server) toolGetExample(rawArgs json.RawMessage) any {
 	}
 }
 
+// evaluateCommand names this surface in every payload it produces, exactly as
+// the describe package's command strings do.
+const evaluateCommand = "mcp experimental_evaluate"
+
+// evaluateArguments is one experimental_evaluate invocation as it arrived on the
+// wire. Each document is held as raw JSON rather than as a string because §8.2
+// gives an omitted document and a supplied empty one two different meanings — an
+// omitted evidence document is the implicit empty object and not an error, while
+// empty bytes are not a carrier-conforming JSON text — and a string field
+// collapses both to "". Holding the raw value keeps presence separate from value,
+// so this surface reaches the preflight with the same distinction the CLI's
+// --evidence flag has, and an explicit null stays distinguishable from an absent
+// key.
+type evaluateArguments struct {
+	Pack                json.RawMessage `json:"pack"`
+	Facts               json.RawMessage `json:"facts"`
+	Evidence            json.RawMessage `json:"evidence"`
+	SupportedExtensions []string        `json:"supported_extensions"`
+}
+
+// textArgument decodes one document argument, returning its text, whether the key
+// was present at all, and an argument-type message when the value is not a JSON
+// string. The declared input schema says string, so an explicit null — or a
+// number, object, or array — is a bad invocation and never an evaluation input;
+// omitting the key is the only form absence takes. A present empty string is a
+// value, and is returned as one so the §8.2 preflight classes it.
+func textArgument(name string, raw json.RawMessage) (string, bool, string) {
+	if len(raw) == 0 {
+		return "", false, ""
+	}
+	argumentError := fmt.Sprintf("The %q argument must be a JSON string; null and every other type are rejected. Omit the key to leave the argument unsupplied.", name)
+	// The null literal is rejected by hand: unmarshaling a JSON null into a string
+	// is a no-op rather than an error, so decoding alone would silently turn an
+	// explicit null into the empty string and, for evidence, into an absence §8.2
+	// says only an omitted key expresses.
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", true, argumentError
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return "", true, argumentError
+	}
+	return text, true, ""
+}
+
 // toolExperimentalEvaluate runs the experimental §§7-8 evaluator (ADR-0007).
 // An evaluation failure — a non-conformant pack, a malformed input, an
-// undeclared evidence key — is an in-band tool error; a produced disposition
-// of any kind is a successful call.
+// undeclared evidence key — is an in-band tool error carrying the §8.4 envelope;
+// a produced disposition of any kind is a successful call.
+//
+// An absent required key is an invocation failure, which §8.4 does not class at
+// all: the call never became an evaluation. A key present with an empty string is
+// a supplied document, so it enters the §8.2 preflight at that input's own place
+// in the order and is classed there — an empty pack is pack-not-conformant, and
+// an empty facts or evidence document is malformed-input.
 func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
-	var args struct {
-		Pack                string   `json:"pack"`
-		Facts               string   `json:"facts"`
-		Evidence            string   `json:"evidence"`
-		SupportedExtensions []string `json:"supported_extensions"`
-	}
+	var args evaluateArguments
 	if len(rawArgs) > 0 {
 		// Strict decoding honors the declared additionalProperties: false — a
 		// misspelled key (say "evidnce") must be an error, not a silently
@@ -276,18 +323,73 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 			return toolError(`The "experimental_evaluate" arguments must be an object with string "pack" and "facts", optional string "evidence", and optional "supported_extensions" (an array of strings); unknown keys are rejected.`)
 		}
 	}
-	if args.Pack == "" {
+	pack, packPresent, argumentError := textArgument("pack", args.Pack)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	facts, factsPresent, argumentError := textArgument("facts", args.Facts)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	evidence, evidenceSupplied, argumentError := textArgument("evidence", args.Evidence)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	if !packPresent {
 		return toolError(`The "pack" argument is required: pass the JPS document as JSON text.`)
 	}
-	if args.Facts == "" {
+	if !factsPresent {
 		return toolError(`The "facts" argument is required: pass one JSON facts document as JSON text.`)
 	}
 	evaluator := evaluation.NewEngine(s.engine)
-	output, failure := evaluator.Evaluate([]byte(args.Pack), []byte(args.Facts), []byte(args.Evidence), args.SupportedExtensions, "mcp experimental_evaluate")
+	output, failure := evaluator.EvaluateWith([]byte(pack), []byte(facts), []byte(evidence), evaluation.Options{
+		Command:             evaluateCommand,
+		SupportedExtensions: args.SupportedExtensions,
+		// The evidence document is supplied exactly when the key was present, empty
+		// string included: §8.2's absence is the omitted document, and empty bytes are
+		// the malformed-input error the preflight reaches in its own place in the order.
+		EvidenceSupplied: evidenceSupplied,
+	})
 	if failure != nil {
-		return toolError(failure.Message)
+		return evaluationToolError(evaluateCommand, failure)
 	}
 	return toolResult(output)
+}
+
+// evaluationToolError reports one refused evaluation on this surface. The
+// structured content is the same shared envelope the CLI writes — the §8.4 class
+// and phase, the version of the evaluator contract that assigned them, and this
+// runtime's finer JPS-* code beside them as the detail §8.4 admits — so a calling
+// model reads the machine-readable identity instead of parsing it back out of
+// prose, and the text content stays for a client that reads only text. Neither
+// form carries a disposition, ever (§8.4): the envelope type has no such member.
+func evaluationToolError(command string, failure *evaluation.Failure) map[string]any {
+	status := "error"
+	if failure.ExitCode == result.ExitUnsupported {
+		status = "unsupported"
+	}
+	// A refusal §8.4 does not classify — a bad invocation, an internal fault —
+	// carries no class, exactly as on the CLI, and is reported as an ordinary
+	// operational failure.
+	envelope := result.NewOperationalResult(command, status, failure.Code, failure.Message)
+	if failure.Class != "" {
+		envelope = result.NewEvaluationError(command, status, failure.Class, failure.Phase, failure.Code, failure.Message)
+	}
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": evaluationFailureMessage(failure)}},
+		"structuredContent": envelope,
+		"isError":           true,
+	}
+}
+
+// evaluationFailureMessage names the JPS §8.4 evaluation-error class and phase
+// beside this runtime's finer code, so a calling model reads the same coarse
+// identity the CLI reports rather than a message it has to classify itself.
+func evaluationFailureMessage(failure *evaluation.Failure) string {
+	if failure.Class == "" {
+		return failure.Message
+	}
+	return fmt.Sprintf("%s (evaluation error class: %s; phase: %s; code: %s)", failure.Message, failure.Class, failure.Phase, failure.Code)
 }
 
 // toolResult wraps a versioned core payload as an MCP tool result: the payload

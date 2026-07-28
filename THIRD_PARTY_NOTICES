@@ -14,7 +14,10 @@ https://github.com/Judgment-Pack/judgment-pack-spec
 
 This distribution embeds unmodified specification artifacts compiled into the
 binary from internal/artifacts/jps/ — schema.json, manifest.json,
-manifest.schema.json, and the conformance case corpus. They are licensed under
+manifest.schema.json, the conformance case corpus, and, for a specification
+version that publishes one, the evaluation corpus under evaluation/ (its
+manifest, that manifest's schema, and the pack fixtures its rows name). They are
+licensed under
 the Apache License, Version 2.0; a copy is in the accompanying LICENSE file, and
 the required attribution is in NOTICE. The exact upstream revision and per-file
 SHA-256 digests are recorded in the bundled lock.json.

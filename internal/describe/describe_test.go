@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
@@ -138,5 +139,44 @@ func TestExampleRejectsUnknownName(t *testing.T) {
 	var unknown *artifacts.UnknownExampleError
 	if !errors.As(err, &unknown) {
 		t.Fatalf("expected *artifacts.UnknownExampleError, got %v", err)
+	}
+}
+
+// The runtime description lists every bundled specification version, and its one
+// provenance string describes all of them: a payload that names two versions must
+// not report the provenance of one.
+func TestRuntimeDescribesEveryBundledVersion(t *testing.T) {
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	described := Runtime(set, "version")
+	if !reflect.DeepEqual(described.SupportedSpecs, artifacts.SupportedVersions()) {
+		t.Fatalf("supportedSpecVersions = %v, want %v", described.SupportedSpecs, artifacts.SupportedVersions())
+	}
+	if described.ArtifactProvenance != "immutable-git-ref" {
+		t.Fatalf("every bundled version is imported from an immutable ref: %q", described.ArtifactProvenance)
+	}
+	for _, version := range described.SupportedSpecs {
+		other, err := artifacts.Load(version)
+		if err != nil {
+			t.Fatalf("a listed version must load: %s: %v", version, err)
+		}
+		if Runtime(other, "version").ArtifactProvenance != described.ArtifactProvenance {
+			t.Fatalf("provenance must not depend on which set reports it: %s", version)
+		}
+	}
+}
+
+// bundledProvenance reports the *least-trusted* kind among the bundles, which is
+// the one a release gate acts on, so the kinds carry an explicit order rather than
+// the loop reporting whichever bundle it visited last. Both bundles are imported
+// from an immutable ref today, so the ordering is pinned here directly.
+func TestProvenanceKindsCarryAnExplicitTrustOrder(t *testing.T) {
+	if provenanceRank("immutable-git-ref") >= provenanceRank("unreleased-local-snapshot") {
+		t.Fatal("an immutable git ref is the more trusted kind")
+	}
+	if provenanceRank("unreleased-local-snapshot") >= provenanceRank("a-kind-this-runtime-does-not-mint") {
+		t.Fatal("an unrecognized kind must rank below every known one: it is not evidence of a trustworthy bundle")
 	}
 }

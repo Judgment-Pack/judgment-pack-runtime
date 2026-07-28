@@ -30,9 +30,15 @@ env GO111MODULE=on go run ./tools/sync-spec-artifacts \
   --source-ref <exact-jps-tag>
 ```
 
+For a specification version that publishes the evaluation corpus of Core §3.4.1, the tool also
+imports that corpus — its manifest, the manifest's schema, and every pack fixture a case names —
+under `evaluation/` in the destination. A version that publishes none contributes nothing there.
+
 Review every imported file and `lock.json`. The lock must contain the official repository URL,
 `immutable-git-ref`, the immutable reference used, its exact commit, `worktreeDirty: false`, and the
-expected bundle digest. Update the embedded registry only when adding a new specification version.
+expected bundle digest. Review one lock per bundled version: the release gate checks all of them, not
+only the version a surface selects by default. Update the embedded registry only when adding a new
+specification version.
 
 ## Validate locally
 
@@ -44,6 +50,8 @@ git diff --check
 env GO111MODULE=on go vet ./...
 env GO111MODULE=on go test ./...
 env GO111MODULE=on go run ./cmd/judgment-pack spec test-conformance --quiet
+env GO111MODULE=on go run ./cmd/judgment-pack spec test-conformance --spec-version 0.2.0-draft --quiet
+env GO111MODULE=on go run ./cmd/judgment-pack experimental evaluate-corpus
 env GO111MODULE=on go run ./tools/check-release --tag <cli-tag>
 goreleaser check
 goreleaser release --snapshot --clean

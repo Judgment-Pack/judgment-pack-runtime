@@ -185,10 +185,18 @@ func TestRFC0006AppendixInstances(t *testing.T) {
 				t.Fatalf("handoff = %q, want %q", disposition.Handoff.State, testCase.wantHandoff)
 			}
 			if testCase.wantHandoff == "requested" {
-				target := disposition.Handoff.Target
+				target := output.HandoffTarget
 				if target == nil || target.Kind != "human-role" || target.Name != "Intake reviewer" {
-					t.Fatalf("a requested handoff must echo the declared target exactly: %+v", disposition.Handoff)
+					t.Fatalf("a requested handoff must echo the declared target exactly, beside the disposition: %+v", output.HandoffTarget)
 				}
+				// §8.3: this pack declares every trigger, so triggeredBy equals the
+				// retained reason set on every one of these rows.
+				if !reflect.DeepEqual(disposition.Handoff.TriggeredBy, disposition.Reasons) {
+					t.Fatalf("triggeredBy = %v, want the retained reason set %v", disposition.Handoff.TriggeredBy, disposition.Reasons)
+				}
+			}
+			if testCase.wantHandoff == "none" && disposition.Handoff.TriggeredBy != nil {
+				t.Fatalf("triggeredBy is present only when a handoff is requested: %+v", disposition.Handoff)
 			}
 			if testCase.wantKind == "outcome" && len(disposition.Reasons) != 0 {
 				t.Fatalf("an outcome result retains no reasons: %+v", disposition)
@@ -380,8 +388,11 @@ func TestRequiredExtensionCapabilityGate(t *testing.T) {
 	engine := newTestEngine(t)
 
 	_, failure := engine.Evaluate(pack, []byte(`{}`), nil, nil, "test")
-	if failure == nil || failure.Code != "JPS-EVALUATION-PACK-NOT-CONFORMANT" || failure.ExitCode != result.ExitUnsupported {
-		t.Fatalf("an unsupported required extension must refuse evaluation: %+v", failure)
+	if failure == nil || failure.Class != result.ClassUnsupportedRequiredExtension || failure.ExitCode != result.ExitUnsupported {
+		t.Fatalf("an unsupported required extension must refuse evaluation as its own §8.4 class: %+v", failure)
+	}
+	if failure.Code != "JPS-CAPABILITY-REQUIRED-EXTENSION" || failure.Phase != result.PhasePreflight {
+		t.Fatalf("the class keeps the capability code as its detail, in the preflight phase: %+v", failure)
 	}
 
 	output, failure := engine.Evaluate(pack, []byte(`{}`), nil, []string{"com.example.review-policy"}, "test")

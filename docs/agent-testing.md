@@ -89,7 +89,8 @@ setting, or simply the agent's first message. Replace `<spec>` with the path to 
 
 You author and revise Judgment Pack Specification (JPS) documents. The judgment-pack CLI is your
 validation oracle. It checks document conformance only -- carrier (bytes/JSON), structural (schema),
-and semantic (references) -- for spec version 0.1.0-draft. It does not evaluate rules, choose an
+and semantic (references) -- for spec versions 0.1.0-draft and 0.2.0-draft, dispatched on the version
+the document itself declares. It does not evaluate rules, choose an
 outcome, fetch sources, or judge whether a pack is correct, authorized, safe, or fit. Structural
 validity means well-formed, nothing more.
 

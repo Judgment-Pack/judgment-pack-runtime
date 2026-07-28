@@ -17,13 +17,20 @@ var (
 )
 
 // CheckEmbedded validates the tag and the integrity and provenance of the
-// specification artifacts compiled into a release candidate.
+// specification artifacts compiled into a release candidate. Every bundled
+// version is checked, not only the default one: a release must not ship any
+// bundle whose lock records a dirty worktree or a moving reference.
 func CheckEmbedded(tag string) error {
-	set, err := artifacts.Load(artifacts.DraftVersion)
-	if err != nil {
-		return fmt.Errorf("load embedded specification artifacts: %w", err)
+	for _, version := range artifacts.SupportedVersions() {
+		set, err := artifacts.Load(version)
+		if err != nil {
+			return fmt.Errorf("load embedded specification artifacts for JPS %s: %w", version, err)
+		}
+		if err := Validate(tag, set.Lock()); err != nil {
+			return fmt.Errorf("embedded JPS %s: %w", version, err)
+		}
 	}
-	return Validate(tag, set.Lock())
+	return nil
 }
 
 // Validate applies release-only invariants to a verified artifact lock.

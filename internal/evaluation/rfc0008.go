@@ -32,20 +32,20 @@ import (
 // is held to full document conformance. What is not claimed, and what the
 // output marker says out loud, is that the pack is valid: it is not, under any
 // published JPS version, and spec validate rejects it.
-func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Validation, map[string]any, *Failure) {
+func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Validation, map[string]any, *Failure, *Failure) {
 	carrierOnly, operational := e.validator.Validate(pack, validation.Options{
 		Through: "carrier",
 		Limits:  carrier.DefaultLimits(),
 	})
 	if operational != nil {
-		return result.Validation{}, nil, &Failure{Code: operational.Code, Message: operational.Message, ExitCode: operational.ExitCode}
+		return result.Validation{}, nil, nil, packOperationalFailure(operational)
 	}
 	if carrierOnly.Status != "valid" {
-		return result.Validation{}, nil, packNotConformant(carrierOnly)
+		return result.Validation{}, nil, nil, packNotConformant(carrierOnly)
 	}
-	document, failure := decodeInput(pack, "pack")
+	document, failure := decodeInput(pack, "pack", result.ClassPackNotConformant)
 	if failure != nil {
-		return result.Validation{}, nil, failure
+		return result.Validation{}, nil, nil, failure
 	}
 	packRoot, isObject := document.(map[string]any)
 	if !isObject {
@@ -53,16 +53,16 @@ func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Valida
 		// than inventing a second message for the same document.
 		validated, operational := e.validator.Validate(pack, validation.Options{Through: "semantic", Limits: carrier.DefaultLimits()})
 		if operational != nil {
-			return result.Validation{}, nil, &Failure{Code: operational.Code, Message: operational.Message, ExitCode: operational.ExitCode}
+			return result.Validation{}, nil, nil, packOperationalFailure(operational)
 		}
-		return result.Validation{}, nil, packNotConformant(validated)
+		return result.Validation{}, nil, nil, packNotConformant(validated)
 	}
 	if diagnostics := rfc0008Diagnostics(packRoot); len(diagnostics) > 0 {
-		return result.Validation{}, nil, draftGrammarFailure(diagnostics)
+		return result.Validation{}, nil, nil, draftGrammarFailure(diagnostics)
 	}
 	projected, err := json.Marshal(projectPack(packRoot))
 	if err != nil {
-		return result.Validation{}, nil, &Failure{Code: "JPS-EVALUATION-INTERNAL", Message: "The pack's Core projection could not be re-encoded for validation.", ExitCode: result.ExitInternal}
+		return result.Validation{}, nil, nil, &Failure{Code: "JPS-EVALUATION-INTERNAL", Message: "The pack's Core projection could not be re-encoded for validation.", ExitCode: result.ExitInternal}
 	}
 	validated, operational := e.validator.Validate(projected, validation.Options{
 		Through:             "semantic",
@@ -70,12 +70,12 @@ func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Valida
 		Limits:              carrier.DefaultLimits(),
 	})
 	if operational != nil {
-		return result.Validation{}, nil, &Failure{Code: operational.Code, Message: operational.Message, ExitCode: operational.ExitCode}
+		return result.Validation{}, nil, nil, packOperationalFailure(operational)
 	}
-	if validated.Status != "valid" {
-		return result.Validation{}, nil, projectionNotConformant(validated)
+	if validated.Status != "valid" && unsupportedRequiredExtension(validated) == nil {
+		return result.Validation{}, nil, nil, projectionNotConformant(validated)
 	}
-	return validated, packRoot, nil
+	return validated, packRoot, unsupportedRequiredExtension(validated), nil
 }
 
 // projectionNotConformant refuses a pack whose Core projection did not reach
@@ -102,7 +102,9 @@ func projectionNotConformant(validated result.Validation) *Failure {
 		detail = fmt.Sprintf(" First diagnostic: %s at %s: %s", first.Code, location, first.Message)
 	}
 	return &Failure{
-		Code: "JPS-EVALUATION-PACK-NOT-CONFORMANT",
+		Class: result.ClassPackNotConformant,
+		Phase: result.PhasePreflight,
+		Code:  "JPS-EVALUATION-PACK-NOT-CONFORMANT",
 		Message: fmt.Sprintf(
 			"The pack is not evaluated because the document conformance status of its Core projection is %q; evaluation requires a fully conformant pack.%s The instance path is relative to that projection, in which each exists and every is replaced by its where and each uniform by a true literal, so a location inside a where is named with the /where segments elided.",
 			validated.Status, detail),
@@ -120,7 +122,9 @@ func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
 		location = "<root>"
 	}
 	return &Failure{
-		Code: "JPS-EVALUATION-RFC0008-GRAMMAR",
+		Class: result.ClassPackNotConformant,
+		Phase: result.PhasePreflight,
+		Code:  "JPS-EVALUATION-RFC0008-GRAMMAR",
 		Message: fmt.Sprintf(
 			"The pack is not evaluated because it does not satisfy the draft RFC 0008 grammar. First diagnostic: %s at %s: %s",
 			first.Code, location, first.Message),
@@ -134,7 +138,9 @@ func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
 // disposition was ever entitled to exist.
 func workLimitFailure(e *evaluator) *Failure {
 	return &Failure{
-		Code: "JPS-RESOURCE-EVALUATION-WORK-LIMIT",
+		Class: result.ClassResourceExhaustion,
+		Phase: result.PhaseEvaluation,
+		Code:  "JPS-RESOURCE-EVALUATION-WORK-LIMIT",
 		Message: fmt.Sprintf(
 			"The evaluation exceeds this runtime's draft RFC 0008 evaluation-work limit of %d units. The charge is computed before any element is evaluated and does not depend on element order, so no disposition is produced.",
 			e.budget),
