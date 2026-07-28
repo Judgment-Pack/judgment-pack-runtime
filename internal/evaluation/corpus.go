@@ -31,10 +31,23 @@ type corpusManifest struct {
 	Cases        []corpusCase `json:"cases"`
 }
 
-type corpusCase struct {
+// MatrixCase is one case-carrier row: one pack, one facts document, the
+// tri-state availability of its declared evidence, the consumer's supported
+// extensions, and exactly one expectation — a §8.3 disposition to compare byte
+// for byte, or the §8.4 error class the evaluation must be refused with.
+//
+// It is exported because the bundled evaluation corpus is not the only carrier
+// of this shape: a project's own instance matrix (ADR-0012) uses the same rows
+// and is compared by the same code, so a matrix a builder writes and the corpus
+// this runtime ships are read, run, and judged identically rather than by two
+// implementations of one comparison.
+//
+// facts, evidenceAvailability, and expectedDisposition are kept as raw bytes:
+// the evaluator takes its inputs as documents, and re-encoding them here would
+// put a second serializer between the carrier and the evaluation.
+type MatrixCase struct {
 	ID                   string          `json:"id"`
 	Origin               string          `json:"origin"`
-	Pack                 string          `json:"pack"`
 	Facts                json.RawMessage `json:"facts"`
 	EvidenceAvailability json.RawMessage `json:"evidenceAvailability"`
 	SupportedExtensions  []string        `json:"supportedExtensions"`
@@ -43,6 +56,14 @@ type corpusCase struct {
 	ExpectedErrorPhase   string          `json:"expectedErrorPhase"`
 	Focus                string          `json:"focus"`
 	SpecSection          string          `json:"specSection"`
+}
+
+// corpusCase is one bundled corpus row: a MatrixCase plus the bundled pack
+// fixture it runs against. A project matrix names its pack in the project
+// configuration instead, which is the only difference between the two carriers.
+type corpusCase struct {
+	MatrixCase
+	Pack string `json:"pack"`
 }
 
 // RunCorpus runs the evaluation corpus bundled for one exact specification
@@ -147,6 +168,33 @@ func loadCorpusManifest(set *artifacts.Set, specVersion string) (corpusManifest,
 // runCorpusCase runs one row. The pack is a bundled, digest-locked fixture; the
 // facts and evidence inputs are the row's own bytes, unaltered.
 func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.EvaluationCorpusCase {
+	pack, err := set.EvaluationPack(item.Pack)
+	if err != nil {
+		return corpusMismatch(result.EvaluationCorpusCase{
+			ID:                 item.ID,
+			Origin:             item.Origin,
+			SpecSection:        item.SpecSection,
+			Status:             "passed",
+			ExpectedErrorClass: item.ExpectedErrorClass,
+			ExpectedErrorPhase: item.ExpectedErrorPhase,
+		}, "The row's pack fixture is not bundled.")
+	}
+	return e.RunCase(pack, item.MatrixCase, "experimental evaluate-corpus")
+}
+
+// RunCase runs one case-carrier row against one pack document and reports the
+// row's result.
+//
+// A row carrying an expected disposition passes when the disposition this
+// evaluator produces canonicalizes, under RFC 8785, to the same bytes as the
+// row's. A row carrying an expected §8.4 error class instead passes when the
+// evaluation is refused with that class, and with that phase when the row names
+// one. That is the whole comparison, and it is the same one whether the row came
+// from the bundled corpus or from a project's own matrix (ADR-0012): a project
+// gets the byte comparison §8.3 defines rather than a looser one written for it.
+//
+// command names the reporting surface, exactly as elsewhere in this package.
+func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.EvaluationCorpusCase {
 	outcome := result.EvaluationCorpusCase{
 		ID:                 item.ID,
 		Origin:             item.Origin,
@@ -154,10 +202,6 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.Evalu
 		Status:             "passed",
 		ExpectedErrorClass: item.ExpectedErrorClass,
 		ExpectedErrorPhase: item.ExpectedErrorPhase,
-	}
-	pack, err := set.EvaluationPack(item.Pack)
-	if err != nil {
-		return corpusMismatch(outcome, "The row's pack fixture is not bundled.")
 	}
 	if item.ExpectedDisposition != nil {
 		expected, err := canonicalDisposition(item.ExpectedDisposition)
@@ -167,7 +211,7 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.Evalu
 		outcome.Expected = expected
 	}
 
-	evaluated, failure := e.Evaluate(pack, item.Facts, item.EvidenceAvailability, item.SupportedExtensions, "experimental evaluate-corpus")
+	evaluated, failure := e.Evaluate(pack, item.Facts, item.EvidenceAvailability, item.SupportedExtensions, command)
 	if failure != nil {
 		outcome.ActualErrorClass, outcome.ActualErrorPhase = failure.Class, failure.Phase
 		if item.ExpectedErrorClass == "" {
@@ -181,6 +225,12 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.Evalu
 		}
 		return outcome
 	}
+	// The identity echo is read off the pack that was actually evaluated, so a row
+	// result names the document it ran against and never a name from its own
+	// carrier. A row refused above carries none: a refusal produces no evaluation
+	// to read the identity off, whether it came before the pack was admitted or
+	// after — a reached §10 evaluation-work limit is refused with the pack in hand.
+	outcome.PackID, outcome.PackVersion = evaluated.PackID, evaluated.PackVersion
 	actual, err := evaluated.Disposition.Canonical()
 	if err != nil {
 		return corpusMismatch(outcome, "The disposition could not be canonicalized: "+err.Error())

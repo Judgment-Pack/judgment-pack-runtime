@@ -4,6 +4,117 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Add the `jpack.json` project convention** (ADR-0012), a **non-normative convention of this
+  runtime** and not part of the Judgment Pack Specification. It gives a project one name per decision
+  that works identically from a shell, a CI step, and an agent's tool call. It is optional end to end:
+  every command still takes a pack by path, every MCP tool still takes one as text, and a project
+  without the file loses no capability. The configuration is selected by `--config`, then
+  `JPACK_CONFIG`, then `./jpack.json`, and its schema is closed — every member it does not name is
+  rejected, so a misspelled key is an error rather than an intention silently dropped. The published
+  schema pins `configVersion` to the one value this runtime accepts, so a configuration held to those
+  exact bytes in an editor or a CI step is held to what the runtime will actually read.
+  - **New top-level `packs` namespace.** `packs list` reports the resolved inventory (the project's
+    decision id, the pack document's own id and version, path, description, and `expectedVersion`
+    status). `packs validate [--id X]` checks the configuration and then six named steps per pack —
+    path containment, document validation, the `expectedVersion` pin, the optional filename
+    cross-check, the hint keys, and matrix well-formedness — each reported as `passed`, `failed`, or
+    `skipped`, so a check that passed is distinguishable from one the configuration never asked for.
+    `packs test [--id X]` runs each pack's instance matrix through the **experimental** evaluator,
+    which its help says plainly. `packs schema` prints the embedded configuration schema, on the same shape and with
+    the same `--write` guards `spec schema` has. `packs validate` and `packs test` each exit `1` on any
+    failure, so the CI gate is one line: `judgment-pack packs validate && judgment-pack packs test`.
+  - **A project's matrix rows are the specification corpus's own case-carrier shape**, and they are run
+    by the same code: `id`, `facts`, `evidenceAvailability`, `supportedExtensions`, and exactly one of
+    `expectedDisposition` and `expectedErrorClass` (with an optional `expectedErrorPhase`). A row with a
+    disposition passes on RFC 8785 canonical byte equality; a row with a class passes when the
+    evaluation is refused with that class and phase. A builder's row is a corpus row once it names
+    its pack fixture — the one member a corpus row adds, because a project matrix names its pack in
+    the configuration — and a pack that declares no matrix is reported **skipped** rather than passed.
+    A run in which no row ran at all is reported **skipped** and exits `1`: a green gate over zero rows
+    would say a project was tested when nothing was.
+  - **`configVersion` is a single integer as a string**, on the `outputVersion` precedent rather than
+    semantic versioning; `"1"` is the only accepted value, and anything else is refused as `unsupported`
+    with a message naming what this runtime does accept. **There is no templating, no target or
+    environment blocks, and no selection**: a templated pack was never the pack anyone reviewed,
+    environments are one file per environment by convention, and choosing which decision to ask stays
+    with the application. Approval is your pull request; there is no approval state in the file.
+  - **Identity is stated once and referenced three times.** The pack document's `id` and `version`
+    members are what a pack is. `expectedVersion` in the configuration, the optional
+    `<decision-id>-<semver>.pack.json` filename, and the new `packId`/`packVersion` payload members are
+    each a *validated reference* to that statement: any of them may disagree with the document, every
+    disagreement is an error, and none of them can win one. The filename convention is never required —
+    a file named anything else has that check `skipped` — and it is binding when followed, on both the
+    decision id and the version.
+  - **Additive payload members, no protocol-version change.** Every evaluation payload, and every
+    evaluation-corpus row, now carries `packId` and `packVersion`, read off the document that was
+    actually evaluated. Two `VERSIONING.md` rules, read together, keep **`outputVersion` at `"2"`**:
+    its compatibility-dimensions clause makes a break in machine-output compatibility the thing that
+    increments the protocol version, and its MINOR bullet classes an added output field as a
+    backward-compatible change. A consumer that never reads these members reads the payload it read
+    before. A row or payload that produced no disposition carries neither member: there was no
+    evaluation to read an identity off.
+  - **`experimental evaluate --pack-id X`** resolves one decision id through the configuration
+    (honoring `--config` and `JPACK_CONFIG`). It is mutually exclusive with the pack argument;
+    supplying both, or neither, is an invocation error rather than a precedence rule. It is documented
+    in the README command block and in the builder's guide, and it reads through the same rooted
+    reader every other project read uses. It yields the pack's *bytes*, never a pathname for the
+    generic reader to open again: a returned pathname would have to be reopened as a second
+    operation on a filesystem that may have changed in between, which is precisely the interval the
+    handle-bound reader below exists to remove.
+  - **New MCP tools `list_packs` and `get_pack`**, and an optional `pack_id` argument on
+    `experimental_evaluate` (mutually exclusive with `pack`, with the same presence and null-rejection
+    discipline the existing arguments have). The server reads `JPACK_CONFIG` or the directory it was
+    launched in and takes no path over the wire (ADR-0006); with no configuration, `list_packs` answers
+    **empty with an explanation of where the runtime looked** rather than failing. `get_pack` serves a
+    document that was read and did not decode with a status of `undecodable` and a `detail` saying why,
+    rather than calling it valid with empty identity members — the same thing `list_packs` says about
+    the same file. Every tool's `inputSchema` stays a flat object: the pack/`pack_id` exclusion is
+    stated in both property descriptions and enforced by the handler rather than advertised as a
+    composed schema keyword a bridge may drop. The server stays read-only, keyless, and offline.
+  - **Hints are non-normative agent guidance and the runtime never resolves one.** A `facts` hint is
+    keyed by the RFC 6901 pointer a pack reads, an `evidence` hint by a declared evidence-requirement
+    id, and each says in the project's own words where the value is held. This runtime holds no
+    credential, opens no network connection, and never reads a source a hint names (ADR-0004,
+    ADR-0006). The gathering is the agent's, and an unsourceable fact is reported `unknown` rather than
+    guessed, so the pack escalates instead of deciding on an invention. Because nothing else ever
+    resolves a hint key, `packs validate` checks it against the pack document: an `evidence` key must
+    be a declared evidence-requirement id, and a `facts` pointer must be one some condition reads or an
+    ancestor of one. A misspelled key is a failed check rather than an instruction an agent follows.
+  - **Every file access is bound to a handle held open on the configuration's own directory** through
+    the new `fssecure.Relative` and `fssecure.Root`. A path that escapes is refused **twice**: when the
+    configuration is validated, before anything is read, and again at read time, where resolution
+    against the handle catches an escape through a symlinked component that a lexical check cannot
+    see. The read-time half is a handle rather than a pathname so that **containment holds through the
+    open and not merely up to it** — a pathname checked and then opened leaves an interval in which an
+    intermediate directory component can be swapped for a symlink pointing out of the root, and the
+    open follows it, with a post-hoc check on the opened file unable to notice. `internal/fssecure`
+    opens the project directory once, at load, and resolves every later read relative to that handle
+    through Go's `os.Root`. A final component that is a symlink is still refused whatever it points at,
+    and only a regular file is read. Every surface that reaches a pack through the configuration takes
+    this one reader — none is handed a pathname to open itself — and `packs validate` asks its
+    containment question of the same handle, so a symlinked-component escape fails the check named for
+    containment rather than the one after it. The project's root is the handle's own directory rather
+    than a second derivation from the configuration path, so the root and the configuration bytes
+    cannot describe two different directories.
+  - **The minimum Go version is now 1.24** (from 1.21). `os.Root` is the standard library's
+    handle-bound opener and is the containment primitive above; hand-rolling one per platform to keep
+    an older floor would be reimplementing a security primitive for no gain. The release workflow
+    continues to pin its own supported toolchain independently.
+  - **A configuration must declare at least one pack.** The schema's `packs` object carries
+    `minProperties: 1`, and the test runner independently demotes any run that executed zero rows to
+    `skipped` regardless of how many packs were selected. Either alone would leave a hole: without the
+    schema constraint an empty project is a valid configuration, and without the runner's demotion any
+    other route to an empty selection reports a clean run over nothing.
+  - New documentation: [`docs/building-with-packs.md`](docs/building-with-packs.md), the builder's
+    guide — the packs-as-code lifecycle, the three-owner model (the application selects, the agent
+    gathers and never invents, the pack judges, with `not-applicable` as the misrouting net), hints in
+    practice, `expectedVersion` discipline, the filename convention, and the
+    data-sufficiency-as-another-pack pattern. A README section and an
+    [`docs/mcp-clients.md`](docs/mcp-clients.md) section cover the same ground briefly. Every new help
+    text, tool description, and label is **reference-only**: `packs test` says where the evaluator's
+    conformance claim is stated and states no part of it, and the claim-surface inventory now walks the
+    new CLI help texts and the new MCP tool descriptions and asserts them by name.
+
 - **Take the §3.4.1 conformance decision, and add the root [`CONFORMANCE.md`](CONFORMANCE.md) it is
   stated in** (ADR-0011). This entry is **reference-only**, deliberately: §3.4.1 fixes the entire form
   such a statement may take, so the class, the version scope, the corpus, the results, the evidence and

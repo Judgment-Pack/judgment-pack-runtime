@@ -214,6 +214,8 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 		ConformanceClaimReference: result.EvaluationClaimReference,
 		SpecVersion:               validated.SpecVersion,
 		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		PackID:                    packIdentity(packRoot, "id"),
+		PackVersion:               packIdentity(packRoot, "version"),
 		Disposition:               disposition,
 		HandoffTarget:             target,
 		Trace:                     trace,
@@ -229,6 +231,17 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 		}
 	}
 	return evaluation, nil
+}
+
+// packIdentity reads one identity member off the pack that was evaluated. Both
+// members are required by §§3.1–3.2 and the document reaching here has full
+// document conformance, so the empty string is unreachable rather than a
+// fallback; it is spelled anyway because a type assertion on a decoded document
+// has to be, and an empty echo is preferable to a panic on a document this
+// evaluator somehow admitted.
+func packIdentity(packRoot map[string]any, member string) string {
+	value, _ := packRoot[member].(string)
+	return value
 }
 
 // conformance establishes the pack's conformance status and returns its decoded

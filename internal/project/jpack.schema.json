@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:judgmentpack:runtime:jpack-config:1",
+  "title": "jpack.json project configuration",
+  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory. It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["configVersion", "packs"],
+  "properties": {
+    "configVersion": {
+      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning; \"1\" is the only value this runtime accepts, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A later shape will be \"2\", published with the runtime that reads it.",
+      "type": "string",
+      "const": "1"
+    },
+    "packs": {
+      "description": "The project's packs, keyed by decision id. The key is the project's own name for one decision; the pack document's id member is the pack's identity and is not this key. At least one pack is required: a configuration declaring none describes no project, and accepting it would let a test run report a clean result over zero rows. The runner demotes a zero-row run to \"skipped\" regardless, so this constraint is the earlier of two independent refusals rather than the only one.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/decisionId" },
+      "additionalProperties": { "$ref": "#/$defs/pack" }
+    }
+  },
+  "$defs": {
+    "decisionId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "relativePath": {
+      "description": "A path relative to this configuration file's own directory, which it must resolve inside. Two different checks say so and neither substitutes for the other: a lexical check refuses an absolute or escaping path before anything is read, and at read time the path is resolved against a handle held open on that directory -- which is what catches a path reaching outside through a symlinked component, since a lexical check cannot see one, and what keeps containment true through the open rather than only up to it. A final component that is a symlink is refused whatever it points at, and only a regular file is read.",
+      "type": "string",
+      "minLength": 1
+    },
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "description": "The pack document, relative to this file's directory.",
+          "$ref": "#/$defs/relativePath"
+        },
+        "matrix": {
+          "description": "The pack's instance matrix, relative to this file's directory. Rows use the same case-carrier shape as the bundled evaluation corpus.",
+          "$ref": "#/$defs/relativePath"
+        },
+        "description": {
+          "description": "One line about the decision this pack encodes, for a human or an agent reading the inventory.",
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedVersion": {
+          "description": "The pack document version this project expects. It is a validated reference and never an independent truth: packs validate reports a difference from the document's own version member as an error rather than preferring either value.",
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "facts": {
+          "description": "NON-NORMATIVE agent hints, keyed by the RFC 6901 JSON Pointer the pack's conditions read. They say where a fact is found; they are not facts, and this runtime never reads a source. The key is checked against the pack document by packs validate: a pointer no condition reads is reported as a failed check rather than handed to an agent as an instruction.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/jsonPointer" },
+          "additionalProperties": { "$ref": "#/$defs/hint" }
+        },
+        "evidence": {
+          "description": "NON-NORMATIVE agent hints, keyed by the pack's declared evidence-requirement ids. They say where evidence is found; they are not evidence, and this runtime never reads a source. The key is checked against the pack document by packs validate: an id the pack declares no requirement for is reported as a failed check.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/decisionId" },
+          "additionalProperties": { "$ref": "#/$defs/hint" }
+        }
+      }
+    },
+    "jsonPointer": {
+      "type": "string",
+      "pattern": "^(?:/(?:[^~/]|~0|~1)*)*$"
+    },
+    "hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "source": {
+          "description": "Where the value is authoritatively held, in the project's own words -- a warehouse table, a document library, a service. The runtime holds no credential and opens no connection; reading it is the agent's job, with the agent's own access.",
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "description": "How to obtain the value from that source, in the project's own words.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -103,13 +103,13 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 		tool := entry.(map[string]any)
 		advertised[tool["name"].(string)] = tool
 	}
-	for _, want := range []string{"validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example", "experimental_evaluate"} {
+	for _, want := range []string{"validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example", "list_packs", "get_pack", "experimental_evaluate"} {
 		if _, ok := advertised[want]; !ok {
 			t.Fatalf("tools/list must advertise %q; got %v", want, advertised)
 		}
 	}
-	if len(advertised) != 7 {
-		t.Fatalf("expected 7 distinct tools, got %d", len(advertised))
+	if len(advertised) != 9 {
+		t.Fatalf("expected 9 distinct tools, got %d", len(advertised))
 	}
 	required := advertised["get_example"]["inputSchema"].(map[string]any)["required"].([]any)
 	if len(required) != 1 || required[0] != "name" {

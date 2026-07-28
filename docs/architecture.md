@@ -80,11 +80,12 @@ claim — see [`CONFORMANCE.md`](../CONFORMANCE.md).
 - `internal/artifacts` embeds exact files and verifies their lock before use.
 - `internal/validation` compiles offline schemas and performs semantic checks.
 - `internal/conformance` validates suite metadata and safely runs pinned cases.
-- `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads.
+- `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads, and roots a project's own reads at one directory so a configured path cannot leave it.
 - `internal/result` defines machine output version 2 and exit classes.
 - `internal/describe` composes the machine descriptions the CLI and MCP server share, so neither drifts.
 - `internal/evaluation` implements the EXPERIMENTAL JPS §§7–8 evaluator (ADR-0007), aligned to the §§8.2–8.4 evaluator class of Core `0.2.0-draft` (ADR-0010) and admitting only packs that declare that version, plus the bundled evaluation-corpus runner; and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts and which the claim in `CONFORMANCE.md` does not cover.
 - `internal/jcs` canonicalizes the one value JPS §8.3 compares byte for byte, the portable disposition, over the strings, arrays, and objects a disposition is made of and nothing else.
+- `internal/project` implements the `jpack.json` project convention (ADR-0012): a NON-NORMATIVE convention of this runtime, not part of the specification, that names a project's packs by decision id, checks the files it points at, and runs each pack's instance matrix through the same row machinery the bundled evaluation corpus uses. It resolves nothing at decision time, reads no source a hint names, and holds no pack's identity — the pack document does, and everything here is a validated reference to it.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.

@@ -1,6 +1,10 @@
 module github.com/Judgment-Pack/judgment-pack-runtime
 
-go 1.21
+// os.Root (Go 1.24) is the containment primitive internal/fssecure is built on:
+// every project read is resolved relative to a retained directory handle, which
+// is what makes containment hold through the open rather than only up to it
+// (ADR-0012). That is the whole reason this floor is 1.24 and not lower.
+go 1.24.0
 
 require (
 	github.com/dlclark/regexp2 v1.12.0

@@ -108,3 +108,4 @@ authority, and following it confers no conformance status on anything.
 | [0009](0009-draft-rfc-quantifier-prototype.md)           | Prototype spec RFC 0008 quantifiers behind an opt-in experimental flag          | proposed |
 | [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md)    | Retarget the experimental evaluator at 0.2.0-draft's evaluator class; claim nothing | proposed; claim-scope determination superseded by [0011](0011-first-evaluator-conformance-claim.md) |
 | [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | proposed |
+| [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec | proposed |

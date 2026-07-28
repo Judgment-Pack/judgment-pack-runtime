@@ -18,7 +18,9 @@ jobs:
           - os: ubuntu-latest
             go: stable
           - os: ubuntu-latest
-            go: 1.21.x
+            # The floor in go.mod. os.Root, which internal/fssecure binds every
+            # project read to, is a Go 1.24 standard-library type.
+            go: 1.24.x
           - os: macos-latest
             go: stable
           - os: windows-latest

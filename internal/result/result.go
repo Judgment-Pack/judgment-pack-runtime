@@ -497,6 +497,19 @@ type DraftPrototype struct {
 // the version of the evaluator contract applied to it (§8.2–§8.4). Both are always
 // present, and this evaluator requires them to agree: §11 makes the declared value
 // exact, so a pack declaring another version is refused rather than evaluated.
+//
+// PackID and PackVersion echo the evaluated pack's own id and version members.
+// They are additive members and not a new fact: they are read off the document
+// that was evaluated, so a payload cannot name a pack the evaluation did not
+// read. That is what makes them safe to echo — a project configuration's pinned
+// version, a filename, and this echo are all validated references to the one
+// statement of identity the pack document carries, never independent truths
+// beside it (ADR-0012). Adding them does not move OutputVersion, on two
+// VERSIONING.md rules read together: its compatibility-dimensions clause makes a
+// break in machine-output compatibility the thing that increments the protocol
+// version, and its MINOR bullet classes an added output field as a
+// backward-compatible change. A consumer that never read these members reads the
+// same payload it read before, so nothing broke.
 type Evaluation struct {
 	OutputVersion             string          `json:"outputVersion"`
 	Tool                      Tool            `json:"tool"`
@@ -506,6 +519,8 @@ type Evaluation struct {
 	ConformanceClaimReference string          `json:"conformanceClaimReference"`
 	SpecVersion               string          `json:"specVersion"`
 	EvaluatorSpecVersion      string          `json:"evaluatorSpecVersion"`
+	PackID                    string          `json:"packId"`
+	PackVersion               string          `json:"packVersion"`
 	DraftPrototype            *DraftPrototype `json:"draftPrototype,omitempty"`
 	Disposition               Disposition     `json:"disposition"`
 	HandoffTarget             *HandoffTarget  `json:"handoffTarget,omitempty"`
@@ -526,10 +541,19 @@ const EvaluationCorpusLabel = "corpus results, the required evidence for the cla
 // produced by the same canonicalizer, so the comparison is disposition equality
 // as §8.3 defines it and not raw equality of what the manifest stores — or the
 // §8.4 class and phase for a row that expects an error instead of a disposition.
+//
+// PackID and PackVersion echo the identity members of the pack this row ran
+// against, exactly as an evaluation payload does, and are absent for a row that
+// produced no disposition — whether the refusal came before the pack was
+// admitted or after, as a reached §10 limit does. The echo is read off the
+// evaluation that produced it, and inventing one from the row's carrier would be
+// the independent truth this echo is deliberately not.
 type EvaluationCorpusCase struct {
 	ID                 string `json:"id"`
 	Origin             string `json:"origin"`
 	SpecSection        string `json:"specSection"`
+	PackID             string `json:"packId,omitempty"`
+	PackVersion        string `json:"packVersion,omitempty"`
 	Status             string `json:"status"`
 	Expected           string `json:"expected"`
 	Actual             string `json:"actual"`
@@ -559,6 +583,212 @@ type EvaluationCorpus struct {
 	Provenance                string                 `json:"provenance"`
 	Summary                   SuiteSummary           `json:"summary"`
 	Cases                     []EvaluationCorpusCase `json:"cases"`
+}
+
+// --- the jpack.json project convention (ADR-0012) ---
+
+// ProjectKind labels every payload of the project convention, in band, as what
+// it is: a convention of this runtime and not part of the specification. A
+// consumer that meets one of these payloads without reading ADR-0012 still
+// learns from the payload itself that nothing here is normative, and that no
+// other JPS implementation is obliged to understand a jpack.json.
+const ProjectKind = "non-normative-runtime-convention"
+
+// PackMatrixLabel labels every project matrix run. A project's matrix is the
+// project's own rows about the project's own packs; it is not the specification's
+// evaluation corpus, and running it reports what those rows did. The evaluator
+// that ran them is the experimental one, whose conformance claim is stated, in
+// full and only, in CONFORMANCE.md; this label points there and says nothing of
+// its own about it.
+const PackMatrixLabel = "project matrix results: rows a project wrote about its own packs, run through the experimental evaluator; that evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md"
+
+// The status of one check in a packs validate report. A skipped check is one the
+// configuration did not ask for — an absent expectedVersion, an absent matrix,
+// absent hints, a filename outside the optional convention — or one an earlier
+// failure left nothing to run, and it is reported rather than silently omitted,
+// so a reader can tell "this passed" from "this was never checked".
+const (
+	PackCheckPassed  = "passed"
+	PackCheckFailed  = "failed"
+	PackCheckSkipped = "skipped"
+)
+
+// The expectedVersion outcomes of one inventory row. "unset" means the entry
+// pins no version, "matches" and "differs" compare the pin against the pack
+// document's own version member, and "unknown" means the document could not be
+// read to compare against — which is not a match and is never reported as one.
+const (
+	PackVersionUnset   = "unset"
+	PackVersionMatches = "matches"
+	PackVersionDiffers = "differs"
+	PackVersionUnknown = "unknown"
+)
+
+// ProjectHint is one non-normative agent hint declared in a jpack.json entry:
+// where a fact or a piece of evidence is held, and how to obtain it. The runtime
+// carries it and never acts on it — it holds no credential, opens no connection,
+// and reads no source (ADR-0004, ADR-0006, ADR-0012). Key is the RFC 6901 JSON
+// Pointer for a fact hint and the declared evidence-requirement id for an
+// evidence hint.
+type ProjectHint struct {
+	Key    string `json:"key"`
+	Source string `json:"source,omitempty"`
+	Hint   string `json:"hint,omitempty"`
+}
+
+// PackSummary is one resolved inventory row: the project's decision id beside
+// the pack document's own identity, which are two different names and are
+// reported as two members for that reason. Detail is present when the document
+// could not be read or decoded, in which case the identity members are empty
+// rather than guessed.
+type PackSummary struct {
+	ID                    string        `json:"id"`
+	PackID                string        `json:"packId"`
+	PackVersion           string        `json:"packVersion"`
+	Path                  string        `json:"path"`
+	MatrixPath            string        `json:"matrixPath,omitempty"`
+	Matrix                bool          `json:"matrix"`
+	Description           string        `json:"description,omitempty"`
+	ExpectedVersion       string        `json:"expectedVersion,omitempty"`
+	ExpectedVersionStatus string        `json:"expectedVersionStatus"`
+	EvidenceRequirements  []string      `json:"evidenceRequirements"`
+	Facts                 []ProjectHint `json:"facts"`
+	Evidence              []ProjectHint `json:"evidence"`
+	Detail                string        `json:"detail,omitempty"`
+}
+
+// PackInventory is the resolved project inventory. Status is "none" when no
+// configuration was found at the resolved location, which is an answer and not a
+// failure: a project may simply not use the convention, and Note says where the
+// runtime looked.
+type PackInventory struct {
+	OutputVersion string        `json:"outputVersion"`
+	Tool          Tool          `json:"tool"`
+	Command       string        `json:"command"`
+	Status        string        `json:"status"`
+	Kind          string        `json:"kind"`
+	ConfigPath    string        `json:"configPath"`
+	ConfigVersion string        `json:"configVersion,omitempty"`
+	Note          string        `json:"note,omitempty"`
+	Packs         []PackSummary `json:"packs"`
+}
+
+// PackDocument is the metadata beside one pack document served by decision id.
+// The bytes travel separately, exactly as a bundled example's do.
+//
+// Status is "valid" when the served bytes decoded and the identity members below
+// were read off them, and "undecodable" when they did not, in which case Detail
+// says why and those members are empty rather than guessed. Neither value is a
+// verdict on the document's conformance: serving a pack does not validate it,
+// and spec validate is what reports that.
+type PackDocument struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	Kind          string `json:"kind"`
+	ConfigPath    string `json:"configPath"`
+	ID            string `json:"id"`
+	PackID        string `json:"packId"`
+	PackVersion   string `json:"packVersion"`
+	SpecVersion   string `json:"specVersion"`
+	Path          string `json:"path"`
+	Description   string `json:"description,omitempty"`
+	Bytes         int    `json:"bytes"`
+	SHA256        string `json:"sha256"`
+	Detail        string `json:"detail,omitempty"`
+}
+
+// PackCounts summarizes a per-pack report: one count per pack checked, and one
+// pack is either passed or failed. A check the configuration never asked for is
+// skipped per check rather than per pack, which is where PackCheckSkipped
+// reports it — a pack with four passed checks and one skipped has passed.
+type PackCounts struct {
+	Total  int `json:"total"`
+	Passed int `json:"passed"`
+	Failed int `json:"failed"`
+}
+
+// PackCheck is one named check applied to one configured pack.
+type PackCheck struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// PackValidationEntry is every check applied to one configured pack, in the
+// order they were applied. A failed check that makes a later one meaningless —
+// a path that escapes the project root — leaves the rest skipped rather than
+// reporting checks that never ran.
+type PackValidationEntry struct {
+	ID     string      `json:"id"`
+	Path   string      `json:"path"`
+	Status string      `json:"status"`
+	Checks []PackCheck `json:"checks"`
+}
+
+// PackValidation is one packs validate report.
+type PackValidation struct {
+	OutputVersion string                `json:"outputVersion"`
+	Tool          Tool                  `json:"tool"`
+	Command       string                `json:"command"`
+	Status        string                `json:"status"`
+	Kind          string                `json:"kind"`
+	ConfigPath    string                `json:"configPath"`
+	ConfigVersion string                `json:"configVersion"`
+	Summary       PackCounts            `json:"summary"`
+	Packs         []PackValidationEntry `json:"packs"`
+}
+
+// PackTestEntry is one pack's matrix run. Rows reuse the corpus row type,
+// because a project matrix row is compared exactly as a corpus row is: the RFC
+// 8785 canonical disposition byte for byte, or the expected §8.4 error class and
+// phase.
+type PackTestEntry struct {
+	ID          string                 `json:"id"`
+	PackID      string                 `json:"packId"`
+	PackVersion string                 `json:"packVersion"`
+	Path        string                 `json:"path"`
+	MatrixPath  string                 `json:"matrixPath,omitempty"`
+	Status      string                 `json:"status"`
+	Summary     SuiteSummary           `json:"summary"`
+	Rows        []EvaluationCorpusCase `json:"rows"`
+	Detail      string                 `json:"detail,omitempty"`
+}
+
+// PackTest is one packs test run. It carries Experimental and
+// ConformanceClaimReference like every other payload the evaluator produces,
+// because the evaluator that produced its rows is that surface.
+type PackTest struct {
+	OutputVersion             string          `json:"outputVersion"`
+	Tool                      Tool            `json:"tool"`
+	Command                   string          `json:"command"`
+	Status                    string          `json:"status"`
+	Experimental              bool            `json:"experimental"`
+	ConformanceClaimReference string          `json:"conformanceClaimReference"`
+	Label                     string          `json:"label"`
+	Kind                      string          `json:"kind"`
+	ConfigPath                string          `json:"configPath"`
+	ConfigVersion             string          `json:"configVersion"`
+	Summary                   SuiteSummary    `json:"summary"`
+	Packs                     []PackTestEntry `json:"packs"`
+}
+
+// ConfigSchema describes the exact embedded jpack.json schema bytes, on the same
+// shape spec schema reports for a bundled JPS schema. It names no specification
+// version, because the configuration format is this runtime's and has a version
+// of its own.
+type ConfigSchema struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	Kind          string `json:"kind"`
+	ConfigVersion string `json:"configVersion"`
+	SchemaID      string `json:"schemaId"`
+	Bytes         int    `json:"bytes"`
+	SHA256        string `json:"sha256"`
+	WrittenTo     string `json:"writtenTo,omitempty"`
 }
 
 type OperationalError struct {
