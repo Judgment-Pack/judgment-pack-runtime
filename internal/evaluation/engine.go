@@ -30,6 +30,24 @@ type Failure struct {
 	ExitCode int
 }
 
+// Options carries one evaluation's caller opt-ins. The zero value is the
+// published surface: Core conditions only, no draft grammar, no work budget.
+type Options struct {
+	// Command names the reporting surface, exactly as in the describe package.
+	Command string
+	// SupportedExtensions is the consumer's extension capability set.
+	SupportedExtensions []string
+	// RFC0008Quantifiers admits the draft RFC 0008 aggregates (exists, every,
+	// uniform). A pack using one is not valid under any published JPS version,
+	// so every evaluation made under this opt-in is labeled a draft-RFC
+	// prototype in its output.
+	RFC0008Quantifiers bool
+	// WorkBudget overrides DefaultWorkBudget. Zero or negative selects
+	// DefaultWorkBudget. It applies only under the draft grammar, which is what
+	// makes an evaluation-work limit load-bearing.
+	WorkBudget int
+}
+
 // Engine evaluates conformant packs. It wraps the validation engine so a pack
 // is always checked to full document conformance before a single condition is
 // interpreted.
@@ -45,6 +63,11 @@ func NewEngine(validator *validation.Engine) *Engine {
 // applies the §§7–8 experiment to the facts and evidence inputs. command names
 // the reporting surface, exactly as in the describe package.
 func (e *Engine) Evaluate(pack, facts, evidence []byte, supported []string, command string) (result.Evaluation, *Failure) {
+	return e.EvaluateWith(pack, facts, evidence, Options{Command: command, SupportedExtensions: supported})
+}
+
+// EvaluateWith is Evaluate with the caller's opt-ins stated explicitly.
+func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (result.Evaluation, *Failure) {
 	// One byte-limit boundary for every surface: the MCP wire must refuse the
 	// same oversized input the CLI's bounded reads refuse.
 	for name, data := range map[string][]byte{"pack": pack, "facts": facts, "evidence": evidence} {
@@ -56,25 +79,9 @@ func (e *Engine) Evaluate(pack, facts, evidence []byte, supported []string, comm
 			}
 		}
 	}
-	validated, operational := e.validator.Validate(pack, validation.Options{
-		Through:             "semantic",
-		SupportedExtensions: supported,
-		Limits:              carrier.DefaultLimits(),
-	})
-	if operational != nil {
-		return result.Evaluation{}, &Failure{Code: operational.Code, Message: operational.Message, ExitCode: operational.ExitCode}
-	}
-	if validated.Status != "valid" {
-		return result.Evaluation{}, packNotConformant(validated)
-	}
-
-	packDocument, failure := decodeInput(pack, "pack")
+	validated, packRoot, failure := e.conformance(pack, options)
 	if failure != nil {
 		return result.Evaluation{}, failure
-	}
-	packRoot, ok := packDocument.(map[string]any)
-	if !ok {
-		return result.Evaluation{}, &Failure{Code: "JPS-EVALUATION-INTERNAL", Message: "The validated pack did not decode to a JSON object.", ExitCode: result.ExitInternal}
 	}
 
 	factsDocument, failure := decodeInput(facts, "facts")
@@ -87,20 +94,34 @@ func (e *Engine) Evaluate(pack, facts, evidence []byte, supported []string, comm
 		return result.Evaluation{}, failure
 	}
 
-	disposition, trace := resolve(packRoot, factsDocument, presence)
+	budget := options.WorkBudget
+	if budget <= 0 {
+		budget = DefaultWorkBudget
+	}
+	disposition, trace, failure := resolve(packRoot, factsDocument, &evaluator{
+		evidence:    presence,
+		quantifiers: options.RFC0008Quantifiers,
+		budget:      budget,
+	})
+	if failure != nil {
+		return result.Evaluation{}, failure
+	}
 	if trace == nil {
 		trace = []result.TraceEntry{}
 	}
 	evaluation := result.Evaluation{
 		OutputVersion:    result.OutputVersion,
 		Tool:             result.CurrentTool(),
-		Command:          command,
+		Command:          options.Command,
 		Status:           "evaluated",
 		Experimental:     true,
 		ConformanceClaim: result.EvaluationClaim,
 		SpecVersion:      validated.SpecVersion,
 		Disposition:      disposition,
 		Trace:            trace,
+	}
+	if options.RFC0008Quantifiers {
+		evaluation.DraftPrototype = draftPrototype(packRoot, validated.SpecVersion)
 	}
 	if set, err := artifacts.Load(validated.SpecVersion); err == nil {
 		evaluation.Artifact = &result.Artifact{
@@ -110,6 +131,36 @@ func (e *Engine) Evaluate(pack, facts, evidence []byte, supported []string, comm
 		}
 	}
 	return evaluation, nil
+}
+
+// conformance establishes the pack's conformance status and returns its
+// decoded root. Without the draft opt-in this is the published path unchanged:
+// full document conformance against the bundled schema, or a refusal. Under the
+// opt-in it is the RFC 0008 gate, which no pack reaches by accident.
+func (e *Engine) conformance(pack []byte, options Options) (result.Validation, map[string]any, *Failure) {
+	if options.RFC0008Quantifiers {
+		return e.rfc0008Conformance(pack, options)
+	}
+	validated, operational := e.validator.Validate(pack, validation.Options{
+		Through:             "semantic",
+		SupportedExtensions: options.SupportedExtensions,
+		Limits:              carrier.DefaultLimits(),
+	})
+	if operational != nil {
+		return result.Validation{}, nil, &Failure{Code: operational.Code, Message: operational.Message, ExitCode: operational.ExitCode}
+	}
+	if validated.Status != "valid" {
+		return result.Validation{}, nil, packNotConformant(validated)
+	}
+	document, failure := decodeInput(pack, "pack")
+	if failure != nil {
+		return result.Validation{}, nil, failure
+	}
+	packRoot, ok := document.(map[string]any)
+	if !ok {
+		return result.Validation{}, nil, &Failure{Code: "JPS-EVALUATION-INTERNAL", Message: "The validated pack did not decode to a JSON object.", ExitCode: result.ExitInternal}
+	}
+	return validated, packRoot, nil
 }
 
 // packNotConformant refuses a pack that did not reach full document

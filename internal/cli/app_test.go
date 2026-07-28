@@ -474,3 +474,114 @@ func TestExperimentalEvaluateCommand(t *testing.T) {
 	}
 	assertDiagnosticCode(t, stdout, "JPS-INVOCATION-FACTS")
 }
+
+// The draft RFC 0008 grammar is reachable only through the opt-in flag on
+// experimental evaluate. spec validate is untouched and still rejects a pack
+// using the operators; without the flag the evaluator refuses it for the same
+// reason; with the flag it evaluates, and the output says in band that the pack
+// is not valid under the published specification.
+func TestExperimentalEvaluateRFC0008QuantifierFlag(t *testing.T) {
+	pack := filepath.Join("..", "evaluation", "testdata", "rfc0008", "airline-cancellation-quantifier.json")
+	facts := filepath.Join(t.TempDir(), "facts.json")
+	document := `{"reservation":{"segments":[{"cancelledByAirline":false},{"cancelledByAirline":true}]}}`
+	if err := os.WriteFile(facts, []byte(document), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// spec validate is untouched: the pack is structurally non-conforming.
+	code, stdout, stderr := runTest(t, []string{"spec", "validate", pack, "--format", "json"}, "")
+	if code != result.ExitInvalid || stderr != "" {
+		t.Fatalf("spec validate must still reject a draft-operator pack: exit=%d stderr=%q", code, stderr)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-STRUCTURE-CONDITION-SHAPE")
+
+	// Without the flag the evaluator refuses it exactly as it does today.
+	code, stdout, _ = runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--format", "json"}, "")
+	if code != result.ExitInvalid {
+		t.Fatalf("without the flag the pack must be refused, got exit=%d", code)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-EVALUATION-PACK-NOT-CONFORMANT")
+
+	// With the flag it evaluates, and the marker travels with the result.
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--rfc0008-quantifiers", "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var output struct {
+		SpecVersion    string `json:"specVersion"`
+		DraftPrototype *struct {
+			RFC                       string   `json:"rfc"`
+			Status                    string   `json:"status"`
+			Operators                 []string `json:"operators"`
+			PackValidUnderSpecVersion bool     `json:"packValidUnderSpecVersion"`
+			Note                      string   `json:"note"`
+		} `json:"draftPrototype"`
+		Disposition struct {
+			Kind      string `json:"kind"`
+			OutcomeID string `json:"outcomeId"`
+		} `json:"disposition"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Disposition.Kind != "outcome" || output.Disposition.OutcomeID != "free-cancellation" {
+		t.Fatalf("disposition = %+v", output.Disposition)
+	}
+	if output.DraftPrototype == nil {
+		t.Fatal("a draft-grammar evaluation must carry the prototype marker")
+	}
+	if output.DraftPrototype.RFC != "0008" || output.DraftPrototype.Status != "draft-rfc-prototype" {
+		t.Fatalf("marker = %+v", output.DraftPrototype)
+	}
+	if !reflect.DeepEqual(output.DraftPrototype.Operators, []string{"exists"}) {
+		t.Fatalf("marker must name the operators used: %v", output.DraftPrototype.Operators)
+	}
+	if output.DraftPrototype.PackValidUnderSpecVersion || !strings.Contains(output.DraftPrototype.Note, "NOT valid") {
+		t.Fatalf("the marker must deny validity under %s: %+v", output.SpecVersion, output.DraftPrototype)
+	}
+
+	// The human surface carries the same warning, above the disposition.
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--rfc0008-quantifiers"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	marker := strings.Index(stdout, "DRAFT-RFC PROTOTYPE")
+	disposition := strings.Index(stdout, "disposition:")
+	if marker < 0 || disposition < 0 || marker > disposition {
+		t.Fatalf("the prototype marker must precede the disposition: %q", stdout)
+	}
+	if !strings.Contains(stdout, "NOT valid under JPS 0.1.0-draft") {
+		t.Fatalf("the human marker must name the specification version it is not valid under: %q", stdout)
+	}
+
+	// The flag on a pack that uses no draft operator changes nothing about it,
+	// and the human marker says so rather than accusing a valid pack. The JSON
+	// marker of the same run reports packValidUnderSpecVersion: true, so the two
+	// surfaces must not contradict each other.
+	corePack := filepath.Join("..", "evaluation", "testdata", "rfc0008", "airline-cancellation-prepared.json")
+	coreFacts := filepath.Join(t.TempDir(), "facts.json")
+	if err := os.WriteFile(coreFacts, []byte(`{"reservation":{"anySegmentCancelledByAirline":true}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", corePack, "--facts", coreFacts, "--rfc0008-quantifiers"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "DRAFT-RFC PROTOTYPE") || strings.Contains(stdout, "NOT valid") {
+		t.Fatalf("a pack using no draft operator must not be called invalid: %q", stdout)
+	}
+	if !strings.Contains(stdout, "uses no draft operator and remains a plain JPS 0.1.0-draft pack") {
+		t.Fatalf("the human marker must say the pack is unchanged by the flag: %q", stdout)
+	}
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", corePack, "--facts", coreFacts, "--rfc0008-quantifiers", "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	output.DraftPrototype = nil
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.DraftPrototype == nil || !output.DraftPrototype.PackValidUnderSpecVersion || len(output.DraftPrototype.Operators) != 0 {
+		t.Fatalf("the JSON marker must agree with the human one: %+v", output.DraftPrototype)
+	}
+}

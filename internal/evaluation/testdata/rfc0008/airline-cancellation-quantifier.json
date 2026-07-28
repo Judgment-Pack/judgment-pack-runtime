@@ -1,0 +1,42 @@
+{
+  "specVersion": "0.1.0-draft",
+  "id": "https://example.invalid/judgment-packs/airline-cancellation-quantifier",
+  "version": "0.1.0",
+  "title": "Synthetic airline cancellation triage (draft RFC 0008 quantifier)",
+  "description": "Synthetic re-encoding of census fact A6:/reservation/anySegmentCancelledByAirline. Invented content for specification testing; it authorizes nothing. This twin quantifies over the per-segment records instead of reading a prepared boolean, and is NOT valid under JPS 0.1.0-draft.",
+  "decision": {
+    "intent": "Decide whether an airline-caused cancellation entitles the reservation to a free cancellation.",
+    "question": "Was any segment of this reservation cancelled by the airline?"
+  },
+  "outcomes": [
+    {
+      "id": "free-cancellation",
+      "label": "Free cancellation",
+      "description": "The reservation may be cancelled at no charge."
+    },
+    {
+      "id": "standard-rules",
+      "label": "Standard cancellation rules",
+      "description": "The ordinary fare rules decide the charge."
+    }
+  ],
+  "rules": [
+    {
+      "id": "airline-cancelled-segment",
+      "description": "A segment cancelled by the airline entitles the reservation to a free cancellation.",
+      "when": {
+        "op": "exists",
+        "path": "/reservation/segments",
+        "where": {
+          "op": "fact",
+          "path": "/cancelledByAirline",
+          "operator": "equals",
+          "value": true
+        }
+      },
+      "outcome": "free-cancellation",
+      "onUnknown": "escalate"
+    }
+  ],
+  "fallbackOutcome": "standard-rules"
+}

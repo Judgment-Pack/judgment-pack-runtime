@@ -20,6 +20,15 @@ defines no evaluator conformance class. Its one evaluation surface is explicitly
 specification's §§7–8 experiment per [ADR-0007](docs/adr/0007-experimental-evaluator.md), claims
 no conformance, and may change or be removed without compatibility promise.
 
+That command carries one further opt-in, `--rfc0008-quantifiers`, which is a **draft-RFC
+prototype** per [ADR-0009](docs/adr/0009-draft-rfc-quantifier-prototype.md): it admits the
+collection quantifiers `exists`, `every`, and `uniform` proposed by the specification's RFC 0008
+(Draft). Those operators belong to no published JPS version. A pack using one is **not valid** under
+JPS `0.1.0-draft`, `spec validate` rejects it, the evaluator without the flag refuses it, and every
+successful evaluation payload produced under the flag says so in band through a `draftPrototype`
+member — a refusal is an operational error and carries none. The flag is CLI only; the MCP tool does
+not expose it.
+
 The command binary is `judgment-pack`; release archives also ship a `jpack` short alias for the
 same program.
 
@@ -33,6 +42,7 @@ judgment-pack spec schema <spec-version>
 judgment-pack spec examples [name]
 judgment-pack mcp
 judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL; no conformance claim)
+judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE)
 ```
 
 The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the

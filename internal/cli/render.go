@@ -137,6 +137,18 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		return a.writeJSON(output)
 	}
 	fmt.Fprintln(a.out, "EXPERIMENTAL evaluation (no conformance claim; JPS 0.1.0-draft defines no evaluator conformance)")
+	if prototype := output.DraftPrototype; prototype != nil {
+		// The two wordings mirror the JSON marker's own: a pack that used no
+		// draft operator is a plain pack the published validator accepts, and
+		// saying otherwise would contradict the same run's JSON output.
+		if prototype.PackValidUnderSpecVersion {
+			fmt.Fprintf(a.out, "DRAFT-RFC PROTOTYPE: RFC %s grammar enabled; this pack uses no draft operator and remains a plain JPS %s pack\n",
+				display.Sanitize(prototype.RFC), display.Sanitize(output.SpecVersion))
+		} else {
+			fmt.Fprintf(a.out, "DRAFT-RFC PROTOTYPE: RFC %s operators %s; this pack is NOT valid under JPS %s and spec validate rejects it\n",
+				display.Sanitize(prototype.RFC), display.Sanitize(operatorList(prototype.Operators)), display.Sanitize(output.SpecVersion))
+		}
+	}
 	switch output.Disposition.Kind {
 	case "outcome":
 		fmt.Fprintf(a.out, "disposition: outcome %s\n", display.Sanitize(output.Disposition.OutcomeID))
@@ -174,6 +186,16 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		fmt.Fprintf(a.out, "artifacts: %s · sha256 %s\n", display.Sanitize(output.Artifact.Provenance), output.Artifact.BundleDigest)
 	}
 	return nil
+}
+
+// operatorList names the draft operators a pack actually used. The empty case
+// never reaches the marker line — a pack that used none gets the other wording
+// above — but it is spelled out rather than left to render as an empty list.
+func operatorList(operators []string) string {
+	if len(operators) == 0 {
+		return "(none used)"
+	}
+	return strings.Join(operators, ", ")
 }
 
 func joinNonEmpty(values ...string) string {

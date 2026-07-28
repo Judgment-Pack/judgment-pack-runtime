@@ -4,6 +4,31 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Add a DRAFT-RFC PROTOTYPE of the specification's RFC 0008 (Draft), bounded collection quantifiers,
+  behind the new `judgment-pack experimental evaluate --rfc0008-quantifiers` flag (ADR-0009, under
+  ADR-0007's experimental umbrella). The flag admits three condition operators — `exists`, `every`,
+  and `uniform` — with the RFC's element re-rooting, its pinned empty-array values, its
+  aggregate-depth bound of two, and a candidate work-accounting model the RFC itself leaves open.
+  Every successful evaluation payload produced this way carries a new output member,
+  `draftPrototype`, naming the operators used and stating that a pack using one is NOT valid under
+  any published JPS version; a refusal carries no such member, because a grammar or work-limit
+  failure is reported through the ordinary operational-error envelope. Four diagnostic codes are
+  minted, `codeStability: "provisional"` like every other: `JPS-EVALUATION-RFC0008-GRAMMAR`,
+  `JPS-EVALUATION-RFC0008-DEPTH`, `JPS-EVALUATION-RFC0008-SHAPE`, and
+  `JPS-RESOURCE-EVALUATION-WORK-LIMIT`. **No conformance claim and no validation behavior changes**:
+  `spec validate` is untouched and still rejects every pack using an operator, the evaluator without
+  the flag refuses one for the same reason, the MCP surface does not expose the flag, and everything
+  the draft grammar does not add is still held to full document conformance through the pack's Core
+  projection. The operators belong to an open proposal that may never be accepted.
+- Make §7.4 equality total in the EXPERIMENTAL evaluator. JSON numbers are compared as normalized
+  tokens — sign, significant digits, adjusted exponent — rather than through arbitrary-precision
+  arithmetic, so `1e3`, `1000`, and `1.0e3` are one value, `-0` equals `0`, and a pair no arithmetic
+  type can hold (`1e999999999` against `2e999999999`) compares `false` instead of degrading to
+  `unknown`. `equals`, `not-equals`, and `in` therefore always decide, and `uniform` needs no arm
+  beyond RFC 0008's five clauses: an evaluator's inability to represent an admitted value is a
+  resource condition, not a semantics two implementations would have to agree on. Ordered comparison
+  is unchanged — still defined only over §2.2 decimal strings — and `spec validate`, the conformance
+  corpus, and the exit classes are untouched.
 - Add the MCP `prompts` capability (ADR-0008): three non-normative authoring-method prompts —
   `author_pack`, `test_pack`, `fix_pack` — served as static, versioned text that the client's model
   executes with the client's key. The server still calls no model, holds no key, and opens no

@@ -245,21 +245,36 @@ type TraceEntry struct {
 	Skipped    bool   `json:"skipped,omitempty"`
 }
 
+// DraftPrototype marks an evaluation that ran under a draft-RFC grammar
+// extension rather than a published JPS version. It is present exactly when the
+// caller opted into such a grammar, and it says in band what the operators are
+// and that the pack carrying them is not valid under the specification the rest
+// of the payload names. A consumer that ignores it is reading a disposition
+// produced by operators no JPS version defines.
+type DraftPrototype struct {
+	RFC                       string   `json:"rfc"`
+	Status                    string   `json:"status"`
+	Operators                 []string `json:"operators"`
+	PackValidUnderSpecVersion bool     `json:"packValidUnderSpecVersion"`
+	Note                      string   `json:"note"`
+}
+
 // Evaluation is the experimental-evaluation envelope. Experimental and
 // ConformanceClaim are always set so no consumer can read the payload as a
 // standard: this surface may change or be removed without compatibility
 // promise (ADR-0007).
 type Evaluation struct {
-	OutputVersion    string       `json:"outputVersion"`
-	Tool             Tool         `json:"tool"`
-	Command          string       `json:"command"`
-	Status           string       `json:"status"`
-	Experimental     bool         `json:"experimental"`
-	ConformanceClaim string       `json:"conformanceClaim"`
-	SpecVersion      string       `json:"specVersion"`
-	Disposition      Disposition  `json:"disposition"`
-	Trace            []TraceEntry `json:"trace"`
-	Artifact         *Artifact    `json:"artifact,omitempty"`
+	OutputVersion    string          `json:"outputVersion"`
+	Tool             Tool            `json:"tool"`
+	Command          string          `json:"command"`
+	Status           string          `json:"status"`
+	Experimental     bool            `json:"experimental"`
+	ConformanceClaim string          `json:"conformanceClaim"`
+	SpecVersion      string          `json:"specVersion"`
+	DraftPrototype   *DraftPrototype `json:"draftPrototype,omitempty"`
+	Disposition      Disposition     `json:"disposition"`
+	Trace            []TraceEntry    `json:"trace"`
+	Artifact         *Artifact       `json:"artifact,omitempty"`
 }
 
 type OperationalError struct {

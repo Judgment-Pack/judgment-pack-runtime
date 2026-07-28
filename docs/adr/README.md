@@ -100,3 +100,4 @@ authority, and following it confers no conformance status on anything.
 | [0006](0006-authoring-lifecycle-in-the-client.md)        | The authoring lifecycle lives in the client; the runtime is a stateless oracle  | accepted |
 | [0007](0007-experimental-evaluator.md)                   | Ship an experimental evaluator behind an explicit experimental surface          | accepted |
 | [0008](0008-mcp-prompts-authoring-method.md)             | Serve authoring method as MCP prompts; the intelligence stays in the client     | accepted |
+| [0009](0009-draft-rfc-quantifier-prototype.md)           | Prototype spec RFC 0008 quantifiers behind an opt-in experimental flag          | proposed |

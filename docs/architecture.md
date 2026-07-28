@@ -52,7 +52,7 @@ evaluation exists only behind the explicitly experimental surface of
 - `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads.
 - `internal/result` defines machine output version 1 and exit classes.
 - `internal/describe` composes the machine descriptions the CLI and MCP server share, so neither drifts.
-- `internal/evaluation` implements the EXPERIMENTAL, non-conformance-claiming JPS §§7–8 evaluator (ADR-0007).
+- `internal/evaluation` implements the EXPERIMENTAL, non-conformance-claiming JPS §§7–8 evaluator (ADR-0007), and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.

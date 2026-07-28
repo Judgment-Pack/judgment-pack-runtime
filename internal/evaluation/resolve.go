@@ -19,34 +19,41 @@ const (
 
 // resolver walks §8 over one conformant pack. It is a pure function of its
 // inputs: the decoded pack, the decoded facts document, and the tri-state
-// presence of every declared evidence requirement.
+// presence of every declared evidence requirement, which the evaluator carries
+// along with the running work charge of the draft RFC 0008 opt-in.
 type resolver struct {
-	pack     map[string]any
-	facts    any
-	evidence map[string]tri
+	pack  map[string]any
+	facts any
+	eval  *evaluator
 
 	reasons          map[string]bool
 	directEscalation bool
 	trace            []result.TraceEntry
 }
 
-// resolve produces the RFC 0006 disposition and the informative trace.
-func resolve(pack map[string]any, facts any, evidence map[string]tri) (result.Disposition, []result.TraceEntry) {
-	r := &resolver{pack: pack, facts: facts, evidence: evidence, reasons: map[string]bool{}}
+// resolve produces the RFC 0006 disposition and the informative trace. The
+// third result is an evaluation error rather than a disposition: exhausting the
+// draft RFC 0008 work budget interrupts §8 wherever it happens, and no partial
+// disposition is reported.
+func resolve(pack map[string]any, facts any, eval *evaluator) (result.Disposition, []result.TraceEntry, *Failure) {
+	r := &resolver{pack: pack, facts: facts, eval: eval, reasons: map[string]bool{}}
 
 	// Step 1: omitted applicability is the literal value true. False is a
 	// terminal not-applicable result; unknown produces unresolved and stops.
 	applicability := triTrue
 	if condition, present := pack["applicability"]; present {
-		applicability = evalCondition(condition, facts, evidence)
+		applicability = r.eval.evaluate(condition, facts)
+		if r.eval.exceeded {
+			return result.Disposition{}, r.trace, workLimitFailure(r.eval)
+		}
 	}
 	switch applicability {
 	case triFalse:
 		r.reasons[reasonNotApplicable] = true
-		return r.disposition("not-applicable", ""), r.trace
+		return r.disposition("not-applicable", ""), r.trace, nil
 	case triUnknown:
 		r.reasons[reasonUnknown] = true
-		return r.disposition("unresolved", ""), r.trace
+		return r.disposition("unresolved", ""), r.trace, nil
 	}
 
 	// Step 2, as pinned by RFC 0006: missing-required-evidence iff any
@@ -62,7 +69,7 @@ func resolve(pack map[string]any, facts any, evidence map[string]tri) (result.Di
 			continue
 		}
 		id, _ := requirement["id"].(string)
-		switch r.evidence[id] {
+		switch r.eval.evidence[id] {
 		case triFalse:
 			requiredFalse = true
 		case triUnknown:
@@ -87,7 +94,10 @@ func resolve(pack map[string]any, facts any, evidence map[string]tri) (result.Di
 		}
 		id, _ := exception["id"].(string)
 		effect, _ := exception["effect"].(string)
-		verdict := evalCondition(exception["when"], facts, evidence)
+		verdict := r.eval.evaluate(exception["when"], facts)
+		if r.eval.exceeded {
+			return result.Disposition{}, r.trace, workLimitFailure(r.eval)
+		}
 		entry := result.TraceEntry{Stage: "exception", ID: id, Condition: verdict.String()}
 		switch verdict {
 		case triUnknown:
@@ -124,7 +134,7 @@ func resolve(pack map[string]any, facts any, evidence map[string]tri) (result.Di
 		r.reasons[reasonConflict] = true
 	}
 	if len(r.reasons) > 0 {
-		return r.disposition("unresolved", ""), r.trace
+		return r.disposition("unresolved", ""), r.trace, nil
 	}
 
 	// Step 6: one compatible forced outcome, no blocking state: produce it
@@ -137,7 +147,7 @@ func resolve(pack map[string]any, facts any, evidence map[string]tri) (result.Di
 					r.trace = append(r.trace, result.TraceEntry{Stage: "rule", ID: id, Condition: "not-evaluated", Skipped: true})
 				}
 			}
-			return r.disposition("outcome", outcome), r.trace
+			return r.disposition("outcome", outcome), r.trace, nil
 		}
 	}
 
@@ -155,7 +165,10 @@ func resolve(pack map[string]any, facts any, evidence map[string]tri) (result.Di
 			r.trace = append(r.trace, result.TraceEntry{Stage: "rule", ID: id, Condition: "not-evaluated", Suppressed: true})
 			continue
 		}
-		verdict := evalCondition(rule["when"], facts, evidence)
+		verdict := r.eval.evaluate(rule["when"], facts)
+		if r.eval.exceeded {
+			return result.Disposition{}, r.trace, workLimitFailure(r.eval)
+		}
 		entry := result.TraceEntry{Stage: "rule", ID: id, Condition: verdict.String()}
 		switch verdict {
 		case triTrue:
@@ -176,23 +189,23 @@ func resolve(pack map[string]any, facts any, evidence map[string]tri) (result.Di
 		r.reasons[reasonConflict] = true
 	}
 	if len(r.reasons) > 0 {
-		return r.disposition("unresolved", ""), r.trace
+		return r.disposition("unresolved", ""), r.trace, nil
 	}
 
 	// Step 9: one distinct outcome and no blocking reason: produce it.
 	if len(candidates) == 1 {
 		for outcome := range candidates {
-			return r.disposition("outcome", outcome), r.trace
+			return r.disposition("outcome", outcome), r.trace, nil
 		}
 	}
 
 	// Step 10: no true rule contributed an outcome. Use the fallback when
 	// declared; otherwise unresolved with reason no-match.
 	if fallback, ok := r.pack["fallbackOutcome"].(string); ok {
-		return r.disposition("outcome", fallback), r.trace
+		return r.disposition("outcome", fallback), r.trace, nil
 	}
 	r.reasons[reasonNoMatch] = true
-	return r.disposition("unresolved", ""), r.trace
+	return r.disposition("unresolved", ""), r.trace, nil
 }
 
 // disposition assembles the RFC 0006 result: sorted deduplicated reasons and
