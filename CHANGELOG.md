@@ -9,7 +9,11 @@ All notable changes to tagged releases are documented here.
   each node quoting the document member it reads, in document order, the same bytes on every
   run. A reading aid derived from the pack, never a second statement of it: it adds no member,
   decides nothing, and diagrams a document exactly as written whether or not it validates.
-  GitHub and VS Code render the output in Markdown fences.
+  GitHub and VS Code render the output in Markdown fences. Escalating unknowns route to an
+  unresolved node — only `escalation.triggers` decides a handoff — labels neutralize the
+  renderer's hazard bytes (backticks, `%%` directives, empty labels), the frontmatter title
+  is a quoted YAML scalar, and the document is decoded once, by the same strict carrier
+  every other surface uses.
 - **Add the `explain_disposition` method prompt** (MCP `prompts` capability, ADR-0008), the
   fourth beside `author_pack`, `test_pack`, and `fix_pack`: non-normative guidance for
   narrating an evaluation payload strictly from the record it carries — ground every

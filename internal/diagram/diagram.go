@@ -25,14 +25,21 @@ func Mermaid(document map[string]any) string {
 	// and version — the one statement of identity a pack carries.
 	title := strings.TrimSpace(str(document, "id") + " " + str(document, "version"))
 	if title != "" {
-		b.WriteString("---\ntitle: " + frontmatterEscape(title) + "\n---\n")
+		b.WriteString("---\ntitle: " + yamlQuote(title) + "\n---\n")
 	}
 	b.WriteString("flowchart TD\n")
 
-	escalationNeeded := writeEscalationUsers(&b, document)
+	escalationNeeded, unresolvedNeeded := diagramSinks(document)
 	writeApplicability(&b, document)
 	writeEvidence(&b, document)
 	writeOutcomes(&b, document)
+	if unresolvedNeeded {
+		// One shared sink for every escalating unknown: onUnknown "escalate"
+		// retains reason "unknown" and produces unresolved (resolve.go); it
+		// requests a handoff only when escalation.triggers says so, which the
+		// triggers node states — so no unknown edge points at escalation.
+		b.WriteString("  unresolved_unknown([\"unresolved (unknown)\"])\n")
+	}
 	writeRules(&b, document)
 	writeExceptions(&b, document)
 	writeFallback(&b, document)
@@ -42,24 +49,31 @@ func Mermaid(document map[string]any) string {
 	return b.String()
 }
 
-// writeEscalationUsers reports whether anything will point at the escalation
-// node: a rule or exception with onUnknown escalate, or an escalate-effect
-// exception. The node is drawn only when referenced or declared.
-func writeEscalationUsers(_ *strings.Builder, document map[string]any) bool {
+// diagramSinks reports which shared terminal nodes the document needs: the
+// escalation node when it is declared or an escalate-effect exception makes a
+// direct request, and the unresolved-unknown node when applicability or any
+// onUnknown "escalate" can reach it.
+func diagramSinks(document map[string]any) (escalation, unresolved bool) {
 	if _, declared := document["escalation"]; declared {
-		return true
+		escalation = true
+	}
+	if _, present := document["applicability"]; present {
+		unresolved = true
 	}
 	for _, rule := range arr(document, "rules") {
 		if str(rule, "onUnknown") == "escalate" {
-			return true
+			unresolved = true
 		}
 	}
 	for _, exception := range arr(document, "exceptions") {
-		if str(exception, "onUnknown") == "escalate" || str(exception, "effect") == "escalate" {
-			return true
+		if str(exception, "onUnknown") == "escalate" {
+			unresolved = true
+		}
+		if str(exception, "effect") == "escalate" {
+			escalation = true
 		}
 	}
-	return false
+	return escalation, unresolved
 }
 
 func writeApplicability(b *strings.Builder, document map[string]any) {
@@ -73,9 +87,8 @@ func writeApplicability(b *strings.Builder, document map[string]any) {
 	// something the resolution model does not.
 	fmt.Fprintf(b, "  applicability{\"applicability: %s\"}\n", label(conditionSummary(condition)))
 	b.WriteString("  not_applicable([\"not-applicable\"])\n")
-	b.WriteString("  applicability_unresolved([\"unresolved (unknown)\"])\n")
 	b.WriteString("  applicability -. \"false\" .-> not_applicable\n")
-	b.WriteString("  applicability -. \"unknown\" .-> applicability_unresolved\n")
+	b.WriteString("  applicability -. \"unknown\" .-> unresolved_unknown\n")
 }
 
 func writeEvidence(b *strings.Builder, document map[string]any) {
@@ -123,7 +136,7 @@ func writeRules(b *strings.Builder, document map[string]any) {
 			fmt.Fprintf(b, "  %s --> %s\n", nodeID("rule", id), nodeID("out", outcome))
 		}
 		if str(rule, "onUnknown") == "escalate" {
-			fmt.Fprintf(b, "  %s -. \"unknown\" .-> escalation\n", nodeID("rule", id))
+			fmt.Fprintf(b, "  %s -. \"unknown\" .-> unresolved_unknown\n", nodeID("rule", id))
 		}
 		for _, reference := range strs(rule, "evidenceRequirementRefs") {
 			fmt.Fprintf(b, "  %s -. \"reads\" .-> %s\n", nodeID("ev", reference), nodeID("rule", id))
@@ -153,7 +166,7 @@ func writeExceptions(b *strings.Builder, document map[string]any) {
 			fmt.Fprintf(b, "  %s == \"escalate\" ==> escalation\n", nodeID("exc", id))
 		}
 		if str(exception, "onUnknown") == "escalate" {
-			fmt.Fprintf(b, "  %s -. \"unknown\" .-> escalation\n", nodeID("exc", id))
+			fmt.Fprintf(b, "  %s -. \"unknown\" .-> unresolved_unknown\n", nodeID("exc", id))
 		}
 	}
 }
@@ -242,10 +255,17 @@ func nodeID(prefix, raw string) string {
 	return b.String()
 }
 
-// label makes text safe inside a quoted Mermaid label: quotes and angle
-// brackets become entities, newlines become the <br/> Mermaid renders, and
-// length is bounded. Truncation counts runes, never splitting one.
+// label makes text safe inside a quoted Mermaid label. Quotes, angle
+// brackets, backticks, and percent signs become entity codes — a leading
+// backtick after the opening quote would switch Mermaid's lexer into its
+// markdown-string state, and %% opens a directive scanned outside any string
+// state — newlines become the <br/> Mermaid renders, and length is bounded,
+// counting runes so truncation never splits one. Empty text gets a
+// placeholder: Mermaid's grammar derives no empty quoted label.
 func label(text string) string {
+	if text == "" {
+		return "(unnamed)"
+	}
 	if runes := []rune(text); len(runes) > labelLimit {
 		text = string(runes[:labelLimit]) + "…"
 	}
@@ -253,14 +273,44 @@ func label(text string) string {
 		"\"", "#quot;",
 		"<", "#lt;",
 		">", "#gt;",
+		"`", "#96;",
+		"%", "#37;",
+		"\r\n", "<br/>",
 		"\n", "<br/>",
+		"\r", "<br/>",
 	)
 	return replacer.Replace(text)
 }
 
-// frontmatterEscape keeps the YAML title one plain line.
-func frontmatterEscape(text string) string {
-	return strings.NewReplacer("\n", " ", "\"", "'").Replace(text)
+// yamlQuote renders text as one YAML double-quoted scalar. Mermaid parses the
+// frontmatter with a YAML loader that has no error handling — an id that
+// happens to contain ": ", "#", a flow character, or a carriage return would
+// abort or truncate the whole render as a plain scalar. Inside double quotes
+// every such byte is inert, and control characters become YAML escapes so the
+// scalar stays one line.
+func yamlQuote(text string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range text {
+		switch {
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '"':
+			b.WriteString(`\"`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20:
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 func str(node any, key string) string {

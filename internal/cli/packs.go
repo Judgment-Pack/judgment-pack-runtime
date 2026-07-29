@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/diagram"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -97,13 +97,22 @@ func (a *App) packsDiagramCommand() *cobra.Command {
 			if documentFailure != nil {
 				return a.projectFailure("packs diagram", "human", documentFailure)
 			}
-			var document map[string]any
-			if err := json.Unmarshal(data, &document); err != nil {
-				detail := meta.Detail
-				if detail == "" {
-					detail = err.Error()
-				}
-				return a.operational("packs diagram", "human", result.ExitInvalid, "JPS-PROJECT-PACK-READ", detail)
+			// One decoder for every surface: the carrier verdict Document
+			// already reached is the gate, and the render input comes from the
+			// same strict decode — a second, looser decoder here would let two
+			// surfaces disagree about one file.
+			if meta.Status != "valid" {
+				return a.operational("packs diagram", "human", result.ExitInvalid, "JPS-PROJECT-PACK-READ", meta.Detail)
+			}
+			decoded, carrierFailure := carrier.Decode(data, carrier.DefaultLimits())
+			if carrierFailure != nil {
+				return a.operational("packs diagram", "human", result.ExitInvalid, "JPS-PROJECT-PACK-READ",
+					project.ReadFailureMessage(meta.Path, carrierFailure))
+			}
+			document, ok := decoded.(map[string]any)
+			if !ok {
+				return a.operational("packs diagram", "human", result.ExitInvalid, "JPS-PROJECT-PACK-READ",
+					"the document's root is not an object")
 			}
 			if _, err := io.WriteString(a.out, diagram.Mermaid(document)); err != nil {
 				return &handledExit{code: result.ExitIO}

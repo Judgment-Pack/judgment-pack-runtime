@@ -86,3 +86,36 @@ func TestMermaidEscapesLabels(t *testing.T) {
 		}
 	}
 }
+
+// The renderer-killing byte sequences found in review stay neutralized: a
+// leading backtick would switch Mermaid's lexer into its markdown-string
+// state, %%{ opens a directive scanned outside string state, an empty label
+// derives nothing in the grammar, and a hostile id would break the YAML
+// frontmatter as a plain scalar or smuggle lines through \r.
+func TestMermaidNeutralizesRendererHazards(t *testing.T) {
+	document := map[string]any{
+		"id":      "a: b #c\r---\rflowchart LR",
+		"version": "0.0.1",
+		"outcomes": []any{
+			map[string]any{"id": "tick", "label": "`Proceed`"},
+			map[string]any{"id": "directive", "label": "%%{init: {}}%%"},
+			map[string]any{},
+		},
+	}
+	rendered := Mermaid(document)
+	for _, banned := range []string{"`", "%%", "\r", "([\"\"])"} {
+		if strings.Contains(rendered, banned) {
+			t.Fatalf("output still carries %q:\n%s", banned, rendered)
+		}
+	}
+	for _, wanted := range []string{
+		`title: "a: b #c\r---\rflowchart LR 0.0.1"`,
+		"#96;Proceed#96;",
+		"#37;#37;{init: {}}#37;#37;",
+		`(["(unnamed)"])`,
+	} {
+		if !strings.Contains(rendered, wanted) {
+			t.Fatalf("expected %q:\n%s", wanted, rendered)
+		}
+	}
+}
