@@ -2,6 +2,16 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Harden the authoring method prompts against test-satisfying pack edits**, from live agent
+  behavior: `author_pack` now states that `evidenceRequirementRefs` is a citation the evaluator
+  never reads, and `test_pack` now names the arbiter for every matrix divergence — the policy
+  text — with the rule that the pack is never weakened to make an author's own expectation
+  pass, and that `missing-required-evidence` usually indicts the row's evidenceAvailability.
+  Method text only; no evaluation surface changes, and the conformance claim is stated, in
+  full and only, in `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.6.2 - 2026-07-29
 
 - **Add the `get_pack_diagram` MCP tool**: one declared pack as the deterministic Mermaid
