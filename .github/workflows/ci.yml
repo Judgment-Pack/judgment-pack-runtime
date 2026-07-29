@@ -66,8 +66,20 @@ jobs:
           import json, jsonschema, sys
           schema = json.load(open('build/mcp-registry/server.schema-2025-12-11.json'))
           doc = json.load(open('/tmp/server.json'))
-          errors = sorted(jsonschema.Draft202012Validator(schema).iter_errors(doc), key=lambda e: list(e.path))
+          errors = [
+              '/'.join(map(str, e.path)) + ' - ' + e.message
+              for e in jsonschema.Draft202012Validator(schema).iter_errors(doc)
+          ]
+          # Server-side rules the registry enforces beyond its schema, learned
+          # from live rejections (v0.5.0-rc.1): an OCI package carries its
+          # version in the identifier tag and must not have a version member.
+          for i, package in enumerate(doc.get('packages', [])):
+              if package.get('registryType') == 'oci':
+                  if 'version' in package:
+                      errors.append(f'packages/{i} - OCI packages must not have a version member')
+                  if ':' not in package.get('identifier', ''):
+                      errors.append(f'packages/{i} - OCI identifier must carry the version as its tag')
           for e in errors:
-              print('INVALID:', '/'.join(map(str, e.path)), '-', e.message, file=sys.stderr)
+              print('INVALID:', e, file=sys.stderr)
           sys.exit(1 if errors else 0)
           EOF
