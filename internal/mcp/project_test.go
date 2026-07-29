@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/diagram"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -483,6 +484,19 @@ func TestGetPackDiagramServesTheDeterministicRendering(t *testing.T) {
 		if !strings.Contains(text, marker) {
 			t.Fatalf("the rendering must contain %q:\n%s", marker, text)
 		}
+	}
+	// Byte parity with the renderer itself: the tool serves diagram.Mermaid
+	// of the same strict carrier decode, nothing more and nothing less.
+	raw, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, carrierFailure := carrier.Decode(raw, carrier.DefaultLimits())
+	if carrierFailure != nil {
+		t.Fatal(carrierFailure)
+	}
+	if expected := diagram.Mermaid(decoded.(map[string]any)); text != expected {
+		t.Fatalf("tool output diverged from diagram.Mermaid:\n--- tool ---\n%s\n--- direct ---\n%s", text, expected)
 	}
 	// Same document, same bytes: a second call returns the identical text.
 	again := runServer(t, toolCall(t, 1, "get_pack_diagram", map[string]any{"pack_id": "intake"}))
