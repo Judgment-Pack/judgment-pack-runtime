@@ -13,8 +13,11 @@ All notable changes to tagged releases are documented here.
   MCP registry as `io.github.Judgment-Pack/judgment-pack` via GitHub OIDC. Released
   image version tags are refused rather than overwritten, and an image whose smoke test
   fails is left unpromoted, unattested, and unpublished. `docs/mcp-clients.md` documents
-  the container and registry install paths. Nothing about the runtime itself changes:
-  local execution, keyless, network-free, no HTTP surface (ADR-0004).
+  the container and registry install paths. The image carries the same `CONFORMANCE.md`,
+  `LICENSE`, `NOTICE`, and `THIRD_PARTY_NOTICES` the archives do; the conformance claim
+  is stated, in full and only, in `CONFORMANCE.md`, which no line of this entry restates.
+  Nothing about the runtime itself changes: local execution, keyless, network-free, no
+  HTTP surface (ADR-0004).
 - The pre-gate release archive smoke matrix gains native `linux/arm64`
   (`ubuntu-24.04-arm`); previously that platform was published without ever being
   executed.
