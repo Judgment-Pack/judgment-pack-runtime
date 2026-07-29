@@ -14,7 +14,7 @@ import (
 // UPDATE_DIAGRAM_GOLDENS=1 and re-review the diff — a golden that changed is a
 // mapping that changed.
 func TestMermaidGoldens(t *testing.T) {
-	for _, name := range []string{"intake-triage", "minimal"} {
+	for _, name := range []string{"intake-triage", "minimal", "branches"} {
 		t.Run(name, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join("testdata", name+".pack.json"))
 			if err != nil {
@@ -114,6 +114,44 @@ func TestMermaidNeutralizesRendererHazards(t *testing.T) {
 		"#37;#37;{init: {}}#37;#37;",
 		`(["(unnamed)"])`,
 	} {
+		if !strings.Contains(rendered, wanted) {
+			t.Fatalf("expected %q:\n%s", wanted, rendered)
+		}
+	}
+}
+
+// Authored text that looks like a Mermaid entity survives rendering as
+// itself: the raw # is escaped first, so #quot; in a document displays as
+// the seven characters the author wrote, not as a decoded quote.
+func TestMermaidRoundTripsAuthoredEntities(t *testing.T) {
+	document := map[string]any{
+		"id":       "https://example.invalid/x",
+		"version":  "0.0.1",
+		"outcomes": []any{map[string]any{"id": "o", "label": "wrote #quot; literally"}},
+	}
+	rendered := Mermaid(document)
+	if !strings.Contains(rendered, "wrote #35;quot; literally") {
+		t.Fatalf("authored entity text must be neutralized:\n%s", rendered)
+	}
+}
+
+// Sanitization is many-to-one; the allocator is not. Two rule ids that
+// sanitize identically stay two vertices, and every reference resolves to
+// the vertex of the member it names.
+func TestMermaidKeepsCollidingIDsDistinct(t *testing.T) {
+	document := map[string]any{
+		"id":      "https://example.invalid/x",
+		"version": "0.0.1",
+		"outcomes": []any{
+			map[string]any{"id": "a-b", "label": "First"},
+			map[string]any{"id": "a_b", "label": "Second"},
+		},
+		"rules": []any{
+			map[string]any{"id": "r", "when": map[string]any{"op": "fact", "path": "/x", "operator": "equals", "value": true}, "outcome": "a_b"},
+		},
+	}
+	rendered := Mermaid(document)
+	for _, wanted := range []string{`out_a_b(["First"])`, `out_a_b_2(["Second"])`, "rule_r --> out_a_b_2"} {
 		if !strings.Contains(rendered, wanted) {
 			t.Fatalf("expected %q:\n%s", wanted, rendered)
 		}

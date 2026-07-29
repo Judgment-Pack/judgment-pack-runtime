@@ -22,14 +22,16 @@ flowchart TD
   end
   rule_decline_hard_appropriateness_failure --> out_decline_redirect
   rule_decline_hard_appropriateness_failure -. "unknown" .-> unresolved_unknown
-  ev_intake_form -. "reads" .-> rule_decline_hard_appropriateness_failure
+  rule_decline_hard_appropriateness_failure -. "cites" .-> ev_intake_form
   rule_clarify_incomplete_or_not_evaluable --> out_clarify_return
   rule_clarify_incomplete_or_not_evaluable -. "unknown" .-> unresolved_unknown
-  ev_intake_form -. "reads" .-> rule_clarify_incomplete_or_not_evaluable
+  rule_clarify_incomplete_or_not_evaluable -. "cites" .-> ev_intake_form
   rule_proceed_complete_and_appropriate --> out_proceed
   rule_proceed_complete_and_appropriate -. "unknown" .-> unresolved_unknown
   ev_intake_form -. "reads" .-> rule_proceed_complete_and_appropriate
   ev_sponsor_endorsement -. "reads" .-> rule_proceed_complete_and_appropriate
+  rule_proceed_complete_and_appropriate -. "cites" .-> ev_intake_form
+  rule_proceed_complete_and_appropriate -. "cites" .-> ev_sponsor_endorsement
   subgraph exceptions
     exc_embargoed_information_to_unauthorized{{"embargoed-information-to-unauthorized<br/>when /request/embargoedInformationToUnauthorizedRe…"}}
   end

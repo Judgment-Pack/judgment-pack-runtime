@@ -1,0 +1,35 @@
+---
+title: "https://example.invalid/judgment-packs/branches 0.0.1"
+---
+flowchart TD
+  applicability{"applicability: all(2)"}
+  not_applicable(["not-applicable"])
+  applicability -. "false" .-> not_applicable
+  applicability -. "unknown" .-> unresolved_unknown
+  ev_charter -. "reads" .-> applicability
+  subgraph evidence["evidence requirements"]
+    ev_charter["charter (required, document)"]
+    ev_sign_off["sign-off (optional, attestation)"]
+  end
+  out_allow(["Allow"])
+  out_deny(["Deny"])
+  unresolved_unknown(["unresolved (unknown)"])
+  subgraph rules
+    rule_allow_when_chartered["allow-when-chartered<br/>when not(evidence-present charter)"]
+    rule_deny_on_flag["deny-on-flag<br/>when /flag equals true"]
+  end
+  rule_allow_when_chartered --> out_deny
+  ev_charter -. "reads" .-> rule_allow_when_chartered
+  rule_deny_on_flag --> out_deny
+  rule_deny_on_flag -. "unknown" .-> unresolved_unknown
+  rule_deny_on_flag -. "cites" .-> ev_sign_off
+  subgraph exceptions
+    exc_quiet_period{{"quiet-period<br/>when /period equals #quot;quiet#quot;"}}
+    exc_board_hold{{"board-hold<br/>when /hold equals true"}}
+  end
+  exc_quiet_period -. "suppress" .-> rule_deny_on_flag
+  exc_board_hold == "escalate" ==> escalation
+  exc_board_hold -. "unknown" .-> unresolved_unknown
+  escalation[/"escalation"/]
+  escalation_triggers["triggers: conflict"]
+  escalation_triggers -.-> escalation
