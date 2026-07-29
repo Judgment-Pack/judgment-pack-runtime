@@ -14,6 +14,11 @@ independent: a CLI release may consume a JPS release, but it never creates or ch
 - The release version is an exact SemVer tag such as `v0.1.0` or `v0.2.0-rc.1`.
 - The release workflow pins a currently supported Go toolchain independently from the minimum
   source-compatible Go version in `go.mod`; both values are reviewed deliberately.
+- The GHCR package `judgment-pack` is **publicly visible**. GHCR creates a package private on
+  first push regardless of repository visibility, so the first release after ADR-0013 will fail
+  its anonymous `image-smoke` job by design: flip the package to public
+  (Package settings → Change visibility), then re-run the failed jobs. Every later release
+  inherits the visibility.
 
 Never release a CLI whose artifact lock says `unreleased-local-snapshot`, records a dirty source
 worktree, or names a moving branch. The tag workflow independently enforces this rule.
@@ -94,17 +99,21 @@ binary. A release build must report the tag version without the leading `v`.
 6. Approve the pending `production` deployment on the release run. The publish job then flips the
    draft to public (a prerelease tag is never marked latest). With Release Immutability enabled,
    publishing locks the tag and assets.
-7. After the release publishes, two follow-on jobs run without further approval
+7. After the release publishes, follow-on jobs run without further approval
    ([ADR-0013](adr/0013-oci-image-and-mcp-registry-distribution.md)): `publish-image` extracts the
-   smoke-tested Linux binaries from the release archives, builds and pushes the multi-arch image to
-   `ghcr.io/judgment-pack/judgment-pack` (version tag; `latest` only for non-prereleases), attests
-   the image digest, and smoke-tests the pushed image by digest; `publish-mcp-registry` then renders
-   `build/mcp-registry/server.json.tmpl` at the release version and publishes it to the official MCP
-   registry as `io.github.judgment-pack/judgment-pack` via GitHub OIDC. Confirm both jobs completed
-   green; the registry entry and the image tag are release-time state that nothing else refreshes.
+   smoke-tested Linux binaries from the release archives, refuses to overwrite an existing version
+   tag, builds and pushes the multi-arch image to `ghcr.io/judgment-pack/judgment-pack` (version
+   tag; `latest` only for non-prereleases), and attests the image digest; `image-smoke` pulls the
+   pushed image **anonymously** by digest on native amd64 and arm64 runners and runs the bundled
+   conformance suite in it; `publish-mcp-registry` then renders
+   `build/mcp-registry/server.json.tmpl` at the release version (CI validates the template against
+   the vendored registry schema on every PR) and publishes it to the official MCP registry as
+   `io.github.judgment-pack/judgment-pack` via GitHub OIDC. Confirm all three completed green; the
+   registry entry and the image tag are release-time state that nothing else refreshes.
 
 Do not move or reuse a released tag. Fixes require a new version — including for the image tags
-and the registry entry, which follow the archives and are never rewritten in place.
+and the registry entry: the version-tag guard in `publish-image` enforces this for the image, so a
+re-run after a downstream failure fails at the guard instead of moving the tag.
 
 ## User-facing verification
 

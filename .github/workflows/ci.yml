@@ -48,3 +48,26 @@ jobs:
         run: go build -trimpath ./cmd/judgment-pack
         env:
           CGO_ENABLED: "0"
+
+  registry-template:
+    name: MCP registry server.json template
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate rendered template against the vendored schema
+        shell: bash
+        # The schema copy is the one the release workflow's pinned mcp-publisher
+        # enforces; bump both together (ADR-0013).
+        run: |
+          pip3 install --quiet jsonschema==4.23.0
+          sed 's/__VERSION__/9.9.9-rc.1/g' build/mcp-registry/server.json.tmpl > /tmp/server.json
+          python3 - <<'EOF'
+          import json, jsonschema, sys
+          schema = json.load(open('build/mcp-registry/server.schema-2025-12-11.json'))
+          doc = json.load(open('/tmp/server.json'))
+          errors = sorted(jsonschema.Draft202012Validator(schema).iter_errors(doc), key=lambda e: list(e.path))
+          for e in errors:
+              print('INVALID:', '/'.join(map(str, e.path)), '-', e.message, file=sys.stderr)
+          sys.exit(1 if errors else 0)
+          EOF

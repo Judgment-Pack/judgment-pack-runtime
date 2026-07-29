@@ -104,6 +104,9 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
+          # linux/arm64 must run natively somewhere before the gate: macOS arm
+          # runners execute the darwin binary, not this one (ADR-0013 review).
+          - ubuntu-24.04-arm
           - macos-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -276,6 +279,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      artifact-metadata: write
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
@@ -314,6 +318,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # Released image tags follow the archive rule: never rewritten in place.
+      # A re-run after a failure downstream of the push must not move the tag;
+      # it fails here instead, and the fix is a new version (releasing.md).
+      - name: Refuse to overwrite a released version tag
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          if docker manifest inspect "ghcr.io/judgment-pack/judgment-pack:${release_version}" >/dev/null 2>&1; then
+            echo "ghcr.io/judgment-pack/judgment-pack:${release_version} already exists; released image tags are immutable" >&2
+            exit 1
+          fi
+
       - name: Build and push the multi-arch image
         id: push
         shell: bash
@@ -349,18 +365,37 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
-      - name: Smoke-test the pushed image
+  # Anonymous by design: no registry login, so this fails loudly if the GHCR
+  # package is not publicly visible (a first-release prerequisite, see
+  # releasing.md) — an authenticated pull would mask exactly that failure.
+  # Native runners on both architectures: the linux/arm64 manifest is executed,
+  # not just published.
+  image-smoke:
+    name: ${{ matrix.os }} pushed image
+    if: github.event_name == 'push'
+    needs: publish-image
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Pull anonymously and smoke-test by digest
         shell: bash
         run: |
           release_version="${RELEASE_TAG#v}"
-          image="ghcr.io/judgment-pack/judgment-pack@${{ steps.push.outputs.digest }}"
+          image="ghcr.io/judgment-pack/judgment-pack@${{ needs.publish-image.outputs.digest }}"
           test "$(docker run --rm "${image}" --version)" = "judgment-pack ${release_version}"
           docker run --rm "${image}" spec test-conformance --quiet
 
   publish-mcp-registry:
     name: Publish to the MCP registry
     if: github.event_name == 'push'
-    needs: publish-image
+    needs: image-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

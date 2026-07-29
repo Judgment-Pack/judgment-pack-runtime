@@ -38,15 +38,19 @@ surface (ADR-0004).
 
 Chosen option: post-gate release jobs build a `scratch` image **from the smoke-tested release
 archives** — never a rebuild — push it to `ghcr.io/judgment-pack/judgment-pack` (linux
-amd64/arm64, version tag, `latest` only for non-prereleases), attest the image digest, smoke-test
-the pushed image by digest, and then publish a rendered `server.json` (OCI package, stdio
-transport) to the official MCP registry under `io.github.judgment-pack/judgment-pack` via
-GitHub OIDC.
+amd64/arm64, version tag, `latest` only for non-prereleases, existing version tags refused rather
+than overwritten), attest the image digest, smoke-test the pushed image by digest **anonymously on
+native runners of both architectures** — an unauthenticated pull is the only proof the package is
+publicly visible, and a native arm64 run is the only execution the arm64 manifest gets — and then
+publish a rendered `server.json` (OCI package, stdio transport) to the official MCP registry under
+`io.github.judgment-pack/judgment-pack` via GitHub OIDC.
 
 ### Consequences
 
 - Good, because the binary in the image is byte-identical to the archived one; one artifact,
-  many channels, one attestation chain.
+  many channels. The archives and the image carry **separate attestations** (the image's digest
+  attestation does not embed the archive attestation as verified material); both chain to the
+  same workflow run.
 - Good, because a container is still local execution with the client's own key — ADR-0004's
   refusal of a hosted API is untouched.
 - Good, because registry-aware clients can now install by name; `docker run -i` becomes a
