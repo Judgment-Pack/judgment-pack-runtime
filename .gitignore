@@ -1,9 +1,7 @@
 /bin/*
 !/bin/.gitkeep
 /dist/
-/judgment-pack
 /jpack
-/judgment-pack.exe
 /jpack.exe
 /coverage.out
 # Release-workflow staging for the OCI image build context (build/oci/Dockerfile).

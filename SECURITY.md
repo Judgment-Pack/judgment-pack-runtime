@@ -40,4 +40,4 @@ process that can concurrently rename or replace its ancestors; run untrusted sui
 directory whose ownership and write permissions you control.
 
 Commercial repositories must not be runtime dependencies of this public core and must not override
-the behavior of `judgment-pack spec` commands.
+the behavior of `jpack spec` commands.

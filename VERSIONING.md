@@ -7,8 +7,8 @@ files or version strings on the mutable `main` branch do not.
 ## CLI versions
 
 The CLI version identifies a released build of the judgment-pack command-line interface. Release builds
-derive their reported version from the Git tag and expose it through `judgment-pack version` and
-`judgment-pack --version`. Untagged development builds report `0.0.0-dev`.
+derive their reported version from the Git tag and expose it through `jpack version` and
+`jpack --version`. Untagged development builds report `0.0.0-dev`.
 
 During the `0.x` research period, any minor release may change commands, flags, exit behavior, or
 human-readable output incompatibly. Patch releases should contain compatible corrections and
