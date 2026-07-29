@@ -1,12 +1,11 @@
 ---
-title: https://example.invalid/judgment-packs/data-request-intake-triage 0.1.0
+title: "https://example.invalid/judgment-packs/data-request-intake-triage 0.1.0"
 ---
 flowchart TD
   applicability{"applicability: /request/type in [#quot;new-data-pipeline#quot;,#quot;pipeline-c…"}
   not_applicable(["not-applicable"])
-  applicability_unresolved(["unresolved (unknown)"])
   applicability -. "false" .-> not_applicable
-  applicability -. "unknown" .-> applicability_unresolved
+  applicability -. "unknown" .-> unresolved_unknown
   subgraph evidence["evidence requirements"]
     ev_intake_form["intake-form (required, document)"]
     ev_sponsor_endorsement["sponsor-endorsement (required, attestation)"]
@@ -15,26 +14,27 @@ flowchart TD
   out_proceed(["Proceed"])
   out_clarify_return(["Clarify / return"])
   out_decline_redirect(["Decline / redirect"])
+  unresolved_unknown(["unresolved (unknown)"])
   subgraph rules
     rule_decline_hard_appropriateness_failure["decline-hard-appropriateness-failure<br/>when /request/appropriateness equals #quot;hard-fail#quot;"]
     rule_clarify_incomplete_or_not_evaluable["clarify-incomplete-or-not-evaluable<br/>when any(2)"]
     rule_proceed_complete_and_appropriate["proceed-complete-and-appropriate<br/>when all(4)"]
   end
   rule_decline_hard_appropriateness_failure --> out_decline_redirect
-  rule_decline_hard_appropriateness_failure -. "unknown" .-> escalation
+  rule_decline_hard_appropriateness_failure -. "unknown" .-> unresolved_unknown
   ev_intake_form -. "reads" .-> rule_decline_hard_appropriateness_failure
   rule_clarify_incomplete_or_not_evaluable --> out_clarify_return
-  rule_clarify_incomplete_or_not_evaluable -. "unknown" .-> escalation
+  rule_clarify_incomplete_or_not_evaluable -. "unknown" .-> unresolved_unknown
   ev_intake_form -. "reads" .-> rule_clarify_incomplete_or_not_evaluable
   rule_proceed_complete_and_appropriate --> out_proceed
-  rule_proceed_complete_and_appropriate -. "unknown" .-> escalation
+  rule_proceed_complete_and_appropriate -. "unknown" .-> unresolved_unknown
   ev_intake_form -. "reads" .-> rule_proceed_complete_and_appropriate
   ev_sponsor_endorsement -. "reads" .-> rule_proceed_complete_and_appropriate
   subgraph exceptions
     exc_embargoed_information_to_unauthorized{{"embargoed-information-to-unauthorized<br/>when /request/embargoedInformationToUnauthorizedRe…"}}
   end
   exc_embargoed_information_to_unauthorized == "force-outcome" ==> out_decline_redirect
-  exc_embargoed_information_to_unauthorized -. "unknown" .-> escalation
+  exc_embargoed_information_to_unauthorized -. "unknown" .-> unresolved_unknown
   no_rule_fired["no rule fired"]
   no_rule_fired -. "fallbackOutcome" .-> out_clarify_return
   escalation[/"escalation → human-role: Intake reviewer"/]
