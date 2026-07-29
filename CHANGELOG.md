@@ -2,6 +2,17 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Add the `get_pack_diagram` MCP tool**: one declared pack as the deterministic Mermaid
+  flowchart the CLI's `packs diagram` emits — same document, same bytes, on the same strict
+  carrier decode every other surface uses. Motivated by live agent behavior: with only
+  `get_pack` available, a model asked for a diagram fetches the document and draws its own
+  paraphrase; with the rendering one tool call away, the deterministic picture is the path of
+  least resistance, and the tool's description says plainly to use it verbatim. The
+  conformance claim is stated, in full and only, in `CONFORMANCE.md`, which no line of this
+  entry restates.
+
 ## 0.6.1 - 2026-07-29
 
 - **`packs diagram` lays the flowchart out in the resolution model's reading order**:

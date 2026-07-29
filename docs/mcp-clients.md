@@ -45,6 +45,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `describe_runtime` | Versions and artifact provenance |
 | `list_examples` / `get_example` | The embedded valid fixtures, read-only |
 | `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
+| `get_pack_diagram` | One declared pack as a deterministic Mermaid flowchart — a reading aid derived from the document; use its output verbatim, never a hand-drawn substitute |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 
 None of these evaluate, decide, or authorize anything, except `experimental_evaluate`, which

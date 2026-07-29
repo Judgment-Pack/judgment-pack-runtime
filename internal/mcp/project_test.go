@@ -457,3 +457,47 @@ func jsonEqual(t *testing.T, left, right any) bool {
 	}
 	return string(leftBytes) == string(rightBytes)
 }
+
+// get_pack_diagram serves the deterministic Mermaid rendering of one declared
+// pack: the same bytes the CLI's packs diagram emits, a valid flowchart with
+// the document's members as nodes, and the standard refusals for a missing or
+// unknown id.
+func TestGetPackDiagramServesTheDeterministicRendering(t *testing.T) {
+	projectFixture(t)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "get_pack_diagram", map[string]any{"pack_id": "intake"}),
+		toolCall(t, 2, "get_pack_diagram", map[string]any{"pack_id": "no-such-pack"}),
+		toolCall(t, 3, "get_pack_diagram", nil),
+	}, ""))
+	if len(responses) != 3 {
+		t.Fatalf("expected 3 responses, got %d", len(responses))
+	}
+
+	rendered := responses[0]["result"].(map[string]any)
+	if rendered["isError"] == true {
+		t.Fatalf("get_pack_diagram must succeed for a declared pack: %#v", rendered)
+	}
+	text := rendered["content"].([]any)[0].(map[string]any)["text"].(string)
+	for _, marker := range []string{"flowchart TD", "out_", "subgraph rules"} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("the rendering must contain %q:\n%s", marker, text)
+		}
+	}
+	// Same document, same bytes: a second call returns the identical text.
+	again := runServer(t, toolCall(t, 1, "get_pack_diagram", map[string]any{"pack_id": "intake"}))
+	if other := again[0]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string); other != text {
+		t.Fatalf("two renderings of one document differed")
+	}
+
+	for i, wantError := range map[int]string{1: "no-such-pack", 2: "pack_id"} {
+		result := responses[i]["result"].(map[string]any)
+		if result["isError"] != true {
+			t.Fatalf("response %d must be a tool error: %#v", i, result)
+		}
+		message := result["content"].([]any)[0].(map[string]any)["text"].(string)
+		if !strings.Contains(message, wantError) {
+			t.Fatalf("error %d must mention %q: %q", i, wantError, message)
+		}
+	}
+}

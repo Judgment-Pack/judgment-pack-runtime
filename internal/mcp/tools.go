@@ -9,6 +9,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/diagram"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
@@ -111,6 +112,18 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		{
+			"name":        "get_pack_diagram",
+			"description": "Render one declared pack as a deterministic Mermaid flowchart, by its decision id. The diagram is generated from the pack document — member nodes quote the document; resolution-state nodes are labeled as what they are — and the same document yields the same bytes on every call. It is a reading aid derived from the pack and never a second statement of it: it adds no member and decides nothing. USE ITS OUTPUT VERBATIM: never draw, simplify, or paraphrase a diagram of a pack yourself — a hand-drawn graph is your reading of the policy, not the policy. Call list_packs for the available decision ids.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"pack_id"},
+				"properties": map[string]any{
+					"pack_id": map[string]any{"type": "string", "description": "The project's decision id, as reported by list_packs (for example, expense-approval)."},
+				},
+			},
+		},
+		{
 			"name":        "experimental_evaluate",
 			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
@@ -162,6 +175,8 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolListPacks(), nil
 	case "get_pack":
 		return s.toolGetPack(params.Arguments), nil
+	case "get_pack_diagram":
+		return s.toolGetPackDiagram(params.Arguments), nil
 	case "experimental_evaluate":
 		return s.toolExperimentalEvaluate(params.Arguments), nil
 	default:
@@ -361,6 +376,56 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 	}
 	return map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": string(data)}},
+		"structuredContent": meta,
+		"isError":           false,
+	}
+}
+
+// toolGetPackDiagram renders one declared pack as the deterministic Mermaid
+// flowchart the CLI's packs diagram emits: same document, same bytes, on the
+// same single-decoder discipline (the strict carrier, so this surface and
+// every other agree about one file).
+func (s *Server) toolGetPackDiagram(rawArgs json.RawMessage) any {
+	var args struct {
+		PackID json.RawMessage `json:"pack_id"`
+	}
+	if len(rawArgs) > 0 {
+		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil {
+			return toolError(`The "get_pack_diagram" arguments must be an object with a string "pack_id"; unknown keys are rejected.`)
+		}
+	}
+	packID, present, argumentError := textArgument("pack_id", args.PackID)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	if !present || packID == "" {
+		return toolError(`The "pack_id" argument is required: pass a decision id, and call list_packs for the available ids.`)
+	}
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return toolError(project.EmptyInventory(configPath, "mcp get_pack_diagram").Note)
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	defer loaded.Close()
+	meta, data, failure := loaded.Document(packID, "mcp get_pack_diagram")
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	decoded, carrierFailure := carrier.Decode(data, carrier.DefaultLimits())
+	if carrierFailure != nil {
+		return toolError(project.ReadFailureMessage(meta.Path, carrierFailure))
+	}
+	document, ok := decoded.(map[string]any)
+	if !ok {
+		return toolError("The document's root is not an object, so there is nothing to diagram.")
+	}
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": diagram.Mermaid(document)}},
 		"structuredContent": meta,
 		"isError":           false,
 	}
