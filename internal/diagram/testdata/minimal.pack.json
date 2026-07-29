@@ -1,0 +1,16 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/minimal",
+  "version": "0.0.1",
+  "title": "Minimal",
+  "decision": {"intent": "Test absence branches.", "question": "Minimal?"},
+  "outcomes": [{"id": "allow", "label": "Allow"}],
+  "rules": [
+    {
+      "id": "always",
+      "when": {"op": "fact", "path": "/x", "operator": "equals", "value": true},
+      "outcome": "allow",
+      "onUnknown": "ignore"
+    }
+  ]
+}

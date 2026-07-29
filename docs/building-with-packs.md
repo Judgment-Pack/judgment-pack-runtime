@@ -213,6 +213,18 @@ A pack that declares no matrix is reported **skipped**, never passed — and a r
 at all is reported `skipped` and exits `1`, so a project with no matrices anywhere cannot get a green
 gate for a suite that tested nothing.
 
+### See it
+
+```bash
+judgment-pack packs diagram --id <decision-id>
+```
+
+renders the pack as a deterministic Mermaid flowchart — applicability, evidence, rules,
+exceptions, outcomes, fallback, escalation, each node quoting the member it reads. Paste the
+output into a Markdown fence and GitHub or VS Code draws it. It is a reading aid derived from
+the document, never a second statement of it: reviewing the diagram is not reviewing the pack,
+and only `packs validate` holds the verdict.
+
 To reach one decision from a shell without a path, name it:
 
 ```bash
