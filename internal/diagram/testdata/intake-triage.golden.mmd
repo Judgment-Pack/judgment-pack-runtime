@@ -3,7 +3,6 @@ title: "https://example.invalid/judgment-packs/data-request-intake-triage 0.1.0"
 ---
 flowchart TD
   applicability{"applicability: /request/type in [#quot;new-data-pipeline#quot;,#quot;pipeline-c…"}
-  not_applicable(["not-applicable"])
   applicability -. "false" .-> not_applicable
   applicability -. "unknown" .-> unresolved_unknown
   subgraph evidence["evidence requirements"]
@@ -11,10 +10,11 @@ flowchart TD
     ev_sponsor_endorsement["sponsor-endorsement (required, attestation)"]
     ev_sensitive_data_approvals["sensitive-data-approvals (optional, attestation)"]
   end
-  out_proceed(["Proceed"])
-  out_clarify_return(["Clarify / return"])
-  out_decline_redirect(["Decline / redirect"])
-  unresolved_unknown(["unresolved (unknown)"])
+  subgraph exceptions
+    exc_embargoed_information_to_unauthorized{{"embargoed-information-to-unauthorized<br/>when /request/embargoedInformationToUnauthorizedRe…"}}
+  end
+  exc_embargoed_information_to_unauthorized == "force-outcome" ==> out_decline_redirect
+  exc_embargoed_information_to_unauthorized -. "unknown" .-> unresolved_unknown
   subgraph rules
     rule_decline_hard_appropriateness_failure["decline-hard-appropriateness-failure<br/>when /request/appropriateness equals #quot;hard-fail#quot;"]
     rule_clarify_incomplete_or_not_evaluable["clarify-incomplete-or-not-evaluable<br/>when any(2)"]
@@ -32,13 +32,16 @@ flowchart TD
   ev_sponsor_endorsement -. "reads" .-> rule_proceed_complete_and_appropriate
   rule_proceed_complete_and_appropriate -. "cites" .-> ev_intake_form
   rule_proceed_complete_and_appropriate -. "cites" .-> ev_sponsor_endorsement
-  subgraph exceptions
-    exc_embargoed_information_to_unauthorized{{"embargoed-information-to-unauthorized<br/>when /request/embargoedInformationToUnauthorizedRe…"}}
-  end
-  exc_embargoed_information_to_unauthorized == "force-outcome" ==> out_decline_redirect
-  exc_embargoed_information_to_unauthorized -. "unknown" .-> unresolved_unknown
+  out_proceed(["Proceed"])
+  out_clarify_return(["Clarify / return"])
+  out_decline_redirect(["Decline / redirect"])
   no_rule_fired["no rule fired"]
   no_rule_fired -. "fallbackOutcome" .-> out_clarify_return
+  unresolved_unknown(["unresolved (unknown)"])
+  not_applicable(["not-applicable"])
   escalation[/"escalation → human-role: Intake reviewer"/]
   escalation_triggers["triggers: not-applicable, missing-required-evidence, unknown, conflict, no-match"]
   escalation_triggers -.-> escalation
+  applicability ~~~ evidence
+  evidence ~~~ exceptions
+  exceptions ~~~ rules

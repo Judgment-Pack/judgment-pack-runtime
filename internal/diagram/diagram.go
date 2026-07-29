@@ -58,10 +58,18 @@ func Mermaid(document map[string]any) string {
 	}
 	r.b.WriteString("flowchart TD\n")
 
+	// Stages are emitted in the §8 evaluation order the reader follows —
+	// applicability, evidence, exceptions, rules, outcomes — and chained with
+	// invisible edges so the renderer stacks them top-to-bottom instead of
+	// packing them sideways. Terminal states come last and sink to the
+	// bottom on their real edges.
 	escalationNeeded, unresolvedNeeded := diagramSinks(document)
 	r.writeApplicability(document)
 	r.writeEvidence(document)
+	r.writeExceptions(document)
+	r.writeRules(document)
 	r.writeOutcomes(document)
+	r.writeFallback(document)
 	if unresolvedNeeded {
 		// One shared sink for every escalating unknown: onUnknown "escalate"
 		// retains reason "unknown" and produces unresolved (resolve.go); it
@@ -69,13 +77,36 @@ func Mermaid(document map[string]any) string {
 		// triggers node states — so no unknown edge points at escalation.
 		r.b.WriteString("  unresolved_unknown([\"unresolved (unknown)\"])\n")
 	}
-	r.writeRules(document)
-	r.writeExceptions(document)
-	r.writeFallback(document)
+	if _, present := document["applicability"]; present {
+		r.b.WriteString("  not_applicable([\"not-applicable\"])\n")
+	}
 	if escalationNeeded {
 		r.writeEscalation(document)
 	}
+	r.writeStageOrder(document)
 	return r.b.String()
+}
+
+// writeStageOrder chains the stages that exist with invisible edges, so the
+// layout follows the resolution model's reading order top to bottom. The
+// edges carry no meaning and render as nothing; they only rank the stages.
+func (r *renderer) writeStageOrder(document map[string]any) {
+	stages := []string{}
+	if _, present := document["applicability"]; present {
+		stages = append(stages, "applicability")
+	}
+	if len(arr(document, "evidenceRequirements")) > 0 {
+		stages = append(stages, "evidence")
+	}
+	if len(arr(document, "exceptions")) > 0 {
+		stages = append(stages, "exceptions")
+	}
+	if len(arr(document, "rules")) > 0 {
+		stages = append(stages, "rules")
+	}
+	for i := 1; i < len(stages); i++ {
+		fmt.Fprintf(&r.b, "  %s ~~~ %s\n", stages[i-1], stages[i])
+	}
 }
 
 // diagramSinks reports which shared terminal nodes the document needs: the
@@ -115,7 +146,6 @@ func (r *renderer) writeApplicability(document map[string]any) {
 	// reason "unknown". Two edges, because conflating them would state
 	// something the resolution model does not.
 	fmt.Fprintf(&r.b, "  applicability{\"applicability: %s\"}\n", label(conditionSummary(condition)))
-	r.b.WriteString("  not_applicable([\"not-applicable\"])\n")
 	r.b.WriteString("  applicability -. \"false\" .-> not_applicable\n")
 	r.b.WriteString("  applicability -. \"unknown\" .-> unresolved_unknown\n")
 	for _, requirement := range evidenceReads(condition) {
