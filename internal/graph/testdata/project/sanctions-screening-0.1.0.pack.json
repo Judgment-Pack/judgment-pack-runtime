@@ -1,0 +1,72 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/sanctions-screening",
+  "version": "0.1.0",
+  "title": "Synthetic sanctions screening fixture",
+  "description": "Constructed graph-surface fixture: decide whether a counterparty's screening run came back clear, from the match count the run recorded. Synthetic content for runtime testing; it authorizes nothing.",
+  "decision": {
+    "intent": "Decide whether the recorded screening run cleared the counterparty or matched it.",
+    "question": "Did the sanctions screening run come back clear for this counterparty?"
+  },
+  "evidenceRequirements": [
+    {
+      "id": "screening-record",
+      "description": "The screening run's recorded result for this counterparty.",
+      "required": true,
+      "kind": "document"
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "clear",
+      "label": "Clear",
+      "description": "The screening run recorded no match."
+    },
+    {
+      "id": "hit",
+      "label": "Hit",
+      "description": "The screening run recorded at least one match."
+    }
+  ],
+  "rules": [
+    {
+      "id": "clear-when-no-match",
+      "description": "Clear the counterparty when the recorded match count is exactly zero.",
+      "when": {
+        "op": "fact",
+        "path": "/screening/matches",
+        "operator": "equals",
+        "value": "0"
+      },
+      "outcome": "clear",
+      "onUnknown": "escalate",
+      "rationale": "A missing match count is not a clean screening; escalating is preferred to guessing."
+    },
+    {
+      "id": "hit-when-match",
+      "description": "Report a hit when the recorded match count is one or more.",
+      "when": {
+        "op": "fact",
+        "path": "/screening/matches",
+        "operator": "greater-than-or-equal",
+        "value": "1"
+      },
+      "outcome": "hit",
+      "onUnknown": "escalate",
+      "rationale": "A count that cannot be ordered against one is not a count this pack can act on."
+    }
+  ],
+  "escalation": {
+    "triggers": ["unknown", "missing-required-evidence"],
+    "target": {
+      "kind": "human-role",
+      "name": "Compliance"
+    },
+    "message": "Escalate a screening whose match count or record cannot be established."
+  },
+  "metadata": {
+    "authors": ["judgment-pack-runtime tests"],
+    "createdAt": "2026-07-29T00:00:00Z",
+    "license": "Apache-2.0"
+  }
+}

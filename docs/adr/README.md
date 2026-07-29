@@ -109,3 +109,5 @@ authority, and following it confers no conformance status on anything.
 | [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md)    | Retarget the experimental evaluator at 0.2.0-draft's evaluator class; claim nothing | accepted; claim-scope determination superseded by 0011 |
 | [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | accepted |
 | [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec | accepted |
+| [0013](0013-oci-image-and-mcp-registry-distribution.md)  | Distribute the released binary as an OCI image and publish it to the MCP registry | accepted |
+| [0015](0015-experimental-graph-surface.md)               | Prototype pack composition as an experimental graph surface                     | accepted |

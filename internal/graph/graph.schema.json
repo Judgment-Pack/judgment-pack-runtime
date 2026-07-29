@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:judgmentpack:runtime:jgraph:1",
+  "title": "Judgment graph document (experimental)",
+  "description": "An EXPERIMENTAL, NON-NORMATIVE convention of the judgment-pack runtime (ADR-0015), prototyping the composition the Judgment Pack Specification's RFC 0002 (Draft) proposes. No JPS version defines a graph: this document composes packs a project's jpack.json already names, it never contains or modifies a pack, and an edge only says which node's outcome feeds which node's input. Each node references one project decision id; identity stays in the pack document, exactly as ADR-0012 requires.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "id", "version", "nodes", "edges", "result"],
+  "properties": {
+    "formatVersion": {
+      "description": "The version of this graph format. A single integer as a string, on the jpack.json configVersion precedent; \"1\" is the only value this runtime accepts. A later shape will be \"2\", published with the runtime that reads it. It is deliberately not named graphVersion: the version member below is the graph's own identity version, and the two must never share a name in a document or a payload.",
+      "type": "string",
+      "const": "1"
+    },
+    "id": {
+      "description": "The graph's own short id, in the decision-id shape. It names this composition; it names no pack.",
+      "$ref": "#/$defs/decisionId"
+    },
+    "version": {
+      "description": "The graph document's own version. Semantic versioning, so a revised composition is a new version rather than a silently different file.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "description": {
+      "description": "One line about the composed decision, for a human or an agent reading the plan.",
+      "type": "string",
+      "minLength": 1
+    },
+    "nodes": {
+      "description": "The graph's nodes, keyed by node id. Each node references one pack by the decision id the project's jpack.json declares; the pack document's own id and version members remain the pack's identity, and this reference is resolved and checked, never believed.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 64,
+      "propertyNames": { "$ref": "#/$defs/decisionId" },
+      "additionalProperties": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "description": "The graph's edges. An edge feeds one upstream node's outcome to one downstream node, as a fact, as evidence availability, or both, and the edges must form a directed acyclic graph. The member is required even when empty, so a single-node graph states its emptiness rather than implying it.",
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "result": {
+      "description": "The node whose disposition is the composite's headline. It must name a declared node; every other node's disposition is still reported beside it, so naming an interior node hides nothing.",
+      "$ref": "#/$defs/decisionId"
+    }
+  },
+  "$defs": {
+    "decisionId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pack"],
+      "properties": {
+        "pack": {
+          "description": "The decision id of one pack the project's jpack.json declares.",
+          "$ref": "#/$defs/decisionId"
+        },
+        "description": {
+          "description": "One line about this node's place in the composition.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "anyOf": [{ "required": ["fact"] }, { "required": ["evidence"] }],
+      "properties": {
+        "from": {
+          "description": "The upstream node whose disposition this edge reads.",
+          "$ref": "#/$defs/decisionId"
+        },
+        "to": {
+          "description": "The downstream node whose inputs this edge feeds.",
+          "$ref": "#/$defs/decisionId"
+        },
+        "fact": {
+          "description": "Outcome as a fact: when the upstream disposition is an outcome, its outcome id is written, verbatim, at this RFC 6901 JSON Pointer in the downstream node's facts document. When the upstream disposition is not an outcome, nothing is written and the pointer is simply absent, which JPS §7 already treats as unknown — so an unresolved upstream reaches the downstream pack through the downstream pack's own onUnknown declarations rather than through a rule of this runtime's invention. Injection creates JSON objects only and never traverses or creates an array: an intermediate that exists and is not an object is a conflict refusal, and a wholly numeric token names an object member. At most 64 reference tokens are admitted, so the assembled facts document stays inside the evaluator's own nesting limit.",
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^(?:/(?:[^~/]|~0|~1)*)+$"
+        },
+        "evidence": {
+          "description": "Outcome as evidence availability: an upstream outcome contributes \"present\" for the named requirement of the downstream pack; any other upstream disposition contributes onUnresolved.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "description": "An evidence-requirement id the downstream pack declares.",
+              "$ref": "#/$defs/decisionId"
+            },
+            "onUnresolved": {
+              "description": "The tri-state an upstream disposition that is not an outcome contributes: \"unknown\" (the default) hands the question to the downstream pack's own unknown handling; \"absent\" states that a decision which did not produce an outcome is itself the missing evidence.",
+              "type": "string",
+              "enum": ["unknown", "absent"]
+            }
+          }
+        },
+        "description": {
+          "description": "One line about what this edge carries.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

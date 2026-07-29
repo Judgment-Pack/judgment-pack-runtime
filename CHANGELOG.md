@@ -2,6 +2,29 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Add an experimental graph surface** (ADR-0015), prototyping the composition the
+  specification's RFC 0002 (Draft) proposes: `experimental graph validate | evaluate | explain`
+  read a closed-schema graph document — `formatVersion` `"1"`, distinct from the document's own
+  identity `version`, echoed in payloads as `formatVersion` beside `graphId` and `graphVersion`
+  — and `experimental graph schema` prints the schema those documents are held to. A graph
+  composes packs the project's `jpack.json` declares into a directed acyclic
+  structure — a node references one configured decision id, and an edge feeds an upstream
+  node's outcome downstream as a fact written at an RFC 6901 pointer, as tri-state evidence
+  availability (`present` for an outcome; the edge's declared `onUnresolved`, default
+  `unknown`, otherwise), or both. Duplicate and overlapping fact targets, evidence targets fed
+  twice, cycles, and over-deep pointers are validation errors; a feed colliding with a
+  caller-supplied input is a refusal, never a merge. Evaluation runs every node in
+  deterministic topological order, each as one ordinary experimental evaluation by the
+  unchanged engine; the composite payload is an envelope of per-node §8.3 dispositions with
+  the declared result node's echoed as its headline and every requested handoff aggregated
+  beside it, and a node the engine refuses refuses the whole run with the node named and its
+  §8.4 class intact. No JPS version defines a graph, a composition, or a composite result:
+  every payload is labeled a non-normative runtime convention, the surface may change or be
+  removed without compatibility promise, and the conformance claim is unaffected and stated,
+  in full and only, in `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.7.0 - 2026-07-29
 
 - **Rename the command binary to `jpack`**, dropping the `judgment-pack` executable and the
