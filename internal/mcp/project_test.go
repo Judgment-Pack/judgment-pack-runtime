@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
-	"github.com/Judgment-Pack/judgment-pack-runtime/internal/diagram"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -457,61 +456,4 @@ func jsonEqual(t *testing.T, left, right any) bool {
 		t.Fatal(err)
 	}
 	return string(leftBytes) == string(rightBytes)
-}
-
-// get_pack_diagram serves the deterministic Mermaid rendering of one declared
-// pack: the same bytes the CLI's packs diagram emits, a valid flowchart with
-// the document's members as nodes, and the standard refusals for a missing or
-// unknown id.
-func TestGetPackDiagramServesTheDeterministicRendering(t *testing.T) {
-	projectFixture(t)
-
-	responses := runServer(t, strings.Join([]string{
-		toolCall(t, 1, "get_pack_diagram", map[string]any{"pack_id": "intake"}),
-		toolCall(t, 2, "get_pack_diagram", map[string]any{"pack_id": "no-such-pack"}),
-		toolCall(t, 3, "get_pack_diagram", nil),
-	}, ""))
-	if len(responses) != 3 {
-		t.Fatalf("expected 3 responses, got %d", len(responses))
-	}
-
-	rendered := responses[0]["result"].(map[string]any)
-	if rendered["isError"] == true {
-		t.Fatalf("get_pack_diagram must succeed for a declared pack: %#v", rendered)
-	}
-	text := rendered["content"].([]any)[0].(map[string]any)["text"].(string)
-	for _, marker := range []string{"flowchart TD", "out_", "subgraph rules"} {
-		if !strings.Contains(text, marker) {
-			t.Fatalf("the rendering must contain %q:\n%s", marker, text)
-		}
-	}
-	// Byte parity with the renderer itself: the tool serves diagram.Mermaid
-	// of the same strict carrier decode, nothing more and nothing less.
-	raw, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, carrierFailure := carrier.Decode(raw, carrier.DefaultLimits())
-	if carrierFailure != nil {
-		t.Fatal(carrierFailure)
-	}
-	if expected := diagram.Mermaid(decoded.(map[string]any)); text != expected {
-		t.Fatalf("tool output diverged from diagram.Mermaid:\n--- tool ---\n%s\n--- direct ---\n%s", text, expected)
-	}
-	// Same document, same bytes: a second call returns the identical text.
-	again := runServer(t, toolCall(t, 1, "get_pack_diagram", map[string]any{"pack_id": "intake"}))
-	if other := again[0]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string); other != text {
-		t.Fatalf("two renderings of one document differed")
-	}
-
-	for i, wantError := range map[int]string{1: "no-such-pack", 2: "pack_id"} {
-		result := responses[i]["result"].(map[string]any)
-		if result["isError"] != true {
-			t.Fatalf("response %d must be a tool error: %#v", i, result)
-		}
-		message := result["content"].([]any)[0].(map[string]any)["text"].(string)
-		if !strings.Contains(message, wantError) {
-			t.Fatalf("error %d must mention %q: %q", i, wantError, message)
-		}
-	}
 }

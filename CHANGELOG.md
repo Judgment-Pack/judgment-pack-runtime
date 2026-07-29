@@ -4,6 +4,14 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Remove the diagram surface entirely** — the `packs diagram` CLI command, the
+  `get_pack_diagram` MCP tool (added 0.6.0–0.6.2), and the internal renderer. Mermaid is a
+  format, not universal: clients render it unevenly, and a fixed picture is one reading of a
+  pack among many. Representation belongs to the interpretation layer — a client's model
+  presenting the document to its audience, grounded in `get_pack` — and, later, to an MCP
+  Apps surface the server carries. Removed by the maintainer's decision while the project has
+  no downstream users; the conformance claim is unaffected and stated, in full and only, in
+  `CONFORMANCE.md`, which no line of this entry restates.
 - **Harden the authoring method prompts against test-satisfying pack edits**, from live agent
   behavior: `author_pack` now states that `evidenceRequirementRefs` is a citation the evaluator
   never reads, and `test_pack` now names the arbiter for every matrix divergence — the policy

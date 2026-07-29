@@ -213,29 +213,6 @@ A pack that declares no matrix is reported **skipped**, never passed — and a r
 at all is reported `skipped` and exits `1`, so a project with no matrices anywhere cannot get a green
 gate for a suite that tested nothing.
 
-### See it
-
-```bash
-judgment-pack packs diagram --id <decision-id>
-```
-
-renders the pack as a deterministic Mermaid flowchart — applicability, evidence, rules,
-exceptions, outcomes, fallback, escalation. Member nodes quote the document; the
-resolution-state nodes (`not-applicable`, `unresolved (unknown)`, `no rule fired`) are
-synthesized and labeled as what they are. Evidence draws two different edges for two different
-relationships: `reads` when a condition actually tests it (`evidence-present`), `cites` for an
-`evidenceRequirementRefs` citation the resolver never reads. Paste the output into a fenced
-block labeled `mermaid` and GitHub or VS Code draws it:
-
-````markdown
-```mermaid
-flowchart TD
-  ...
-```
-````
-
-It is a reading aid derived from the document, never a second statement of it: reviewing the
-diagram is not reviewing the pack, and only `packs validate` holds the verdict.
 
 To reach one decision from a shell without a path, name it:
 
