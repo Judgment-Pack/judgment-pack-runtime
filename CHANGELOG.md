@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.6.0 - 2026-07-29
 
 - **Add `packs diagram`**: render one declared pack as a deterministic Mermaid flowchart —
   applicability, evidence requirements, rules, exceptions, outcomes, fallback, and escalation,
