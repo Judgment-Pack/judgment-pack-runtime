@@ -321,8 +321,16 @@ gathering step, which your agent already has.
 
 Your application then runs it first and only calls the substantive pack when it says `sufficient`.
 That is composition by the application, which is where composition lives today; the specification's
-own graph work (RFC 0002) is where composition may eventually be described, and until it is, two
-sequential calls from your code are the whole mechanism and are perfectly adequate.
+own graph work (RFC 0002) is where composition may eventually be described. Two sequential calls
+from your code are perfectly adequate — and when you want the wiring itself declared, reviewed,
+and versioned instead of coded, `jpack experimental graph evaluate` (ADR-0015) runs both decisions
+from a graph document: nodes reference your configured decision ids, and an edge feeds the
+sufficiency decision's outcome into the substantive pack's inputs, where that pack's own rules and
+`onUnknown` declarations decide what an insufficient or unresolved gathering means. Note what the
+graph deliberately does not do: every node always evaluates, so it declares dataflow, not
+conditional execution — skipping the substantive call remains your application's choice. The whole
+surface is an experimental, non-normative prototype of that proposal, which may change or be
+removed without compatibility promise.
 
 The gain is that "enough to decide" becomes a reviewed, versioned, testable artifact with its own
 matrix, instead of a threshold in a prompt.
@@ -337,6 +345,7 @@ matrix, instead of a threshold in a prompt.
 ## See also
 
 - [ADR-0012 — the jpack.json project convention](adr/0012-jpack-project-convention.md)
+- [ADR-0015 — the experimental graph surface](adr/0015-experimental-graph-surface.md) — declaring composition instead of coding it
 - [authoring-lifecycle.md](authoring-lifecycle.md) — writing and repairing one pack
 - [agent-testing.md](agent-testing.md) — the agent-driven testing protocol
 - [mcp-clients.md](mcp-clients.md) — per-client setup

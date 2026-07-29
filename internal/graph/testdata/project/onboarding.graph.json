@@ -1,0 +1,28 @@
+{
+  "formatVersion": "1",
+  "id": "vendor-onboarding-flow",
+  "version": "0.1.0",
+  "description": "The screening decision feeds the onboarding decision, as a fact and as evidence availability.",
+  "nodes": {
+    "screening": {
+      "pack": "sanctions-screening",
+      "description": "Establish the screening decision first."
+    },
+    "onboarding": {
+      "pack": "vendor-onboarding",
+      "description": "Decide onboarding from the screening decision's outcome."
+    }
+  },
+  "edges": [
+    {
+      "from": "screening",
+      "to": "onboarding",
+      "fact": "/screening/status",
+      "evidence": {
+        "id": "screening-outcome"
+      },
+      "description": "The screening outcome id lands at /screening/status, and its resolution state is the screening-outcome evidence."
+    }
+  ],
+  "result": "onboarding"
+}

@@ -1,0 +1,13 @@
+{
+  "configVersion": "1",
+  "packs": {
+    "sanctions-screening": {
+      "path": "sanctions-screening-0.1.0.pack.json",
+      "description": "Synthetic screening decision: clear or hit from the recorded match count."
+    },
+    "vendor-onboarding": {
+      "path": "vendor-onboarding-0.1.0.pack.json",
+      "description": "Synthetic onboarding decision fed by the screening decision's outcome."
+    }
+  }
+}

@@ -1,0 +1,190 @@
+package result
+
+// --- the experimental graph surface (ADR-0015; spec RFC 0002, Draft) ---
+//
+// A graph composes packs this runtime's project convention already names; the
+// Judgment Pack Specification defines none of it. JPS Core 0.2.0-draft has no
+// graph, no composition, and no composite result — composition is the
+// specification's RFC 0002, a draft proposal — so every payload here is labeled
+// a non-normative runtime convention exactly as the jpack.json payloads are,
+// and the composite payload additionally carries GraphCompositeLabel so no
+// consumer reads it as a specification artifact. The §8.3 dispositions inside it are per-node
+// facts produced by the experimental evaluator, unchanged; the envelope around
+// them is this runtime's own.
+
+// GraphCompositeLabel labels every graph evaluation this runtime reports. The
+// composite is an envelope of per-node results, not a specification artifact:
+// no JPS version defines a composition, and the one thing the label may say
+// about the evaluator that produced the node dispositions is where its
+// conformance claim is stated.
+const GraphCompositeLabel = "graph composite: an experimental composition of this runtime (spec RFC 0002 is a draft proposal; no JPS version defines a graph or a composite result); each node's disposition is produced by the experimental evaluator, whose conformance claim is stated, in full and only, in CONFORMANCE.md"
+
+// GraphFactFeed records one outcome-as-fact edge as it applied to one node's
+// facts document. Injected says whether a value was actually written: an
+// upstream node that produced no outcome — an unresolved or not-applicable
+// disposition — injects nothing, and the pointer is simply absent from the
+// downstream facts document, which is how §7 already treats a fact nobody
+// established. Value carries the injected outcome id exactly when Injected is
+// true.
+type GraphFactFeed struct {
+	From     string `json:"from"`
+	Pointer  string `json:"pointer"`
+	Injected bool   `json:"injected"`
+	Value    string `json:"value,omitempty"`
+}
+
+// GraphEvidenceFeed records one outcome-as-evidence edge as it applied to one
+// node's evidence-availability document: the upstream node, the downstream
+// requirement id, and the tri-state value the edge contributed. An upstream
+// outcome contributes "present"; anything else contributes the edge's declared
+// onUnresolved value, "unknown" unless the edge says "absent".
+type GraphEvidenceFeed struct {
+	From        string `json:"from"`
+	Requirement string `json:"requirement"`
+	State       string `json:"state"`
+}
+
+// GraphNodeEvaluation is one node's evaluation inside a graph run: the graph's
+// node id, the project decision id it names, the evaluated pack's own identity
+// echoes, the feeds that arrived over in-edges, and the same disposition,
+// handoff target, and trace a standalone evaluation reports. Nothing is
+// summarized away: the composite is these results side by side, not a
+// replacement for them.
+type GraphNodeEvaluation struct {
+	Node          string              `json:"node"`
+	Pack          string              `json:"pack"`
+	PackID        string              `json:"packId"`
+	PackVersion   string              `json:"packVersion"`
+	SpecVersion   string              `json:"specVersion"`
+	FactFeeds     []GraphFactFeed     `json:"factFeeds"`
+	EvidenceFeeds []GraphEvidenceFeed `json:"evidenceFeeds"`
+	Disposition   Disposition         `json:"disposition"`
+	HandoffTarget *HandoffTarget      `json:"handoffTarget,omitempty"`
+	Trace         []TraceEntry        `json:"trace"`
+}
+
+// GraphHandoff is one node's requested handoff, aggregated so a reader of the
+// composite cannot miss an escalation a non-result node requested. It is an
+// aggregation of what the node dispositions already say, never a new fact.
+type GraphHandoff struct {
+	Node        string         `json:"node"`
+	TriggeredBy []string       `json:"triggeredBy"`
+	Target      *HandoffTarget `json:"target,omitempty"`
+}
+
+// GraphEvaluation is the composite envelope of one graph run. Disposition and
+// HandoffTarget echo the declared result node's own members, exactly as they
+// appear in Nodes — a validated echo on the ADR-0012 pattern, never a second
+// truth — and Handoffs aggregates every requested handoff so an escalation
+// upstream of the result is as visible as the result itself. Like every
+// payload the experimental evaluator produces, it asserts nothing about the
+// wisdom of acting on any disposition it carries.
+type GraphEvaluation struct {
+	OutputVersion             string                `json:"outputVersion"`
+	Tool                      Tool                  `json:"tool"`
+	Command                   string                `json:"command"`
+	Status                    string                `json:"status"`
+	Experimental              bool                  `json:"experimental"`
+	ConformanceClaimReference string                `json:"conformanceClaimReference"`
+	Label                     string                `json:"label"`
+	Kind                      string                `json:"kind"`
+	EvaluatorSpecVersion      string                `json:"evaluatorSpecVersion"`
+	FormatVersion             string                `json:"formatVersion"`
+	ConfigPath                string                `json:"configPath"`
+	GraphPath                 string                `json:"graphPath"`
+	GraphID                   string                `json:"graphId"`
+	GraphVersion              string                `json:"graphVersion"`
+	ResultNode                string                `json:"resultNode"`
+	Disposition               Disposition           `json:"disposition"`
+	HandoffTarget             *HandoffTarget        `json:"handoffTarget,omitempty"`
+	Handoffs                  []GraphHandoff        `json:"handoffs"`
+	Nodes                     []GraphNodeEvaluation `json:"nodes"`
+	Artifact                  *Artifact             `json:"artifact,omitempty"`
+}
+
+// GraphPlanFeed is one edge as the plan states it, before any evaluation:
+// which upstream node feeds which fact pointer or evidence requirement, and —
+// for an evidence feed — the tri-state an unresolved upstream would
+// contribute. OnUnresolved is stated explicitly, default included, because a
+// plan whose reader must know the default has not explained anything.
+type GraphPlanFeed struct {
+	From         string `json:"from"`
+	Fact         string `json:"fact,omitempty"`
+	Evidence     string `json:"evidence,omitempty"`
+	OnUnresolved string `json:"onUnresolved,omitempty"`
+}
+
+// GraphPlanStep is one node in evaluation order: its position, the project
+// decision id it names, the declared path, the pack document's own identity
+// when it could be read — empty with Detail set when it could not, never
+// guessed — and every feed that will arrive before it runs.
+type GraphPlanStep struct {
+	Order       int             `json:"order"`
+	Node        string          `json:"node"`
+	Pack        string          `json:"pack"`
+	Path        string          `json:"path"`
+	PackID      string          `json:"packId"`
+	PackVersion string          `json:"packVersion"`
+	Detail      string          `json:"detail,omitempty"`
+	Feeds       []GraphPlanFeed `json:"feeds"`
+}
+
+// GraphPlan is the evaluation plan of one graph, stated without evaluating
+// anything: the deterministic node order, and per node the feeds it would
+// receive. It reads pack documents only to echo their identity; no condition
+// is interpreted, no disposition is produced, and the plan authorizes nothing.
+type GraphPlan struct {
+	OutputVersion string          `json:"outputVersion"`
+	Tool          Tool            `json:"tool"`
+	Command       string          `json:"command"`
+	Status        string          `json:"status"`
+	Kind          string          `json:"kind"`
+	FormatVersion string          `json:"formatVersion"`
+	ConfigPath    string          `json:"configPath"`
+	GraphPath     string          `json:"graphPath"`
+	GraphID       string          `json:"graphId"`
+	GraphVersion  string          `json:"graphVersion"`
+	ResultNode    string          `json:"resultNode"`
+	Steps         []GraphPlanStep `json:"steps"`
+}
+
+// GraphSchema describes the exact embedded graph schema bytes, on the shape
+// packs schema reports for the configuration schema. It names no
+// specification version, because the graph format is this runtime's and has a
+// formatVersion of its own — which is what FormatVersion carries, never the
+// version member of any graph document: a payload in which "graphVersion"
+// could mean either fact would be a payload nobody could read safely, so the
+// format version is "formatVersion" in every graph payload and the document
+// identity echo is graphId with graphVersion, exactly parallel to packId with
+// packVersion.
+type GraphSchema struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	Kind          string `json:"kind"`
+	FormatVersion string `json:"formatVersion"`
+	SchemaID      string `json:"schemaId"`
+	Bytes         int    `json:"bytes"`
+	SHA256        string `json:"sha256"`
+	WrittenTo     string `json:"writtenTo,omitempty"`
+}
+
+// GraphValidation is one graph document's validation report: the document
+// against the embedded schema and the graph's own semantic rules, and its
+// references against the project — every node resolves through the
+// configuration, every evidence feed names a requirement its target pack
+// declares. Diagnostics carry every finding rather than the first one.
+type GraphValidation struct {
+	OutputVersion string       `json:"outputVersion"`
+	Tool          Tool         `json:"tool"`
+	Command       string       `json:"command"`
+	Status        string       `json:"status"`
+	Kind          string       `json:"kind"`
+	FormatVersion string       `json:"formatVersion"`
+	ConfigPath    string       `json:"configPath"`
+	GraphPath     string       `json:"graphPath"`
+	GraphID       string       `json:"graphId,omitempty"`
+	GraphVersion  string       `json:"graphVersion,omitempty"`
+	Diagnostics   []Diagnostic `json:"diagnostics"`
+}

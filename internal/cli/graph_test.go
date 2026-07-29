@@ -1,0 +1,256 @@
+package cli
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
+)
+
+// graphFixture reads one file of the graph package's fixture project, so the
+// CLI is tested against the same demo-seam pair the engine-level tests use.
+func graphFixture(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "graph", "testdata", "project", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// graphProject lays out the fixture project plus the graph document and any
+// extra files, returning the configuration path and the graph path.
+func graphProject(t *testing.T, graphDocument string, extra map[string]string) (string, string) {
+	t.Helper()
+	files := map[string]string{
+		"sanctions-screening-0.1.0.pack.json": graphFixture(t, "sanctions-screening-0.1.0.pack.json"),
+		"vendor-onboarding-0.1.0.pack.json":   graphFixture(t, "vendor-onboarding-0.1.0.pack.json"),
+		"onboarding.graph.json":               graphDocument,
+	}
+	for name, body := range extra {
+		files[name] = body
+	}
+	configPath := writeProjectFixture(t, graphFixture(t, "jpack.json"), files)
+	return configPath, filepath.Join(filepath.Dir(configPath), "onboarding.graph.json")
+}
+
+const graphHappyInputs = `{"screening":{"facts":{"screening":{"matches":"0"}},"evidence":{"screening-record":"present"}}}`
+
+func writeGraphInputs(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "inputs.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestGraphValidateCommand(t *testing.T) {
+	configPath, graphPath := graphProject(t, graphFixture(t, "onboarding.graph.json"), nil)
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "validate", graphPath, "--config", configPath}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "valid: graph vendor-onboarding-flow 0.1.0") {
+		t.Fatalf("unexpected human output: %q", stdout)
+	}
+
+	// A cycle is found, reported as a diagnostic, and exits 1.
+	looped := strings.Replace(graphFixture(t, "onboarding.graph.json"),
+		`"edges": [`,
+		`"edges": [
+    {"from": "onboarding", "to": "screening", "fact": "/loop"},`, 1)
+	configPath, graphPath = graphProject(t, looped, nil)
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "validate", graphPath, "--config", configPath, "--format", "json"}, "")
+	if code != result.ExitInvalid || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var validation result.GraphValidation
+	if err := json.Unmarshal([]byte(stdout), &validation); err != nil {
+		t.Fatal(err)
+	}
+	if validation.Status != "invalid" || validation.Kind != result.ProjectKind {
+		t.Fatalf("unexpected payload: %+v", validation)
+	}
+	found := false
+	for _, diagnostic := range validation.Diagnostics {
+		if diagnostic.Code == "JPS-GRAPH-CYCLE" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the cycle must be a diagnostic: %+v", validation.Diagnostics)
+	}
+}
+
+func TestGraphEvaluateCommandComposesAndReportsJSON(t *testing.T) {
+	configPath, graphPath := graphProject(t, graphFixture(t, "onboarding.graph.json"), nil)
+	inputs := writeGraphInputs(t, graphHappyInputs)
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--inputs", inputs, "--config", configPath, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var output result.GraphEvaluation
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.OutputVersion != result.OutputVersion || !output.Experimental || output.Status != "evaluated" {
+		t.Fatalf("unexpected envelope: %+v", output)
+	}
+	if output.ConformanceClaimReference != result.EvaluationClaimReference || !strings.Contains(output.Label, "graph composite") {
+		t.Fatalf("the labels must be carried: %+v", output)
+	}
+	if output.EvaluatorSpecVersion != result.EvaluatorSpecVersion || output.ResultNode != "onboarding" {
+		t.Fatalf("unexpected identity: %+v", output)
+	}
+	if output.FormatVersion != graph.FormatVersion || output.GraphVersion != "0.1.0" {
+		t.Fatalf("the format version and the document's own version are two members: %+v", output)
+	}
+	if output.Disposition.Kind != "outcome" || output.Disposition.OutcomeID != "approve" {
+		t.Fatalf("unexpected composite disposition: %+v", output.Disposition)
+	}
+	if len(output.Nodes) != 2 || len(output.Handoffs) != 0 {
+		t.Fatalf("unexpected composition: %+v", output)
+	}
+
+	// The escalation path: an unresolvable upstream propagates, and both
+	// requested handoffs are aggregated in the composite.
+	inputs = writeGraphInputs(t, `{"screening":{"facts":{},"evidence":{"screening-record":"present"}}}`)
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--inputs", inputs, "--config", configPath, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Disposition.Kind != "unresolved" || len(output.Handoffs) != 2 {
+		t.Fatalf("the escalations must surface: %+v", output)
+	}
+}
+
+func TestGraphEvaluateReportsTheNodeErrorClass(t *testing.T) {
+	var pack map[string]any
+	if err := json.Unmarshal([]byte(graphFixture(t, "vendor-onboarding-0.1.0.pack.json")), &pack); err != nil {
+		t.Fatal(err)
+	}
+	delete(pack, "title")
+	broken, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath, graphPath := graphProject(t, graphFixture(t, "onboarding.graph.json"), map[string]string{
+		"vendor-onboarding-0.1.0.pack.json": string(broken),
+	})
+	inputs := writeGraphInputs(t, graphHappyInputs)
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--inputs", inputs, "--config", configPath, "--format", "json"}, "")
+	if code != result.ExitInvalid || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var envelope result.OperationalError
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.EvaluationError == nil || envelope.EvaluationError.Class != result.ClassPackNotConformant || envelope.EvaluationError.Phase != result.PhasePreflight {
+		t.Fatalf("the node's §8.4 identity must be in band: %+v", envelope)
+	}
+	if !strings.Contains(envelope.Diagnostics[0].Message, `Node "onboarding"`) {
+		t.Fatalf("the refusal must name the node: %+v", envelope.Diagnostics)
+	}
+}
+
+func TestGraphExplainCommand(t *testing.T) {
+	configPath, graphPath := graphProject(t, graphFixture(t, "onboarding.graph.json"), nil)
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "explain", graphPath, "--config", configPath, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var plan result.GraphPlan
+	if err := json.Unmarshal([]byte(stdout), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.Status != "planned" || len(plan.Steps) != 2 || plan.Steps[1].Node != "onboarding" || len(plan.Steps[1].Feeds) != 2 {
+		t.Fatalf("unexpected plan: %+v", plan)
+	}
+
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "explain", graphPath, "--config", configPath}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "graph plan:") || !strings.Contains(stdout, "nothing was evaluated") {
+		t.Fatalf("unexpected human output: %q", stdout)
+	}
+
+	// A pack that read and decoded fine but declares no id is not "document
+	// unreadable": three different things leave the identity empty, and the
+	// plan keeps them apart exactly as the project inventory does.
+	var pack map[string]any
+	if err := json.Unmarshal([]byte(graphFixture(t, "vendor-onboarding-0.1.0.pack.json")), &pack); err != nil {
+		t.Fatal(err)
+	}
+	delete(pack, "id")
+	anonymous, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath, graphPath = graphProject(t, graphFixture(t, "onboarding.graph.json"), map[string]string{
+		"vendor-onboarding-0.1.0.pack.json": string(anonymous),
+	})
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "explain", graphPath, "--config", configPath}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "(pack vendor-onboarding = no id declared)") || strings.Contains(stdout, "document unreadable") {
+		t.Fatalf("a decodable pack without an id must not be called unreadable: %q", stdout)
+	}
+}
+
+func TestGraphSchemaCommand(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "schema"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "graph schema (formatVersion 1)") || !strings.Contains(stdout, graph.SchemaID) {
+		t.Fatalf("unexpected output: %q", stdout)
+	}
+
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "schema", "--write", "-"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if stdout != string(graph.Schema()) {
+		t.Fatalf("--write - must print the exact schema bytes")
+	}
+
+	code, _, _ = runTest(t, []string{"experimental", "graph", "schema", "--write", "-", "--format", "json"}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("--write - with --format json must be refused: exit=%d", code)
+	}
+}
+
+func TestGraphInvocationGuards(t *testing.T) {
+	configPath, _ := graphProject(t, graphFixture(t, "onboarding.graph.json"), nil)
+	code, stdout, _ := runTest(t, []string{"experimental", "graph", "evaluate", "-", "--inputs", "-", "--config", configPath, "--format", "json"}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("two stdin inputs must be refused: exit=%d", code)
+	}
+	var envelope result.OperationalError
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Diagnostics[0].Code != "JPS-INVOCATION-STDIN" {
+		t.Fatalf("unexpected code: %+v", envelope.Diagnostics)
+	}
+	if envelope.Command != "experimental graph evaluate" {
+		t.Fatalf("the command label must name the graph verb: %+v", envelope)
+	}
+
+	// The graph document itself can arrive on standard input.
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "validate", "-", "--config", configPath}, graphFixture(t, "onboarding.graph.json"))
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+}

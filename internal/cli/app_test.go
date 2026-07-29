@@ -68,6 +68,14 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"experimental", "--help"}, mustReference: true},
 		{args: []string{"experimental", "evaluate", "--help"}, mustReference: true},
 		{args: []string{"experimental", "evaluate-corpus", "--help"}, mustReference: true},
+		// The graph surface (ADR-0015). The group and its evaluate verb speak
+		// about the evaluator, so they say where the claim is stated; the other
+		// verbs evaluate nothing and are inventoried for the phrase scans.
+		{args: []string{"experimental", "graph", "--help"}, mustReference: true},
+		{args: []string{"experimental", "graph", "validate", "--help"}},
+		{args: []string{"experimental", "graph", "evaluate", "--help"}, mustReference: true},
+		{args: []string{"experimental", "graph", "explain", "--help"}},
+		{args: []string{"experimental", "graph", "schema", "--help"}},
 		{args: []string{"mcp", "--help"}, mustReference: true},
 		// The project convention (ADR-0012). Only the two that speak about the
 		// evaluator have to say where the claim is stated.
@@ -557,7 +565,7 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 
 	// The command names are unchanged: the namespace is stability, not conformance.
 	_, stdout, _ := runTest(t, []string{"experimental", "--help"}, "")
-	for _, verb := range []string{"evaluate", "evaluate-corpus"} {
+	for _, verb := range []string{"evaluate", "evaluate-corpus", "graph"} {
 		if !strings.Contains(stdout, verb) {
 			t.Fatalf("%q must still be spelled the same: %q", verb, stdout)
 		}

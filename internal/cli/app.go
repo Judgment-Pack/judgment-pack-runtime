@@ -106,7 +106,7 @@ func (a *App) experimentalCommand() *cobra.Command {
 			return command.Help()
 		},
 	}
-	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand())
+	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand())
 	return experimental
 }
 
@@ -722,6 +722,14 @@ func requestedCommand(args []string) string {
 				switch args[index+1] {
 				case "evaluate", "evaluate-corpus":
 					return "experimental " + args[index+1]
+				case "graph":
+					if index+2 < len(args) {
+						switch args[index+2] {
+						case "validate", "evaluate", "explain", "schema":
+							return "experimental graph " + args[index+2]
+						}
+					}
+					return "experimental graph"
 				}
 			}
 			return "experimental"

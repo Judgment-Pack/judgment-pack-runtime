@@ -397,6 +397,171 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 	return nil
 }
 
+// renderGraphValidation reports one graph document's checks. Every diagnostic
+// is printed, on the spec validate precedent: a reader fixing a graph wants
+// the whole list, not a conversation.
+func (a *App) renderGraphValidation(format string, output result.GraphValidation) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	if output.Status == "valid" {
+		fmt.Fprintf(a.out, "valid: graph %s %s and its references check out\n", display.Sanitize(output.GraphID), display.Sanitize(output.GraphVersion))
+	} else {
+		fmt.Fprintf(a.out, "invalid: %d problem(s) in graph %s\n", len(output.Diagnostics), display.Sanitize(output.GraphPath))
+		for _, diagnostic := range output.Diagnostics {
+			location := diagnostic.InstancePath
+			if location == "" {
+				location = "<root>"
+			}
+			fmt.Fprintf(a.out, "%s %s: %s\n", display.Sanitize(diagnostic.Code), display.Sanitize(location), display.Sanitize(diagnostic.Message))
+		}
+	}
+	fmt.Fprintf(a.out, "%s · %s · %s\n", display.Sanitize(output.GraphPath), display.Sanitize(output.ConfigPath), display.Sanitize(output.Kind))
+	return nil
+}
+
+// renderGraphEvaluation reports one graph run. The label leads for the same
+// reason every experimental label does, the composite headline echoes the
+// result node, and every requested handoff is printed before the per-node
+// detail so an escalation upstream of the result cannot be scrolled past.
+func (a *App) renderGraphEvaluation(format string, output result.GraphEvaluation) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE graph evaluation: %s\n", output.Label)
+	fmt.Fprintf(a.out, "graph: %s %s · result node: %s\n", display.Sanitize(output.GraphID), display.Sanitize(output.GraphVersion), display.Sanitize(output.ResultNode))
+	a.printDisposition("disposition", output.Disposition, output.HandoffTarget)
+	for _, handoff := range output.Handoffs {
+		target := "no declared destination"
+		if handoff.Target != nil {
+			target = fmt.Sprintf("%s %q", display.Sanitize(handoff.Target.Kind), display.Sanitize(handoff.Target.Name))
+		}
+		fmt.Fprintf(a.out, "handoff[%s]: requested -> %s (triggered by %s)\n", display.Sanitize(handoff.Node), target, display.Sanitize(strings.Join(handoff.TriggeredBy, ", ")))
+	}
+	for _, node := range output.Nodes {
+		fmt.Fprintf(a.out, "- node %s (pack %s = %s %s): %s\n",
+			display.Sanitize(node.Node), display.Sanitize(node.Pack),
+			display.Sanitize(node.PackID), display.Sanitize(node.PackVersion),
+			dispositionSummary(node.Disposition))
+		for _, feed := range node.FactFeeds {
+			note := "not injected (the upstream disposition is not an outcome)"
+			if feed.Injected {
+				note = "injected " + display.Sanitize(feed.Value)
+			}
+			fmt.Fprintf(a.out, "  fact %s <- %s: %s\n", display.Sanitize(feed.Pointer), display.Sanitize(feed.From), note)
+		}
+		for _, feed := range node.EvidenceFeeds {
+			fmt.Fprintf(a.out, "  evidence %s <- %s: %s\n", display.Sanitize(feed.Requirement), display.Sanitize(feed.From), display.Sanitize(feed.State))
+		}
+		for _, entry := range node.Trace {
+			fmt.Fprintf(a.out, "  %s\n", traceLine(entry))
+		}
+	}
+	if output.Artifact != nil {
+		fmt.Fprintf(a.out, "artifacts: %s · sha256 %s\n", display.Sanitize(output.Artifact.Provenance), output.Artifact.BundleDigest)
+	}
+	return nil
+}
+
+// renderGraphPlan reports one graph's evaluation plan. The closing line says
+// what a plan is not, because a printed order can read like a run to someone
+// scrolling past.
+func (a *App) renderGraphPlan(format string, output result.GraphPlan) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "graph plan: %s %s · result node: %s\n", display.Sanitize(output.GraphID), display.Sanitize(output.GraphVersion), display.Sanitize(output.ResultNode))
+	for _, step := range output.Steps {
+		// Three different things leave the identity empty, exactly as in the
+		// project inventory: a document that could not be obtained carries a
+		// detail, and one that was read and simply declares no id does not.
+		identity := "no id declared"
+		switch {
+		case step.PackID != "":
+			identity = display.Sanitize(step.PackID) + " " + display.Sanitize(step.PackVersion)
+		case step.Detail != "":
+			identity = "document unreadable"
+		}
+		fmt.Fprintf(a.out, "%d. %s (pack %s = %s): %s\n", step.Order, display.Sanitize(step.Node), display.Sanitize(step.Pack), identity, display.Sanitize(step.Path))
+		if step.Detail != "" {
+			fmt.Fprintf(a.out, "   detail: %s\n", display.Sanitize(step.Detail))
+		}
+		for _, feed := range step.Feeds {
+			if feed.Fact != "" {
+				fmt.Fprintf(a.out, "   fact %s <- %s\n", display.Sanitize(feed.Fact), display.Sanitize(feed.From))
+			}
+			if feed.Evidence != "" {
+				fmt.Fprintf(a.out, "   evidence %s <- %s (onUnresolved: %s)\n", display.Sanitize(feed.Evidence), display.Sanitize(feed.From), display.Sanitize(feed.OnUnresolved))
+			}
+		}
+	}
+	fmt.Fprintf(a.out, "%s · %s · %s\n", display.Sanitize(output.GraphPath), display.Sanitize(output.ConfigPath), display.Sanitize(output.Kind))
+	fmt.Fprintln(a.out, "nothing was evaluated: no condition was interpreted and no disposition exists")
+	return nil
+}
+
+func (a *App) renderGraphSchema(format string, output result.GraphSchema) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "graph schema (formatVersion %s)\n", display.Sanitize(output.FormatVersion))
+	fmt.Fprintf(a.out, "id: %s\n", display.Sanitize(output.SchemaID))
+	fmt.Fprintf(a.out, "sha256: %s\n", output.SHA256)
+	fmt.Fprintf(a.out, "bytes: %d\n", output.Bytes)
+	fmt.Fprintf(a.out, "kind: %s\n", display.Sanitize(output.Kind))
+	if output.WrittenTo != "" {
+		fmt.Fprintf(a.out, "written: %s\n", display.Sanitize(output.WrittenTo))
+	}
+	return nil
+}
+
+// printDisposition prints one disposition and its handoff, exactly as the
+// standalone evaluation renderer formats them.
+func (a *App) printDisposition(label string, disposition result.Disposition, target *result.HandoffTarget) {
+	fmt.Fprintf(a.out, "%s: %s\n", label, dispositionSummary(disposition))
+	if disposition.Handoff.State == "requested" {
+		triggers := display.Sanitize(strings.Join(disposition.Handoff.TriggeredBy, ", "))
+		if target != nil {
+			fmt.Fprintf(a.out, "handoff: requested -> %s %q (triggered by %s)\n", display.Sanitize(target.Kind), display.Sanitize(target.Name), triggers)
+		} else {
+			fmt.Fprintf(a.out, "handoff: requested (no declared destination; triggered by %s)\n", triggers)
+		}
+	}
+}
+
+// dispositionSummary is one disposition on one line: the outcome id for an
+// outcome, and the kind with its retained reasons for anything else.
+func dispositionSummary(disposition result.Disposition) string {
+	if disposition.Kind == "outcome" {
+		return "outcome " + display.Sanitize(disposition.OutcomeID)
+	}
+	return fmt.Sprintf("%s (%s)", display.Sanitize(disposition.Kind), display.Sanitize(strings.Join(disposition.Reasons, ", ")))
+}
+
+// traceLine formats one trace entry as the standalone evaluation renderer
+// prints it, minus the leading label, so both surfaces show one trace the
+// same way.
+func traceLine(entry result.TraceEntry) string {
+	note := entry.Condition
+	if entry.Suppressed {
+		note = "suppressed"
+	}
+	if entry.Skipped {
+		note = "skipped (forced outcome)"
+	}
+	detail := ""
+	if entry.Effect != "" {
+		detail = " effect=" + entry.Effect
+	}
+	if entry.Outcome != "" {
+		detail += " outcome=" + entry.Outcome
+	}
+	if entry.OnUnknown != "" {
+		detail += " onUnknown=" + entry.OnUnknown
+	}
+	return fmt.Sprintf("trace: %s %s: %s%s", display.Sanitize(entry.Stage), display.Sanitize(entry.ID), display.Sanitize(note), display.Sanitize(detail))
+}
+
 // operatorList names the draft operators a pack actually used. The empty case
 // never reaches the marker line — a pack that used none gets the other wording
 // above — but it is spelled out rather than left to render as an empty list.
