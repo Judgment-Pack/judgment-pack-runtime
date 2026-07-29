@@ -182,8 +182,10 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		surfaces = append(surfaces, claimSurface{
 			name: "mcp prompts/get " + prompt.Name,
 			text: text,
-			// Only the prompt that drives the evaluator speaks about it.
-			mustReference: prompt.Name == "test_pack",
+			// Only the prompts that speak about the evaluator say where its
+			// claim is stated: the one that drives it and the one that
+			// explains its payloads.
+			mustReference: prompt.Name == "test_pack" || prompt.Name == "explain_disposition",
 		})
 	}
 

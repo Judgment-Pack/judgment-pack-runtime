@@ -101,16 +101,18 @@ rather than guessed, so the pack can escalate instead of deciding on an inventio
 
 ## The prompts
 
-The server also serves three **method prompts** (MCP `prompts` capability) — static, versioned,
+The server also serves four **method prompts** (MCP `prompts` capability) — static, versioned,
 non-normative guidance that your client's model executes with your key. In Claude Code they appear
-as slash commands (`/mcp__judgment-pack__author_pack`, `…test_pack`, `…fix_pack`); other clients
-surface them differently or not at all, and everything works without them.
+as slash commands (`/mcp__judgment-pack__author_pack`, `…test_pack`, `…fix_pack`,
+`…explain_disposition`); other clients surface them differently or not at all, and everything
+works without them.
 
 | Prompt | Guides |
 | --- | --- |
 | `author_pack` | Encoding one policy decision: the create → validate → evaluate loop, the resolution-model shapes that avoid conflicts, the decimal-string and `onUnknown` rules, the prepared-facts ledger |
 | `test_pack` | Probing a pack's logic with an instance matrix (per-outcome, conflict, unknown, missing-evidence, not-applicable, forced-outcome, ordered-comparison rows) |
 | `fix_pack` | Repairing a non-conformant pack from the validator's diagnostics, in carrier → structural → semantic order |
+| `explain_disposition` | Narrating an evaluation payload strictly from the record it carries — the authoritative disposition, the informative (possibly partial) `trace[]`, the pack's members: reproduce the complete reason set, echo the handoff as recorded, and never soften or extend the disposition |
 
 Following a prompt does not make a pack conformant — only validation decides that — and the
 documents you produce are yours; the runtime stores and interprets nothing (ADR-0008).

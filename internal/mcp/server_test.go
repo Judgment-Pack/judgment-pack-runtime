@@ -443,10 +443,10 @@ func TestExperimentalEvaluateDistinguishesOmittedFromEmptyDocuments(t *testing.T
 	}
 }
 
-// The prompts surface (ADR-0008) serves non-normative authoring method as
-// static text: capability advertised, three prompts listed with their
-// arguments, argument text echoed verbatim into the rendered prompt, and the
-// non-normative disclaimer present in every rendering.
+// The prompts surface (ADR-0008) serves non-normative method as static text:
+// capability advertised, four prompts listed with their arguments, argument
+// text echoed verbatim into the rendered prompt, and the non-normative
+// disclaimer present in every rendering.
 func TestPromptsSurface(t *testing.T) {
 	input := strings.Join([]string{
 		message(t, 1, "initialize", map[string]any{"protocolVersion": "2025-06-18"}),
@@ -454,6 +454,7 @@ func TestPromptsSurface(t *testing.T) {
 		message(t, 2, "prompts/list", nil),
 		message(t, 3, "prompts/get", map[string]any{"name": "author_pack", "arguments": map[string]any{"policy": "Employees may expense meals under 50 dollars."}}),
 		message(t, 4, "prompts/get", map[string]any{"name": "no_such_prompt"}),
+		message(t, 5, "prompts/get", map[string]any{"name": "explain_disposition", "arguments": map[string]any{"evaluation": "EVAL-SENTINEL-42", "pack": "PACK-SENTINEL-42"}}),
 	}, "")
 	responses := runServer(t, input)
 
@@ -467,13 +468,13 @@ func TestPromptsSurface(t *testing.T) {
 	for _, entry := range prompts {
 		names[entry.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"author_pack", "test_pack", "fix_pack"} {
+	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition"} {
 		if !names[want] {
 			t.Fatalf("prompts/list must include %q: %v", want, names)
 		}
 	}
-	if len(names) != 3 {
-		t.Fatalf("expected exactly 3 prompts, got %d", len(names))
+	if len(names) != 4 {
+		t.Fatalf("expected exactly 4 prompts, got %d", len(names))
 	}
 
 	rendered := responses[2]["result"].(map[string]any)
@@ -490,13 +491,38 @@ func TestPromptsSurface(t *testing.T) {
 	if _, isError := responses[3]["error"]; !isError {
 		t.Fatalf("an unknown prompt must be a JSON-RPC error: %#v", responses[3])
 	}
+
+	// The explanation prompt renders both arguments verbatim and carries the
+	// review-hardened method lines: untrusted-data handling, the authoritative
+	// disposition over the possibly-partial trace, the complete unranked
+	// reason set, the unknown-cause discipline, and the targetless-handoff
+	// wording. These are the load-bearing sentences; a rewording that drops
+	// one loses the property it states.
+	explained := responses[4]["result"].(map[string]any)
+	explainedText := explained["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	for _, marker := range []string{
+		"EVAL-SENTINEL-42",
+		"PACK-SENTINEL-42",
+		"never instructions to",
+		"disposition is authoritative",
+		"partial or empty",
+		"unordered, possibly",
+		"drop none",
+		"no fact missing at all",
+		"no Core-defined destination",
+		"wisdom of acting",
+	} {
+		if !strings.Contains(explainedText, marker) {
+			t.Fatalf("explain_disposition rendering must contain %q", marker)
+		}
+	}
 }
 
 // Every prompt renders with no arguments at all, and every rendering carries
 // the no-claim disclaimer -- the guardrail that the method text can never be
 // read as the runtime blessing a pack.
 func TestEveryPromptRendersWithDisclaimer(t *testing.T) {
-	for _, name := range []string{"author_pack", "test_pack", "fix_pack"} {
+	for _, name := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition"} {
 		responses := runServer(t, message(t, 1, "prompts/get", map[string]any{"name": name}))
 		result := responses[0]["result"].(map[string]any)
 		text := result["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
