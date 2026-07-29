@@ -125,8 +125,8 @@ func TestMermaidNeutralizesRendererHazards(t *testing.T) {
 // the seven characters the author wrote, not as a decoded quote.
 func TestMermaidRoundTripsAuthoredEntities(t *testing.T) {
 	document := map[string]any{
-		"id":      "https://example.invalid/x",
-		"version": "0.0.1",
+		"id":       "https://example.invalid/x",
+		"version":  "0.0.1",
 		"outcomes": []any{map[string]any{"id": "o", "label": "wrote #quot; literally"}},
 	}
 	rendered := Mermaid(document)
