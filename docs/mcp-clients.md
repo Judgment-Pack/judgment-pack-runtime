@@ -112,7 +112,7 @@ works without them.
 | `author_pack` | Encoding one policy decision: the create → validate → evaluate loop, the resolution-model shapes that avoid conflicts, the decimal-string and `onUnknown` rules, the prepared-facts ledger |
 | `test_pack` | Probing a pack's logic with an instance matrix (per-outcome, conflict, unknown, missing-evidence, not-applicable, forced-outcome, ordered-comparison rows) |
 | `fix_pack` | Repairing a non-conformant pack from the validator's diagnostics, in carrier → structural → semantic order |
-| `explain_disposition` | Narrating an evaluation payload strictly from its `trace[]` and the pack: ground every sentence in the record, walk the entries in order, show how the disposition follows, and never soften or extend it |
+| `explain_disposition` | Narrating an evaluation payload strictly from the record it carries — the authoritative disposition, the informative (possibly partial) `trace[]`, the pack's members: reproduce the complete reason set, echo the handoff as recorded, and never soften or extend the disposition |
 
 Following a prompt does not make a pack conformant — only validation decides that — and the
 documents you produce are yours; the runtime stores and interprets nothing (ADR-0008).

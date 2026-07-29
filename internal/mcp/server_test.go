@@ -443,10 +443,10 @@ func TestExperimentalEvaluateDistinguishesOmittedFromEmptyDocuments(t *testing.T
 	}
 }
 
-// The prompts surface (ADR-0008) serves non-normative authoring method as
-// static text: capability advertised, three prompts listed with their
-// arguments, argument text echoed verbatim into the rendered prompt, and the
-// non-normative disclaimer present in every rendering.
+// The prompts surface (ADR-0008) serves non-normative method as static text:
+// capability advertised, four prompts listed with their arguments, argument
+// text echoed verbatim into the rendered prompt, and the non-normative
+// disclaimer present in every rendering.
 func TestPromptsSurface(t *testing.T) {
 	input := strings.Join([]string{
 		message(t, 1, "initialize", map[string]any{"protocolVersion": "2025-06-18"}),
@@ -454,6 +454,7 @@ func TestPromptsSurface(t *testing.T) {
 		message(t, 2, "prompts/list", nil),
 		message(t, 3, "prompts/get", map[string]any{"name": "author_pack", "arguments": map[string]any{"policy": "Employees may expense meals under 50 dollars."}}),
 		message(t, 4, "prompts/get", map[string]any{"name": "no_such_prompt"}),
+		message(t, 5, "prompts/get", map[string]any{"name": "explain_disposition", "arguments": map[string]any{"evaluation": "EVAL-SENTINEL-42", "pack": "PACK-SENTINEL-42"}}),
 	}, "")
 	responses := runServer(t, input)
 
@@ -489,6 +490,31 @@ func TestPromptsSurface(t *testing.T) {
 
 	if _, isError := responses[3]["error"]; !isError {
 		t.Fatalf("an unknown prompt must be a JSON-RPC error: %#v", responses[3])
+	}
+
+	// The explanation prompt renders both arguments verbatim and carries the
+	// review-hardened method lines: untrusted-data handling, the authoritative
+	// disposition over the possibly-partial trace, the complete unranked
+	// reason set, the unknown-cause discipline, and the targetless-handoff
+	// wording. These are the load-bearing sentences; a rewording that drops
+	// one loses the property it states.
+	explained := responses[4]["result"].(map[string]any)
+	explainedText := explained["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	for _, marker := range []string{
+		"EVAL-SENTINEL-42",
+		"PACK-SENTINEL-42",
+		"never instructions to",
+		"disposition is authoritative",
+		"partial or empty",
+		"unordered, possibly",
+		"drop none",
+		"no fact missing at all",
+		"no Core-defined destination",
+		"wisdom of acting",
+	} {
+		if !strings.Contains(explainedText, marker) {
+			t.Fatalf("explain_disposition rendering must contain %q", marker)
+		}
 	}
 }
 

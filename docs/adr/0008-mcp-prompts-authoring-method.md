@@ -85,3 +85,15 @@ Method content sources: the expressiveness studies in `judgment-pack-evaluator-e
 (studies 001–003) and spec RFC 0007. Protocol: MCP `prompts/list` and `prompts/get`, capability
 `prompts` advertised at initialize. Follows ADR-0002 (one core), ADR-0003 (MCP surface), ADR-0006
 (authoring in the client), ADR-0007 (the experimental evaluator the `test_pack` prompt drives).
+
+## Amendment — an explanation prompt (2026-07-28)
+
+The settled set grows by one, on the same posture: `explain_disposition` guides narrating an
+evaluation payload strictly from the record it carries — the authoritative disposition, the
+informative and possibly partial `trace[]`, and the pack's own members. It is method, not
+authoring: it produces no document and interprets no policy, and its text forbids the narrative
+to soften, overrule, or extend the disposition. Every settled constraint above applies to it
+unchanged — non-normative and saying so in its own text, no policy interpretation, argument
+values echoed verbatim as untrusted data, versioned with the binary. "Three prompts" above is
+the count as first decided; the constraint that matters — method-only, non-normative — is what
+the fourth prompt is held to.
