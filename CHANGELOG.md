@@ -2,6 +2,15 @@
 
 All notable changes to tagged releases are documented here.
 
+## 0.6.1 - 2026-07-29
+
+- **`packs diagram` lays the flowchart out in the resolution model's reading order**:
+  applicability, evidence, exceptions, rules, outcomes, then the terminal states, ranked
+  top-to-bottom with invisible edges — the reader follows the pack's own evaluation flow
+  instead of a renderer's packing. Rendering only; no evaluation surface changes, and the
+  conformance claim is stated, in full and only, in `CONFORMANCE.md`, which no line of this
+  entry restates.
+
 ## 0.6.0 - 2026-07-29
 
 - **Add `packs diagram`**: render one declared pack as a deterministic Mermaid flowchart —
