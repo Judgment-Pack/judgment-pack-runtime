@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.6.2 - 2026-07-29
 
 - **Add the `get_pack_diagram` MCP tool**: one declared pack as the deterministic Mermaid
   flowchart the CLI's `packs diagram` emits — same document, same bytes, on the same strict
