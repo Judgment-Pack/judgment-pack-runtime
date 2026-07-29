@@ -6,14 +6,19 @@ All notable changes to tagged releases are documented here.
 
 - **Add `packs diagram`**: render one declared pack as a deterministic Mermaid flowchart —
   applicability, evidence requirements, rules, exceptions, outcomes, fallback, and escalation,
-  each node quoting the document member it reads, in document order, the same bytes on every
-  run. A reading aid derived from the pack, never a second statement of it: it adds no member,
-  decides nothing, and diagrams a document exactly as written whether or not it validates.
-  GitHub and VS Code render the output in Markdown fences. Escalating unknowns route to an
-  unresolved node — only `escalation.triggers` decides a handoff — labels neutralize the
-  renderer's hazard bytes (backticks, `%%` directives, empty labels), the frontmatter title
-  is a quoted YAML scalar, and the document is decoded once, by the same strict carrier
-  every other surface uses.
+  in document order, the same bytes on every run. Member nodes quote the document;
+  resolution-state nodes (not-applicable, unresolved, no rule fired) are synthesized and
+  labeled as what they are. A reading aid derived from the pack, never a second statement of
+  it: it adds no member, decides nothing, and diagrams a document exactly as written whether
+  or not it validates. GitHub and VS Code render the output in fenced blocks labeled
+  `mermaid`. Evidence draws `reads` edges for what conditions actually test
+  (`evidence-present`) and `cites` edges for `evidenceRequirementRefs` citations; escalating
+  unknowns route to an unresolved node — only `escalation.triggers` decides a handoff;
+  colliding sanitized ids stay distinct vertices; labels neutralize the renderer's hazard
+  bytes (backticks, `%%` directives, entity-lookalike `#`, empty labels); the frontmatter
+  title is a quoted YAML scalar; and the document is decoded once, by the same strict carrier
+  every other surface uses, with resource limits refused as operational (exit 4), not
+  invalid.
 - **Add the `explain_disposition` method prompt** (MCP `prompts` capability, ADR-0008), the
   fourth beside `author_pack`, `test_pack`, and `fix_pack`: non-normative guidance for
   narrating an evaluation payload strictly from the record it carries — ground every

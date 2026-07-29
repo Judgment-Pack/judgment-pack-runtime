@@ -71,13 +71,14 @@ func (a *App) packsDiagramCommand() *cobra.Command {
 		Use:   "diagram",
 		Short: "Render one declared pack as a Mermaid flowchart (a reading aid, not the document)",
 		Long: "Render one pack the project declares as a deterministic Mermaid flowchart: applicability, " +
-			"evidence requirements, rules, exceptions, outcomes, fallback, and escalation, each node quoting " +
-			"the document member it reads, in document order, the same bytes on every run. The output is a " +
-			"reading aid derived from the pack and never a second statement of it: it adds no member, decides " +
-			"nothing, and diagrams a document exactly as written whether or not that document validates -- " +
-			"spec validate and packs validate hold the verdicts. Pipe the output to any Mermaid renderer " +
-			"(GitHub and VS Code render it in Markdown fences). With one declared pack --id is optional; with " +
-			"several it names the one to render.",
+			"evidence requirements, rules, exceptions, outcomes, fallback, and escalation, in document order, " +
+			"the same bytes on every run. Member nodes quote the document; resolution-state nodes " +
+			"(not-applicable, unresolved, no rule fired) are synthesized and labeled as what they are. The " +
+			"output is a reading aid derived from the pack and never a second statement of it: it adds no " +
+			"member, decides nothing, and diagrams a document exactly as written whether or not that document " +
+			"validates -- spec validate and packs validate hold the verdicts. Paste the output into a fenced " +
+			"code block labeled mermaid; GitHub and VS Code render those. With one declared pack --id is " +
+			"optional; with several it names the one to render.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			loaded, failure := a.loadProject(configPath, "packs diagram", "human")
@@ -97,16 +98,19 @@ func (a *App) packsDiagramCommand() *cobra.Command {
 			if documentFailure != nil {
 				return a.projectFailure("packs diagram", "human", documentFailure)
 			}
-			// One decoder for every surface: the carrier verdict Document
-			// already reached is the gate, and the render input comes from the
-			// same strict decode — a second, looser decoder here would let two
-			// surfaces disagree about one file.
-			if meta.Status != "valid" {
-				return a.operational("packs diagram", "human", result.ExitInvalid, "JPS-PROJECT-PACK-READ", meta.Detail)
-			}
+			// One decoder for every surface: the same strict carrier decode
+			// every other reader applies, classified the way the validator
+			// classifies it — a resource limit is an operational refusal
+			// (exit 4), not a defect of the document (exit 1). A second,
+			// looser decoder here would let two surfaces disagree about one
+			// file.
 			decoded, carrierFailure := carrier.Decode(data, carrier.DefaultLimits())
 			if carrierFailure != nil {
-				return a.operational("packs diagram", "human", result.ExitInvalid, "JPS-PROJECT-PACK-READ",
+				exit := result.ExitInvalid
+				if carrierFailure.Resource {
+					exit = result.ExitIO
+				}
+				return a.operational("packs diagram", "human", exit, "JPS-PROJECT-PACK-READ",
 					project.ReadFailureMessage(meta.Path, carrierFailure))
 			}
 			document, ok := decoded.(map[string]any)
