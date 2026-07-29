@@ -76,7 +76,6 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"packs", "list", "--help"}},
 		{args: []string{"packs", "validate", "--help"}},
 		{args: []string{"packs", "schema", "--help"}},
-		{args: []string{"packs", "diagram", "--help"}},
 	} {
 		code, stdout, stderr := runTest(t, surface.args, "")
 		if code != 0 || stderr != "" {
@@ -537,7 +536,6 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 		"cli packs validate --help",
 		"cli packs test --help",
 		"cli packs schema --help",
-		"cli packs diagram --help",
 		"mcp tools/list list_packs",
 		"mcp tools/list get_pack",
 		"prose docs/building-with-packs.md",

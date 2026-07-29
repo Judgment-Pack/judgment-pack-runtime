@@ -2,6 +2,3 @@
 # checkout-time line-ending conversion.
 internal/artifacts/jps/** -text
 
-# Diagram goldens are compared byte-for-byte against rendered output, and the
-# renderer emits LF on every platform.
-internal/diagram/testdata/** -text
