@@ -2,6 +2,16 @@
 
 All notable changes to tagged releases are documented here.
 
+## 0.5.0-rc.2 - 2026-07-28
+
+- **Fix the MCP registry package shape**: the live registry rejects a `version` member on an
+  OCI package — the version rides in the `identifier` tag — and v0.5.0-rc.1's registry publish
+  failed on exactly that, after its OIDC login succeeded. The template drops the member, and CI
+  now asserts the server-side OCI rules the registry enforces beyond its published schema.
+  Everything else about the release pipeline is unchanged from 0.5.0-rc.1, whose image and
+  archives shipped and verified; the conformance claim is stated, in full and only, in
+  `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.5.0-rc.1 - 2026-07-28
 
 - **Distribute the released binary as an OCI image and publish it to the MCP registry**
