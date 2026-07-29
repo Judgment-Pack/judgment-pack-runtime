@@ -23,7 +23,7 @@ Decision record: [ADR-0011](docs/adr/0011-first-evaluator-conformance-claim.md).
 
 ## The claim
 
-`judgment-pack` claims **evaluator conformance** as JPS Core `0.2.0-draft` §3.4 defines that class,
+`jpack` claims **evaluator conformance** as JPS Core `0.2.0-draft` §3.4 defines that class,
 against Core **`0.2.0-draft`** — the exact `specVersion` — and against the evaluation corpus published
 for that version, whose `suiteVersion` is **`0.2.0-draft`**.
 
@@ -45,7 +45,7 @@ development build from this history makes the same claim its released artifacts 
 such build emits the same reference to this file. Anyone can reproduce its evidence offline:
 
 ```bash
-judgment-pack experimental evaluate-corpus --spec-version 0.2.0-draft --format json
+jpack experimental evaluate-corpus --spec-version 0.2.0-draft --format json
 ```
 
 The claim applies to **conforming Core-class inputs reaching this runtime's one shared evaluator**

@@ -88,7 +88,7 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	if !ok || initResult["protocolVersion"] != "2025-06-18" {
 		t.Fatalf("initialize result: %#v", responses[0])
 	}
-	if serverInfo := initResult["serverInfo"].(map[string]any); serverInfo["name"] != "judgment-pack" {
+	if serverInfo := initResult["serverInfo"].(map[string]any); serverInfo["name"] != "jpack" {
 		t.Fatalf("serverInfo: %#v", serverInfo)
 	}
 	if _, hasTools := initResult["capabilities"].(map[string]any)["tools"]; !hasTools {

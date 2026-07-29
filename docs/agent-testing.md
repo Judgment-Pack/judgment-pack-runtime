@@ -13,12 +13,12 @@ the integration and testing surface is recorded in
 [ADR-0003](adr/0003-mcp-integration-and-testing-surface.md).
 
 The agent drives the command-line binary directly below. The runtime also ships an MCP server
-(`judgment-pack mcp`, see ADR-0003) exposing the same operations as tools to any MCP client; the
+(`jpack mcp`, see ADR-0003) exposing the same operations as tools to any MCP client; the
 CLI loop here needs neither an SDK nor a running server.
 
 ## What you need
 
-- A `judgment-pack` binary (installed or built below).
+- A `jpack` binary (installed or built below).
 - Any agent client that can run a shell command and read and write files, configured with **your
   own** model API key. The runtime holds no key and opens no network connection — the key lives
   entirely in the client. (Its only evaluation surface is the explicitly experimental evaluator of
@@ -32,20 +32,20 @@ Either install a released binary or build from source.
 
 **Install a tagged release.** Download the archive for your operating system and architecture from
 the repository's [GitHub Releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases)
-and put the binary on your `PATH`. Each archive also ships a `jpack` short alias.
+and put the binary on your `PATH`.
 
 ```bash
 tar -xzf judgment-pack_<version>_<os>_<arch>.tar.gz   # on Windows, expand the .zip instead
-install -m 0755 judgment-pack "$HOME/.local/bin/judgment-pack"
-judgment-pack version
+install -m 0755 jpack "$HOME/.local/bin/jpack"
+jpack version
 ```
 
 **Build from source.** With a currently supported Go toolchain, from a checkout of this repository.
 If `go env GO111MODULE` reports `off`, force module mode as shown:
 
 ```bash
-env GO111MODULE=on go build -o ~/.local/bin/judgment-pack ./cmd/judgment-pack
-judgment-pack version
+env GO111MODULE=on go build -o ~/.local/bin/jpack ./cmd/jpack
+jpack version
 ```
 
 ## How the loop works
@@ -53,7 +53,7 @@ judgment-pack version
 The agent edits a candidate document and validates it after every change:
 
 ```bash
-judgment-pack spec validate <path-or-> --format json
+jpack spec validate <path-or-> --format json
 ```
 
 - `status` is `valid`, `invalid`, or `unsupported`; the loop stops at `valid`.
@@ -88,7 +88,7 @@ setting, or simply the agent's first message. Replace `<spec>` with the path to 
 ```markdown
 # JPS pack authoring -- validation loop
 
-You author and revise Judgment Pack Specification (JPS) documents. The judgment-pack CLI is your
+You author and revise Judgment Pack Specification (JPS) documents. The jpack CLI is your
 validation oracle. It checks document conformance only -- carrier (bytes/JSON), structural (schema),
 and semantic (references) -- for spec versions 0.1.0-draft and 0.2.0-draft, dispatched on the version
 the document itself declares. It does not evaluate rules, choose an
@@ -98,7 +98,7 @@ validity means well-formed, nothing more.
 ## The loop
 After every edit, validate and fix what it reports:
 
-    judgment-pack spec validate <path-or-> --format json
+    jpack spec validate <path-or-> --format json
 
 - status: "valid" | "invalid" | "unsupported". Stop at "valid".
 - exit code: 0 = valid, non-zero = not valid.
@@ -106,7 +106,7 @@ After every edit, validate and fix what it reports:
   Pointer), and message. Fix by instancePath and re-run.
 - layers[]: a later layer runs only after earlier layers pass.
 
-To see the full schema:  judgment-pack spec schema 0.1.0-draft --write -
+To see the full schema:  jpack spec schema 0.1.0-draft --write -
 
 ## Where to start
 Read one example first to learn the shape, then build your own -- do not copy it verbatim:

@@ -15,5 +15,5 @@
 // The server speaks MCP's newline-delimited JSON-RPC 2.0 stdio framing directly,
 // without a third-party SDK, to keep the runtime's dependency set minimal and
 // its build free of a newer-Go-toolchain requirement. It runs as the "mcp"
-// subcommand of the single judgment-pack binary.
+// subcommand of the single jpack binary.
 package mcp

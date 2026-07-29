@@ -43,9 +43,9 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Run bundled conformance suite
-        run: go run ./cmd/judgment-pack spec test-conformance --quiet
+        run: go run ./cmd/jpack spec test-conformance --quiet
       - name: Build
-        run: go build -trimpath ./cmd/judgment-pack
+        run: go build -trimpath ./cmd/jpack
         env:
           CGO_ENABLED: "0"
 

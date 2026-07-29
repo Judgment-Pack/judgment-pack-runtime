@@ -10,7 +10,7 @@ FROM scratch
 ARG TARGETOS
 ARG TARGETARCH
 
-COPY bin/${TARGETOS}_${TARGETARCH}/judgment-pack /judgment-pack
+COPY bin/${TARGETOS}_${TARGETARCH}/jpack /jpack
 COPY CONFORMANCE.md LICENSE NOTICE THIRD_PARTY_NOTICES /
 
 # The launch-directory convention (ADR-0012): mount a project at /project and
@@ -24,5 +24,5 @@ LABEL io.modelcontextprotocol.server.name="io.github.Judgment-Pack/judgment-pack
       org.opencontainers.image.source="https://github.com/Judgment-Pack/judgment-pack-runtime" \
       org.opencontainers.image.licenses="Apache-2.0"
 
-ENTRYPOINT ["/judgment-pack"]
+ENTRYPOINT ["/jpack"]
 CMD ["mcp"]

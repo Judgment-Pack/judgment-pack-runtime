@@ -34,7 +34,7 @@ The runtime serves both without knowing which it is talking to.
 
 ## The two surfaces
 
-| Concern | CLI | MCP server (`judgment-pack mcp`) |
+| Concern | CLI | MCP server (`jpack mcp`) |
 | --- | --- | --- |
 | Invocation | one-shot process per call | long-lived, JSON-RPC 2.0 over stdio |
 | Validate | `spec validate <path-or->` | `validate { document }` |
@@ -112,7 +112,7 @@ Seed a draft from a fixture, validate it, break it, read the diagnostic, fix it,
 real output from this runtime:
 
 ```console
-$ judgment-pack spec examples minimal-literal --write pack.json
+$ jpack spec examples minimal-literal --write pack.json
 JPS example minimal-literal
 focus: minimal structurally and semantically conforming document
 spec: §§2–7
@@ -122,20 +122,20 @@ kind: version-pinned-conformance-fixture
 artifacts: immutable-git-ref
 written: pack.json
 
-$ judgment-pack spec validate pack.json
+$ jpack spec validate pack.json
 valid: JPS document conformance passed (0.1.0-draft)
 artifacts: immutable-git-ref · sha256 abc3d3371db5be6c0b63639d399fbe42e3f3e136a162d8d6c2b50503634bbe70
 
 # ...edit pack.json so a rule points at an outcome that was never declared...
 
-$ judgment-pack spec validate pack.json ; echo "exit=$?"
+$ jpack spec validate pack.json ; echo "exit=$?"
 invalid: JPS document conformance was not established
 JPS-SEMANTIC-UNRESOLVED-OUTCOME /rules/0/outcome: Outcome reference "approve" does not resolve to a declared outcome. Declared outcome ids: accept, reject.
 exit=1
 
 # ...the diagnostic named the offending value, the location, and the valid set; fix it...
 
-$ judgment-pack spec validate pack.json ; echo "exit=$?"
+$ jpack spec validate pack.json ; echo "exit=$?"
 valid: JPS document conformance passed (0.1.0-draft)
 artifacts: immutable-git-ref · sha256 abc3d3371db5be6c0b63639d399fbe42e3f3e136a162d8d6c2b50503634bbe70
 exit=0

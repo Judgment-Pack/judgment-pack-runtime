@@ -75,7 +75,7 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 
 func (a *App) rootCommand() *cobra.Command {
 	root := &cobra.Command{
-		Use:           "judgment-pack",
+		Use:           "jpack",
 		Short:         "Judgment Pack Specification tooling",
 		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental namespace is the one exception: it evaluates, under the JPS Core 0.2.0-draft evaluator contract, on a surface that may change without notice. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; no help text, payload, or other file states it, and this one does not either. No command authorizes anything.",
 		SilenceErrors: true,
@@ -89,7 +89,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.SetIn(a.in)
 	root.SetOut(a.out)
 	root.SetErr(a.errOut)
-	root.SetVersionTemplate("judgment-pack {{.Version}}\n")
+	root.SetVersionTemplate("jpack {{.Version}}\n")
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.pretty, "pretty", false, "indent JSON output")
 	root.AddCommand(a.versionCommand(), a.specCommand(), a.packsCommand(), a.mcpCommand(), a.experimentalCommand())
@@ -385,7 +385,7 @@ func (a *App) versionCommand() *cobra.Command {
 					return &handledExit{code: result.ExitIO}
 				}
 			} else {
-				fmt.Fprintf(a.out, "judgment-pack %s\n", result.CLIVersion)
+				fmt.Fprintf(a.out, "jpack %s\n", result.CLIVersion)
 				fmt.Fprintf(a.out, "JPS: %s (%s)\n", strings.Join(output.SupportedSpecs, ", "), output.ArtifactProvenance)
 			}
 			return nil
@@ -732,5 +732,5 @@ func requestedCommand(args []string) string {
 			return "version"
 		}
 	}
-	return "judgment-pack"
+	return "jpack"
 }

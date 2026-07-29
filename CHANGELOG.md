@@ -4,6 +4,19 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Rename the command binary to `jpack`**, dropping the `judgment-pack` executable and the
+  short-alias arrangement: release archives now carry one binary, `jpack`, built from
+  `cmd/jpack`. The long name was the friction a two-binary alias only papered over, so while
+  the project has no downstream users the alias becomes the name. The project, repository,
+  archive names (`judgment-pack_<version>_<os>_<arch>`), GHCR image
+  (`ghcr.io/judgment-pack/judgment-pack`), and MCP registry identity
+  (`io.github.Judgment-Pack/judgment-pack`) are unchanged; the executable inside them is
+  `jpack`, the OCI entrypoint is `/jpack`, `--version` prints `jpack <version>`, and the MCP
+  `serverInfo.name` and every payload's `tool.name` now carry the value `jpack`. That is a
+  value change within unchanged members, so `outputVersion` stays `"2"`; a consumer matching
+  `tool.name == "judgment-pack"` must match `jpack` instead. The conformance claim is
+  unaffected and stated, in full and only, in `CONFORMANCE.md`, which no line of this entry
+  restates.
 - **Remove the diagram surface entirely** — the `packs diagram` CLI command, the
   `get_pack_diagram` MCP tool (added 0.6.0–0.6.2), and the internal renderer. Mermaid is a
   format, not universal: clients render it unevenly, and a fixed picture is one reading of a

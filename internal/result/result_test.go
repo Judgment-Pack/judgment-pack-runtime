@@ -158,7 +158,7 @@ func TestOutputVersionIsPinned(t *testing.T) {
 	if OutputVersion != "2" {
 		t.Fatalf("outputVersion is part of the machine contract: got %q, want %q", OutputVersion, "2")
 	}
-	if CLIName != "judgment-pack" {
+	if CLIName != "jpack" {
 		t.Fatalf("tool.name is part of the machine contract: got %q", CLIName)
 	}
 }
