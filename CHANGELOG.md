@@ -2,17 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## 0.5.0-rc.2 - 2026-07-28
-
-- **Fix the MCP registry package shape**: the live registry rejects a `version` member on an
-  OCI package — the version rides in the `identifier` tag — and v0.5.0-rc.1's registry publish
-  failed on exactly that, after its OIDC login succeeded. The template drops the member, and CI
-  now asserts the server-side OCI rules the registry enforces beyond its published schema.
-  Everything else about the release pipeline is unchanged from 0.5.0-rc.1, whose image and
-  archives shipped and verified; the conformance claim is stated, in full and only, in
-  `CONFORMANCE.md`, which no line of this entry restates.
-
-## 0.5.0-rc.1 - 2026-07-28
+## 0.5.0 - 2026-07-28
 
 - **Distribute the released binary as an OCI image and publish it to the MCP registry**
   (ADR-0013). Post-gate release jobs build a `scratch` image from the published release
@@ -32,7 +22,9 @@ All notable changes to tagged releases are documented here.
   (`ubuntu-24.04-arm`); previously that platform was published without ever being
   executed.
 - CI validates the rendered MCP registry `server.json` template against the vendored
-  registry schema, so the pinned publisher and the template cannot drift apart silently.
+  registry schema — and against the server-side rules the registry enforces beyond it,
+  learned live during the release candidates: an OCI package carries its version in the
+  `identifier` tag and must not have a `version` member.
 
 ## 0.4.0 - 2026-07-28
 
