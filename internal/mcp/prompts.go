@@ -55,6 +55,17 @@ func promptDefinitions() []promptDefinition {
 			},
 			build: buildFixPack,
 		},
+		{
+			name: "explain_disposition",
+			description: "Guide an explanation session: narrate an evaluation payload's disposition " +
+				"strictly from its trace and the pack it evaluated. Non-normative method guidance; " +
+				"the narrative reads the record and decides nothing.",
+			arguments: []promptArgument{
+				{Name: "evaluation", Description: "The evaluation payload, as JSON text (optional; you may also run experimental_evaluate first).", Required: false},
+				{Name: "pack", Description: "The evaluated pack, as JSON text (optional; you may also fetch it with get_pack).", Required: false},
+			},
+			build: buildExplainDisposition,
+		},
 	}
 }
 
@@ -190,6 +201,67 @@ Re-validate after each batch; repeat to exit 0. An "unsupported" result is diffe
 it means a required extension this consumer does not support, which no edit to the pack fixes.
 After reaching valid, re-run whatever instance matrix exists for the pack -- a repair that changes
 ids or structure can change behavior, and validity does not test logic.
+
+`)
+	b.WriteString(authoringDisclaimer)
+	return b.String()
+}
+
+func buildExplainDisposition(args map[string]string) string {
+	var b strings.Builder
+	b.WriteString("Explain the disposition of ONE evaluation, strictly from the record it carries.\n")
+	b.WriteString("The payload's trace is the record: one entry per exception and rule, in evaluation\n")
+	b.WriteString("order, each naming its condition value, effect, and onUnknown handling. Your narrative\n")
+	b.WriteString("is a reading of that record -- it explains the disposition and decides nothing. The\n")
+	b.WriteString("evaluator's surface is experimental; its conformance claim is stated, in full and only,\n")
+	b.WriteString("in CONFORMANCE.md, and whatever it says there is about the evaluator, not about this\n")
+	b.WriteString("pack, these facts, or your narrative (JPS §3.5).\n\n")
+	if evaluation := strings.TrimSpace(args["evaluation"]); evaluation != "" {
+		b.WriteString("The evaluation payload:\n\n---\n" + evaluation + "\n---\n\n")
+	} else {
+		b.WriteString("Obtain the payload first: run experimental_evaluate (or read the one you were given).\n\n")
+	}
+	if pack := strings.TrimSpace(args["pack"]); pack != "" {
+		b.WriteString("The evaluated pack:\n\n---\n" + pack + "\n---\n\n")
+	} else {
+		b.WriteString("Fetch the evaluated pack (get_pack by decision id, or the document you hold): the trace\n")
+		b.WriteString("names rule ids; the pack holds their conditions, and you need both.\n\n")
+	}
+	b.WriteString(`Work in this order:
+
+1. GROUND. Every sentence you write must cite a member of the payload or of the pack --
+   a trace entry, a disposition member, a rule's condition, a fact addressed by its JSON
+   Pointer. If you cannot ground a sentence in one of those, do not write it.
+
+2. IDENTIFY. Name what was evaluated and under what: packId and packVersion (echoed from
+   the document itself), the pack's specVersion beside the payload's evaluatorSpecVersion,
+   and the disposition's kind -- outcome (with its outcomeId), not-applicable, or
+   unresolved (with its reasons).
+
+3. WALK THE TRACE, in order. For each entry: which stage (exception or rule), which id,
+   what its condition evaluated to (true, false, or unknown). For a fired rule, quote the
+   condition from the pack and name the facts it read. For an unknown, name the missing or
+   unknown fact and the entry's onUnknown -- escalate means "a missing fact here must stop
+   the decision"; ignore means the rule simply did not fire. Say which entries were
+   suppressed or skipped, and by what.
+
+4. EXPLAIN THE RESOLUTION. Show how the disposition follows from the walked trace: fired
+   rules agreeing on one outcome; rules naming different outcomes (reason "conflict");
+   an escalating unknown blocking resolution (reason "unknown", and a handoff when the
+   trigger is wired -- name its triggeredBy); required evidence absent
+   ("missing-required-evidence"); facts outside the pack's applicability
+   (not-applicable); or a fallbackOutcome that no rule displaced.
+
+5. HOLD THE LINE. The narrative must not soften, overrule, or extend the disposition:
+   unknown stays unknown, unresolved stays unresolved, and a handoff is a request the
+   pack made, not one you may withdraw. Do not invent facts, do not average the trace
+   into a hunch, and if asked whether to ACT on the disposition, say plainly that the
+   payload asserts nothing about the wisdom of acting -- that judgment belongs to the
+   humans the escalation machinery exists to reach.
+
+6. FORMAT. One paragraph stating the disposition and the single load-bearing cause; then
+   one bullet per trace entry that mattered, each citing its entry; then the handoff
+   sentence, if any, naming who the pack asked for.
 
 `)
 	b.WriteString(authoringDisclaimer)

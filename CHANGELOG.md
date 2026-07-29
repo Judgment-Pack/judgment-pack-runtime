@@ -2,6 +2,17 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Add the `explain_disposition` method prompt** (MCP `prompts` capability, ADR-0008), the
+  fourth beside `author_pack`, `test_pack`, and `fix_pack`: non-normative guidance for
+  narrating an evaluation payload strictly from the record it carries — ground every
+  sentence in a payload or pack member, walk the `trace[]` in order, show how the
+  disposition follows from it, and hold the line: the narrative must not soften, overrule,
+  or extend the disposition, and the payload asserts nothing about the wisdom of acting on
+  it (JPS §3.5). The evaluator's conformance claim is stated, in full and only, in
+  `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.5.0 - 2026-07-28
 
 - **Distribute the released binary as an OCI image and publish it to the MCP registry**

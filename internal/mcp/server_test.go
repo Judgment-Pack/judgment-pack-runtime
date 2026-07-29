@@ -467,13 +467,13 @@ func TestPromptsSurface(t *testing.T) {
 	for _, entry := range prompts {
 		names[entry.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"author_pack", "test_pack", "fix_pack"} {
+	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition"} {
 		if !names[want] {
 			t.Fatalf("prompts/list must include %q: %v", want, names)
 		}
 	}
-	if len(names) != 3 {
-		t.Fatalf("expected exactly 3 prompts, got %d", len(names))
+	if len(names) != 4 {
+		t.Fatalf("expected exactly 4 prompts, got %d", len(names))
 	}
 
 	rendered := responses[2]["result"].(map[string]any)
@@ -496,7 +496,7 @@ func TestPromptsSurface(t *testing.T) {
 // the no-claim disclaimer -- the guardrail that the method text can never be
 // read as the runtime blessing a pack.
 func TestEveryPromptRendersWithDisclaimer(t *testing.T) {
-	for _, name := range []string{"author_pack", "test_pack", "fix_pack"} {
+	for _, name := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition"} {
 		responses := runServer(t, message(t, 1, "prompts/get", map[string]any{"name": name}))
 		result := responses[0]["result"].(map[string]any)
 		text := result["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
