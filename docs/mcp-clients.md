@@ -12,7 +12,7 @@ the most common failure and most clients report it poorly.
 
 Two installation-free alternatives ([ADR-0013](adr/0013-oci-image-and-mcp-registry-distribution.md)):
 registry-aware clients can install the server by name — it is published to the official MCP
-registry as `io.github.judgment-pack/judgment-pack` — and any client that can run a container can
+registry as `io.github.Judgment-Pack/judgment-pack` — and any client that can run a container can
 use the released image directly, with a project mounted at `/project` (the launch directory the
 `jpack.json` convention reads):
 

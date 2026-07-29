@@ -100,20 +100,31 @@ binary. A release build must report the tag version without the leading `v`.
    draft to public (a prerelease tag is never marked latest). With Release Immutability enabled,
    publishing locks the tag and assets.
 7. After the release publishes, follow-on jobs run without further approval
-   ([ADR-0013](adr/0013-oci-image-and-mcp-registry-distribution.md)): `publish-image` extracts the
-   smoke-tested Linux binaries from the release archives, refuses to overwrite an existing version
-   tag, builds and pushes the multi-arch image to `ghcr.io/judgment-pack/judgment-pack` (version
-   tag; `latest` only for non-prereleases), and attests the image digest; `image-smoke` pulls the
-   pushed image **anonymously** by digest on native amd64 and arm64 runners and runs the bundled
-   conformance suite in it; `publish-mcp-registry` then renders
-   `build/mcp-registry/server.json.tmpl` at the release version (CI validates the template against
-   the vendored registry schema on every PR) and publishes it to the official MCP registry as
-   `io.github.judgment-pack/judgment-pack` via GitHub OIDC. Confirm all three completed green; the
-   registry entry and the image tag are release-time state that nothing else refreshes.
+   ([ADR-0013](adr/0013-oci-image-and-mcp-registry-distribution.md)), ordered so nothing
+   user-facing exists before the pushed image has actually run: `publish-image` downloads the
+   archives **from the published release** (the run artifact expires; the release does not),
+   verifies their checksums, refuses to overwrite an existing version tag, and pushes the
+   multi-arch image to `ghcr.io/judgment-pack/judgment-pack` under the version tag only;
+   `image-smoke` pulls it **anonymously** by digest on native amd64 and arm64 runners and runs
+   the bundled conformance suite in it; only then does `promote-image` attest the digest and
+   (non-prereleases only) fast-forward `latest` to it, and `publish-mcp-registry` renders
+   `build/mcp-registry/server.json.tmpl` at the release version (CI validates the template
+   against the vendored registry schema on every PR) and publishes it to the official MCP
+   registry as `io.github.Judgment-Pack/judgment-pack` via GitHub OIDC. Confirm all four
+   completed green; the registry entry and the image tag are release-time state that nothing
+   else refreshes.
+
+   A prerelease **is** published to the registry, deliberately, so an rc exercises the registry
+   job end to end — and the registry orders versions by SemVer with no prerelease notion, so an
+   rc is the registry's newest version until its final follows. Cut the final promptly, and pin
+   a version in registry-aware clients when this matters. The GitHub release and the image
+   `latest` tag are unaffected: neither ever moves for a prerelease.
 
 Do not move or reuse a released tag. Fixes require a new version — including for the image tags
 and the registry entry: the version-tag guard in `publish-image` enforces this for the image, so a
-re-run after a downstream failure fails at the guard instead of moving the tag.
+re-run after a downstream failure fails at the guard instead of moving the tag. An image whose
+smoke test fails is left as a dead version tag: never promoted to `latest`, never attested, never
+published to the registry.
 
 ## User-facing verification
 

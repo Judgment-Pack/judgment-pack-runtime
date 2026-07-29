@@ -18,7 +18,7 @@ COPY CONFORMANCE.md LICENSE NOTICE THIRD_PARTY_NOTICES /
 WORKDIR /project
 USER 65532:65532
 
-LABEL io.modelcontextprotocol.server.name="io.github.judgment-pack/judgment-pack" \
+LABEL io.modelcontextprotocol.server.name="io.github.Judgment-Pack/judgment-pack" \
       org.opencontainers.image.title="judgment-pack" \
       org.opencontainers.image.description="Vendor-neutral reference runtime and CLI for the Judgment Pack Specification (JPS): offline validation, conformance testing, and the experimental evaluator, served over stdio MCP." \
       org.opencontainers.image.source="https://github.com/Judgment-Pack/judgment-pack-runtime" \

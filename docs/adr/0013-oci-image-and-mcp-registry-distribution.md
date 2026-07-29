@@ -23,7 +23,7 @@ surface (ADR-0004).
   that chain or introduce a second build of the binary.
 - ADR-0004: no hosted execution; a distribution channel must not become a service.
 - Registry identity: the official MCP registry verifies OCI ownership through the
-  `io.modelcontextprotocol.server.name` annotation and grants the `io.github.judgment-pack/*`
+  `io.modelcontextprotocol.server.name` annotation and grants the `io.github.Judgment-Pack/*`
   namespace through GitHub OIDC.
 
 ## Considered options
@@ -36,14 +36,16 @@ surface (ADR-0004).
 
 ## Decision outcome
 
-Chosen option: post-gate release jobs build a `scratch` image **from the smoke-tested release
-archives** — never a rebuild — push it to `ghcr.io/judgment-pack/judgment-pack` (linux
-amd64/arm64, version tag, `latest` only for non-prereleases, existing version tags refused rather
-than overwritten), attest the image digest, smoke-test the pushed image by digest **anonymously on
-native runners of both architectures** — an unauthenticated pull is the only proof the package is
-publicly visible, and a native arm64 run is the only execution the arm64 manifest gets — and then
-publish a rendered `server.json` (OCI package, stdio transport) to the official MCP registry under
-`io.github.judgment-pack/judgment-pack` via GitHub OIDC.
+Chosen option: post-gate release jobs build a `scratch` image **from the published release
+archives** — never a rebuild, and never the expiring run artifact — push it to
+`ghcr.io/judgment-pack/judgment-pack` under the immutable version tag only (existing version tags
+refused rather than overwritten), smoke-test the pushed image by digest **anonymously on native
+runners of both architectures** — an unauthenticated pull is the only proof the package is
+publicly visible, and a native arm64 run is the only execution the arm64 manifest gets — and only
+after that passing run attest the digest, fast-forward `latest` to it (non-prereleases only), and
+publish a rendered `server.json` (OCI package, stdio transport) to the official MCP registry
+under `io.github.Judgment-Pack/judgment-pack` via GitHub OIDC. Everything user-facing — the
+attestation, `latest`, the registry entry — postdates a passing execution of the image.
 
 ### Consequences
 
@@ -58,7 +60,12 @@ publish a rendered `server.json` (OCI package, stdio transport) to the official 
 - Bad, because the registry entry and image tags are release-time state that can drift from the
   repository if a release is yanked or re-cut; the release checklist gains steps.
 - Bad, because `mcp-publisher` and the registry schema are young and may change; the publish job
-  pins the publisher by sha256 and the first release after this ADR must watch that job.
+  pins the publisher by sha256, CI validates the rendered template against the vendored schema,
+  and the first release after this ADR must watch that job.
+- Accepted deliberately: a prerelease is published to the registry so an rc exercises the
+  registry job, and the registry — which orders by SemVer with no prerelease notion — will show
+  it as newest until the final follows. The GitHub release and the image `latest` tag never
+  move for a prerelease.
 - Revisit when MCPB bundles are added, or if the registry's verification model changes.
 
 ## More information

@@ -277,9 +277,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
-      attestations: write
-      artifact-metadata: write
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
@@ -289,11 +286,17 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_TAG }}
 
-      - name: Download smoke-tested archives
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-dist
-          path: dist
+      # The published release, not the run artifact, is the source: release-dist
+      # expires after 7 days while a pending production approval can wait 30, and
+      # the just-published release is the immutable statement of what shipped.
+      - name: Download the published release archives
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${RELEASE_TAG}" --dir dist \
+            --pattern 'judgment-pack_*_linux_*.tar.gz' --pattern checksums.txt
+          (cd dist && sha256sum --check --ignore-missing checksums.txt)
 
       # The image carries the released binary, not a rebuild: extract it from
       # the same archives the smoke tests ran and the release published.
@@ -330,40 +333,32 @@ jobs:
             exit 1
           fi
 
+      # Only the immutable version tag is pushed here. Everything user-facing —
+      # the attestation, the latest tag, the registry entry — waits for the
+      # anonymous smoke test: a version tag that fails it is left dead, never
+      # promoted, and the fix is a new version.
       - name: Build and push the multi-arch image
         id: push
         shell: bash
         run: |
           release_version="${RELEASE_TAG#v}"
           image="ghcr.io/judgment-pack/judgment-pack"
-          tags=(--tag "${image}:${release_version}")
-          # A prerelease (tag contains a hyphen) must not move latest.
-          if [[ "${RELEASE_TAG}" != *-* ]]; then
-            tags+=(--tag "${image}:latest")
-          fi
 
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --provenance=false --sbom=false \
-            --annotation "index,manifest:io.modelcontextprotocol.server.name=io.github.judgment-pack/judgment-pack" \
+            --annotation "index,manifest:io.modelcontextprotocol.server.name=io.github.Judgment-Pack/judgment-pack" \
             --annotation "index,manifest:org.opencontainers.image.source=https://github.com/Judgment-Pack/judgment-pack-runtime" \
             --annotation "index,manifest:org.opencontainers.image.version=${release_version}" \
             --annotation "index,manifest:org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.version=${release_version}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            "${tags[@]}" \
+            --tag "${image}:${release_version}" \
             --metadata-file build/oci/metadata.json \
             --push build/oci
 
           digest="$(python3 -c "import json; print(json.load(open('build/oci/metadata.json'))['containerimage.digest'])")"
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-
-      - name: Attest the image
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
-        with:
-          subject-name: ghcr.io/judgment-pack/judgment-pack
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
 
   # Anonymous by design: no registry login, so this fails loudly if the GHCR
   # package is not publicly visible (a first-release prerequisite, see
@@ -392,10 +387,55 @@ jobs:
           test "$(docker run --rm "${image}" --version)" = "judgment-pack ${release_version}"
           docker run --rm "${image}" spec test-conformance --quiet
 
+  # Runs only after the pushed image passed the anonymous smoke test on both
+  # architectures: the attestation and the latest tag are promises to users,
+  # so neither is made for an image that has not been executed.
+  promote-image:
+    name: Attest and promote the image
+    if: github.event_name == 'push'
+    needs:
+      - publish-image
+      - image-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Attest the smoke-tested image
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/judgment-pack/judgment-pack
+          subject-digest: ${{ needs.publish-image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Point latest at the smoke-tested digest
+        shell: bash
+        run: |
+          # A prerelease (tag contains a hyphen) must not move latest.
+          if [[ "${RELEASE_TAG}" == *-* ]]; then
+            echo "prerelease: latest stays where it is"
+            exit 0
+          fi
+          docker buildx imagetools create \
+            --tag ghcr.io/judgment-pack/judgment-pack:latest \
+            "ghcr.io/judgment-pack/judgment-pack@${{ needs.publish-image.outputs.digest }}"
+
   publish-mcp-registry:
     name: Publish to the MCP registry
     if: github.event_name == 'push'
-    needs: image-smoke
+    needs:
+      - publish-image
+      - promote-image
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
