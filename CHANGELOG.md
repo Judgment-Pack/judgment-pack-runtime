@@ -2,6 +2,25 @@
 
 All notable changes to tagged releases are documented here.
 
+## 0.5.0-rc.1 - 2026-07-28
+
+- **Distribute the released binary as an OCI image and publish it to the MCP registry**
+  (ADR-0013). Post-gate release jobs build a `scratch` image from the published release
+  archives — never a rebuild — push it to `ghcr.io/judgment-pack/judgment-pack`
+  (linux amd64/arm64) under the immutable version tag, execute it anonymously on native
+  runners of both architectures, and only after that passing run attest the digest,
+  fast-forward `latest` (non-prereleases only), and publish the server to the official
+  MCP registry as `io.github.Judgment-Pack/judgment-pack` via GitHub OIDC. Released
+  image version tags are refused rather than overwritten, and an image whose smoke test
+  fails is left unpromoted, unattested, and unpublished. `docs/mcp-clients.md` documents
+  the container and registry install paths. Nothing about the runtime itself changes:
+  local execution, keyless, network-free, no HTTP surface (ADR-0004).
+- The pre-gate release archive smoke matrix gains native `linux/arm64`
+  (`ubuntu-24.04-arm`); previously that platform was published without ever being
+  executed.
+- CI validates the rendered MCP registry `server.json` template against the vendored
+  registry schema, so the pinned publisher and the template cannot drift apart silently.
+
 ## 0.4.0 - 2026-07-28
 
 - **Add the `jpack.json` project convention** (ADR-0012), a **non-normative convention of this
