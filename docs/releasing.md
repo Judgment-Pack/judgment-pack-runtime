@@ -94,8 +94,17 @@ binary. A release build must report the tag version without the leading `v`.
 6. Approve the pending `production` deployment on the release run. The publish job then flips the
    draft to public (a prerelease tag is never marked latest). With Release Immutability enabled,
    publishing locks the tag and assets.
+7. After the release publishes, two follow-on jobs run without further approval
+   ([ADR-0013](adr/0013-oci-image-and-mcp-registry-distribution.md)): `publish-image` extracts the
+   smoke-tested Linux binaries from the release archives, builds and pushes the multi-arch image to
+   `ghcr.io/judgment-pack/judgment-pack` (version tag; `latest` only for non-prereleases), attests
+   the image digest, and smoke-tests the pushed image by digest; `publish-mcp-registry` then renders
+   `build/mcp-registry/server.json.tmpl` at the release version and publishes it to the official MCP
+   registry as `io.github.judgment-pack/judgment-pack` via GitHub OIDC. Confirm both jobs completed
+   green; the registry entry and the image tag are release-time state that nothing else refreshes.
 
-Do not move or reuse a released tag. Fixes require a new version.
+Do not move or reuse a released tag. Fixes require a new version — including for the image tags
+and the registry entry, which follow the archives and are never rewritten in place.
 
 ## User-facing verification
 

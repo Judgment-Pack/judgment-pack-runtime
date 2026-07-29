@@ -6,6 +6,13 @@
 /judgment-pack.exe
 /jpack.exe
 /coverage.out
+# Release-workflow staging for the OCI image build context (build/oci/Dockerfile).
+/build/oci/bin/
+/build/oci/metadata.json
+/build/oci/CONFORMANCE.md
+/build/oci/LICENSE
+/build/oci/NOTICE
+/build/oci/THIRD_PARTY_NOTICES
 *.test
 *.prof
 .DS_Store

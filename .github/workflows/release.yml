@@ -264,3 +264,135 @@ jobs:
             publish_args+=(--latest)
           fi
           gh release edit "${publish_args[@]}"
+
+  publish-image:
+    name: Publish OCI image
+    if: github.event_name == 'push'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Download smoke-tested archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+
+      # The image carries the released binary, not a rebuild: extract it from
+      # the same archives the smoke tests ran and the release published.
+      - name: Extract linux binaries from the release archives
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          for arch in amd64 arm64; do
+            mkdir -p "build/oci/bin/linux_${arch}"
+            tar -xzf "dist/judgment-pack_${release_version}_linux_${arch}.tar.gz" \
+              -C "build/oci/bin/linux_${arch}" judgment-pack
+          done
+          cp CONFORMANCE.md LICENSE NOTICE THIRD_PARTY_NOTICES build/oci/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push the multi-arch image
+        id: push
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          image="ghcr.io/judgment-pack/judgment-pack"
+          tags=(--tag "${image}:${release_version}")
+          # A prerelease (tag contains a hyphen) must not move latest.
+          if [[ "${RELEASE_TAG}" != *-* ]]; then
+            tags+=(--tag "${image}:latest")
+          fi
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --provenance=false --sbom=false \
+            --annotation "index,manifest:io.modelcontextprotocol.server.name=io.github.judgment-pack/judgment-pack" \
+            --annotation "index,manifest:org.opencontainers.image.source=https://github.com/Judgment-Pack/judgment-pack-runtime" \
+            --annotation "index,manifest:org.opencontainers.image.version=${release_version}" \
+            --annotation "index,manifest:org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${release_version}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            "${tags[@]}" \
+            --metadata-file build/oci/metadata.json \
+            --push build/oci
+
+          digest="$(python3 -c "import json; print(json.load(open('build/oci/metadata.json'))['containerimage.digest'])")"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest the image
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/judgment-pack/judgment-pack
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Smoke-test the pushed image
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          image="ghcr.io/judgment-pack/judgment-pack@${{ steps.push.outputs.digest }}"
+          test "$(docker run --rm "${image}" --version)" = "judgment-pack ${release_version}"
+          docker run --rm "${image}" spec test-conformance --quiet
+
+  publish-mcp-registry:
+    name: Publish to the MCP registry
+    if: github.event_name == 'push'
+    needs: publish-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install mcp-publisher (pinned by digest)
+        shell: bash
+        run: |
+          publisher_version="v1.8.0"
+          publisher_sha256="1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf"
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${publisher_version}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${publisher_sha256}  mcp-publisher.tar.gz" | sha256sum --check
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          sudo install -m 0755 mcp-publisher /usr/local/bin/
+
+      - name: Render server.json for this release
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          sed "s/__VERSION__/${release_version}/g" build/mcp-registry/server.json.tmpl > server.json
+          cat server.json
+
+      - name: Publish
+        shell: bash
+        run: |
+          mcp-publisher login github-oidc
+          mcp-publisher publish

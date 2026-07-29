@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.judgment-pack/judgment-pack",
+  "description": "Offline validator, conformance tester, and experimental evaluator for Judgment Pack Specification (JPS) documents, over stdio. Keyless, network-free, stateless; the client supplies its own model and key.",
+  "version": "__VERSION__",
+  "repository": {
+    "url": "https://github.com/Judgment-Pack/judgment-pack-runtime",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/judgment-pack/judgment-pack:__VERSION__",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "JPACK_CONFIG",
+          "description": "Path to a jpack.json project configuration (ADR-0012). Optional: without it the server reads jpack.json from its launch directory (/project in this image; mount a project there), and a project that does not use the convention still validates and evaluates pack documents passed over the wire.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
