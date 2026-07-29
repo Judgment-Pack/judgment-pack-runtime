@@ -18,7 +18,7 @@ import (
 // not an added field. The CHANGELOG entry for that change carries the migration.
 const (
 	OutputVersion = "2"
-	CLIName       = "judgment-pack"
+	CLIName       = "jpack"
 )
 
 // CLIVersion may be replaced at build time with -ldflags once releases are approved.

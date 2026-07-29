@@ -54,9 +54,9 @@ env GO111MODULE=on go fmt ./...
 git diff --check
 env GO111MODULE=on go vet ./...
 env GO111MODULE=on go test ./...
-env GO111MODULE=on go run ./cmd/judgment-pack spec test-conformance --quiet
-env GO111MODULE=on go run ./cmd/judgment-pack spec test-conformance --spec-version 0.2.0-draft --quiet
-env GO111MODULE=on go run ./cmd/judgment-pack experimental evaluate-corpus
+env GO111MODULE=on go run ./cmd/jpack spec test-conformance --quiet
+env GO111MODULE=on go run ./cmd/jpack spec test-conformance --spec-version 0.2.0-draft --quiet
+env GO111MODULE=on go run ./cmd/jpack experimental evaluate-corpus
 env GO111MODULE=on go run ./tools/check-release --tag <cli-tag>
 goreleaser check
 goreleaser release --snapshot --clean

@@ -20,7 +20,7 @@ versions, `0.1.0-draft` and `0.2.0-draft`, and validates a document against the 
 document declares; `0.1.0-draft` defines carrier, structural, and semantic document conformance
 only, and `0.2.0-draft` changes no part of the document format.
 
-Its one evaluation surface is `judgment-pack experimental evaluate` (and the `experimental_evaluate`
+Its one evaluation surface is `jpack experimental evaluate` (and the `experimental_evaluate`
 MCP tool), which applies the specification's §§7–8 resolution model per
 [ADR-0007](docs/adr/0007-experimental-evaluator.md). The `experimental` namespace is a **stability**
 statement: this surface may change or be removed without compatibility promise. It is not a statement
@@ -41,7 +41,7 @@ every row of that corpus version passed — so this README states no part of it 
 other surface: a partial restatement would be the partial claim §3.4.1 forbids. Read that file for the
 claim, its version scope, its evidence, and everything it does not assert, which includes anything at
 all about a pack, its facts, or the wisdom of acting on a disposition (§3.5).
-`judgment-pack experimental evaluate-corpus` runs the bundled evaluation corpus and reports its rows —
+`jpack experimental evaluate-corpus` runs the bundled evaluation corpus and reports its rows —
 the evidence §3.4.1 requires of a claim of this class, and explicitly not exhaustive evidence of one;
 see [CONFORMANCE.md](CONFORMANCE.md).
 
@@ -54,33 +54,33 @@ successful evaluation payload produced under the flag says so in band through a 
 member — a refusal is an operational error and carries none. The flag is CLI only; the MCP tool does
 not expose it.
 
-The command binary is `judgment-pack`; release archives also ship a `jpack` short alias for the
-same program.
+The command binary is `jpack`. The project, repository, and release archives keep the
+`judgment-pack` name; the executable they carry is `jpack`.
 
 ## Implemented commands
 
 ```text
-judgment-pack version
-judgment-pack spec validate <pack-or->
-judgment-pack spec test-conformance [suite]
-judgment-pack spec schema <spec-version>
-judgment-pack spec examples [name]
-judgment-pack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
-judgment-pack packs validate [--id X]
-judgment-pack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
-judgment-pack packs schema
-judgment-pack mcp
-judgment-pack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
-judgment-pack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
-judgment-pack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
-judgment-pack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
+jpack version
+jpack spec validate <pack-or->
+jpack spec test-conformance [suite]
+jpack spec schema <spec-version>
+jpack spec examples [name]
+jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
+jpack packs validate [--id X]
+jpack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack packs schema
+jpack mcp
+jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
+jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
+jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 ```
 
 The pack argument and `--pack-id` are mutually exclusive: one pack, one source, and supplying both
 or neither is an invocation error rather than a precedence rule. `--pack-id` honors `--config` and
 `JPACK_CONFIG` like every other command that reads a configuration.
 
-The namespace is `judgment-pack spec`, not `judgment-pack jps`. JPS remains the name of the
+The namespace is `jpack spec`, not `jpack jps`. JPS remains the name of the
 specification and the prefix of its provisional diagnostic codes.
 
 The `mcp` command serves the same offline operations to a Model Context Protocol client over stdio,
@@ -92,7 +92,7 @@ so an agent can validate documents as a tool call; see
 
 Download the archive for your operating system and architecture from
 [GitHub Releases](https://github.com/Judgment-Pack/judgment-pack-runtime/releases). Each archive
-includes the `judgment-pack` and `jpack` binaries, README, the `CONFORMANCE.md` claim the source it was
+includes the `jpack` binary, README, the `CONFORMANCE.md` claim the source it was
 built from carries, Apache-2.0 license, attribution notice, and third-party notices.
 
 Asset names follow this pattern:
@@ -107,15 +107,15 @@ can extract an archive and install the binary into a user-owned directory alread
 
 ```bash
 tar -xzf judgment-pack_0.1.0_linux_amd64.tar.gz
-install -m 0755 judgment-pack "$HOME/.local/bin/judgment-pack"
-judgment-pack version
+install -m 0755 jpack "$HOME/.local/bin/jpack"
+jpack version
 ```
 
-On Windows, expand the `.zip`, move `judgment-pack.exe` into a directory on your user `PATH`, and
+On Windows, expand the `.zip`, move `jpack.exe` into a directory on your user `PATH`, and
 run:
 
 ```powershell
-judgment-pack version
+jpack version
 ```
 
 Verify the archive before extracting it. On Linux:
@@ -158,30 +158,30 @@ If an older WSL setup has persisted `GO111MODULE=off`, clear it once with
 measure.
 
 ```bash
-env GO111MODULE=on CGO_ENABLED=0 go build -trimpath -o ./bin/judgment-pack ./cmd/judgment-pack
-./bin/judgment-pack --help
-./bin/judgment-pack version
+env GO111MODULE=on CGO_ENABLED=0 go build -trimpath -o ./bin/jpack ./cmd/jpack
+./bin/jpack --help
+./bin/jpack version
 ```
 
 From a sibling checkout of `judgment-pack-spec`, validate a synthetic example:
 
 ```bash
-./bin/judgment-pack spec validate ../judgment-pack-spec/examples/minimal-expense-approval.json
-./bin/judgment-pack spec validate --format json ../judgment-pack-spec/examples/minimal-expense-approval.json
+./bin/jpack spec validate ../judgment-pack-spec/examples/minimal-expense-approval.json
+./bin/jpack spec validate --format json ../judgment-pack-spec/examples/minimal-expense-approval.json
 ```
 
 Standard input is accepted explicitly with `-`:
 
 ```bash
-./bin/judgment-pack spec validate --format json - < pack.json
+./bin/jpack spec validate --format json - < pack.json
 ```
 
 Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an exact bundled version:
 
 ```bash
-./bin/judgment-pack spec test-conformance
-./bin/judgment-pack spec test-conformance --format json
-./bin/judgment-pack spec test-conformance --spec-version 0.2.0-draft
+./bin/jpack spec test-conformance
+./bin/jpack spec test-conformance --format json
+./bin/jpack spec test-conformance --spec-version 0.2.0-draft
 ```
 
 Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimental evaluator. Every
@@ -194,18 +194,18 @@ because §3.4 makes a divergence as likely to be a defect in the row as in this 
 a project-issued erratum can excuse a row:
 
 ```bash
-./bin/judgment-pack experimental evaluate-corpus
-./bin/judgment-pack experimental evaluate-corpus --format json
-./bin/judgment-pack experimental evaluate-corpus --spec-version 0.2.0-draft
+./bin/jpack experimental evaluate-corpus
+./bin/jpack experimental evaluate-corpus --format json
+./bin/jpack experimental evaluate-corpus --spec-version 0.2.0-draft
 ```
 
 Inspect or copy the bundled schema without network access:
 
 ```bash
-./bin/judgment-pack spec schema 0.1.0-draft
-./bin/judgment-pack spec schema 0.2.0-draft
-./bin/judgment-pack spec schema 0.1.0-draft --write schema.json
-./bin/judgment-pack spec schema 0.1.0-draft --write -
+./bin/jpack spec schema 0.1.0-draft
+./bin/jpack spec schema 0.2.0-draft
+./bin/jpack spec schema 0.1.0-draft --write schema.json
+./bin/jpack spec schema 0.1.0-draft --write -
 ```
 
 The schema command refuses to overwrite an existing file.
@@ -373,7 +373,7 @@ nothing: every command still takes a pack by path, and every MCP tool still take
 ```
 
 The file is selected by `--config`, then `JPACK_CONFIG`, then `./jpack.json`. Its schema is closed
-and printable with `judgment-pack packs schema`: every member it does not name is rejected.
+and printable with `jpack packs schema`: every member it does not name is rejected.
 `configVersion` is a single integer as a string, on the `outputVersion` precedent rather than
 semantic versioning, and `"1"` is the only accepted value.
 
@@ -407,8 +407,8 @@ pathname to open for itself.
 Four commands and one CI line:
 
 ```bash
-judgment-pack packs list                                  # the resolved inventory
-judgment-pack packs validate && judgment-pack packs test  # the CI gate
+jpack packs list                                  # the resolved inventory
+jpack packs validate && jpack packs test  # the CI gate
 ```
 
 `packs validate` reports six named checks per pack — path containment, document validation, the
@@ -421,7 +421,7 @@ matrix is reported *skipped* rather than passed, and a `packs test` run in which
 is reported *skipped* and exits `1`: a green gate over zero rows would say a project was tested when
 nothing was.
 
-From a shell, `judgment-pack experimental evaluate --pack-id expense-approval --facts facts.json`
+From a shell, `jpack experimental evaluate --pack-id expense-approval --facts facts.json`
 reaches the same pack by the same name. Over MCP the same inventory is `list_packs`, one document is
 `get_pack`, and `experimental_evaluate` accepts `pack_id` instead of pasted `pack` text. With no configuration,
 `list_packs` answers empty with an explanation of where the runtime looked, rather than failing.
@@ -517,12 +517,12 @@ install, validate, and run its conformance tests without private repositories, c
 services, package indexes, or feature flags.
 
 Commercial capabilities should live in separate private repositories; this public repository must
-never depend on them. The current supported integration boundary is the `judgment-pack` executable
+never depend on them. The current supported integration boundary is the `jpack` executable
 and its versioned JSON output. Go packages are intentionally `internal`, and there is not yet a
 stable in-process SDK or plugin API. Before commercial commands are composed into one binary, the
 public project must define and version that contract deliberately. Future commands should use
-distinct namespaces such as `judgment-pack cloud` or `judgment-pack org`; they must not override
-`judgment-pack spec` conformance semantics or auto-load during validation.
+distinct namespaces such as `jpack cloud` or `jpack org`; they must not override
+`jpack spec` conformance semantics or auto-load during validation.
 
 The normative specification, schemas, and public corpus remain in the separate
 [`judgment-pack-spec`](https://github.com/Judgment-Pack/judgment-pack-spec) repository.
@@ -533,13 +533,13 @@ The normative specification, schemas, and public corpus remain in the separate
 env GO111MODULE=on go fmt ./...
 env GO111MODULE=on go vet ./...
 env GO111MODULE=on go test ./...
-env GO111MODULE=on CGO_ENABLED=0 go build -trimpath ./cmd/judgment-pack
+env GO111MODULE=on CGO_ENABLED=0 go build -trimpath ./cmd/jpack
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/architecture.md](docs/architecture.md), and the
 [maintainer release runbook](docs/releasing.md).
 
-In VS Code, **Terminal → Run Task → judgment-pack: Build CLI** builds `bin/judgment-pack`; the test
+In VS Code, **Terminal → Run Task → judgment-pack: Build CLI** builds `bin/jpack`; the test
 and bundled conformance tasks are available from the same menu. The tasks explicitly enable Go
 module mode for older WSL configurations.
 

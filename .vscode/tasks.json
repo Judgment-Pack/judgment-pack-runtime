@@ -5,7 +5,7 @@
       "label": "judgment-pack: Build CLI",
       "type": "process",
       "command": "go",
-      "args": ["build", "-trimpath", "-o", "${workspaceFolder}/bin/judgment-pack", "./cmd/judgment-pack"],
+      "args": ["build", "-trimpath", "-o", "${workspaceFolder}/bin/jpack", "./cmd/jpack"],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -37,7 +37,7 @@
       "label": "judgment-pack: Run JPS conformance",
       "type": "process",
       "command": "go",
-      "args": ["run", "./cmd/judgment-pack", "spec", "test-conformance"],
+      "args": ["run", "./cmd/jpack", "spec", "test-conformance"],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {

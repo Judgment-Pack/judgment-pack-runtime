@@ -48,7 +48,7 @@ different path in a CI job, and a blob of text a model was handed. With it, all 
 }
 ```
 
-`judgment-pack packs schema` prints the schema this is held to, and it is **closed**: every member
+`jpack packs schema` prints the schema this is held to, and it is **closed**: every member
 it does not name is rejected, so a misspelled key is an error rather than an intention silently
 dropped. `configVersion` is a single integer as a string — `"1"` is the only value this runtime
 accepts, and a later shape will be `"2"`. There is no minor or patch component, because there is
@@ -125,7 +125,7 @@ the same gate everything else does.
 
 ### Author
 
-Use the `author_pack` prompt (in Claude Code, `/mcp__judgment-pack__author_pack`). It walks the
+Use the `author_pack` prompt (in Claude Code, `/mcp__jpack__author_pack`). It walks the
 scoping, the resolution-model shapes that avoid conflicts, the decimal-string and `onUnknown` rules,
 and the prepared-facts ledger. Validate to `valid`; the diagnostics are self-sufficient.
 
@@ -198,7 +198,7 @@ a JSON file that its own author flips is a decoration.
 ### Gate it in CI
 
 ```bash
-judgment-pack packs validate && judgment-pack packs test
+jpack packs validate && jpack packs test
 ```
 
 `packs validate` checks the configuration and, per pack, six named steps: the declared path
@@ -217,7 +217,7 @@ gate for a suite that tested nothing.
 To reach one decision from a shell without a path, name it:
 
 ```bash
-judgment-pack experimental evaluate --pack-id expense-approval --facts facts.json
+jpack experimental evaluate --pack-id expense-approval --facts facts.json
 ```
 
 `--pack-id` resolves through the same `jpack.json` (honoring `--config` and `JPACK_CONFIG`) and is
@@ -273,9 +273,9 @@ Launch the MCP server in the project root, or point `JPACK_CONFIG` at the config
 ```json
 {
   "mcpServers": {
-    "judgment-pack": {
+    "jpack": {
       "type": "stdio",
-      "command": "judgment-pack",
+      "command": "jpack",
       "args": ["mcp"],
       "env": { "JPACK_CONFIG": "/abs/path/to/jpack.json" }
     }

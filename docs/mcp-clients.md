@@ -1,12 +1,12 @@
 # Connecting MCP clients
 
-`judgment-pack mcp` serves the offline validator to any Model Context Protocol client over stdio:
+`jpack mcp` serves the offline validator to any Model Context Protocol client over stdio:
 no port, no credential, no network. The client supplies its own model and API key; the runtime
 never sees either (see [ADR-0003](adr/0003-mcp-integration-and-testing-surface.md) and
 [ADR-0006](adr/0006-authoring-lifecycle-in-the-client.md)).
 
-Every client below launches the same binary. Install a released `judgment-pack` (see the
-[README](../README.md)) and make sure the command the client launches resolves — if `judgment-pack`
+Every client below launches the same binary. Install a released `jpack` (see the
+[README](../README.md)) and make sure the command the client launches resolves — if `jpack`
 is not on the PATH the client's launcher inherits, use the absolute path instead; a wrong path is
 the most common failure and most clients report it poorly.
 
@@ -19,7 +19,7 @@ use the released image directly, with a project mounted at `/project` (the launc
 ```json
 {
   "mcpServers": {
-    "judgment-pack": {
+    "jpack": {
       "type": "stdio",
       "command": "docker",
       "args": ["run", "-i", "--rm", "-v", "/abs/path/to/project:/project",
@@ -80,9 +80,9 @@ project root:
 ```json
 {
   "mcpServers": {
-    "judgment-pack": {
+    "jpack": {
       "type": "stdio",
-      "command": "judgment-pack",
+      "command": "jpack",
       "args": ["mcp"],
       "env": { "JPACK_CONFIG": "/abs/path/to/jpack.json" }
     }
@@ -103,7 +103,7 @@ rather than guessed, so the pack can escalate instead of deciding on an inventio
 
 The server also serves four **method prompts** (MCP `prompts` capability) — static, versioned,
 non-normative guidance that your client's model executes with your key. In Claude Code they appear
-as slash commands (`/mcp__judgment-pack__author_pack`, `…test_pack`, `…fix_pack`,
+as slash commands (`/mcp__jpack__author_pack`, `…test_pack`, `…fix_pack`,
 `…explain_disposition`); other clients surface them differently or not at all, and everything
 works without them.
 
@@ -122,7 +122,7 @@ documents you produce are yours; the runtime stores and interprets nothing (ADR-
 One command, from any directory:
 
 ```bash
-claude mcp add --scope user judgment-pack -- judgment-pack mcp
+claude mcp add --scope user jpack -- jpack mcp
 ```
 
 Or per project, in `.mcp.json` at the project root (gitignored here):
@@ -130,9 +130,9 @@ Or per project, in `.mcp.json` at the project root (gitignored here):
 ```json
 {
   "mcpServers": {
-    "judgment-pack": {
+    "jpack": {
       "type": "stdio",
-      "command": "judgment-pack",
+      "command": "jpack",
       "args": ["mcp"]
     }
   }
@@ -146,12 +146,12 @@ Restart the session, approve the server when prompted, and confirm with `/mcp`.
 In `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.judgment-pack]
-command = "judgment-pack"
+[mcp_servers.jpack]
+command = "jpack"
 args = ["mcp"]
 ```
 
-Or equivalently: `codex mcp add judgment-pack -- judgment-pack mcp`. Start `codex` and confirm
+Or equivalently: `codex mcp add jpack -- jpack mcp`. Start `codex` and confirm
 with `/mcp`. All tools are read-only except the experimental evaluator, so an automatic approval
 mode is reasonable.
 
@@ -163,9 +163,9 @@ not `mcpServers`:
 ```json
 {
   "servers": {
-    "judgment-pack": {
+    "jpack": {
       "type": "stdio",
-      "command": "judgment-pack",
+      "command": "jpack",
       "args": ["mcp"]
     }
   }
@@ -189,11 +189,11 @@ separately governed hosted distribution.
 
 ## Troubleshooting
 
-- **Server fails to start:** run `judgment-pack mcp` in a terminal yourself; if it starts and
+- **Server fails to start:** run `jpack mcp` in a terminal yourself; if it starts and
   waits on stdin, the binary is fine and the problem is the client's command path or config file.
 - **Config edits not picked up:** clients read MCP configuration at session start — restart the
   session.
-- **Old binary:** `judgment-pack version` must report a release that has the `mcp` command
+- **Old binary:** `jpack version` must report a release that has the `mcp` command
   (v0.1.0 or later); a stale build on the PATH is easy to pick up by mistake.
 
 The end-to-end authoring loop these tools support — create, read, update, delete, with the

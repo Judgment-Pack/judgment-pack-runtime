@@ -63,7 +63,7 @@ jobs:
         run: go test ./...
 
       - name: Run bundled conformance suite
-        run: go run ./cmd/judgment-pack spec test-conformance --quiet
+        run: go run ./cmd/jpack spec test-conformance --quiet
 
       - name: Verify tag and immutable specification provenance
         run: go run ./tools/check-release --tag "${RELEASE_TAG}"
@@ -140,8 +140,8 @@ jobs:
           (cd dist && "${checksum_command[@]}" checksums.txt)
           mkdir -p "${destination}"
           tar -xzf "dist/${archive}" -C "${destination}"
-          test "$("${destination}/judgment-pack" --version)" = "judgment-pack ${release_version}"
-          "${destination}/judgment-pack" spec test-conformance --quiet
+          test "$("${destination}/jpack" --version)" = "jpack ${release_version}"
+          "${destination}/jpack" spec test-conformance --quiet
 
   smoke-windows:
     name: windows-latest release archive
@@ -177,9 +177,9 @@ jobs:
 
           $destination = Join-Path $env:RUNNER_TEMP "judgment-pack-release-smoke"
           Expand-Archive -Path $archivePath -DestinationPath $destination
-          $binary = Join-Path $destination "judgment-pack.exe"
+          $binary = Join-Path $destination "jpack.exe"
           $reportedVersion = & $binary --version
-          if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "judgment-pack $releaseVersion") {
+          if ($LASTEXITCODE -ne 0 -or $reportedVersion -ne "jpack $releaseVersion") {
             throw "Unexpected version output: $reportedVersion"
           }
 
@@ -307,7 +307,7 @@ jobs:
           for arch in amd64 arm64; do
             mkdir -p "build/oci/bin/linux_${arch}"
             tar -xzf "dist/judgment-pack_${release_version}_linux_${arch}.tar.gz" \
-              -C "build/oci/bin/linux_${arch}" judgment-pack
+              -C "build/oci/bin/linux_${arch}" jpack
           done
           cp CONFORMANCE.md LICENSE NOTICE THIRD_PARTY_NOTICES build/oci/
 
@@ -384,7 +384,7 @@ jobs:
         run: |
           release_version="${RELEASE_TAG#v}"
           image="ghcr.io/judgment-pack/judgment-pack@${{ needs.publish-image.outputs.digest }}"
-          test "$(docker run --rm "${image}" --version)" = "judgment-pack ${release_version}"
+          test "$(docker run --rm "${image}" --version)" = "jpack ${release_version}"
           docker run --rm "${image}" spec test-conformance --quiet
 
   # Runs only after the pushed image passed the anonymous smoke test on both
