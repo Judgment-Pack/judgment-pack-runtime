@@ -582,4 +582,3 @@ func TestEveryEvaluationPayloadEchoesTheEvaluatedPacksIdentity(t *testing.T) {
 		t.Fatalf("the corpus must have rows to assert about: %d resolved, %d refused, %d rows", resolved, refused, len(corpus.Cases))
 	}
 }
-
