@@ -1,0 +1,88 @@
+package diagram
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// The renderer's whole contract is byte determinism, so the tests are golden
+// files: the same fixture yields the same bytes, and a reviewed golden is the
+// specification of the mapping. Regenerate deliberately with
+// UPDATE_DIAGRAM_GOLDENS=1 and re-review the diff — a golden that changed is a
+// mapping that changed.
+func TestMermaidGoldens(t *testing.T) {
+	for _, name := range []string{"intake-triage", "minimal"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("testdata", name+".pack.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document map[string]any
+			if err := json.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
+			}
+			rendered := Mermaid(document)
+
+			goldenPath := filepath.Join("testdata", name+".golden.mmd")
+			if os.Getenv("UPDATE_DIAGRAM_GOLDENS") == "1" {
+				if err := os.WriteFile(goldenPath, []byte(rendered), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			golden, err := os.ReadFile(goldenPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rendered != string(golden) {
+				t.Fatalf("rendering diverged from the reviewed golden;\n--- got ---\n%s\n--- want ---\n%s", rendered, golden)
+			}
+		})
+	}
+}
+
+// Determinism holds across repeated renders of the same decoded document —
+// nothing in the walk depends on map iteration order.
+func TestMermaidDeterministic(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "intake-triage.pack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	first := Mermaid(document)
+	for i := 0; i < 16; i++ {
+		if Mermaid(document) != first {
+			t.Fatalf("render %d differed", i)
+		}
+	}
+}
+
+// Labels never leak Mermaid syntax: quotes, angle brackets, and newlines in
+// document strings arrive as entities or <br/>, and hostile member text stays
+// inside its quoted label.
+func TestMermaidEscapesLabels(t *testing.T) {
+	document := map[string]any{
+		"id":      "https://example.invalid/x",
+		"version": "0.0.1",
+		"outcomes": []any{map[string]any{
+			"id":    "quote",
+			"label": `he said "hi" --> <script>` + "\nline",
+		}},
+	}
+	rendered := Mermaid(document)
+	for _, banned := range []string{`"hi"`, "<script>"} {
+		if strings.Contains(rendered, banned) {
+			t.Fatalf("label leaked %q:\n%s", banned, rendered)
+		}
+	}
+	for _, wanted := range []string{"#quot;hi#quot;", "#lt;script#gt;", "<br/>"} {
+		if !strings.Contains(rendered, wanted) {
+			t.Fatalf("expected escaped form %q:\n%s", wanted, rendered)
+		}
+	}
+}
