@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.7.0 - 2026-07-29
 
 - **Rename the command binary to `jpack`**, dropping the `judgment-pack` executable and the
   short-alias arrangement: release archives now carry one binary, `jpack`, built from
