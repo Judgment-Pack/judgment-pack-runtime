@@ -120,7 +120,10 @@ func buildAuthorPack(args map[string]string) string {
 
 6. EVIDENCE. evidenceRequirements with required: true block every evaluation that arrives without
    an evidence document -- use required: true only for evidence the decision truly cannot proceed
-   without, and remember callers may not supply an evidence document at all.
+   without, and remember callers may not supply an evidence document at all. A rule's
+   evidenceRequirementRefs member is a CITATION the evaluator never reads: adding or removing it
+   changes no evaluation, so never edit it expecting behavior to change -- evidence is enforced by
+   required: true or by an evidence-present condition, nothing else.
 
 7. LOOP. validate the draft; every diagnostic names its location and the fix; repair and repeat to
    exit 0. Then evaluate against 2-3 realistic facts documents and check the dispositions match
@@ -167,9 +170,13 @@ func buildTestPack(args map[string]string) string {
    the most common silent authoring mistake.
 
 Read each disposition fully: kind, outcomeId, reasons, handoff, and the trace (which rules fired,
-which were skipped). A divergence between expectation and disposition is either a pack bug or an
-intended escalation -- decide which, fix the pack if the former, and re-run the whole matrix after
-any change. Keep the matrix with the pack; it is the pack's regression suite.
+which were skipped). A divergence between expectation and disposition is either a pack bug or a
+wrong row, and THE POLICY TEXT IS THE ARBITER: decide which is wrong before touching either, and
+never weaken the pack -- a required flag, a gate, a rule -- just to make your own expectation
+pass. Two facts that prevent common misdiagnoses: a missing-required-evidence reason means the
+row's evidenceAvailability omitted evidence the pack requires (the row is usually what needs
+fixing), and evidenceRequirementRefs is a citation the evaluator never reads. Re-run the whole
+matrix after any change. Keep the matrix with the pack; it is the pack's regression suite.
 
 `)
 	b.WriteString(authoringDisclaimer)
