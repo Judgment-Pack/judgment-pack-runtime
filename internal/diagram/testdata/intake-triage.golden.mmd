@@ -4,7 +4,9 @@ title: https://example.invalid/judgment-packs/data-request-intake-triage 0.1.0
 flowchart TD
   applicability{"applicability: /request/type in [#quot;new-data-pipeline#quot;,#quot;pipeline-c…"}
   not_applicable(["not-applicable"])
-  applicability -. "false / unknown" .-> not_applicable
+  applicability_unresolved(["unresolved (unknown)"])
+  applicability -. "false" .-> not_applicable
+  applicability -. "unknown" .-> applicability_unresolved
   subgraph evidence["evidence requirements"]
     ev_intake_form["intake-form (required, document)"]
     ev_sponsor_endorsement["sponsor-endorsement (required, attestation)"]

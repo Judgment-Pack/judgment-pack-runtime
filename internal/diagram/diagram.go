@@ -67,9 +67,15 @@ func writeApplicability(b *strings.Builder, document map[string]any) {
 	if !present {
 		return
 	}
+	// False and unknown are different results (resolve.go step 1): false is
+	// the terminal not-applicable disposition; unknown is unresolved with
+	// reason "unknown". Two edges, because conflating them would state
+	// something the resolution model does not.
 	fmt.Fprintf(b, "  applicability{\"applicability: %s\"}\n", label(conditionSummary(condition)))
 	b.WriteString("  not_applicable([\"not-applicable\"])\n")
-	b.WriteString("  applicability -. \"false / unknown\" .-> not_applicable\n")
+	b.WriteString("  applicability_unresolved([\"unresolved (unknown)\"])\n")
+	b.WriteString("  applicability -. \"false\" .-> not_applicable\n")
+	b.WriteString("  applicability -. \"unknown\" .-> applicability_unresolved\n")
 }
 
 func writeEvidence(b *strings.Builder, document map[string]any) {
