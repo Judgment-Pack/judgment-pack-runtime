@@ -10,6 +10,28 @@ Every client below launches the same binary. Install a released `judgment-pack` 
 is not on the PATH the client's launcher inherits, use the absolute path instead; a wrong path is
 the most common failure and most clients report it poorly.
 
+Two installation-free alternatives ([ADR-0013](adr/0013-oci-image-and-mcp-registry-distribution.md)):
+registry-aware clients can install the server by name — it is published to the official MCP
+registry as `io.github.Judgment-Pack/judgment-pack` — and any client that can run a container can
+use the released image directly, with a project mounted at `/project` (the launch directory the
+`jpack.json` convention reads):
+
+```json
+{
+  "mcpServers": {
+    "judgment-pack": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/abs/path/to/project:/project",
+               "ghcr.io/judgment-pack/judgment-pack:latest"]
+    }
+  }
+}
+```
+
+The image is the released static binary on `scratch` — no shell, no package manager, no network
+use — and its digest is attested; the binary inside is byte-identical to the release archive's.
+
 Client configuration is personal wiring, not project source, so the local config files below are
 gitignored in this repository. Copy a snippet, don't commit one.
 

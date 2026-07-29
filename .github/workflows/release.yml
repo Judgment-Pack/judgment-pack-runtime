@@ -104,6 +104,9 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
+          # linux/arm64 must run natively somewhere before the gate: macOS arm
+          # runners execute the darwin binary, not this one (ADR-0013 review).
+          - ubuntu-24.04-arm
           - macos-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -264,3 +267,207 @@ jobs:
             publish_args+=(--latest)
           fi
           gh release edit "${publish_args[@]}"
+
+  publish-image:
+    name: Publish OCI image
+    if: github.event_name == 'push'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+
+      # The published release, not the run artifact, is the source: release-dist
+      # expires after 7 days while a pending production approval can wait 30, and
+      # the just-published release is the immutable statement of what shipped.
+      - name: Download the published release archives
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${RELEASE_TAG}" --dir dist \
+            --pattern 'judgment-pack_*_linux_*.tar.gz' --pattern checksums.txt
+          (cd dist && sha256sum --check --ignore-missing checksums.txt)
+
+      # The image carries the released binary, not a rebuild: extract it from
+      # the same archives the smoke tests ran and the release published.
+      - name: Extract linux binaries from the release archives
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          for arch in amd64 arm64; do
+            mkdir -p "build/oci/bin/linux_${arch}"
+            tar -xzf "dist/judgment-pack_${release_version}_linux_${arch}.tar.gz" \
+              -C "build/oci/bin/linux_${arch}" judgment-pack
+          done
+          cp CONFORMANCE.md LICENSE NOTICE THIRD_PARTY_NOTICES build/oci/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # Released image tags follow the archive rule: never rewritten in place.
+      # A re-run after a failure downstream of the push must not move the tag;
+      # it fails here instead, and the fix is a new version (releasing.md).
+      - name: Refuse to overwrite a released version tag
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          if docker manifest inspect "ghcr.io/judgment-pack/judgment-pack:${release_version}" >/dev/null 2>&1; then
+            echo "ghcr.io/judgment-pack/judgment-pack:${release_version} already exists; released image tags are immutable" >&2
+            exit 1
+          fi
+
+      # Only the immutable version tag is pushed here. Everything user-facing —
+      # the attestation, the latest tag, the registry entry — waits for the
+      # anonymous smoke test: a version tag that fails it is left dead, never
+      # promoted, and the fix is a new version.
+      - name: Build and push the multi-arch image
+        id: push
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          image="ghcr.io/judgment-pack/judgment-pack"
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --provenance=false --sbom=false \
+            --annotation "index,manifest:io.modelcontextprotocol.server.name=io.github.Judgment-Pack/judgment-pack" \
+            --annotation "index,manifest:org.opencontainers.image.source=https://github.com/Judgment-Pack/judgment-pack-runtime" \
+            --annotation "index,manifest:org.opencontainers.image.version=${release_version}" \
+            --annotation "index,manifest:org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${release_version}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "${image}:${release_version}" \
+            --metadata-file build/oci/metadata.json \
+            --push build/oci
+
+          digest="$(python3 -c "import json; print(json.load(open('build/oci/metadata.json'))['containerimage.digest'])")"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+  # Anonymous by design: no registry login, so this fails loudly if the GHCR
+  # package is not publicly visible (a first-release prerequisite, see
+  # releasing.md) — an authenticated pull would mask exactly that failure.
+  # Native runners on both architectures: the linux/arm64 manifest is executed,
+  # not just published.
+  image-smoke:
+    name: ${{ matrix.os }} pushed image
+    if: github.event_name == 'push'
+    needs: publish-image
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Pull anonymously and smoke-test by digest
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          image="ghcr.io/judgment-pack/judgment-pack@${{ needs.publish-image.outputs.digest }}"
+          test "$(docker run --rm "${image}" --version)" = "judgment-pack ${release_version}"
+          docker run --rm "${image}" spec test-conformance --quiet
+
+  # Runs only after the pushed image passed the anonymous smoke test on both
+  # architectures: the attestation and the latest tag are promises to users,
+  # so neither is made for an image that has not been executed.
+  promote-image:
+    name: Attest and promote the image
+    if: github.event_name == 'push'
+    needs:
+      - publish-image
+      - image-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Attest the smoke-tested image
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/judgment-pack/judgment-pack
+          subject-digest: ${{ needs.publish-image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Point latest at the smoke-tested digest
+        shell: bash
+        run: |
+          # A prerelease (tag contains a hyphen) must not move latest.
+          if [[ "${RELEASE_TAG}" == *-* ]]; then
+            echo "prerelease: latest stays where it is"
+            exit 0
+          fi
+          docker buildx imagetools create \
+            --tag ghcr.io/judgment-pack/judgment-pack:latest \
+            "ghcr.io/judgment-pack/judgment-pack@${{ needs.publish-image.outputs.digest }}"
+
+  publish-mcp-registry:
+    name: Publish to the MCP registry
+    if: github.event_name == 'push'
+    needs:
+      - publish-image
+      - promote-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install mcp-publisher (pinned by digest)
+        shell: bash
+        run: |
+          publisher_version="v1.8.0"
+          publisher_sha256="1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf"
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${publisher_version}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${publisher_sha256}  mcp-publisher.tar.gz" | sha256sum --check
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+          sudo install -m 0755 mcp-publisher /usr/local/bin/
+
+      - name: Render server.json for this release
+        shell: bash
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          sed "s/__VERSION__/${release_version}/g" build/mcp-registry/server.json.tmpl > server.json
+          cat server.json
+
+      - name: Publish
+        shell: bash
+        run: |
+          mcp-publisher login github-oidc
+          mcp-publisher publish
