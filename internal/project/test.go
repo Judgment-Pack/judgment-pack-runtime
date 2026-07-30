@@ -126,7 +126,7 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// that supports a required extension reaches §8, and its coverage is not
 	// forfeited to a stricter set than any row uses.
 	if admitsForSomeRow(evaluator, pack, matrix) {
-		report.Coverage = matrixCoverage(packRoot(pack), matrix)
+		report.Coverage = matrixCoverage(PackRoot(pack), matrix)
 	}
 	return report
 }

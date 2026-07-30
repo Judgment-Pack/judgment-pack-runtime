@@ -1,7 +1,9 @@
 package project
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -36,68 +38,125 @@ func matrixCoverage(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 	if pack == nil {
 		return nil
 	}
-	rows := expectedRows(matrix)
-	// nil until a probe is derived: a pack whose declarations derive none — a
-	// shape only a document far from conformant can reach — carries no coverage
-	// member rather than an empty one.
-	var probes []result.MatrixProbe
-	add := func(probe, missingDetail string, witnesses func(expectedRow) bool) {
-		for _, row := range rows {
-			if witnesses(row) {
-				probes = append(probes, result.MatrixProbe{
-					Probe:  probe,
-					Status: result.MatrixProbeCovered,
-					Detail: fmt.Sprintf("Row %q expects it.", display.Sanitize(row.id)),
-				})
-				return
-			}
-		}
-		probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeMissing, Detail: missingDetail})
-	}
-	expectsReason := func(reason string) func(expectedRow) bool {
-		return func(row expectedRow) bool { return row.reasons[reason] }
-	}
-
-	// One probe per declared outcome some rule, force-outcome exception, or
-	// fallbackOutcome names, in declaration order. Semantic validation checks
-	// only the forward direction — every named outcome must be declared — so
-	// the reverse is decided here: an outcome nothing references cannot be
-	// produced under §8, and deriving its probe would state an expectation no
-	// row could ever satisfy without mismatching.
-	referenced := referencedOutcomes(pack)
-	for _, entry := range asObjects(pack["outcomes"]) {
-		id, _ := entry["id"].(string)
-		if id == "" || !referenced[id] {
+	witnesses := make([]ProbeWitness, 0, len(matrix.Cases))
+	for _, row := range matrix.Cases {
+		if len(row.ExpectedDisposition) == 0 {
 			continue
 		}
-		add("outcome:"+id,
-			fmt.Sprintf("No row expects an outcome disposition naming %q.", display.Sanitize(id)),
-			func(row expectedRow) bool { return row.kind == "outcome" && row.outcomeID == id })
+		if witness, ok := DecodeWitness(fmt.Sprintf("Row %q", display.Sanitize(row.ID)), row.ExpectedDisposition); ok {
+			witnesses = append(witnesses, witness)
+		}
 	}
+	return PackProbes(pack, witnesses, Reach{})
+}
+
+// ProbeWitness is the slice of one expectation coverage reads: a label naming
+// where the expectation came from, and the disposition it states. A witness
+// exists only for a legal §8.3 disposition — DecodeWitness is the gate — so a
+// probe never reads covered on an expectation the comparator would refuse.
+type ProbeWitness struct {
+	Label     string
+	Kind      string
+	OutcomeID string
+	Reasons   map[string]bool
+}
+
+// DecodeWitness decodes one raw expected disposition into a witness through
+// the same strict gate the row comparator applies
+// (evaluation.DecodeDisposition), stated once so no surface can decode a
+// witness more leniently than it compares one. An expectation that does not
+// decode witnesses nothing — the comparator already reports such a row as its
+// own mismatch.
+func DecodeWitness(label string, raw json.RawMessage) (ProbeWitness, bool) {
+	expected, err := evaluation.DecodeDisposition(raw)
+	if err != nil {
+		return ProbeWitness{}, false
+	}
+	reasons := map[string]bool{}
+	for _, reason := range expected.Reasons {
+		reasons[reason] = true
+	}
+	return ProbeWitness{Label: label, Kind: expected.Kind, OutcomeID: expected.OutcomeID, Reasons: reasons}, true
+}
+
+// Reach narrows, for one pack, which inputs a caller can actually supply. The
+// pack surface narrows nothing — any caller can hand a standalone evaluation
+// any presence state — and a composed surface may narrow the evidence side: a
+// graph edge that feeds a requirement fixes its state set, because a caller
+// entry for an edge-fed requirement is refused rather than merged. The zero
+// Reach is the pack surface's.
+type Reach struct {
+	// EvidenceStates returns, for one declared evidence requirement id, the
+	// presence states that can actually arrive. nil means unnarrowed: all
+	// three tri-states.
+	EvidenceStates func(requirementID string) []string
+}
+
+// evidenceCanBe reports whether any required requirement can arrive in the
+// given state under this reach — the reachability question behind both
+// evidence-driven probes: missing-required-evidence needs a required
+// requirement that can be absent, and evidence's door into reason unknown
+// needs one that can be unknown.
+func (r Reach) evidenceCanBe(pack map[string]any, state string) bool {
+	for _, requirement := range asObjects(pack["evidenceRequirements"]) {
+		if required, _ := requirement["required"].(bool); !required {
+			continue
+		}
+		if r.EvidenceStates == nil {
+			return true
+		}
+		id, _ := requirement["id"].(string)
+		if slices.Contains(r.EvidenceStates(id), state) {
+			return true
+		}
+	}
+	return false
+}
+
+// ProducibleOutcomes lists the declared outcomes §8 can actually produce — the
+// ones some rule, force-outcome exception, or fallbackOutcome names — in
+// declaration order. Semantic validation checks only the forward direction —
+// every named outcome must be declared — so the reverse is decided here: an
+// outcome nothing references cannot be produced under §8, and deriving its
+// probe would state an expectation no row could ever satisfy without
+// mismatching.
+func ProducibleOutcomes(pack map[string]any) []string {
+	referenced := referencedOutcomes(pack)
+	var outcomes []string
+	for _, entry := range asObjects(pack["outcomes"]) {
+		id, _ := entry["id"].(string)
+		if id != "" && referenced[id] {
+			outcomes = append(outcomes, id)
+		}
+	}
+	return outcomes
+}
+
+// ReachableReasons lists the §8 reasons this pack's declarations make
+// reachable under the given reach, in the order the probes report them. Every
+// probe derivation goes through this one list, so no two surfaces can
+// disagree about what a pack can do.
+func ReachableReasons(pack map[string]any, reach Reach) []string {
+	var reasons []string
 
 	// §8 step 1: only a declared applicability can evaluate false.
-	if _, declared := pack["applicability"]; declared {
-		add(evaluation.ReasonNotApplicable,
-			"The pack declares applicability, and no row expects a not-applicable disposition.",
-			func(row expectedRow) bool { return row.kind == "not-applicable" })
+	_, applicability := pack["applicability"]
+	if applicability {
+		reasons = append(reasons, evaluation.ReasonNotApplicable)
 	}
 
-	// §8 step 2: only a required requirement can be missing.
-	if anyRequiredEvidence(pack) {
-		add(evaluation.ReasonMissingEvidence,
-			`The pack declares required evidence, and no row's expected reasons include "missing-required-evidence".`,
-			expectsReason(evaluation.ReasonMissingEvidence))
+	// §8 step 2: only a required requirement that can arrive absent can be
+	// missing.
+	if reach.evidenceCanBe(pack, "absent") {
+		reasons = append(reasons, evaluation.ReasonMissingEvidence)
 	}
 
 	// Reason unknown has three doors: an applicability that evaluates unknown, a
-	// required requirement whose presence is unknown, and an escalating rule or
-	// exception whose condition evaluates unknown. Any one of them makes the
+	// required requirement whose presence can be unknown, and an escalating rule
+	// or exception whose condition evaluates unknown. Any one of them makes the
 	// reason reachable and the probe worth a row.
-	_, applicability := pack["applicability"]
-	if applicability || anyRequiredEvidence(pack) || anyEscalatingOnUnknown(pack) {
-		add(evaluation.ReasonUnknown,
-			`The pack can reach reason "unknown", and no row's expected reasons include it.`,
-			expectsReason(evaluation.ReasonUnknown))
+	if applicability || reach.evidenceCanBe(pack, "unknown") || anyEscalatingOnUnknown(pack) {
+		reasons = append(reasons, evaluation.ReasonUnknown)
 	}
 
 	// §8 steps 5 and 8: a conflict needs two rules, or two true force-outcome
@@ -105,83 +164,104 @@ func matrixCoverage(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 	// pair exists; whether facts can make both fire together is the row author's
 	// question, which is one of the reasons coverage never gates.
 	if distinctRuleOutcomes(pack) > 1 || distinctForcedOutcomes(pack) > 1 {
-		add(evaluation.ReasonConflict,
-			`Rules or forced outcomes name different outcomes, and no row's expected reasons include "conflict". Either construct facts that make two of them fire together, or confirm against the policy text that they exclude each other.`,
-			expectsReason(evaluation.ReasonConflict))
+		reasons = append(reasons, evaluation.ReasonConflict)
 	}
 
 	// A direct escalation is the one exception effect an expected disposition
 	// can witness, through its own reason.
 	if anyEscalateException(pack) {
-		add(evaluation.ReasonExceptionEscalation,
-			`An exception declares effect "escalate", and no row's expected reasons include "exception-escalation".`,
-			expectsReason(evaluation.ReasonExceptionEscalation))
+		reasons = append(reasons, evaluation.ReasonExceptionEscalation)
 	}
 
 	// §8 step 10: no-match is reachable exactly while no fallbackOutcome is
 	// declared.
 	if _, declared := pack["fallbackOutcome"].(string); !declared {
-		add(evaluation.ReasonNoMatch,
-			`The pack declares no fallbackOutcome, and no row's expected reasons include "no-match".`,
-			expectsReason(evaluation.ReasonNoMatch))
+		reasons = append(reasons, evaluation.ReasonNoMatch)
+	}
+	return reasons
+}
+
+// PackProbes derives one pack's probes — one per producible outcome, one per
+// reachable reason — and reports each covered by its first witness or missing
+// with a sentence naming what no witness expects. This is ADR-0014's whole
+// derivation behind one entry point, so a surface composing packs derives
+// exactly what the pack surface derives, narrowed only through Reach.
+func PackProbes(pack map[string]any, witnesses []ProbeWitness, reach Reach) []result.MatrixProbe {
+	if pack == nil {
+		return nil
+	}
+	// nil until a probe is derived: a pack whose declarations derive none — a
+	// shape only a document far from conformant can reach — carries no coverage
+	// member rather than an empty one.
+	var probes []result.MatrixProbe
+	add := func(probe, missingDetail string, witnessed func(ProbeWitness) bool) {
+		for _, witness := range witnesses {
+			if witnessed(witness) {
+				probes = append(probes, result.MatrixProbe{
+					Probe:  probe,
+					Status: result.MatrixProbeCovered,
+					Detail: witness.Label + " expects it.",
+				})
+				return
+			}
+		}
+		probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeMissing, Detail: missingDetail})
+	}
+	expectsReason := func(reason string) func(ProbeWitness) bool {
+		return func(witness ProbeWitness) bool { return witness.Reasons[reason] }
+	}
+
+	for _, id := range ProducibleOutcomes(pack) {
+		add("outcome:"+id,
+			fmt.Sprintf("No row expects an outcome disposition naming %q.", display.Sanitize(id)),
+			func(witness ProbeWitness) bool { return witness.Kind == "outcome" && witness.OutcomeID == id })
+	}
+
+	for _, reason := range ReachableReasons(pack, reach) {
+		switch reason {
+		case evaluation.ReasonNotApplicable:
+			// A not-applicable disposition carries its kind, not a reason, so
+			// this one probe is witnessed by the kind.
+			add(reason,
+				"The pack declares applicability, and no row expects a not-applicable disposition.",
+				func(witness ProbeWitness) bool { return witness.Kind == "not-applicable" })
+		case evaluation.ReasonMissingEvidence:
+			add(reason,
+				`The pack declares required evidence, and no row's expected reasons include "missing-required-evidence".`,
+				expectsReason(reason))
+		case evaluation.ReasonUnknown:
+			add(reason,
+				`The pack can reach reason "unknown", and no row's expected reasons include it.`,
+				expectsReason(reason))
+		case evaluation.ReasonConflict:
+			add(reason,
+				`Rules or forced outcomes name different outcomes, and no row's expected reasons include "conflict". Either construct facts that make two of them fire together, or confirm against the policy text that they exclude each other.`,
+				expectsReason(reason))
+		case evaluation.ReasonExceptionEscalation:
+			add(reason,
+				`An exception declares effect "escalate", and no row's expected reasons include "exception-escalation".`,
+				expectsReason(reason))
+		case evaluation.ReasonNoMatch:
+			add(reason,
+				`The pack declares no fallbackOutcome, and no row's expected reasons include "no-match".`,
+				expectsReason(reason))
+		}
 	}
 
 	return probes
 }
 
-// expectedRow is the slice of one matrix row coverage reads: the row's id and
-// the disposition it expects. A row that expects an error class expects no
-// disposition and can witness no probe; a row whose expected disposition is
-// not a legal §8.3 disposition is dropped here through the same strict gate
-// the row comparator applies — a looser decode would accept as a witness the
-// exact expectation the comparison refuses, and a probe would read covered on
-// a row that mismatches by construction.
-type expectedRow struct {
-	id        string
-	kind      string
-	outcomeID string
-	reasons   map[string]bool
-}
-
-func expectedRows(matrix Matrix) []expectedRow {
-	rows := []expectedRow{}
-	for _, row := range matrix.Cases {
-		if len(row.ExpectedDisposition) == 0 {
-			continue
-		}
-		expected, err := evaluation.DecodeDisposition(row.ExpectedDisposition)
-		if err != nil {
-			continue
-		}
-		reasons := map[string]bool{}
-		for _, reason := range expected.Reasons {
-			reasons[reason] = true
-		}
-		rows = append(rows, expectedRow{id: row.ID, kind: expected.Kind, outcomeID: expected.OutcomeID, reasons: reasons})
-	}
-	return rows
-}
-
-// packRoot decodes bytes the caller already holds — the file is not read a
+// PackRoot decodes bytes the caller already holds — the file is not read a
 // second time — with the same carrier rules the pack got everywhere else. A
-// document that does not decode yields nil, which derives no probes; testPack
-// has already refused such a pack before any row ran.
-func packRoot(data []byte) map[string]any {
+// document that does not decode yields nil, which derives no probes; every
+// caller has already refused such a pack before deriving coverage from it.
+func PackRoot(data []byte) map[string]any {
 	document, failure := carrier.Decode(data, carrier.DefaultLimits())
 	if failure != nil {
 		return nil
 	}
 	root, _ := document.(map[string]any)
 	return root
-}
-
-func anyRequiredEvidence(pack map[string]any) bool {
-	for _, requirement := range asObjects(pack["evidenceRequirements"]) {
-		if required, _ := requirement["required"].(bool); required {
-			return true
-		}
-	}
-	return false
 }
 
 // anyEscalatingOnUnknown reports whether any rule or exception declares

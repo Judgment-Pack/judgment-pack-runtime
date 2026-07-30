@@ -112,3 +112,4 @@ authority, and following it confers no conformance status on anything.
 | [0013](0013-oci-image-and-mcp-registry-distribution.md)  | Distribute the released binary as an OCI image and publish it to the MCP registry | accepted |
 | [0014](0014-matrix-coverage-report.md)                   | Report derived matrix coverage in `packs test`, and never gate on it            | accepted |
 | [0015](0015-experimental-graph-surface.md)               | Prototype pack composition as an experimental graph surface                     | accepted |
+| [0016](0016-graph-rows-coverage-report.md)               | Report derived coverage in `experimental graph test`, and never gate on it      | accepted |

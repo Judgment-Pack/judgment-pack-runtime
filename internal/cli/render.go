@@ -319,28 +319,35 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 				fmt.Fprintf(a.out, "    expected class: %s / actual class: %s\n", display.Sanitize(row.ExpectedErrorClass), display.Sanitize(row.ActualErrorClass))
 			}
 		}
-		// The count line always states that probes were derived; only missing
-		// probes get a detail line, as only mismatching rows do above. Coverage
-		// moves no status and no exit code (ADR-0014).
-		if len(pack.Coverage) > 0 {
-			covered := 0
-			for _, probe := range pack.Coverage {
-				if probe.Status == result.MatrixProbeCovered {
-					covered++
-				}
-			}
-			fmt.Fprintf(a.out, "  coverage: %d/%d derived probes have a row expecting them\n", covered, len(pack.Coverage))
-			for _, probe := range pack.Coverage {
-				if probe.Status != result.MatrixProbeMissing {
-					continue
-				}
-				fmt.Fprintf(a.out, "    %s: %s\n", display.Sanitize(probe.Probe), display.Sanitize(probe.Detail))
-			}
-		}
+		a.renderCoverage("  ", pack.Coverage)
 	}
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	fmt.Fprintln(a.out, "A mismatching row is a statement about the pack and the row, not about this runtime.")
 	return nil
+}
+
+// renderCoverage prints one coverage block: the count line always states that
+// probes were derived; only missing probes get a detail line, as only
+// mismatching rows do. Coverage moves no status and no exit code (ADR-0014;
+// ADR-0016 for graph rows) — the exit code is rows-only on every surface that
+// calls this.
+func (a *App) renderCoverage(indent string, probes []result.MatrixProbe) {
+	if len(probes) == 0 {
+		return
+	}
+	covered := 0
+	for _, probe := range probes {
+		if probe.Status == result.MatrixProbeCovered {
+			covered++
+		}
+	}
+	fmt.Fprintf(a.out, "%scoverage: %d/%d derived probes have a row expecting them\n", indent, covered, len(probes))
+	for _, probe := range probes {
+		if probe.Status != result.MatrixProbeMissing {
+			continue
+		}
+		fmt.Fprintf(a.out, "%s  %s: %s\n", indent, display.Sanitize(probe.Probe), display.Sanitize(probe.Detail))
+	}
 }
 
 func (a *App) renderConfigSchema(format string, output result.ConfigSchema) error {
@@ -549,6 +556,7 @@ func (a *App) renderGraphTest(format string, output result.GraphTest) error {
 			fmt.Fprintf(a.out, "  node %s actual:   %s\n", display.Sanitize(node.Node), display.Sanitize(node.Actual))
 		}
 	}
+	a.renderCoverage("", output.Coverage)
 	fmt.Fprintf(a.out, "graph: %s %s · %s · %s\n", display.Sanitize(output.GraphID), display.Sanitize(output.GraphVersion), display.Sanitize(output.RowsPath), display.Sanitize(output.Kind))
 	fmt.Fprintln(a.out, "A mismatching row is a statement about the graph and the row, not about this runtime.")
 	return nil
