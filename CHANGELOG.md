@@ -2,6 +2,23 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Report derived matrix coverage in `packs test`** (ADR-0014): each entry whose matrix loaded,
+  whose pack the evaluator admits, and whose declarations derive any probe carries a
+  `coverage` array — the probe classes the pack's own
+  declarations derive (one per producible
+  declared outcome — one a rule, exception, or fallback names — then `not-applicable`, `missing-required-evidence`, `unknown`, `conflict`,
+  `exception-escalation`, and `no-match`, each only where the pack makes it reachable), and
+  which of them some row's expected disposition witnesses. Coverage informs and never gates:
+  no status or exit code moves, a probe's detail states "no row expects this" and nothing more,
+  and probes no expectation can witness (a forced outcome, the ordered-comparison type probe)
+  are not derived rather than pretended to. `coverage` is an additive member, so
+  `outputVersion` stays `"2"`; the §8 reason vocabulary is now exported from the evaluator
+  package so the derivation reads the strings the resolver writes. The conformance claim is
+  unaffected and stated, in full and only, in `CONFORMANCE.md`, which no line of this entry
+  restates.
+
 ## 0.8.0 - 2026-07-30
 
 - **Add an experimental graph surface** (ADR-0015), prototyping the composition the

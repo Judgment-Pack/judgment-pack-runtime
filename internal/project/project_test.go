@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -678,4 +679,261 @@ func quote(value string) string {
 		panic(err)
 	}
 	return string(encoded)
+}
+
+// Coverage probes are derived from the pack document's own declarations, and
+// each exists only where the declarations make its behavior reachable: a probe
+// for a pack that cannot produce the behavior would demand a row no facts can
+// produce. Witnessing is by expectation only — an error row expects no
+// disposition and witnesses nothing.
+func TestMatrixCoverageDerivesProbesFromDeclarations(t *testing.T) {
+	probeNames := func(probes []result.MatrixProbe) []string {
+		names := make([]string, 0, len(probes))
+		for _, probe := range probes {
+			names = append(names, probe.Probe)
+		}
+		return names
+	}
+
+	// The full derivation, in deterministic order: outcomes as declared, then
+	// the reachable reason classes.
+	pack := map[string]any{
+		"applicability": map[string]any{"op": "equals", "path": "/t", "value": "x"},
+		"evidenceRequirements": []any{
+			map[string]any{"id": "receipt", "required": true},
+			map[string]any{"id": "approval", "required": false},
+		},
+		"outcomes": []any{map[string]any{"id": "allow"}, map[string]any{"id": "deny"}},
+		"rules": []any{
+			map[string]any{"id": "r1", "outcome": "allow", "onUnknown": "ignore"},
+			map[string]any{"id": "r2", "outcome": "deny", "onUnknown": "escalate"},
+		},
+		"exceptions":      []any{map[string]any{"id": "e1", "effect": "force-outcome", "outcome": "deny"}},
+		"fallbackOutcome": "allow",
+	}
+	probes := matrixCoverage(pack, Matrix{})
+	want := []string{"outcome:allow", "outcome:deny", "not-applicable", "missing-required-evidence", "unknown", "conflict"}
+	if got := probeNames(probes); !slices.Equal(got, want) {
+		t.Fatalf("probes = %v, want %v", got, want)
+	}
+	for _, probe := range probes {
+		if probe.Status != result.MatrixProbeMissing || probe.Detail == "" {
+			t.Fatalf("an empty matrix witnesses nothing, and every missing probe says why: %+v", probe)
+		}
+	}
+
+	// A pack that declares none of the reachable behaviors derives none of the
+	// probes — and no fallbackOutcome is what makes no-match reachable.
+	minimal := map[string]any{
+		"outcomes": []any{map[string]any{"id": "allow"}},
+		"rules": []any{
+			map[string]any{"id": "r1", "outcome": "allow"},
+			map[string]any{"id": "r2", "outcome": "allow"},
+		},
+	}
+	if got := probeNames(matrixCoverage(minimal, Matrix{})); !slices.Equal(got, []string{"outcome:allow", "no-match"}) {
+		t.Fatalf("probes = %v", got)
+	}
+
+	// A direct escalation is the one exception effect an expectation can
+	// witness, and two force-outcome exceptions naming different outcomes make
+	// a conflict constructible even when every rule agrees.
+	exceptional := map[string]any{
+		"outcomes": []any{map[string]any{"id": "allow"}},
+		"rules":    []any{map[string]any{"id": "r1", "outcome": "allow"}},
+		"exceptions": []any{
+			map[string]any{"id": "e1", "effect": "escalate"},
+			map[string]any{"id": "e2", "effect": "force-outcome", "outcome": "allow"},
+			map[string]any{"id": "e3", "effect": "force-outcome", "outcome": "deny"},
+		},
+		"fallbackOutcome": "allow",
+	}
+	if got := probeNames(matrixCoverage(exceptional, Matrix{})); !slices.Equal(got, []string{"outcome:allow", "conflict", "exception-escalation"}) {
+		t.Fatalf("probes = %v", got)
+	}
+
+	// A declared outcome nothing references cannot be produced under §8, so
+	// no probe is derived for it: the probe would be permanently missing, and
+	// a row written to cover it would mismatch forever. Semantic validation
+	// checks only that named outcomes are declared, not the reverse.
+	unreferenced := map[string]any{
+		"outcomes": []any{map[string]any{"id": "allow"}, map[string]any{"id": "orphan"}},
+		"rules":    []any{map[string]any{"id": "r1", "outcome": "allow"}},
+	}
+	if got := probeNames(matrixCoverage(unreferenced, Matrix{})); !slices.Equal(got, []string{"outcome:allow", "no-match"}) {
+		t.Fatalf("an unreferenced outcome derives no probe: %v", got)
+	}
+
+	// A pack that did not decode derives nothing at all.
+	if matrixCoverage(nil, Matrix{}) != nil {
+		t.Fatal("no pack, no probes")
+	}
+}
+
+// A witness passes the same strict §8.3 gate the row comparator applies: an
+// expectation that is legal JSON but not a legal disposition mismatches by
+// construction, and a looser decode would report a probe covered by a row
+// that can never hold.
+func TestMatrixCoverageRefusesIllegalWitnesses(t *testing.T) {
+	pack := map[string]any{
+		"outcomes":        []any{map[string]any{"id": "allow"}},
+		"rules":           []any{map[string]any{"id": "r1", "outcome": "allow"}},
+		"fallbackOutcome": "allow",
+	}
+	illegal := Matrix{Cases: []evaluation.MatrixCase{{
+		ID:                  "outcome-with-reasons",
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":["unknown"],"handoff":{"state":"none"}}`),
+	}}}
+	for _, probe := range matrixCoverage(pack, illegal) {
+		if probe.Status != result.MatrixProbeMissing {
+			t.Fatalf("an illegal expectation witnesses nothing: %+v", probe)
+		}
+	}
+	legal := Matrix{Cases: []evaluation.MatrixCase{{
+		ID:                  "plain-allow",
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`),
+	}}}
+	probes := matrixCoverage(pack, legal)
+	if len(probes) != 1 || probes[0].Probe != "outcome:allow" || probes[0].Status != result.MatrixProbeCovered {
+		t.Fatalf("the same row with a legal disposition witnesses: %+v", probes)
+	}
+}
+
+// A probe is witnessed by what a row expects, not by what it produced: the
+// first witnessing row is named, a reason witnesses exactly its own probe, an
+// error row witnesses nothing, and a row whose expectation does not decode is
+// dropped here because it fails its own comparison anyway.
+func TestMatrixCoverageIsWitnessedByExpectationsOnly(t *testing.T) {
+	pack := map[string]any{
+		"evidenceRequirements": []any{map[string]any{"id": "receipt", "required": true}},
+		"outcomes":             []any{map[string]any{"id": "allow"}},
+		"rules":                []any{map[string]any{"id": "r1", "outcome": "allow", "onUnknown": "escalate"}},
+		"fallbackOutcome":      "allow",
+	}
+	matrix := Matrix{Cases: []evaluation.MatrixCase{
+		{ID: "errors", Facts: json.RawMessage(`{}`), ExpectedErrorClass: "malformed-input"},
+		{ID: "undecodable", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`[`)},
+		{ID: "first-allow", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`)},
+		{ID: "second-allow", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`)},
+		{ID: "no-receipt", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`{"kind":"unresolved","reasons":["missing-required-evidence"],"handoff":{"state":"requested","triggeredBy":["missing-required-evidence"]}}`)},
+	}}
+	probes := matrixCoverage(pack, matrix)
+	byName := map[string]result.MatrixProbe{}
+	for _, probe := range probes {
+		byName[probe.Probe] = probe
+	}
+	if got := byName["outcome:allow"]; got.Status != result.MatrixProbeCovered || !strings.Contains(got.Detail, `"first-allow"`) {
+		t.Fatalf("the first witnessing row is named: %+v", got)
+	}
+	if got := byName["missing-required-evidence"]; got.Status != result.MatrixProbeCovered {
+		t.Fatalf("a reason witnesses its probe: %+v", got)
+	}
+	if got := byName["unknown"]; got.Status != result.MatrixProbeMissing {
+		t.Fatalf("a reason witnesses only its own probe: %+v", got)
+	}
+}
+
+// Coverage rides beside the rows: it is derived whenever the matrix loaded —
+// mismatched rows included, because their expectations exist whether or not
+// they held — and never moves a status. A pack with no matrix has no rows to
+// read and carries no coverage.
+func TestMatrixCoverageIsReportedBesideRowsAndMovesNoStatus(t *testing.T) {
+	pack := string(packFixture(t))
+	facts := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
+	evidence := `{"intake-form":"present","sponsor-endorsement":"present"}`
+	matrix := `{"matrixVersion":"1","cases":[
+	  {"id":"hard-fail","facts":` + facts + `,"evidenceAvailability":` + evidence + `,"expectedDisposition":{"kind":"outcome","outcomeId":"decline-redirect","reasons":[],"handoff":{"state":"none"}}}
+	]}`
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"},"bare":{"path":"packs/a.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+	run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+
+	// The fixture declares three outcomes, applicability, required evidence,
+	// escalating rules with three distinct outcomes, and a fallback: seven
+	// probes, of which this one-row matrix witnesses exactly one.
+	entry := run.Packs[0]
+	if entry.Status != "passed" || len(entry.Coverage) != 7 {
+		t.Fatalf("entry = %s with %d probes: %+v", entry.Status, len(entry.Coverage), entry.Coverage)
+	}
+	covered := 0
+	for _, probe := range entry.Coverage {
+		if probe.Status == result.MatrixProbeCovered {
+			covered++
+			if probe.Probe != "outcome:decline-redirect" {
+				t.Fatalf("only the expected outcome is witnessed: %+v", probe)
+			}
+		}
+	}
+	if covered != 1 {
+		t.Fatalf("covered = %d: %+v", covered, entry.Coverage)
+	}
+	// Missing probes moved nothing: the entry passed, the run passed, and the
+	// matrix-less pack is skipped with no coverage to read.
+	if run.Status != "passed" {
+		t.Fatalf("coverage must not gate: %+v", run.Summary)
+	}
+	if bare := run.Packs[1]; bare.Status != "skipped" || bare.Coverage != nil {
+		t.Fatalf("no matrix, no coverage: %+v", bare)
+	}
+
+	// A mismatching entry still reports what its matrix fails to probe.
+	drifted := strings.Replace(matrix, "decline-redirect", "proceed", 1)
+	configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": drifted})
+	run, failure = mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Packs[0].Status != "mismatch" || len(run.Packs[0].Coverage) != 7 {
+		t.Fatalf("a mismatching entry keeps its coverage: %+v", run.Packs[0])
+	}
+}
+
+// Every witness matcher is pinned by a matrix that covers every probe: a
+// mis-wired matcher — the wrong kind, the wrong reason string — flips its probe
+// to missing and fails here. The pack derives all six reason-class probes plus
+// its outcomes, and a pack whose declarations derive no probe at all carries
+// nil coverage rather than an empty list, so the payload member is absent, not
+// empty.
+func TestMatrixCoverageWitnessesEveryProbeClass(t *testing.T) {
+	pack := map[string]any{
+		"applicability":        map[string]any{"op": "equals", "path": "/t", "value": "x"},
+		"evidenceRequirements": []any{map[string]any{"id": "receipt", "required": true}},
+		"outcomes":             []any{map[string]any{"id": "allow"}, map[string]any{"id": "deny"}},
+		"rules": []any{
+			map[string]any{"id": "r1", "outcome": "allow", "onUnknown": "escalate"},
+			map[string]any{"id": "r2", "outcome": "deny"},
+		},
+		"exceptions": []any{map[string]any{"id": "e1", "effect": "escalate"}},
+	}
+	unresolved := func(reason string) json.RawMessage {
+		return json.RawMessage(`{"kind":"unresolved","reasons":[` + quote(reason) + `],"handoff":{"state":"none"}}`)
+	}
+	matrix := Matrix{Cases: []evaluation.MatrixCase{
+		{ID: "w-allow", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`)},
+		{ID: "w-deny", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"deny","reasons":[],"handoff":{"state":"none"}}`)},
+		{ID: "w-na", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"none"}}`)},
+		{ID: "w-evidence", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("missing-required-evidence")},
+		{ID: "w-unknown", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("unknown")},
+		{ID: "w-conflict", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("conflict")},
+		{ID: "w-escalation", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("exception-escalation")},
+		{ID: "w-no-match", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("no-match")},
+	}}
+	probes := matrixCoverage(pack, matrix)
+	if len(probes) != 8 {
+		t.Fatalf("all eight probes derive: %+v", probes)
+	}
+	for _, probe := range probes {
+		if probe.Status != result.MatrixProbeCovered {
+			t.Fatalf("every probe class must be witnessed by its matcher: %+v", probe)
+		}
+	}
+
+	// No derivable probe, no coverage member: nil, not empty.
+	if probes := matrixCoverage(map[string]any{"fallbackOutcome": "x"}, matrix); probes != nil {
+		t.Fatalf("a pack deriving no probe carries nil coverage: %+v", probes)
+	}
 }

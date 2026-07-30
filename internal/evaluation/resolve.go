@@ -7,15 +7,18 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
-// reason vocabulary of the §8 experiment. exception-escalation is a direct
-// request rather than a trigger-selected one.
+// Reason vocabulary of the §8 experiment. exception-escalation is a direct
+// request rather than a trigger-selected one. Exported because the resolver is
+// not the vocabulary's only reader: a project matrix's coverage report derives
+// which of these reasons a pack's own declarations make reachable, and a
+// vocabulary stated in two packages could disagree with itself.
 const (
-	reasonNotApplicable       = "not-applicable"
-	reasonMissingEvidence     = "missing-required-evidence"
-	reasonUnknown             = "unknown"
-	reasonConflict            = "conflict"
-	reasonNoMatch             = "no-match"
-	reasonExceptionEscalation = "exception-escalation"
+	ReasonNotApplicable       = "not-applicable"
+	ReasonMissingEvidence     = "missing-required-evidence"
+	ReasonUnknown             = "unknown"
+	ReasonConflict            = "conflict"
+	ReasonNoMatch             = "no-match"
+	ReasonExceptionEscalation = "exception-escalation"
 )
 
 // resolver walks §8 over one conformant pack. It is a pure function of its
@@ -64,10 +67,10 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 	}
 	switch applicability {
 	case triFalse:
-		r.reasons[reasonNotApplicable] = true
+		r.reasons[ReasonNotApplicable] = true
 		return r.dispose("not-applicable", "")
 	case triUnknown:
-		r.reasons[reasonUnknown] = true
+		r.reasons[ReasonUnknown] = true
 		return r.dispose("unresolved", "")
 	}
 
@@ -92,9 +95,9 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 		}
 	}
 	if requiredFalse {
-		r.reasons[reasonMissingEvidence] = true
+		r.reasons[ReasonMissingEvidence] = true
 	} else if requiredUnknown {
-		r.reasons[reasonUnknown] = true
+		r.reasons[ReasonUnknown] = true
 	}
 
 	// Steps 3-4: evaluate every exception and combine true effects. An
@@ -119,7 +122,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 			onUnknown, _ := exception["onUnknown"].(string)
 			entry.OnUnknown = onUnknown
 			if onUnknown == "escalate" {
-				r.reasons[reasonUnknown] = true
+				r.reasons[ReasonUnknown] = true
 			}
 		case triTrue:
 			entry.Effect = effect
@@ -135,7 +138,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 				}
 			case "escalate":
 				r.directEscalation = true
-				r.reasons[reasonExceptionEscalation] = true
+				r.reasons[ReasonExceptionEscalation] = true
 			}
 		}
 		r.trace = append(r.trace, entry)
@@ -146,7 +149,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 	// unresolved with every retained reason. A direct escalation takes
 	// precedence over suppression and forced outcomes.
 	if len(forced) > 1 {
-		r.reasons[reasonConflict] = true
+		r.reasons[ReasonConflict] = true
 	}
 	if len(r.reasons) > 0 {
 		return r.dispose("unresolved", "")
@@ -195,13 +198,13 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 			onUnknown, _ := rule["onUnknown"].(string)
 			entry.OnUnknown = onUnknown
 			if onUnknown == "escalate" {
-				r.reasons[reasonUnknown] = true
+				r.reasons[ReasonUnknown] = true
 			}
 		}
 		r.trace = append(r.trace, entry)
 	}
 	if len(candidates) > 1 {
-		r.reasons[reasonConflict] = true
+		r.reasons[ReasonConflict] = true
 	}
 	if len(r.reasons) > 0 {
 		return r.dispose("unresolved", "")
@@ -219,7 +222,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 	if fallback, ok := r.pack["fallbackOutcome"].(string); ok {
 		return r.dispose("outcome", fallback)
 	}
-	r.reasons[reasonNoMatch] = true
+	r.reasons[ReasonNoMatch] = true
 	return r.dispose("unresolved", "")
 }
 
@@ -269,8 +272,8 @@ func (r *resolver) disposition(kind, outcomeID string) (result.Disposition, *res
 	// A direct exception escalation is a request regardless of the trigger list,
 	// using the configured target when one exists; without an escalation object
 	// it remains a request with no Core-defined destination.
-	if r.directEscalation && !slices.Contains(triggeredBy, reasonExceptionEscalation) {
-		triggeredBy = append(triggeredBy, reasonExceptionEscalation)
+	if r.directEscalation && !slices.Contains(triggeredBy, ReasonExceptionEscalation) {
+		triggeredBy = append(triggeredBy, ReasonExceptionEscalation)
 	}
 	if len(triggeredBy) == 0 {
 		return disposition, nil

@@ -264,10 +264,8 @@ func corpusMismatch(outcome result.EvaluationCorpusCase, detail string) result.E
 // expectation to §8.3's three presence rules, so a carrier defect the manifest
 // schema cannot catch is named as one.
 func canonicalDisposition(raw json.RawMessage) (string, error) {
-	var disposition result.Disposition
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&disposition); err != nil {
+	disposition, err := DecodeDisposition(raw)
+	if err != nil {
 		return "", err
 	}
 	encoded, err := disposition.Canonical()
@@ -275,6 +273,26 @@ func canonicalDisposition(raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+// DecodeDisposition decodes one §8.3 disposition strictly — unknown members
+// refused — and holds it to every invariant §8.3 states about the disposition
+// alone, through the same canonicalization the row comparator applies. It is
+// exported because the comparator is not the only reader of expected
+// dispositions: the coverage derivation reads them too, and a second, looser
+// decoder could accept as a witness the exact expectation the comparator
+// refuses. One gate, however many readers.
+func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
+	var disposition result.Disposition
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&disposition); err != nil {
+		return result.Disposition{}, err
+	}
+	if _, err := disposition.Canonical(); err != nil {
+		return result.Disposition{}, err
+	}
+	return disposition, nil
 }
 
 func internalCorpusFailure(message string) *Failure {
