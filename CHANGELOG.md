@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.8.0 - 2026-07-30
 
 - **Add an experimental graph surface** (ADR-0015), prototyping the composition the
   specification's RFC 0002 (Draft) proposes: `experimental graph validate | evaluate | explain`
