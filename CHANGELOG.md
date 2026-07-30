@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.9.0 - 2026-07-30
 
 - **Add `experimental graph test`**: run a graph matrix — rows carrying one inputs document and
   exactly one expectation each — and judge every row exactly as a pack matrix row is judged:
