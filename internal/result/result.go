@@ -460,12 +460,14 @@ type EvaluationError struct {
 	EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
 }
 
-// TraceEntry records one exception or rule evaluation. The trace is
-// informative: §8 requires an unknown that resolution ignored to remain
-// visible, and permits recording contributing ids.
+// TraceEntry records one applicability, exception, or rule evaluation. The
+// trace is informative: §8 requires an unknown that resolution ignored to remain
+// visible, and permits recording contributing ids. A pack's applicability is one
+// unnamed condition rather than an authored declaration, so its entry carries no
+// id at all rather than an empty one.
 type TraceEntry struct {
 	Stage      string `json:"stage"`
-	ID         string `json:"id"`
+	ID         string `json:"id,omitempty"`
 	Condition  string `json:"condition"`
 	Effect     string `json:"effect,omitempty"`
 	Outcome    string `json:"outcome,omitempty"`

@@ -19,6 +19,31 @@ All notable changes to tagged releases are documented here.
   unaffected and stated, in full and only, in `CONFORMANCE.md`, which no line of this entry
   restates.
 
+- **Record the applicability stage in the trace**, so no disposition an authored applicability
+  decides arrives over an empty one. §8 step 1 is the single stage that can decide an entire
+  evaluation, and both of its terminal branches returned before any exception or rule was
+  reached: a pack whose applicability evaluated `false` or `unknown` produced a
+  `not-applicable` or `unresolved` disposition with an empty `trace[]` — a record naming no
+  condition a reader could place the disposition against, and the same record whatever the
+  pack had asked. An authored applicability is now recorded whatever it evaluates to, as an
+  entry whose `stage` is `applicability`; an omitted one is the literal `true` with no
+  authored condition to report and still records nothing — so a pack without one that stops
+  at the §8 step-2 evidence gate still returns an empty trace, with the retained reasons as
+  the account. The entry carries no `id`, applicability being one unnamed condition on the
+  pack rather than an authored declaration with one, so `id` is now `omitempty` and the human
+  renderers print such an entry as its stage alone — both of them through one function,
+  rather than the two copies of that formatting that had to agree by inspection. The
+  `explain_disposition` prompt's trace walk names the new stage and what a terminal
+  applicability means, so a narration reports the pack declining the question or failing to
+  reach it instead of a rule that did not fire. `stage` gains a value within an unchanged
+  member and `outputVersion` stays `"2"`, on the 0.7.0 precedent that a value change within
+  unchanged members is not a protocol break; a consumer matching `stage` exhaustively must
+  accept `applicability` beside `exception` and `rule`, exactly as a consumer matching
+  `tool.name` had to accept `jpack`. The trace remains informative — ADR-0014's refusal of
+  trace-based coverage turns on that, and nothing here pins a trace minimum or invites
+  coverage to read one — and the conformance claim is unaffected and stated, in full and
+  only, in `CONFORMANCE.md`.
+
 ## 0.8.0 - 2026-07-30
 
 - **Add an experimental graph surface** (ADR-0015), prototyping the composition the

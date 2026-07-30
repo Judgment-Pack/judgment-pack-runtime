@@ -219,9 +219,9 @@ func buildExplainDisposition(args map[string]string) string {
 	var b strings.Builder
 	b.WriteString("Explain the disposition of ONE evaluation, strictly from the record it carries.\n")
 	b.WriteString("The disposition is authoritative; the trace beside it is informative and may be\n")
-	b.WriteString("partial or empty (a not-applicable result traces nothing, and a refusal that\n")
-	b.WriteString("precedes the rules -- missing required evidence, a blocking exception -- returns\n")
-	b.WriteString("before later entries exist). Your narrative is a reading of that record. The\n")
+	b.WriteString("partial or empty (a pack with no authored applicability that stops at the\n")
+	b.WriteString("evidence gate traces nothing, and a stop that precedes the rules returns before\n")
+	b.WriteString("later entries exist). Your narrative is a reading of that record. The\n")
 	b.WriteString("evaluator's surface is experimental; its conformance claim is stated, in full\n")
 	b.WriteString("and only, in CONFORMANCE.md.\n\n")
 	if evaluation := strings.TrimSpace(args["evaluation"]); evaluation != "" {
@@ -257,13 +257,18 @@ Work in this order:
    plural, never ranked. "unknown" beside "conflict" means both block resolution and
    neither comes first. State every member; drop none; promote none to "the" cause.
 
-4. WALK THE TRACE, in order, for what it holds. Each entry names its stage (exception or
-   rule), its id, and what its condition evaluated to -- true, false, or unknown; members
-   that do not apply are simply absent. For a fired rule, quote its condition from the
-   pack and the facts it addresses. For an unknown, say the condition evaluated unknown --
-   name a cause only when the condition's own members establish it deterministically; a
-   composite condition, or a value shape an operator does not admit (a JSON number where a
-   decimal string is required), yields unknown with no fact missing at all. onUnknown:
+4. WALK THE TRACE, in order, for what it holds. Each entry names its stage -- applicability,
+   exception, or rule -- what its condition evaluated to (true, false, or unknown), and, for
+   an authored declaration, its id; members that do not apply are simply absent, and a pack's
+   applicability is one unnamed condition, so its entry carries no id. An applicability that
+   evaluated false or unknown is the entire trace: §8 stops there, and the disposition is
+   not-applicable or unresolved on that account alone. Report it as the pack declining the
+   question or failing to reach it -- never as a rule that did not fire, and never as an
+   absence of record. For a fired rule, quote its condition from the pack and the facts it
+   addresses. For an unknown, say the condition evaluated unknown -- name a cause only when
+   the condition's own members establish it deterministically; a composite condition, or a
+   value shape an operator does not admit (a JSON number where a decimal string is
+   required), yields unknown with no fact missing at all. onUnknown:
    escalate retains reason "unknown" and blocks resolution; ignore contributes nothing,
    without converting unknown to false. Say which entries were suppressed or skipped, and
    by what.
@@ -273,8 +278,8 @@ Work in this order:
    escalating unknown ("unknown"); no rule fired and no fallbackOutcome ("no-match"); a
    fallbackOutcome no rule displaced; a force-outcome exception overriding the rules it
    suppresses; a direct escalate exception ("exception-escalation"); required evidence
-   absent ("missing-required-evidence"); applicability false or unknown (not-applicable,
-   with an empty trace).
+   absent ("missing-required-evidence"); an authored applicability that evaluated false
+   (not-applicable) or unknown (unresolved), its own entry the whole trace.
 
 6. ECHO THE HANDOFF as recorded. State handoff.state and its triggeredBy. When the
    payload carries handoffTarget, quote its kind and name; otherwise say the pack

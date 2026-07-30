@@ -205,6 +205,127 @@ func TestRFC0006AppendixInstances(t *testing.T) {
 	}
 }
 
+// TestApplicabilityIsTraced holds the one stage that can decide an evaluation
+// by itself to the visibility every other stage already has. Both terminal
+// branches of §8 step 1 return before any exception or rule is reached, so an
+// untraced applicability returns a not-applicable or unresolved disposition
+// over an empty trace: a record naming no condition the reader can place it
+// against, which is the same record whatever the pack asked. The entry carries
+// no id, in the payload as well as the struct, because applicability is one
+// unnamed condition on the pack rather than an authored declaration with one.
+func TestApplicabilityIsTraced(t *testing.T) {
+	engine := newTestEngine(t)
+	pack := intakePack(t)
+	no := boolPtr(false)
+	evidence := []byte(`{"intake-form":"present","sponsor-endorsement":"present"}`)
+
+	cases := []struct {
+		name      string
+		facts     []byte
+		condition string
+		wantKind  string
+		terminal  bool
+	}{
+		{
+			name:      "true-continues-the-walk",
+			facts:     factsJSON(t, "new-data-pipeline", "complete", "pass", no),
+			condition: "true",
+			wantKind:  "outcome",
+		},
+		{
+			name:      "false-is-terminal",
+			facts:     factsJSON(t, "dataset-deletion", "", "", nil),
+			condition: "false",
+			wantKind:  "not-applicable",
+			terminal:  true,
+		},
+		{
+			name:      "unknown-is-terminal",
+			facts:     factsJSON(t, "", "complete", "pass", no),
+			condition: "unknown",
+			wantKind:  "unresolved",
+			terminal:  true,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			output, failure := engine.Evaluate(pack, testCase.facts, evidence, nil, "test")
+			if failure != nil {
+				t.Fatalf("evaluation failed: %s: %s", failure.Code, failure.Message)
+			}
+			if output.Disposition.Kind != testCase.wantKind {
+				t.Fatalf("kind = %q, want %q", output.Disposition.Kind, testCase.wantKind)
+			}
+			if len(output.Trace) == 0 {
+				t.Fatalf("an authored applicability is recorded whatever it evaluates to: trace is empty")
+			}
+			entry := output.Trace[0]
+			if entry.Stage != "applicability" {
+				t.Fatalf("the walk records applicability first, got stage %q", entry.Stage)
+			}
+			if entry.Condition != testCase.condition {
+				t.Fatalf("condition = %q, want %q", entry.Condition, testCase.condition)
+			}
+			if entry.ID != "" {
+				t.Fatalf("applicability is unnamed and carries no id, got %q", entry.ID)
+			}
+			encoded, err := json.Marshal(entry)
+			if err != nil {
+				t.Fatalf("marshaling the trace entry: %v", err)
+			}
+			if strings.Contains(string(encoded), `"id"`) {
+				t.Fatalf("the absent id is omitted from the payload, not emitted empty: %s", encoded)
+			}
+			// A terminal branch returns before step 2, so its own entry is the
+			// whole trace; true carries the walk on into the stages below it.
+			if testCase.terminal && len(output.Trace) != 1 {
+				t.Fatalf("a terminal applicability stops the walk: %+v", output.Trace)
+			}
+			if !testCase.terminal && len(output.Trace) < 2 {
+				t.Fatalf("a true applicability continues into exceptions and rules: %+v", output.Trace)
+			}
+			if !testCase.terminal {
+				next := output.Trace[1].Stage
+				if next != "exception" && next != "rule" {
+					t.Fatalf("the walk continues into the authored stages, got %q", next)
+				}
+			}
+		})
+	}
+}
+
+// An omitted applicability is the literal true with no authored condition to
+// report: nothing is recorded for step 1, and the trace opens at the stages
+// below it. This is the deliberate other half of the applicability entry — a
+// pack that never asked the question has no condition a reader could place.
+func TestOmittedApplicabilityRecordsNothing(t *testing.T) {
+	engine := newTestEngine(t)
+	var document map[string]any
+	if err := json.Unmarshal(intakePack(t), &document); err != nil {
+		t.Fatal(err)
+	}
+	delete(document, "applicability")
+	pack, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := factsJSON(t, "new-data-pipeline", "complete", "pass", boolPtr(false))
+	evidence := []byte(`{"intake-form":"present","sponsor-endorsement":"present"}`)
+	output, failure := engine.Evaluate(pack, facts, evidence, nil, "test")
+	if failure != nil {
+		t.Fatalf("evaluation failed: %s: %s", failure.Code, failure.Message)
+	}
+	if len(output.Trace) == 0 {
+		t.Fatal("the stages below step 1 still record")
+	}
+	for _, entry := range output.Trace {
+		if entry.Stage == "applicability" {
+			t.Fatalf("an omitted applicability records nothing: %+v", output.Trace)
+		}
+	}
+}
+
 // A forced outcome must skip normal rules entirely: the proceed rule would be
 // true for instance 8's facts, and the trace must show it was never evaluated.
 func TestForcedOutcomeSkipsRules(t *testing.T) {
