@@ -4,6 +4,17 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Say what a facts document is, where the mistake happens**: the `experimental_evaluate`
+  tool's `facts` description and the CLI `--facts` help now state that the facts document is
+  the nested document fact pointers descend into — `{"request":{"type":...}}` for the pointer
+  `/request/type` — and never a flat object with pointer-named members, a shape that mirrors
+  how `jpack.json` fact hints are keyed and does not resolve the pointers a pack spells
+  unescaped. Help text only. A preflight refusal of the all-pointer-named shape was drafted
+  and withdrawn under review: a pack can declare the escaped pointer `/~1a~1b`, which reads
+  exactly a member literally named `/a/b`, so the shape is a legal facts document and §8.2
+  permits no refusal of it. The conformance claim is unaffected and stated, in full and only,
+  in `CONFORMANCE.md`, which no line of this entry restates.
+
 - **`author_graph` grows the testing and declaration steps** (ADR-0008's surface; method text
   only): a new step walks writing the graph matrix and running `experimental graph test` —
   `expectedNodes` is what pins an upstream node, the coverage report informs and never gates,
