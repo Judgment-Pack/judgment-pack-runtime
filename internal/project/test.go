@@ -117,13 +117,31 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	}
 	// Coverage reads the rows' expectations, which exist whether or not they
 	// held, so mismatched rows are covered rows too and a mismatching entry
-	// still reports what its matrix fails to probe. It is derived only for a
-	// pack the evaluator admits: a pack the preflight refuses never reaches
-	// §8, so a derivation over its declarations would describe behavior
-	// nothing can reach — and its matrix, rightly full of error rows, would
-	// be told it misses probes it can never cover.
-	if evaluator.Admits(pack) {
+	// still reports what its matrix fails to probe. It is derived only when
+	// the evaluator admits the pack for the empty capability set or for some
+	// row's declared one: a pack no row's capabilities can get past the
+	// preflight never reaches §8, so a derivation over its declarations would
+	// describe behavior nothing can reach — and its matrix, rightly full of
+	// error rows, would be told it misses probes it can never cover. A row
+	// that supports a required extension reaches §8, and its coverage is not
+	// forfeited to a stricter set than any row uses.
+	if admitsForSomeRow(evaluator, pack, matrix) {
 		report.Coverage = matrixCoverage(packRoot(pack), matrix)
 	}
 	return report
+}
+
+// admitsForSomeRow reports whether the evaluator admits the pack under the
+// empty capability set or under at least one row's declared
+// supportedExtensions — the sets rows actually evaluate with.
+func admitsForSomeRow(evaluator *evaluation.Engine, pack []byte, matrix Matrix) bool {
+	if evaluator.Admits(pack, nil) {
+		return true
+	}
+	for _, row := range matrix.Cases {
+		if len(row.SupportedExtensions) > 0 && evaluator.Admits(pack, row.SupportedExtensions) {
+			return true
+		}
+	}
+	return false
 }

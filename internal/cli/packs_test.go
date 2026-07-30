@@ -645,6 +645,72 @@ func TestPacksTestDerivesNoCoverageForARefusedPack(t *testing.T) {
 	if run.Packs[0].Status != "passed" || run.Packs[0].Coverage != nil {
 		t.Fatalf("a refused pack passes its error rows and derives no coverage: %+v", run.Packs[0])
 	}
+}
+
+// Admission follows the capability sets the rows actually evaluate with: a
+// pack whose required extension some row supports reaches §8 for that row and
+// derives coverage; the same pack whose rows support nothing derives none.
+func TestPacksTestCoverageFollowsRowCapabilities(t *testing.T) {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(evaluatorPack(t)), &doc); err != nil {
+		t.Fatal(err)
+	}
+	metadata, _ := doc["metadata"].(map[string]any)
+	metadata["requiredExtensions"] = []any{"example.demo"}
+	// A required extension must have a value in an extension slot; a bare
+	// requirement is the semantic defect JPS-SEMANTIC-MISSING-REQUIRED-EXTENSION.
+	doc["extensions"] = map[string]any{"example.demo": map[string]any{"note": "capability fixture"}}
+	pack, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := `{"configVersion":"1","packs":{"triage":{"path":"triage.pack.json","matrix":"triage.matrix.json"}}}`
+
+	supported := `{"matrixVersion":"1","cases":[
+	  {"id":"hard-fail","facts":` + hardFailFacts + `,"evidenceAvailability":` + presentEvidence + `,"supportedExtensions":["example.demo"],"expectedDisposition":` + declineRedirect + `}]}`
+	code, stdout, stderr := runTest(t, []string{"packs", "test", "--config", writeProjectFixture(t, config, map[string]string{
+		"triage.pack.json":   string(pack),
+		"triage.matrix.json": supported,
+	}), "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var run result.PackTest
+	if err := json.Unmarshal([]byte(stdout), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Packs[0].Status != "passed" || len(run.Packs[0].Coverage) == 0 {
+		t.Fatalf("a row that supports the required extension reaches §8, so coverage is derived: %+v", run.Packs[0])
+	}
+	witnessed := false
+	for _, probe := range run.Packs[0].Coverage {
+		if probe.Probe == "outcome:decline-redirect" && probe.Status == result.MatrixProbeCovered {
+			witnessed = true
+		}
+	}
+	if !witnessed {
+		t.Fatalf("the supporting row's expectation must witness its probe, not merely derive it: %+v", run.Packs[0].Coverage)
+	}
+
+	unsupported := `{"matrixVersion":"1","cases":[
+	  {"id":"refused","facts":{},"expectedErrorClass":"unsupported-required-extension","expectedErrorPhase":"preflight"}]}`
+	code, stdout, stderr = runTest(t, []string{"packs", "test", "--config", writeProjectFixture(t, config, map[string]string{
+		"triage.pack.json":   string(pack),
+		"triage.matrix.json": unsupported,
+	}), "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	// A fresh value: coverage is omitempty, so unmarshalling the second
+	// payload into the first one's struct would retain the first one's
+	// coverage and assert nothing.
+	var rerun result.PackTest
+	if err := json.Unmarshal([]byte(stdout), &rerun); err != nil {
+		t.Fatal(err)
+	}
+	if rerun.Packs[0].Status != "passed" || rerun.Packs[0].Coverage != nil {
+		t.Fatalf("no row's capabilities admit the pack, so no coverage is derived: %+v", rerun.Packs[0])
+	}
 	if strings.Contains(stdout, "expects it.") {
 		t.Fatalf("a covered probe gets no detail line: %q", stdout)
 	}
