@@ -285,7 +285,44 @@ func TestApplicabilityIsTraced(t *testing.T) {
 			if !testCase.terminal && len(output.Trace) < 2 {
 				t.Fatalf("a true applicability continues into exceptions and rules: %+v", output.Trace)
 			}
+			if !testCase.terminal {
+				next := output.Trace[1].Stage
+				if next != "exception" && next != "rule" {
+					t.Fatalf("the walk continues into the authored stages, got %q", next)
+				}
+			}
 		})
+	}
+}
+
+// An omitted applicability is the literal true with no authored condition to
+// report: nothing is recorded for step 1, and the trace opens at the stages
+// below it. This is the deliberate other half of the applicability entry — a
+// pack that never asked the question has no condition a reader could place.
+func TestOmittedApplicabilityRecordsNothing(t *testing.T) {
+	engine := newTestEngine(t)
+	var document map[string]any
+	if err := json.Unmarshal(intakePack(t), &document); err != nil {
+		t.Fatal(err)
+	}
+	delete(document, "applicability")
+	pack, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := factsJSON(t, "new-data-pipeline", "complete", "pass", boolPtr(false))
+	evidence := []byte(`{"intake-form":"present","sponsor-endorsement":"present"}`)
+	output, failure := engine.Evaluate(pack, facts, evidence, nil, "test")
+	if failure != nil {
+		t.Fatalf("evaluation failed: %s: %s", failure.Code, failure.Message)
+	}
+	if len(output.Trace) == 0 {
+		t.Fatal("the stages below step 1 still record")
+	}
+	for _, entry := range output.Trace {
+		if entry.Stage == "applicability" {
+			t.Fatalf("an omitted applicability records nothing: %+v", output.Trace)
+		}
 	}
 }
 

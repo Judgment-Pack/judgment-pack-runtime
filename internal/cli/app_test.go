@@ -1057,6 +1057,34 @@ func TestExperimentalEvaluateCommand(t *testing.T) {
 // using the operators; without the flag the evaluator refuses it for the same
 // reason; with the flag it evaluates, and the output says in band that the pack
 // is not valid under the published specification.
+// A terminal applicability is visible on the human surface as its stage
+// alone: no id and no stray separator — the same entry the JSON records, so
+// the two surfaces cannot tell different stories about why nothing else ran.
+func TestHumanTraceShowsTerminalApplicability(t *testing.T) {
+	dir := t.TempDir()
+	pack := filepath.Join(dir, "pack.json")
+	if err := os.WriteFile(pack, []byte(evaluatorPack(t)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	facts := filepath.Join(dir, "facts.json")
+	if err := os.WriteFile(facts, []byte(`{"request":{"type":"dataset-deletion"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "disposition: not-applicable") {
+		t.Fatalf("the fixture's applicability excludes this request type: %q", stdout)
+	}
+	if !strings.Contains(stdout, "trace: applicability: false") {
+		t.Fatalf("the terminal applicability renders as its stage alone: %q", stdout)
+	}
+	if strings.Contains(stdout, "applicability :") {
+		t.Fatalf("the empty id must not leave a stray separator: %q", stdout)
+	}
+}
+
 func TestExperimentalEvaluateRFC0008QuantifierFlag(t *testing.T) {
 	pack := filepath.Join("..", "evaluation", "testdata", "rfc0008", "airline-cancellation-quantifier.json")
 	facts := filepath.Join(t.TempDir(), "facts.json")
