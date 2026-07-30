@@ -264,3 +264,78 @@ type GraphTest struct {
 	Rows                      []GraphTestRow `json:"rows"`
 	Coverage                  []MatrixProbe  `json:"coverage,omitempty"`
 }
+
+// GraphSuiteEntry is one configured graph's matrix run inside the project walk
+// (ADR-0017), on PackTestEntry's shape: the project's graph id beside the
+// graph document's own identity echoes, the run's rows and coverage exactly as
+// the single-graph payload carries them, and Detail set when the graph did not
+// run — an unreadable or invalid document, a missing rows declaration — in
+// which case the identity echoes are empty rather than guessed and Rows and
+// Coverage are absent.
+type GraphSuiteEntry struct {
+	ID           string         `json:"id"`
+	Path         string         `json:"path"`
+	RowsPath     string         `json:"rowsPath,omitempty"`
+	GraphID      string         `json:"graphId,omitempty"`
+	GraphVersion string         `json:"graphVersion,omitempty"`
+	Status       string         `json:"status"`
+	Summary      SuiteSummary   `json:"summary"`
+	Rows         []GraphTestRow `json:"rows,omitempty"`
+	Coverage     []MatrixProbe  `json:"coverage,omitempty"`
+	Detail       string         `json:"detail,omitempty"`
+}
+
+// GraphSuite is the project graph-matrix walk: every configured graph's rows,
+// or the one graph --id selected, each entry exactly one graph test. It
+// carries the same labels the single-graph payload carries, because the same
+// two surfaces made every entry. A walk over a configuration that declares no
+// graphs reports status "skipped" over zero entries — an answer, not a clean
+// pass: nothing was tested, and the exit code says so.
+type GraphSuite struct {
+	OutputVersion             string            `json:"outputVersion"`
+	Tool                      Tool              `json:"tool"`
+	Command                   string            `json:"command"`
+	Status                    string            `json:"status"`
+	Experimental              bool              `json:"experimental"`
+	ConformanceClaimReference string            `json:"conformanceClaimReference"`
+	Label                     string            `json:"label"`
+	Kind                      string            `json:"kind"`
+	FormatVersion             string            `json:"formatVersion"`
+	EvaluatorSpecVersion      string            `json:"evaluatorSpecVersion"`
+	ConfigPath                string            `json:"configPath"`
+	ConfigVersion             string            `json:"configVersion"`
+	Summary                   SuiteSummary      `json:"summary"`
+	Graphs                    []GraphSuiteEntry `json:"graphs"`
+}
+
+// GraphValidationEntry is one configured graph's validation inside the project
+// walk: the document against the embedded schema, the graph's own rules, and
+// its references against the project — the same checks the single-graph verb
+// applies — plus the declared rows document's containment when one is
+// declared. Diagnostics carry every finding rather than the first one.
+type GraphValidationEntry struct {
+	ID           string       `json:"id"`
+	Path         string       `json:"path"`
+	RowsPath     string       `json:"rowsPath,omitempty"`
+	GraphID      string       `json:"graphId,omitempty"`
+	GraphVersion string       `json:"graphVersion,omitempty"`
+	Status       string       `json:"status"`
+	Diagnostics  []Diagnostic `json:"diagnostics"`
+}
+
+// GraphValidationSuite is the project graph-validation walk, on
+// PackValidation's shape: every configured graph held to the same checks, and
+// a summary a CI gate can read at a glance. Like every graph payload it is a
+// non-normative runtime convention, and says so in Kind.
+type GraphValidationSuite struct {
+	OutputVersion string                 `json:"outputVersion"`
+	Tool          Tool                   `json:"tool"`
+	Command       string                 `json:"command"`
+	Status        string                 `json:"status"`
+	Kind          string                 `json:"kind"`
+	FormatVersion string                 `json:"formatVersion"`
+	ConfigPath    string                 `json:"configPath"`
+	ConfigVersion string                 `json:"configVersion"`
+	Summary       PackCounts             `json:"summary"`
+	Graphs        []GraphValidationEntry `json:"graphs"`
+}

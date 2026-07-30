@@ -1048,3 +1048,183 @@ func TestGraphCoverageFollowsUpstreamDeclarations(t *testing.T) {
 		t.Fatalf("the downstream node still derives its own probes: %+v", output.Coverage)
 	}
 }
+
+// The project walk is the single-graph surface relocated, never changed: the
+// fixture's declared graph runs its declared rows with coverage riding along,
+// an entry declaring no rows is skipped and says so, a walk over a
+// configuration declaring no graphs is skipped — an answer the CLI exits
+// non-zero on for test, because nothing ran — and an unknown --id refusal
+// lists the configured graph ids.
+func TestProjectWalkRunsDeclaredRows(t *testing.T) {
+	loaded := fixtureProject(t)
+	output, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "passed" || output.Summary.Passed != 3 || len(output.Graphs) != 1 {
+		t.Fatalf("the fixture walk passes its three rows: %+v", output)
+	}
+	entry := output.Graphs[0]
+	if entry.ID != "onboarding" || entry.GraphID != "vendor-onboarding-flow" || entry.Status != "passed" || len(entry.Coverage) != 13 {
+		t.Fatalf("the entry is the single-graph run relocated, coverage included: %+v", entry)
+	}
+	if output.Label != result.GraphMatrixLabel || !output.Experimental || output.ConfigVersion != "2" {
+		t.Fatalf("the labels and the declared configVersion are carried: %+v", output)
+	}
+
+	if _, failure := TestProject(loaded, newEngine(t), "ghost", Options{Command: "test"}); failure == nil ||
+		failure.Code != "JPS-PROJECT-UNKNOWN-GRAPH" || !strings.Contains(failure.Message, "onboarding") {
+		t.Fatalf("an unknown id lists the configured graph ids: %+v", failure)
+	}
+
+	// A graph declared without rows is skipped; with nothing else declared the
+	// walk ran nothing, and says skipped rather than passed.
+	rowless := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"2","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}},
+		  "graphs":{"onboarding":{"path":"onboarding.graph.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+		"vendor-onboarding-0.1.0.pack.json":   string(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json")),
+		"onboarding.graph.json":               string(fixtureBytes(t, "onboarding.graph.json")),
+	})
+	output, failure = TestProject(rowless, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "skipped" || output.Graphs[0].Status != "skipped" || !strings.Contains(output.Graphs[0].Detail, "declares no rows") {
+		t.Fatalf("no rows ran, and the walk says so: %+v", output)
+	}
+
+	// A configuration declaring no graphs walks nothing.
+	bare := writeProject(t, map[string]string{
+		"jpack.json":                          `{"configVersion":"1","packs":{"sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+	})
+	output, failure = TestProject(bare, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "skipped" || len(output.Graphs) != 0 {
+		t.Fatalf("a graphless project is a skipped walk: %+v", output)
+	}
+
+	// A broken graph document is the entry's mismatch, not a refusal of the
+	// walk: one broken graph must not hide the others' results.
+	broken := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"2","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}},
+		  "graphs":{"onboarding":{"path":"onboarding.graph.json","rows":"onboarding.rows.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+		"vendor-onboarding-0.1.0.pack.json":   string(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json")),
+		"onboarding.graph.json":               `{"formatVersion":"9"}`,
+		"onboarding.rows.json":                string(fixtureBytes(t, "onboarding.rows.json")),
+	})
+	output, failure = TestProject(broken, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "mismatch" || output.Graphs[0].Status != "mismatch" || output.Graphs[0].Detail == "" {
+		t.Fatalf("an unloadable graph is the entry's mismatch: %+v", output.Graphs[0])
+	}
+}
+
+// The validation walk applies the single-graph checks per entry, adds the one
+// check only the configuration can ask for — the declared rows path staying
+// inside the project — and reports zero declared graphs as skipped, which
+// unlike the test walk is not a failure: a project without graphs has nothing
+// here to be wrong about.
+func TestProjectWalkValidatesDeclaredGraphs(t *testing.T) {
+	loaded := fixtureProject(t)
+	output, failure := ValidateProject(loaded, "", "validate")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "valid" || output.Summary.Passed != 1 || output.Graphs[0].GraphID != "vendor-onboarding-flow" {
+		t.Fatalf("the fixture validates: %+v", output)
+	}
+
+	escaping := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"2","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}},
+		  "graphs":{"onboarding":{"path":"onboarding.graph.json","rows":"../outside.rows.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+		"vendor-onboarding-0.1.0.pack.json":   string(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json")),
+		"onboarding.graph.json":               string(fixtureBytes(t, "onboarding.graph.json")),
+	})
+	output, failure = ValidateProject(escaping, "", "validate")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	found := false
+	for _, diagnostic := range output.Graphs[0].Diagnostics {
+		if diagnostic.Code == "JPS-GRAPH-ENTRY-ROWS-PATH" {
+			found = true
+		}
+	}
+	if output.Status != "invalid" || !found {
+		t.Fatalf("an escaping rows path is the entry's diagnostic: %+v", output.Graphs[0])
+	}
+
+	bare := writeProject(t, map[string]string{
+		"jpack.json":                          `{"configVersion":"1","packs":{"sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+	})
+	output, failure = ValidateProject(bare, "", "validate")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "skipped" {
+		t.Fatalf("nothing declared, nothing checked, and it says so: %+v", output)
+	}
+}
+
+// A rows file that is merely missing is inside the project, and containment
+// must not call it an escape: the containment diagnostic exists for
+// fssecure.ErrOutsideRoot alone, and the missing file is the test walk's
+// finding when the rows are actually read. The check is also independent of
+// the document, so a graph that will not load cannot hide an escaped rows
+// path.
+func TestProjectWalkRowsContainmentIsExact(t *testing.T) {
+	missing := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"2","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}},
+		  "graphs":{"onboarding":{"path":"onboarding.graph.json","rows":"nowhere.rows.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+		"vendor-onboarding-0.1.0.pack.json":   string(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json")),
+		"onboarding.graph.json":               string(fixtureBytes(t, "onboarding.graph.json")),
+	})
+	output, failure := ValidateProject(missing, "", "validate")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "valid" {
+		t.Fatalf("a missing-but-contained rows file is not a containment defect: %+v", output.Graphs[0])
+	}
+
+	hidden := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"2","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}},
+		  "graphs":{"onboarding":{"path":"onboarding.graph.json","rows":"../outside.rows.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+		"vendor-onboarding-0.1.0.pack.json":   string(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json")),
+		"onboarding.graph.json":               `{"formatVersion":"9"}`,
+	})
+	output, failure = ValidateProject(hidden, "", "validate")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	found := false
+	for _, diagnostic := range output.Graphs[0].Diagnostics {
+		if diagnostic.Code == "JPS-GRAPH-ENTRY-ROWS-PATH" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("an unloadable graph must not hide an escaped rows path: %+v", output.Graphs[0])
+	}
+}

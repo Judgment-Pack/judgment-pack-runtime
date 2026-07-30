@@ -4,6 +4,25 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Declare graphs in `jpack.json`, and walk them like matrices** (ADR-0017): `configVersion`
+  becomes `"2"` — this runtime reads both `"1"` and `"2"`, and a `"1"` configuration keeps
+  loading everywhere unchanged — and a `"2"` configuration may declare `graphs`: the project's
+  own name for each graph, its document path, and optionally its rows document. `experimental
+  graph test` and `experimental graph validate` with no argument then walk the declared graphs
+  (`--id` selects one), each entry exactly the path-named form's run, rows and coverage
+  included; the path-named forms are unchanged. A test walk in which no row ran reports
+  `skipped` and exits 1 — a green gate over nothing tested is not a pass — while the validate
+  walk reports zero declared graphs as `skipped` at exit 0. Declaring a graph is the one thing
+  that costs `configVersion "2"`, which an older runtime refuses as unsupported while naming
+  what it accepts; the schema's own `if/then` states that gate once, and `packs schema` now
+  reports `supportedConfigVersions` beside the newest version. This partially supersedes
+  ADR-0015's determination that graphs stay out of `jpack.json` (its verb-and-payload
+  separation stands: nothing graph-shaped enters `packs test`), and reverses the 0.9.0 entry's
+  sentence that the stable `jpack.json` shape was untouched by the experimental surface —
+  reversed here, not edited there. The `graphs` member and the walk are part of the
+  experimental surface and vanish with it. The conformance claim is unaffected and stated, in
+  full and only, in `CONFORMANCE.md`, which no line of this entry restates.
+
 - **Report derived coverage in `experimental graph test`** (ADR-0016): the payload carries a
   `coverage` array beside its rows — per node, ADR-0014's own pack derivation renamed
   `node:<nodeId>:<packProbe>`, witnessed by a row's `expectedNodes` entry and, for the declared

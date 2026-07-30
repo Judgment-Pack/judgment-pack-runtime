@@ -382,7 +382,8 @@ nothing: every command still takes a pack by path, and every MCP tool still take
 The file is selected by `--config`, then `JPACK_CONFIG`, then `./jpack.json`. Its schema is closed
 and printable with `jpack packs schema`: every member it does not name is rejected.
 `configVersion` is a single integer as a string, on the `outputVersion` precedent rather than
-semantic versioning, and `"1"` is the only accepted value.
+semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with them (ADR-0017), and
+this runtime reads both.
 
 There is **no templating, no target or environment blocks, and no selection**. A templated pack was
 never the pack anyone reviewed; environments are one file per environment by convention

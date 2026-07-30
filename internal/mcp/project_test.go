@@ -87,7 +87,7 @@ func TestProjectToolsServeTheInventoryAndOneDocument(t *testing.T) {
 	if inventory.Status != "valid" || inventory.Command != "mcp list_packs" || inventory.Kind != result.ProjectKind {
 		t.Fatalf("inventory = %+v", inventory)
 	}
-	if inventory.ConfigPath != configPath || inventory.ConfigVersion != project.ConfigVersion {
+	if inventory.ConfigPath != configPath || inventory.ConfigVersion != "1" {
 		t.Fatalf("the inventory names the configuration it read: %+v", inventory)
 	}
 	if len(inventory.Packs) != 1 {
@@ -411,7 +411,7 @@ func quoteJSON(t *testing.T, value string) string {
 func TestABrokenConfigurationIsAToolError(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, project.DefaultConfigName)
-	if err := os.WriteFile(configPath, []byte(`{"configVersion":"2","packs":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","packs":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(project.ConfigEnv, configPath)
@@ -420,7 +420,7 @@ func TestABrokenConfigurationIsAToolError(t *testing.T) {
 	if listed["isError"] != true {
 		t.Fatalf("a broken configuration must be a tool error: %#v", listed)
 	}
-	if text := toolText(t, listed); !strings.Contains(text, "It accepts: "+project.ConfigVersion+".") {
+	if text := toolText(t, listed); !strings.Contains(text, "It accepts: "+strings.Join(project.SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must name the versions this runtime accepts: %q", text)
 	}
 }

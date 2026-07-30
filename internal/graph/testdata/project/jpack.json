@@ -1,5 +1,5 @@
 {
-  "configVersion": "1",
+  "configVersion": "2",
   "packs": {
     "sanctions-screening": {
       "path": "sanctions-screening-0.1.0.pack.json",
@@ -8,6 +8,13 @@
     "vendor-onboarding": {
       "path": "vendor-onboarding-0.1.0.pack.json",
       "description": "Synthetic onboarding decision fed by the screening decision's outcome."
+    }
+  },
+  "graphs": {
+    "onboarding": {
+      "path": "onboarding.graph.json",
+      "rows": "onboarding.rows.json",
+      "description": "The screening decision feeds the onboarding decision, as a fact and as evidence availability."
     }
   }
 }

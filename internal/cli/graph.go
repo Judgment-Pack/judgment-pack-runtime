@@ -49,9 +49,10 @@ func (a *App) graphCommand() *cobra.Command {
 func (a *App) graphValidateCommand() *cobra.Command {
 	format := "human"
 	configPath := ""
+	graphID := ""
 	command := &cobra.Command{
-		Use:   "validate <graph-or->",
-		Short: "Check one graph document and its references against the project",
+		Use:   "validate [graph-or-]",
+		Short: "Check graph documents and their references against the project",
 		Long: "Check one graph document and its references. The document is held to the strict carrier decode " +
 			"every surface uses, the formatVersion gate, and the embedded graph schema printed by experimental " +
 			"graph schema, and is refused with the exact reason when it fails one of those. The graph's own rules " +
@@ -62,13 +63,38 @@ func (a *App) graphValidateCommand() *cobra.Command {
 			"the edges form a directed acyclic graph. One kind of pack read then happens, and only one: each pack " +
 			"an evidence feed targets is read to check that it declares the requirement id the edge names; no " +
 			"other pack is opened, and no pack is validated -- spec validate and packs validate are what report " +
-			"that. Every finding is reported, not the first one. It evaluates nothing. Exit 0 when every check " +
-			"passed, 1 when any failed.",
-		Args: cobra.ExactArgs(1),
+			"that. Every finding is reported, not the first one. It evaluates nothing. With no argument it walks " +
+			"the project instead: every graph the configuration declares (configVersion 2, ADR-0017), or the one " +
+			"--id selects, each held to the same checks plus its declared rows path staying inside the project; a " +
+			"configuration declaring no graphs is reported skipped, which is an answer and not a failure. Exit 0 " +
+			"when every check passed, 1 when any failed.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			const commandName = "experimental graph validate"
 			if err := validateFormat(format); err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			if len(args) == 1 && graphID != "" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-GRAPH-ID", "--id selects a configured graph in the project walk; with an explicit graph path it is not applicable.")
+			}
+			if len(args) == 0 {
+				loaded, projectFailure := project.Load(project.Locate(configPath))
+				if projectFailure != nil {
+					return a.projectFailure(commandName, format, projectFailure)
+				}
+				defer loaded.Close()
+				output, walkFailure := graph.ValidateProject(loaded, graphID, commandName)
+				if walkFailure != nil {
+					return a.evaluationFailure(commandName, format, walkFailure)
+				}
+				if err := a.renderGraphValidationSuite(format, output); err != nil {
+					return &handledExit{code: result.ExitIO}
+				}
+				code := result.ExitSuccess
+				if output.Status == "invalid" {
+					code = result.ExitInvalid
+				}
+				return &handledExit{code: code}
 			}
 			document, graphPath, loaded, failure := a.loadGraph(commandName, format, args[0], configPath)
 			if failure != nil {
@@ -103,6 +129,7 @@ func (a *App) graphValidateCommand() *cobra.Command {
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().StringVar(&graphID, "id", graphID, "check one declared graph by its configured id instead of all of them (project walk only)")
 	return command
 }
 
@@ -223,9 +250,10 @@ func (a *App) graphTestCommand() *cobra.Command {
 	rowsPath := ""
 	supported := []string{}
 	configPath := ""
+	graphID := ""
 	command := &cobra.Command{
-		Use:   "test <graph-or->",
-		Short: "EXPERIMENTAL SURFACE: run a graph's matrix rows and compare every disposition byte for byte",
+		Use:   "test [graph-or-]",
+		Short: "EXPERIMENTAL SURFACE: run graph matrix rows and compare every disposition byte for byte",
 		Long: "Run every row of one graph matrix through this runtime's experimental composition and report " +
 			"each one. This command runs the EXPERIMENTAL evaluator on every node of every row (ADR-0007, " +
 			"ADR-0011, ADR-0015): both surfaces may change or be removed without compatibility promise, and " +
@@ -241,13 +269,49 @@ func (a *App) graphTestCommand() *cobra.Command {
 			"with a row's own inputs -- is deliberately unassertable and mismatches every expectation: rows " +
 			"assert the stable vocabularies only, and this runtime's diagnostic codes are provisional detail. " +
 			"What this reports is what one project's rows did: no row is an authorization, and no JPS version " +
-			"defines a graph, a composition, or a composite result. Exit 0 when every row matched its " +
-			"expectation, 1 when any did not.",
-		Args: cobra.ExactArgs(1),
+			"defines a graph, a composition, or a composite result. With no argument it walks the project " +
+			"instead: every graph the configuration declares (configVersion 2, ADR-0017), or the one --id " +
+			"selects, each entry that graph's declared rows run exactly as the path-named form runs them, " +
+			"coverage included; an entry declaring no rows is skipped and says so, and a walk in which no row " +
+			"ran at all reports skipped and exits 1, because a green gate over nothing tested is not a pass. " +
+			"Exit 0 when every row matched its expectation, 1 when any did not (or none ran).",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			const commandName = "experimental graph test"
 			if err := validateFormat(format); err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			// One constructor for both forms: the walk and the path-named run
+			// are one surface, and CONFORMANCE.md's enumeration is held to
+			// constructor sites per file.
+			evaluator := evaluation.NewEngine(a.engine)
+			if len(args) == 0 {
+				if rowsPath != "" {
+					return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-ROWS", "--rows names a rows document for one path-named graph; the project walk reads each configured graph's declared rows.")
+				}
+				loaded, projectFailure := project.Load(project.Locate(configPath))
+				if projectFailure != nil {
+					return a.projectFailure(commandName, format, projectFailure)
+				}
+				defer loaded.Close()
+				output, walkFailure := graph.TestProject(loaded, evaluator, graphID, graph.Options{
+					Command:             commandName,
+					SupportedExtensions: supported,
+				})
+				if walkFailure != nil {
+					return a.evaluationFailure(commandName, format, walkFailure)
+				}
+				if err := a.renderGraphSuite(format, output); err != nil {
+					return &handledExit{code: result.ExitIO}
+				}
+				code := result.ExitSuccess
+				if output.Status != "passed" {
+					code = result.ExitInvalid
+				}
+				return &handledExit{code: code}
+			}
+			if graphID != "" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-GRAPH-ID", "--id selects a configured graph in the project walk; with an explicit graph path it is not applicable.")
 			}
 			if rowsPath == "" {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-ROWS", "--rows is required: one graph matrix document (a file path, or - for standard input).")
@@ -274,7 +338,7 @@ func (a *App) graphTestCommand() *cobra.Command {
 			if loadFailure != nil {
 				return a.evaluationFailure(commandName, format, loadFailure)
 			}
-			output, testFailure := graph.Test(loaded, evaluation.NewEngine(a.engine), document, graphPath, rowsPath, rows, graph.Options{
+			output, testFailure := graph.Test(loaded, evaluator, document, graphPath, rowsPath, rows, graph.Options{
 				Command:             commandName,
 				SupportedExtensions: supported,
 			})
@@ -292,9 +356,10 @@ func (a *App) graphTestCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
-	command.Flags().StringVar(&rowsPath, "rows", rowsPath, "the graph matrix document: {\"cases\":[{\"id\",\"inputs\",\"expectedDisposition\"|\"expectedErrorClass\"[,\"expectedNodes\"]}]}; a file path, or - for standard input (required)")
+	command.Flags().StringVar(&rowsPath, "rows", rowsPath, "the graph matrix document: {\"cases\":[{\"id\",\"inputs\",\"expectedDisposition\"|\"expectedErrorClass\"[,\"expectedNodes\"]}]}; a file path, or - for standard input (required with a path-named graph)")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, applied to every node (repeatable)")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().StringVar(&graphID, "id", graphID, "run one declared graph's rows by its configured id instead of all of them (project walk only)")
 	return command
 }
 
