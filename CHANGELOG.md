@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.10.0 - 2026-07-30
 
 - **Declare graphs in `jpack.json`, and walk them like matrices** (ADR-0017): `configVersion`
   becomes `"2"` — this runtime reads both `"1"` and `"2"`, and a `"1"` configuration keeps
