@@ -390,24 +390,7 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		}
 	}
 	for _, entry := range output.Trace {
-		note := entry.Condition
-		if entry.Suppressed {
-			note = "suppressed"
-		}
-		if entry.Skipped {
-			note = "skipped (forced outcome)"
-		}
-		detail := ""
-		if entry.Effect != "" {
-			detail = " effect=" + entry.Effect
-		}
-		if entry.Outcome != "" {
-			detail += " outcome=" + entry.Outcome
-		}
-		if entry.OnUnknown != "" {
-			detail += " onUnknown=" + entry.OnUnknown
-		}
-		fmt.Fprintf(a.out, "trace: %s %s: %s%s\n", display.Sanitize(entry.Stage), display.Sanitize(entry.ID), display.Sanitize(note), display.Sanitize(detail))
+		fmt.Fprintln(a.out, traceLine(entry))
 	}
 	if output.Artifact != nil {
 		fmt.Fprintf(a.out, "artifacts: %s · sha256 %s\n", display.Sanitize(output.Artifact.Provenance), output.Artifact.BundleDigest)
@@ -556,9 +539,10 @@ func dispositionSummary(disposition result.Disposition) string {
 	return fmt.Sprintf("%s (%s)", display.Sanitize(disposition.Kind), display.Sanitize(strings.Join(disposition.Reasons, ", ")))
 }
 
-// traceLine formats one trace entry as the standalone evaluation renderer
-// prints it, minus the leading label, so both surfaces show one trace the
-// same way.
+// traceLine formats one trace entry. Both surfaces that print a trace -- the
+// standalone evaluation renderer and the per-node graph renderer, which indents
+// what it returns -- render through this one function, so one trace reads the
+// same way wherever it is shown.
 func traceLine(entry result.TraceEntry) string {
 	note := entry.Condition
 	if entry.Suppressed {
@@ -577,7 +561,13 @@ func traceLine(entry result.TraceEntry) string {
 	if entry.OnUnknown != "" {
 		detail += " onUnknown=" + entry.OnUnknown
 	}
-	return fmt.Sprintf("trace: %s %s: %s%s", display.Sanitize(entry.Stage), display.Sanitize(entry.ID), display.Sanitize(note), display.Sanitize(detail))
+	// An applicability entry is unnamed, and prints as its stage alone rather
+	// than as a stage trailed by the gap where an authored id would have been.
+	stage := display.Sanitize(entry.Stage)
+	if entry.ID != "" {
+		stage += " " + display.Sanitize(entry.ID)
+	}
+	return fmt.Sprintf("trace: %s: %s%s", stage, display.Sanitize(note), display.Sanitize(detail))
 }
 
 // operatorList names the draft operators a pack actually used. The empty case

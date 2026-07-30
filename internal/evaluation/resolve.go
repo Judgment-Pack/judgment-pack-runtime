@@ -58,12 +58,23 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 
 	// Step 1: omitted applicability is the literal value true. False is a
 	// terminal not-applicable result; unknown produces unresolved and stops.
+	// An authored applicability is recorded whatever it evaluates to. It is the
+	// one stage that can decide an entire evaluation, and both terminal branches
+	// below return before any other stage is reached, so leaving it untraced
+	// returns a not-applicable or unresolved disposition over an empty trace --
+	// a record that names no condition the reader can place it against. An
+	// omitted applicability is the literal true with no authored condition to
+	// report, and records nothing.
 	applicability := triTrue
 	if condition, present := pack["applicability"]; present {
 		applicability = r.eval.evaluate(condition, facts)
 		if r.eval.exceeded {
 			return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
 		}
+		r.trace = append(r.trace, result.TraceEntry{
+			Stage:     "applicability",
+			Condition: applicability.String(),
+		})
 	}
 	switch applicability {
 	case triFalse:

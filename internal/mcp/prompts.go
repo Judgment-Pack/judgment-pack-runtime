@@ -257,13 +257,18 @@ Work in this order:
    plural, never ranked. "unknown" beside "conflict" means both block resolution and
    neither comes first. State every member; drop none; promote none to "the" cause.
 
-4. WALK THE TRACE, in order, for what it holds. Each entry names its stage (exception or
-   rule), its id, and what its condition evaluated to -- true, false, or unknown; members
-   that do not apply are simply absent. For a fired rule, quote its condition from the
-   pack and the facts it addresses. For an unknown, say the condition evaluated unknown --
-   name a cause only when the condition's own members establish it deterministically; a
-   composite condition, or a value shape an operator does not admit (a JSON number where a
-   decimal string is required), yields unknown with no fact missing at all. onUnknown:
+4. WALK THE TRACE, in order, for what it holds. Each entry names its stage -- applicability,
+   exception, or rule -- what its condition evaluated to (true, false, or unknown), and, for
+   an authored declaration, its id; members that do not apply are simply absent, and a pack's
+   applicability is one unnamed condition, so its entry carries no id. An applicability that
+   evaluated false or unknown is the entire trace: §8 stops there, and the disposition is
+   not-applicable or unresolved on that account alone. Report it as the pack declining the
+   question or failing to reach it -- never as a rule that did not fire, and never as an
+   absence of record. For a fired rule, quote its condition from the pack and the facts it
+   addresses. For an unknown, say the condition evaluated unknown -- name a cause only when
+   the condition's own members establish it deterministically; a composite condition, or a
+   value shape an operator does not admit (a JSON number where a decimal string is
+   required), yields unknown with no fact missing at all. onUnknown:
    escalate retains reason "unknown" and blocks resolution; ignore contributes nothing,
    without converting unknown to false. Say which entries were suppressed or skipped, and
    by what.
