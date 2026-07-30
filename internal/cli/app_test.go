@@ -192,9 +192,9 @@ func claimSurfaces(t *testing.T) []claimSurface {
 			name: "mcp prompts/get " + prompt.Name,
 			text: text,
 			// Only the prompts that speak about the evaluator say where its
-			// claim is stated: the one that drives it and the one that
+			// claim is stated: the two that drive it and the one that
 			// explains its payloads.
-			mustReference: prompt.Name == "test_pack" || prompt.Name == "explain_disposition",
+			mustReference: prompt.Name == "test_pack" || prompt.Name == "explain_disposition" || prompt.Name == "author_graph",
 		})
 	}
 
