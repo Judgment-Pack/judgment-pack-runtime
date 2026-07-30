@@ -20,10 +20,12 @@ versions, `0.1.0-draft` and `0.2.0-draft`, and validates a document against the 
 document declares; `0.1.0-draft` defines carrier, structural, and semantic document conformance
 only, and `0.2.0-draft` changes no part of the document format.
 
-Its one evaluation surface is `jpack experimental evaluate` (and the `experimental_evaluate`
-MCP tool), which applies the specification's §§7–8 resolution model per
-[ADR-0007](docs/adr/0007-experimental-evaluator.md). The `experimental` namespace is a **stability**
-statement: this surface may change or be removed without compatibility promise. It is not a statement
+One shared evaluator applies the specification's §§7–8 resolution model per
+[ADR-0007](docs/adr/0007-experimental-evaluator.md), and six surfaces reach it: `jpack experimental
+evaluate` and `evaluate-corpus`, the project walk `jpack packs test`, the graph verbs
+`jpack experimental graph evaluate` and `graph test`, and the `experimental_evaluate`
+MCP tool. The `experimental` namespace is a **stability**
+statement: such a surface may change or be removed without compatibility promise. It is not a statement
 about conformance. That evaluator implements the evaluator conformance class Core `0.2.0-draft` adds —
 the §8.2 input preflight, the §8.3 portable disposition with its RFC 8785 byte agreement, the §8.4
 error classes and their fixed precedence, and the §10 limits — per
