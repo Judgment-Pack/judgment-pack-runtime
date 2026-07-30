@@ -812,18 +812,23 @@ type PackTest struct {
 // ConfigSchema describes the exact embedded jpack.json schema bytes, on the same
 // shape spec schema reports for a bundled JPS schema. It names no specification
 // version, because the configuration format is this runtime's and has a version
-// of its own.
+// of its own. ConfigVersion is the newest shape the schema describes;
+// SupportedConfigVersions lists every one the runtime reads, so this payload
+// cannot imply that an older shape stopped being read. The list is an added
+// member, so outputVersion is unchanged under VERSIONING.md's machine-output
+// rules.
 type ConfigSchema struct {
-	OutputVersion string `json:"outputVersion"`
-	Tool          Tool   `json:"tool"`
-	Command       string `json:"command"`
-	Status        string `json:"status"`
-	Kind          string `json:"kind"`
-	ConfigVersion string `json:"configVersion"`
-	SchemaID      string `json:"schemaId"`
-	Bytes         int    `json:"bytes"`
-	SHA256        string `json:"sha256"`
-	WrittenTo     string `json:"writtenTo,omitempty"`
+	OutputVersion           string   `json:"outputVersion"`
+	Tool                    Tool     `json:"tool"`
+	Command                 string   `json:"command"`
+	Status                  string   `json:"status"`
+	Kind                    string   `json:"kind"`
+	ConfigVersion           string   `json:"configVersion"`
+	SupportedConfigVersions []string `json:"supportedConfigVersions"`
+	SchemaID                string   `json:"schemaId"`
+	Bytes                   int      `json:"bytes"`
+	SHA256                  string   `json:"sha256"`
+	WrittenTo               string   `json:"writtenTo,omitempty"`
 }
 
 type OperationalError struct {

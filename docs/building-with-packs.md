@@ -50,9 +50,9 @@ different path in a CI job, and a blob of text a model was handed. With it, all 
 
 `jpack packs schema` prints the schema this is held to, and it is **closed**: every member
 it does not name is rejected, so a misspelled key is an error rather than an intention silently
-dropped. `configVersion` is a single integer as a string — `"1"` is the only value this runtime
-accepts, and a later shape will be `"2"`. There is no minor or patch component, because there is
-nothing to negotiate: a program either knows the shape or does not.
+dropped. `configVersion` is a single integer as a string — `"1"` is the shape without graphs and `"2"`
+the shape with them (ADR-0017), and this runtime reads both. There is no minor or patch
+component, because there is nothing to negotiate: a program either knows the shape or does not.
 
 Three things the file deliberately does **not** have:
 
@@ -349,7 +349,10 @@ The gain is that "enough to decide" becomes a reviewed, versioned, testable arti
 matrix, instead of a threshold in a prompt. The wiring is testable the same way: `jpack
 experimental graph test` runs a graph matrix and reports the same kind of derived coverage `packs
 test` does — over each node's probes and each edge's resolved and unresolved branches — and, like
-all coverage here, it informs and never gates.
+all coverage here, it informs and never gates. A project can declare the wiring's harness too:
+under `configVersion "2"`, `jpack.json` may declare its graphs and their rows (ADR-0017), and the
+same two verbs with no argument then walk every declared graph exactly as `packs test` walks every
+declared matrix — one CI step, no hardcoded paths.
 
 ## What this runtime still never does
 

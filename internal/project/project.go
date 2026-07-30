@@ -61,13 +61,16 @@ const (
 	DefaultConfigName = "jpack.json"
 	// ConfigEnv names the environment variable that selects a configuration.
 	ConfigEnv = "JPACK_CONFIG"
-	// ConfigVersion is the one configVersion value this runtime accepts. It is a
-	// single integer as a string, on the outputVersion precedent and deliberately
-	// not semantic versioning: this file describes a shape a program reads, and a
-	// shape either is the one this program knows or is not.
-	ConfigVersion = "1"
+	// ConfigVersion is the newest configVersion this runtime accepts — the shape
+	// the embedded schema describes in full. It is a single integer as a string,
+	// on the outputVersion precedent and deliberately not semantic versioning:
+	// this file describes a shape a program reads, and a shape either is one this
+	// program knows or is not. "2" added the experimental graphs member
+	// (ADR-0017); "1", the shape without it, is still read — see
+	// SupportedConfigVersions.
+	ConfigVersion = "2"
 	// SchemaID is the embedded schema's own $id.
-	SchemaID = "urn:judgmentpack:runtime:jpack-config:1"
+	SchemaID = "urn:judgmentpack:runtime:jpack-config:2"
 	// MaxConfigBytes bounds one configuration document. It is an index of a
 	// project's packs, not a pack.
 	MaxConfigBytes = int64(1 << 20)
@@ -83,7 +86,9 @@ var schemaBytes []byte
 
 // SupportedConfigVersions names every configVersion this runtime accepts, so a
 // refusal can say what would have been accepted instead of only what was not.
-func SupportedConfigVersions() []string { return []string{ConfigVersion} }
+// A "1" configuration is exactly a "2" without graphs, so both are read by one
+// schema and the version gate lives in that schema's own bytes.
+func SupportedConfigVersions() []string { return []string{"1", ConfigVersion} }
 
 // Schema returns the exact embedded configuration schema bytes.
 func Schema() []byte { return schemaBytes }
@@ -93,15 +98,16 @@ func Schema() []byte { return schemaBytes }
 func SchemaDescription(command string) result.ConfigSchema {
 	sum := sha256.Sum256(schemaBytes)
 	return result.ConfigSchema{
-		OutputVersion: result.OutputVersion,
-		Tool:          result.CurrentTool(),
-		Command:       command,
-		Status:        "valid",
-		Kind:          result.ProjectKind,
-		ConfigVersion: ConfigVersion,
-		SchemaID:      SchemaID,
-		Bytes:         len(schemaBytes),
-		SHA256:        hex.EncodeToString(sum[:]),
+		OutputVersion:           result.OutputVersion,
+		Tool:                    result.CurrentTool(),
+		Command:                 command,
+		Status:                  "valid",
+		Kind:                    result.ProjectKind,
+		ConfigVersion:           ConfigVersion,
+		SupportedConfigVersions: SupportedConfigVersions(),
+		SchemaID:                SchemaID,
+		Bytes:                   len(schemaBytes),
+		SHA256:                  hex.EncodeToString(sum[:]),
 	}
 }
 
@@ -132,12 +138,26 @@ type Pack struct {
 	Evidence        map[string]Hint `json:"evidence,omitempty"`
 }
 
+// Graph is one configured experimental graph (ADR-0017): the graph document,
+// its optional matrix, and one line about it. Every path is relative to the
+// configuration's own directory, and the entry carries no identity of its own
+// — the graph document's id and version are the graph's, exactly as a pack
+// entry's key is not the pack's id. Deliberately no expectedVersion pin: the
+// graph format is experimental, and a pin is one more member to remove with it.
+type Graph struct {
+	Path        string `json:"path"`
+	Rows        string `json:"rows,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 // Config is one jpack.json document. It is a closed shape: the embedded schema
 // rejects every member not named here, so a misspelled key is an error rather
-// than a silently ignored intention.
+// than a silently ignored intention. Graphs exists only under configVersion
+// "2" — the schema's own version gate holds that, stated once in its bytes.
 type Config struct {
-	ConfigVersion string          `json:"configVersion"`
-	Packs         map[string]Pack `json:"packs"`
+	ConfigVersion string           `json:"configVersion"`
+	Packs         map[string]Pack  `json:"packs"`
+	Graphs        map[string]Graph `json:"graphs,omitempty"`
 }
 
 // Project is one loaded configuration together with the directory every path in
@@ -159,6 +179,9 @@ type Project struct {
 	// IDs are the configured decision ids in sorted order, so every report this
 	// package produces is ordered the same way on every run and in every process.
 	IDs []string
+	// GraphIDs are the configured graph ids in the same sorted order, for the
+	// same reason.
+	GraphIDs []string
 
 	root *fssecure.Root
 }
@@ -310,14 +333,20 @@ func loadThrough(root *fssecure.Root, configPath, configName string) (*Project, 
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	graphIDs := make([]string, 0, len(config.Graphs))
+	for id := range config.Graphs {
+		graphIDs = append(graphIDs, id)
+	}
+	sort.Strings(graphIDs)
 	return &Project{
 		ConfigPath: configPath,
 		// The handle's own directory, not a second derivation from configPath: the
 		// string and the handle must not be able to disagree.
-		Root:   root.Dir(),
-		Config: config,
-		IDs:    ids,
-		root:   root,
+		Root:     root.Dir(),
+		Config:   config,
+		IDs:      ids,
+		GraphIDs: graphIDs,
+		root:     root,
 	}, nil
 }
 
@@ -409,6 +438,58 @@ func (p *Project) selection(id string) ([]string, *Failure) {
 // directory handle, which is the only way anything here reaches a declared path.
 func (p *Project) ReadPack(entry Pack) ([]byte, error) {
 	return p.root.Read(entry.Path, carrier.HardMaxBytes)
+}
+
+// GraphEntry returns one configured graph by id.
+func (p *Project) GraphEntry(id string) (Graph, bool) {
+	entry, ok := p.Config.Graphs[id]
+	return entry, ok
+}
+
+// UnknownGraphFailure is the refusal every surface gives for a graph id the
+// configuration does not name, on UnknownPackFailure's shape: it lists the
+// configured graph ids, which is what makes the message enough to act on.
+func (p *Project) UnknownGraphFailure(id string) *Failure {
+	known := "The configuration declares no graphs."
+	if len(p.GraphIDs) > 0 {
+		known = "Configured graph ids: " + strings.Join(p.GraphIDs, ", ") + "."
+	}
+	return &Failure{
+		Code:     "JPS-PROJECT-UNKNOWN-GRAPH",
+		Message:  fmt.Sprintf("No graph in %s is named %q. %s", display.Sanitize(p.ConfigPath), display.Sanitize(id), known),
+		ExitCode: result.ExitUnsupported,
+	}
+}
+
+// GraphSelection is the graph ids one operation runs over: all of them, or the
+// one the caller named. It is exported, unlike the pack selection, because the
+// graph walk lives in internal/graph — which already imports this package — and
+// a second unexported copy of the same rule would be a place for the two to
+// disagree.
+func (p *Project) GraphSelection(id string) ([]string, *Failure) {
+	if id == "" {
+		return p.GraphIDs, nil
+	}
+	if _, ok := p.Config.Graphs[id]; !ok {
+		return nil, p.UnknownGraphFailure(id)
+	}
+	return []string{id}, nil
+}
+
+// ReadGraph reads one configured graph document through the project's own
+// directory handle. The byte limit is the caller's, unlike ReadPack's, because
+// the graph limits live with the graph surface (MaxGraphBytes, MaxRowsBytes in
+// internal/graph) and restating them here would be a second place for a number
+// to drift; the deliberate part is that the only relative paths readable are
+// ones the configuration declared, and no caller is ever handed a pathname.
+func (p *Project) ReadGraph(entry Graph, limit int64) ([]byte, error) {
+	return p.root.Read(entry.Path, limit)
+}
+
+// ReadGraphRows reads one configured graph's matrix through the same handle,
+// under the same caller-owned limit rule as ReadGraph.
+func (p *Project) ReadGraphRows(entry Graph, limit int64) ([]byte, error) {
+	return p.root.Read(entry.Rows, limit)
 }
 
 // Contains reports whether one declared path is inside the project, without

@@ -562,6 +562,79 @@ func (a *App) renderGraphTest(format string, output result.GraphTest) error {
 	return nil
 }
 
+// renderGraphSuite reports the project graph-matrix walk, on renderPackTest's
+// shape: the label leads, entries carry their own counts and details, and only
+// mismatching rows and missing probes get lines.
+func (a *App) renderGraphSuite(format string, output result.GraphSuite) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE graph matrix: %s\n", output.Label)
+	switch output.Status {
+	case "passed":
+		fmt.Fprintf(a.out, "passed: %d/%d graph rows matched their expectation\n", output.Summary.Passed, output.Summary.Total)
+	case "skipped":
+		// No row ran, and the exit code says so: a green gate over nothing
+		// tested is not a pass (ADR-0017). The wording covers both ways of
+		// running nothing — no graph declares rows, and no graph declared at
+		// all.
+		fmt.Fprintln(a.out, "skipped: no graph row ran, because no selected graph declares rows (or no graph is configured)")
+	default:
+		fmt.Fprintf(a.out, "mismatch: %d/%d graph rows did not match their expectation\n", output.Summary.Mismatched, output.Summary.Total)
+	}
+	for _, entry := range output.Graphs {
+		fmt.Fprintf(a.out, "- %s [%s]: %d/%d\n", display.Sanitize(entry.ID), display.Sanitize(entry.Status), entry.Summary.Passed, entry.Summary.Total)
+		if entry.Detail != "" {
+			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(entry.Detail))
+		}
+		for _, row := range entry.Rows {
+			if row.Status != "mismatch" {
+				continue
+			}
+			fmt.Fprintf(a.out, "  %s: %s\n", display.Sanitize(row.ID), display.Sanitize(row.Detail))
+			if row.Expected != "" || row.Actual != "" {
+				fmt.Fprintf(a.out, "    expected: %s\n", display.Sanitize(row.Expected))
+				fmt.Fprintf(a.out, "    actual:   %s\n", display.Sanitize(row.Actual))
+			}
+			if row.ExpectedErrorClass != "" || row.ActualErrorClass != "" {
+				fmt.Fprintf(a.out, "    expected class: %s / actual class: %s\n", display.Sanitize(row.ExpectedErrorClass), display.Sanitize(row.ActualErrorClass))
+			}
+		}
+		a.renderCoverage("  ", entry.Coverage)
+	}
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	fmt.Fprintln(a.out, "A mismatching row is a statement about the graph and the row, not about this runtime.")
+	return nil
+}
+
+// renderGraphValidationSuite reports the project graph-validation walk, on
+// renderPackValidation's shape.
+func (a *App) renderGraphValidationSuite(format string, output result.GraphValidationSuite) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	switch output.Status {
+	case "valid":
+		fmt.Fprintf(a.out, "valid: %d/%d configured graphs passed every check\n", output.Summary.Passed, output.Summary.Total)
+	case "skipped":
+		fmt.Fprintln(a.out, "skipped: the configuration declares no graphs, so nothing was checked")
+	default:
+		fmt.Fprintf(a.out, "invalid: %d/%d configured graphs failed a check\n", output.Summary.Failed, output.Summary.Total)
+	}
+	for _, entry := range output.Graphs {
+		fmt.Fprintf(a.out, "- %s [%s]: %s\n", display.Sanitize(entry.ID), display.Sanitize(entry.Status), display.Sanitize(entry.Path))
+		for _, diagnostic := range entry.Diagnostics {
+			location := diagnostic.InstancePath
+			if location == "" {
+				location = "<root>"
+			}
+			fmt.Fprintf(a.out, "  %s at %s: %s\n", display.Sanitize(diagnostic.Code), display.Sanitize(location), display.Sanitize(diagnostic.Message))
+		}
+	}
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	return nil
+}
+
 // printDisposition prints one disposition and its handoff, exactly as the
 // standalone evaluation renderer formats them.
 func (a *App) printDisposition(label string, disposition result.Disposition, target *result.HandoffTarget) {

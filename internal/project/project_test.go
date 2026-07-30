@@ -107,7 +107,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 		code   string
 	}{
 		"no configVersion":                     {`{"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
-		"a later configVersion":                {`{"configVersion":"2","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
+		"a later configVersion":                {`{"configVersion":"3","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a semver configVersion":               {`{"configVersion":"1.0.0","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a numeric configVersion":              {`{"configVersion":1,"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"no packs member":                      {`{"configVersion":"1"}`, "JPS-PROJECT-CONFIG-SCHEMA"},
@@ -136,8 +136,8 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 
 	// The version refusal names what would have been accepted; a message that only
 	// said "no" would leave a caller guessing.
-	_, failure := Load(writeProject(t, `{"configVersion":"2","packs":{}}`, nil))
-	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+ConfigVersion+".") {
+	_, failure := Load(writeProject(t, `{"configVersion":"3","packs":{}}`, nil))
+	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+strings.Join(SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must be unsupported and name this runtime's versions: exit=%d %q", failure.ExitCode, failure.Message)
 	}
 }
@@ -1016,5 +1016,62 @@ func TestReachNarrowsTheEvidenceDoors(t *testing.T) {
 	reopened := ReachableReasons(escalating, Reach{EvidenceStates: func(string) []string { return []string{"present", "absent"} }})
 	if !slices.Contains(reopened, evaluation.ReasonUnknown) {
 		t.Fatalf("the rule door is untouched by evidence narrowing: %v", reopened)
+	}
+}
+
+// configVersion "2" is the shape with graphs; "1" the shape without, still
+// read. The version gate lives in the schema's own bytes: graphs declared
+// under "1" name the exact member to change, a "2" without graphs is legal,
+// and the graph entries get the same closed-shape treatment pack entries get.
+func TestConfigVersionTwoDeclaresGraphs(t *testing.T) {
+	_, failure := Load(writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"a.json"}},"graphs":{"g":{"path":"g.json"}}}`, nil))
+	if failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" || !strings.Contains(failure.Message, "'2'") {
+		t.Fatalf("graphs under configVersion 1 name the member to change: %+v", failure)
+	}
+
+	loaded, failure := Load(writeProject(t, `{"configVersion":"2","packs":{"a":{"path":"a.json"}},
+	  "graphs":{"zeta":{"path":"z.json"},"alpha":{"path":"a.graph.json","rows":"a.rows.json","description":"d"}}}`, nil))
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer loaded.Close()
+	if !slices.Equal(loaded.GraphIDs, []string{"alpha", "zeta"}) {
+		t.Fatalf("graph ids are sorted: %v", loaded.GraphIDs)
+	}
+	entry, ok := loaded.GraphEntry("alpha")
+	if !ok || entry.Path != "a.graph.json" || entry.Rows != "a.rows.json" {
+		t.Fatalf("entry = %+v", entry)
+	}
+	if failure := loaded.UnknownGraphFailure("ghost"); failure.Code != "JPS-PROJECT-UNKNOWN-GRAPH" ||
+		!strings.Contains(failure.Message, "alpha, zeta") || failure.ExitCode != result.ExitUnsupported {
+		t.Fatalf("the refusal lists configured graph ids: %+v", failure)
+	}
+
+	if loaded, failure := Load(writeProject(t, `{"configVersion":"2","packs":{"a":{"path":"a.json"}}}`, nil)); failure != nil {
+		t.Fatalf("a 2 without graphs is legal: %+v", failure)
+	} else {
+		loaded.Close()
+	}
+
+	rejected := map[string]string{
+		"an empty graphs object":     `{"configVersion":"2","packs":{"a":{"path":"a.json"}},"graphs":{}}`,
+		"a graph without a path":     `{"configVersion":"2","packs":{"a":{"path":"a.json"}},"graphs":{"g":{"rows":"r.json"}}}`,
+		"a graph key outside the id": `{"configVersion":"2","packs":{"a":{"path":"a.json"}},"graphs":{"Bad_Key":{"path":"g.json"}}}`,
+		"an unknown graph member":    `{"configVersion":"2","packs":{"a":{"path":"a.json"}},"graphs":{"g":{"path":"g.json","expectedVersion":"0.1.0"}}}`,
+	}
+	for name, config := range rejected {
+		t.Run(name, func(t *testing.T) {
+			if _, failure := Load(writeProject(t, config, nil)); failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" {
+				t.Fatalf("this configuration must be refused by the schema: %+v", failure)
+			}
+		})
+	}
+
+	// The schema payload names the newest shape and every shape read, so it
+	// cannot imply "1" stopped being accepted.
+	description := SchemaDescription("packs schema")
+	if description.ConfigVersion != "2" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2"}) ||
+		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:2" {
+		t.Fatalf("schema description = %+v", description)
 	}
 }

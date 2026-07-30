@@ -95,7 +95,7 @@ func TestPacksListReportsBothNames(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &inventory); err != nil {
 		t.Fatal(err)
 	}
-	if inventory.Command != "packs list" || inventory.Kind != result.ProjectKind || inventory.ConfigVersion != project.ConfigVersion {
+	if inventory.Command != "packs list" || inventory.Kind != result.ProjectKind || inventory.ConfigVersion != "1" {
 		t.Fatalf("inventory = %+v", inventory)
 	}
 	if len(inventory.Packs) != 1 {

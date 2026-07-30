@@ -317,3 +317,77 @@ func TestGraphTestCommand(t *testing.T) {
 		t.Fatalf("dual stdin is refused: exit=%d", code)
 	}
 }
+
+// With no argument the two verbs walk the project's declared graphs
+// (ADR-0017): the fixture's one graph runs its declared rows — coverage
+// included — and validates; --id selects; the flag combinations that mix the
+// two forms are invocation errors; and a walk that ran nothing exits 1 for
+// test while validate reports it skipped at exit 0.
+func TestGraphWalkCommands(t *testing.T) {
+	configPath, _ := graphProject(t, graphFixture(t, "onboarding.graph.json"), map[string]string{
+		"onboarding.rows.json": graphFixture(t, "onboarding.rows.json"),
+	})
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "test", "--config", configPath}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "passed: 3/3 graph rows matched their expectation") ||
+		!strings.Contains(stdout, "- onboarding [passed]: 3/3") ||
+		!strings.Contains(stdout, "  coverage: 7/13 derived probes have a row expecting them") {
+		t.Fatalf("the walk is the single-graph run relocated, coverage included: %q", stdout)
+	}
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "test", "--config", configPath, "--format", "json"}, "")
+	if code != 0 {
+		t.Fatalf("exit=%d", code)
+	}
+	var suite result.GraphSuite
+	if err := json.Unmarshal([]byte(stdout), &suite); err != nil {
+		t.Fatal(err)
+	}
+	if suite.Status != "passed" || suite.ConfigVersion != "2" || len(suite.Graphs) != 1 || len(suite.Graphs[0].Coverage) != 13 {
+		t.Fatalf("suite = %+v", suite)
+	}
+
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "validate", "--config", configPath}, "")
+	if code != 0 || !strings.Contains(stdout, "valid: 1/1 configured graphs passed every check") {
+		t.Fatalf("the validate walk: exit=%d %q", code, stdout)
+	}
+
+	// --id selects one configured graph, and an unknown id lists what exists.
+	code, _, _ = runTest(t, []string{"experimental", "graph", "test", "--id", "onboarding", "--config", configPath}, "")
+	if code != 0 {
+		t.Fatalf("--id selects the declared graph: exit=%d", code)
+	}
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "test", "--id", "ghost", "--config", configPath}, "")
+	if code != result.ExitUnsupported || !strings.Contains(stdout, "onboarding") {
+		t.Fatalf("an unknown id refusal lists configured ids: exit=%d %q", code, stdout)
+	}
+
+	// Mixing the two forms is an invocation error, stated for the flag used.
+	graphPath := filepath.Join(filepath.Dir(configPath), "onboarding.graph.json")
+	code, _, _ = runTest(t, []string{"experimental", "graph", "test", graphPath, "--id", "onboarding", "--config", configPath}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("--id with a path is an invocation error: exit=%d", code)
+	}
+	code, _, _ = runTest(t, []string{"experimental", "graph", "validate", graphPath, "--id", "onboarding", "--config", configPath}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("--id with a path is an invocation error on validate too: exit=%d", code)
+	}
+	code, _, _ = runTest(t, []string{"experimental", "graph", "test", "--rows", "x.json", "--config", configPath}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("--rows in the walk form is an invocation error: exit=%d", code)
+	}
+
+	// A project declaring no graphs: the test walk ran nothing and exits 1;
+	// the validate walk checked nothing and that is not a failure.
+	bare := writeProjectFixture(t, `{"configVersion":"1","packs":{"sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"}}}`,
+		map[string]string{"sanctions-screening-0.1.0.pack.json": graphFixture(t, "sanctions-screening-0.1.0.pack.json")})
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "test", "--config", bare}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, "skipped: no graph row ran") {
+		t.Fatalf("a green gate over nothing tested is not a pass: exit=%d %q", code, stdout)
+	}
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "validate", "--config", bare}, "")
+	if code != 0 || !strings.Contains(stdout, "skipped: the configuration declares no graphs") {
+		t.Fatalf("validating nothing is an answer, not a failure: exit=%d %q", code, stdout)
+	}
+}
