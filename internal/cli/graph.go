@@ -40,6 +40,7 @@ func (a *App) graphCommand() *cobra.Command {
 		a.graphValidateCommand(),
 		a.graphEvaluateCommand(),
 		a.graphExplainCommand(),
+		a.graphTestCommand(),
 		a.graphSchemaCommand(),
 	)
 	return graphGroup
@@ -213,6 +214,86 @@ func (a *App) graphExplainCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	return command
+}
+
+func (a *App) graphTestCommand() *cobra.Command {
+	format := "human"
+	rowsPath := ""
+	supported := []string{}
+	configPath := ""
+	command := &cobra.Command{
+		Use:   "test <graph-or->",
+		Short: "EXPERIMENTAL SURFACE: run a graph's matrix rows and compare every disposition byte for byte",
+		Long: "Run every row of one graph matrix through this runtime's experimental composition and report " +
+			"each one. This command runs the EXPERIMENTAL evaluator on every node of every row (ADR-0007, " +
+			"ADR-0011, ADR-0015): both surfaces may change or be removed without compatibility promise, and " +
+			"the conformance claim for the evaluator is stated, in full and only, in CONFORMANCE.md -- this " +
+			"text states no part of it, and neither does any payload this command writes. A row carries one " +
+			"inputs document for the whole graph and exactly one expectation: the composite headline " +
+			"disposition, or the evaluation error class (and optionally phase) of a refused run. A row may " +
+			"also pin named nodes' dispositions with expectedNodes; a node a row does not name is unchecked, " +
+			"which is the row author's stated choice. Every disposition comparison is the RFC 8785 canonical " +
+			"byte comparison used everywhere else -- the composite headline and each named node -- and a row " +
+			"whose expectation is not a legal disposition is a mismatch of the row, never compared loosely. A " +
+			"refusal carrying no error class -- a graph-layer or invocation refusal, such as a feed colliding " +
+			"with a row's own inputs -- is deliberately unassertable and mismatches every expectation: rows " +
+			"assert the stable vocabularies only, and this runtime's diagnostic codes are provisional detail. " +
+			"What this reports is what one project's rows did: no row is an authorization, and no JPS version " +
+			"defines a graph, a composition, or a composite result. Exit 0 when every row matched its " +
+			"expectation, 1 when any did not.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			const commandName = "experimental graph test"
+			if err := validateFormat(format); err != nil {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			if rowsPath == "" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-ROWS", "--rows is required: one graph matrix document (a file path, or - for standard input).")
+			}
+			if args[0] == "-" && rowsPath == "-" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The graph and the rows document cannot both be standard input.")
+			}
+			if rowsPath != "-" && (strings.Contains(rowsPath, "://") || fssecure.IsRemotePath(rowsPath)) {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
+			}
+			document, graphPath, loaded, failure := a.loadGraph(commandName, format, args[0], configPath)
+			if failure != nil {
+				return failure
+			}
+			defer loaded.Close()
+			data, err := a.readPack(rowsPath, graph.MaxRowsBytes)
+			if errors.Is(err, fssecure.ErrTooLarge) {
+				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-GRAPH-ROWS-BYTE-LIMIT", "The rows document exceeds this runtime's documented byte limit.")
+			}
+			if err != nil {
+				return a.operational(commandName, format, result.ExitIO, "JPS-INPUT-READ", "The rows document could not be read as one bounded regular file or standard input stream.")
+			}
+			rows, loadFailure := graph.LoadRows(data, rowsPath)
+			if loadFailure != nil {
+				return a.evaluationFailure(commandName, format, loadFailure)
+			}
+			output, testFailure := graph.Test(loaded, evaluation.NewEngine(a.engine), document, graphPath, rowsPath, rows, graph.Options{
+				Command:             commandName,
+				SupportedExtensions: supported,
+			})
+			if testFailure != nil {
+				return a.evaluationFailure(commandName, format, testFailure)
+			}
+			if err := a.renderGraphTest(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			code := result.ExitSuccess
+			if output.Status != "passed" {
+				code = result.ExitInvalid
+			}
+			return &handledExit{code: code}
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&rowsPath, "rows", rowsPath, "the graph matrix document: {\"cases\":[{\"id\",\"inputs\",\"expectedDisposition\"|\"expectedErrorClass\"[,\"expectedNodes\"]}]}; a file path, or - for standard input (required)")
+	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, applied to every node (repeatable)")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	return command
 }

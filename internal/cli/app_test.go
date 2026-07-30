@@ -75,6 +75,7 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"experimental", "graph", "validate", "--help"}},
 		{args: []string{"experimental", "graph", "evaluate", "--help"}, mustReference: true},
 		{args: []string{"experimental", "graph", "explain", "--help"}},
+		{args: []string{"experimental", "graph", "test", "--help"}, mustReference: true},
 		{args: []string{"experimental", "graph", "schema", "--help"}},
 		{args: []string{"mcp", "--help"}, mustReference: true},
 		// The project convention (ADR-0012). Only the two that speak about the

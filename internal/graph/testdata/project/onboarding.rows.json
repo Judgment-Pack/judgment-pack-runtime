@@ -1,0 +1,32 @@
+{
+  "graphMatrixVersion": "1",
+  "cases": [
+    {
+      "id": "clear-approves",
+      "inputs": {
+        "screening": { "facts": { "screening": { "matches": "0" } }, "evidence": { "screening-record": "present" } }
+      },
+      "expectedDisposition": { "kind": "outcome", "outcomeId": "approve", "reasons": [], "handoff": { "state": "none" } },
+      "expectedNodes": {
+        "screening": { "kind": "outcome", "outcomeId": "clear", "reasons": [], "handoff": { "state": "none" } }
+      }
+    },
+    {
+      "id": "match-declines",
+      "inputs": {
+        "screening": { "facts": { "screening": { "matches": "2" } }, "evidence": { "screening-record": "present" } }
+      },
+      "expectedDisposition": { "kind": "outcome", "outcomeId": "decline", "reasons": [], "handoff": { "state": "none" } }
+    },
+    {
+      "id": "unresolved-screening-escalates",
+      "inputs": {
+        "screening": { "facts": {}, "evidence": { "screening-record": "present" } }
+      },
+      "expectedDisposition": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } },
+      "expectedNodes": {
+        "onboarding": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } }
+      }
+    }
+  ]
+}

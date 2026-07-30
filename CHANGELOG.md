@@ -4,6 +4,17 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Add `experimental graph test`**: run a graph matrix — rows carrying one inputs document and
+  exactly one expectation each — and judge every row exactly as a pack matrix row is judged:
+  the RFC 8785 canonical §8.3 byte comparison, applied to the composite headline and to every
+  node a row names in `expectedNodes` (an unnamed node is unchecked, the row author's stated
+  choice), or the §8.4 class and phase a refusal row expects. A row whose expectation is not a
+  legal disposition is the row's own mismatch, never compared loosely — the same strict gate
+  every comparison shares. Exit 0 when every row matched, 1 otherwise; graphs and rows stay
+  path-named, and the stable `jpack.json` shape is deliberately untouched by this experimental
+  surface. The conformance claim is unaffected and stated, in full and only, in
+  `CONFORMANCE.md`, which no line of this entry restates.
+
 - **Add two method prompts, `present_pack` and `author_graph`** (ADR-0008's surface, grown to
   six): `present_pack` guides presenting one pack to an audience grounded in the document
   alone — every statement traceable to a member, the representation labeled as one reading,

@@ -516,6 +516,44 @@ func (a *App) renderGraphSchema(format string, output result.GraphSchema) error 
 	return nil
 }
 
+// renderGraphTest reports one graph matrix run. The label leads for the same
+// reason every matrix label does: a reader who sees only a pass count must
+// not read anything about conformance into it.
+func (a *App) renderGraphTest(format string, output result.GraphTest) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE graph matrix: %s\n", output.Label)
+	if output.Status == "passed" {
+		fmt.Fprintf(a.out, "passed: %d/%d graph rows matched their expectation\n", output.Summary.Passed, output.Summary.Total)
+	} else {
+		fmt.Fprintf(a.out, "mismatch: %d/%d graph rows did not match their expectation\n", output.Summary.Mismatched, output.Summary.Total)
+	}
+	for _, row := range output.Rows {
+		if row.Status != "mismatch" {
+			continue
+		}
+		fmt.Fprintf(a.out, "- %s: %s\n", display.Sanitize(row.ID), display.Sanitize(row.Detail))
+		if row.Expected != "" || row.Actual != "" {
+			fmt.Fprintf(a.out, "  expected: %s\n", display.Sanitize(row.Expected))
+			fmt.Fprintf(a.out, "  actual:   %s\n", display.Sanitize(row.Actual))
+		}
+		if row.ExpectedErrorClass != "" || row.ActualErrorClass != "" {
+			fmt.Fprintf(a.out, "  expected class: %s / actual class: %s\n", display.Sanitize(row.ExpectedErrorClass), display.Sanitize(row.ActualErrorClass))
+		}
+		for _, node := range row.Nodes {
+			if node.Status != "mismatch" {
+				continue
+			}
+			fmt.Fprintf(a.out, "  node %s expected: %s\n", display.Sanitize(node.Node), display.Sanitize(node.Expected))
+			fmt.Fprintf(a.out, "  node %s actual:   %s\n", display.Sanitize(node.Node), display.Sanitize(node.Actual))
+		}
+	}
+	fmt.Fprintf(a.out, "graph: %s %s · %s · %s\n", display.Sanitize(output.GraphID), display.Sanitize(output.GraphVersion), display.Sanitize(output.RowsPath), display.Sanitize(output.Kind))
+	fmt.Fprintln(a.out, "A mismatching row is a statement about the graph and the row, not about this runtime.")
+	return nil
+}
+
 // printDisposition prints one disposition and its handoff, exactly as the
 // standalone evaluation renderer formats them.
 func (a *App) printDisposition(label string, disposition result.Disposition, target *result.HandoffTarget) {

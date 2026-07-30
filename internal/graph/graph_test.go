@@ -634,3 +634,147 @@ func TestPlanStatesTheFixture(t *testing.T) {
 		t.Fatalf("an invalid graph has no plan: %+v", planFailure)
 	}
 }
+
+func TestLoadRowsRefusals(t *testing.T) {
+	valid := `{"graphMatrixVersion":"1","cases":[{"id":"r","inputs":{},"expectedDisposition":{"kind":"outcome","outcomeId":"x","reasons":[],"handoff":{"state":"none"}}}]}`
+	cases := []struct {
+		name string
+		data string
+		code string
+	}{
+		{"empty", "", "JPS-GRAPH-ROWS-JSON"},
+		{"malformed", "{", "JPS-GRAPH-ROWS-JSON"},
+		{"unknown member", strings.Replace(valid, `"cases"`, `"rows"`, 1), "JPS-GRAPH-ROWS-SHAPE"},
+		{"unsupported version", strings.Replace(valid, `"1"`, `"2"`, 1), "JPS-GRAPH-ROWS-VERSION"},
+		{"no rows", `{"cases":[]}`, "JPS-GRAPH-ROWS-EMPTY"},
+		{"no id", `{"cases":[{"inputs":{},"expectedErrorClass":"malformed-input"}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"duplicate id", `{"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c"},{"id":"r","inputs":{},"expectedErrorClass":"c"}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"no inputs", `{"cases":[{"id":"r","expectedErrorClass":"c"}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"both expectations", `{"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c","expectedDisposition":{}}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"neither expectation", `{"cases":[{"id":"r","inputs":{}}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"phase without class", `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedErrorPhase":"preflight"}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"nodes beside error", `{"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c","expectedNodes":{"n":{}}}]}`, "JPS-GRAPH-ROWS-ROW"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, failure := LoadRows([]byte(tc.data), "rows.json")
+			if failure == nil || failure.Code != tc.code {
+				t.Fatalf("got %+v", failure)
+			}
+		})
+	}
+	if _, failure := LoadRows([]byte(valid), "rows.json"); failure != nil {
+		t.Fatalf("the valid document loads: %+v", failure)
+	}
+}
+
+func TestGraphTestJudgesRowsByteExactly(t *testing.T) {
+	loaded := fixtureProject(t)
+	rows, failure := LoadRows(fixtureBytes(t, "onboarding.rows.json"), "onboarding.rows.json")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "passed" || output.Summary.Passed != 3 || output.Summary.Total != 3 {
+		t.Fatalf("the fixture rows all pass: %+v", output)
+	}
+	if output.Label != result.GraphMatrixLabel || !output.Experimental || output.ConformanceClaimReference != result.EvaluationClaimReference {
+		t.Fatalf("the labels must be carried: %+v", output)
+	}
+	first := output.Rows[0]
+	if len(first.Nodes) != 1 || first.Nodes[0].Node != "screening" || first.Nodes[0].Status != "passed" || first.Nodes[0].Expected != first.Nodes[0].Actual {
+		t.Fatalf("the named node is compared canonically: %+v", first.Nodes)
+	}
+
+	// A wrong expectation is a mismatch carrying both canonical forms.
+	wrong := rows
+	wrong.Cases = []RowCase{{
+		ID:                  "wrong",
+		Inputs:              rows.Cases[0].Inputs,
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"decline","reasons":[],"handoff":{"state":"none"}}`),
+	}}
+	output, failure = Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", wrong, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	row := output.Rows[0]
+	if output.Status != "mismatch" || row.Status != "mismatch" || !strings.Contains(row.Actual, `"approve"`) || !strings.Contains(row.Expected, `"decline"`) {
+		t.Fatalf("a differing headline mismatches with both canonical forms: %+v", row)
+	}
+
+	// An illegal expectation is the row's own defect, never compared loosely.
+	illegal := rows
+	illegal.Cases = []RowCase{{
+		ID:                  "illegal",
+		Inputs:              rows.Cases[0].Inputs,
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":["unknown"],"handoff":{"state":"none"}}`),
+	}}
+	output, _ = Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", illegal, Options{Command: "test"})
+	if output.Rows[0].Status != "mismatch" || !strings.Contains(output.Rows[0].Detail, "defect in the row") {
+		t.Fatalf("an illegal expectation is the row's defect: %+v", output.Rows[0])
+	}
+
+	// A row naming a node the graph does not declare mismatches with the name.
+	ghost := rows
+	ghost.Cases = []RowCase{{
+		ID:                  "ghost-node",
+		Inputs:              rows.Cases[0].Inputs,
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`),
+		ExpectedNodes:       map[string]json.RawMessage{"ghost": json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`)},
+	}}
+	output, _ = Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", ghost, Options{Command: "test"})
+	if output.Rows[0].Status != "mismatch" || !strings.Contains(output.Rows[0].Detail, `"ghost"`) {
+		t.Fatalf("an undeclared node in expectedNodes mismatches: %+v", output.Rows[0])
+	}
+}
+
+// A row expecting a refusal passes exactly when the run is refused with that
+// class (and phase, when named) — the same discipline a pack matrix's error
+// rows have.
+func TestGraphTestErrorRows(t *testing.T) {
+	var pack map[string]any
+	if err := json.Unmarshal(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json"), &pack); err != nil {
+		t.Fatal(err)
+	}
+	delete(pack, "title")
+	broken, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"1","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json")),
+		"vendor-onboarding-0.1.0.pack.json":   string(broken),
+	})
+	rows := Rows{Cases: []RowCase{{
+		ID:                 "refused",
+		Inputs:             json.RawMessage(`{}`),
+		ExpectedErrorClass: result.ClassPackNotConformant,
+		ExpectedErrorPhase: result.PhasePreflight,
+	}}}
+	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "passed" || output.Rows[0].ActualErrorClass != result.ClassPackNotConformant {
+		t.Fatalf("a refused run matches its expected class: %+v", output.Rows[0])
+	}
+}
+
+// The precondition LoadRows enforces holds for direct callers too, and a
+// document whose root is not an object is a shape refusal on the matrix
+// loader's own precedent, not an empty-matrix one.
+func TestGraphTestPreconditions(t *testing.T) {
+	if _, failure := LoadRows([]byte(`null`), "rows.json"); failure == nil || failure.Code != "JPS-GRAPH-ROWS-SHAPE" {
+		t.Fatalf("a null root is a shape refusal: %+v", failure)
+	}
+	loaded := fixtureProject(t)
+	if _, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", Rows{}, Options{Command: "test"}); failure == nil || failure.Code != "JPS-GRAPH-ROWS-EMPTY" {
+		t.Fatalf("zero rows never yield a clean report: %+v", failure)
+	}
+}
