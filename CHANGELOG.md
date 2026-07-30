@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.11.0 - 2026-07-30
 
 - **Say what a facts document is, where the mistake happens**: the `experimental_evaluate`
   tool's `facts` description and the CLI `--facts` help now state that the facts document is
