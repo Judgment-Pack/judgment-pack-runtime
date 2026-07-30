@@ -25,6 +25,11 @@ import (
 // zero rows would hand a project a green CI gate for a suite that tested
 // nothing, and the per-pack rows saying "skipped" underneath it would not undo
 // the top line anyone reads.
+//
+// Beside its rows, every entry whose matrix loaded carries the coverage report
+// of ADR-0014: the probe classes the pack's own declarations derive, and which
+// of them some row's expectation witnesses. Coverage informs and never gates —
+// it moves no status and no exit code.
 func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result.PackTest, *Failure) {
 	selected, failure := p.selection(id)
 	if failure != nil {
@@ -110,5 +115,9 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		}
 		report.Rows = append(report.Rows, outcome)
 	}
+	// Coverage reads the rows' expectations, which exist whether or not they
+	// held, so mismatched rows are covered rows too and a mismatching entry
+	// still reports what its matrix fails to probe.
+	report.Coverage = matrixCoverage(packRoot(pack), matrix)
 	return report
 }

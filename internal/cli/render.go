@@ -319,6 +319,24 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 				fmt.Fprintf(a.out, "    expected class: %s / actual class: %s\n", display.Sanitize(row.ExpectedErrorClass), display.Sanitize(row.ActualErrorClass))
 			}
 		}
+		// The count line always states that probes were derived; only missing
+		// probes get a detail line, as only mismatching rows do above. Coverage
+		// moves no status and no exit code (ADR-0014).
+		if len(pack.Coverage) > 0 {
+			covered := 0
+			for _, probe := range pack.Coverage {
+				if probe.Status == result.MatrixProbeCovered {
+					covered++
+				}
+			}
+			fmt.Fprintf(a.out, "  coverage: %d/%d derived probes have a row expecting them\n", covered, len(pack.Coverage))
+			for _, probe := range pack.Coverage {
+				if probe.Status != result.MatrixProbeMissing {
+					continue
+				}
+				fmt.Fprintf(a.out, "    %s: %s\n", display.Sanitize(probe.Probe), display.Sanitize(probe.Detail))
+			}
+		}
 	}
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	fmt.Fprintln(a.out, "A mismatching row is a statement about the pack and the row, not about this runtime.")

@@ -187,6 +187,17 @@ A row with a disposition passes when the disposition produced canonicalizes, und
 same bytes as the row's. A row with a class passes when the evaluation is refused with that class,
 and with that phase when the row names one.
 
+Beside the rows, `packs test` reports **coverage**: the probe classes your pack's own declarations
+derive — one per declared outcome, then `not-applicable`, `missing-required-evidence`, `unknown`,
+`conflict`, `exception-escalation`, and `no-match`, each only where the pack makes it reachable —
+and which of them some row's expectation witnesses. Coverage informs and never gates: a missing
+probe is a fact about what your rows expect, not a failed row. The derivation follows reachable
+behavior, not the `test_pack` prompt's list — two of the prompt's probes (forced-outcome,
+ordered-comparison) cannot be witnessed by an expectation and are not derived, and
+`exception-escalation` and `no-match` are derived though the prompt's list does not name them. A
+covered matrix is one that probes every derivable behavior; whether the expectations are *right* is
+still yours to judge against the policy text (ADR-0014).
+
 ### Review
 
 **Approval is the pull request.** There is no approval state in the file, no `approved: true`, and
@@ -211,7 +222,8 @@ from one the configuration never asked for.
 
 A pack that declares no matrix is reported **skipped**, never passed — and a run in which no row ran
 at all is reported `skipped` and exits `1`, so a project with no matrices anywhere cannot get a green
-gate for a suite that tested nothing.
+gate for a suite that tested nothing. The coverage report never moves the exit code: a green gate
+with missing probes is a passing suite that has not probed everything, and the report says which.
 
 
 To reach one decision from a shell without a path, name it:

@@ -582,3 +582,47 @@ func TestEveryEvaluationPayloadEchoesTheEvaluatedPacksIdentity(t *testing.T) {
 		t.Fatalf("the corpus must have rows to assert about: %d resolved, %d refused, %d rows", resolved, refused, len(corpus.Cases))
 	}
 }
+
+// Coverage is reported beside the rows on both surfaces and moves no exit
+// code: a passing run with missing probes still exits 0, because a missing
+// probe is a fact about what the rows expect, not a failed row (ADR-0014).
+func TestPacksTestReportsCoverageWithoutGatingOnIt(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"packs", "test", "--config", oneGoodProject(t), "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var run result.PackTest
+	if err := json.Unmarshal([]byte(stdout), &run); err != nil {
+		t.Fatal(err)
+	}
+	if len(run.Packs[0].Coverage) == 0 {
+		t.Fatalf("a loaded matrix carries its coverage: %+v", run.Packs[0])
+	}
+	missing := 0
+	for _, probe := range run.Packs[0].Coverage {
+		if probe.Status == result.MatrixProbeMissing {
+			missing++
+		}
+	}
+	if missing == 0 {
+		t.Fatalf("the fixture matrix does not witness every probe, and the report must say so: %+v", run.Packs[0].Coverage)
+	}
+
+	// The human surface prints the exact count and details only missing probes,
+	// as it details only mismatching rows: the fixture pack derives seven
+	// probes and its matrix witnesses exactly one, and the covered probe's
+	// witness line stays out of the human output.
+	code, stdout, stderr = runTest(t, []string{"packs", "test", "--config", oneGoodProject(t)}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "coverage: 1/7 derived probes have a row expecting them") {
+		t.Fatalf("the human surface must state the exact coverage count: %q", stdout)
+	}
+	if !strings.Contains(stdout, "No row expects") {
+		t.Fatalf("a missing probe gets its detail line: %q", stdout)
+	}
+	if strings.Contains(stdout, "expects it.") {
+		t.Fatalf("a covered probe gets no detail line: %q", stdout)
+	}
+}
