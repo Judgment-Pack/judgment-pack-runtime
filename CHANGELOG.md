@@ -2,6 +2,18 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`author_graph` grows the testing and declaration steps** (ADR-0008's surface; method text
+  only): a new step walks writing the graph matrix and running `experimental graph test` —
+  `expectedNodes` is what pins an upstream node, the coverage report informs and never gates,
+  expectations come from the source statement and never from a run, and a probe that cannot be
+  constructed is a question for the policy text, not a row to force — and the hand-over step now
+  proposes the `jpack.json` graphs entry (configVersion `"2"`, ADR-0017) beside the document,
+  with the human committing the configuration edit exactly as they commit the graph. No
+  evaluation surface changes. The conformance claim is unaffected and stated, in full and only,
+  in `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.10.0 - 2026-07-30
 
 - **Declare graphs in `jpack.json`, and walk them like matrices** (ADR-0017): `configVersion`

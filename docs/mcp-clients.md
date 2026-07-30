@@ -114,7 +114,7 @@ works without them.
 | `fix_pack` | Repairing a non-conformant pack from the validator's diagnostics, in carrier → structural → semantic order |
 | `explain_disposition` | Narrating an evaluation payload strictly from the record it carries — the authoritative disposition, the informative (possibly partial) `trace[]`, the pack's members: reproduce the complete reason set, echo the handoff as recorded, and never soften or extend the disposition |
 | `present_pack` | Presenting one pack to an audience, grounded in the document alone: every statement traceable to a member, the representation labeled as one reading, omissions stated, semantics kept the format's — and no outcome ever simulated in place of an evaluation |
-| `author_graph` | Composing existing packs into an experimental graph document: declare only relationships the source states, check both ends of every verbatim edge, record what cannot be declared, validate to exit 0, and hand the proposal to a human — the packs themselves are never edited |
+| `author_graph` | Composing existing packs into an experimental graph document: declare only relationships the source states, check both ends of every verbatim edge, record what cannot be declared, validate to exit 0, give the graph its rows and read the coverage report, and hand the proposal — the `jpack.json` declaration included — to a human; the packs themselves are never edited |
 
 Following a prompt does not make a pack conformant — only validation decides that — and the
 documents you produce are yours; the runtime stores and interprets nothing (ADR-0008).

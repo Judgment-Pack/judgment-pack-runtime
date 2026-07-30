@@ -472,8 +472,25 @@ func buildAuthorGraph(args map[string]string) string {
    to exit 0 -- and "jpack experimental graph explain <file>" prints the evaluation plan
    without evaluating anything, which is the artifact a reviewer reads beside the document.
 
-6. HAND IT OVER. Deliver the graph document, the plan, and your residue notes together, for
-   review exactly as a pack is reviewed. You propose; the human commits.
+6. GIVE THE GRAPH ITS ROWS, where a terminal is available. Write a graph matrix --
+   {"cases":[{"id","inputs","expectedDisposition"|"expectedErrorClass"[,"expectedNodes"]}]} --
+   and run "jpack experimental graph test <file> --rows <rows> --config <jpack.json>": every
+   disposition is compared byte for byte, and expectedNodes is what pins an UPSTREAM node,
+   because a row that checks only the headline says nothing about the decision that fed it.
+   expectedNodes rides only beside expectedDisposition -- a refused run produces no node
+   dispositions to compare. The report's coverage block lists the probes the graph and its
+   nodes' packs derive and which of them no row expects; it informs and never gates.
+   Expectations come from the source statement, never from a run -- a run only confirms the
+   encoding -- and a probe you cannot construct is a question for the policy text, not a row
+   to force. The rows run through the experimental evaluator, whose conformance claim is
+   stated, in full and only, in CONFORMANCE.md.
+
+7. HAND IT OVER. Deliver the graph document, the plan, the rows, and your residue notes
+   together, for review exactly as a pack is reviewed -- and propose, beside them, the
+   jpack.json entry that makes the suite a project gate: under configVersion "2" a graphs
+   entry names the document and its rows, and "jpack experimental graph test" with no
+   argument then walks every declared graph. You propose; the human commits, the
+   configuration edit included.
 
 (Method guidance from the judgment-pack runtime, non-normative and for an experimental
 surface: the graph format may change or be removed without compatibility promise, no graph is
