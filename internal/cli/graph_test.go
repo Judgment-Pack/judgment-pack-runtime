@@ -274,6 +274,24 @@ func TestGraphTestCommand(t *testing.T) {
 	if output.ConformanceClaimReference != result.EvaluationClaimReference || !strings.Contains(output.Label, "graph matrix") {
 		t.Fatalf("the labels must be carried: %+v", output)
 	}
+	if len(output.Coverage) != 13 {
+		t.Fatalf("the fixture derives thirteen probes: %+v", output.Coverage)
+	}
+
+	// The human surface prints the coverage block, and missing probes move
+	// nothing: the run above already exited 0 with probes missing, and the
+	// exact count line is pinned so the informs-never-gates block is a
+	// deliberate edit, never drift (ADR-0016).
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "test", graphPath, "--rows", rowsPath, "--config", configPath}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("missing probes must not gate: exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "coverage: 7/13 derived probes have a row expecting them") {
+		t.Fatalf("the human surface carries the count line: %q", stdout)
+	}
+	if !strings.Contains(stdout, "node:screening:missing-required-evidence:") {
+		t.Fatalf("a missing probe gets its detail line: %q", stdout)
+	}
 
 	// A mismatching matrix exits 1 and the human surface details it.
 	broken := strings.Replace(graphFixture(t, "onboarding.rows.json"), `"outcomeId": "approve"`, `"outcomeId": "decline"`, 1)

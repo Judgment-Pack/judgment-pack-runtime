@@ -2,6 +2,25 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Report derived coverage in `experimental graph test`** (ADR-0016): the payload carries a
+  `coverage` array beside its rows — per node, ADR-0014's own pack derivation renamed
+  `node:<nodeId>:<packProbe>`, witnessed by a row's `expectedNodes` entry and, for the declared
+  result node, by the row's headline expectation (the composite headline is that node's
+  disposition echoed, so it is one probe family, not two); per edge, `edge:<index>:resolved` and
+  `edge:<index>:unresolved`, each derived only while the upstream's declarations can reach that
+  branch and witnessed by the upstream node's expected disposition kind. One graph-specific
+  narrowing: an edge-fed required requirement can never be absent under the default
+  `onUnresolved` — a caller entry for an edge-fed requirement is refused, so the state set is
+  closed — and its `missing-required-evidence` probe is then not derived rather than pretended
+  to. Coverage informs and never gates: no status or exit code moves, witnesses pass the same
+  strict disposition gate every comparison shares, and what ran never witnesses — only what the
+  rows expect. `coverage` is an additive member, so `outputVersion` is unchanged. The shipped
+  fixture's rows now pin the screening node their unresolved row is named for — a fixture
+  defect this report found. The conformance claim is unaffected and stated, in full and only,
+  in `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.9.0 - 2026-07-30
 
 - **Add `experimental graph test`**: run a graph matrix — rows carrying one inputs document and

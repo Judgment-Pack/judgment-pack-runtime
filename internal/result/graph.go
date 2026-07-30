@@ -227,6 +227,23 @@ type GraphTestRow struct {
 // the graph labels beside them, because both surfaces made it: the rows ran
 // through the experimental composition, and each node's disposition through
 // the experimental evaluator.
+//
+// Coverage reuses MatrixProbe unchanged, under a graph-owned probe grammar
+// (MatrixProbe itself stays surface-agnostic): "node:<nodeId>:<packProbe>" is
+// one node's pack-level probe — witnessed by a row's expectedNodes entry for
+// that node, and for the declared result node also by the row's headline
+// expectation, which is that node's disposition echoed — and
+// "edge:<index>:resolved" / "edge:<index>:unresolved" are one edge's two
+// branches, witnessed by the upstream node's expected disposition kind. Node
+// ids are lowercase-kebab per the graph schema, so the colon namespacing is
+// unambiguous. The member is present when some node's pack derived a probe,
+// and absent when no node's pack could be read or the evaluator admitted none
+// — never a statement that the rows did not load, which is a refusal carrying
+// no payload at all. Mismatched rows still witness, because coverage reads
+// expectations, which exist whether or not they held. It moves no status and
+// no exit code (ADR-0014's invariant, inherited by ADR-0016), and it is
+// additive, so outputVersion is unchanged by the VERSIONING.md machine-output
+// rules.
 type GraphTest struct {
 	OutputVersion             string         `json:"outputVersion"`
 	Tool                      Tool           `json:"tool"`
@@ -245,4 +262,5 @@ type GraphTest struct {
 	GraphVersion              string         `json:"graphVersion"`
 	Summary                   SuiteSummary   `json:"summary"`
 	Rows                      []GraphTestRow `json:"rows"`
+	Coverage                  []MatrixProbe  `json:"coverage,omitempty"`
 }

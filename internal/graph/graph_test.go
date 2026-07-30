@@ -778,3 +778,273 @@ func TestGraphTestPreconditions(t *testing.T) {
 		t.Fatalf("zero rows never yield a clean report: %+v", failure)
 	}
 }
+
+// The fixture derives thirteen probes — six for screening, five for
+// onboarding (its required requirement is edge-fed with the default
+// onUnresolved, so missing-required-evidence is not derivable), two for the
+// edge — and the shipped rows witness exactly seven of them. The exact
+// ordered list is pinned so a derivation change is a deliberate edit here,
+// never drift.
+func TestGraphCoverageDerivesNodeAndEdgeProbes(t *testing.T) {
+	loaded := fixtureProject(t)
+	rows, failure := LoadRows(fixtureBytes(t, "onboarding.rows.json"), "onboarding.rows.json")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	expected := []struct {
+		probe  string
+		status string
+	}{
+		{"node:screening:outcome:clear", result.MatrixProbeCovered},
+		{"node:screening:outcome:hit", result.MatrixProbeMissing},
+		{"node:screening:missing-required-evidence", result.MatrixProbeMissing},
+		{"node:screening:unknown", result.MatrixProbeCovered},
+		{"node:screening:conflict", result.MatrixProbeMissing},
+		{"node:screening:no-match", result.MatrixProbeMissing},
+		{"node:onboarding:outcome:approve", result.MatrixProbeCovered},
+		{"node:onboarding:outcome:decline", result.MatrixProbeCovered},
+		{"node:onboarding:unknown", result.MatrixProbeCovered},
+		{"node:onboarding:conflict", result.MatrixProbeMissing},
+		{"node:onboarding:no-match", result.MatrixProbeMissing},
+		{"edge:0:resolved", result.MatrixProbeCovered},
+		{"edge:0:unresolved", result.MatrixProbeCovered},
+	}
+	if len(output.Coverage) != len(expected) {
+		t.Fatalf("%d probes: %+v", len(output.Coverage), output.Coverage)
+	}
+	for index, want := range expected {
+		got := output.Coverage[index]
+		if got.Probe != want.probe || got.Status != want.status {
+			t.Fatalf("probe %d = %+v, want %s %s", index, got, want.probe, want.status)
+		}
+	}
+	// Covered details name their witness: a node probe carries the node
+	// prefix, an edge probe the witness label alone, and the result node is
+	// witnessed by headlines.
+	if output.Coverage[0].Detail != `Node "screening" (pack "sanctions-screening"): Row "clear-approves" expects it.` {
+		t.Fatalf("node witness detail: %q", output.Coverage[0].Detail)
+	}
+	if output.Coverage[6].Detail != `Node "onboarding" (pack "vendor-onboarding"): Row "clear-approves" (headline) expects it.` {
+		t.Fatalf("headline witness detail: %q", output.Coverage[6].Detail)
+	}
+	if output.Coverage[12].Detail != `Row "unresolved-screening-escalates" expects it.` {
+		t.Fatalf("edge witness detail: %q", output.Coverage[12].Detail)
+	}
+	// Coverage moved nothing: the run passed on its rows alone.
+	if output.Status != "passed" || output.Summary.Passed != 3 {
+		t.Fatalf("coverage must not gate: %+v", output.Summary)
+	}
+}
+
+// A row with a headline and no expectedNodes still witnesses the declared
+// result node — the headline is that node's disposition echoed, not a probe
+// family of its own — and coverage reads expectations, not results: a
+// mismatching row's legal expectation witnesses, and a run that leaves a node
+// unresolved witnesses nothing unless some row expects that.
+func TestGraphCoverageWitnessesExpectationsOnly(t *testing.T) {
+	loaded := fixtureProject(t)
+	rows := Rows{Cases: []RowCase{{
+		ID:     "headline-only",
+		Inputs: json.RawMessage(happyInputs),
+		// Deliberately wrong for these inputs — the run approves — and legal,
+		// so it mismatches AND witnesses outcome:decline.
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"decline","reasons":[],"handoff":{"state":"none"}}`),
+	}, {
+		ID: "unresolved-run-pins-nothing",
+		// The run leaves both nodes unresolved, and the row expects none of it.
+		Inputs:              json.RawMessage(`{"screening":{"evidence":{"screening-record":"present"}}}`),
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`),
+	}}}
+	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if output.Status != "mismatch" {
+		t.Fatalf("both rows mismatch: %+v", output.Summary)
+	}
+	byProbe := map[string]string{}
+	for _, probe := range output.Coverage {
+		byProbe[probe.Probe] = probe.Status
+	}
+	if byProbe["node:onboarding:outcome:decline"] != result.MatrixProbeCovered {
+		t.Fatalf("a mismatching row's legal expectation still witnesses: %+v", output.Coverage)
+	}
+	if byProbe["node:screening:unknown"] != result.MatrixProbeMissing || byProbe["edge:0:unresolved"] != result.MatrixProbeMissing {
+		t.Fatalf("what ran does not witness — only expectations do: %+v", output.Coverage)
+	}
+	for _, probe := range output.Coverage {
+		if probe.Status == result.MatrixProbeCovered && !strings.Contains(probe.Detail, "(headline)") {
+			t.Fatalf("every witness here is a headline: %+v", probe)
+		}
+	}
+}
+
+// An expectation the comparator would refuse witnesses nothing: the witness
+// gate is the comparator's own decoder, so a probe never reads covered on a
+// row that mismatches by construction. An error-class row witnesses nothing
+// either — a refused run produces no disposition.
+func TestGraphCoverageRefusesIllegalWitnesses(t *testing.T) {
+	loaded := fixtureProject(t)
+	rows := Rows{Cases: []RowCase{{
+		ID:                  "illegal-node-expectation",
+		Inputs:              json.RawMessage(happyInputs),
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`),
+		ExpectedNodes: map[string]json.RawMessage{
+			"screening": json.RawMessage(`{"kind":"outcome","outcomeId":"clear","reasons":["unknown"],"handoff":{"state":"none"}}`),
+		},
+	}, {
+		ID:                 "error-row",
+		Inputs:             json.RawMessage(happyInputs),
+		ExpectedErrorClass: result.ClassPackNotConformant,
+	}}}
+	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	for _, probe := range output.Coverage {
+		if probe.Probe == "node:screening:outcome:clear" && probe.Status == result.MatrixProbeCovered {
+			t.Fatalf("an illegal expectation must not witness: %+v", probe)
+		}
+	}
+}
+
+// The one graph-specific narrowing: an edge-fed required requirement's state
+// set is {"present", the edge's onUnresolved} — nothing can widen it, because
+// a caller entry for an edge-fed requirement is refused — so with the default
+// onUnresolved the requirement can never be absent and the
+// missing-required-evidence probe is not derived. Declaring "absent" restores
+// it, and reason unknown survives either way through the pack's own
+// escalating rules.
+func TestGraphCoverageSuppressesUnreachableEvidenceProbe(t *testing.T) {
+	loaded := fixtureProject(t)
+	rows, failure := LoadRows(fixtureBytes(t, "onboarding.rows.json"), "onboarding.rows.json")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	names := map[string]bool{}
+	for _, probe := range output.Coverage {
+		names[probe.Probe] = true
+	}
+	if names["node:onboarding:missing-required-evidence"] {
+		t.Fatalf("the edge-fed requirement can never be absent: %+v", output.Coverage)
+	}
+	if !names["node:onboarding:unknown"] {
+		t.Fatalf("reason unknown stays reachable through the escalating rules: %+v", output.Coverage)
+	}
+
+	absent := strings.Replace(string(fixtureBytes(t, "onboarding.graph.json")),
+		`"id": "screening-outcome"`,
+		`"id": "screening-outcome", "onUnresolved": "absent"`, 1)
+	document, loadFailure := Load([]byte(absent), "onboarding.graph.json")
+	if loadFailure != nil {
+		t.Fatal(loadFailure.Message)
+	}
+	output, failure = Test(loaded, newEngine(t), document, "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	names = map[string]bool{}
+	for _, probe := range output.Coverage {
+		names[probe.Probe] = true
+	}
+	if !names["node:onboarding:missing-required-evidence"] {
+		t.Fatalf(`onUnresolved "absent" makes absence reachable again: %+v`, output.Coverage)
+	}
+	if !names["node:onboarding:unknown"] {
+		t.Fatalf("reason unknown still has its rule door: %+v", output.Coverage)
+	}
+}
+
+// An edge probe never claims a behavior the upstream's declarations cannot
+// reach: an upstream that can always resolve — no applicability, no required
+// evidence, no escalating onUnknown, one distinct rule outcome, a declared
+// fallback — derives no unresolved branch. And a node whose pack is not
+// admitted derives nothing at all, silently: no node probes and no edge
+// probes name it, because a skipped-probe status would be a third coverage
+// state ADR-0014 refused.
+func TestGraphCoverageFollowsUpstreamDeclarations(t *testing.T) {
+	var pack map[string]any
+	if err := json.Unmarshal(fixtureBytes(t, "sanctions-screening-0.1.0.pack.json"), &pack); err != nil {
+		t.Fatal(err)
+	}
+	requirements := pack["evidenceRequirements"].([]any)
+	requirements[0].(map[string]any)["required"] = false
+	rules := pack["rules"].([]any)
+	for _, rule := range rules {
+		entry := rule.(map[string]any)
+		entry["onUnknown"] = "ignore"
+	}
+	rules[1].(map[string]any)["outcome"] = "clear"
+	pack["fallbackOutcome"] = "clear"
+	alwaysResolves, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"1","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(alwaysResolves),
+		"vendor-onboarding-0.1.0.pack.json":   string(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json")),
+	})
+	rows := Rows{Cases: []RowCase{{
+		ID:                  "any",
+		Inputs:              json.RawMessage(happyInputs),
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`),
+	}}}
+	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	names := map[string]bool{}
+	for _, probe := range output.Coverage {
+		names[probe.Probe] = true
+	}
+	if names["edge:0:unresolved"] {
+		t.Fatalf("an upstream that always resolves has no unresolved branch: %+v", output.Coverage)
+	}
+	if !names["edge:0:resolved"] {
+		t.Fatalf("the resolved branch stays derivable: %+v", output.Coverage)
+	}
+
+	// Break the upstream pack: it is no longer admitted, so neither its node
+	// probes nor the edge's exist, and the downstream node still derives.
+	delete(pack, "title")
+	broken, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded = writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"1","packs":{
+		  "sanctions-screening":{"path":"sanctions-screening-0.1.0.pack.json"},
+		  "vendor-onboarding":{"path":"vendor-onboarding-0.1.0.pack.json"}}}`,
+		"sanctions-screening-0.1.0.pack.json": string(broken),
+		"vendor-onboarding-0.1.0.pack.json":   string(fixtureBytes(t, "vendor-onboarding-0.1.0.pack.json")),
+	})
+	output, failure = Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	for _, probe := range output.Coverage {
+		if strings.HasPrefix(probe.Probe, "node:screening:") || strings.HasPrefix(probe.Probe, "edge:") {
+			t.Fatalf("an unadmitted pack derives nothing: %+v", probe)
+		}
+	}
+	found := false
+	for _, probe := range output.Coverage {
+		if strings.HasPrefix(probe.Probe, "node:onboarding:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the downstream node still derives its own probes: %+v", output.Coverage)
+	}
+}

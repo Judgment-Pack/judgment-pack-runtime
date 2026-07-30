@@ -25,6 +25,7 @@
       },
       "expectedDisposition": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } },
       "expectedNodes": {
+        "screening": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } },
         "onboarding": { "kind": "unresolved", "reasons": ["unknown"], "handoff": { "state": "requested", "triggeredBy": ["unknown"] } }
       }
     }

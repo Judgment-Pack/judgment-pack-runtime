@@ -141,6 +141,15 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 // composite headline, and every node the row names), or the §8.4 class and
 // phase the row expects. What this reports is what a project's own rows did;
 // it is not the specification's corpus, and no JPS version defines a graph.
+//
+// Beside the rows it reports coverage (ADR-0016): the probes the graph's
+// declarations derive, and which of them some row's expectation witnesses.
+// The derivation reads each node's pack once per run — not per row — through
+// the same jailed handle the evaluation reads it through, so a pack that
+// cannot be read derives no probes rather than failing the run. Coverage sits
+// after the row loop because it reads expectations, which exist whether or
+// not they held; it touches neither Status nor Summary, and a run with every
+// probe missing still exits by its rows alone.
 func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, graphPath, rowsPath string, rows Rows, options Options) (result.GraphTest, *evaluation.Failure) {
 	// LoadRows refuses an empty matrix, and this precondition is enforced here
 	// too so no caller can obtain a clean 0/0 report over nothing.
@@ -192,6 +201,7 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		}
 		output.Rows = append(output.Rows, outcome)
 	}
+	output.Coverage = coverage(loaded, engine, doc, rows, options)
 	return output, nil
 }
 

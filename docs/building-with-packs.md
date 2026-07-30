@@ -346,7 +346,10 @@ surface is an experimental, non-normative prototype of that proposal, which may 
 removed without compatibility promise.
 
 The gain is that "enough to decide" becomes a reviewed, versioned, testable artifact with its own
-matrix, instead of a threshold in a prompt.
+matrix, instead of a threshold in a prompt. The wiring is testable the same way: `jpack
+experimental graph test` runs a graph matrix and reports the same kind of derived coverage `packs
+test` does — over each node's probes and each edge's resolved and unresolved branches — and, like
+all coverage here, it informs and never gates.
 
 ## What this runtime still never does
 

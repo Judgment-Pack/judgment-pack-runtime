@@ -937,3 +937,84 @@ func TestMatrixCoverageWitnessesEveryProbeClass(t *testing.T) {
 		t.Fatalf("a pack deriving no probe carries nil coverage: %+v", probes)
 	}
 }
+
+// The exported derivation is the pack derivation: PackProbes over witnesses
+// built the way matrixCoverage builds them yields byte-identical probes, so
+// the refactor that opened the seam for the graph surface (ADR-0016) is
+// provably behavior-preserving, and the zero Reach narrows nothing.
+func TestPackProbesMatchesMatrixCoverage(t *testing.T) {
+	pack := `{"specVersion":"x","outcomes":[{"id":"a","description":"d"},{"id":"b","description":"d"},{"id":"ghost","description":"d"}],
+	  "applicability":{"op":"fact","path":"/x","operator":"exists"},
+	  "evidenceRequirements":[{"id":"r","description":"d","required":true}],
+	  "rules":[{"id":"one","outcome":"a","onUnknown":"escalate"},{"id":"two","outcome":"b","onUnknown":"escalate"}]}`
+	root := PackRoot([]byte(pack))
+	if root == nil {
+		t.Fatal("the inline pack must decode")
+	}
+	matrix := Matrix{Cases: []evaluation.MatrixCase{
+		{ID: "good", ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"a","reasons":[],"handoff":{"state":"none"}}`)},
+		{ID: "illegal", ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"b","reasons":["unknown"],"handoff":{"state":"none"}}`)},
+		{ID: "error-row"},
+	}}
+	direct := matrixCoverage(root, matrix)
+	witnesses := []ProbeWitness{}
+	for _, row := range matrix.Cases {
+		if len(row.ExpectedDisposition) == 0 {
+			continue
+		}
+		if witness, ok := DecodeWitness(`Row "`+row.ID+`"`, row.ExpectedDisposition); ok {
+			witnesses = append(witnesses, witness)
+		}
+	}
+	exported := PackProbes(root, witnesses, Reach{})
+	if !slices.Equal(direct, exported) {
+		t.Fatalf("the two derivations diverged:\n%+v\n%+v", direct, exported)
+	}
+	// The ghost outcome is declared but nothing references it: no probe.
+	for _, probe := range exported {
+		if probe.Probe == "outcome:ghost" {
+			t.Fatalf("an unreferenced outcome derives no probe: %+v", exported)
+		}
+	}
+}
+
+// Reach narrows exactly the two evidence doors. A required requirement that
+// can only be present or unknown cannot be missing; one that can only be
+// present or absent keeps missing-required-evidence, and reason unknown then
+// survives only through its other doors.
+func TestReachNarrowsTheEvidenceDoors(t *testing.T) {
+	// One required requirement, no applicability, no escalating onUnknown: the
+	// unknown reason's only door is the evidence side.
+	pack := `{"outcomes":[{"id":"a","description":"d"}],
+	  "evidenceRequirements":[{"id":"r","description":"d","required":true}],
+	  "rules":[{"id":"one","outcome":"a","onUnknown":"ignore"}],"fallbackOutcome":"a"}`
+	root := PackRoot([]byte(pack))
+
+	unnarrowed := ReachableReasons(root, Reach{})
+	if !slices.Contains(unnarrowed, evaluation.ReasonMissingEvidence) || !slices.Contains(unnarrowed, evaluation.ReasonUnknown) {
+		t.Fatalf("the zero Reach narrows nothing: %v", unnarrowed)
+	}
+	neverAbsent := ReachableReasons(root, Reach{EvidenceStates: func(string) []string { return []string{"present", "unknown"} }})
+	if slices.Contains(neverAbsent, evaluation.ReasonMissingEvidence) {
+		t.Fatalf("a requirement that cannot be absent cannot be missing: %v", neverAbsent)
+	}
+	if !slices.Contains(neverAbsent, evaluation.ReasonUnknown) {
+		t.Fatalf("unknown stays reachable through the evidence door: %v", neverAbsent)
+	}
+	neverUnknown := ReachableReasons(root, Reach{EvidenceStates: func(string) []string { return []string{"present", "absent"} }})
+	if !slices.Contains(neverUnknown, evaluation.ReasonMissingEvidence) {
+		t.Fatalf("absence reachable keeps the missing probe: %v", neverUnknown)
+	}
+	if slices.Contains(neverUnknown, evaluation.ReasonUnknown) {
+		t.Fatalf("with the evidence door closed and no other door, unknown is unreachable: %v", neverUnknown)
+	}
+
+	// An escalating rule reopens unknown regardless of the narrowing.
+	escalating := PackRoot([]byte(`{"outcomes":[{"id":"a","description":"d"}],
+	  "evidenceRequirements":[{"id":"r","description":"d","required":true}],
+	  "rules":[{"id":"one","outcome":"a","onUnknown":"escalate"}],"fallbackOutcome":"a"}`))
+	reopened := ReachableReasons(escalating, Reach{EvidenceStates: func(string) []string { return []string{"present", "absent"} }})
+	if !slices.Contains(reopened, evaluation.ReasonUnknown) {
+		t.Fatalf("the rule door is untouched by evidence narrowing: %v", reopened)
+	}
+}
