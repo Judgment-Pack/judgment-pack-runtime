@@ -257,7 +257,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
-	command.Flags().StringVar(&factsPath, "facts", factsPath, "JSON facts document: a file path, or - for standard input (required)")
+	command.Flags().StringVar(&factsPath, "facts", factsPath, "JSON facts document: a file path, or - for standard input (required). The nested document fact pointers descend into: for /request/type write {\"request\":{\"type\":\"data-access\"}} -- a flat member literally named \"/request/type\" does not resolve that pointer")
 	command.Flags().StringVar(&evidencePath, "evidence", evidencePath, "optional tri-state evidence availability: {\"<requirement-id>\": \"present\"|\"absent\"|\"unknown\"}")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports (repeatable)")
 	command.Flags().BoolVar(&quantifiers, "rfc0008-quantifiers", quantifiers, "DRAFT-RFC PROTOTYPE: admit the spec's RFC 0008 (Draft) collection quantifiers -- exists, every, uniform -- in conditions. A pack using them is NOT valid under any published JPS version; spec validate rejects it, and every successful evaluation payload produced this way is labeled a draft-RFC prototype (a refusal is reported as an operational error and carries no such label)")
