@@ -117,7 +117,13 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	}
 	// Coverage reads the rows' expectations, which exist whether or not they
 	// held, so mismatched rows are covered rows too and a mismatching entry
-	// still reports what its matrix fails to probe.
-	report.Coverage = matrixCoverage(packRoot(pack), matrix)
+	// still reports what its matrix fails to probe. It is derived only for a
+	// pack the evaluator admits: a pack the preflight refuses never reaches
+	// §8, so a derivation over its declarations would describe behavior
+	// nothing can reach — and its matrix, rightly full of error rows, would
+	// be told it misses probes it can never cover.
+	if evaluator.Admits(pack) {
+		report.Coverage = matrixCoverage(packRoot(pack), matrix)
+	}
 	return report
 }

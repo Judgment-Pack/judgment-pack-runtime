@@ -1,7 +1,6 @@
 package project
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -132,8 +131,11 @@ func matrixCoverage(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 
 // expectedRow is the slice of one matrix row coverage reads: the row's id and
 // the disposition it expects. A row that expects an error class expects no
-// disposition and can witness no probe; a row whose expected disposition does
-// not decode is dropped here and fails its own byte comparison anyway.
+// disposition and can witness no probe; a row whose expected disposition is
+// not a legal §8.3 disposition is dropped here through the same strict gate
+// the row comparator applies — a looser decode would accept as a witness the
+// exact expectation the comparison refuses, and a probe would read covered on
+// a row that mismatches by construction.
 type expectedRow struct {
 	id        string
 	kind      string
@@ -147,19 +149,15 @@ func expectedRows(matrix Matrix) []expectedRow {
 		if len(row.ExpectedDisposition) == 0 {
 			continue
 		}
-		var decoded struct {
-			Kind      string   `json:"kind"`
-			OutcomeID string   `json:"outcomeId"`
-			Reasons   []string `json:"reasons"`
-		}
-		if err := json.Unmarshal(row.ExpectedDisposition, &decoded); err != nil {
+		expected, err := evaluation.DecodeDisposition(row.ExpectedDisposition)
+		if err != nil {
 			continue
 		}
 		reasons := map[string]bool{}
-		for _, reason := range decoded.Reasons {
+		for _, reason := range expected.Reasons {
 			reasons[reason] = true
 		}
-		rows = append(rows, expectedRow{id: row.ID, kind: decoded.Kind, outcomeID: decoded.OutcomeID, reasons: reasons})
+		rows = append(rows, expectedRow{id: row.ID, kind: expected.Kind, outcomeID: expected.OutcomeID, reasons: reasons})
 	}
 	return rows
 }

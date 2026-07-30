@@ -233,6 +233,18 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 	return evaluation, nil
 }
 
+// Admits reports whether this evaluator would admit the pack itself — full
+// document conformance, the one declared specVersion this contract covers,
+// and no required extension outside an empty supported set — before any facts
+// or evidence document is consulted. It exists for surfaces that must know
+// whether §8 is reachable at all without running an evaluation: a coverage
+// derivation over a pack the preflight refuses would describe behavior
+// nothing can reach.
+func (e *Engine) Admits(pack []byte) bool {
+	validated, _, unsupported, failure := e.conformance(pack, Options{})
+	return failure == nil && unsupported == nil && declaredSpecVersion(validated.SpecVersion) == nil
+}
+
 // packIdentity reads one identity member off the pack that was evaluated. Both
 // members are required by §§3.1–3.2 and the document reaching here has full
 // document conformance, so the empty string is unreachable rather than a

@@ -768,12 +768,14 @@ type PackValidation struct {
 // 8785 canonical disposition byte for byte, or the expected §8.4 error class and
 // phase.
 //
-// Coverage is present when the matrix loaded as rows and the pack's
-// declarations derive at least one probe — mismatched rows included, because
-// it reads the rows' expectations, which exist whether or not they held. It
-// never moves Status — a missing probe is a fact about what the rows expect,
-// not a failed row (ADR-0014). An additive member, so outputVersion stays "2"
-// by the same two VERSIONING.md rules ADR-0012 cites.
+// Coverage is present when the matrix loaded as rows, the evaluator admits
+// the pack — one the preflight refuses never reaches §8, so no derivation
+// describes it — and the pack's declarations derive at least one probe.
+// Mismatched rows are included, because it reads the rows' expectations,
+// which exist whether or not they held. It never moves Status — a missing
+// probe is a fact about what the rows expect, not a failed row (ADR-0014).
+// An additive member, so outputVersion stays "2" by the same two
+// VERSIONING.md rules ADR-0012 cites.
 type PackTestEntry struct {
 	ID          string                 `json:"id"`
 	PackID      string                 `json:"packId"`

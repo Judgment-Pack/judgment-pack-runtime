@@ -770,6 +770,35 @@ func TestMatrixCoverageDerivesProbesFromDeclarations(t *testing.T) {
 	}
 }
 
+// A witness passes the same strict §8.3 gate the row comparator applies: an
+// expectation that is legal JSON but not a legal disposition mismatches by
+// construction, and a looser decode would report a probe covered by a row
+// that can never hold.
+func TestMatrixCoverageRefusesIllegalWitnesses(t *testing.T) {
+	pack := map[string]any{
+		"outcomes":        []any{map[string]any{"id": "allow"}},
+		"rules":           []any{map[string]any{"id": "r1", "outcome": "allow"}},
+		"fallbackOutcome": "allow",
+	}
+	illegal := Matrix{Cases: []evaluation.MatrixCase{{
+		ID:                  "outcome-with-reasons",
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":["unknown"],"handoff":{"state":"none"}}`),
+	}}}
+	for _, probe := range matrixCoverage(pack, illegal) {
+		if probe.Status != result.MatrixProbeMissing {
+			t.Fatalf("an illegal expectation witnesses nothing: %+v", probe)
+		}
+	}
+	legal := Matrix{Cases: []evaluation.MatrixCase{{
+		ID:                  "plain-allow",
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`),
+	}}}
+	probes := matrixCoverage(pack, legal)
+	if len(probes) != 1 || probes[0].Probe != "outcome:allow" || probes[0].Status != result.MatrixProbeCovered {
+		t.Fatalf("the same row with a legal disposition witnesses: %+v", probes)
+	}
+}
+
 // A probe is witnessed by what a row expects, not by what it produced: the
 // first witnessing row is named, a reason witnesses exactly its own probe, an
 // error row witnesses nothing, and a row whose expectation does not decode is

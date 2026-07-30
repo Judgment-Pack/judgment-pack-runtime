@@ -622,6 +622,29 @@ func TestPacksTestReportsCoverageWithoutGatingOnIt(t *testing.T) {
 	if !strings.Contains(stdout, "No row expects") {
 		t.Fatalf("a missing probe gets its detail line: %q", stdout)
 	}
+}
+
+// A pack the evaluator refuses never reaches §8, so no coverage is derived
+// for it: its matrix, rightly full of error rows, is not told it misses
+// probes it can never cover, and the refusal stays the rows' business.
+func TestPacksTestDerivesNoCoverageForARefusedPack(t *testing.T) {
+	pack := `{"specVersion":"0.1.0-draft","id":"https://example.invalid/judgment-packs/stale","version":"0.1.0"}`
+	matrix := `{"matrixVersion":"1","cases":[{"id":"refused","facts":{},"expectedErrorClass":"pack-not-conformant","expectedErrorPhase":"preflight"}]}`
+	config := `{"configVersion":"1","packs":{"stale":{"path":"stale.pack.json","matrix":"stale.matrix.json"}}}`
+	code, stdout, stderr := runTest(t, []string{"packs", "test", "--config", writeProjectFixture(t, config, map[string]string{
+		"stale.pack.json":   pack,
+		"stale.matrix.json": matrix,
+	}), "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var run result.PackTest
+	if err := json.Unmarshal([]byte(stdout), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Packs[0].Status != "passed" || run.Packs[0].Coverage != nil {
+		t.Fatalf("a refused pack passes its error rows and derives no coverage: %+v", run.Packs[0])
+	}
 	if strings.Contains(stdout, "expects it.") {
 		t.Fatalf("a covered probe gets no detail line: %q", stdout)
 	}
