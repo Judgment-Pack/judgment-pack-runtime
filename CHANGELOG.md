@@ -4,6 +4,19 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Add two method prompts, `present_pack` and `author_graph`** (ADR-0008's surface, grown to
+  six): `present_pack` guides presenting one pack to an audience grounded in the document
+  alone — every statement traceable to a member, the representation labeled as one reading,
+  omissions stated, and no outcome ever simulated in place of an evaluation; `author_graph`
+  guides composing existing packs into an experimental graph document — declare only
+  relationships the source states, check both ends of every verbatim edge (a permission is
+  not a performed act), record verbatim what cannot be declared, and hand the proposal to a
+  human, the packs themselves never edited. `author_pack` now names `specVersion`
+  `0.2.0-draft` — the one version the experimental evaluator admits — where it previously
+  named `0.1.0-draft` and steered its own step 7 into a §11 refusal. Method text only; no
+  evaluation surface changes, and the conformance claim is unaffected and stated, in full and
+  only, in `CONFORMANCE.md`, which no line of this entry restates.
+
 - **Report derived matrix coverage in `packs test`** (ADR-0014): each entry whose matrix loaded,
   whose pack the evaluator admits, and whose declarations derive any probe carries a
   `coverage` array — the probe classes the pack's own

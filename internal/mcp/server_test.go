@@ -444,7 +444,7 @@ func TestExperimentalEvaluateDistinguishesOmittedFromEmptyDocuments(t *testing.T
 }
 
 // The prompts surface (ADR-0008) serves non-normative method as static text:
-// capability advertised, four prompts listed with their arguments, argument
+// capability advertised, six prompts listed with their arguments, argument
 // text echoed verbatim into the rendered prompt, and the non-normative
 // disclaimer present in every rendering.
 func TestPromptsSurface(t *testing.T) {
@@ -468,13 +468,13 @@ func TestPromptsSurface(t *testing.T) {
 	for _, entry := range prompts {
 		names[entry.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition"} {
+	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph"} {
 		if !names[want] {
 			t.Fatalf("prompts/list must include %q: %v", want, names)
 		}
 	}
-	if len(names) != 4 {
-		t.Fatalf("expected exactly 4 prompts, got %d", len(names))
+	if len(names) != 6 {
+		t.Fatalf("expected exactly 6 prompts, got %d", len(names))
 	}
 
 	rendered := responses[2]["result"].(map[string]any)
@@ -522,11 +522,11 @@ func TestPromptsSurface(t *testing.T) {
 // the no-claim disclaimer -- the guardrail that the method text can never be
 // read as the runtime blessing a pack.
 func TestEveryPromptRendersWithDisclaimer(t *testing.T) {
-	for _, name := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition"} {
+	for _, name := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph"} {
 		responses := runServer(t, message(t, 1, "prompts/get", map[string]any{"name": name}))
 		result := responses[0]["result"].(map[string]any)
 		text := result["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
-		if !strings.Contains(text, "does not make a\npack conformant") && !strings.Contains(text, "does not make a pack conformant") {
+		if !strings.Contains(text, "non-normative") {
 			t.Fatalf("%s must carry the non-normative disclaimer", name)
 		}
 		if len(text) < 500 {

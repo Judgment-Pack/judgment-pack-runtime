@@ -67,6 +67,30 @@ func promptDefinitions() []promptDefinition {
 			},
 			build: buildExplainDisposition,
 		},
+		{
+			name: "present_pack",
+			description: "Guide a presentation session: render one pack for an audience, grounded in " +
+				"the document alone — every statement traceable to a member, omissions stated, the " +
+				"representation labeled as one reading. Non-normative method guidance; the pack " +
+				"remains the only statement of itself.",
+			arguments: []promptArgument{
+				{Name: "pack", Description: "The pack to present, as JSON text (optional; you may also fetch it with get_pack).", Required: false},
+				{Name: "audience", Description: "Who the presentation is for and what they are deciding (optional).", Required: false},
+			},
+			build: buildPresentPack,
+		},
+		{
+			name: "author_graph",
+			description: "Guide a composition session: declare how existing packs' decisions feed one " +
+				"another as an experimental graph document, and record verbatim what cannot be " +
+				"declared. Non-normative method guidance for an experimental surface that may change " +
+				"or be removed; the graph it helps produce is a proposal for human review.",
+			arguments: []promptArgument{
+				{Name: "relationship", Description: "The policy or system statement relating the decisions (optional).", Required: false},
+				{Name: "packs", Description: "The packs to compose: decision ids from the project's jpack.json, or JSON text (optional).", Required: false},
+			},
+			build: buildAuthorGraph,
+		},
 	}
 }
 
@@ -76,7 +100,8 @@ you produce is yours; this runtime stores nothing and decides nothing.)`
 
 func buildAuthorPack(args map[string]string) string {
 	var b strings.Builder
-	b.WriteString("Encode ONE policy decision as a Judgment Pack (JPS 0.1.0-draft), working in a\n")
+	b.WriteString("Encode ONE policy decision as a Judgment Pack (declare specVersion 0.2.0-draft,\n")
+	b.WriteString("the one version the experimental evaluator admits), working in a\n")
 	b.WriteString("validate-and-fix loop against the judgment-pack tools.\n\n")
 	if policy := strings.TrimSpace(args["policy"]); policy != "" {
 		b.WriteString("The policy to encode:\n\n---\n" + policy + "\n---\n\n")
@@ -85,9 +110,12 @@ func buildAuthorPack(args map[string]string) string {
 	}
 	b.WriteString(`Work in this order:
 
-1. ORIENT. Call get_schema for the format reference and list_examples for the bundled valid
-   fixtures; fetch the one closest to your decision with get_example and use its SHAPE (not its
-   content) as scaffolding. Fixtures are version-pinned conformance cases, not templates.
+1. ORIENT. Call get_schema with spec_version "0.2.0-draft" for the format reference -- the
+   tool's no-argument default serves 0.1.0-draft, which is not the version you are declaring.
+   Then list_examples for the bundled valid fixtures; fetch the one closest to your decision
+   with get_example and use its SHAPE (not its content) as scaffolding. Fixtures are
+   version-pinned 0.1.0-draft conformance cases, not templates: the two drafts share one
+   document format, so the only member your pack declares differently is specVersion.
 
 2. SCOPE. One pack = one decision ("may X be done?"), with the outcomes the policy itself names.
    Agent procedure ("confirm before acting") is not a decision; leave it out. If the policy names a
@@ -343,4 +371,113 @@ func getPrompt(rawParams json.RawMessage) (map[string]any, *rpcError) {
 		}, nil
 	}
 	return nil, &rpcError{Code: codeInvalidParams, Message: "Unknown prompt: " + params.Name}
+}
+
+func buildPresentPack(args map[string]string) string {
+	var b strings.Builder
+	b.WriteString("Present ONE judgment pack to an audience, strictly from the document itself.\n")
+	b.WriteString("The pack is the only statement of what it is; your presentation is one reading\n")
+	b.WriteString("of it, fitted to the people in front of it, and it must say so.\n\n")
+	if pack := strings.TrimSpace(args["pack"]); pack != "" {
+		b.WriteString("The pack to present:\n\n---\n" + pack + "\n---\n\n")
+	} else {
+		b.WriteString("Obtain the document first: call get_pack for it (or read the one you were given).\n\n")
+	}
+	if audience := strings.TrimSpace(args["audience"]); audience != "" {
+		b.WriteString("The audience and their question:\n\n---\n" + audience + "\n---\n\n")
+	}
+	b.WriteString(`Work in this order:
+
+1. GROUND. Every statement you make traces to a member of the document -- a rule's condition,
+   an outcome's description, an escalation target, a source citation. Never present from
+   memory of similar packs, and never merge in policy text the document does not carry: if the
+   audience needs what the pack omits, say the pack omits it.
+
+2. FIT the representation to the audience and their question. A decision table derived from
+   rules[], a narrative walk of one request, a reviewer's checklist of conditions and
+   escalations -- the FORM is yours to choose; the content is the document's. Quote the pack's
+   own id, version, and decision question first, so it is always clear which document this is
+   a presentation of.
+
+3. LABEL, and state omissions. Say what the representation is ("a table derived from the
+   pack's rules, in declaration order") and what it leaves out (rationales, sources,
+   exceptions, the escalation object -- whatever the chosen form drops). An omission stated is
+   a reading; an omission silent is a misrepresentation.
+
+4. KEEP THE SEMANTICS THE FORMAT'S. Conditions are tri-state -- a missing fact is unknown,
+   not false; ordered comparisons hold between decimal strings only; onUnknown: escalate
+   stops a decision rather than guessing. Present declared behavior only, and do not simulate
+   outcomes for hypothetical facts -- an evaluation is the evaluator's to produce, and if the
+   audience wants one, run one and present its payload instead of predicting it.
+
+5. CLOSE WITH WHAT THE DOCUMENT DOES NOT SAY. The pack decides one question; it does not
+   authorize acting on any disposition, rank its own importance, or claim the policy it
+   encodes is right. A presentation that reads stronger than its document has left the record.
+
+(Method guidance from the judgment-pack runtime, non-normative: a presentation is one reading
+of the document, the pack remains the only statement of itself, and only "spec validate" / the
+"validate" tool decides conformance.)`)
+	return b.String()
+}
+
+func buildAuthorGraph(args map[string]string) string {
+	var b strings.Builder
+	b.WriteString("Compose EXISTING judgment packs into ONE experimental graph document -- a declaration\n")
+	b.WriteString("of how one decision's outcome feeds another's inputs. The graph surface is\n")
+	b.WriteString("experimental and may change or be removed; the packs stay exactly as reviewed, and\n")
+	b.WriteString("the graph you produce is a PROPOSAL for a human to review, never something you adopt.\n\n")
+	if relationship := strings.TrimSpace(args["relationship"]); relationship != "" {
+		b.WriteString("The statement relating the decisions:\n\n---\n" + relationship + "\n---\n\n")
+	} else {
+		b.WriteString("Ask for the policy or system statement that relates the decisions if you do not hold it.\n\n")
+	}
+	if packs := strings.TrimSpace(args["packs"]); packs != "" {
+		b.WriteString("The packs to compose:\n\n---\n" + packs + "\n---\n\n")
+	}
+	b.WriteString(`Work in this order:
+
+1. ORIENT. Fetch each pack (get_pack, or the project's jpack.json decision ids) and read what
+   each decision declares: its outcomes, the fact pointers its conditions read, its declared
+   evidence requirements. The graph document's shape, compactly:
+   {"formatVersion":"1","id":"...","version":"0.1.0",
+    "nodes":{"<node>":{"pack":"<decision-id>"}},
+    "edges":[{"from":"<node>","to":"<node>","fact":"/a/pointer",
+              "evidence":{"id":"<requirement-id>","onUnresolved":"unknown"}}],
+    "result":"<node>"}
+   An edge carries a fact device, an evidence device, or both; the full schema is printed by
+   "jpack experimental graph schema" where a terminal is available.
+
+2. DECLARE ONLY WHAT THE SOURCE STATES. An edge exists when the statement says one decision's
+   OUTCOME feeds another decision -- never because composition seems plausible, and never
+   because two packs share a topic. Decisions that relate only through shared facts are not an
+   edge: they read the same world, they do not consume each other.
+
+3. THE EDGE IS VERBATIM, so check both ends. A fact edge writes the upstream outcome id,
+   unchanged, at the declared pointer: confirm the downstream pack's conditions actually read
+   that pointer and compare against those exact ids. Then check the id MEANS what the
+   downstream needs -- a permission is not a performed act, and an entitlement that changes
+   what a later decision may conclude is not a fact its conditions read; neither becomes
+   faithful by being injected. An evidence edge contributes "present" exactly when the
+   upstream produced an outcome; ANY other disposition -- unresolved, and not-applicable
+   too -- contributes its onUnresolved, "unknown" by default, "absent" only when the source
+   says a decision that produced no outcome IS the missing evidence.
+
+4. REFUSING IS A DELIVERABLE. When no faithful edge exists, the correct output is a
+   validating graph with zero edges plus every relating sentence recorded VERBATIM with what
+   you did instead. Never bend an edge's meaning, and never edit a pack to make composition
+   work -- changing a decision is an authoring session, not a composition.
+
+5. VALIDATE AND EXPLAIN, where a terminal is available: "jpack experimental graph validate
+   <file> --config <jpack.json>" reports every problem with its location -- repair and repeat
+   to exit 0 -- and "jpack experimental graph explain <file>" prints the evaluation plan
+   without evaluating anything, which is the artifact a reviewer reads beside the document.
+
+6. HAND IT OVER. Deliver the graph document, the plan, and your residue notes together, for
+   review exactly as a pack is reviewed. You propose; the human commits.
+
+(Method guidance from the judgment-pack runtime, non-normative and for an experimental
+surface: the graph format may change or be removed without compatibility promise, no graph is
+part of the Judgment Pack Specification, and nothing you produce here decides or authorizes
+anything.)`)
+	return b.String()
 }
