@@ -6,8 +6,8 @@ All notable changes to tagged releases are documented here.
 
 - **Report derived matrix coverage in `packs test`** (ADR-0014): each entry whose matrix loaded
   and whose pack derives any probe carries a `coverage` array — the probe classes the pack's own
-  declarations derive (one per
-  declared outcome, then `not-applicable`, `missing-required-evidence`, `unknown`, `conflict`,
+  declarations derive (one per producible
+  declared outcome — one a rule, exception, or fallback names — then `not-applicable`, `missing-required-evidence`, `unknown`, `conflict`,
   `exception-escalation`, and `no-match`, each only where the pack makes it reachable), and
   which of them some row's expected disposition witnesses. Coverage informs and never gates:
   no status or exit code moves, a probe's detail states "no row expects this" and nothing more,

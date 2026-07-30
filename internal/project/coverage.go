@@ -16,8 +16,9 @@ import (
 // probe exists only where the declarations make its behavior reachable: a pack
 // with no applicability member has no not-applicable probe to miss.
 //
-// The probes are one row per declared outcome, then a class per reachable §8
-// reason. That overlaps the test_pack method's probe list without being it, in
+// The probes are one row per producible declared outcome — one some rule,
+// force-outcome exception, or fallbackOutcome names — then a class per
+// reachable §8 reason. That overlaps the test_pack method's probe list without being it, in
 // both directions: two of the method's probes are deliberately not here,
 // because no expected disposition can witness them — a forced outcome reads
 // exactly like a rule-produced one (§8.3 carries no "forced" member, and a
@@ -58,12 +59,16 @@ func matrixCoverage(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 		return func(row expectedRow) bool { return row.reasons[reason] }
 	}
 
-	// One probe per declared outcome, in declaration order. Forced and fallback
-	// outcomes are declared outcomes too, so this is also every target an
-	// exception or fallbackOutcome can name.
+	// One probe per declared outcome some rule, force-outcome exception, or
+	// fallbackOutcome names, in declaration order. Semantic validation checks
+	// only the forward direction — every named outcome must be declared — so
+	// the reverse is decided here: an outcome nothing references cannot be
+	// produced under §8, and deriving its probe would state an expectation no
+	// row could ever satisfy without mismatching.
+	referenced := referencedOutcomes(pack)
 	for _, entry := range asObjects(pack["outcomes"]) {
 		id, _ := entry["id"].(string)
-		if id == "" {
+		if id == "" || !referenced[id] {
 			continue
 		}
 		add("outcome:"+id,
@@ -202,6 +207,30 @@ func anyEscalateException(pack map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// referencedOutcomes collects every outcome id some rule, force-outcome
+// exception, or fallbackOutcome names — the outcomes §8 can actually produce,
+// which is the set the per-outcome probes are derived over.
+func referencedOutcomes(pack map[string]any) map[string]bool {
+	outcomes := map[string]bool{}
+	for _, rule := range asObjects(pack["rules"]) {
+		if outcome, ok := rule["outcome"].(string); ok && outcome != "" {
+			outcomes[outcome] = true
+		}
+	}
+	for _, exception := range asObjects(pack["exceptions"]) {
+		if effect, _ := exception["effect"].(string); effect != "force-outcome" {
+			continue
+		}
+		if outcome, ok := exception["outcome"].(string); ok && outcome != "" {
+			outcomes[outcome] = true
+		}
+	}
+	if fallback, ok := pack["fallbackOutcome"].(string); ok && fallback != "" {
+		outcomes[fallback] = true
+	}
+	return outcomes
 }
 
 func distinctRuleOutcomes(pack map[string]any) int {

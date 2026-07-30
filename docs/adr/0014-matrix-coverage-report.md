@@ -68,7 +68,9 @@ report to the one part of the payload the specification deliberately does not st
 Settled determinations:
 
 - **The probes are derived per pack from its declared outcomes and the reachable §8 reasons:** one
-  probe per declared outcome, in declaration order; `not-applicable` when the pack declares
+  probe per producible declared outcome — one some rule, force-outcome exception, or
+  fallbackOutcome names, in declaration order (an outcome nothing references cannot be produced
+  under §8, so its probe would be one no row could ever satisfy); `not-applicable` when the pack declares
   applicability; `missing-required-evidence` when any evidence requirement is required;
   `unknown` when applicability, required evidence, or an `onUnknown: escalate` rule or exception
   makes the reason reachable; `conflict` when two rules, or two force-outcome exceptions, name

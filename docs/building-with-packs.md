@@ -188,7 +188,8 @@ same bytes as the row's. A row with a class passes when the evaluation is refuse
 and with that phase when the row names one.
 
 Beside the rows, `packs test` reports **coverage**: the probe classes your pack's own declarations
-derive — one per declared outcome, then `not-applicable`, `missing-required-evidence`, `unknown`,
+derive — one per producible declared outcome (one a rule, exception, or fallback names), then
+`not-applicable`, `missing-required-evidence`, `unknown`,
 `conflict`, `exception-escalation`, and `no-match`, each only where the pack makes it reachable —
 and which of them some row's expectation witnesses. Coverage informs and never gates: a missing
 probe is a fact about what your rows expect, not a failed row. The derivation follows reachable

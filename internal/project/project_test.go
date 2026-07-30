@@ -752,6 +752,18 @@ func TestMatrixCoverageDerivesProbesFromDeclarations(t *testing.T) {
 		t.Fatalf("probes = %v", got)
 	}
 
+	// A declared outcome nothing references cannot be produced under §8, so
+	// no probe is derived for it: the probe would be permanently missing, and
+	// a row written to cover it would mismatch forever. Semantic validation
+	// checks only that named outcomes are declared, not the reverse.
+	unreferenced := map[string]any{
+		"outcomes": []any{map[string]any{"id": "allow"}, map[string]any{"id": "orphan"}},
+		"rules":    []any{map[string]any{"id": "r1", "outcome": "allow"}},
+	}
+	if got := probeNames(matrixCoverage(unreferenced, Matrix{})); !slices.Equal(got, []string{"outcome:allow", "no-match"}) {
+		t.Fatalf("an unreferenced outcome derives no probe: %v", got)
+	}
+
 	// A pack that did not decode derives nothing at all.
 	if matrixCoverage(nil, Matrix{}) != nil {
 		t.Fatal("no pack, no probes")
