@@ -188,3 +188,61 @@ type GraphValidation struct {
 	GraphVersion  string       `json:"graphVersion,omitempty"`
 	Diagnostics   []Diagnostic `json:"diagnostics"`
 }
+
+// GraphMatrixLabel labels every graph matrix run. Like the pack matrix label
+// it points at the one claim document and says nothing of its own about it,
+// and like the composite label it says what no specification defines.
+const GraphMatrixLabel = "graph matrix results: rows a project wrote about its own graph, run through this runtime's experimental composition (no JPS version defines a graph or a composite result); each node's disposition is produced by the experimental evaluator, whose conformance claim is stated, in full and only, in CONFORMANCE.md"
+
+// GraphTestNode is one named node's comparison inside one graph matrix row:
+// the RFC 8785 canonical §8.3 dispositions, expected and actual, compared byte
+// for byte by the same canonicalizer every other comparison uses. Only the
+// nodes a row names are compared; an unnamed node is unchecked, and saying so
+// is the row author's choice made visible.
+type GraphTestNode struct {
+	Node     string `json:"node"`
+	Status   string `json:"status"`
+	Expected string `json:"expected"`
+	Actual   string `json:"actual"`
+}
+
+// GraphTestRow is one graph matrix row's result: the composite headline
+// compared canonically, the §8.4 class and phase for a row that expects a
+// refusal instead, and the per-node comparisons the row asked for.
+type GraphTestRow struct {
+	ID                 string          `json:"id"`
+	Status             string          `json:"status"`
+	Expected           string          `json:"expected"`
+	Actual             string          `json:"actual"`
+	ExpectedErrorClass string          `json:"expectedErrorClass,omitempty"`
+	ActualErrorClass   string          `json:"actualErrorClass,omitempty"`
+	ExpectedErrorPhase string          `json:"expectedErrorPhase,omitempty"`
+	ActualErrorPhase   string          `json:"actualErrorPhase,omitempty"`
+	Nodes              []GraphTestNode `json:"nodes,omitempty"`
+	Detail             string          `json:"detail,omitempty"`
+}
+
+// GraphTest is one graph matrix run. It carries Experimental and
+// ConformanceClaimReference like every payload the evaluator produces, and
+// the graph labels beside them, because both surfaces made it: the rows ran
+// through the experimental composition, and each node's disposition through
+// the experimental evaluator.
+type GraphTest struct {
+	OutputVersion             string         `json:"outputVersion"`
+	Tool                      Tool           `json:"tool"`
+	Command                   string         `json:"command"`
+	Status                    string         `json:"status"`
+	Experimental              bool           `json:"experimental"`
+	ConformanceClaimReference string         `json:"conformanceClaimReference"`
+	Label                     string         `json:"label"`
+	Kind                      string         `json:"kind"`
+	FormatVersion             string         `json:"formatVersion"`
+	EvaluatorSpecVersion      string         `json:"evaluatorSpecVersion"`
+	ConfigPath                string         `json:"configPath"`
+	GraphPath                 string         `json:"graphPath"`
+	RowsPath                  string         `json:"rowsPath"`
+	GraphID                   string         `json:"graphId"`
+	GraphVersion              string         `json:"graphVersion"`
+	Summary                   SuiteSummary   `json:"summary"`
+	Rows                      []GraphTestRow `json:"rows"`
+}

@@ -254,3 +254,48 @@ func TestGraphInvocationGuards(t *testing.T) {
 		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
 	}
 }
+
+func TestGraphTestCommand(t *testing.T) {
+	configPath, graphPath := graphProject(t, graphFixture(t, "onboarding.graph.json"), map[string]string{
+		"onboarding.rows.json": graphFixture(t, "onboarding.rows.json"),
+	})
+	rowsPath := filepath.Join(filepath.Dir(configPath), "onboarding.rows.json")
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "test", graphPath, "--rows", rowsPath, "--config", configPath, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var output result.GraphTest
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Status != "passed" || output.Summary.Passed != 3 || !output.Experimental {
+		t.Fatalf("unexpected payload: %+v", output)
+	}
+	if output.ConformanceClaimReference != result.EvaluationClaimReference || !strings.Contains(output.Label, "graph matrix") {
+		t.Fatalf("the labels must be carried: %+v", output)
+	}
+
+	// A mismatching matrix exits 1 and the human surface details it.
+	broken := strings.Replace(graphFixture(t, "onboarding.rows.json"), `"outcomeId": "approve"`, `"outcomeId": "decline"`, 1)
+	brokenPath := filepath.Join(t.TempDir(), "broken.rows.json")
+	if err := os.WriteFile(brokenPath, []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "test", graphPath, "--rows", brokenPath, "--config", configPath}, "")
+	if code != result.ExitInvalid || stderr != "" {
+		t.Fatalf("a mismatch exits 1: exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "mismatch: 1/3") || !strings.Contains(stdout, "expected:") {
+		t.Fatalf("the human surface details the mismatch: %q", stdout)
+	}
+
+	// --rows is required, and dual stdin is refused.
+	code, _, _ = runTest(t, []string{"experimental", "graph", "test", graphPath, "--config", configPath}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("--rows is required: exit=%d", code)
+	}
+	code, _, _ = runTest(t, []string{"experimental", "graph", "test", "-", "--rows", "-", "--config", configPath}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("dual stdin is refused: exit=%d", code)
+	}
+}

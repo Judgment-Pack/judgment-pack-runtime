@@ -77,6 +77,7 @@ jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the 
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
 jpack experimental graph evaluate <graph-or-> [--inputs <file-or->]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph explain <graph-or->   (the evaluation plan; nothing is evaluated)
+jpack experimental graph test <graph-or-> --rows <file-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph schema
 ```
 
