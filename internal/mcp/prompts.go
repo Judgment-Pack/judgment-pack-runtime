@@ -98,13 +98,25 @@ const authoringDisclaimer = `(Method guidance from the judgment-pack runtime, no
 pack conformant, and only "spec validate" / the "validate" tool decides conformance. The document
 you produce is yours; this runtime stores nothing and decides nothing.)`
 
+// writeFencedBlock appends one labelled block of caller-supplied material,
+// fenced so the model can tell what the caller handed it from the instructions
+// around it. Written member by member rather than concatenated: the builder is
+// what the strings are being assembled into, so building a throwaway string
+// first only to copy it in defeats the point.
+func writeFencedBlock(b *strings.Builder, label, body string) {
+	b.WriteString(label)
+	b.WriteString("\n\n---\n")
+	b.WriteString(body)
+	b.WriteString("\n---\n\n")
+}
+
 func buildAuthorPack(args map[string]string) string {
 	var b strings.Builder
 	b.WriteString("Encode ONE policy decision as a Judgment Pack (declare specVersion 0.2.0-draft,\n")
 	b.WriteString("the one version the experimental evaluator admits), working in a\n")
 	b.WriteString("validate-and-fix loop against the judgment-pack tools.\n\n")
 	if policy := strings.TrimSpace(args["policy"]); policy != "" {
-		b.WriteString("The policy to encode:\n\n---\n" + policy + "\n---\n\n")
+		writeFencedBlock(&b, "The policy to encode:", policy)
 	} else {
 		b.WriteString("Ask for the policy text or decision description if you do not already hold it.\n\n")
 	}
@@ -176,7 +188,7 @@ func buildTestPack(args map[string]string) string {
 	b.WriteString("nothing about whether this pack decides well. Only a pack declaring specVersion\n")
 	b.WriteString("0.2.0-draft is evaluated (JPS §11: re-declaring is one edit, the specVersion string).\n\n")
 	if pack := strings.TrimSpace(args["pack"]); pack != "" {
-		b.WriteString("The pack under test:\n\n---\n" + pack + "\n---\n\n")
+		writeFencedBlock(&b, "The pack under test:", pack)
 	}
 	b.WriteString(`Build an instance matrix -- one facts document per row -- and evaluate each:
 
@@ -215,7 +227,7 @@ func buildFixPack(args map[string]string) string {
 	var b strings.Builder
 	b.WriteString("Repair a judgment pack that failed validation, using the validator's diagnostics.\n\n")
 	if diagnostics := strings.TrimSpace(args["diagnostics"]); diagnostics != "" {
-		b.WriteString("The diagnostics:\n\n---\n" + diagnostics + "\n---\n\n")
+		writeFencedBlock(&b, "The diagnostics:", diagnostics)
 	} else {
 		b.WriteString("Run the validate tool on the pack first; work from its diagnostics.\n\n")
 	}
@@ -253,12 +265,12 @@ func buildExplainDisposition(args map[string]string) string {
 	b.WriteString("evaluator's surface is experimental; its conformance claim is stated, in full\n")
 	b.WriteString("and only, in CONFORMANCE.md.\n\n")
 	if evaluation := strings.TrimSpace(args["evaluation"]); evaluation != "" {
-		b.WriteString("The evaluation payload:\n\n---\n" + evaluation + "\n---\n\n")
+		writeFencedBlock(&b, "The evaluation payload:", evaluation)
 	} else {
 		b.WriteString("Obtain the payload first: run experimental_evaluate (or read the one you were given).\n\n")
 	}
 	if pack := strings.TrimSpace(args["pack"]); pack != "" {
-		b.WriteString("The evaluated pack:\n\n---\n" + pack + "\n---\n\n")
+		writeFencedBlock(&b, "The evaluated pack:", pack)
 	} else {
 		b.WriteString("Fetch the evaluated pack (get_pack by decision id, or the document you hold): the trace\n")
 		b.WriteString("names rule ids; the pack holds their conditions, and you need both.\n\n")
@@ -379,12 +391,12 @@ func buildPresentPack(args map[string]string) string {
 	b.WriteString("The pack is the only statement of what it is; your presentation is one reading\n")
 	b.WriteString("of it, fitted to the people in front of it, and it must say so.\n\n")
 	if pack := strings.TrimSpace(args["pack"]); pack != "" {
-		b.WriteString("The pack to present:\n\n---\n" + pack + "\n---\n\n")
+		writeFencedBlock(&b, "The pack to present:", pack)
 	} else {
 		b.WriteString("Obtain the document first: call get_pack for it (or read the one you were given).\n\n")
 	}
 	if audience := strings.TrimSpace(args["audience"]); audience != "" {
-		b.WriteString("The audience and their question:\n\n---\n" + audience + "\n---\n\n")
+		writeFencedBlock(&b, "The audience and their question:", audience)
 	}
 	b.WriteString(`Work in this order:
 
@@ -427,12 +439,12 @@ func buildAuthorGraph(args map[string]string) string {
 	b.WriteString("experimental and may change or be removed; the packs stay exactly as reviewed, and\n")
 	b.WriteString("the graph you produce is a PROPOSAL for a human to review, never something you adopt.\n\n")
 	if relationship := strings.TrimSpace(args["relationship"]); relationship != "" {
-		b.WriteString("The statement relating the decisions:\n\n---\n" + relationship + "\n---\n\n")
+		writeFencedBlock(&b, "The statement relating the decisions:", relationship)
 	} else {
 		b.WriteString("Ask for the policy or system statement that relates the decisions if you do not hold it.\n\n")
 	}
 	if packs := strings.TrimSpace(args["packs"]); packs != "" {
-		b.WriteString("The packs to compose:\n\n---\n" + packs + "\n---\n\n")
+		writeFencedBlock(&b, "The packs to compose:", packs)
 	}
 	b.WriteString(`Work in this order:
 
