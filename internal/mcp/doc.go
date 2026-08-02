@@ -7,7 +7,9 @@
 // JSON-RPC on stdio instead of argv. The validation tools evaluate no
 // condition and resolve no outcome; the one exception is experimental_evaluate
 // (ADR-0007), which runs the evaluation package on this runtime's experimental
-// surface. Nothing in this package states a conformance claim: the claim is stated,
+// surface and is also the one tool here that can write: in a project whose
+// jpack.json declares an audit directory it appends one record per completed
+// call, through the project's own directory handle and nowhere else (ADR-0018). Nothing in this package states a conformance claim: the claim is stated,
 // in full and only, in CONFORMANCE.md, and every payload carries a reference to
 // that file beside the contract version applied
 // (result.EvaluationClaimReference, result.EvaluatorSpecVersion).

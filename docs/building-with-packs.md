@@ -10,7 +10,12 @@ Everything here rests on one file, `jpack.json`, and on
 importantly — what it is not. **It is a convention of this runtime, not part of the Judgment Pack
 Specification.** No other implementation is obliged to understand it, nothing in it changes what a
 pack means, and a project that never writes one loses no capability: every command still takes a
-pack by path, and every MCP tool still takes one as text.
+pack by path, and every MCP tool still takes one as text. It is also the only place this runtime can
+be asked to *write a record of what it decided* — the audit trail of
+[ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md), described at the end of this guide — and a
+configuration that does not ask leaves nothing recorded anywhere. (The runtime's only other write
+is the `--write` flag on `spec schema`, `spec examples`, and `packs schema`, which copies bundled
+bytes to a new file an operator names and has nothing to do with a project.)
 
 What it buys is a name. Without it, "the expense approval decision" is a path in a shell script, a
 different path in a CI job, and a blob of text a model was handed. With it, all three say
@@ -50,8 +55,9 @@ different path in a CI job, and a blob of text a model was handed. With it, all 
 
 `jpack packs schema` prints the schema this is held to, and it is **closed**: every member
 it does not name is rejected, so a misspelled key is an error rather than an intention silently
-dropped. `configVersion` is a single integer as a string — `"1"` is the shape without graphs and `"2"`
-the shape with them (ADR-0017), and this runtime reads both. There is no minor or patch
+dropped. `configVersion` is a single integer as a string — `"1"` is the shape without graphs, `"2"`
+the shape with them (ADR-0017), and `"3"` the shape that may also ask for an audit trail
+(ADR-0018), and this runtime reads all three. There is no minor or patch
 component, because there is nothing to negotiate: a program either knows the shape or does not.
 
 Three things the file deliberately does **not** have:
@@ -87,7 +93,8 @@ hints are what tells it where to look.
 
 The hints are **non-normative guidance in your own words**. This runtime carries them and never
 acts on one: it holds no credential, opens no network connection, and does not know what Snowflake
-is. Because nothing else ever resolves a hint key, `packs validate` checks it against the pack
+is. No hint is read, followed, or recorded — not even in the audit trail described below, which
+records what was evaluated and never where a value was said to live. Because nothing else ever resolves a hint key, `packs validate` checks it against the pack
 document — an `evidence` key must be a declared evidence-requirement id, and a `facts` pointer must
 be one some condition reads (or an ancestor of one). A misspelled key is a failed check rather than
 an instruction an agent follows. Reading the source is the agent's job, with the agent's own access
@@ -307,7 +314,9 @@ Three tools then matter:
 - **`get_pack { pack_id }`** — the full document, read-only, exactly the bytes on disk.
 - **`experimental_evaluate { pack_id, facts, evidence }`** — evaluation by id instead of by pasted
   text. `pack` and `pack_id` are mutually exclusive: supplying both is refused rather than given a
-  precedence rule nobody asked for.
+  precedence rule nobody asked for. It is the one tool that can write: in a project whose
+  `jpack.json` declares an `audit` directory it appends one record per completed call, and in a
+  project that declares none it writes nothing.
 
 A workable agent loop: `list_packs` → the application (not the model) names the decision id →
 gather each hinted fact, reporting `unknown` for anything you could not source → `experimental_evaluate`
@@ -319,7 +328,10 @@ two different escapes: a lexical one at configuration time, and resolution again
 at read time, which is what catches an escape through a symlinked component. Because the second is a
 handle rather than a pathname, containment holds through the open itself — there is no moment between
 "this path is inside the project" and "open it" for the directory structure to be rearranged
-underneath the answer. The server stays read-only, keyless, and offline.
+underneath the answer. The server stays keyless and offline, and it reads only — with the single
+exception a project asks for in writing: when `jpack.json` declares an `audit` directory, each
+completed `experimental_evaluate` call appends one record to it, inside the project's own tree and
+through that same handle.
 
 ## When the data isn't good enough: another pack
 
@@ -354,9 +366,59 @@ under `configVersion "2"`, `jpack.json` may declare its graphs and their rows (A
 same two verbs with no argument then walk every declared graph exactly as `packs test` walks every
 declared matrix — one CI step, no hardcoded paths.
 
+## Keeping a record of what you decided
+
+Every payload this runtime writes goes to a stream and is gone. If you want to be able to answer
+"what did this pack decide, on what, in which version" a month later, ask for it in the file that
+already says what the project owns:
+
+```json
+{
+  "configVersion": "3",
+  "audit": { "dir": "audit" },
+  "packs": {
+    "expense-approval": { "path": "packs/expense-approval-1.2.0.pack.json" }
+  }
+}
+```
+
+That is the whole of the opt-in ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)). With it,
+each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the MCP
+`experimental_evaluate` tool appends one JSON line to `audit/evaluations.jsonl`, relative to the
+configuration: a timestamp, which surface ran, the pack's id, version, `specVersion` and the
+SHA-256 of its exact bytes, the facts and evidence documents as evaluated, and the disposition in
+the same RFC 8785 canonical form two implementations compare byte for byte. A graph run writes one
+line per node — the facts there are the assembled document, after the upstream outcomes were
+injected, because that is what the node was evaluated against — plus one for the composite
+headline.
+
+Four things it deliberately does not do. It does not record test runs: `packs test`, `experimental
+graph test`, and `experimental evaluate-corpus` run the same evaluator over the same project and
+write nothing, because a matrix row is a check on a pack and not a decision anyone took. It does
+not record refusals: an evaluation the preflight refused has no disposition at all, and a trail
+whose lines were sometimes results and sometimes failures would not be a trail of what you decided
+— a graph run refused at its third node records nothing for the first two either, because a run's
+records are held until the run has a composite and written in one go. It does not carry on when it
+cannot write: a record that fails to append refuses the run with exit 4 rather than handing you a
+disposition nothing kept. And it does not rotate, compact, or expire anything — the file is in your
+tree, under your version control and your retention policy, exactly like your packs.
+
+`packs validate` reports the directory's containment as a named check on the configuration itself,
+`audit-dir-inside-root`, so a path that leaves the project is a CI failure rather than an
+unexplained refusal at the first decision. A directory that is not there yet passes it: the first
+record creates it, with owner-only permissions. A directory you created yourself keeps the mode you
+gave it.
+
+The records hold your input documents. That is what they are for, and it is why the directory is
+one you name rather than one this runtime picks: the human-readable diagnostics stay sanitized and
+value-free, because they go to whoever is watching a terminal, while a record goes where you sent
+it.
+
 ## What this runtime still never does
 
-- No store: your packs are yours, on your disk, in your version control.
+- No store you did not ask for: your packs are yours, on your disk, in your version control, and
+  the one file this runtime writes is the audit trail your own `jpack.json` declared, in your own
+  tree. Declare none and nothing is written at all.
 - No credential and no network: hints are text; the runtime never reads a source.
 - No selection: naming a pack is the application's.
 - No approval workflow: your pull request is the approval.
@@ -365,6 +427,7 @@ declared matrix — one CI step, no hardcoded paths.
 
 - [ADR-0012 — the jpack.json project convention](adr/0012-jpack-project-convention.md)
 - [ADR-0015 — the experimental graph surface](adr/0015-experimental-graph-surface.md) — declaring composition instead of coding it
+- [ADR-0018 — the opt-in evaluation audit trail](adr/0018-opt-in-evaluation-audit-trail.md) — the one thing a configuration can ask this runtime to write
 - [authoring-lifecycle.md](authoring-lifecycle.md) — writing and repairing one pack
 - [agent-testing.md](agent-testing.md) — the agent-driven testing protocol
 - [mcp-clients.md](mcp-clients.md) — per-client setup

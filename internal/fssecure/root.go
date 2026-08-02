@@ -2,6 +2,7 @@ package fssecure
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -172,21 +173,157 @@ func (r *Root) Open(relative string) (*os.File, error) {
 	if err != nil {
 		return nil, classify(err)
 	}
-	openedInfo, err := file.Stat()
-	if err != nil {
+	if _, err := r.sameRegularFile(file, cleaned); err != nil {
 		file.Close()
 		return nil, err
 	}
+	return file, nil
+}
+
+// sameRegularFile makes the two checks that are about the opened file itself
+// rather than about where it is, against the same handle the open used. Lstat
+// is what refuses a final symlink, since os.Root follows one that stays inside
+// the root; SameFile is what refuses a final component swapped between the open
+// and that Lstat, because then the opened file is not the file the check just
+// described. Both fail closed, and the caller closes the file. The opened file's
+// own information is returned so a caller that has more to ask of it does not
+// stat it a second time.
+func (r *Root) sameRegularFile(file *os.File, cleaned string) (os.FileInfo, error) {
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
 	if !openedInfo.Mode().IsRegular() {
-		file.Close()
 		return nil, errors.New("path is not a regular file")
 	}
 	linkInfo, err := r.root.Lstat(cleaned)
 	if err != nil || linkInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(openedInfo, linkInfo) {
-		file.Close()
 		return nil, errors.New("path changed or resolves through a final symlink")
 	}
-	return file, nil
+	return openedInfo, nil
+}
+
+// MakeDir creates one directory beneath this root, and every parent of it that
+// is also beneath this root, treating a directory already there as made.
+//
+// Each component is created through the retained handle rather than by a joined
+// pathname, so the containment that bounds every read bounds the creation too:
+// a component that would leave the root is refused by os.Root itself, and there
+// is no interval between deciding where the directory goes and making it there.
+//
+// The mode is a creation mode and nothing more: a directory that was already
+// there keeps whatever mode it was given, because tightening a directory this
+// package did not make would be deciding something about a tree the project
+// owns.
+func (r *Root) MakeDir(relative string) error {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return err
+	}
+	if cleaned == "." {
+		return nil
+	}
+	made := ""
+	for _, component := range strings.Split(cleaned, string(filepath.Separator)) {
+		made = filepath.Join(made, component)
+		err := r.root.Mkdir(made, 0o700)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return classify(err)
+		}
+		// mkdirat reports "exists" for a regular file too, so "already there"
+		// has to be checked for being a directory. Without this the refusal
+		// arrives one call later and names the file that could not be opened
+		// instead of the component that is not a directory. The check follows
+		// the component through the handle rather than Lstat-ing it: a symlink
+		// to a directory inside the root is a legitimate project layout and
+		// reads as one everywhere else here, and a symlink pointing out of the
+		// root is refused as the escape it is rather than as a non-directory.
+		info, statErr := r.root.Stat(made)
+		if statErr != nil {
+			return classify(statErr)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%q exists and is not a directory", made)
+		}
+	}
+	return nil
+}
+
+// Append adds one record to the end of a file beneath this root, creating the
+// file when it is not there and never rewriting a byte already in it.
+//
+// It is the only write this package performs, and it is bounded exactly as
+// every read is: the path is resolved against the retained handle, and the
+// checks about the file itself are made against that same handle. O_APPEND is
+// what makes the write one operation at the end of the file rather than a seek
+// and a write with an interval in between, so two writers appending whole
+// records interleave records and never halves of one.
+//
+// The final component is checked for being a symlink BEFORE the open as well as
+// after it, and the order is the point. This open carries O_CREATE, and os.Root
+// resolves a symlink that stays inside the root like any other component, so a
+// check made only afterward would refuse the write having already created the
+// file the link pointed at — a path nobody named, planted again on every
+// evaluation. (O_NOFOLLOW in the flag word does not help: os.Root resolves the
+// path itself and the open still succeeds.) The post-open check stays for the
+// race the pre-open one cannot cover: a component swapped between the two.
+//
+// A file with more than one link is refused where the platform reports the
+// count. That is not a containment question — a hardlinked alias is inside the
+// project, in the same trust domain as editing the files it aliases — but every
+// neighbouring case fails closed, and appending a record into whatever else
+// names the same inode should not be the one that does not.
+//
+// The mode is set on every append rather than only at creation, because a trail
+// file put there by something else would otherwise keep whatever mode it was
+// given, and these records carry the documents the project asked to have
+// recorded.
+//
+// Sync is what makes the record's bytes reach the disk before this returns. It
+// says nothing about the directory entry of a file this same call created:
+// nothing here fsyncs a directory, and a crash between the two can lose a
+// freshly created trail file that was reported written.
+func (r *Root) Append(relative string, record []byte) error {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return err
+	}
+	if info, err := r.root.Lstat(cleaned); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("path resolves through a final symlink")
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return classify(err)
+	}
+	file, err := r.root.OpenFile(cleaned, os.O_WRONLY|os.O_CREATE|os.O_APPEND|nonBlockingOpen, 0o600)
+	if err != nil {
+		return classify(err)
+	}
+	openedInfo, err := r.sameRegularFile(file, cleaned)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	if hardLinked(openedInfo) {
+		file.Close()
+		return errors.New("path has more than one link, so it names a file something else also names")
+	}
+	if err := file.Chmod(0o600); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(record); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 // Read reads one bounded regular file beneath this root. It is Open plus the

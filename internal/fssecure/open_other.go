@@ -11,6 +11,10 @@ import (
 // about, so the open carries no extra flag and the regular-file check stands alone.
 const nonBlockingOpen = 0
 
+// hardLinked is unanswerable on a platform this package makes no assumption
+// about, so it answers no and Append's other refusals stand alone.
+func hardLinked(os.FileInfo) bool { return false }
+
 func openRegular(filePath string) (*os.File, error) {
 	file, err := os.Open(filePath)
 	if err != nil {

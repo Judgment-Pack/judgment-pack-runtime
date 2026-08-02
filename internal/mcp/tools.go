@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -17,8 +18,10 @@ import (
 )
 
 // toolDefinitions is the tools/list payload. Every tool wraps a read-only core
-// operation; all evaluate nothing except experimental_evaluate, the evaluator on
-// this runtime's experimental surface (ADR-0007). No description here states a
+// operation except experimental_evaluate, which is the evaluator on this
+// runtime's experimental surface (ADR-0007) and appends one record per completed
+// call in a project whose configuration asked for one (ADR-0018); every other
+// tool evaluates nothing and writes nothing. No description here states a
 // conformance claim: the claim is stated, in full and only, in CONFORMANCE.md
 // (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
@@ -100,7 +103,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "get_pack",
-			"description": "Return one pack document this project declares in its jpack.json, by its decision id, as JSON text, with the document's own id and version, its declared specVersion, its digest, and its byte size. The document is the project's own file, served unaltered and read-only; this server stores nothing and returns nothing you did not already have on disk. Call list_packs for the available decision ids. The file is read through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed.",
+			"description": "Return one pack document this project declares in its jpack.json, by its decision id, as JSON text, with the document's own id and version, its declared specVersion, its digest, and its byte size. The document is the project's own file, served unaltered and read-only; this tool stores nothing and returns nothing you did not already have on disk. Call list_packs for the available decision ids. The file is read through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -112,7 +115,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -459,9 +462,39 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	if !packPresent && !packIDPresent {
 		return toolError(`A pack is required: pass the JPS document as JSON text in "pack", or a project decision id in "pack_id".`)
 	}
+	if packIDPresent && packID == "" {
+		return toolError(`The "pack_id" argument is present but empty: pass a decision id, and call list_packs for the available ids.`)
+	}
+	// Every argument refusal precedes the filesystem. A call missing a required
+	// argument never became an evaluation, and a broken configuration must not
+	// answer in place of the argument mistake the caller actually made.
+	if !factsPresent {
+		return toolError(`The "facts" argument is required: pass one JSON facts document as JSON text.`)
+	}
+	// The project is resolved for every call this tool serves, not only for the
+	// ones naming a pack by id: whether an evaluation is recorded is the
+	// configuration's to say (ADR-0018), and a pack passed as text is still
+	// evaluated in the project this server was launched in. A configuration that
+	// is there and cannot be read refuses the call either way — and "there" is
+	// mere presence, not a readable regular file, so nothing unloadable can be
+	// mistaken for a project that does not use the convention.
+	configPath := project.Locate("")
+	present := project.Present(configPath)
+	if packIDPresent && !present {
+		return toolError(project.EmptyInventory(configPath, evaluateCommand).Note)
+	}
+	var loaded *project.Project
+	if present {
+		opened, failure := project.Load(configPath)
+		if failure != nil {
+			return toolError(failure.Message)
+		}
+		defer opened.Close()
+		loaded = opened
+	}
 	oversized := []string{}
 	if packIDPresent {
-		resolved, packOversized, toolFailure := resolvePackID(packID)
+		resolved, packOversized, toolFailure := resolvePackID(loaded, packID)
 		if toolFailure != nil {
 			return toolFailure
 		}
@@ -469,9 +502,6 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		if packOversized {
 			oversized = append(oversized, "pack")
 		}
-	}
-	if !factsPresent {
-		return toolError(`The "facts" argument is required: pass one JSON facts document as JSON text.`)
 	}
 	evaluator := evaluation.NewEngine(s.engine)
 	output, failure := evaluator.EvaluateWith([]byte(pack), []byte(facts), []byte(evidence), evaluation.Options{
@@ -486,12 +516,39 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	if failure != nil {
 		return evaluationToolError(evaluateCommand, failure)
 	}
+	// The record is written before the disposition is returned, and a failed
+	// write refuses the call: a project that asked to be told what its packs
+	// decided is not served by an answer it has no record of. The evaluation
+	// itself is untouched either way, having already happened.
+	if err := loaded.AuditWriter().Evaluation(output, audit.Inputs{
+		Facts:            json.RawMessage(facts),
+		Evidence:         json.RawMessage(evidence),
+		EvidenceSupplied: evidenceSupplied,
+	}, []byte(pack), nil); err != nil {
+		return auditToolError()
+	}
 	return toolResult(output)
+}
+
+// auditToolError reports a record that could not be written. It carries the
+// operational envelope rather than a bare message, so a client reads the same
+// JPS-AUDIT-WRITE code the CLI reports and can tell "your decision was not
+// recorded" from an argument mistake. No disposition accompanies it: the
+// envelope type has no such member, and reporting one would be reporting the
+// answer this refusal exists to withhold.
+func auditToolError() map[string]any {
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": audit.FailureMessage}},
+		"structuredContent": result.NewOperationalResult(evaluateCommand, "error", audit.FailureCode, audit.FailureMessage),
+		"isError":           true,
+	}
 }
 
 // resolvePackID reads one declared pack's document for the evaluation surface,
 // through the same rooted reader every project read uses. It reports the
 // document text, whether the read stopped at the byte limit, and a tool error.
+// The project is the caller's, already resolved and still open, because this
+// tool consults the configuration whether or not a pack was named by id.
 //
 // A failure here is an argument failure and never an evaluation error: the call
 // never reached the §8.2 preflight, so §8.4 classes nothing about it, and it is
@@ -501,19 +558,7 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 // fixed order the engine assigns, so it is handed to the engine exactly as the
 // CLI's bounded reads hand it over. One byte-limit boundary for every surface
 // means the wire cannot class the same oversized pack differently from the shell.
-func resolvePackID(packID string) (string, bool, map[string]any) {
-	if packID == "" {
-		return "", false, toolError(`The "pack_id" argument is present but empty: pass a decision id, and call list_packs for the available ids.`)
-	}
-	configPath := project.Locate("")
-	if !project.Exists(configPath) {
-		return "", false, toolError(project.EmptyInventory(configPath, "mcp experimental_evaluate").Note)
-	}
-	loaded, failure := project.Load(configPath)
-	if failure != nil {
-		return "", false, toolError(failure.Message)
-	}
-	defer loaded.Close()
+func resolvePackID(loaded *project.Project, packID string) (string, bool, map[string]any) {
 	entry, ok := loaded.Entry(packID)
 	if !ok {
 		return "", false, toolError(loaded.UnknownPackFailure(packID).Message)

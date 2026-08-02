@@ -273,6 +273,192 @@ func TestRootIsTheDirectoryOpenedNotItsPathname(t *testing.T) {
 	}
 }
 
+// The one write this package performs is bounded by the same handle every read
+// is, and it appends: what is already in the file is never rewritten, and two
+// records are two lines in the order they were written.
+func TestRootAppendsInsideAndNeverRewrites(t *testing.T) {
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+
+	if err := root.MakeDir("records/evaluations"); err != nil {
+		t.Fatalf("a directory inside the root must be creatable: %v", err)
+	}
+	// Making a directory that is already there is not a failure: every record
+	// prepares its own directory, and the second record must not fail because
+	// the first one succeeded.
+	if err := root.MakeDir("records/evaluations"); err != nil {
+		t.Fatalf("an existing directory is made: %v", err)
+	}
+	for _, record := range []string{"{\"n\":1}\n", "{\"n\":2}\n"} {
+		if err := root.Append("records/evaluations/log.jsonl", []byte(record)); err != nil {
+			t.Fatalf("appending %q: %v", record, err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "records", "evaluations", "log.jsonl"))
+	if err != nil || string(data) != "{\"n\":1}\n{\"n\":2}\n" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+	// The mode is the project's own trail, not something a reader of the
+	// directory is entitled to by default.
+	info, err := os.Stat(filepath.Join(dir, "records", "evaluations", "log.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("the record file must not be group- or world-readable: %v", info.Mode())
+	}
+}
+
+// Every refusal the reader makes, the writer makes: a path is not permitted to
+// leave the root because it is being written rather than read.
+func TestRootAppendRefusesEveryEscapeTheReaderRefuses(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "project")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := mustOpenRoot(t, dir)
+
+	for _, relative := range []string{"", "..", "../escape.jsonl", "records/../../escape.jsonl", "/etc/passwd", "log\x00.jsonl"} {
+		if err := root.Append(relative, []byte("x\n")); !errors.Is(err, ErrOutsideRoot) {
+			t.Fatalf("%q must be refused as outside the root, got %v", relative, err)
+		}
+		if err := root.MakeDir(relative); !errors.Is(err, ErrOutsideRoot) {
+			t.Fatalf("%q must be refused as a directory outside the root, got %v", relative, err)
+		}
+	}
+	// Nothing was created outside the root while those were refused.
+	if _, err := os.Lstat(filepath.Join(base, "escape.jsonl")); err == nil {
+		t.Fatal("a refused append must not have written anything")
+	}
+	// A directory is not a record file, and a path through a regular file is a
+	// write failure the operating system named rather than an escape.
+	if err := root.MakeDir("records"); err != nil {
+		t.Fatal(err)
+	}
+	// "Already there" is only "already made" when the entry is a directory:
+	// mkdir reports the same "exists" for a regular file, and the refusal must
+	// name the component that is wrong rather than defer to the append.
+	if err := os.WriteFile(filepath.Join(dir, "occupied"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.MakeDir("occupied"); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("a regular file where a directory is asked for must be refused by name: %v", err)
+	}
+	if err := root.Append("records", []byte("x\n")); err == nil {
+		t.Fatal("a directory must not be appended to as a regular file")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plain"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Append("plain/log.jsonl", []byte("x\n")); err == nil || errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("a path through a regular file is a write failure, not an escape: %v", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// A symlinked directory component pointing out of the root: lexically the
+	// path is inside, and only resolving against the handle catches it.
+	if err := os.Symlink(base, filepath.Join(dir, "out")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.Append("out/escape.jsonl", []byte("x\n")); !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("a path leaving the root through a symlinked directory must be refused: %v", err)
+	}
+	if err := root.MakeDir("out/escape"); !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("a directory outside the root through a symlink must be refused: %v", err)
+	}
+	// A final component that is a symlink is refused whatever it points at,
+	// exactly as it is for a read — including one pointing at a file inside the
+	// root, and including one pointing at a file that is not there yet.
+	target := filepath.Join(dir, "real.jsonl")
+	if err := os.WriteFile(target, []byte("kept\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "alias.jsonl")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.Append("alias.jsonl", []byte("appended\n")); err == nil {
+		t.Fatal("a final symlink must be refused")
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "kept\n" {
+		t.Fatalf("the refused append must not have reached the link's target: data=%q err=%v", data, err)
+	}
+	if err := os.Symlink(filepath.Join(base, "escape.jsonl"), filepath.Join(dir, "outalias.jsonl")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.Append("outalias.jsonl", []byte("x\n")); err == nil {
+		t.Fatal("a final symlink out of the root must be refused")
+	}
+	if _, err := os.Lstat(filepath.Join(base, "escape.jsonl")); err == nil {
+		t.Fatal("the refused append must not have created the link's target")
+	}
+
+	// The refusal is side-effect-free, which is the half a check made only
+	// after the open cannot deliver: this open carries O_CREATE and os.Root
+	// follows a symlink that stays inside the root, so a link pointing at a
+	// path that is not there yet would otherwise be refused *after* the file it
+	// named had been planted — again on every run.
+	if err := os.Symlink(filepath.Join(dir, "planted.json"), filepath.Join(dir, "inalias.jsonl")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.Append("inalias.jsonl", []byte("x\n")); err == nil {
+		t.Fatal("a final symlink to a file that is not there must be refused")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "planted.json")); err == nil {
+		t.Fatal("a refused append must not create the file the link pointed at")
+	}
+
+	// A hardlink is invisible to every path-based check there is — the alias is
+	// a second name for one inode — so the link count is what stops a record
+	// being appended into whatever else that inode is named by, a pack most
+	// obviously.
+	pack := filepath.Join(dir, "pack.json")
+	if err := os.WriteFile(pack, []byte("{\"id\":\"hiring\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(pack, filepath.Join(dir, "linked.jsonl")); err != nil {
+		t.Skipf("cannot create hardlink: %v", err)
+	}
+	if err := root.Append("linked.jsonl", []byte("record\n")); err == nil {
+		t.Fatal("a file with more than one name must be refused")
+	}
+	if data, err := os.ReadFile(pack); err != nil || string(data) != "{\"id\":\"hiring\"}\n" {
+		t.Fatalf("the refused append must not have reached the aliased file: data=%q err=%v", data, err)
+	}
+}
+
+// The trail's mode is the project's own record of its decisions, not something
+// a directory listing hands out: a file put there by something else at a wider
+// mode is tightened by the append rather than kept as it was found.
+func TestRootAppendTightensAnExistingTrailFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not what a Windows file mode means")
+	}
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+	trail := filepath.Join(dir, "evaluations.jsonl")
+	if err := os.WriteFile(trail, []byte("{\"first\":true}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Append("evaluations.jsonl", []byte("{\"second\":true}\n")); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(trail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("an appended trail must not stay group- or world-readable: %v", info.Mode())
+	}
+	// Tightening the mode is not rewriting the file: what was already in it
+	// stays, and the record goes after it.
+	if data, err := os.ReadFile(trail); err != nil || string(data) != "{\"first\":true}\n{\"second\":true}\n" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+}
+
 func TestOpenRootRefusesAMissingDirectory(t *testing.T) {
 	if _, err := OpenRoot(filepath.Join(t.TempDir(), "absent")); err == nil {
 		t.Fatal("opening a root that is not there must fail")

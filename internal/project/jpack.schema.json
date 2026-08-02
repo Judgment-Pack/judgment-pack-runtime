@@ -1,23 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:judgmentpack:runtime:jpack-config:2",
+  "$id": "urn:judgmentpack:runtime:jpack-config:3",
   "title": "jpack.json project configuration",
-  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — and, under configVersion \"2\", the experimental graphs composing them (ADR-0017). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
+  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), and under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
   "type": "object",
   "additionalProperties": false,
   "required": ["configVersion", "packs"],
   "allOf": [
     {
-      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal.",
+      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal. \"3\" reads them too — a later shape adds a member, it does not drop one.",
       "if": { "required": ["graphs"] },
-      "then": { "properties": { "configVersion": { "const": "2" } } }
+      "then": { "properties": { "configVersion": { "enum": ["2", "3"] } } }
+    },
+    {
+      "description": "The same gate for audit, the \"3\" shape's one addition: a configuration asking for an audit trail under an earlier version is told exactly which member to change.",
+      "if": { "required": ["audit"] },
+      "then": { "properties": { "configVersion": { "const": "3" } } }
     }
   ],
   "properties": {
+    "audit": {
+      "description": "The directory this project's evaluation records are appended to (ADR-0018), relative to this file's own directory. Declaring it is what turns recording on: with no audit member this runtime writes nothing at all, and with one, every evaluation the CLI's experimental evaluate, experimental graph evaluate, and the MCP experimental_evaluate tool complete appends one record. Test runs — packs test, experimental graph test, experimental evaluate-corpus — never record: a run of a matrix is not a decision anyone took. Declaring it requires configVersion \"3\".",
+      "$ref": "#/$defs/audit"
+    },
     "configVersion": {
-      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs and \"2\" the shape with them; this runtime reads both, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only \"1\" refuses a \"2\" configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under \"1\" would be an invalid-config refusal that takes every project surface down with it.",
+      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs, \"2\" the shape with them, and \"3\" the shape that may also ask for an audit trail; this runtime reads all three, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only the earlier shapes refuses a later configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under an earlier version would be an invalid-config refusal that takes every project surface down with it.",
       "type": "string",
-      "enum": ["1", "2"]
+      "enum": ["1", "2", "3"]
     },
     "graphs": {
       "description": "EXPERIMENTAL graphs composing this project's packs (ADR-0015, ADR-0017), keyed by the project's own name for one graph — the graph document's id member is the graph's identity and is not this key, exactly as a pack entry's key is not the pack's id. Declaring any graph requires configVersion \"2\". The graph surface may change or be removed without compatibility promise, and a project that declares no graph never needs this member or that version.",
@@ -35,6 +44,17 @@
     }
   },
   "$defs": {
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dir"],
+      "properties": {
+        "dir": {
+          "description": "The directory the records are appended to, relative to this file's own directory, which it must resolve inside — the same containment every declared path here is held to, and held to it the same two ways: the lexical check packs validate reports as the audit-dir-inside-root check before anything is opened, and resolution against the handle held open on this file's directory when the record is written. The directory is created inside that handle if it is not there; nothing outside it can be created, named, or written, whatever the pathname would suggest. One file is written in it, evaluations.jsonl, one JSON record per line, owner-readable only. The directory's own mode is set when this runtime creates it and never afterward: a directory the project made is the project's, and its access control stays the project's.",
+          "$ref": "#/$defs/relativePath"
+        }
+      }
+    },
     "decisionId": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"

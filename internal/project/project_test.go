@@ -107,7 +107,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 		code   string
 	}{
 		"no configVersion":                     {`{"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
-		"a later configVersion":                {`{"configVersion":"3","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
+		"a later configVersion":                {`{"configVersion":"4","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a semver configVersion":               {`{"configVersion":"1.0.0","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a numeric configVersion":              {`{"configVersion":1,"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"no packs member":                      {`{"configVersion":"1"}`, "JPS-PROJECT-CONFIG-SCHEMA"},
@@ -136,7 +136,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 
 	// The version refusal names what would have been accepted; a message that only
 	// said "no" would leave a caller guessing.
-	_, failure := Load(writeProject(t, `{"configVersion":"3","packs":{}}`, nil))
+	_, failure := Load(writeProject(t, `{"configVersion":"4","packs":{}}`, nil))
 	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+strings.Join(SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must be unsupported and name this runtime's versions: exit=%d %q", failure.ExitCode, failure.Message)
 	}
@@ -1068,10 +1068,80 @@ func TestConfigVersionTwoDeclaresGraphs(t *testing.T) {
 	}
 
 	// The schema payload names the newest shape and every shape read, so it
-	// cannot imply "1" stopped being accepted.
+	// cannot imply an earlier one stopped being accepted.
 	description := SchemaDescription("packs schema")
-	if description.ConfigVersion != "2" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2"}) ||
-		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:2" {
+	if description.ConfigVersion != "3" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3"}) ||
+		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:3" {
 		t.Fatalf("schema description = %+v", description)
+	}
+}
+
+// configVersion "3" is the shape that may ask for an audit trail; "2" and "1",
+// the shapes without it, are still read. The version gate lives in the
+// schema's own bytes and nowhere else: audit declared under an earlier version
+// names the exact member to change, a "3" without audit is legal, a "3" may
+// still declare graphs, and the audit entry gets the closed-shape treatment
+// every other entry gets.
+func TestConfigVersionThreeDeclaresTheAuditDirectory(t *testing.T) {
+	for name, config := range map[string]string{
+		"under configVersion 1": `{"configVersion":"1","packs":{"a":{"path":"a.json"}},"audit":{"dir":"audit"}}`,
+		"under configVersion 2": `{"configVersion":"2","packs":{"a":{"path":"a.json"}},"audit":{"dir":"audit"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			// The gate is a schema refusal, not a version refusal: the declared
+			// version is one this runtime reads, and what it does not read is
+			// this member under that version. That is the diagnostic the gate
+			// exists to produce, and it names the value to change.
+			_, failure := Load(writeProject(t, config, nil))
+			if failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" || !strings.Contains(failure.Message, "'3'") {
+				t.Fatalf("audit under an earlier configVersion names the member to change: %+v", failure)
+			}
+			if failure.ExitCode != result.ExitInvalid {
+				t.Fatalf("exit = %d, want the invalid class", failure.ExitCode)
+			}
+		})
+	}
+
+	loaded, failure := Load(writeProject(t, `{"configVersion":"3","packs":{"a":{"path":"a.json"}},
+	  "audit":{"dir":"records/evaluations"},"graphs":{"g":{"path":"g.json"}}}`, nil))
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer loaded.Close()
+	if loaded.Config.Audit == nil || loaded.Config.Audit.Dir != "records/evaluations" {
+		t.Fatalf("audit = %+v", loaded.Config.Audit)
+	}
+	if !slices.Equal(loaded.GraphIDs, []string{"g"}) {
+		t.Fatalf("a 3 may still declare graphs: %v", loaded.GraphIDs)
+	}
+	if loaded.AuditWriter() == nil {
+		t.Fatal("a declared audit directory produces a writer")
+	}
+
+	// Absence is distinguishable from declaration with defaults, which is the
+	// whole reason the member is a pointer, and a project that declares no
+	// audit member has nothing to write with.
+	if plain, failure := Load(writeProject(t, `{"configVersion":"3","packs":{"a":{"path":"a.json"}}}`, nil)); failure != nil {
+		t.Fatalf("a 3 without audit is legal: %+v", failure)
+	} else {
+		defer plain.Close()
+		if plain.Config.Audit != nil || plain.AuditWriter() != nil {
+			t.Fatalf("audit = %+v", plain.Config.Audit)
+		}
+	}
+
+	rejected := map[string]string{
+		"an audit entry with no dir":     `{"configVersion":"3","packs":{"a":{"path":"a.json"}},"audit":{}}`,
+		"an unknown audit member":        `{"configVersion":"3","packs":{"a":{"path":"a.json"}},"audit":{"dir":"audit","rotate":"daily"}}`,
+		"an audit dir that is not text":  `{"configVersion":"3","packs":{"a":{"path":"a.json"}},"audit":{"dir":["audit"]}}`,
+		"an empty audit dir":             `{"configVersion":"3","packs":{"a":{"path":"a.json"}},"audit":{"dir":""}}`,
+		"an audit member that is a path": `{"configVersion":"3","packs":{"a":{"path":"a.json"}},"audit":"audit"}`,
+	}
+	for name, config := range rejected {
+		t.Run(name, func(t *testing.T) {
+			if _, failure := Load(writeProject(t, config, nil)); failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" {
+				t.Fatalf("this configuration must be refused by the schema: %+v", failure)
+			}
+		})
 	}
 }

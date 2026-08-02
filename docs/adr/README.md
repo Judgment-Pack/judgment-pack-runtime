@@ -102,15 +102,16 @@ authority, and following it confers no conformance status on anything.
 | [0003](0003-mcp-integration-and-testing-surface.md)      | MCP is the runtime's integration and testing surface                            | accepted |
 | [0004](0004-decline-http-api.md)                         | Permanently decline an in-runtime HTTP API                                      | accepted |
 | [0005](0005-single-jps-diagnostic-code-prefix.md)        | Use a single `JPS-` prefix for diagnostic codes                                 | accepted |
-| [0006](0006-authoring-lifecycle-in-the-client.md)        | The authoring lifecycle lives in the client; the runtime is a stateless oracle  | accepted |
+| [0006](0006-authoring-lifecycle-in-the-client.md)        | The authoring lifecycle lives in the client; the runtime is a stateless oracle  | accepted; no-store determination partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
 | [0007](0007-experimental-evaluator.md)                   | Ship an experimental evaluator behind an explicit experimental surface          | accepted; claim posture superseded by [0011](0011-first-evaluator-conformance-claim.md) |
 | [0008](0008-mcp-prompts-authoring-method.md)             | Serve authoring method as MCP prompts; the intelligence stays in the client     | accepted |
 | [0009](0009-draft-rfc-quantifier-prototype.md)           | Prototype spec RFC 0008 quantifiers behind an opt-in experimental flag          | accepted |
 | [0010](0010-evaluator-aligned-to-core-0.2.0-draft.md)    | Retarget the experimental evaluator at 0.2.0-draft's evaluator class; claim nothing | accepted; claim-scope determination superseded by 0011 |
 | [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | accepted |
-| [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec (configVersion value list superseded by 0017) | accepted |
+| [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec (configVersion value list superseded by 0017) | accepted; nothing-writes determination partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
 | [0013](0013-oci-image-and-mcp-registry-distribution.md)  | Distribute the released binary as an OCI image and publish it to the MCP registry | accepted |
 | [0014](0014-matrix-coverage-report.md)                   | Report derived matrix coverage in `packs test`, and never gate on it            | accepted |
 | [0015](0015-experimental-graph-surface.md)               | Prototype pack composition as an experimental graph surface (jpack.json determination partially superseded by 0017) | accepted |
 | [0016](0016-graph-rows-coverage-report.md)               | Report derived coverage in `experimental graph test`, and never gate on it      | accepted |
-| [0017](0017-declare-graphs-in-the-project-configuration.md) | Declare graphs in the project configuration, and walk them like matrices     | accepted |
+| [0017](0017-declare-graphs-in-the-project-configuration.md) | Declare graphs in the project configuration, and walk them like matrices     | accepted; configVersion value list and schema `$id` partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
+| [0018](0018-opt-in-evaluation-audit-trail.md)            | Record evaluations into the project's own tree, and only when the project asks | proposed |

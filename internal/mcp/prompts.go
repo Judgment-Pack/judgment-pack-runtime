@@ -96,7 +96,7 @@ func promptDefinitions() []promptDefinition {
 
 const authoringDisclaimer = `(Method guidance from the judgment-pack runtime, non-normative: following it does not make a
 pack conformant, and only "spec validate" / the "validate" tool decides conformance. The document
-you produce is yours; this runtime stores nothing and decides nothing.)`
+you produce is yours; nothing in this method writes it anywhere, and this runtime decides nothing.)`
 
 // writeFencedBlock appends one labelled block of caller-supplied material,
 // fenced so the model can tell what the caller handed it from the instructions

@@ -753,6 +753,14 @@ type PackValidationEntry struct {
 }
 
 // PackValidation is one packs validate report.
+//
+// Checks are the checks about the configuration itself rather than about any
+// one pack — today the containment of the audit directory, which no pack entry
+// owns. They are a separate list because the summary counts packs: a
+// configuration-level failure moves Status without moving a pack count, and
+// folding it into a pack's checks would report it against a pack that is fine.
+// An additive member, so outputVersion stays "2" by the same two VERSIONING.md
+// rules ADR-0012 cites.
 type PackValidation struct {
 	OutputVersion string                `json:"outputVersion"`
 	Tool          Tool                  `json:"tool"`
@@ -762,6 +770,7 @@ type PackValidation struct {
 	ConfigPath    string                `json:"configPath"`
 	ConfigVersion string                `json:"configVersion"`
 	Summary       PackCounts            `json:"summary"`
+	Checks        []PackCheck           `json:"checks,omitempty"`
 	Packs         []PackValidationEntry `json:"packs"`
 }
 

@@ -261,10 +261,27 @@ func (a *App) renderPackValidation(format string, output result.PackValidation) 
 	if format == "json" {
 		return a.writeJSON(output)
 	}
-	if output.Status == "valid" {
+	switch {
+	case output.Status == "valid":
 		fmt.Fprintf(a.out, "valid: %d/%d configured packs passed every check\n", output.Summary.Passed, output.Summary.Total)
-	} else {
+	case output.Summary.Failed > 0:
 		fmt.Fprintf(a.out, "invalid: %d/%d configured packs failed a check\n", output.Summary.Failed, output.Summary.Total)
+	default:
+		// Every pack passed and something about the configuration itself did
+		// not. Reporting "0/1 configured packs failed a check" under an invalid
+		// headline would send a reader looking through the packs for a defect
+		// that is not in any of them.
+		fmt.Fprintln(a.out, "invalid: every configured pack passed, and a check on the configuration itself failed")
+	}
+	if len(output.Checks) > 0 {
+		fmt.Fprintln(a.out, "- the configuration itself:")
+		for _, check := range output.Checks {
+			line := fmt.Sprintf("  %s: %s", display.Sanitize(check.Name), display.Sanitize(check.Status))
+			if check.Detail != "" {
+				line += " — " + display.Sanitize(check.Detail)
+			}
+			fmt.Fprintln(a.out, line)
+		}
 	}
 	for _, pack := range output.Packs {
 		fmt.Fprintf(a.out, "- %s [%s]: %s\n", display.Sanitize(pack.ID), display.Sanitize(pack.Status), display.Sanitize(pack.Path))

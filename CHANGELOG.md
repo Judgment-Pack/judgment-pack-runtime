@@ -2,6 +2,39 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Record evaluations when the project asks for it, and only then** (ADR-0018): `configVersion "3"`
+  adds one root member to `jpack.json` — `"audit": {"dir": "<relative-dir>"}` — and declaring it is
+  the whole of the opt-in. Each completed evaluation of `experimental evaluate`, `experimental graph
+  evaluate` (one record per node plus one for the composite headline), and the MCP
+  `experimental_evaluate` tool then appends one JSON line to `<dir>/evaluations.jsonl`: the
+  timestamp, the surface, the pack's `id`, `version`, `specVersion` and the SHA-256 of its exact
+  bytes, the facts and evidence documents as they reached the engine with the `evidenceSupplied`
+  flag that keeps an omitted document distinct from an empty one, and the disposition as the RFC
+  8785 canonical bytes the run itself produced. `packs test`, `experimental graph test`, and
+  `experimental evaluate-corpus` reach the same evaluator and record nothing — a matrix row is a
+  check on a pack, not a decision anyone took — and a refused evaluation records nothing either,
+  because it produces no disposition at all. A graph run is one run for that purpose: its node
+  records are held and written together with the composite, so a run refused at its third node
+  leaves nothing for the first two. A record that cannot be written refuses the run with exit `4`
+  and the provisional code `JPS-AUDIT-WRITE`, reporting no disposition; the evaluation is never
+  influenced, having already completed. The append goes through the directory handle
+  `internal/fssecure` already holds open on the configuration's own directory, under exactly the
+  refusals a read is held to plus two of the write's own — a final symlink is refused before the
+  open as well as after it, so a refusal creates nothing, and a trail file with more than one link
+  is refused where the platform reports the count — and no surface is handed a pathname.
+  `packs validate` gains one check on the configuration itself, `audit-dir-inside-root`, so a
+  declared directory that leaves the project fails the gate instead of failing every later
+  evaluation. Two consequences worth reading before upgrading a project: declaring `audit` requires
+  `configVersion "3"`, which an older runtime refuses as unsupported while naming what it accepts;
+  and the three evaluating surfaces now resolve the project configuration on every run, so a
+  configuration that *is there* and cannot be read now refuses an evaluation whose pack was named by
+  path or passed as text, where it previously succeeded without the configuration being read at all.
+  A project that declares no `audit` member, or none at all, is written to by nothing and behaves
+  exactly as before. The conformance claim is unaffected and stated, in full and only, in
+  `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.11.0 - 2026-07-30
 
 - **Say what a facts document is, where the mistake happens**: the `experimental_evaluate`

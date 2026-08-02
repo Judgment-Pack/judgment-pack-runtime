@@ -1,8 +1,10 @@
 # Connecting MCP clients
 
 `jpack mcp` serves the offline validator to any Model Context Protocol client over stdio:
-no port, no credential, no network. The client supplies its own model and API key; the runtime
-never sees either (see [ADR-0003](adr/0003-mcp-integration-and-testing-surface.md) and
+no port, no credential, no network — and no write, unless the project it is launched in asks for one
+(see [The project tools](#the-project-tools) below). The client supplies its own model and
+API key; the runtime never sees either (see
+[ADR-0003](adr/0003-mcp-integration-and-testing-surface.md) and
 [ADR-0006](adr/0006-authoring-lifecycle-in-the-client.md)).
 
 Every client below launches the same binary. Install a released `jpack` (see the
@@ -99,6 +101,15 @@ the client's, with the client's own access — and a value you cannot source is 
 rather than guessed, so the pack can escalate instead of deciding on an invention.
 [building-with-packs.md](building-with-packs.md) is the full guide.
 
+One thing a configuration can ask this server to write, and nothing else can: under `configVersion
+"3"` an `audit` member names a directory relative to `jpack.json`, and each completed
+`experimental_evaluate` call then appends one record to `evaluations.jsonl` in it — the pack's
+identity and digest, the documents it was evaluated against, and the disposition in canonical form
+([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)). The record goes through the same rooted
+handle every read is bound to, into the project's own tree; a refused evaluation records nothing, and a
+record that cannot be written is reported as a tool error instead of a disposition. A project that
+declares no `audit` member is written to by nothing.
+
 ## The prompts
 
 The server also serves six **method prompts** (MCP `prompts` capability) — static, versioned,
@@ -154,8 +165,13 @@ args = ["mcp"]
 ```
 
 Or equivalently: `codex mcp add jpack -- jpack mcp`. Start `codex` and confirm
-with `/mcp`. All tools are read-only except the experimental evaluator, so an automatic approval
-mode is reasonable.
+with `/mcp`. Judge an automatic approval mode on three facts. Every tool here is read-only except
+the experimental evaluator. The evaluator writes only where the project told it to: in a project
+whose `jpack.json` declares no `audit` directory nothing is written at all, and in one that
+declares an `audit` directory each completed evaluation appends one record there and nowhere else.
+And `test_conformance` reads any suite path the caller names, so it is not confined to the
+directory the server was launched in — the rest of the tools read the project's own files and the
+documents you pass.
 
 ## GitHub Copilot (VS Code)
 
@@ -199,5 +215,6 @@ separately governed hosted distribution.
   (v0.1.0 or later); a stale build on the PATH is easy to pick up by mistake.
 
 The end-to-end authoring loop these tools support — create, read, update, delete, with the
-runtime as a stateless oracle — is described in [authoring-lifecycle.md](authoring-lifecycle.md),
-and the agent-driven testing protocol in [agent-testing.md](agent-testing.md).
+runtime as a stateless oracle for every step of it — is described in
+[authoring-lifecycle.md](authoring-lifecycle.md), and the agent-driven testing protocol in
+[agent-testing.md](agent-testing.md).

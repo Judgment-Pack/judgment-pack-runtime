@@ -157,7 +157,10 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			"and composition is the specification's RFC 0002, a draft proposal. The evaluator's conformance claim " +
 			"is stated, in full and only, in CONFORMANCE.md; this text states no part of it, and no result is an " +
 			"authorization, an executed action, or any statement about whether acting on any disposition is " +
-			"correct (§3.5). Producing a composite exits 0.",
+			"correct (§3.5). Producing a composite exits 0. Under configVersion \"3\" a project may declare an " +
+			"audit directory (ADR-0018), and this verb then appends one record per node plus one for the " +
+			"composite headline; experimental graph test runs the same nodes over the same project and records " +
+			"nothing, because a matrix row is a check on the graph rather than a decision the project took.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			const commandName = "experimental graph evaluate"
@@ -189,6 +192,11 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			output, evaluateFailure := graph.Evaluate(loaded, evaluation.NewEngine(a.engine), document, graphPath, inputs, inputsPath != "", graph.Options{
 				Command:             commandName,
 				SupportedExtensions: supported,
+				// This verb records and experimental graph test does not,
+				// though both run the same evaluator over the same project: a
+				// matrix row is a check on a graph, not a decision the project
+				// took (ADR-0018).
+				Audit: loaded.AuditWriter(),
 			})
 			if evaluateFailure != nil {
 				return a.evaluationFailure(commandName, format, evaluateFailure)

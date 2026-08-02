@@ -215,7 +215,8 @@ Inspect or copy the bundled schema without network access:
 ./bin/jpack spec schema 0.1.0-draft --write -
 ```
 
-The schema command refuses to overwrite an existing file.
+The schema command refuses to overwrite an existing file. It is a different write from the audit
+trail below, which appends to a file the project's own configuration named and never replaces one.
 
 ## Validation behavior
 
@@ -382,8 +383,8 @@ nothing: every command still takes a pack by path, and every MCP tool still take
 The file is selected by `--config`, then `JPACK_CONFIG`, then `./jpack.json`. Its schema is closed
 and printable with `jpack packs schema`: every member it does not name is rejected.
 `configVersion` is a single integer as a string, on the `outputVersion` precedent rather than
-semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with them (ADR-0017), and
-this runtime reads both.
+semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with them (ADR-0017), `"3"`
+the shape that may also ask for an audit trail (ADR-0018), and this runtime reads all three.
 
 There is **no templating, no target or environment blocks, and no selection**. A templated pack was
 never the pack anyone reviewed; environments are one file per environment by convention
@@ -411,6 +412,19 @@ against the handle makes that impossible rather than unlikely. A final component
 refused whatever it points at, and only a regular file is read. Every surface that reaches a pack
 through the configuration takes this one reader, `--pack-id` included, and none of them is handed a
 pathname to open for itself.
+
+The one thing this file can ask the runtime to **write** is a record of what it evaluated
+([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)). Under `configVersion "3"`, an
+`audit` member names a directory relative to the configuration — `"audit": { "dir": "audit" }` —
+and each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the
+MCP `experimental_evaluate` tool then appends one JSON line to `evaluations.jsonl` in it: the
+pack's id, version, `specVersion` and the digest of its exact bytes, the facts and evidence
+documents as evaluated, and the disposition in its canonical form. Test runs never record —
+`packs test`, `experimental graph test`, and `experimental evaluate-corpus` are checks on packs,
+not decisions anyone took — a refused evaluation records nothing, because it has no disposition to
+record, and a record that cannot be written refuses the run (exit 4) rather than reporting a
+disposition nothing kept. The write goes through the same held handle every read does, into the
+project's own tree and nowhere else. Declare no `audit` member and nothing is written at all.
 
 Four commands and one CI line:
 
@@ -463,6 +477,12 @@ The current implementation:
 
 - performs no runtime network requests and never dereferences document locators;
 - accepts one explicitly selected regular file or standard input, not URLs or special files;
+- writes only where it was told to, in two ways and no others: a copy of a bundled schema or
+  example at the target an operator names with `--write`, which refuses to overwrite an existing
+  file; and one appended record per completed evaluation when a project's `jpack.json` declares an
+  `audit` directory ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)), into that
+  directory, through the handle held open on the configuration's own directory — a record is not a
+  diagnostic, and it carries the documents the project asked to have recorded;
 - rejects duplicate decoded member names at every depth, invalid UTF-8, trailing JSON, and
   non-JSON constants;
 - caps a document at 10 MiB, nesting at 128, parsed nodes at 250,000, and diagnostics at 100;

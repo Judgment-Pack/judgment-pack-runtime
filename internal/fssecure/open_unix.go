@@ -13,6 +13,15 @@ import (
 // after, which is the point — the refusal must not depend on someone else writing.
 const nonBlockingOpen = syscall.O_NONBLOCK
 
+// hardLinked reports whether an opened file has more than one name. Append
+// refuses one, so a record cannot be written into a file the trail's name was
+// hardlinked to. The link count is the only way to ask: a hardlink is
+// indistinguishable from the original by every path-based check there is.
+func hardLinked(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Nlink > 1
+}
+
 func openRegular(filePath string) (*os.File, error) {
 	fd, err := syscall.Open(filePath, syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
 	if err != nil {

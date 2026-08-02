@@ -7,12 +7,13 @@ lifecycle lives; this shows *how* it runs.
 
 ## The one question the runtime answers
 
-The runtime is a **stateless oracle**: `bytes -> result`. Every step below consults it for one thing —
+For the authoring loop the runtime is a **stateless oracle**: `bytes -> result`. Every step below
+consults it for one thing —
 
 > *Is what you now hold conformant?*
 
 It cannot distinguish Create from Update, because both arrive as "validate this document." It keeps
-no store, holds no credential, and opens no network connection; its one evaluation surface is
+no store of your documents, holds no credential, and opens no network connection; its one evaluation surface is
 `experimental_evaluate` (ADR-0007), whose surface stability is experimental and whose conformance claim
 is stated, in full and only, in [`CONFORMANCE.md`](../CONFORMANCE.md) — a claim about the evaluator, not
 about any pack it reads.
@@ -162,13 +163,18 @@ text at every step:
    tool call, not a tool error; `isError` is reserved for a failure to run the tool itself.
 5. Fix and re-`validate` until `structuredContent.status` is `valid`.
 
-`get_schema` is available throughout as the reference of last resort. No step writes, stores, or
-deletes anything on the server; Delete is the client dropping the document and re-validating whatever
-remains.
+`get_schema` is available throughout as the reference of last resort. No step of this loop writes,
+stores, or deletes anything on the server — none of them evaluates, and evaluation is the only thing
+a project can ask to have recorded; Delete is the client dropping the document and re-validating
+whatever remains.
 
 ## What the runtime never does
 
-- No store: it never saves, names, lists, overwrites, or deletes user content.
+- No store: it never saves, names, lists, overwrites, or deletes user content. The one exception is
+  one it cannot take on its own — a project whose `jpack.json` declares an `audit` directory
+  ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)) has asked to be told what its packs
+  decided, and one appended evaluation record in that directory is the whole of what this runtime
+  writes. No step of the authoring lifecycle writes anything at all.
 - No credential and no network: the client owns the key; the server opens no connection.
 - No path over the wire: MCP documents are values (text), never references to the server's filesystem.
 - No evaluation in the authoring loop: validation never resolves a condition, chooses an outcome,
