@@ -48,6 +48,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
@@ -415,11 +416,33 @@ func declaredConfigVersion(configPath string, root map[string]any) *Failure {
 			return nil
 		}
 	}
+	message := fmt.Sprintf("The project configuration %s declares configVersion %q, which this runtime does not support. It accepts: %s.", display.Sanitize(configPath), display.Sanitize(declared), strings.Join(SupportedConfigVersions(), ", "))
+	// A declared version above what this runtime reads means the runtime is
+	// behind, not that the configuration is wrong. Say which side to change:
+	// left ambiguous, a reader — human or agent — reaches for the edit that
+	// makes the refusal go away, and editing the declaration down silently
+	// discards whatever the newer version declares.
+	if newerThanSupported(declared) {
+		message += " This configuration comes from a newer toolchain: upgrade the runtime. Do not edit the declaration to an older version — that discards what this configuration declares."
+	}
 	return &Failure{
 		Code:     "JPS-PROJECT-CONFIG-VERSION",
-		Message:  fmt.Sprintf("The project configuration %s declares configVersion %q, which this runtime does not support. It accepts: %s.", display.Sanitize(configPath), display.Sanitize(declared), strings.Join(SupportedConfigVersions(), ", ")),
+		Message:  message,
 		ExitCode: result.ExitUnsupported,
 	}
+}
+
+// newerThanSupported reports whether a declared configVersion is a plain
+// integer above the newest one this runtime reads. Only that case earns the
+// upgrade steer; an unparseable declaration says nothing about which side is
+// behind.
+func newerThanSupported(declared string) bool {
+	newest, err := strconv.Atoi(ConfigVersion)
+	if err != nil {
+		return false
+	}
+	value, err := strconv.Atoi(declared)
+	return err == nil && value > newest
 }
 
 // schemaDetail compresses one schema error into a single sanitized line. The
