@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.13.0 - 2026-08-02
 
 - **Pin the reviewed set, and refuse to decide under law that left it** (ADR-0019): `jpack packs
   lock` writes `jpack.lock.json` beside the configuration — the digest of the configuration's exact
