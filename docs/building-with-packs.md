@@ -214,10 +214,37 @@ branch protection says so — the review, the reviewers, and the audit trail are
 control's, which already does this properly and is already what your auditor asks for. A boolean in
 a JSON file that its own author flips is a decoration.
 
+### Declare the reviewed set
+
+One command, run whenever the law changes on purpose:
+
+```bash
+jpack packs lock
+```
+
+It writes `jpack.lock.json` beside your configuration: the digest of the configuration's exact bytes
+and of every pack and graph it declares ([ADR-0019](adr/0019-reviewed-set-lock.md)). Matrices and
+`rows` documents are not pinned — the only commands that read them are `packs test` and `graph
+test`, which neither record nor decide, so a fixture edit is not an amendment. Commit it with
+the change it pins. Running it *is* the amendment — it is how the project says, in a file a reviewer
+diffs, that this is the law now — and it approves nothing, exactly as the paragraph above says. The
+file is generated and deterministic, so re-running it over an unchanged tree leaves no diff to read.
+
+`jpack packs verify` is the other half, and it belongs in the CI line below: it names every
+difference between the tree and the reviewed set — `config-drift`, `document-drift`,
+`document-missing`, `lock-entry-missing` for a pack the configuration declares and the lock does
+not, `locked-but-undeclared` for one the lock names and the configuration dropped — and exits `1` on
+any of them. It reports what changed and never whether the change was right: a runtime cannot tell
+an amendment from tampering, and only the people reading the diff can.
+
+The file's *presence* is the whole of the opt-in. No `configVersion` moves, nothing in `jpack.json`
+points at it — a configuration that named its own lock could rename it — and a project without one
+behaves exactly as it did before this existed.
+
 ### Gate it in CI
 
 ```bash
-jpack packs validate && jpack packs test
+jpack packs validate && jpack packs test && jpack packs verify
 ```
 
 `packs validate` checks the configuration and, per pack, six named steps: the declared path
@@ -233,6 +260,11 @@ at all is reported `skipped` and exits `1`, so a project with no matrices anywhe
 gate for a suite that tested nothing. The coverage report never moves the exit code: a green gate
 with missing probes is a passing suite that has not probed everything, and the report says which.
 
+`packs verify` is there so a pull request that changes a pack and forgets `packs lock` fails the
+gate rather than merging an undeclared amendment. Drop it from the line if the project keeps no
+lock; with no lock file it refuses with "there is nothing to verify against" rather than passing
+silently, which is the honest answer and a red CI step either way.
+
 
 To reach one decision from a shell without a path, name it:
 
@@ -242,6 +274,15 @@ jpack experimental evaluate --pack-id expense-approval --facts facts.json
 
 `--pack-id` resolves through the same `jpack.json` (honoring `--config` and `JPACK_CONFIG`) and is
 mutually exclusive with the pack argument — one pack, one source.
+
+In a project that keeps a lock, that command is a **decision** and it is held to the reviewed set:
+the configuration's bytes and the named pack's are checked before anything is evaluated, and a
+mismatch refuses the run (exit `1`, `JPS-LOCK-VERIFY`) with the two honest ways forward — declare
+the amendment, or restore the reviewed bytes. Naming a pack **by path** instead is a **draft**:
+evaluated, never refused for being unlocked, because writing a pack and trying it is the whole of
+authoring. `packs test`, `experimental graph test`, and `experimental evaluate-corpus` consult the
+lock never — the author's loop is free and only decisions are classified, which is the same split
+the audit trail draws.
 
 ### Ship
 
@@ -419,6 +460,14 @@ passes it: the first record creates it. On unix the trail file is kept owner-onl
 mode sets only the read-only attribute and does not restrict the ACL, so put the directory somewhere
 whose ACL is already what you want. A directory you created yourself keeps the mode you gave it.
 
+Where the project also keeps a lock, each line carries `reviewed`: `true` when every document the
+evaluation applied was one the lock declares and the exact bytes it applied matched the reviewed set
+— the check is on those bytes, not on a re-read of the file they came from — `false` when any of
+them was a draft. It is absent — not `false` — in a project with no lock, because "does not use the
+convention" is not the same fact as "ran on unreviewed law". There is no "declared but drifted"
+value: a deciding surface refuses such a run before it evaluates, so `reviewed: true` is a claim
+about what actually ran rather than a label.
+
 Each line carries a `run` id: one value per invocation, on every record that invocation writes. For
 a graph run that is what marks the run finished — the `graph-composite` line carries the same id as
 its nodes' lines, so node lines whose id has no composite belong to a run that did not complete, and
@@ -433,8 +482,12 @@ it.
 ## What this runtime still never does
 
 - No store you did not ask for: your packs are yours, on your disk, in your version control, and
-  the one file this runtime writes is the audit trail your own `jpack.json` declared, in your own
-  tree. Declare none and nothing is written at all.
+  the two files this runtime writes are ones you asked for — the audit trail your own `jpack.json`
+  declared, and the reviewed-set lock `packs lock` generates. Ask for neither and nothing is written
+  at all.
+- No wall around your own tree: the lock makes an amendment explicit and recorded, and anything that
+  can edit a pack can also re-run `packs lock`. Keeping the deciding party out of the law's write
+  domain is a property of where the decision runs, not of what this runtime checks.
 - No credential and no network: hints are text; the runtime never reads a source.
 - No selection: naming a pack is the application's.
 - No approval workflow: your pull request is the approval.
@@ -443,7 +496,8 @@ it.
 
 - [ADR-0012 — the jpack.json project convention](adr/0012-jpack-project-convention.md)
 - [ADR-0015 — the experimental graph surface](adr/0015-experimental-graph-surface.md) — declaring composition instead of coding it
-- [ADR-0018 — the opt-in evaluation audit trail](adr/0018-opt-in-evaluation-audit-trail.md) — the one thing a configuration can ask this runtime to write
+- [ADR-0018 — the opt-in evaluation audit trail](adr/0018-opt-in-evaluation-audit-trail.md) — recording what was decided
+- [ADR-0019 — the reviewed-set lock](adr/0019-reviewed-set-lock.md) — declaring which law counts, and refusing to decide under law that left it
 - [authoring-lifecycle.md](authoring-lifecycle.md) — writing and repairing one pack
 - [agent-testing.md](agent-testing.md) — the agent-driven testing protocol
 - [mcp-clients.md](mcp-clients.md) — per-client setup

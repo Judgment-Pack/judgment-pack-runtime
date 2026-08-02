@@ -409,6 +409,105 @@ func (r *Root) openForAppend(cleaned string) (*os.File, error) {
 	return nil, errors.New("path kept changing between the check and the open")
 }
 
+// Replace writes one whole file beneath this root, creating it or replacing
+// what a previous call put there.
+//
+// It exists for a *generated* file — one this runtime produces in full from
+// something else it read, so there is nothing in the old contents to preserve
+// and appending would be wrong. The containment is Append's exactly: the same
+// flag choice by what is already at the path, so a symlink swapped in behind the
+// check loses the race rather than being followed; the same post-open
+// same-file, regular-file, and link-count refusals; and no pathname handed to
+// anything.
+//
+// The mode is set on every write, not only on creation, exactly as Append does
+// and for the same reason.
+//
+// It is not atomic. Truncating and rewriting through one handle is what os.Root
+// offers on this module's Go floor — Root.Rename arrived after it — so an I/O
+// failure partway through leaves a short file rather than either version. That
+// is acceptable for a file whose one producer can be run again and whose reader
+// refuses a document it cannot decode; it would not be acceptable for anything a
+// reader must trust to be either old or new.
+func (r *Root) Replace(relative string, contents []byte) error {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return err
+	}
+	file, err := r.openForWrite(cleaned)
+	if err != nil {
+		return err
+	}
+	openedInfo, err := r.sameRegularFile(file, cleaned)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	if hardLinked(openedInfo) {
+		file.Close()
+		return errors.New("path has more than one link, so it names a file something else also names")
+	}
+	// The mode is set on every write rather than only at creation, on Append's
+	// rule and for its reason: a file something else left at this name would
+	// otherwise keep whatever mode it was given, and this one carries the
+	// project's statement of which documents it reviewed. It is a unix
+	// guarantee — a Go file mode on Windows sets only the read-only attribute.
+	if err := file.Chmod(0o644); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Truncate(0); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(contents); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+// openForWrite is openForAppend's rule for a file that is rewritten rather than
+// extended: the same branch on what is already there, and the same bounded retry
+// when the two conditions swap under it. The truncation is the caller's, after
+// the checks, so nothing is discarded before this open is known to have found
+// the file the check described.
+func (r *Root) openForWrite(cleaned string) (*os.File, error) {
+	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
+		info, err := r.root.Lstat(cleaned)
+		switch {
+		case err == nil:
+			if info.Mode()&os.ModeSymlink != 0 {
+				return nil, errors.New("path resolves through a final symlink")
+			}
+			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|nonBlockingOpen, 0)
+			if errors.Is(openErr, fs.ErrNotExist) {
+				continue
+			}
+			if openErr != nil {
+				return nil, classify(openErr)
+			}
+			return file, nil
+		case errors.Is(err, fs.ErrNotExist):
+			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|os.O_CREATE|os.O_EXCL|nonBlockingOpen, 0o644)
+			if errors.Is(openErr, fs.ErrExist) {
+				continue
+			}
+			if openErr != nil {
+				return nil, classify(openErr)
+			}
+			return file, nil
+		default:
+			return nil, classify(err)
+		}
+	}
+	return nil, errors.New("path kept changing between the check and the open")
+}
+
 // Read reads one bounded regular file beneath this root. It is Open plus the
 // byte limit, and it is how every caller that wants bytes rather than a handle
 // gets exactly the containment Open provides.

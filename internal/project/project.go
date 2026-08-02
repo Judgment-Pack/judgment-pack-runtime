@@ -81,6 +81,11 @@ const (
 	// MaxMatrixBytes bounds one instance matrix, which carries facts documents and
 	// expected dispositions and is read whole before a row runs.
 	MaxMatrixBytes = int64(16 << 20)
+	// MaxLockBytes bounds one reviewed-set lock (ADR-0019). It is one digest per
+	// declared document, so the configuration's own limit is more than enough
+	// and stating it separately keeps the two numbers from being read as one
+	// rule about "the project's files".
+	MaxLockBytes = int64(1 << 20)
 	// MaxMatrixCases bounds the rows of one matrix.
 	MaxMatrixCases = 10_000
 )
@@ -194,6 +199,12 @@ type Project struct {
 	ConfigPath string
 	Root       string
 	Config     Config
+	// ConfigDigest names the exact bytes this configuration was decoded from,
+	// taken where those bytes and this decoded shape are known to be one thing.
+	// The reviewed-set lock (ADR-0019) is what needs it: the configuration is
+	// the law's index, so a lock that did not pin it would leave the one file
+	// that says which packs count unpinned.
+	ConfigDigest string
 	// IDs are the configured decision ids in sorted order, so every report this
 	// package produces is ordered the same way on every run and in every process.
 	IDs []string
@@ -377,11 +388,12 @@ func loadThrough(root *fssecure.Root, configPath, configName string) (*Project, 
 		ConfigPath: configPath,
 		// The handle's own directory, not a second derivation from configPath: the
 		// string and the handle must not be able to disagree.
-		Root:     root.Dir(),
-		Config:   config,
-		IDs:      ids,
-		GraphIDs: graphIDs,
-		root:     root,
+		Root:         root.Dir(),
+		Config:       config,
+		ConfigDigest: audit.Digest(data),
+		IDs:          ids,
+		GraphIDs:     graphIDs,
+		root:         root,
 	}, nil
 }
 
@@ -565,6 +577,167 @@ func (p *Project) Contains(relative string) error {
 // — so the validate-time check has to ask the same question the write will.
 func (p *Project) ContainsDir(relative string) error {
 	return p.root.ContainsDir(relative)
+}
+
+// LockName is the reviewed-set lock's filename for this project: the
+// configuration's own name with ".lock" before its extension — jpack.json's
+// lock is jpack.lock.json, and jpack.staging.json's is
+// jpack.staging.lock.json. The second result is false when the configuration's
+// filename does not end in ".json", which is the one case the derivation cannot
+// answer; see LockNameFor.
+//
+// It is a convention and never a declaration. A configuration member pointing
+// at its own lock would be circular: the lock pins the configuration, so a
+// configuration that named it could rename it, and a reader following the
+// rename would verify against whatever the edit chose. Derivation cannot be
+// edited without editing the configuration's own filename, which is the
+// invocation's business rather than the configuration's.
+func (p *Project) LockName() (string, bool) {
+	_, configName := filepath.Split(p.ConfigPath)
+	return LockNameFor(configName)
+}
+
+// LockNameFor derives one configuration filename's lock filename, and reports
+// whether the derivation is available at all. It is exported for the surfaces
+// that must name the file in a message before a project is loaded.
+//
+// A filename that does not end in ".json" has no lock name here, and that
+// refusal is what makes the derivation one-to-one. Trimming a ".json" that is
+// not there would map both "jpack.json" and a configuration literally named
+// "jpack" onto one "jpack.lock.json", and two projects in one directory sharing
+// one reviewed set is two projects each denying the other the convention. The
+// configuration's own loader imposes no extension, so this is the place the
+// requirement is stated.
+func LockNameFor(configName string) (string, bool) {
+	if !strings.HasSuffix(configName, ".json") || configName == ".json" {
+		return "", false
+	}
+	return strings.TrimSuffix(configName, ".json") + ".lock.json", true
+}
+
+// LockPath is the lock's pathname, for messages only. Nothing opens it: the
+// reads and the write go through this project's own handle, exactly as every
+// declared path does. A configuration with no derivable lock name reports its
+// own path, so a message about the lock still names the project it is about.
+func (p *Project) LockPath() string {
+	configDir, _ := filepath.Split(p.ConfigPath)
+	name, ok := p.LockName()
+	if !ok {
+		return p.ConfigPath
+	}
+	return configDir + name
+}
+
+// HasLock reports whether this project carries a reviewed-set lock at all. Its
+// presence is the whole of the opt-in (ADR-0019): a project without one reaches
+// no new behavior on any surface.
+//
+// Presence, not readability, is the question — the same distinction Present
+// draws for the configuration and for the same reason. Something that is there
+// and will not read is a defect to report, not a project that declined the
+// convention.
+func (p *Project) HasLock() bool {
+	name, ok := p.LockName()
+	return ok && p.root.Contains(name) == nil
+}
+
+// LockNameFailure is the refusal for a configuration whose filename yields no
+// lock name. It names the requirement rather than the derivation, because the
+// fix is the invocation's: point --config at a file whose name ends in .json.
+func (p *Project) LockNameFailure() *Failure {
+	return &Failure{
+		Code:     "JPS-LOCK-CONFIG-NAME",
+		Message:  fmt.Sprintf("The reviewed-set lock is named after the configuration, and %s does not end in .json, so no lock name can be derived from it. Name the configuration with a .json extension.", display.Sanitize(p.ConfigPath)),
+		ExitCode: result.ExitInvocation,
+	}
+}
+
+// DeclaresPath reports whether the configuration declares any document at one
+// relative path — a pack, its matrix, a graph, or its rows. It is what keeps a
+// generated file from being written over declared law: the comparison is
+// lexical, on the cleaned relative form every declared path is held to, because
+// that is the form the configuration states and the form the write would use.
+func (p *Project) DeclaresPath(relative string) (string, bool) {
+	target, err := fssecure.Relative(relative)
+	if err != nil {
+		return "", false
+	}
+	same := func(declared string) bool {
+		cleaned, err := fssecure.Relative(declared)
+		return err == nil && cleaned == target
+	}
+	for _, id := range p.IDs {
+		entry := p.Config.Packs[id]
+		if same(entry.Path) {
+			return fmt.Sprintf("the pack %q", id), true
+		}
+		if entry.Matrix != "" && same(entry.Matrix) {
+			return fmt.Sprintf("the matrix of %q", id), true
+		}
+	}
+	for _, id := range p.GraphIDs {
+		entry := p.Config.Graphs[id]
+		if same(entry.Path) {
+			return fmt.Sprintf("the graph %q", id), true
+		}
+		if entry.Rows != "" && same(entry.Rows) {
+			return fmt.Sprintf("the rows of %q", id), true
+		}
+	}
+	return "", false
+}
+
+// DeclaredGraphID reports which configured graph, if any, an invocation's graph
+// argument names.
+//
+// The graph verbs take a path rather than a decision id, so this is the only way
+// to tell "the reviewed graph this project declares" from "a graph document
+// someone is drafting". It compares resolved pathnames, which is an
+// *identification* and never an access: nothing is opened by the result, the
+// document was already read through the ordinary reader, and the pathname is
+// never handed anywhere. Its failure mode is the safe one — a declared graph
+// reached by a pathname that does not compare equal is treated as a draft, so
+// the run records itself unreviewed instead of claiming a review it did not
+// verify.
+func (p *Project) DeclaredGraphID(graphPath string) (string, bool) {
+	if graphPath == "" || graphPath == "-" {
+		return "", false
+	}
+	absolute, err := filepath.Abs(graphPath)
+	if err != nil {
+		return "", false
+	}
+	for _, id := range p.GraphIDs {
+		entry := p.Config.Graphs[id]
+		declared, err := fssecure.Resolve(p.Root, entry.Path)
+		if err != nil {
+			continue
+		}
+		if filepath.Clean(declared) == filepath.Clean(absolute) {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+// ReadLock reads the lock through the project's own handle.
+func (p *Project) ReadLock() ([]byte, error) {
+	name, ok := p.LockName()
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return p.root.Read(name, MaxLockBytes)
+}
+
+// WriteLock replaces the lock through the same handle. The bytes are the
+// caller's whole file: a lock is generated in full from what was read, so there
+// is nothing in an older one to preserve.
+func (p *Project) WriteLock(contents []byte) error {
+	name, ok := p.LockName()
+	if !ok {
+		return os.ErrInvalid
+	}
+	return p.root.Replace(name, contents)
 }
 
 // AuditWriter returns the writer for the audit trail this configuration asks

@@ -170,11 +170,13 @@ whatever remains.
 
 ## What the runtime never does
 
-- No store: it never saves, names, lists, overwrites, or deletes user content. The one exception is
-  one it cannot take on its own — a project whose `jpack.json` declares an `audit` directory
+- No store: it never saves, names, lists, overwrites, or deletes user content. The exceptions are
+  two it cannot take on its own — a project whose `jpack.json` declares an `audit` directory
   ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)) has asked to be told what its packs
-  decided, and one appended evaluation record in that directory is the whole of what this runtime
-  writes. No step of the authoring lifecycle writes anything at all.
+  decided, and a project that runs `jpack packs lock`
+  ([ADR-0019](adr/0019-reviewed-set-lock.md)) has asked for a generated file declaring which
+  documents it reviewed. Both are the project's own request, in the project's own tree. No step of
+  the authoring lifecycle writes anything at all.
 - No credential and no network: the client owns the key; the server opens no connection.
 - No path over the wire: MCP documents are values (text), never references to the server's filesystem.
 - No evaluation in the authoring loop: validation never resolves a condition, chooses an outcome,

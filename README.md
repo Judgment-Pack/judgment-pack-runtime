@@ -70,6 +70,8 @@ jpack spec examples [name]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
 jpack packs validate [--id X]
 jpack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
+jpack packs verify      (check the project against that reviewed set)
 jpack packs schema
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
@@ -426,12 +428,43 @@ record, and a record that cannot be written refuses the run (exit 4) rather than
 disposition nothing kept. The write goes through the same held handle every read does, into the
 project's own tree and nowhere else. Declare no `audit` member and nothing is written at all.
 
-Four commands and one CI line:
+### The reviewed set
+
+`jpack packs lock` writes `jpack.lock.json` beside the configuration: the digest of the
+configuration's exact bytes and of every pack and graph it declares
+([ADR-0019](docs/adr/0019-reviewed-set-lock.md)). Running it **is** the amendment — it is how a
+project says, in a file a reviewer diffs, that the law changed on purpose — and it approves nothing:
+your pull request is still the approval. The file is generated and deterministic, so re-running it
+over an unchanged tree leaves no diff. `jpack packs verify` names every difference from it:
+`config-drift`, `document-drift`, `document-missing`, `lock-entry-missing`, `locked-but-undeclared`.
+
+Its **presence** is the opt-in, and it is found by convention rather than declared: no
+`configVersion` moves, the schema does not change, and a project with no lock file behaves exactly
+as it did. With one, the deciding surfaces — `experimental evaluate`, `experimental graph evaluate`,
+and the MCP `experimental_evaluate` tool — hold the law they are about to apply to it and refuse a
+mismatch (`JPS-LOCK-VERIFY`, exit 1) with the two honest ways forward: declare the amendment, or
+restore the reviewed bytes. `packs test`, `experimental graph test`, and `experimental
+evaluate-corpus` consult it never: the author's loop is free and decisions are classified. A pack
+named by path, or passed as text over MCP, is a draft — evaluated, never refused for being unlocked,
+and recorded as a draft. Where an audit trail is configured, each record carries `reviewed`: `true`
+when every document applied was declared and matched, `false` for a draft, absent when the project
+declares no lock.
+
+**What it is not.** It is not a wall. Anything that can edit a pack can run `packs lock` again, and
+this runtime cannot tell that from an author amending policy on purpose — they are the same act.
+What the lock buys is that the amendment stops being silent.
+
+Six commands, one CI line, and one amendment step:
 
 ```bash
-jpack packs list                                  # the resolved inventory
-jpack packs validate && jpack packs test  # the CI gate
+jpack packs list                                            # the resolved inventory
+jpack packs validate && jpack packs test && jpack packs verify   # the CI gate
 ```
+
+`packs lock` is deliberately not in that line. It is the amendment — you run it when the law changes
+on purpose, and you commit its output with the change it pins. Running it immediately before
+`packs verify` would make the verification vacuous, which is the one way to hold this convention
+backwards.
 
 `packs validate` reports six named checks per pack — path containment, document validation, the
 `expectedVersion` pin, the filename cross-check, the hint keys, and matrix well-formedness — each as
@@ -477,12 +510,15 @@ The current implementation:
 
 - performs no runtime network requests and never dereferences document locators;
 - accepts one explicitly selected regular file or standard input, not URLs or special files;
-- writes only where it was told to, in two ways and no others: a copy of a bundled schema or
+- writes only where it was told to, in three ways and no others: a copy of a bundled schema or
   example at the target an operator names with `--write`, which refuses to overwrite an existing
-  file; and one appended record per completed evaluation when a project's `jpack.json` declares an
+  file; one appended record per completed evaluation when a project's `jpack.json` declares an
   `audit` directory ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)), into that
   directory, through the handle held open on the configuration's own directory — a record is not a
-  diagnostic, and it carries the documents the project asked to have recorded;
+  diagnostic, and it carries the documents the project asked to have recorded; and the reviewed-set
+  lock `jpack packs lock` generates beside the configuration when an operator runs that command
+  ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), replaced in place through the same handle and
+  refused outright if it would land on a document the configuration declares;
 - rejects duplicate decoded member names at every depth, invalid UTF-8, trailing JSON, and
   non-JSON constants;
 - caps a document at 10 MiB, nesting at 128, parsed nodes at 250,000, and diagnostics at 100;

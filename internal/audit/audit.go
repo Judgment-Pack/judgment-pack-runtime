@@ -113,6 +113,18 @@ const (
 // disposition produced under draft-RFC operators is not a disposition any
 // published JPS version defines and a record that dropped the label would say
 // otherwise.
+//
+// Reviewed says which law the decision was judged under (ADR-0019). It is
+// present exactly when the project carries a reviewed-set lock: true when every
+// document this evaluation applied was one the lock declares and every one of
+// them matched, false when any of them was a draft. It is absent — not false —
+// for a project that declares no lock, because "this project does not use the
+// convention" and "this ran on unreviewed law" are different facts. There is no
+// "declared but drifted" value, and there cannot be: a deciding surface refuses
+// such a run before the evaluator is reached, so nothing composes a record for
+// it. The member is additive, which is why recordVersion stays "1" — the same
+// rule VERSIONING.md applies to outputVersion, where an added member is
+// backward-compatible and a removed or renamed one is the break.
 type Record struct {
 	RecordVersion        string                 `json:"recordVersion"`
 	Run                  string                 `json:"run"`
@@ -126,6 +138,7 @@ type Record struct {
 	Inputs               *Inputs                `json:"inputs,omitempty"`
 	DraftPrototype       *result.DraftPrototype `json:"draftPrototype,omitempty"`
 	Artifact             *result.Artifact       `json:"artifact,omitempty"`
+	Reviewed             *bool                  `json:"reviewed,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
 }
 
@@ -178,9 +191,23 @@ func Digest(document []byte) string {
 // their own, and "no configuration" cannot be mistaken at a call site for "the
 // write failed".
 type Writer struct {
-	root *fssecure.Root
-	dir  string
-	run  string
+	root     *fssecure.Root
+	dir      string
+	run      string
+	reviewed *bool
+}
+
+// UnderLaw records which law this invocation's records were judged under
+// (ADR-0019). It is set on the writer rather than passed to each composer
+// because the fact is about the run: one invocation consults the lock once, and
+// every record it writes carries the same answer. nil is the value for a
+// project that declares no lock, and it is also the zero value, so a surface
+// that never consults writes records with no such member.
+func (w *Writer) UnderLaw(reviewed *bool) {
+	if w == nil {
+		return
+	}
+	w.reviewed = reviewed
 }
 
 // NewWriter binds a writer to one project's directory handle. The handle stays
@@ -318,6 +345,7 @@ func (w *Writer) AppendAll(records []Record) error {
 			record = stamp(record)
 		}
 		record.Run = w.run
+		record.Reviewed = w.reviewed
 		encoder := json.NewEncoder(&lines)
 		// HTML escaping is off so a recorded document reads as the project
 		// wrote it rather than as a wall of <. It is a spelling choice and

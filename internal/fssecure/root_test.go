@@ -467,6 +467,86 @@ func TestRootAppendNeverCreatesWhatItWasNotAskedFor(t *testing.T) {
 	}
 }
 
+// Replace writes a whole generated file where Append extends one, under the
+// same containment: the same escapes refused, the same final-symlink and
+// link-count refusals, and a rewrite that leaves nothing of the old contents.
+func TestRootReplacesInsideAndRefusesEveryEscape(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "project")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := mustOpenRoot(t, dir)
+
+	if err := root.Replace("generated.json", []byte("{\"first\":true}\n")); err != nil {
+		t.Fatal(err)
+	}
+	// A second, shorter document replaces the first entirely: a generated file
+	// has nothing in its old contents to keep, and a leftover tail would be a
+	// document nothing produced.
+	if err := root.Replace("generated.json", []byte("{}\n")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "generated.json"))
+	if err != nil || string(data) != "{}\n" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+
+	for _, relative := range []string{"", "..", "../escape.json", "/etc/passwd", "gen\x00.json"} {
+		if err := root.Replace(relative, []byte("x")); !errors.Is(err, ErrOutsideRoot) {
+			t.Fatalf("%q must be refused as outside the root, got %v", relative, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(base, "escape.json")); err == nil {
+		t.Fatal("a refused replace must not have written anything")
+	}
+	if err := root.MakeDir("records"); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Replace("records", []byte("x")); err == nil {
+		t.Fatal("a directory must not be replaced as a regular file")
+	}
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// A final component that is a symlink is refused whatever it points at, and
+	// the refusal creates nothing — the same rule the append is held to.
+	target := filepath.Join(dir, "real.json")
+	if err := os.WriteFile(target, []byte("kept\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "alias.json")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.Replace("alias.json", []byte("overwritten\n")); err == nil {
+		t.Fatal("a final symlink must be refused")
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "kept\n" {
+		t.Fatalf("the refused replace must not have reached the link's target: data=%q err=%v", data, err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "absent.json"), filepath.Join(dir, "toabsent.json")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.Replace("toabsent.json", []byte("x")); err == nil {
+		t.Fatal("a final symlink to a file that is not there must be refused")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "absent.json")); err == nil {
+		t.Fatal("a refused replace must not create the file the link pointed at")
+	}
+	// And a hardlinked alias is refused, so a generated file cannot be written
+	// over whatever else names that inode.
+	if err := os.Link(target, filepath.Join(dir, "linked.json")); err != nil {
+		t.Skipf("cannot create hardlink: %v", err)
+	}
+	if err := root.Replace("linked.json", []byte("x")); err == nil {
+		t.Fatal("a file with more than one name must be refused")
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "kept\n" {
+		t.Fatalf("the refused replace must not have reached the aliased file: data=%q err=%v", data, err)
+	}
+}
+
 // The containment question a directory poses is not the one a file poses. A
 // declared audit directory becomes an intermediate component of everything
 // written beneath it, so its final component has to be resolved — while a file's

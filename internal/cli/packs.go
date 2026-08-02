@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -53,9 +57,228 @@ func (a *App) packsCommand() *cobra.Command {
 		a.packsListCommand(),
 		a.packsValidateCommand(),
 		a.packsTestCommand(),
+		a.packsLockCommand(),
+		a.packsVerifyCommand(),
 		a.packsSchemaCommand(),
 	)
 	return packs
+}
+
+func (a *App) packsLockCommand() *cobra.Command {
+	format := "human"
+	configPath := ""
+	command := &cobra.Command{
+		Use:   "lock",
+		Short: "Declare the project's current documents as its reviewed set",
+		Long: "Write the project's reviewed-set lock (ADR-0019): a generated sibling of jpack.json named " +
+			"jpack.lock.json, pinning the exact bytes of the configuration and of every pack and graph it " +
+			"declares. Running this command IS the amendment -- it is how a project says, in a file a reviewer " +
+			"can diff, that the law changed on purpose. It reviews nothing and approves nothing: your pull " +
+			"request is still the approval, exactly as it is for the documents themselves. The file is " +
+			"deterministic, so re-running it over an unchanged tree rewrites identical bytes and leaves no diff " +
+			"to read. Its presence is what turns verification on: with no lock file, nothing anywhere in this " +
+			"runtime behaves differently, and with one, the deciding surfaces refuse to evaluate law that differs " +
+			"from it. A configuration that does not load is refused before anything is written -- a lock over a " +
+			"configuration this runtime cannot read would declare a set nobody can check.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			const commandName = "packs lock"
+			if err := validateFormat(format); err != nil {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			loaded, failure := a.loadProject(configPath, commandName, format)
+			if failure != nil {
+				return failure
+			}
+			defer loaded.Close()
+			lockName, named := loaded.LockName()
+			if !named {
+				return a.projectFailure(commandName, format, loaded.LockNameFailure())
+			}
+			// The generated file never lands on a document the configuration
+			// declares. Writing there would destroy declared law with a
+			// generated artifact and then record the digest of what it
+			// destroyed — the one write in this runtime that could take
+			// something away.
+			if owner, declared := loaded.DeclaresPath(lockName); declared {
+				return a.operational(commandName, format, result.ExitInvalid, "JPS-LOCK-PATH",
+					fmt.Sprintf("The reviewed-set lock would be written at %s, which this configuration declares as %s. Rename that document, or name the configuration something whose lock lands elsewhere; nothing was written.",
+						display.Sanitize(loaded.LockPath()), display.Sanitize(owner)))
+			}
+			document, lockFailure := lock.Generate(loaded)
+			if lockFailure != nil {
+				return a.lockFailure(commandName, format, lockFailure)
+			}
+			contents, err := lock.Encode(document)
+			if err != nil {
+				return a.operational(commandName, format, result.ExitInternal, "JPS-LOCK-ENCODE", "The reviewed-set lock could not be encoded.")
+			}
+			// A generator must not emit a document its own reader refuses. Past
+			// the limit the lock would be unreadable by packs verify and by
+			// every deciding surface, and the refusal's steer — run packs lock
+			// — would regenerate the same unreadable file.
+			if int64(len(contents)) > project.MaxLockBytes {
+				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-LOCK-BYTE-LIMIT",
+					fmt.Sprintf("The reviewed set of %d declared document(s) encodes to %d bytes, past the %d-byte limit every reader of this file applies; nothing was written.",
+						len(loaded.IDs)+len(loaded.GraphIDs), len(contents), project.MaxLockBytes))
+			}
+			if err := loaded.WriteLock(contents); err != nil {
+				return a.operational(commandName, format, result.ExitIO, "JPS-LOCK-WRITE", "The reviewed-set lock could not be written into the configuration's own directory.")
+			}
+			output := lockReport(loaded, document, commandName)
+			output.WrittenTo = loaded.LockPath()
+			if err := a.renderPackLock(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	return command
+}
+
+func (a *App) packsVerifyCommand() *cobra.Command {
+	format := "human"
+	configPath := ""
+	command := &cobra.Command{
+		Use:   "verify",
+		Short: "Check the project's documents against its reviewed-set lock",
+		Long: "Compare a project's current documents against the reviewed set its jpack.lock.json declares " +
+			"(ADR-0019), and report every difference by name: config-drift when the configuration's own bytes " +
+			"changed, document-drift when a declared pack or graph changed, document-missing when one cannot be " +
+			"read, lock-entry-missing when the configuration declares a document the reviewed set does not name, " +
+			"and locked-but-undeclared when the reviewed set names one the configuration dropped. Every " +
+			"difference is reported, not the first. It says what changed and never whether the change was " +
+			"right: an amendment and a tampering look identical to a runtime, and only the people reviewing the " +
+			"diff can tell them apart. Exit 0 when the project matches its reviewed set, 1 when anything " +
+			"differs. A project with no lock has nothing to verify against, which is reported as an operational " +
+			"refusal naming the command that would create one rather than as a failed verification.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			const commandName = "packs verify"
+			if err := validateFormat(format); err != nil {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			loaded, failure := a.loadProject(configPath, commandName, format)
+			if failure != nil {
+				return failure
+			}
+			defer loaded.Close()
+			if _, named := loaded.LockName(); !named {
+				return a.projectFailure(commandName, format, loaded.LockNameFailure())
+			}
+			if !loaded.HasLock() {
+				return a.lockFailure(commandName, format, lock.NoLockFailure(loaded))
+			}
+			document, lockFailure := lock.Load(loaded)
+			if lockFailure != nil {
+				return a.lockFailure(commandName, format, lockFailure)
+			}
+			output := verificationReport(loaded, document, lock.Verify(loaded, document), commandName)
+			if err := a.renderPackLockVerification(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			code := result.ExitSuccess
+			if output.Status != "valid" {
+				code = result.ExitInvalid
+			}
+			return &handledExit{code: code}
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	return command
+}
+
+// lockReport composes the payload packs lock writes: the reviewed set as it was
+// just declared, in the sorted order every project payload uses.
+func lockReport(loaded *project.Project, document lock.Document, command string) result.PackLock {
+	output := result.PackLock{
+		OutputVersion: result.OutputVersion,
+		Tool:          result.CurrentTool(),
+		Command:       command,
+		Status:        "valid",
+		Kind:          result.ProjectKind,
+		ConfigPath:    loaded.ConfigPath,
+		LockPath:      loaded.LockPath(),
+		LockVersion:   document.LockVersion,
+		ConfigDigest:  document.Config.Digest,
+		Entries:       []result.LockedID{},
+	}
+	for _, id := range loaded.IDs {
+		entry := document.Packs[id]
+		output.Entries = append(output.Entries, result.LockedID{Kind: "pack", ID: id, Path: entry.Path, Digest: entry.Digest})
+	}
+	for _, id := range loaded.GraphIDs {
+		entry := document.Graphs[id]
+		output.Entries = append(output.Entries, result.LockedID{Kind: "graph", ID: id, Path: entry.Path, Digest: entry.Digest})
+	}
+	output.Summary.Total = len(output.Entries)
+	output.Summary.Passed = len(output.Entries)
+	return output
+}
+
+// verificationReport composes the payload packs verify writes. The summary
+// counts declared documents rather than findings, and the configuration's own
+// drift is a configuration-level check beside them: the configuration is not one
+// of the documents the counts are about.
+func verificationReport(loaded *project.Project, document lock.Document, checks []lock.Check, command string) result.PackLockVerification {
+	output := result.PackLockVerification{
+		OutputVersion: result.OutputVersion,
+		Tool:          result.CurrentTool(),
+		Command:       command,
+		Status:        "valid",
+		Kind:          result.ProjectKind,
+		ConfigPath:    loaded.ConfigPath,
+		LockPath:      loaded.LockPath(),
+		LockVersion:   document.LockVersion,
+		Findings:      []result.LockFinding{},
+	}
+	// The summary counts declared documents, which is what Total is. A finding
+	// about the configuration is a configuration-level check, and one about an
+	// entry the configuration no longer declares counts nowhere in a total of
+	// documents the configuration declares — it gets its own number. Failures
+	// are keyed by kind and id together, because a pack and a graph may share
+	// an id and two drifted documents must not collapse into one.
+	failed := map[string]bool{}
+	for _, check := range checks {
+		switch check.Name {
+		case lock.CheckConfigDrift:
+			output.Checks = append(output.Checks, result.PackCheck{
+				Name:   check.Name,
+				Status: result.PackCheckFailed,
+				Detail: check.Detail,
+			})
+		case lock.CheckUndeclaredInConfig:
+			output.StaleEntries++
+		default:
+			failed[check.Kind+"/"+check.ID] = true
+		}
+		output.Findings = append(output.Findings, result.LockFinding{
+			Name:   check.Name,
+			Kind:   check.Kind,
+			ID:     check.ID,
+			Path:   check.Path,
+			Detail: check.Detail,
+		})
+		output.Status = "invalid"
+	}
+	output.Summary.Total = len(loaded.IDs) + len(loaded.GraphIDs)
+	output.Summary.Failed = len(failed)
+	output.Summary.Passed = output.Summary.Total - output.Summary.Failed
+	if len(output.Checks) == 0 {
+		output.Checks = append(output.Checks, result.PackCheck{Name: lock.CheckConfigDrift, Status: result.PackCheckPassed})
+	}
+	return output
+}
+
+// lockFailure reports one reviewed-set failure through the same operational
+// path every other refusal takes. Like a project failure it carries no §8.4
+// class: a lock that does not match is not an evaluation error, because no
+// evaluation was attempted.
+func (a *App) lockFailure(command, format string, failure *lock.Failure) error {
+	return a.operational(command, format, failure.ExitCode, failure.Code, failure.Message)
 }
 
 func (a *App) packsListCommand() *cobra.Command {

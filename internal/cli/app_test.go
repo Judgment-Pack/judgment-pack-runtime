@@ -84,6 +84,12 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"packs", "test", "--help"}, mustReference: true},
 		{args: []string{"packs", "list", "--help"}},
 		{args: []string{"packs", "validate", "--help"}},
+		// The reviewed-set lock (ADR-0019). Neither verb evaluates, so neither
+		// has an evaluator claim to point at; both are inventoried for the
+		// phrase scans, which is where a stray claim about what a lock proves
+		// would otherwise hide.
+		{args: []string{"packs", "lock", "--help"}},
+		{args: []string{"packs", "verify", "--help"}},
 		{args: []string{"packs", "schema", "--help"}},
 	} {
 		code, stdout, stderr := runTest(t, surface.args, "")
@@ -545,6 +551,8 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 		"cli packs validate --help",
 		"cli packs test --help",
 		"cli packs schema --help",
+		"cli packs lock --help",
+		"cli packs verify --help",
 		"mcp tools/list list_packs",
 		"mcp tools/list get_pack",
 		"prose docs/building-with-packs.md",

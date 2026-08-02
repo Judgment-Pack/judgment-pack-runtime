@@ -66,7 +66,12 @@ Release notes describe compatibility separately for:
   artifacts.
 
 The JSON `outputVersion` is a protocol version, not the CLI release version. A change that breaks
-machine-output compatibility must deliberately increment that protocol version.
+machine-output compatibility must deliberately increment that protocol version. The same rule
+governs every versioned JSON artifact this runtime writes or reads — `outputVersion` for machine
+output, `recordVersion` for an audit record (ADR-0018), `lockVersion` for a reviewed-set lock
+(ADR-0019), and `configVersion` for a `jpack.json` (ADR-0012) — each independent of the others and
+of the release version: an added member is backward-compatible and does not move one, and a removed
+or renamed member is the break that does.
 
 ## Release artifacts
 
