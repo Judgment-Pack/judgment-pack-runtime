@@ -1,9 +1,17 @@
-// Package fssecure reads files under a containment rule: a project's declared
-// paths are relative to that project's own directory, and none of them may leave
-// it.
+// Package fssecure reaches a project's files under a containment rule: a
+// project's declared paths are relative to that project's own directory, and
+// none of them may leave it.
+//
+// Nearly everything here reads. The one exception is Root.Append with the
+// Root.MakeDir that prepares its directory, which exist for the one thing a
+// project can ask this runtime to write — the audit trail of ADR-0018, into a
+// directory that project's own configuration declares. They are in this package
+// rather than at the surface that calls them precisely because the containment
+// rule is not weaker for a write: the same handle, the same lexical refusal, the
+// same final-component checks, and no pathname handed to anything.
 //
 // The rule is enforced by Root, which holds the directory open and resolves every
-// read against that handle. Containment therefore holds through the open and not
+// access against that handle. Containment therefore holds through the open and not
 // merely up to it — the distinction matters, because a resolver that returns a
 // pathname for someone else to open leaves an interval in which the filesystem
 // can be rearranged underneath the decision. Root has no such interval; see its

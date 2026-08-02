@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -411,7 +412,7 @@ func quoteJSON(t *testing.T, value string) string {
 func TestABrokenConfigurationIsAToolError(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, project.DefaultConfigName)
-	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","packs":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"4","packs":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(project.ConfigEnv, configPath)
@@ -422,6 +423,129 @@ func TestABrokenConfigurationIsAToolError(t *testing.T) {
 	}
 	if text := toolText(t, listed); !strings.Contains(text, "It accepts: "+strings.Join(project.SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must name the versions this runtime accepts: %q", text)
+	}
+}
+
+// A project that declares an audit directory is recorded on this surface too,
+// with the pack passed as text as much as by id: the configuration says what is
+// recorded, and which argument the client used is not part of that. A failure
+// to write the record is a tool error and no disposition comes back with it.
+func TestExperimentalEvaluateRecordsWhatTheProjectAskedFor(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	config := `{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "evidence": `{"intake-form":"present","sponsor-endorsement":"present"}`}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack": string(pack), "facts": projectFacts}),
+		toolCall(t, 3, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": `{"request":{"type":"data-access"}}`, "evidence": `{"not-a-requirement":"present"}`}),
+	}, ""))
+	for index, response := range responses[:2] {
+		if response["result"].(map[string]any)["isError"] != false {
+			t.Fatalf("call %d must succeed: %#v", index+1, response)
+		}
+	}
+	if responses[2]["result"].(map[string]any)["isError"] != true {
+		t.Fatalf("the third call must be refused: %#v", responses[2])
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	// Two completed evaluations, two records. The refused one produced no
+	// disposition at all (§8.4) and left no record.
+	if len(lines) != 2 {
+		t.Fatalf("records = %d, want 2: %q", len(lines), data)
+	}
+	var evaluation result.Evaluation
+	decodeStructured(t, responses[0]["result"].(map[string]any), &evaluation)
+	var record map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+		t.Fatalf("undecodable record %q: %v", lines[0], err)
+	}
+	if record["kind"] != audit.KindEvaluation || record["surface"] != "mcp experimental_evaluate" {
+		t.Fatalf("record = %v", record)
+	}
+	if record["pack"].(map[string]any)["id"] != evaluation.PackID {
+		t.Fatalf("record = %v, payload = %+v", record, evaluation)
+	}
+	canonical, err := evaluation.Disposition.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(lines[0], `"disposition":`+string(canonical)) {
+		t.Fatalf("the record must embed the call's own canonical disposition %s: %q", canonical, lines[0])
+	}
+
+	// A record that cannot be written refuses the call, and the disposition
+	// does not come back without it.
+	occupied := t.TempDir()
+	if err := os.WriteFile(filepath.Join(occupied, "packs.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(occupied, "audit"), []byte("occupied"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Join(occupied, project.DefaultConfigName)
+	if err := os.WriteFile(blocked, []byte(`{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, blocked)
+	refused := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}))[0]["result"].(map[string]any)
+	if refused["isError"] != true || toolText(t, refused) != audit.FailureMessage {
+		t.Fatalf("a record that could not be written refuses the call: %#v", refused)
+	}
+	// The refusal carries the same code the CLI reports, so a client can tell
+	// "your decision was not recorded" from an argument mistake — and carries no
+	// disposition, which is the answer this refusal exists to withhold.
+	var envelope struct {
+		Status      string `json:"status"`
+		Diagnostics []struct {
+			Code string `json:"code"`
+		} `json:"diagnostics"`
+		Disposition any `json:"disposition"`
+	}
+	decodeStructured(t, refused, &envelope)
+	if envelope.Status != "error" || len(envelope.Diagnostics) != 1 ||
+		envelope.Diagnostics[0].Code != audit.FailureCode || envelope.Disposition != nil {
+		t.Fatalf("refusal envelope = %+v (%#v)", envelope, refused["structuredContent"])
+	}
+}
+
+// A configuration that is there and cannot be read refuses the call on this
+// surface too, with the pack passed as text: the same fail-closed rule the CLI
+// applies, for the same reason.
+func TestABrokenConfigurationRefusesAPackPassedAsText(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","packs":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	outcome := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack": string(pack), "facts": projectFacts}))[0]["result"].(map[string]any)
+	if outcome["isError"] != true || !strings.Contains(toolText(t, outcome), project.DefaultConfigName) {
+		t.Fatalf("a broken configuration refuses the call and says which file it is: %#v", outcome)
 	}
 }
 

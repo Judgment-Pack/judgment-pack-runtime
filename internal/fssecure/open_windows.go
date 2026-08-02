@@ -13,6 +13,12 @@ import (
 // Unix does not arise here, and os.Root rejects an unsupported flag.
 const nonBlockingOpen = 0
 
+// hardLinked cannot be answered here: os.FileInfo's Windows Sys() carries no
+// link count, and reaching for one would mean a syscall this package does not
+// make. Append's other refusals stand, and the trail's containment does not
+// rest on this one.
+func hardLinked(os.FileInfo) bool { return false }
+
 func openRegular(filePath string) (*os.File, error) {
 	file, err := os.Open(filePath)
 	if err != nil {

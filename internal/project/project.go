@@ -29,7 +29,9 @@
 //     that containment holds through the open instead of only up to it. No surface
 //     here or elsewhere stops at the lexical half, and none hands back a pathname
 //     for something else to open: a caller that wants a pack by decision id gets
-//     the bytes, read through this project's own handle.
+//     the bytes, read through this project's own handle. The one thing a
+//     configuration can ask to have written — the audit directory of ADR-0018 —
+//     is written through that same handle, under the same rule.
 //
 // The hints a configuration may carry are guidance for an agent gathering inputs.
 // This runtime never acts on one: it holds no credential, opens no network
@@ -48,6 +50,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -66,11 +69,11 @@ const (
 	// on the outputVersion precedent and deliberately not semantic versioning:
 	// this file describes a shape a program reads, and a shape either is one this
 	// program knows or is not. "2" added the experimental graphs member
-	// (ADR-0017); "1", the shape without it, is still read — see
-	// SupportedConfigVersions.
-	ConfigVersion = "2"
+	// (ADR-0017) and "3" the audit member (ADR-0018); the earlier shapes, without
+	// them, are still read — see SupportedConfigVersions.
+	ConfigVersion = "3"
 	// SchemaID is the embedded schema's own $id.
-	SchemaID = "urn:judgmentpack:runtime:jpack-config:2"
+	SchemaID = "urn:judgmentpack:runtime:jpack-config:3"
 	// MaxConfigBytes bounds one configuration document. It is an index of a
 	// project's packs, not a pack.
 	MaxConfigBytes = int64(1 << 20)
@@ -86,9 +89,10 @@ var schemaBytes []byte
 
 // SupportedConfigVersions names every configVersion this runtime accepts, so a
 // refusal can say what would have been accepted instead of only what was not.
-// A "1" configuration is exactly a "2" without graphs, so both are read by one
-// schema and the version gate lives in that schema's own bytes.
-func SupportedConfigVersions() []string { return []string{"1", ConfigVersion} }
+// A "1" configuration is exactly a "2" without graphs, and a "2" exactly a "3"
+// without audit, so all three are read by one schema and each version gate
+// lives in that schema's own bytes.
+func SupportedConfigVersions() []string { return []string{"1", "2", ConfigVersion} }
 
 // Schema returns the exact embedded configuration schema bytes.
 func Schema() []byte { return schemaBytes }
@@ -150,12 +154,25 @@ type Graph struct {
 	Description string `json:"description,omitempty"`
 }
 
+// Audit is the one thing a configuration can ask this runtime to write
+// (ADR-0018): the directory an evaluation record is appended to, relative to
+// the configuration's own directory and contained by it like every other
+// declared path. The member is the whole of the opt-in — a configuration that
+// does not carry it is a configuration nothing writes for.
+type Audit struct {
+	Dir string `json:"dir"`
+}
+
 // Config is one jpack.json document. It is a closed shape: the embedded schema
 // rejects every member not named here, so a misspelled key is an error rather
 // than a silently ignored intention. Graphs exists only under configVersion
-// "2" — the schema's own version gate holds that, stated once in its bytes.
+// "2" and Audit only under "3" — the schema's own version gates hold that,
+// each stated once in its bytes. Audit is a pointer because a single-object
+// member has no other way to tell "declared, with defaults" from "absent"; a
+// map member gets that distinction for free.
 type Config struct {
 	ConfigVersion string           `json:"configVersion"`
+	Audit         *Audit           `json:"audit,omitempty"`
 	Packs         map[string]Pack  `json:"packs"`
 	Graphs        map[string]Graph `json:"graphs,omitempty"`
 }
@@ -215,6 +232,23 @@ func Locate(explicit string) string {
 func Exists(configPath string) bool {
 	info, err := os.Lstat(configPath)
 	return err == nil && info.Mode().IsRegular()
+}
+
+// Present reports whether anything at all is at path, whatever it is.
+//
+// It is the narrower question's opposite, and the two are not interchangeable.
+// Exists asks whether a *readable regular file* is there, so a symlink, a
+// directory, or a special file all answer "no" — which a surface then reads as
+// "this project does not use the convention". On a surface that decides, that
+// reading is a fail-open: the configuration is demonstrably there, it would
+// demonstrably fail to load, and the run would report a decision anyway,
+// unrecorded, for a project that asked to be recorded. So a deciding surface
+// asks this question instead, and anything present-but-unloadable reaches Load
+// and is refused with Load's own diagnostic. An error that is not "nothing is
+// there" also answers yes, for the same fail-closed reason.
+func Present(configPath string) bool {
+	_, err := os.Lstat(configPath)
+	return !errors.Is(err, os.ErrNotExist)
 }
 
 // Load reads and validates one configuration.
@@ -498,6 +532,29 @@ func (p *Project) ReadGraphRows(entry Graph, limit int64) ([]byte, error) {
 // check and the read cannot be about two different directories.
 func (p *Project) Contains(relative string) error {
 	return p.root.Contains(relative)
+}
+
+// ContainsDir reports whether one declared directory is inside the project,
+// resolving an existing final component rather than leaving it unresolved as
+// Contains does. That difference is the point: a declared directory becomes an
+// intermediate component of every path written beneath it, and an intermediate
+// symlink out of the project is precisely what the handle refuses at write time
+// — so the validate-time check has to ask the same question the write will.
+func (p *Project) ContainsDir(relative string) error {
+	return p.root.ContainsDir(relative)
+}
+
+// AuditWriter returns the writer for the audit trail this configuration asks
+// for, or nil when it asks for none — which is what a caller that never checks
+// gets right by default, because the returned writer's nil value writes
+// nothing. It is bound to the same handle every read is bound to, so the
+// records go into the directory the configuration came out of and no pathname
+// is handed to anything.
+func (p *Project) AuditWriter() *audit.Writer {
+	if p == nil || p.Config.Audit == nil {
+		return nil
+	}
+	return audit.NewWriter(p.root, p.Config.Audit.Dir)
 }
 
 // ReadFailureMessage turns one failure to obtain a configured file into a

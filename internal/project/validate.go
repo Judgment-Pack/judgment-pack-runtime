@@ -24,6 +24,10 @@ const (
 	CheckFilename       = "filename"
 	CheckHintKeys       = "hint-keys"
 	CheckMatrix         = "matrix"
+	// CheckAuditDirInsideRoot is the one check that is about the configuration
+	// itself rather than about a pack: the audit directory is the only declared
+	// path no pack entry owns (ADR-0018).
+	CheckAuditDirInsideRoot = "audit-dir-inside-root"
 )
 
 // documentChecks are the checks that read the pack document, in order. They are
@@ -69,6 +73,16 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 		ConfigVersion: p.Config.ConfigVersion,
 		Packs:         make([]result.PackValidationEntry, 0, len(selected)),
 	}
+	// The configuration's own declared path, checked before any pack is: an
+	// audit directory that leaves the project would otherwise be a report of
+	// full validity followed by an unexplainable refusal at the first decision.
+	if p.Config.Audit != nil {
+		check := p.checkAuditDir()
+		output.Checks = append(output.Checks, check)
+		if check.Status == result.PackCheckFailed {
+			output.Status = "invalid"
+		}
+	}
 	for _, packID := range selected {
 		entry := p.validatePack(engine, packID, p.Config.Packs[packID])
 		output.Summary.Total++
@@ -81,6 +95,34 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 		output.Packs = append(output.Packs, entry)
 	}
 	return output, nil
+}
+
+// checkAuditDir reports whether the declared audit directory stays inside the
+// project.
+//
+// It is decided against the project's own handle, exactly as a pack path's
+// containment is, so the check and the write cannot be about two different
+// directories. It uses the directory form of the question rather than the file
+// form: a pack path's final component is never resolved here because the open
+// refuses a final symlink whatever it points at, while an audit directory's
+// final component becomes an intermediate component of the trail written under
+// it — so `audit -> ../outside` is an escape the write will refuse and this
+// check must refuse too, not a name the check may leave alone.
+//
+// A contained directory that is not there yet passes: the first record makes
+// it, and reporting "missing" for a directory the runtime is about to create
+// would be a named check asserting a defect that does not exist.
+func (p *Project) checkAuditDir() result.PackCheck {
+	check := result.PackCheck{Name: CheckAuditDirInsideRoot, Status: result.PackCheckPassed}
+	switch err := p.ContainsDir(p.Config.Audit.Dir); {
+	case errors.Is(err, fssecure.ErrOutsideRoot):
+		check.Status = result.PackCheckFailed
+		check.Detail = fmt.Sprintf("The audit directory %q resolves outside the configuration's own directory, which no configured path may.", display.Sanitize(p.Config.Audit.Dir))
+	case err != nil:
+		check.Status = result.PackCheckFailed
+		check.Detail = fmt.Sprintf("The audit directory %q is inside the configuration's own directory but cannot be used as one: %s", display.Sanitize(p.Config.Audit.Dir), display.Sanitize(err.Error()))
+	}
+	return check
 }
 
 // validatePack applies every check to one configured pack.

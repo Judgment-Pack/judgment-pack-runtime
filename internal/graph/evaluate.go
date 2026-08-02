@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -26,10 +27,31 @@ type Options struct {
 	Command             string
 	SupportedExtensions []string
 
+	// Audit is the trail this run's records are appended to, or nil for a run
+	// that records nothing. It is a field rather than something derived from
+	// the project, because the project is live on both graph paths and only
+	// one of them is a decision: experimental graph evaluate sets it and
+	// experimental graph test does not, so a matrix run over the same graph,
+	// with the same configuration, records nothing.
+	Audit *audit.Writer
+
 	// injectionBudget overrides the per-node injected-bytes budget, whose
 	// default is the carrier's hard byte limit. It exists so a test can trip
 	// the budget without megabytes of fixture; no surface sets it.
 	injectionBudget int64
+}
+
+// auditWriteFailure is the refusal a record that could not be written
+// produces. It refuses the run rather than dropping the record: a project that
+// asked to be told what its packs decided is not served by a disposition it
+// was never told about, and the evaluation itself is untouched either way —
+// every node had already been evaluated when this is reached.
+func auditWriteFailure() *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:     audit.FailureCode,
+		Message:  audit.FailureMessage,
+		ExitCode: result.ExitIO,
+	}
 }
 
 // budget is the per-node injected-bytes budget in force.
@@ -121,6 +143,9 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 	order, _ := doc.Order()
 	dispositions := map[string]result.Disposition{}
 	nodes := make([]result.GraphNodeEvaluation, 0, len(order))
+	// The run's audit records, held until it has a composite. Empty for a run
+	// that records nothing at all.
+	records := []audit.Record{}
 	for _, nodeID := range order {
 		packID := doc.Nodes[nodeID].Pack
 		entry, _ := loaded.Entry(packID)
@@ -263,6 +288,29 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 				ExitCode: engineFailure.ExitCode,
 			}
 		}
+		// The node's record is composed now, while what it describes is in
+		// hand, and held: nothing is appended until the whole run has a
+		// composite, so a node refused later leaves no trace of the nodes that
+		// ran before it. The recorded facts are the assembled document, not the
+		// caller's — it is what this node was evaluated against, and on this
+		// surface those are two different documents.
+		if options.Audit != nil {
+			record, err := audit.EvaluationRecord(evaluated, audit.Inputs{
+				Facts:            factsBytes,
+				Evidence:         evidenceBytes,
+				EvidenceSupplied: evidenceSupplied,
+			}, packBytes, &audit.Graph{
+				ID:            doc.ID,
+				Version:       doc.Version,
+				FormatVersion: doc.FormatVersion,
+				Digest:        doc.Digest,
+				Node:          nodeID,
+			})
+			if err != nil {
+				return result.GraphEvaluation{}, auditWriteFailure()
+			}
+			records = append(records, record)
+		}
 		dispositions[nodeID] = evaluated.Disposition
 		nodes = append(nodes, result.GraphNodeEvaluation{
 			Node:          nodeID,
@@ -315,6 +363,19 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			SpecVersion:  result.EvaluatorSpecVersion,
 			BundleDigest: set.Lock().BundleDigest.Value,
 			Provenance:   set.Lock().Source.Kind,
+		}
+	}
+	// The whole run is appended here, in one write, or not at all: the node
+	// records held above plus the composite, which is the one thing none of them
+	// holds — the headline this run produced, and which node the graph declared
+	// it comes from.
+	if options.Audit != nil {
+		composite, err := audit.CompositeRecord(output, doc.Digest)
+		if err != nil {
+			return result.GraphEvaluation{}, auditWriteFailure()
+		}
+		if err := options.Audit.AppendAll(append(records, composite)); err != nil {
+			return result.GraphEvaluation{}, auditWriteFailure()
 		}
 	}
 	return output, nil

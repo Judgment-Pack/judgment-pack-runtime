@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
@@ -158,7 +159,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
 		Short: "EXPERIMENTAL SURFACE: apply the JPS §§7-8 resolution model to one pack",
-		Long:  "Apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all, including a reached §10 evaluation-work limit (resource-exhaustion, evaluation phase). The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The §§8.2-8.4 contract is JPS Core 0.2.0-draft's, and only a pack declaring that exact specVersion is evaluated: §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string, and nothing else in the document -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The payload names the pack's specVersion and the contract's evaluatorSpecVersion. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim, and one run of this command is a result rather than the claim or evidence about anything beyond that run -- no result is an authorization, an executed action, or any statement about whether the pack, the facts, or acting on the disposition is correct (§3.5). Producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version, is not an input the claimed class defines, and every evaluation payload produced this way says so in band. The pack may also be named by --pack-id, which resolves one decision id through a project's jpack.json (ADR-0012, a convention of this runtime and not of the specification); it is mutually exclusive with the pack argument, because a command with two sources for one input has an order of precedence nobody asked for. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated.",
+		Long:  "Apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all, including a reached §10 evaluation-work limit (resource-exhaustion, evaluation phase). The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The §§8.2-8.4 contract is JPS Core 0.2.0-draft's, and only a pack declaring that exact specVersion is evaluated: §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string, and nothing else in the document -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The payload names the pack's specVersion and the contract's evaluatorSpecVersion. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim, and one run of this command is a result rather than the claim or evidence about anything beyond that run -- no result is an authorization, an executed action, or any statement about whether the pack, the facts, or acting on the disposition is correct (§3.5). Producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version, is not an input the claimed class defines, and every evaluation payload produced this way says so in band. The pack may also be named by --pack-id, which resolves one decision id through a project's jpack.json (ADR-0012, a convention of this runtime and not of the specification); it is mutually exclusive with the pack argument, because a command with two sources for one input has an order of precedence nobody asked for. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. The project's configuration is consulted on every run, however the pack was named, because whether an evaluation is recorded is that configuration's to say: under configVersion \"3\" an audit member declares a directory, and each completed evaluation then appends one record to it (ADR-0018). A refused evaluation records nothing, a record that cannot be written refuses the run rather than reporting a disposition nothing kept, and a project that declares no audit member has nothing written for it.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
@@ -176,17 +177,11 @@ func (a *App) evaluateCommand() *cobra.Command {
 			if packArgument == "" && packID == "" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-PACK-ID", "A pack is required: pass a file path (or - for standard input), or --pack-id to resolve one through the project's jpack.json.")
 			}
-			// A pack named by id is read here, through the project's directory
-			// handle, and never becomes a pathname the generic reader opens again.
-			var packFromID []byte
-			packIDOversized := false
-			if packID != "" {
-				data, oversized, failure := a.resolvePackID(configPath, packID, format)
-				if failure != nil {
-					return failure
-				}
-				packFromID, packIDOversized = data, oversized
-			}
+			// Every argument refusal precedes the filesystem, on this surface as
+			// on the MCP one. A call missing a required argument, or naming an
+			// input this command does not take, never became an evaluation — and
+			// a broken configuration must not answer in place of the mistake the
+			// caller actually made.
 			if factsPath == "" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FACTS", "--facts is required: one JSON facts document (a file path, or - for standard input).")
 			}
@@ -200,6 +195,34 @@ func (a *App) evaluateCommand() *cobra.Command {
 				if input != "" && input != "-" && (strings.Contains(input, "://") || fssecure.IsRemotePath(input)) {
 					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
 				}
+			}
+			// The project is consulted on every evaluation this command runs, not
+			// only on the ones that name a pack by id: whether an evaluation is
+			// recorded is the configuration's to say (ADR-0018), and a pack named
+			// by path is still evaluated in the project the command was run in. A
+			// configuration that is there and cannot be read therefore refuses
+			// the run, on either form of the pack argument — the alternative is
+			// evaluating unrecorded for a project that asked to be told.
+			var loaded *project.Project
+			configFile := project.Locate(configPath)
+			if packID != "" || project.Present(configFile) {
+				opened, failure := project.Load(configFile)
+				if failure != nil {
+					return a.projectFailure("experimental evaluate", format, failure)
+				}
+				defer opened.Close()
+				loaded = opened
+			}
+			// A pack named by id is read here, through the project's directory
+			// handle, and never becomes a pathname the generic reader opens again.
+			var packFromID []byte
+			packIDOversized := false
+			if packID != "" {
+				data, oversized, failure := a.resolvePackID(loaded, packID, format)
+				if failure != nil {
+					return failure
+				}
+				packFromID, packIDOversized = data, oversized
 			}
 			// An oversized input is reported to the engine rather than refused
 			// here: the byte limit is a §8.2 preflight condition whose §8.4 class
@@ -250,6 +273,18 @@ func (a *App) evaluateCommand() *cobra.Command {
 			if failure != nil {
 				return a.evaluationFailure("experimental evaluate", format, failure)
 			}
+			// The record is written before the disposition is reported, and a
+			// failed write refuses the run. A project that asked to be told what
+			// its packs decided is not served by an answer it has no record of;
+			// the evaluation itself is untouched either way, having already
+			// happened.
+			if err := loaded.AuditWriter().Evaluation(output, audit.Inputs{
+				Facts:            facts,
+				Evidence:         evidence,
+				EvidenceSupplied: evidencePath != "",
+			}, pack, nil); err != nil {
+				return a.operational("experimental evaluate", format, result.ExitIO, audit.FailureCode, audit.FailureMessage)
+			}
 			if err := a.renderEvaluation(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}
@@ -280,12 +315,12 @@ func (a *App) evaluateCommand() *cobra.Command {
 // The oversized case is reported rather than refused, because the byte limit is a
 // §8.2 preflight condition the engine classes: a pack over the limit is the same
 // non-admission whether it was named by path or by id.
-func (a *App) resolvePackID(configPath, packID, format string) ([]byte, bool, error) {
-	loaded, failure := project.Load(project.Locate(configPath))
-	if failure != nil {
-		return nil, false, a.projectFailure("experimental evaluate", format, failure)
-	}
-	defer loaded.Close()
+//
+// The project is the caller's, already loaded and still open: this command
+// consults the configuration whether or not a pack was named by id, and loading
+// it twice would be a second derivation of the one thing the handle exists to
+// make single.
+func (a *App) resolvePackID(loaded *project.Project, packID, format string) ([]byte, bool, error) {
 	entry, ok := loaded.Entry(packID)
 	if !ok {
 		return nil, false, a.projectFailure("experimental evaluate", format, loaded.UnknownPackFailure(packID))
