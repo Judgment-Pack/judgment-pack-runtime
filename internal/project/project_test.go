@@ -140,6 +140,19 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+strings.Join(SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must be unsupported and name this runtime's versions: exit=%d %q", failure.ExitCode, failure.Message)
 	}
+	// A version above what this runtime reads says which side to change: the
+	// runtime. Left ambiguous, a reader edits the declaration down — observed
+	// live, with an agent — and silently discards what it declared.
+	if !strings.Contains(failure.Message, "upgrade the runtime") ||
+		!strings.Contains(failure.Message, "Do not edit the declaration") {
+		t.Fatalf("a newer declaration must steer toward upgrading the runtime: %q", failure.Message)
+	}
+	// An unparseable declaration says nothing about which side is behind, so it
+	// earns the version list and no steer.
+	_, failure = Load(writeProject(t, `{"configVersion":"next","packs":{}}`, nil))
+	if failure.Code != "JPS-PROJECT-CONFIG-VERSION" || strings.Contains(failure.Message, "upgrade the runtime") {
+		t.Fatalf("an unparseable declaration must not claim the runtime is behind: %q", failure.Message)
+	}
 }
 
 // A missing configuration is a read failure a caller can act on, and it names
