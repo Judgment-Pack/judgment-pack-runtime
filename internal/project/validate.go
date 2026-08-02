@@ -102,15 +102,25 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 //
 // It is decided against the project's own handle, exactly as a pack path's
 // containment is, so the check and the write cannot be about two different
-// directories — and only an escape fails it. A contained directory that is not
-// there yet is contained: the first record makes it, and reporting "missing"
-// for a directory the runtime is about to create would be a named check
-// asserting a defect that does not exist.
+// directories. It uses the directory form of the question rather than the file
+// form: a pack path's final component is never resolved here because the open
+// refuses a final symlink whatever it points at, while an audit directory's
+// final component becomes an intermediate component of the trail written under
+// it — so `audit -> ../outside` is an escape the write will refuse and this
+// check must refuse too, not a name the check may leave alone.
+//
+// A contained directory that is not there yet passes: the first record makes
+// it, and reporting "missing" for a directory the runtime is about to create
+// would be a named check asserting a defect that does not exist.
 func (p *Project) checkAuditDir() result.PackCheck {
 	check := result.PackCheck{Name: CheckAuditDirInsideRoot, Status: result.PackCheckPassed}
-	if err := p.Contains(p.Config.Audit.Dir); errors.Is(err, fssecure.ErrOutsideRoot) {
+	switch err := p.ContainsDir(p.Config.Audit.Dir); {
+	case errors.Is(err, fssecure.ErrOutsideRoot):
 		check.Status = result.PackCheckFailed
 		check.Detail = fmt.Sprintf("The audit directory %q resolves outside the configuration's own directory, which no configured path may.", display.Sanitize(p.Config.Audit.Dir))
+	case err != nil:
+		check.Status = result.PackCheckFailed
+		check.Detail = fmt.Sprintf("The audit directory %q is inside the configuration's own directory but cannot be used as one: %s", display.Sanitize(p.Config.Audit.Dir), display.Sanitize(err.Error()))
 	}
 	return check
 }

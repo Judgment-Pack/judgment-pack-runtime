@@ -385,12 +385,20 @@ already says what the project owns:
 That is the whole of the opt-in ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)). With it,
 each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the MCP
 `experimental_evaluate` tool appends one JSON line to `audit/evaluations.jsonl`, relative to the
-configuration: a timestamp, which surface ran, the pack's id, version, `specVersion` and the
-SHA-256 of its exact bytes, the facts and evidence documents as evaluated, and the disposition in
-the same RFC 8785 canonical form two implementations compare byte for byte. A graph run writes one
-line per node — the facts there are the assembled document, after the upstream outcomes were
-injected, because that is what the node was evaluated against — plus one for the composite
-headline.
+configuration: a run id and a timestamp, which surface ran, which build of this runtime ran it and
+against which bundled specification artifacts, the pack's id, version, `specVersion` and the SHA-256
+of its exact bytes, the facts and evidence documents as evaluated, and the disposition in the same
+RFC 8785 canonical form two implementations compare byte for byte. A graph run writes one line per
+node — the facts there are the assembled document, after the upstream outcomes were injected,
+because that is what the node was evaluated against, and each line names the graph's `formatVersion`
+and the digest of its exact bytes — plus one for the composite headline. An evaluation run under
+`--rfc0008-quantifiers` carries the same draft-RFC label its payload carries, because a disposition
+produced by operators no published JPS version defines is not an ordinary one.
+
+The documents are recorded as JSON *values*: the encoder compacts them, so `{ "x": 1 }` is written
+as `{"x":1}` and the line is the source compacted rather than the source itself. Replaying a record
+gives the evaluation that ran, because evaluation is a function of the value; keeping the caller's
+exact bytes, if you need those, is the caller's job.
 
 Four things it deliberately does not do. It does not record test runs: `packs test`, `experimental
 graph test`, and `experimental evaluate-corpus` run the same evaluator over the same project and
@@ -405,9 +413,17 @@ tree, under your version control and your retention policy, exactly like your pa
 
 `packs validate` reports the directory's containment as a named check on the configuration itself,
 `audit-dir-inside-root`, so a path that leaves the project is a CI failure rather than an
-unexplained refusal at the first decision. A directory that is not there yet passes it: the first
-record creates it, with owner-only permissions. A directory you created yourself keeps the mode you
-gave it.
+unexplained refusal at the first decision — a symlinked directory pointing outside included, since
+that is what everything written beneath it would resolve through. A directory that is not there yet
+passes it: the first record creates it. On unix the trail file is kept owner-only; on Windows a file
+mode sets only the read-only attribute and does not restrict the ACL, so put the directory somewhere
+whose ACL is already what you want. A directory you created yourself keeps the mode you gave it.
+
+Each line carries a `run` id: one value per invocation, on every record that invocation writes. For
+a graph run that is what marks the run finished — the `graph-composite` line carries the same id as
+its nodes' lines, so node lines whose id has no composite belong to a run that did not complete, and
+a trailing line that is not whole JSON is a write that did not complete. Read a trail by that rule
+rather than by assuming every line is a decision.
 
 The records hold your input documents. That is what they are for, and it is why the directory is
 one you name rather than one this runtime picks: the human-readable diagnostics stay sanitized and

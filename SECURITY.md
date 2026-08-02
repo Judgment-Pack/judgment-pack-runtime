@@ -44,22 +44,34 @@ created, named, overwritten, or deleted anywhere.
 
 The append is bounded by the directory handle held open on the configuration's own directory and
 refuses every escape a read refuses — an absolute or traversing path, a path leaving the root
-through a symlinked component, a final component that is a symlink (checked before the open as
-well as after it, so a refused append creates nothing), anything that is not a regular file — and
-no pathname is handed to a caller to open. That guarantee is about path resolution and symlinks. It
-does not extend to a hardlinked alias, which is a second name for one inode and invisible to every
-path-based check: the append refuses a trail file with more than one link where the platform
-reports the count, but making such an alias requires write access inside the project directory,
-which is the same trust domain as editing the packs themselves.
+through a symlinked component, a final component that is a symlink, anything that is not a regular
+file — and no pathname is handed to a caller to open. That guarantee is about path resolution and
+symlinks. It does not extend to a hardlinked alias, which is a second name for one inode and
+invisible to every path-based check: the append refuses a trail file with more than one link where
+the platform reports the count, but making such an alias requires write access inside the project
+directory, which is the same trust domain as editing the packs themselves.
+
+What "nothing else is created" covers, precisely: a refusal reached before or at the open creates
+nothing. An existing trail is opened without `O_CREATE`, and a trail that is not there yet is
+created exclusively, so a name that appears in between — a symlink most of all — loses the race
+rather than being followed into existence. A failure *after* a successful create, on the other
+hand, leaves the file there, empty or partly written; an appender cannot un-append. That is why
+every record carries a run id and a graph run's composite is its commit marker: a reader tells a
+complete run from an abandoned one by that rule, stated in `internal/audit`'s package
+documentation, and not by trusting the writer to have been atomic.
 
 The records deliberately contain the facts and evidence documents that were evaluated: they are the
 project's own trail, written where the project asked, and they are not diagnostics. Human
 diagnostics remain sanitized and value-free, and a failed append is reported as an input/output
-failure carrying no value at all. The trail file's mode is set to owner-only on every append. The
-audit directory's mode is set when this runtime creates it and not afterward: a directory that was
-already there keeps the mode the project gave it, and its access control is the project's. The file
-grows without bound: its retention and whether it belongs in version control are the project's,
-exactly as for the packs beside it.
+failure carrying no value at all. **On unix** the trail file's mode is set to owner-only on every
+append. **On Windows a file mode is not access control**: Go's `Chmod` there sets only the
+read-only attribute and does not restrict the DACL, so what may read a trail is whatever the
+containing directory's ACL allows, and a project recording facts and evidence on Windows should
+place its audit directory where that ACL is already what it wants. The audit directory's mode is
+set when this runtime creates it and not afterward, on every platform: a directory that was already
+there keeps the mode the project gave it, and its access control is the project's. The file grows
+without bound: its retention and whether it belongs in version control are the project's, exactly
+as for the packs beside it.
 
 Local input files are opened without following a final symlink where the operating system supports
 that primitive, then checked as the same regular file before reading. Suite descendants are also

@@ -177,10 +177,29 @@ func (a *App) evaluateCommand() *cobra.Command {
 			if packArgument == "" && packID == "" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-PACK-ID", "A pack is required: pass a file path (or - for standard input), or --pack-id to resolve one through the project's jpack.json.")
 			}
+			// Every argument refusal precedes the filesystem, on this surface as
+			// on the MCP one. A call missing a required argument, or naming an
+			// input this command does not take, never became an evaluation — and
+			// a broken configuration must not answer in place of the mistake the
+			// caller actually made.
+			if factsPath == "" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FACTS", "--facts is required: one JSON facts document (a file path, or - for standard input).")
+			}
+			if packArgument == "-" && factsPath == "-" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The pack and the facts document cannot both be standard input.")
+			}
+			if evidencePath == "-" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The evidence document cannot be standard input; pass a file path.")
+			}
+			for _, input := range []string{packArgument, factsPath, evidencePath} {
+				if input != "" && input != "-" && (strings.Contains(input, "://") || fssecure.IsRemotePath(input)) {
+					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
+				}
+			}
 			// The project is consulted on every evaluation this command runs, not
 			// only on the ones that name a pack by id: whether an evaluation is
 			// recorded is the configuration's to say (ADR-0018), and a pack named
-			// by path is still evaluated inside the project it was named in. A
+			// by path is still evaluated in the project the command was run in. A
 			// configuration that is there and cannot be read therefore refuses
 			// the run, on either form of the pack argument — the alternative is
 			// evaluating unrecorded for a project that asked to be told.
@@ -204,20 +223,6 @@ func (a *App) evaluateCommand() *cobra.Command {
 					return failure
 				}
 				packFromID, packIDOversized = data, oversized
-			}
-			if factsPath == "" {
-				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FACTS", "--facts is required: one JSON facts document (a file path, or - for standard input).")
-			}
-			if packArgument == "-" && factsPath == "-" {
-				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The pack and the facts document cannot both be standard input.")
-			}
-			if evidencePath == "-" {
-				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The evidence document cannot be standard input; pass a file path.")
-			}
-			for _, input := range []string{packArgument, factsPath, evidencePath} {
-				if input != "" && input != "-" && (strings.Contains(input, "://") || fssecure.IsRemotePath(input)) {
-					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
-				}
 			}
 			// An oversized input is reported to the engine rather than refused
 			// here: the byte limit is a §8.2 preflight condition whose §8.4 class

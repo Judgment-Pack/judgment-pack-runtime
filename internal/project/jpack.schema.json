@@ -29,7 +29,7 @@
       "enum": ["1", "2", "3"]
     },
     "graphs": {
-      "description": "EXPERIMENTAL graphs composing this project's packs (ADR-0015, ADR-0017), keyed by the project's own name for one graph — the graph document's id member is the graph's identity and is not this key, exactly as a pack entry's key is not the pack's id. Declaring any graph requires configVersion \"2\". The graph surface may change or be removed without compatibility promise, and a project that declares no graph never needs this member or that version.",
+      "description": "EXPERIMENTAL graphs composing this project's packs (ADR-0015, ADR-0017), keyed by the project's own name for one graph — the graph document's id member is the graph's identity and is not this key, exactly as a pack entry's key is not the pack's id. Declaring any graph requires configVersion \"2\" or later. The graph surface may change or be removed without compatibility promise, and a project that declares no graph never needs this member or that version.",
       "type": "object",
       "minProperties": 1,
       "propertyNames": { "$ref": "#/$defs/decisionId" },
@@ -50,7 +50,7 @@
       "required": ["dir"],
       "properties": {
         "dir": {
-          "description": "The directory the records are appended to, relative to this file's own directory, which it must resolve inside — the same containment every declared path here is held to, and held to it the same two ways: the lexical check packs validate reports as the audit-dir-inside-root check before anything is opened, and resolution against the handle held open on this file's directory when the record is written. The directory is created inside that handle if it is not there; nothing outside it can be created, named, or written, whatever the pathname would suggest. One file is written in it, evaluations.jsonl, one JSON record per line, owner-readable only. The directory's own mode is set when this runtime creates it and never afterward: a directory the project made is the project's, and its access control stays the project's.",
+          "description": "The directory the records are appended to. It is a directory rather than a file, and the constraints differ from a declared file's accordingly: it need not exist — the first record creates it — a symlink to a directory inside this file's own directory is followed like any other component, and a symlink pointing out of it is the escape packs validate reports as the audit-dir-inside-root check and the write refuses again. Nothing outside can be created, named, or written, whatever the pathname would suggest. One file is written in it, evaluations.jsonl, one JSON record per line. On unix that file is kept owner-readable only; on Windows a file mode sets only the read-only attribute and does not restrict the DACL, so what may read a record there is whatever the directory's ACL allows. The directory's own mode is set when this runtime creates it and never afterward: a directory the project made is the project's, and its access control stays the project's.",
           "$ref": "#/$defs/relativePath"
         }
       }
@@ -59,8 +59,12 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
     },
+    "relativeFilePath": {
+      "description": "A relative path naming one file. Containment is the relativePath rule and nothing here relaxes it; on top of it, a final component that is a symlink is refused whatever it points at, and only a regular file is read.",
+      "$ref": "#/$defs/relativePath"
+    },
     "relativePath": {
-      "description": "A path relative to this configuration file's own directory, which it must resolve inside. Two different checks say so and neither substitutes for the other: a lexical check refuses an absolute or escaping path before anything is read, and at read time the path is resolved against a handle held open on that directory -- which is what catches a path reaching outside through a symlinked component, since a lexical check cannot see one, and what keeps containment true through the open rather than only up to it. A final component that is a symlink is refused whatever it points at, and only a regular file is read.",
+      "description": "A path relative to this configuration file's own directory, which it must resolve inside. Two different checks say so and neither substitutes for the other: a lexical check refuses an absolute or escaping path before anything is opened, and at access time the path is resolved against a handle held open on that directory -- which is what catches a path reaching outside through a symlinked component, since a lexical check cannot see one, and what keeps containment true through the open rather than only up to it. What the final component may be depends on what the member names, and each member says so: this is the containment rule and nothing more.",
       "type": "string",
       "minLength": 1
     },
@@ -71,11 +75,11 @@
       "properties": {
         "path": {
           "description": "The pack document, relative to this file's directory.",
-          "$ref": "#/$defs/relativePath"
+          "$ref": "#/$defs/relativeFilePath"
         },
         "matrix": {
           "description": "The pack's instance matrix, relative to this file's directory. Rows use the same case-carrier shape as the bundled evaluation corpus.",
-          "$ref": "#/$defs/relativePath"
+          "$ref": "#/$defs/relativeFilePath"
         },
         "description": {
           "description": "One line about the decision this pack encodes, for a human or an agent reading the inventory.",
@@ -108,11 +112,11 @@
       "properties": {
         "path": {
           "description": "The graph document, relative to this file's directory.",
-          "$ref": "#/$defs/relativePath"
+          "$ref": "#/$defs/relativeFilePath"
         },
         "rows": {
           "description": "The graph's matrix, relative to this file's directory: rows run by experimental graph test. Optional — a graph without rows validates in the project walk and is skipped by the test walk, which says so.",
-          "$ref": "#/$defs/relativePath"
+          "$ref": "#/$defs/relativeFilePath"
         },
         "description": {
           "description": "One line about the composition this graph declares, for a human or an agent reading the inventory.",

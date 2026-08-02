@@ -51,6 +51,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -163,6 +164,12 @@ type Document struct {
 	Nodes         map[string]Node `json:"nodes"`
 	Edges         []Edge          `json:"edges"`
 	Result        string          `json:"result"`
+	// Digest names the exact bytes this document was decoded from. It is not a
+	// member of the document and is never decoded from one: Load sets it from
+	// what it was handed, which is the only place the bytes and the decoded
+	// shape are known to be the same thing. A graph's id and version are as
+	// mutable as a pack's, so an audit record names both and the digest too.
+	Digest string `json:"-"`
 }
 
 // Load reads one graph document from bytes: the strict carrier decode every
@@ -232,6 +239,7 @@ func Load(data []byte, name string) (Document, *evaluation.Failure) {
 			ExitCode: result.ExitInternal,
 		}
 	}
+	document.Digest = audit.Digest(data)
 	return document, nil
 }
 

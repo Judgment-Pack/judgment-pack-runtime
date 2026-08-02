@@ -21,12 +21,22 @@ All notable changes to tagged releases are documented here.
   and the provisional code `JPS-AUDIT-WRITE`, reporting no disposition; the evaluation is never
   influenced, having already completed. The append goes through the directory handle
   `internal/fssecure` already holds open on the configuration's own directory, under exactly the
-  refusals a read is held to plus two of the write's own — a final symlink is refused before the
-  open as well as after it, so a refusal creates nothing, and a trail file with more than one link
-  is refused where the platform reports the count — and no surface is handed a pathname.
-  `packs validate` gains one check on the configuration itself, `audit-dir-inside-root`, so a
-  declared directory that leaves the project fails the gate instead of failing every later
-  evaluation. Two consequences worth reading before upgrading a project: declaring `audit` requires
+  refusals a read is held to plus two of the write's own — an existing trail is opened without
+  `O_CREATE` and an absent one exclusively, so a symlink swapped in behind the check loses the race
+  instead of being followed into existence, and a trail file with more than one link is refused
+  where the platform reports the count — and no surface is handed a pathname. `packs validate` gains
+  one check on the configuration itself, `audit-dir-inside-root`, which resolves the declared
+  directory's final component because everything written beneath it resolves through that component,
+  so a directory that leaves the project — a symlink out of it included — fails the gate instead of
+  failing every later evaluation. Every record carries a run id, one per invocation, and a graph
+  run's composite line is that run's commit marker: a flat append cannot be atomic against an I/O
+  failure partway through a write, so a reader tells a complete run from an abandoned one by that
+  rule rather than by trusting the writer. Records name the build that produced them, the bundled
+  artifacts evaluated against, the graph's `formatVersion` and document digest, and the draft-RFC
+  label whenever the payload carries one; inputs are recorded as JSON values, compacted by the line
+  encoder rather than kept as source bytes. On unix the trail file is kept owner-only; on Windows a
+  Go file mode sets the read-only attribute and does not restrict the DACL, so confidentiality there
+  is the containing directory's ACL. Two consequences worth reading before upgrading a project: declaring `audit` requires
   `configVersion "3"`, which an older runtime refuses as unsupported while naming what it accepts;
   and the three evaluating surfaces now resolve the project configuration on every run, so a
   configuration that *is there* and cannot be read now refuses an evaluation whose pack was named by

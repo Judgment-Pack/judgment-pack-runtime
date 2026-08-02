@@ -87,14 +87,29 @@ the mechanical guard on CONFORMANCE.md's enumeration of the six surfaces that re
 unchanged.
 
 **The record.** One JSON text per line in `<dir>/evaluations.jsonl`, appended and never rewritten:
-`recordVersion` `"1"`, `at` (RFC 3339, UTC), `kind`, `surface`, `evaluatorSpecVersion`, the pack's
-`id`, `version`, `specVersion` and the SHA-256 digest of its exact bytes, the graph identity and
-node where there is one, the `facts` and `evidence` documents as they reached the engine with the
-`evidenceSupplied` flag that keeps §8.2's omitted document distinct from an empty one, and the
-disposition as the RFC 8785 canonical bytes the run itself produced — embedded, never re-serialized
-through the pretty printer that re-indents inside that member. On the graph surface the recorded
-facts are the *assembled* document, after upstream outcomes were injected: what the node was
-actually evaluated against, which on that surface is not what the caller supplied.
+`recordVersion` `"1"`, `run` (this invocation's id), `at` (RFC 3339, UTC, nanoseconds), `kind`,
+`surface`, the `tool` that produced it and the bundled `artifact` it evaluated against,
+`evaluatorSpecVersion`, the pack's `id`, `version`, `specVersion` and the SHA-256 digest of its
+exact bytes, the graph's identity, `formatVersion` and document digest where there is one, the
+`facts` and `evidence` documents as they reached the engine with the `evidenceSupplied` flag that
+keeps §8.2's omitted document distinct from an empty one, `draftPrototype` exactly when the payload
+carries it, and the disposition as the RFC 8785 canonical bytes the run itself produced — embedded,
+never re-serialized through the pretty printer that re-indents inside that member. Provenance is
+recorded because a record that named a contract version and nothing that ran it would not
+reconstruct an evaluation; the graph digest because a graph's `id` and `version` are as mutable as a
+pack's, and the pack digest already answers that question for packs; `draftPrototype` because a
+disposition produced under operators no published JPS version defines is not an ordinary
+disposition, and a record that dropped the label would assert it was. On the graph surface the
+recorded facts are the *assembled* document, after upstream outcomes were injected: what the node
+was actually evaluated against, which on that surface is not what the caller supplied.
+
+**Inputs are recorded as JSON values, not as source bytes.** The documents reach the trail through
+the line encoder, which compacts them, so `{ "x": 1 }` is written `{"x":1}` and a line is the source
+compacted rather than the source itself or a normalization of it. Nothing about replay is lost —
+evaluation is a function of the value — and the alternative, a second copy of every input as raw
+bytes or a digest of them, is weight for a question the pack and graph digests already answer about
+the documents that decide what an evaluation means. The package documentation says which of the two
+a reader is holding.
 
 **The record contains values, and that is not a reversal of the value-free posture.** Diagnostics
 are sanitized because they go to an operator who did not ask for the values and may not be entitled
@@ -103,17 +118,29 @@ own tree, at the project's own request. They are different artifacts with differ
 only the first is sanitized. The timestamp is the other deliberate difference: nothing on the
 payload path reads a clock, and nothing on the payload path reads a record.
 
-**Errors are not records, and a run records all of itself or none of it.** Only the evaluator's
-success return leaves a record. A refused evaluation has no disposition at all under §8.4, and a
-trail whose lines were sometimes results and sometimes failures would not be a trail of what the
-project decided. A composition is one run for this purpose: its node records are composed as each
-node completes but held, and appended in a single write once the run has a composite. A graph
-refused at its third node therefore leaves nothing for the first two — the alternative is orphan
-lines belonging to a run that never finished, with nothing in the record marking them as such.
+**Errors are not records, and a refused run is never opened for.** Only the evaluator's success
+return leaves a record. A refused evaluation has no disposition at all under §8.4, and a trail whose
+lines were sometimes results and sometimes failures would not be a trail of what the project
+decided. A composition is one run for this purpose: its node records are composed as each node
+completes but *held*, and appended in a single write once the run has a composite, so a graph
+refused at its third node never opens the trail at all and leaves nothing for the first two.
 Records are stamped when composed rather than when written, at nanosecond resolution, so a held
 record's time is when its node ran. The ordering key within a run is the file itself — records are
 appended in composition order — because no wall clock guarantees distinct stamps for adjacent
 records (Windows ticks at 100ns granularity).
+
+**What that does *not* promise, stated plainly.** A flat append cannot be atomic against arbitrary
+I/O failure. A refusal reached before or at the open writes nothing, which covers every refusal this
+implementation produces by choice — an escaping path, a symlinked trail, a directory that is not
+one, a disposition that will not canonicalize. But a write that fails partway through has already
+put bytes in the file, and no appender can take them back: a trail can end in a complete record
+whose run was then reported failed, or in a partial line. So the guarantee is stated as a *reader's*
+rule instead of a writer's. Every record carries a `run` id, one per invocation; a graph run's
+`graph-composite` line is its commit marker, and node lines whose run id has no composite belong to
+a run that did not finish. A trailing line that is not a complete JSON text is a write that did not
+complete, and it can only be the last line. That rule is written down in `internal/audit`'s package
+documentation, where a reader of a trail will look for it, and it is what makes an orphaned run
+identifiable rather than indistinguishable from a later run's nodes.
 
 **A failed write refuses the run.** The append is fail-closed: exit `4` with the provisional code
 `JPS-AUDIT-WRITE` and a value-free sentence, through the same operational path every other
@@ -137,32 +164,49 @@ file: a symlinked or otherwise unloadable configuration must reach the loader an
 because reading it as "this project does not use the convention" is the fail-open this
 consultation exists to prevent.
 
-**Argument refusals still precede the configuration.** A call missing a required argument never
-became an evaluation, so on both surfaces every argument check runs before the filesystem is
-touched — otherwise a broken configuration answers in place of the mistake the caller actually
-made. `packs validate` gains the one check the configuration can now ask for that no pack entry
+**Argument refusals still precede the configuration.** A call missing a required argument, or naming
+an input the command does not take, never became an evaluation — so on both surfaces every
+argument-shape check runs before the filesystem is touched, the CLI's `--facts`, dual-stdin,
+evidence-stdin and URL refusals included, and before a decision id is resolved. Otherwise a broken
+configuration answers in place of the mistake the caller actually made. `packs validate` gains the one check the configuration can now ask for that no pack entry
 owns: `audit-dir-inside-root`, decided against the same handle every read is, reported beside the
 pack checks and moving the report to invalid. Only an escape fails it; a contained directory that
 is not there yet is contained, because the first record is what creates it.
 
-**The write primitive.** `internal/fssecure` gains two operations and no more: appending one record
-to a file beneath the retained `os.Root` handle, and creating the directory for it beneath the same
-handle. They refuse everything the reader refuses — the lexical escapes, a path leaving the root
-through a symlinked component, a final component that is a symlink, anything that is not a regular
-file — and they resolve nothing to a pathname for something else to open. Two refusals are the
-write's own. The final-symlink check is made *before* the open as well as after it, because this
-open carries `O_CREATE` and `os.Root` follows a link that stays inside the root: a check made only
-afterward refuses the write having already planted a file at a path nobody named, again on every
-run. And a file with more than one link is refused where the platform reports the count — a
+**The write primitive.** `internal/fssecure` gains three operations and no more: appending one
+record to a file beneath the retained `os.Root` handle, creating the directory for it beneath the
+same handle, and answering the containment question a *directory* poses. They refuse everything the
+reader refuses — the lexical escapes, a path leaving the root through a symlinked component, a final
+component that is a symlink, anything that is not a regular file — and they resolve nothing to a
+pathname for something else to open.
+
+Two refusals are the write's own. Which flags the open carries is decided by what is already at the
+path: an existing regular file is opened *without* `O_CREATE`, and an absent one with
+`O_CREATE|O_EXCL`, retried a bounded number of times if the two conditions swap under it. That is
+what keeps a refusal from planting a file — `os.Root` follows a link that stays inside the root, so
+a plain `O_CREATE` open would create the target of a symlink swapped in behind the check, again on
+every run, and `O_NOFOLLOW` in the flag word does not help because `os.Root` resolves the path
+itself. And a file with more than one link is refused where the platform reports the count — a
 hardlinked alias is invisible to every path-based check, and appending a record into whatever else
 names that inode should not be the one case that does not fail closed. It is not a containment
 question: making the alias needs write access inside the project, the same trust domain as editing
-the packs, and SECURITY.md says so rather than claiming more than the rule delivers. `O_APPEND` is
-what makes each write one operation at the end of the file; the trail file's mode is set to
-owner-only on every append rather than only at creation, while a directory that was already there
-keeps the mode the project gave it; and the record's bytes are synced before the surface is told it
-was written — which says nothing about the directory entry of a file the same call created, because
-nothing here fsyncs a directory.
+the packs, and SECURITY.md says so rather than claiming more than the rule delivers.
+
+The directory question is separate from the file one, and the difference decides a validate-time
+check. `Contains` deliberately leaves a final component unresolved, because for a file a final
+symlink is refused at the open whatever it points at. For `audit.dir` that component becomes an
+*intermediate* one of everything written beneath it, so `audit -> ../outside` is an escape — and a
+check that left it unresolved would report the project valid and let every evaluation fail. The
+directory form resolves an existing final component through the handle, treats a directory that is
+not there yet as contained, and is what `audit-dir-inside-root` asks.
+
+`O_APPEND` is what makes each write one operation at the end of the file; the trail file's mode is
+set to owner-only on every append rather than only at creation, on unix — a Go file mode on Windows
+sets the read-only attribute and does not touch the DACL, so confidentiality there is the containing
+directory's ACL and the documents say so; a directory that was already there keeps the mode the
+project gave it; and the record's bytes are synced before the surface is told it was written — which
+says nothing about the directory entry of a file the same call created, because nothing here fsyncs
+a directory.
 
 **What this supersedes, exactly.** ADR-0006's determinations that "the runtime never stores,
 overwrites, or deletes user content" and that "there is no session document and no store", as
@@ -198,9 +242,17 @@ record's index row, as `docs/adr/README.md` requires.
   Adding rotation would be adding a policy nobody stated.
 - The conformance claim is untouched: the evaluator gains nothing, no new surface reaches it, and
   CONFORMANCE.md is unedited — this record restates no part of what that file says.
+- Bad, because owner-only permissions on the trail are a unix guarantee only. On Windows a Go file
+  mode sets the read-only attribute and does not restrict the DACL, so confidentiality there is the
+  containing directory's ACL and this record says so rather than claiming otherwise. Establishing a
+  DACL through the opened handle is a Windows-specific syscall this runtime does not make today.
 - Revisit when a project needs more than one file, needs records shipped off the box, or needs the
   record shape to carry something an evaluation payload does not — each of which is a different
   decision from this one, and the first of them reopens the file layout rather than the posture.
+- Revisit when a trail must survive arbitrary I/O failure with a stronger guarantee than a reader's
+  rule: that is a transactional format — per-run artifacts committed by rename, or a length-and-
+  checksum framing a reader verifies — and it is a different storage decision from this one, not an
+  adjustment to it. The run id is deliberately the shape that decision would build on.
 
 ## More information
 

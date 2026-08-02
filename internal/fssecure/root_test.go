@@ -429,9 +429,107 @@ func TestRootAppendRefusesEveryEscapeTheReaderRefuses(t *testing.T) {
 	}
 }
 
+// The open that creates is exclusive, so a name that appears between the check
+// and the open loses the race instead of being followed into existence. This is
+// the interleaving a check-then-O_CREATE open cannot cover: the pre-open Lstat
+// sees nothing, a symlink to an absent target is put there, and the open must
+// not create that target.
+func TestRootAppendNeverCreatesWhatItWasNotAskedFor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation is privileged on Windows")
+	}
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+	// The swap, performed in the window a pathname-based writer would leave: the
+	// name is absent when Append is entered, and a link is in place by the time
+	// the open runs. Doing it deterministically means creating the link first
+	// and asserting the exclusive open loses to it, which is the same instant
+	// from the open's point of view.
+	if err := os.Symlink(filepath.Join(dir, "target.json"), filepath.Join(dir, "swapped.jsonl")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.Append("swapped.jsonl", []byte("x\n")); err == nil {
+		t.Fatal("a name that became a symlink must be refused")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "target.json")); err == nil {
+		t.Fatal("the refused append must not have created the link's target")
+	}
+	// And an ordinary create still works, on the same path, once the link is
+	// gone: the exclusive branch is not a permanent refusal of a new trail.
+	if err := os.Remove(filepath.Join(dir, "swapped.jsonl")); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Append("swapped.jsonl", []byte("x\n")); err != nil {
+		t.Fatalf("a genuinely absent trail is created: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "swapped.jsonl")); err != nil || string(data) != "x\n" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
+}
+
+// The containment question a directory poses is not the one a file poses. A
+// declared audit directory becomes an intermediate component of everything
+// written beneath it, so its final component has to be resolved — while a file's
+// is deliberately left alone, because the open refuses a final symlink whatever
+// it points at.
+func TestContainsDirResolvesTheFinalComponent(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "project")
+	if err := os.MkdirAll(filepath.Join(dir, "records"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := mustOpenRoot(t, dir)
+
+	if err := root.ContainsDir("records"); err != nil {
+		t.Fatalf("a directory inside the root is contained: %v", err)
+	}
+	// Not there yet is contained: the first record makes it, and a validate-time
+	// check must not report a defect that does not exist.
+	if err := root.ContainsDir("not/created/yet"); err != nil {
+		t.Fatalf("an absent directory inside the root is contained: %v", err)
+	}
+	for _, relative := range []string{"..", "../outside", "/etc"} {
+		if err := root.ContainsDir(relative); !errors.Is(err, ErrOutsideRoot) {
+			t.Fatalf("%q must be refused: %v", relative, err)
+		}
+	}
+	// A regular file is not a directory, and saying so at validate time beats
+	// an unexplained refusal at the first record.
+	if err := os.WriteFile(filepath.Join(dir, "plain"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.ContainsDir("plain"); err == nil || errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("a regular file is not a contained directory: %v", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// The case Contains cannot see: a final component that is a symlink out of
+	// the root. Every path written beneath it would leave the project.
+	if err := os.Symlink(base, filepath.Join(dir, "escaping")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.ContainsDir("escaping"); !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("a final directory symlink out of the root must be refused: %v", err)
+	}
+	if err := root.Contains("escaping"); err != nil {
+		t.Fatalf("the file form deliberately does not resolve it, which is why the directory form exists: %v", err)
+	}
+	// An inward one is a legitimate project layout and reads as one.
+	if err := os.Symlink("records", filepath.Join(dir, "alias")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if err := root.ContainsDir("alias"); err != nil {
+		t.Fatalf("a directory symlink inside the root is inside it: %v", err)
+	}
+}
+
 // The trail's mode is the project's own record of its decisions, not something
 // a directory listing hands out: a file put there by something else at a wider
-// mode is tightened by the append rather than kept as it was found.
+// mode is tightened by the append rather than kept as it was found. It is a
+// unix guarantee — on Windows a Go file mode reaches only the read-only
+// attribute and not the DACL.
 func TestRootAppendTightensAnExistingTrailFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits are not what a Windows file mode means")

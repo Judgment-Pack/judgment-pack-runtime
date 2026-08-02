@@ -299,7 +299,13 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 				Facts:            factsBytes,
 				Evidence:         evidenceBytes,
 				EvidenceSupplied: evidenceSupplied,
-			}, packBytes, &audit.Graph{ID: doc.ID, Version: doc.Version, Node: nodeID})
+			}, packBytes, &audit.Graph{
+				ID:            doc.ID,
+				Version:       doc.Version,
+				FormatVersion: doc.FormatVersion,
+				Digest:        doc.Digest,
+				Node:          nodeID,
+			})
 			if err != nil {
 				return result.GraphEvaluation{}, auditWriteFailure()
 			}
@@ -364,7 +370,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 	// holds — the headline this run produced, and which node the graph declared
 	// it comes from.
 	if options.Audit != nil {
-		composite, err := audit.CompositeRecord(output)
+		composite, err := audit.CompositeRecord(output, doc.Digest)
 		if err != nil {
 			return result.GraphEvaluation{}, auditWriteFailure()
 		}

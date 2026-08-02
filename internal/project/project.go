@@ -534,6 +534,16 @@ func (p *Project) Contains(relative string) error {
 	return p.root.Contains(relative)
 }
 
+// ContainsDir reports whether one declared directory is inside the project,
+// resolving an existing final component rather than leaving it unresolved as
+// Contains does. That difference is the point: a declared directory becomes an
+// intermediate component of every path written beneath it, and an intermediate
+// symlink out of the project is precisely what the handle refuses at write time
+// — so the validate-time check has to ask the same question the write will.
+func (p *Project) ContainsDir(relative string) error {
+	return p.root.ContainsDir(relative)
+}
+
 // AuditWriter returns the writer for the audit trail this configuration asks
 // for, or nil when it asks for none — which is what a caller that never checks
 // gets right by default, because the returned writer's nil value writes

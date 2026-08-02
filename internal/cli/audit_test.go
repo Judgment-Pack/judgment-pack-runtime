@@ -318,6 +318,112 @@ func TestPacksValidateChecksTheAuditDirectory(t *testing.T) {
 	}
 }
 
+// The check resolves the declared directory's final component, because that
+// component becomes an intermediate one of everything written beneath it. A
+// symlinked audit directory pointing out of the project is the escape every
+// evaluation would refuse, and the gate has to refuse it too.
+func TestPacksValidateResolvesASymlinkedAuditDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory symlink creation is privileged on Windows")
+	}
+	configPath := auditProject(t)
+	root := filepath.Dir(configPath)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "audit")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	code, stdout, stderr := runTest(t, []string{"packs", "validate", "--config", configPath, "--format", "json"}, "")
+	if code != result.ExitInvalid || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var report result.PackValidation
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Checks) != 1 || report.Checks[0].Status != result.PackCheckFailed ||
+		!strings.Contains(report.Checks[0].Detail, "outside") {
+		t.Fatalf("checks = %+v", report.Checks)
+	}
+	// And the evaluation refuses it too, so the two agree about one project.
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+	code, _, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts}, "")
+	if code != result.ExitIO || !strings.Contains(stderr, audit.FailureMessage) {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+
+	// An inward symlink is an ordinary project layout and passes both.
+	if err := os.Remove(filepath.Join(root, "audit")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "records"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("records", filepath.Join(root, "audit")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	code, stdout, stderr = runTest(t, []string{"packs", "validate", "--config", configPath}, "")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "audit-dir-inside-root: passed") {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+}
+
+// Every argument-shape refusal precedes the filesystem, so a broken
+// configuration cannot answer in place of the mistake the caller made. The
+// pack-id form is checked too: resolving a decision id is a filesystem
+// operation, and it must not outrank a missing required argument either.
+func TestArgumentRefusalsPrecedeTheConfiguration(t *testing.T) {
+	broken := writeProjectFixture(t, `{"configVersion":"4","packs":{}}`, map[string]string{
+		"pack.json": evaluatorPack(t),
+	})
+	packPath := filepath.Join(filepath.Dir(broken), "pack.json")
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+
+	for name, invocation := range map[string]struct {
+		args []string
+		want string
+	}{
+		"a missing facts document, pack by path": {
+			args: []string{"experimental", "evaluate", packPath, "--config", broken},
+			want: "--facts is required",
+		},
+		"a missing facts document, pack by id": {
+			args: []string{"experimental", "evaluate", "--pack-id", "intake", "--config", broken},
+			want: "--facts is required",
+		},
+		"an evidence document on standard input": {
+			args: []string{"experimental", "evaluate", packPath, "--config", broken, "--facts", facts, "--evidence", "-"},
+			want: "cannot be standard input",
+		},
+		"a URL input": {
+			args: []string{"experimental", "evaluate", "https://example.invalid/p.json", "--config", broken, "--facts", facts},
+			want: "URL and remote filesystem inputs are not supported",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			code, _, stderr := runTest(t, invocation.args, "")
+			if code != result.ExitInvocation {
+				t.Fatalf("exit=%d, want the invocation class %d (stderr %q)", code, result.ExitInvocation, stderr)
+			}
+			if !strings.Contains(stderr, invocation.want) {
+				t.Fatalf("stderr = %q, want the argument refusal %q", stderr, invocation.want)
+			}
+			if strings.Contains(stderr, "configVersion") {
+				t.Fatalf("the configuration must not answer in place of the argument mistake: %q", stderr)
+			}
+		})
+	}
+
+	// With the arguments in order, the configuration is reached and refuses. An
+	// unsupported version is reported on standard output, as every unsupported
+	// refusal is.
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", packPath, "--config", broken, "--facts", facts}, "")
+	if code != result.ExitUnsupported || !strings.Contains(stdout, "configVersion") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
 // The graph surface records each node and the composite, and its test verb —
 // the same evaluator, over the same project, from the same configuration —
 // records nothing.
@@ -366,6 +472,28 @@ func TestGraphEvaluateRecordsEveryNodeAndTheComposite(t *testing.T) {
 	if last["kind"] != audit.KindGraphComposite || graph["resultNode"] != composite.ResultNode ||
 		last["inputs"] != nil || last["pack"] != nil {
 		t.Fatalf("composite record = %v", last)
+	}
+	// The graph's own bytes, digested: a graph's id and version are as mutable
+	// as a pack's, and two compositions can carry both unchanged.
+	document, err := os.ReadFile(graphPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		named := record["graph"].(map[string]any)
+		if named["digest"] != audit.Digest(document) || named["formatVersion"] != composite.FormatVersion {
+			t.Fatalf("graph provenance = %v, want the document's own digest and format", named)
+		}
+	}
+	// One invocation, one run id, and the composite is what marks it finished.
+	run := records[0]["run"]
+	for _, record := range records {
+		if record["run"] != run {
+			t.Fatalf("one run writes one id: %v vs %v", record["run"], run)
+		}
+	}
+	if last["run"] != run {
+		t.Fatalf("the composite commits the run its nodes belong to: %v", last["run"])
 	}
 
 	// The same graph, the same configuration, run as a matrix: nothing recorded.
