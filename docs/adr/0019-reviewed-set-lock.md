@@ -105,7 +105,8 @@ running it *is* the amendment: it is how a project says, in a reviewable file, t
 on purpose. It reviews nothing and approves nothing — the pull request is still the approval, as it
 is for the documents themselves. `packs verify` compares the tree against the lock and names every
 difference: `config-drift`, `document-drift`, `document-missing`, `lock-entry-missing` (declared but
-not locked), `locked-but-undeclared`. It reports what changed and never whether the change was
+not locked), `locked-but-undeclared`, and `path-mismatch`. A document wrong in more than one way at
+once produces one finding per way — a complete report is what the command promises. It reports what changed and never whether the change was
 right, because a runtime cannot tell an amendment from tampering and should not pretend to.
 
 **The deciding surfaces verify; the rehearsal surfaces do not.** `experimental evaluate`,
@@ -128,6 +129,13 @@ evaluates; the graph package learns nothing about locks, and the test verb passe
 `packs verify` keeps the re-reading form, because re-reading is exactly the question that command
 asks.
 
+**One read of the reviewed set per run.** A run that consults the lock reads it once and retains the
+decoded document and the digest of its exact bytes; every check that run makes is against that one
+revision. This matters most on the graph surface, where the configuration and the graph document are
+checked before the run starts and each node's pack as its bytes come in hand: two reads could see
+two revisions, and a run that passed one check against each would record a review no single reviewed
+set ever declared.
+
 **An id the configuration does not declare is not the lock's finding.** A graph node naming an
 unknown decision id is the graph's own reference check, which names the id and lists the configured
 ones; the lock passes it over rather than refusing with a sentence that would state the opposite of
@@ -142,7 +150,28 @@ a path the configuration declares — a pack, a matrix, a graph, or rows — bec
 destroy a reviewed document with a generated one and then record the digest of what it destroyed.
 It also refuses to emit a lock past the byte limit its own readers apply, since a generator that
 produced a document `packs verify` and every deciding surface must refuse would leave a project
-whose only steer regenerates the same unreadable file. `packs test`, `experimental graph test`, and
+whose only steer regenerates the same unreadable file — and it makes that refusal from the
+configuration alone, before a single document is read, so an impossible lock costs no work. The
+collision check asks about *files* rather than spellings: cleaned relative forms, file identity
+through the project's own handle when both names exist, and a case-folded comparison for a name that
+is not there yet, because on a filesystem that folds case the alternative is destroying a reviewed
+document. The audit directory is refused the same way, at its own name or at any component above it:
+a generated file there leaves the directory uncreatable and every later evaluation refuses *after*
+evaluating.
+
+**What the lock is held to when it is read.** It is generated, so anything malformed in it was
+written by hand or by something that is not this runtime — and reading it loosely would let a
+hand-edited entry verify. `lockVersion`, the configuration digest, and every entry's path and digest
+are checked on load, digests against the one form this runtime writes. Each entry's recorded path is
+compared with the path the configuration declares, and a mismatch is its own finding
+(`path-mismatch`): the digest may be right while the file a reviewer reads says the bytes belong to
+another document, and the lock's whole purpose is to be read.
+
+**Work is bounded by the documents there are, not by the ids that name them.** A configuration may
+point many declared ids at one document; each distinct file is read and digested once per run. An
+aggregate byte budget over all declared documents is deliberately deferred: the per-document limits
+already apply, the encoded-size preflight bounds the pathological configuration, and a new global
+budget is a number this record would have to justify rather than inherit. `packs test`, `experimental graph test`, and
 `experimental evaluate-corpus` consult nothing, ever — not even a lock this runtime cannot parse.
 That is the same split ADR-0018 drew for audit records and it rests on the same principle, stated
 here once for both: **the author's loop is free and decisions are classified.** A matrix row is a
@@ -161,6 +190,11 @@ member, `reviewed`, present exactly when the project carries a lock: `true` when
 evaluation applied was declared and matched, `false` when any of them was a draft, and *absent* for
 a project with no lock — because "does not use the convention" and "ran on unreviewed law" are
 different facts and a record that collapsed them would be worse than one that said nothing.
+The record names *which* reviewed set: `reviewedSet` carries the digest of the exact lock bytes the
+checks used, the `lockVersion` those bytes declared, and the configuration digest compared. The lock is replaced in place, so without it the Boolean is a claim nothing outside the run
+can re-derive — an auditor holding a record and a lock file could not tell whether that lock is the
+one the decision was judged under, which contradicts this record's own driver that whatever is
+checked at decision time is recorded. It is present exactly when `reviewed` is true.
 `recordVersion` stays `"1"`: an added member is backward-compatible and a removed or renamed one is
 the break, which is this repository's settled practice for every versioned JSON artifact it writes —
 stated for `outputVersion` in VERSIONING.md, applied to `configVersion` by ADR-0012 and ADR-0017,
@@ -193,6 +227,11 @@ reader refuses a document it cannot decode.
   `packs lock` before the next decision, and forgetting it produces a refusal at exactly the wrong
   moment. The steer in the refusal message is the mitigation, and it is a mitigation rather than a
   fix.
+- Bad, because a newly created lock is made durable by syncing its directory on unix and not on
+  Windows, where a directory handle does not support it cleanly: there the guarantee is the file's
+  contents and not its entry, so a crash in that window can leave a project whose lock is absent and
+  therefore unverified. An atomic temp-file-and-rename would settle both, and `os.Root` gained no
+  rename on this module's Go floor; it is recorded here as the work that closes it.
 - Bad, because a project whose configuration filename does not end in `.json` cannot use the
   convention at all: the lock verbs refuse it and the deciding surfaces find no lock, which is the
   same answer a project without one gets. Injectivity is worth more than that case.

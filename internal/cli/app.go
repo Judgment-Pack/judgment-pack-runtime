@@ -277,11 +277,24 @@ func (a *App) evaluateCommand() *cobra.Command {
 			if packID != "" && pack != nil {
 				applied = []lock.Applied{lock.AppliedPack(packID, pack)}
 			}
-			reviewed, lockFailure := lock.Consult(loaded, applied, packID == "")
-			if lockFailure != nil {
-				return a.lockFailure("experimental evaluate", format, lockFailure)
+			// A run applying no declared document never reads the lock at all,
+			// so an unreadable one does not stop a draft; a run that does
+			// applies it once, and the record names the revision it was judged
+			// under.
+			var set *lock.Set
+			reviewed := lock.DraftRun(loaded)
+			if len(applied) > 0 {
+				opened, lockFailure := lock.Open(loaded)
+				if lockFailure != nil {
+					return a.lockFailure("experimental evaluate", format, lockFailure)
+				}
+				set = opened
+				reviewed, lockFailure = set.Consult(loaded, applied, false)
+				if lockFailure != nil {
+					return a.lockFailure("experimental evaluate", format, lockFailure)
+				}
 			}
-			auditWriter.UnderLaw(reviewed)
+			auditWriter.UnderLaw(reviewed, set.Provenance())
 			evaluator := evaluation.NewEngine(a.engine)
 			output, failure := evaluator.EvaluateWith(pack, facts, evidence, evaluation.Options{
 				Command:             "experimental evaluate",
@@ -770,7 +783,7 @@ func requestedCommand(args []string) string {
 		case "packs":
 			if index+1 < len(args) {
 				switch args[index+1] {
-				case "list", "validate", "test", "schema":
+				case "list", "validate", "test", "lock", "verify", "schema":
 					return "packs " + args[index+1]
 				}
 			}

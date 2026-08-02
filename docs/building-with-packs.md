@@ -224,8 +224,8 @@ jpack packs lock
 
 It writes `jpack.lock.json` beside your configuration: the digest of the configuration's exact bytes
 and of every pack and graph it declares ([ADR-0019](adr/0019-reviewed-set-lock.md)). Matrices and
-`rows` documents are not pinned — the only commands that read them are `packs test` and `graph
-test`, which neither record nor decide, so a fixture edit is not an amendment. Commit it with
+`rows` documents are not pinned — they are read by `packs validate`, `packs test`, and `graph test`,
+none of which records or decides, so a fixture edit is not an amendment. Commit it with
 the change it pins. Running it *is* the amendment — it is how the project says, in a file a reviewer
 diffs, that this is the law now — and it approves nothing, exactly as the paragraph above says. The
 file is generated and deterministic, so re-running it over an unchanged tree leaves no diff to read.
@@ -233,8 +233,9 @@ file is generated and deterministic, so re-running it over an unchanged tree lea
 `jpack packs verify` is the other half, and it belongs in the CI line below: it names every
 difference between the tree and the reviewed set — `config-drift`, `document-drift`,
 `document-missing`, `lock-entry-missing` for a pack the configuration declares and the lock does
-not, `locked-but-undeclared` for one the lock names and the configuration dropped — and exits `1` on
-any of them. It reports what changed and never whether the change was right: a runtime cannot tell
+not, `locked-but-undeclared` for one the lock names and the configuration dropped, and
+`path-mismatch` for an entry recorded at a path the configuration does not declare — and exits `1`
+on any of them. It reports what changed and never whether the change was right: a runtime cannot tell
 an amendment from tampering, and only the people reading the diff can.
 
 The file's *presence* is the whole of the opt-in. No `configVersion` moves, nothing in `jpack.json`
@@ -463,7 +464,9 @@ whose ACL is already what you want. A directory you created yourself keeps the m
 Where the project also keeps a lock, each line carries `reviewed`: `true` when every document the
 evaluation applied was one the lock declares and the exact bytes it applied matched the reviewed set
 — the check is on those bytes, not on a re-read of the file they came from — `false` when any of
-them was a draft. It is absent — not `false` — in a project with no lock, because "does not use the
+them was a draft. A reviewed line also carries `reviewedSet`: the lock's own digest, its `lockVersion`,
+and the configuration digest compared, so a reader holding the record and a lock file can tell
+whether that lock is the one the decision was judged under. It is absent — not `false` — in a project with no lock, because "does not use the
 convention" is not the same fact as "ran on unreviewed law". There is no "declared but drifted"
 value: a deciding surface refuses such a run before it evaluates, so `reviewed: true` is a claim
 about what actually ran rather than a label.

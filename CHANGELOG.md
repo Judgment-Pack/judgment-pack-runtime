@@ -20,7 +20,10 @@ All notable changes to tagged releases are documented here.
   amendment with `packs lock`, or restore the reviewed bytes. `packs lock` refuses to write over a
   document the configuration declares, or to emit a lock past the byte limit its own readers apply;
   a matrix or a graph's rows are deliberately not pinned, because the surfaces that read them
-  neither record nor decide. `packs test`, `experimental graph
+  neither record nor decide. A run consults the reviewed set once and every check it makes is
+  against that one revision; the lock is held to the shape its generator writes when it is read, and
+  an entry recorded at a path the configuration does not declare is its own `path-mismatch`
+  finding. `packs test`, `experimental graph
   test`, and `experimental evaluate-corpus` consult it never — the author's loop is free and only
   decisions are classified, the same split the audit trail draws. A pack named by path, or passed
   as text over MCP, is a draft: evaluated, never refused for being unlocked. Where an audit trail is
@@ -76,7 +79,10 @@ All notable changes to tagged releases are documented here.
   rule rather than by trusting the writer. Records name the build that produced them, the bundled
   artifacts evaluated against, the graph's `formatVersion` and document digest, and the draft-RFC
   label whenever the payload carries one; inputs are recorded as JSON values, compacted by the line
-  encoder rather than kept as source bytes. On unix the trail file is kept owner-only; on Windows a
+  encoder rather than kept as source bytes. A reviewed record also names the revision that made its
+  claim true — `reviewedSet` carries the lock's own digest, its `lockVersion`, and the configuration
+  digest compared — because the lock is replaced in place and the Boolean alone is a claim nothing
+  outside the run can re-derive. On unix the trail file is kept owner-only; on Windows a
   Go file mode sets the read-only attribute and does not restrict the DACL, so confidentiality there
   is the containing directory's ACL. Two consequences worth reading before upgrading a project: declaring `audit` requires
   `configVersion "3"`, which an older runtime refuses as unsupported while naming what it accepts;

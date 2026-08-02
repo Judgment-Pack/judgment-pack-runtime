@@ -436,7 +436,8 @@ configuration's exact bytes and of every pack and graph it declares
 project says, in a file a reviewer diffs, that the law changed on purpose — and it approves nothing:
 your pull request is still the approval. The file is generated and deterministic, so re-running it
 over an unchanged tree leaves no diff. `jpack packs verify` names every difference from it:
-`config-drift`, `document-drift`, `document-missing`, `lock-entry-missing`, `locked-but-undeclared`.
+`config-drift`, `document-drift`, `document-missing`, `lock-entry-missing`,
+`locked-but-undeclared`, and `path-mismatch`.
 
 Its **presence** is the opt-in, and it is found by convention rather than declared: no
 `configVersion` moves, the schema does not change, and a project with no lock file behaves exactly
@@ -490,7 +491,7 @@ pack judges), hints in practice, and the data-sufficiency-as-another-pack patter
 | Exit | Meaning |
 | ---: | --- |
 | `0` | Command succeeded; validation passed the reported scope. |
-| `1` | Document invalid, or a conformance expectation mismatched. |
+| `1` | Document invalid, an expectation mismatched, or a check the command makes failed — a conformance mismatch, a difference from the reviewed set, or law that left it. |
 | `2` | Exact JPS version or required extension unsupported. |
 | `3` | Invocation or suite configuration invalid. |
 | `4` | Input/output or resource-limit failure. |

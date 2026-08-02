@@ -1,6 +1,7 @@
 package lock
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,11 +117,11 @@ func TestVerifyNamesEveryDifference(t *testing.T) {
 	declare(t, open(t, configPath))
 
 	loaded := open(t, configPath)
-	document, failure := Load(loaded)
+	set, failure := Open(loaded)
 	if failure != nil {
 		t.Fatal(failure.Message)
 	}
-	if checks := Verify(loaded, document); len(checks) != 0 {
+	if checks := Verify(loaded, set.Document); len(checks) != 0 {
 		t.Fatalf("an unchanged project has nothing to report: %+v", checks)
 	}
 
@@ -129,7 +130,7 @@ func TestVerifyNamesEveryDifference(t *testing.T) {
 		t.Fatal(err)
 	}
 	drifted := open(t, configPath)
-	checks := Verify(drifted, document)
+	checks := Verify(drifted, set.Document)
 	if len(checks) != 1 || checks[0].Name != CheckDocumentDrift || checks[0].ID != "intake" {
 		t.Fatalf("checks = %+v", checks)
 	}
@@ -140,7 +141,7 @@ func TestVerifyNamesEveryDifference(t *testing.T) {
 		t.Fatal(err)
 	}
 	both := open(t, configPath)
-	checks = Verify(both, document)
+	checks = Verify(both, set.Document)
 	if len(checks) != 2 || checks[0].Name != CheckConfigDrift || checks[1].Name != CheckDocumentDrift {
 		t.Fatalf("checks = %+v", checks)
 	}
@@ -150,7 +151,7 @@ func TestVerifyNamesEveryDifference(t *testing.T) {
 // four answers are the four cases a surface has to tell apart.
 func TestConsultAnswersTheFourCasesADecidingSurfaceHas(t *testing.T) {
 	t.Run("no project in scope", func(t *testing.T) {
-		reviewed, failure := Consult(nil, nil, false)
+		reviewed, failure := mustConsult(t, nil, nil, false)
 		if reviewed != nil || failure != nil {
 			t.Fatalf("reviewed=%v failure=%v", reviewed, failure)
 		}
@@ -159,7 +160,7 @@ func TestConsultAnswersTheFourCasesADecidingSurfaceHas(t *testing.T) {
 	t.Run("a project that declares no reviewed set", func(t *testing.T) {
 		configPath, _ := lockedProject(t, oneGoodConfig, map[string]string{"packs/intake.json": packFixture(t)})
 		loaded := open(t, configPath)
-		reviewed, failure := Consult(loaded, []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
+		reviewed, failure := mustConsult(t, loaded, []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
 		if reviewed != nil || failure != nil {
 			t.Fatalf("a project without a lock reaches nothing: reviewed=%v failure=%v", reviewed, failure)
 		}
@@ -168,7 +169,7 @@ func TestConsultAnswersTheFourCasesADecidingSurfaceHas(t *testing.T) {
 	t.Run("declared law that verified", func(t *testing.T) {
 		configPath, _ := lockedProject(t, oneGoodConfig, map[string]string{"packs/intake.json": packFixture(t)})
 		declare(t, open(t, configPath))
-		reviewed, failure := Consult(open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
+		reviewed, failure := mustConsult(t, open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
 		if failure != nil || reviewed == nil || !*reviewed {
 			t.Fatalf("reviewed=%v failure=%v", reviewed, failure)
 		}
@@ -179,7 +180,7 @@ func TestConsultAnswersTheFourCasesADecidingSurfaceHas(t *testing.T) {
 		declare(t, open(t, configPath))
 		// No declared id is involved, so nothing is verified and the run is not
 		// a reviewed one. It is never refused: drafting is the author's loop.
-		reviewed, failure := Consult(open(t, configPath), nil, true)
+		reviewed, failure := mustConsult(t, open(t, configPath), nil, true)
 		if failure != nil || reviewed == nil || *reviewed {
 			t.Fatalf("reviewed=%v failure=%v", reviewed, failure)
 		}
@@ -191,7 +192,7 @@ func TestConsultAnswersTheFourCasesADecidingSurfaceHas(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "packs", "intake.json"), []byte(packFixture(t)+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		reviewed, failure := Consult(open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)+"\n"))}, false)
+		reviewed, failure := mustConsult(t, open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)+"\n"))}, false)
 		if reviewed != nil || failure == nil {
 			t.Fatalf("reviewed=%v failure=%v", reviewed, failure)
 		}
@@ -221,14 +222,14 @@ func TestConsultAnswersTheFourCasesADecidingSurfaceHas(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "packs", "other.json"), []byte(packFixture(t)+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		reviewed, failure := Consult(open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
+		reviewed, failure := mustConsult(t, open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
 		if failure != nil || reviewed == nil || !*reviewed {
 			t.Fatalf("a decision is about the law it applies: reviewed=%v failure=%v", reviewed, failure)
 		}
 		// packs verify, which asks about the whole project, does see it.
 		loaded := open(t, configPath)
-		document, _ := Load(loaded)
-		if checks := Verify(loaded, document); len(checks) != 1 || checks[0].ID != "other" {
+		set, _ := Open(loaded)
+		if checks := Verify(loaded, set.Document); len(checks) != 1 || checks[0].ID != "other" {
 			t.Fatalf("checks = %+v", checks)
 		}
 	})
@@ -247,7 +248,7 @@ func TestALockThatCannotBeReadRefusesRatherThanBeingIgnored(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "jpack.lock.json"), []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			reviewed, failure := Consult(open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
+			reviewed, failure := mustConsult(t, open(t, configPath), []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false)
 			if reviewed != nil || failure == nil {
 				t.Fatalf("reviewed=%v failure=%v", reviewed, failure)
 			}
@@ -308,7 +309,7 @@ func TestTheDecidingCheckFollowsTheBytesAndNotThePath(t *testing.T) {
 
 	// The file still holds the locked bytes; the evaluation is about to apply
 	// different ones. A check that re-read the path would pass this.
-	if _, failure := Consult(open(t, configPath), []Applied{AppliedPack("intake", other)}, false); failure == nil {
+	if _, failure := mustConsult(t, open(t, configPath), []Applied{AppliedPack("intake", other)}, false); failure == nil {
 		t.Fatal("bytes that are not the reviewed ones must be refused, whatever the file says")
 	}
 
@@ -318,7 +319,7 @@ func TestTheDecidingCheckFollowsTheBytesAndNotThePath(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "packs", "intake.json"), other, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	reviewed, failure := Consult(open(t, configPath), []Applied{AppliedPack("intake", locked)}, false)
+	reviewed, failure := mustConsult(t, open(t, configPath), []Applied{AppliedPack("intake", locked)}, false)
 	if failure != nil || reviewed == nil || !*reviewed {
 		t.Fatalf("the verdict is about the bytes applied: reviewed=%v failure=%v", reviewed, failure)
 	}
@@ -326,8 +327,8 @@ func TestTheDecidingCheckFollowsTheBytesAndNotThePath(t *testing.T) {
 	// packs verify keeps the re-reading form, because re-reading is the
 	// question that command asks: it reports the file, which now differs.
 	loaded := open(t, configPath)
-	document, _ := Load(loaded)
-	if checks := Verify(loaded, document); len(checks) != 1 || checks[0].Name != CheckDocumentDrift {
+	set, _ := Open(loaded)
+	if checks := Verify(loaded, set.Document); len(checks) != 1 || checks[0].Name != CheckDocumentDrift {
 		t.Fatalf("checks = %+v", checks)
 	}
 }
@@ -345,7 +346,7 @@ func TestADraftRunNeverReadsTheLock(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "jpack.lock.json"), []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			reviewed, failure := Consult(open(t, configPath), nil, true)
+			reviewed, failure := mustConsult(t, open(t, configPath), nil, true)
 			if failure != nil {
 				t.Fatalf("a draft run is untouched by a lock it never consults: %+v", failure)
 			}
@@ -363,18 +364,208 @@ func TestAnUndeclaredIdIsNotTheLocksFinding(t *testing.T) {
 	configPath, _ := lockedProject(t, oneGoodConfig, map[string]string{"packs/intake.json": packFixture(t)})
 	declare(t, open(t, configPath))
 	loaded := open(t, configPath)
-	document, failure := Load(loaded)
+	set, failure := Open(loaded)
 	if failure != nil {
 		t.Fatal(failure.Message)
 	}
-	if checks := VerifyDeciding(loaded, document, []Applied{AppliedPack("not-declared", []byte("{}"))}); len(checks) != 0 {
+	if checks := VerifyDeciding(loaded, set.Document, []Applied{AppliedPack("not-declared", []byte("{}"))}); len(checks) != 0 {
 		t.Fatalf("checks = %+v", checks)
 	}
 	// The node check, which is the same rule applied per node, passes it over
 	// too — so the graph's own reference diagnostic is what the reader sees.
-	if check := NodeCheck(loaded, document); check == nil {
+	if check := set.NodeCheck(loaded); check == nil {
 		t.Fatal("a locked project has a node check")
 	} else if failure := check("not-declared", []byte("{}")); failure != nil {
 		t.Fatalf("failure = %+v", failure)
+	}
+}
+
+// mustConsult is the two-step a deciding surface takes, in one call: read the
+// reviewed set when this run applies declared law, and consult it. A run that
+// applies none never opens the lock, which is what keeps an unreadable one from
+// stopping a draft.
+func mustConsult(t *testing.T, loaded *project.Project, applied []Applied, draft bool) (*bool, *Failure) {
+	t.Helper()
+	if loaded == nil || !loaded.HasLock() {
+		return nil, nil
+	}
+	if len(applied) == 0 {
+		return DraftRun(loaded), nil
+	}
+	set, failure := Open(loaded)
+	if failure != nil {
+		return nil, failure
+	}
+	return set.Consult(loaded, applied, draft)
+}
+
+// A lock is generated, so anything malformed in it was written by hand or by
+// something that is not this runtime. Reading it loosely would let a
+// hand-edited entry verify.
+func TestALockIsHeldToTheShapeItsGeneratorWrites(t *testing.T) {
+	good := `"config":{"digest":"sha256:` + strings.Repeat("a", 64) + `"}`
+	for name, contents := range map[string]string{
+		"no lockVersion":                             `{` + good + `}`,
+		"a lockVersion that is a number":             `{"lockVersion":1,` + good + `}`,
+		"no configuration digest":                    `{"lockVersion":"1","config":{}}`,
+		"a configuration digest of the wrong length": `{"lockVersion":"1","config":{"digest":"sha256:abc"}}`,
+		"a configuration digest in upper case":       `{"lockVersion":"1","config":{"digest":"sha256:` + strings.Repeat("A", 64) + `"}}`,
+		"an entry with no path":                      `{"lockVersion":"1",` + good + `,"packs":{"intake":{"digest":"sha256:` + strings.Repeat("a", 64) + `"}}}`,
+		"an entry with no digest":                    `{"lockVersion":"1",` + good + `,"packs":{"intake":{"path":"packs/intake.json"}}}`,
+		"an entry whose digest is not hexadecimal":   `{"lockVersion":"1",` + good + `,"packs":{"intake":{"path":"p.json","digest":"sha256:` + strings.Repeat("z", 64) + `"}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			configPath, root := lockedProject(t, oneGoodConfig, map[string]string{"packs/intake.json": packFixture(t)})
+			if err := os.WriteFile(filepath.Join(root, "jpack.lock.json"), []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			set, failure := Open(open(t, configPath))
+			if set != nil || failure == nil {
+				t.Fatalf("set=%v failure=%v", set, failure)
+			}
+			if !strings.HasPrefix(failure.Code, "JPS-LOCK-") || !strings.Contains(failure.Message, "packs lock") {
+				t.Fatalf("failure = %+v", failure)
+			}
+		})
+	}
+}
+
+// An entry has to be about the document the configuration declares, not merely
+// about bytes that match: an entry pinning the right bytes under another name
+// misdescribes the reviewed set to whoever reads it.
+func TestAnEntryRecordedAtAnotherPathIsItsOwnFinding(t *testing.T) {
+	configPath, root := lockedProject(t, oneGoodConfig, map[string]string{"packs/intake.json": packFixture(t)})
+	declare(t, open(t, configPath))
+	// The digest is left exactly right and only the path is edited.
+	trail := filepath.Join(root, "jpack.lock.json")
+	body, err := os.ReadFile(trail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(trail, []byte(strings.Replace(string(body), `"packs/intake.json"`, `"packs/something-else.json"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := open(t, configPath)
+	set, failure := Open(loaded)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	checks := Verify(loaded, set.Document)
+	if len(checks) != 1 || checks[0].Name != CheckPathMismatch || checks[0].ID != "intake" {
+		t.Fatalf("checks = %+v", checks)
+	}
+	// A deciding surface refuses it too: the bytes match, and what does not is
+	// which document the reviewed set says they are.
+	if _, failure := set.Consult(loaded, []Applied{AppliedPack("intake", []byte(packFixture(t)))}, false); failure == nil {
+		t.Fatal("a mislabelled entry must refuse the decision")
+	}
+}
+
+// A document can be wrong in more than one way at once, and each way is its own
+// finding: reporting only the first would promise a complete report and give a
+// partial one.
+func TestADocumentMissingFromDiskAndFromTheLockReportsBoth(t *testing.T) {
+	config := `{"configVersion":"1","packs":{
+	  "intake":{"path":"packs/intake.json"},
+	  "later":{"path":"packs/later.json"}
+	}}`
+	configPath, root := lockedProject(t, config, map[string]string{
+		"packs/intake.json": packFixture(t),
+		"packs/later.json":  packFixture(t),
+	})
+	declare(t, open(t, configPath))
+	// The lock is regenerated without "later", and the file is removed too.
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"1","packs":{"intake":{"path":"packs/intake.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	declare(t, open(t, configPath))
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "packs", "later.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded := open(t, configPath)
+	set, failure := Open(loaded)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	found := map[string]bool{}
+	for _, check := range Verify(loaded, set.Document) {
+		if check.ID == "later" {
+			found[check.Name] = true
+		}
+	}
+	if !found[CheckLockEntryMissing] || !found[CheckDocumentMissing] {
+		t.Fatalf("both differences are reported: %v", found)
+	}
+}
+
+// A run reads the reviewed set once and every check in it is against that one
+// revision. Proved by construction: the lock file is deleted after the set is
+// read, and the per-node check still verifies against what was retained.
+func TestOneRunReadsTheReviewedSetOnce(t *testing.T) {
+	configPath, root := lockedProject(t, oneGoodConfig, map[string]string{"packs/intake.json": packFixture(t)})
+	declare(t, open(t, configPath))
+	loaded := open(t, configPath)
+	set, failure := Open(loaded)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	check := set.NodeCheck(loaded)
+	if check == nil {
+		t.Fatal("a locked project has a node check")
+	}
+
+	// Nothing from here on may reach the file.
+	if err := os.Remove(filepath.Join(root, "jpack.lock.json")); err != nil {
+		t.Fatal(err)
+	}
+	if failure := check("intake", []byte(packFixture(t))); failure != nil {
+		t.Fatalf("the retained set is what the node check uses: %+v", failure)
+	}
+	if failure := check("intake", []byte(packFixture(t)+"\n")); failure == nil {
+		t.Fatal("and it still refuses bytes that are not the reviewed ones")
+	}
+	// The set names the revision every record of this run will carry.
+	provenance := set.Provenance()
+	if provenance == nil || provenance.LockVersion != Version || provenance.ConfigDigest != loaded.ConfigDigest {
+		t.Fatalf("provenance = %+v", provenance)
+	}
+	if !validDigest(provenance.LockDigest) {
+		t.Fatalf("the lock digest names the exact bytes read: %q", provenance.LockDigest)
+	}
+}
+
+// A configuration may point many declared ids at one document, and hashing that
+// document once per id turns a legal configuration into work proportional to ids
+// times bytes rather than to the bytes there are.
+func TestOneDocumentIsHashedOncePerRun(t *testing.T) {
+	entries := make([]string, 0, 64)
+	for index := 0; index < 64; index++ {
+		entries = append(entries, fmt.Sprintf(`"decision-%02d":{"path":"packs/intake.json"}`, index))
+	}
+	configPath, _ := lockedProject(t, `{"configVersion":"1","packs":{`+strings.Join(entries, ",")+`}}`,
+		map[string]string{"packs/intake.json": packFixture(t)})
+	loaded := open(t, configPath)
+	document, failure := Generate(loaded)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	// Every alias pins the same document, which is the fact the cache turns on.
+	want := Digest([]byte(packFixture(t)))
+	for id, entry := range document.Packs {
+		if entry.Digest != want {
+			t.Fatalf("%s = %q, want %q", id, entry.Digest, want)
+		}
+	}
+	// And the size a lock would take is answerable before anything is read.
+	if least, tooLarge := TooLargeToWrite(loaded, 1<<20); tooLarge || least <= 0 {
+		t.Fatalf("least=%d tooLarge=%v", least, tooLarge)
+	}
+	if _, tooLarge := TooLargeToWrite(loaded, 64); !tooLarge {
+		t.Fatal("a limit smaller than the entries must be refused before reading")
 	}
 }

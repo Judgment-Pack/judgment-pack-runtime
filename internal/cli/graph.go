@@ -197,20 +197,23 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			// not declared is a draft — evaluated, never refused for being
 			// unlocked, and recorded as a draft run.
 			auditWriter := loaded.AuditWriter()
+			// One read of the reviewed set for the whole run. The configuration
+			// and the graph document are checked against it here; each node's
+			// pack is checked against the same retained revision where its bytes
+			// are read, inside the run. Reading twice could see two revisions,
+			// and a run that passed one check against each would record a review
+			// no single reviewed set ever declared.
+			set, lockFailure := lock.Open(loaded)
+			if lockFailure != nil {
+				return a.lockFailure(commandName, format, lockFailure)
+			}
 			applied, declared := appliedGraph(loaded, document, graphPath)
-			reviewed, lockFailure := lock.Consult(loaded, applied, !declared)
+			reviewed, lockFailure := set.Consult(loaded, applied, !declared)
 			if lockFailure != nil {
 				return a.lockFailure(commandName, format, lockFailure)
 			}
-			auditWriter.UnderLaw(reviewed)
-			// Each node's pack is checked where its bytes are read, inside the
-			// run, so the check and the evaluation are about one read. The
-			// reviewed set is loaded once here for that check to close over;
-			// with no lock, nodeCheck is nil and the run checks nothing.
-			nodeCheck, lockFailure := a.nodeCheck(loaded)
-			if lockFailure != nil {
-				return a.lockFailure(commandName, format, lockFailure)
-			}
+			auditWriter.UnderLaw(reviewed, set.Provenance())
+			nodeCheck := a.nodeCheck(loaded, set)
 			output, evaluateFailure := graph.Evaluate(loaded, evaluation.NewEngine(a.engine), document, graphPath, inputs, inputsPath != "", graph.Options{
 				Command:             commandName,
 				SupportedExtensions: supported,
@@ -489,21 +492,14 @@ func appliedGraph(loaded *project.Project, document graph.Document, graphPath st
 	return []lock.Applied{lock.AppliedGraph(id, document.Digest)}, true
 }
 
-// nodeCheck builds the per-node check this run applies to each pack as it is
-// read, from the project's reviewed set. It reports the lock's own failure when
-// the lock is there and will not load, because a run that would check nothing
-// for that reason must not proceed as though it had checked.
-func (a *App) nodeCheck(loaded *project.Project) (func(string, []byte) *evaluation.Failure, *lock.Failure) {
-	if !loaded.HasLock() {
-		return nil, nil
-	}
-	document, failure := lock.Load(loaded)
-	if failure != nil {
-		return nil, failure
-	}
-	check := lock.NodeCheck(loaded, document)
+// nodeCheck adapts the reviewed set this run already read into the per-node
+// check the graph evaluator applies to each pack's bytes as it reads them. It
+// re-reads nothing: the set is the one the configuration and the graph document
+// were checked against, so every check in one run is against one revision.
+func (a *App) nodeCheck(loaded *project.Project, set *lock.Set) func(string, []byte) *evaluation.Failure {
+	check := set.NodeCheck(loaded)
 	if check == nil {
-		return nil, nil
+		return nil
 	}
 	return func(decisionID string, applied []byte) *evaluation.Failure {
 		lockFailure := check(decisionID, applied)
@@ -515,5 +511,5 @@ func (a *App) nodeCheck(loaded *project.Project) (func(string, []byte) *evaluati
 			Message:  lockFailure.Message,
 			ExitCode: lockFailure.ExitCode,
 		}
-	}, nil
+	}
 }

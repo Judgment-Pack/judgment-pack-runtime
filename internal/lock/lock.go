@@ -37,10 +37,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -63,6 +65,10 @@ const (
 	CheckDocumentMissing    = "document-missing"
 	CheckLockEntryMissing   = "lock-entry-missing"
 	CheckUndeclaredInConfig = "locked-but-undeclared"
+	// CheckPathMismatch is an entry whose recorded path is not the path the
+	// configuration declares. The digest may still match: the defect is that
+	// the file a reviewer reads mislabels which document was reviewed.
+	CheckPathMismatch = "path-mismatch"
 )
 
 // Digest is one document's exact bytes in the algorithm-prefixed form this
@@ -118,6 +124,11 @@ func Generate(loaded *project.Project) (Document, *Failure) {
 		LockVersion: Version,
 		Config:      Config{Digest: loaded.ConfigDigest},
 	}
+	// One read and one digest per distinct declared file. Nothing forbids a
+	// configuration from pointing many ids at one document, and hashing that
+	// document once per id turns a legal configuration into work proportional to
+	// ids times bytes rather than to the bytes there are.
+	digests := map[string]string{}
 	if len(loaded.IDs) > 0 {
 		document.Packs = make(map[string]Entry, len(loaded.IDs))
 	}
@@ -131,7 +142,7 @@ func Generate(loaded *project.Project) (Document, *Failure) {
 				ExitCode: result.ExitIO,
 			}
 		}
-		document.Packs[id] = Entry{Path: entry.Path, Digest: Digest(data)}
+		document.Packs[id] = Entry{Path: entry.Path, Digest: digestOf(digests, entry.Path, data)}
 	}
 	if len(loaded.GraphIDs) > 0 {
 		document.Graphs = make(map[string]Entry, len(loaded.GraphIDs))
@@ -146,9 +157,36 @@ func Generate(loaded *project.Project) (Document, *Failure) {
 				ExitCode: result.ExitIO,
 			}
 		}
-		document.Graphs[id] = Entry{Path: entry.Path, Digest: Digest(data)}
+		document.Graphs[id] = Entry{Path: entry.Path, Digest: digestOf(digests, entry.Path, data)}
 	}
 	return document, nil
+}
+
+// perEntryBytes is a deliberate under-estimate of what one entry costs once
+// encoded: the two member names, the digest, the punctuation, and the
+// indentation, without the id or the path. It is used to refuse a lock that
+// cannot possibly fit before any document is read — under-estimating is what
+// makes that refusal safe, since a preflight that guessed high would refuse a
+// project that would have fitted.
+const perEntryBytes = 100
+
+// TooLargeToWrite reports whether a project's declared set cannot encode within
+// the limit every reader of a lock applies, judged before anything is read.
+//
+// A generator must not spend an unbounded read hashing thousands of documents
+// only to find its own output unreadable, and the arithmetic that says so is
+// available from the configuration alone.
+func TooLargeToWrite(loaded *project.Project, limit int64) (int64, bool) {
+	least := int64(len("{\n  \"lockVersion\": \"1\",\n  \"config\": {\n    \"digest\": \"\"\n  }\n}\n") + 71)
+	for _, id := range loaded.IDs {
+		entry, _ := loaded.Entry(id)
+		least += int64(perEntryBytes + len(id) + len(entry.Path))
+	}
+	for _, id := range loaded.GraphIDs {
+		entry, _ := loaded.GraphEntry(id)
+		least += int64(perEntryBytes + len(id) + len(entry.Path))
+	}
+	return least, least > limit
 }
 
 // Encode renders one lock as the exact bytes written to disk: two-space indent,
@@ -166,17 +204,57 @@ func Encode(document Document) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-// Load reads and decodes one project's lock through its own handle.
+// Set is one project's reviewed set as it was read: the decoded document and
+// the digest of the exact bytes it was decoded from.
+//
+// It exists so a run reads the lock once. A graph checks the configuration and
+// the graph document before it starts and each node's pack as that node's bytes
+// come in hand; two reads of the file could see two revisions, and a run that
+// passed one check against each would record a review no single reviewed set
+// ever declared. The digest is retained for the same reason a record carries
+// it: the lock is replaced in place, so naming the revision is the only way a
+// later reader can tell which one a decision was judged under.
+type Set struct {
+	Document Document
+	Digest   string
+}
+
+// Provenance names this reviewed set for an audit record. A nil Set names
+// nothing, which is what a draft or an unlocked project records.
+func (s *Set) Provenance() *audit.ReviewedSet {
+	if s == nil {
+		return nil
+	}
+	return &audit.ReviewedSet{
+		LockDigest:   s.Digest,
+		LockVersion:  s.Document.LockVersion,
+		ConfigDigest: s.Document.Config.Digest,
+	}
+}
+
+// Open reads and decodes one project's lock through its own handle, once. It
+// returns nil with no failure for a project that declares no reviewed set,
+// which is the answer every surface then carries forward.
+//
+// A caller whose run applies no declared document must not call it: an
+// unreadable lock, or one from a newer toolchain, must not stop someone
+// drafting, and reading it at all would be the only thing that could.
 //
 // The decode is the strict carrier decode every other document here gets — a
 // duplicate member in a reviewed artifact is a defect, not a last-one-wins — and
 // the version is read before the shape, so a lock from a later toolchain is told
-// exactly that instead of being read as a broken one.
-func Load(loaded *project.Project) (Document, *Failure) {
+// exactly that instead of being read as a broken one. What follows is the shape
+// check: this file is generated, so anything malformed in it was edited by hand
+// or by something that is not this runtime, and reading it loosely would let a
+// hand-edited entry verify.
+func Open(loaded *project.Project) (*Set, *Failure) {
+	if loaded == nil || !loaded.HasLock() {
+		return nil, nil
+	}
 	name, _ := loaded.LockName()
 	data, err := loaded.ReadLock()
 	if err != nil {
-		return Document{}, &Failure{
+		return nil, &Failure{
 			Code:     "JPS-LOCK-READ",
 			Message:  fmt.Sprintf("The reviewed-set lock %s could not be read: %s", display.Sanitize(loaded.LockPath()), project.ReadFailureMessage(name, err)),
 			ExitCode: result.ExitIO,
@@ -184,23 +262,23 @@ func Load(loaded *project.Project) (Document, *Failure) {
 	}
 	decoded, carrierFailure := carrier.Decode(data, carrier.DefaultLimits())
 	if carrierFailure != nil {
-		return Document{}, &Failure{
-			Code:     "JPS-LOCK-JSON",
-			Message:  fmt.Sprintf("The reviewed-set lock %s is not acceptable JSON: %s. It is generated: run jpack packs lock to write it again.", display.Sanitize(loaded.LockPath()), display.Sanitize(carrierFailure.Diagnostic.Message)),
-			ExitCode: result.ExitInvalid,
-		}
+		return nil, shapeFailure(loaded, "JPS-LOCK-JSON", result.ExitInvalid,
+			fmt.Sprintf("is not acceptable JSON: %s", display.Sanitize(carrierFailure.Diagnostic.Message)))
 	}
 	root, ok := decoded.(map[string]any)
 	if !ok {
-		return Document{}, &Failure{
-			Code:     "JPS-LOCK-SHAPE",
-			Message:  fmt.Sprintf("The reviewed-set lock %s must be a JSON object. It is generated: run jpack packs lock to write it again.", display.Sanitize(loaded.LockPath())),
-			ExitCode: result.ExitInvalid,
-		}
+		return nil, shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid, "must be a JSON object")
 	}
-	declared, _ := root["lockVersion"].(string)
+	raw, present := root["lockVersion"]
+	if !present {
+		return nil, shapeFailure(loaded, "JPS-LOCK-VERSION", result.ExitInvalid, "declares no lockVersion")
+	}
+	declared, ok := raw.(string)
+	if !ok {
+		return nil, shapeFailure(loaded, "JPS-LOCK-VERSION", result.ExitInvalid, "declares a lockVersion that is not a string")
+	}
 	if declared != Version {
-		return Document{}, &Failure{
+		return nil, &Failure{
 			Code:     "JPS-LOCK-VERSION",
 			Message:  fmt.Sprintf("The reviewed-set lock %s declares lockVersion %q, which this runtime does not read. It reads: %s.", display.Sanitize(loaded.LockPath()), display.Sanitize(declared), Version),
 			ExitCode: result.ExitUnsupported,
@@ -208,13 +286,74 @@ func Load(loaded *project.Project) (Document, *Failure) {
 	}
 	var document Document
 	if err := json.Unmarshal(data, &document); err != nil {
-		return Document{}, &Failure{
-			Code:     "JPS-LOCK-SHAPE",
-			Message:  fmt.Sprintf("The reviewed-set lock %s could not be decoded. It is generated: run jpack packs lock to write it again.", display.Sanitize(loaded.LockPath())),
-			ExitCode: result.ExitInvalid,
+		return nil, shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid, "could not be decoded")
+	}
+	if failure := validate(loaded, document); failure != nil {
+		return nil, failure
+	}
+	return &Set{Document: document, Digest: Digest(data)}, nil
+}
+
+// validate holds a decoded lock to the shape this runtime writes: a digest for
+// the configuration, and a path and a digest for every entry, each digest in
+// the one form Digest produces. A lock that fails this was not written by
+// packs lock, and comparing against it would be comparing against a guess.
+func validate(loaded *project.Project, document Document) *Failure {
+	if !validDigest(document.Config.Digest) {
+		return shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid,
+			"declares no usable digest for the configuration")
+	}
+	for _, set := range []struct {
+		kind    string
+		entries map[string]Entry
+	}{{"pack", document.Packs}, {"graph", document.Graphs}} {
+		ids := make([]string, 0, len(set.entries))
+		for id := range set.entries {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			entry := set.entries[id]
+			if entry.Path == "" {
+				return shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid,
+					fmt.Sprintf("declares the %s %q with no path", set.kind, display.Sanitize(id)))
+			}
+			if !validDigest(entry.Digest) {
+				return shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid,
+					fmt.Sprintf("declares the %s %q with no usable digest", set.kind, display.Sanitize(id)))
+			}
 		}
 	}
-	return document, nil
+	return nil
+}
+
+// validDigest reports whether one string is the digest form this runtime
+// writes: "sha256:" and sixty-four lowercase hexadecimal digits.
+func validDigest(digest string) bool {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(digest, prefix) {
+		return false
+	}
+	body := digest[len(prefix):]
+	if len(body) != 64 {
+		return false
+	}
+	for _, character := range body {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// shapeFailure is one sentence about a generated file that is not the shape its
+// generator writes, always ending in the command that writes it again.
+func shapeFailure(loaded *project.Project, code string, exitCode int, detail string) *Failure {
+	return &Failure{
+		Code:     code,
+		Message:  fmt.Sprintf("The reviewed-set lock %s %s. It is generated: run jpack packs lock to write it again.", display.Sanitize(loaded.LockPath()), detail),
+		ExitCode: exitCode,
+	}
 }
 
 // Check is one named finding about one entry. Kind is "pack", "graph", or ""
@@ -233,6 +372,11 @@ type Check struct {
 // the lock: the configuration's own bytes, each declared pack and graph, and
 // each locked entry the configuration no longer declares.
 //
+// It re-reads every declared document, which is exactly the question this form
+// asks — "is what is on disk what was reviewed". The deciding form
+// (VerifyDeciding) does not, because a decision's claim must be about the bytes
+// that produced it and not about a second read of their path.
+//
 // Findings are returned in a deterministic order — the configuration, then packs
 // by id, then graphs by id, then the locked-but-undeclared entries by id — so
 // two runs over one tree report the same thing in the same order.
@@ -245,16 +389,20 @@ func Verify(loaded *project.Project, document Document) []Check {
 			Detail: "The configuration's own bytes differ from the reviewed set. Adding, removing, or re-pointing a declared pack is an amendment.",
 		})
 	}
+	// One digest per distinct file per run. A configuration may point many
+	// declared ids at one document — nothing forbids it — and hashing that file
+	// once per id turns a legal configuration into an unbounded amount of work.
+	digests := map[string]string{}
 	checks = append(checks, verifySet(loaded, document.Packs, loaded.IDs, "pack", func(id string) (string, []byte, error) {
 		entry, _ := loaded.Entry(id)
 		data, err := loaded.ReadPack(entry)
 		return entry.Path, data, err
-	})...)
+	}, digests)...)
 	checks = append(checks, verifySet(loaded, document.Graphs, loaded.GraphIDs, "graph", func(id string) (string, []byte, error) {
 		entry, _ := loaded.GraphEntry(id)
 		data, err := loaded.ReadGraph(entry, graph.MaxGraphBytes)
 		return entry.Path, data, err
-	})...)
+	}, digests)...)
 	return checks
 }
 
@@ -262,7 +410,12 @@ func Verify(loaded *project.Project, document Document) []Check {
 // configuration. Both directions are reported: a declared document with no lock
 // entry is law nobody declared reviewed, and a locked entry the configuration
 // dropped is a reviewed set that no longer describes the project.
-func verifySet(loaded *project.Project, locked map[string]Entry, declared []string, kind string, read func(string) (string, []byte, error)) []Check {
+//
+// A document can be wrong in more than one way at once, and each way is its own
+// finding: an entry may be missing from the lock *and* the file it names may be
+// gone, and reporting only the first would promise a complete report and give a
+// partial one.
+func verifySet(loaded *project.Project, locked map[string]Entry, declared []string, kind string, read func(string) (string, []byte, error), digests map[string]string) []Check {
 	checks := []Check{}
 	for _, id := range declared {
 		path, data, err := read(id)
@@ -275,7 +428,6 @@ func verifySet(loaded *project.Project, locked map[string]Entry, declared []stri
 				Path:   path,
 				Detail: fmt.Sprintf("The configuration declares this %s and the reviewed set does not name it.", kind),
 			})
-			continue
 		}
 		if err != nil {
 			checks = append(checks, Check{
@@ -287,7 +439,13 @@ func verifySet(loaded *project.Project, locked map[string]Entry, declared []stri
 			})
 			continue
 		}
-		if got := Digest(data); got != entry.Digest {
+		if !inLock {
+			continue
+		}
+		if check, wrong := pathMismatch(kind, id, path, entry); wrong {
+			checks = append(checks, check)
+		}
+		if digestOf(digests, path, data) != entry.Digest {
 			checks = append(checks, Check{
 				Name:   CheckDocumentDrift,
 				Kind:   kind,
@@ -314,6 +472,42 @@ func verifySet(loaded *project.Project, locked map[string]Entry, declared []stri
 		})
 	}
 	return checks
+}
+
+// digestOf hashes one document once per distinct declared path within a run.
+func digestOf(digests map[string]string, path string, data []byte) string {
+	cleaned, err := fssecure.Relative(path)
+	if err != nil {
+		return Digest(data)
+	}
+	if known, seen := digests[cleaned]; seen {
+		return known
+	}
+	digest := Digest(data)
+	digests[cleaned] = digest
+	return digest
+}
+
+// pathMismatch reports an entry whose recorded path is not the path the
+// configuration declares.
+//
+// The digest may still match, and that is exactly why this is its own finding:
+// the lock is the file a reviewer reads, so an entry that pins the right bytes
+// under the wrong name tells the reviewer a document was reviewed that was not.
+// Only a generator writes this file, so a mismatch is a hand edit.
+func pathMismatch(kind, id, declared string, entry Entry) (Check, bool) {
+	want, wantErr := fssecure.Relative(declared)
+	got, gotErr := fssecure.Relative(entry.Path)
+	if wantErr == nil && gotErr == nil && want == got {
+		return Check{}, false
+	}
+	return Check{
+		Name:   CheckPathMismatch,
+		Kind:   kind,
+		ID:     id,
+		Path:   declared,
+		Detail: fmt.Sprintf("The reviewed set records this %s at %q, and the configuration declares it at %q.", kind, display.Sanitize(entry.Path), display.Sanitize(declared)),
+	}, true
 }
 
 // findDeclared answers whether the configuration still declares one id of one
@@ -423,16 +617,23 @@ func verifyApplied(loaded *project.Project, document Document, applied Applied) 
 			Detail: fmt.Sprintf("The configuration declares this %s and the reviewed set does not name it.", applied.Kind),
 		}}
 	}
+	checks := []Check{}
+	// The entry has to be about the document the configuration declares, not
+	// merely about bytes that match: an entry pinning the right bytes under
+	// another name misdescribes the reviewed set to whoever reads it.
+	if check, wrong := pathMismatch(applied.Kind, applied.ID, path, entry); wrong {
+		checks = append(checks, check)
+	}
 	if applied.Digest != entry.Digest {
-		return []Check{{
+		checks = append(checks, Check{
 			Name:   CheckDocumentDrift,
 			Kind:   applied.Kind,
 			ID:     applied.ID,
 			Path:   path,
 			Detail: fmt.Sprintf("The %s document's bytes differ from the reviewed set.", applied.Kind),
-		}}
+		})
 	}
-	return nil
+	return checks
 }
 
 // sortedApplied orders the documents one evaluation applies, so a refusal names
@@ -479,44 +680,45 @@ func DecidingFailure(loaded *project.Project, checks []Check) *Failure {
 	}
 }
 
-// Consult is the whole of what a deciding surface does about the lock: nothing
-// at all when there is no project, no lock, or no declared document in play, a
-// refusal when the law this evaluation applies differs from the reviewed set,
+// DraftRun is the classification for a run that applies no declared document at
+// all: nil when the project declares no reviewed set, and false when it does.
+//
+// It is separate from Consult because such a run must not read the lock — an
+// unreadable lock, or one from a newer toolchain, must not stop someone
+// drafting, and reading it is the only thing that could.
+func DraftRun(loaded *project.Project) *bool {
+	if loaded == nil || !loaded.HasLock() {
+		return nil
+	}
+	draft := false
+	return &draft
+}
+
+// Consult is what a deciding surface does about the lock once it has read one:
+// a refusal when the law this evaluation applies differs from the reviewed set,
 // and otherwise the bit an audit record carries.
 //
 // applied names the declared documents this one evaluation applies, each by the
 // digest of the bytes it applies. draft says at least one document it applies
-// was not declared — a pack named by path, a pack passed inline over the wire, a
-// graph document that is not one the configuration declares. A draft is never
-// refused for being unlocked: writing a pack and trying it is the author's loop,
-// and a convention that made the loop illegal would be a convention authors
-// route around.
+// was not declared — a graph document that is not one the configuration
+// declares. A draft is never refused for being unlocked: writing a document and
+// trying it is the author's loop, and a convention that made the loop illegal
+// would be a convention authors route around.
 //
-// A run that applies no declared document reaches the lock not at all — not even
-// to read it. That order is deliberate: an unreadable lock, or one from a newer
-// toolchain, must not stop someone drafting, because there is no declared law in
-// play for it to say anything about.
-//
-// The returned bit is nil when the project declares no lock, so a record from an
-// unlocked project carries no member rather than a false one. It is true only
-// when every document applied was declared and every one of them matched; a
-// draft anywhere makes it false, because a record saying "reviewed" about a run
-// that applied an undeclared document would be the strongest claim in the trail
-// and the least true.
-func Consult(loaded *project.Project, applied []Applied, draft bool) (*bool, *Failure) {
-	if loaded == nil || !loaded.HasLock() {
+// A nil Set is a project that declares no reviewed set, and the returned bit is
+// nil with it, so a record from an unlocked project carries no member rather
+// than a false one. The bit is true only when every document applied was
+// declared and every one of them matched; a draft anywhere makes it false,
+// because a record saying "reviewed" about a run that applied an undeclared
+// document would be the strongest claim in the trail and the least true.
+func (s *Set) Consult(loaded *project.Project, applied []Applied, draft bool) (*bool, *Failure) {
+	if s == nil || loaded == nil {
 		return nil, nil
 	}
-	if len(applied) == 0 {
-		reviewed := !draft
-		return &reviewed, nil
-	}
-	document, failure := Load(loaded)
-	if failure != nil {
-		return nil, failure
-	}
-	if checks := VerifyDeciding(loaded, document, applied); len(checks) > 0 {
-		return nil, DecidingFailure(loaded, checks)
+	if len(applied) > 0 {
+		if checks := VerifyDeciding(loaded, s.Document, applied); len(checks) > 0 {
+			return nil, DecidingFailure(loaded, checks)
+		}
 	}
 	reviewed := !draft
 	return &reviewed, nil
@@ -533,13 +735,20 @@ func Consult(loaded *project.Project, applied []Applied, draft bool) (*bool, *Fa
 type LawCheck func(decisionID string, document []byte) *Failure
 
 // NodeCheck builds the LawCheck a graph run applies to each node's pack as it
-// is read. It returns nil when there is nothing to check — no project, no lock —
-// so a caller can hand the result over unconditionally.
+// is read, closing over the reviewed set this run already read. A nil Set has
+// nothing to check and returns nil, so a caller can hand the result over
+// unconditionally.
+//
+// It closes over the retained set rather than reading the lock again, and that
+// is the point: the configuration and the graph document were checked against
+// this revision before the run started, and a second read could see another one
+// — leaving a run that passed each check against a different reviewed set and
+// recorded a review no single set ever declared.
 //
 // An id the configuration does not declare is passed over: the graph's own
 // reference checks name it, and they name it correctly.
-func NodeCheck(loaded *project.Project, document Document) LawCheck {
-	if loaded == nil || !loaded.HasLock() {
+func (s *Set) NodeCheck(loaded *project.Project) LawCheck {
+	if s == nil || loaded == nil {
 		return nil
 	}
 	return func(decisionID string, applied []byte) *Failure {
@@ -547,7 +756,7 @@ func NodeCheck(loaded *project.Project, document Document) LawCheck {
 			// The configuration is checked once by the surface, before the run
 			// starts; repeating it per node would report one drift as many.
 			Config: Config{Digest: loaded.ConfigDigest},
-			Packs:  document.Packs,
+			Packs:  s.Document.Packs,
 		}, []Applied{AppliedPack(decisionID, applied)})
 		if len(checks) == 0 {
 			return nil

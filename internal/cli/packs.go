@@ -49,7 +49,7 @@ func (a *App) packsCommand() *cobra.Command {
 			return command.Help()
 		},
 	}
-	// --config is registered on the three subcommands that read a configuration
+	// --config is registered on the five subcommands that read a configuration
 	// rather than on this one as a persistent flag. packs schema prints an
 	// embedded artifact and touches no configuration; a flag inherited into its
 	// help would promise an effect it does not have.
@@ -105,6 +105,24 @@ func (a *App) packsLockCommand() *cobra.Command {
 					fmt.Sprintf("The reviewed-set lock would be written at %s, which this configuration declares as %s. Rename that document, or name the configuration something whose lock lands elsewhere; nothing was written.",
 						display.Sanitize(loaded.LockPath()), display.Sanitize(owner)))
 			}
+			// The audit directory is the other thing a generated file must not
+			// land on or above: a file there leaves the directory uncreatable,
+			// and every later evaluation then refuses after evaluating because
+			// its record cannot be written.
+			if loaded.ContainsAuditDir(lockName) {
+				return a.operational(commandName, format, result.ExitInvalid, "JPS-LOCK-PATH",
+					fmt.Sprintf("The reviewed-set lock would be written at %s, which is the audit directory this configuration declares, or a component above it. Move one of the two; nothing was written.",
+						display.Sanitize(loaded.LockPath())))
+			}
+			// The arithmetic that says the lock cannot fit is available from the
+			// configuration alone, so it is done before a single document is
+			// read: a generator must not spend an unbounded read hashing
+			// thousands of documents only to find its own output unreadable.
+			if least, tooLarge := lock.TooLargeToWrite(loaded, project.MaxLockBytes); tooLarge {
+				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-LOCK-BYTE-LIMIT",
+					fmt.Sprintf("The reviewed set of %d declared document(s) cannot encode within the %d-byte limit every reader of this file applies — %d bytes at the least; nothing was written or read.",
+						len(loaded.IDs)+len(loaded.GraphIDs), project.MaxLockBytes, least))
+			}
 			document, lockFailure := lock.Generate(loaded)
 			if lockFailure != nil {
 				return a.lockFailure(commandName, format, lockFailure)
@@ -148,7 +166,8 @@ func (a *App) packsVerifyCommand() *cobra.Command {
 			"(ADR-0019), and report every difference by name: config-drift when the configuration's own bytes " +
 			"changed, document-drift when a declared pack or graph changed, document-missing when one cannot be " +
 			"read, lock-entry-missing when the configuration declares a document the reviewed set does not name, " +
-			"and locked-but-undeclared when the reviewed set names one the configuration dropped. Every " +
+			"locked-but-undeclared when the reviewed set names one the configuration dropped, and " +
+			"path-mismatch when an entry records a path the configuration does not declare. Every " +
 			"difference is reported, not the first. It says what changed and never whether the change was " +
 			"right: an amendment and a tampering look identical to a runtime, and only the people reviewing the " +
 			"diff can tell them apart. Exit 0 when the project matches its reviewed set, 1 when anything " +
@@ -171,11 +190,11 @@ func (a *App) packsVerifyCommand() *cobra.Command {
 			if !loaded.HasLock() {
 				return a.lockFailure(commandName, format, lock.NoLockFailure(loaded))
 			}
-			document, lockFailure := lock.Load(loaded)
+			set, lockFailure := lock.Open(loaded)
 			if lockFailure != nil {
 				return a.lockFailure(commandName, format, lockFailure)
 			}
-			output := verificationReport(loaded, document, lock.Verify(loaded, document), commandName)
+			output := verificationReport(loaded, set.Document, lock.Verify(loaded, set.Document), commandName)
 			if err := a.renderPackLockVerification(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}

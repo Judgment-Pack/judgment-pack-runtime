@@ -621,6 +621,22 @@ func TestExperimentalEvaluateHoldsDeclaredLawToTheReviewedSet(t *testing.T) {
 	if reviewed[0] != true || reviewed[1] != false {
 		t.Fatalf("reviewed = %v, want the declared run true and the draft false", reviewed)
 	}
+	// The reviewed run names the revision that made its claim true; the draft
+	// names none, because it was judged under no reviewed set.
+	var declaredRecord, draftRecord map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &declaredRecord); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &draftRecord); err != nil {
+		t.Fatal(err)
+	}
+	named, ok := declaredRecord["reviewedSet"].(map[string]any)
+	if !ok || named["lockDigest"] != lock.Digest(contents) || named["lockVersion"] != lock.Version {
+		t.Fatalf("reviewedSet = %v", declaredRecord["reviewedSet"])
+	}
+	if draftRecord["reviewedSet"] != nil {
+		t.Fatalf("a draft names no reviewed set: %v", draftRecord["reviewedSet"])
+	}
 
 	// Law that left the reviewed set refuses, carrying the same code the CLI
 	// reports and no disposition.

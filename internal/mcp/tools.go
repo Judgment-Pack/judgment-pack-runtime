@@ -517,11 +517,23 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		applied = []lock.Applied{lock.AppliedPack(packID, []byte(pack))}
 	}
 	auditWriter := loaded.AuditWriter()
-	reviewed, lockFailure := lock.Consult(loaded, applied, !packIDPresent)
-	if lockFailure != nil {
-		return lockToolError(lockFailure)
+	// A call applying no declared document never reads the lock at all, so an
+	// unreadable one does not stop a draft; a call that does applies it once,
+	// and the record names the revision it was judged under.
+	var set *lock.Set
+	reviewed := lock.DraftRun(loaded)
+	if len(applied) > 0 {
+		opened, lockFailure := lock.Open(loaded)
+		if lockFailure != nil {
+			return lockToolError(lockFailure)
+		}
+		set = opened
+		reviewed, lockFailure = set.Consult(loaded, applied, false)
+		if lockFailure != nil {
+			return lockToolError(lockFailure)
+		}
 	}
-	auditWriter.UnderLaw(reviewed)
+	auditWriter.UnderLaw(reviewed, set.Provenance())
 	evaluator := evaluation.NewEngine(s.engine)
 	output, failure := evaluator.EvaluateWith([]byte(pack), []byte(facts), []byte(evidence), evaluation.Options{
 		Command:             evaluateCommand,

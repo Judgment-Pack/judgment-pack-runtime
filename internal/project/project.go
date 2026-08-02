@@ -653,10 +653,17 @@ func (p *Project) LockNameFailure() *Failure {
 }
 
 // DeclaresPath reports whether the configuration declares any document at one
-// relative path — a pack, its matrix, a graph, or its rows. It is what keeps a
-// generated file from being written over declared law: the comparison is
-// lexical, on the cleaned relative form every declared path is held to, because
-// that is the form the configuration states and the form the write would use.
+// relative path — a pack, its matrix, a graph, or its rows — and names which.
+//
+// It is what keeps a generated file from being written over declared law, so it
+// has to answer about *files* and not about spellings. Three questions in
+// order: the cleaned relative forms, which settles the ordinary case; file
+// identity through the project's own handle when both names exist, which
+// settles a hardlink and any alias the filesystem resolves to one inode; and a
+// case-folded comparison of the cleaned forms, which is the conservative answer
+// for a name that is not there yet on a filesystem that may not distinguish
+// case. Refusing a collision that is not one costs a rename; missing one
+// destroys a reviewed document.
 func (p *Project) DeclaresPath(relative string) (string, bool) {
 	target, err := fssecure.Relative(relative)
 	if err != nil {
@@ -664,7 +671,13 @@ func (p *Project) DeclaresPath(relative string) (string, bool) {
 	}
 	same := func(declared string) bool {
 		cleaned, err := fssecure.Relative(declared)
-		return err == nil && cleaned == target
+		if err != nil {
+			return false
+		}
+		if cleaned == target || strings.EqualFold(cleaned, target) {
+			return true
+		}
+		return p.sameFile(cleaned, target)
 	}
 	for _, id := range p.IDs {
 		entry := p.Config.Packs[id]
@@ -685,6 +698,39 @@ func (p *Project) DeclaresPath(relative string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// sameFile reports whether two cleaned relative names are one file, asked
+// through the project's own handle. It answers only when both are there: a name
+// that is not there yet has no identity to compare, which is what the caller's
+// case-folded comparison covers.
+func (p *Project) sameFile(left, right string) bool {
+	return p.root.SameFile(left, right)
+}
+
+// ContainsAuditDir reports whether one relative path is, or contains, the audit
+// directory this configuration declares.
+//
+// A generated file written at the audit directory's own name — or at any
+// component above it — leaves that directory uncreatable, and every later
+// evaluation then refuses *after* evaluating because its record cannot be
+// written. That is a defect the write can see coming and the evaluation cannot.
+func (p *Project) ContainsAuditDir(relative string) bool {
+	if p.Config.Audit == nil {
+		return false
+	}
+	target, err := fssecure.Relative(relative)
+	if err != nil {
+		return false
+	}
+	dir, err := fssecure.Relative(p.Config.Audit.Dir)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(dir, target) {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(dir), strings.ToLower(target)+string(filepath.Separator))
 }
 
 // DeclaredGraphID reports which configured graph, if any, an invocation's graph

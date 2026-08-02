@@ -492,6 +492,17 @@ func TestRootReplacesInsideAndRefusesEveryEscape(t *testing.T) {
 		t.Fatalf("data=%q err=%v", data, err)
 	}
 
+	// A create in a subdirectory reaches the directory sync path, which must not
+	// turn a successful write into a failure.
+	if err := root.MakeDir("nested"); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Replace("nested/generated.json", []byte("{}\n")); err != nil {
+		t.Fatalf("a create below the root must succeed and be made durable: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "nested", "generated.json")); err != nil || string(data) != "{}\n" {
+		t.Fatalf("data=%q err=%v", data, err)
+	}
 	for _, relative := range []string{"", "..", "../escape.json", "/etc/passwd", "gen\x00.json"} {
 		if err := root.Replace(relative, []byte("x")); !errors.Is(err, ErrOutsideRoot) {
 			t.Fatalf("%q must be refused as outside the root, got %v", relative, err)

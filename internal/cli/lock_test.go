@@ -750,3 +750,190 @@ func TestPacksLockTightensAnExistingLockFile(t *testing.T) {
 		t.Fatalf("mode = %v, want 0644", info.Mode().Perm())
 	}
 }
+
+// A record that claims a review names the revision that made the claim true.
+// The lock is replaced in place, so without it a reader holding a record and a
+// lock file cannot tell whether that lock is the one the decision was judged
+// under.
+func TestAReviewedRecordNamesTheReviewedSet(t *testing.T) {
+	configPath := auditProject(t)
+	mustLock(t, configPath)
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+
+	code, _, stderr := runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	record := auditRecords(t, configPath)[0]
+	set, ok := record["reviewedSet"].(map[string]any)
+	if !ok {
+		t.Fatalf("a reviewed record names its reviewed set: %v", record)
+	}
+	lockBytes, err := os.ReadFile(lockPath(configPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set["lockDigest"] != lock.Digest(lockBytes) || set["lockVersion"] != lock.Version ||
+		set["configDigest"] != lock.Digest(config) {
+		t.Fatalf("reviewedSet = %v", set)
+	}
+
+	// A draft names none: it was judged under no reviewed set.
+	packPath := filepath.Join(filepath.Dir(configPath), "packs", "intake-0.1.0.pack.json")
+	code, _, stderr = runTest(t, []string{"experimental", "evaluate", packPath,
+		"--config", configPath, "--facts", facts}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	records := auditRecords(t, configPath)
+	last := records[len(records)-1]
+	if last["reviewed"] != false || last["reviewedSet"] != nil {
+		t.Fatalf("a draft names no reviewed set: %v", last)
+	}
+
+	// And a project with no lock names none either.
+	plain := oneGoodProject(t)
+	if _, _, stderr := runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", plain, "--facts", facts}, ""); stderr != "" {
+		t.Fatalf("stderr=%q", stderr)
+	}
+}
+
+// A graph run reads the reviewed set once and every record of it names that one
+// revision — including the composite, which is written after every node.
+func TestAGraphRunNamesOneReviewedSet(t *testing.T) {
+	config := strings.Replace(graphFixture(t, "jpack.json"),
+		`"configVersion": "2",`, `"configVersion": "3",`+"\n"+`  "audit": {"dir": "audit"},`, 1)
+	configPath := writeProjectFixture(t, config, map[string]string{
+		"sanctions-screening-0.1.0.pack.json": graphFixture(t, "sanctions-screening-0.1.0.pack.json"),
+		"vendor-onboarding-0.1.0.pack.json":   graphFixture(t, "vendor-onboarding-0.1.0.pack.json"),
+		"onboarding.graph.json":               graphFixture(t, "onboarding.graph.json"),
+	})
+	graphPath := filepath.Join(filepath.Dir(configPath), "onboarding.graph.json")
+	mustLock(t, configPath)
+	lockBytes, err := os.ReadFile(lockPath(configPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", writeGraphInputs(t, graphHappyInputs)}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	records := auditRecords(t, configPath)
+	if len(records) < 3 {
+		t.Fatalf("records = %d", len(records))
+	}
+	for _, record := range records {
+		set, ok := record["reviewedSet"].(map[string]any)
+		if !ok || set["lockDigest"] != lock.Digest(lockBytes) {
+			t.Fatalf("every record of one run names the one revision it was judged under: %v", record)
+		}
+	}
+}
+
+// The lock is read once per run: the configuration and the graph document are
+// checked against the revision the node checks also use. Proved by
+// construction — the file is removed after the run has read it, and the node
+// checks still verify.
+func TestAGraphRunReadsTheReviewedSetOnce(t *testing.T) {
+	config := strings.Replace(graphFixture(t, "jpack.json"),
+		`"configVersion": "2",`, `"configVersion": "3",`+"\n"+`  "audit": {"dir": "audit"},`, 1)
+	configPath := writeProjectFixture(t, config, map[string]string{
+		"sanctions-screening-0.1.0.pack.json": graphFixture(t, "sanctions-screening-0.1.0.pack.json"),
+		"vendor-onboarding-0.1.0.pack.json":   graphFixture(t, "vendor-onboarding-0.1.0.pack.json"),
+		"onboarding.graph.json":               graphFixture(t, "onboarding.graph.json"),
+	})
+	graphPath := filepath.Join(filepath.Dir(configPath), "onboarding.graph.json")
+	mustLock(t, configPath)
+
+	// The check that the run holds one revision is made in internal/lock, where
+	// the set can be retained across the file's removal. Here the observable
+	// half: a drifted node pack refuses even though the graph document and the
+	// configuration both matched, so the per-node check ran against the same
+	// set the run opened.
+	packPath := filepath.Join(filepath.Dir(configPath), "vendor-onboarding-0.1.0.pack.json")
+	body, err := os.ReadFile(packPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(packPath, append(body, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", writeGraphInputs(t, graphHappyInputs)}, "")
+	if code != result.ExitInvalid || !strings.Contains(stderr, lock.CheckDocumentDrift) {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	noAuditTrail(t, configPath)
+}
+
+// The generated file never lands on the audit directory or above it: a file
+// there leaves the directory uncreatable, and every later evaluation then
+// refuses after evaluating because its record cannot be written.
+func TestPacksLockRefusesToOccupyTheAuditDirectory(t *testing.T) {
+	for name, dir := range map[string]string{
+		"the audit directory itself": "jpack.lock.json",
+		"a directory below it":       "jpack.lock.json/records",
+	} {
+		t.Run(name, func(t *testing.T) {
+			configPath := writeProjectFixture(t,
+				`{"configVersion":"3","audit":{"dir":"`+dir+`"},"packs":{"intake":{"path":"packs/intake.json"}}}`,
+				map[string]string{"packs/intake.json": evaluatorPack(t)})
+			code, _, stderr := runTest(t, []string{"packs", "lock", "--config", configPath}, "")
+			if code != result.ExitInvalid || !strings.Contains(stderr, "audit directory") {
+				t.Fatalf("exit=%d stderr=%q", code, stderr)
+			}
+			if _, err := os.Stat(lockPath(configPath)); err == nil {
+				t.Fatal("nothing was written")
+			}
+		})
+	}
+}
+
+// The collision refusal is about files, not spellings: a case-equivalent name
+// is refused wherever it is written, because on a filesystem that folds case it
+// is the same file and the write would destroy declared law.
+func TestPacksLockRefusesACaseEquivalentDeclaredPath(t *testing.T) {
+	configPath := writeProjectFixture(t,
+		`{"configVersion":"1","packs":{"intake":{"path":"JPACK.LOCK.JSON"}}}`,
+		map[string]string{"JPACK.LOCK.JSON": evaluatorPack(t)})
+	code, _, stderr := runTest(t, []string{"packs", "lock", "--config", configPath}, "")
+	if code != result.ExitInvalid || !strings.Contains(stderr, "nothing was written") {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	// The declared document is exactly as it was. On a case-folding filesystem
+	// that is the whole point; on a case-sensitive one the refusal is
+	// conservative and costs a rename.
+	body, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "JPACK.LOCK.JSON"))
+	if err != nil || string(body) != evaluatorPack(t) {
+		t.Fatalf("the declared document must be untouched: err=%v", err)
+	}
+}
+
+// The JSON envelope of an argument failure names the command the diagnostic is
+// about. A verb missing from the scan reports its group instead, which a
+// consumer keying on the member cannot tell from a group-level failure.
+func TestTheEnvelopeNamesTheNewVerbs(t *testing.T) {
+	for _, verb := range []string{"lock", "verify"} {
+		code, stdout, _ := runTest(t, []string{"packs", verb, "extra", "--format", "json"}, "")
+		if code != result.ExitInvocation {
+			t.Fatalf("packs %s: exit=%d", verb, code)
+		}
+		var envelope struct {
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+			t.Fatalf("packs %s: undecodable %q: %v", verb, stdout, err)
+		}
+		if envelope.Command != "packs "+verb {
+			t.Fatalf("command = %q, want %q", envelope.Command, "packs "+verb)
+		}
+	}
+}

@@ -119,7 +119,8 @@ const (
 // document this evaluation applied was one the lock declares and every one of
 // them matched, false when any of them was a draft. It is absent — not false —
 // for a project that declares no lock, because "this project does not use the
-// convention" and "this ran on unreviewed law" are different facts. There is no
+// convention" and "this ran on unreviewed law" are different facts. When it is
+// true, ReviewedSet names the revision that made it so. There is no
 // "declared but drifted" value, and there cannot be: a deciding surface refuses
 // such a run before the evaluator is reached, so nothing composes a record for
 // it. The member is additive, which is why recordVersion stays "1" — the same
@@ -139,7 +140,24 @@ type Record struct {
 	DraftPrototype       *result.DraftPrototype `json:"draftPrototype,omitempty"`
 	Artifact             *result.Artifact       `json:"artifact,omitempty"`
 	Reviewed             *bool                  `json:"reviewed,omitempty"`
+	ReviewedSet          *ReviewedSet           `json:"reviewedSet,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
+}
+
+// ReviewedSet names the revision of the reviewed set that made Reviewed true:
+// the digest of the exact lock bytes the checks used, the shape those bytes
+// declared, and the configuration digest that was compared.
+//
+// It is here because the lock is replaced in place. Without it a reader holding
+// a record and a lock file cannot tell whether that lock is the one the decision
+// was judged under, and the Boolean would be a claim nothing outside the run can
+// re-derive — which is the opposite of what a trail is for. It is present
+// exactly when Reviewed is true: a draft was judged under no reviewed set, and a
+// project with no lock has none to name.
+type ReviewedSet struct {
+	LockDigest   string `json:"lockDigest"`
+	LockVersion  string `json:"lockVersion"`
+	ConfigDigest string `json:"configDigest"`
 }
 
 // Pack is the identity of the document that was evaluated, plus the digest of
@@ -195,6 +213,7 @@ type Writer struct {
 	dir      string
 	run      string
 	reviewed *bool
+	underLaw *ReviewedSet
 }
 
 // UnderLaw records which law this invocation's records were judged under
@@ -203,11 +222,12 @@ type Writer struct {
 // every record it writes carries the same answer. nil is the value for a
 // project that declares no lock, and it is also the zero value, so a surface
 // that never consults writes records with no such member.
-func (w *Writer) UnderLaw(reviewed *bool) {
+func (w *Writer) UnderLaw(reviewed *bool, set *ReviewedSet) {
 	if w == nil {
 		return
 	}
 	w.reviewed = reviewed
+	w.underLaw = set
 }
 
 // NewWriter binds a writer to one project's directory handle. The handle stays
@@ -346,6 +366,13 @@ func (w *Writer) AppendAll(records []Record) error {
 		}
 		record.Run = w.run
 		record.Reviewed = w.reviewed
+		// The set is named exactly when the record claims a review. A draft was
+		// judged under none, and a project with no lock has none to name, so
+		// neither carries a member a reader could mistake for provenance.
+		record.ReviewedSet = nil
+		if w.reviewed != nil && *w.reviewed {
+			record.ReviewedSet = w.underLaw
+		}
 		encoder := json.NewEncoder(&lines)
 		// HTML escaping is off so a recorded document reads as the project
 		// wrote it rather than as a wall of <. It is a spelling choice and
