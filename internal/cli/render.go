@@ -297,6 +297,63 @@ func (a *App) renderPackValidation(format string, output result.PackValidation) 
 	return nil
 }
 
+// renderPackLock reports the reviewed set one packs lock run declared. It
+// prints every entry with its digest: the file itself is the artifact a
+// reviewer reads, and the terminal output is what says which documents just
+// entered the set.
+func (a *App) renderPackLock(format string, output result.PackLock) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintf(a.out, "locked: %d declared document(s) are now this project's reviewed set\n", output.Summary.Total)
+	fmt.Fprintf(a.out, "- configuration: %s\n", display.Sanitize(output.ConfigDigest))
+	for _, entry := range output.Entries {
+		fmt.Fprintf(a.out, "- %s %s: %s (%s)\n", display.Sanitize(entry.Kind), display.Sanitize(entry.ID),
+			display.Sanitize(entry.Digest), display.Sanitize(entry.Path))
+	}
+	if output.WrittenTo != "" {
+		fmt.Fprintf(a.out, "written: %s\n", display.Sanitize(output.WrittenTo))
+	}
+	fmt.Fprintf(a.out, "%s (lockVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.LockVersion), display.Sanitize(output.Kind))
+	return nil
+}
+
+// renderPackLockVerification reports every difference from the reviewed set, or
+// says plainly that there is none. A verification that printed nothing on
+// success would leave a reader unsure whether it ran.
+func (a *App) renderPackLockVerification(format string, output result.PackLockVerification) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	if output.Status == "valid" {
+		fmt.Fprintf(a.out, "verified: %d/%d declared document(s) match the reviewed set, and so does the configuration\n",
+			output.Summary.Passed, output.Summary.Total)
+	} else {
+		fmt.Fprintf(a.out, "invalid: %d difference(s) from the reviewed set (%d/%d declared document(s) failed",
+			len(output.Findings), output.Summary.Failed, output.Summary.Total)
+		if output.StaleEntries > 0 {
+			fmt.Fprintf(a.out, ", %d locked entry/entries the configuration no longer declares", output.StaleEntries)
+		}
+		fmt.Fprintln(a.out, ")")
+	}
+	for _, finding := range output.Findings {
+		subject := display.Sanitize(finding.Path)
+		if finding.ID != "" {
+			subject = fmt.Sprintf("%s (%s)", display.Sanitize(finding.ID), display.Sanitize(finding.Path))
+		}
+		line := fmt.Sprintf("- %s: %s", display.Sanitize(finding.Name), subject)
+		if finding.Detail != "" {
+			line += " — " + display.Sanitize(finding.Detail)
+		}
+		fmt.Fprintln(a.out, line)
+	}
+	if output.Status != "valid" {
+		fmt.Fprintln(a.out, "Run jpack packs lock to declare the amendment, or restore the reviewed bytes.")
+	}
+	fmt.Fprintf(a.out, "%s (lockVersion %s) · %s\n", display.Sanitize(output.LockPath), display.Sanitize(output.LockVersion), display.Sanitize(output.Kind))
+	return nil
+}
+
 // renderPackTest reports one project matrix run. The label leads the output for
 // the same reason the corpus label does: a reader who sees only a pass count
 // must not read anything about this runtime's conformance into it.

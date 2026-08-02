@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -151,6 +152,35 @@ func (r *Root) Contains(relative string) error {
 	return nil
 }
 
+// SameFile reports whether two declared relative paths name one file, resolved
+// against this root and without following either final component.
+//
+// It answers a question spelling cannot: a hardlink, and any alias a filesystem
+// resolves to one inode, are two names for one file, and a caller about to
+// write at one of them needs to know whether it is about to write over the
+// other. It answers false when either name is not there — an absent name has no
+// identity — so a caller that must be conservative about a name it is about to
+// create has to say so some other way.
+func (r *Root) SameFile(left, right string) bool {
+	leftCleaned, err := Relative(left)
+	if err != nil {
+		return false
+	}
+	rightCleaned, err := Relative(right)
+	if err != nil {
+		return false
+	}
+	leftInfo, err := r.root.Lstat(leftCleaned)
+	if err != nil {
+		return false
+	}
+	rightInfo, err := r.root.Lstat(rightCleaned)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(leftInfo, rightInfo)
+}
+
 // ContainsDir reports whether one declared relative path names a directory
 // inside this root, resolving the final component when it exists.
 //
@@ -287,7 +317,8 @@ func (r *Root) MakeDir(relative string) error {
 // Append adds one record to the end of a file beneath this root, creating the
 // file when it is not there and never rewriting a byte already in it.
 //
-// It is the only write this package performs, and it is bounded exactly as
+// It is one of the two writes this package performs — Replace is the other —
+// and it is bounded exactly as
 // every read is: the path is resolved against the retained handle, and the
 // checks about the file itself are made against that same handle. O_APPEND is
 // what makes the write one operation at the end of the file rather than a seek
@@ -407,6 +438,147 @@ func (r *Root) openForAppend(cleaned string) (*os.File, error) {
 		}
 	}
 	return nil, errors.New("path kept changing between the check and the open")
+}
+
+// Replace writes one whole file beneath this root, creating it or replacing
+// what a previous call put there.
+//
+// It exists for a *generated* file — one this runtime produces in full from
+// something else it read, so there is nothing in the old contents to preserve
+// and appending would be wrong. The containment is Append's exactly: the same
+// flag choice by what is already at the path, so a symlink swapped in behind the
+// check loses the race rather than being followed; the same post-open
+// same-file, regular-file, and link-count refusals; and no pathname handed to
+// anything.
+//
+// The mode is set on every write, not only on creation, exactly as Append does
+// and for the same reason.
+//
+// When this call *creates* the file, the containing directory is synced before
+// it returns, so the new entry survives a crash. That matters more here than
+// anywhere else in this package: the reviewed-set lock's presence is what turns
+// verification on, so a lost directory entry does not lose a record — it turns
+// the check off. A write that replaced an existing file syncs only the file: the
+// entry was already durable, and syncing a directory that did not change buys
+// nothing. On Windows a directory handle does not support this cleanly and the
+// sync is skipped, so there the guarantee is the file's contents and not its
+// entry.
+//
+// It is not atomic. Truncating and rewriting through one handle is what os.Root
+// offers on this module's Go floor — Root.Rename arrived after it — so an I/O
+// failure partway through leaves a short file rather than either version. That
+// is acceptable for a file whose one producer can be run again and whose reader
+// refuses a document it cannot decode; it would not be acceptable for anything a
+// reader must trust to be either old or new.
+func (r *Root) Replace(relative string, contents []byte) error {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return err
+	}
+	file, created, err := r.openForWrite(cleaned)
+	if err != nil {
+		return err
+	}
+	openedInfo, err := r.sameRegularFile(file, cleaned)
+	if err != nil {
+		file.Close()
+		return err
+	}
+	if hardLinked(openedInfo) {
+		file.Close()
+		return errors.New("path has more than one link, so it names a file something else also names")
+	}
+	// The mode is set on every write rather than only at creation, on Append's
+	// rule and for its reason: a file something else left at this name would
+	// otherwise keep whatever mode it was given, and this one carries the
+	// project's statement of which documents it reviewed. It is a unix
+	// guarantee — a Go file mode on Windows sets only the read-only attribute.
+	if err := file.Chmod(0o644); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Truncate(0); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(contents); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if created {
+		return r.syncDir(cleaned)
+	}
+	return nil
+}
+
+// syncDir makes a freshly created entry durable by syncing the directory that
+// holds it, through the same handle. A directory that cannot be opened for this
+// is not a failed write — the file's contents are on disk either way — so the
+// only failure reported is one the sync itself gave.
+func (r *Root) syncDir(cleaned string) error {
+	if runtime.GOOS == "windows" {
+		// A directory handle on Windows does not support this, and asking would
+		// fail every create rather than making one durable.
+		return nil
+	}
+	dir := filepath.Dir(cleaned)
+	if dir == "." {
+		dir = "."
+	}
+	handle, err := r.root.Open(dir)
+	if err != nil {
+		return nil
+	}
+	defer handle.Close()
+	if err := handle.Sync(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// openForWrite is openForAppend's rule for a file that is rewritten rather than
+// extended: the same branch on what is already there, and the same bounded retry
+// when the two conditions swap under it. The truncation is the caller's, after
+// the checks, so nothing is discarded before this open is known to have found
+// the file the check described. The second result says whether this open created
+// the file, which is what decides whether its directory entry needs syncing.
+func (r *Root) openForWrite(cleaned string) (*os.File, bool, error) {
+	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
+		info, err := r.root.Lstat(cleaned)
+		switch {
+		case err == nil:
+			if info.Mode()&os.ModeSymlink != 0 {
+				return nil, false, errors.New("path resolves through a final symlink")
+			}
+			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|nonBlockingOpen, 0)
+			if errors.Is(openErr, fs.ErrNotExist) {
+				continue
+			}
+			if openErr != nil {
+				return nil, false, classify(openErr)
+			}
+			return file, false, nil
+		case errors.Is(err, fs.ErrNotExist):
+			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|os.O_CREATE|os.O_EXCL|nonBlockingOpen, 0o644)
+			if errors.Is(openErr, fs.ErrExist) {
+				continue
+			}
+			if openErr != nil {
+				return nil, false, classify(openErr)
+			}
+			return file, true, nil
+		default:
+			return nil, false, classify(err)
+		}
+	}
+	return nil, false, errors.New("path kept changing between the check and the open")
 }
 
 // Read reads one bounded regular file beneath this root. It is Open plus the

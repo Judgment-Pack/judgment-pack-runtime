@@ -9,6 +9,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -189,6 +190,30 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				}
 				inputs = data
 			}
+			// The law this run would apply is held to the reviewed set before
+			// any node evaluates (ADR-0019): the configuration, every node's
+			// declared pack, and the graph document itself when the argument
+			// names one the configuration declares. A graph document that is
+			// not declared is a draft — evaluated, never refused for being
+			// unlocked, and recorded as a draft run.
+			auditWriter := loaded.AuditWriter()
+			// One read of the reviewed set for the whole run. The configuration
+			// and the graph document are checked against it here; each node's
+			// pack is checked against the same retained revision where its bytes
+			// are read, inside the run. Reading twice could see two revisions,
+			// and a run that passed one check against each would record a review
+			// no single reviewed set ever declared.
+			set, lockFailure := lock.Open(loaded)
+			if lockFailure != nil {
+				return a.lockFailure(commandName, format, lockFailure)
+			}
+			applied, declared := appliedGraph(loaded, document, graphPath)
+			reviewed, lockFailure := set.Consult(loaded, applied, !declared)
+			if lockFailure != nil {
+				return a.lockFailure(commandName, format, lockFailure)
+			}
+			auditWriter.UnderLaw(reviewed, set.Provenance())
+			nodeCheck := a.nodeCheck(loaded, set)
 			output, evaluateFailure := graph.Evaluate(loaded, evaluation.NewEngine(a.engine), document, graphPath, inputs, inputsPath != "", graph.Options{
 				Command:             commandName,
 				SupportedExtensions: supported,
@@ -196,7 +221,8 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				// though both run the same evaluator over the same project: a
 				// matrix row is a check on a graph, not a decision the project
 				// took (ADR-0018).
-				Audit: loaded.AuditWriter(),
+				Audit:    auditWriter,
+				LawCheck: nodeCheck,
 			})
 			if evaluateFailure != nil {
 				return a.evaluationFailure(commandName, format, evaluateFailure)
@@ -448,4 +474,42 @@ func (a *App) loadGraph(commandName, format, argument, configPath string) (graph
 		return graph.Document{}, "", nil, a.projectFailure(commandName, format, projectFailure)
 	}
 	return document, argument, loaded, nil
+}
+
+// appliedGraph names the declared graph document one run applies, by the digest
+// taken where its bytes were decoded, and says whether the argument named a
+// declared graph at all.
+//
+// The graph verbs take a path rather than a decision id, so this is where "the
+// project's reviewed graph" is told from "a graph someone is drafting"; an
+// argument matching nothing declared is a draft. The node packs are not here:
+// they are checked inside the run, on the bytes it reads.
+func appliedGraph(loaded *project.Project, document graph.Document, graphPath string) ([]lock.Applied, bool) {
+	id, found := loaded.DeclaredGraphID(graphPath)
+	if !found {
+		return nil, false
+	}
+	return []lock.Applied{lock.AppliedGraph(id, document.Digest)}, true
+}
+
+// nodeCheck adapts the reviewed set this run already read into the per-node
+// check the graph evaluator applies to each pack's bytes as it reads them. It
+// re-reads nothing: the set is the one the configuration and the graph document
+// were checked against, so every check in one run is against one revision.
+func (a *App) nodeCheck(loaded *project.Project, set *lock.Set) func(string, []byte) *evaluation.Failure {
+	check := set.NodeCheck(loaded)
+	if check == nil {
+		return nil
+	}
+	return func(decisionID string, applied []byte) *evaluation.Failure {
+		lockFailure := check(decisionID, applied)
+		if lockFailure == nil {
+			return nil
+		}
+		return &evaluation.Failure{
+			Code:     lockFailure.Code,
+			Message:  lockFailure.Message,
+			ExitCode: lockFailure.ExitCode,
+		}
+	}
 }

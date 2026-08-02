@@ -68,6 +68,22 @@ Release notes describe compatibility separately for:
 The JSON `outputVersion` is a protocol version, not the CLI release version. A change that breaks
 machine-output compatibility must deliberately increment that protocol version.
 
+Every versioned JSON artifact this runtime writes or reads carries its own such version, each
+independent of the others and of the release version — but two kinds of artifact follow two
+different rules, and conflating them has been a live source of error.
+
+- **Output and record formats this runtime produces** — `outputVersion` for machine output,
+  `recordVersion` for an audit record (ADR-0018). A consumer reads what it knows and ignores what it
+  does not, so an added member is backward-compatible and does not move the version; a removed or
+  renamed member is the break that does.
+- **Closed input and declaration formats this runtime reads** — `configVersion` for a `jpack.json`
+  (ADR-0012), `lockVersion` for a reviewed-set lock (ADR-0019), `formatVersion` for a graph document
+  (ADR-0015). Their schemas are closed, so an older reader *rejects* a document carrying a member it
+  does not know rather than ignoring it. Adding one therefore moves the version, whatever the
+  addition is: `graphs` moved `configVersion` to `"2"` and `audit` moved it to `"3"` for exactly
+  this reason, and the version gate is what turns an unreadable-config refusal into an actionable
+  "this runtime accepts" one.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:

@@ -2,6 +2,51 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Pin the reviewed set, and refuse to decide under law that left it** (ADR-0019): `jpack packs
+  lock` writes `jpack.lock.json` beside the configuration — the digest of the configuration's exact
+  bytes and of every pack and graph it declares, generated, sorted, and byte-deterministic — and
+  `jpack packs verify` names every difference from it: `config-drift`, `document-drift`,
+  `document-missing`, `lock-entry-missing`, `locked-but-undeclared`, exit `1` on any. The file's
+  *presence* is the whole of the opt-in: it is a sibling found by convention rather than a member
+  declared in `jpack.json` (a configuration that named its own lock could rename it), so no
+  `configVersion` moves, the configuration schema is untouched, and a project with no lock file
+  behaves exactly as before. With one, the three deciding surfaces — `experimental evaluate`,
+  `experimental graph evaluate`, and the MCP `experimental_evaluate` tool — hold the law that one
+  evaluation applies to the reviewed set before evaluating — against the exact bytes about to be
+  evaluated, never a second read of the path they came from — and refuse a mismatch fail-closed with
+  the provisional code `JPS-LOCK-VERIFY` at exit `1`, naming both honest ways forward: declare the
+  amendment with `packs lock`, or restore the reviewed bytes. `packs lock` refuses to write over a
+  document the configuration declares, or to emit a lock past the byte limit its own readers apply;
+  a matrix or a graph's rows are deliberately not pinned, because the surfaces that read them
+  neither record nor decide. A run consults the reviewed set once and every check it makes is
+  against that one revision; the lock is held to the shape its generator writes when it is read, and
+  an entry recorded at a path the configuration does not declare is its own `path-mismatch`
+  finding. `packs test`, `experimental graph
+  test`, and `experimental evaluate-corpus` consult it never — the author's loop is free and only
+  decisions are classified, the same split the audit trail draws. A pack named by path, or passed
+  as text over MCP, is a draft: evaluated, never refused for being unlocked. Where an audit trail is
+  configured, each record gains an optional `reviewed` member — `true` when every document applied
+  was declared and its exact evaluated bytes matched the reviewed set, `false` for a draft, absent
+  when the project keeps no lock;
+  `recordVersion` stays `"1"`, because an added member is backward-compatible under the same rule
+  VERSIONING.md applies to `outputVersion`. What this is *not*, stated in the record and in the
+  documents: it is not a wall. Anything that can edit a pack can re-run `packs lock`, and this
+  runtime cannot tell that from an author amending policy on purpose. It makes the amendment
+  explicit and recorded. The conformance claim is unaffected and stated, in full and only, in
+  `CONFORMANCE.md`, which no line of this entry restates.
+
+- **Say which side to change when a `configVersion` is from a newer toolchain** (#69): a
+  configuration declaring a plain integer above the newest version this runtime reads now earns a
+  steer beside the accepted list — upgrade the runtime, and do not edit the declaration down,
+  because that discards what the configuration declares. An unparseable declaration says nothing
+  about which side is behind and keeps the unsteered message. Diagnostic text only; no surface,
+  payload, or exit class changes. It was observed live: an agent refused on a `configVersion "3"`
+  project by an older sandbox edited the declaration down, evaluated, and reverted — the incident
+  ADR-0019 above is the structural answer to. The conformance claim is unaffected and stated, in
+  full and only, in `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.12.0 - 2026-08-02
 
 - **Record evaluations when the project asks for it, and only then** (ADR-0018): `configVersion "3"`
@@ -34,7 +79,10 @@ All notable changes to tagged releases are documented here.
   rule rather than by trusting the writer. Records name the build that produced them, the bundled
   artifacts evaluated against, the graph's `formatVersion` and document digest, and the draft-RFC
   label whenever the payload carries one; inputs are recorded as JSON values, compacted by the line
-  encoder rather than kept as source bytes. On unix the trail file is kept owner-only; on Windows a
+  encoder rather than kept as source bytes. A reviewed record also names the revision that made its
+  claim true — `reviewedSet` carries the lock's own digest, its `lockVersion`, and the configuration
+  digest compared — because the lock is replaced in place and the Boolean alone is a claim nothing
+  outside the run can re-derive. On unix the trail file is kept owner-only; on Windows a
   Go file mode sets the read-only attribute and does not restrict the DACL, so confidentiality there
   is the containing directory's ACL. Two consequences worth reading before upgrading a project: declaring `audit` requires
   `configVersion "3"`, which an older runtime refuses as unsupported while naming what it accepts;

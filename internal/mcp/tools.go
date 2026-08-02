@@ -12,6 +12,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
@@ -503,6 +504,36 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 			oversized = append(oversized, "pack")
 		}
 	}
+	// The reviewed set is consulted on the bytes this call is about to
+	// evaluate, never on a second read of the path they came from (ADR-0019),
+	// exactly as on the CLI. A pack named by decision id is declared law and is
+	// held to what the project last declared reviewed; a pack passed as text is
+	// a draft, never refused for being unlocked, and the record says so.
+	// A pack the read could not present in full carries the oversized marker
+	// instead: there are no bytes to check, and the engine refuses it at the
+	// byte limit's own place in the preflight.
+	var applied []lock.Applied
+	if packIDPresent && len(oversized) == 0 {
+		applied = []lock.Applied{lock.AppliedPack(packID, []byte(pack))}
+	}
+	auditWriter := loaded.AuditWriter()
+	// A call applying no declared document never reads the lock at all, so an
+	// unreadable one does not stop a draft; a call that does applies it once,
+	// and the record names the revision it was judged under.
+	var set *lock.Set
+	reviewed := lock.DraftRun(loaded)
+	if len(applied) > 0 {
+		opened, lockFailure := lock.Open(loaded)
+		if lockFailure != nil {
+			return lockToolError(lockFailure)
+		}
+		set = opened
+		reviewed, lockFailure = set.Consult(loaded, applied, false)
+		if lockFailure != nil {
+			return lockToolError(lockFailure)
+		}
+	}
+	auditWriter.UnderLaw(reviewed, set.Provenance())
 	evaluator := evaluation.NewEngine(s.engine)
 	output, failure := evaluator.EvaluateWith([]byte(pack), []byte(facts), []byte(evidence), evaluation.Options{
 		Command:             evaluateCommand,
@@ -520,7 +551,7 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	// write refuses the call: a project that asked to be told what its packs
 	// decided is not served by an answer it has no record of. The evaluation
 	// itself is untouched either way, having already happened.
-	if err := loaded.AuditWriter().Evaluation(output, audit.Inputs{
+	if err := auditWriter.Evaluation(output, audit.Inputs{
 		Facts:            json.RawMessage(facts),
 		Evidence:         json.RawMessage(evidence),
 		EvidenceSupplied: evidenceSupplied,
@@ -528,6 +559,23 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		return auditToolError()
 	}
 	return toolResult(output)
+}
+
+// lockToolError reports law that does not match the project's reviewed set, or
+// a lock that could not be read. It carries the operational envelope so a
+// calling model reads the same JPS-LOCK-* code the CLI reports rather than
+// parsing prose, and no disposition accompanies it: the refusal happens before
+// the evaluator is reached, so there is none to accompany it with.
+func lockToolError(failure *lock.Failure) map[string]any {
+	status := "error"
+	if failure.ExitCode == result.ExitUnsupported {
+		status = "unsupported"
+	}
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": failure.Message}},
+		"structuredContent": result.NewOperationalResult(evaluateCommand, status, failure.Code, failure.Message),
+		"isError":           true,
+	}
 }
 
 // auditToolError reports a record that could not be written. It carries the

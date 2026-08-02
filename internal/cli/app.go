@@ -18,6 +18,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/mcp"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -224,6 +225,13 @@ func (a *App) evaluateCommand() *cobra.Command {
 				}
 				packFromID, packIDOversized = data, oversized
 			}
+			// The reviewed set is consulted before anything is evaluated
+			// (ADR-0019). A pack named by decision id is declared law, so its
+			// bytes and the configuration that resolves the id are held to what
+			// the project last declared reviewed; a pack named by path is a
+			// draft, never refused for being unlocked, and the record it leaves
+			// says so.
+			auditWriter := loaded.AuditWriter()
 			// An oversized input is reported to the engine rather than refused
 			// here: the byte limit is a §8.2 preflight condition whose §8.4 class
 			// and place in the fixed order the engine assigns. Refusing it at the
@@ -259,6 +267,34 @@ func (a *App) evaluateCommand() *cobra.Command {
 					oversized = append(oversized, "evidence")
 				}
 			}
+			// The reviewed set is consulted on the bytes this run is about to
+			// evaluate, never on a second read of the path they came from
+			// (ADR-0019): a claim about a review has to be about the document
+			// that produced the disposition. A pack named by decision id is
+			// declared law; a pack named by path is a draft, never refused for
+			// being unlocked, and the record it leaves says so.
+			var applied []lock.Applied
+			if packID != "" && pack != nil {
+				applied = []lock.Applied{lock.AppliedPack(packID, pack)}
+			}
+			// A run applying no declared document never reads the lock at all,
+			// so an unreadable one does not stop a draft; a run that does
+			// applies it once, and the record names the revision it was judged
+			// under.
+			var set *lock.Set
+			reviewed := lock.DraftRun(loaded)
+			if len(applied) > 0 {
+				opened, lockFailure := lock.Open(loaded)
+				if lockFailure != nil {
+					return a.lockFailure("experimental evaluate", format, lockFailure)
+				}
+				set = opened
+				reviewed, lockFailure = set.Consult(loaded, applied, false)
+				if lockFailure != nil {
+					return a.lockFailure("experimental evaluate", format, lockFailure)
+				}
+			}
+			auditWriter.UnderLaw(reviewed, set.Provenance())
 			evaluator := evaluation.NewEngine(a.engine)
 			output, failure := evaluator.EvaluateWith(pack, facts, evidence, evaluation.Options{
 				Command:             "experimental evaluate",
@@ -278,7 +314,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// its packs decided is not served by an answer it has no record of;
 			// the evaluation itself is untouched either way, having already
 			// happened.
-			if err := loaded.AuditWriter().Evaluation(output, audit.Inputs{
+			if err := auditWriter.Evaluation(output, audit.Inputs{
 				Facts:            facts,
 				Evidence:         evidence,
 				EvidenceSupplied: evidencePath != "",
@@ -747,7 +783,7 @@ func requestedCommand(args []string) string {
 		case "packs":
 			if index+1 < len(args) {
 				switch args[index+1] {
-				case "list", "validate", "test", "schema":
+				case "list", "validate", "test", "lock", "verify", "schema":
 					return "packs " + args[index+1]
 				}
 			}

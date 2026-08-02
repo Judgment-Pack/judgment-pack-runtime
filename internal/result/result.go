@@ -774,6 +774,70 @@ type PackValidation struct {
 	Packs         []PackValidationEntry `json:"packs"`
 }
 
+// PackLock is one packs lock report: the reviewed set this run declared
+// (ADR-0019). It is its own payload rather than a member of an existing one,
+// on ADR-0017's precedent — a surface this new should be removable without
+// taking a member out of a payload consumers already read.
+type PackLock struct {
+	OutputVersion string     `json:"outputVersion"`
+	Tool          Tool       `json:"tool"`
+	Command       string     `json:"command"`
+	Status        string     `json:"status"`
+	Kind          string     `json:"kind"`
+	ConfigPath    string     `json:"configPath"`
+	LockPath      string     `json:"lockPath"`
+	LockVersion   string     `json:"lockVersion"`
+	ConfigDigest  string     `json:"configDigest"`
+	Summary       PackCounts `json:"summary"`
+	Entries       []LockedID `json:"entries"`
+	WrittenTo     string     `json:"writtenTo,omitempty"`
+}
+
+// LockedID is one declared document in the reviewed set, reported in the
+// sorted order every project payload uses.
+type LockedID struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Path   string `json:"path"`
+	Digest string `json:"digest"`
+}
+
+// PackLockVerification is one packs verify report: every difference between a
+// project's current documents and the reviewed set its lock declares.
+//
+// Summary counts the documents the configuration declares, and nothing else, so
+// Passed plus Failed is always Total. Two findings are therefore outside it and
+// each is reported in its own place: the configuration's own drift, which is a
+// configuration-level check exactly as it is in PackValidation, and an entry the
+// reviewed set names that the configuration no longer declares, which is counted
+// by StaleEntries because it is not one of the documents Total is about. Every
+// finding of every kind is in Findings regardless.
+type PackLockVerification struct {
+	OutputVersion string        `json:"outputVersion"`
+	Tool          Tool          `json:"tool"`
+	Command       string        `json:"command"`
+	Status        string        `json:"status"`
+	Kind          string        `json:"kind"`
+	ConfigPath    string        `json:"configPath"`
+	LockPath      string        `json:"lockPath"`
+	LockVersion   string        `json:"lockVersion"`
+	Summary       PackCounts    `json:"summary"`
+	StaleEntries  int           `json:"staleEntries"`
+	Checks        []PackCheck   `json:"checks,omitempty"`
+	Findings      []LockFinding `json:"findings"`
+}
+
+// LockFinding is one named difference between a document and the reviewed set.
+// Kind is "pack", "graph", or absent for the configuration itself: a pack and a
+// graph may share an id, so the pair is the finding's identity.
+type LockFinding struct {
+	Name   string `json:"name"`
+	Kind   string `json:"kind,omitempty"`
+	ID     string `json:"id,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
 // PackTestEntry is one pack's matrix run. Rows reuse the corpus row type,
 // because a project matrix row is compared exactly as a corpus row is: the RFC
 // 8785 canonical disposition byte for byte, or the expected §8.4 error class and

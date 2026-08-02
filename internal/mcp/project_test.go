@@ -11,6 +11,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -546,6 +547,124 @@ func TestABrokenConfigurationRefusesAPackPassedAsText(t *testing.T) {
 	outcome := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack": string(pack), "facts": projectFacts}))[0]["result"].(map[string]any)
 	if outcome["isError"] != true || !strings.Contains(toolText(t, outcome), project.DefaultConfigName) {
 		t.Fatalf("a broken configuration refuses the call and says which file it is: %#v", outcome)
+	}
+}
+
+// The reviewed-set lock reaches this surface exactly as it reaches the CLI
+// (ADR-0019): a pack named by decision id is declared law and is held to what
+// the project declared reviewed; a pack passed as text is a draft, evaluated and
+// recorded as one; and law that drifted refuses the call before the evaluator is
+// reached.
+func TestExperimentalEvaluateHoldsDeclaredLawToTheReviewedSet(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	packPath := filepath.Join(root, "packs", "intake.json")
+	if err := os.WriteFile(packPath, pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	config := `{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake.json"}}}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	document, lockFailure := lock.Generate(loaded)
+	if lockFailure != nil {
+		t.Fatal(lockFailure.Message)
+	}
+	contents, err := lock.Encode(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.WriteLock(contents); err != nil {
+		t.Fatal(err)
+	}
+	loaded.Close()
+
+	// Declared law that matches, and the same pack as text — a draft.
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack": string(pack), "facts": projectFacts}),
+	}, ""))
+	for index, response := range responses {
+		if response["result"].(map[string]any)["isError"] != false {
+			t.Fatalf("call %d must succeed: %#v", index+1, response)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("records = %d, want 2: %q", len(lines), data)
+	}
+	reviewed := make([]any, 0, 2)
+	for _, line := range lines {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		reviewed = append(reviewed, record["reviewed"])
+	}
+	if reviewed[0] != true || reviewed[1] != false {
+		t.Fatalf("reviewed = %v, want the declared run true and the draft false", reviewed)
+	}
+	// The reviewed run names the revision that made its claim true; the draft
+	// names none, because it was judged under no reviewed set.
+	var declaredRecord, draftRecord map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &declaredRecord); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &draftRecord); err != nil {
+		t.Fatal(err)
+	}
+	named, ok := declaredRecord["reviewedSet"].(map[string]any)
+	if !ok || named["lockDigest"] != lock.Digest(contents) || named["lockVersion"] != lock.Version {
+		t.Fatalf("reviewedSet = %v", declaredRecord["reviewedSet"])
+	}
+	if draftRecord["reviewedSet"] != nil {
+		t.Fatalf("a draft names no reviewed set: %v", draftRecord["reviewedSet"])
+	}
+
+	// Law that left the reviewed set refuses, carrying the same code the CLI
+	// reports and no disposition.
+	if err := os.WriteFile(packPath, append(pack, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refused := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}))[0]["result"].(map[string]any)
+	if refused["isError"] != true {
+		t.Fatalf("drifted law must refuse the call: %#v", refused)
+	}
+	if !strings.Contains(toolText(t, refused), "jpack packs lock") {
+		t.Fatalf("the refusal steers: %q", toolText(t, refused))
+	}
+	var envelope struct {
+		Diagnostics []struct {
+			Code string `json:"code"`
+		} `json:"diagnostics"`
+		Disposition any `json:"disposition"`
+	}
+	decodeStructured(t, refused, &envelope)
+	if len(envelope.Diagnostics) != 1 || envelope.Diagnostics[0].Code != lock.FailureCode || envelope.Disposition != nil {
+		t.Fatalf("envelope = %+v", envelope)
+	}
+	// A draft is still evaluated over the same project: an undeclared document
+	// is never refused for being unlocked.
+	drafted := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack": string(pack), "facts": projectFacts}))[0]["result"].(map[string]any)
+	if drafted["isError"] != false {
+		t.Fatalf("a draft is evaluated: %#v", drafted)
 	}
 }
 

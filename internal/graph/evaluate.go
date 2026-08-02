@@ -35,6 +35,16 @@ type Options struct {
 	// with the same configuration, records nothing.
 	Audit *audit.Writer
 
+	// LawCheck is a caller-supplied check on each node's pack, applied to the
+	// exact bytes this run is about to evaluate, at the one point they are in
+	// hand. It is a function rather than anything this package understands:
+	// what it enforces is the reviewed-set lock (ADR-0019), which is the
+	// caller's concern, and a check that re-read the file to answer would be
+	// answering about a different read than the one that decides. nil is a run
+	// that checks nothing — experimental graph test leaves it so, for the same
+	// reason it records nothing.
+	LawCheck func(decisionID string, document []byte) *evaluation.Failure
+
 	// injectionBudget overrides the per-node injected-bytes budget, whose
 	// default is the carrier's hard byte limit. It exists so a test can trip
 	// the budget without megabytes of fixture; no surface sets it.
@@ -152,6 +162,16 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		packBytes, oversized, readFailure := readNodePack(loaded, nodeID, packID, entry)
 		if readFailure != nil {
 			return result.GraphEvaluation{}, readFailure
+		}
+		// The caller's check on the bytes just read, before the node they
+		// belong to evaluates. Bytes the read could not present in full carry
+		// the oversized marker instead, and the engine refuses them in the
+		// preflight's own order — there is nothing to check about a document
+		// that was never presented.
+		if options.LawCheck != nil && packBytes != nil {
+			if failure := options.LawCheck(packID, packBytes); failure != nil {
+				return result.GraphEvaluation{}, failure
+			}
 		}
 
 		in := perNode[nodeID]
