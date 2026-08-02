@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.12.0 - 2026-08-02
 
 - **Record evaluations when the project asks for it, and only then** (ADR-0018): `configVersion "3"`
   adds one root member to `jpack.json` — `"audit": {"dir": "<relative-dir>"}` — and declaring it is
