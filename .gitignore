@@ -16,6 +16,10 @@
 .DS_Store
 .idea/
 
+# Ed25519 signing seeds. The gateway's keygen writes gateway.seed into whatever
+# directory it is run from; a private key must never be committed.
+*.seed
+
 # Local AI-assistant configuration and state.
 # .mcp.json is each contributor's client wiring, not project source; see docs/mcp-clients.md.
 /.mcp.json
