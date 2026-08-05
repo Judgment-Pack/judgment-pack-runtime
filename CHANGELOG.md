@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.15.0 - 2026-08-05
 
 - **Lint every consulted pointer against a producer declaration** (ADR-0022): a new `jpack packs
   lint` holds the packs a project declares to a producer declaration — every fact pointer a pack's
