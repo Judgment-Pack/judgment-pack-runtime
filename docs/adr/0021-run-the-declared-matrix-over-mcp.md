@@ -74,9 +74,13 @@ Determinations the record settles:
 - **The tool-result/tool-error boundary.** `mismatch` and `skipped` are
   successful calls carrying the payload — the caller asked what the rows did
   and is being told, exactly as `packs test` prints its report while exiting
-  nonzero. Tool errors are what stopped the run from happening: a bad
-  argument, an unknown decision id, a configuration that is there and will not
-  load, and no configuration at all.
+  nonzero. Tool errors are invocation and configuration failures: a bad
+  argument (a JSON `null` for the arguments object included — decoded, it
+  would silently select the whole-project run), an unknown decision id, a
+  configuration that is there and will not load, and no configuration at all.
+  A pack or matrix that cannot be read *inside* a run is that pack's own
+  in-band report — a mismatch whose detail names the failure, exactly as the
+  CLI reports it — because the run happened and this is what it found.
 - **No configuration is a tool error, unlike `list_packs`.** An empty
   inventory answers "what can this project decide"; a skipped suite does not
   answer "run the suite", and a model reading `skipped` as green is the exact
@@ -89,7 +93,24 @@ Determinations the record settles:
   matrix outside the reviewed set; the deciding surfaces are where drift
   refuses).
 - **`outputVersion` stays `"2"`** — the payload is `packs test`'s own, with
-  only the command string naming the surface.
+  only the command string naming the surface. One member is added to it on
+  both surfaces: `evaluatorSpecVersion`, so the applied contract version stays
+  in band (ADR-0011) even for a run whose every pack was skipped and carries
+  no row to infer it from. The payload *structure* is one; the JSON *text*
+  encodings differ (the CLI disables HTML escaping and appends a newline;
+  MCP uses standard marshaling), and `configPath` follows each surface's own
+  locator spelling.
+- **The response is bounded, and the bound refuses rather than truncates.**
+  A marshaled report over 16 MiB — symmetric with the transport's inbound
+  line bound — is a tool error naming its size and the CLI command that
+  streams the same report. A truncated suite report would under-report
+  silently, which is the failure mode ADR-0014 exists to end; a refused one
+  names its own fix. The compute behind a large report is still spent before
+  the refusal: one call may do a whole project's evaluation work, and the
+  server handles calls one at a time, so a caller that wants interruptibility
+  or an unbounded report uses the CLI. Per-suite work budgeting and a
+  decode-once pack path are recorded as follow-up work rather than folded in
+  here.
 
 ### Consequences
 

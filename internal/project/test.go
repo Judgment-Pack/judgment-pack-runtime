@@ -41,6 +41,7 @@ func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result
 		Command:                   command,
 		Status:                    "passed",
 		Experimental:              true,
+		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
 		ConformanceClaimReference: result.EvaluationClaimReference,
 		Label:                     result.PackMatrixLabel,
 		Kind:                      result.ProjectKind,

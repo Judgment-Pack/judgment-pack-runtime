@@ -20,7 +20,12 @@ All notable changes to tagged releases are documented here.
   reviewed set (ADR-0019), the same split both records drew. A mismatching or skipped run is a
   successful call carrying its payload; tool errors are kept for what stopped the run from
   happening — a bad argument, an unknown decision id, a configuration that is there and will not
-  load, or no configuration at all. `outputVersion` stays `"2"`, and CONFORMANCE.md's claim-scope
+  load, or no configuration at all — while a pack or matrix unreadable inside a run is that pack's
+  own in-band mismatch, exactly as the CLI reports it. A marshaled report over 16 MiB is refused
+  with its size and the CLI command that streams the same report, never truncated: a truncated
+  suite report would under-report silently. Both surfaces' payloads gain one member,
+  `evaluatorSpecVersion`, so the applied contract version stays in band even for a run whose every
+  pack was skipped. `outputVersion` stays `"2"`, and CONFORMANCE.md's claim-scope
   enumeration now names seven surfaces rather than six, held mechanically by the test that counts
   evaluator constructor sites; the conformance claim itself is unaffected and stated, in full and
   only, in `CONFORMANCE.md`, which no line of this entry restates.

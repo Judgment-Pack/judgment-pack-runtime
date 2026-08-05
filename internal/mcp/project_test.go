@@ -776,6 +776,9 @@ func TestExperimentalTestPacksRunsTheDeclaredMatrix(t *testing.T) {
 	if report.ConformanceClaimReference == "" {
 		t.Fatalf("the payload must say where the claim is stated: %+v", report)
 	}
+	if report.EvaluatorSpecVersion != result.EvaluatorSpecVersion {
+		t.Fatalf("the applied contract version stays in band: %+v", report)
+	}
 	if report.Status != "passed" || report.Summary.Total != 2 || report.Summary.Passed != 2 {
 		t.Fatalf("summary = %+v status = %q", report.Summary, report.Status)
 	}
@@ -853,6 +856,10 @@ func TestExperimentalTestPacksRefusesBadArguments(t *testing.T) {
 		toolCall(t, 2, "experimental_test_packs", map[string]any{"pack_id": nil}),
 		toolCall(t, 3, "experimental_test_packs", map[string]any{"pack_id": 7}),
 		toolCall(t, 4, "experimental_test_packs", map[string]any{"pack_id": ""}),
+		// A JSON null for the whole arguments object is a malformed invocation,
+		// not "run everything": decoded, it would silently select the tool's
+		// most expensive operation.
+		message(t, 5, "tools/call", map[string]any{"name": "experimental_test_packs", "arguments": nil}),
 	}, ""))
 	for index, response := range responses {
 		outcome := response["result"].(map[string]any)
@@ -862,6 +869,9 @@ func TestExperimentalTestPacksRefusesBadArguments(t *testing.T) {
 	}
 	if text := toolText(t, responses[3]["result"].(map[string]any)); !strings.Contains(text, "present but empty") {
 		t.Fatalf("the empty-id refusal must say what is wrong: %q", text)
+	}
+	if text := toolText(t, responses[4]["result"].(map[string]any)); !strings.Contains(text, "must be an object") {
+		t.Fatalf("the null-arguments refusal must say what is wrong: %q", text)
 	}
 }
 
@@ -942,9 +952,12 @@ func TestExperimentalTestPacksConsultsNoReviewedSet(t *testing.T) {
 	}
 }
 
-// The wire and the shell report one run: the MCP payload is packs test's own,
-// with only the command naming the surface. Two surfaces reading one project
-// must not disagree about it.
+// The wire and the shell serve one report structure from one code path: the
+// MCP structured payload equals a direct (*Project).Test run with only the
+// command naming the surface. The JSON *text* encodings still differ — the CLI
+// renderer disables HTML escaping and appends a newline, and configPath
+// follows each surface's locator spelling — so this pins the structure, not
+// the bytes.
 func TestExperimentalTestPacksMatchesThePacksTestPayload(t *testing.T) {
 	configPath := matrixProjectFixture(t, matrixConfig, passingMatrix)
 	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
@@ -1013,5 +1026,23 @@ func TestExperimentalTestPacksRefusesAnEscapingMatrixPath(t *testing.T) {
 	}
 	if strings.Contains(toolText(t, outcome), `"secret"`) {
 		t.Fatalf("no escaped byte may reach the payload: %q", toolText(t, outcome))
+	}
+}
+
+// A report over the response bound is refused with its size and the command
+// that streams the same report — never truncated, because a truncated suite
+// report under-reports silently (ADR-0021). The bound is lowered here so the
+// refusal is testable without building a multi-gigabyte report.
+func TestExperimentalTestPacksRefusesAnOversizedReport(t *testing.T) {
+	matrixProjectFixture(t, matrixConfig, passingMatrix)
+	bound := maxTestPacksResultBytes
+	maxTestPacksResultBytes = 1024
+	defer func() { maxTestPacksResultBytes = bound }()
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != true {
+		t.Fatalf("an oversized report must be refused: %#v", outcome)
+	}
+	if text := toolText(t, outcome); !strings.Contains(text, "jpack packs test --format json") {
+		t.Fatalf("the refusal must name the command that can carry the report: %q", text)
 	}
 }

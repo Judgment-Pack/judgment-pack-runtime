@@ -181,8 +181,8 @@ whatever remains.
 - No credential and no network: the client owns the key; the server opens no connection.
 - No path over the wire: MCP documents are values (text), never references to the server's filesystem.
 - No evaluation in the authoring loop: validation never resolves a condition, chooses an outcome,
-  or authorizes anything. The separate `experimental_evaluate` tool evaluates experimentally, says
-  so in every payload, and still authorizes nothing.
+  or authorizes anything. The separate `experimental_evaluate` and `experimental_test_packs` tools
+  evaluate experimentally, say so in every payload, and still authorize nothing.
 
 ## See also
 

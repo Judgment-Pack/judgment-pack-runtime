@@ -876,15 +876,20 @@ type PackTestEntry struct {
 	Detail      string                 `json:"detail,omitempty"`
 }
 
-// PackTest is one packs test run. It carries Experimental and
-// ConformanceClaimReference like every other payload the evaluator produces,
-// because the evaluator that produced its rows is that surface.
+// PackTest is one packs test run. It carries Experimental,
+// ConformanceClaimReference, and EvaluatorSpecVersion like every other payload
+// the evaluator produces, because the evaluator that produced its rows is that
+// surface — the applied contract version stays in band (ADR-0011) even for a
+// run whose every pack was skipped and carries no row to infer it from. An
+// additive member, so outputVersion stays "2" by the same two VERSIONING.md
+// rules ADR-0012 cites.
 type PackTest struct {
 	OutputVersion             string          `json:"outputVersion"`
 	Tool                      Tool            `json:"tool"`
 	Command                   string          `json:"command"`
 	Status                    string          `json:"status"`
 	Experimental              bool            `json:"experimental"`
+	EvaluatorSpecVersion      string          `json:"evaluatorSpecVersion"`
 	ConformanceClaimReference string          `json:"conformanceClaimReference"`
 	Label                     string          `json:"label"`
 	Kind                      string          `json:"kind"`
