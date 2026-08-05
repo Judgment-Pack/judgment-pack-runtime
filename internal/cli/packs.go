@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -49,7 +50,7 @@ func (a *App) packsCommand() *cobra.Command {
 			return command.Help()
 		},
 	}
-	// --config is registered on the five subcommands that read a configuration
+	// --config is registered on the six subcommands that read a configuration
 	// rather than on this one as a persistent flag. packs schema prints an
 	// embedded artifact and touches no configuration; a flag inherited into its
 	// help would promise an effect it does not have.
@@ -59,9 +60,86 @@ func (a *App) packsCommand() *cobra.Command {
 		a.packsTestCommand(),
 		a.packsLockCommand(),
 		a.packsVerifyCommand(),
+		a.packsLintCommand(),
 		a.packsSchemaCommand(),
 	)
 	return packs
+}
+
+// packsLintCommand holds every consulted pointer to a producer (ADR-0022) —
+// the inverse of validate's hint-key check. validate holds the declared
+// hints to the document; lint holds the document's consulted pointers to a
+// producer declaration, because the defect it catches never errors on its
+// own: a pointer no source feeds is merely unknowable, every rule touching
+// it escalates, and the system looks conservative rather than broken.
+func (a *App) packsLintCommand() *cobra.Command {
+	format := "human"
+	id := ""
+	configPath := ""
+	producersPath := ""
+	command := &cobra.Command{
+		Use:   "lint",
+		Short: "Check that every pointer the packs consult has a producer",
+		Long: "Check the packs a project declares against a producer declaration: every fact pointer a pack's " +
+			"conditions consult must have a producer, every declared evidence requirement must have a supplier, " +
+			"and nothing may be supplied that nothing declares -- per pack in hints mode, where the declaration " +
+			"is pack-local, and project-wide for a manifest's evidence list. Without --producers, the configuration's own facts and evidence hints are the producer " +
+			"declaration — a hint is the project saying where that answer lives. With --producers, an explicit " +
+			"manifest ({\"producersVersion\":\"1\",\"facts\":[...pointers],\"evidence\":[...ids]}) is the " +
+			"declaration instead, for an application whose producer set is wider than its hints. A facts producer " +
+			"declares the pointer and the whole subtree beneath it — the lint checks declarations, never running " +
+			"systems — and a consulted entry may be a condition-shaped value the pack carries as data (ADR-0020), " +
+			"which fails here until it is declared or restructured. A consulted pointer no producer supplies " +
+			"never errors at run time: the condition is unknowable, every rule touching it escalates, and the " +
+			"system looks conservative rather than broken — this command is where that defect fails loudly " +
+			"instead. A pack using draft-RFC collection quantifiers reports its fact half as skipped rather than " +
+			"checked, because element-relative pointers cannot be held to a flat producer set (ADR-0020, " +
+			"ADR-0022); a skipped check is reported, never silently passed. Exit 0 when a check passed and none " +
+			"failed, 1 otherwise — a run in which nothing was checkable is skipped, not passed.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if err := validateFormat(format); err != nil {
+				return a.operational("packs lint", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			var manifest *project.Producers
+			if producersPath != "" {
+				if producersPath != "-" && (strings.Contains(producersPath, "://") || fssecure.IsRemotePath(producersPath)) {
+					return a.operational("packs lint", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "Remote filesystem input paths are not supported.")
+				}
+				data, err := a.readPack(producersPath, project.MaxProducersBytes)
+				if err != nil {
+					return a.operational("packs lint", format, result.ExitIO, "JPS-LINT-PRODUCERS-READ", "The producer manifest could not be read: "+err.Error())
+				}
+				decoded, decodeErr := project.DecodeProducers(data)
+				if decodeErr != nil {
+					return a.operational("packs lint", format, result.ExitInvocation, "JPS-INVOCATION-PRODUCERS", decodeErr.Error())
+				}
+				manifest = decoded
+			}
+			loaded, failure := a.loadProject(configPath, "packs lint", format)
+			if failure != nil {
+				return failure
+			}
+			defer loaded.Close()
+			output, projectFailure := loaded.Lint(manifest, id, "packs lint")
+			if projectFailure != nil {
+				return a.projectFailure("packs lint", format, projectFailure)
+			}
+			if err := a.renderPackProducersLint(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			code := result.ExitSuccess
+			if output.Status != "passed" {
+				code = result.ExitInvalid
+			}
+			return &handledExit{code: code}
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&id, "id", id, "lint one declared pack by its decision id instead of all of them")
+	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().StringVar(&producersPath, "producers", producersPath, "path to a producer manifest or -; omit to lint against the configuration's own hints")
+	return command
 }
 
 func (a *App) packsLockCommand() *cobra.Command {

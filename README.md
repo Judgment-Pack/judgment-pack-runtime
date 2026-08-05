@@ -72,6 +72,7 @@ jpack packs validate [--id X]
 jpack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
 jpack packs verify      (check the project against that reviewed set)
+jpack packs lint [--producers M]   (every consulted pointer has a producer; ADR-0022)
 jpack packs schema
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
@@ -455,11 +456,11 @@ declares no lock.
 this runtime cannot tell that from an author amending policy on purpose — they are the same act.
 What the lock buys is that the amendment stops being silent.
 
-Six commands, one CI line, and one amendment step:
+Seven commands, one CI line, and one amendment step:
 
 ```bash
 jpack packs list                                            # the resolved inventory
-jpack packs validate && jpack packs test && jpack packs verify   # the CI gate
+jpack packs validate && jpack packs lint && jpack packs test && jpack packs verify   # the CI gate
 ```
 
 `packs lock` is deliberately not in that line. It is the amendment — you run it when the law changes
@@ -475,7 +476,11 @@ canonical §8.3 disposition byte for byte, or the expected §8.4 error class and
 same case-carrier shape that corpus uses. Both commands exit `1` on any failure, a pack with no
 matrix is reported *skipped* rather than passed, and a `packs test` run in which no row ran at all
 is reported *skipped* and exits `1`: a green gate over zero rows would say a project was tested when
-nothing was.
+nothing was. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no
+source feeds raises no error anywhere — the condition is unknowable, every rule touching it
+escalates, and the system looks conservative rather than broken — so the lint holds every consulted
+pointer to a producer declaration (the configuration's own hints, or an explicit `--producers`
+manifest) and fails the build where that defect otherwise hides (ADR-0022).
 
 From a shell, `jpack experimental evaluate --pack-id expense-approval --facts facts.json`
 reaches the same pack by the same name. Over MCP the same inventory is `list_packs`, one document is

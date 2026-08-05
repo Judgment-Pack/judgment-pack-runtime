@@ -921,7 +921,7 @@ func TestPacksLockRefusesACaseEquivalentDeclaredPath(t *testing.T) {
 // about. A verb missing from the scan reports its group instead, which a
 // consumer keying on the member cannot tell from a group-level failure.
 func TestTheEnvelopeNamesTheNewVerbs(t *testing.T) {
-	for _, verb := range []string{"lock", "verify"} {
+	for _, verb := range []string{"lock", "verify", "lint"} {
 		code, stdout, _ := runTest(t, []string{"packs", verb, "extra", "--format", "json"}, "")
 		if code != result.ExitInvocation {
 			t.Fatalf("packs %s: exit=%d", verb, code)

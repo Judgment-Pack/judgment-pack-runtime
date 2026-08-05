@@ -297,6 +297,45 @@ func (a *App) renderPackValidation(format string, output result.PackValidation) 
 	return nil
 }
 
+// renderPackProducersLint reports every producer check, skipped ones
+// included, on renderPackValidation's own reasoning: a report that printed
+// only failures would let a project believe a check ran when it never could.
+func (a *App) renderPackProducersLint(format string, output result.PackProducersLint) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	switch output.Status {
+	case "passed":
+		fmt.Fprintf(a.out, "passed: %d/%d declared packs lint clean against the %s (%d skipped)\n", output.Summary.Passed, output.Summary.Total, display.Sanitize(output.ProducersSource), output.Summary.Skipped)
+	case "failed":
+		fmt.Fprintf(a.out, "failed: %d/%d declared packs and the %s disagree — the checks below say in which direction\n", output.Summary.Failed, output.Summary.Total, display.Sanitize(output.ProducersSource))
+	default:
+		fmt.Fprintln(a.out, "skipped: nothing was checkable — a green lint over zero checks would say a project was linted when nothing was")
+	}
+	if len(output.Checks) > 0 {
+		fmt.Fprintln(a.out, "- the manifest against every selected pack:")
+		for _, check := range output.Checks {
+			line := fmt.Sprintf("  %s: %s", display.Sanitize(check.Name), display.Sanitize(check.Status))
+			if check.Detail != "" {
+				line += " — " + display.Sanitize(check.Detail)
+			}
+			fmt.Fprintln(a.out, line)
+		}
+	}
+	for _, pack := range output.Packs {
+		fmt.Fprintf(a.out, "- %s [%s]: %s\n", display.Sanitize(pack.ID), display.Sanitize(pack.Status), display.Sanitize(pack.Path))
+		for _, check := range pack.Checks {
+			line := fmt.Sprintf("  %s: %s", display.Sanitize(check.Name), display.Sanitize(check.Status))
+			if check.Detail != "" {
+				line += " — " + display.Sanitize(check.Detail)
+			}
+			fmt.Fprintln(a.out, line)
+		}
+	}
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	return nil
+}
+
 // renderPackLock reports the reviewed set one packs lock run declared. It
 // prints every entry with its digest: the file itself is the artifact a
 // reviewer reads, and the terminal output is what says which documents just

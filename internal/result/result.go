@@ -786,6 +786,49 @@ type PackValidation struct {
 	Packs         []PackValidationEntry `json:"packs"`
 }
 
+// LintCounts is one packs lint summary. Unlike PackCounts it carries a
+// skipped member, because a lint entry has three outcomes and a summary that
+// folded skipped packs into neither number would misdescribe its own total.
+type LintCounts struct {
+	Total   int `json:"total"`
+	Passed  int `json:"passed"`
+	Failed  int `json:"failed"`
+	Skipped int `json:"skipped"`
+}
+
+// PackProducersLintEntry is one pack's producer lint: whether every pointer
+// its conditions consult has a producer, and whether declared and supplied
+// evidence agree. Status follows the packs test
+// discipline — "skipped" when nothing was checkable, never "passed".
+type PackProducersLintEntry struct {
+	ID          string      `json:"id"`
+	PackID      string      `json:"packId"`
+	PackVersion string      `json:"packVersion"`
+	Path        string      `json:"path"`
+	Status      string      `json:"status"`
+	Checks      []PackCheck `json:"checks"`
+}
+
+// PackProducersLint is one packs lint report (ADR-0022). It is its own
+// payload rather than a member of an existing one, on the same reasoning
+// PackLock records: a surface this new should be removable without taking a
+// member out of a payload consumers already read. ProducersSource says which
+// producer declaration the run was held to — the configuration's own hints,
+// or an explicit manifest.
+type PackProducersLint struct {
+	OutputVersion   string                   `json:"outputVersion"`
+	Tool            Tool                     `json:"tool"`
+	Command         string                   `json:"command"`
+	Status          string                   `json:"status"`
+	Kind            string                   `json:"kind"`
+	ConfigPath      string                   `json:"configPath"`
+	ConfigVersion   string                   `json:"configVersion"`
+	ProducersSource string                   `json:"producersSource"`
+	Summary         LintCounts               `json:"summary"`
+	Checks          []PackCheck              `json:"checks,omitempty"`
+	Packs           []PackProducersLintEntry `json:"packs"`
+}
+
 // PackLock is one packs lock report: the reviewed set this run declared
 // (ADR-0019). It is its own payload rather than a member of an existing one,
 // on ADR-0017's precedent — a surface this new should be removable without

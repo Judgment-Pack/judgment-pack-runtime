@@ -2,6 +2,32 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Lint every consulted pointer against a producer declaration** (ADR-0022): a new `jpack packs
+  lint` holds the packs a project declares to a producer declaration — every fact pointer a pack's
+  conditions consult must be covered by a producer (at the pointer or an ancestor, the declared
+  subtree contract; or at a descendant, which structurally makes the ancestor resolvable), every
+  declared evidence requirement must have a supplier, and nothing may be supplied that nothing
+  declares — per pack in hints mode, project-wide for a manifest's evidence list, because
+  evidence ids are pack-local names. Without `--producers`, the configuration's own facts and
+  evidence hints are the declaration, read in the direction `packs validate` never checks:
+  validate holds every hint to the document, and lint holds the document to a producer. With
+  `--producers`, an explicit manifest (`{"producersVersion":"1","facts":[...],"evidence":[...]}`,
+  a closed input decoded through the strict carrier with its value domains checked, `-` for
+  stdin) is the declaration instead, for an application whose producer set is wider than its
+  hints. The defect this catches never errors at run time — a consulted pointer no source feeds
+  is merely unknowable, every rule touching it escalates, and the system looks conservative
+  rather than broken — which is why it is a build gate and why its status follows `packs test`'s
+  discipline: a failed check exits 1, an unreadable declared document fails rather than skips,
+  and a run in which nothing was checkable is reported skipped, never passed, and exits 1 too. A
+  pack using the known draft-RFC collection quantifiers reports its fact half as a named
+  `quantifier-scope` skip rather than either verdict, on ADR-0020's recorded narrowness — and
+  the detection is operator-keyed so a data literal cannot silently suppress the gate. The
+  payload is its own type with a skipped-carrying summary and `outputVersion` stays `"2"`. The
+  conformance claim is unaffected and stated, in full and only, in `CONFORMANCE.md`, which no
+  line of this entry restates.
+
 ## 0.14.0 - 2026-08-05
 
 - **Run a project's instance matrix over MCP** (ADR-0021): a new `experimental_test_packs` tool
