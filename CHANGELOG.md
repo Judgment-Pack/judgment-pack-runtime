@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.14.0 - 2026-08-05
 
 - **Run a project's instance matrix over MCP** (ADR-0021): a new `experimental_test_packs` tool
   runs every declared pack's instance matrix — or the one an optional `pack_id` names — through
