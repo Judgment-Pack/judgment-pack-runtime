@@ -217,6 +217,9 @@ pass. Two facts that prevent common misdiagnoses: a missing-required-evidence re
 row's evidenceAvailability omitted evidence the pack requires (the row is usually what needs
 fixing), and evidenceRequirementRefs is a citation the evaluator never reads. Re-run the whole
 matrix after any change. Keep the matrix with the pack; it is the pack's regression suite.
+Where the project's jpack.json declares the pack and its matrix, run the whole suite with the
+experimental_test_packs tool instead of replaying rows one by one: it compares every row with the
+same code the CLI uses and reports the derived coverage the rows do not probe.
 
 `)
 	b.WriteString(authoringDisclaimer)
