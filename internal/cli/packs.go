@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -80,11 +81,15 @@ func (a *App) packsLintCommand() *cobra.Command {
 		Use:   "lint",
 		Short: "Check that every pointer the packs consult has a producer",
 		Long: "Check the packs a project declares against a producer declaration: every fact pointer a pack's " +
-			"conditions consult must have a producer, and declared and supplied evidence must agree in both " +
-			"directions. Without --producers, the configuration's own facts and evidence hints are the producer " +
+			"conditions consult must have a producer, every declared evidence requirement must have a supplier, " +
+			"and nothing may be supplied that nothing declares -- per pack in hints mode, where the declaration " +
+			"is pack-local, and project-wide for a manifest's evidence list. Without --producers, the configuration's own facts and evidence hints are the producer " +
 			"declaration — a hint is the project saying where that answer lives. With --producers, an explicit " +
-			"manifest ({\"producersVersion\":\"1\",\"facts\":[...pointers],\"evidence\":[...ids]}) is, for an " +
-			"application whose producer set is wider than its hints. A consulted pointer no producer supplies " +
+			"manifest ({\"producersVersion\":\"1\",\"facts\":[...pointers],\"evidence\":[...ids]}) is the " +
+			"declaration instead, for an application whose producer set is wider than its hints. A facts producer " +
+			"declares the pointer and the whole subtree beneath it — the lint checks declarations, never running " +
+			"systems — and a consulted entry may be a condition-shaped value the pack carries as data (ADR-0020), " +
+			"which fails here until it is declared or restructured. A consulted pointer no producer supplies " +
 			"never errors at run time: the condition is unknowable, every rule touching it escalates, and the " +
 			"system looks conservative rather than broken — this command is where that defect fails loudly " +
 			"instead. A pack using draft-RFC collection quantifiers reports its fact half as skipped rather than " +
@@ -98,7 +103,7 @@ func (a *App) packsLintCommand() *cobra.Command {
 			}
 			var manifest *project.Producers
 			if producersPath != "" {
-				if producersPath != "-" && fssecure.IsRemotePath(producersPath) {
+				if producersPath != "-" && (strings.Contains(producersPath, "://") || fssecure.IsRemotePath(producersPath)) {
 					return a.operational("packs lint", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "Remote filesystem input paths are not supported.")
 				}
 				data, err := a.readPack(producersPath, project.MaxProducersBytes)
@@ -107,7 +112,7 @@ func (a *App) packsLintCommand() *cobra.Command {
 				}
 				decoded, decodeErr := project.DecodeProducers(data)
 				if decodeErr != nil {
-					return a.operational("packs lint", format, result.ExitInvalid, "JPS-LINT-PRODUCERS", decodeErr.Error())
+					return a.operational("packs lint", format, result.ExitInvocation, "JPS-INVOCATION-PRODUCERS", decodeErr.Error())
 				}
 				manifest = decoded
 			}

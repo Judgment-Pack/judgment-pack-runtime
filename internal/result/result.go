@@ -786,9 +786,19 @@ type PackValidation struct {
 	Packs         []PackValidationEntry `json:"packs"`
 }
 
+// LintCounts is one packs lint summary. Unlike PackCounts it carries a
+// skipped member, because a lint entry has three outcomes and a summary that
+// folded skipped packs into neither number would misdescribe its own total.
+type LintCounts struct {
+	Total   int `json:"total"`
+	Passed  int `json:"passed"`
+	Failed  int `json:"failed"`
+	Skipped int `json:"skipped"`
+}
+
 // PackProducersLintEntry is one pack's producer lint: whether every pointer
 // its conditions consult has a producer, and whether declared and supplied
-// evidence agree in both directions. Status follows the packs test
+// evidence agree. Status follows the packs test
 // discipline — "skipped" when nothing was checkable, never "passed".
 type PackProducersLintEntry struct {
 	ID          string      `json:"id"`
@@ -814,7 +824,8 @@ type PackProducersLint struct {
 	ConfigPath      string                   `json:"configPath"`
 	ConfigVersion   string                   `json:"configVersion"`
 	ProducersSource string                   `json:"producersSource"`
-	Summary         PackCounts               `json:"summary"`
+	Summary         LintCounts               `json:"summary"`
+	Checks          []PackCheck              `json:"checks,omitempty"`
 	Packs           []PackProducersLintEntry `json:"packs"`
 }
 

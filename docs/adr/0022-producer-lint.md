@@ -53,36 +53,65 @@ manifest covers the application whose producers outgrow its prose.
 
 Determinations the record settles:
 
-- **The checks.** `fact-producers`: every pointer in the pack's consulted set
-  is equal to or a descendant of a producer — `producesPointer`, the exact
-  inverse of validate's `readsPointer`, because a producer writing a subtree
-  answers every pointer beneath it. `evidence-producers`: declared
-  `evidenceRequirements` and supplied evidence ids agree in both directions.
-  The issue's third invariant — every referenced requirement is declared — is
-  the JPS semantic layer's own check and is deliberately not duplicated here.
+- **The checks.** `fact-producers`: every consulted pointer is covered by a
+  producer in one of two directions that mean two different things —
+  a producer at the pointer or an ancestor of it is the **declared subtree
+  contract** (a producer claims the whole value at its pointer, descendants
+  included; the lint checks declarations, never running systems), and a
+  producer at a descendant is **structurally true** (writing `/request/type`
+  necessarily creates `/request`). The empty pointer is the root: as a
+  producer it covers everything, as a consulted pointer any producer covers
+  it. `evidence-producers`: every declared requirement has a supplier (both
+  modes, per pack); the reverse — nothing supplied that nothing declares —
+  is per pack in hints mode, where the declaration is pack-local, and one
+  **configuration-level check** in manifest mode, because evidence ids are
+  pack-local names and one application-wide list held to every pack
+  separately would fail any project whose packs declare different
+  requirements. That pack-locality is also a stated limit: one manifest
+  string can satisfy two packs' same-named requirements that mean different
+  evidence. The issue's third invariant — every referenced requirement is
+  declared — is the JPS semantic layer's own check and is deliberately not
+  duplicated here.
 - **The manifest** is a closed input:
-  `{"producersVersion": "1", "facts": [...], "evidence": [...]}`, strictly
-  decoded, its version moving on any member change (VERSIONING.md's closed-
-  input rule), read via the same flag pattern every document flag uses
-  (`-` for stdin, remote paths refused), bounded like the configuration.
+  `{"producersVersion": "1", "facts": [...], "evidence": [...]}`, decoded
+  through the strict carrier (duplicate member names refused, exact-case
+  member names only, one JSON text) with its value domains held to the same
+  patterns the configuration schema holds hint keys to — an entry that could
+  never name a real pointer or a declarable requirement is refused, and lists
+  are deduplicated. Its version moves on any member change (VERSIONING.md's
+  closed-input rule); it is read via the same flag pattern every document
+  flag uses (`-` for stdin, URL and remote paths refused as invocations),
+  bounded like the configuration; a malformed manifest is an invocation
+  failure in the invocation exit class, distinguishable from a completed
+  failing lint.
 - **The status discipline is `packs test`'s.** `passed` only when a check
   passed somewhere; any failed check fails the run; a run in which nothing was
   checkable is `skipped` and exits 1 — a green lint over zero checks would say
   a project was linted when nothing was.
-- **A quantifier pack's fact half is skipped, by name.** ADR-0020 recorded
-  that a flat consulted list reports draft-RFC element-relative pointers
-  without their element context; holding those to a flat producer set would
-  fail healthy packs on pointers no producer could name, and passing them
-  would trust a list known untrustworthy for that shape. The lint detects the
-  shape (a condition carrying `where` or `at`) and reports a named
-  `quantifier-scope` skip instead of either verdict.
-- **An unreadable document skips here, with the reason.** `packs validate` is
-  where a broken pack is an error; two commands failing one defect would
-  report it twice in two vocabularies.
+- **A quantifier pack's fact half is skipped, by name — and the detection is
+  operator-keyed, deliberately.** ADR-0020 recorded that a flat consulted
+  list reports draft-RFC element-relative pointers without their element
+  context; holding those to a flat producer set would fail healthy packs on
+  pointers no producer could name, and passing them would trust a list known
+  untrustworthy for that shape. The detector keys on the known quantifier
+  operators (`exists`, `every`, `uniform`) carrying `where` or `at`, unlike
+  ADR-0020's shape-keyed walk, because the two errors are not symmetric
+  here: a data literal that merely carries `where` must not silently
+  suppress the fact gate for the whole pack, while a future quantifier
+  operator this list does not know falls into the flat check and fails
+  visibly there — the direction that gets noticed.
+- **An unreadable document fails here, on `packs test`'s own discipline.**
+  Skipping it would let a broken pack lint clean behind a passing sibling —
+  the exact bypass `packs test` closes by classing an unreadable pack as a
+  mismatch. `packs validate` remains where the read failure itself is
+  diagnosed; the lint's failure says so and points there.
 - **Own payload type** (`PackProducersLint`), on PackLock's recorded
   precedent: a surface this new should be removable without taking a member
-  out of a payload consumers already read. `outputVersion` stays `"2"` — a
-  new payload adds no member to any existing one.
+  out of a payload consumers already read. Its summary is a lint-specific
+  `LintCounts` carrying `skipped`, because a lint entry has three outcomes
+  and reusing a two-outcome count type would misdescribe its own total.
+  `outputVersion` stays `"2"` — a new payload adds no member to any existing
+  one.
 - **No MCP counterpart yet.** No project-level validation reaches MCP today;
   the lint follows whatever decision first puts one there, rather than
   setting that precedent as a rider.
@@ -96,7 +125,17 @@ Determinations the record settles:
   them true.
 - Bad, because a hints-mode pass says the *declaration* is complete, not that
   the producers actually run — the lint reads claims, not systems, and its
-  prose says so.
+  prose says so. The ancestor-producer direction inherits this squarely: a
+  producer claiming `/request` whose system in fact supplies only some leaves
+  passes the lint and starves the pack at run time; that is a false
+  declaration, which no declaration checker can catch.
+- Bad, because ADR-0020's over-approximation crosses here as a failing gate:
+  a conforming pack that carries a condition-shaped object as *data* (in a
+  condition's value literal, or an extension) fails `fact-producers` on a
+  pointer nothing ever reads. That is the deliberate direction of error —
+  visible and arguable beats invisible — and the failure detail says so and
+  names the remedies: declare the phantom as a producer to acknowledge it,
+  restructure the value, or fix the pack.
 - Bad, because the quantifier skip leaves the draft-RFC surface unlinted;
   revisit when those shapes leave experimental or when a structured consulted
   form exists to lint against.

@@ -456,11 +456,11 @@ declares no lock.
 this runtime cannot tell that from an author amending policy on purpose — they are the same act.
 What the lock buys is that the amendment stops being silent.
 
-Six commands, one CI line, and one amendment step:
+Seven commands, one CI line, and one amendment step:
 
 ```bash
 jpack packs list                                            # the resolved inventory
-jpack packs validate && jpack packs test && jpack packs verify   # the CI gate
+jpack packs validate && jpack packs lint && jpack packs test && jpack packs verify   # the CI gate
 ```
 
 `packs lock` is deliberately not in that line. It is the amendment — you run it when the law changes

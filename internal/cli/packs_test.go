@@ -775,16 +775,24 @@ func TestPacksLintReportsProducersAndExitsOnTheVerdict(t *testing.T) {
 
 	// Human output names the failure and the source.
 	code, human, _ := runTest(t, []string{"packs", "lint", "--config", configPath}, "")
-	if code != result.ExitInvalid || !strings.Contains(human, "hints") || !strings.Contains(human, "fact-producers") {
+	if code != result.ExitInvalid || !strings.Contains(human, "disagree") || !strings.Contains(human, "fact-producers") {
 		t.Fatalf("exit=%d human=%q", code, human)
 	}
 
-	// A malformed manifest is an invocation-level refusal with its own code.
+	// A malformed manifest is an invocation-level refusal in the invocation
+	// exit class, distinguishable from a completed failing lint.
 	code, stdout, _ = runTest(t, []string{"packs", "lint", "--config", configPath, "--producers", "-", "--format", "json"}, `{"producersVersion":"9"}`)
-	if code != result.ExitInvalid {
+	if code != result.ExitInvocation {
 		t.Fatalf("exit=%d", code)
 	}
-	assertDiagnosticCode(t, stdout, "JPS-LINT-PRODUCERS")
+	assertDiagnosticCode(t, stdout, "JPS-INVOCATION-PRODUCERS")
+
+	// A URL producer path is refused as an invocation, never attempted as a read.
+	code, stdout, _ = runTest(t, []string{"packs", "lint", "--config", configPath, "--producers", "https://example.invalid/p.json", "--format", "json"}, "")
+	if code != result.ExitInvocation {
+		t.Fatalf("exit=%d", code)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-INVOCATION-INPUT")
 
 	// An unknown decision id is refused exactly as its siblings refuse it.
 	code, stdout, _ = runTest(t, []string{"packs", "lint", "--config", configPath, "--id", "no-such-pack", "--format", "json"}, "")

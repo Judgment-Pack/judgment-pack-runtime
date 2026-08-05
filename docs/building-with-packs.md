@@ -245,7 +245,7 @@ behaves exactly as it did before this existed.
 ### Gate it in CI
 
 ```bash
-jpack packs validate && jpack packs test && jpack packs verify
+jpack packs validate && jpack packs lint && jpack packs test && jpack packs verify
 ```
 
 `packs validate` checks the configuration and, per pack, six named steps: the declared path
