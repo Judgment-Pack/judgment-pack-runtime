@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,6 +87,9 @@ func TestPacksListReportsBothNames(t *testing.T) {
 			t.Fatalf("human output must carry %q: %q", required, stdout)
 		}
 	}
+	if strings.Contains(stdout, "/request/appropriateness") {
+		t.Fatalf("human output stays pointer-free; consultedFactPaths is a JSON member: %q", stdout)
+	}
 
 	code, stdout, stderr = runTest(t, []string{"packs", "list", "--config", configPath, "--format", "json"}, "")
 	if code != 0 || stderr != "" {
@@ -110,6 +114,16 @@ func TestPacksListReportsBothNames(t *testing.T) {
 	}
 	if len(entry.EvidenceRequirements) != 3 || entry.EvidenceRequirements[0] != "intake-form" {
 		t.Fatalf("the inventory carries the pack's declared evidence ids: %v", entry.EvidenceRequirements)
+	}
+	// The pointers the pack's conditions read, sorted and deduplicated — the
+	// fixture reads /request/type in three places and it appears once (ADR-0020).
+	wantConsulted := []string{"/request/appropriateness", "/request/completeness",
+		"/request/embargoedInformationToUnauthorizedRecipients", "/request/type"}
+	if !slices.Equal(entry.ConsultedFactPaths, wantConsulted) {
+		t.Fatalf("consultedFactPaths = %v, want %v", entry.ConsultedFactPaths, wantConsulted)
+	}
+	if inventory.OutputVersion != "2" {
+		t.Fatalf("an added member is backward-compatible, so outputVersion stays \"2\": %q", inventory.OutputVersion)
 	}
 	if len(entry.Facts) != 1 || entry.Facts[0].Key != "/request/type" || entry.Facts[0].Source == "" {
 		t.Fatalf("the hints travel with the inventory: %+v", entry.Facts)

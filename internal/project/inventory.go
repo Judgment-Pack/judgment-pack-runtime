@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -18,9 +19,12 @@ import (
 // configuration, because the document is where a pack's identity is stated and
 // the configuration only points at it.
 //
-// FactPaths is not reported to anyone: it exists so packs validate can check the
-// configuration's hint keys against the document instead of taking them on
-// trust, which is the same one-statement discipline expectedVersion follows.
+// FactPaths serves two consumers from one derivation: packs validate checks the
+// configuration's hint keys against it instead of taking them on trust — the
+// same one-statement discipline expectedVersion follows — and the inventory
+// reports it as consultedFactPaths, so an application can name the pointer an
+// escalation is waiting on and check that every consulted pointer has a
+// producer, without re-walking the document with a narrower walk (ADR-0020).
 type identity struct {
 	ID                   string
 	Version              string
@@ -78,15 +82,27 @@ func identityFrom(data []byte) (identity, error) {
 	return found, nil
 }
 
-// factPaths collects every JSON Pointer the document's conditions read: the path
-// member of every condition object, wherever it sits — applicability, a rule's
-// when, an exception, or inside a nested collection quantifier.
+// factPaths collects the path strings the document's condition-shaped objects
+// carry, wherever they sit — applicability, a rule's when, an exception, or
+// inside a nested collection quantifier. The empty string is the RFC 6901 root
+// pointer and is collected like any other: a condition with "path": "" reads
+// the whole facts document.
 //
 // It walks the whole document rather than the members this runtime knows,
 // because the point is to find every pointer a pack reads and a walk keyed to
 // one grammar would miss the next one. A condition is recognized by carrying
 // both op and a string path, which is what every fact-reading condition shape
-// has in common.
+// has in common. That rule over-approximates by design: an object of that
+// shape carried as data — inside a condition's value literal, or an extension
+// — is collected too, and a string that is not a legal pointer is collected
+// verbatim, because over-reporting is visible and under-reporting is not. Two
+// known narrownesses, recorded in ADR-0020: an element-relative pointer inside
+// a draft-RFC quantifier is reported without its element context, and a
+// quantifier member read under another name (uniform's at) is not collected.
+//
+// The result is sorted and deduplicated: a pointer two conditions read is one
+// consulted pointer, and the one list serves both packs validate's hint check
+// and the inventory's consultedFactPaths member.
 func factPaths(document any) []string {
 	found := []string{}
 	var walk func(node any)
@@ -94,7 +110,7 @@ func factPaths(document any) []string {
 		switch value := node.(type) {
 		case map[string]any:
 			if _, isCondition := value["op"]; isCondition {
-				if path, ok := value["path"].(string); ok && path != "" {
+				if path, ok := value["path"].(string); ok {
 					found = append(found, path)
 				}
 			}
@@ -109,7 +125,7 @@ func factPaths(document any) []string {
 	}
 	walk(document)
 	sort.Strings(found)
-	return found
+	return slices.Compact(found)
 }
 
 func stringMember(root map[string]any, name string) string {
@@ -139,8 +155,9 @@ func EmptyInventory(configPath, command string) result.PackInventory {
 // Inventory is the resolved, token-cheap description of every configured pack:
 // the project's decision id, the pack document's own id and version, the
 // description, whether a matrix exists, the ids of the evidence the pack
-// requires, and the non-normative hints. It is what an agent reads to find out
-// what a project can decide without fetching a single pack document.
+// requires, the fact pointers the pack's conditions read, and the
+// non-normative hints. It is what an agent reads to find out what a project
+// can decide without fetching a single pack document.
 //
 // A pack whose document cannot be read is listed with its Detail saying why and
 // its identity members empty. Listing is not validating: an inventory that
@@ -168,6 +185,7 @@ func (p *Project) Inventory(command string) result.PackInventory {
 			ExpectedVersion:       entry.ExpectedVersion,
 			ExpectedVersionStatus: result.PackVersionUnset,
 			EvidenceRequirements:  []string{},
+			ConsultedFactPaths:    []string{},
 			Facts:                 hints(entry.Facts),
 			Evidence:              hints(entry.Evidence),
 		}
@@ -183,6 +201,7 @@ func (p *Project) Inventory(command string) result.PackInventory {
 		summary.PackID = found.ID
 		summary.PackVersion = found.Version
 		summary.EvidenceRequirements = found.EvidenceRequirements
+		summary.ConsultedFactPaths = found.FactPaths
 		summary.ExpectedVersionStatus = expectedVersionStatus(entry.ExpectedVersion, found.Version)
 		output.Packs = append(output.Packs, summary)
 	}

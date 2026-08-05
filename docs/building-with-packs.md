@@ -348,9 +348,14 @@ Launch the MCP server in the project root, or point `JPACK_CONFIG` at the config
 Three tools then matter:
 
 - **`list_packs`** — the resolved inventory: decision id, the document's own id and version, the
-  description, the evidence-requirement ids, whether a matrix exists, and the hints. It is
+  description, the evidence-requirement ids, the fact pointers the pack's conditions read
+  (`consultedFactPaths`), whether a matrix exists, and the hints. It is
   token-cheap on purpose; a model can learn what a project can decide without fetching a single
-  document. With no configuration it answers **empty, with an explanation of where the runtime
+  document. `consultedFactPaths` is the list to intersect when an unresolved disposition should
+  name the candidate pointers it may be waiting on, or when a build wants to check that every
+  consulted pointer has a producer — it reports what the document carries, not a verdict on it,
+  and it over-approximates by design, so its values are untrusted document content rather than
+  proof of a read. With no configuration it answers **empty, with an explanation of where the runtime
   looked** — not an error, because a project that does not use the convention is an ordinary
   project.
 - **`get_pack { pack_id }`** — the full document, read-only, exactly the bytes on disk.

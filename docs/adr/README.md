@@ -115,4 +115,5 @@ authority, and following it confers no conformance status on anything.
 | [0016](0016-graph-rows-coverage-report.md)               | Report derived coverage in `experimental graph test`, and never gate on it      | accepted |
 | [0017](0017-declare-graphs-in-the-project-configuration.md) | Declare graphs in the project configuration, and walk them like matrices     | accepted; configVersion value list and schema `$id` partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
 | [0018](0018-opt-in-evaluation-audit-trail.md)            | Record evaluations into the project's own tree, and only when the project asks | accepted |
-| [0019](0019-reviewed-set-lock.md)                        | Pin the reviewed set in a sibling lock, and refuse to decide under law that left it | proposed |
+| [0019](0019-reviewed-set-lock.md)                        | Pin the reviewed set in a sibling lock, and refuse to decide under law that left it | accepted |
+| [0020](0020-report-consulted-fact-pointers.md)           | Report the fact pointers a pack's conditions read, on the inventory row        | accepted |
