@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -104,6 +105,13 @@ func TestProjectToolsServeTheInventoryAndOneDocument(t *testing.T) {
 	}
 	if len(entry.EvidenceRequirements) != 3 {
 		t.Fatalf("the inventory carries the pack's declared evidence ids: %v", entry.EvidenceRequirements)
+	}
+	// The same row the CLI serves, from the same derivation: the pointers the
+	// pack's conditions read, sorted and deduplicated (ADR-0020).
+	wantConsulted := []string{"/request/appropriateness", "/request/completeness",
+		"/request/embargoedInformationToUnauthorizedRecipients", "/request/type"}
+	if !slices.Equal(entry.ConsultedFactPaths, wantConsulted) {
+		t.Fatalf("consultedFactPaths = %v, want %v", entry.ConsultedFactPaths, wantConsulted)
 	}
 	if len(entry.Facts) != 1 || entry.Facts[0].Key != "/request/type" || entry.Facts[0].Source == "" {
 		t.Fatalf("the fact hints travel with the inventory: %+v", entry.Facts)

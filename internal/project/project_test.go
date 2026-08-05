@@ -347,6 +347,37 @@ func TestHintKeysAreCheckedAgainstThePackDocument(t *testing.T) {
 	}
 }
 
+// The inventory reports the pointers the conditions read — from every position
+// a condition can sit in, deduplicated, by the shape-keyed walk rather than the
+// operators this runtime happens to know (ADR-0020). Listing is not validating:
+// the document below is not a conformant pack, and the walk reports what it
+// carries, verbatim.
+func TestTheInventoryReportsEveryPointerTheConditionsRead(t *testing.T) {
+	document := `{
+	  "id": "https://example.invalid/judgment-packs/walked", "version": "0.1.0",
+	  "applicability": {"op": "fact", "path": "/request/type"},
+	  "rules": [{"id": "r1", "when": {"all": [
+	    {"op": "fact", "path": "/request/containsPersonalData"},
+	    {"any": [{"op": "fact", "path": "/request/type"}]}
+	  ]}}],
+	  "exceptions": [{"id": "x1", "when": {"op": "future-shape", "path": "/request/urgency"}}],
+	  "metadata": {"op": "empty-path-is-skipped", "path": ""},
+	  "notes": [{"op": "non-string-is-skipped", "path": 7},
+	            {"op": "reported", "path": "not-a-pointer"}]
+	}`
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"walked":{"path":"packs/walked.json"}}}`,
+		map[string]string{"packs/walked.json": document})
+	summary := mustLoad(t, configPath).Inventory("packs list").Packs[0]
+
+	// /request/type is read twice and reported once; the exception's unknown
+	// operator is still a condition by shape; the string that is not a pointer
+	// is reported verbatim rather than silently dropped.
+	want := []string{"/request/containsPersonalData", "/request/type", "/request/urgency", "not-a-pointer"}
+	if !slices.Equal(summary.ConsultedFactPaths, want) {
+		t.Fatalf("consultedFactPaths = %v, want %v", summary.ConsultedFactPaths, want)
+	}
+}
+
 // The pin is a reference, never a truth: a difference is reported as one, and
 // the pack document's own version is what the pack is.
 func TestExpectedVersionDriftIsReportedAgainstTheDocument(t *testing.T) {
@@ -550,8 +581,12 @@ func TestServingAnUndecodableDocumentSaysSo(t *testing.T) {
 		t.Fatalf("no identity is invented for a document that did not decode: %+v", document)
 	}
 	// The inventory says the same thing about the same file.
-	if detail := loaded.Inventory("packs list").Packs[0].Detail; detail != document.Detail {
-		t.Fatalf("the two surfaces must report one file identically: %q vs %q", detail, document.Detail)
+	row := loaded.Inventory("packs list").Packs[0]
+	if row.Detail != document.Detail {
+		t.Fatalf("the two surfaces must report one file identically: %q vs %q", row.Detail, document.Detail)
+	}
+	if row.ConsultedFactPaths == nil || len(row.ConsultedFactPaths) != 0 {
+		t.Fatalf("a document that did not decode carries [], never null: %v", row.ConsultedFactPaths)
 	}
 
 	// A document that decodes but declares no id is a different condition: it is

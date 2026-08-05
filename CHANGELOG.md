@@ -2,6 +2,26 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Report the fact pointers a pack's conditions read** (ADR-0020): every `packs list --format
+  json` row and every MCP `list_packs` row now carries `consultedFactPaths` — the pointers the
+  pack's conditions read, sorted and deduplicated, from the same whole-document walk `packs
+  validate` holds a configuration's fact-hint keys to, which recognizes a condition by carrying
+  `op` and a string `path` rather than by the operator names this runtime happens to know. The
+  list was computed and deliberately withheld, and the consequence was that a consumer needing it
+  re-walked the document with a walk keyed to the operators it knew — which under-reports the
+  moment a pack uses another fact-reading shape, invisibly, because a pointer never listed is
+  never mentioned to the person who needed it. An application can now name the pointer an
+  unresolved disposition is waiting on, and can check at build time that every consulted pointer
+  has a producer. `outputVersion` stays `"2"`: an added member is backward-compatible under
+  VERSIONING.md's machine-output rule, so the bump issue #73 asked for was declined in the open —
+  it breaks every consumer that pins the version and buys nothing. Human `packs list` output is
+  unchanged, and the row still reports what the document says rather than a verdict on it: a
+  document that could not be read carries `[]` beside its `detail`, exactly as
+  `evidenceRequirements` does. The conformance claim is unaffected and stated, in full and only,
+  in `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.13.0 - 2026-08-02
 
 - **Pin the reviewed set, and refuse to decide under law that left it** (ADR-0019): `jpack packs

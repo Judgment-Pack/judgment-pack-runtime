@@ -666,6 +666,14 @@ type ProjectHint struct {
 // reported as two members for that reason. Detail is present when the document
 // could not be read or decoded, in which case the identity members are empty
 // rather than guessed.
+//
+// ConsultedFactPaths is the pointers the document's conditions carry, sorted
+// and deduplicated (ADR-0020). It reports what the document says, not a
+// verdict on it: listing is not validating, a string that is not a legal
+// pointer is reported verbatim, and a document that could not be read carries
+// [] beside its Detail exactly as evidenceRequirements does. An additive
+// member, so outputVersion stays "2" by the same two VERSIONING.md rules
+// ADR-0012 cites.
 type PackSummary struct {
 	ID                    string        `json:"id"`
 	PackID                string        `json:"packId"`
@@ -677,6 +685,7 @@ type PackSummary struct {
 	ExpectedVersion       string        `json:"expectedVersion,omitempty"`
 	ExpectedVersionStatus string        `json:"expectedVersionStatus"`
 	EvidenceRequirements  []string      `json:"evidenceRequirements"`
+	ConsultedFactPaths    []string      `json:"consultedFactPaths"`
 	Facts                 []ProjectHint `json:"facts"`
 	Evidence              []ProjectHint `json:"evidence"`
 	Detail                string        `json:"detail,omitempty"`

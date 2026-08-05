@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -18,9 +19,12 @@ import (
 // configuration, because the document is where a pack's identity is stated and
 // the configuration only points at it.
 //
-// FactPaths is not reported to anyone: it exists so packs validate can check the
-// configuration's hint keys against the document instead of taking them on
-// trust, which is the same one-statement discipline expectedVersion follows.
+// FactPaths serves two consumers from one derivation: packs validate checks the
+// configuration's hint keys against it instead of taking them on trust — the
+// same one-statement discipline expectedVersion follows — and the inventory
+// reports it as consultedFactPaths, so an application can name the pointer an
+// escalation is waiting on and check that every consulted pointer has a
+// producer, without re-walking the document with a narrower walk (ADR-0020).
 type identity struct {
 	ID                   string
 	Version              string
@@ -87,6 +91,10 @@ func identityFrom(data []byte) (identity, error) {
 // one grammar would miss the next one. A condition is recognized by carrying
 // both op and a string path, which is what every fact-reading condition shape
 // has in common.
+//
+// The result is sorted and deduplicated: a pointer two conditions read is one
+// consulted pointer, and the one list serves both packs validate's hint check
+// and the inventory's consultedFactPaths member.
 func factPaths(document any) []string {
 	found := []string{}
 	var walk func(node any)
@@ -109,7 +117,7 @@ func factPaths(document any) []string {
 	}
 	walk(document)
 	sort.Strings(found)
-	return found
+	return slices.Compact(found)
 }
 
 func stringMember(root map[string]any, name string) string {
@@ -168,6 +176,7 @@ func (p *Project) Inventory(command string) result.PackInventory {
 			ExpectedVersion:       entry.ExpectedVersion,
 			ExpectedVersionStatus: result.PackVersionUnset,
 			EvidenceRequirements:  []string{},
+			ConsultedFactPaths:    []string{},
 			Facts:                 hints(entry.Facts),
 			Evidence:              hints(entry.Evidence),
 		}
@@ -183,6 +192,7 @@ func (p *Project) Inventory(command string) result.PackInventory {
 		summary.PackID = found.ID
 		summary.PackVersion = found.Version
 		summary.EvidenceRequirements = found.EvidenceRequirements
+		summary.ConsultedFactPaths = found.FactPaths
 		summary.ExpectedVersionStatus = expectedVersionStatus(entry.ExpectedVersion, found.Version)
 		output.Packs = append(output.Packs, summary)
 	}
