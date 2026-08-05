@@ -127,21 +127,23 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// error rows, would be told it misses probes it can never cover. A row
 	// that supports a required extension reaches §8, and its coverage is not
 	// forfeited to a stricter set than any row uses.
-	if admitsForSomeRow(evaluator, pack, matrix) {
+	if admitsForSomeRow(admitted, matrix) {
 		report.Coverage = matrixCoverage(PackRoot(pack), matrix)
 	}
 	return report
 }
 
-// admitsForSomeRow reports whether the evaluator admits the pack under the
-// empty capability set or under at least one row's declared
-// supportedExtensions — the sets rows actually evaluate with.
-func admitsForSomeRow(evaluator *evaluation.Engine, pack []byte, matrix Matrix) bool {
-	if evaluator.Admits(pack, nil) {
+// admitsForSomeRow reports whether the pack is admitted under the empty
+// capability set or under at least one row's declared supportedExtensions —
+// the sets rows actually evaluate with, read from the same admissions the
+// rows already computed (issue #78: probing coverage must not re-validate
+// the pack per row).
+func admitsForSomeRow(admitted *evaluation.AdmittedPack, matrix Matrix) bool {
+	if admitted.Admits(nil) {
 		return true
 	}
 	for _, row := range matrix.Cases {
-		if len(row.SupportedExtensions) > 0 && evaluator.Admits(pack, row.SupportedExtensions) {
+		if len(row.SupportedExtensions) > 0 && admitted.Admits(row.SupportedExtensions) {
 			return true
 		}
 	}
