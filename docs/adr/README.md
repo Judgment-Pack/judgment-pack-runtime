@@ -118,3 +118,4 @@ authority, and following it confers no conformance status on anything.
 | [0019](0019-reviewed-set-lock.md)                        | Pin the reviewed set in a sibling lock, and refuse to decide under law that left it | accepted |
 | [0020](0020-report-consulted-fact-pointers.md)           | Report the fact pointers a pack's conditions read, on the inventory row        | accepted |
 | [0021](0021-run-the-declared-matrix-over-mcp.md)         | Run the declared matrix over MCP, and keep the rehearsal outside the record    | accepted |
+| [0022](0022-producer-lint.md)                            | Lint every consulted pointer against a producer declaration                    | accepted |

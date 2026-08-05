@@ -783,7 +783,7 @@ func requestedCommand(args []string) string {
 		case "packs":
 			if index+1 < len(args) {
 				switch args[index+1] {
-				case "list", "validate", "test", "lock", "verify", "schema":
+				case "list", "validate", "test", "lock", "verify", "lint", "schema":
 					return "packs " + args[index+1]
 				}
 			}

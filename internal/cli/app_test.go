@@ -90,6 +90,9 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// would otherwise hide.
 		{args: []string{"packs", "lock", "--help"}},
 		{args: []string{"packs", "verify", "--help"}},
+		// The producer lint (ADR-0022) evaluates nothing; it is inventoried
+		// for the phrase scans like its siblings.
+		{args: []string{"packs", "lint", "--help"}},
 		{args: []string{"packs", "schema", "--help"}},
 	} {
 		code, stdout, stderr := runTest(t, surface.args, "")
@@ -556,6 +559,7 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 		"cli packs schema --help",
 		"cli packs lock --help",
 		"cli packs verify --help",
+		"cli packs lint --help",
 		"mcp tools/list list_packs",
 		"mcp tools/list get_pack",
 		"mcp tools/list experimental_test_packs",

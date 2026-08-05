@@ -353,9 +353,11 @@ Three tools then matter:
   token-cheap on purpose; a model can learn what a project can decide without fetching a single
   document. `consultedFactPaths` is the list to intersect when an unresolved disposition should
   name the candidate pointers it may be waiting on, or when a build wants to check that every
-  consulted pointer has a producer — it reports what the document carries, not a verdict on it,
-  and it over-approximates by design, so its values are untrusted document content rather than
-  proof of a read. With no configuration it answers **empty, with an explanation of where the runtime
+  consulted pointer has a producer — the check `jpack packs lint` now performs against the
+  configuration's own hints, or against an explicit `--producers` manifest when an application
+  produces more than it hints (ADR-0022). The list reports what the document carries, not a
+  verdict on it, and it over-approximates by design, so its values are untrusted document content
+  rather than proof of a read. With no configuration it answers **empty, with an explanation of where the runtime
   looked** — not an error, because a project that does not use the convention is an ordinary
   project.
 - **`get_pack { pack_id }`** — the full document, read-only, exactly the bytes on disk.

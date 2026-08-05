@@ -729,3 +729,67 @@ func TestPacksTestCoverageFollowsRowCapabilities(t *testing.T) {
 		t.Fatalf("a covered probe gets no detail line: %q", stdout)
 	}
 }
+
+// packs lint holds the consulted set to a producer declaration and exits on
+// the verdict — with a skipped run exiting nonzero on the same reasoning
+// packs test refuses a zero-row run.
+func TestPacksLintReportsProducersAndExitsOnTheVerdict(t *testing.T) {
+	configPath := oneGoodProject(t)
+
+	// Hints mode: the fixture project hints /request/type and intake-form
+	// only, so both halves fail against what the pack actually consults.
+	code, stdout, stderr := runTest(t, []string{"packs", "lint", "--config", configPath, "--format", "json"}, "")
+	if code != result.ExitInvalid || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var report result.PackProducersLint
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Command != "packs lint" || report.Status != "failed" || report.ProducersSource != "hints" {
+		t.Fatalf("report = %+v", report)
+	}
+	if report.OutputVersion != "2" {
+		t.Fatalf("an added payload moves no version: %q", report.OutputVersion)
+	}
+	named := map[string]string{}
+	for _, check := range report.Packs[0].Checks {
+		named[check.Name] = check.Status
+	}
+	if named[project.CheckFactProducers] != result.PackCheckFailed || named[project.CheckEvidenceProducers] != result.PackCheckFailed {
+		t.Fatalf("both halves fail in hints mode here: %v", named)
+	}
+
+	// Manifest mode over stdin: a producer set wider than the hints passes.
+	manifest := `{"producersVersion":"1","facts":["/request"],"evidence":["intake-form","sponsor-endorsement","sensitive-data-approvals"]}`
+	code, stdout, stderr = runTest(t, []string{"packs", "lint", "--config", configPath, "--producers", "-", "--format", "json"}, manifest)
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "passed" || report.ProducersSource != "manifest" {
+		t.Fatalf("report = %+v", report)
+	}
+
+	// Human output names the failure and the source.
+	code, human, _ := runTest(t, []string{"packs", "lint", "--config", configPath}, "")
+	if code != result.ExitInvalid || !strings.Contains(human, "hints") || !strings.Contains(human, "fact-producers") {
+		t.Fatalf("exit=%d human=%q", code, human)
+	}
+
+	// A malformed manifest is an invocation-level refusal with its own code.
+	code, stdout, _ = runTest(t, []string{"packs", "lint", "--config", configPath, "--producers", "-", "--format", "json"}, `{"producersVersion":"9"}`)
+	if code != result.ExitInvalid {
+		t.Fatalf("exit=%d", code)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-LINT-PRODUCERS")
+
+	// An unknown decision id is refused exactly as its siblings refuse it.
+	code, stdout, _ = runTest(t, []string{"packs", "lint", "--config", configPath, "--id", "no-such-pack", "--format", "json"}, "")
+	if code != result.ExitUnsupported {
+		t.Fatalf("exit=%d", code)
+	}
+	assertDiagnosticCode(t, stdout, "JPS-PROJECT-UNKNOWN-PACK")
+}
