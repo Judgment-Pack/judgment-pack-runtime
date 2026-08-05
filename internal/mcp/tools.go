@@ -19,12 +19,15 @@ import (
 )
 
 // toolDefinitions is the tools/list payload. Every tool wraps a read-only core
-// operation except experimental_evaluate, which is the evaluator on this
-// runtime's experimental surface (ADR-0007) and appends one record per completed
-// call in a project whose configuration asked for one (ADR-0018); every other
-// tool evaluates nothing and writes nothing. No description here states a
-// conformance claim: the claim is stated, in full and only, in CONFORMANCE.md
-// (ADR-0011), and these descriptions reference it.
+// operation except the two that reach the evaluator on this runtime's
+// experimental surface (ADR-0007): experimental_evaluate, which appends one
+// record per completed call in a project whose configuration asked for one
+// (ADR-0018) and is the only tool here that can write, and
+// experimental_test_packs, which runs declared instance matrices and writes
+// nothing — a matrix row is a rehearsal, not a decision (ADR-0021). Every
+// other tool evaluates nothing and writes nothing. No description here states
+// a conformance claim: the claim is stated, in full and only, in
+// CONFORMANCE.md (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
 		{
@@ -138,6 +141,17 @@ func toolDefinitions() []map[string]any {
 				},
 			},
 		},
+		{
+			"name":        "experimental_test_packs",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every declared pack's instance matrix through this runtime's evaluator and report every row, or one pack's matrix by its decision id in \"pack_id\". A row is judged exactly as a row of the bundled evaluation corpus is, by the same code: the RFC 8785 canonical §8.3 disposition compared byte for byte against the row's, or the §8.4 error class and phase the row expects. The payload is the one jpack packs test --format json emits, with the derived coverage report (ADR-0014) beside each pack's rows, informing and never gating. A mismatching or skipped run is a successful call reporting its status: a pack that declares no matrix is reported skipped and never passed, and a run in which no row ran at all is reported skipped rather than passed -- a green gate over zero rows would say a project was tested when nothing was. Tool errors are kept for what stopped the run from happening: a bad argument, an unknown decision id, a configuration that is there and will not load, or no configuration at all. This tool reads the project tree this server was launched in, holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the pack a project wrote rather than about this implementation, and no row is an authorization or a statement that acting on a disposition is correct (§3.5). Call list_packs for the available decision ids. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"pack_id": map[string]any{"type": "string", "description": "A decision id declared in the project's jpack.json: run only that pack's matrix. Omit the key to run every declared pack; call list_packs for the available ids."},
+				},
+			},
+		},
 	}
 }
 
@@ -168,6 +182,8 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolGetPack(params.Arguments), nil
 	case "experimental_evaluate":
 		return s.toolExperimentalEvaluate(params.Arguments), nil
+	case "experimental_test_packs":
+		return s.toolExperimentalTestPacks(params.Arguments), nil
 	default:
 		return nil, &rpcError{Code: codeInvalidParams, Message: "Unknown tool: " + params.Name}
 	}
@@ -373,6 +389,67 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 // evaluateCommand names this surface in every payload it produces, exactly as
 // the describe package's command strings do.
 const evaluateCommand = "mcp experimental_evaluate"
+
+// testPacksCommand names the matrix-run surface in every payload it produces.
+const testPacksCommand = "mcp experimental_test_packs"
+
+// testPacksArguments is one experimental_test_packs invocation as it arrived on
+// the wire. PackID is raw so presence stays separate from value: a key present
+// with an empty string is a supplied argument and is refused as one — a client
+// that computed an empty id must not silently get a whole-project run — and
+// omitting the key is the only form "run every declared pack" takes.
+type testPacksArguments struct {
+	PackID json.RawMessage `json:"pack_id"`
+}
+
+// toolExperimentalTestPacks runs declared instance matrices through the
+// experimental evaluator (ADR-0007) and returns exactly what packs test
+// reports (ADR-0021). A mismatching or skipped run is a successful call
+// carrying its payload — the caller asked what the rows did and is being told
+// — and a tool error is what stopped the run from happening. Nothing is
+// written and no reviewed set is consulted: a matrix row is a rehearsal, not a
+// decision (ADR-0018, ADR-0019).
+//
+// Presence is tested with project.Present rather than Exists, so a
+// configuration that is demonstrably there and unloadable refuses the call
+// instead of answering as a project that does not use the convention. No
+// configuration at all is a tool error here, unlike list_packs: an empty
+// inventory answers "what can this project decide", but "your suite was
+// skipped" does not answer "run the suite", and a caller reading skipped as
+// green is the exact misreading the payload's own status exists to prevent.
+func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
+	var args testPacksArguments
+	if len(rawArgs) > 0 {
+		// Strict decoding honors the declared additionalProperties: false — a
+		// misspelled key must be an error, not a silently different run.
+		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil {
+			return toolError(`The "experimental_test_packs" arguments must be an object with an optional string "pack_id"; unknown keys are rejected.`)
+		}
+	}
+	packID, packIDPresent, argumentError := textArgument("pack_id", args.PackID)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	if packIDPresent && packID == "" {
+		return toolError(`The "pack_id" argument is present but empty: pass a decision id, or omit the key to run every declared pack. Call list_packs for the available ids.`)
+	}
+	configPath := project.Locate("")
+	if !project.Present(configPath) {
+		return toolError(project.EmptyInventory(configPath, testPacksCommand).Note)
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	defer loaded.Close()
+	output, projectFailure := loaded.Test(evaluation.NewEngine(s.engine), packID, testPacksCommand)
+	if projectFailure != nil {
+		return toolError(projectFailure.Message)
+	}
+	return toolResult(output)
+}
 
 // evaluateArguments is one experimental_evaluate invocation as it arrived on the
 // wire. Each document is held as raw JSON rather than as a string because §8.2

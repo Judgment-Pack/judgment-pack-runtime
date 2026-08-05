@@ -125,25 +125,28 @@ func claimSurfaces(t *testing.T) []claimSurface {
 	if len(listed.Result.Tools) == 0 {
 		t.Fatalf("tools/list returned no tool: %q", stdout)
 	}
-	evaluationTool := false
+	evaluationTools := map[string]bool{"experimental_evaluate": false, "experimental_test_packs": false}
 	for _, tool := range listed.Result.Tools {
 		if tool.Description == "" {
 			t.Fatalf("tool %q has no description", tool.Name)
 		}
-		// Only the evaluation tool speaks about the evaluator, so only it must carry
-		// the reference; the other descriptions are inventoried for the phrase scans,
-		// which is where a stray denial would otherwise hide.
+		// Only the tools that reach the evaluator speak about it, so only they must
+		// carry the reference; the other descriptions are inventoried for the phrase
+		// scans, which is where a stray denial would otherwise hide.
+		_, reachesEvaluator := evaluationTools[tool.Name]
 		surfaces = append(surfaces, claimSurface{
 			name:          "mcp tools/list " + tool.Name,
 			text:          tool.Description,
-			mustReference: tool.Name == "experimental_evaluate",
+			mustReference: reachesEvaluator,
 		})
-		if tool.Name == "experimental_evaluate" {
-			evaluationTool = true
+		if reachesEvaluator {
+			evaluationTools[tool.Name] = true
 		}
 	}
-	if !evaluationTool {
-		t.Fatalf("the inventory must include the evaluation tool's own description: %q", stdout)
+	for name, seen := range evaluationTools {
+		if !seen {
+			t.Fatalf("the inventory must include %s's own description: %q", name, stdout)
+		}
 	}
 
 	// The rendered prompts, from real prompts/list and prompts/get responses over the
@@ -555,6 +558,7 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 		"cli packs verify --help",
 		"mcp tools/list list_packs",
 		"mcp tools/list get_pack",
+		"mcp tools/list experimental_test_packs",
 		"prose docs/building-with-packs.md",
 	} {
 		if !named[required] {

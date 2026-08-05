@@ -117,3 +117,4 @@ authority, and following it confers no conformance status on anything.
 | [0018](0018-opt-in-evaluation-audit-trail.md)            | Record evaluations into the project's own tree, and only when the project asks | accepted |
 | [0019](0019-reviewed-set-lock.md)                        | Pin the reviewed set in a sibling lock, and refuse to decide under law that left it | accepted |
 | [0020](0020-report-consulted-fact-pointers.md)           | Report the fact pointers a pack's conditions read, on the inventory row        | accepted |
+| [0021](0021-run-the-declared-matrix-over-mcp.md)         | Run the declared matrix over MCP, and keep the rehearsal outside the record    | accepted |

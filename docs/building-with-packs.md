@@ -367,7 +367,11 @@ Three tools then matter:
 
 A workable agent loop: `list_packs` → the application (not the model) names the decision id →
 gather each hinted fact, reporting `unknown` for anything you could not source → `experimental_evaluate`
-→ read the disposition, and hand a `requested` handoff to a human.
+→ read the disposition, and hand a `requested` handoff to a human. When authoring rather than
+deciding, `experimental_test_packs` closes the loop the `test_pack` prompt teaches: it runs the
+declared matrix through the same comparison `jpack packs test` uses and reports the derived
+coverage beside the rows, so re-running the suite after any change happens where the method is
+served.
 
 Every file the server reads goes through a reader bound to a handle held open on the configuration's
 own directory. A configured path that leaves that directory is refused, and by two checks that catch

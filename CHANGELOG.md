@@ -4,6 +4,26 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Run a project's instance matrix over MCP** (ADR-0021): a new `experimental_test_packs` tool
+  runs every declared pack's instance matrix — or the one an optional `pack_id` names — through
+  the same evaluator and the same comparison `jpack packs test` uses, and returns the payload that
+  command already emits: each row's agreement or divergence, by the RFC 8785 canonical disposition
+  compared byte for byte or the §8.4 error class and phase the row expects, with the derived
+  coverage report of ADR-0014 beside each pack's rows, informing and never gating. The method for
+  building a matrix has been served over MCP since ADR-0008 and the means to run one had not: a
+  client with no shell in front of it was taught a regression discipline it could not execute, and
+  the substitute — replaying rows through `experimental_evaluate` and comparing client-side —
+  re-implements the comparison and drops the coverage report, which under-reports silently. The
+  posture is unchanged: the tool reads the project tree the server was launched in, takes no path
+  over the wire, holds no credential, opens no connection, and writes nothing at all — a matrix
+  row is a rehearsal and not a decision, so it appends no audit record (ADR-0018) and consults no
+  reviewed set (ADR-0019), the same split both records drew. A mismatching or skipped run is a
+  successful call carrying its payload; tool errors are kept for what stopped the run from
+  happening — a bad argument, an unknown decision id, a configuration that is there and will not
+  load, or no configuration at all. `outputVersion` stays `"2"`, and CONFORMANCE.md's claim-scope
+  enumeration now names seven surfaces rather than six, held mechanically by the test that counts
+  evaluator constructor sites; the conformance claim itself is unaffected and stated, in full and
+  only, in `CONFORMANCE.md`, which no line of this entry restates.
 - **Report the fact pointers a pack's conditions read** (ADR-0020): every `packs list --format
   json` row and every MCP `list_packs` row now carries `consultedFactPaths` — the pointers the
   pack's conditions read, sorted and deduplicated, from the same whole-document walk `packs

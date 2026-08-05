@@ -12,9 +12,11 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
 const projectFacts = `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
@@ -426,9 +428,16 @@ func TestABrokenConfigurationIsAToolError(t *testing.T) {
 	}
 	t.Setenv(project.ConfigEnv, configPath)
 
-	listed := runServer(t, toolCall(t, 1, "list_packs", nil))[0]["result"].(map[string]any)
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "list_packs", nil),
+		toolCall(t, 2, "experimental_test_packs", nil),
+	}, ""))
+	listed := responses[0]["result"].(map[string]any)
 	if listed["isError"] != true {
 		t.Fatalf("a broken configuration must be a tool error: %#v", listed)
+	}
+	if tested := responses[1]["result"].(map[string]any); tested["isError"] != true {
+		t.Fatalf("a broken configuration must refuse the matrix run too: %#v", tested)
 	}
 	if text := toolText(t, listed); !strings.Contains(text, "It accepts: "+strings.Join(project.SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must name the versions this runtime accepts: %q", text)
@@ -707,4 +716,302 @@ func jsonEqual(t *testing.T, left, right any) bool {
 		t.Fatal(err)
 	}
 	return string(leftBytes) == string(rightBytes)
+}
+
+// passingMatrix is the CLI fixture's own two-row matrix: one row per judged
+// path — a canonical-disposition comparison and an expected §8.4 refusal.
+const passingMatrix = `{"matrixVersion":"1","cases":[
+  {"id":"hard-fail","facts":` + projectFacts + `,"evidenceAvailability":{"intake-form":"present","sponsor-endorsement":"present"},"expectedDisposition":{"kind":"outcome","outcomeId":"decline-redirect","reasons":[],"handoff":{"state":"none"}}},
+  {"id":"undeclared-key","facts":{"request":{"type":"data-access"}},"evidenceAvailability":{"not-a-requirement":"present"},"expectedErrorClass":"malformed-input","expectedErrorPhase":"preflight"}
+]}`
+
+// matrixProjectFixture lays out one project whose single pack declares a
+// matrix, and points JPACK_CONFIG at it. projectFixture stays matrix-less on
+// purpose: its callers pin today's inventory.
+func matrixProjectFixture(t *testing.T, config, matrix string) string {
+	t.Helper()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake.matrix.json"), []byte(matrix), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+	return configPath
+}
+
+const matrixConfig = `{"configVersion":"1","packs":{"intake":{
+  "path":"packs/intake-0.1.0.pack.json",
+  "matrix":"packs/intake.matrix.json",
+  "description":"Triage an inbound data-access request"
+}}}`
+
+// experimental_test_packs runs the declared matrix through the same evaluator
+// and the same comparison packs test uses, and returns that command's payload
+// (ADR-0021): every row's agreement or divergence, the derived coverage report
+// beside the rows, informing and never gating.
+func TestExperimentalTestPacksRunsTheDeclaredMatrix(t *testing.T) {
+	matrixProjectFixture(t, matrixConfig, passingMatrix)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("a passing run is a successful call: %#v", outcome)
+	}
+	var report result.PackTest
+	decodeStructured(t, outcome, &report)
+	if report.OutputVersion != "2" || report.Command != "mcp experimental_test_packs" || !report.Experimental {
+		t.Fatalf("report = %+v", report)
+	}
+	if report.ConformanceClaimReference == "" {
+		t.Fatalf("the payload must say where the claim is stated: %+v", report)
+	}
+	if report.Status != "passed" || report.Summary.Total != 2 || report.Summary.Passed != 2 {
+		t.Fatalf("summary = %+v status = %q", report.Summary, report.Status)
+	}
+	if len(report.Packs) != 1 || len(report.Packs[0].Coverage) == 0 {
+		t.Fatalf("the derived coverage report travels with the rows: %+v", report.Packs)
+	}
+}
+
+// A row that diverged is what the caller asked to be told: the call succeeds
+// and the payload reports mismatch, exactly as packs test exits nonzero while
+// still printing its report.
+func TestExperimentalTestPacksReportsAMismatchAsASuccessfulCall(t *testing.T) {
+	mismatching := `{"matrixVersion":"1","cases":[
+	  {"id":"wrong-expectation","facts":` + projectFacts + `,"evidenceAvailability":{"intake-form":"present","sponsor-endorsement":"present"},"expectedDisposition":{"kind":"outcome","outcomeId":"approve-standard","reasons":[],"handoff":{"state":"none"}}}
+	]}`
+	matrixProjectFixture(t, matrixConfig, mismatching)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("a mismatching run is a successful call: %#v", outcome)
+	}
+	var report result.PackTest
+	decodeStructured(t, outcome, &report)
+	if report.Status != "mismatch" || report.Summary.Mismatched != 1 {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// A pack with no matrix is skipped and never passed, and the skip is a
+// successful call: a green gate over zero rows would say a project was tested
+// when nothing was, and the payload's own status is what says so here.
+func TestExperimentalTestPacksReportsNoMatrixAsSkipped(t *testing.T) {
+	projectFixture(t)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("a skipped run is a successful call: %#v", outcome)
+	}
+	var report result.PackTest
+	decodeStructured(t, outcome, &report)
+	if report.Status != "skipped" || len(report.Packs) != 1 || report.Packs[0].Status != "skipped" {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// pack_id selects one declared pack exactly as --id does, and an unknown id is
+// a tool error naming the ids the project does declare.
+func TestExperimentalTestPacksSelectsOnePackById(t *testing.T) {
+	matrixProjectFixture(t, matrixConfig, passingMatrix)
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_test_packs", map[string]any{"pack_id": "intake"}),
+		toolCall(t, 2, "experimental_test_packs", map[string]any{"pack_id": "no-such-pack"}),
+	}, ""))
+	selected := responses[0]["result"].(map[string]any)
+	if selected["isError"] != false {
+		t.Fatalf("selecting a declared pack must succeed: %#v", selected)
+	}
+	var report result.PackTest
+	decodeStructured(t, selected, &report)
+	if report.Status != "passed" || len(report.Packs) != 1 || report.Packs[0].ID != "intake" {
+		t.Fatalf("report = %+v", report)
+	}
+	unknown := responses[1]["result"].(map[string]any)
+	if unknown["isError"] != true || !strings.Contains(toolText(t, unknown), "intake") {
+		t.Fatalf("an unknown id is refused naming the known ones: %#v", unknown)
+	}
+}
+
+// Argument refusals precede the run: an unknown key, a null, a non-string, and
+// a present-but-empty pack_id are each invocation failures, never a silently
+// different run. Presence is the discriminator, so an empty id a client
+// computed must not select every declared pack.
+func TestExperimentalTestPacksRefusesBadArguments(t *testing.T) {
+	matrixProjectFixture(t, matrixConfig, passingMatrix)
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_test_packs", map[string]any{"packId": "intake"}),
+		toolCall(t, 2, "experimental_test_packs", map[string]any{"pack_id": nil}),
+		toolCall(t, 3, "experimental_test_packs", map[string]any{"pack_id": 7}),
+		toolCall(t, 4, "experimental_test_packs", map[string]any{"pack_id": ""}),
+	}, ""))
+	for index, response := range responses {
+		outcome := response["result"].(map[string]any)
+		if outcome["isError"] != true {
+			t.Fatalf("call %d must be refused: %#v", index+1, outcome)
+		}
+	}
+	if text := toolText(t, responses[3]["result"].(map[string]any)); !strings.Contains(text, "present but empty") {
+		t.Fatalf("the empty-id refusal must say what is wrong: %q", text)
+	}
+}
+
+// No configuration is a tool error here, unlike list_packs: an empty inventory
+// answers "what can this project decide", but a skipped suite does not answer
+// "run the suite", and a caller reading it as green is the misreading the
+// refusal prevents. The error carries the same note the empty inventory does.
+func TestExperimentalTestPacksWithNoConfigurationIsAToolError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), project.DefaultConfigName)
+	t.Setenv(project.ConfigEnv, missing)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != true {
+		t.Fatalf("no configuration must refuse the run: %#v", outcome)
+	}
+	if text := toolText(t, outcome); !strings.Contains(text, "No project configuration was found") {
+		t.Fatalf("the refusal must say where the runtime looked: %q", text)
+	}
+}
+
+// A matrix run is a rehearsal, not a decision: in a project that declares an
+// audit directory, experimental_test_packs appends nothing at all (ADR-0018,
+// ADR-0021), where the same project's experimental_evaluate would append one
+// record per completed call.
+func TestExperimentalTestPacksRecordsNothing(t *testing.T) {
+	auditConfig := `{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{
+	  "path":"packs/intake-0.1.0.pack.json",
+	  "matrix":"packs/intake.matrix.json"
+	}}}`
+	configPath := matrixProjectFixture(t, auditConfig, passingMatrix)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("the run must succeed: %#v", outcome)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), "audit", audit.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("a rehearsal must leave no audit record: stat err = %v", err)
+	}
+}
+
+// The reviewed set is not consulted: a matrix row rehearses law rather than
+// deciding under it (ADR-0019, ADR-0021), so a declared pack that drifted from
+// its lock still runs and reports what its rows did — where the same project's
+// experimental_evaluate would refuse the drift fail-closed.
+func TestExperimentalTestPacksConsultsNoReviewedSet(t *testing.T) {
+	configPath := matrixProjectFixture(t, matrixConfig, passingMatrix)
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	document, lockFailure := lock.Generate(loaded)
+	if lockFailure != nil {
+		t.Fatal(lockFailure.Message)
+	}
+	contents, err := lock.Encode(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := loaded.WriteLock(contents); err != nil {
+		t.Fatal(err)
+	}
+	loaded.Close()
+	// Drift the declared pack's bytes without changing what it evaluates.
+	packPath := filepath.Join(filepath.Dir(configPath), "packs", "intake-0.1.0.pack.json")
+	drifted, err := os.ReadFile(packPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(packPath, append(drifted, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("a drifted pack still rehearses: %#v", outcome)
+	}
+	var report result.PackTest
+	decodeStructured(t, outcome, &report)
+	if report.Status != "passed" {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
+// The wire and the shell report one run: the MCP payload is packs test's own,
+// with only the command naming the surface. Two surfaces reading one project
+// must not disagree about it.
+func TestExperimentalTestPacksMatchesThePacksTestPayload(t *testing.T) {
+	configPath := matrixProjectFixture(t, matrixConfig, passingMatrix)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	var wire result.PackTest
+	decodeStructured(t, outcome, &wire)
+
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer loaded.Close()
+	shell, projectFailure := loaded.Test(evaluation.NewEngine(engine), "", "packs test")
+	if projectFailure != nil {
+		t.Fatal(projectFailure.Message)
+	}
+	if wire.Command != "mcp experimental_test_packs" || shell.Command != "packs test" {
+		t.Fatalf("commands name their surfaces: %q vs %q", wire.Command, shell.Command)
+	}
+	wire.Command = ""
+	shell.Command = ""
+	if !jsonEqual(t, wire, shell) {
+		t.Fatalf("the two surfaces must report one run identically:\nwire  = %+v\nshell = %+v", wire, shell)
+	}
+}
+
+// A declared matrix path that escapes the project root is refused at the read,
+// through the same rooted handle every project file goes through — and the
+// refusal is reported in-band exactly as the CLI reports it: the pack's entry
+// is a mismatch whose detail names the read failure, and no escaped byte
+// reaches the payload.
+func TestExperimentalTestPacksRefusesAnEscapingMatrixPath(t *testing.T) {
+	base := t.TempDir()
+	if err := os.WriteFile(filepath.Join(base, "secret.json"), []byte(`{"secret":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(base, "project")
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	config := `{"configVersion":"1","packs":{"intake":{"path":"packs/intake.json","matrix":"../secret.json"}}}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("the refusal is reported in-band, as the CLI reports it: %#v", outcome)
+	}
+	var report result.PackTest
+	decodeStructured(t, outcome, &report)
+	if report.Status != "mismatch" || len(report.Packs) != 1 || report.Packs[0].Detail == "" {
+		t.Fatalf("report = %+v", report)
+	}
+	if strings.Contains(toolText(t, outcome), `"secret"`) {
+		t.Fatalf("no escaped byte may reach the payload: %q", toolText(t, outcome))
+	}
 }
