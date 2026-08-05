@@ -41,10 +41,12 @@
 package evaluation
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -157,19 +159,24 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 	// in the preflight order, so an oversized pack is reported as the pack's
 	// failure even when the facts document is oversized too, and a non-conformant
 	// pack outranks an oversized facts document (§8.4).
-	if failure := byteLimit("pack", pack, result.ClassPackNotConformant, options.oversized("pack")); failure != nil {
+	return e.EvaluateAdmitted(e.AdmitPack(pack), facts, evidence, options)
+}
+
+// EvaluateAdmitted is EvaluateWith over a pack admitted once for many rows
+// (issue #78). The admission carries the pack half of the preflight — byte
+// limit, conformance, version gate — whose outcome is replayed here before
+// any other input is touched, so the §8.4 precedence a per-row caller saw is
+// byte-identical.
+func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte, options Options) (result.Evaluation, *Failure) {
+	if failure := byteLimit("pack", admitted.pack, result.ClassPackNotConformant, options.oversized("pack")); failure != nil {
 		return result.Evaluation{}, failure
 	}
-	validated, packRoot, unsupportedExtensions, failure := e.conformance(pack, options)
-	if failure != nil {
-		return result.Evaluation{}, failure
+	admission := admitted.admission(options)
+	if admission.failure != nil {
+		return result.Evaluation{}, copyFailure(admission.failure)
 	}
-	// The version gate is part of admitting the pack, so it precedes the facts
-	// document and every later step, and its class is the pack's own:
-	// pack-not-conformant, which §8.4 orders first in any case.
-	if failure := declaredSpecVersion(validated.SpecVersion); failure != nil {
-		return result.Evaluation{}, failure
-	}
+	validated, packRoot := admission.validated, admission.packRoot
+	unsupportedExtensions := copyFailure(admission.unsupported)
 
 	if failure := byteLimit("facts", facts, result.ClassMalformedInput, options.oversized("facts")); failure != nil {
 		return result.Evaluation{}, failure
@@ -246,8 +253,111 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 // bounded reader already, and a helper that half-repeated the preflight's
 // resource checks would invite reliance on the half.
 func (e *Engine) Admits(pack []byte, supported []string) bool {
-	validated, _, unsupported, failure := e.conformance(pack, Options{SupportedExtensions: supported})
-	return failure == nil && unsupported == nil && declaredSpecVersion(validated.SpecVersion) == nil
+	return e.AdmitPack(pack).Admits(supported)
+}
+
+// AdmittedPack memoizes the pack half of the §8.2 preflight — full document
+// conformance, the version gate, and the decode — across many evaluations of
+// one pack (issue #78). A suite of ten thousand rows previously re-validated
+// and re-decoded the same bytes ten thousand times; with this, once per
+// distinct capability SET the rows declare: the key is canonical (sorted,
+// deduplicated, collision-free JSON encoding), so two spellings of one set
+// share one admission and no two different inputs can share a key. The
+// admission's outcome, failures included, is replayed identically per row —
+// as a copy, so a caller mutating a returned failure cannot poison the next
+// row — and §8.4's error precedence is unchanged: the pack byte limit is
+// checked per call ahead of the memo exactly where EvaluateWith always
+// checked it, a pack-half failure returns before any facts or evidence
+// document is touched, and unsupported required extensions stay deferred to
+// their §8.2 place.
+//
+// The decoded packRoot is shared across the rows of one admission; the
+// resolution path reads it and never mutates it, which the corpus and every
+// suite of this repository hold in place. The memo is bounded: past
+// maxAdmissions distinct sets, further sets are admitted without being
+// retained — exactly the old per-row cost, never an unbounded retention of
+// decoded roots. An AdmittedPack is safe for concurrent use.
+type AdmittedPack struct {
+	engine     *Engine
+	pack       []byte
+	mu         sync.Mutex
+	admissions map[string]*packAdmission
+}
+
+// maxAdmissions bounds how many distinct capability sets one AdmittedPack
+// retains. Real suites declare a handful; a matrix engineered to declare
+// thousands falls back to per-row admission cost instead of pinning
+// thousands of decoded roots.
+const maxAdmissions = 64
+
+type packAdmission struct {
+	validated   result.Validation
+	packRoot    map[string]any
+	unsupported *Failure
+	failure     *Failure
+}
+
+// AdmitPack prepares one pack's bytes for evaluation across many rows.
+func (e *Engine) AdmitPack(pack []byte) *AdmittedPack {
+	return &AdmittedPack{engine: e, pack: pack, admissions: map[string]*packAdmission{}}
+}
+
+// admissionKey is the part of Options the conformance half of the preflight
+// can see, in a canonical, injective encoding: capabilities are deduplicated
+// and sorted (validation treats them as a set), and JSON framing makes a
+// collision between different inputs impossible.
+func admissionKey(options Options) string {
+	supported := slices.Clone(options.SupportedExtensions)
+	slices.Sort(supported)
+	supported = slices.Compact(supported)
+	if supported == nil {
+		supported = []string{}
+	}
+	encoded, _ := json.Marshal(struct {
+		Supported []string `json:"s"`
+		RFC0008   bool     `json:"r"`
+	}{supported, options.RFC0008Quantifiers})
+	return string(encoded)
+}
+
+// copyFailure hands a caller its own failure value: the memo's copy stays
+// pristine however the caller treats the return.
+func copyFailure(failure *Failure) *Failure {
+	if failure == nil {
+		return nil
+	}
+	duplicate := *failure
+	return &duplicate
+}
+
+func (a *AdmittedPack) admission(options Options) *packAdmission {
+	key := admissionKey(options)
+	a.mu.Lock()
+	if cached, ok := a.admissions[key]; ok {
+		a.mu.Unlock()
+		return cached
+	}
+	a.mu.Unlock()
+	admission := &packAdmission{}
+	validated, packRoot, unsupported, failure := a.engine.conformance(a.pack, options)
+	if failure == nil {
+		failure = declaredSpecVersion(validated.SpecVersion)
+	}
+	admission.validated, admission.packRoot = validated, packRoot
+	admission.unsupported, admission.failure = unsupported, failure
+	a.mu.Lock()
+	if _, ok := a.admissions[key]; !ok && len(a.admissions) < maxAdmissions {
+		a.admissions[key] = admission
+	}
+	a.mu.Unlock()
+	return admission
+}
+
+// Admits reports whether this pack reaches §8 under a capability set, from
+// the memo — the raw byte limit stays with EvaluateWith, as it always has.
+func (a *AdmittedPack) Admits(supported []string) bool {
+	admission := a.admission(Options{SupportedExtensions: supported})
+	return admission.failure == nil && admission.unsupported == nil
 }
 
 // packIdentity reads one identity member off the pack that was evaluated. Both

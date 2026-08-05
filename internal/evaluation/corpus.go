@@ -118,8 +118,9 @@ func (e *Engine) RunCorpus(specVersion, command string) (result.EvaluationCorpus
 		Provenance:                set.Lock().Source.Kind,
 		Cases:                     []result.EvaluationCorpusCase{},
 	}
+	admissions := map[string]*AdmittedPack{}
 	for _, item := range manifest.Cases {
-		caseResult := e.runCorpusCase(set, item)
+		caseResult := e.runCorpusCase(set, admissions, item)
 		output.Summary.Total++
 		if caseResult.Status == "passed" {
 			output.Summary.Passed++
@@ -166,8 +167,10 @@ func loadCorpusManifest(set *artifacts.Set, specVersion string) (corpusManifest,
 }
 
 // runCorpusCase runs one row. The pack is a bundled, digest-locked fixture; the
-// facts and evidence inputs are the row's own bytes, unaltered.
-func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.EvaluationCorpusCase {
+// facts and evidence inputs are the row's own bytes, unaltered. Fixtures
+// repeat across the corpus, so admissions are shared per fixture name
+// (issue #78) — the same memo the project suite uses.
+func (e *Engine) runCorpusCase(set *artifacts.Set, admissions map[string]*AdmittedPack, item corpusCase) result.EvaluationCorpusCase {
 	pack, err := set.EvaluationPack(item.Pack)
 	if err != nil {
 		return corpusMismatch(result.EvaluationCorpusCase{
@@ -179,7 +182,12 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.Evalu
 			ExpectedErrorPhase: item.ExpectedErrorPhase,
 		}, "The row's pack fixture is not bundled.")
 	}
-	return e.RunCase(pack, item.MatrixCase, "experimental evaluate-corpus")
+	admitted, ok := admissions[item.Pack]
+	if !ok {
+		admitted = e.AdmitPack(pack)
+		admissions[item.Pack] = admitted
+	}
+	return e.RunCaseAdmitted(admitted, item.MatrixCase, "experimental evaluate-corpus")
 }
 
 // RunCase runs one case-carrier row against one pack document and reports the
@@ -195,6 +203,13 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.Evalu
 //
 // command names the reporting surface, exactly as elsewhere in this package.
 func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.EvaluationCorpusCase {
+	return e.RunCaseAdmitted(e.AdmitPack(pack), item, command)
+}
+
+// RunCaseAdmitted is RunCase over a pack admitted once for the whole suite
+// (issue #78): the same judgment, without re-validating and re-decoding the
+// pack bytes for every row.
+func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, command string) result.EvaluationCorpusCase {
 	outcome := result.EvaluationCorpusCase{
 		ID:                 item.ID,
 		Origin:             item.Origin,
@@ -211,7 +226,8 @@ func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.Ev
 		outcome.Expected = expected
 	}
 
-	evaluated, failure := e.Evaluate(pack, item.Facts, item.EvidenceAvailability, item.SupportedExtensions, command)
+	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability,
+		Options{Command: command, SupportedExtensions: item.SupportedExtensions})
 	if failure != nil {
 		outcome.ActualErrorClass, outcome.ActualErrorPhase = failure.Class, failure.Phase
 		if item.ExpectedErrorClass == "" {
