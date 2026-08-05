@@ -105,8 +105,9 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		report.Detail = display.Sanitize(err.Error())
 		return report
 	}
+	admitted := evaluator.AdmitPack(pack)
 	for _, row := range matrix.Cases {
-		outcome := evaluator.RunCase(pack, row, command)
+		outcome := evaluator.RunCaseAdmitted(admitted, row, command)
 		report.Summary.Total++
 		if outcome.Status == "passed" {
 			report.Summary.Passed++

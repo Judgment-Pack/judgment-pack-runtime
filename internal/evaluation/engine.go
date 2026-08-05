@@ -157,19 +157,20 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 	// in the preflight order, so an oversized pack is reported as the pack's
 	// failure even when the facts document is oversized too, and a non-conformant
 	// pack outranks an oversized facts document (§8.4).
-	if failure := byteLimit("pack", pack, result.ClassPackNotConformant, options.oversized("pack")); failure != nil {
-		return result.Evaluation{}, failure
+	return e.EvaluateAdmitted(e.AdmitPack(pack), facts, evidence, options)
+}
+
+// EvaluateAdmitted is EvaluateWith over a pack admitted once for many rows
+// (issue #78). The admission carries the pack half of the preflight — byte
+// limit, conformance, version gate — whose outcome is replayed here before
+// any other input is touched, so the §8.4 precedence a per-row caller saw is
+// byte-identical.
+func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte, options Options) (result.Evaluation, *Failure) {
+	admission := admitted.admission(options)
+	if admission.failure != nil {
+		return result.Evaluation{}, admission.failure
 	}
-	validated, packRoot, unsupportedExtensions, failure := e.conformance(pack, options)
-	if failure != nil {
-		return result.Evaluation{}, failure
-	}
-	// The version gate is part of admitting the pack, so it precedes the facts
-	// document and every later step, and its class is the pack's own:
-	// pack-not-conformant, which §8.4 orders first in any case.
-	if failure := declaredSpecVersion(validated.SpecVersion); failure != nil {
-		return result.Evaluation{}, failure
-	}
+	validated, packRoot, unsupportedExtensions := admission.validated, admission.packRoot, admission.unsupported
 
 	if failure := byteLimit("facts", facts, result.ClassMalformedInput, options.oversized("facts")); failure != nil {
 		return result.Evaluation{}, failure
@@ -246,8 +247,72 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 // bounded reader already, and a helper that half-repeated the preflight's
 // resource checks would invite reliance on the half.
 func (e *Engine) Admits(pack []byte, supported []string) bool {
-	validated, _, unsupported, failure := e.conformance(pack, Options{SupportedExtensions: supported})
-	return failure == nil && unsupported == nil && declaredSpecVersion(validated.SpecVersion) == nil
+	admission := e.AdmitPack(pack).admission(Options{SupportedExtensions: supported})
+	return admission.failure == nil && admission.unsupported == nil
+}
+
+// AdmittedPack memoizes the pack half of the §8.2 preflight — the byte
+// limit, full document conformance, the version gate, and the decode —
+// across many evaluations of one pack (issue #78). A suite of ten thousand
+// rows previously re-validated and re-decoded the same bytes ten thousand
+// times; with this, once per distinct capability set the rows declare. The
+// admission's outcome, failures included, is replayed identically per row,
+// so §8.4's error precedence is unchanged: a pack-half failure is returned
+// before any facts or evidence document is touched, exactly as before.
+//
+// The decoded packRoot is shared across the rows of one admission; the
+// resolution path reads it and never mutates it, which the corpus and every
+// suite of this repository hold in place.
+type AdmittedPack struct {
+	engine     *Engine
+	pack       []byte
+	admissions map[string]*packAdmission
+}
+
+type packAdmission struct {
+	validated   result.Validation
+	packRoot    map[string]any
+	unsupported *Failure
+	failure     *Failure
+}
+
+// AdmitPack prepares one pack's bytes for evaluation across many rows.
+func (e *Engine) AdmitPack(pack []byte) *AdmittedPack {
+	return &AdmittedPack{engine: e, pack: pack, admissions: map[string]*packAdmission{}}
+}
+
+// admissionKey is the part of Options the pack half of the preflight can see.
+func admissionKey(options Options) string {
+	supported := slices.Clone(options.SupportedExtensions)
+	slices.Sort(supported)
+	key := strings.Join(supported, "\x00")
+	if options.RFC0008Quantifiers {
+		key += "\x01rfc0008"
+	}
+	if options.oversized("pack") {
+		key += "\x01oversized"
+	}
+	return key
+}
+
+func (a *AdmittedPack) admission(options Options) *packAdmission {
+	key := admissionKey(options)
+	if cached, ok := a.admissions[key]; ok {
+		return cached
+	}
+	admission := &packAdmission{}
+	if failure := byteLimit("pack", a.pack, result.ClassPackNotConformant, options.oversized("pack")); failure != nil {
+		admission.failure = failure
+	} else {
+		validated, packRoot, unsupported, failure := a.engine.conformance(a.pack, options)
+		if failure == nil {
+			failure = declaredSpecVersion(validated.SpecVersion)
+		}
+		admission.validated, admission.packRoot = validated, packRoot
+		admission.unsupported, admission.failure = unsupported, failure
+	}
+	a.admissions[key] = admission
+	return admission
 }
 
 // packIdentity reads one identity member off the pack that was evaluated. Both

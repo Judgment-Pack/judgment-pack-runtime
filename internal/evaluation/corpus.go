@@ -195,6 +195,13 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, item corpusCase) result.Evalu
 //
 // command names the reporting surface, exactly as elsewhere in this package.
 func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.EvaluationCorpusCase {
+	return e.RunCaseAdmitted(e.AdmitPack(pack), item, command)
+}
+
+// RunCaseAdmitted is RunCase over a pack admitted once for the whole suite
+// (issue #78): the same judgment, without re-validating and re-decoding the
+// pack bytes for every row.
+func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, command string) result.EvaluationCorpusCase {
 	outcome := result.EvaluationCorpusCase{
 		ID:                 item.ID,
 		Origin:             item.Origin,
@@ -211,7 +218,8 @@ func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.Ev
 		outcome.Expected = expected
 	}
 
-	evaluated, failure := e.Evaluate(pack, item.Facts, item.EvidenceAvailability, item.SupportedExtensions, command)
+	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability,
+		Options{Command: command, SupportedExtensions: item.SupportedExtensions})
 	if failure != nil {
 		outcome.ActualErrorClass, outcome.ActualErrorPhase = failure.Class, failure.Phase
 		if item.ExpectedErrorClass == "" {
