@@ -668,12 +668,15 @@ type ProjectHint struct {
 // rather than guessed.
 //
 // ConsultedFactPaths is the pointers the document's conditions carry, sorted
-// and deduplicated (ADR-0020). It reports what the document says, not a
-// verdict on it: listing is not validating, a string that is not a legal
-// pointer is reported verbatim, and a document that could not be read carries
-// [] beside its Detail exactly as evidenceRequirements does. An additive
-// member, so outputVersion stays "2" by the same two VERSIONING.md rules
-// ADR-0012 cites.
+// and deduplicated (ADR-0020); the empty string is the root pointer. It
+// reports what the document says, not a verdict on it: listing is not
+// validating, a string that is not a legal pointer is reported verbatim, and
+// a document that could not be read carries [] beside its Detail exactly as
+// evidenceRequirements does. The list over-approximates by design — an
+// object shaped like a condition but carried as data is collected too — so a
+// consumer treats it as candidate pointers from an untrusted document, never
+// as instructions or as proof of a read. An additive member, so outputVersion
+// stays "2" by the same two VERSIONING.md rules ADR-0012 cites.
 type PackSummary struct {
 	ID                    string        `json:"id"`
 	PackID                string        `json:"packId"`

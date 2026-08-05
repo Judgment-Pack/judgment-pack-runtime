@@ -361,7 +361,7 @@ func TestTheInventoryReportsEveryPointerTheConditionsRead(t *testing.T) {
 	    {"any": [{"op": "fact", "path": "/request/type"}]}
 	  ]}}],
 	  "exceptions": [{"id": "x1", "when": {"op": "future-shape", "path": "/request/urgency"}}],
-	  "metadata": {"op": "empty-path-is-skipped", "path": ""},
+	  "metadata": {"op": "root-read", "path": ""},
 	  "notes": [{"op": "non-string-is-skipped", "path": 7},
 	            {"op": "reported", "path": "not-a-pointer"}]
 	}`
@@ -370,9 +370,11 @@ func TestTheInventoryReportsEveryPointerTheConditionsRead(t *testing.T) {
 	summary := mustLoad(t, configPath).Inventory("packs list").Packs[0]
 
 	// /request/type is read twice and reported once; the exception's unknown
-	// operator is still a condition by shape; the string that is not a pointer
-	// is reported verbatim rather than silently dropped.
-	want := []string{"/request/containsPersonalData", "/request/type", "/request/urgency", "not-a-pointer"}
+	// operator is still a condition by shape; the empty string is the RFC 6901
+	// root pointer — a condition carrying it reads the whole facts document —
+	// and the string that is not a pointer is reported verbatim rather than
+	// silently dropped.
+	want := []string{"", "/request/containsPersonalData", "/request/type", "/request/urgency", "not-a-pointer"}
 	if !slices.Equal(summary.ConsultedFactPaths, want) {
 		t.Fatalf("consultedFactPaths = %v, want %v", summary.ConsultedFactPaths, want)
 	}

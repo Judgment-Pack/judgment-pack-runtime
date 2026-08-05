@@ -63,8 +63,9 @@ convention](../README.md#the-jpackjson-project-convention) — this runtime's co
 the specification ([ADR-0012](adr/0012-jpack-project-convention.md)). `list_packs` returns the
 resolved, token-cheap inventory: the project's decision id, the pack document's own id and version,
 the description, the ids of the evidence the pack requires, the fact pointers the pack's conditions
-read (`consultedFactPaths`, sorted and deduplicated — how an application names the pointer an
-escalation is waiting on, and checks that every consulted pointer has a producer), whether an
+read (`consultedFactPaths`, sorted and deduplicated — how an application names the candidate
+pointers an escalation may be waiting on, and checks that every consulted pointer has a producer;
+it over-approximates by design, so its values are untrusted document content), whether an
 instance matrix exists, and the project's non-normative hints about where each fact and each piece
 of evidence is held.
 `get_pack { pack_id }` returns one document, read-only and unaltered — and a document that was read

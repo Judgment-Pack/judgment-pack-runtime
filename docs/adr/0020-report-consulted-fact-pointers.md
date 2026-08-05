@@ -79,6 +79,24 @@ Determinations the record settles:
   object carrying `op` and a string `path` is reported; a string that is not a
   legal pointer is reported verbatim; a document that could not be decoded
   carries `[]` beside its `detail`. Same posture as every identity member.
+- **The empty string is the root pointer, and it is reported.** The 0.2.0-draft
+  schema admits the empty RFC 6901 pointer and the evaluator reads the facts
+  root through it, so a condition carrying `"path": ""` consults the whole
+  facts document and the list says so. (Found in cross-vendor review; the
+  first draft skipped it.)
+- **The list over-approximates, and the property is named.** The shape-keyed
+  walk collects a condition-shaped object wherever it sits — including one a
+  condition carries as *data* in its `value` literal, or one inside an inert
+  extension. That is the deliberate direction of error: over-reporting is
+  visible and arguable, under-reporting is invisible. Every surface that
+  serves the member says it is candidate pointers from an untrusted document,
+  never proof of a read and never instructions.
+- **The escalation use is candidates, not attribution.** Evaluation can stop
+  before reaching a rule, and a trace entry carries no pointer, so
+  intersecting `consultedFactPaths` with the supplied facts names the
+  *candidate* missing pointers — which is what every consumer-facing sentence
+  promises. Per-escalation attribution would need trace-level pointers, which
+  is a different decision nobody has asked for yet.
 - **Human `packs list` output is unchanged.** The member is for machines; the
   human rendering stays pointer-free, which also avoids a new sanitization
   site.
@@ -93,14 +111,27 @@ Determinations the record settles:
   own issue) has the consulted set to intersect against.
 - Bad, because the payload grows with the pack's condition variety. The bound
   is real but wide: `condition.path` carries no `maxLength` in the 0.2.0-draft
-  schema, so the member is bounded by the 10 MiB carrier limit and the dedupe
-  rather than by a cap. A cap is refused here deliberately — a silent
-  truncation would be the same invisible under-report this decision exists to
-  end; if one ever becomes necessary it must be a stated truncation.
+  schema, the configuration puts no maximum on pack entries and entries may
+  alias one document, and the MCP transport's 16 MiB line bound is inbound
+  only while a tool result is emitted twice (text and `structuredContent`) —
+  so the member is bounded by the 10 MiB per-document carrier limit and the
+  dedupe rather than by any project-wide cap. `evidenceRequirements` already
+  had this asymptotic shape; this member widens it. A cap is refused here
+  deliberately — a silent truncation would be the same invisible under-report
+  this decision exists to end; if one ever becomes necessary it must be a
+  stated truncation.
+- Bad, because the draft-RFC quantifier shapes read more than a flat list can
+  say: a nested `where.path` resolves relative to each selected element and is
+  reported here without that context, and `uniform` reads its `at` member,
+  which a `path`-keyed walk does not collect. Both live on the opt-in
+  experimental RFC-0008 surface; the narrowness is recorded in the walk's own
+  comment, and a shape that carries element context is deferred to the
+  producer-lint design (issue #76).
 - Bad, because a consumer may misread the list as validated pointers. The doc
   comment, the tool description, and this record all say it is not.
-- Revisit when a truncation becomes necessary, or when `packs lint
-  --producers` needs a shape this member cannot carry.
+- Revisit when a truncation becomes necessary, when the quantifier surface
+  leaves experimental, or when `packs lint --producers` needs a shape this
+  member cannot carry.
 
 ## More information
 

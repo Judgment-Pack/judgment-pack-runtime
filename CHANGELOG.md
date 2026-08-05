@@ -12,9 +12,11 @@ All notable changes to tagged releases are documented here.
   list was computed and deliberately withheld, and the consequence was that a consumer needing it
   re-walked the document with a walk keyed to the operators it knew — which under-reports the
   moment a pack uses another fact-reading shape, invisibly, because a pointer never listed is
-  never mentioned to the person who needed it. An application can now name the pointer an
-  unresolved disposition is waiting on, and can check at build time that every consulted pointer
-  has a producer. `outputVersion` stays `"2"`: an added member is backward-compatible under
+  never mentioned to the person who needed it. An application can now name the candidate pointers
+  an unresolved disposition may be waiting on, and can check at build time that every consulted
+  pointer has a producer. The empty string is the root pointer and is reported like any other;
+  the list over-approximates by design — a condition-shaped object carried as data is listed too
+  — so its values are candidate pointers from an untrusted document, never proof of a read. `outputVersion` stays `"2"`: an added member is backward-compatible under
   VERSIONING.md's machine-output rule, so the bump issue #73 asked for was declined in the open —
   it breaks every consumer that pins the version and buys nothing. Human `packs list` output is
   unchanged, and the row still reports what the document says rather than a verdict on it: a
