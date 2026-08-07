@@ -249,18 +249,31 @@ jpack packs suggest --id expense --write candidates.json
 ```
 
 What comes back is a `candidatesVersion`/`candidates` document, and every candidate carries an `id`,
-`origin: "generated"`, a `facts` document, sometimes an `evidenceAvailability`, and one sentence
-saying what it places and why the pack implies it. **It carries no expectation, and that absence is
+`origin: "generated"`, a `facts` document, sometimes an `evidenceAvailability`, and a `rationale` —
+a sentence saying what it places and why the pack implies it, closed by the sentence every candidate
+ends with: no expectation is stated, write one from the policy text or delete this candidate.
+**It carries no expectation, and that absence is
 the whole point.** The expectation is the member that says what your pack *should* decide; deriving
 one from the pack would only tell you what the pack already does. So the generator supplies the half
 a machine can supply — the input — and leaves you the half only the policy text answers.
 
-Two refusals hold that line, and neither is new code: point a `jpack.json` `matrix` at a raw
-candidate file and the matrix loader rejects the root members it does not know; paste a candidate
-into a `cases` array and the loader rejects it again, because a row must declare exactly one of
-`expectedDisposition` and `expectedErrorClass`. **A candidate becomes a row only when you write four
-members from the policy text**, and **deleting a candidate the policy does not decide is a
-first-class outcome** — a candidate is an offer, not a demand.
+Refusals hold that line, and none of them is new code. Point a `jpack.json` `matrix` at a raw
+candidate file and the matrix loader rejects the root members it does not know. Paste a candidate
+into a `cases` array and you meet two more, in this order:
+
+```
+the matrix has a member this runtime does not know, or a member of the wrong type: ... unknown field "rationale"
+row "suggest:expense:value:/expense/amount:5000" must declare exactly one of expectedDisposition and expectedErrorClass: ...
+```
+
+The first is what a **verbatim** paste hits: `rationale` is a member of no row, so the whole matrix
+is refused before any row is examined — which is also the layer that keeps the generator's own prose
+out of anything that could be scored. Delete the `rationale` and you meet the second, which is the
+one that names the work still to do. Then you write the expectation. For an outcome disposition that
+is `kind`, `outcomeId`, `reasons`, and `handoff`, authored from the policy text — those four are the
+shape of *your* act, not a check the loader performs; what it enforces is the weaker "exactly one of
+`expectedDisposition` and `expectedErrorClass`". And **deleting a candidate the policy does not
+decide is a first-class outcome** — a candidate is an offer, not a demand.
 
 Per pointer the values are: the compared literal itself; one unit either side of it *at the
 precision the pack authored it in* (`"5000"` steps by 1 to 4999 and 5001, `"70.0"` steps by 0.1 to
@@ -270,7 +283,9 @@ a pointer compared against *n* distinct literals. One value spelled two ways is 
 and `70.0` derive one lattice), and its step comes from the *finest* spelling your pack authored, so
 reordering two rules changes neither the values you are offered nor the step between them. What it
 can change is the *text*. The candidate at the literal is placed and named in the first-authored
-spelling, and every rationale sentence that quotes that authored literal — the at-literal
+spelling a reviewer can read — a spelling past the 128-byte budget is reported and skipped over for
+this purpose, so which one is offered does not depend on declaration order either — and every
+rationale sentence that quotes that authored literal — the at-literal
 candidate's own, and each candidate stepped from it — follows the same spelling. Rationale
 sentences also name the rules that own a comparison in *declaration* order, so reordering can
 rewrite rationale text even where every spelling is identical. Both are strings only: no offered
@@ -279,8 +294,13 @@ value and no step moves
 first-declared spelling, exactly as ADR-0023's probe does).
 
 `--include-hugs` adds one more pair per literal, two decimal places finer than the authored
-precision — 4999.99 and 5000.01 beside 4999 and 5001 — taking the bound to `6n+1`. It is **off by
-default**, and the reason is evidence rather than taste: the corpus study behind
+precision — 4999.99 and 5000.01 beside 4999 and 5001 — taking the bound to `6n+1`. It carries the
+same `10^-6` floor the unit step does, so "two places finer" is exact only below five authored
+digits: a literal authored at five digits is hugged one place finer instead of two, and one at six or
+more has no finer pair to offer and gets none. Both narrowings are reported as skipped dimensions
+(`clamped-hug`, `unavailable-hug`) and the clamped pair's rationale names the distance it actually
+carries — a pair quietly delivered one place finer would read as the pair the flag names. It is
+**off by default**, and the reason is evidence rather than taste: the corpus study behind
 [ADR-0024](adr/0024-suggest-candidate-row-inputs.md) found authored test values already piled up on
 the thresholds and within 0.01 of them, and almost nothing in the gap between. Authors already hug;
 what authorship misses is the unit step at the precision the policy was written in. Pass the flag
@@ -289,23 +309,49 @@ when you want the hug mechanized anyway.
 Each stated member of an `in`, `equals`, or `not-equals` operand gets a candidate too, and so does
 the absence of a pointer, and the three tri-states of each declared evidence requirement.
 
-**Every candidate varies exactly one pointer** and holds the rest at a base assignment, so the count
-grows with the number of pointers and never as their product. `--base <rowId>` makes that base an
+**Composition is one factor or axis at a time.** A value or membership candidate varies exactly one
+pointer and holds the rest at a base assignment; an evidence candidate varies no pointer at all and
+moves the availability axis instead; and with no `--base`, the single absence candidate states no
+facts at all, because there is nothing to hold the other pointers at. So the count grows with the
+number of pointers and axes and never as their product. `--base <rowId>` makes that base an
 already-reviewed row of your matrix, which is what makes a candidate read as "this reviewed row,
 with one pointer moved to a value the pack's own literals imply"; without it, the facts carry only
 the varied pointer. The generator never synthesizes a plausible-looking full record: that would be
 it inventing a policy world.
 
+Where your base row already *states* something at the pointer's path that the placement would have
+to replace — a scalar to descend through, an explicit `null`, or an array position RFC 6901 does not
+address — the candidate is declined and the reason is reported under `unplaceable-pointer`, never
+forced: overwriting a stated answer would change the base beyond the one thing a candidate varies.
+
+The report and the candidate document are two artifacts. `--format human|json` renders the *report*
+about the run — the counts, the pack identity each candidate came from, and every skipped dimension
+— while `--write` emits the document. `--write -` and `--format json` are **refused together**,
+because one stream cannot carry two documents; and when `--write -` takes stdout for the document,
+the report goes to **stderr**, so a piped stdout is exactly the document's bytes and the skipped
+dimensions are still stated:
+
+```bash
+jpack packs suggest --id expense --write - > candidates.json   # report on stderr, document in the file
+```
+
 It decides nothing and gates nothing. It runs no evaluator, moves no exit code, and writes nothing
 unless you pass `--write <file>` or `--write -`; a destination your configuration declares as a
 pack, a matrix, a graph, or a `rows` document is refused by name — including when you reach it
-through a symlinked spelling of your project directory. Past `--max` (500 by default) the run
+through a symlinked spelling of your project directory, and including when your *configuration*
+names that document through an alias of its own, because both ends are resolved before they are
+compared. Past `--max` (500 by default) the run
 refuses rather than truncating, because a truncated candidate set looks exactly like a complete one;
-`--max 0` and a negative one are refused outright rather than read as the default. There is a 16 MiB
-bound on the emitted document as well, measured on the file as it would be *written*, which `--max`
+the cap is charged as candidates are composed, so a low `--max` stops the derivation there rather
+than letting it run to the end and refusing after the fact. `--max 0` and a negative one are refused
+outright rather than read as the default. There is a 16 MiB
+bound on the emitted document as well, charged on the file as it would be *written*, which `--max`
 cannot stand in for: every candidate carries a whole facts document, so a `--base` row that is wide
 — or merely deeply nested, which the emitted document's indentation multiplies again — multiplies
-by the candidate count, and crossing it refuses whole with the size and the budget named. A pack using draft-RFC collection quantifiers has
+by the candidate count, and crossing it refuses whole. The number that refusal names is a **bound**
+rather than a measurement — each candidate is charged its written encoding plus a fixed envelope,
+deliberately a little more than the framing costs — and the remedy that lets a run of this shape
+finish is a narrower `--base` row. A pack using draft-RFC collection quantifiers has
 that dimension reported as *skipped*, never silently left out. Two runs over an unchanged pack write
 identical bytes.
 
@@ -316,7 +362,7 @@ as open as it always was. What this measures rather than prevents is how much of
 machine supplied: `packs test` reports **origin counts** per pack, in both formats —
 
 ```
-- expense [mismatch]: 1/2
+- expense [mismatch]: 13/14
   coverage: 5/5 derived probes are witnessed by a row
   origin generated: 12/14 row(s) declare it
 ```

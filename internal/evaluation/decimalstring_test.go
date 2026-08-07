@@ -139,3 +139,69 @@ func TestPointerTokensAgreeWithTheResolver(t *testing.T) {
 		t.Fatal("a pointer that is neither empty nor rooted at / resolves against nothing")
 	}
 }
+
+// ArrayIndex is the resolver's own array-token rule and not a second one. A
+// surface that PLACES a value has to admit exactly the tokens the resolution
+// admits, or it places where nothing reads: strconv.Atoi reads "00" and "+0" as
+// zero, and RFC 6901 reads neither.
+func TestArrayIndexIsTheResolutionsOwnRule(t *testing.T) {
+	document := map[string]any{"items": []any{"zero", "one"}}
+	for _, token := range []string{"0", "1", "00", "+0", "01", "-", "", " 0", "1.0", "2"} {
+		index, admitted := ArrayIndex(token, 2)
+		value, resolved := ResolvePointer(document, "/items/"+token)
+		if admitted != resolved {
+			t.Fatalf("token %q: ArrayIndex says %v and the resolver says %v", token, admitted, resolved)
+		}
+		if admitted && value != document["items"].([]any)[index] {
+			t.Fatalf("token %q: the index and the resolution must name one element", token)
+		}
+	}
+}
+
+// The contract is about the NUMBER, not about the fraction it arrived as. This
+// is an exported writer, and a *big.Rat a caller assembled through Num and
+// Denom need not be in lowest terms: 2/4 rendered off an unreduced denominator
+// is "0.50", which states a precision the number does not have, and 3/3 is
+// refused outright for a denominator that clears the moment it is reduced.
+// Both are the fewest-exact-digits contract failing on a value that satisfies
+// it, so the value is reduced before it is read.
+func TestDecimalStringReducesBeforeItRenders(t *testing.T) {
+	// An unreduced Rat, built the one way a caller can build one: a value whose
+	// denominator is a live reference, then set.
+	unreduced := func(numerator, denominator int64) *big.Rat {
+		value := big.NewRat(1, 2)
+		value.Num().SetInt64(numerator)
+		value.Denom().SetInt64(denominator)
+		return value
+	}
+	for _, row := range []struct {
+		numerator   int64
+		denominator int64
+		want        string
+	}{
+		{2, 4, "0.5"},
+		{3, 3, "1"},
+		{-6, 4, "-1.5"},
+		{50, 100, "0.5"},
+		{0, 7, "0"},
+	} {
+		value := unreduced(row.numerator, row.denominator)
+		text, rendered := DecimalString(value)
+		if !rendered || text != row.want {
+			t.Fatalf("%d/%d: got %q (%v), want %q", row.numerator, row.denominator, text, rendered, row.want)
+		}
+		// The caller's own value is untouched: reduction happens on a copy,
+		// because a writer that edited its argument would be a side effect
+		// nobody asked a rendering for.
+		if value.Num().Int64() != row.numerator || value.Denom().Int64() != row.denominator {
+			t.Fatalf("%d/%d: the caller's value was modified: %s", row.numerator, row.denominator, value.RatString())
+		}
+	}
+	// Reducing does not soften the refusal: a value whose expansion does not
+	// terminate is still refused rather than rounded, sign included.
+	for _, row := range [][2]int64{{1, 3}, {-1, 3}, {-7, 6}, {2, 6}} {
+		if text, rendered := DecimalString(unreduced(row[0], row[1])); rendered {
+			t.Fatalf("%d/%d has no terminating expansion and must be refused, not rounded to %q", row[0], row[1], text)
+		}
+	}
+}

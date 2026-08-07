@@ -294,10 +294,26 @@ func DecimalValue(value any) (*big.Rat, bool) {
 // terminates the rendering carries every digit of it, at the fewest digits that
 // are exact, so the result has no trailing fractional zero and DecimalValue
 // reads back the number this was called with.
+//
+// Both halves of that contract are about the number and not about the fraction
+// it arrived as, so the value is reduced before it is read. A *big.Rat the
+// arithmetic here produces is already in lowest terms, but this is exported and
+// a caller can hand over one that is not — big.Rat's own Num and Denom return
+// references a caller may set — and 2/4 rendered off an unreduced denominator
+// is "0.50", which states a precision the number does not have, while 3/3 is
+// refused outright for a denominator that clears on sight. Reducing a copy
+// costs one normalization and leaves the caller's value untouched.
 func DecimalString(value *big.Rat) (string, bool) {
 	if value == nil {
 		return "", false
 	}
+	// A denominator of zero is no fraction at all. It cannot arise from this
+	// package's own arithmetic and is checked because SetFrac would panic on
+	// it, and a panic is not an answer this function is allowed to give.
+	if value.Denom().Sign() == 0 {
+		return "", false
+	}
+	value = new(big.Rat).SetFrac(value.Num(), value.Denom())
 	// The scale is the smaller power of ten that clears the denominator:
 	// 10^d = 2^d·5^d, so d must reach the larger of the denominator's own two
 	// exponents and nothing beyond it. Taking the smallest such d is what makes
@@ -366,6 +382,22 @@ func PointerTokens(pointer string) ([]string, bool) {
 		return nil, false
 	}
 	return compiled.tokens, true
+}
+
+// ArrayIndex reads one RFC 6901 array-reference token as an index into a
+// container of the given length — decimal digits with no leading zero other
+// than "0" itself, no sign, no past-the-end "-", and in range — exported for
+// the same single-source-of-truth reason PointerTokens is.
+//
+// A surface that PLACES a value at a pointer has to admit exactly the tokens
+// the resolution admits. strconv.Atoi is the tempting substitute and it is a
+// wider grammar: it reads "00" and "+0" as zero, so a candidate placed at
+// /items/00 lands at the element the pointer does not address, where this
+// evaluator then resolves nothing and no condition ever reads it (ADR-0024).
+// One rule, stated here, is what keeps a placement and a resolution from
+// disagreeing about which element a pointer names.
+func ArrayIndex(token string, length int) (int, bool) {
+	return arrayIndex(token, length)
 }
 
 // compiledPointer is an authored RFC 6901 pointer with its bytes already read:

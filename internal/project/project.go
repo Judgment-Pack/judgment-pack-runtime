@@ -670,7 +670,7 @@ func (p *Project) DeclaresPath(relative string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	same := func(declared string) bool {
+	return p.declaredDocument(func(declared string) bool {
 		cleaned, err := fssecure.Relative(declared)
 		if err != nil {
 			return false
@@ -679,7 +679,18 @@ func (p *Project) DeclaresPath(relative string) (string, bool) {
 			return true
 		}
 		return p.sameFile(cleaned, target)
-	}
+	})
+}
+
+// declaredDocument names the first declared document a caller's own comparison
+// admits: a pack, its matrix, a graph, or its rows, in configuration order.
+//
+// The enumeration lives in one place because "declared law" has to mean the
+// same four things to every question asked about it. Two passes ask different
+// questions — one compares cleaned relative spellings, the other resolved
+// pathnames — and a fifth declared document added to only one of them would be
+// law one pass protects and the other writes over.
+func (p *Project) declaredDocument(same func(declared string) bool) (string, bool) {
 	for _, id := range p.IDs {
 		entry := p.Config.Packs[id]
 		if same(entry.Path) {
@@ -725,13 +736,59 @@ func (p *Project) DeclaresPath(relative string) (string, bool) {
 // destination reads as undeclared. That is the case a reviewer would never
 // notice, because what lands there is a declared matrix that was missing until
 // the generator created it.
+//
+// The DECLARATION is a spelling too, and that is the second pass. A
+// configuration may name its matrix through an alias of its own —
+// "alias/x.matrix.json" where alias is a symlink to packs — and a caller
+// writing at "packs/x.matrix.json" then names the same file under the name the
+// configuration did not use. Resolving only the destination cannot see that:
+// both ends have to be put through the same deepest-existing-ancestor
+// resolution before they are compared, or the alias moves the blind spot from
+// one side to the other rather than closing it.
 func (p *Project) DeclaresOutputPath(target string) (string, bool) {
 	for _, relative := range p.outputRelatives(target) {
 		if owner, declared := p.DeclaresPath(relative); declared {
 			return owner, true
 		}
 	}
-	return "", false
+	return p.declaresResolvedFile(target)
+}
+
+// declaresResolvedFile asks whether any declared document and this destination
+// are one pathname once BOTH are resolved through their symlinks.
+//
+// It compares resolved absolute pathnames rather than relative spellings,
+// because a declared path resolved through an alias need not stay under the
+// configuration's directory at all, and a comparison that dropped it there
+// would drop exactly the arrangement this pass exists for. The case-folded
+// comparison is the same conservative answer DeclaresPath gives for a name that
+// is not there yet on a filesystem that may not distinguish case: refusing a
+// collision that is not one costs a rename, missing one destroys a reviewed
+// document.
+func (p *Project) declaresResolvedFile(target string) (string, bool) {
+	absoluteTarget, err := filepath.Abs(target)
+	if err != nil {
+		return "", false
+	}
+	resolvedTarget, ok := resolveExistingPrefix(absoluteTarget)
+	if !ok {
+		return "", false
+	}
+	absoluteRoot, err := filepath.Abs(p.Root)
+	if err != nil {
+		return "", false
+	}
+	return p.declaredDocument(func(declared string) bool {
+		cleaned, err := fssecure.Relative(declared)
+		if err != nil {
+			return false
+		}
+		resolved, ok := resolveExistingPrefix(filepath.Join(absoluteRoot, cleaned))
+		if !ok {
+			return false
+		}
+		return resolved == resolvedTarget || strings.EqualFold(resolved, resolvedTarget)
+	})
 }
 
 // outputRelatives renders one named destination as the paths relative to the

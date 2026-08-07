@@ -466,10 +466,21 @@ func (a *App) renderPackSuggestion(writer io.Writer, format string, output resul
 		return writeJSON(writer, output, a.pretty)
 	}
 	fmt.Fprintf(writer, "candidate inputs (candidatesVersion %s): %s\n", display.Sanitize(output.CandidatesVersion), output.Label)
-	if output.Status == "suggested" {
+	switch unreadable := unreadablePacks(output); {
+	case output.Status == "suggested":
 		fmt.Fprintf(writer, "suggested: %d candidate input(s) from %d/%d declared pack(s)\n",
 			output.Summary.Candidates, output.Summary.Suggested, output.Summary.Total)
-	} else {
+	// A pack nobody could read states nothing knowable, so the ordinary
+	// headline — no selected pack states a derivable comparison — would be a
+	// claim about a document this run never parsed. The two are separated
+	// before either is printed.
+	case unreadable == output.Summary.Total:
+		fmt.Fprintf(writer, "skipped: no selected pack could be read, so whether any states a comparison this derives an input from is unknown (%d of %d)\n",
+			unreadable, output.Summary.Total)
+	case unreadable > 0:
+		fmt.Fprintf(writer, "skipped: %d of %d selected pack(s) could not be read, and the pack(s) that did read state no comparison this derives an input from\n",
+			unreadable, output.Summary.Total)
+	default:
 		fmt.Fprintln(writer, "skipped: no selected pack's conditions state a comparison this derives an input from")
 	}
 	for _, pack := range output.Packs {
@@ -491,6 +502,18 @@ func (a *App) renderPackSuggestion(writer io.Writer, format string, output resul
 	fmt.Fprintf(writer, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	fmt.Fprintln(writer, "A candidate is an input, not a row: write each expectation from the policy text, and delete the candidates the policy does not decide.")
 	return nil
+}
+
+// unreadablePacks counts the selected packs this run could not read, which the
+// headline needs before it can say what a run that derived nothing means.
+func unreadablePacks(output result.PackSuggestion) int {
+	count := 0
+	for _, pack := range output.Packs {
+		if pack.Unreadable {
+			count++
+		}
+	}
+	return count
 }
 
 // renderCoverage prints one coverage block: the count line always states that

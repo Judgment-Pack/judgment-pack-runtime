@@ -3,6 +3,7 @@ package project
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 // walkFixture is one pack the walk-invariance golden is taken over.
@@ -202,7 +204,17 @@ func suggestOne(t *testing.T, loaded *Project, options SuggestOptions) Candidate
 // built the one way production builds one: with the run's own byte budget
 // attached, so no test exercises a set that composes an unbounded document.
 func latticeSet() *candidateSet {
-	return newCandidateSet("d", nil, false, SuggestOptions{Max: MaxCandidatesUnset}, &outputBudget{limit: DefaultMaxOutputBytes})
+	return newCandidateSet("d", nil, false, SuggestOptions{Max: MaxCandidatesUnset},
+		&outputBudget{limit: DefaultMaxOutputBytes}, &candidateCap{limit: DefaultMaxCandidates})
+}
+
+// hugSet is latticeSet with --include-hugs, for the clamp's own correctness
+// cases: the pair the flag names is exact only below the generator's step
+// floor, and what the floor swallows has to be reported rather than delivered
+// quietly.
+func hugSet() *candidateSet {
+	return newCandidateSet("d", nil, false, SuggestOptions{Max: MaxCandidatesUnset, IncludeHugs: true},
+		&outputBudget{limit: DefaultMaxOutputBytes}, &candidateCap{limit: DefaultMaxCandidates})
 }
 
 // candidateFacts indexes one document's candidates by id.
@@ -465,10 +477,12 @@ func TestTheStepPrecisionComesFromTheFinestSpellingAndNotTheFirst(t *testing.T) 
 	}
 }
 
-// Every candidate varies exactly one pointer and holds every other member of
-// the base at what the reviewed row said. That is what makes a candidate read
-// as "this reviewed row, with one pointer moved" rather than as a policy world
-// the generator invented.
+// No candidate varies more than one member of the base: a value or membership
+// candidate moves exactly one pointer and holds every other member at what the
+// reviewed row said, an absence candidate withholds exactly one, and an
+// evidence candidate moves none at all. That is what makes a candidate read as
+// "this reviewed row, with one thing changed" rather than as a policy world the
+// generator invented.
 func TestEveryCandidateVariesExactlyOnePointerOfTheBase(t *testing.T) {
 	matrix := `{"matrixVersion":"1","cases":[{"id":"reviewed","facts":{"expense":{"amountUsd":"10","category":"travel"},"employee":{"costCentre":"R&D"}},"expectedDisposition":{"kind":"outcome","outcomeId":"auto-approve","reasons":[],"handoff":{"state":"none"}}}]}`
 	pack := strings.Replace(thresholdPack,
@@ -534,8 +548,10 @@ func TestNoCandidateLoadsAsARowUntilAnExpectationIsAuthored(t *testing.T) {
 		t.Fatalf("a candidate document is not a matrix, and the loader must say so: %v", err)
 	}
 
-	// Layer 2: a candidate pasted verbatim into a cases array declares neither
-	// expectation, and the loader names the work still to do.
+	// Layer 2: a candidate pasted VERBATIM carries its rationale, which is a
+	// member of no row, so strict decoding refuses the whole matrix before any
+	// row is examined. That refusal comes first, and it is its own layer: the
+	// generator's prose cannot ride into anything that gets scored.
 	var pasted []map[string]any
 	for _, candidate := range document.Candidates[:1] {
 		var row map[string]any
@@ -552,20 +568,40 @@ func TestNoCandidateLoadsAsARowUntilAnExpectationIsAuthored(t *testing.T) {
 		if _, present := row["expectedErrorClass"]; present {
 			t.Fatal("a candidate must carry no expectedErrorClass, not even a sentinel")
 		}
-		delete(row, "rationale")
+		if _, present := row["rationale"]; !present {
+			t.Fatal("a candidate carries the sentence saying what is still owed")
+		}
 		pasted = append(pasted, row)
 	}
-	cases, err := json.Marshal(map[string]any{"matrixVersion": "1", "cases": pasted})
-	if err != nil {
-		t.Fatal(err)
+	pasteInto := func(name string, rows []map[string]any) error {
+		cases, err := json.Marshal(map[string]any{"matrixVersion": "1", "cases": rows})
+		if err != nil {
+			t.Fatal(err)
+		}
+		loadedPaste := mustLoad(t, writeProject(t, `{"configVersion":"1","packs":{"expense":{"path":"packs/pack.json","matrix":"packs/`+name+`.json"}}}`, map[string]string{
+			"packs/pack.json":         thresholdPack,
+			"packs/" + name + ".json": string(cases),
+		}))
+		_, err = loadedPaste.LoadMatrix(loadedPaste.Config.Packs["expense"])
+		return err
 	}
-	second := mustLoad(t, writeProject(t, `{"configVersion":"1","packs":{"expense":{"path":"packs/pack.json","matrix":"packs/pasted.json"}}}`, map[string]string{
-		"packs/pack.json":   thresholdPack,
-		"packs/pasted.json": string(cases),
-	}))
-	_, err = second.LoadMatrix(second.Config.Packs["expense"])
+	err = pasteInto("verbatim", pasted)
+	if err == nil || !strings.Contains(err.Error(), "member this runtime does not know") ||
+		!strings.Contains(err.Error(), "rationale") {
+		t.Fatalf("a verbatim paste is refused first for the rationale, a member of no row: %v", err)
+	}
+	if strings.Contains(err.Error(), "must declare exactly one of") {
+		t.Fatalf("the missing-expectation refusal comes second, not first: %v", err)
+	}
+
+	// Layer 3: with the rationale removed the row declares neither expectation,
+	// and THAT is the refusal naming the work still to do.
+	for index := range pasted {
+		delete(pasted[index], "rationale")
+	}
+	err = pasteInto("pasted", pasted)
 	if err == nil || !strings.Contains(err.Error(), "must declare exactly one of expectedDisposition and expectedErrorClass") {
-		t.Fatalf("a pasted candidate must fail closed with the message naming the missing work: %v", err)
+		t.Fatalf("a candidate without its rationale must fail closed with the message naming the missing work: %v", err)
 	}
 	// The origin member, in contrast, loads: it is provenance the row carries
 	// into the report, never a gate (ADR-0024).
@@ -613,18 +649,48 @@ func TestTwoRunsWriteIdenticalBytes(t *testing.T) {
 // Past the cap the run refuses and names the flag. A truncated candidate set
 // looks exactly like a complete one, and a reviewer cannot tell that the
 // dimensions past the cut were never offered.
+//
+// The cap is charged as candidates are composed, not read off the finished
+// document, and that is what makes "lower --max" advice that changes anything:
+// a cap checked at the end bounds what is returned and nothing about the work
+// done to reach it. So the refusal names the cap rather than a total — the
+// total is exactly what a run stopped at the cap did not go on to find out, and
+// a number it did not measure is not a number it may report.
 func TestTheCapRefusesRatherThanTruncates(t *testing.T) {
 	loaded := suggestProject(t, thresholdPack, nil, `{"path":"packs/pack.json"}`)
 	whole := suggestOne(t, loaded, SuggestOptions{Max: MaxCandidatesUnset})
-	_, _, failure := loaded.Suggest(SuggestOptions{Max: len(whole.Candidates) - 1}, "packs suggest")
+	bound := len(whole.Candidates) - 1
+	_, document, failure := loaded.Suggest(SuggestOptions{Max: bound}, "packs suggest")
 	if failure == nil || !strings.Contains(failure.Message, "--max") {
 		t.Fatalf("past the cap the run refuses and names the flag: %+v", failure)
 	}
 	if !strings.Contains(failure.Message, "nothing was written") {
 		t.Fatalf("the refusal must say nothing was written: %s", failure.Message)
 	}
+	if !strings.Contains(failure.Message, strconv.Itoa(bound)) {
+		t.Fatalf("the refusal names the cap the run stopped at: %s", failure.Message)
+	}
+	if strings.Contains(failure.Message, strconv.Itoa(len(whole.Candidates))) {
+		t.Fatalf("a run stopped at the cap never counted the rest, so it states no total: %s", failure.Message)
+	}
+	if len(document.Candidates) != 0 {
+		t.Fatalf("a refused run returns no partial document: %d candidate(s)", len(document.Candidates))
+	}
 	if _, _, failure := loaded.Suggest(SuggestOptions{Max: len(whole.Candidates)}, "packs suggest"); failure != nil {
 		t.Fatalf("exactly at the cap is inside it: %+v", failure)
+	}
+	// The bound is on the WORK and not only on the answer: a cap of one stops
+	// after one candidate is composed, whatever the pack would go on to derive.
+	set := newCandidateSet("d", nil, false, SuggestOptions{Max: 1},
+		&outputBudget{limit: DefaultMaxOutputBytes}, &candidateCap{limit: 1})
+	set.deriveValues(map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules": []any{map[string]any{"id": "one", "outcome": "review", "when": map[string]any{
+			"op": "fact", "path": "/p", "operator": "greater-than", "value": "5000",
+		}}},
+	})
+	if len(set.candidates) != 1 || !set.stopped() {
+		t.Fatalf("the derivation stops at the cap rather than running on: %d composed, stopped=%v", len(set.candidates), set.stopped())
 	}
 }
 
@@ -679,11 +745,25 @@ func TestUnplaceablePointersAreReportedRatherThanForced(t *testing.T) {
 
 	// A base whose member is a scalar where the pointer needs a container: the
 	// placement is refused rather than overwriting the scalar.
-	if _, ok := placeFact(map[string]any{"expense": "flat"}, true, "/expense/amountUsd", "5000"); ok {
+	if _, _, ok := placeFact(map[string]any{"expense": "flat"}, true, "/expense/amountUsd", "5000"); ok {
 		t.Fatal("overwriting a scalar would change the base beyond the one varied pointer")
 	}
+	// An explicit JSON null is a value the base STATES, not an absence: growing
+	// an object under it would edit a stated answer rather than vary a pointer.
+	if _, _, ok := placeFact(map[string]any{"expense": nil}, true, "/expense/amountUsd", "5000"); ok {
+		t.Fatal("a member stated as null is a stated scalar, not a place to build in")
+	}
+	// The pointer's own final position is a different question: replacing the
+	// null AT the varied pointer is exactly the one factor a candidate varies.
+	replaced, _, ok := placeFact(map[string]any{"expense": nil}, true, "/expense", "5000")
+	if !ok {
+		t.Fatal("the varied pointer's own value is replaced, null or not")
+	}
+	if rendered, err := encodeCandidateJSON(replaced); err != nil || string(rendered) != `{"expense":"5000"}` {
+		t.Fatalf("the varied pointer is placed over the stated null: %s %v", rendered, err)
+	}
 	// Where the base simply does not state the path, the containers are created.
-	placed, ok := placeFact(map[string]any{"other": "kept"}, true, "/expense/amountUsd", "5000")
+	placed, _, ok := placeFact(map[string]any{"other": "kept"}, true, "/expense/amountUsd", "5000")
 	if !ok {
 		t.Fatal("a path the base does not state is created as objects")
 	}
@@ -695,13 +775,22 @@ func TestUnplaceablePointersAreReportedRatherThanForced(t *testing.T) {
 		t.Fatalf("the rest of the base is preserved verbatim: %s", rendered)
 	}
 	// An array position is descended into by index and never renumbered.
-	placed, ok = placeFact(map[string]any{"lines": []any{map[string]any{"amount": "1"}}}, true, "/lines/0/amount", "5000")
+	placed, _, ok = placeFact(map[string]any{"lines": []any{map[string]any{"amount": "1"}}}, true, "/lines/0/amount", "5000")
 	if !ok {
 		t.Fatal("an array index in a pointer addresses an element of the base")
 	}
 	rendered, _ = encodeCandidateJSON(placed)
 	if string(rendered) != `{"lines":[{"amount":"5000"}]}` {
 		t.Fatalf("an array element is replaced in place: %s", rendered)
+	}
+	// A token this runtime's own RFC 6901 resolution refuses addresses no
+	// element, whatever strconv.Atoi would make of it. Placing there would put
+	// the value where no condition ever reads.
+	for _, token := range []string{"00", "+0", "-", "01", " 0"} {
+		if _, bad, ok := placeFact(map[string]any{"lines": []any{map[string]any{"amount": "1"}}}, true,
+			"/lines/"+token+"/amount", "5000"); ok || bad != token {
+			t.Fatalf("the array token %q is not an index: placed=%v token=%q", token, ok, bad)
+		}
 	}
 }
 
@@ -1056,5 +1145,397 @@ func TestANonDecimalLiteralIsReportedRatherThanDroppedInSilence(t *testing.T) {
 	}
 	if len(ordinary.skipped()) != 0 {
 		t.Fatalf("an ordinary derivation declines nothing: %+v", ordinary.skipped())
+	}
+}
+
+// A base row that STATES a member as null states a scalar there, and a scalar
+// is not a place to build a container in.
+//
+// The distinction the one nil check conflated: a member the base never
+// mentioned has no answer to preserve, so the containers a pointer needs are
+// created under it; a member stated as JSON null is an answer the reviewed row
+// gave, and growing an object under it would edit that answer rather than vary
+// one pointer — the same thing overwriting any other scalar would do. It is
+// reported under the placement's own name, because a dimension missing in
+// silence reads as one the pack never stated.
+func TestAnExplicitNullBaseMemberIsAStatedScalarAndNotAnAbsence(t *testing.T) {
+	expectation := `"expectedDisposition":{"kind":"outcome","outcomeId":"auto-approve","reasons":[],"handoff":{"state":"none"}}`
+	matrix := `{"matrixVersion":"1","cases":[
+	  {"id":"stated-null","facts":{"expense":null},` + expectation + `},
+	  {"id":"unstated","facts":{"other":"kept"},` + expectation + `}
+	]}`
+	loaded := suggestProject(t, thresholdPack, map[string]string{"packs/pack.matrix.json": matrix},
+		`{"path":"packs/pack.json","matrix":"packs/pack.matrix.json"}`)
+
+	report, document, failure := loaded.Suggest(SuggestOptions{ID: "expense", BaseRow: "stated-null", Max: MaxCandidatesUnset}, "packs suggest")
+	if failure != nil {
+		t.Fatalf("suggest: %s: %s", failure.Code, failure.Message)
+	}
+	if len(document.Candidates) != 0 {
+		t.Fatalf("nothing may be placed under a stated null: %v", candidateFacts(document))
+	}
+	skips := report.Packs[0].Skipped
+	if len(skips) != 1 || skips[0].Name != "unplaceable-pointer" {
+		t.Fatalf("the declined placement is reported under its own name: %+v", skips)
+	}
+	// The full report content this skip owes: the constraint it declined on, the
+	// null it declined on in particular, and the subject it was declined for.
+	for _, required := range []string{"explicit null", "container", "Not derived for: ", "/expense/amountUsd"} {
+		if !strings.Contains(skips[0].Detail, required) {
+			t.Fatalf("the skip must carry %q: %s", required, skips[0].Detail)
+		}
+	}
+
+	// The unstated member is the contrast and is not a decline at all: the base
+	// never answered, so the containers are created and the lattice derives.
+	_, unstated, failure := loaded.Suggest(SuggestOptions{ID: "expense", BaseRow: "unstated", Max: MaxCandidatesUnset}, "packs suggest")
+	if failure != nil {
+		t.Fatalf("suggest: %s", failure.Message)
+	}
+	if unstated.Candidates == nil || len(unstated.Candidates) == 0 {
+		t.Fatal("a pointer the base never states is created rather than declined")
+	}
+	if facts := candidateFacts(unstated)["suggest:expense:value:/expense/amountUsd:5000"]; facts != `{"expense":{"amountUsd":"5000"},"other":"kept"}` {
+		t.Fatalf("the rest of the base is preserved and the pointer is created: %s", facts)
+	}
+}
+
+// A pointer whose array token this runtime's own RFC 6901 resolution refuses
+// addresses no element, so nothing is placed at it.
+//
+// strconv.Atoi reads "00" and "+0" as zero and the evaluator does not, and the
+// gap is not academic: a candidate placed at /items/00 would sit at element 0
+// of a reviewed row while every condition reading that pointer resolves
+// nothing, so the candidate would probe a value no evaluation ever sees. The
+// decline is reported with the token named, because "unplaceable pointer" alone
+// would not tell a reader which token was refused.
+func TestAnArrayTokenTheResolutionRefusesIsDeclinedRatherThanPlaced(t *testing.T) {
+	pack := strings.Replace(thresholdPack, "/expense/amountUsd", "/items/00/amount", 1)
+	expectation := `"expectedDisposition":{"kind":"outcome","outcomeId":"auto-approve","reasons":[],"handoff":{"state":"none"}}`
+	matrix := `{"matrixVersion":"1","cases":[{"id":"array","facts":{"items":[{"amount":"1"}]},` + expectation + `}]}`
+	loaded := suggestProject(t, pack, map[string]string{"packs/pack.matrix.json": matrix},
+		`{"path":"packs/pack.json","matrix":"packs/pack.matrix.json"}`)
+
+	report, document, failure := loaded.Suggest(SuggestOptions{ID: "expense", BaseRow: "array", Max: MaxCandidatesUnset}, "packs suggest")
+	if failure != nil {
+		t.Fatalf("suggest: %s: %s", failure.Code, failure.Message)
+	}
+	if len(document.Candidates) != 0 {
+		t.Fatalf("a pointer the evaluator refuses derives no candidate: %v", candidateFacts(document))
+	}
+	var placement result.SuggestionSkip
+	for _, skip := range report.Packs[0].Skipped {
+		if skip.Name == "unplaceable-pointer" {
+			placement = skip
+		}
+	}
+	if placement.Name == "" {
+		t.Fatalf("the declined placement is reported: %+v", report.Packs[0].Skipped)
+	}
+	for _, required := range []string{"RFC 6901", `(array token "00")`, "/items/00/amount"} {
+		if !strings.Contains(placement.Detail, required) {
+			t.Fatalf("the skip must name %q: %s", required, placement.Detail)
+		}
+	}
+}
+
+// One value spelled two ways is one boundary, and whether that boundary derives
+// a lattice at all must not depend on which spelling a rule declared first.
+//
+// Under the first-spelling reading, "1" and a 146-byte spelling of the same
+// value derived a whole lattice in one order — the oversize spelling never
+// looked at — and in the other derived nothing at all: no values, no absence
+// witness, only a skip. The same policy, two candidate sets, with nothing in
+// the pack to explain the difference. Both spellings are read now: the oversize
+// one is reported, the readable one derives, and the two orderings write
+// identical bytes.
+func TestAnOversizeSpellingOfOneBoundaryIsOrderIndependent(t *testing.T) {
+	oversize := "1." + strings.Repeat("0", 145)
+	if len(oversize) <= maxCandidateLiteralBytes {
+		t.Fatalf("the probe needs a spelling past the budget: %d bytes", len(oversize))
+	}
+	// Both comparisons sit in one rule under one operator, so the only thing
+	// that differs between the two runs is which spelling is declared first.
+	lattice := func(first, second string) ([]byte, []result.SuggestionSkip) {
+		set := latticeSet()
+		set.deriveValues(map[string]any{
+			"outcomes": []any{map[string]any{"id": "review"}},
+			"rules": []any{map[string]any{"id": "one", "outcome": "review", "when": map[string]any{
+				"op": "any", "conditions": []any{
+					map[string]any{"op": "fact", "path": "/p", "operator": "greater-than", "value": first},
+					map[string]any{"op": "fact", "path": "/p", "operator": "greater-than", "value": second},
+				},
+			}}},
+		})
+		encoded, err := EncodeCandidates(Candidates{CandidatesVersion: CandidatesVersion, Candidates: set.candidates})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded, set.skipped()
+	}
+	readableFirst, readableSkips := lattice("1", oversize)
+	oversizeFirst, oversizeSkips := lattice(oversize, "1")
+	if string(readableFirst) != string(oversizeFirst) {
+		t.Fatalf("reordering two spellings of one boundary must not change the bytes:\n%s\nversus\n%s", readableFirst, oversizeFirst)
+	}
+	if len(readableSkips) != 1 || len(oversizeSkips) != 1 || readableSkips[0] != oversizeSkips[0] {
+		t.Fatalf("the oversize spelling is reported in both orderings: %+v versus %+v", readableSkips, oversizeSkips)
+	}
+	if readableSkips[0].Name != "oversize-literal" {
+		t.Fatalf("the declined spelling is reported under its own name: %+v", readableSkips[0])
+	}
+	// The lattice is derived and rendered in the spelling a reviewer can read,
+	// and the unreadable one appears nowhere in the document.
+	if !strings.Contains(string(readableFirst), `"p": "1"`) {
+		t.Fatalf("the readable spelling is what the candidates carry: %s", readableFirst)
+	}
+	if strings.Contains(string(readableFirst), oversize) {
+		t.Fatalf("a value no reviewer can read is in no candidate: %s", readableFirst)
+	}
+}
+
+// --include-hugs promises the pair two decimal places finer than each literal's
+// authored precision, and this generator's step floor is 10^-6. Where the floor
+// swallows one or both of them the run says so rather than delivering something
+// narrower under the flag's name.
+func TestTheHugPairIsClampedAtTheStepFloorAndSaidSo(t *testing.T) {
+	for _, row := range []struct {
+		literal string
+		hugs    []string
+		skip    string
+	}{
+		// Under the floor: exactly the pair the flag names, two places finer.
+		{literal: "1.00", hugs: []string{"0.9999", "1.0001"}},
+		// One place off the floor: the pair lands one finer rather than two.
+		{literal: "1.00000", hugs: []string{"0.999999", "1.000001"}, skip: "clamped-hug"},
+		// At the floor: there is no finer pair to offer, and none is offered.
+		{literal: "1.000000", skip: "unavailable-hug"},
+	} {
+		pack := map[string]any{
+			"outcomes": []any{map[string]any{"id": "review"}},
+			"rules": []any{map[string]any{"id": "one", "outcome": "review", "when": map[string]any{
+				"op": "fact", "path": "/p", "operator": "greater-than", "value": row.literal,
+			}}},
+		}
+		set := hugSet()
+		set.deriveValues(pack)
+		values := map[string]string{}
+		for _, candidate := range set.candidates {
+			var facts struct {
+				P string `json:"p"`
+			}
+			if err := json.Unmarshal(candidate.Facts, &facts); err != nil {
+				t.Fatal(err)
+			}
+			values[facts.P] = candidate.Rationale
+		}
+		for _, want := range row.hugs {
+			rationale, offered := values[want]
+			if !offered {
+				t.Fatalf("literal %q must offer the hug %q: %v", row.literal, want, slices.Sorted(maps.Keys(values)))
+			}
+			if !strings.Contains(rationale, "--include-hugs") {
+				t.Fatalf("a hug says which flag asked for it: %s", rationale)
+			}
+			if (row.skip == "clamped-hug") != strings.Contains(rationale, "one place finer rather than two") {
+				t.Fatalf("a clamped hug names the distance it actually carries: %s", rationale)
+			}
+		}
+		names := []string{}
+		for _, skip := range set.skipped() {
+			names = append(names, skip.Name)
+		}
+		if row.skip == "" {
+			if len(names) != 0 {
+				t.Fatalf("literal %q declines nothing: %v", row.literal, names)
+			}
+		} else if !slices.Contains(names, row.skip) {
+			t.Fatalf("literal %q must report %q: %v", row.literal, row.skip, names)
+		}
+		// A clamped hug is a narrowing, not a decline: its pair IS derived, so
+		// its subject tail must say so rather than contradict the record body.
+		for _, skip := range set.skipped() {
+			if skip.Name == "clamped-hug" {
+				if !strings.Contains(skip.Detail, "Narrowed for: ") || strings.Contains(skip.Detail, "Not derived for: ") {
+					t.Fatalf("a clamped-hug skip narrows rather than declines: %q", skip.Detail)
+				}
+			}
+		}
+		// The floor is reported, never silently applied: at the floor the pair
+		// is absent from the values entirely.
+		if row.skip == "unavailable-hug" && len(values) != 5 {
+			t.Fatalf("literal %q offers its lattice and no hug pair: %v", row.literal, slices.Sorted(maps.Keys(values)))
+		}
+	}
+	// Without the flag neither record is opened at all: nothing was asked for,
+	// so nothing was declined.
+	plain := latticeSet()
+	plain.deriveValues(map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules": []any{map[string]any{"id": "one", "outcome": "review", "when": map[string]any{
+			"op": "fact", "path": "/p", "operator": "greater-than", "value": "1.000000",
+		}}},
+	})
+	if len(plain.skipped()) != 0 {
+		t.Fatalf("a run that asked for no hugs declines none: %+v", plain.skipped())
+	}
+}
+
+// The quantifier report is keyed to the positions a condition can occupy, not
+// to any object that looks like one. A pack carrying a condition-shaped operand
+// as DATA states no quantifier, and reporting one would say a whole dimension
+// was skipped when nothing was.
+func TestConditionShapedDataIsNotADraftQuantifier(t *testing.T) {
+	for _, row := range []struct {
+		name      string
+		when      string
+		quantifer bool
+	}{
+		{
+			name: "a quantifier-shaped operand is data",
+			when: `{"op":"fact","path":"/expense/amountUsd","operator":"equals",
+			        "value":{"op":"exists","path":"/lines","where":{"op":"fact","path":"/amount","operator":"greater-than","value":"1"}}}`,
+		},
+		{
+			name:      "a quantifier at a condition position is a quantifier",
+			when:      `{"op":"exists","path":"/lines","where":{"op":"fact","path":"/amount","operator":"greater-than","value":"1"}}`,
+			quantifer: true,
+		},
+		{
+			name:      "and so is one nested under all, any, or not",
+			when:      `{"op":"all","conditions":[{"op":"not","condition":{"op":"every","path":"/lines","where":{"op":"fact","path":"/amount","operator":"greater-than","value":"1"}}}]}`,
+			quantifer: true,
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			pack := strings.Replace(thresholdPack,
+				`{"op": "fact", "path": "/expense/amountUsd", "operator": "greater-than", "value": "5000"}`,
+				row.when, 1)
+			loaded := suggestProject(t, pack, nil, `{"path":"packs/pack.json"}`)
+			report, _, failure := loaded.Suggest(SuggestOptions{Max: MaxCandidatesUnset}, "packs suggest")
+			if failure != nil {
+				t.Fatalf("suggest: %s", failure.Message)
+			}
+			reported := false
+			for _, skip := range report.Packs[0].Skipped {
+				if skip.Name == "draft-rfc-quantifiers" {
+					reported = true
+				}
+			}
+			if reported != row.quantifer {
+				t.Fatalf("quantifier reported=%v, want %v: %+v", reported, row.quantifer, report.Packs[0].Skipped)
+			}
+		})
+	}
+}
+
+// A compared literal or operand no reviewer can read derives no candidate and
+// is reported: a candidate would repeat it in an id, in a rationale, and in a
+// facts document, and a value nobody can read is a candidate nobody can review.
+func TestAnOversizeLiteralAndOperandAreReportedRatherThanRendered(t *testing.T) {
+	oversize := strings.Repeat("7", maxCandidateLiteralBytes+1)
+	pack := map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules": []any{
+			map[string]any{"id": "ordered", "outcome": "review", "when": map[string]any{
+				"op": "fact", "path": "/p", "operator": "greater-than", "value": oversize,
+			}},
+			map[string]any{"id": "member", "outcome": "review", "when": map[string]any{
+				"op": "fact", "path": "/q", "operator": "equals", "value": oversize,
+			}},
+		},
+	}
+	set := latticeSet()
+	set.deriveValues(pack)
+	set.deriveMembers(pack)
+	if len(set.candidates) != 0 {
+		t.Fatalf("no candidate renders a value past the budget: %v", candidateFacts(Candidates{Candidates: set.candidates}))
+	}
+	skips := set.skipped()
+	if len(skips) != 1 || skips[0].Name != "oversize-literal" {
+		t.Fatalf("both halves are reported under one name: %+v", skips)
+	}
+	for _, required := range []string{strconv.Itoa(maxCandidateLiteralBytes), "/p", "/q"} {
+		if !strings.Contains(skips[0].Detail, required) {
+			t.Fatalf("the skip names the bound and both subjects: %s", skips[0].Detail)
+		}
+	}
+	if strings.Contains(skips[0].Detail, oversize) {
+		t.Fatalf("a value no reviewer can read is not repeated in the report: %s", skips[0].Detail)
+	}
+}
+
+// The negative witness is an ABSENCE and never an invented non-member. Every
+// value a membership candidate places is a value the pack document itself
+// carries, which is what keeps this dimension in scope where synthesizing one
+// would not be: a made-up value is the generator inventing a policy world.
+func TestNoCandidatePlacesAValueThePackDoesNotState(t *testing.T) {
+	pack := map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules": []any{
+			map[string]any{"id": "listed", "outcome": "review", "when": map[string]any{
+				"op": "fact", "path": "/tier", "operator": "in", "value": []any{"gold", "silver"},
+			}},
+			map[string]any{"id": "excluded", "outcome": "review", "when": map[string]any{
+				"op": "fact", "path": "/region", "operator": "not-equals", "value": "eu",
+			}},
+		},
+	}
+	set := latticeSet()
+	set.deriveMembers(pack)
+	set.deriveAbsences()
+	stated := map[string]bool{`{"tier":"gold"}`: true, `{"tier":"silver"}`: true, `{"region":"eu"}`: true}
+	absences := 0
+	for _, candidate := range set.candidates {
+		if strings.Contains(candidate.ID, ":absent") {
+			absences++
+			if string(candidate.Facts) != "{}" {
+				t.Fatalf("the absence witness withholds rather than invents: %s", candidate.Facts)
+			}
+			continue
+		}
+		if !stated[string(candidate.Facts)] {
+			t.Fatalf("a candidate placed a value the pack never states: %s", candidate.Facts)
+		}
+	}
+	if len(set.candidates) != len(stated)+absences || absences != 1 {
+		t.Fatalf("every stated operand derives one candidate and the negative witness is the absence: %d candidate(s)", len(set.candidates))
+	}
+	// In particular: nothing anywhere in the run is a value invented to fail the
+	// not-equals — the not-member witness is the withheld pointer.
+	if len(set.skipped()) != 0 {
+		t.Fatalf("nothing was declined in this shape: %+v", set.skipped())
+	}
+}
+
+// A declared pack this runtime cannot read derives nothing, is reported as
+// unreadable rather than as stating no comparison, and does not fail the run:
+// packs validate is the surface that fails on an unreadable declared document,
+// and duplicating that verdict here would give a generator a gate's exit code.
+func TestAnUnreadablePackIsDemotedAndNeverFailsTheRun(t *testing.T) {
+	loaded := suggestProject(t, `{ not json`, nil, `{"path":"packs/pack.json"}`)
+	report, document, failure := loaded.Suggest(SuggestOptions{Max: MaxCandidatesUnset}, "packs suggest")
+	if failure != nil {
+		t.Fatalf("an unreadable pack is not this run's failure: %s", failure.Message)
+	}
+	if len(document.Candidates) != 0 || report.Status != "skipped" {
+		t.Fatalf("nothing was derived and the run is skipped: %q %d", report.Status, len(document.Candidates))
+	}
+	entry := report.Packs[0]
+	if !entry.Unreadable {
+		t.Fatalf("the entry says the pack could not be read: %+v", entry)
+	}
+	if !strings.Contains(entry.Detail, "packs validate") {
+		t.Fatalf("the detail points at the surface that diagnoses the read: %s", entry.Detail)
+	}
+	// A document that decodes but is not an object is the same fact: nothing
+	// about its conditions is knowable either.
+	notAnObject := suggestProject(t, `"a pack document that is a string"`, nil, `{"path":"packs/pack.json"}`)
+	other, _, failure := notAnObject.Suggest(SuggestOptions{Max: MaxCandidatesUnset}, "packs suggest")
+	if failure != nil {
+		t.Fatalf("suggest: %s", failure.Message)
+	}
+	if !other.Packs[0].Unreadable {
+		t.Fatalf("a document that does not decode as an object is unreadable too: %+v", other.Packs[0])
 	}
 }

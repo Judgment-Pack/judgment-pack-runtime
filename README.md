@@ -70,7 +70,7 @@ jpack spec examples [name]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
 jpack packs validate [--id X]
 jpack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
-jpack packs suggest [--id X] [--base ROW] [--write F|-]   (candidate row INPUTS, never rows; ADR-0024)
+jpack packs suggest [--id X] [--base ROW] [--write F|-] [--max N] [--include-hugs]   (candidate row INPUTS, never rows; ADR-0024)
 jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
 jpack packs verify      (check the project against that reviewed set)
 jpack packs lint [--producers M]   (every consulted pointer has a producer; ADR-0022)

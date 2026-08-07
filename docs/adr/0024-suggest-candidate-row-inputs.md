@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-08-07
 deciders: maintainer
 ---
@@ -67,13 +67,25 @@ a real property and a bounded one, and this record claims exactly that much — 
 
 **C is refused, and the reasoning is the hinge of the whole design.** The brief offered "absent or a
 sentinel the loader refuses to score", and absence wins on two grounds. First, absence is enforced by
-machinery that already exists: `internal/project/matrix.go` refuses any row that does not declare
-exactly one of `expectedDisposition` and `expectedErrorClass`, with a message naming the missing
-work, and that refusal is not code this change adds or can relax. A sentinel would need new refusal
-code, one `if` away from being softened by a future edit. Second, and more importantly, **a sentinel
-is a slot inviting a fill, and the fill is one token.** Absence is not a slot: the author must
-*write* `kind`, `outcomeId`, `reasons`, and `handoff` from the policy text, which is a categorically
-different act from overwriting `"TODO"`.
+machinery that already exists, and a verbatim paste meets **two** refusals of it, in this order:
+
+1. A candidate carries a `rationale`, which is a member of no row. `internal/project/matrix.go`
+   decodes strictly, so the *whole matrix* is refused — "the matrix has a member this runtime does
+   not know" — before any row is examined. This is the anti-scoring layer for the generator's own
+   prose: the sentence explaining a candidate cannot ride into anything that gets scored, and it
+   cannot be mistaken for a row member the loader tolerated.
+2. With the `rationale` removed, the row declares neither expectation, and the loader refuses it by
+   name: "must declare exactly one of `expectedDisposition` and `expectedErrorClass`". That is the
+   message naming the missing work.
+
+Neither refusal is code this change adds or can relax; a sentinel would need new refusal code, one
+`if` away from being softened by a future edit. Second, and more importantly, **a sentinel is a slot
+inviting a fill, and the fill is one token.** Absence is not a slot: the reviewer must *author* the
+expectation from the policy text. What the reviewer writes for an outcome disposition is `kind`,
+`outcomeId`, `reasons`, and `handoff` — a categorically different act from overwriting `"TODO"` —
+and what the loader *enforces* is the weaker, unrelaxable "exactly one of the two". The distinction
+is deliberate: the four members are the shape of the authoring act, not a check anything performs at
+load.
 
 **D is refused, and refusing it is not a concession.** A gate on the provenance marker is defeated by
 deleting one member — a *worse* affordance than the sentinel this record already refuses — and it
@@ -127,9 +139,11 @@ Settled determinations:
   document was shaped to trip refusals that already existed.
 - **Each candidate carries `id`, `origin`, `facts`, optionally `evidenceAvailability`, and a
   `rationale`, and carries NEITHER `expectedDisposition` NOR `expectedErrorClass`** — absence, not a
-  sentinel, for the reasons under option C. The `rationale` is prose about the *pack*: what the
-  candidate places and which of the pack's own declarations imply it. It never describes what an
-  evaluation would produce, because nothing here evaluates anything.
+  sentinel, for the reasons under option C. The `rationale` is prose about the *pack*: a sentence
+  saying what the candidate places and which of the pack's own declarations imply it, closed by the
+  one sentence every candidate ends with — no expectation is stated, write one from the policy text
+  or delete this candidate. It never describes what an evaluation would produce, because nothing here
+  evaluates anything. `rationale` is also what makes a verbatim paste fail first, under option C.
 - **`origin: "generated"` is provenance, reported and never gated.** `packs test` gains a per-pack
   `origins` array counting the rows by the origin each declares, rendered in both formats. It moves
   no status, no summary, and no exit code. Only rows that declare an origin are counted, so a suite
@@ -157,6 +171,13 @@ Settled determinations:
     midpoint of two terminating decimals is itself a terminating decimal and therefore itself a §2.2
     value. That is precisely why midpoints are principled where "adjacent" is not.
   - **Outer edges** at `v₁ − 1` and `vₙ + 1`, the regions beyond every band the literals partition.
+  - **`--include-hugs` carries the same `10^-6` floor**, and the floor is the design's rather than an
+    accident of it: nothing here steps finer than the unit step does. So the flag's "two decimal
+    places finer" is exact only below five authored digits; at five the pair lands one place finer
+    instead of two, and at six or more there is no finer pair to offer and none is emitted. Both
+    narrowings are **reported as declined dimensions** (`clamped-hug`, `unavailable-hug`) and the
+    clamped pair's rationale says which distance it carries, because a pair quietly delivered one
+    place finer — or quietly not delivered — reads as the pair the flag named.
 - **This is not a reversal of ADR-0023's refused option E, and the hinge is demand versus offer.**
   That record reads, in full (the quotation is delimited with `_` so the source's own emphasis
   survives inside it): _"**E is refused because the decimal domain is dense.** §2.2 decimals
@@ -173,8 +194,12 @@ Settled determinations:
   runtime invented, and where even that is unjustifiable the candidate is deleted at no cost. The
   refusal of E stands unchanged for the coverage report, which derives no far-side probe and still
   will not.
-- **Composition is one factor at a time.** Every candidate varies exactly one pointer and holds
-  every other member of the base at what the base said; a run's size is the sum over pointers and
+- **Composition is one factor or axis at a time.** A value or membership candidate varies exactly
+  one pointer and holds every other member of the base at what the base said. An evidence candidate
+  varies no pointer at all — it moves the availability axis and holds the facts at the base — and the
+  one absence candidate a run with no `--base` emits states no facts, so it withholds every consulted
+  pointer at once, because with no base there is nothing to hold the others at and a per-pointer
+  absence would be the same empty document repeated. A run's size is the sum over pointers and axes,
   never their product. The base assignment is, in order of preference: `--base <rowId>`, an
   already-reviewed row of that pack's matrix, so the candidate reads as "this reviewed row, with one
   pointer moved"; otherwise a facts document carrying **only** the varied pointer, which invents
@@ -183,7 +208,14 @@ Settled determinations:
   the generator inventing a policy world, and it is what would make a generated row look
   authoritative. Where a base states a scalar the varied pointer needs to descend through, the
   placement is refused and reported rather than overwriting it, because overwriting would change the
-  base beyond the one varied pointer.
+  base beyond the one varied pointer. An **explicit JSON null is such a scalar**: `{"expense": null}`
+  is a base that states the answer is null, so growing an object under it would edit a stated value
+  rather than vary a pointer — a member the base never mentioned is the different case, and there the
+  containers the path needs are created. A pointer naming an **array position this runtime's own RFC
+  6901 resolution does not address** is refused on the other side of the same rule: the placement
+  admits exactly the tokens the resolution admits (`evaluation.ArrayIndex`, exported for that one
+  reason), because `strconv.Atoi` reads `00` and `+0` as zero and the evaluator reads neither, so a
+  candidate placed there would sit where no condition ever looks.
 - **The non-numeric dimensions are scoped to what the pack itself states.** Each stated member of an
   `in` operand, and the operand of an `equals` or `not-equals`, gets a candidate — inventing nothing.
   The negative witness is an **absence**: the pointer simply not present, which is a stated
@@ -201,7 +233,12 @@ Settled determinations:
   through `all`, `any`, and `not`, exactly as ADR-0023's does, so a comparison inside a `where` or an
   `at` derives no candidate — and an element-relative pointer has no place in a flat facts document
   to derive one at. A pack stating one is reported with the dimension named, on ADR-0022's
-  skipped-not-passed precedent, never silently derived around.
+  skipped-not-passed precedent, never silently derived around. The detection is keyed to the
+  quantifier operator names **and to the positions a condition can occupy**, over the same
+  enumeration: a condition-shaped object carried as an operand *value* is data, and reporting a
+  quantifier for it would announce a skipped dimension where nothing was skipped — and, in
+  `packs lint`, would skip the fact half of a pack that states no quantifier, leaving a genuinely
+  unproduced pointer unreported behind it.
 - **`evaluation.DecimalString` is a new export, because `DecimalKey` cannot render.** `DecimalKey`
   returns `big.Rat`'s canonical string — `"81/2"` for 40.5 — which is an *identity* key and a
   spelling §7.4 declines to compare. Emitting a derived value needs a §2.2 writer:
@@ -239,9 +276,12 @@ Settled determinations:
   carry both; when the document goes to stdout the **report goes to stderr**, so a piped stdout is
   exactly the document's bytes and the skipped dimensions are still stated. Emitting the document and
   swallowing the report would be silence over a gap, which is what ADR-0012's demotion discipline
-  refuses. Provenance lives in the report and not in the document: the document exists to
-  be edited into a matrix, so a provenance member inside it would either be pasted into a row that
-  has no place for it or be silently dropped. A pack **digest** in the document was considered for
+  refuses. The **pack's** provenance lives in the report and not in the document — which document was
+  read, at which identity and version — because the document exists to be edited into a matrix, so a
+  member naming the pack would either be pasted into a row that has no place for it or be silently
+  dropped. The candidate's own `origin` is the exception and travels *in* the document, because
+  `origin` is a member a row carries: it survives the edit, which is precisely what makes the count
+  below possible. A pack **digest** in the document was considered for
   PR #94's replay-tuple discipline and refused: it would add a staleness failure mode that nothing
   enforces to a file whose whole purpose is to be edited and thrown away.
 - **The run has no verdict and the exit code is neutral.** A pack that derives nothing is reported
@@ -249,7 +289,12 @@ Settled determinations:
   `packs validate` pointed at, because duplicating that verdict here would give a generator a gate's
   exit code. Past `--max` (500 by default) the run **refuses rather than truncates**, naming the
   flag: a truncated candidate set looks exactly like a complete one, and a reviewer cannot tell that
-  the dimensions past the cut were never offered. A **non-positive `--max` is refused**, not read as
+  the dimensions past the cut were never offered. The cap is **charged as candidates are composed**,
+  not read off the finished document: a cap checked at the end bounds what is returned and nothing
+  about the work done to reach it, which would make "lower `--max`" advice that changes no cost. So
+  the run stops deriving the moment the count a caller asked for is reached, and refuses there —
+  naming the cap rather than a total, because the total is exactly what a run stopped at the cap did
+  not go on to find out. A **non-positive `--max` is refused**, not read as
   the default: a run asked for at most zero candidates was asked for nothing, and answering it with
   five hundred is the silent substitution this family refuses everywhere else. Only an explicit unset
   sentinel means "state no bound of my own", and no command line produces it, because `--max` is
@@ -263,19 +308,45 @@ Settled determinations:
   containers deep wrapping very many one-character tokens is legal on every §2.1 carrier bound,
   under a megabyte composed, and hundreds of megabytes written. A budget charged compact would admit
   exactly that document. The budget sits on `MaxMatrixBytes`' own footing and is **charged as each
-  candidate is composed** rather than measured once the document is whole, so the bytes are never
-  accumulated in the first place and the refusal fires before a document that size exists. Crossing
-  it refuses the run whole — naming the measured size, the budget, and the two remedies, a lower
-  `--max` or a narrower `--base` row — and writes nothing and truncates nothing, for exactly the
-  reason `--max` does not truncate.
+  candidate is composed** rather than measured once the document is whole: at most one candidate's
+  encoding is held while it is measured — the encoder materializes that one in order to indent it,
+  and the counter it is written through keeps nothing — so the document's own bytes are never
+  accumulated and the refusal fires before a document that size exists. What the refusal names is a
+  **bound and not a measurement**, and it says so: each candidate is charged its written encoding
+  plus a fixed 128-byte envelope for the framing around it, deliberately more than that framing
+  costs, because a byte budget that under-charges is the only kind that fails. Crossing it refuses
+  the run whole — naming that bound, the budget, and what each remedy actually does: a narrower
+  `--base` row is what lets a run of this shape finish, and a lower `--max` stops the derivation
+  earlier at the cost of a refusal naming the cap instead. It writes nothing and truncates nothing,
+  for exactly the reason `--max` does not truncate.
 - **A compared literal or operand longer than 128 bytes derives no candidate, and is reported.** §2.1
   bounds an authored string only at a megabyte, and ADR-0023 already determined that a report
   repeating such a string is a size defect; a *candidate* would repeat it in an id, in a rationale,
   and in a facts document. A value no reviewer can read is a candidate no reviewer can review, which
-  is this surface's whole purpose.
-- **The output is deterministic.** No clock is read and no map is ranged over: order is
-  first-occurrence walk order across pointers and numeric order within one, and object members are
-  rendered in the encoder's own sorted order. Two runs over an unchanged pack write identical bytes,
+  is this surface's whole purpose. The bound is applied over **every spelling** a boundary's sites
+  authored, on `groupStepPrecision`'s reasoning: one value spelled `"1"` in one rule and with a
+  hundred and forty trailing zeroes in another is one boundary, so reading the bound off the
+  first-declared spelling would make reordering those two rules decide whether the pointer derives a
+  lattice at all. The oversize spelling is reported either way; the readable one still derives, and
+  the candidates render in it.
+- **Three further refusals, each reported under its own name.** They are recorded here because a
+  refusal a record does not name is a behavior nobody agreed to:
+  - **The root pointer.** A condition may compare the whole facts document at `""`, and the reason
+    for refusing is *replacement*, not addressability: a facts document CAN be a scalar the empty
+    pointer selects, and a row can carry one. Placing there would replace the whole document with
+    that one value, leaving no base assignment for the candidate to hold the pack's other pointers
+    at, so the one-factor-at-a-time rule could not be stated of it. A path that is neither empty nor
+    rooted at `/` is refused beside it, because RFC 6901 resolves it against nothing.
+  - **A consulted pointer longer than 128 bytes**, on the literal bound's own reasoning: the pointer
+    is repeated in the candidate's id and in its rationale.
+  - **A declared evidence requirement whose id is empty or longer than 128 bytes.** Neither can be
+    named in an `evidenceAvailability` a reviewer could check, so the axis is reported rather than
+    silently left out.
+- **The output is deterministic.** No clock is read, and no range over a map decides anything a run
+  writes: the maps in the derivation are looked up in or copied through, the one place a map's keys
+  become output sorts them first (the `origins` count), order is otherwise first-occurrence walk
+  order across pointers and numeric order within one, and object members are rendered in the
+  encoder's own sorted order. Two runs over an unchanged pack write identical bytes,
   so a re-run in the middle of a review produces no diff to explain.
 - **This record amends nothing in ADR-0014, and generated rows get no special credit.** ADR-0014's
   determinations govern *witnesses*, and a candidate has no expectation to witness with — the
@@ -298,8 +369,8 @@ what this design does, so no reader takes a safeguard for a solution.
 
 **What resists it.** The generator never runs the evaluator, so its output contains no evaluator
 product — a real but bounded property that declines to *shorten* the loop rather than closing it.
-The expectation is absent rather than sentinel, so four members must be written and none can be
-overwritten. One factor at a time, with no invented base, keeps each candidate's point legible; a
+The expectation is absent rather than sentinel, so it must be authored — four members for an
+outcome disposition — and there is nothing to overwrite. One factor at a time, with no invented base, keeps each candidate's point legible; a
 reviewable candidate is one somebody can actually refuse. And `origin` survives into the result
 payload and into a rendered count, so a suite where 40 of 45 rows declare a generated origin is
 visible to a reviewer and to CI.

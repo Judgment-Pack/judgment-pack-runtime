@@ -997,12 +997,19 @@ type SuggestionSkip struct {
 // produced and every dimension it did not. Status is "suggested" when the pack
 // derived at least one candidate and "skipped" when it derived none — never
 // "passed", because nothing here was checked.
+//
+// Unreadable separates the two ways of deriving nothing, which are different
+// facts and must not be reported as one. A pack this runtime read and found no
+// derivable comparison in states no such comparison; a pack it could not read
+// states nothing knowable at all, and a report that said "no comparison" of it
+// would be asserting something about a document nobody parsed.
 type PackSuggestionEntry struct {
 	ID          string           `json:"id"`
 	PackID      string           `json:"packId"`
 	PackVersion string           `json:"packVersion"`
 	Path        string           `json:"path"`
 	Status      string           `json:"status"`
+	Unreadable  bool             `json:"unreadable,omitempty"`
 	Candidates  int              `json:"candidates"`
 	Skipped     []SuggestionSkip `json:"skipped,omitempty"`
 	Detail      string           `json:"detail,omitempty"`

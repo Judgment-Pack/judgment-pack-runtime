@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -82,16 +83,38 @@ func TestSuggestClosesTheBoundaryOnlyAfterAHumanWritesTheExpectation(t *testing.
 		t.Fatalf("a candidate document is not a matrix: exit=%d %s", code, stdout)
 	}
 
-	// Layer 2: pasting a candidate into a cases array is refused with the
-	// message that names the missing work — a refusal that predates this
+	// Layer 2: the emitted candidate pasted VERBATIM into a cases array carries
+	// its rationale, which is a member of no row, so the loader refuses the
+	// whole matrix for it before any row is examined. This is the first thing a
+	// person copying out of the file actually meets.
+	verbatim := map[string]any{}
+	if encodedCandidate, err := json.Marshal(at); err != nil {
+		t.Fatal(err)
+	} else if err := json.Unmarshal(encodedCandidate, &verbatim); err != nil {
+		t.Fatal(err)
+	}
+	casesWith := func(row map[string]any) string {
+		encoded, err := json.Marshal(map[string]any{"matrixVersion": "1", "cases": []map[string]any{row}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return writeProjectFixture(t, `{"configVersion":"1","packs":{"expense":{"path":"packs/expense-0.1.0.pack.json","matrix":"packs/pasted.json"}}}`,
+			map[string]string{
+				"packs/expense-0.1.0.pack.json": thresholdPack,
+				"packs/pasted.json":             string(encoded),
+			})
+	}
+	code, stdout, _ = runTest(t, []string{"packs", "test", "--config", casesWith(verbatim)}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, "member this runtime does not know") ||
+		!strings.Contains(stdout, "rationale") {
+		t.Fatalf("a verbatim paste is refused first for the rationale: exit=%d %s", code, stdout)
+	}
+
+	// Layer 3: with the rationale deleted the row declares neither expectation,
+	// and THAT is the refusal naming the missing work — one that predates this
 	// generator entirely.
-	pasted := `{"matrixVersion":"1","cases":[{"id":"at-threshold","origin":"generated","facts":{"expense":{"amount":"5000"}}}]}`
-	pastedProject := writeProjectFixture(t, `{"configVersion":"1","packs":{"expense":{"path":"packs/expense-0.1.0.pack.json","matrix":"packs/pasted.json"}}}`,
-		map[string]string{
-			"packs/expense-0.1.0.pack.json": thresholdPack,
-			"packs/pasted.json":             pasted,
-		})
-	code, stdout, _ = runTest(t, []string{"packs", "test", "--config", pastedProject}, "")
+	delete(verbatim, "rationale")
+	code, stdout, _ = runTest(t, []string{"packs", "test", "--config", casesWith(verbatim)}, "")
 	if code != result.ExitInvalid || !strings.Contains(stdout, "must declare exactly one of expectedDisposition and expectedErrorClass") {
 		t.Fatalf("a candidate is not a row until an expectation is authored: exit=%d %s", code, stdout)
 	}
@@ -405,5 +428,187 @@ func TestSuggestRefusesADeeplyNestedBaseRowAndCreatesNoFile(t *testing.T) {
 	}
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
 		t.Fatalf("a refused run creates nothing at the destination: %v", err)
+	}
+}
+
+// The alias can sit on the DECLARATION's side too, and resolving only the
+// destination moves the blind spot rather than closing it.
+//
+// Here the configuration names its matrix through a symlink of its own —
+// "alias/expense.matrix.json", where alias points at packs — and the caller
+// writes at the real spelling, "packs/expense.matrix.json". Lexically the two
+// share no path; the file does not exist yet, so there are no inodes for
+// sameFile to compare; and what lands there is the declared matrix, missing
+// until the generator created it. Both ends are resolved before they are
+// compared, so the refusal reads the same from either side.
+func TestSuggestRefusesADeclaredDocumentDeclaredThroughAnAlias(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation is privileged on Windows")
+	}
+	configPath := writeProjectFixture(t, `{"configVersion":"1","packs":{"expense":{
+	  "path":"packs/expense-0.1.0.pack.json",
+	  "matrix":"alias/expense.matrix.json"
+	}}}`, map[string]string{"packs/expense-0.1.0.pack.json": thresholdPack})
+	root := filepath.Dir(configPath)
+	if err := os.Symlink(filepath.Join(root, "packs"), filepath.Join(root, "alias")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	declared := filepath.Join(root, "packs", "expense.matrix.json")
+	if _, err := os.Stat(declared); !os.IsNotExist(err) {
+		t.Fatalf("the declared matrix must not exist for this probe: %v", err)
+	}
+
+	code, _, stderr := runTest(t, []string{"packs", "suggest", "--config", configPath, "--write", declared}, "")
+	if code != result.ExitInvalid || !strings.Contains(stderr, `the matrix of "expense"`) {
+		t.Fatalf("a matrix declared through an alias is the same file: exit=%d %s", code, stderr)
+	}
+	if _, err := os.Stat(declared); !os.IsNotExist(err) {
+		t.Fatalf("nothing was written at the declared matrix: %v", err)
+	}
+	// Writing through the alias's own spelling is refused too — the same file
+	// under the name the configuration did use.
+	code, _, stderr = runTest(t, []string{"packs", "suggest", "--config", configPath, "--write",
+		filepath.Join(root, "alias", "expense.matrix.json")}, "")
+	if code != result.ExitInvalid || !strings.Contains(stderr, `the matrix of "expense"`) {
+		t.Fatalf("the declared spelling is refused as well: exit=%d %s", code, stderr)
+	}
+	// And a destination beside it that nothing declares is still written: this
+	// check answers about declared documents, never about spellings it dislikes.
+	fresh := filepath.Join(root, "packs", "candidates.json")
+	if code, _, stderr = runTest(t, []string{"packs", "suggest", "--config", configPath, "--write", fresh}, ""); code != result.ExitSuccess {
+		t.Fatalf("an undeclared destination is written: exit=%d %s", code, stderr)
+	}
+}
+
+// A declared graph and a declared rows document are law on the same footing as
+// a pack and its matrix, and a generated file must not land on either.
+func TestSuggestRefusesToWriteOverADeclaredGraphOrItsRows(t *testing.T) {
+	graphDocument := `{"formatVersion":"1","id":"g","version":"0.1.0","nodes":{"a":{"pack":"expense"}},"edges":[],"result":"a"}`
+	for name, declaration := range map[string]struct{ config, target, owner string }{
+		"the graph itself": {
+			config: `"graphs":{"g":{"path":"graphs/g.json"}}`,
+			target: "graphs/g.json",
+			owner:  `the graph "g"`,
+		},
+		"its rows document": {
+			config: `"graphs":{"g":{"path":"graphs/g.json","rows":"graphs/g.rows.json"}}`,
+			target: "graphs/g.rows.json",
+			owner:  `the rows of "g"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			configPath := writeProjectFixture(t,
+				`{"configVersion":"2","packs":{"expense":{"path":"packs/expense-0.1.0.pack.json"}},`+declaration.config+`}`,
+				map[string]string{
+					"packs/expense-0.1.0.pack.json": thresholdPack,
+					"graphs/g.json":                 graphDocument,
+				})
+			target := filepath.Join(filepath.Dir(configPath), filepath.FromSlash(declaration.target))
+			code, _, stderr := runTest(t, []string{"packs", "suggest", "--config", configPath, "--write", target}, "")
+			if code != result.ExitInvalid || !strings.Contains(stderr, declaration.owner) {
+				t.Fatalf("%s is declared law and is refused by name: exit=%d %s", name, code, stderr)
+			}
+			if !strings.Contains(stderr, "nothing was written") {
+				t.Fatalf("the refusal says nothing was written: %s", stderr)
+			}
+		})
+	}
+}
+
+// A remote destination is refused before a project is even loaded, on the same
+// footing every other surface of this runtime refuses one: this runtime opens
+// local files, and a path it cannot hold to its own rules is not a path it
+// writes to.
+func TestSuggestRefusesARemoteWritePath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("remote pathnames are a Windows UNC concept; the refusal is unreachable elsewhere")
+	}
+	configPath := greenSuiteWithUnwitnessedBoundary(t, "")
+	code, _, stderr := runTest(t, []string{"packs", "suggest", "--config", configPath, "--write", `\\server\share\candidates.json`}, "")
+	if code != result.ExitInvocation || !strings.Contains(stderr, "Remote filesystem output paths are not supported") {
+		t.Fatalf("a remote destination is refused: exit=%d %s", code, stderr)
+	}
+}
+
+// A declared pack this runtime could not read derives nothing, and "nothing"
+// means something different from a pack that was read and states no derivable
+// comparison. The headline says which: a report claiming no pack states a
+// comparison would be asserting something about a document nobody parsed.
+func TestSuggestSaysWhenItDerivedNothingBecauseNothingCouldBeRead(t *testing.T) {
+	configPath := writeProjectFixture(t, `{"configVersion":"1","packs":{"broken":{"path":"packs/broken.json"}}}`,
+		map[string]string{"packs/broken.json": `{ not json`})
+
+	code, stdout, stderr := runTest(t, []string{"packs", "suggest", "--config", configPath}, "")
+	if code != result.ExitSuccess {
+		t.Fatalf("an unreadable pack is not this generator's verdict: exit=%d %s", code, stderr)
+	}
+	if !strings.Contains(stdout, "could not be read") {
+		t.Fatalf("the headline distinguishes a pack nobody could read: %s", stdout)
+	}
+	if strings.Contains(stdout, "no selected pack's conditions state a comparison") {
+		t.Fatalf("what an unreadable pack states is unknown, not known to be nothing: %s", stdout)
+	}
+	if !strings.Contains(stdout, "packs validate") {
+		t.Fatalf("the detail points at the surface that diagnoses the read: %s", stdout)
+	}
+	// The machine payload carries the same distinction as a member rather than
+	// leaving a consumer to parse the sentence.
+	_, stdout, _ = runTest(t, []string{"packs", "suggest", "--config", configPath, "--format", "json"}, "")
+	var payload result.PackSuggestion
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Packs) != 1 || !payload.Packs[0].Unreadable {
+		t.Fatalf("the entry says the pack could not be read: %+v", payload.Packs)
+	}
+
+	// The contrast: a pack that reads perfectly well and states no ordered or
+	// point comparison gets the other headline, and no unreadable marker.
+	bare := `{
+	  "specVersion": "0.2.0-draft", "id": "https://example.invalid/judgment-packs/bare", "version": "0.1.0",
+	  "title": "Bare", "description": "A pack whose rules compare nothing.",
+	  "decision": {"question": "Anything?", "subject": "thing"},
+	  "outcomes": [{"id": "review", "label": "Review"}],
+	  "fallbackOutcome": "review"
+	}`
+	bareConfig := writeProjectFixture(t, `{"configVersion":"1","packs":{"bare":{"path":"packs/bare.json"}}}`,
+		map[string]string{"packs/bare.json": bare})
+	_, stdout, _ = runTest(t, []string{"packs", "suggest", "--config", bareConfig}, "")
+	if !strings.Contains(stdout, "no selected pack's conditions state a comparison") {
+		t.Fatalf("a pack that was read and states nothing gets the other headline: %s", stdout)
+	}
+	if strings.Contains(stdout, "could not be read") {
+		t.Fatalf("a readable pack is not reported unreadable: %s", stdout)
+	}
+}
+
+// The emitted document is refused by the OTHER matrix loader too. A candidates
+// file is not a graph matrix either, and the refusal is the graph loader's own
+// strict decode — code that knows nothing about this generator.
+func TestAnEmittedCandidateDocumentIsNotAGraphMatrixEither(t *testing.T) {
+	configPath := greenSuiteWithUnwitnessedBoundary(t, "")
+	code, emitted, stderr := runTest(t, []string{"packs", "suggest", "--config", configPath, "--write", "-"}, "")
+	if code != result.ExitSuccess {
+		t.Fatalf("exit=%d %s", code, stderr)
+	}
+	if _, failure := graph.LoadRows([]byte(emitted), "candidates.json"); failure == nil ||
+		failure.Code != "JPS-GRAPH-ROWS-SHAPE" || !strings.Contains(failure.Message, "member this runtime does not know") {
+		t.Fatalf("a candidate document must not load as a graph matrix: %+v", failure)
+	}
+	// And one candidate lifted into a graph matrix's cases array is refused as
+	// well: it carries no inputs, no expectation, and a rationale no row knows.
+	var document project.Candidates
+	if err := json.Unmarshal([]byte(emitted), &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Candidates) == 0 {
+		t.Fatal("the run must have emitted something for this probe")
+	}
+	lifted, err := json.Marshal(map[string]any{"graphMatrixVersion": "1", "cases": document.Candidates[:1]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, failure := graph.LoadRows(lifted, "lifted.json"); failure == nil {
+		t.Fatal("a candidate is not a graph row either")
 	}
 }

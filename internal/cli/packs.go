@@ -86,22 +86,28 @@ func (a *App) packsSuggestCommand() *cobra.Command {
 		Long: "Read the packs a project declares and emit candidate test-row inputs -- facts documents at the " +
 			"values each pack's own conditions imply -- as a candidatesVersion/candidates document, never as matrix " +
 			"rows. Each candidate carries an id, origin \"generated\", a facts document, sometimes an " +
-			"evidenceAvailability, and one sentence saying what it places and why the pack implies it. It carries " +
-			"NEITHER expectedDisposition NOR expectedErrorClass, and that absence is the point: an expectation is " +
-			"the member that says what the pack should decide, deriving one from the pack would be the circular " +
-			"oracle, and packs test already refuses any row declaring neither -- so a candidate pasted into a cases " +
-			"array fails closed with a message naming the work still to do. The emitted document is not a matrix " +
-			"either; a jpack.json matrix path aimed at one is refused by the loader twice over. Per pointer the " +
-			"values are the compared literal itself, one unit either side of it at the precision the pack authored " +
-			"it in, the midpoints between adjacent literals, and one unit outside the outermost ones; every " +
-			"candidate varies exactly ONE pointer and holds the rest at a base assignment, so a run's size is the " +
-			"sum over pointers and never their product. --base names an already-reviewed row of that pack's matrix " +
+			"evidenceAvailability, and a rationale: a sentence saying what it places and why the pack implies it, " +
+			"closed by the sentence every candidate ends with -- no expectation is stated, write one or delete the " +
+			"candidate. It carries NEITHER expectedDisposition NOR expectedErrorClass, and that absence is the " +
+			"point: an expectation is the member that says what the pack should decide, and deriving one from the " +
+			"pack would be the circular oracle. Nothing it emits can be scored, through refusals the matrix loader " +
+			"already makes: a candidate pasted VERBATIM into a cases array is refused for the rationale it carries, " +
+			"which is a member of no row, and with that removed it is refused again -- by name -- for declaring " +
+			"neither expectation. The emitted document is not a matrix either; a jpack.json matrix path aimed at " +
+			"one is refused by the loader twice over. Per pointer the values are the compared literal itself, one " +
+			"unit either side of it at the precision the pack authored it in, the midpoints between adjacent " +
+			"literals, and one unit outside the outermost ones; composition is one factor or axis at a time -- a " +
+			"value or membership candidate moves ONE pointer and holds the rest at a base assignment, an evidence " +
+			"candidate moves no pointer at all -- so a run's size is the sum over pointers and never their " +
+			"product. --base names an already-reviewed row of that pack's matrix " +
 			"to vary from, which is what makes a candidate read as \"this reviewed row, with one pointer moved\"; " +
 			"without it the facts carry only the varied pointer. It runs no evaluator, derives no expectation, " +
 			"decides nothing, and moves no exit code: a value the policy text does not decide is a candidate you " +
-			"delete, and deleting one is a first-class outcome of reviewing this file. Nothing is written unless " +
-			"--write names a new file or -, and a destination this configuration declares as a pack, a matrix, a " +
-			"graph, or a rows document is refused.",
+			"delete, and deleting one is a first-class outcome of reviewing this file. --format renders the report " +
+			"about the run, on stdout, or on stderr when --write - takes stdout for the document; --write - and " +
+			"--format json are refused together, because one stream cannot carry two documents. Nothing is written " +
+			"unless --write names a new file or -, and a destination this configuration declares as a pack, a " +
+			"matrix, a graph, or a rows document is refused.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			const commandName = "packs suggest"
@@ -183,7 +189,7 @@ func (a *App) packsSuggestCommand() *cobra.Command {
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().StringVar(&writeTarget, "write", writeTarget, "write the candidate document to a new file or -; omit to report the derivation without emitting it")
 	command.Flags().IntVar(&maximum, "max", maximum, "refuse, rather than truncate, past this many candidates in one run; must be a positive count")
-	command.Flags().BoolVar(&includeHugs, "include-hugs", includeHugs, "also emit the pair two decimal places finer than each literal's authored precision")
+	command.Flags().BoolVar(&includeHugs, "include-hugs", includeHugs, "also emit the pair two decimal places finer than each literal's authored precision, clamped at 10^-6: a literal authored at five digits is hugged one place finer instead of two, one at six or more gets no pair, and the report names both")
 	return command
 }
 

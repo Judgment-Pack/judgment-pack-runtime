@@ -24,12 +24,25 @@ import (
 // should decide, and deriving one from the pack would be the circular oracle
 // ADR-0014 names. So a candidate carries neither expectedDisposition nor
 // expectedErrorClass, and their ABSENCE rather than a placeholder is what
-// enforces it: LoadMatrix already refuses a row that declares neither
-// (matrix.go, "must declare exactly one of expectedDisposition and
-// expectedErrorClass"), so a candidate pasted into a cases array fails closed
-// with a message naming the missing work, through machinery no edit here can
-// relax. A sentinel would instead be a slot inviting a fill, and the fill is
-// one token; absence makes an author write four members from the policy text.
+// enforces it — through two refusals LoadMatrix already makes, in this order:
+//
+//  1. A candidate pasted VERBATIM into a cases array carries a rationale, which
+//     is a member of no row. Strict decoding refuses the whole matrix for it
+//     ("a member this runtime does not know"), before any row is examined. That
+//     refusal is not the missing-expectation one and is not a lesser one: it is
+//     the layer that keeps the generator's own prose — a sentence about the
+//     pack, never about what an evaluation would produce — out of anything that
+//     could be scored.
+//  2. With the rationale removed, the row declares neither expectation, and
+//     LoadMatrix refuses it by name ("must declare exactly one of
+//     expectedDisposition and expectedErrorClass"), which is the message that
+//     names the work still to do.
+//
+// Neither refusal is code this file adds or can relax. A sentinel would instead
+// be a slot inviting a fill, and the fill is one token; absence makes a reviewer
+// author the expectation from the policy text — an outcome disposition is kind,
+// outcomeId, reasons, and handoff, which is what a reviewer WRITES, while what
+// the loader ENFORCES is the weaker and unrelaxable "exactly one of the two".
 //
 // The emitted document is not a matrix either. Its root members are
 // candidatesVersion and candidates, so a jpack.json matrix path aimed at a raw
@@ -77,9 +90,10 @@ const (
 	// containers deep wrapping very many tiny tokens is under a megabyte compact
 	// and hundreds of megabytes written, passes every carrier bound on the way
 	// in, and would sail through a budget charged compact. The budget is charged
-	// as each candidate is composed rather than measured at the end, so the
-	// bytes are never held in the first place and the refusal fires before any
-	// such document exists.
+	// as each candidate is composed rather than measured at the end, so at most
+	// one candidate's encoding exists at a time — the encoder materializes that
+	// one to indent it — and the refusal fires before the whole document it is
+	// about could exist.
 	DefaultMaxOutputBytes = 16 << 20
 	// maxStepPrecision bounds the exponent of the one-unit step. A literal
 	// authored at finer precision than this steps at 10^-6 instead, and the
@@ -124,9 +138,10 @@ const (
 )
 
 // Candidates is the document jpack packs suggest emits. It is deliberately NOT
-// a Matrix: the root members differ, so LoadMatrix refuses it, and its rows
-// carry no expectation, so LoadMatrix refuses those too if they are lifted into
-// a cases array unchanged. Both refusals already existed (ADR-0024).
+// a Matrix: the root members differ, so LoadMatrix refuses the document itself,
+// and a candidate lifted into a cases array is refused twice more — for the
+// rationale it carries and, once that is gone, for the expectation it does not.
+// Every one of those refusals already existed (ADR-0024).
 type Candidates struct {
 	CandidatesVersion string      `json:"candidatesVersion"`
 	Candidates        []Candidate `json:"candidates"`
@@ -167,7 +182,11 @@ type SuggestOptions struct {
 	// answered.
 	Max int
 	// IncludeHugs additionally emits the pair two decimal places finer than the
-	// authored precision. Default off, and the reason is evidential rather than
+	// authored precision, under the same 10^-maxStepPrecision floor the unit
+	// step carries: a literal authored one place off that floor is hugged one
+	// place finer rather than two, and one already at or past it has no hug pair
+	// at all. Both narrowings are reported as declined dimensions rather than
+	// delivered quietly. Default off, and the reason is evidential rather than
 	// aesthetic: the authored corpus this generator exists to complement is
 	// already saturated at that distance, so the hug mechanizes what authorship
 	// already does and the unit step supplies what it does not.
@@ -198,10 +217,13 @@ func EncodeCandidates(document Candidates) ([]byte, error) {
 // report says which packs were read, at which identities, how many candidates
 // each derived, and every dimension the derivation declined — a caller renders
 // it in the run's own format. The candidate document is the emitted artifact
-// itself, which a caller writes to a file or to stdout. Provenance lives in the
-// report rather than in the document, because the document exists to be edited
-// into a matrix and a provenance member inside it would either be pasted into a
-// row that has no place for it or be silently dropped.
+// itself, which a caller writes to a file or to stdout. The PACK's provenance —
+// which document was read, at which identity and version — lives in the report
+// rather than in the emitted file, because that file exists to be edited into a
+// matrix and a member naming the pack would either be pasted into a row that has
+// no place for it or be silently dropped. The candidate's own origin marker is
+// the exception and travels in the document, because origin IS a member a row
+// carries: it survives the edit and is what the packs test report counts.
 //
 // Nothing here evaluates anything, and the run has no verdict: a pack that
 // derives nothing is reported "skipped", never "failed", and the exit code
@@ -222,6 +244,7 @@ func (p *Project) Suggest(options SuggestOptions, command string) (result.PackSu
 		return result.PackSuggestion{}, Candidates{}, failure
 	}
 	budget := &outputBudget{limit: DefaultMaxOutputBytes}
+	count := &candidateCap{limit: maximum}
 	output := result.PackSuggestion{
 		OutputVersion:     result.OutputVersion,
 		Tool:              result.CurrentTool(),
@@ -236,13 +259,16 @@ func (p *Project) Suggest(options SuggestOptions, command string) (result.PackSu
 	}
 	document := Candidates{CandidatesVersion: CandidatesVersion, Candidates: []Candidate{}}
 	for _, packID := range selected {
-		entry, candidates := p.suggestPack(options, base, hasBase, budget, packID, p.Config.Packs[packID])
-		// The byte budget is answered the moment it is crossed, before the
-		// candidates composed so far are carried any further: a document past it
-		// is refused whole, exactly as one past --max is, because a truncated
-		// candidate set looks like a complete one however it was cut.
+		entry, candidates := p.suggestPack(options, base, hasBase, budget, count, packID, p.Config.Packs[packID])
+		// Both run-level bounds are answered the moment they are crossed, before
+		// the candidates composed so far are carried any further: a run past
+		// either is refused whole, because a truncated candidate set looks like
+		// a complete one however it was cut.
 		if budget.exceeded {
 			return result.PackSuggestion{}, Candidates{}, budget.failure()
+		}
+		if count.exceeded {
+			return result.PackSuggestion{}, Candidates{}, count.failure()
 		}
 		output.Summary.Total++
 		if entry.Status == "suggested" {
@@ -255,18 +281,56 @@ func (p *Project) Suggest(options SuggestOptions, command string) (result.PackSu
 		output.Packs = append(output.Packs, entry)
 		document.Candidates = append(document.Candidates, candidates...)
 	}
-	// Refuse rather than truncate, naming the flag: a truncated candidate set
-	// looks exactly like a complete one, and a reviewer cannot tell that the
-	// dimensions past the cut were never offered.
-	if len(document.Candidates) > maximum {
-		return result.PackSuggestion{}, Candidates{}, &Failure{
-			Code: "JPS-RESOURCE-SUGGEST-CANDIDATE-LIMIT",
-			Message: fmt.Sprintf("The selected pack(s) derive %d candidate inputs, past the %d this run allows; nothing was written. Raise --max to accept them all, or select one pack with --id — a truncated set would look exactly like a complete one.",
-				len(document.Candidates), maximum),
-			ExitCode: result.ExitInvocation,
-		}
-	}
 	return output, document, nil
+}
+
+// candidateCap bounds how many candidates one run composes, across every pack
+// the run selected.
+//
+// It is checked AS candidates are composed rather than over the finished
+// document, and the difference is not bookkeeping: a cap read at the end bounds
+// what is returned and nothing about what was done to get there, so "lower
+// --max" would be advice that changes no cost — the derivation would run to
+// completion either way and only then be refused. Charged here, the cap stops
+// the derivation at the count a caller asked for, which is what makes it a
+// bound on the work and not only on the answer.
+//
+// It refuses rather than truncates, exactly as the byte budget does. A
+// truncated candidate set looks exactly like a complete one, and a reviewer
+// cannot tell that the dimensions past the cut were never offered.
+type candidateCap struct {
+	limit int
+	used  int
+	// exceeded latches: past the cap the run is refused whole, and every later
+	// candidate is declined rather than composed.
+	exceeded bool
+}
+
+// admit records one composed candidate against the cap and reports whether the
+// run may keep it.
+func (bound *candidateCap) admit() bool {
+	if bound.exceeded {
+		return false
+	}
+	if bound.used >= bound.limit {
+		bound.exceeded = true
+		return false
+	}
+	bound.used++
+	return true
+}
+
+// failure is the one refusal a crossed cap produces. It names the cap rather
+// than a total, because the total is precisely what a run stopped at the cap
+// did not go on to find out — and a number it did not measure is not a number
+// it may report.
+func (bound *candidateCap) failure() *Failure {
+	return &Failure{
+		Code: "JPS-RESOURCE-SUGGEST-CANDIDATE-LIMIT",
+		Message: fmt.Sprintf("The selected pack(s) derive more candidate inputs than the %d this run allows; the derivation stopped at that count and nothing was written. Raise --max to accept them all, or select one pack with --id — a truncated set would look exactly like a complete one, so this refuses rather than cuts.",
+			bound.limit),
+		ExitCode: result.ExitInvocation,
+	}
 }
 
 // suggestMaximum reads one run's candidate bound, refusing a non-positive one
@@ -303,8 +367,10 @@ func suggestMaximum(stated int) (int, *Failure) {
 // what EncodeCandidates will put in the file, indentation included — because
 // indentation multiplies with nesting depth and a deep base row is therefore
 // two orders larger written than composed. The budget is charged as each
-// candidate is composed rather than measured once the document is whole, so the
-// bytes are never accumulated in the first place, and it refuses rather than
+// candidate is composed rather than measured once the document is whole: at
+// most one candidate's encoding is held while it is measured — the encoder
+// builds that one to indent it, and nothing keeps it afterwards — so the
+// document's own bytes are never accumulated, and it refuses rather than
 // truncates for the same reason --max does.
 type outputBudget struct {
 	limit int
@@ -312,9 +378,11 @@ type outputBudget struct {
 	// exceeded latches: once a run is past the budget it is refused whole, and
 	// every later candidate is declined rather than composed.
 	exceeded bool
-	// measured is what the document had reached when the budget was crossed —
-	// the size the refusal names, so a reader can see how far past it the run
-	// was rather than only that it was.
+	// measured is what the document had been charged when the budget was
+	// crossed — the bound the refusal names, so a reader can see how far past it
+	// the run was rather than only that it was. It is a charge and not a
+	// measurement: each candidate carries a fixed envelope beyond its own
+	// encoding, and the refusal words it that way.
 	measured int
 }
 
@@ -334,14 +402,21 @@ func (budget *outputBudget) charge(size int) bool {
 	return true
 }
 
-// failure is the one refusal a crossed budget produces: the size measured, the
-// budget it passed, and the two things a caller can do about it. Nothing is
-// written and nothing is truncated.
+// failure is the one refusal a crossed budget produces: the charge that crossed
+// it, the budget it passed, and the two things a caller can do about it.
+// Nothing is written and nothing is truncated.
+//
+// The number it names is a BOUND and is worded as one. Each candidate is
+// charged its own written encoding plus a fixed envelope for the array framing
+// around it, and that envelope is deliberately larger than the framing costs,
+// because a byte budget that under-charges is the only kind that fails. So the
+// charge is at least what the file would carry and generally a little more, and
+// reporting it as a measurement would state a precision the run does not have.
 func (budget *outputBudget) failure() *Failure {
 	return &Failure{
 		Code: "JPS-RESOURCE-SUGGEST-OUTPUT-BYTES",
-		Message: fmt.Sprintf("The candidate inputs derived so far measure %d bytes as this run would write them, indentation included, past the %d this run allows; nothing was written. Every candidate carries a whole facts document, so a base row that is large — or merely deeply nested, which indentation multiplies — multiplies again by the candidate count. Lower --max, or name a narrower --base row — a truncated candidate document would look exactly like a complete one.",
-			budget.measured, budget.limit),
+		Message: fmt.Sprintf("The candidate inputs derived so far would write at most %d bytes, indentation included — a bound rather than a measurement, since each candidate is charged its written encoding plus a fixed %d-byte envelope for the framing around it — past the %d this run allows; nothing was written. Every candidate carries a whole facts document, so a base row that is large — or merely deeply nested, which indentation multiplies — multiplies again by the candidate count. Lower --max to stop the derivation earlier, at the cost of a refusal that names the cap instead of this budget, or name a narrower --base row, which is what lets a run of this shape finish — a truncated candidate document would look exactly like a complete one.",
+			budget.measured, candidateEnvelopeBytes, budget.limit),
 		ExitCode: result.ExitInvocation,
 	}
 }
@@ -412,20 +487,22 @@ func (p *Project) resolveBase(options SuggestOptions) (any, bool, *Failure) {
 // judges nothing: packs validate is the surface that fails on an unreadable
 // declared document, and duplicating that verdict here would give a generator a
 // gate's exit code.
-func (p *Project) suggestPack(options SuggestOptions, base any, hasBase bool, budget *outputBudget, id string, entry Pack) (result.PackSuggestionEntry, []Candidate) {
+func (p *Project) suggestPack(options SuggestOptions, base any, hasBase bool, budget *outputBudget, count *candidateCap, id string, entry Pack) (result.PackSuggestionEntry, []Candidate) {
 	report := result.PackSuggestionEntry{ID: id, Path: entry.Path, Status: "skipped"}
 	found, data, err := p.readIdentity(entry)
 	if err != nil {
+		report.Unreadable = true
 		report.Detail = "No candidate could be derived, because the pack document could not be read; packs validate diagnoses the read itself: " + ReadFailureMessage(entry.Path, err)
 		return report, nil
 	}
 	report.PackID, report.PackVersion = found.ID, found.Version
 	pack := PackRoot(data)
 	if pack == nil {
+		report.Unreadable = true
 		report.Detail = "No candidate could be derived, because the pack document does not decode as a JSON object under this runtime's carrier rules; packs validate diagnoses it."
 		return report, nil
 	}
-	set := newCandidateSet(id, base, hasBase, options, budget)
+	set := newCandidateSet(id, base, hasBase, options, budget, count)
 	if usesQuantifiers(pack) {
 		set.skip("draft-rfc-quantifiers",
 			"The pack states a draft RFC 0008 collection quantifier. This derivation shares the coverage report's structure-keyed walk, which descends only through all, any, and not, so a comparison inside a where or an at derives no candidate — and an element-relative pointer has no place in a flat facts document to derive one at.",
@@ -446,9 +523,11 @@ func (p *Project) suggestPack(options SuggestOptions, base any, hasBase bool, bu
 }
 
 // candidateSet accumulates one pack's candidates and the dimensions its
-// derivation declined. Order is first-occurrence walk order throughout and no
-// map is ever ranged over, so two runs over one unchanged pack emit identical
-// bytes.
+// derivation declined. Order is first-occurrence walk order throughout, and
+// every ordering that reaches the output is derived from a slice or sorted
+// before it is emitted — the maps here are copied through or looked up in, and
+// no range over one decides what a run writes — so two runs over one unchanged
+// pack emit identical bytes.
 type candidateSet struct {
 	decisionID string
 	base       any
@@ -464,13 +543,17 @@ type candidateSet struct {
 	// budget is the run's own, shared with every other pack of the same run:
 	// the bound is on one document, and the document is one run's whole output.
 	budget *outputBudget
+	// count is the run's candidate cap, shared for the same reason: --max
+	// bounds one run's output and not one pack's share of it.
+	count *candidateCap
 }
 
 // newCandidateSet opens one pack's accumulator. It is the only construction
-// there is, so no set can exist without the run's byte budget attached — a set
-// with none would compose an unbounded document, and the bound is the property
-// DefaultMaxOutputBytes exists to hold.
-func newCandidateSet(decisionID string, base any, hasBase bool, options SuggestOptions, budget *outputBudget) *candidateSet {
+// there is, so no set can exist without the run's two bounds attached — a set
+// with neither would compose an unbounded document over an unbounded
+// derivation, and those bounds are what DefaultMaxOutputBytes and --max exist
+// to hold.
+func newCandidateSet(decisionID string, base any, hasBase bool, options SuggestOptions, budget *outputBudget, count *candidateCap) *candidateSet {
 	return &candidateSet{
 		decisionID: decisionID,
 		base:       base,
@@ -478,7 +561,16 @@ func newCandidateSet(decisionID string, base any, hasBase bool, options SuggestO
 		options:    options,
 		ids:        map[string]bool{},
 		budget:     budget,
+		count:      count,
 	}
+}
+
+// stopped reports whether this run has crossed one of its bounds, which every
+// derivation loop asks before composing another candidate. Past either bound
+// the run is refused whole, so the work after it is work whose product nobody
+// will see.
+func (set *candidateSet) stopped() bool {
+	return set.budget.exceeded || set.count.exceeded
 }
 
 // skipRecord is one declined dimension: what it is, why, and the subjects it
@@ -504,6 +596,13 @@ func (set *candidateSet) skip(name, reason, subject string) {
 	}
 }
 
+// skipTails names the subject-list tail per skip kind where the default would
+// be false: a clamped-hug pointer's pair IS derived, at a narrowed distance,
+// so "Not derived for" would contradict the record's own body.
+var skipTails = map[string]string{
+	"clamped-hug": " Narrowed for: ",
+}
+
 // skipped renders the declined dimensions for the report, each naming the first
 // few subjects and counting the rest.
 func (set *candidateSet) skipped() []result.SuggestionSkip {
@@ -514,7 +613,11 @@ func (set *candidateSet) skipped() []result.SuggestionSkip {
 	for _, record := range set.skips {
 		detail := record.reason
 		if len(record.subjects) > 0 {
-			detail += " Not derived for: " + joinCapped(record.subjects, suggestSkipCap) + "."
+			tail, narrowed := skipTails[record.name]
+			if !narrowed {
+				tail = " Not derived for: "
+			}
+			detail += tail + joinCapped(record.subjects, suggestSkipCap) + "."
 		}
 		rendered = append(rendered, result.SuggestionSkip{Name: record.name, Detail: detail})
 	}
@@ -544,13 +647,13 @@ type latticeValue struct {
 //
 // The bound is 4n+1 values for a pointer compared against n distinct literals
 // — 6n+1 under --include-hugs, which adds the pair two decimal places finer
-// than the authored precision to each literal — and the composition across
-// pointers is one factor at a time — every candidate
-// moves exactly one pointer and holds the rest at the base assignment — so a
-// run's size is the sum over pointers and never their product. That is a review
-// decision before it is a performance one: a cross product produces mostly
-// nonsense rows, and an unreviewable pile is the direct cause of the failure
-// mode this whole surface is arranged against.
+// than the authored precision to each literal, under this generator's own
+// step floor — and the composition across pointers is one factor at a time: a
+// value candidate moves one pointer and holds every other member of the base at
+// what the base said, so a run's size is the sum over pointers and never their
+// product. That is a review decision before it is a performance one: a cross
+// product produces mostly nonsense rows, and an unreviewable pile is the direct
+// cause of the failure mode this whole surface is arranged against.
 func (set *candidateSet) deriveValues(pack map[string]any) {
 	groups := boundaryGroups(comparisonSites(pack))
 	// Group by pointer, in first-occurrence order, so a pointer compared against
@@ -558,15 +661,28 @@ func (set *candidateSet) deriveValues(pack map[string]any) {
 	var paths []string
 	byPath := map[string][]boundaryGroup{}
 	for _, group := range groups {
+		if set.stopped() {
+			return
+		}
 		if !set.admitPointer(group.path) {
 			continue
 		}
-		if len(group.literal) > maxCandidateLiteralBytes {
+		literal, readable, oversize := admissibleSpelling(group)
+		if oversize {
 			set.skip("oversize-literal",
 				fmt.Sprintf("A compared literal is longer than %d bytes. A value no reviewer can read is a candidate no reviewer can review, and ADR-0023 already bounds every authored string this family renders.", maxCandidateLiteralBytes),
 				capRendered(group.path))
+		}
+		if !readable {
 			continue
 		}
+		// The group renders in the first spelling a reviewer can read rather
+		// than in whichever one was declared first: one value spelled "1" in
+		// one rule and with a hundred and forty trailing zeroes in another is
+		// ONE boundary, and reading the budget off the first-declared spelling
+		// would make reordering those two rules decide whether the pointer
+		// derives a lattice at all.
+		group.literal = literal
 		set.notePointer(group.path)
 		if _, opened := byPath[group.path]; !opened {
 			paths = append(paths, group.path)
@@ -576,6 +692,47 @@ func (set *candidateSet) deriveValues(pack map[string]any) {
 	for _, path := range paths {
 		set.derivePointerLattice(path, byPath[path])
 	}
+}
+
+// admissibleSpelling reports the spelling one boundary's candidates render in,
+// whether any spelling is renderable at all, and whether some spelling was past
+// the budget — over EVERY spelling the group's sites authored rather than over
+// the one the group happens to carry.
+//
+// The reason is groupStepPrecision's exactly: a boundary is one value however
+// many ways the pack spelled it, so a property read off the first-declared
+// spelling makes reordering two rules change the derivation. Here the property
+// is whether a lattice is derived at all, which is the sharpest form of it —
+// under the first-spelling reading, "1" and a 146-byte spelling of the same
+// value derived a whole lattice in one order and nothing at all, absence
+// witness included, in the other. The oversize spelling is reported either way,
+// because it is a dimension the derivation declined; the valid one still
+// derives, because a value a reviewer can read is a candidate a reviewer can
+// review whatever else the pack calls it.
+func admissibleSpelling(group boundaryGroup) (string, bool, bool) {
+	chosen, readable, oversize := "", false, false
+	for _, literal := range append([]string{group.literal}, groupSiteLiterals(group)...) {
+		if len(literal) > maxCandidateLiteralBytes {
+			oversize = true
+			continue
+		}
+		if !readable {
+			chosen, readable = literal, true
+		}
+	}
+	return chosen, readable, oversize
+}
+
+// groupSiteLiterals lists the spellings one boundary's sites authored, in site
+// order and once each.
+func groupSiteLiterals(group boundaryGroup) []string {
+	literals := make([]string, 0, len(group.sites))
+	for _, site := range group.sites {
+		if !slices.Contains(literals, site.literal) {
+			literals = append(literals, site.literal)
+		}
+	}
+	return literals
 }
 
 // admittedLiteral is one boundary of a pointer's lattice together with the
@@ -625,6 +782,9 @@ func (set *candidateSet) derivePointerLattice(path string, groups []boundaryGrou
 	// hug would supply what authorship already supplies. One unit at the
 	// precision the policy wrote the number in is what it does not.
 	for _, entry := range admitted {
+		if set.stopped() {
+			return
+		}
 		digits, clamped := groupStepPrecision(entry.group)
 		step := new(big.Rat).SetFrac(big.NewInt(1), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(digits)), nil))
 		note := ""
@@ -650,9 +810,26 @@ func (set *candidateSet) derivePointerLattice(path string, groups []boundaryGrou
 		if !set.options.IncludeHugs {
 			continue
 		}
+		// The hug is two decimal places finer than the authored precision, and
+		// the 10^-6 floor is this generator's own — the same clamp the unit step
+		// carries, and the design's floor rather than an accident of it. Where
+		// the floor swallows the distance the report says so, on the same
+		// discipline every other declined dimension is named under: a pair
+		// quietly delivered one place finer, or quietly not delivered at all,
+		// reads as the pair --include-hugs promised.
 		hugDigits := min(digits+2, maxStepPrecision)
 		if hugDigits <= digits {
+			set.skip("unavailable-hug",
+				fmt.Sprintf("--include-hugs asked for the pair two decimal places finer than each literal's authored precision, and this generator's finest step is 10^-%d. A literal already authored at %d digits or more has no finer pair available, so none is offered for it — reported rather than left out, because a pair missing in silence reads as the pair the flag promised.", maxStepPrecision, maxStepPrecision),
+				capRendered(path))
 			continue
+		}
+		hugNote := ""
+		if hugDigits < digits+2 {
+			hugNote = fmt.Sprintf(" It is one place finer rather than two: two would be past the 10^-%d this generator steps at.", maxStepPrecision)
+			set.skip("clamped-hug",
+				fmt.Sprintf("--include-hugs asked for the pair two decimal places finer than each literal's authored precision, and this generator's finest step is 10^-%d, so a literal authored close to that floor is hugged at the floor instead — one place finer rather than two. The pair is offered and each candidate's rationale says which distance it carries; the narrowing is reported here rather than passing as the distance the flag names.", maxStepPrecision),
+				capRendered(path))
 		}
 		hug := new(big.Rat).SetFrac(big.NewInt(1), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(hugDigits)), nil))
 		for _, side := range []struct {
@@ -668,8 +845,8 @@ func (set *candidateSet) derivePointerLattice(path string, groups []boundaryGrou
 				set.skip("unrenderable-value", unrenderableReason, capRendered(path))
 				continue
 			}
-			add(text, hugged, fmt.Sprintf("Places %s at %s, hugging the literal %s two decimal places finer than the pack authored it (10^-%d), which --include-hugs asked for.",
-				capRendered(path), text, capRendered(entry.group.literal), hugDigits))
+			add(text, hugged, fmt.Sprintf("Places %s at %s, hugging the literal %s at 10^-%d, which --include-hugs asked for.%s",
+				capRendered(path), text, capRendered(entry.group.literal), hugDigits, hugNote))
 		}
 	}
 	// The interior midpoints of the adjacent literals, and one unit outside the
@@ -730,6 +907,9 @@ func (set *candidateSet) derivePointerLattice(path string, groups []boundaryGrou
 	}
 	slices.SortStableFunc(kept, func(left, right latticeValue) int { return left.value.Cmp(right.value) })
 	for _, value := range kept {
+		if set.stopped() {
+			return
+		}
 		set.emit(candidateSeed{
 			family:    "value",
 			subject:   path,
@@ -850,6 +1030,9 @@ func membershipSites(pack map[string]any) []membershipSite {
 // synthesizing a non-member is not.
 func (set *candidateSet) deriveMembers(pack map[string]any) {
 	for _, site := range membershipSites(pack) {
+		if set.stopped() {
+			return
+		}
 		if !set.admitPointer(site.path) {
 			continue
 		}
@@ -907,6 +1090,9 @@ func (set *candidateSet) deriveAbsences() {
 		return
 	}
 	for _, path := range set.pointers {
+		if set.stopped() {
+			return
+		}
 		facts, outcome := removeFact(set.base, path)
 		switch outcome {
 		case removalBlocked:
@@ -939,6 +1125,9 @@ func (set *candidateSet) deriveAbsences() {
 // one-factor axes is the cross product this design refuses.
 func (set *candidateSet) deriveEvidence(pack map[string]any) {
 	for _, requirement := range asObjects(pack["evidenceRequirements"]) {
+		if set.stopped() {
+			return
+		}
 		id, _ := requirement["id"].(string)
 		if id == "" || len(id) > maxCandidateLiteralBytes {
 			set.skip("unusable-evidence-id",
@@ -992,6 +1181,17 @@ type placement struct {
 	raw   json.RawMessage
 }
 
+// unplaceablePointerReason is the one sentence a placement this generator
+// declines is reported with. Three shapes reach it and they are one refusal:
+// the base states a scalar — an explicit null included, which is a value the
+// base states rather than an absence — where the pointer needs a container; the
+// pointer names an array position outside the array; or it names one with a
+// token RFC 6901 does not read as an index, such as a leading zero or a sign,
+// which this runtime's own resolution refuses. The first would change the base
+// beyond the one pointer a candidate varies; the other two would place a value
+// where no condition ever reads it.
+const unplaceablePointerReason = "The base row's facts state a value — an explicit null included — where the pointer needs a container, or the pointer names an array position this runtime's own RFC 6901 resolution does not address. Overwriting a stated value would change the base beyond the one pointer a candidate varies, and placing at a position the resolution refuses would offer a candidate no condition ever reads; both are reported rather than forced."
+
 // unencodableCandidateReason is the one sentence a candidate that could not be
 // rendered as JSON is declined with. It cannot arise from a value that came in
 // through the carrier — every one of those is JSON that was already parsed once
@@ -1002,10 +1202,10 @@ const unencodableCandidateReason = "A composed candidate could not be rendered a
 
 // emit composes one candidate's id, facts, and rationale and appends it.
 func (set *candidateSet) emit(seed candidateSeed) {
-	// Past the run's byte budget nothing more is composed. The refusal itself is
-	// the caller's: this set reports what it derived, and Suggest answers the
-	// crossed budget for the run as a whole.
-	if set.budget.exceeded {
+	// Past either of the run's bounds nothing more is composed. The refusal
+	// itself is the caller's: this set reports what it derived, and Suggest
+	// answers the crossed bound for the run as a whole.
+	if set.stopped() {
 		return
 	}
 	document := set.base
@@ -1033,11 +1233,13 @@ func (set *candidateSet) emit(seed candidateSeed) {
 		} else {
 			value = seed.place.value
 		}
-		placed, ok := placeFact(document, set.hasBase, seed.place.path, value)
+		placed, badToken, ok := placeFact(document, set.hasBase, seed.place.path, value)
 		if !ok {
-			set.skip("unplaceable-pointer",
-				"The base row's facts carry a value where the pointer needs a container, or an array position the pointer does not address. Replacing it would change the base beyond the one pointer a candidate varies, which is the property that makes a candidate reviewable.",
-				capRendered(seed.place.path))
+			subject := capRendered(seed.place.path)
+			if badToken != "" {
+				subject += fmt.Sprintf(" (array token %q)", capRendered(badToken))
+			}
+			set.skip("unplaceable-pointer", unplaceablePointerReason, subject)
 			return
 		}
 		document = placed
@@ -1068,8 +1270,12 @@ func (set *candidateSet) emit(seed candidateSeed) {
 	// Charged before the candidate is kept, so the run holds at most the budget
 	// plus the one candidate that crossed it rather than everything a large or a
 	// deep base row would multiply out to, and the refusal fires before the
-	// document it is about could exist.
+	// document it is about could exist. The cap is counted here for the same
+	// reason: a bound charged as the work is done is a bound on the work.
 	if !set.budget.charge(written + candidateEnvelopeBytes) {
+		return
+	}
+	if !set.count.admit() {
 		return
 	}
 	set.candidates = append(set.candidates, composed)
@@ -1089,8 +1295,9 @@ func (counter *byteCounter) Write(data []byte) (int, error) {
 // candidates array, which is itself a member of the root object, so two steps.
 //
 // The measurement goes through a counter rather than a buffer because the
-// budget wants the number and not the bytes, and the number is what a run may
-// have to reject.
+// budget wants the number and not the bytes: the encoder still builds this one
+// candidate's encoding in order to indent it, and the counter is what keeps
+// that encoding from being retained past the count it produced.
 func candidateWrittenBytes(candidate Candidate) (int, error) {
 	counter := &byteCounter{}
 	encoder := json.NewEncoder(counter)
@@ -1127,10 +1334,18 @@ func (set *candidateSet) uniqueID(seed candidateSeed) string {
 }
 
 // admitPointer reports whether a candidate can be composed for one pointer at
-// all, recording why not when it cannot. The root pointer is the one refusal:
-// a condition reading "" compares the whole facts document, and placing a
-// decimal there would make the document itself a decimal string — an input no
-// other candidate could share a base with and one no base row could carry.
+// all, recording why not when it cannot. Three refusals live here: a path that
+// is neither empty nor rooted at "/", which RFC 6901 resolves against nothing;
+// the root pointer; and a pointer past the rendering budget ADR-0023 bounds
+// authored strings at.
+//
+// The root pointer's refusal is about REPLACEMENT and not about addressability.
+// A facts document may perfectly well be a scalar selected by the empty
+// pointer, and a matrix row may carry one — nothing in the carrier or in the
+// row loader says otherwise. What placing there would do is replace the whole
+// document with that one value, which leaves no other member of the base
+// standing, so the candidate could not be read as "this reviewed row, with one
+// pointer moved" and the one-factor-at-a-time rule could not be stated of it.
 func (set *candidateSet) admitPointer(path string) bool {
 	tokens, rooted := evaluation.PointerTokens(path)
 	if !rooted {
@@ -1141,7 +1356,7 @@ func (set *candidateSet) admitPointer(path string) bool {
 	}
 	if len(tokens) == 0 {
 		set.skip("root-pointer",
-			"A condition compares the whole facts document at the root pointer. Placing a value there would make the document itself that value, so the candidate could hold no other pointer at a base assignment and the one-factor-at-a-time rule could not be stated of it.",
+			"A condition compares the whole facts document at the root pointer. A facts document CAN be a scalar the empty pointer selects, so this is not a value nothing could carry — it is a placement that would replace the whole document rather than vary one member of it, leaving no base assignment for the candidate to hold the rest of the pack's pointers at.",
 			capRendered(path))
 		return false
 	}
@@ -1165,11 +1380,18 @@ func (set *candidateSet) admitPointer(path string) bool {
 // scalar the path needs to descend through, the placement is refused rather
 // than overwriting it: overwriting would change the base beyond the single
 // pointer the candidate varies, which is the property that makes a candidate
-// reviewable against the row it came from.
-func placeFact(base any, hasBase bool, pointer string, value any) (any, bool) {
+// reviewable against the row it came from. A member stated as an explicit JSON
+// null is such a scalar and not an absence: {"expense": null} is a base that
+// SAYS the answer is null, and quietly growing an object under it would edit a
+// stated value rather than vary a pointer.
+//
+// The second result is the array token a refusal was about, empty when the
+// refusal was not about one, so the report can name the token rather than only
+// the pointer that carries it.
+func placeFact(base any, hasBase bool, pointer string, value any) (any, string, bool) {
 	tokens, rooted := evaluation.PointerTokens(pointer)
 	if !rooted || len(tokens) == 0 {
-		return nil, false
+		return nil, "", false
 	}
 	if !hasBase {
 		base = map[string]any{}
@@ -1177,45 +1399,55 @@ func placeFact(base any, hasBase bool, pointer string, value any) (any, bool) {
 	return placeAt(base, true, tokens, value)
 }
 
-func placeAt(current any, present bool, tokens []string, value any) (any, bool) {
+func placeAt(current any, present bool, tokens []string, value any) (any, string, bool) {
 	if len(tokens) == 0 {
-		return value, true
+		return value, "", true
 	}
 	token := tokens[0]
-	if !present || current == nil {
-		child, ok := placeAt(nil, false, tokens[1:], value)
+	// Absent is not the same as present-and-null, and only the first is a place
+	// to build in. A member the base never stated has no value to preserve, so
+	// the containers the path needs are created; a member stated as null is a
+	// value the base states, and it is refused on the same footing as any other
+	// scalar the path would have to descend through.
+	if !present {
+		child, _, ok := placeAt(nil, false, tokens[1:], value)
 		if !ok {
-			return nil, false
+			return nil, "", false
 		}
-		return map[string]any{token: child}, true
+		return map[string]any{token: child}, "", true
 	}
 	switch container := current.(type) {
 	case map[string]any:
 		existing, has := container[token]
-		child, ok := placeAt(existing, has, tokens[1:], value)
+		child, badToken, ok := placeAt(existing, has, tokens[1:], value)
 		if !ok {
-			return nil, false
+			return nil, badToken, false
 		}
 		next := make(map[string]any, len(container)+1)
 		for key, member := range container {
 			next[key] = member
 		}
 		next[token] = child
-		return next, true
+		return next, "", true
 	case []any:
-		index, err := strconv.Atoi(token)
-		if err != nil || index < 0 || index >= len(container) {
-			return nil, false
-		}
-		child, ok := placeAt(container[index], true, tokens[1:], value)
+		// The evaluator's own array-token rule, not strconv.Atoi's: "00" and
+		// "+0" are numbers Atoi reads and RFC 6901 does not, so placing at them
+		// would put a candidate's value where this runtime's own resolution
+		// never looks — a candidate that reads as a probe of a pointer nobody
+		// evaluates.
+		index, ok := evaluation.ArrayIndex(token, len(container))
 		if !ok {
-			return nil, false
+			return nil, token, false
+		}
+		child, badToken, ok := placeAt(container[index], true, tokens[1:], value)
+		if !ok {
+			return nil, badToken, false
 		}
 		next := slices.Clone(container)
 		next[index] = child
-		return next, true
+		return next, "", true
 	default:
-		return nil, false
+		return nil, "", false
 	}
 }
 
