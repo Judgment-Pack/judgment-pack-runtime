@@ -186,9 +186,14 @@ project matrix names its pack in `jpack.json` instead.
 Per row: `id` (unique, named so a mismatch can be pointed at), `facts` (required), optional
 `evidenceAvailability` and `supportedExtensions`, and **exactly one** of `expectedDisposition` and
 `expectedErrorClass` — a disposition and an evaluation error are never both produced, so a row
-expecting both is refused. `expectedErrorPhase` is optional beside a class. `matrixVersion` is
-optional and, when present, must be `"1"`. Unknown members are rejected: a misspelled
-`expectedDispositon` has to be an error, not a row that silently expects nothing.
+expecting both is refused. `expectedErrorPhase` is optional beside a class. Three further members
+are optional and none of them decides anything: `origin`, a free string saying where the row's
+*input* came from (`jpack packs suggest` writes `"generated"`, and `packs test` reports a count per
+origin — see below); `focus`, one line saying what the row is probing; and `specSection`, the
+section of the specification the row is about, which is what the bundled evaluation corpus uses the
+member for. `matrixVersion` is optional and, when present, must be `"1"`. Unknown members are
+rejected: a misspelled `expectedDispositon` has to be an error, not a row that silently expects
+nothing.
 
 A row with a disposition passes when the disposition produced canonicalizes, under RFC 8785, to the
 same bytes as the row's. A row with a class passes when the evaluation is refused with that class,
@@ -233,6 +238,93 @@ not about which input distinguishes two encodings.
 Coverage informs and never gates: a missing probe is a fact about what your rows state, not a failed
 row. A covered matrix is one that probes every derivable behavior; whether the rows are *right* is
 still yours to judge against the policy text (ADR-0014, ADR-0023).
+
+### Let the pack suggest the inputs
+
+Coverage names the gap; `jpack packs suggest` offers the inputs that would close it, derived from
+the pack's own literals ([ADR-0024](adr/0024-suggest-candidate-row-inputs.md)):
+
+```bash
+jpack packs suggest --id expense --write candidates.json
+```
+
+What comes back is a `candidatesVersion`/`candidates` document, and every candidate carries an `id`,
+`origin: "generated"`, a `facts` document, sometimes an `evidenceAvailability`, and one sentence
+saying what it places and why the pack implies it. **It carries no expectation, and that absence is
+the whole point.** The expectation is the member that says what your pack *should* decide; deriving
+one from the pack would only tell you what the pack already does. So the generator supplies the half
+a machine can supply — the input — and leaves you the half only the policy text answers.
+
+Two refusals hold that line, and neither is new code: point a `jpack.json` `matrix` at a raw
+candidate file and the matrix loader rejects the root members it does not know; paste a candidate
+into a `cases` array and the loader rejects it again, because a row must declare exactly one of
+`expectedDisposition` and `expectedErrorClass`. **A candidate becomes a row only when you write four
+members from the policy text**, and **deleting a candidate the policy does not decide is a
+first-class outcome** — a candidate is an offer, not a demand.
+
+Per pointer the values are: the compared literal itself; one unit either side of it *at the
+precision the pack authored it in* (`"5000"` steps by 1 to 4999 and 5001, `"70.0"` steps by 0.1 to
+69.9 and 70.1); the midpoints between adjacent literals, which are always themselves decimal strings
+because 2 divides 10; and one unit outside the outermost literals. That is at most `4n+1` values for
+a pointer compared against *n* distinct literals. One value spelled two ways is one literal (`70`
+and `70.0` derive one lattice), and its step comes from the *finest* spelling your pack authored, so
+reordering two rules changes neither the values you are offered nor the step between them. What it
+can change is the *text*. The candidate at the literal is placed and named in the first-authored
+spelling, and every rationale sentence that quotes that authored literal — the at-literal
+candidate's own, and each candidate stepped from it — follows the same spelling. Rationale
+sentences also name the rules that own a comparison in *declaration* order, so reordering can
+rewrite rationale text even where every spelling is identical. Both are strings only: no offered
+value and no step moves
+([ADR-0024](adr/0024-suggest-candidate-row-inputs.md) records that the group carries the
+first-declared spelling, exactly as ADR-0023's probe does).
+
+`--include-hugs` adds one more pair per literal, two decimal places finer than the authored
+precision — 4999.99 and 5000.01 beside 4999 and 5001 — taking the bound to `6n+1`. It is **off by
+default**, and the reason is evidence rather than taste: the corpus study behind
+[ADR-0024](adr/0024-suggest-candidate-row-inputs.md) found authored test values already piled up on
+the thresholds and within 0.01 of them, and almost nothing in the gap between. Authors already hug;
+what authorship misses is the unit step at the precision the policy was written in. Pass the flag
+when you want the hug mechanized anyway.
+
+Each stated member of an `in`, `equals`, or `not-equals` operand gets a candidate too, and so does
+the absence of a pointer, and the three tri-states of each declared evidence requirement.
+
+**Every candidate varies exactly one pointer** and holds the rest at a base assignment, so the count
+grows with the number of pointers and never as their product. `--base <rowId>` makes that base an
+already-reviewed row of your matrix, which is what makes a candidate read as "this reviewed row,
+with one pointer moved to a value the pack's own literals imply"; without it, the facts carry only
+the varied pointer. The generator never synthesizes a plausible-looking full record: that would be
+it inventing a policy world.
+
+It decides nothing and gates nothing. It runs no evaluator, moves no exit code, and writes nothing
+unless you pass `--write <file>` or `--write -`; a destination your configuration declares as a
+pack, a matrix, a graph, or a `rows` document is refused by name — including when you reach it
+through a symlinked spelling of your project directory. Past `--max` (500 by default) the run
+refuses rather than truncating, because a truncated candidate set looks exactly like a complete one;
+`--max 0` and a negative one are refused outright rather than read as the default. There is a 16 MiB
+bound on the emitted document as well, measured on the file as it would be *written*, which `--max`
+cannot stand in for: every candidate carries a whole facts document, so a `--base` row that is wide
+— or merely deeply nested, which the emitted document's indentation multiplies again — multiplies
+by the candidate count, and crossing it refuses whole with the size and the budget named. A pack using draft-RFC collection quantifiers has
+that dimension reported as *skipped*, never silently left out. Two runs over an unchanged pack write
+identical bytes.
+
+**The honest limit.** A generator that makes coverage cheaper to reach, under unchanged review
+discipline, makes cheaply-justified coverage. Nothing here stops someone running each candidate
+through the evaluator and pasting the answer — that is ADR-0014's circular oracle, and it is exactly
+as open as it always was. What this measures rather than prevents is how much of a suite the
+machine supplied: `packs test` reports **origin counts** per pack, in both formats —
+
+```
+- expense [mismatch]: 1/2
+  coverage: 5/5 derived probes are witnessed by a row
+  origin generated: 12/14 row(s) declare it
+```
+
+— and a suite where 12 of 14 rows declare a generated origin is a suite worth a longer look. The
+count never gates: `origin` is deletable in one edit, so a gate would teach the deletion and destroy
+the only signal there is. If you find yourself writing an expectation for *every* candidate rather
+than deleting some, that is the signature this design is watching for.
 
 ### Review
 

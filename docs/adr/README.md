@@ -120,3 +120,4 @@ authority, and following it confers no conformance status on anything.
 | [0021](0021-run-the-declared-matrix-over-mcp.md)         | Run the declared matrix over MCP, and keep the rehearsal outside the record    | accepted |
 | [0022](0022-producer-lint.md)                            | Lint every consulted pointer against a producer declaration                    | accepted |
 | [0023](0023-boundary-probes-for-ordered-comparisons.md)  | Derive a boundary probe for every ordered comparison, witnessed by a row's facts | accepted |
+| [0024](0024-suggest-candidate-row-inputs.md)             | Derive candidate test-row inputs from a pack's own literals, and never their expectations | proposed |

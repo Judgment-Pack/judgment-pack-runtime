@@ -47,6 +47,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -698,6 +699,114 @@ func (p *Project) DeclaresPath(relative string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// DeclaresOutputPath is DeclaresPath asked about a destination a caller named
+// on the command line rather than about a path relative to the configuration.
+//
+// It exists because a generated document has to be kept off declared law even
+// when the caller is standing somewhere else in the tree: `--write` takes a
+// path relative to the working directory, `DeclaresPath` takes one relative to
+// the configuration's own directory, and comparing the two spellings directly
+// would let `../project/packs/x.matrix.json` past a check that `packs lock`
+// passes for free. A destination that resolves outside the configuration's
+// directory declares nothing by construction, because every declared path is
+// contained by that directory.
+//
+// It answers about the *destination*, not about permission: the caller still
+// creates the file through the exclusive open every generated write uses, so a
+// path this reports nothing about is not thereby a path anything may overwrite.
+//
+// The question is asked twice, of the lexical pathnames and of the symlinked
+// ones, and either answer refuses. A lexical comparison alone is a comparison
+// of spellings: a symlink aliasing the configuration's own directory is a
+// second spelling of every declared document under it, and the file the alias
+// names does not exist yet — so sameFile has no inodes to compare and the
+// destination reads as undeclared. That is the case a reviewer would never
+// notice, because what lands there is a declared matrix that was missing until
+// the generator created it.
+func (p *Project) DeclaresOutputPath(target string) (string, bool) {
+	for _, relative := range p.outputRelatives(target) {
+		if owner, declared := p.DeclaresPath(relative); declared {
+			return owner, true
+		}
+	}
+	return "", false
+}
+
+// outputRelatives renders one named destination as the paths relative to the
+// configuration's directory that could be asked about: the lexical one, and the
+// one both ends resolve to through their symlinks. A destination that resolves
+// outside the directory contributes nothing, because every declared path is
+// contained by it.
+//
+// Refusing a collision that is not one costs a rename; missing one writes
+// machine-supplied inputs over reviewed law, so both spellings are asked and
+// neither is trusted to stand for the other.
+func (p *Project) outputRelatives(target string) []string {
+	var relatives []string
+	add := func(root, destination string) {
+		relative, err := filepath.Rel(root, destination)
+		if err != nil {
+			return
+		}
+		if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return
+		}
+		if !slices.Contains(relatives, relative) {
+			relatives = append(relatives, relative)
+		}
+	}
+	absoluteTarget, targetErr := filepath.Abs(target)
+	absoluteRoot, rootErr := filepath.Abs(p.Root)
+	if targetErr != nil || rootErr != nil {
+		return nil
+	}
+	add(absoluteRoot, absoluteTarget)
+	resolvedRoot, err := filepath.EvalSymlinks(absoluteRoot)
+	if err != nil {
+		return relatives
+	}
+	resolvedTarget, ok := resolveExistingPrefix(absoluteTarget)
+	if !ok {
+		return relatives
+	}
+	add(resolvedRoot, resolvedTarget)
+	return relatives
+}
+
+// resolveExistingPrefix resolves the symlinks of a pathname that need not
+// exist: the deepest ancestor that does exist is resolved, and the tail that
+// does not is rejoined to it lexically.
+//
+// A destination a generator is about to create is exactly that pathname — the
+// file is not there, so filepath.EvalSymlinks refuses the whole of it, and
+// refusing to answer is what let an aliased directory past the check. The
+// ancestors are where a directory symlink can be, and they are the part that
+// exists.
+func resolveExistingPrefix(absolute string) (string, bool) {
+	current, tail := absolute, ""
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			if tail == "" {
+				return resolved, true
+			}
+			return filepath.Join(resolved, tail), true
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			// Anything else — a permission denial, a symlink loop — is a
+			// question this cannot answer, and answering it wrongly would be
+			// answering "not declared". The lexical comparison stands alone.
+			return "", false
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", false
+		}
+		tail = filepath.Join(filepath.Base(current), tail)
+		current = parent
+	}
 }
 
 // sameFile reports whether two cleaned relative names are one file, asked

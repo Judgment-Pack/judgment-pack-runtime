@@ -693,7 +693,49 @@ func boundaryGroups(sites []comparisonSite) []boundaryGroup {
 // doors.
 func comparisonSites(pack map[string]any) []comparisonSite {
 	var sites []comparisonSite
-	collectComparisons(pack["applicability"], "applicability", stageApplicability, &sites)
+	packConditions(pack, func(node any, owner string, stage siteStage) {
+		walkConditions(node, func(condition map[string]any) {
+			// The operand check is defensive rather than load-bearing: the schema
+			// pins an ordered operator's value to a decimal string, and a pack that
+			// failed that check never reaches coverage at all. The literal's
+			// canonical value is read here, once per site, which is also what
+			// admits it.
+			operator, _ := condition["operator"].(string)
+			if !evaluation.OrderedOperator(operator) {
+				return
+			}
+			path, ok := condition["path"].(string)
+			if !ok {
+				return
+			}
+			literal, ok := condition["value"].(string)
+			if !ok {
+				return
+			}
+			key, decimal := evaluation.DecimalKey(literal)
+			if !decimal {
+				return
+			}
+			sites = append(sites, comparisonSite{path: path, literal: literal, key: key, operator: operator, owner: owner, stage: stage})
+		})
+	})
+	return sites
+}
+
+// packConditions calls visit for every condition tree the pack states, in
+// declaration order — applicability, then each rule's when, then each
+// exception's when — with the rendering of the owning declaration and the §8
+// stage that declaration sits at.
+//
+// It is the enumeration half of the structure-keyed walk, separated from the
+// leaf half so a second derivation can reuse the enumeration without widening
+// what this one collects (ADR-0024). The separation is the point: comparisonSites
+// feeds a *demand* — a probe a report says no row satisfies — and a fourth door
+// added to the enumeration would widen that demand silently, whereas a second
+// leaf handler cannot widen it at all. The generator's membership walk is that
+// second handler.
+func packConditions(pack map[string]any, visit func(node any, owner string, stage siteStage)) {
+	visit(pack["applicability"], "applicability", stageApplicability)
 	for _, member := range []string{"rules", "exceptions"} {
 		noun, stage := "rule", stageRules
 		if member == "exceptions" {
@@ -707,20 +749,19 @@ func comparisonSites(pack map[string]any) []comparisonSite {
 			if id, _ := entry["id"].(string); id != "" {
 				owner = fmt.Sprintf("%s %q", noun, capRendered(id))
 			}
-			collectComparisons(entry["when"], owner, stage, &sites)
+			visit(entry["when"], owner, stage)
 		}
 	}
-	return sites
 }
 
-// collectComparisons walks one condition tree depth-first and appends every
-// ordered comparison over a §2.2 decimal literal, tagged with the stage of the
-// declaration the walk entered from. The operand check is defensive rather
-// than load-bearing: the schema pins an ordered operator's value to a decimal
-// string, and a pack that failed that check never reaches coverage at all. It
-// reads the literal's canonical value here, once per site, which is also what
-// admits it.
-func collectComparisons(node any, owner string, stage siteStage, sites *[]comparisonSite) {
+// walkConditions walks one condition tree depth-first and calls leaf for every
+// fact condition it reaches, descending only through all, any, and not — never
+// into a condition's value, into extensions, into a draft-RFC quantifier's
+// where or at, or into any member it does not know. It is the leaf-parameterized
+// form of the walk comparisonSites has always performed; the doors it opens are
+// exactly the three that record names, and a leaf handler chooses only what to
+// do with what arrives, never what arrives.
+func walkConditions(node any, leaf func(condition map[string]any)) {
 	condition, ok := node.(map[string]any)
 	if !ok {
 		return
@@ -729,28 +770,12 @@ func collectComparisons(node any, owner string, stage siteStage, sites *[]compar
 	case "all", "any":
 		children, _ := condition["conditions"].([]any)
 		for _, child := range children {
-			collectComparisons(child, owner, stage, sites)
+			walkConditions(child, leaf)
 		}
 	case "not":
-		collectComparisons(condition["condition"], owner, stage, sites)
+		walkConditions(condition["condition"], leaf)
 	case "fact":
-		operator, _ := condition["operator"].(string)
-		if !evaluation.OrderedOperator(operator) {
-			return
-		}
-		path, ok := condition["path"].(string)
-		if !ok {
-			return
-		}
-		literal, ok := condition["value"].(string)
-		if !ok {
-			return
-		}
-		key, decimal := evaluation.DecimalKey(literal)
-		if !decimal {
-			return
-		}
-		*sites = append(*sites, comparisonSite{path: path, literal: literal, key: key, operator: operator, owner: owner, stage: stage})
+		leaf(condition)
 	}
 }
 

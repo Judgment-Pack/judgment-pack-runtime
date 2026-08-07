@@ -4,6 +4,79 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Derive candidate test-row inputs from a pack's own literals, and never their expectations**
+  (ADR-0024): a new `jpack packs suggest` reads the packs a project declares and emits a
+  `candidatesVersion`/`candidates` document — facts documents at the values each pack's own
+  conditions imply, with an id, `origin: "generated"`, sometimes an `evidenceAvailability`, and one
+  sentence saying what the candidate places and which declaration implies it. It carries **neither
+  `expectedDisposition` nor `expectedErrorClass`**, and that absence is the design rather than an
+  omission: an expectation is the member that says what a pack *should* decide, deriving one from
+  the pack would be ADR-0014's circular oracle, and the matrix loader already refuses any row
+  declaring neither — so a candidate pasted into a `cases` array fails closed with a message naming
+  the work still to do, through machinery this change neither adds nor can relax. A sentinel was
+  refused for the same reason it is tempting: a slot invites a fill and the fill is one token, where
+  absence makes an author write four members from the policy text. The emitted document is not a
+  matrix either, so a `jpack.json` matrix path aimed at a raw candidate file is refused twice over.
+  Per fact pointer the values are the compared literal itself, one unit either side of it at the
+  precision the pack authored it in (`"5000"` steps by 1, `"70.0"` by 0.1, clamped at six digits and
+  said so), the midpoints of adjacent literals — which invent no granularity, because 2 divides 10
+  and the midpoint of two terminating decimals is itself one — and one unit outside the outermost
+  literals: at most `4n+1` values (`6n+1` under `--include-hugs`, off by default, which adds the
+  pair two decimal places finer than each literal's authored precision), deduplicated by the
+  evaluator's own decimal identity so `70` and `70.0` derive one lattice. Because that makes them
+  one boundary, the step is read off the **finest** spelling any of the boundary's sites authored
+  rather than off whichever rule declared it first: otherwise reordering two rules would change the
+  lattice, and a derivation must be a function of what a pack says and not of the order it says it
+  in. Each stated member of an `in`, `equals`, or `not-equals` operand gets a
+  candidate too, the negative witness is an *absence* rather than an invented non-member, and the
+  three tri-states of each declared evidence requirement are a separate axis never crossed with the
+  numeric one. Every candidate varies exactly **one** pointer and holds the rest at a base
+  assignment — `--base <rowId>` makes that an already-reviewed matrix row, so a candidate reads as
+  "this reviewed row, with one pointer moved" — so a run's size is the sum over pointers and never
+  their product, because volume is what turns review into rubber-stamping. A plausible-looking full
+  record is never synthesized: that is the generator inventing a policy world. This does not reverse
+  ADR-0023's refused option E, and the record states the hinge rather than leaving it implied: E was
+  refused as a *demand*, "a probe built on it would demand a row at a value nobody can justify",
+  where a generated value is an *offer* that moves no probe, no status, and no exit code and costs
+  one delete. The command runs no evaluator, derives no expectation, and gates nothing: nothing is
+  written unless `--write <file>` or `--write -` says so, a destination the configuration declares as
+  a pack, matrix, graph, or `rows` document is refused **by name** — the exclusive open cannot make
+  that refusal, because it would happily create a declared matrix that does not exist yet, and the
+  check resolves both the configuration's directory and the destination through their symlinks, so
+  an aliased root is not a second spelling that walks past it — and past `--max` (500) the run
+  refuses rather than truncating, since a truncated candidate set looks exactly like a complete one.
+  A non-positive `--max` is refused by name rather than read as the default, because a caller who
+  asked for at most zero candidates and silently received five hundred was not answered. There is a
+  16 MiB bound on the emitted document beside the count, on `MaxMatrixBytes`' own footing and for a
+  reason the count cannot cover: every candidate carries a whole facts document, so a run's size is
+  the candidate count times its base row, and a base row is bounded only by `MaxMatrixBytes`. It
+  bounds the *written* form rather than a compact measure of the same values, because indentation
+  multiplies with nesting depth: a base row a hundred containers deep wrapping very many
+  one-character tokens is legal on every carrier bound, under a megabyte composed, and hundreds of
+  megabytes written. It is charged as each candidate is composed rather than measured at the end, so
+  the bytes are never accumulated, and crossing it refuses whole — naming the measured size, the
+  budget, and the two remedies — rather than writing a partial document. A pack using draft RFC 0008 collection quantifiers has that dimension reported
+  as skipped, never silently omitted. Two runs over an unchanged pack write identical bytes.
+  Alongside it, `packs test` reports a per-pack `origins` count of the rows by the origin each
+  declares, in both formats: `origin` was already a member of the case carrier and already loaded
+  silently while meaning nothing, and it now means provenance and is **counted, never gated** — a
+  gate would be defeated by deleting one member, and would teach the deletion that destroys the only
+  signal measuring how much of a suite a generator supplied. The count is an added member, so
+  `outputVersion` stays `"2"`. `evaluation.DecimalString` is a new export because `DecimalKey` cannot
+  render — it returns big.Rat's canonical form, `"81/2"` for 40.5, which §7.4 declines to compare —
+  and it refuses rather than rounds any value whose decimal expansion does not terminate;
+  `DecimalValue` and `PointerTokens` are exported beside it so this package holds no second decimal
+  admission and no second implementation of the `~1`/`~0` escapes. The walk ADR-0023 introduced is
+  split into an enumeration half and a leaf half so the generator's membership sites reuse it without
+  widening it, held to a pure refactor by a golden over every fixture: widening a shared walk would
+  widen a demand. The record is honest about what it does not fix — this makes coverage cheaper to
+  reach, and cheaper coverage under unchanged review discipline is worse-justified coverage — and
+  registers the falsifier that would show it: an acceptance rate near 100% for generated candidates
+  refutes the premise. Generated rows get no special credit in the coverage report, because that is
+  the metric that would reward the rubber-stamp. CLI-only in this cut: an MCP tool handing an agent
+  candidate rows and an expectation-shaped hole in one turn is the rubber-stamping vector, and
+  ADR-0021 set the precedent of a CLI surface lived with first.
+
 - **Derive a boundary probe for every ordered comparison** (ADR-0023): the coverage report beside
   `packs test`'s rows gains a second probe family, `boundary:<pointer>:<literal>` — one probe per
   distinct fact pointer and decimal value a pack's own conditions compare with `greater-than`,

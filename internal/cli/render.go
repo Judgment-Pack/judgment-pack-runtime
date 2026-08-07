@@ -433,9 +433,63 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 			}
 		}
 		a.renderCoverage("  ", pack.Coverage)
+		a.renderOrigins("  ", pack.Summary.Total, pack.Origins)
 	}
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	fmt.Fprintln(a.out, "A mismatching row is a statement about the pack and the row, not about this runtime.")
+	return nil
+}
+
+// renderOrigins prints the origins one pack's rows declare, as counts against
+// the row total. It is a measurement and never a verdict: how a row's facts
+// were supplied says nothing about whether its expectation is right, and the
+// count exists so a suite mostly supplied by a generator is visible to the
+// person reviewing it rather than gated by the runtime (ADR-0024). Nothing here
+// moves a status or an exit code.
+func (a *App) renderOrigins(indent string, rows int, origins []result.OriginCount) {
+	for _, origin := range origins {
+		fmt.Fprintf(a.out, "%sorigin %s: %d/%d row(s) declare it\n", indent, display.Sanitize(origin.Origin), origin.Rows, rows)
+	}
+}
+
+// renderPackSuggestion reports one derivation of candidate inputs. The leading
+// line says what the run produced and, in the same sentence, what it did not:
+// a reader who sees only a candidate count must not read a test into it.
+//
+// The stream is a parameter because the candidate document and this report are
+// two documents. When the document goes to stdout the report goes to stderr, so
+// a piped stdout is exactly the document's bytes and the skipped dimensions are
+// still stated — a run that emitted the document and swallowed the report would
+// be silence over a gap, which is the one thing this convention refuses.
+func (a *App) renderPackSuggestion(writer io.Writer, format string, output result.PackSuggestion) error {
+	if format == "json" {
+		return writeJSON(writer, output, a.pretty)
+	}
+	fmt.Fprintf(writer, "candidate inputs (candidatesVersion %s): %s\n", display.Sanitize(output.CandidatesVersion), output.Label)
+	if output.Status == "suggested" {
+		fmt.Fprintf(writer, "suggested: %d candidate input(s) from %d/%d declared pack(s)\n",
+			output.Summary.Candidates, output.Summary.Suggested, output.Summary.Total)
+	} else {
+		fmt.Fprintln(writer, "skipped: no selected pack's conditions state a comparison this derives an input from")
+	}
+	for _, pack := range output.Packs {
+		fmt.Fprintf(writer, "- %s [%s]: %d candidate(s)\n", display.Sanitize(pack.ID), display.Sanitize(pack.Status), pack.Candidates)
+		if pack.Detail != "" {
+			fmt.Fprintf(writer, "  detail: %s\n", display.Sanitize(pack.Detail))
+		}
+		// Skipped dimensions are printed, never omitted: a candidate set that
+		// quietly left a dimension out would read as the whole derivable set.
+		for _, skipped := range pack.Skipped {
+			fmt.Fprintf(writer, "  skipped %s: %s\n", display.Sanitize(skipped.Name), display.Sanitize(skipped.Detail))
+		}
+	}
+	if output.WrittenTo != "" {
+		fmt.Fprintf(writer, "written: %s\n", display.Sanitize(output.WrittenTo))
+	} else if output.Summary.Candidates > 0 {
+		fmt.Fprintln(writer, "Nothing was written. Pass --write <file> or --write - to emit the candidate document.")
+	}
+	fmt.Fprintf(writer, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	fmt.Fprintln(writer, "A candidate is an input, not a row: write each expectation from the policy text, and delete the candidates the policy does not decide.")
 	return nil
 }
 
