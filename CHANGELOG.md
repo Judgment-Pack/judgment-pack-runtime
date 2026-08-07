@@ -2,6 +2,41 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Derive a boundary probe for every ordered comparison** (ADR-0023): the coverage report beside
+  `packs test`'s rows gains a second probe family, `boundary:<pointer>:<literal>` — one probe per
+  distinct fact pointer and decimal value a pack's own conditions compare with `greater-than`,
+  `greater-than-or-equal`, `less-than`, or `less-than-or-equal`, covered by a row whose facts place
+  that pointer's value exactly at the literal. It catches the defect nothing else here can see: a
+  rule described as "5000 or more" that compares `greater-than "5000"` is two individually valid
+  members disagreeing at exactly one input, and a suite with rows at 4999 and 5001 is green while
+  saying nothing about which reading the pack carries. Identity is per pointer and value, not per
+  site and not per operator — sites sharing them have identical witness sets, so a threshold
+  compared in three places with two operators is one probe one row settles, and `70` and `70.0` are
+  one boundary because equality is the evaluator's own decimal comparison. A JSON number at the
+  pointer witnesses nothing, because §7.4 cannot compare it at all. The witness is expectation-gated
+  as well as facts-located: a row expecting a §8.4 error class, a row whose expectation does not
+  decode, and a row whose facts do not decode each state nothing about the boundary. The expectation
+  also decides, per site and from §8's evaluation order, whether the row's evaluation reached the
+  comparison at all: a row expecting `not-applicable`, or an unresolved whose only reason is
+  `missing-required-evidence`, halts before any rule's `when` is read, so it witnesses a boundary
+  declared in `applicability` and not one declared in a rule or an exception. The walk is
+  structure-keyed — `applicability`, `rules[].when`, `exceptions[].when`, descending only through
+  `all`, `any`, and `not` — so a condition-shaped object carried inside a `value` literal or an
+  `extensions` slot derives no probe: an over-reported probe is a demand for a row nothing could
+  satisfy. The graph surface derives none of this family, because an edge may inject the very fact a
+  node compares. Coverage still informs and never gates: a missing boundary moves no status, no
+  summary, and no exit code, and the probes are new values in the existing `coverage` array, so
+  `outputVersion` stays `"2"`. One human line changes — the count sentence now reads "*n/m* derived
+  probes are witnessed by a row", true of both families. This record also narrows the scope of the
+  affirmative half of ADR-0014's witness determination — "witnessed by what a row expects" now
+  states the disposition family's rule rather than a universal — and keeps its prohibitive half,
+  "never by what it produced", verbatim for both: a row's facts are an authored input in the row
+  document, not a product of the evaluator. The `test_pack` prompt's ordered-comparison *type* probe
+  is deliberately still not derived; it is a named follow-up. The conformance claim is unaffected
+  and stated, in full and only, in `CONFORMANCE.md`.
+
 ## 0.15.0 - 2026-08-05
 
 - **Lint every consulted pointer against a producer declaration** (ADR-0022): a new `jpack packs

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 )
 
 // evalCondition applies §7's experimental interpretation, as pinned by spec
@@ -427,4 +429,71 @@ func TestHandoffTriggerMatching(t *testing.T) {
 			t.Fatalf("a direct escalation takes precedence over a compatible forced outcome: %+v", disposition)
 		}
 	})
+}
+
+// The ordered-operator set is stated once and read by two packages, so it is
+// held to the bundled schema rather than to a second hand-written list: the
+// schema pins exactly the operators whose operand must be a §2.2 decimal
+// string, and those are exactly the operators decimalCompare decides. An
+// operator added to one and not the other fails here. The test reads the set
+// through the exported predicate as an importer does, and the unexported map
+// for the reverse direction, which is the half a predicate cannot answer.
+func TestOrderedOperatorsMatchTheSchemasDecimalOperandRule(t *testing.T) {
+	set, err := artifacts.Load(artifacts.EvaluatorDraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := set.Schema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Defs struct {
+			Condition struct {
+				OneOf []struct {
+					AllOf []struct {
+						If struct {
+							Properties struct {
+								Operator struct {
+									Enum []string `json:"enum"`
+								} `json:"operator"`
+							} `json:"properties"`
+						} `json:"if"`
+						Then struct {
+							Properties struct {
+								Value struct {
+									Ref string `json:"$ref"`
+								} `json:"value"`
+							} `json:"properties"`
+						} `json:"then"`
+					} `json:"allOf"`
+				} `json:"oneOf"`
+			} `json:"condition"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, member := range schema.Defs.Condition.OneOf {
+		for _, rule := range member.AllOf {
+			if rule.Then.Properties.Value.Ref != "#/$defs/decimalString" {
+				continue
+			}
+			for _, operator := range rule.If.Properties.Operator.Enum {
+				declared[operator] = true
+			}
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("the schema must pin some operator's operand to a decimal string, or this test guards nothing")
+	}
+	for operator := range declared {
+		if !OrderedOperator(operator) {
+			t.Fatalf("the schema pins %q to a decimal operand and the evaluator does not order it", operator)
+		}
+	}
+	if !reflect.DeepEqual(declared, orderedOperators) {
+		t.Fatalf("the schema declares %v, the evaluator orders %v", declared, orderedOperators)
+	}
 }

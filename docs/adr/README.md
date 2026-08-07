@@ -110,7 +110,7 @@ authority, and following it confers no conformance status on anything.
 | [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | accepted |
 | [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec (configVersion value list superseded by 0017) | accepted; nothing-writes determination partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
 | [0013](0013-oci-image-and-mcp-registry-distribution.md)  | Distribute the released binary as an OCI image and publish it to the MCP registry | accepted |
-| [0014](0014-matrix-coverage-report.md)                   | Report derived matrix coverage in `packs test`, and never gate on it            | accepted |
+| [0014](0014-matrix-coverage-report.md)                   | Report derived matrix coverage in `packs test`, and never gate on it            | accepted; the expectation-only witness clause narrowed in scope by [0023](0023-boundary-probes-for-ordered-comparisons.md) |
 | [0015](0015-experimental-graph-surface.md)               | Prototype pack composition as an experimental graph surface (jpack.json determination partially superseded by 0017) | accepted |
 | [0016](0016-graph-rows-coverage-report.md)               | Report derived coverage in `experimental graph test`, and never gate on it      | accepted |
 | [0017](0017-declare-graphs-in-the-project-configuration.md) | Declare graphs in the project configuration, and walk them like matrices     | accepted; configVersion value list and schema `$id` partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
@@ -119,3 +119,4 @@ authority, and following it confers no conformance status on anything.
 | [0020](0020-report-consulted-fact-pointers.md)           | Report the fact pointers a pack's conditions read, on the inventory row        | accepted |
 | [0021](0021-run-the-declared-matrix-over-mcp.md)         | Run the declared matrix over MCP, and keep the rehearsal outside the record    | accepted |
 | [0022](0022-producer-lint.md)                            | Lint every consulted pointer against a producer declaration                    | accepted |
+| [0023](0023-boundary-probes-for-ordered-comparisons.md)  | Derive a boundary probe for every ordered comparison, witnessed by a row's facts | accepted |

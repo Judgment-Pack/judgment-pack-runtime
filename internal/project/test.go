@@ -27,9 +27,11 @@ import (
 // the top line anyone reads.
 //
 // Beside its rows, every entry whose matrix loaded carries the coverage report
-// of ADR-0014: the probe classes the pack's own declarations derive, and which
-// of them some row's expectation witnesses. Coverage informs and never gates —
-// it moves no status and no exit code.
+// of ADR-0014 and ADR-0023: the probe classes the pack's own declarations
+// derive, and which of them some row states — a disposition probe through what
+// a row expects, a comparison boundary through what a row's facts place at the
+// literal. Coverage informs and never gates — it moves no status and no exit
+// code.
 func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result.PackTest, *Failure) {
 	selected, failure := p.selection(id)
 	if failure != nil {

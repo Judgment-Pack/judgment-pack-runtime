@@ -286,7 +286,7 @@ func TestGraphTestCommand(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("missing probes must not gate: exit=%d stderr=%q", code, stderr)
 	}
-	if !strings.Contains(stdout, "coverage: 7/13 derived probes have a row expecting them") {
+	if !strings.Contains(stdout, "coverage: 7/13 derived probes are witnessed by a row") {
 		t.Fatalf("the human surface carries the count line: %q", stdout)
 	}
 	if !strings.Contains(stdout, "node:screening:missing-required-evidence:") {
@@ -333,7 +333,7 @@ func TestGraphWalkCommands(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "passed: 3/3 graph rows matched their expectation") ||
 		!strings.Contains(stdout, "- onboarding [passed]: 3/3") ||
-		!strings.Contains(stdout, "  coverage: 7/13 derived probes have a row expecting them") {
+		!strings.Contains(stdout, "  coverage: 7/13 derived probes are witnessed by a row") {
 		t.Fatalf("the walk is the single-graph run relocated, coverage included: %q", stdout)
 	}
 	code, stdout, _ = runTest(t, []string{"experimental", "graph", "test", "--config", configPath, "--format", "json"}, "")

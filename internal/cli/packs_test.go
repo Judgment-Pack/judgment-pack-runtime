@@ -630,11 +630,105 @@ func TestPacksTestReportsCoverageWithoutGatingOnIt(t *testing.T) {
 	if code != result.ExitSuccess || stderr != "" {
 		t.Fatalf("exit=%d stderr=%q", code, stderr)
 	}
-	if !strings.Contains(stdout, "coverage: 1/7 derived probes have a row expecting them") {
+	if !strings.Contains(stdout, "coverage: 1/7 derived probes are witnessed by a row") {
 		t.Fatalf("the human surface must state the exact coverage count: %q", stdout)
 	}
 	if !strings.Contains(stdout, "No row expects") {
 		t.Fatalf("a missing probe gets its detail line: %q", stdout)
+	}
+}
+
+// thresholdPack is the contributed case: a rule whose description says "5000
+// or more" and whose operator says strictly greater. Both members are
+// individually valid and they disagree at exactly one input.
+const thresholdPack = `{
+  "specVersion":"0.2.0-draft",
+  "id":"https://example.invalid/judgment-packs/expense-threshold",
+  "version":"0.1.0",
+  "title":"Synthetic expense review threshold",
+  "decision":{"intent":"Route an expense to review once its amount reaches a stated spend threshold.","question":"Does this expense require review?"},
+  "outcomes":[{"id":"review","label":"Requires review"},{"id":"auto-approve","label":"Auto-approved"}],
+  "rules":[{"id":"expense-threshold","description":"5000 or more spend requires review",
+    "when":{"op":"fact","path":"/expense/amount","operator":"greater-than","value":"5000"},
+    "outcome":"review","onUnknown":"escalate"}],
+  "fallbackOutcome":"auto-approve"
+}`
+
+// greenSuiteWithUnwitnessedBoundary is a project whose every row passes and
+// whose rows sit on either side of the threshold: the shape the boundary probe
+// exists to make visible, because a green suite says nothing about which side
+// of 5000 the comparison falls on.
+func greenSuiteWithUnwitnessedBoundary(t *testing.T, extraRows string) string {
+	t.Helper()
+	matrix := `{"matrixVersion":"1","cases":[
+	  {"id":"under","facts":{"expense":{"amount":"4999"}},"expectedDisposition":{"kind":"outcome","outcomeId":"auto-approve","reasons":[],"handoff":{"state":"none"}}},
+	  {"id":"over","facts":{"expense":{"amount":"5001"}},"expectedDisposition":{"kind":"outcome","outcomeId":"review","reasons":[],"handoff":{"state":"none"}}}` + extraRows + `
+	]}`
+	return writeProjectFixture(t, `{"configVersion":"1","packs":{"expense":{
+	  "path":"packs/expense-0.1.0.pack.json",
+	  "matrix":"packs/expense.matrix.json"
+	}}}`, map[string]string{
+		"packs/expense-0.1.0.pack.json": thresholdPack,
+		"packs/expense.matrix.json":     matrix,
+	})
+}
+
+// A boundary probe rides in the same coverage array as every other probe, is
+// named on the human surface, and moves nothing: a green suite that never
+// states what happens at the threshold still passes and still exits 0
+// (ADR-0023, inheriting ADR-0014's exit-code neutrality whole).
+func TestPacksTestReportsAnUnwitnessedBoundaryWithoutGatingOnIt(t *testing.T) {
+	config := greenSuiteWithUnwitnessedBoundary(t, "")
+	code, stdout, stderr := runTest(t, []string{"packs", "test", "--config", config, "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	var run result.PackTest
+	if err := json.Unmarshal([]byte(stdout), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.OutputVersion != "2" {
+		t.Fatalf("a new probe value is not a new output version: %q", run.OutputVersion)
+	}
+	entry := run.Packs[0]
+	if entry.Status != "passed" || run.Status != "passed" {
+		t.Fatalf("every row holds; only the boundary is unstated: %+v", entry)
+	}
+	var boundary result.MatrixProbe
+	for _, probe := range entry.Coverage {
+		if probe.Probe == "boundary:/expense/amount:5000" {
+			boundary = probe
+		}
+	}
+	if boundary.Status != result.MatrixProbeMissing {
+		t.Fatalf("neither 4999 nor 5001 witnesses the boundary: %+v", entry.Coverage)
+	}
+	if !strings.Contains(boundary.Detail, `rule "expense-threshold" (greater-than)`) {
+		t.Fatalf("the detail names the site and its operator: %q", boundary.Detail)
+	}
+
+	code, stdout, stderr = runTest(t, []string{"packs", "test", "--config", config}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "coverage: 2/4 derived probes are witnessed by a row") {
+		t.Fatalf("the human surface states the exact count: %q", stdout)
+	}
+	if !strings.Contains(stdout, "boundary:/expense/amount:5000: No row's facts place") {
+		t.Fatalf("the missing boundary gets its detail line: %q", stdout)
+	}
+
+	// One row at exactly the literal settles it, and the exit code is the same
+	// 0 it always was.
+	config = greenSuiteWithUnwitnessedBoundary(t, `,
+	  {"id":"at-threshold","facts":{"expense":{"amount":"5000"}},"expectedDisposition":{"kind":"outcome","outcomeId":"auto-approve","reasons":[],"handoff":{"state":"none"}}}`)
+	code, stdout, stderr = runTest(t, []string{"packs", "test", "--config", config}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "coverage: 3/4 derived probes are witnessed by a row") ||
+		strings.Contains(stdout, "boundary:/expense/amount:5000:") {
+		t.Fatalf("a witnessed boundary is counted and detailed no further: %q", stdout)
 	}
 }
 
