@@ -517,3 +517,48 @@ it.
 - [mcp-clients.md](mcp-clients.md) — per-client setup
 - [`CONFORMANCE.md`](../CONFORMANCE.md) — where the evaluator's conformance claim is stated, in full
   and only; nothing in this guide states any part of it
+
+## Replaying a decision: pin the tuple, not the pack
+
+A pack hash alone does not make a decision replayable. The evaluator applies a specification
+contract that moves with releases, and JPS §11 makes a pack's declared `specVersion` exact — so a
+byte-frozen pack that evaluated cleanly under one release can be *correctly refused* by a later one
+(`JPS-EVALUATION-PACK-SPEC-VERSION`, in preflight, before any evaluation) while `spec validate`
+still passes it. That is working as designed, and it means any pack pinned for longer than the
+release cadence will eventually meet an evaluator that no longer evaluates it. Issue
+[#93](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/93) records the first time this
+happened in the field, mid-study.
+
+The unit of replay is therefore a tuple of three facts, recorded **together**, at the moment the
+decision — or the freeze, for a study — happens:
+
+| | what to record | where it comes from |
+| --- | --- | --- |
+| the pack | SHA-256 of the exact bytes evaluated | your repository, lock, or audit record |
+| the evaluator release | the version that ran | the JSON envelope's `tool.version`, or `jpack version` |
+| the executable | SHA-256 of the binary that ran | the release's `checksums.txt`, or hash the file you staged |
+
+Side by side, in one place. A pack hash in one file and a binary version in another is the
+fact-stated-twice problem from `expectedVersion` in a different costume: nothing checks that the
+pair you eventually replay is the pair that ran. The opt-in audit trail (ADR-0018) already writes
+two of the three on every record — the pack's digest and the `tool` that produced the record, with
+`evaluatorSpecVersion` — so a project with auditing on needs to add only the executable digest,
+which lives wherever the binary is staged and verified.
+
+The discipline at replay time:
+
+1. Fetch the recorded release by its tag. Published tags are never moved or reused, and old
+   releases stay published, precisely so this step works years later
+   ([VERSIONING.md](../VERSIONING.md)).
+2. Verify the archive against its `checksums.txt` and the extracted binary against your recorded
+   digest, before executing anything.
+3. Evaluate the recorded pack bytes with that binary — never with a current one. A current binary
+   refusing your old pack is not the replay failing; it is the specification's exactness doing its
+   job. Re-declaring the pack to satisfy a newer evaluator is an edit to the artifact you were
+   trying to replay, and belongs to a new version of the decision, not to the replay of the old
+   one.
+
+Projects that already stage binaries through a verified lock — a file of name, version, and digest
+that a boot step checks before executing — have all the mechanics. The habit that tends to be
+missing is the pairing: writing the evaluator's identity down next to the hash of the pack it
+judged, in the same record.
