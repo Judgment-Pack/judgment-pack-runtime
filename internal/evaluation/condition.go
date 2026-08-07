@@ -171,7 +171,24 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 		return triUnknown
 	}
 	operand := condition["value"]
-	switch condition["operator"] {
+	operator, _ := condition["operator"].(string)
+	if orderedOperators[operator] {
+		comparison, comparable := decimalCompare(value, operand)
+		if !comparable {
+			return triUnknown
+		}
+		switch operator {
+		case "greater-than":
+			return triFromBool(comparison > 0)
+		case "greater-than-or-equal":
+			return triFromBool(comparison >= 0)
+		case "less-than":
+			return triFromBool(comparison < 0)
+		default:
+			return triFromBool(comparison <= 0)
+		}
+	}
+	switch operator {
 	case "equals":
 		return triFromBool(jsonEqual(value, operand))
 	case "not-equals":
@@ -189,24 +206,67 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 			}
 		}
 		return triFalse
-	case "greater-than", "greater-than-or-equal", "less-than", "less-than-or-equal":
-		comparison, comparable := decimalCompare(value, operand)
-		if !comparable {
-			return triUnknown
-		}
-		switch condition["operator"] {
-		case "greater-than":
-			return triFromBool(comparison > 0)
-		case "greater-than-or-equal":
-			return triFromBool(comparison >= 0)
-		case "less-than":
-			return triFromBool(comparison < 0)
-		default:
-			return triFromBool(comparison <= 0)
-		}
 	default:
 		return triUnknown
 	}
+}
+
+// orderedOperators is §7.4's ordered-comparison operator set: the operators
+// whose result decimalCompare decides and whose operand the schema pins to a
+// §2.2 decimal string. It is stated here once because a second surface reads
+// it — the coverage derivation walks a pack's conditions for exactly these
+// operators (ADR-0023) — and a restated list in that package could disagree
+// with the dispatch that uses this one.
+var orderedOperators = map[string]bool{
+	"greater-than":          true,
+	"greater-than-or-equal": true,
+	"less-than":             true,
+	"less-than-or-equal":    true,
+}
+
+// OrderedOperator reports whether one authored operator is an ordered
+// comparison. The set is read by a second package and is therefore exported as
+// a function rather than as the map itself: an exported map variable has no
+// write barrier, so any importer could assign into it and silently rewrite
+// §7.4's dispatch — `evaluation.OrderedOperators["equals"] = true` would change
+// what the evaluator compares, from a package that only meant to read the set.
+// A function exports the answer without exporting the ability to change it.
+func OrderedOperator(operator string) bool {
+	return orderedOperators[operator]
+}
+
+// DecimalCompare is RFC 0006's pinned ordering as the evaluator applies it,
+// exported so a surface that must judge two decimals the way §7.4 judges them
+// reads this rule rather than restating a second decimal grammar: "5000.0" and
+// "5000" are one value, and a JSON number on either side is not comparable at
+// all. The one-statement discipline ADR-0014 applied to the reason vocabulary,
+// applied to a comparison (ADR-0023).
+func DecimalCompare(fact, operand any) (int, bool) {
+	return decimalCompare(fact, operand)
+}
+
+// DecimalKey renders one value's §2.2 decimal identity: big.Rat's own
+// canonical string for the number the value denotes, or false for anything
+// §7.4 cannot compare at all — a JSON number, a grouped "5,000", a non-string.
+// Two values share a key exactly when DecimalCompare judges them equal, which
+// is what lets a surface grouping decimals by value fold them in one pass
+// through this grammar (ADR-0023's boundary identity) instead of comparing
+// every pair. It reads the same pattern and the same big.Rat parse
+// DecimalCompare does, so the two cannot drift apart.
+func DecimalKey(value any) (string, bool) {
+	parsed, ok := decimalValue(value)
+	if !ok {
+		return "", false
+	}
+	return parsed.RatString(), true
+}
+
+// ResolvePointer resolves one RFC 6901 pointer against a decoded document
+// exactly as a fact condition resolves its path, exported for the same reason
+// as DecimalCompare: the coverage derivation must locate a fact by the
+// evaluator's own resolution, not by a second pointer walker.
+func ResolvePointer(document any, pointer string) (any, bool) {
+	return resolvePointer(document, pointer)
 }
 
 // compiledPointer is an authored RFC 6901 pointer with its bytes already read:
@@ -555,18 +615,25 @@ var decimalPattern = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?$`)
 // grammar, compared by mathematical value. Any other value — including a JSON
 // number — is not comparable.
 func decimalCompare(fact, operand any) (int, bool) {
-	factText, ok := fact.(string)
-	if !ok || !decimalPattern.MatchString(factText) {
+	factValue, ok := decimalValue(fact)
+	if !ok {
 		return 0, false
 	}
-	operandText, ok := operand.(string)
-	if !ok || !decimalPattern.MatchString(operandText) {
-		return 0, false
-	}
-	factValue, factOK := new(big.Rat).SetString(factText)
-	operandValue, operandOK := new(big.Rat).SetString(operandText)
-	if !factOK || !operandOK {
+	operandValue, ok := decimalValue(operand)
+	if !ok {
 		return 0, false
 	}
 	return factValue.Cmp(operandValue), true
+}
+
+// decimalValue is the one place a value is admitted as a §2.2 decimal and read
+// into a number: the grammar check and the parse together, so every surface
+// that asks about a decimal — the comparison, the identity key — asks the same
+// question of the same tokens.
+func decimalValue(value any) (*big.Rat, bool) {
+	text, ok := value.(string)
+	if !ok || !decimalPattern.MatchString(text) {
+		return nil, false
+	}
+	return new(big.Rat).SetString(text)
 }

@@ -454,7 +454,10 @@ func (a *App) renderCoverage(indent string, probes []result.MatrixProbe) {
 			covered++
 		}
 	}
-	fmt.Fprintf(a.out, "%scoverage: %d/%d derived probes have a row expecting them\n", indent, covered, len(probes))
+	// "witnessed by a row" rather than "have a row expecting them": a boundary
+	// probe is witnessed by what a row's facts state, not by what it expects
+	// (ADR-0023), and one count line covers both families.
+	fmt.Fprintf(a.out, "%scoverage: %d/%d derived probes are witnessed by a row\n", indent, covered, len(probes))
 	for _, probe := range probes {
 		if probe.Status != result.MatrixProbeMissing {
 			continue

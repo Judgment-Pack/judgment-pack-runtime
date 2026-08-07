@@ -822,6 +822,15 @@ func TestGraphCoverageDerivesNodeAndEdgeProbes(t *testing.T) {
 			t.Fatalf("probe %d = %+v, want %s %s", index, got, want.probe, want.status)
 		}
 	}
+	// The screening pack compares a match count in order, and the graph surface
+	// derives no boundary probe from it: an edge may inject the very fact a
+	// node compares, so asking whether some row places a value at the literal
+	// is the fact-value reachability this record refuses (ADR-0016, ADR-0023).
+	for _, probe := range output.Coverage {
+		if strings.Contains(probe.Probe, "boundary:") {
+			t.Fatalf("the graph surface derives no boundary probe: %+v", probe)
+		}
+	}
 	// Covered details name their witness: a node probe carries the node
 	// prefix, an edge probe the witness label alone, and the result node is
 	// witnessed by headlines.

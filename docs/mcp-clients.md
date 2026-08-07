@@ -53,9 +53,10 @@ gitignored in this repository. Copy a snippet, don't commit one.
 None of these evaluate, decide, or authorize anything, except the two that reach the evaluator:
 `experimental_evaluate`, which evaluates one case, and `experimental_test_packs`, which runs the
 declared instance matrices through the same evaluator and comparison the CLI's `packs test` uses —
-reporting each row's agreement or divergence with the derived coverage report (ADR-0014) beside it,
-writing nothing, appending no audit record, and consulting no reviewed set, because a matrix row is a
-rehearsal and not a decision. Each payload names the contract version it applied and carries a
+reporting each row's agreement or divergence with the derived coverage report (ADR-0014, ADR-0023)
+beside it, writing nothing, appending no audit record, and consulting no reviewed set, because a
+matrix row is a rehearsal and not a decision. Each payload names the contract version it applied and
+carries a
 `conformanceClaimReference`
 member pointing at [`CONFORMANCE.md`](../CONFORMANCE.md), where the conformance claim is stated in full
 and only; no tool description, and no line of this document, states any part of it. Whatever that claim

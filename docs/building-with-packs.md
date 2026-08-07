@@ -195,16 +195,44 @@ same bytes as the row's. A row with a class passes when the evaluation is refuse
 and with that phase when the row names one.
 
 Beside the rows, `packs test` reports **coverage**: the probe classes your pack's own declarations
-derive — one per producible declared outcome (one a rule, exception, or fallback names), then
-`not-applicable`, `missing-required-evidence`, `unknown`,
-`conflict`, `exception-escalation`, and `no-match`, each only where the pack makes it reachable —
-and which of them some row's expectation witnesses. Coverage informs and never gates: a missing
-probe is a fact about what your rows expect, not a failed row. The derivation follows reachable
-behavior, not the `test_pack` prompt's list — two of the prompt's probes (forced-outcome,
-ordered-comparison) cannot be witnessed by an expectation and are not derived, and
-`exception-escalation` and `no-match` are derived though the prompt's list does not name them. A
-covered matrix is one that probes every derivable behavior; whether the expectations are *right* is
-still yours to judge against the policy text (ADR-0014).
+derive, and which of them some row states. There are two families.
+
+The **disposition** family is one probe per producible declared outcome (one a rule, exception, or
+fallback names), then `not-applicable`, `missing-required-evidence`, `unknown`, `conflict`,
+`exception-escalation`, and `no-match`, each only where the pack makes it reachable, each witnessed
+by what a row *expects*. It follows reachable behavior, not the `test_pack` prompt's list — the
+prompt's forced-outcome probe cannot be witnessed by an expectation and is not derived, the prompt's
+ordered-comparison *type* probe (a JSON number where a decimal string belongs) is deliberately still
+not derived either, and `exception-escalation` and `no-match` are derived though the prompt's list
+does not name them. The type probe stays a prompt question because the schema already pins an
+ordered comparison's operand to a decimal string, so that mistake lives in how your facts are
+*produced*, upstream of the pack; it is a named follow-up rather than a refusal.
+
+The **boundary** family is `boundary:<pointer>:<literal>`: one probe per distinct fact pointer and
+decimal value your conditions compare with `greater-than`, `greater-than-or-equal`, `less-than`, or
+`less-than-or-equal`, witnessed by a row whose own *facts* place that pointer's value exactly at the
+literal. A rule saying "5000 or more requires review" and comparing `greater-than "5000"` is two
+individually valid members that disagree at exactly one input, and a suite with rows at 4999 and
+5001 is green while saying nothing about it. Sites sharing a pointer and a value are one probe
+however many operators compare them and however the decimal is spelled (`70` and `70.0` are one
+boundary), and the missing sentence names the sites still unwitnessed — one entry per owning
+declaration and operator, the first six of them — so you can open the pack at the right member.
+
+The row also has to be one that could have reached the comparison, which §8's order decides.
+`applicability` runs first, so any row whose expectation decodes exercised it. Every exception's
+`when` is evaluated next, and missing required evidence does not stop that — §8 records it and halts
+only after every exception has been inspected — so only a row expecting `not-applicable` fails to
+witness an exception's boundary. A normal rule's `when` runs last, so a row whose expected reasons
+include `missing-required-evidence` or `exception-escalation` does not witness a rule's boundary:
+both prove the evaluation stopped before the rules. One threshold compared in two of those places
+needs a row for each, because the row that stopped early genuinely never compared the other copy.
+What it does not catch: a threshold written at the wrong
+*number*, or a comparison reading the wrong pointer — both are questions about what the policy says,
+not about which input distinguishes two encodings.
+
+Coverage informs and never gates: a missing probe is a fact about what your rows state, not a failed
+row. A covered matrix is one that probes every derivable behavior; whether the rows are *right* is
+still yours to judge against the policy text (ADR-0014, ADR-0023).
 
 ### Review
 

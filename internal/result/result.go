@@ -605,8 +605,9 @@ const ProjectKind = "non-normative-runtime-convention"
 const PackMatrixLabel = "project matrix results: rows a project wrote about its own packs, run through the experimental evaluator; that evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md"
 
 // The status of one derived coverage probe in a packs test report. A probe is
-// covered when some row's expectation witnesses it and missing when none does.
-// There is no third status: a probe the pack's own declarations make
+// covered when some row witnesses it — by its expectation for a disposition
+// probe, by its authored facts for a boundary probe — and missing when no row
+// does. There is no third status: a probe the pack's own declarations make
 // unreachable is not derived at all, because listing it as skipped would state
 // a reachability claim in a status field.
 const (
@@ -614,13 +615,15 @@ const (
 	MatrixProbeMissing = "missing"
 )
 
-// MatrixProbe is one derived coverage probe: a behavior the pack's own
-// declarations make reachable, and whether any matrix row's expectation
-// witnesses it. Coverage reads what the rows expect, not what they produced —
-// a covered probe says "a row expects this", never that the expectation is
-// right, and a matrix with every probe covered has stated an expectation about
-// every derivable behavior, which is not a statement that the pack decides
-// well or that its rows expect the right things.
+// MatrixProbe is one derived coverage probe: a behavior or a comparison
+// boundary the pack's own declarations make reachable, and whether any matrix
+// row witnesses it. Coverage reads what the rows document — a disposition
+// probe is witnessed by what a row expects, a boundary probe by what a row's
+// authored facts state — and never what an evaluation produced. A covered
+// probe says "a row states this", never that the row is right, and a matrix
+// with every probe covered has stated something about every derivable
+// behavior, which is not a statement that the pack decides well or that its
+// rows expect the right things.
 type MatrixProbe struct {
 	Probe  string `json:"probe"`
 	Status string `json:"status"`
@@ -901,9 +904,10 @@ type LockFinding struct {
 // Coverage is present when the matrix loaded as rows, the evaluator admits
 // the pack — one the preflight refuses never reaches §8, so no derivation
 // describes it — and the pack's declarations derive at least one probe.
-// Mismatched rows are included, because it reads the rows' expectations,
-// which exist whether or not they held. It never moves Status — a missing
-// probe is a fact about what the rows expect, not a failed row (ADR-0014).
+// Mismatched rows are included, because it reads what the rows document —
+// their expectations, and their authored facts — which exist whether or not
+// they held. It never moves Status — a missing probe is a fact about what the
+// rows state, not a failed row (ADR-0014, ADR-0023).
 // An additive member, so outputVersion stays "2" by the same two
 // VERSIONING.md rules ADR-0012 cites.
 type PackTestEntry struct {

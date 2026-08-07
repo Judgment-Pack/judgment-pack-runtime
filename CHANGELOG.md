@@ -2,6 +2,51 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Derive a boundary probe for every ordered comparison** (ADR-0023): the coverage report beside
+  `packs test`'s rows gains a second probe family, `boundary:<pointer>:<literal>` — one probe per
+  distinct fact pointer and decimal value a pack's own conditions compare with `greater-than`,
+  `greater-than-or-equal`, `less-than`, or `less-than-or-equal`, covered by a row whose facts place
+  that pointer's value exactly at the literal. It catches the defect nothing else here can see: a
+  rule described as "5000 or more" that compares `greater-than "5000"` is two individually valid
+  members disagreeing at exactly one input, and a suite with rows at 4999 and 5001 is green while
+  saying nothing about which reading the pack carries. Identity is per pointer and value, not per
+  site and not per operator — sites sharing them ask one question of a row's facts, so a threshold
+  compared in three places with two operators is one probe, and `70` and `70.0` are one boundary
+  because equality is the evaluator's own decimal comparison. A JSON number at the pointer witnesses
+  nothing, because §7.4 cannot compare it at all. The witness is expectation-gated as well as
+  facts-located: a row expecting a §8.4 error class, a row whose expectation does not decode, and a
+  row whose facts do not decode each state nothing about the boundary. The expectation also decides,
+  from §8's evaluation order, whether that row's evaluation could have reached the comparison at
+  all, and §8 reads a pack's conditions at three points with a different halt in front of each:
+  `applicability` (step 1) is exercised by any row whose expectation decodes; an exception's `when`
+  (step 3) by every row except one expecting `not-applicable`, because step 2 records missing
+  evidence without returning and §8 halts on it only at step 5, after every exception effect has
+  been inspected; and a normal rule's `when` (steps 6-7) only by a row whose expectation does not
+  prove that step-5 halt — a retained `missing-required-evidence` proves it whatever else the reason
+  set contains, and so does a retained `exception-escalation`. A merged probe is covered only when
+  every stage its sites sit at has an eligible row at the literal, so a rule-sited threshold cannot
+  read covered because some row settled an applicability-sited copy of it. Each rendered pointer,
+  literal, and declaration id is capped at 128 bytes with a SHA-256 tail beyond that, so the
+  report's size follows the pack's thresholds and not the megabyte the carrier allows each of those
+  strings — without the cap, a pack inside every carrier limit could push the report past the MCP
+  surface's response bound and turn a call that used to succeed into a refusal. The walk is
+  structure-keyed — `applicability`, `rules[].when`, `exceptions[].when`, descending only through
+  `all`, `any`, and `not` — so a condition-shaped object carried inside a `value` literal or an
+  `extensions` slot derives no probe: an over-reported probe is a demand for a row nothing could
+  satisfy. The graph surface derives none of this family, because an edge may inject the very fact a
+  node compares. Coverage still informs and never gates: a missing boundary moves no status, no
+  summary, and no exit code, and the probes are new values in the existing `coverage` array, so
+  `outputVersion` stays `"2"`. One human line changes — the count sentence now reads "*n/m* derived
+  probes are witnessed by a row", true of both families. This record also narrows the scope of the
+  affirmative half of ADR-0014's witness determination — "witnessed by what a row expects" now
+  states the disposition family's rule rather than a universal — and keeps its prohibitive half,
+  "never by what it produced", verbatim for both: a row's facts are an authored input in the row
+  document, not a product of the evaluator. The `test_pack` prompt's ordered-comparison *type* probe
+  is deliberately still not derived; it is a named follow-up. The conformance claim is unaffected
+  and stated, in full and only, in `CONFORMANCE.md`.
+
 ## 0.15.0 - 2026-08-05
 
 - **Lint every consulted pointer against a producer declaration** (ADR-0022): a new `jpack packs
