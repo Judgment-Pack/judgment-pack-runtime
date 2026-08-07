@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1045,4 +1046,102 @@ func TestExperimentalTestPacksRefusesAnOversizedReport(t *testing.T) {
 	if text := toolText(t, outcome); !strings.Contains(text, "jpack packs test --format json") {
 		t.Fatalf("the refusal must name the command that can carry the report: %q", text)
 	}
+}
+
+// The boundary family repeats a fact pointer and a decimal literal in a probe
+// name and again in a missing sentence, and §2.1's carrier admits a megabyte of
+// either. Rendered whole, a pack well inside every carrier limit — four
+// maximum-length pointer/literal pairs, about 8 MiB, one passing row — pushed
+// the report past this surface's response bound, turning a call that used to
+// succeed into a refusal. An additive JSON member that removes an existing
+// call is a compatibility break, so every authored string the family renders is
+// capped at a fixed budget with a digest tail (ADR-0023): the report stays
+// small, the call still succeeds, and the four names stay distinct and stable
+// even though the pointers agree for their whole first megabyte.
+func TestExperimentalTestPacksBoundsBoundaryProbesAtCarrierLimits(t *testing.T) {
+	// Each pointer and each literal is exactly at the carrier's per-string
+	// limit, and the pointers differ only in their final byte, so nothing but
+	// the digest tail keeps the rendered names apart.
+	shared := strings.Repeat("a", carrier.DefaultMaxStringBytes-2)
+	digits := strings.Repeat("9", carrier.DefaultMaxStringBytes-1)
+	rules := make([]any, 0, 4)
+	for index := range 4 {
+		distinguisher := string(rune('a' + index))
+		rules = append(rules, map[string]any{
+			"id": "rule-" + distinguisher, "description": "review threshold",
+			"outcome": "review", "onUnknown": "ignore",
+			"when": map[string]any{
+				"op": "fact", "path": "/" + shared + distinguisher,
+				"operator": "greater-than", "value": digits + strconv.Itoa(index),
+			},
+		})
+	}
+	pack, err := json.Marshal(map[string]any{
+		"specVersion": "0.2.0-draft",
+		"id":          "https://example.invalid/judgment-packs/carrier-bounds",
+		"version":     "0.1.0", "title": "Carrier bounds",
+		"decision": map[string]any{"intent": "Bound the report at the carrier's own limits.", "question": "Should this be reviewed?"},
+		"outcomes": []any{map[string]any{"id": "review", "label": "Review"}, map[string]any{"id": "clear", "label": "Clear"}},
+		"rules":    rules, "fallbackOutcome": "review",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(pack)) >= carrier.HardMaxBytes {
+		t.Fatalf("the fixture must stay inside the carrier's own limit: %d bytes", len(pack))
+	}
+
+	root := t.TempDir()
+	matrix := `{"matrixVersion":"1","cases":[{"id":"unresolved-pointers","facts":{},
+	  "expectedDisposition":{"kind":"outcome","outcomeId":"review","reasons":[],"handoff":{"state":"none"}}}]}`
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	for name, content := range map[string][]byte{
+		"pack.json":               pack,
+		"matrix.json":             []byte(matrix),
+		project.DefaultConfigName: []byte(`{"configVersion":"1","packs":{"bounds":{"path":"pack.json","matrix":"matrix.json"}}}`),
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("a pack inside every carrier limit must still be reportable: %q", toolText(t, outcome))
+	}
+	payload := toolText(t, outcome)
+	if len(payload) > maxTestPacksResultBytes {
+		t.Fatalf("the report is %d bytes, over the %d-byte response bound", len(payload), maxTestPacksResultBytes)
+	}
+	// Not merely inside the bound: the rendered size no longer follows the
+	// pack's, so an 8 MiB pack reports in kilobytes.
+	if len(payload) > 64<<10 {
+		t.Fatalf("the report grew with the pack: %d bytes", len(payload))
+	}
+
+	var report result.PackTest
+	decodeStructured(t, outcome, &report)
+	if report.Status != "passed" || len(report.Packs) != 1 {
+		t.Fatalf("every row holds; only the boundaries are unstated: %+v", report)
+	}
+	var names []string
+	for _, probe := range report.Packs[0].Coverage {
+		if !strings.HasPrefix(probe.Probe, "boundary:") {
+			continue
+		}
+		if slices.Contains(names, probe.Probe) {
+			t.Fatalf("two boundaries rendered to one name: %q", probe.Probe)
+		}
+		if len(probe.Probe) > 1024 || len(probe.Detail) > 4096 {
+			t.Fatalf("probe %d bytes, detail %d bytes: neither may follow the pack", len(probe.Probe), len(probe.Detail))
+		}
+		names = append(names, probe.Probe)
+	}
+	if len(names) != 4 {
+		t.Fatalf("four compared pairs are four probes: %v", names)
+	}
+	// That the same pack renders the same names on every derivation is pinned
+	// in the project package, where a second derivation costs no second
+	// validation of an 8 MiB document.
 }

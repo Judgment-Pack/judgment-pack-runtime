@@ -1,10 +1,13 @@
 package project
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -38,11 +41,14 @@ import (
 // held to. It is a named follow-up, not a refusal (ADR-0023).
 //
 // The boundary family is one probe per distinct fact pointer and decimal value
-// the pack's own conditions compare, witnessed by a row whose facts place that
-// pointer's value exactly at the literal and whose expected disposition leaves
-// that comparison reachable under §8's order. It reads a row's authored facts,
-// not what an evaluation produced, and it is derived here rather than inside
-// PackProbes because only a matrix row carries a facts document (ADR-0023).
+// the pack's own conditions compare, witnessed by rows whose facts place that
+// pointer's value exactly at the literal and whose expected dispositions leave
+// that comparison reachable under §8's order — one such row for every §8 stage
+// the pack compares that pointer and value at, so a rule-sited boundary is
+// never settled by a row that stopped in applicability. It reads a row's
+// authored facts, not what an evaluation produced, and it is derived here
+// rather than inside PackProbes because only a matrix row carries a facts
+// document (ADR-0023).
 //
 // A missing probe is a fact — no row states this — and never a failed row. In
 // particular, a derived probe is reachable by declaration, not by proof: two
@@ -267,68 +273,104 @@ func PackProbes(pack map[string]any, witnesses []ProbeWitness, reach Reach) []re
 }
 
 // siteStage is where in §8's evaluation order a comparison sits, which decides
-// which rows can have exercised it. §8 evaluates applicability first (step 1),
-// then required evidence (step 2), and only then rules and exceptions; each of
-// the first two steps can halt the evaluation before any rule condition is
-// read. So the stage of a comparison and the disposition a row expects
-// together say whether that row's evaluation could have reached the
-// comparison at all.
+// which rows can have exercised it. §8 runs applicability (step 1), records
+// required evidence without returning (step 2), evaluates every exception
+// condition (step 3), combines their effects (step 4), may halt before normal
+// rules (step 5), and only then evaluates the rules that survive (steps 6-7).
+// So the stage of a comparison and the disposition a row expects together say
+// whether that row's evaluation could have reached the comparison at all.
 //
-// The two stages are ordered by permissiveness — every row that exercises a
-// rule-staged site also exercises an applicability-staged one — which is what
-// lets a boundary compared at several sites carry the smallest stage among
-// them and answer for all of them in one test.
+// There are three stages because §8 has three places a condition of a pack is
+// read, with a different halt in front of each. They are ordered by
+// permissiveness — every row that exercises a rule-staged site also exercises
+// an exception-staged one, and every row that exercises an exception-staged
+// site also exercises an applicability-staged one — but permissiveness does
+// not let one stage answer for another: a boundary compared at two stages
+// needs a witness at each (ADR-0023), or a rule-sited comparison could read
+// covered on a row that stopped in applicability.
 type siteStage int
 
 const (
 	// stageApplicability: §8 step 1, evaluated on every evaluation that
 	// reaches §8 at all.
 	stageApplicability siteStage = iota
-	// stageRules: a rule's or an exception's when, reached only when steps 1
-	// and 2 did not halt first.
+	// stageExceptions: an exception's when, §8 step 3, reached whenever step 1
+	// did not halt.
+	stageExceptions
+	// stageRules: a normal rule's when, §8 steps 6-7, reached only when step 5
+	// did not produce unresolved first.
 	stageRules
 )
 
+// stageCount is how many stages exist, so a per-stage witness record is a
+// fixed-size array rather than a map.
+const stageCount = int(stageRules) + 1
+
 // exercisedBy reports whether a row expecting this disposition can have
-// reached a comparison at this stage, read off §8's evaluation order rather
-// than off a run.
+// reached a comparison sited at this stage. It is read off §8's evaluation
+// order and off internal/evaluation/resolve.go, which implements that order —
+// never off a run.
 //
-// An applicability comparison is exercised by any row whose expectation
-// decodes: applicability runs first, so even a not-applicable row exercised it
-// — that disposition is what the comparison produced.
+// **Applicability** (§8 step 1; resolve.go evaluates `pack["applicability"]`
+// before anything else and returns on false or unknown) is evaluated on every
+// evaluation that reaches §8 at all, so any row whose expectation decodes
+// exercised it. A not-applicable row exercised it by definition: that
+// disposition is what the comparison produced.
 //
-// A rule- or exception-staged comparison is exercised only by a row whose
-// expected disposition implies the evaluation got past steps 1 and 2. Exactly
-// two dispositions prove it did not: kind not-applicable is step 1's halt
-// (§8.3 pins its reason set to exactly {"not-applicable"}, so it is
-// unambiguous), and an unresolved carrying no reason but
-// missing-required-evidence is step 2's. Every other disposition is admitted.
+// **An exception's when** (§8 step 3, "Evaluate every exception condition")
+// is reached whenever step 1 did not halt, and step 1 is the only halt in
+// front of it. Step 2 records missing-required-evidence or unknown and
+// returns nothing — resolve.go sets the reason and falls through to the
+// exception loop — because §8 places the halt those reasons cause at step 5,
+// which produces unresolved only "after all exception effects have been
+// inspected". A missing-evidence row therefore did evaluate every exception,
+// and the one expectation that proves the evaluation stopped before step 3 is
+// kind not-applicable, whose reason set §8.3 pins to exactly
+// {"not-applicable"}.
 //
-// That admission is deliberately generous in one place and honest about it: an
-// unresolved whose reasons include "unknown" may have come from an
-// applicability that evaluated unknown, in which case no rule ran either — and
-// no derivation over declarations alone can tell those apart without the
-// fact-value reachability analysis this family refuses. Generous is the right
-// direction here, because the cost of the strict reading is a demand for a row
-// the author already wrote, and an over-demand is the failure mode ADR-0023
-// refuses; the cost of the generous one is a probe covered by a row that does
-// place the value at the boundary.
+// **A normal rule's when** (§8 steps 6-7, reached only when step 5 produced no
+// unresolved) excludes kind not-applicable and, additionally, every
+// expectation that proves the step-5 halt:
+//
+//   - missing-required-evidence is recorded only at step 2 (resolve.go's
+//     required-evidence loop is its only writer) and step 5 halts on it, so
+//     its presence in a retained reason set proves no normal rule ran —
+//     whatever else the set contains, since §8 step 5 "retain[s] every reason
+//     discovered at this stage" and resolve.go returns on a non-empty reason
+//     set before the rule loop.
+//   - exception-escalation is recorded only by a true escalate exception at
+//     step 4 (again one writer in resolve.go) and is one of step 5's named
+//     halting states, so it proves the same.
+//
+// Every other decoded expectation is admitted, and two admissions are
+// deliberately generous and honest about it. Reason unknown is recorded at
+// step 1 (an unknown applicability), step 2 (unknown required evidence), step
+// 3 (an unknown exception with onUnknown: escalate), and step 7 (an unknown
+// rule with onUnknown: escalate), and only the last proves a rule was
+// evaluated. Reason conflict is recorded at step 5 (incompatible forced
+// outcomes) and at step 8 (true rules naming different outcomes). Neither is
+// decidable over declarations alone without the fact-value reachability
+// analysis this family refuses. Generous is the right direction there: the
+// strict reading's cost is a demand for a row the author already wrote, which
+// is the failure mode ADR-0023 refuses, while the generous reading's cost is a
+// probe covered by a row that does place the value at the boundary.
 func (stage siteStage) exercisedBy(witness ProbeWitness) bool {
-	if stage == stageApplicability {
+	// A step-1 halt is proven by the not-applicable kind OR by an unresolved
+	// carrying the not-applicable reason: the disposition grammar pins the
+	// reason set only for the kind, so the reason spelling decodes and must
+	// mean the same halt here.
+	halted := witness.Kind == "not-applicable" ||
+		witness.Reasons[evaluation.ReasonNotApplicable]
+	switch stage {
+	case stageApplicability:
 		return true
-	}
-	switch witness.Kind {
-	case "not-applicable":
-		return false
-	case "unresolved":
-		for reason := range witness.Reasons {
-			if reason != evaluation.ReasonMissingEvidence {
-				return true
-			}
-		}
-		return false
+	case stageExceptions:
+		return !halted
 	default:
-		return true
+		if halted {
+			return false
+		}
+		return !witness.Reasons[evaluation.ReasonMissingEvidence] && !witness.Reasons[evaluation.ReasonExceptionEscalation]
 	}
 }
 
@@ -353,20 +395,66 @@ type comparisonSite struct {
 
 // boundaryGroup is one derived boundary: a fact pointer, the first literal
 // authored at it, every site comparing that pointer against that value, and
-// the smallest §8 stage among those sites. Two sites sharing a pointer and a
-// value have the same facts test, so they are one question and one probe
-// (ADR-0023); a row witnesses the group when its facts pass that test and its
-// expectation could have reached at least one of the sites, which is exactly
-// the smallest stage's test.
+// the distinct §8 stages those sites sit at, in stage order. Two sites sharing
+// a pointer and a value ask one question of a row's facts — place this value
+// here — so they are one probe (ADR-0023).
+//
+// They do not ask one question of a row's expectation. A site's stage decides
+// which expectations could have reached it, so the group is covered only when
+// every stage it is compared at has a row that both places the value and could
+// have reached that stage; otherwise a rule-sited comparison would read
+// covered on a row whose evaluation stopped in applicability.
 type boundaryGroup struct {
 	path    string
 	literal string
 	sites   []comparisonSite
-	stage   siteStage
+	stages  []siteStage
 	// pathIndex addresses this group's pointer in the derivation's
 	// distinct-path list, so a pointer compared against several literals is
 	// resolved once per row rather than once per probe.
 	pathIndex int
+}
+
+// stageWitnesses is one boundary's witness record: the first row eligible for
+// each stage, indexed by that stage.
+type stageWitnesses [stageCount]string
+
+// complete reports whether every stage this boundary is compared at has a
+// witness — the covered test.
+func (found stageWitnesses) complete(stages []siteStage) bool {
+	for _, stage := range stages {
+		if found[stage] == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// labels lists the witnessing rows once each, in stage order. One row usually
+// answers for every stage — eligibility for a later stage implies eligibility
+// for an earlier one — but the first eligible row differs per stage when an
+// applicability-only row appears before a rule-eligible one.
+func (found stageWitnesses) labels(stages []siteStage) []string {
+	var labels []string
+	for _, stage := range stages {
+		if label := found[stage]; label != "" && !slices.Contains(labels, label) {
+			labels = append(labels, label)
+		}
+	}
+	return labels
+}
+
+// unwitnessedSites lists the sites whose stage has no eligible witness — the
+// ones a missing sentence names, so a partly witnessed boundary points at the
+// declarations still unprobed rather than at all of them.
+func (group boundaryGroup) unwitnessedSites(found stageWitnesses) []comparisonSite {
+	sites := make([]comparisonSite, 0, len(group.sites))
+	for _, site := range group.sites {
+		if found[site.stage] == "" {
+			sites = append(sites, site)
+		}
+	}
+	return sites
 }
 
 // boundaryProbes derives one probe per distinct fact pointer and decimal value
@@ -383,9 +471,9 @@ type boundaryGroup struct {
 // The expectation does more than gate. It also says, through §8's evaluation
 // order, whether that row's evaluation could have reached this particular
 // comparison — a not-applicable row never reached a rule's when — so
-// eligibility is decided per site and a row witnesses a group when it is
-// eligible for at least one of the group's sites. siteStage.exercisedBy
-// carries that rule and its derivation.
+// eligibility is decided per stage, and a boundary is covered only when every
+// stage it is compared at has an eligible row at the literal.
+// siteStage.exercisedBy carries that rule and its derivation.
 //
 // Each row's facts are decoded once here, under the same carrier rules
 // LoadMatrix used, and each distinct pointer is resolved once against that one
@@ -408,7 +496,7 @@ func boundaryProbes(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 		}
 		groups[index].pathIndex = at
 	}
-	witnesses := make([]string, len(groups))
+	found := make([]stageWitnesses, len(groups))
 	values := make([]any, len(paths))
 	for _, row := range matrix.Cases {
 		if len(row.ExpectedDisposition) == 0 {
@@ -424,57 +512,128 @@ func boundaryProbes(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 			continue
 		}
 		for index, path := range paths {
-			value, found := evaluation.ResolvePointer(facts, path)
-			if !found {
+			value, resolved := evaluation.ResolvePointer(facts, path)
+			if !resolved {
 				value = nil
 			}
 			values[index] = value
 		}
 		for index, group := range groups {
-			if witnesses[index] != "" || !group.stage.exercisedBy(witness) {
+			if found[index].complete(group.stages) {
 				continue
 			}
 			// The evaluator's own comparison decides equality, so "5000.0"
 			// witnesses the literal "5000" and a JSON number witnesses nothing
 			// — the value §7.4 cannot compare never exercises the boundary.
-			if comparison, comparable := evaluation.DecimalCompare(values[group.pathIndex], group.literal); comparable && comparison == 0 {
-				witnesses[index] = label
+			comparison, comparable := evaluation.DecimalCompare(values[group.pathIndex], group.literal)
+			if !comparable || comparison != 0 {
+				continue
+			}
+			for _, stage := range group.stages {
+				if found[index][stage] == "" && stage.exercisedBy(witness) {
+					found[index][stage] = label
+				}
 			}
 		}
 	}
 	probes := make([]result.MatrixProbe, 0, len(groups))
 	for index, group := range groups {
-		probe := "boundary:" + group.path + ":" + group.literal
-		if witnesses[index] != "" {
-			probes = append(probes, result.MatrixProbe{
-				Probe:  probe,
-				Status: result.MatrixProbeCovered,
-				Detail: witnesses[index] + " places the compared value there.",
-			})
+		// The pointer and the literal are rendered under a fixed budget in the
+		// name and in the sentence alike: both are authored strings the carrier
+		// bounds only at a megabyte each, and a probe is emitted per distinct
+		// pair (ADR-0023).
+		probe := "boundary:" + capRendered(group.path) + ":" + capRendered(group.literal)
+		if found[index].complete(group.stages) {
+			labels := found[index].labels(group.stages)
+			detail := labels[0] + " places the compared value there."
+			if len(labels) > 1 {
+				detail = joinCapped(labels, boundarySiteCap) + " place the compared value there, one for each stage of the evaluation order this boundary is compared at."
+			}
+			probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeCovered, Detail: detail})
 			continue
 		}
 		probes = append(probes, result.MatrixProbe{
 			Probe:  probe,
 			Status: result.MatrixProbeMissing,
-			Detail: fmt.Sprintf("No row's facts place %q at %s, the literal compared by %s. A row at exactly that value is the one input where a strict and a non-strict encoding of this threshold differ; the policy text is the arbiter of which one the pack should carry.",
-				display.Sanitize(group.path), display.Sanitize(group.literal), joinCapped(siteDescriptions(group.sites), 6)),
+			Detail: fmt.Sprintf("No row's facts place %q at %s under an expected disposition that could have reached %s. A row at exactly that value is the one input where a strict and a non-strict encoding of this threshold differ; the policy text is the arbiter of which one the pack should carry.",
+				capRendered(group.path), capRendered(group.literal), joinCapped(siteDescriptions(group.unwitnessedSites(found[index])), boundarySiteCap)),
 		})
 	}
 	return probes
 }
 
-// siteDescriptions names each site of one boundary the way a reader would open
-// the pack at it: the owning declaration and the operator it compares with.
-// The operator is the half of a threshold that can disagree with the prose, so
-// it is reported even though it is not part of the probe's identity.
-// Identical descriptions are listed once — one rule may compare a pointer
-// against a value twice, once under a not, and naming the same member twice
-// tells a reader nothing the first mention did not.
+// The rendering budget of the boundary family. A fact pointer, a decimal
+// literal, and a declaration id are authored strings the carrier bounds only at
+// DefaultMaxStringBytes — a megabyte each — and this family repeats them in a
+// probe name and again in a missing sentence, once per distinct pair. Left
+// unbounded, a pack well inside every carrier limit can push the report past
+// the MCP surface's response bound and turn a call that used to succeed into a
+// refusal, which is a compatibility break rather than an additive change. So
+// every authored string this family renders is capped here, and the cap is a
+// determination of ADR-0023 rather than a detail.
+//
+// What the cap does not bound is how many probes there are: that stays
+// proportional to the pack's distinct compared pairs, exactly as ADR-0014's
+// probe count stays proportional to the pack's declared outcomes and reasons.
+// The MCP response bound remains the backstop for a report that is large
+// because the pack is, and it names the CLI command that streams the same
+// report.
+const (
+	// boundaryTextBudget is how many bytes of one rendered authored string a
+	// probe name or a missing sentence carries.
+	boundaryTextBudget = 128
+	// boundaryDigestHex is how many hex digits of the SHA-256 of the authored
+	// bytes a capped rendering ends with.
+	boundaryDigestHex = 16
+	// boundarySiteCap is how many site descriptions, or witnessing rows, one
+	// sentence names before counting the rest.
+	boundarySiteCap = 6
+)
+
+// capRendered renders one authored string — a fact pointer, a decimal literal,
+// or a declaration id — for a probe name or a detail sentence, bounded to
+// boundaryTextBudget bytes. A string within the budget is rendered whole, so
+// every realistic pointer, threshold, and id reads exactly as authored. A
+// longer one is rendered as its sanitized prefix, an ellipsis, and the first
+// boundaryDigestHex hex digits of the SHA-256 of the authored bytes, so two
+// strings agreeing for the first budget bytes still produce different probe
+// names: identity stays unambiguous where the text stops being readable.
+//
+// The digest is taken over the authored bytes rather than the sanitized ones
+// because sanitizing is lossy — it maps every control character to the same
+// '?' — and the truncation is taken at a rune boundary, so the rendered value
+// is well-formed text whatever was authored.
+func capRendered(text string) string {
+	rendered := display.Sanitize(text)
+	if len(rendered) <= boundaryTextBudget {
+		return rendered
+	}
+	digest := sha256.Sum256([]byte(text))
+	tail := "…" + hex.EncodeToString(digest[:])[:boundaryDigestHex]
+	prefix := rendered[:max(boundaryTextBudget-len(tail), 0)]
+	for len(prefix) > 0 && !utf8.ValidString(prefix) {
+		prefix = prefix[:len(prefix)-1]
+	}
+	return prefix + tail
+}
+
+// siteDescriptions names the given sites of one boundary the way a reader
+// would open the pack at them: the owning declaration and the operator it
+// compares with. The operator is the half of a threshold that can disagree
+// with the prose, so it is reported even though it is not part of the probe's
+// identity.
+//
+// The list is one entry per distinct owner-and-operator pair, in walk order,
+// not one entry per site: one rule may compare a pointer against a value
+// twice, once under a not, and naming the same member twice tells a reader
+// nothing the first mention did not. Callers cap the list itself
+// (boundarySiteCap), and the owner was rendered under the budget when its site
+// was collected.
 func siteDescriptions(sites []comparisonSite) []string {
 	described := make([]string, 0, len(sites))
 	listed := map[string]bool{}
 	for _, site := range sites {
-		description := fmt.Sprintf("%s (%s)", display.Sanitize(site.owner), display.Sanitize(site.operator))
+		description := fmt.Sprintf("%s (%s)", site.owner, display.Sanitize(site.operator))
 		if listed[description] {
 			continue
 		}
@@ -496,8 +655,9 @@ func siteDescriptions(sites []comparisonSite) []string {
 // the authored pointer itself carries one.
 //
 // Order is first occurrence in walk order, the probe carries the
-// first-authored spelling of the literal, and the group keeps the smallest §8
-// stage among its sites.
+// first-authored spelling of the literal, and the group collects the distinct
+// §8 stages its sites sit at, in stage order — each of which needs its own
+// witness.
 func boundaryGroups(sites []comparisonSite) []boundaryGroup {
 	var groups []boundaryGroup
 	index := map[string]int{}
@@ -506,11 +666,12 @@ func boundaryGroups(sites []comparisonSite) []boundaryGroup {
 		if !opened {
 			at = len(groups)
 			index[site.path+"\x00"+site.key] = at
-			groups = append(groups, boundaryGroup{path: site.path, literal: site.literal, stage: site.stage})
+			groups = append(groups, boundaryGroup{path: site.path, literal: site.literal})
 		}
 		groups[at].sites = append(groups[at].sites, site)
-		if site.stage < groups[at].stage {
-			groups[at].stage = site.stage
+		if !slices.Contains(groups[at].stages, site.stage) {
+			groups[at].stages = append(groups[at].stages, site.stage)
+			slices.Sort(groups[at].stages)
 		}
 	}
 	return groups
@@ -534,16 +695,19 @@ func comparisonSites(pack map[string]any) []comparisonSite {
 	var sites []comparisonSite
 	collectComparisons(pack["applicability"], "applicability", stageApplicability, &sites)
 	for _, member := range []string{"rules", "exceptions"} {
-		noun := "rule"
+		noun, stage := "rule", stageRules
 		if member == "exceptions" {
-			noun = "exception"
+			noun, stage = "exception", stageExceptions
 		}
 		for index, entry := range asObjects(pack[member]) {
 			owner := fmt.Sprintf("%s %d", noun, index)
+			// The id is rendered under the budget here, once, because it is an
+			// authored string of unbounded length and every mention of this site
+			// in a report carries it.
 			if id, _ := entry["id"].(string); id != "" {
-				owner = fmt.Sprintf("%s %q", noun, id)
+				owner = fmt.Sprintf("%s %q", noun, capRendered(id))
 			}
-			collectComparisons(entry["when"], owner, stageRules, &sites)
+			collectComparisons(entry["when"], owner, stage, &sites)
 		}
 	}
 	return sites

@@ -60,12 +60,21 @@ at a pointer needs no cooperation from the pack's other conditions — which mak
 candidate yet for ADR-0014's "revisit when real projects ask for a gate" clause. That clause is
 where the question belongs, not this record.
 
-**D is refused because the sites have identical witness sets.** The witness test — some row's facts
-place this pointer's value at this literal — is a pure function of the pointer and the literal.
-Sites sharing them are always covered together and always missing together, so a per-site partition
-would inflate the `n/m` denominator in proportion to how often an author repeated a threshold. The
-study's correct pack compares `/vendor/riskScore` at `70` in three places with two operators; one
-row at 70 settles all three, and this derivation reports one question rather than three.
+**D is refused because the sites ask one question of the facts.** The witness test's fact half —
+some row's facts place this pointer's value at this literal — is a pure function of the pointer and
+the literal, so a per-site partition would inflate the `n/m` denominator in proportion to how often
+an author repeated a threshold. The study's correct pack compares `/vendor/riskScore` at `70` in
+three places with two operators, and this derivation asks one question rather than three.
+
+The sites do **not** ask one question of the expectation, and this record says so rather than
+assuming otherwise. An earlier draft justified D's refusal by claiming that sites sharing a pointer
+and a value have identical witness sets and are therefore always covered together and always missing
+together. That claim is false: a row expecting `not-applicable` is an eligible witness for an
+applicability-sited comparison and is not one for a rule-sited comparison against the same value.
+Merged identity with a union of eligibilities would then let a rule-sited boundary read covered
+because some row settled the applicability copy — masking exactly the defect this family exists to
+show. So identity merges and eligibility does not: the probe is one, and it is covered only when
+every §8 stage its sites sit at has an eligible row at the literal (below).
 
 **E is refused because the decimal domain is dense.** §2.2 decimals have no successor: 5000.1,
 5000.01, and so on downward forever. "Adjacent" is a granularity the runtime would have to invent,
@@ -108,23 +117,41 @@ Settled determinations:
   used, place the pointer's value at the literal. A row expecting a §8.4 error class is refused
   before §7 compares anything; a row whose expectation cannot decode mismatches forever; a row whose
   facts do not decode states no input. None of the three pins what the pack does at the boundary.
-- **Eligibility is per site, from §8's evaluation order.** The expectation is not only a gate: it
-  also says whether that row's evaluation could have reached the comparison at all. §8 evaluates
-  applicability (step 1), then required evidence (step 2), and only then rules and exceptions — so a
-  comparison sited in `applicability` is exercised by *any* row whose expectation decodes (a
-  not-applicable row exercised it by definition; that disposition is what the comparison produced),
-  while one sited in a rule's or an exception's `when` is exercised only by a row whose disposition
-  implies rules ran. Exactly two dispositions prove they did not: kind `not-applicable`, which §8.3
-  pins to the reason set `{"not-applicable"}`, and an `unresolved` carrying no reason but
-  `missing-required-evidence`. A row witnesses a boundary when its facts place the value there *and*
-  it is eligible for at least one of the boundary's sites; since applicability-sited eligibility is
-  implied by rule-sited eligibility, a boundary compared at both stages takes the applicability
-  reading. Recorded honestly in one direction: an `unresolved` whose reasons include `unknown` is
-  admitted at a rule site although §8 can also reach that reason at an unknown applicability, before
-  any rule. Telling those apart is the fact-value reachability analysis this record refuses
-  elsewhere, and the generous reading is the right one here — its cost is a probe covered by a row
-  that does place the value at the boundary, where the strict reading's cost is demanding a row the
-  author has already written, which is the failure mode option H is refused for.
+- **Eligibility is per stage, from §8's evaluation order, and there are three stages.** The
+  expectation is not only a gate: it also says whether that row's evaluation could have reached the
+  comparison at all. §8 runs applicability (step 1), records required evidence *without returning*
+  (step 2), evaluates **every** exception condition (step 3), combines their effects (step 4), may
+  halt before normal rules (step 5), and evaluates the surviving rules last (steps 6-7). A pack's
+  conditions are read at three of those points, each behind a different halt:
+
+  - **`applicability`** is exercised by *any* row whose expectation decodes. A not-applicable row
+    exercised it by definition — that disposition is what the comparison produced.
+  - **An exception's `when`** is exercised by every row except one expecting kind
+    `not-applicable`, which §8.3 pins to the reason set `{"not-applicable"}`. Step 1 is the only
+    halt in front of step 3: step 2 *records* `missing-required-evidence` or `unknown` and returns
+    nothing, because §8 places the halt those reasons cause at step 5, "after all exception effects
+    have been inspected". A missing-evidence row therefore did evaluate every exception.
+  - **A normal rule's `when`** additionally excludes every expectation that proves that step-5 halt:
+    a retained `missing-required-evidence`, which only step 2 records and which §8 retains beside
+    whatever else was discovered, so its presence proves the halt however many other reasons
+    accompany it; and a retained `exception-escalation`, which only a true `escalate` exception
+    records at step 4 and which is one of step 5's named halting states.
+
+  A boundary is covered when **every stage its sites sit at** has a row that both places the value
+  at the literal and is eligible for that stage — not when one stage does. Eligibility for a later
+  stage implies eligibility for an earlier one, so one rule-eligible row usually answers for the
+  whole boundary; what the per-stage rule refuses is the reverse, an applicability-only row
+  answering for a rule-sited comparison. The missing sentence then names the sites still unwitnessed
+  rather than all of them.
+
+  Recorded honestly in two directions: reason `unknown` is admitted at a rule site although §8 also
+  reaches it at an unknown applicability, at unknown required evidence, and at an escalating
+  exception; and reason `conflict` is admitted there although §8 records it at step 5 for
+  incompatible forced outcomes as well as at step 8 for rules naming different outcomes. Telling
+  either apart is the fact-value reachability analysis this record refuses elsewhere, and the
+  generous reading is the right one for both — its cost is a probe covered by a row that does place
+  the value at the boundary, where the strict reading's cost is demanding a row the author has
+  already written, which is the failure mode option H is refused for.
 - **Equality is the evaluator's own comparison, exported rather than restated.**
   `evaluation.DecimalCompare` wraps the ordering §7.4 applies, so `"5000.0"` witnesses the literal
   `"5000"` and a JSON number `5000` witnesses nothing — the value §7.4 cannot compare never
@@ -154,14 +181,39 @@ Settled determinations:
   exclusion is structural, not a flag.
 - **The output is additive and the exit code is untouched.** Boundary probes are new values in the
   existing `coverage` array, so `outputVersion` stays `"2"` under `VERSIONING.md`'s machine-output
-  rules — weaker than the additive member ADR-0014 already precedented. A missing boundary moves no
+  rules — weaker than the additive member ADR-0014 already precedented. Additive in the payload is
+  not automatically additive in *behavior*, though, and this record separates the two: a report that
+  crosses the MCP surface's response bound turns a previously successful `experimental_test_packs`
+  call into a refusal, which is a compatibility break the shape rules would not have caught. That is
+  why the rendering budget below is a determination here and not an implementation detail. A missing
+  boundary moves no
   status, no summary, and no exit code. One human line changes: the count sentence read "*n/m*
   derived probes have a row expecting them", which is false of a family witnessed by facts, and now
   reads "*n/m* derived probes are witnessed by a row".
-- **The wording stays inside ADR-0014's bounded-wording rule.** The missing sentence names the
-  pointer, the value, and each site with its operator (capped, in the house style), then states what
-  a row at that value would settle and that the policy text is the arbiter of which encoding the
-  pack should carry. No text states or implies that a covered boundary is a correct one.
+- **The wording stays inside ADR-0014's bounded-wording rule, and this is what it is.** The missing
+  sentence names the pointer, the value, and the sites still unwitnessed — one entry per distinct
+  owning declaration *and* operator, in walk order, so a rule comparing the same pointer and value
+  twice (once under a `not`) is named once — then states what a row at that value would settle and
+  that the policy text is the arbiter of which encoding the pack should carry. The site list is
+  capped at six entries with the rest counted, in the house style. The covered sentence names the
+  witnessing row, or the witnessing rows when the stages were settled by different ones, under the
+  same cap. No text states or implies that a covered boundary is a correct one.
+- **Every authored string this family renders is capped, with a digest tail.** A fact pointer, a
+  decimal literal, and a declaration id are authored strings §2.1's carrier bounds only at a
+  megabyte each, and this family repeats a pointer and a literal in a probe name and again in a
+  sentence, once per distinct pair. Rendered whole, a pack well inside every carrier limit — four
+  maximum-length pointer/literal pairs, about 8 MiB, one passing row — produced a 16.8 MB report
+  where the previous shape produced 1.3 KB, past the MCP surface's 16 MiB response bound: a call
+  that used to succeed became a refusal. An additive JSON member that removes an existing call is a
+  compatibility break, whatever the payload's shape rules say, so each rendered string is bounded to
+  128 bytes: within it, the string is rendered exactly as authored, and beyond it the rendering is
+  the prefix, an ellipsis, and the first 16 hex digits of the SHA-256 of the authored bytes.
+  Identity stays unambiguous where the text stops being readable — two pointers agreeing for their
+  whole first megabyte still name two probes — and the same pack renders the same names on every
+  run. What the cap deliberately does not bound is the *number* of probes: that stays proportional
+  to the pack's distinct compared pairs, exactly as ADR-0014's count stays proportional to a pack's
+  declared outcomes and reasons. The response bound remains the backstop for a report that is large
+  because the pack is, and it names the CLI command that streams the same report.
 - **ADR-0014's expectation-only clause is amended by scope, and its prohibition is kept verbatim.**
   ADR-0014's determination reads "**a probe is witnessed by what a row expects, never by what it
   produced**", and the same record separately declines the ordered-comparison type probe because it
@@ -175,8 +227,24 @@ Settled determinations:
   the invariant is **document, never run**, argued where ADR-0014 refuses trace-based coverage and
   where it admits the circular oracle, and a row's facts are an authored input in the row document,
   as static and portable as its expectation and not a product of the evaluator. The separate
-  type-probe clause narrows with the affirmative half, for the same reason. This record amends those
-  two clauses' scope by name and supersedes nothing else in ADR-0014.
+  type-probe clause narrows with the affirmative half, for the same reason.
+- **Three further ADR-0014 statements are universals this record generalizes, and they are listed
+  rather than left implied.** Each was written when the disposition family was the only family, and
+  each is stated of "the probes" without qualification:
+  - "**The probes are derived per pack from its declared outcomes and the reachable §8 reasons.**"
+    A boundary probe is derived from a *condition site* — a pointer and a decimal literal an ordered
+    comparison names — so the derivation's sources are now the declared outcomes, the reachable
+    reasons, **and** the ordered comparisons the pack's own conditions state.
+  - "**A missing probe is a fact about what the rows expect.**" For a boundary it is a fact about
+    what the rows' authored **facts** state. ADR-0014's point survives the widening whole — a
+    missing probe is a fact about the row documents and never a failed row — and only its "expect"
+    narrows.
+  - "**A probe's detail states 'no row expects X'.**" A boundary's missing detail states "No row's
+    facts place …", which is the same bounded-wording rule applied to an input rather than to a
+    disposition; the rule that no detail may state or imply that covered means correct is untouched.
+
+  Those three are generalized by scope, the affirmative-witness and type-probe clauses are narrowed
+  by scope, and this record supersedes nothing else in ADR-0014.
 - **The type probe is deliberately still not derived.** The widened witness makes it derivable — a
   row placing a JSON number at a compared pointer is a readable fact — and it is left out anyway,
   for two reasons. The schema pins an ordered-comparison operand to a decimal string, so the mistake
@@ -197,25 +265,42 @@ Settled determinations:
   row at 71 covers, saying nothing about whether 71 was the right number. A comparison reading the
   wrong pointer derives a probe at the wrong pointer. Both are questions about what the policy says,
   and no derivation over the pack's own declarations can ask them.
-- Bad, because eligibility is read off §8's order rather than off a run, and the order alone cannot
-  always answer it. An `unresolved` whose reasons include `unknown` is credited with having reached
-  a rule's comparison even where the unknown in fact came from applicability, so a boundary can read
-  covered by a row that placed the value there and stopped short of comparing it. The two
-  dispositions §8 makes unambiguous — `not-applicable` and an `unresolved` carrying only
-  `missing-required-evidence` — are excluded exactly; the rest are admitted, and this is the
-  generous direction on purpose.
+- Bad, because eligibility is read off §8's order rather than off a run, and the order alone
+  cannot always answer it. An `unresolved` whose reasons include `unknown` is credited with having
+  reached a rule's comparison even where the unknown in fact came from applicability, from required
+  evidence, or from an escalating exception; a `conflict` is credited the same way although step 5
+  records it too. What §8 makes unambiguous is excluded exactly — kind `not-applicable` before an
+  exception or a rule, and a retained `missing-required-evidence` or `exception-escalation` before a
+  normal rule, each of which has exactly one writer in the resolver and a halt behind it — and the
+  rest are admitted, which is the generous direction on purpose.
+- Bad, because per-stage coverage can demand two rows where one reads like enough: a threshold
+  compared both in `applicability` and in a rule, whose only row at the literal expects
+  `not-applicable`, stays missing until a row that reaches the rule places the value there too. That
+  is the demand being right rather than convenient — the rule copy of the comparison is exactly what
+  a not-applicable row never evaluated — and the sentence names the site still unprobed so the
+  second row is obvious to write.
 - Bad, because the circular-oracle escape is exactly as open as ADR-0014 left it: a facts document
   can be pasted from a run as easily as an expectation can. Coverage forces the row to exist; the
   arbiter rule governs what it may contain; nothing mechanical closes the remainder.
-- Bad, because the probe name is not machine-splittable — an RFC 6901 pointer may itself contain a
-  colon, so `boundary:<pointer>:<literal>` has an ambiguous delimiter. Accepted: probe strings are
-  labels this runtime never parses, both members are restated in the detail sentence, and
-  ADR-0016's `node:<nodeId>:<packProbe>` has the same property.
+- Neutral, and correcting an earlier draft of this record: `boundary:<pointer>:<literal>` **is**
+  splittable, at its **final** colon. A pointer may contain as many colons as it likes, including a
+  trailing one, but the literal cannot contain any — every literal that reaches a probe has already
+  passed §2.2's decimal grammar, `-?(0|[1-9][0-9]*)(\.[0-9]+)?`, and a capped rendering's tail is an
+  ellipsis and hex digits. Splitting at the last colon therefore recovers the two halves uniquely,
+  including for a root pointer and for `/a~1b/~0c:d`. What it recovers is the *rendered* pointer and
+  literal, which are the authored ones except where the 128-byte budget capped them. None of that
+  makes the name an interface: probe strings stay labels this runtime never parses, and both members
+  are restated in the detail sentence. ADR-0016's `node:<nodeId>:<packProbe>` is a different
+  composition — its second half is itself a probe name that may contain colons — and nothing here
+  changes what that record says about it.
 - Bad, because the shipped demo project's packs carry ordered comparisons and its matrices will
   start reporting gaps. That is ADR-0014's own precedent — the gaps become visible where they
   already exist — and closing them is a demo-repository follow-up, deliberately not folded in here.
 - Bad, because the report grows lines on a surface whose argument is that it has few. Merged
-  identity is the mitigation: a threshold repeated across a pack is one probe.
+  identity is the mitigation for the count — a threshold repeated across a pack is one probe — and
+  the rendering budget is the mitigation for the size of each line. Neither bounds a report whose
+  pack declares thousands of distinct thresholds; that report is large because the pack is, and the
+  MCP surface refuses it with the command that streams it rather than truncating it.
 - The `test_pack` prompt gains no clause pointing at the derived boundary probes in this change.
   ADR-0016 set the precedent of not smuggling a method-layer change into a derivation record; the
   prompt's numbered list is method (ADR-0008) and is amended there.
@@ -227,8 +312,11 @@ Settled determinations:
 ## More information
 
 `internal/project/coverage.go` carries the derivation — the structure-keyed walk, the grouping, the
-witness pass, and the emitted probes — beside ADR-0014's disposition family and outside
-`PackProbes`. `internal/evaluation/condition.go` exports `OrderedOperator`, `DecimalCompare`,
+per-stage witness pass with its eligibility predicate, the rendering budget, and the emitted probes
+— beside ADR-0014's disposition family and outside `PackProbes`. The eligibility predicate's doc
+comment derives each stage's rule from §8 and from `internal/evaluation/resolve.go`, which is this
+runtime's implementation of that order and the second authority every claim here is checked against.
+`internal/evaluation/condition.go` exports `OrderedOperator`, `DecimalCompare`,
 `DecimalKey`, and `ResolvePointer`, each with the reason it is exported. `internal/cli/render.go`
 carries the reworded count line and `internal/result/result.go` the corrected coverage doc comments.
 [ADR-0014](0014-matrix-coverage-report.md) is the record this one amends by scope and otherwise

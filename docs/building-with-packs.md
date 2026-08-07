@@ -215,11 +215,18 @@ literal. A rule saying "5000 or more requires review" and comparing `greater-tha
 individually valid members that disagree at exactly one input, and a suite with rows at 4999 and
 5001 is green while saying nothing about it. Sites sharing a pointer and a value are one probe
 however many operators compare them and however the decimal is spelled (`70` and `70.0` are one
-boundary), and the missing sentence names each site and its operator so you can open the pack at the
-right member. The row also has to be one that reaches the comparison: a row expecting
-`not-applicable`, or an unresolved whose only reason is `missing-required-evidence`, stops in §8
-before any rule's `when` is read, so it witnesses a boundary declared in `applicability` but not one
-declared in a rule or an exception. What it does not catch: a threshold written at the wrong
+boundary), and the missing sentence names the sites still unwitnessed — one entry per owning
+declaration and operator, the first six of them — so you can open the pack at the right member.
+
+The row also has to be one that could have reached the comparison, which §8's order decides.
+`applicability` runs first, so any row whose expectation decodes exercised it. Every exception's
+`when` is evaluated next, and missing required evidence does not stop that — §8 records it and halts
+only after every exception has been inspected — so only a row expecting `not-applicable` fails to
+witness an exception's boundary. A normal rule's `when` runs last, so a row whose expected reasons
+include `missing-required-evidence` or `exception-escalation` does not witness a rule's boundary:
+both prove the evaluation stopped before the rules. One threshold compared in two of those places
+needs a row for each, because the row that stopped early genuinely never compared the other copy.
+What it does not catch: a threshold written at the wrong
 *number*, or a comparison reading the wrong pointer — both are questions about what the policy says,
 not about which input distinguishes two encodings.
 

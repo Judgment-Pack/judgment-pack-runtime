@@ -3,6 +3,7 @@ package project
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1220,13 +1221,19 @@ func TestBoundaryProbesMergeSitesSharingAPointerAndValue(t *testing.T) {
 	}
 }
 
-// Witness eligibility is per site, read off §8's evaluation order. A row's
-// facts at the literal are only half of the test: a row whose evaluation halts
-// at step 1 (not applicable) or step 2 (missing required evidence) never
-// reached a rule's when, so it cannot have exercised a comparison declared
-// there. An applicability comparison is exercised by any row whose expectation
-// decodes — applicability runs first, and a not-applicable disposition is what
-// that comparison produced.
+// Witness eligibility is per stage, read off §8's evaluation order, and §8 has
+// three stages where a pack's own condition is read: applicability (step 1),
+// every exception's when (step 3), and the normal rules that survive step 5
+// (steps 6-7). A row's facts at the literal are only half of the test.
+//
+// Applicability is exercised by any row whose expectation decodes —
+// applicability runs first, and a not-applicable disposition is what that
+// comparison produced. An exception's when is exercised by every row except a
+// not-applicable one: §8 records missing evidence at step 2 without returning
+// and halts at step 5 "after all exception effects have been inspected". A
+// normal rule's when additionally excludes every expectation that proves that
+// step-5 halt — a retained missing-required-evidence, whatever else it is
+// retained beside, and a retained exception-escalation.
 func TestBoundaryWitnessEligibilityFollowsTheEvaluationOrder(t *testing.T) {
 	pack := map[string]any{
 		"outcomes":             []any{map[string]any{"id": "review"}},
@@ -1234,31 +1241,49 @@ func TestBoundaryWitnessEligibilityFollowsTheEvaluationOrder(t *testing.T) {
 		"applicability": map[string]any{
 			"op": "fact", "path": "/scope/tier", "operator": "greater-than-or-equal", "value": "5000",
 		},
+		"exceptions": []any{map[string]any{"id": "vip", "effect": "escalate", "when": map[string]any{
+			"op": "fact", "path": "/vendor/tenure", "operator": "greater-than", "value": "5000",
+		}}},
 		"rules": []any{map[string]any{"id": "threshold", "outcome": "review", "when": map[string]any{
 			"op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "5000",
 		}}},
 		"fallbackOutcome": "review",
 	}
-	// Both pointers carry exactly the compared literal in every row below, so
-	// the facts never decide the difference: only the expectation does.
-	facts := json.RawMessage(`{"scope":{"tier":"5000"},"expense":{"amount":"5000"}}`)
+	// All three pointers carry exactly the compared literal in every row below,
+	// so the facts never decide the difference: only the expectation does.
+	facts := json.RawMessage(`{"scope":{"tier":"5000"},"vendor":{"tenure":"5000"},"expense":{"amount":"5000"}}`)
 	for _, testCase := range []struct {
-		id          string
-		expectation string
-		rulesRan    bool
+		id            string
+		expectation   string
+		exceptionsRan bool
+		rulesRan      bool
 	}{
-		// §8.1 halts here; the applicability comparison is what produced it.
-		{"not-applicable", `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"none"}}`, false},
-		// §8.2 halts here, after applicability and before any rule.
-		{"missing-evidence", `{"kind":"unresolved","reasons":["missing-required-evidence"],"handoff":{"state":"none"}}`, false},
-		// Reason unknown is admitted: §8 can reach it at a rule, and no
-		// derivation over declarations can tell that from an applicability that
-		// evaluated unknown.
-		{"unknown", `{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}}`, true},
+		// Step 1 halts here; the applicability comparison is what produced it,
+		// and nothing after step 1 was evaluated.
+		{"not-applicable", `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"none"}}`, false, false},
+		// The same halt spelled as an unresolved carrying the not-applicable
+		// reason: the disposition grammar pins the reason set only for the
+		// kind, so this decodes — and it must mean the same step-1 halt, or a
+		// row expecting it would witness exceptions that were never evaluated.
+		{"not-applicable-as-reason", `{"kind":"unresolved","reasons":["not-applicable"],"handoff":{"state":"none"}}`, false, false},
+		// Step 2 records the reason and returns nothing: every exception was
+		// still evaluated, and the halt this reason causes is step 5's, before
+		// the normal rules.
+		{"missing-evidence", `{"kind":"unresolved","reasons":["missing-required-evidence"],"handoff":{"state":"none"}}`, true, false},
+		// A retained missing-required-evidence proves the step-5 halt however
+		// many other reasons it is retained beside.
+		{"missing-and-unknown", `{"kind":"unresolved","reasons":["missing-required-evidence","unknown"],"handoff":{"state":"none"}}`, true, false},
+		// A true escalate exception is one of step 5's named halting states, so
+		// its reason proves the normal rules were skipped too — and it proves
+		// the exceptions themselves were all evaluated.
+		{"exception-escalation", `{"kind":"unresolved","reasons":["exception-escalation"],"handoff":{"state":"requested","triggeredBy":["exception-escalation"]}}`, true, false},
+		// Reason unknown is admitted at both later stages: §8 reaches it at an
+		// escalating rule as well as at applicability, at evidence, and at an
+		// escalating exception, and no derivation over declarations can tell
+		// those apart.
+		{"unknown", `{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}}`, true, true},
 		// An outcome is produced by a rule or the fallback, so rules ran.
-		{"outcome", `{"kind":"outcome","outcomeId":"review","reasons":[],"handoff":{"state":"none"}}`, true},
-		// Missing evidence beside another reason no longer proves step 2 halted.
-		{"missing-and-unknown", `{"kind":"unresolved","reasons":["missing-required-evidence","unknown"],"handoff":{"state":"none"}}`, true},
+		{"outcome", `{"kind":"outcome","outcomeId":"review","reasons":[],"handoff":{"state":"none"}}`, true, true},
 	} {
 		probes := matrixCoverage(pack, Matrix{Cases: []evaluation.MatrixCase{{
 			ID: testCase.id, Facts: facts, ExpectedDisposition: json.RawMessage(testCase.expectation),
@@ -1267,21 +1292,34 @@ func TestBoundaryWitnessEligibilityFollowsTheEvaluationOrder(t *testing.T) {
 		if applicability.Status != result.MatrixProbeCovered {
 			t.Fatalf("row %q exercised the applicability comparison whatever it expects: %+v", testCase.id, applicability)
 		}
-		rule := findProbe(t, probes, "boundary:/expense/amount:5000")
-		want := result.MatrixProbeMissing
-		if testCase.rulesRan {
-			want = result.MatrixProbeCovered
-		}
-		if rule.Status != want {
-			t.Fatalf("row %q at the rule's literal: %+v, want %s", testCase.id, rule, want)
+		for _, staged := range []struct {
+			name    string
+			probe   string
+			reached bool
+		}{
+			{"exception", "boundary:/vendor/tenure:5000", testCase.exceptionsRan},
+			{"rule", "boundary:/expense/amount:5000", testCase.rulesRan},
+		} {
+			probe := findProbe(t, probes, staged.probe)
+			want := result.MatrixProbeMissing
+			if staged.reached {
+				want = result.MatrixProbeCovered
+			}
+			if probe.Status != want {
+				t.Fatalf("row %q at the %s's literal: %+v, want %s", testCase.id, staged.name, probe, want)
+			}
 		}
 	}
+}
 
-	// A boundary is witnessed when the row is eligible for at least one of its
-	// sites, so one compared at both stages takes the applicability reading: a
-	// not-applicable row covers it, because that row did evaluate the
-	// applicability copy of the comparison.
-	bothStages := map[string]any{
+// One pointer and one value compared at two stages is one probe, and covering
+// it takes a witness for each stage. Grouping must not mask: an
+// applicability-only witness settles the applicability copy of the comparison
+// and says nothing about the rule copy, so the merged probe stays missing —
+// and its sentence names the site still unprobed, not both sites — until a row
+// that could have reached the rule places the value there too.
+func TestBoundaryCoverageIsPerStageSoGroupingCannotMask(t *testing.T) {
+	pack := map[string]any{
 		"outcomes":      []any{map[string]any{"id": "review"}},
 		"applicability": map[string]any{"op": "fact", "path": "/expense/amount", "operator": "greater-than-or-equal", "value": "5000"},
 		"rules": []any{map[string]any{"id": "threshold", "outcome": "review", "when": map[string]any{
@@ -1289,16 +1327,47 @@ func TestBoundaryWitnessEligibilityFollowsTheEvaluationOrder(t *testing.T) {
 		}}},
 		"fallbackOutcome": "review",
 	}
-	shared := matrixCoverage(bothStages, Matrix{Cases: []evaluation.MatrixCase{{
-		ID:                  "not-applicable",
-		Facts:               facts,
+	facts := json.RawMessage(`{"expense":{"amount":"5000"}}`)
+	notApplicable := evaluation.MatrixCase{
+		ID: "not-applicable", Facts: facts,
 		ExpectedDisposition: json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"none"}}`),
-	}}})
-	if got := boundaryNames(shared); !slices.Equal(got, []string{"boundary:/expense/amount:5000"}) {
+	}
+	reachesTheRule := evaluation.MatrixCase{
+		ID: "at-threshold", Facts: facts,
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"review","reasons":[],"handoff":{"state":"none"}}`),
+	}
+
+	masked := matrixCoverage(pack, Matrix{Cases: []evaluation.MatrixCase{notApplicable}})
+	if got := boundaryNames(masked); !slices.Equal(got, []string{"boundary:/expense/amount:5000"}) {
 		t.Fatalf("the two sites are one boundary: %v", got)
 	}
-	if probe := findProbe(t, shared, "boundary:/expense/amount:5000"); probe.Status != result.MatrixProbeCovered {
-		t.Fatalf("eligibility for one site of a boundary witnesses the boundary: %+v", probe)
+	probe := findProbe(t, masked, "boundary:/expense/amount:5000")
+	if probe.Status != result.MatrixProbeMissing {
+		t.Fatalf("an applicability-only witness cannot settle the rule site: %+v", probe)
+	}
+	if !strings.Contains(probe.Detail, `rule "threshold" (greater-than)`) || strings.Contains(probe.Detail, "applicability") {
+		t.Fatalf("the sentence names the unwitnessed site and only that one: %q", probe.Detail)
+	}
+
+	// Both stages witnessed, by two different rows, is covered — and the
+	// sentence names both rows, because neither one answers for the other.
+	covered := findProbe(t, matrixCoverage(pack, Matrix{Cases: []evaluation.MatrixCase{notApplicable, reachesTheRule}}),
+		"boundary:/expense/amount:5000")
+	if covered.Status != result.MatrixProbeCovered {
+		t.Fatalf("a witness at every stage covers the boundary: %+v", covered)
+	}
+	for _, want := range []string{`"not-applicable"`, `"at-threshold"`} {
+		if !strings.Contains(covered.Detail, want) {
+			t.Fatalf("the covered detail names %s: %q", want, covered.Detail)
+		}
+	}
+
+	// One row eligible for the strictest stage is eligible for every earlier
+	// one, so it answers for the whole boundary by itself.
+	alone := findProbe(t, matrixCoverage(pack, Matrix{Cases: []evaluation.MatrixCase{reachesTheRule}}),
+		"boundary:/expense/amount:5000")
+	if alone.Status != result.MatrixProbeCovered || strings.Contains(alone.Detail, "one for each stage") {
+		t.Fatalf("one rule-eligible row settles both stages: %+v", alone)
 	}
 }
 
@@ -1317,6 +1386,79 @@ func TestBoundaryMissingDetailNamesEachSiteOnce(t *testing.T) {
 	probe := findProbe(t, matrixCoverage(pack, Matrix{}), "boundary:/x:5")
 	if got := strings.Count(probe.Detail, `rule "twice" (greater-than)`); got != 1 {
 		t.Fatalf("a repeated site is named once, got %d: %q", got, probe.Detail)
+	}
+}
+
+// The site list itself is capped: one boundary compared at many declarations
+// names the first six and counts the rest, so the sentence cannot grow with
+// the pack.
+func TestBoundaryMissingDetailCapsTheSiteList(t *testing.T) {
+	rules := make([]any, 0, 8)
+	for index := range 8 {
+		rules = append(rules, map[string]any{
+			"id": fmt.Sprintf("rule-%d", index), "outcome": "review",
+			"when": map[string]any{"op": "fact", "path": "/x", "operator": "greater-than", "value": "5"},
+		})
+	}
+	pack := map[string]any{"outcomes": []any{map[string]any{"id": "review"}}, "rules": rules, "fallbackOutcome": "review"}
+	probe := findProbe(t, matrixCoverage(pack, Matrix{}), "boundary:/x:5")
+	if !strings.Contains(probe.Detail, `rule "rule-5" (greater-than)`) || strings.Contains(probe.Detail, `rule "rule-6"`) {
+		t.Fatalf("the first six sites are named: %q", probe.Detail)
+	}
+	if !strings.Contains(probe.Detail, "(and 2 more)") {
+		t.Fatalf("the rest are counted: %q", probe.Detail)
+	}
+}
+
+// Pointers, literals, and declaration ids are authored strings the carrier
+// bounds only at a megabyte each, and this family repeats them in a probe name
+// and in a sentence. Every one of them is rendered under a fixed budget, and
+// the overflow is replaced by a digest of the authored bytes, so two strings
+// that agree for the whole budget still name two different probes — and the
+// same pack names them the same way every time.
+func TestBoundaryRenderingIsCappedAndStillDistinct(t *testing.T) {
+	long := func(suffix string) string { return "/" + strings.Repeat("a", 4096) + suffix }
+	digits := strings.Repeat("9", 4096)
+	pack := map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules": []any{
+			map[string]any{"id": strings.Repeat("z", 4096), "outcome": "review", "when": map[string]any{
+				"op": "fact", "path": long("one"), "operator": "greater-than", "value": digits + "1",
+			}},
+			map[string]any{"id": "short", "outcome": "review", "when": map[string]any{
+				"op": "fact", "path": long("two"), "operator": "less-than", "value": digits + "2",
+			}},
+		},
+		"fallbackOutcome": "review",
+	}
+	probes := matrixCoverage(pack, Matrix{})
+	names := boundaryNames(probes)
+	if len(names) != 2 || names[0] == names[1] {
+		t.Fatalf("two compared pairs are two distinct probes: %v", names)
+	}
+	if !slices.Equal(names, boundaryNames(matrixCoverage(pack, Matrix{}))) {
+		t.Fatalf("the same pack derives the same names: %v", names)
+	}
+	for _, probe := range probes {
+		if !strings.HasPrefix(probe.Probe, "boundary:") {
+			continue
+		}
+		// "boundary:" plus a capped pointer, a colon, and a capped literal.
+		if want := len("boundary:") + 2*boundaryTextBudget + 1; len(probe.Probe) > want {
+			t.Fatalf("probe name is %d bytes, over the %d-byte budget: %q", len(probe.Probe), want, probe.Probe)
+		}
+		if len(probe.Detail) > 1024 {
+			t.Fatalf("missing sentence is %d bytes: %q", len(probe.Detail), probe.Detail)
+		}
+	}
+	// The capped rendering is the prefix, an ellipsis, and a digest of the
+	// authored bytes — not a truncation that would collide.
+	first, second := capRendered(long("one")), capRendered(long("two"))
+	if first == second || !strings.Contains(first, "…") || len(first) > boundaryTextBudget {
+		t.Fatalf("capped renderings must stay distinct and bounded: %q, %q", first, second)
+	}
+	if short := "/vendor/riskScore"; capRendered(short) != short {
+		t.Fatalf("text inside the budget is rendered whole: %q", capRendered(short))
 	}
 }
 
