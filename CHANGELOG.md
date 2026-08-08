@@ -2,7 +2,16 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.16.0 - 2026-08-07
+
+- **Replaying a decision: pin the tuple, not the pack**: `docs/building-with-packs.md` gains a
+  closing section recording the replay discipline issue #93 surfaced — a pack hash alone does not
+  make a decision replayable, because JPS §11's exactness means a later evaluator correctly
+  refuses an unedited older pack. The unit of replay is three facts recorded together: the pack's
+  SHA-256, the evaluator release that ran, and the executable's digest; old releases stay
+  published so replay is a fetch-by-tag, verify-checksums, never-use-latest operation. The
+  `JPS-EVALUATION-PACK-SPEC-VERSION` diagnostic now names that path beside the one-edit
+  re-declaration it already explained, so the guidance appears at the moment of refusal.
 
 - **Derive candidate test-row inputs from a pack's own literals, and never their expectations**
   (ADR-0024): a new `jpack packs suggest` reads the packs a project declares and emits a
