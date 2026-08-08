@@ -261,12 +261,143 @@ func DecimalKey(value any) (string, bool) {
 	return parsed.RatString(), true
 }
 
+// DecimalValue admits one value as a §2.2 decimal and reads it into an exact
+// number, exported for the same one-statement reason DecimalKey is: a surface
+// deriving new decimals from a pack's own literals — the test-row input
+// generator of ADR-0024 — must admit them through the grammar §7.4 admits,
+// never through big.Rat's own SetString, which reads "1/3", "1e5", and " 5 "
+// as numbers §2.2 has no spelling for. The returned value is this call's own
+// and the caller may do arithmetic on it.
+//
+// It is the reading half of the pair whose writing half is DecimalString, and
+// the two are exact inverses over every value either admits.
+func DecimalValue(value any) (*big.Rat, bool) {
+	return decimalValue(value)
+}
+
+// DecimalString renders one exact number as a §2.2 decimal string —
+// -?(0|[1-9][0-9]*)(\.[0-9]+)? — or reports false for a number that grammar
+// cannot spell.
+//
+// It exists because DecimalKey cannot do this and must not be made to: that
+// function renders big.Rat's canonical form, which is "81/2" for 40.5, so it
+// is an *identity* key and never an emission. A surface emitting a decimal a
+// pack's own literals imply (ADR-0024) needs the emission, and a second decimal
+// writer living outside this package could spell a value the evaluator then
+// declines to compare.
+//
+// The contract is exactness in both directions. A number whose decimal
+// expansion does not terminate — any value whose denominator in lowest terms
+// keeps a prime factor other than 2 or 5 — is refused rather than rounded,
+// because a rounded value is a different number and a generator that quietly
+// substituted one would emit an input nobody asked for. Where the expansion
+// terminates the rendering carries every digit of it, at the fewest digits that
+// are exact, so the result has no trailing fractional zero and DecimalValue
+// reads back the number this was called with.
+//
+// Both halves of that contract are about the number and not about the fraction
+// it arrived as, so the value is reduced before it is read. A *big.Rat the
+// arithmetic here produces is already in lowest terms, but this is exported and
+// a caller can hand over one that is not — big.Rat's own Num and Denom return
+// references a caller may set — and 2/4 rendered off an unreduced denominator
+// is "0.50", which states a precision the number does not have, while 3/3 is
+// refused outright for a denominator that clears on sight. Reducing a copy
+// costs one normalization and leaves the caller's value untouched.
+func DecimalString(value *big.Rat) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	// A denominator of zero is no fraction at all. It cannot arise from this
+	// package's own arithmetic and is checked because SetFrac would panic on
+	// it, and a panic is not an answer this function is allowed to give.
+	if value.Denom().Sign() == 0 {
+		return "", false
+	}
+	value = new(big.Rat).SetFrac(value.Num(), value.Denom())
+	// The scale is the smaller power of ten that clears the denominator:
+	// 10^d = 2^d·5^d, so d must reach the larger of the denominator's own two
+	// exponents and nothing beyond it. Taking the smallest such d is what makes
+	// the rendering unique — a larger one would append zeroes that state a
+	// precision the number does not have.
+	denominator := new(big.Int).Set(value.Denom())
+	scale := 0
+	for _, factor := range []int64{2, 5} {
+		divisor := big.NewInt(factor)
+		exponent := 0
+		for {
+			quotient, remainder := new(big.Int).QuoRem(denominator, divisor, new(big.Int))
+			if remainder.Sign() != 0 {
+				break
+			}
+			denominator, exponent = quotient, exponent+1
+		}
+		if exponent > scale {
+			scale = exponent
+		}
+	}
+	if denominator.Cmp(big.NewInt(1)) != 0 {
+		return "", false
+	}
+	scaled := new(big.Int).Mul(value.Num(), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(scale)), nil))
+	scaled.Quo(scaled, value.Denom())
+	sign := ""
+	if scaled.Sign() < 0 {
+		sign = "-"
+		scaled.Neg(scaled)
+	}
+	digits := scaled.String()
+	if scale == 0 {
+		return sign + digits, true
+	}
+	// §2.2 requires an integer part, so a value under one is padded to exactly
+	// the "0.…" the grammar names rather than left as ".5".
+	for len(digits) <= scale {
+		digits = "0" + digits
+	}
+	return sign + digits[:len(digits)-scale] + "." + digits[len(digits)-scale:], true
+}
+
 // ResolvePointer resolves one RFC 6901 pointer against a decoded document
 // exactly as a fact condition resolves its path, exported for the same reason
 // as DecimalCompare: the coverage derivation must locate a fact by the
 // evaluator's own resolution, not by a second pointer walker.
 func ResolvePointer(document any, pointer string) (any, bool) {
 	return resolvePointer(document, pointer)
+}
+
+// PointerTokens splits one authored RFC 6901 pointer into its escape-decoded
+// reference tokens, or reports false for a pointer that is neither empty nor
+// rooted at "/". A surface that must *place* a value at a pointer rather than
+// read one needs the tokens themselves, and ResolvePointer only reads; without
+// this export that surface would carry a second implementation of ~1 and ~0,
+// and a pointer the two escaped differently would place a fact where no
+// condition looks for it (ADR-0024).
+//
+// The empty pointer selects the whole document and yields no tokens, which is
+// the caller's cue that there is no member to place: a caller placing into a
+// document distinguishes that case rather than treating it as an error here.
+func PointerTokens(pointer string) ([]string, bool) {
+	compiled := compilePointer(pointer)
+	if !compiled.rooted {
+		return nil, false
+	}
+	return compiled.tokens, true
+}
+
+// ArrayIndex reads one RFC 6901 array-reference token as an index into a
+// container of the given length — decimal digits with no leading zero other
+// than "0" itself, no sign, no past-the-end "-", and in range — exported for
+// the same single-source-of-truth reason PointerTokens is.
+//
+// A surface that PLACES a value at a pointer has to admit exactly the tokens
+// the resolution admits. strconv.Atoi is the tempting substitute and it is a
+// wider grammar: it reads "00" and "+0" as zero, so a candidate placed at
+// /items/00 lands at the element the pointer does not address, where this
+// evaluator then resolves nothing and no condition ever reads it (ADR-0024).
+// One rule, stated here, is what keeps a placement and a resolution from
+// disagreeing about which element a pointer names.
+func ArrayIndex(token string, length int) (int, bool) {
+	return arrayIndex(token, length)
 }
 
 // compiledPointer is an authored RFC 6901 pointer with its bytes already read:

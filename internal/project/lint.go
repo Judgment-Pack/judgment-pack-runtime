@@ -151,42 +151,77 @@ func producesPointer(producers []string, consulted string) bool {
 }
 
 // quantifierOps is the draft-RFC collection-quantifier operator set. The
-// detection is deliberately keyed to these names, unlike ADR-0020's
-// shape-keyed walk: a data literal that merely carries `where` must not
-// silently suppress the fact gate, and a future quantifier operator this
-// list does not know falls into the flat check and fails visibly there —
+// detection is keyed to these names AND to the positions a condition can
+// occupy, on two separate grounds: a data literal that merely carries `where`
+// must not silently suppress the fact gate, and a future quantifier operator
+// this list does not know falls into the flat check and fails visibly there —
 // the failure direction that gets noticed — rather than skipping silently.
 var quantifierOps = map[string]bool{"exists": true, "every": true, "uniform": true}
 
-// usesQuantifiers reports whether the document carries a draft-RFC
-// collection quantifier: a node whose op is one of the known quantifier
-// operators and which carries `where` or `at`. The flat consulted-pointer
-// list reports such a pack's element-relative pointers without their element
-// context (ADR-0020's recorded narrowness), so the lint says it cannot check
-// that pack's fact half rather than fail it on pointers no flat producer set
-// could name — or pass it on a list it knows is untrustworthy.
+// usesQuantifiers reports whether the pack STATES a draft-RFC collection
+// quantifier: a node whose op is one of the known quantifier operators, which
+// carries `where` or `at`, and which sits where the evaluator reads a condition
+// — the pack's applicability, a rule's `when`, an exception's `when`, or a
+// position reached from one of those through all, any, or not.
+//
+// The position half is load-bearing. A pack may carry a condition-shaped object
+// as DATA — an equals operand comparing a fact against a literal that happens
+// to be shaped {"op":"exists","where":…} is a valid pack stating no quantifier
+// at all — and a walk that descended into operand values would report a draft
+// quantifier for it. The consequence is not cosmetic: this pack's fact half
+// would then be reported skipped rather than checked, so a real unproduced
+// pointer would go unreported behind a quantifier the pack does not use. The
+// enumeration is the structure-keyed one ADR-0023 split out and ADR-0024's
+// generator reuses, so this detection, the coverage probes, and the candidate
+// derivation all read conditions from exactly the same places.
+//
+// Where a pack does state one, the flat consulted-pointer list reports its
+// element-relative pointers without their element context (ADR-0020's recorded
+// narrowness), so the lint says it cannot check that pack's fact half rather
+// than fail it on pointers no flat producer set could name — or pass it on a
+// list it knows is untrustworthy.
 func usesQuantifiers(document any) bool {
-	switch value := document.(type) {
-	case map[string]any:
-		if op, ok := value["op"].(string); ok && quantifierOps[op] {
-			if _, hasWhere := value["where"]; hasWhere {
-				return true
-			}
-			if _, hasAt := value["at"]; hasAt {
+	pack, ok := document.(map[string]any)
+	if !ok {
+		return false
+	}
+	found := false
+	packConditions(pack, func(node any, _ string, _ siteStage) {
+		if !found && conditionUsesQuantifier(node) {
+			found = true
+		}
+	})
+	return found
+}
+
+// conditionUsesQuantifier reports whether one condition tree states a draft-RFC
+// collection quantifier at a condition position. It descends through the three
+// doors the core grammar recurses through and through a quantifier's own nested
+// condition members — never into a condition's value, which is data.
+func conditionUsesQuantifier(node any) bool {
+	condition, ok := node.(map[string]any)
+	if !ok {
+		return false
+	}
+	op, _ := condition["op"].(string)
+	if quantifierOps[op] {
+		if _, hasWhere := condition["where"]; hasWhere {
+			return true
+		}
+		if _, hasAt := condition["at"]; hasAt {
+			return true
+		}
+	}
+	switch op {
+	case "all", "any":
+		children, _ := condition["conditions"].([]any)
+		for _, child := range children {
+			if conditionUsesQuantifier(child) {
 				return true
 			}
 		}
-		for _, member := range value {
-			if usesQuantifiers(member) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range value {
-			if usesQuantifiers(item) {
-				return true
-			}
-		}
+	case "not":
+		return conditionUsesQuantifier(condition["condition"])
 	}
 	return false
 }

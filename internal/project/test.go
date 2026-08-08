@@ -32,6 +32,13 @@ import (
 // a row expects, a comparison boundary through what a row's facts place at the
 // literal. Coverage informs and never gates — it moves no status and no exit
 // code.
+//
+// Beside that, an entry whose matrix loaded carries the origins its rows
+// declare, counted (ADR-0024). It is a measurement of how a suite's inputs were
+// supplied, not a judgement of them: the member that decides a row is its
+// expectation, and an expectation is authored whatever supplied its facts. Like
+// coverage it moves no status and no exit code, and unlike coverage there is
+// nothing here to satisfy.
 func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result.PackTest, *Failure) {
 	selected, failure := p.selection(id)
 	if failure != nil {
@@ -107,6 +114,12 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		report.Detail = display.Sanitize(err.Error())
 		return report
 	}
+	// The origins the rows declare are counted before any of them runs, because
+	// the count is about the row documents and not about what running them
+	// produced. It moves no status: the member that decides a row is its
+	// expectation, and an expectation is authored whatever supplied the facts
+	// (ADR-0024).
+	report.Origins = MatrixOrigins(matrix)
 	admitted := evaluator.AdmitPack(pack)
 	for _, row := range matrix.Cases {
 		outcome := evaluator.RunCaseAdmitted(admitted, row, command)

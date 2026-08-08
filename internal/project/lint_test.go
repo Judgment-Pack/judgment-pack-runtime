@@ -252,6 +252,40 @@ func TestADataLiteralCannotImpersonateAQuantifier(t *testing.T) {
 	}
 }
 
+// The impersonation that matters most is the exact one: a condition-shaped
+// object whose op IS a known quantifier operator, carried as an equals operand.
+// The detection is keyed to condition POSITIONS as well as to those names, so
+// this pack states no quantifier and its fact half is checked rather than
+// skipped.
+//
+// The cost of getting this wrong is not cosmetic. A skipped fact half is a
+// check nobody performed, so a genuinely unproduced pointer would go unreported
+// behind a quantifier the pack does not use — the lint failing open on the one
+// defect it exists to catch.
+func TestAQuantifierShapedOperandIsDataAndDoesNotSkipTheFactHalf(t *testing.T) {
+	document := `{
+	  "id": "https://example.invalid/judgment-packs/carrier", "version": "0.1.0",
+	  "rules": [{"id": "r1", "when": {"op": "fact", "path": "/real", "operator": "equals",
+	    "value": {"op": "exists", "path": "/lines", "where": {"op": "fact", "path": "/amount", "operator": "greater-than", "value": "1"}}}}]
+	}`
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"carrier":{"path":"packs/c.json"}}}`,
+		map[string]string{"packs/c.json": document})
+	report, failure := mustLoad(t, configPath).Lint(nil, "", "packs lint")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	for _, pack := range report.Packs {
+		for _, check := range pack.Checks {
+			if check.Name == CheckQuantifierScope {
+				t.Fatalf("a pack stating no quantifier must not have one reported: %+v", check)
+			}
+		}
+	}
+	if got := lintCheckNamed(t, report, "carrier", CheckFactProducers); got.Status != result.PackCheckFailed {
+		t.Fatalf("the fact half is checked, and its unproduced pointer fails visibly: %+v", got)
+	}
+}
+
 // An unknown decision id is refused exactly as every packs command refuses it.
 func TestLintRefusesAnUnknownDecisionId(t *testing.T) {
 	configPath := writeProject(t, `{"configVersion":"1","packs":{"intake":{"path":"packs/a.json"}}}`,

@@ -910,6 +910,16 @@ type LockFinding struct {
 // rows state, not a failed row (ADR-0014, ADR-0023).
 // An additive member, so outputVersion stays "2" by the same two
 // VERSIONING.md rules ADR-0012 cites.
+// Origins counts the rows by the origin each declares, so a suite whose rows
+// were mostly machine-supplied inputs says so where a reviewer and a CI log
+// both read it (ADR-0024). It counts and never gates: an origin moves no
+// status, no summary, and no exit code, because the member that decides
+// anything about a row is its expectation and an expectation is always
+// authored. Gating on it would be worse than useless — the marker is deletable
+// in one edit, and a gate would teach exactly that deletion, destroying the one
+// signal that measures how much of a suite a generator supplied. An additive
+// member, so outputVersion stays "2" by the same two VERSIONING.md rules
+// ADR-0012 cites.
 type PackTestEntry struct {
 	ID          string                 `json:"id"`
 	PackID      string                 `json:"packId"`
@@ -920,7 +930,18 @@ type PackTestEntry struct {
 	Summary     SuiteSummary           `json:"summary"`
 	Rows        []EvaluationCorpusCase `json:"rows"`
 	Coverage    []MatrixProbe          `json:"coverage,omitempty"`
+	Origins     []OriginCount          `json:"origins,omitempty"`
 	Detail      string                 `json:"detail,omitempty"`
+}
+
+// OriginCount is how many of one pack's matrix rows declare one origin, in
+// sorted order of the origin. Only rows that declare one are counted, so a
+// suite in which nothing declares an origin carries no member rather than a
+// zero: the absence of the marker is not a claim that every row was hand
+// written, and a count of "" would read like one.
+type OriginCount struct {
+	Origin string `json:"origin"`
+	Rows   int    `json:"rows"`
 }
 
 // PackTest is one packs test run. It carries Experimental,
@@ -944,6 +965,81 @@ type PackTest struct {
 	ConfigVersion             string          `json:"configVersion"`
 	Summary                   SuiteSummary    `json:"summary"`
 	Packs                     []PackTestEntry `json:"packs"`
+}
+
+// PackSuggestionLabel labels every packs suggest report with what the run
+// produced and what it did not. It is the corpus label's discipline applied to
+// a generator: the one thing a reader must not take from a candidate document
+// is that anything in it has been decided.
+const PackSuggestionLabel = "candidate test-row inputs derived from a pack's own literals: facts documents with no expectation, which are not rows and are not tests until a human writes the expectation from the policy text"
+
+// SuggestionCounts summarizes one packs suggest run. Total counts the packs
+// selected; Candidates counts the candidate inputs derived across all of them,
+// which is the number a reviewer is about to read.
+type SuggestionCounts struct {
+	Total      int `json:"total"`
+	Suggested  int `json:"suggested"`
+	Skipped    int `json:"skipped"`
+	Candidates int `json:"candidates"`
+}
+
+// SuggestionSkip is one derivation this run did not perform, and why. A
+// dimension the generator cannot address is reported rather than silently
+// omitted, on ADR-0022's skipped-not-passed precedent: a candidate set that
+// quietly left out a pack's collection quantifiers would read as the whole
+// derivable set when it is not.
+type SuggestionSkip struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+}
+
+// PackSuggestionEntry is one pack's derivation: how many candidate inputs it
+// produced and every dimension it did not. Status is "suggested" when the pack
+// derived at least one candidate and "skipped" when it derived none — never
+// "passed", because nothing here was checked.
+//
+// Unreadable separates the two ways of deriving nothing, which are different
+// facts and must not be reported as one. A pack this runtime read and found no
+// derivable comparison in states no such comparison; a pack it could not read
+// states nothing knowable at all, and a report that said "no comparison" of it
+// would be asserting something about a document nobody parsed.
+type PackSuggestionEntry struct {
+	ID          string           `json:"id"`
+	PackID      string           `json:"packId"`
+	PackVersion string           `json:"packVersion"`
+	Path        string           `json:"path"`
+	Status      string           `json:"status"`
+	Unreadable  bool             `json:"unreadable,omitempty"`
+	Candidates  int              `json:"candidates"`
+	Skipped     []SuggestionSkip `json:"skipped,omitempty"`
+	Detail      string           `json:"detail,omitempty"`
+}
+
+// PackSuggestion is one packs suggest report (ADR-0024): the report *about* a
+// derivation, which is a different artifact from the candidate document the
+// derivation emits. The document goes to --write or to stdout and carries
+// candidatesVersion and candidates; this payload carries the counts, the pack
+// identities the candidates came from, and every skipped dimension. Keeping
+// them apart is what lets the document stay inputs-only — a provenance member
+// inside it would be a member of a file whose whole purpose is to be edited
+// into a matrix — while a reader still learns which pack version a run read.
+//
+// It is its own payload rather than a member of an existing one, on the
+// reasoning PackLock and PackProducersLint record: a surface this new should be
+// removable without taking a member out of a payload consumers already read.
+type PackSuggestion struct {
+	OutputVersion     string                `json:"outputVersion"`
+	Tool              Tool                  `json:"tool"`
+	Command           string                `json:"command"`
+	Status            string                `json:"status"`
+	Kind              string                `json:"kind"`
+	Label             string                `json:"label"`
+	ConfigPath        string                `json:"configPath"`
+	ConfigVersion     string                `json:"configVersion"`
+	CandidatesVersion string                `json:"candidatesVersion"`
+	Summary           SuggestionCounts      `json:"summary"`
+	Packs             []PackSuggestionEntry `json:"packs"`
+	WrittenTo         string                `json:"writtenTo,omitempty"`
 }
 
 // ConfigSchema describes the exact embedded jpack.json schema bytes, on the same

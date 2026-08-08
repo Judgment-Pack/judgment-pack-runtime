@@ -50,7 +50,7 @@ func (a *App) packsCommand() *cobra.Command {
 			return command.Help()
 		},
 	}
-	// --config is registered on the six subcommands that read a configuration
+	// --config is registered on the seven subcommands that read a configuration
 	// rather than on this one as a persistent flag. packs schema prints an
 	// embedded artifact and touches no configuration; a flag inherited into its
 	// help would promise an effect it does not have.
@@ -58,12 +58,139 @@ func (a *App) packsCommand() *cobra.Command {
 		a.packsListCommand(),
 		a.packsValidateCommand(),
 		a.packsTestCommand(),
+		a.packsSuggestCommand(),
 		a.packsLockCommand(),
 		a.packsVerifyCommand(),
 		a.packsLintCommand(),
 		a.packsSchemaCommand(),
 	)
 	return packs
+}
+
+// packsSuggestCommand derives candidate test-row inputs from a pack's own
+// literals (ADR-0024). It emits facts and never rows: the expectation is the
+// member that says what a pack should decide, deriving it from the pack would
+// be the circular oracle, and its absence — not a placeholder — is what the
+// matrix loader already refuses on.
+func (a *App) packsSuggestCommand() *cobra.Command {
+	format := "human"
+	id := ""
+	baseRow := ""
+	configPath := ""
+	writeTarget := ""
+	maximum := project.DefaultMaxCandidates
+	includeHugs := false
+	command := &cobra.Command{
+		Use:   "suggest",
+		Short: "Derive candidate test-row INPUTS from a pack's own literals; they are not rows until you write the expectation",
+		Long: "Read the packs a project declares and emit candidate test-row inputs -- facts documents at the " +
+			"values each pack's own conditions imply -- as a candidatesVersion/candidates document, never as matrix " +
+			"rows. Each candidate carries an id, origin \"generated\", a facts document, sometimes an " +
+			"evidenceAvailability, and a rationale: a sentence saying what it places and why the pack implies it, " +
+			"closed by the sentence every candidate ends with -- no expectation is stated, write one or delete the " +
+			"candidate. It carries NEITHER expectedDisposition NOR expectedErrorClass, and that absence is the " +
+			"point: an expectation is the member that says what the pack should decide, and deriving one from the " +
+			"pack would be the circular oracle. Nothing it emits can be scored, through refusals the matrix loader " +
+			"already makes: a candidate pasted VERBATIM into a cases array is refused for the rationale it carries, " +
+			"which is a member of no row, and with that removed it is refused again -- by name -- for declaring " +
+			"neither expectation. The emitted document is not a matrix either; a jpack.json matrix path aimed at " +
+			"one is refused by the loader twice over. Per pointer the values are the compared literal itself, one " +
+			"unit either side of it at the precision the pack authored it in, the midpoints between adjacent " +
+			"literals, and one unit outside the outermost ones; composition is one factor or axis at a time -- a " +
+			"value or membership candidate moves ONE pointer and holds the rest at a base assignment, an evidence " +
+			"candidate moves no pointer at all -- so a run's size is the sum over pointers and never their " +
+			"product. --base names an already-reviewed row of that pack's matrix " +
+			"to vary from, which is what makes a candidate read as \"this reviewed row, with one pointer moved\"; " +
+			"without it the facts carry only the varied pointer. It runs no evaluator, derives no expectation, " +
+			"decides nothing, and moves no exit code: a value the policy text does not decide is a candidate you " +
+			"delete, and deleting one is a first-class outcome of reviewing this file. --format renders the report " +
+			"about the run, on stdout, or on stderr when --write - takes stdout for the document; --write - and " +
+			"--format json are refused together, because one stream cannot carry two documents. Nothing is written " +
+			"unless --write names a new file or -, and a destination this configuration declares as a pack, a " +
+			"matrix, a graph, or a rows document is refused.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			const commandName = "packs suggest"
+			if err := validateFormat(format); err != nil {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			if writeTarget == "-" && format == "json" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-STDOUT", "--write - cannot be combined with --format json: the candidate document and the report about the run are two documents, and one stream cannot carry both.")
+			}
+			// --max is registered carrying the default, so an absent flag arrives
+			// as 500 and only a typed one can be non-positive. It is refused
+			// rather than read as "the default": a run asked for at most zero
+			// candidates was asked for nothing, and answering it with five
+			// hundred is the silent substitution this family refuses everywhere.
+			if maximum <= 0 {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-SUGGEST-MAX",
+					fmt.Sprintf("--max bounds how many candidate inputs one run may emit, so it must be a positive count; %d bounds nothing this run could offer. Omit --max to accept the default of %d.",
+						maximum, project.DefaultMaxCandidates))
+			}
+			if writeTarget != "" && writeTarget != "-" && fssecure.IsRemotePath(writeTarget) {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-OUTPUT", "Remote filesystem output paths are not supported.")
+			}
+			loaded, failure := a.loadProject(configPath, commandName, format)
+			if failure != nil {
+				return failure
+			}
+			defer loaded.Close()
+			// The destination is checked before a single pack is read. A generated
+			// candidate file landing on a declared pack, matrix, graph, or rows
+			// document would put machine-supplied inputs where reviewed law is,
+			// and the exclusive open cannot say that: it refuses an existing file
+			// with an I/O error and accepts a declared path that does not exist
+			// yet, which is the case a reviewer would never notice.
+			if writeTarget != "" && writeTarget != "-" {
+				if owner, declared := loaded.DeclaresOutputPath(writeTarget); declared {
+					return a.operational(commandName, format, result.ExitInvalid, "JPS-SUGGEST-PATH",
+						fmt.Sprintf("The candidate document would be written at %s, which this configuration declares as %s. Candidates are inputs nobody has reviewed; a declared document is law somebody did. Name another destination; nothing was written.",
+							display.Sanitize(writeTarget), display.Sanitize(owner)))
+				}
+			}
+			output, document, projectFailure := loaded.Suggest(project.SuggestOptions{
+				ID:          id,
+				BaseRow:     baseRow,
+				Max:         maximum,
+				IncludeHugs: includeHugs,
+			}, commandName)
+			if projectFailure != nil {
+				return a.projectFailure(commandName, format, projectFailure)
+			}
+			contents, err := project.EncodeCandidates(document)
+			if err != nil {
+				return a.operational(commandName, format, result.ExitInternal, "JPS-SUGGEST-ENCODE", "The candidate document could not be encoded.")
+			}
+			// With the document on stdout the report goes to stderr, so a piped
+			// stdout is exactly the document's bytes and the skipped dimensions
+			// are still stated. Emitting the document and swallowing the report
+			// would be silence over a gap.
+			stream := a.out
+			if writeTarget == "-" {
+				if _, err := a.out.Write(contents); err != nil {
+					return &handledExit{code: result.ExitIO}
+				}
+				stream = a.errOut
+			} else if writeTarget != "" {
+				if err := writeNewFile(writeTarget, contents); err != nil {
+					return a.operational(commandName, format, result.ExitIO, "JPS-SUGGEST-WRITE", "Candidate destination must be a new writable file.")
+				}
+				output.WrittenTo = writeTarget
+			}
+			if err := a.renderPackSuggestion(stream, format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format for the report about the run: human or json")
+	command.Flags().StringVar(&id, "id", id, "derive candidates for one declared pack by its decision id instead of all of them")
+	command.Flags().StringVar(&baseRow, "base", baseRow, "vary from this already-reviewed row of the selected pack's matrix; requires --id")
+	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().StringVar(&writeTarget, "write", writeTarget, "write the candidate document to a new file or -; omit to report the derivation without emitting it")
+	command.Flags().IntVar(&maximum, "max", maximum, "refuse, rather than truncate, past this many candidates in one run; must be a positive count")
+	command.Flags().BoolVar(&includeHugs, "include-hugs", includeHugs, "also emit the pair two decimal places finer than each literal's authored precision, clamped at 10^-6: a literal authored at five digits is hugged one place finer instead of two, one at six or more gets no pair, and the report names both")
+	return command
 }
 
 // packsLintCommand holds every consulted pointer to a producer (ADR-0022) —
