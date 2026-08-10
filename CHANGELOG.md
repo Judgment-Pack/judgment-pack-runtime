@@ -65,13 +65,18 @@ All notable changes to tagged releases are documented here.
   the comparison is decided on the decoded targets — presence, then each member in full — because
   sixty-four bits of digest deciding whether a suite passes would be a probabilistic answer to a
   question with an exact one. And because a budget on *retained* bytes says nothing about the work
-  spent producing them, the pack's own target is **rendered once per admission** — where the pack is
-  decoded — and every row reads a field: §8.1 gives a pack one escalation target, so rendering per
-  row makes ten thousand rows against a megabyte-long name ten gigabytes of repeated canonicalizing
-  and hashing that no retained-bytes budget can see. Keying that cache on the target's *content*
-  rather than on the admission is not enough, and this is recorded because it was the first attempt:
-  `supportedExtensions` selects a distinct admission, each admission decodes the pack separately, so
-  a content check compares an equal megabyte on every row once a run mixes two capability sets. The actual side of the pair carries a third value, **`unavailable`**
+  spent producing them, the pack's target is **rendered once per pack per run** — where the pack is
+  loaded, above the row loop, and only when some row asserts one — and handed to every row as a
+  value: §8.1 gives a pack one escalation target, so rendering per row makes ten thousand rows
+  against a megabyte-long name ten gigabytes of repeated canonicalizing and hashing that no
+  retained-bytes budget can see. Caching it instead of hoisting it is not enough, and the attempts
+  are recorded because each failed the same way: keyed on the target's *content*, a run mixing two
+  capability sets compares an equal megabyte per row, because `supportedExtensions` selects a
+  distinct admission and each admission decodes the pack separately; stored on the *admission*, a
+  matrix that uses sixty-four one-off capability sets and repeats a sixty-fifth re-renders on every
+  remaining row, because `maxAdmissions` bounds what is retained and not what is computed. The
+  rendering is a function of the pack's bytes alone, so it belongs where a pack is loaded; the row
+  path then holds no cache, no lock, and no counter. The actual side of the pair carries a third value, **`unavailable`**
   (`unavailable (evaluation refused)` on the human surface), for a row whose evaluation was refused:
   reporting `null` there would say an evaluation reported no target when no evaluation happened. The
   **graph** surface is deliberately unchanged and its matrices stay blind to a target-only pack edit;

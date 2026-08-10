@@ -250,48 +250,44 @@ Settled determinations:
   the split, and nothing is spent either: a row's expectation lives in the matrix, which
   `MaxMatrixBytes` bounds whole, so the total compared across a run is bounded by the matrix rather
   than by the pack, and a length mismatch settles a comparison before a byte of either is read.
-- **The pack's own target is rendered once per admission, and no row renders or compares one.** The
-  budgets above bound what a report *retains*; they say nothing about what producing it *costs*, and
-  the second round of review found the gap between those two. §8.1 gives a pack one escalation
-  target and every row of one matrix evaluates one pack, so ten thousand rows asserting `null`
-  against a megabyte-long target canonicalize and hash the same authored string ten thousand times —
-  ten gigabytes of work, while the retained bytes stay at a comfortable 2.6 MB and the aggregate
-  budget never fires.
+- **The pack's target is rendered once per pack per run, by whatever owns the row loop, and the row
+  path computes nothing.** The budgets above bound what a report *retains*; they say nothing about
+  what producing it *costs*, and three rounds of review were spent on the gap between those two.
+  §8.1 gives a pack one escalation target and every row of one matrix evaluates one pack, so ten
+  thousand rows asserting `null` against a megabyte-long target canonicalize and hash the same
+  authored string ten thousand times — ten gigabytes of work, while the retained bytes stay at a
+  comfortable 2.6 MB and the aggregate budget never fires.
 
-  The first repair for that was a single-entry memo keyed on the target's **content**, and the third
-  round of review showed it fixed the arithmetic only for a matrix that uses one capability set.
-  `Options.SupportedExtensions` selects a distinct *admission*; each admission decodes the pack
-  separately, so two admissions hold target strings that are equal and separately allocated; and the
-  memo's hit test then compared a full megabyte on every row after the capability set changed. One
-  row with no extensions followed by 9,999 rows declaring one harmless extension is the same ten
-  gigabytes, under every budget, and a test using one capability set cannot see it. **Content
-  equality is not identity**, and a cache that has to prove a hit by reading both values has not
-  removed the work — it has renamed it. The claim that a miss was "never slower" is withdrawn with
-  it: a miss paid the rendering *and* the lookup, the lock, and the counter.
+  Three repairs failed before this one, and they are recorded because each failed for the same
+  reason in a different disguise. **Rendering per row** was the defect itself. **A single-entry memo
+  keyed on the target's content** only moved the cost: `Options.SupportedExtensions` selects a
+  distinct *admission*, each admission decodes the pack separately, so two admissions hold target
+  strings that are equal and separately allocated — and the hit test then compared a full megabyte
+  on every row after the capability set changed. **Storing the rendering on the admission** looked
+  like the fix and was not: `maxAdmissions` bounds what is *retained*, not what is computed, so a
+  matrix using sixty-four one-off capability sets and then repeating a sixty-fifth revalidated,
+  re-decoded, and re-rendered on every remaining row — twice per asserting row, since reporting
+  re-entered the admission lookup that evaluating had already done. The claim that the row path took
+  no lock was false for the same reason.
 
-  So the rendering is a property of the **admission**, which is the immutable thing a row already
-  selects by: it is computed once, where the pack is decoded, and stored on that admission. A row
-  reads a field — no comparison, no hashing, no lock on the row path at all. The total is therefore
-  at most `maxAdmissions` renderings of one authored string, however many rows run; past that bound
-  admissions stop being cached and each row pays the pre-existing cost of re-validating and
-  re-decoding the whole pack, which one rendering is a rounding error beside. A test asserts that
-  the count does not move when the row count grows by an order of magnitude, and that it equals the
-  number of capability sets the run used. It counts renderings rather than timing them, because a
-  cache whose only evidence is a stopwatch is a cache nothing holds to its purpose — and it says
-  plainly that the absence of a per-row *comparison* is structural rather than counted, since a test
-  cannot assert the absence of work it has no hook for.
-- **A second budget bounds the accumulation, charged as each row's result is composed.** The
-  per-rendering cap bounds one row; what a report retains is a product of that cap, the row cap, and
-  the number of packs a project declares. `MaxHandoffTargetReportBytes` bounds the total across the
-  whole run — one counter, because a report is one document however many packs contributed to it —
-  and it is charged **before** each rendering is retained rather than measured once the report is
-  whole, on ADR-0024's reasoning: a budget checked at the end bounds what is returned and nothing
-  about the memory spent reaching it. Crossing it **refuses the run** and writes nothing: a report
-  cut short looks exactly like a complete one. It is a `Failure` and not a mismatch, because a
-  mismatch is a statement about a pack and a row and "this report does not fit" is a statement about
-  neither. It has no configuration surface, deliberately — a limit a project could raise is a limit
-  an oversized report can ask to be allowed — and its number is derived from the other two rather
-  than chosen as a preference.
+  What all three shared is that they left *the decision about when to compute* on the row path, and
+  then tried to make that decision cheap. The rendering is a function of the **pack's bytes alone**:
+  every admission of one pack decodes the identical declared target, and a capability set has
+  nothing to do with it. So it is computed where a pack is loaded — `project.testPack`, above the
+  row loop, and only when some row asserts a target — and handed down as a value
+  (`evaluation.HandoffTargetRendering`). The bound is then a property of *where the call sits*
+  rather than of a cache that has to decide whether to answer, and the row path has no cache to
+  miss, no admission to re-enter, no mutex, and no atomic — not as a claim about a fast path, but
+  because there is no state there to reach. A suite that asserts nothing renders nothing and decodes
+  nothing extra.
+
+  The count is observable (`Engine.HandoffTargetRenders`) because a bound this record claims and
+  nothing can watch is a bound nobody can hold it to. A test drives the whole orchestration across
+  the `maxAdmissions` boundary — sixty-four one-off capability sets, then a repeated sixty-fifth —
+  at two row counts, and asserts one rendering for the pack in both. The rows of a `packs test` run
+  are sequential in one loop, and the rendering is computed before that loop begins; that is a
+  property of this orchestration and not a promise made about the engine, and it is why there is no
+  concurrent path here to test.
 - **An unpaired surrogate escape is refused at the carrier, for both sides of this comparison and
   for every other document.** Go's decoder replaces `"\ud800"` with U+FFFD without complaint, so a
   pack authoring a lone surrogate in its target name canonicalizes to the same bytes as an
@@ -425,9 +421,10 @@ disposition comparison that both the bundled corpus and a project matrix run thr
 `internal/result/result.go` carries `result.HandoffTarget.Canonical` and `Rendered` — the one writer
 of both *reported* sides, and the rendering budget — the `unavailable` constant, and the two row
 members; `sameHandoffTarget` in `internal/evaluation/corpus.go` is the comparison, which reads the
-decoded values and never those renderings. `internal/evaluation/engine.go` carries
-`declaredHandoffTarget` and the per-admission fields that render one pack's configured target once
-where the pack is decoded, and `reportedHandoffTarget`, which is the row path and does no work.
+decoded values and never those renderings. `internal/evaluation/corpus.go` also carries
+`HandoffTargetRendering`, `Engine.PackHandoffTarget`, and `reportedHandoffTarget` — the value, the
+one place that renders, and the row path that does no work — and `internal/project/test.go` is the
+caller that renders once per pack per run, above the row loop.
 `internal/project/matrix.go` carries the version preflight, the exact-member check, and the
 load-time refusals: the companionship rule and the shape check through that one decoder.
 `internal/project/project.go` carries `MaxHandoffTargetReportBytes` and the injectable counter, and

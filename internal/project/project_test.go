@@ -2307,3 +2307,84 @@ func TestACarrierMaximumTargetAcrossManyRowsIsBoundedInWorkAndInBytes(t *testing
 		t.Fatalf("a refused run writes no report: %+v", partial)
 	}
 }
+
+// One pack's escalation target is rendered once per run, whatever the rows do
+// with capability sets (ADR-0025).
+//
+// This is the shape three earlier attempts got wrong, so it is pinned
+// mechanically rather than argued. The matrix below crosses maxAdmissions on
+// purpose: 64 rows each declaring a one-off supportedExtensions set fill the
+// admission memo, and the rows after them repeat a 65th set that can never be
+// cached — so every one of those rows is revalidated and re-decoded, which is
+// the pre-existing cost of a matrix engineered that way. What must *not* scale
+// with them is the target rendering. Under the admission-keyed design each of
+// those rows rendered a megabyte-long name, twice: once while evaluating and
+// once while reporting.
+//
+// Rows run sequentially in one loop here, and the rendering is computed before
+// that loop begins; there is no concurrency in this path to test, and that is a
+// property of the orchestration rather than a promise made about the engine.
+func TestOnePacksHandoffTargetIsRenderedOncePerRunAcrossAdmissionOverflow(t *testing.T) {
+	name := strings.Repeat("q", 1<<20)
+	pack := strings.Replace(string(packFixture(t)), `"name": "Intake reviewer"`, `"name": "`+name+`"`, 1)
+	if pack == string(packFixture(t)) {
+		t.Fatal("the fixture must declare the target this test lengthens")
+	}
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+
+	rowsFor := func(total int) string {
+		cases := make([]string, 0, total)
+		for index := range total {
+			// The first maxAdmissions rows each take a distinct capability set,
+			// filling the memo; every row after them repeats one more set, which
+			// is therefore never retained.
+			capability := fmt.Sprintf("https://example.com/one-off-%d", index)
+			if index >= 64 {
+				capability = "https://example.com/the-sixty-fifth"
+			}
+			cases = append(cases, fmt.Sprintf(
+				`{"id":"row-%d","facts":{"request":{"type":"unrelated"}},"supportedExtensions":["%s"],"expectedDisposition":%s,"expectedHandoffTarget":null}`,
+				index, capability, notApplicable))
+		}
+		return `{"matrixVersion":"2","cases":[` + strings.Join(cases, ",") + `]}`
+	}
+
+	// The same shape at two row counts: the rendering count must not move.
+	renders := map[int]int64{}
+	for _, total := range []int{70, 140} {
+		configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+			map[string]string{"packs/a.json": pack, "packs/a.matrix.json": rowsFor(total)})
+		engine := evaluation.NewEngine(newValidator(t))
+		run, failure := mustLoad(t, configPath).Test(engine, "", "packs test")
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		// Every row mismatches — each expects no target and the pack configures
+		// one — which is the correct verdict and not what this test measures.
+		if run.Summary.Total != total || run.Summary.Mismatched != total {
+			t.Fatalf("%d rows: %+v", total, run.Summary)
+		}
+		for _, row := range run.Packs[0].Rows {
+			if len(row.ActualHandoffTarget) > result.HandoffTargetBudget {
+				t.Fatalf("row %s retains more than the budget: %d bytes", row.ID, len(row.ActualHandoffTarget))
+			}
+		}
+		renders[total] = engine.HandoffTargetRenders()
+	}
+	if renders[70] != 1 || renders[140] != 1 {
+		t.Fatalf("one pack, one run, one rendering: %d at 70 rows, %d at 140", renders[70], renders[140])
+	}
+
+	// And a suite that asserts nothing renders nothing at all: absent stays
+	// absent in the work a run does, not only in the payload it writes.
+	silent := strings.ReplaceAll(rowsFor(70), `,"expectedHandoffTarget":null`, "")
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": silent})
+	engine := evaluation.NewEngine(newValidator(t))
+	if _, failure := mustLoad(t, configPath).Test(engine, "", "packs test"); failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if engine.HandoffTargetRenders() != 0 {
+		t.Fatalf("a suite that asks nothing renders nothing: %d", engine.HandoffTargetRenders())
+	}
+}

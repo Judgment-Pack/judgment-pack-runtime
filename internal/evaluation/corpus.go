@@ -92,6 +92,94 @@ type corpusCase struct {
 	Pack string `json:"pack"`
 }
 
+// HandoffTargetRendering is one pack's declared escalation target, rendered for
+// the report, computed **once per pack per run** by whatever owns the row loop
+// and handed to every row of that pack (ADR-0025).
+//
+// It is a value and not a cache, and that is the whole design. Three earlier
+// drafts tried to make the rendering cheap where it was needed — per row, then
+// memoized on the target's content, then stored on a capability admission — and
+// each was a bound on the wrong thing, because each left the *decision about
+// when to compute* on the row path. A rendering is a function of the pack's
+// bytes alone: §8.1 gives a pack one escalation target, every admission of one
+// pack decodes the identical declared target, and a capability set has nothing
+// to do with it. So it is computed where a pack is loaded, which is a place
+// visited once, and carried down. The row path then has no cache to miss, no
+// admission to re-enter, no mutex, and no atomic — not as a claim about a fast
+// path, but because there is no state there to reach.
+//
+// The zero value is the honest "nobody computed one": a row that asserts a
+// target and meets it falls back to rendering what the evaluation reported,
+// which is correct and, for a caller that runs one row, is also the cheapest
+// thing available.
+type HandoffTargetRendering struct {
+	// Rendered is the target's report rendering, bounded by
+	// result.HandoffTargetBudget.
+	Rendered string
+	// Present says the pack declares an escalation target at all. A pack with no
+	// escalation object, or one whose target is not the {kind, name} object §8.1
+	// states, declares none.
+	Present bool
+	// Err carries a rendering that refused, so the row that needs it reports the
+	// refusal rather than a blank.
+	Err error
+}
+
+// PackHandoffTarget renders the escalation target a decoded pack declares.
+//
+// It is a pure function of the decoded pack, with one exception that is not
+// state the answer depends on: the Engine counts the renderings it has produced,
+// because "once per pack per run" is a claim this record makes and a claim
+// nothing can observe is a claim nobody can hold. See HandoffTargetRenders.
+func (e *Engine) PackHandoffTarget(packRoot map[string]any) HandoffTargetRendering {
+	escalation, _ := packRoot["escalation"].(map[string]any)
+	if escalation == nil {
+		return HandoffTargetRendering{}
+	}
+	target, _ := escalation["target"].(map[string]any)
+	if target == nil {
+		return HandoffTargetRendering{}
+	}
+	kind, _ := target["kind"].(string)
+	name, _ := target["name"].(string)
+	if kind == "" || name == "" {
+		return HandoffTargetRendering{}
+	}
+	e.targetRenders.Add(1)
+	rendered, err := (&result.HandoffTarget{Kind: kind, Name: name}).Rendered()
+	if err != nil {
+		return HandoffTargetRendering{Err: err}
+	}
+	return HandoffTargetRendering{Rendered: rendered, Present: true}
+}
+
+// HandoffTargetRenders reports how many escalation targets this engine has
+// rendered. It exists so the bound above is observable rather than asserted:
+// a target name is an authored string §2.1 admits at a megabyte, so the number
+// of times one is canonicalized and hashed is the difference between a bounded
+// run and a matrix that costs gigabytes while staying inside every byte limit.
+func (e *Engine) HandoffTargetRenders() int64 { return e.targetRenders.Load() }
+
+// reportedHandoffTarget renders the escalation target one evaluation reported,
+// from the rendering its pack was given. It does no work and holds no state.
+func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTargetRendering) (string, error) {
+	if produced == nil {
+		return result.NoHandoffTarget, nil
+	}
+	if declared.Err != nil {
+		return "", declared.Err
+	}
+	if declared.Present {
+		return declared.Rendered, nil
+	}
+	// The caller supplied no rendering, or supplied one for a pack that declares
+	// no target while this evaluation reported one — which the resolver cannot
+	// produce, since it reads the target out of the pack's own escalation object.
+	// Rendering it here is the correct answer either way, and the alternative to
+	// computing it is printing a wrong one.
+	return produced.Rendered()
+}
+
 // RunCorpus runs the evaluation corpus bundled for one exact specification
 // version through this evaluator and reports every row's result.
 //
@@ -213,7 +301,10 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, admissions map[string]*Admitt
 		admitted = e.AdmitPack(pack)
 		admissions[item.Pack] = admitted
 	}
-	return e.RunCaseAdmitted(admitted, item.MatrixCase, "experimental evaluate-corpus")
+	// No rendering is computed for a bundled row: that manifest's schema closes
+	// its case object, so no corpus row can declare expectedHandoffTarget and no
+	// corpus row can reach the member this would feed (ADR-0025).
+	return e.RunCaseAdmitted(admitted, item.MatrixCase, HandoffTargetRendering{}, "experimental evaluate-corpus")
 }
 
 // RunCase runs one case-carrier row against one pack document and reports the
@@ -235,13 +326,24 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, admissions map[string]*Admitt
 //
 // command names the reporting surface, exactly as elsewhere in this package.
 func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.EvaluationCorpusCase {
-	return e.RunCaseAdmitted(e.AdmitPack(pack), item, command)
+	// One row, one pack: this is the caller for whom "once per pack per run" and
+	// "once per row" are the same number, so it renders its own and hands it on.
+	// The rendering is skipped entirely unless the row asks about a target.
+	var declared HandoffTargetRendering
+	if item.ExpectedHandoffTarget != nil {
+		if document, failure := carrier.Decode(pack, carrier.DefaultLimits()); failure == nil {
+			if root, ok := document.(map[string]any); ok {
+				declared = e.PackHandoffTarget(root)
+			}
+		}
+	}
+	return e.RunCaseAdmitted(e.AdmitPack(pack), item, declared, command)
 }
 
 // RunCaseAdmitted is RunCase over a pack admitted once for the whole suite
 // (issue #78): the same judgment, without re-validating and re-decoding the
 // pack bytes for every row.
-func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, command string) result.EvaluationCorpusCase {
+func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declared HandoffTargetRendering, command string) result.EvaluationCorpusCase {
 	outcome := result.EvaluationCorpusCase{
 		ID:                 item.ID,
 		Origin:             item.Origin,
@@ -279,8 +381,8 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 		expectedTarget, outcome.ExpectedHandoffTarget = decoded, rendered
 	}
 
-	options := Options{Command: command, SupportedExtensions: item.SupportedExtensions}
-	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability, options)
+	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability,
+		Options{Command: command, SupportedExtensions: item.SupportedExtensions})
 	if failure != nil {
 		outcome.ActualErrorClass, outcome.ActualErrorPhase = failure.Class, failure.Phase
 		if item.ExpectedErrorClass == "" {
@@ -308,15 +410,14 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 	// This is also where "unavailable" stops being the actual side's value —
 	// there is now an evaluation to read one off.
 	//
-	// The rendering is read off the admission this row evaluated under, where it
-	// was computed once. Every row of one matrix evaluates one pack and §8.1
-	// gives a pack one escalation target, so rendering per row canonicalizes and
-	// hashes the same authored string once per row: ten thousand rows against a
-	// pack whose target name is at §2.1's megabyte is ten gigabytes of repeated
-	// work the retained-bytes budget cannot see, because what is retained is
-	// capped and what is *processed* is not.
+	// The rendering was computed once, for this pack, by whoever owns the row
+	// loop, and is handed in. Nothing is rendered, compared, or locked here.
+	// Rendering per row would canonicalize and hash the same authored string
+	// once per row — ten thousand rows against a pack whose target name is at
+	// §2.1's megabyte is ten gigabytes of work the retained-bytes budget cannot
+	// see, because what is retained is capped and what is *processed* is not.
 	if item.ExpectedHandoffTarget != nil {
-		actualTarget, err := admitted.reportedHandoffTarget(evaluated.HandoffTarget, options)
+		actualTarget, err := reportedHandoffTarget(evaluated.HandoffTarget, declared)
 		if err != nil {
 			return corpusMismatch(outcome, "The evaluation's handoff target could not be canonicalized: "+err.Error())
 		}

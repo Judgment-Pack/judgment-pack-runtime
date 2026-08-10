@@ -129,6 +129,12 @@ func (o Options) workLimit() int {
 // interpreted.
 type Engine struct {
 	validator *validation.Engine
+	// targetRenders counts the escalation targets this engine has rendered for a
+	// report (ADR-0025). It is observation and never input: nothing reads it to
+	// decide anything, and it exists because "once per pack per run" is a bound
+	// this runtime claims and a claim nothing can observe is a claim nobody can
+	// hold to it.
+	targetRenders atomic.Int64
 }
 
 func NewEngine(validator *validation.Engine) *Engine {
@@ -283,83 +289,6 @@ type AdmittedPack struct {
 	pack       []byte
 	mu         sync.Mutex
 	admissions map[string]*packAdmission
-	// targetRenders counts how many times a declared escalation target was
-	// rendered for this pack, across every admission. It exists for the test
-	// that pins the work bound (ADR-0025): a cache whose only evidence is a
-	// stopwatch is a cache nothing can hold to its purpose.
-	targetRenders atomic.Int64
-}
-
-// reportedHandoffTarget renders the escalation target one evaluation reported,
-// for the report only (ADR-0025).
-//
-// It reads a rendering computed **once, when the pack was admitted**, and does
-// no per-row work at all: no string comparison, no hashing, no lock. That shape
-// is the second correction this memo needed. Rendering per row was ten
-// gigabytes of repeated canonicalizing and hashing for a matrix well inside
-// every bound — §8.1 gives a pack one escalation target, so every row asserting
-// one asks the same question. Replacing that with a single-entry cache keyed on
-// the target's *content* only moved the cost: options.SupportedExtensions makes
-// a distinct admission, each admission decodes the pack separately, so the
-// strings are separately allocated, and a run mixing two capability sets
-// compared an equal megabyte on every row. Content equality is not identity.
-//
-// So the rendering is a property of the admission, which is the immutable thing
-// a row already selects by capability set. Admissions are bounded at
-// maxAdmissions, so the total is at most that many renderings of one authored
-// string, however many rows run. Past that bound admissions stop being cached
-// and each row pays full admission cost — re-validating and re-decoding the
-// whole pack — which this rendering is a rounding error beside; that fallback
-// is the pre-existing one and this changes neither its cost nor its shape.
-func (a *AdmittedPack) reportedHandoffTarget(target *result.HandoffTarget, options Options) (string, error) {
-	if target == nil {
-		return result.NoHandoffTarget, nil
-	}
-	admission := a.admission(options)
-	if admission.targetErr != nil {
-		return "", admission.targetErr
-	}
-	if admission.hasTarget {
-		return admission.targetRendering, nil
-	}
-	// Unreachable: a reported target is built by the resolver out of this
-	// admission's own decoded pack (resolve.go, §8.1's escalation object), so an
-	// admission that declares none cannot have produced one. Rendered rather
-	// than guessed, because the alternative to computing the answer here is
-	// printing a wrong one.
-	a.targetRenders.Add(1)
-	return target.Rendered()
-}
-
-// handoffTargetRenders reports how many times a declared target was rendered
-// for this pack. Unexported, and for one test (ADR-0025).
-func (a *AdmittedPack) handoffTargetRenders() int64 { return a.targetRenders.Load() }
-
-// declaredHandoffTarget renders the escalation target a decoded pack declares,
-// once, for the admission that decoded it. The third return says whether the
-// pack declares one at all; a pack with no escalation object, or one whose
-// target is not the {kind, name} object §8.1 states, declares none and renders
-// nothing rather than rendering a target no pack could have.
-func (a *AdmittedPack) declaredHandoffTarget(packRoot map[string]any) (string, bool, error) {
-	escalation, _ := packRoot["escalation"].(map[string]any)
-	if escalation == nil {
-		return "", false, nil
-	}
-	target, _ := escalation["target"].(map[string]any)
-	if target == nil {
-		return "", false, nil
-	}
-	kind, _ := target["kind"].(string)
-	name, _ := target["name"].(string)
-	if kind == "" || name == "" {
-		return "", false, nil
-	}
-	a.targetRenders.Add(1)
-	rendered, err := (&result.HandoffTarget{Kind: kind, Name: name}).Rendered()
-	if err != nil {
-		return "", false, err
-	}
-	return rendered, true, nil
 }
 
 // maxAdmissions bounds how many distinct capability sets one AdmittedPack
@@ -373,15 +302,6 @@ type packAdmission struct {
 	packRoot    map[string]any
 	unsupported *Failure
 	failure     *Failure
-	// targetRendering is the report rendering of the escalation target this
-	// admission's decoded pack declares, computed once here so no row computes
-	// it (ADR-0025). hasTarget says whether the pack declares one; targetErr
-	// carries a rendering that refused. All three are written before the
-	// admission is published and never afterwards, which is what makes reading
-	// them lock-free on the row path.
-	targetRendering string
-	hasTarget       bool
-	targetErr       error
 }
 
 // AdmitPack prepares one pack's bytes for evaluation across many rows.
@@ -432,10 +352,6 @@ func (a *AdmittedPack) admission(options Options) *packAdmission {
 	}
 	admission.validated, admission.packRoot = validated, packRoot
 	admission.unsupported, admission.failure = unsupported, failure
-	// Rendered here, once per admission, against the pack this admission just
-	// decoded — so a row reads a field rather than recomputing a value that
-	// cannot have changed (ADR-0025).
-	admission.targetRendering, admission.hasTarget, admission.targetErr = a.declaredHandoffTarget(packRoot)
 	a.mu.Lock()
 	if _, ok := a.admissions[key]; !ok && len(a.admissions) < maxAdmissions {
 		a.admissions[key] = admission

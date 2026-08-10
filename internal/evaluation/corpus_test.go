@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
@@ -321,127 +322,112 @@ func TestHandoffTargetEqualityIsDecidedOnTheDecodedValues(t *testing.T) {
 	}
 }
 
-// One pack's configured target is rendered once per admitted pack, not once per
-// asserting row (ADR-0025).
+// The row comparator renders no escalation target: it reports the rendering it
+// was handed (ADR-0025).
 //
-// §8.1 gives a pack one escalation target, so a suite asserting a target on n
-// rows would otherwise canonicalize and hash the same authored string n times.
-// That work is invisible to the retained-bytes budget — what that budget bounds
-// is what a report keeps, and this is what producing it costs — so a cache whose
-// only effect is a timing difference would be a cache nothing could hold to its
-// purpose. This counts the renderings instead.
-func TestOnePacksHandoffTargetIsRenderedOncePerRun(t *testing.T) {
+// This is the property the previous three attempts kept failing to have. §8.1
+// gives a pack one escalation target, so a suite asserting one on n rows must
+// not canonicalize and hash the same authored string n times — work invisible to
+// the retained-bytes budget, because that budget bounds what a report keeps and
+// this is what producing it costs. The fix is not a faster cache; it is that the
+// row path has nothing to compute. Rendering is a function of the pack's bytes,
+// so it happens where a pack is loaded, and the row is handed a value.
+func TestTheRowComparatorRendersNoHandoffTarget(t *testing.T) {
 	engine := newTestEngine(t)
 	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	admitted := engine.AdmitPack(pack)
+	declared := HandoffTargetRendering{Rendered: `{"kind":"human-role","name":"Intake reviewer"}`, Present: true}
+	rendersAfterOne := engine.HandoffTargetRenders()
+
 	row := MatrixCase{
 		Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
 		ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
 		ExpectedHandoffTarget: json.RawMessage(`{"kind":"human-role","name":"Intake reviewer"}`),
 	}
-	for index := range 50 {
+	// Capability sets vary per row on purpose: they select distinct admissions,
+	// which is where two earlier drafts hid a per-row rendering. The rendering
+	// handed in is the same value for all of them, because it is a property of
+	// the pack and not of an admission.
+	for index := range 200 {
 		row.ID = fmt.Sprint(index)
-		outcome := engine.RunCaseAdmitted(admitted, row, "test")
+		row.SupportedExtensions = nil
+		if index%2 == 1 {
+			row.SupportedExtensions = []string{fmt.Sprintf("https://example.com/spare-%d", index)}
+		}
+		outcome := engine.RunCaseAdmitted(admitted, row, declared, "test")
 		if outcome.Status != "passed" {
 			t.Fatalf("row %d: %+v", index, outcome)
 		}
-		if outcome.ActualHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` {
-			t.Fatalf("the memo must return the rendering, not a stale or empty one: %+v", outcome)
+		if outcome.ActualHandoffTarget != declared.Rendered {
+			t.Fatalf("row %d must report the rendering it was handed: %+v", index, outcome)
 		}
 	}
-	if renders := admitted.handoffTargetRenders(); renders != 1 {
-		t.Fatalf("one pack, one target, one rendering: %d", renders)
+	if renders := engine.HandoffTargetRenders(); renders != rendersAfterOne {
+		t.Fatalf("the row path renders nothing: %d renderings across 200 rows", renders-rendersAfterOne)
 	}
 
-	// A row that asserts nothing renders nothing, and a null-reporting
-	// evaluation never reaches the memo at all.
+	// A row asserting nothing reports nothing and is handed nothing.
 	outcome := engine.RunCaseAdmitted(admitted, MatrixCase{
 		ID:                  "silent",
 		Facts:               row.Facts,
 		ExpectedDisposition: row.ExpectedDisposition,
-	}, "test")
+	}, HandoffTargetRendering{}, "test")
 	if outcome.Status != "passed" || outcome.ActualHandoffTarget != "" {
 		t.Fatalf("outcome = %+v", outcome)
 	}
-	if renders := admitted.handoffTargetRenders(); renders != 1 {
-		t.Fatalf("a row that asks nothing costs nothing: %d", renders)
-	}
 }
 
-// The rendering is bounded by the admissions a run makes, not by its rows —
-// which is the path the first version of this cache missed (ADR-0025).
-//
-// options.SupportedExtensions makes a distinct admission, and each admission
-// decodes the pack separately, so the target strings of two admissions are equal
-// in content and separately allocated. A cache keyed on the target's *content*
-// therefore scanned an equal megabyte on every row after the capability set
-// changed: one row with no extensions followed by ten thousand rows declaring
-// one harmless extension was roughly ten gigabytes of comparison, under every
-// byte budget, and a single-capability test cannot see it.
-//
-// What is asserted here is the invariant that replaced it: the number of
-// renderings is the number of admissions and does not move with the number of
-// rows. The count pins the rendering half. The comparison half is structural
-// rather than counted — the row path reads a field and contains no string
-// comparison to count — and that is stated rather than measured, because a test
-// cannot assert the absence of work it has no hook for. Its wall-clock
-// consequence is bounded by the carrier-maximum integration test in the project
-// package.
-func TestTheHandoffTargetRenderingIsBoundedByAdmissionsNotByRows(t *testing.T) {
+// PackHandoffTarget reads one pack's declared escalation target and renders it,
+// and answers "none" for a pack that declares none (ADR-0025).
+func TestPackHandoffTargetRendersWhatThePackDeclares(t *testing.T) {
 	engine := newTestEngine(t)
 	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A megabyte-long target name, which is what §2.1 admits and what makes a
-	// per-row rendering expensive rather than merely wasteful.
-	long := strings.Replace(string(pack), `"name": "Intake reviewer"`, `"name": "`+strings.Repeat("q", 1<<20)+`"`, 1)
-	if long == string(pack) {
-		t.Fatal("the fixture must declare the target this test lengthens")
+	document, failure := carrier.Decode(pack, carrier.DefaultLimits())
+	if failure != nil {
+		t.Fatal(failure.Diagnostic.Message)
+	}
+	before := engine.HandoffTargetRenders()
+	declared := engine.PackHandoffTarget(document.(map[string]any))
+	if !declared.Present || declared.Err != nil || declared.Rendered != `{"kind":"human-role","name":"Intake reviewer"}` {
+		t.Fatalf("declared = %+v", declared)
+	}
+	if engine.HandoffTargetRenders() != before+1 {
+		t.Fatal("one call, one rendering")
 	}
 
-	// The same two capability sets over an order of magnitude more rows. Equal
-	// counts are the whole assertion: what the renderings are proportional to is
-	// the admissions, and rows do not enter it.
-	counts := map[int]int64{}
-	for _, rows := range []int{40, 400} {
-		admitted := engine.AdmitPack([]byte(long))
-		row := MatrixCase{
-			Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
-			ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
-			ExpectedHandoffTarget: json.RawMessage(`null`),
-		}
-		// One row with no capability set, then the rest with one. Both admit —
-		// the pack requires no extension, so declaring a spare one changes the
-		// admission key and nothing else — which is exactly the adversarial
-		// shape: two admissions, equal targets, separately allocated.
-		for index := range rows {
-			row.ID = fmt.Sprint(index)
-			if index > 0 {
-				row.SupportedExtensions = []string{"https://example.com/spare-extension"}
-			}
-			outcome := engine.RunCaseAdmitted(admitted, row, "test")
-			// Each row mismatches: it expects no target and the pack configures
-			// one. The verdict is not what this test is about; the work behind it
-			// is.
-			if outcome.Status != "mismatch" || outcome.ExpectedHandoffTarget != result.NoHandoffTarget {
-				t.Fatalf("%d rows, row %d: %+v", rows, index, outcome)
-			}
-			if len(outcome.ActualHandoffTarget) > result.HandoffTargetBudget {
-				t.Fatalf("row %d retains more than the budget: %d bytes", index, len(outcome.ActualHandoffTarget))
-			}
-		}
-		counts[rows] = admitted.handoffTargetRenders()
+	// A pack with no escalation object declares no target, and nothing is
+	// rendered for it: an escalate exception with no escalation object is a
+	// requested handoff with no Core-defined destination (§8.1).
+	escalate, err := os.ReadFile(filepath.Join("..", "artifacts", "jps", "0.2.0-draft", "cases", "valid", "exception-escalate.json"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if counts[40] != counts[400] {
-		t.Fatalf("renderings must not grow with rows: %d at 40 rows, %d at 400", counts[40], counts[400])
+	document, failure = carrier.Decode(escalate, carrier.DefaultLimits())
+	if failure != nil {
+		t.Fatal(failure.Diagnostic.Message)
 	}
-	// And the constant is the number of capability sets the run used, so the
-	// bound is a real one rather than a cache that stopped rendering the truth.
-	if counts[400] != 2 {
-		t.Fatalf("one rendering per admission, and this run made two: %d", counts[400])
+	before = engine.HandoffTargetRenders()
+	if declared = engine.PackHandoffTarget(document.(map[string]any)); declared.Present || declared.Rendered != "" {
+		t.Fatalf("declared = %+v", declared)
+	}
+	if engine.HandoffTargetRenders() != before {
+		t.Fatal("a pack with no target renders nothing")
+	}
+	// And a row asserting null against it passes on the value it was handed,
+	// with the comparator rendering nothing either.
+	outcome := engine.RunCaseAdmitted(engine.AdmitPack(escalate), MatrixCase{
+		ID:                    "no-destination",
+		Facts:                 json.RawMessage(`{}`),
+		ExpectedDisposition:   json.RawMessage(`{"kind":"unresolved","reasons":["exception-escalation"],"handoff":{"state":"requested","triggeredBy":["exception-escalation"]}}`),
+		ExpectedHandoffTarget: json.RawMessage(`null`),
+	}, declared, "test")
+	if outcome.Status != "passed" || outcome.ActualHandoffTarget != result.NoHandoffTarget {
+		t.Fatalf("outcome = %+v", outcome)
 	}
 }

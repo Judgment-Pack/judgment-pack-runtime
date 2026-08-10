@@ -543,15 +543,17 @@ func TestHandoffTargetRenderingIsCappedAndStillDistinct(t *testing.T) {
 		t.Fatalf("a capped rendering says it was capped: %q", rendered)
 	}
 
-	// Two targets that agree for the whole budget still render differently, so
-	// the comparison the report decides on is not weakened by the cap.
+	// Two targets that agree for the whole budget still render as two lines, so
+	// a report does not print them as one. No comparison depends on that — the
+	// verdict is taken from the decoded values — and this asserts a property of
+	// the rendering, not a guarantee about equality.
 	other := &HandoffTarget{Kind: "queue", Name: strings.Repeat("a", 4095) + "b"}
 	otherRendered, err := other.Rendered()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rendered == otherRendered {
-		t.Fatal("the digest tail is what keeps two capped targets distinct")
+		t.Fatal("the digest tail is what keeps two capped targets readable as two")
 	}
 	// And two equal targets still render equally, on every run.
 	again, err := (&HandoffTarget{Kind: "queue", Name: strings.Repeat("a", 4096)}).Rendered()

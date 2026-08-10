@@ -138,8 +138,22 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// (ADR-0024).
 	report.Origins = MatrixOrigins(matrix)
 	admitted := evaluator.AdmitPack(pack)
+	// The pack's declared escalation target is rendered here, once, before any
+	// row runs — and only when some row asks about one (ADR-0025). This is the
+	// place that owns the row loop and the place a pack is loaded, so "once per
+	// pack per run" is a property of where the call sits rather than of a cache
+	// that has to decide whether to answer. §8.1 gives a pack one escalation
+	// target and the rendering is a function of the pack's bytes alone, so
+	// nothing below this line can need a second one.
+	//
+	// The rows run sequentially, one after another in this loop, and neither
+	// this rendering nor the budget below is shared with anything outside it.
+	var declaredTarget evaluation.HandoffTargetRendering
+	if assertsHandoffTarget(matrix) {
+		declaredTarget = evaluator.PackHandoffTarget(PackRoot(pack))
+	}
 	for _, row := range matrix.Cases {
-		outcome := evaluator.RunCaseAdmitted(admitted, row, command)
+		outcome := evaluator.RunCaseAdmitted(admitted, row, declaredTarget, command)
 		// Charged as the row's result is composed, before it is retained, so the
 		// refusal fires instead of the report being built and then rejected. Only
 		// the two target renderings are charged: they are the members whose size a
@@ -177,6 +191,19 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		report.Coverage = matrixCoverage(PackRoot(pack), matrix)
 	}
 	return report, nil
+}
+
+// assertsHandoffTarget reports whether any row of one matrix declares the
+// optional target assertion. A suite that asks nothing about the escalation
+// target renders nothing and decodes nothing extra: absent stays absent in the
+// work a run does, not only in the payload it writes (ADR-0025).
+func assertsHandoffTarget(matrix Matrix) bool {
+	for _, row := range matrix.Cases {
+		if row.ExpectedHandoffTarget != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // admitsForSomeRow reports whether the pack is admitted under the empty
