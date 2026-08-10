@@ -27,6 +27,13 @@ const MatrixVersion = "1"
 // rows run through the same comparison the corpus rows do, so a project gets the
 // RFC 8785 byte comparison §8.3 defines rather than a looser one written for
 // projects, and a row a builder writes can be lifted into a corpus unchanged.
+//
+// One member is a project's alone: expectedHandoffTarget (ADR-0025), the
+// optional assertion about the escalation target §8.3 keeps outside the
+// disposition. The corpus manifest's own schema closes its case object, so a
+// corpus row cannot state it — which is the shape of the thing rather than a
+// restriction imposed on it, because the target a pack configures is a fact
+// about that pack and the corpus's packs are fixtures of the specification.
 type Matrix struct {
 	MatrixVersion string                  `json:"matrixVersion,omitempty"`
 	Cases         []evaluation.MatrixCase `json:"cases"`
@@ -37,9 +44,10 @@ type Matrix struct {
 // "Well-formed" here is the carrier and the shape, not the outcomes: strict JSON
 // with no duplicate member names, a closed set of members, a declared version
 // this runtime knows, at least one row, unique row ids, a facts document per
-// row, and exactly one expectation per row. Whether a row's expectation holds is
-// what packs test answers, and a matrix that cannot be read as rows has no
-// answer to give.
+// row, exactly one expectation per row, and a readable expectedHandoffTarget
+// where a row states that optional second assertion. Whether a row's expectation
+// holds is what packs test answers, and a matrix that cannot be read as rows has
+// no answer to give.
 func (p *Project) LoadMatrix(entry Pack) (Matrix, error) {
 	data, err := p.root.Read(entry.Matrix, MaxMatrixBytes)
 	if err != nil {
@@ -88,6 +96,23 @@ func (p *Project) LoadMatrix(entry Pack) (Matrix, error) {
 		}
 		if row.ExpectedErrorPhase != "" && !hasClass {
 			return Matrix{}, fmt.Errorf("row %q declares an expectedErrorPhase without an expectedErrorClass", display.Sanitize(row.ID))
+		}
+		// expectedHandoffTarget rides only beside expectedDisposition, on the
+		// precedent expectedNodes set on the graph surface: a refused evaluation
+		// produces no disposition and no target beside one, so an assertion about
+		// the target of a run that never happened is unsatisfiable rather than
+		// merely unmet, and a row stating one is refused before it runs.
+		if row.ExpectedHandoffTarget != nil && !hasDisposition {
+			return Matrix{}, fmt.Errorf("row %q declares an expectedHandoffTarget beside an expected error; a refused evaluation reports no handoff target to compare", display.Sanitize(row.ID))
+		}
+		// The expectation's own shape is checked here too, through the one decoder
+		// the comparator uses: a matrix whose assertion cannot be read is a carrier
+		// defect, and packs validate says so before packs test reports it as a
+		// mismatching row.
+		if row.ExpectedHandoffTarget != nil {
+			if _, err := evaluation.DecodeHandoffTarget(row.ExpectedHandoffTarget); err != nil {
+				return Matrix{}, fmt.Errorf("row %q declares an expectedHandoffTarget that is neither null nor a {kind, name} object: %s", display.Sanitize(row.ID), display.Sanitize(err.Error()))
+			}
 		}
 	}
 	return matrix, nil

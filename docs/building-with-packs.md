@@ -170,7 +170,8 @@ project matrix names its pack in `jpack.json` instead.
         "kind": "unresolved",
         "reasons": ["unknown"],
         "handoff": { "state": "requested", "triggeredBy": ["unknown"] }
-      }
+      },
+      "expectedHandoffTarget": { "kind": "human-role", "name": "Finance approver" }
     },
     {
       "id": "undeclared-evidence-key-is-refused",
@@ -186,7 +187,8 @@ project matrix names its pack in `jpack.json` instead.
 Per row: `id` (unique, named so a mismatch can be pointed at), `facts` (required), optional
 `evidenceAvailability` and `supportedExtensions`, and **exactly one** of `expectedDisposition` and
 `expectedErrorClass` — a disposition and an evaluation error are never both produced, so a row
-expecting both is refused. `expectedErrorPhase` is optional beside a class. Three further members
+expecting both is refused. `expectedErrorPhase` is optional beside a class, and
+`expectedHandoffTarget` is optional beside a disposition (below). Three further members
 are optional and none of them decides anything: `origin`, a free string saying where the row's
 *input* came from (`jpack packs suggest` writes `"generated"`, and `packs test` reports a count per
 origin — see below); `focus`, one line saying what the row is probing; and `specSection`, the
@@ -198,6 +200,26 @@ nothing.
 A row with a disposition passes when the disposition produced canonicalizes, under RFC 8785, to the
 same bytes as the row's. A row with a class passes when the evaluation is refused with that class,
 and with that phase when the row names one.
+
+**`expectedHandoffTarget` is the one further assertion a row can make**, and it exists because §8.3
+keeps your pack's configured escalation target *outside* the disposition — it is reported beside it,
+as the payload's own `handoffTarget`. A pack edit that changes only `escalation.target.name`
+therefore leaves every disposition byte-identical, and a matrix that compares only dispositions
+stays green while your requests route to the wrong desk (ADR-0025). Declare the member and the row
+compares it too:
+
+- an **object** with `kind` and `name` — both required, neither empty — asserts that exact target;
+- the literal **`null`** asserts that the evaluation reports **no** target, which is what an outcome
+  that requests no handoff produces;
+- **absent** asserts nothing, which is what every row written before this member existed does.
+
+It rides beside `expectedDisposition` only — a refused evaluation reports no target to compare, so a
+row declaring it beside `expectedErrorClass` is refused when the matrix loads. It is an
+**assertion**, not a coverage line: a mismatch fails the row, the pack, the run, and the exit code,
+exactly as a disposition mismatch does, and the report carries `expectedHandoffTarget` and
+`actualHandoffTarget` side by side so you can see which destination each names. What it holds is the
+target your pack *configures*: nothing here observes that a handoff was delivered, that the named
+role or queue exists, or that anyone acted on it.
 
 Beside the rows, `packs test` reports **coverage**: the probe classes your pack's own declarations
 derive, and which of them some row states. There are two families.

@@ -2,6 +2,36 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A matrix row can assert the handoff target, because no disposition can carry it** (ADR-0025):
+  a `packs test` row may declare `expectedHandoffTarget`, the one further assertion beside
+  `expectedDisposition`. It exists because JPS §8.3 keeps a pack's configured escalation target
+  **outside** the disposition — this runtime reports it beside one, as `handoffTarget` — so a pack
+  edit reaching only `escalation.target.name` leaves `kind`, `outcomeId`, `reasons`,
+  `handoff.state`, and `handoff.triggeredBy` byte-identical and every row of a disposition-only
+  matrix still passes. That is Study 013's holdout cell h02, written adversarially by that study's
+  cross-vendor reviewer and caught in the study only downstream, once the corrupted target had
+  already reached a tool argument. The member has three states and they are three different
+  statements: an object with `kind` and `name` (both required, neither empty) asserts that exact
+  target by string equality; the literal `null` asserts the evaluation reports **no** target; and
+  **absent asserts nothing**, so a matrix written before this release is judged by byte-identical
+  behavior and its row results carry no new member. It is an **assertion and not a coverage line** —
+  a mismatch moves the row, the pack entry, the run, and the exit code exactly as a disposition
+  mismatch does, which is why ADR-0014 and ADR-0023's never-gate stance for *derived* probes is
+  untouched and unamended. It rides beside `expectedDisposition` only, refused at load on the graph
+  surface's `expectedNodes` precedent: a refused evaluation reports no target to compare. Both sides
+  are rendered by one writer (`result.HandoffTarget.Canonical`), reported as `expectedHandoffTarget`
+  and `actualHandoffTarget` on the row and printed as one line beside the disposition pair; the
+  mismatch detail names which side states a destination rather than repeating two authored strings a
+  third time. Folding the target into `expectedDisposition` was refused because that section's
+  composition is normative and the target's separateness is what makes a disposition portable;
+  always asserting it was refused because it breaks every existing matrix and makes the runtime
+  compare the pack against itself. What it holds is the target the pack *configures* — no delivery
+  is observed, and a green row does not make the destination the right one. The conformance claim is
+  unaffected and stated, in full and only, in `CONFORMANCE.md`, which no line of this entry
+  restates.
+
 ## 0.16.0 - 2026-08-07
 
 - **Replaying a decision: pin the tuple, not the pack**: `docs/building-with-packs.md` gains a

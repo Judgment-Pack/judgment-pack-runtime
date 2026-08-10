@@ -255,6 +255,41 @@ func TestPacksTestByteDiffsDispositionsAndExitsOnAnyMismatch(t *testing.T) {
 	}
 }
 
+// A row's optional handoff-target assertion gates like any other expectation,
+// and the human surface prints the pair beside the disposition's (ADR-0025).
+// The disposition here is correct in every byte: §8.3 keeps the configured
+// target outside it, so the "expected/actual" line above cannot show this
+// difference and a second line has to.
+func TestPacksTestComparesTheHandoffTargetWhenARowAsksForIt(t *testing.T) {
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	matrix := `{"cases":[{"id":"out-of-scope","facts":{"request":{"type":"unrelated"}},"expectedDisposition":` + notApplicable +
+		`,"expectedHandoffTarget":{"kind":"human-role","name":"Disclosure office"}}]}`
+	configPath := writeProjectFixture(t, `{"configVersion":"1","packs":{"intake":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": evaluatorPack(t), "packs/a.matrix.json": matrix})
+
+	code, stdout, _ := runTest(t, []string{"packs", "test", "--config", configPath, "--format", "json"}, "")
+	if code != result.ExitInvalid {
+		t.Fatalf("a mismatching target must exit 1, got exit=%d", code)
+	}
+	var run result.PackTest
+	if err := json.Unmarshal([]byte(stdout), &run); err != nil {
+		t.Fatal(err)
+	}
+	row := run.Packs[0].Rows[0]
+	if row.Status != "mismatch" || row.Expected != row.Actual {
+		t.Fatalf("the disposition matched and the target did not: %+v", row)
+	}
+	if row.ExpectedHandoffTarget != `{"kind":"human-role","name":"Disclosure office"}` ||
+		row.ActualHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` {
+		t.Fatalf("the payload carries both renderings: %+v", row)
+	}
+
+	code, stdout, _ = runTest(t, []string{"packs", "test", "--config", configPath}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, "expected target: ") || !strings.Contains(stdout, "actual target: ") {
+		t.Fatalf("the human surface must print the target pair: exit=%d %q", code, stdout)
+	}
+}
+
 // A project whose packs declare no matrix has tested nothing, and packs test
 // says so and exits non-zero. The per-pack row alone would not: a CI gate reads
 // the exit code, and a green build over zero rows is the failure this prevents.

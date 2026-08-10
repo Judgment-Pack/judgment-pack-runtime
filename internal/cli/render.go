@@ -431,6 +431,12 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 			if row.ExpectedErrorClass != "" || row.ActualErrorClass != "" {
 				fmt.Fprintf(a.out, "    expected class: %s / actual class: %s\n", display.Sanitize(row.ExpectedErrorClass), display.Sanitize(row.ActualErrorClass))
 			}
+			// The second comparison, printed only for a row that asked for one. §8.3
+			// keeps the configured escalation target outside the disposition, so
+			// neither line above can show a difference in it (ADR-0025).
+			if row.ExpectedHandoffTarget != "" || row.ActualHandoffTarget != "" {
+				fmt.Fprintf(a.out, "    expected target: %s / actual target: %s\n", display.Sanitize(row.ExpectedHandoffTarget), display.Sanitize(row.ActualHandoffTarget))
+			}
 		}
 		a.renderCoverage("  ", pack.Coverage)
 		a.renderOrigins("  ", pack.Summary.Total, pack.Origins)

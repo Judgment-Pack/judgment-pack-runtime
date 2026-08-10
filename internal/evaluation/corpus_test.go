@@ -1,6 +1,7 @@
 package evaluation
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -125,5 +126,63 @@ func TestCorpusIsOnlyOfferedWhereItIsPublished(t *testing.T) {
 	}
 	if _, failure := engine.RunCorpus("9.9.9-draft", "test"); failure == nil || failure.Code != "JPS-CAPABILITY-SPEC-VERSION" {
 		t.Fatalf("an unbundled version has no corpus: %+v", failure)
+	}
+}
+
+// The three states of an expected handoff target are three different statements,
+// and the carrier keeps them apart (ADR-0025). Absent is a nil RawMessage and
+// reaches no comparison at all; the literal null decodes to no target and renders
+// as null; an object decodes to that target and renders canonically. A carrier
+// that folded the first two together would make "I assert nothing" and "I assert
+// there is no target" the same row, which is the one distinction this member
+// exists for.
+func TestExpectedHandoffTargetSeparatesAbsentFromNull(t *testing.T) {
+	var row MatrixCase
+	if err := json.Unmarshal([]byte(`{"id":"absent","facts":{}}`), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row.ExpectedHandoffTarget != nil {
+		t.Fatalf("an absent member must stay absent: %q", row.ExpectedHandoffTarget)
+	}
+	if err := json.Unmarshal([]byte(`{"id":"null","facts":{},"expectedHandoffTarget":null}`), &row); err != nil {
+		t.Fatal(err)
+	}
+	if string(row.ExpectedHandoffTarget) != "null" {
+		t.Fatalf("a stated null must survive the carrier: %q", row.ExpectedHandoffTarget)
+	}
+
+	for name, probe := range map[string]struct {
+		raw      string
+		rendered string
+		refused  bool
+	}{
+		"null":              {raw: `null`, rendered: `null`},
+		"a target":          {raw: `{"kind":"human-role","name":"Intake reviewer"}`, rendered: `{"kind":"human-role","name":"Intake reviewer"}`},
+		"reordered members": {raw: `{"name":"Intake reviewer","kind":"human-role"}`, rendered: `{"kind":"human-role","name":"Intake reviewer"}`},
+		"a bare string":     {raw: `"Intake reviewer"`, refused: true},
+		"no name":           {raw: `{"kind":"human-role"}`, refused: true},
+		"an empty kind":     {raw: `{"kind":"","name":"Intake reviewer"}`, refused: true},
+		"a null member":     {raw: `{"kind":"human-role","name":null}`, refused: true},
+		"an unknown member": {raw: `{"kind":"human-role","name":"Intake reviewer","urgency":"high"}`, refused: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			target, err := DecodeHandoffTarget([]byte(probe.raw))
+			if probe.refused {
+				if err == nil {
+					t.Fatalf("this expectation must be refused: %+v", target)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			rendered, err := target.Canonical()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(rendered) != probe.rendered {
+				t.Fatalf("rendered = %s, want %s", rendered, probe.rendered)
+			}
+		})
 	}
 }

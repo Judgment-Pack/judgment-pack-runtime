@@ -264,6 +264,24 @@ type HandoffTarget struct {
 	Name string `json:"name"`
 }
 
+// Canonical renders one escalation target as the value a row asserts it with:
+// the RFC 8785 form of the {kind, name} object, and the JSON literal null for
+// no target at all. The nil receiver is the "no target" case and is answered
+// rather than refused, because a target's absence is a statement about an
+// evaluation exactly as its presence is (ADR-0025).
+//
+// It is not a disposition and never becomes one: §8.3 keeps the configured
+// target outside the disposition object, so this is a second canonical value
+// reported beside that one and compared separately. Both sides of that
+// comparison are produced here, so a row's expectation and an evaluation's
+// report are rendered by one writer and never by two.
+func (h *HandoffTarget) Canonical() ([]byte, error) {
+	if h == nil {
+		return []byte("null"), nil
+	}
+	return jcs.Encode(map[string]any{"kind": h.Kind, "name": h.Name})
+}
+
 // Handoff is the disposition's handoff object (§8.3): the state, and — exactly
 // when the state is "requested" — the non-empty subset of the retained reasons
 // that triggered the request. A direct exception escalation on a pack with no
@@ -550,20 +568,29 @@ const EvaluationCorpusLabel = "corpus results, the required evidence for the cla
 // admitted or after, as a reached §10 limit does. The echo is read off the
 // evaluation that produced it, and inventing one from the row's carrier would be
 // the independent truth this echo is deliberately not.
+//
+// ExpectedHandoffTarget and ActualHandoffTarget are the second comparison, and
+// they appear exactly when the row asked for one (ADR-0025). Each is a target's
+// canonical rendering or the literal null for no target, so the pair says which
+// of the two sides names a destination as well as which destination it names. A
+// row that declares no expectedHandoffTarget carries neither member, and its
+// result is byte for byte what it was before that member existed.
 type EvaluationCorpusCase struct {
-	ID                 string `json:"id"`
-	Origin             string `json:"origin"`
-	SpecSection        string `json:"specSection"`
-	PackID             string `json:"packId,omitempty"`
-	PackVersion        string `json:"packVersion,omitempty"`
-	Status             string `json:"status"`
-	Expected           string `json:"expected"`
-	Actual             string `json:"actual"`
-	ExpectedErrorClass string `json:"expectedErrorClass,omitempty"`
-	ActualErrorClass   string `json:"actualErrorClass,omitempty"`
-	ExpectedErrorPhase string `json:"expectedErrorPhase,omitempty"`
-	ActualErrorPhase   string `json:"actualErrorPhase,omitempty"`
-	Detail             string `json:"detail,omitempty"`
+	ID                    string `json:"id"`
+	Origin                string `json:"origin"`
+	SpecSection           string `json:"specSection"`
+	PackID                string `json:"packId,omitempty"`
+	PackVersion           string `json:"packVersion,omitempty"`
+	Status                string `json:"status"`
+	Expected              string `json:"expected"`
+	Actual                string `json:"actual"`
+	ExpectedErrorClass    string `json:"expectedErrorClass,omitempty"`
+	ActualErrorClass      string `json:"actualErrorClass,omitempty"`
+	ExpectedErrorPhase    string `json:"expectedErrorPhase,omitempty"`
+	ActualErrorPhase      string `json:"actualErrorPhase,omitempty"`
+	ExpectedHandoffTarget string `json:"expectedHandoffTarget,omitempty"`
+	ActualHandoffTarget   string `json:"actualHandoffTarget,omitempty"`
+	Detail                string `json:"detail,omitempty"`
 }
 
 // EvaluationCorpus is one run of the evaluation corpus bundled for an exact
