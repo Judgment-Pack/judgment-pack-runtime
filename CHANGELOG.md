@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.17.0 - 2026-08-09
 
 - **A matrix row can assert the handoff target, because no disposition can carry it** (ADR-0025):
   a `packs test` row may declare `expectedHandoffTarget`, the one further assertion beside
