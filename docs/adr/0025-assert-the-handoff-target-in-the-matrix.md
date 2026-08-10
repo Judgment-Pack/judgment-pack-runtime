@@ -281,18 +281,33 @@ Settled determinations:
   because there is no state there to reach. A suite that asserts nothing renders nothing and decodes
   nothing extra.
 
-  **The rendering type is opaque, and that is what makes the claim structural rather than a
-  convention.** Its members are unexported and `Engine.PackHandoffTarget` is its only constructor —
-  which is also the only place a target is rendered and the only place the count is taken. A caller
-  of the exported row primitive therefore cannot hand it a rendering it built itself, cannot hand it
-  stale bytes for a target the pack does not declare, and cannot reach a path that renders one per
-  row behind the counter's back. An earlier draft of this narrowing left the fields exported with a
-  documented zero value and a fallback that rendered what the evaluation reported; both were removed
-  once a review pointed out that a documented zero value is an invitation and a fallback is the
-  per-row rendering this determination exists to forbid, reintroduced for the one caller careless
-  enough to take it. Where no rendering was supplied, the actual side degrades to the `unavailable`
-  convention and the human surface names the cause; the **verdict is untouched**, because it rests
-  on the decoded values.
+  **The rendering type is opaque and bound to what it rendered, and those two together make the
+  claim structural rather than a convention.** Its members are unexported and
+  `Engine.PackHandoffTarget` is its only constructor — which is also the only place a target is
+  rendered and the only place the count is taken — so a caller of the exported row primitive cannot
+  hand it a rendering it built itself and cannot reach a path that renders one per row behind the
+  counter's back. An earlier draft of this narrowing left the fields exported with a documented zero
+  value and a fallback that rendered what the evaluation reported; both were removed once a review
+  pointed out that a documented zero value is an invitation and a fallback is the per-row rendering
+  this determination exists to forbid, reintroduced for the one caller careless enough to take it.
+
+  Opacity alone was still not the guarantee this record claimed, and the next review said so.
+  `PackHandoffTarget` renders whatever root it is handed, so a *genuine* rendering minted for one
+  pack could be **transplanted** onto another pack's rows: reported verbatim while the verdict
+  compared the evaluated pack's real target, which is a row passing while `actualHandoffTarget`
+  names a destination that pack never declared — this record's own defect, inverted, and produced by
+  the machinery meant to prevent it. So a rendering **carries the decoded target it was made from**,
+  and a row uses it only when that is the target its evaluation produced. What is reported is then
+  provably a rendering of the same value the verdict compared, whichever engine minted it, and a
+  stale or foreign rendering degrades to `unavailable` instead of lying. The check costs one string
+  comparison per asserting row whose evaluation produced a target — lengths before bytes, nothing
+  allocated, no hash — and it is the same comparison the verdict makes one line later, asked of the
+  other side of the question. That is a cost this record accepts explicitly: a report that cannot
+  name the wrong destination is worth more than a comparison it saves.
+
+  Where no rendering was supplied, or the supplied one belongs elsewhere, the actual side degrades
+  to the `unavailable` convention and the human surface names the cause; the **verdict is untouched**
+  in every case, because it rests on the decoded values.
 
   The count is observable (`Engine.HandoffTargetRenders`) because a bound this record claims and
   nothing can watch is a bound nobody can hold it to — and because the sole rendering site is also
@@ -307,11 +322,22 @@ Settled determinations:
   a target inside the single-row `RunCase` put a decode in front of it, and `carrier.Decode` has no
   raw-byte cap of its own — so a syntactically valid pack padded past the limit was scanned whole,
   and its target canonicalized, before a refusal that was always going to happen; trailing
-  whitespace alone made that work unbounded. The limit is therefore applied at the top of that
-  function through the same helper the evaluation path uses, so the two cannot drift, and nothing is
-  rendered for a pack that will be refused. Recorded as a determination rather than as a fix because
-  it is the general rule this record has to obey wherever it added work: **a bound that existed
-  before this change runs before the work this change added.**
+  whitespace alone made that work unbounded. The limit is therefore consulted before that decode,
+  through the same helper the evaluation path uses so the two cannot drift, and nothing is decoded
+  or rendered for a pack that will be refused. Recorded as a determination rather than as a fix
+  because it is the general rule this record has to obey wherever it added work: **a bound that
+  existed before this change runs before the work this change added.**
+
+  What that check does **not** do is refuse. A first attempt returned early with a hand-assembled
+  outcome, and a review caught what the shortcut cost: the row preprocessing every other path runs
+  was skipped, so the expected disposition went uncanonicalized — letting a malformed expectation
+  ride an expected pack-limit error to a false pass — the expected target went undecoded, and an
+  oversized pack produced a payload shaped unlike every other refusal, which is the byte-compatible
+  promise made two determinations above. The limit is already `EvaluateAdmitted`'s first act, so
+  declining to *decode* is the whole of what this needs: the refusal arrives through the ordinary
+  path, after every expectation has been read exactly as it always was. The second general rule,
+  beside the first: **work this record adds may be skipped early; the row's own processing may
+  not.**
 - **An unpaired surrogate escape is refused at the carrier, for both sides of this comparison and
   for every other document.** Go's decoder replaces `"\ud800"` with U+FFFD without complaint, so a
   pack authoring a lone surrogate in its target name canonicalizes to the same bytes as an

@@ -124,10 +124,27 @@ type corpusCase struct {
 // sameHandoffTarget). No in-tree caller reaches that state: the project runner
 // computes a rendering whenever a row asserts, RunCase computes its own, and no
 // bundled corpus row can assert at all.
+//
+// **It also carries the decoded target it rendered, and a row uses it only when
+// that target is the one the evaluation produced.** Opacity stops a caller
+// *fabricating* a rendering; it does not stop one *transplanting* a genuine
+// rendering minted for another pack, since PackHandoffTarget will render any
+// root it is handed. Without the binding, such a rendering would be reported
+// verbatim while the verdict compared the evaluated pack's real target — a row
+// passing while its actualHandoffTarget named a destination the pack never
+// declared, which is the failure this whole record exists to prevent, inverted.
+// With it, a rendering that does not match degrades to "unavailable": the report
+// says it cannot state the target rather than stating a false one, and what is
+// reported is provably a rendering of the same value the verdict compared,
+// whichever engine minted it.
 type HandoffTargetRendering struct {
 	rendered string
 	present  bool
 	err      error
+	// target is the decoded value `rendered` was produced from, kept so a row can
+	// check that the rendering it was handed belongs to the target its evaluation
+	// produced.
+	target *result.HandoffTarget
 }
 
 // PackHandoffTarget renders the escalation target a decoded pack declares. It is
@@ -155,11 +172,12 @@ func (e *Engine) PackHandoffTarget(packRoot map[string]any) HandoffTargetRenderi
 		return HandoffTargetRendering{}
 	}
 	e.targetRenders.Add(1)
-	rendered, err := (&result.HandoffTarget{Kind: kind, Name: name}).Rendered()
+	declared := &result.HandoffTarget{Kind: kind, Name: name}
+	rendered, err := declared.Rendered()
 	if err != nil {
 		return HandoffTargetRendering{err: err}
 	}
-	return HandoffTargetRendering{rendered: rendered, present: true}
+	return HandoffTargetRendering{rendered: rendered, present: true, target: declared}
 }
 
 // Present reports whether a rendering was computed — that is, whether the pack
@@ -182,10 +200,21 @@ func (e *Engine) HandoffTargetRenders() int64 { return e.targetRenders.Load() }
 // it has no constructor for a rendering and no target-shaped input beyond the
 // one it was handed.
 //
-// Where the caller supplied none, the actual side degrades to the "unavailable"
-// convention rather than being computed here. That is the whole of the
-// difference this narrowing makes: the report says it cannot state the target,
-// instead of the row path quietly doing the work a run was supposed to do once.
+// It uses that rendering only when it is a rendering **of this target**. Where
+// the caller supplied none, or supplied one minted for a different target, the
+// actual side degrades to the "unavailable" convention rather than being
+// computed here or reported as something it is not. That is the whole of the
+// difference these two narrowings make: the report says it cannot state the
+// target, instead of the row path quietly doing the work a run was supposed to
+// do once, or repeating bytes that belong to another pack.
+//
+// The check costs one string comparison per asserting row whose evaluation
+// produced a target, against the target the rendering was minted from. It is
+// deliberately not free and deliberately not a hash: Go compares lengths before
+// bytes, nothing is allocated, and what it buys is a report that cannot name a
+// destination the evaluated pack does not declare. It is the same comparison the
+// verdict already makes one line later, applied to the other side of the same
+// question.
 func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTargetRendering) (string, error) {
 	if produced == nil {
 		return result.NoHandoffTarget, nil
@@ -193,7 +222,7 @@ func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTarge
 	if declared.err != nil {
 		return "", declared.err
 	}
-	if declared.present {
+	if declared.present && sameHandoffTarget(declared.target, produced) {
 		return declared.rendered, nil
 	}
 	return result.HandoffTargetUnavailable, nil
@@ -345,46 +374,26 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, admissions map[string]*Admitt
 //
 // command names the reporting surface, exactly as elsewhere in this package.
 func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.EvaluationCorpusCase {
-	// The pack's hard byte limit comes first, before anything reads the bytes.
-	// It is the same check EvaluateAdmitted makes and it is made through the same
-	// helper, so the two cannot drift: before this function rendered anything it
-	// delegated straight to admission, where the limit was the first thing that
-	// ran, and a decode placed ahead of it would scan an oversized document —
-	// arbitrarily long trailing whitespace and all — before the refusal §8.4
-	// requires. A refusal returns as the row's own result, exactly as the
-	// evaluation path's would.
-	if failure := byteLimit("pack", pack, result.ClassPackNotConformant, false); failure != nil {
-		outcome := result.EvaluationCorpusCase{
-			ID:                 item.ID,
-			Origin:             item.Origin,
-			SpecSection:        item.SpecSection,
-			Status:             "passed",
-			ExpectedErrorClass: item.ExpectedErrorClass,
-			ExpectedErrorPhase: item.ExpectedErrorPhase,
-			ActualErrorClass:   failure.Class,
-			ActualErrorPhase:   failure.Phase,
-		}
-		if item.ExpectedHandoffTarget != nil {
-			outcome.ExpectedHandoffTarget = result.HandoffTargetUnavailable
-			outcome.ActualHandoffTarget = result.HandoffTargetUnavailable
-		}
-		if item.ExpectedErrorClass == "" {
-			return corpusMismatch(outcome, "The evaluation was refused where a disposition was expected: "+failure.Code+": "+failure.Message)
-		}
-		if failure.Class != item.ExpectedErrorClass {
-			return corpusMismatch(outcome, "The evaluation error class differs: "+failure.Code+": "+failure.Message)
-		}
-		if item.ExpectedErrorPhase != "" && failure.Phase != item.ExpectedErrorPhase {
-			return corpusMismatch(outcome, "The evaluation error phase differs: "+failure.Code+": "+failure.Message)
-		}
-		return outcome
-	}
 	// One row, one pack: this is the caller for whom "once per pack per run" and
 	// "once per row" are the same number, so it renders its own and hands it on.
-	// The rendering is skipped entirely unless the row asks about a target, and
-	// it happens only for a pack that already passed the limit above.
+	// The rendering is skipped entirely unless the row asks about a target.
+	//
+	// The pack's hard byte limit is consulted **before** the decode that
+	// rendering needs, through the same helper EvaluateAdmitted uses so the two
+	// cannot drift: carrier.Decode has no raw-byte cap of its own, so a decode
+	// placed ahead of the limit would scan an oversized document — arbitrarily
+	// long trailing whitespace and all — before the refusal §8.4 requires.
+	//
+	// What it does **not** do is refuse here. An earlier draft returned early
+	// with a hand-assembled outcome, which skipped the row preprocessing every
+	// other path runs: the expected disposition went uncanonicalized, so a
+	// malformed expectation could ride an expected pack-limit error to a false
+	// pass, and an oversized pack produced a payload shaped unlike every other
+	// refusal. The limit is EvaluateAdmitted's first act, so declining to decode
+	// is all this needs to do — the refusal arrives through the ordinary path
+	// below, after every expectation has been read exactly as it always was.
 	var declared HandoffTargetRendering
-	if item.ExpectedHandoffTarget != nil {
+	if item.ExpectedHandoffTarget != nil && byteLimit("pack", pack, result.ClassPackNotConformant, false) == nil {
 		if document, failure := carrier.Decode(pack, carrier.DefaultLimits()); failure == nil {
 			if root, ok := document.(map[string]any); ok {
 				declared = e.PackHandoffTarget(root)

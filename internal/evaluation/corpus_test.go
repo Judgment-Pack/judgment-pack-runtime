@@ -520,10 +520,42 @@ func TestRunCaseRefusesAnOversizedPackBeforeRenderingAnything(t *testing.T) {
 	if !strings.Contains(outcome.Detail, "JPS-RESOURCE-INPUT-BYTE-LIMIT") {
 		t.Fatalf("the detail names the limit: %q", outcome.Detail)
 	}
-	// The pair still appears together, and it reports that nothing could be
-	// stated rather than a target nobody produced.
-	if outcome.ExpectedHandoffTarget != result.HandoffTargetUnavailable || outcome.ActualHandoffTarget != result.HandoffTargetUnavailable {
+	// Every row preprocessing step still ran: the expected disposition is
+	// canonicalized and the expected target decoded and reported, exactly as
+	// they are for any other refusal. The limit declines to *decode* the pack;
+	// it does not shortcut the row.
+	if outcome.Expected == "" {
+		t.Fatalf("the expected disposition is canonicalized whatever the pack does: %+v", outcome)
+	}
+	if outcome.ExpectedHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` {
+		t.Fatalf("the row's own assertion is reported back: %+v", outcome)
+	}
+	// The pair still appears together, and the actual side says nothing could be
+	// stated rather than naming a target nobody produced.
+	if outcome.ActualHandoffTarget != result.HandoffTargetUnavailable {
 		t.Fatalf("outcome = %+v", outcome)
+	}
+
+	// A malformed expectation is still caught behind an oversized pack: the row
+	// preprocessing that finds carrier defects runs before the evaluation is
+	// attempted, so an expected pack-limit error cannot carry a bad expectation
+	// to a pass.
+	malformed := MatrixCase{
+		ID:                  "malformed-beside-an-oversized-pack",
+		Facts:               json.RawMessage(`{}`),
+		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","reasons":["unknown"],"handoff":{"state":"none"}}`),
+	}
+	if outcome = engine.RunCase([]byte(oversized), malformed, "test"); outcome.Status != "mismatch" {
+		t.Fatalf("a malformed expectation is a carrier defect whatever the pack weighs: %+v", outcome)
+	}
+	if !strings.Contains(outcome.Detail, "not a canonicalizable §8.3 disposition") {
+		t.Fatalf("the detail names the expectation's defect: %q", outcome.Detail)
+	}
+	malformed.ExpectedDisposition = nil
+	malformed.ExpectedErrorClass, malformed.ExpectedErrorPhase = result.ClassPackNotConformant, result.PhasePreflight
+	malformed.ExpectedHandoffTarget = json.RawMessage(`{"kind":"human-role"}`)
+	if outcome = engine.RunCase([]byte(oversized), malformed, "test"); outcome.Status != "mismatch" {
+		t.Fatalf("a malformed target assertion is caught too: %+v", outcome)
 	}
 
 	// A row expecting that refusal passes, which is what makes this the same
@@ -532,5 +564,81 @@ func TestRunCaseRefusesAnOversizedPackBeforeRenderingAnything(t *testing.T) {
 	row.ExpectedErrorClass, row.ExpectedErrorPhase = result.ClassPackNotConformant, result.PhasePreflight
 	if outcome = engine.RunCase([]byte(oversized), row, "test"); outcome.Status != "passed" {
 		t.Fatalf("outcome = %+v", outcome)
+	}
+}
+
+// A rendering minted for one pack cannot be reported against another
+// (ADR-0025).
+//
+// Unexported members stop a caller fabricating a rendering; they do not stop one
+// transplanting a genuine rendering, because PackHandoffTarget renders whatever
+// root it is handed. A transplanted rendering would be reported verbatim while
+// the verdict compared the evaluated pack's real target — a row passing while
+// its actualHandoffTarget named a destination the pack never declared, which is
+// this record's own defect inverted. The rendering therefore carries the target
+// it was minted from, and a row uses it only when that is the target its
+// evaluation produced.
+func TestATransplantedRenderingIsNotReported(t *testing.T) {
+	engine := newTestEngine(t)
+	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pack B: the same policy, a different destination. Its rows must never
+	// report pack A's.
+	other := strings.Replace(string(pack), `"name": "Intake reviewer"`, `"name": "Disclosure office"`, 1)
+	if other == string(pack) {
+		t.Fatal("the fixture must declare the target this test changes")
+	}
+
+	renderingFor := func(document string) HandoffTargetRendering {
+		decoded, failure := carrier.Decode([]byte(document), carrier.DefaultLimits())
+		if failure != nil {
+			t.Fatal(failure.Diagnostic.Message)
+		}
+		return engine.PackHandoffTarget(decoded.(map[string]any))
+	}
+	fromA, fromB := renderingFor(string(pack)), renderingFor(other)
+	if !fromA.Present() || !fromB.Present() {
+		t.Fatal("both packs declare a target")
+	}
+
+	// Pack B's own rows, asserting pack B's target: the row passes and reports
+	// pack B's destination.
+	row := MatrixCase{
+		ID:                    "b",
+		Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
+		ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
+		ExpectedHandoffTarget: json.RawMessage(`{"kind":"human-role","name":"Disclosure office"}`),
+	}
+	admittedB := engine.AdmitPack([]byte(other))
+	outcome := engine.RunCaseAdmitted(admittedB, row, fromB, "test")
+	if outcome.Status != "passed" || outcome.ActualHandoffTarget != `{"kind":"human-role","name":"Disclosure office"}` {
+		t.Fatalf("a matching rendering reports normally: %+v", outcome)
+	}
+
+	// The same row and the same pack, handed pack A's rendering. The verdict is
+	// unchanged — it never read the rendering — and the report refuses to state
+	// a target rather than stating pack A's.
+	transplanted := engine.RunCaseAdmitted(admittedB, row, fromA, "test")
+	if transplanted.Status != outcome.Status {
+		t.Fatalf("the verdict does not depend on the rendering: %+v", transplanted)
+	}
+	if transplanted.ActualHandoffTarget != result.HandoffTargetUnavailable {
+		t.Fatalf("a transplanted rendering must not be reported: %+v", transplanted)
+	}
+	if strings.Contains(transplanted.ActualHandoffTarget, "Intake reviewer") {
+		t.Fatalf("pack A's destination must not appear in pack B's row: %+v", transplanted)
+	}
+
+	// And the mismatching direction is unaffected: a row asserting pack A's
+	// target against pack B still fails on the decoded comparison, whichever
+	// rendering it was handed.
+	row.ExpectedHandoffTarget = json.RawMessage(`{"kind":"human-role","name":"Intake reviewer"}`)
+	for name, supplied := range map[string]HandoffTargetRendering{"pack B's": fromB, "pack A's": fromA} {
+		failing := engine.RunCaseAdmitted(admittedB, row, supplied, "test")
+		if failing.Status != "mismatch" {
+			t.Fatalf("%s rendering: the verdict rests on decoded values: %+v", name, failing)
+		}
 	}
 }

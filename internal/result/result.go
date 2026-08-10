@@ -272,9 +272,18 @@ type HandoffTarget struct {
 // reported none.
 //
 // HandoffTargetUnavailable is the third state a *reported* target can be in, and
-// it is deliberately not null: an evaluation that was refused produced no
-// answer, which is not the same fact as an evaluation that answered "none".
-// Substituting null there would report a §8.3 statement no evaluation made.
+// it is deliberately not null: it says the report cannot state a target, where
+// null says an evaluation reported none. Substituting null would report a §8.3
+// statement no evaluation made.
+//
+// It has three causes, and a consumer tells the first from the others by whether
+// the row carries an §8.4 class. The evaluation was **refused**, so it produced
+// no answer at all. Or the evaluation produced one and **no rendering was
+// computed** for the pack — a state no surface of this runtime reaches, since
+// the caller that owns a row loop renders once for the pack before the loop.
+// Or a rendering was supplied that was minted from a **different target** than
+// the one produced, which is refused rather than repeated: the report declines
+// to name a destination rather than naming the wrong one (ADR-0025).
 const (
 	NoHandoffTarget          = "null"
 	HandoffTargetUnavailable = "unavailable"
@@ -650,12 +659,15 @@ const EvaluationCorpusLabel = "corpus results, the required evidence for the cla
 // names, and it never quietly loses one half.
 //
 // "unavailable" is the honest third state and the reason the pair is a triple
-// rather than a pair of renderings: a row that asserts a target and whose
-// evaluation is then refused produced nothing to compare, and reporting null
-// there would state that an evaluation reported no target when no evaluation
-// happened. A row that declares no expectedHandoffTarget carries neither
-// member, and its result is byte for byte what it was before that member
-// existed.
+// rather than a pair of renderings: it says this report cannot state a target,
+// where null says an evaluation reported none. Its causes are enumerated at
+// HandoffTargetUnavailable — a refused evaluation, no rendering computed for the
+// pack, or a supplied rendering belonging to some other target — and the first
+// is told from the rest by ActualErrorClass being set. None of them moves a
+// verdict: the comparison reads the decoded targets, so a degraded report is a
+// report that says less, never a row that decides differently. A row that
+// declares no expectedHandoffTarget carries neither member, and its result is
+// byte for byte what it was before that member existed.
 type EvaluationCorpusCase struct {
 	ID                    string `json:"id"`
 	Origin                string `json:"origin"`
