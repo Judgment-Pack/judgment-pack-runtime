@@ -316,8 +316,37 @@ Settled determinations:
 
   The digest is taken once per `AdmitPack` — which every caller performs once per pack per run —
   beside the several passes admission already makes to validate and decode the same bytes. It is
-  the one field this record adds to a type it otherwise left exactly as it found it, and that
+  one of two fields this record adds to a type it otherwise left exactly as it found it, and that
   departure is disclosed here rather than left for a reader to notice.
+
+  **An admitted pack is a snapshot, and the binding is what forced that.** `AdmitPack` copies the
+  bytes it is given and answers every later question from its own copy. Without it the digest is a
+  promise about bytes somebody else can still rewrite, and a review found the sequence that
+  collects on it: mint a rendering for pack A, admit A's slice, edit that same backing array in
+  place into a valid pack B of the same length before the first admission decodes anything. The
+  digest still said A while the evaluation decoded B, so A's rendering was accepted and reported
+  while the verdict was decided from B — a row **passing** while `actualHandoffTarget` named a
+  destination the evaluated document does not declare. That is this record's own defect, reached
+  through the machinery built to prevent it, for the third distinct reason. The snapshot makes the
+  question meaningless rather than answering it: what was admitted is what `AdmitPack` was handed,
+  so the digest, the evaluation, and the report all describe one document and a later edit
+  describes nothing. It costs one linear pass per pack per run, and it is now the constructor's
+  documented ownership rule.
+
+  **The pack byte limit runs ahead of both new passes, and that is this record's second rule
+  catching this record a second time.** A draft took the digest before consulting the limit, in
+  both the constructor and the rendering site, so every oversized pack was scanned before being
+  refused — and `RunCase` scanned one twice. §8.4 makes the limit a preflight refusal, and the
+  rule stated two determinations above is that a bound which existed before this change runs before
+  the work this change added; here the added work was the binding itself, which is the easiest
+  place to forget it and the least excusable. The limit is decided once, in `AdmitPack`, where the
+  bytes arrive, and replayed by every evaluating path — one boundary, with no ordering left to get
+  wrong. An oversized pack is consequently neither copied nor hashed. It *is* still retained as the
+  caller's slice, which is the single exception to the ownership rule and is safe for the reason
+  the rule exists: no digest is taken for it, so there is no binding an edit could defeat, and
+  every evaluating path refuses it before decoding. Retaining it is what keeps `Admits` at the
+  semantics it documented long before this record — conformance, deliberately not the raw byte
+  limit.
 
   **The digest is checked before anything else the handle carries**, including its error. A foreign
   handle has nothing to say about this row, and propagating its rendering failure would flip that

@@ -87,7 +87,14 @@ All notable changes to tagged releases are documented here.
   unlike the row-versus-pack comparison the verdict makes, which the matrix's own byte limit bounds.
   Thirty-two bytes, whatever the pack weighs, checked ahead of everything else the handle carries so
   a foreign one degrades the report rather than failing the row. A rendering minted elsewhere over
-  the *same* bytes reports honestly, since the same bytes declare the same target. A pack's hard byte limit is
+  the *same* bytes reports honestly, since the same bytes declare the same target. **An admitted
+  pack is now a snapshot**: `AdmitPack` copies the bytes it is given and answers every later
+  question from that copy, because a digest of bytes the caller can still edit binds nothing — edit
+  the slice in place into a same-length pack after admitting it, and the stale digest would accept
+  the first pack's rendering while the evaluation decoded the second. The pack byte limit is decided
+  once, in `AdmitPack`, ahead of both the copy and the digest, so an oversized pack is refused
+  rather than scanned by work this change added; every evaluating path replays that one decision,
+  and `Admits` keeps the conformance-only semantics it documented long before. A pack's hard byte limit is
   consulted before any of this decodes a pack, so an oversized document is not scanned first — and
   the refusal itself still travels the ordinary row path, so every expectation is canonicalized and
   every payload keeps the shape it had. The actual side of the pair carries a third value, **`unavailable`**

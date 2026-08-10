@@ -183,10 +183,14 @@ type HandoffTargetRendering struct {
 // that count is complete for renderings this engine minted. See
 // HandoffTargetRenders.
 func (e *Engine) PackHandoffTarget(pack []byte) HandoffTargetRendering {
-	digest := sha256.Sum256(pack)
+	// The limit is the first thing that touches the bytes — ahead of the digest,
+	// which is work this record added. An oversized pack is refused everywhere it
+	// is met, so nothing here scans one: the zero value it returns matches no
+	// pack's digest, which is the right answer for bytes no evaluation will read.
 	if failure := byteLimit("pack", pack, result.ClassPackNotConformant, false); failure != nil {
-		return HandoffTargetRendering{digest: digest}
+		return HandoffTargetRendering{}
 	}
+	digest := sha256.Sum256(pack)
 	document, failure := carrier.Decode(pack, carrier.DefaultLimits())
 	if failure != nil {
 		return HandoffTargetRendering{digest: digest}

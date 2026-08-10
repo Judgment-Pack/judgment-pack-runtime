@@ -560,13 +560,13 @@ func TestRunCaseRefusesAnOversizedPackBeforeRenderingAnything(t *testing.T) {
 // (ADR-0025).
 //
 // Unexported members stop a caller fabricating a rendering; they do not stop one
-// transplanting a genuine rendering, because PackHandoffTarget renders whatever
-// root it is handed. A transplanted rendering would be reported verbatim while
-// the verdict compared the evaluated pack's real target — a row passing while
-// its actualHandoffTarget named a destination the pack never declared, which is
-// this record's own defect inverted. The rendering therefore carries the target
-// it was minted from, and a row uses it only when that is the target its
-// evaluation produced.
+// transplanting a genuine rendering, because PackHandoffTarget mints from
+// whatever bytes it is handed. A transplanted rendering would be reported
+// verbatim while the verdict compared the evaluated pack's real target — a row
+// passing while its actualHandoffTarget named a destination the pack never
+// declared, which is this record's own defect inverted. The rendering therefore
+// carries the SHA-256 of the pack bytes it was minted from, and a row uses it
+// only when that digest is its own admitted pack's.
 func TestATransplantedRenderingIsNotReported(t *testing.T) {
 	engine := newTestEngine(t)
 	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
@@ -754,5 +754,134 @@ func TestARenderingOfTheSameBytesIsReportedWhicheverEngineMintedIt(t *testing.T)
 	}
 	if minting.HandoffTargetRenders() != 1 {
 		t.Fatalf("the mint happened once, elsewhere: %d", minting.HandoffTargetRenders())
+	}
+}
+
+// An admitted pack is a snapshot: editing the caller's slice afterwards changes
+// nothing about what was admitted (ADR-0025).
+//
+// This is the sequence a review found, and it is race-free. Mint a rendering for
+// pack A. Admit A's slice. Edit that same backing array in place into a valid
+// pack B of the same length, before the first admission decodes anything. When
+// the admitted bytes were the caller's, the digest still said A while the
+// evaluation decoded B — so A's rendering was accepted and reported while the
+// verdict was decided from B, and a row expecting B passed while naming a
+// destination B does not declare. That is the failure the binding exists to
+// prevent, reached through the binding.
+//
+// The snapshot closes it by making the question meaningless: what was admitted
+// is what AdmitPack was handed, so the digest, the evaluation, and the report
+// all describe the same document, and a later edit describes nothing.
+func TestAnAdmittedPackIsASnapshotOfTheBytesItWasGiven(t *testing.T) {
+	engine := newTestEngine(t)
+	fixture, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two packs differing only in a target name of the same length, so one can be
+	// edited into the other in place.
+	nameA, nameB := strings.Repeat("A", 15), strings.Repeat("B", 15)
+	packA := []byte(strings.Replace(string(fixture), `"name": "Intake reviewer"`, `"name": "`+nameA+`"`, 1))
+	packB := []byte(strings.Replace(string(fixture), `"name": "Intake reviewer"`, `"name": "`+nameB+`"`, 1))
+	if len(packA) != len(packB) || string(packA) == string(packB) {
+		t.Fatalf("the two packs must differ in content and not in length: %d vs %d", len(packA), len(packB))
+	}
+
+	fromA := engine.PackHandoffTarget(packA)
+	if !fromA.Present() {
+		t.Fatal("pack A declares a target")
+	}
+	admitted := engine.AdmitPack(packA)
+	// The edit, in place, after admission and before any row runs.
+	copy(packA, packB)
+
+	notApplicable := json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`)
+	facts := json.RawMessage(`{"request":{"type":"unrelated"}}`)
+	assertion := func(name string) json.RawMessage {
+		return json.RawMessage(`{"kind":"human-role","name":"` + name + `"}`)
+	}
+
+	// A row expecting B — the bytes the caller's slice now holds — must not pass:
+	// B was never admitted. The verdict is A's, because A is what was snapshotted.
+	expectingB := engine.RunCaseAdmitted(admitted, MatrixCase{
+		ID: "expects-b", Facts: facts, ExpectedDisposition: notApplicable, ExpectedHandoffTarget: assertion(nameB),
+	}, fromA, "test")
+	if expectingB.Status != "mismatch" {
+		t.Fatalf("the edit must not reach the admitted pack: %+v", expectingB)
+	}
+	if strings.Contains(expectingB.ActualHandoffTarget, nameB) {
+		t.Fatalf("nothing may report the edited bytes: %+v", expectingB)
+	}
+
+	// And the report never disagrees with the verdict: a row expecting A passes
+	// and reports A, which is the document that was actually admitted.
+	expectingA := engine.RunCaseAdmitted(admitted, MatrixCase{
+		ID: "expects-a", Facts: facts, ExpectedDisposition: notApplicable, ExpectedHandoffTarget: assertion(nameA),
+	}, fromA, "test")
+	if expectingA.Status != "passed" || !strings.Contains(expectingA.ActualHandoffTarget, nameA) {
+		t.Fatalf("the admitted document decides and is reported: %+v", expectingA)
+	}
+
+	// The binding still works across the edit: a rendering minted from the edited
+	// bytes belongs to other bytes and is refused as foreign.
+	fromEdited := engine.PackHandoffTarget(packA)
+	degraded := engine.RunCaseAdmitted(admitted, MatrixCase{
+		ID: "foreign", Facts: facts, ExpectedDisposition: notApplicable, ExpectedHandoffTarget: assertion(nameA),
+	}, fromEdited, "test")
+	if degraded.ActualHandoffTarget != result.HandoffTargetUnavailable {
+		t.Fatalf("a rendering of the edited bytes is foreign to this admission: %+v", degraded)
+	}
+}
+
+// The pack byte limit is the first thing that touches a pack's bytes, on every
+// path this record added work to (ADR-0025).
+//
+// §8.4 makes the limit a preflight refusal, and this record's own rule is that a
+// bound which existed before it runs before the work it added. Both new passes
+// over a pack — the binding digest and the admission snapshot — therefore sit
+// behind it, structurally: neither is reachable in AdmitPack or in
+// PackHandoffTarget except after the limit has returned nil. A rendering counter
+// cannot observe a SHA pass, so what is asserted here is the consequence that is
+// observable — an oversized pack is refused, mints nothing, and never becomes a
+// bound admission.
+func TestTheByteLimitPrecedesEveryPassThisRecordAdded(t *testing.T) {
+	engine := newTestEngine(t)
+	fixture, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized := append(bytes.Clone(fixture), bytes.Repeat([]byte(" "), int(carrier.HardMaxBytes))...)
+
+	// Nothing is minted for a pack no evaluation will read.
+	before := engine.HandoffTargetRenders()
+	if declared := engine.PackHandoffTarget(oversized); declared.Present() {
+		t.Fatal("an oversized pack mints no rendering")
+	}
+	if engine.HandoffTargetRenders() != before {
+		t.Fatalf("an oversized pack renders nothing: %d", engine.HandoffTargetRenders()-before)
+	}
+
+	// AdmitPack refuses it at the limit, and every evaluating path replays that
+	// refusal rather than deciding it again over bytes it did not keep.
+	admitted := engine.AdmitPack(oversized)
+	if admitted.oversized == nil {
+		t.Fatal("AdmitPack decides the limit, once, where the bytes arrive")
+	}
+	if admitted.packDigest != ([sha256.Size]byte{}) {
+		t.Fatal("no digest is taken for a pack that was refused")
+	}
+	_, failure := engine.EvaluateAdmitted(admitted, []byte(`{}`), nil, Options{Command: "test"})
+	if failure == nil || failure.Class != result.ClassPackNotConformant || failure.Phase != result.PhasePreflight {
+		t.Fatalf("failure = %+v", failure)
+	}
+	if failure.Code != "JPS-RESOURCE-INPUT-BYTE-LIMIT" {
+		t.Fatalf("the replayed refusal is the limit's own: %+v", failure)
+	}
+
+	// And Admits keeps the semantics it documented before any of this: a
+	// conformant pack padded past the limit still admits, and still refuses to
+	// evaluate. The limit is EvaluateWith's, not Admits'.
+	if !admitted.Admits(nil) {
+		t.Fatal("Admits applies conformance, not the raw byte limit")
 	}
 }

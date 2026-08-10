@@ -41,6 +41,7 @@
 package evaluation
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -176,6 +177,13 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 // any other input is touched, so the §8.4 precedence a per-row caller saw is
 // byte-identical.
 func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte, options Options) (result.Evaluation, *Failure) {
+	// The limit was decided in AdmitPack, over the bytes as they were handed in;
+	// this replays it rather than re-deciding it, and additionally honours the
+	// Options report a CLI makes when its own bounded read stopped at the limit
+	// — that pack arrives *under* the limit and only the caller knows why.
+	if admitted.oversized != nil {
+		return result.Evaluation{}, copyFailure(admitted.oversized)
+	}
 	if failure := byteLimit("pack", admitted.pack, result.ClassPackNotConformant, options.oversized("pack")); failure != nil {
 		return result.Evaluation{}, failure
 	}
@@ -301,8 +309,14 @@ type AdmittedPack struct {
 	// over the pack, once per AdmitPack — which every caller performs once per
 	// pack per run — beside the several passes admission already makes to
 	// validate and decode the same bytes. It is immutable from construction, so
-	// nothing reads it under a lock.
+	// nothing reads it under a lock, and it is taken over pack, which is this
+	// type's own copy: a digest of bytes a caller could still edit would bind
+	// nothing.
 	packDigest [sha256.Size]byte
+	// oversized is the pack byte-limit refusal, recorded at construction because
+	// that is where the bytes are first seen and before anything else reads them.
+	// Every later path replays it rather than re-deciding it.
+	oversized *Failure
 }
 
 // maxAdmissions bounds how many distinct capability sets one AdmittedPack
@@ -319,13 +333,41 @@ type packAdmission struct {
 }
 
 // AdmitPack prepares one pack's bytes for evaluation across many rows.
+//
+// **It takes a snapshot.** The returned value owns a private copy of pack, and
+// every later question — what the pack conforms to, what it decodes to, what its
+// binding digest is — is answered from that copy. A caller may reuse or edit its
+// slice afterwards without changing what was admitted. That is not politeness
+// about aliasing: without it the digest is a promise about bytes somebody else
+// can still rewrite, so a caller could mint a rendering for one pack, admit it,
+// edit the slice into a different pack of the same length, and have a row report
+// the first pack's destination while the evaluation decided from the second —
+// a row passing while its report named a target the evaluated document does not
+// declare, which is exactly what the binding exists to prevent. The copy costs
+// one linear pass, once per pack per run.
+//
+// The pack byte limit is decided **first**, ahead of the copy and the digest,
+// because it is a bound that existed before any of this and §8.4 makes it a
+// preflight refusal: an oversized pack must be refused rather than copied or
+// hashed. The refusal is recorded once, here, and replayed by every evaluating
+// path, so there is one boundary and no order left to get wrong.
+//
+// An oversized pack is therefore *not* snapshotted, and the caller's slice is
+// retained instead — the one place the ownership rule above does not apply, and
+// it is safe for the reason the rule exists: no digest is taken for such a pack,
+// so there is no binding for a later edit to defeat, and every evaluating path
+// refuses it before it decodes anything. Retaining it at all is what keeps
+// Admits at its documented semantics, which are conformance and deliberately not
+// the raw byte limit: a conformant pack padded past the limit still Admits, and
+// still refuses to evaluate.
 func (e *Engine) AdmitPack(pack []byte) *AdmittedPack {
-	return &AdmittedPack{
-		engine:     e,
-		pack:       pack,
-		admissions: map[string]*packAdmission{},
-		packDigest: sha256.Sum256(pack),
+	admitted := &AdmittedPack{engine: e, pack: pack, admissions: map[string]*packAdmission{}}
+	if admitted.oversized = byteLimit("pack", pack, result.ClassPackNotConformant, false); admitted.oversized != nil {
+		return admitted
 	}
+	admitted.pack = bytes.Clone(pack)
+	admitted.packDigest = sha256.Sum256(admitted.pack)
+	return admitted
 }
 
 // admissionKey is the part of Options the conformance half of the preflight

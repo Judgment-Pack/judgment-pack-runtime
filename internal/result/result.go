@@ -281,9 +281,13 @@ type HandoffTarget struct {
 // no answer at all. Or the evaluation produced one and **no rendering was
 // computed** for the pack — a state no surface of this runtime reaches, since
 // the caller that owns a row loop renders once for the pack before the loop.
-// Or a rendering was supplied that was minted from a **different target** than
-// the one produced, which is refused rather than repeated: the report declines
-// to name a destination rather than naming the wrong one (ADR-0025).
+// Or a rendering was supplied that was minted from **different pack bytes**,
+// which is refused rather than repeated: the report declines to name a
+// destination rather than risk naming the wrong one (ADR-0025). That last
+// refusal is by the bytes and not by the target, so a rendering of a *different*
+// pack that happens to declare the *same* destination degrades too — honest
+// rather than pedantic, because what such a handle proves is only where it came
+// from, and it did not come from here.
 const (
 	NoHandoffTarget          = "null"
 	HandoffTargetUnavailable = "unavailable"
