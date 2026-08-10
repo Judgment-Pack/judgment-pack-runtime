@@ -339,7 +339,14 @@ func TestTheRowComparatorRendersNoHandoffTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	admitted := engine.AdmitPack(pack)
-	declared := HandoffTargetRendering{Rendered: `{"kind":"human-role","name":"Intake reviewer"}`, Present: true}
+	// The rendering can only come from the one place that renders: the type's
+	// members are unexported and it has no other constructor, so this test could
+	// not fabricate one even to check that the row path ignores it.
+	document, failure := carrier.Decode(pack, carrier.DefaultLimits())
+	if failure != nil {
+		t.Fatal(failure.Diagnostic.Message)
+	}
+	declared := engine.PackHandoffTarget(document.(map[string]any))
 	rendersAfterOne := engine.HandoffTargetRenders()
 
 	row := MatrixCase{
@@ -361,7 +368,7 @@ func TestTheRowComparatorRendersNoHandoffTarget(t *testing.T) {
 		if outcome.Status != "passed" {
 			t.Fatalf("row %d: %+v", index, outcome)
 		}
-		if outcome.ActualHandoffTarget != declared.Rendered {
+		if outcome.ActualHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` {
 			t.Fatalf("row %d must report the rendering it was handed: %+v", index, outcome)
 		}
 	}
@@ -369,8 +376,28 @@ func TestTheRowComparatorRendersNoHandoffTarget(t *testing.T) {
 		t.Fatalf("the row path renders nothing: %d renderings across 200 rows", renders-rendersAfterOne)
 	}
 
+	// A row that asserts a target and is handed no rendering renders nothing on
+	// its own: the report degrades to the unavailable convention and says so.
+	// This is the state the narrowing created on purpose — it is what a direct
+	// caller of this primitive gets instead of a per-row rendering behind the
+	// counter's back — and no surface of this runtime reaches it.
+	row.ID, row.SupportedExtensions = "unrendered", nil
+	before := engine.HandoffTargetRenders()
+	outcome := engine.RunCaseAdmitted(admitted, row, HandoffTargetRendering{}, "test")
+	if outcome.ActualHandoffTarget != result.HandoffTargetUnavailable {
+		t.Fatalf("no rendering means the report says so: %+v", outcome)
+	}
+	if engine.HandoffTargetRenders() != before {
+		t.Fatal("the row path renders nothing, including when it was handed nothing")
+	}
+	// The verdict is unaffected: it rests on the decoded values, which are equal
+	// here, so the row passes while its report degrades.
+	if outcome.Status != "passed" {
+		t.Fatalf("the verdict does not depend on the rendering: %+v", outcome)
+	}
+
 	// A row asserting nothing reports nothing and is handed nothing.
-	outcome := engine.RunCaseAdmitted(admitted, MatrixCase{
+	outcome = engine.RunCaseAdmitted(admitted, MatrixCase{
 		ID:                  "silent",
 		Facts:               row.Facts,
 		ExpectedDisposition: row.ExpectedDisposition,
@@ -394,11 +421,23 @@ func TestPackHandoffTargetRendersWhatThePackDeclares(t *testing.T) {
 	}
 	before := engine.HandoffTargetRenders()
 	declared := engine.PackHandoffTarget(document.(map[string]any))
-	if !declared.Present || declared.Err != nil || declared.Rendered != `{"kind":"human-role","name":"Intake reviewer"}` {
-		t.Fatalf("declared = %+v", declared)
+	// Present is the only member a caller can read, on purpose: the rendering
+	// itself is for the row result to report, not for a caller to inspect or to
+	// rebuild one from. What it renders is asserted through a row, below.
+	if !declared.Present() {
+		t.Fatalf("this pack declares a target: %+v", declared)
 	}
 	if engine.HandoffTargetRenders() != before+1 {
 		t.Fatal("one call, one rendering")
+	}
+	reported := engine.RunCaseAdmitted(engine.AdmitPack(pack), MatrixCase{
+		ID:                    "reports-the-rendering",
+		Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
+		ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
+		ExpectedHandoffTarget: json.RawMessage(`{"kind":"human-role","name":"Intake reviewer"}`),
+	}, declared, "test")
+	if reported.Status != "passed" || reported.ActualHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` {
+		t.Fatalf("reported = %+v", reported)
 	}
 
 	// A pack with no escalation object declares no target, and nothing is
@@ -413,8 +452,8 @@ func TestPackHandoffTargetRendersWhatThePackDeclares(t *testing.T) {
 		t.Fatal(failure.Diagnostic.Message)
 	}
 	before = engine.HandoffTargetRenders()
-	if declared = engine.PackHandoffTarget(document.(map[string]any)); declared.Present || declared.Rendered != "" {
-		t.Fatalf("declared = %+v", declared)
+	if declared = engine.PackHandoffTarget(document.(map[string]any)); declared.Present() {
+		t.Fatalf("a pack with no escalation object declares no target: %+v", declared)
 	}
 	if engine.HandoffTargetRenders() != before {
 		t.Fatal("a pack with no target renders nothing")
@@ -428,6 +467,70 @@ func TestPackHandoffTargetRendersWhatThePackDeclares(t *testing.T) {
 		ExpectedHandoffTarget: json.RawMessage(`null`),
 	}, declared, "test")
 	if outcome.Status != "passed" || outcome.ActualHandoffTarget != result.NoHandoffTarget {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+}
+
+// RunCase refuses an oversized pack before it reads a byte of it (ADR-0025).
+//
+// The hard byte limit is §8.4's own preflight refusal, and before this record
+// touched RunCase the function delegated straight to the admission path where
+// that limit ran first. Rendering the pack's target inside RunCase put a decode
+// in front of it — carrier.Decode has no raw-byte cap of its own — so a
+// syntactically valid pack padded past the limit was scanned whole, and its
+// megabyte-long target canonicalized and hashed, before the refusal that was
+// always going to happen. Trailing whitespace alone made that work unbounded.
+//
+// The limit therefore runs first, through the same helper the evaluation path
+// uses so the two cannot drift, and nothing is rendered for a pack that will be
+// refused.
+func TestRunCaseRefusesAnOversizedPackBeforeRenderingAnything(t *testing.T) {
+	engine := newTestEngine(t)
+	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Valid JSON, a megabyte-long target, and padding past the hard limit: every
+	// byte of it would be scanned by a decode placed ahead of the limit.
+	oversized := strings.Replace(string(pack), `"name": "Intake reviewer"`, `"name": "`+strings.Repeat("q", 1<<20)+`"`, 1)
+	oversized += strings.Repeat(" ", int(carrier.HardMaxBytes)+1-len(oversized))
+	if int64(len(oversized)) <= carrier.HardMaxBytes {
+		t.Fatalf("this test needs a pack past the limit: %d bytes", len(oversized))
+	}
+
+	row := MatrixCase{
+		ID:                    "oversized",
+		Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
+		ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
+		ExpectedHandoffTarget: json.RawMessage(`{"kind":"human-role","name":"Intake reviewer"}`),
+	}
+	before := engine.HandoffTargetRenders()
+	outcome := engine.RunCase([]byte(oversized), row, "test")
+	if engine.HandoffTargetRenders() != before {
+		t.Fatalf("a pack that will be refused renders nothing: %d", engine.HandoffTargetRenders()-before)
+	}
+	// The refusal is the one the pre-existing contract names: the §8.4 class and
+	// phase the evaluation path would have produced.
+	if outcome.Status != "mismatch" || outcome.ActualErrorClass != result.ClassPackNotConformant {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if outcome.ActualErrorPhase != result.PhasePreflight {
+		t.Fatalf("the limit is a preflight refusal: %+v", outcome)
+	}
+	if !strings.Contains(outcome.Detail, "JPS-RESOURCE-INPUT-BYTE-LIMIT") {
+		t.Fatalf("the detail names the limit: %q", outcome.Detail)
+	}
+	// The pair still appears together, and it reports that nothing could be
+	// stated rather than a target nobody produced.
+	if outcome.ExpectedHandoffTarget != result.HandoffTargetUnavailable || outcome.ActualHandoffTarget != result.HandoffTargetUnavailable {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+
+	// A row expecting that refusal passes, which is what makes this the same
+	// contract the evaluation path has always had rather than a new one.
+	row.ExpectedDisposition, row.ExpectedHandoffTarget = nil, nil
+	row.ExpectedErrorClass, row.ExpectedErrorPhase = result.ClassPackNotConformant, result.PhasePreflight
+	if outcome = engine.RunCase([]byte(oversized), row, "test"); outcome.Status != "passed" {
 		t.Fatalf("outcome = %+v", outcome)
 	}
 }

@@ -146,8 +146,11 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// target and the rendering is a function of the pack's bytes alone, so
 	// nothing below this line can need a second one.
 	//
-	// The rows run sequentially, one after another in this loop, and neither
-	// this rendering nor the budget below is shared with anything outside it.
+	// The rows run sequentially, one after another in this loop. Nothing here is
+	// shared *concurrently*: the rendering is read by every row and written by
+	// none, and the aggregate budget below is deliberately carried across the
+	// successive packs of one run — it bounds a report, and a report is one
+	// document however many packs contributed to it.
 	var declaredTarget evaluation.HandoffTargetRendering
 	if assertsHandoffTarget(matrix) {
 		declaredTarget = evaluator.PackHandoffTarget(PackRoot(pack))

@@ -435,7 +435,9 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 			// keeps the configured escalation target outside the disposition, so
 			// neither line above can show a difference in it (ADR-0025).
 			if row.ExpectedHandoffTarget != "" || row.ActualHandoffTarget != "" {
-				fmt.Fprintf(a.out, "    expected target: %s / actual target: %s\n", handoffTargetLine(row.ExpectedHandoffTarget), handoffTargetLine(row.ActualHandoffTarget))
+				refused := row.ActualErrorClass != ""
+				fmt.Fprintf(a.out, "    expected target: %s / actual target: %s\n",
+					handoffTargetLine(row.ExpectedHandoffTarget, refused), handoffTargetLine(row.ActualHandoffTarget, refused))
 			}
 		}
 		a.renderCoverage("  ", pack.Coverage)
@@ -448,14 +450,24 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 
 // handoffTargetLine renders one side of a row's handoff-target comparison. The
 // "unavailable" state is spelled out rather than printed as the bare word: a
-// reader meeting it beside a target on the other side needs to know that no
-// evaluation reported anything, which is a different fact from an evaluation
-// reporting no target (ADR-0025).
-func handoffTargetLine(rendered string) string {
-	if rendered == result.HandoffTargetUnavailable {
+// reader meeting it beside a target on the other side needs to know that the
+// report cannot state a target, which is a different fact from an evaluation
+// reporting none (ADR-0025).
+//
+// It has two causes and they are told apart by what the row already carries
+// rather than by a fourth payload value: a row with an §8.4 class was refused
+// and produced nothing, and a row without one produced a target for which no
+// rendering was computed — which no surface of this runtime reaches, and which
+// is named rather than papered over because the alternative is a blank beside a
+// destination.
+func handoffTargetLine(rendered string, refused bool) string {
+	if rendered != result.HandoffTargetUnavailable {
+		return display.Sanitize(rendered)
+	}
+	if refused {
 		return "unavailable (evaluation refused)"
 	}
-	return display.Sanitize(rendered)
+	return "unavailable (no rendering was computed for this pack)"
 }
 
 // renderOrigins prints the origins one pack's rows declare, as counts against

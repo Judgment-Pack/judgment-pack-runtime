@@ -76,7 +76,11 @@ All notable changes to tagged releases are documented here.
   matrix that uses sixty-four one-off capability sets and repeats a sixty-fifth re-renders on every
   remaining row, because `maxAdmissions` bounds what is retained and not what is computed. The
   rendering is a function of the pack's bytes alone, so it belongs where a pack is loaded; the row
-  path then holds no cache, no lock, and no counter. The actual side of the pair carries a third value, **`unavailable`**
+  path then holds no cache, no lock, and no counter. The rendering type is **opaque** — unexported
+  members, and `PackHandoffTarget` as its only constructor and the only place a target is rendered —
+  so "the row path renders nothing" is enforced rather than documented, and the render count that
+  makes the bound observable is complete rather than a sample. A pack's hard byte limit runs before
+  any of this reads a pack, so an oversized document is refused rather than scanned first. The actual side of the pair carries a third value, **`unavailable`**
   (`unavailable (evaluation refused)` on the human surface), for a row whose evaluation was refused:
   reporting `null` there would say an evaluation reported no target when no evaluation happened. The
   **graph** surface is deliberately unchanged and its matrices stay blind to a target-only pack edit;

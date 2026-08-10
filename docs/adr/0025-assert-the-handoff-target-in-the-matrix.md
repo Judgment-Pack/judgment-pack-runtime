@@ -281,13 +281,37 @@ Settled determinations:
   because there is no state there to reach. A suite that asserts nothing renders nothing and decodes
   nothing extra.
 
+  **The rendering type is opaque, and that is what makes the claim structural rather than a
+  convention.** Its members are unexported and `Engine.PackHandoffTarget` is its only constructor —
+  which is also the only place a target is rendered and the only place the count is taken. A caller
+  of the exported row primitive therefore cannot hand it a rendering it built itself, cannot hand it
+  stale bytes for a target the pack does not declare, and cannot reach a path that renders one per
+  row behind the counter's back. An earlier draft of this narrowing left the fields exported with a
+  documented zero value and a fallback that rendered what the evaluation reported; both were removed
+  once a review pointed out that a documented zero value is an invitation and a fallback is the
+  per-row rendering this determination exists to forbid, reintroduced for the one caller careless
+  enough to take it. Where no rendering was supplied, the actual side degrades to the `unavailable`
+  convention and the human surface names the cause; the **verdict is untouched**, because it rests
+  on the decoded values.
+
   The count is observable (`Engine.HandoffTargetRenders`) because a bound this record claims and
-  nothing can watch is a bound nobody can hold it to. A test drives the whole orchestration across
-  the `maxAdmissions` boundary — sixty-four one-off capability sets, then a repeated sixty-fifth —
-  at two row counts, and asserts one rendering for the pack in both. The rows of a `packs test` run
-  are sequential in one loop, and the rendering is computed before that loop begins; that is a
-  property of this orchestration and not a promise made about the engine, and it is why there is no
-  concurrent path here to test.
+  nothing can watch is a bound nobody can hold it to — and because the sole rendering site is also
+  the sole constructor, that count is complete rather than a sample. A test drives the whole
+  orchestration across the `maxAdmissions` boundary — sixty-four one-off capability sets, then a
+  repeated sixty-fifth — at two row counts, and asserts one rendering for the pack in both. The rows
+  of a `packs test` run are sequential in one loop, and the rendering is computed before that loop
+  begins; that is a property of this orchestration and not a promise made about the engine, and it
+  is why there is no concurrent path here to test.
+- **A pack's hard byte limit runs before anything reads the pack, on every path that renders.** §8.4
+  makes the limit a preflight refusal and `EvaluateAdmitted` has always applied it first. Rendering
+  a target inside the single-row `RunCase` put a decode in front of it, and `carrier.Decode` has no
+  raw-byte cap of its own — so a syntactically valid pack padded past the limit was scanned whole,
+  and its target canonicalized, before a refusal that was always going to happen; trailing
+  whitespace alone made that work unbounded. The limit is therefore applied at the top of that
+  function through the same helper the evaluation path uses, so the two cannot drift, and nothing is
+  rendered for a pack that will be refused. Recorded as a determination rather than as a fix because
+  it is the general rule this record has to obey wherever it added work: **a bound that existed
+  before this change runs before the work this change added.**
 - **An unpaired surrogate escape is refused at the carrier, for both sides of this comparison and
   for every other document.** Go's decoder replaces `"\ud800"` with U+FFFD without complaint, so a
   pack authoring a lone surrogate in its target name canonicalizes to the same bytes as an
