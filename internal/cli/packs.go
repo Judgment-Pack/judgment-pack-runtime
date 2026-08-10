@@ -606,13 +606,14 @@ func (a *App) packsTestCommand() *cobra.Command {
 			"command writes; every payload carries a conformanceClaimReference member pointing at that file. A row " +
 			"is judged exactly as a row of the bundled evaluation corpus is, by the same code: the RFC 8785 " +
 			"canonical §8.3 disposition compared byte for byte against the row's, or the §8.4 error class and " +
-			"phase the row expects. Matrix rows share a base shape with that corpus -- id, facts, " +
+			"phase the row expects. Matrix rows share with that corpus the fields the comparator reads -- id, facts, " +
 			"evidenceAvailability, supportedExtensions, and exactly one of expectedDisposition and " +
 			"expectedErrorClass -- and carry one project-only extension: expectedHandoffTarget, an optional " +
 			"assertion beside a disposition about the escalation target §8.3 keeps outside it, stated as a " +
-			"{kind, name} object or as the literal null for no target, and requiring matrixVersion \"2\". A row " +
-			"stating only base members lifts into the corpus unchanged; a row asserting a target does not, " +
-			"because the corpus's own schema closes its case object. What this reports is what one project's own rows did: it is not the " +
+			"{kind, name} object or as the literal null for no target, and requiring matrixVersion \"2\". The two " +
+			"are not the same document: corpus admission additionally requires pack, origin, supportedExtensions, " +
+			"focus, and specSection, and its closed schema refuses expectedHandoffTarget, so lifting a row means " +
+			"supplying those members and removing any target assertion. What this reports is what one project's own rows did: it is not the " +
 			"specification's corpus, it is evidence about the pack a project wrote rather than about this " +
 			"implementation, and no row is an authorization or a statement that acting on a disposition is correct " +
 			"(§3.5). A pack that declares no matrix is reported as skipped and never as passed, and a run in which " +

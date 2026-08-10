@@ -76,11 +76,18 @@ var matrixVersionMembers = map[string]string{"expectedHandoffTarget": "2"}
 // do, so a project gets the RFC 8785 byte comparison §8.3 defines rather than a
 // looser one written for projects.
 //
-// Liftability follows the split exactly, and this is the sentence that used to
-// overstate it: a row that states **only** base members can be lifted into a
-// corpus unchanged, and a row that asserts expectedHandoffTarget **cannot** —
-// the corpus manifest's own schema closes its case object, so that row is
-// refused there by name. That is the shape of the thing rather than a
+// What the two carriers share is the fields the comparator reads. They are not
+// the same document, and the sentence here used to say they were: corpus
+// admission additionally requires members a project matrix has no place for —
+// pack, origin, supportedExtensions, focus, and specSection are all required by
+// the bundled manifest's schema, and a minimal project row declares none of
+// them — and that schema closes its case object, so it refuses
+// expectedHandoffTarget outright. Lifting a project row into a corpus therefore
+// means supplying the corpus-owned members and removing any target assertion;
+// what does not have to be rewritten is the expectation, which is the half the
+// shared comparator judges.
+//
+// The target assertion's exclusion is the shape of the thing rather than a
 // restriction imposed on it: an escalation target is a fact about the pack that
 // declares it, and the corpus's packs are fixtures of the specification rather
 // than a project's policy.

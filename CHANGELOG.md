@@ -34,7 +34,8 @@ All notable changes to tagged releases are documented here.
   input** under VERSIONING.md — an older reader *rejects* a document carrying a member it does not
   know rather than ignoring it — so adding a member moves the version whatever the addition is,
   exactly as `graphs` moved `configVersion` to `"2"`. A matrix declaring `"1"`, and a matrix
-  declaring no version at all, is read as the shape it was written for and is **unchanged in every
+  declaring no version at all, is read as the shape it was written for and — where it was
+  **otherwise valid**, in the sense the two carrier fixes below narrow — is **unchanged in every
   byte**; a row in one that asserts a target is refused by name, naming the version it would take.
   Only `"2"` admits `expectedHandoffTarget`. The declared version is settled before anything
   version-specific decodes, so a document from a future version gets a refusal about the version
@@ -59,7 +60,14 @@ All notable changes to tagged releases are documented here.
   a pack may configure a target name §2.1 admits at a megabyte and a matrix may declare ten thousand
   rows, which uncapped is a report in the gigabytes built from inputs every carrier limit accepts.
   Crossing the aggregate budget refuses the run and writes nothing, because a report cut short looks
-  exactly like a complete one. The actual side of the pair carries a third value, **`unavailable`**
+  exactly like a complete one. A capped rendering is a **display value and never an equality key**:
+  the comparison is decided on the decoded targets — presence, then each member in full — because
+  sixty-four bits of digest deciding whether a suite passes would be a probabilistic answer to a
+  question with an exact one. And because a budget on *retained* bytes says nothing about the work
+  spent producing them, the pack's own target is **rendered once per run** rather than once per
+  asserting row: §8.1 gives a pack one escalation target, so without the memo ten thousand rows
+  against a megabyte-long name is ten gigabytes of repeated canonicalizing and hashing that no
+  retained-bytes budget can see. The actual side of the pair carries a third value, **`unavailable`**
   (`unavailable (evaluation refused)` on the human surface), for a row whose evaluation was refused:
   reporting `null` there would say an evaluation reported no target when no evaluation happened. The
   **graph** surface is deliberately unchanged and its matrices stay blind to a target-only pack edit;

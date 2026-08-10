@@ -5,7 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
@@ -281,5 +285,88 @@ func TestMatrixCaseRoundTripsTheThreeAssertionStates(t *testing.T) {
 				t.Fatalf("reload = %q, want %q", again.ExpectedHandoffTarget, row.ExpectedHandoffTarget)
 			}
 		})
+	}
+}
+
+// Equality is decided on the decoded targets and never on their capped
+// renderings (ADR-0025).
+//
+// A rendering past result.HandoffTargetBudget keeps a prefix and sixty-four bits
+// of SHA-256. Two targets sharing that prefix still render differently in
+// practice, and "in practice" is not what a suite's verdict may rest on: a
+// digest deciding pass or fail is a probabilistic answer to a question with an
+// exact one. The pair below is the shape that would be decided wrongly if the
+// rendering were the key — a shared 256-byte prefix, differing far past it — and
+// the comparison must separate them on the strings.
+func TestHandoffTargetEqualityIsDecidedOnTheDecodedValues(t *testing.T) {
+	prefix := strings.Repeat("a", 4096)
+	left := &result.HandoffTarget{Kind: "queue", Name: prefix + "left"}
+	right := &result.HandoffTarget{Kind: "queue", Name: prefix + "right"}
+	if sameHandoffTarget(left, right) {
+		t.Fatal("two different targets are two targets, however they render")
+	}
+	if !sameHandoffTarget(left, &result.HandoffTarget{Kind: "queue", Name: prefix + "left"}) {
+		t.Fatal("two equal targets are one target")
+	}
+	// Presence is compared as presence: neither direction is an equality.
+	if sameHandoffTarget(nil, left) || sameHandoffTarget(left, nil) {
+		t.Fatal("a target and no target are never the same statement")
+	}
+	if !sameHandoffTarget(nil, nil) {
+		t.Fatal("no target and no target are the same statement")
+	}
+	// Each member is compared in full, so a difference in either separates them.
+	if sameHandoffTarget(left, &result.HandoffTarget{Kind: "system", Name: left.Name}) {
+		t.Fatal("the kind is part of the target")
+	}
+}
+
+// One pack's configured target is rendered once per admitted pack, not once per
+// asserting row (ADR-0025).
+//
+// §8.1 gives a pack one escalation target, so a suite asserting a target on n
+// rows would otherwise canonicalize and hash the same authored string n times.
+// That work is invisible to the retained-bytes budget — what that budget bounds
+// is what a report keeps, and this is what producing it costs — so a cache whose
+// only effect is a timing difference would be a cache nothing could hold to its
+// purpose. This counts the renderings instead.
+func TestOnePacksHandoffTargetIsRenderedOncePerRun(t *testing.T) {
+	engine := newTestEngine(t)
+	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted := engine.AdmitPack(pack)
+	row := MatrixCase{
+		Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
+		ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
+		ExpectedHandoffTarget: json.RawMessage(`{"kind":"human-role","name":"Intake reviewer"}`),
+	}
+	for index := range 50 {
+		row.ID = fmt.Sprint(index)
+		outcome := engine.RunCaseAdmitted(admitted, row, "test")
+		if outcome.Status != "passed" {
+			t.Fatalf("row %d: %+v", index, outcome)
+		}
+		if outcome.ActualHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` {
+			t.Fatalf("the memo must return the rendering, not a stale or empty one: %+v", outcome)
+		}
+	}
+	if renders := admitted.handoffTargetRenders(); renders != 1 {
+		t.Fatalf("one pack, one target, one rendering: %d", renders)
+	}
+
+	// A row that asserts nothing renders nothing, and a null-reporting
+	// evaluation never reaches the memo at all.
+	outcome := engine.RunCaseAdmitted(admitted, MatrixCase{
+		ID:                  "silent",
+		Facts:               row.Facts,
+		ExpectedDisposition: row.ExpectedDisposition,
+	}, "test")
+	if outcome.Status != "passed" || outcome.ActualHandoffTarget != "" {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if renders := admitted.handoffTargetRenders(); renders != 1 {
+		t.Fatalf("a row that asks nothing costs nothing: %d", renders)
 	}
 }

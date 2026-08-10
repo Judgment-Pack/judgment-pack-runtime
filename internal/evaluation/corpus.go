@@ -57,12 +57,15 @@ type corpusManifest struct {
 // which reloads as the assertion that the evaluation reports no target, so a
 // round trip through this type would invent an expectation nobody wrote.
 //
-// The member is a **project-only extension** of the shared base. The bundled
-// corpus never carries it — that manifest's own schema closes its case object —
-// so a base-only row is liftable into a corpus unchanged and an asserting row is
-// not. It is reachable only from a project matrix, which is the carrier whose
-// rows are written about a pack the project itself maintains, and only from
-// matrixVersion 2 (project.MatrixVersion).
+// The member is a **project-only extension** of what the two carriers share,
+// which is the fields this comparator reads — not a claim that a row moves
+// between them untouched. The bundled corpus never carries it, because that
+// manifest's schema closes its case object; the same schema separately requires
+// pack, origin, supportedExtensions, focus, and specSection, which a project row
+// need not declare. So lifting a project row into a corpus means supplying those
+// and dropping any target assertion. The member is reachable only from a project
+// matrix, which is the carrier whose rows are written about a pack the project
+// itself maintains, and only from matrixVersion 2 (project.MatrixVersion).
 type MatrixCase struct {
 	ID                    string          `json:"id"`
 	Origin                string          `json:"origin"`
@@ -257,18 +260,19 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 	// one. So the pair appears together on every path a declaring row can take —
 	// including the paths that return before an evaluation exists — and neither
 	// half is ever silently absent while the other is present.
+	var expectedTarget *result.HandoffTarget
 	if item.ExpectedHandoffTarget != nil {
 		outcome.ExpectedHandoffTarget = result.HandoffTargetUnavailable
 		outcome.ActualHandoffTarget = result.HandoffTargetUnavailable
-		expectedTarget, err := DecodeHandoffTarget(item.ExpectedHandoffTarget)
+		decoded, err := DecodeHandoffTarget(item.ExpectedHandoffTarget)
 		if err != nil {
 			return corpusMismatch(outcome, "The row's expectedHandoffTarget is neither null nor a {kind, name} object: "+err.Error())
 		}
-		rendered, err := expectedTarget.Rendered()
+		rendered, err := decoded.Rendered()
 		if err != nil {
 			return corpusMismatch(outcome, "The row's expectedHandoffTarget could not be canonicalized: "+err.Error())
 		}
-		outcome.ExpectedHandoffTarget = rendered
+		expectedTarget, outcome.ExpectedHandoffTarget = decoded, rendered
 	}
 
 	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability,
@@ -299,8 +303,16 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 	// each: the detail names the first difference, the payload names them all.
 	// This is also where "unavailable" stops being the actual side's value —
 	// there is now an evaluation to read one off.
+	//
+	// The rendering goes through the admitted pack's memo rather than being
+	// recomputed. Every row of one matrix evaluates one pack, and §8.1 gives a
+	// pack one escalation target, so without the memo a suite asserting a target
+	// on n rows canonicalizes and hashes the same authored string n times: ten
+	// thousand rows against a pack whose target name is at §2.1's megabyte is
+	// ten gigabytes of repeated work that the retained-bytes budget cannot see,
+	// because what is retained is capped and what is *processed* is not.
 	if item.ExpectedHandoffTarget != nil {
-		actualTarget, err := evaluated.HandoffTarget.Rendered()
+		actualTarget, err := admitted.renderHandoffTarget(evaluated.HandoffTarget)
 		if err != nil {
 			return corpusMismatch(outcome, "The evaluation's handoff target could not be canonicalized: "+err.Error())
 		}
@@ -319,15 +331,35 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 	}
 	// §8.3 keeps the configured target outside the disposition, so this row-level
 	// comparison is the only one that can see it: a pack mutation reaching only
-	// escalation.target leaves every disposition byte-identical (ADR-0025). The
-	// detail names which side states a destination rather than repeating the two
-	// renderings a third time — they are already reported as their own members,
-	// and an escalation target's name is an authored string §2.1 bounds only at a
-	// megabyte.
-	if item.ExpectedHandoffTarget != nil && outcome.ActualHandoffTarget != outcome.ExpectedHandoffTarget {
-		return corpusMismatch(outcome, "The evaluation's handoff target differs from the row's expectation: "+handoffTargetDifference(outcome.ExpectedHandoffTarget, outcome.ActualHandoffTarget))
+	// escalation.target leaves every disposition byte-identical (ADR-0025).
+	//
+	// It is decided on the DECODED values and never on the rendered ones. The
+	// renderings are capped for the report, and a capped rendering ends in
+	// sixty-four bits of digest: deciding equality on it would let two different
+	// long targets pass as one, which is a comparison this record exists to make
+	// exact. So presence is compared as presence and each member as its whole
+	// string, and the renderings are carried beside the verdict rather than
+	// standing in for it.
+	if item.ExpectedHandoffTarget != nil && !sameHandoffTarget(expectedTarget, evaluated.HandoffTarget) {
+		return corpusMismatch(outcome, "The evaluation's handoff target differs from the row's expectation: "+handoffTargetDifference(expectedTarget, evaluated.HandoffTarget, false))
 	}
 	return outcome
+}
+
+// sameHandoffTarget is the whole of the target comparison: presence against
+// presence, then each member in full.
+//
+// Comparing the authored strings rather than their capped renderings costs
+// nothing a suite can feel. A row's expectation lives in the matrix, which
+// MaxMatrixBytes bounds whole, so the total length compared across a run is
+// bounded by the matrix rather than by the pack — and Go compares a string's
+// length before its bytes, so an assertion of a different length is settled
+// without reading either.
+func sameHandoffTarget(expected, actual *result.HandoffTarget) bool {
+	if expected == nil || actual == nil {
+		return expected == nil && actual == nil
+	}
+	return expected.Kind == actual.Kind && expected.Name == actual.Name
 }
 
 // handoffTargetDifference names the shape of a handoff-target difference in
@@ -336,13 +368,17 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 // name are authored strings, and a detail that repeated them would put the same
 // unbounded bytes in a payload for the third time (ADR-0023's rendering budget,
 // applied to the reason it exists rather than to its exact mechanism).
-func handoffTargetDifference(expected, actual string) string {
+//
+// It reads the decoded values for the same reason the comparison does: "the row
+// expects no target" is a fact about a nil, not about a rendering that happens
+// to spell null.
+func handoffTargetDifference(expected, actual *result.HandoffTarget, refused bool) string {
 	switch {
-	case actual == result.HandoffTargetUnavailable:
+	case refused:
 		return "the evaluation was refused, so it reported no target at all — which is not the same fact as reporting none."
-	case expected == result.NoHandoffTarget:
+	case expected == nil:
 		return "the row expects no target and the evaluation reports one."
-	case actual == result.NoHandoffTarget:
+	case actual == nil:
 		return "the row expects a target and the evaluation reports none."
 	default:
 		return "both name a target and the two differ; the row's expectedHandoffTarget and actualHandoffTarget carry them."

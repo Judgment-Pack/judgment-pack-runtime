@@ -291,9 +291,15 @@ const (
 // each of its readers. Within the budget a target renders exactly as it
 // canonicalizes; beyond it the rendering is the prefix, an ellipsis, and the
 // first HandoffTargetDigestHex hex digits of the SHA-256 of the full canonical
-// bytes. Identity survives the cap — two targets agreeing for the whole budget
-// still render differently — which is what lets the comparison run on the
-// rendering instead of needing a second, uncapped path beside it.
+// bytes.
+//
+// A capped rendering is a **display value and never an equality key.** The
+// digest tail makes an accidental collision between two authored targets
+// unlikely, and unlikely is not the standard a comparison is held to: sixty-four
+// bits of digest deciding whether a suite passes would be a probabilistic answer
+// to a question with an exact one. Whatever compares two targets compares the
+// decoded values — presence, then each member in full — and reads these
+// renderings only to say what it saw.
 const (
 	HandoffTargetBudget    = 256
 	HandoffTargetDigestHex = 16
@@ -306,10 +312,11 @@ const (
 // evaluation exactly as its presence is (ADR-0025).
 //
 // It is not a disposition and never becomes one: §8.3 keeps the configured
-// target outside the disposition object, so this is a second canonical value
-// reported beside that one and compared separately. Both sides of that
-// comparison are produced here, so a row's expectation and an evaluation's
-// report are rendered by one writer and never by two.
+// target outside the disposition object, so this is a second value reported
+// beside that one. Both sides of the report are produced here, so a row's
+// expectation and an evaluation's report are rendered by one writer and never
+// by two — but what those two sides are *compared* by is the decoded values,
+// not this rendering (see the budget above).
 //
 // Like Disposition.Canonical it refuses a value that is not a legal target
 // rather than serializing one: §8.1 states both members of an escalation
@@ -327,9 +334,10 @@ func (h *HandoffTarget) Canonical() ([]byte, error) {
 	return jcs.Encode(map[string]any{"kind": h.Kind, "name": h.Name})
 }
 
-// Rendered is Canonical under the budget above: the value a row result carries
-// and the value the comparison is decided on. Every reader of a reported target
-// goes through it, so nothing retains an unbounded rendering.
+// Rendered is Canonical under the budget above: the value a row result carries,
+// and only that. Every reader that *reports* a target goes through it, so
+// nothing retains an unbounded rendering — and no reader that *decides*
+// anything goes through it at all.
 func (h *HandoffTarget) Rendered() (string, error) {
 	canonical, err := h.Canonical()
 	if err != nil {

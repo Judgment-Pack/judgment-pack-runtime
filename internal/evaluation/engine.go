@@ -282,6 +282,71 @@ type AdmittedPack struct {
 	pack       []byte
 	mu         sync.Mutex
 	admissions map[string]*packAdmission
+	// target memoizes the rendering of this pack's configured escalation target
+	// across the rows that assert one (ADR-0025). It has its own lock because it
+	// is a different question from admission and is answered after one.
+	targetMu sync.Mutex
+	target   handoffTargetMemo
+}
+
+// handoffTargetMemo renders one pack's configured escalation target once per
+// admitted pack rather than once per asserting row.
+//
+// §8.1 gives a pack one escalation target, and every row of one matrix
+// evaluates one pack, so the rendering the report needs is the same string for
+// every row that asks for it. Recomputing it is not free: a target name is an
+// authored string §2.1 admits at a megabyte, a matrix may declare ten thousand
+// rows, and canonicalizing and hashing a megabyte per row is ten gigabytes of
+// work the retained-bytes budget cannot see — what that budget bounds is what a
+// report *keeps*, and this is what producing it *costs*.
+//
+// The hit test compares lengths before bytes and, on the strings the resolver
+// read straight out of the pack this memo belongs to, settles on the pointer
+// equality Go's string comparison checks first. A miss is exactly the work the
+// memo replaced, so the memo is never the slower path — it just is not the
+// faster one for a target that changed, which cannot happen for one pack.
+type handoffTargetMemo struct {
+	kind     string
+	name     string
+	rendered string
+	set      bool
+	// renders counts how many times the rendering was actually computed. It
+	// exists for the test that pins the memo: a cache whose effect is only a
+	// timing difference is a cache nothing can hold to its purpose.
+	renders int
+}
+
+// renderHandoffTarget renders one evaluation's reported escalation target for
+// the report, reusing this pack's memo when the reported target is the one the
+// pack declares — which, for a target the resolver read off this pack, it is.
+//
+// The nil target is answered without touching the memo: "no target" renders as
+// one constant, whatever pack produced it.
+func (a *AdmittedPack) renderHandoffTarget(target *result.HandoffTarget) (string, error) {
+	if target == nil {
+		return result.NoHandoffTarget, nil
+	}
+	a.targetMu.Lock()
+	defer a.targetMu.Unlock()
+	if a.target.set && len(a.target.kind) == len(target.Kind) && len(a.target.name) == len(target.Name) &&
+		a.target.kind == target.Kind && a.target.name == target.Name {
+		return a.target.rendered, nil
+	}
+	rendered, err := target.Rendered()
+	if err != nil {
+		return "", err
+	}
+	renders := a.target.renders + 1
+	a.target = handoffTargetMemo{kind: target.Kind, name: target.Name, rendered: rendered, set: true, renders: renders}
+	return rendered, nil
+}
+
+// handoffTargetRenders reports how many times this pack's target rendering was
+// computed. It is unexported and exists for one test (ADR-0025).
+func (a *AdmittedPack) handoffTargetRenders() int {
+	a.targetMu.Lock()
+	defer a.targetMu.Unlock()
+	return a.target.renders
 }
 
 // maxAdmissions bounds how many distinct capability sets one AdmittedPack

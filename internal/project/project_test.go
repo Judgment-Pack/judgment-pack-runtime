@@ -483,11 +483,17 @@ func TestMatrixWellFormednessIsCheckedBeforeAnyRowRuns(t *testing.T) {
 		"unparsable JSON":             `{`,
 		// ADR-0025: the optional second assertion is held to its shape before any
 		// row runs, and it rides only beside a disposition.
-		"a handoff target beside an error class":  `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input","expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}}]}`,
-		"a handoff target that is not an object":  `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":"Intake reviewer"}]}`,
-		"a handoff target missing a member":       `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role"}}]}`,
-		"a handoff target with an empty member":   `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role","name":""}}]}`,
-		"a handoff target with an unknown member": `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer","queue":"triage"}}]}`,
+		"a handoff target beside an error class": `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input","expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}}]}`,
+		// The literal null is the same refusal for the same reason: a refused
+		// evaluation reports no target at all, which is not the statement "this
+		// evaluation reported none". Both spellings of the assertion are refused,
+		// or the companionship rule would have a hole in exactly the state the
+		// unavailable rendering exists to keep distinct.
+		"a null handoff target beside an error class": `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input","expectedHandoffTarget":null}]}`,
+		"a handoff target that is not an object":      `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":"Intake reviewer"}]}`,
+		"a handoff target missing a member":           `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role"}}]}`,
+		"a handoff target with an empty member":       `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role","name":""}}]}`,
+		"a handoff target with an unknown member":     `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer","queue":"triage"}}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
@@ -1884,6 +1890,7 @@ func TestTheHandoffTargetAssertionRequiresMatrixVersionTwo(t *testing.T) {
 	for name, matrix := range map[string]string{
 		"a future version alone":                            `{"matrixVersion":"9","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
 		"a future version with a member it would introduce": `{"matrixVersion":"9","cases":[{"id":"a","facts":{},"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":` + target + `,"somethingFromNine":1}]}`,
+		"a future version with a null assertion":            `{"matrixVersion":"9","cases":[{"id":"a","facts":{},"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":null}]}`,
 		"a version of the wrong type":                       `{"matrixVersion":2,"cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -2034,6 +2041,35 @@ func TestTheHandoffTargetComparisonAcrossTheShapesARowCanTake(t *testing.T) {
 		row := report.Packs[0].Rows[0]
 		if row.Status != "passed" || row.ExpectedHandoffTarget != "null" || row.ActualHandoffTarget != "null" {
 			t.Fatalf("row = %+v", row)
+		}
+	})
+
+	// An unresolved/requested disposition asserting the object target it actually
+	// reaches: the escalating path, passing, with both sides naming a
+	// destination. The not-applicable case above reaches the target through §8's
+	// step 1; this reaches it through a rule that escalated on an unknown, which
+	// is the path a real suite exercises most.
+	t.Run("an unresolved requested disposition with an object target", func(t *testing.T) {
+		unknown := `{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"requested","triggeredBy":["unknown"]}}`
+		facts := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"pass"}}`
+		matrix := `{"matrixVersion":"2","cases":[{"id":"r","facts":` + facts +
+			`,"evidenceAvailability":{"intake-form":"present","sponsor-endorsement":"present"},"expectedDisposition":` + unknown +
+			`,"expectedHandoffTarget":` + target + `}]}`
+		report := run(t, pack, matrix)
+		row := report.Packs[0].Rows[0]
+		if report.Status != "passed" || row.Status != "passed" {
+			t.Fatalf("row = %+v", row)
+		}
+		if row.ExpectedHandoffTarget != target || row.ActualHandoffTarget != target {
+			t.Fatalf("both sides name the destination: %+v", row)
+		}
+		// The same row against a pack whose target name differs fails, so the
+		// pass above is the comparison agreeing rather than the comparison not
+		// running.
+		corrupted := strings.Replace(pack, `"Intake reviewer"`, `"Disclosure office"`, 1)
+		row = run(t, corrupted, matrix).Packs[0].Rows[0]
+		if row.Status != "mismatch" || row.Expected != row.Actual {
+			t.Fatalf("the disposition is unchanged and the target is not: %+v", row)
 		}
 	})
 
@@ -2195,5 +2231,78 @@ func TestTheHandoffTargetComparisonIsExactOverUnicode(t *testing.T) {
 	}
 	if run.Packs[0].Status != "mismatch" || !strings.Contains(run.Packs[0].Detail, "unpaired surrogate") {
 		t.Fatalf("a lone surrogate in a matrix is refused: %+v", run.Packs[0])
+	}
+}
+
+// The shape the amplification blocker was really about, end to end: a target at
+// the carrier's own maximum string length, asserted by many rows (ADR-0025).
+//
+// Every input here is one this runtime accepts — §2.1 admits a megabyte-long
+// authored string, and MaxMatrixCases admits ten thousand rows — which is the
+// point: the defence cannot be "nobody would write that". Three things are
+// pinned. The per-row rendering stays inside its budget, so no row retains a
+// megabyte. The aggregate budget sees the accumulation and refuses when it is
+// crossed. And the work is bounded too, not only the retained bytes: the pack's
+// target is rendered once for the run rather than once per row, which is what
+// keeps a valid matrix from forcing gigabytes of repeated canonicalizing and
+// hashing that no retained-bytes budget could ever notice.
+func TestACarrierMaximumTargetAcrossManyRowsIsBoundedInWorkAndInBytes(t *testing.T) {
+	const rows = 2000
+	name := strings.Repeat("q", 1<<20)
+	pack := strings.Replace(string(packFixture(t)), `"name": "Intake reviewer"`, `"name": "`+name+`"`, 1)
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	cases := make([]string, 0, rows)
+	for index := range rows {
+		// Every row asserts null against a pack that reports a megabyte-long
+		// target: the assertion is four bytes and the answer is a megabyte, which
+		// is the asymmetry that made the uncapped version a defect.
+		cases = append(cases, fmt.Sprintf(`{"id":"row-%d","facts":{"request":{"type":"unrelated"}},"expectedDisposition":%s,"expectedHandoffTarget":null}`, index, notApplicable))
+	}
+	matrix := `{"matrixVersion":"2","cases":[` + strings.Join(cases, ",") + `]}`
+	config := `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`
+	configPath := writeProject(t, config, map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+
+	run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	// Every row mismatches — each expects no target and the pack configures one —
+	// which is the correct verdict and not what this test is about.
+	if run.Summary.Total != rows || run.Summary.Mismatched != rows {
+		t.Fatalf("run = %+v", run.Summary)
+	}
+	retained := 0
+	for _, row := range run.Packs[0].Rows {
+		if len(row.ActualHandoffTarget) > result.HandoffTargetBudget {
+			t.Fatalf("no row may retain more than the budget: %d bytes", len(row.ActualHandoffTarget))
+		}
+		if !strings.Contains(row.ActualHandoffTarget, "…") {
+			t.Fatalf("a target past the budget is reported as capped: %q", row.ActualHandoffTarget)
+		}
+		if row.ExpectedHandoffTarget != "null" {
+			t.Fatalf("the row's own assertion is reported as it was written: %+v", row)
+		}
+		retained += len(row.ExpectedHandoffTarget) + len(row.ActualHandoffTarget)
+	}
+	// The whole run's target renderings are kilobytes, against a pack whose one
+	// target is a megabyte: two thousand uncapped renderings would have been two
+	// gigabytes.
+	if retained > MaxHandoffTargetReportBytes {
+		t.Fatalf("the aggregate must stay inside its budget: %d bytes", retained)
+	}
+	if retained > rows*(result.HandoffTargetBudget+len("null")) {
+		t.Fatalf("retained = %d, which is past what the per-row budget allows", retained)
+	}
+
+	// The same run under a budget smaller than it needs is refused whole, and
+	// writes nothing.
+	bounded := mustLoad(t, configPath)
+	bounded.handoffTargetReportBudget = 4096
+	partial, failure := bounded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure == nil || failure.Code != "JPS-RESOURCE-MATRIX-HANDOFF-TARGETS" {
+		t.Fatalf("the aggregate budget must refuse this run: %+v", failure)
+	}
+	if len(partial.Packs) != 0 {
+		t.Fatalf("a refused run writes no report: %+v", partial)
 	}
 }

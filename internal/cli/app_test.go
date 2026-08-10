@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -1520,5 +1522,39 @@ func TestPrettyKeepsDispositionMemberOrderButNotItsCanonicalBytes(t *testing.T) 
 	}
 	if string(recanonicalized) != string(canonical) {
 		t.Fatalf("recanonicalizing the --pretty payload must recover the same bytes: %s, want %s", recanonicalized, canonical)
+	}
+}
+
+// The complete bundled-corpus payload is byte-identical to what it was before
+// the handoff-target member existed (ADR-0025).
+//
+// The row-level golden in internal/evaluation pins the rows; this pins the whole
+// envelope a consumer actually receives, which is the artifact the compatibility
+// claim is about. The digest below is the raw stdout of this exact command, and
+// it was reproduced independently against the commit this change branched from
+// before it was written down here.
+//
+// It is asserted only for a development build. tool.version is replaced at build
+// time with -ldflags for a release, which moves these bytes for a reason that has
+// nothing to do with this change; a golden that failed every release would be a
+// golden nobody kept.
+func TestTheWholeCorpusEnvelopeIsUnchangedByTheHandoffTargetMember(t *testing.T) {
+	const goldenEnvelope = "d3cdbb25cafbc27b4fb3820e774adf3e2fd0ebdc8c5cf14e1e4317eee8c14c16"
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate-corpus", "--format", "json"}, "")
+	if code != result.ExitSuccess || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	for _, member := range []string{"expectedHandoffTarget", "actualHandoffTarget", "unavailable"} {
+		if strings.Contains(stdout, member) {
+			t.Fatalf("no corpus payload may carry %q: %s", member, stdout)
+		}
+	}
+	if result.CLIVersion != "0.0.0-dev" {
+		t.Skipf("the golden is taken from a development build; this one reports %q", result.CLIVersion)
+	}
+	digest := sha256.Sum256([]byte(stdout))
+	if hex.EncodeToString(digest[:]) != goldenEnvelope {
+		t.Fatalf("the corpus envelope changed: %s\nwant %s", hex.EncodeToString(digest[:]), goldenEnvelope)
 	}
 }

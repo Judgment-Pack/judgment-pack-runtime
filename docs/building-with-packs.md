@@ -143,17 +143,17 @@ probe, an unknown probe per escalating rule, a missing-evidence probe, a not-app
 forced-outcome probe per exception, and an ordered-comparison probe. Write those rows to the
 `matrix` file, and the matrix becomes the pack's regression suite.
 
-A matrix document is a `cases` array of rows sharing a **base shape with the bundled evaluation
-corpus**, which is deliberate: your rows run through the same comparator its rows do, so you get the
-byte comparison §8.3 defines rather than a looser one written for projects. A row that states only
-base members is a corpus row once you name its pack fixture — the one member a corpus row adds,
-because a project matrix names its pack in `jpack.json` instead.
+A matrix document is a `cases` array of rows that **share, with the bundled evaluation corpus, the
+fields the comparator reads**. That is deliberate: your rows run through the same comparator its
+rows do, so you get the byte comparison §8.3 defines rather than a looser one written for projects.
 
-One member is a **project-only extension** of that base: `expectedHandoffTarget` (below). The
-corpus's own manifest schema closes its case object, so a row asserting it is **not** directly
-liftable into a corpus — that is the shape of the thing rather than a restriction, because an
-escalation target is a fact about the pack that declares it and the corpus's packs are fixtures of
-the specification. Everything else about such a row lifts; drop the assertion and it lifts too.
+It is not a claim that a row moves between the two untouched, and this document used to overstate
+it. Corpus admission requires members a project matrix has no place for — `pack`, plus `origin`,
+`supportedExtensions`, `focus`, and `specSection`, all required there and optional or absent here —
+and its schema closes the case object, so `expectedHandoffTarget` (below) is refused outright.
+Lifting one of your rows into a corpus means supplying those members and removing any target
+assertion. What you never rewrite is the expectation, which is the half the shared comparator
+judges.
 
 ```json
 {

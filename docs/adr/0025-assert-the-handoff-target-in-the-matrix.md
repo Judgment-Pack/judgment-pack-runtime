@@ -221,8 +221,8 @@ Settled determinations:
   members, the engine builds no such value, and an exported type can be handed one — which would
   put a target no pack can declare on both sides of a comparison, where it compares equal to itself
   and passes.
-- **A reported target is bounded, and bounding it is what makes the comparison safe to run on the
-  rendering.** This is the correction an adversarial review forced, and the arithmetic is worth
+- **A reported target is bounded, and a bounded rendering is a display value and never an equality
+  key.** This is the correction two rounds of adversarial review forced, and the arithmetic is worth
   recording rather than the conclusion alone: a pack may configure a target whose `name` §2.1 admits
   at a megabyte, a matrix may declare `MaxMatrixCases` — ten thousand — rows, and every asserting
   row retains two renderings. Uncapped, ten thousand rows asserting `null` against such a pack build
@@ -231,9 +231,31 @@ Settled determinations:
   bytes were "two short renderings"; that claim was false, and it is withdrawn here rather than
   softened. So each rendering is capped at `result.HandoffTargetBudget` bytes on ADR-0023's own
   shape — the value whole within the budget, and beyond it a prefix, an ellipsis, and the first
-  sixteen hex digits of the SHA-256 of the full canonical bytes. Identity survives the cap, which is
-  the property that lets the comparison stay a string equality over the rendering instead of needing
-  a second uncapped path beside it.
+  sixteen hex digits of the SHA-256 of the full canonical bytes.
+
+  A second draft then made the opposite mistake, and it is recorded because the mistake is
+  instructive: it decided the comparison **on the capped rendering**, reasoning that the digest tail
+  kept two capped targets distinct. It does, with overwhelming probability — and overwhelming
+  probability is not the standard a verdict is held to. Sixty-four bits of digest deciding whether a
+  suite passes is a probabilistic answer to a question that has an exact one, and this record exists
+  precisely because a comparison that could not see a difference let a corrupted target through. So
+  the two are separated: **the rendering is what the report shows, and the decoded values are what
+  the comparison reads** — presence against presence, then each member in full. Nothing is lost by
+  the split, and nothing is spent either: a row's expectation lives in the matrix, which
+  `MaxMatrixBytes` bounds whole, so the total compared across a run is bounded by the matrix rather
+  than by the pack, and a length mismatch settles a comparison before a byte of either is read.
+- **The pack's own target is rendered once per admitted pack, not once per asserting row.** The
+  budgets above bound what a report *retains*; they say nothing about what producing it *costs*, and
+  the second round of review found the gap between those two. §8.1 gives a pack one escalation
+  target and every row of one matrix evaluates one pack, so ten thousand rows asserting `null`
+  against a megabyte-long target canonicalize and hash the same authored string ten thousand times —
+  ten gigabytes of work, while the retained bytes stay at a comfortable 2.6 MB and the aggregate
+  budget never fires. The rendering is therefore memoized on the `AdmittedPack`, which is the object
+  a run already shares across its rows. The memo's hit test compares lengths before bytes and, for
+  the strings the resolver read straight out of that pack, settles on the pointer equality Go's own
+  string comparison checks first; a miss costs exactly what the memo replaced, so it is never the
+  slower path. A test counts the renderings rather than timing them, because a cache whose only
+  evidence is a stopwatch is a cache nothing holds to its purpose.
 - **A second budget bounds the accumulation, charged as each row's result is composed.** The
   per-rendering cap bounds one row; what a report retains is a product of that cap, the row cap, and
   the number of packs a project declares. `MaxHandoffTargetReportBytes` bounds the total across the
@@ -271,7 +293,11 @@ Settled determinations:
   carrier is shared — `evaluation.MatrixCase` is the corpus row and the project row, so a project's
   rows are judged by the corpus's own comparator rather than by a second implementation of it — but
   the corpus manifest's schema closes its case object with `additionalProperties: false`, so no
-  bundled row can carry this member and the corpus run is unchanged in every byte. That is the shape
+  bundled row can carry this member and the corpus run is unchanged in every byte — pinned at the
+  row level and at the whole envelope a consumer receives. What the two carriers share is the fields
+  the comparator reads and not the shape of a document: that schema separately *requires* `pack`,
+  `origin`, `supportedExtensions`, `focus`, and `specSection`, which a project row need not declare,
+  so lifting a row into a corpus was never the no-op an earlier draft of this record described. That is the shape
   of the thing rather than a restriction imposed on it: an escalation target is a fact about the
   pack that declares it, and the corpus's packs are fixtures of the specification, not a project's
   policy.
@@ -296,8 +322,13 @@ Settled determinations:
   target is the right one — a requested handoff is a request, and §8.3 is explicit that it is not
   evidence one occurred. A green row means the pack still names the destination the author recorded;
   it means nothing else, and no rendered line says otherwise.
-- **The graph surface is untouched.** `internal/graph`'s `rows` carrier gains no member and its
-  result rows gain none, for the reason option G is refused for.
+- **The graph surface is untouched, and the deferral is pinned in the direction that can rot.**
+  `internal/graph`'s `rows` carrier gains no member and its result rows gain none, for the reason
+  option G is **deferred** for — deferred, not refused, and this determination says so because a
+  record that refuses in one paragraph and defers in another has decided nothing. A test asserts
+  that a graph row stating `expectedHandoffTarget` is refused as the unknown member it is, so one
+  surface cannot quietly acquire half of this while the choice between a headline assertion and a
+  per-node one is still open.
 - **The `test_pack` prompt gains no clause here.** ADR-0023 set the precedent and ADR-0024 followed
   it, both citing ADR-0016's: the prompt's numbered list is method
   ([ADR-0008](0008-mcp-prompts-authoring-method.md)) and is amended there. A follow-up adds the
@@ -313,10 +344,14 @@ Settled determinations:
   for is the one member of the evaluation payload that names the configured target downstream
   integrations may use. It is not always a person: §8.1's kinds are `human-role`, `queue`, and
   `system`, and this record claims nothing about what any of them does with a request.
-- Good, because it costs existing suites nothing. A matrix written before this record is judged by
-  the comparison it was written for, byte for byte, and the two new result members do not appear.
-  The corpus payload is pinned to a digest taken from the commit this branched from, so that claim
-  is checked against bytes rather than against empty Go fields.
+- Good, because it costs an existing suite nothing — with the scope stated, because the unqualified
+  version of this sentence is false. A matrix that was **otherwise valid** — exact member spellings,
+  no unpaired surrogate escape — is judged by the comparison it was written for, byte for byte, and
+  the two new result members do not appear. A matrix that was none of those things was being
+  misread, and is now refused; that is the next consequence, not an exception hidden inside this
+  one. The corpus payload is pinned at both levels — the rows and the whole envelope a consumer
+  receives — to digests taken from the commit this branched from, so the claim is checked against
+  bytes rather than against empty Go fields.
 - Good, unexpectedly, because closing this required fixing two defects older than it: a "closed"
   matrix shape that accepted case-folded aliases for every one of its members, and a carrier that
   silently repaired invalid Unicode into U+FFFD. Both were found by the adversarial review of this
@@ -331,8 +366,12 @@ Settled determinations:
   fix and the previous acceptance was the defect. It is called out here because it is a behavior
   change nobody asked for.
 - Bad, because a very long target is reported truncated, which is a rendering an author did not
-  write. The digest tail keeps two such targets distinct, so nothing is decided wrongly; what is
-  lost is readability of a value that was never readable at that length.
+  write, and the tail it ends in is a digest rather than the value. What is lost is readability of a
+  value that was never readable at that length. What is **not** lost is correctness, and the reason
+  is that the rendering decides nothing: an earlier draft of this record said the digest tail kept
+  two capped targets distinct and concluded that "nothing is decided wrongly", which was a
+  probabilistic guarantee dressed as an exact one. The rendering is display; the verdict is taken
+  from the decoded values.
 - Bad, because it asserts what the pack **configures** and not what happens next. Nothing here
   observes a delivery, and a project whose escalation target is correct and whose routing is broken
   gets a green row. The limit is stated on the surface as well as here.
@@ -360,7 +399,10 @@ Settled determinations:
 decoder and its three refusals — and the second comparison in `RunCaseAdmitted`, beside the
 disposition comparison that both the bundled corpus and a project matrix run through.
 `internal/result/result.go` carries `result.HandoffTarget.Canonical` and `Rendered` — the one writer
-of both sides, and the rendering budget — the `unavailable` constant, and the two row members.
+of both *reported* sides, and the rendering budget — the `unavailable` constant, and the two row
+members; `sameHandoffTarget` in `internal/evaluation/corpus.go` is the comparison, which reads the
+decoded values and never those renderings. `internal/evaluation/engine.go` carries the
+`handoffTargetMemo` on `AdmittedPack` that renders one pack's configured target once for a run.
 `internal/project/matrix.go` carries the version preflight, the exact-member check, and the
 load-time refusals: the companionship rule and the shape check through that one decoder.
 `internal/project/project.go` carries `MaxHandoffTargetReportBytes` and the injectable counter, and
