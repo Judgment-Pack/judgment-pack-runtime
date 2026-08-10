@@ -143,14 +143,21 @@ probe, an unknown probe per escalating rule, a missing-evidence probe, a not-app
 forced-outcome probe per exception, and an ordered-comparison probe. Write those rows to the
 `matrix` file, and the matrix becomes the pack's regression suite.
 
-A matrix document is a `cases` array of rows in the **same case-carrier shape the bundled evaluation
-corpus uses**, which is deliberate: your rows are compared the same way its rows are, and a row you
-write is a corpus row once you name its pack fixture — the one member a corpus row adds, because a
-project matrix names its pack in `jpack.json` instead.
+A matrix document is a `cases` array of rows sharing a **base shape with the bundled evaluation
+corpus**, which is deliberate: your rows run through the same comparator its rows do, so you get the
+byte comparison §8.3 defines rather than a looser one written for projects. A row that states only
+base members is a corpus row once you name its pack fixture — the one member a corpus row adds,
+because a project matrix names its pack in `jpack.json` instead.
+
+One member is a **project-only extension** of that base: `expectedHandoffTarget` (below). The
+corpus's own manifest schema closes its case object, so a row asserting it is **not** directly
+liftable into a corpus — that is the shape of the thing rather than a restriction, because an
+escalation target is a fact about the pack that declares it and the corpus's packs are fixtures of
+the specification. Everything else about such a row lifts; drop the assertion and it lifts too.
 
 ```json
 {
-  "matrixVersion": "1",
+  "matrixVersion": "2",
   "cases": [
     {
       "id": "over-limit-needs-signoff",
@@ -193,9 +200,10 @@ are optional and none of them decides anything: `origin`, a free string saying w
 *input* came from (`jpack packs suggest` writes `"generated"`, and `packs test` reports a count per
 origin — see below); `focus`, one line saying what the row is probing; and `specSection`, the
 section of the specification the row is about, which is what the bundled evaluation corpus uses the
-member for. `matrixVersion` is optional and, when present, must be `"1"`. Unknown members are
-rejected: a misspelled `expectedDispositon` has to be an error, not a row that silently expects
-nothing.
+member for. `matrixVersion` is optional and, when present, must be `"1"` or `"2"`; an omitted
+version is read as `"1"`. Unknown members are rejected: a misspelled `expectedDispositon` has to be
+an error, not a row that silently expects nothing — and so is a member spelled in another case, so
+`Facts` and `ExpectedHandoffTarget` are refused rather than read as the members they resemble.
 
 A row with a disposition passes when the disposition produced canonicalizes, under RFC 8785, to the
 same bytes as the row's. A row with a class passes when the evaluation is refused with that class,
@@ -213,13 +221,30 @@ compares it too:
   that requests no handoff produces;
 - **absent** asserts nothing, which is what every row written before this member existed does.
 
+**It needs `matrixVersion: "2"`.** A matrix is a closed input — an older reader *rejects* a document
+carrying a member it does not know rather than ignoring it — so adding a member moves the version,
+and a matrix that declares `"1"` or declares nothing is refused by name if a row asserts a target.
+The refusal tells you which version to declare.
+
 It rides beside `expectedDisposition` only — a refused evaluation reports no target to compare, so a
 row declaring it beside `expectedErrorClass` is refused when the matrix loads. It is an
 **assertion**, not a coverage line: a mismatch fails the row, the pack, the run, and the exit code,
 exactly as a disposition mismatch does, and the report carries `expectedHandoffTarget` and
-`actualHandoffTarget` side by side so you can see which destination each names. What it holds is the
-target your pack *configures*: nothing here observes that a handoff was delivered, that the named
-role or queue exists, or that anyone acted on it.
+`actualHandoffTarget` side by side so you can see which destination each names. A third value can
+appear on the actual side: **`unavailable`**, printed as `unavailable (evaluation refused)`, which
+means the evaluation was refused and reported nothing at all. That is deliberately not `null` —
+`null` would say an evaluation ran and reported no target. Very long targets are reported truncated
+with a digest tail, so a report stays a size you can read while two different targets still compare
+as two.
+
+What it holds is the target your pack *configures*: nothing here observes that a handoff was
+delivered, that the named role or queue exists, or that anyone acted on it. It is the value
+downstream integrations read to route the request, and this is what pins it.
+
+One surface does not have it: a **graph** matrix (`experimental graph test`) has no
+`expectedHandoffTarget`, so a graph row is still blind to a target-only pack edit. Where a graph's
+nodes are packs you maintain, assert their targets in each pack's own matrix — the graph deferral is
+recorded in ADR-0025 and does not make the gap invisible.
 
 Beside the rows, `packs test` reports **coverage**: the probe classes your pack's own declarations
 derive, and which of them some row states. There are two families.

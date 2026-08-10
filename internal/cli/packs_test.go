@@ -253,6 +253,17 @@ func TestPacksTestByteDiffsDispositionsAndExitsOnAnyMismatch(t *testing.T) {
 	if run.Status != "mismatch" || row.Status != "mismatch" || row.Expected == row.Actual {
 		t.Fatalf("the report must carry both byte sequences: %+v", row)
 	}
+	// A suite that asserts no handoff target prints no line about one, on the
+	// surface as well as in the payload (ADR-0025). Checking the bytes is the
+	// point: empty Go fields would still pass if the members started being
+	// written.
+	if strings.Contains(stdout, "HandoffTarget") {
+		t.Fatalf("a suite that asks nothing about the target reports nothing: %s", stdout)
+	}
+	_, human, _ := runTest(t, []string{"packs", "test", "--config", configPath}, "")
+	if strings.Contains(human, "target:") {
+		t.Fatalf("no target line without an assertion: %q", human)
+	}
 }
 
 // A row's optional handoff-target assertion gates like any other expectation,
@@ -262,7 +273,7 @@ func TestPacksTestByteDiffsDispositionsAndExitsOnAnyMismatch(t *testing.T) {
 // difference and a second line has to.
 func TestPacksTestComparesTheHandoffTargetWhenARowAsksForIt(t *testing.T) {
 	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
-	matrix := `{"cases":[{"id":"out-of-scope","facts":{"request":{"type":"unrelated"}},"expectedDisposition":` + notApplicable +
+	matrix := `{"matrixVersion":"2","cases":[{"id":"out-of-scope","facts":{"request":{"type":"unrelated"}},"expectedDisposition":` + notApplicable +
 		`,"expectedHandoffTarget":{"kind":"human-role","name":"Disclosure office"}}]}`
 	configPath := writeProjectFixture(t, `{"configVersion":"1","packs":{"intake":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
 		map[string]string{"packs/a.json": evaluatorPack(t), "packs/a.matrix.json": matrix})
@@ -287,6 +298,24 @@ func TestPacksTestComparesTheHandoffTargetWhenARowAsksForIt(t *testing.T) {
 	code, stdout, _ = runTest(t, []string{"packs", "test", "--config", configPath}, "")
 	if code != result.ExitInvalid || !strings.Contains(stdout, "expected target: ") || !strings.Contains(stdout, "actual target: ") {
 		t.Fatalf("the human surface must print the target pair: exit=%d %q", code, stdout)
+	}
+
+	// A row that asserts a target and whose evaluation is then refused reports
+	// "unavailable" and never null: no evaluation happened, which is not the
+	// same fact as an evaluation reporting no target. The human line says so in
+	// words, because a reader meeting a bare "unavailable" beside a target needs
+	// to know which of the two it is (ADR-0025).
+	refused := `{"matrixVersion":"2","cases":[{"id":"undeclared-key","facts":{"request":{"type":"data-access"}},` +
+		`"evidenceAvailability":{"not-a-requirement":"present"},"expectedDisposition":` + notApplicable +
+		`,"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}}]}`
+	configPath = writeProjectFixture(t, `{"configVersion":"1","packs":{"intake":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": evaluatorPack(t), "packs/a.matrix.json": refused})
+	code, stdout, _ = runTest(t, []string{"packs", "test", "--config", configPath}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, "actual target: unavailable (evaluation refused)") {
+		t.Fatalf("a refused evaluation reports no target at all: exit=%d %q", code, stdout)
+	}
+	if strings.Contains(stdout, "actual target: null") {
+		t.Fatalf("null would say an evaluation reported none: %q", stdout)
 	}
 }
 

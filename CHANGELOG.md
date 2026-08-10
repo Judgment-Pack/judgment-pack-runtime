@@ -28,7 +28,43 @@ All notable changes to tagged releases are documented here.
   composition is normative and the target's separateness is what makes a disposition portable;
   always asserting it was refused because it breaks every existing matrix and makes the runtime
   compare the pack against itself. What it holds is the target the pack *configures* — no delivery
-  is observed, and a green row does not make the destination the right one. The conformance claim is
+  is observed, and a green row does not make the destination the right one.
+
+  **`matrixVersion` moves to `"2"`, and this is the compatibility rule.** A matrix is a **closed
+  input** under VERSIONING.md — an older reader *rejects* a document carrying a member it does not
+  know rather than ignoring it — so adding a member moves the version whatever the addition is,
+  exactly as `graphs` moved `configVersion` to `"2"`. A matrix declaring `"1"`, and a matrix
+  declaring no version at all, is read as the shape it was written for and is **unchanged in every
+  byte**; a row in one that asserts a target is refused by name, naming the version it would take.
+  Only `"2"` admits `expectedHandoffTarget`. The declared version is settled before anything
+  version-specific decodes, so a document from a future version gets a refusal about the version
+  rather than about a member. `outputVersion` stays `"2"` — that is the output side, where a
+  consumer ignores what it does not know, and the two rules are deliberately decided separately.
+
+  Two defects older than this change were found by its adversarial review and fixed with it. **A
+  "closed" matrix shape was accepting case-folded aliases**: `encoding/json` matches member names
+  case-insensitively even under `DisallowUnknownFields`, so `{"Facts":…}` decoded into `facts` and a
+  document carrying both spellings had one silently overwrite the other. Member names are now
+  checked against the carrier-decoded document, where the authored spelling still exists, and an
+  alias is refused rather than read — for every row member, not only the new one. **The carrier was
+  silently repairing invalid Unicode**: Go replaces an unpaired surrogate escape such as `"\ud800"`
+  with U+FFFD without complaint, so two different documents could canonicalize to the same bytes and
+  a byte comparison §8.3 requires to be exact quietly stopped being one. RFC 8785 §3.2.2.2 makes
+  such a value invalid rather than replaceable, and `carrier.Decode` now terminates on it — for
+  every pack, matrix, facts, evidence, configuration, and graph document. An escape and the literal
+  it names are still one string; NFC and NFD are still two.
+
+  Both reported renderings are **bounded**, at 256 bytes with a SHA-256 digest tail on ADR-0023's
+  shape, and the run carries a **4 MiB aggregate budget** charged as each row's result is composed:
+  a pack may configure a target name §2.1 admits at a megabyte and a matrix may declare ten thousand
+  rows, which uncapped is a report in the gigabytes built from inputs every carrier limit accepts.
+  Crossing the aggregate budget refuses the run and writes nothing, because a report cut short looks
+  exactly like a complete one. The actual side of the pair carries a third value, **`unavailable`**
+  (`unavailable (evaluation refused)` on the human surface), for a row whose evaluation was refused:
+  reporting `null` there would say an evaluation reported no target when no evaluation happened. The
+  **graph** surface is deliberately unchanged and its matrices stay blind to a target-only pack edit;
+  a graph row stating the member is refused, and the deferral and its remaining gap are recorded.
+  The conformance claim is
   unaffected and stated, in full and only, in `CONFORMANCE.md`, which no line of this entry
   restates.
 

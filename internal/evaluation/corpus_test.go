@@ -1,6 +1,9 @@
 package evaluation
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"slices"
 	"testing"
@@ -164,6 +167,19 @@ func TestExpectedHandoffTargetSeparatesAbsentFromNull(t *testing.T) {
 		"an empty kind":     {raw: `{"kind":"","name":"Intake reviewer"}`, refused: true},
 		"a null member":     {raw: `{"kind":"human-role","name":null}`, refused: true},
 		"an unknown member": {raw: `{"kind":"human-role","name":"Intake reviewer","urgency":"high"}`, refused: true},
+		// encoding/json matches member names case-insensitively even under
+		// DisallowUnknownFields, so a struct decode reads every spelling below as
+		// an exact member and lets an alias overwrite the one an author wrote. A
+		// closed shape has to refuse them, and none of them is a decoder option.
+		"a capitalized kind":            {raw: `{"Kind":"human-role","name":"Intake reviewer"}`, refused: true},
+		"a capitalized name":            {raw: `{"kind":"human-role","Name":"Intake reviewer"}`, refused: true},
+		"a shouted member":              {raw: `{"KIND":"human-role","NAME":"Ops"}`, refused: true},
+		"an alias beside the member":    {raw: `{"kind":"human-role","name":"Intake reviewer","Kind":"queue"}`, refused: true},
+		"a duplicated member":           {raw: `{"kind":"human-role","kind":"queue","name":"Ops"}`, refused: true},
+		"trailing JSON after null":      {raw: `null {"kind":"queue","name":"Ops"}`, refused: true},
+		"trailing JSON after an object": {raw: `{"kind":"queue","name":"Ops"} null`, refused: true},
+		"a nested value":                {raw: `{"kind":{"of":"thing"},"name":"Ops"}`, refused: true},
+		"an array":                      {raw: `[{"kind":"queue","name":"Ops"}]`, refused: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			target, err := DecodeHandoffTarget([]byte(probe.raw))
@@ -182,6 +198,87 @@ func TestExpectedHandoffTargetSeparatesAbsentFromNull(t *testing.T) {
 			}
 			if string(rendered) != probe.rendered {
 				t.Fatalf("rendered = %s, want %s", rendered, probe.rendered)
+			}
+		})
+	}
+}
+
+// The bundled corpus payload is byte-identical to what it was before the
+// handoff-target member existed, and this pins it rather than asserting it
+// (ADR-0025).
+//
+// The claim the ADR makes is that a row asserting nothing reports nothing new.
+// Checking empty Go fields would not catch a serialization change that started
+// writing them, so the check is over the bytes: the digest below was taken from
+// the same run on the commit this change branched from, and no member of the
+// corpus manifest's closed case object can ever declare the new member.
+func TestBundledCorpusPayloadIsUnchangedByTheHandoffTargetMember(t *testing.T) {
+	const goldenCases = "9947a8e5cf7f4930ed090af5bdaa1b183e46257aafa015bad73e4efe906770ce"
+
+	engine := newTestEngine(t)
+	run, failure := engine.RunCorpus(artifacts.EvaluatorDraftVersion, "test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	encoded, err := json.Marshal(run.Cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest := hex.EncodeToString(sliceDigest(encoded)); digest != goldenCases {
+		t.Fatalf("the corpus row payload changed: %s\nwant %s\n%s", digest, goldenCases, encoded)
+	}
+	for _, member := range []string{"expectedHandoffTarget", "actualHandoffTarget"} {
+		if bytes.Contains(encoded, []byte(member)) {
+			t.Fatalf("no corpus row may carry %q: %s", member, encoded)
+		}
+	}
+}
+
+func sliceDigest(data []byte) []byte {
+	digest := sha256.Sum256(data)
+	return digest[:]
+}
+
+// The three assertion states survive a round trip through the carrier type, and
+// the middle one is why omitempty is there (ADR-0025).
+//
+// Without it, marshaling a row that asserted nothing writes
+// expectedHandoffTarget: null, which reloads as the assertion that the
+// evaluation reports no target — a round trip that invents an expectation
+// nobody wrote, and the one confusion this member's three states exist to
+// prevent.
+func TestMatrixCaseRoundTripsTheThreeAssertionStates(t *testing.T) {
+	for name, probe := range map[string]struct {
+		row    string
+		member string
+	}{
+		"absent":   {row: `{"id":"a","facts":{}}`, member: ""},
+		"null":     {row: `{"id":"a","facts":{},"expectedHandoffTarget":null}`, member: `"expectedHandoffTarget":null`},
+		"a target": {row: `{"id":"a","facts":{},"expectedHandoffTarget":{"kind":"queue","name":"Ops"}}`, member: `"expectedHandoffTarget":{"kind":"queue","name":"Ops"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var row MatrixCase
+			if err := json.Unmarshal([]byte(probe.row), &row); err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if probe.member == "" {
+				if bytes.Contains(encoded, []byte("expectedHandoffTarget")) {
+					t.Fatalf("an absent assertion must not be written back as null: %s", encoded)
+				}
+			} else if !bytes.Contains(encoded, []byte(probe.member)) {
+				t.Fatalf("the assertion must survive the round trip: %s", encoded)
+			}
+			// And the reload states what the original stated.
+			var again MatrixCase
+			if err := json.Unmarshal(encoded, &again); err != nil {
+				t.Fatal(err)
+			}
+			if string(again.ExpectedHandoffTarget) != string(row.ExpectedHandoffTarget) {
+				t.Fatalf("reload = %q, want %q", again.ExpectedHandoffTarget, row.ExpectedHandoffTarget)
 			}
 		})
 	}

@@ -63,7 +63,95 @@ func Decode(data []byte, limits Limits) (any, *Failure) {
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return nil, invalid("JPS-CARRIER-INVALID-JSON", "", "Input contains trailing data after the JSON value.")
 	}
+	// The surrogate scan runs last, over bytes now known to be well-formed JSON,
+	// so its string tracking is exact rather than a guess about where a string
+	// begins. What it refuses is what the decoder above silently repaired.
+	if offset, found := unpairedSurrogateEscape(data); found {
+		return nil, invalid("JPS-CARRIER-INVALID-JSON", "",
+			fmt.Sprintf("Input contains an unpaired surrogate escape at byte offset %d. RFC 8785 §3.2.2.2 makes such a value invalid rather than replaceable, and this decoder refuses it rather than substituting U+FFFD.", offset))
+	}
 	return value, nil
+}
+
+// unpairedSurrogateEscape reports the offset of the first \uD800-\uDFFF escape
+// that is not one half of a well-formed pair, and whether one was found.
+//
+// Go's decoder replaces such an escape with U+FFFD without complaint, which is
+// silent lossy repair of a value RFC 8785 §3.2.2.2 says a canonicalizer must
+// refuse: an authored "\ud800" would otherwise canonicalize to the same bytes
+// as a literal U+FFFD, so two different documents would compare equal and a
+// byte comparison §8.3 requires to be exact would not be. Refusing at the
+// carrier fixes it once for every document that reaches this runtime — pack,
+// matrix, facts, evidence, configuration, and graph — rather than once per
+// reader.
+//
+// It runs over JSON already parsed successfully, so a backslash appears only
+// inside a string and every escape is well-formed; the walk still checks its
+// own bounds rather than trusting that.
+func unpairedSurrogateEscape(data []byte) (int, bool) {
+	inString := false
+	for index := 0; index < len(data); index++ {
+		if !inString {
+			if data[index] == '"' {
+				inString = true
+			}
+			continue
+		}
+		switch data[index] {
+		case '"':
+			inString = false
+		case '\\':
+			if index+1 >= len(data) {
+				return 0, false
+			}
+			if data[index+1] != 'u' {
+				index++
+				continue
+			}
+			value, ok := hexQuad(data, index+2)
+			if !ok {
+				return 0, false
+			}
+			index += 5
+			if value < 0xD800 || value > 0xDFFF {
+				continue
+			}
+			// A low surrogate can never open a pair, and a high one must be
+			// followed immediately by another \u escape carrying a low one.
+			if value > 0xDBFF {
+				return index - 5, true
+			}
+			low, ok := hexQuad(data, index+3)
+			if !ok || index+1 >= len(data) || data[index+1] != '\\' || data[index+2] != 'u' || low < 0xDC00 || low > 0xDFFF {
+				return index - 5, true
+			}
+			index += 6
+		}
+	}
+	return 0, false
+}
+
+// hexQuad reads the four hex digits of one \u escape at start.
+func hexQuad(data []byte, start int) (int, bool) {
+	if start+4 > len(data) {
+		return 0, false
+	}
+	value := 0
+	for _, char := range data[start : start+4] {
+		digit := 0
+		switch {
+		case char >= '0' && char <= '9':
+			digit = int(char - '0')
+		case char >= 'a' && char <= 'f':
+			digit = int(char-'a') + 10
+		case char >= 'A' && char <= 'F':
+			digit = int(char-'A') + 10
+		default:
+			return 0, false
+		}
+		value = value*16 + digit
+	}
+	return value, true
 }
 
 func (p *parser) value(location []string, depth int) (any, *Failure) {

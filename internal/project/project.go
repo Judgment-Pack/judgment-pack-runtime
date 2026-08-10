@@ -89,6 +89,27 @@ const (
 	MaxLockBytes = int64(1 << 20)
 	// MaxMatrixCases bounds the rows of one matrix.
 	MaxMatrixCases = 10_000
+	// MaxHandoffTargetReportBytes bounds the total handoff-target renderings one
+	// packs test run retains, across every selected pack and every row (ADR-0025).
+	//
+	// It exists because the two per-row members are the first thing in a run's
+	// report whose size is a product rather than a sum of an author's own
+	// choices: a pack may configure a target whose name §2.1 admits at a
+	// megabyte, a matrix may declare MaxMatrixCases rows, and a project may
+	// declare many packs. The per-rendering budget of
+	// result.HandoffTargetBudget already bounds each one at 256 bytes, which is
+	// what makes the arithmetic tractable; this bounds the accumulation, so no
+	// combination of admissible inputs builds a report the MCP surface would then
+	// refuse whole after paying for it.
+	//
+	// The number is the two budgets and the row cap read together: 4 MiB is more
+	// than eight thousand rows at the maximum a capped pair can cost, and tens of
+	// thousands of rows at what a real target costs, while staying a quarter of
+	// the response bound so target renderings alone can never be what crosses it.
+	// It is charged as each row's result is composed rather than measured once
+	// the report is whole, because a budget checked at the end bounds what is
+	// returned and nothing about the memory spent reaching it.
+	MaxHandoffTargetReportBytes = 4 << 20
 )
 
 //go:embed jpack.schema.json
@@ -214,6 +235,21 @@ type Project struct {
 	GraphIDs []string
 
 	root *fssecure.Root
+	// handoffTargetReportBudget is MaxHandoffTargetReportBytes unless a test
+	// injects a smaller one. It is unexported and has no configuration surface:
+	// a limit a project could raise is a limit an oversized report can ask to be
+	// allowed, and the number here is derived from two other limits rather than
+	// being a preference.
+	handoffTargetReportBudget int
+}
+
+// handoffBudget is the run's aggregate budget for handoff-target renderings,
+// with the injected value winning only when a test set one.
+func (p *Project) handoffBudget() int {
+	if p.handoffTargetReportBudget > 0 {
+		return p.handoffTargetReportBudget
+	}
+	return MaxHandoffTargetReportBytes
 }
 
 // Close releases the project's directory handle.

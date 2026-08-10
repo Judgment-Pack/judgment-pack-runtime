@@ -58,7 +58,22 @@ goes, and it is the one part of an evaluation's payload no expectation could rea
 
 ## Decision outcome
 
-Chosen option: **A**. Every other option is refused for one load-bearing reason.
+Chosen option: **A**. Every other option is refused for one load-bearing reason, except **G**, which
+is deferred for one — and the difference between a refusal and a deferral is stated rather than
+blurred, because a deferral leaves the gap open on that surface.
+
+**B is refused because the gap is not a documentation defect, and saying so is not a formality.**
+The status quo is a real option here — every other record in this family refused a gate and settled
+for a report — so it has to be weighed rather than assumed away. It loses on what the h02 story
+actually shows. A documented gap is closed by a person remembering it at the moment they change a
+pack, and the mutation this exists for is the one nobody looks at: the disposition is right, the
+suite is green, and the only signal is a wrong destination reaching an integration downstream. This
+runtime already refuses that trade elsewhere — ADR-0012's demotion discipline is that silence over a
+gap is the failure mode, and ADR-0023 declined to leave an ordered-comparison boundary to prompt
+text on exactly this reasoning. What tips it past those precedents is that the repair is a **row
+member a person writes**, not a derivation that has to be argued for: the whole cost of closing this
+is four tokens in the rows that already exist, and refusing to spend them would leave a member the
+runtime reports, the pack authors, and nothing can hold to anything.
 
 **C is refused because §8.3's disposition composition is normative and the target is deliberately
 outside it.** That section enumerates the disposition's members and this runtime's `Disposition`
@@ -100,11 +115,25 @@ existing suite, which is the cost of D without D's (rejected) benefit. The produ
 reported **only** for a row that asked about it, so a suite that asserts nothing reports what it
 reported before.
 
-**G is refused as out of scope, on ADR-0023's own precedent for the same surface.** A graph's `rows`
-document already carries `expectedNodes`, and a per-node target assertion is a different derivation
-with a different carrier — a composite's headline is not one pack's evaluation, and which node's
-target a headline should be held to is a question this record has not answered. Named as a
-follow-up, not smuggled in.
+**G is deferred rather than refused, and the reason is a real open choice rather than a missing
+mechanism.** An earlier draft of this record said the graph surface had no target to assert, and
+that was wrong: `internal/graph/evaluate.go` already binds the composite's headline `HandoffTarget`
+to the declared result node's, so a headline-level assertion is *available* today and would need no
+new plumbing. What is unsettled is which assertion is the right one. A graph row can hold the
+headline — one assertion per row, cheap, and blind to every upstream node — or it can hold each node
+beside `expectedNodes`, which is where the graph surface already puts a claim about a decision that
+fed the headline and where ADR-0016 put its own per-node coverage. Choosing under the pressure of
+this record would settle a graph question inside a pack-matrix decision, and ADR-0023 set the
+precedent for not doing that.
+
+The cost of deferring is stated rather than implied: **a graph matrix stays blind to a target-only
+mutation**, which is the exact defect this record exists to close, on a surface where it is
+arguably worse — a composite's escalation is the one a caller is furthest from. The mitigation is
+not a mitigation: where a graph's nodes are packs a project maintains, the assertion belongs in each
+pack's own matrix, which does have it, and `docs/building-with-packs.md` says so at the point a
+builder would otherwise assume the graph covers it. A test pins the deferral in the direction that
+can rot — a graph row stating `expectedHandoffTarget` is refused as the unknown member it is — so
+one surface cannot quietly acquire half of this.
 
 Settled determinations:
 
@@ -113,7 +142,42 @@ Settled determinations:
   all. An object states `kind` and `name`, both required and neither empty, compared by exact string
   equality against the evaluation's top-level `handoffTarget`. Absent and `null` are two different
   statements and the carrier keeps them apart: the member is `json.RawMessage`, which is nil when
-  the member is missing and the four bytes `null` when it is present and null.
+  the member is missing and the four bytes `null` when it is present and null. It carries
+  `omitempty` for the same reason: without it, marshaling a row that asserted nothing writes
+  `expectedHandoffTarget: null`, which reloads as the assertion that the evaluation reports no
+  target, so a round trip through the carrier type would invent an expectation nobody wrote.
+- **It moves `matrixVersion` to `"2"`, and an earlier draft of this record was wrong not to.** A
+  matrix is a **closed input**, and VERSIONING.md states the rule for those in the sentence this
+  change would otherwise have contradicted: their schemas are closed, so an older reader *rejects* a
+  document carrying a member it does not know rather than ignoring it, and adding one therefore
+  moves the version whatever the addition is — as `graphs` moved `configVersion` to `"2"` and
+  `audit` moved it to `"3"`. Reading the additive-output rule onto an input is the exact conflation
+  that document names as a live source of error. So: `"1"` and an omitted version are the shape
+  written before this record and stay target-free; `"2"` admits the assertion; and a `"1"` matrix
+  that states one is refused **by name**, naming the version it would take, because
+  "`expectedHandoffTarget` is not a member" is a false sentence to print at an author whose only
+  mistake was not moving a version string.
+- **The declared version is settled before anything version-specific decodes it.** The check runs
+  off the carrier-decoded document, ahead of the typed decode, so a matrix declaring a version this
+  runtime has never heard of is told exactly that rather than told that one of its members is
+  unknown — true, uninformative, and pointing at the wrong repair. The ordering is a determination
+  and not an implementation detail: it is what makes a future version's document produce an
+  actionable refusal from an older binary instead of a puzzling one.
+- **A member spelled in another case is refused rather than read as the member it folds onto.**
+  `encoding/json` matches member names case-insensitively **even under `DisallowUnknownFields`**, so
+  `{"Facts":…}` and `{"ExpectedHandoffTarget":…}` decode into the exact members, and a document
+  carrying both spellings has one silently overwrite the other in map order — an assertion an author
+  wrote replaced by one they did not. A closed shape that admits an alias is not closed. The member
+  names are therefore checked against the carrier-decoded document, where every authored name still
+  exists verbatim, before anything is decoded into a Go type. This fixes the whole row shape rather
+  than this record's member alone, because the defect was never specific to it; the strict decode
+  stays, as the type check it also is.
+- **The expectation is decoded from the token stream, not into a struct.** The same case-folding
+  applies inside a target object, and two more defects come with it: `encoding/json` accepts a
+  duplicated member silently, and it stops at the end of the first value, so trailing JSON rides
+  along unread and `null {"kind":"queue","name":"Ops"}` reads as an assertion of no target. None of
+  the three is expressible as a decoder option, so `DecodeHandoffTarget` reads tokens, matches
+  member names exactly, refuses a repeat, and requires EOF.
 - **Absent is byte-identical to today, in the payload and in the exit code.** A row that states
   nothing carries neither new result member, produces no new line on the human surface, and is
   judged by exactly the comparison it was judged by before. That is the property that makes this
@@ -152,7 +216,47 @@ Settled determinations:
   which is the same discipline the disposition comparison already follows. The canonicalization is
   the existing `internal/jcs` encoder over an object of two strings — inside the value space that
   package implements, and stated here because that package's doc comment names the disposition as
-  its reason for existing.
+  its reason for existing. That writer also **refuses a target with an empty `kind` or `name`**,
+  exactly as `Disposition.Canonical` refuses a disposition §8.3 does not admit: §8.1 states both
+  members, the engine builds no such value, and an exported type can be handed one — which would
+  put a target no pack can declare on both sides of a comparison, where it compares equal to itself
+  and passes.
+- **A reported target is bounded, and bounding it is what makes the comparison safe to run on the
+  rendering.** This is the correction an adversarial review forced, and the arithmetic is worth
+  recording rather than the conclusion alone: a pack may configure a target whose `name` §2.1 admits
+  at a megabyte, a matrix may declare `MaxMatrixCases` — ten thousand — rows, and every asserting
+  row retains two renderings. Uncapped, ten thousand rows asserting `null` against such a pack build
+  a report in the gigabytes out of inputs every carrier limit admits, and the MCP surface's 16 MiB
+  check runs only once the whole thing exists. An earlier draft of this record claimed the added
+  bytes were "two short renderings"; that claim was false, and it is withdrawn here rather than
+  softened. So each rendering is capped at `result.HandoffTargetBudget` bytes on ADR-0023's own
+  shape — the value whole within the budget, and beyond it a prefix, an ellipsis, and the first
+  sixteen hex digits of the SHA-256 of the full canonical bytes. Identity survives the cap, which is
+  the property that lets the comparison stay a string equality over the rendering instead of needing
+  a second uncapped path beside it.
+- **A second budget bounds the accumulation, charged as each row's result is composed.** The
+  per-rendering cap bounds one row; what a report retains is a product of that cap, the row cap, and
+  the number of packs a project declares. `MaxHandoffTargetReportBytes` bounds the total across the
+  whole run — one counter, because a report is one document however many packs contributed to it —
+  and it is charged **before** each rendering is retained rather than measured once the report is
+  whole, on ADR-0024's reasoning: a budget checked at the end bounds what is returned and nothing
+  about the memory spent reaching it. Crossing it **refuses the run** and writes nothing: a report
+  cut short looks exactly like a complete one. It is a `Failure` and not a mismatch, because a
+  mismatch is a statement about a pack and a row and "this report does not fit" is a statement about
+  neither. It has no configuration surface, deliberately — a limit a project could raise is a limit
+  an oversized report can ask to be allowed — and its number is derived from the other two rather
+  than chosen as a preference.
+- **An unpaired surrogate escape is refused at the carrier, for both sides of this comparison and
+  for every other document.** Go's decoder replaces `"\ud800"` with U+FFFD without complaint, so a
+  pack authoring a lone surrogate in its target name canonicalizes to the same bytes as an
+  expectation carrying a literal replacement character: two different documents compare equal, and a
+  byte comparison §8.3 requires to be exact quietly stops being one. RFC 8785 §3.2.2.2 makes such a
+  value invalid rather than replaceable, so `carrier.Decode` terminates on it. The fix is at the
+  carrier rather than at this comparison because the carrier is where both paths meet and because
+  the defect was never specific to a handoff target — it reaches every pack, matrix, facts,
+  evidence, configuration, and graph document this runtime reads. Nothing else about Unicode
+  changes: an escape and the literal it names remain one string, and NFC and NFD remain two, because
+  normalizing either toward the other is not something §8.3 asks for.
 - **The report carries `expectedHandoffTarget` and `actualHandoffTarget`, and the detail does not
   repeat them.** The two renderings are their own members of the row result and are printed as one
   line on the human surface, beside the disposition pair and the error-class pair. The mismatch
@@ -171,11 +275,21 @@ Settled determinations:
   of the thing rather than a restriction imposed on it: an escalation target is a fact about the
   pack that declares it, and the corpus's packs are fixtures of the specification, not a project's
   policy.
+- **The reported pair appears together, and its third value is `unavailable`.** A row that asserts a
+  target and whose evaluation is then refused produced nothing to compare. Reporting `null` there
+  would state that an evaluation reported no target, which is a §8.3 statement no evaluation made;
+  reporting the expected side alone would break the rule that the pair appears whenever the row
+  asked. So both members are set to `unavailable` the moment a row is seen to declare an assertion,
+  and each is replaced when there is something true to put there. The human surface spells it out —
+  `unavailable (evaluation refused)` — because a reader meeting the bare word beside a target on the
+  other side needs to know which of the two facts it is.
 - **The output is additive and `outputVersion` stays `"2"`.** Two members appear on a row result
   only when that row asked for them, which is weaker than the additive member ADR-0023 already
-  precedented and squarely inside VERSIONING.md's backward-compatible-addition rule. The MCP
-  response bound ADR-0023 spent a determination on is not moved: the added bytes are two short
-  renderings per **asserting** row, and no string is repeated into a detail.
+  precedented and squarely inside VERSIONING.md's backward-compatible-addition rule. This is the
+  **output** side and it is deliberately decided separately from the matrix's own version above:
+  output is read by consumers that ignore what they do not know, and a matrix is a closed input read
+  by a runtime that must not. The MCP response bound ADR-0023 spent a determination on is held by
+  the two budgets rather than by a claim about how short the renderings are.
 - **This asserts the target as evaluated, and nothing beyond it.** It compares the destination the
   pack **configures** against the destination a row's author wrote down. It does not verify that any
   handoff was delivered, that the named role or queue exists, that anyone acted on it, or that the
@@ -196,9 +310,29 @@ Settled determinations:
   study found it: the same matrix over the correct and the corrupted pack, green both times until a
   row asserts the target.
 - Good, because the assertion is cheap and legible. A row gains four tokens, and what it gains them
-  for is the one member of the evaluation payload that says where a human is being sent.
+  for is the one member of the evaluation payload that names the configured target downstream
+  integrations may use. It is not always a person: §8.1's kinds are `human-role`, `queue`, and
+  `system`, and this record claims nothing about what any of them does with a request.
 - Good, because it costs existing suites nothing. A matrix written before this record is judged by
   the comparison it was written for, byte for byte, and the two new result members do not appear.
+  The corpus payload is pinned to a digest taken from the commit this branched from, so that claim
+  is checked against bytes rather than against empty Go fields.
+- Good, unexpectedly, because closing this required fixing two defects older than it: a "closed"
+  matrix shape that accepted case-folded aliases for every one of its members, and a carrier that
+  silently repaired invalid Unicode into U+FFFD. Both were found by the adversarial review of this
+  change, both are refusals now, and neither is specific to a handoff target.
+- Bad, because a matrix asserting a target needs `matrixVersion: "2"`, which is a two-step edit for
+  an author who wanted one. The alternative was leaving a closed input's version standing while its
+  shape changed, which is the conflation VERSIONING.md names; the refusal names the version, so the
+  second step is told to the author rather than discovered.
+- Bad, because refusing case-folded member names may refuse a matrix that loaded yesterday. Such a
+  matrix was being *misread* yesterday — a member the author spelled `Facts` was silently accepted
+  as `facts`, and a document carrying both had one overwrite the other — so the refusal is the bug
+  fix and the previous acceptance was the defect. It is called out here because it is a behavior
+  change nobody asked for.
+- Bad, because a very long target is reported truncated, which is a rendering an author did not
+  write. The digest tail keeps two such targets distinct, so nothing is decided wrongly; what is
+  lost is readability of a value that was never readable at that length.
 - Bad, because it asserts what the pack **configures** and not what happens next. Nothing here
   observes a delivery, and a project whose escalation target is correct and whose routing is broken
   gets a green row. The limit is stated on the surface as well as here.
@@ -222,12 +356,17 @@ Settled determinations:
 
 ## More information
 
-`internal/evaluation/corpus.go` carries the carrier member, `DecodeHandoffTarget`, and the second
-comparison in `RunCaseAdmitted`, beside the disposition comparison that both the bundled corpus and
-a project matrix run through. `internal/result/result.go` carries
-`result.HandoffTarget.Canonical` — the one writer of both sides — and the two row members.
-`internal/project/matrix.go` carries the load-time refusals: the companionship rule and the shape
-check through that one decoder. `internal/cli/render.go` prints the pair.
+`internal/evaluation/corpus.go` carries the carrier member, `DecodeHandoffTarget` — the token-stream
+decoder and its three refusals — and the second comparison in `RunCaseAdmitted`, beside the
+disposition comparison that both the bundled corpus and a project matrix run through.
+`internal/result/result.go` carries `result.HandoffTarget.Canonical` and `Rendered` — the one writer
+of both sides, and the rendering budget — the `unavailable` constant, and the two row members.
+`internal/project/matrix.go` carries the version preflight, the exact-member check, and the
+load-time refusals: the companionship rule and the shape check through that one decoder.
+`internal/project/project.go` carries `MaxHandoffTargetReportBytes` and the injectable counter, and
+`internal/project/test.go` charges it as each row is composed. `internal/carrier/decode.go` carries
+the unpaired-surrogate refusal, which is where both sides of this comparison — and every other
+document — stop being silently repaired.
 [ADR-0010](0010-evaluator-aligned-to-core-0.2.0-draft.md) is where the target came to be reported
 outside the disposition; [ADR-0014](0014-matrix-coverage-report.md) and
 [ADR-0023](0023-boundary-probes-for-ordered-comparisons.md) are the never-gate line this record

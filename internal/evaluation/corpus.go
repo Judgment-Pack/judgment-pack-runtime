@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -51,10 +52,17 @@ type corpusManifest struct {
 // it is raw bytes for a reason the other members do not have: the assertion has
 // three states and only raw bytes distinguish them. Absent asserts nothing; the
 // literal null asserts that the evaluation reports no target; an object asserts
-// the target it names. The bundled corpus never carries it — that manifest's
-// own schema closes its case object — so this member is reachable only from a
-// project matrix, which is the carrier whose rows are written about a pack the
-// project itself maintains.
+// the target it names. It carries `omitempty` for the same reason — without it,
+// marshaling a row that asserted nothing writes `expectedHandoffTarget: null`,
+// which reloads as the assertion that the evaluation reports no target, so a
+// round trip through this type would invent an expectation nobody wrote.
+//
+// The member is a **project-only extension** of the shared base. The bundled
+// corpus never carries it — that manifest's own schema closes its case object —
+// so a base-only row is liftable into a corpus unchanged and an asserting row is
+// not. It is reachable only from a project matrix, which is the carrier whose
+// rows are written about a pack the project itself maintains, and only from
+// matrixVersion 2 (project.MatrixVersion).
 type MatrixCase struct {
 	ID                    string          `json:"id"`
 	Origin                string          `json:"origin"`
@@ -62,7 +70,7 @@ type MatrixCase struct {
 	EvidenceAvailability  json.RawMessage `json:"evidenceAvailability"`
 	SupportedExtensions   []string        `json:"supportedExtensions"`
 	ExpectedDisposition   json.RawMessage `json:"expectedDisposition"`
-	ExpectedHandoffTarget json.RawMessage `json:"expectedHandoffTarget"`
+	ExpectedHandoffTarget json.RawMessage `json:"expectedHandoffTarget,omitempty"`
 	ExpectedErrorClass    string          `json:"expectedErrorClass"`
 	ExpectedErrorPhase    string          `json:"expectedErrorPhase"`
 	Focus                 string          `json:"focus"`
@@ -242,20 +250,25 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 		}
 		outcome.Expected = expected
 	}
-	// The second expectation, when the row states one (ADR-0025). It is rendered
-	// before the evaluation runs, so a row that asserts a target reports what it
-	// asserted even where the evaluation was refused and produced nothing to
-	// compare against.
+	// The second expectation, when the row states one (ADR-0025). Both members of
+	// the pair are set to "unavailable" the moment the row is seen to declare
+	// one, and each is replaced when there is something true to put there: the
+	// expected side once it decodes, the actual side once an evaluation produces
+	// one. So the pair appears together on every path a declaring row can take —
+	// including the paths that return before an evaluation exists — and neither
+	// half is ever silently absent while the other is present.
 	if item.ExpectedHandoffTarget != nil {
+		outcome.ExpectedHandoffTarget = result.HandoffTargetUnavailable
+		outcome.ActualHandoffTarget = result.HandoffTargetUnavailable
 		expectedTarget, err := DecodeHandoffTarget(item.ExpectedHandoffTarget)
 		if err != nil {
 			return corpusMismatch(outcome, "The row's expectedHandoffTarget is neither null nor a {kind, name} object: "+err.Error())
 		}
-		rendered, err := expectedTarget.Canonical()
+		rendered, err := expectedTarget.Rendered()
 		if err != nil {
 			return corpusMismatch(outcome, "The row's expectedHandoffTarget could not be canonicalized: "+err.Error())
 		}
-		outcome.ExpectedHandoffTarget = string(rendered)
+		outcome.ExpectedHandoffTarget = rendered
 	}
 
 	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability,
@@ -284,12 +297,14 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 	// members it always carried. It is rendered before the disposition is
 	// compared, so a row failing both comparisons still reports both sides of
 	// each: the detail names the first difference, the payload names them all.
+	// This is also where "unavailable" stops being the actual side's value —
+	// there is now an evaluation to read one off.
 	if item.ExpectedHandoffTarget != nil {
-		actualTarget, err := evaluated.HandoffTarget.Canonical()
+		actualTarget, err := evaluated.HandoffTarget.Rendered()
 		if err != nil {
 			return corpusMismatch(outcome, "The evaluation's handoff target could not be canonicalized: "+err.Error())
 		}
-		outcome.ActualHandoffTarget = string(actualTarget)
+		outcome.ActualHandoffTarget = actualTarget
 	}
 	actual, err := evaluated.Disposition.Canonical()
 	if err != nil {
@@ -323,25 +338,31 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 // applied to the reason it exists rather than to its exact mechanism).
 func handoffTargetDifference(expected, actual string) string {
 	switch {
-	case expected == noHandoffTarget:
+	case actual == result.HandoffTargetUnavailable:
+		return "the evaluation was refused, so it reported no target at all — which is not the same fact as reporting none."
+	case expected == result.NoHandoffTarget:
 		return "the row expects no target and the evaluation reports one."
-	case actual == noHandoffTarget:
+	case actual == result.NoHandoffTarget:
 		return "the row expects a target and the evaluation reports none."
 	default:
 		return "both name a target and the two differ; the row's expectedHandoffTarget and actualHandoffTarget carry them."
 	}
 }
 
-// noHandoffTarget is the rendering of "no target at all", on both sides of the
-// comparison: the JSON literal a row writes to assert it, which is also what
-// result.HandoffTarget.Canonical renders for an evaluation that reported none.
-const noHandoffTarget = "null"
-
 // DecodeHandoffTarget decodes one row's expected escalation target: JSON null,
 // which asserts that the evaluation reports no target at all, or an object
 // stating both kind and name. It is exported for the same one-gate reason
 // DecodeDisposition is — the matrix loader and the row comparator must not be
 // able to disagree about what a well-formed expectation is.
+//
+// It is written against the token stream rather than against a struct, and that
+// is not style. `encoding/json` matches member names **case-insensitively**
+// even under DisallowUnknownFields, so a struct decode reads `{"Kind":"queue"}`
+// as a kind and lets `{"kind":"human-role","Kind":"queue"}` overwrite the exact
+// member with the alias; it also accepts a duplicated member silently, and
+// stops at the end of the first value so trailing JSON rides along unread. A
+// closed shape has to refuse all three, and none of them is expressible as a
+// decoder option.
 //
 // Both members are required and neither may be empty, because an escalation
 // target §8.1 admits states both and a pack declaring an empty one is refused
@@ -351,19 +372,69 @@ const noHandoffTarget = "null"
 // reported as the loud mismatch it is rather than by a second copy of a list
 // this package does not own.
 func DecodeHandoffTarget(raw json.RawMessage) (*result.HandoffTarget, error) {
-	if string(bytes.TrimSpace(raw)) == noHandoffTarget {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if token == nil {
+		if err := endOfValue(decoder); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}
-	var target result.HandoffTarget
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&target); err != nil {
+	if token != json.Delim('{') {
+		return nil, errors.New("an expected handoff target is null or a {kind, name} object")
+	}
+	target := &result.HandoffTarget{}
+	seen := map[string]bool{}
+	for decoder.More() {
+		nameToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return nil, errors.New("an object member name is not a string")
+		}
+		member, known := map[string]*string{"kind": &target.Kind, "name": &target.Name}[name]
+		if !known {
+			return nil, fmt.Errorf("an expected handoff target states kind and name and no other member; %q is not one of them", name)
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("member %q appears more than once", name)
+		}
+		seen[name] = true
+		valueToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		value, ok := valueToken.(string)
+		if !ok {
+			return nil, fmt.Errorf("the %s of an expected handoff target is a string", name)
+		}
+		*member = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, errors.New("an expected handoff target is null or a {kind, name} object")
+	}
+	if err := endOfValue(decoder); err != nil {
 		return nil, err
 	}
 	if target.Kind == "" || target.Name == "" {
 		return nil, errors.New("an expected handoff target states a non-empty kind and a non-empty name")
 	}
-	return &target, nil
+	return target, nil
+}
+
+// endOfValue refuses anything after the value just read. A decoder that stops at
+// the end of the first value would read `null {"kind":"queue","name":"Ops"}` as
+// an assertion of no target, silently dropping the half an author meant.
+func endOfValue(decoder *json.Decoder) error {
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("an expected handoff target carries trailing data after its value")
+	}
+	return nil
 }
 
 func corpusMismatch(outcome result.EvaluationCorpusCase, detail string) result.EvaluationCorpusCase {

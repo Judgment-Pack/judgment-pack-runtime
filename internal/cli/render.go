@@ -435,7 +435,7 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 			// keeps the configured escalation target outside the disposition, so
 			// neither line above can show a difference in it (ADR-0025).
 			if row.ExpectedHandoffTarget != "" || row.ActualHandoffTarget != "" {
-				fmt.Fprintf(a.out, "    expected target: %s / actual target: %s\n", display.Sanitize(row.ExpectedHandoffTarget), display.Sanitize(row.ActualHandoffTarget))
+				fmt.Fprintf(a.out, "    expected target: %s / actual target: %s\n", handoffTargetLine(row.ExpectedHandoffTarget), handoffTargetLine(row.ActualHandoffTarget))
 			}
 		}
 		a.renderCoverage("  ", pack.Coverage)
@@ -444,6 +444,18 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	fmt.Fprintln(a.out, "A mismatching row is a statement about the pack and the row, not about this runtime.")
 	return nil
+}
+
+// handoffTargetLine renders one side of a row's handoff-target comparison. The
+// "unavailable" state is spelled out rather than printed as the bare word: a
+// reader meeting it beside a target on the other side needs to know that no
+// evaluation reported anything, which is a different fact from an evaluation
+// reporting no target (ADR-0025).
+func handoffTargetLine(rendered string) string {
+	if rendered == result.HandoffTargetUnavailable {
+		return "unavailable (evaluation refused)"
+	}
+	return display.Sanitize(rendered)
 }
 
 // renderOrigins prints the origins one pack's rows declare, as counts against
