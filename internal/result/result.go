@@ -666,7 +666,7 @@ const EvaluationCorpusLabel = "corpus results, the required evidence for the cla
 // rather than a pair of renderings: it says this report cannot state a target,
 // where null says an evaluation reported none. Its causes are enumerated at
 // HandoffTargetUnavailable — a refused evaluation, no rendering computed for the
-// pack, or a supplied rendering belonging to some other target — and the first
+// pack, or a supplied rendering minted from different pack bytes — and the first
 // is told from the rest by ActualErrorClass being set. None of them moves a
 // verdict: the comparison reads the decoded targets, so a degraded report is a
 // report that says less, never a row that decides differently. A row that

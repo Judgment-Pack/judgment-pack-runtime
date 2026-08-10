@@ -304,10 +304,10 @@ type AdmittedPack struct {
 	// admits at a megabyte, so the check is flat in the row count where every
 	// comparison of the decoded targets was not.
 	//
-	// This is the one field this record adds to a type it otherwise left exactly
-	// as it found it, and the cost is stated rather than buried: one linear pass
-	// over the pack, once per AdmitPack — which every caller performs once per
-	// pack per run — beside the several passes admission already makes to
+	// This is one of two fields this record adds to a type it otherwise left
+	// exactly as it found it, and the cost is stated rather than buried: one
+	// linear pass over the pack, once per AdmitPack — which every caller performs
+	// once per pack per run — beside the several passes admission already makes to
 	// validate and decode the same bytes. It is immutable from construction, so
 	// nothing reads it under a lock, and it is taken over pack, which is this
 	// type's own copy: a digest of bytes a caller could still edit would bind
@@ -315,7 +315,9 @@ type AdmittedPack struct {
 	packDigest [sha256.Size]byte
 	// oversized is the pack byte-limit refusal, recorded at construction because
 	// that is where the bytes are first seen and before anything else reads them.
-	// Every later path replays it rather than re-deciding it.
+	// Every later evaluating path replays it rather than re-deciding it; Admits
+	// deliberately does not, because its semantics are conformance and not the
+	// raw byte limit.
 	oversized *Failure
 }
 
