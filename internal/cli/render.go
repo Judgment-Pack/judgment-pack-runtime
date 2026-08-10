@@ -454,12 +454,16 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 // report cannot state a target, which is a different fact from an evaluation
 // reporting none (ADR-0025).
 //
-// It has two causes and they are told apart by what the row already carries
-// rather than by a fourth payload value: a row with an §8.4 class was refused
-// and produced nothing, and a row without one produced a target for which no
-// rendering was computed — which no surface of this runtime reaches, and which
-// is named rather than papered over because the alternative is a blank beside a
-// destination.
+// It has three causes, told apart by what the row already carries rather than by
+// a fourth payload value. A row with an §8.4 class was refused and produced
+// nothing. A row without one produced a target this report has no rendering of:
+// either none was computed for the pack, or the one supplied was minted from
+// other bytes and is refused rather than repeated. Those two are grouped, and
+// deliberately — naming only the first would be false of the second, and the
+// reader's question is the same either way: this report cannot state the
+// destination, and it is not claiming there is none. Neither is reachable from
+// any surface of this runtime; they are named rather than papered over, because
+// the alternative is a blank beside a destination.
 func handoffTargetLine(rendered string, refused bool) string {
 	if rendered != result.HandoffTargetUnavailable {
 		return display.Sanitize(rendered)
@@ -467,7 +471,7 @@ func handoffTargetLine(rendered string, refused bool) string {
 	if refused {
 		return "unavailable (evaluation refused)"
 	}
-	return "unavailable (no rendering was computed for this pack)"
+	return "unavailable (no matching rendering was supplied)"
 }
 
 // renderOrigins prints the origins one pack's rows declare, as counts against

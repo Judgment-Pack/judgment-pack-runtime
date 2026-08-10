@@ -2263,7 +2263,8 @@ func TestACarrierMaximumTargetAcrossManyRowsIsBoundedInWorkAndInBytes(t *testing
 	config := `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`
 	configPath := writeProject(t, config, map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
 
-	run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	engineForRun := evaluation.NewEngine(newValidator(t))
+	run, failure := mustLoad(t, configPath).Test(engineForRun, "", "packs test")
 	if failure != nil {
 		t.Fatal(failure.Message)
 	}
@@ -2285,6 +2286,15 @@ func TestACarrierMaximumTargetAcrossManyRowsIsBoundedInWorkAndInBytes(t *testing
 		}
 		retained += len(row.ExpectedHandoffTarget) + len(row.ActualHandoffTarget)
 	}
+	// Nor does the row path *compare* the pack's target: the binding a row checks
+	// is a thirty-two-byte digest, which is fixed width whatever the pack weighs.
+	// A draft of this record bound by comparing the decoded targets instead, and
+	// two thousand rows of that is two gigabytes of comparison — the same
+	// resource shape, reappearing in the machinery meant to protect the report.
+	// There is no byte counter here for the same reason there is none for the
+	// rendering: what is asserted is that the mechanism is fixed width, which is
+	// structural, and the rendering count below is what proves nothing recomputes.
+	//
 	// The whole run's target renderings are kilobytes, against a pack whose one
 	// target is a megabyte: two thousand uncapped renderings would have been two
 	// gigabytes.
@@ -2293,6 +2303,11 @@ func TestACarrierMaximumTargetAcrossManyRowsIsBoundedInWorkAndInBytes(t *testing
 	}
 	if retained > rows*(result.HandoffTargetBudget+len("null")) {
 		t.Fatalf("retained = %d, which is past what the per-row budget allows", retained)
+	}
+	// One pack, one run, one rendering — for two thousand rows against a target
+	// at the carrier's maximum.
+	if renders := engineForRun.HandoffTargetRenders(); renders != 1 {
+		t.Fatalf("one rendering per pack per run: %d", renders)
 	}
 
 	// The same run under a budget smaller than it needs is refused whole, and

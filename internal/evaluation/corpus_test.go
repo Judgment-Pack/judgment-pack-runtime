@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -342,11 +343,7 @@ func TestTheRowComparatorRendersNoHandoffTarget(t *testing.T) {
 	// The rendering can only come from the one place that renders: the type's
 	// members are unexported and it has no other constructor, so this test could
 	// not fabricate one even to check that the row path ignores it.
-	document, failure := carrier.Decode(pack, carrier.DefaultLimits())
-	if failure != nil {
-		t.Fatal(failure.Diagnostic.Message)
-	}
-	declared := engine.PackHandoffTarget(document.(map[string]any))
+	declared := engine.PackHandoffTarget(pack)
 	rendersAfterOne := engine.HandoffTargetRenders()
 
 	row := MatrixCase{
@@ -415,12 +412,8 @@ func TestPackHandoffTargetRendersWhatThePackDeclares(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document, failure := carrier.Decode(pack, carrier.DefaultLimits())
-	if failure != nil {
-		t.Fatal(failure.Diagnostic.Message)
-	}
 	before := engine.HandoffTargetRenders()
-	declared := engine.PackHandoffTarget(document.(map[string]any))
+	declared := engine.PackHandoffTarget(pack)
 	// Present is the only member a caller can read, on purpose: the rendering
 	// itself is for the row result to report, not for a caller to inspect or to
 	// rebuild one from. What it renders is asserted through a row, below.
@@ -447,12 +440,8 @@ func TestPackHandoffTargetRendersWhatThePackDeclares(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	document, failure = carrier.Decode(escalate, carrier.DefaultLimits())
-	if failure != nil {
-		t.Fatal(failure.Diagnostic.Message)
-	}
 	before = engine.HandoffTargetRenders()
-	if declared = engine.PackHandoffTarget(document.(map[string]any)); declared.Present() {
+	if declared = engine.PackHandoffTarget(escalate); declared.Present() {
 		t.Fatalf("a pack with no escalation object declares no target: %+v", declared)
 	}
 	if engine.HandoffTargetRenders() != before {
@@ -591,14 +580,7 @@ func TestATransplantedRenderingIsNotReported(t *testing.T) {
 		t.Fatal("the fixture must declare the target this test changes")
 	}
 
-	renderingFor := func(document string) HandoffTargetRendering {
-		decoded, failure := carrier.Decode([]byte(document), carrier.DefaultLimits())
-		if failure != nil {
-			t.Fatal(failure.Diagnostic.Message)
-		}
-		return engine.PackHandoffTarget(decoded.(map[string]any))
-	}
-	fromA, fromB := renderingFor(string(pack)), renderingFor(other)
+	fromA, fromB := engine.PackHandoffTarget(pack), engine.PackHandoffTarget([]byte(other))
 	if !fromA.Present() || !fromB.Present() {
 		t.Fatal("both packs declare a target")
 	}
@@ -631,6 +613,25 @@ func TestATransplantedRenderingIsNotReported(t *testing.T) {
 		t.Fatalf("pack A's destination must not appear in pack B's row: %+v", transplanted)
 	}
 
+	// An errored foreign handle degrades too, and this is the case ordering
+	// decides: propagating its error would flip this row's verdict to mismatch,
+	// which is a stronger effect than the false report the binding exists to
+	// prevent. The handle is built here because PackHandoffTarget can no longer
+	// produce one — it takes pack bytes, and the carrier refuses the invalid
+	// UTF-8 that is jcs.Encode's only failure — so what is pinned is the
+	// ordering, which outlives today's carrier rules.
+	errored := HandoffTargetRendering{err: errors.New("would not render"), digest: sha256.Sum256([]byte("some other pack"))}
+	degraded := engine.RunCaseAdmitted(admittedB, row, errored, "test")
+	if degraded.Status != outcome.Status {
+		t.Fatalf("a foreign handle must not change a verdict: %+v", degraded)
+	}
+	if degraded.ActualHandoffTarget != result.HandoffTargetUnavailable {
+		t.Fatalf("a foreign errored handle degrades the report: %+v", degraded)
+	}
+	if strings.Contains(degraded.Detail, "would not render") {
+		t.Fatalf("another pack's rendering failure is not this row's: %+v", degraded)
+	}
+
 	// And the mismatching direction is unaffected: a row asserting pack A's
 	// target against pack B still fails on the decoded comparison, whichever
 	// rendering it was handed.
@@ -640,5 +641,118 @@ func TestATransplantedRenderingIsNotReported(t *testing.T) {
 		if failing.Status != "mismatch" {
 			t.Fatalf("%s rendering: the verdict rests on decoded values: %+v", name, failing)
 		}
+	}
+}
+
+// The binding is decided on the pack digest, before anything else the handle
+// carries (ADR-0025).
+//
+// This is a unit test of the ordering rather than of a reachable state, and the
+// distinction is worth stating. An errored rendering is not constructible
+// through PackHandoffTarget any more: it takes pack bytes, carrier.Decode
+// refuses invalid UTF-8 and unpaired surrogates, and jcs.Encode's only failure
+// is invalid UTF-8 — so the error door is closed at the entrance. It is kept,
+// and tested here, because "unreachable" is a property of today's carrier rules
+// and the ordering it protects is not: a foreign handle carrying an error would
+// otherwise propagate that error onto a row it has nothing to do with, flipping
+// a verdict to mismatch, which is a stronger effect than the false report the
+// binding exists to prevent.
+func TestTheHandoffTargetBindingIsDecidedOnTheDigestFirst(t *testing.T) {
+	produced := &result.HandoffTarget{Kind: "human-role", Name: "Intake reviewer"}
+	mine := sha256.Sum256([]byte("this pack"))
+	foreign := sha256.Sum256([]byte("some other pack"))
+	broken := errors.New("this target would not render")
+
+	for name, probe := range map[string]struct {
+		handle   HandoffTargetRendering
+		reported string
+		fails    bool
+	}{
+		"a rendering of this pack": {
+			handle:   HandoffTargetRendering{rendered: `{"kind":"human-role","name":"Intake reviewer"}`, present: true, digest: mine},
+			reported: `{"kind":"human-role","name":"Intake reviewer"}`,
+		},
+		"a rendering of another pack": {
+			handle:   HandoffTargetRendering{rendered: `{"kind":"queue","name":"Somewhere else"}`, present: true, digest: foreign},
+			reported: result.HandoffTargetUnavailable,
+		},
+		"no rendering at all": {
+			handle:   HandoffTargetRendering{},
+			reported: result.HandoffTargetUnavailable,
+		},
+		"this pack's rendering, which failed": {
+			handle: HandoffTargetRendering{err: broken, digest: mine},
+			fails:  true,
+		},
+		"another pack's rendering, which failed": {
+			// The ordering that matters: a foreign handle is refused as foreign
+			// before its error is looked at, so it degrades the report instead of
+			// changing this row's verdict.
+			handle:   HandoffTargetRendering{err: broken, digest: foreign},
+			reported: result.HandoffTargetUnavailable,
+		},
+		"this pack, which declares no target": {
+			handle:   HandoffTargetRendering{digest: mine},
+			reported: result.HandoffTargetUnavailable,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			reported, err := reportedHandoffTarget(produced, probe.handle, mine)
+			if probe.fails {
+				if err == nil {
+					t.Fatal("this pack's own rendering failed, and the row says so")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("a handle that is not this pack's must not fail the row: %v", err)
+			}
+			if reported != probe.reported {
+				t.Fatalf("reported = %q, want %q", reported, probe.reported)
+			}
+		})
+	}
+
+	// An evaluation that produced no target answers before the digest is
+	// consulted at all: "no target" is one constant whatever pack produced it.
+	if reported, err := reportedHandoffTarget(nil, HandoffTargetRendering{digest: foreign}, mine); err != nil || reported != result.NoHandoffTarget {
+		t.Fatalf("reported = %q %v", reported, err)
+	}
+}
+
+// Two mints over the same pack bytes are interchangeable, because the binding
+// is over the bytes and the same bytes declare the same target (ADR-0025).
+//
+// This is the honest consequence of binding by digest rather than by mint
+// identity, and it is the behaviour worth having: a rendering another engine
+// made over this very pack reports the truth, so nothing degrades for a caller
+// that shares work. What it costs is observation scope — the local counter
+// counts local mints — which is a fact about the number, not a hole in the
+// bound it observes.
+func TestARenderingOfTheSameBytesIsReportedWhicheverEngineMintedIt(t *testing.T) {
+	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	minting, reporting := newTestEngine(t), newTestEngine(t)
+	elsewhere := minting.PackHandoffTarget(pack)
+	if !elsewhere.Present() {
+		t.Fatal("this pack declares a target")
+	}
+	outcome := reporting.RunCaseAdmitted(reporting.AdmitPack(pack), MatrixCase{
+		ID:                    "shared",
+		Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
+		ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
+		ExpectedHandoffTarget: json.RawMessage(`{"kind":"human-role","name":"Intake reviewer"}`),
+	}, elsewhere, "test")
+	if outcome.Status != "passed" || outcome.ActualHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` {
+		t.Fatalf("same bytes, same target, reported honestly: %+v", outcome)
+	}
+	// The reporting engine minted nothing, and says so.
+	if reporting.HandoffTargetRenders() != 0 {
+		t.Fatalf("the counter counts local mints: %d", reporting.HandoffTargetRenders())
+	}
+	if minting.HandoffTargetRenders() != 1 {
+		t.Fatalf("the mint happened once, elsewhere: %d", minting.HandoffTargetRenders())
 	}
 }

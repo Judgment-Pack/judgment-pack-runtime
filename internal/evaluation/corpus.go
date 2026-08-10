@@ -2,6 +2,7 @@ package evaluation
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -125,59 +126,94 @@ type corpusCase struct {
 // computes a rendering whenever a row asserts, RunCase computes its own, and no
 // bundled corpus row can assert at all.
 //
-// **It also carries the decoded target it rendered, and a row uses it only when
-// that target is the one the evaluation produced.** Opacity stops a caller
-// *fabricating* a rendering; it does not stop one *transplanting* a genuine
-// rendering minted for another pack, since PackHandoffTarget will render any
-// root it is handed. Without the binding, such a rendering would be reported
-// verbatim while the verdict compared the evaluated pack's real target — a row
-// passing while its actualHandoffTarget named a destination the pack never
-// declared, which is the failure this whole record exists to prevent, inverted.
-// With it, a rendering that does not match degrades to "unavailable": the report
-// says it cannot state the target rather than stating a false one, and what is
-// reported is provably a rendering of the same value the verdict compared,
-// whichever engine minted it.
+// **It also carries the SHA-256 of the pack bytes it was minted from, and a row
+// uses it only when that digest is the digest of the pack it evaluated.**
+// Opacity stops a caller *fabricating* a rendering; it does not stop one
+// *transplanting* a genuine rendering minted for another pack. Without the
+// binding, such a rendering would be reported verbatim while the verdict
+// compared the evaluated pack's real target — a row passing while its
+// actualHandoffTarget named a destination the pack never declared, which is the
+// failure this whole record exists to prevent, inverted. With it, a rendering
+// that does not belong degrades to "unavailable": the report says it cannot
+// state the target rather than stating a false one.
+//
+// The binding is a **digest of the pack's bytes** and not a comparison of the
+// decoded targets, and the difference is the whole of what a review round cost.
+// Comparing decoded targets is exact, but both of its operands come from the
+// *pack*, so a matrix asserting on ten thousand rows scans the pack's target ten
+// thousand times — the resource shape this record has rejected three times over,
+// reappearing in the machinery meant to protect the report. R2-1's per-row
+// comparison is bounded because one operand comes from the *row*, and the matrix
+// bounds the rows; that proof does not transfer to two pack-derived operands,
+// and a draft of this determination claimed it did. A digest comparison is
+// thirty-two bytes whatever the pack weighs.
+//
+// Same bytes mean the same declared target, so a rendering minted by another
+// engine over the same pack reports honestly rather than degrading. What that
+// costs is observation scope and not correctness: Engine.HandoffTargetRenders
+// counts what *this* engine minted, so a run reusing another's rendering sees a
+// lower count than mints performed. Documented rather than fought — the number
+// is there to hold one run's own loop to its bound.
 type HandoffTargetRendering struct {
 	rendered string
 	present  bool
 	err      error
-	// target is the decoded value `rendered` was produced from, kept so a row can
-	// check that the rendering it was handed belongs to the target its evaluation
-	// produced.
-	target *result.HandoffTarget
+	// digest is the SHA-256 of the pack bytes this rendering was minted from. It
+	// is set even when rendering failed: an errored handle still knows which pack
+	// it belongs to, so a foreign one is refused as foreign rather than having its
+	// error propagated onto a row it has nothing to do with.
+	digest [sha256.Size]byte
 }
 
-// PackHandoffTarget renders the escalation target a decoded pack declares. It is
-// the only function in this runtime that renders one, and the only constructor
-// of a non-zero HandoffTargetRendering.
+// PackHandoffTarget renders the escalation target a pack declares. It is the
+// only function in this runtime that renders one, and the only constructor of a
+// non-zero HandoffTargetRendering.
 //
-// It is a pure function of the decoded pack, with one exception that is not
-// state the answer depends on: the Engine counts the renderings it has produced,
-// because "once per pack per run" is a claim this record makes and a claim
-// nothing can observe is a claim nobody can hold. Since this is the sole
-// rendering site, that count is complete rather than a sample. See
+// It takes the pack's **bytes** rather than a decoded root for two reasons that
+// are the same reason: the bytes are what the binding digest is over, and taking
+// a caller-supplied map would let a rendering be minted from a document no pack
+// ever was. It applies the shared byte limit before decoding, through the same
+// helper the evaluation path uses, so an oversized pack is refused here as it is
+// everywhere — nothing is scanned that a §8.4 preflight would refuse.
+//
+// It is a pure function of those bytes, with one exception that is not state the
+// answer depends on: the Engine counts the renderings it has produced, because
+// "once per pack per run" is a claim this record makes and a claim nothing can
+// observe is a claim nobody can hold. Since this is the sole rendering site,
+// that count is complete for renderings this engine minted. See
 // HandoffTargetRenders.
-func (e *Engine) PackHandoffTarget(packRoot map[string]any) HandoffTargetRendering {
+func (e *Engine) PackHandoffTarget(pack []byte) HandoffTargetRendering {
+	digest := sha256.Sum256(pack)
+	if failure := byteLimit("pack", pack, result.ClassPackNotConformant, false); failure != nil {
+		return HandoffTargetRendering{digest: digest}
+	}
+	document, failure := carrier.Decode(pack, carrier.DefaultLimits())
+	if failure != nil {
+		return HandoffTargetRendering{digest: digest}
+	}
+	packRoot, ok := document.(map[string]any)
+	if !ok {
+		return HandoffTargetRendering{digest: digest}
+	}
 	escalation, _ := packRoot["escalation"].(map[string]any)
 	if escalation == nil {
-		return HandoffTargetRendering{}
+		return HandoffTargetRendering{digest: digest}
 	}
 	target, _ := escalation["target"].(map[string]any)
 	if target == nil {
-		return HandoffTargetRendering{}
+		return HandoffTargetRendering{digest: digest}
 	}
 	kind, _ := target["kind"].(string)
 	name, _ := target["name"].(string)
 	if kind == "" || name == "" {
-		return HandoffTargetRendering{}
+		return HandoffTargetRendering{digest: digest}
 	}
 	e.targetRenders.Add(1)
-	declared := &result.HandoffTarget{Kind: kind, Name: name}
-	rendered, err := declared.Rendered()
+	rendered, err := (&result.HandoffTarget{Kind: kind, Name: name}).Rendered()
 	if err != nil {
-		return HandoffTargetRendering{err: err}
+		return HandoffTargetRendering{err: err, digest: digest}
 	}
-	return HandoffTargetRendering{rendered: rendered, present: true, target: declared}
+	return HandoffTargetRendering{rendered: rendered, present: true, digest: digest}
 }
 
 // Present reports whether a rendering was computed — that is, whether the pack
@@ -190,9 +226,10 @@ func (h HandoffTargetRendering) Present() bool { return h.present }
 // of times one is canonicalized and hashed is the difference between a bounded
 // run and a matrix that costs gigabytes while staying inside every byte limit.
 //
-// The observation is complete because PackHandoffTarget is the sole rendering
-// site and the sole constructor: there is no second path that could produce a
-// rendering this number does not count.
+// It counts what this engine minted. A rendering minted elsewhere over the same
+// pack bytes is reported rather than re-minted, and is therefore not counted
+// here; that is the scope of the observation and not a hole in the bound, which
+// is about the loop a run performs.
 func (e *Engine) HandoffTargetRenders() int64 { return e.targetRenders.Load() }
 
 // reportedHandoffTarget reports the escalation target one evaluation produced,
@@ -200,29 +237,28 @@ func (e *Engine) HandoffTargetRenders() int64 { return e.targetRenders.Load() }
 // it has no constructor for a rendering and no target-shaped input beyond the
 // one it was handed.
 //
-// It uses that rendering only when it is a rendering **of this target**. Where
-// the caller supplied none, or supplied one minted for a different target, the
-// actual side degrades to the "unavailable" convention rather than being
-// computed here or reported as something it is not. That is the whole of the
-// difference these two narrowings make: the report says it cannot state the
-// target, instead of the row path quietly doing the work a run was supposed to
-// do once, or repeating bytes that belong to another pack.
+// The digest comes first, ahead of the error and ahead of everything else. A
+// rendering that belongs to other bytes has nothing to say about this row, and
+// that is true of an errored one too — propagating its error would let a foreign
+// handle flip a row's verdict to mismatch, which is a stronger effect than the
+// false report the binding exists to prevent. So: wrong pack, "unavailable",
+// whatever else the handle carries. Right pack and an error, the error, because
+// then it is *this* pack's target that would not render. Right pack and a
+// rendering, the rendering.
 //
-// The check costs one string comparison per asserting row whose evaluation
-// produced a target, against the target the rendering was minted from. It is
-// deliberately not free and deliberately not a hash: Go compares lengths before
-// bytes, nothing is allocated, and what it buys is a report that cannot name a
-// destination the evaluated pack does not declare. It is the same comparison the
-// verdict already makes one line later, applied to the other side of the same
-// question.
-func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTargetRendering) (string, error) {
+// Where no rendering was supplied at all, the zero value's zero digest matches
+// no pack and takes the same door.
+func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTargetRendering, packDigest [sha256.Size]byte) (string, error) {
 	if produced == nil {
 		return result.NoHandoffTarget, nil
+	}
+	if declared.digest != packDigest {
+		return result.HandoffTargetUnavailable, nil
 	}
 	if declared.err != nil {
 		return "", declared.err
 	}
-	if declared.present && sameHandoffTarget(declared.target, produced) {
+	if declared.present {
 		return declared.rendered, nil
 	}
 	return result.HandoffTargetUnavailable, nil
@@ -375,30 +411,14 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, admissions map[string]*Admitt
 // command names the reporting surface, exactly as elsewhere in this package.
 func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.EvaluationCorpusCase {
 	// One row, one pack: this is the caller for whom "once per pack per run" and
-	// "once per row" are the same number, so it renders its own and hands it on.
-	// The rendering is skipped entirely unless the row asks about a target.
-	//
-	// The pack's hard byte limit is consulted **before** the decode that
-	// rendering needs, through the same helper EvaluateAdmitted uses so the two
-	// cannot drift: carrier.Decode has no raw-byte cap of its own, so a decode
-	// placed ahead of the limit would scan an oversized document — arbitrarily
-	// long trailing whitespace and all — before the refusal §8.4 requires.
-	//
-	// What it does **not** do is refuse here. An earlier draft returned early
-	// with a hand-assembled outcome, which skipped the row preprocessing every
-	// other path runs: the expected disposition went uncanonicalized, so a
-	// malformed expectation could ride an expected pack-limit error to a false
-	// pass, and an oversized pack produced a payload shaped unlike every other
-	// refusal. The limit is EvaluateAdmitted's first act, so declining to decode
-	// is all this needs to do — the refusal arrives through the ordinary path
-	// below, after every expectation has been read exactly as it always was.
+	// "once per row" are the same number, so it mints its own and hands it on.
+	// Nothing is minted unless the row asks about a target, and the constructor
+	// applies the shared byte limit before it decodes anything — so an oversized
+	// pack is never scanned here, while the refusal itself still arrives through
+	// the ordinary row path below with every expectation read as it always was.
 	var declared HandoffTargetRendering
-	if item.ExpectedHandoffTarget != nil && byteLimit("pack", pack, result.ClassPackNotConformant, false) == nil {
-		if document, failure := carrier.Decode(pack, carrier.DefaultLimits()); failure == nil {
-			if root, ok := document.(map[string]any); ok {
-				declared = e.PackHandoffTarget(root)
-			}
-		}
+	if item.ExpectedHandoffTarget != nil {
+		declared = e.PackHandoffTarget(pack)
 	}
 	return e.RunCaseAdmitted(e.AdmitPack(pack), item, declared, command)
 }
@@ -480,7 +500,7 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declar
 	// §2.1's megabyte is ten gigabytes of work the retained-bytes budget cannot
 	// see, because what is retained is capped and what is *processed* is not.
 	if item.ExpectedHandoffTarget != nil {
-		actualTarget, err := reportedHandoffTarget(evaluated.HandoffTarget, declared)
+		actualTarget, err := reportedHandoffTarget(evaluated.HandoffTarget, declared, admitted.packDigest)
 		if err != nil {
 			return corpusMismatch(outcome, "The evaluation's handoff target could not be canonicalized: "+err.Error())
 		}

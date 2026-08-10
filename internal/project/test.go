@@ -153,7 +153,7 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// document however many packs contributed to it.
 	var declaredTarget evaluation.HandoffTargetRendering
 	if assertsHandoffTarget(matrix) {
-		declaredTarget = evaluator.PackHandoffTarget(PackRoot(pack))
+		declaredTarget = evaluator.PackHandoffTarget(pack)
 	}
 	for _, row := range matrix.Cases {
 		outcome := evaluator.RunCaseAdmitted(admitted, row, declaredTarget, command)

@@ -41,6 +41,7 @@
 package evaluation
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -289,6 +290,19 @@ type AdmittedPack struct {
 	pack       []byte
 	mu         sync.Mutex
 	admissions map[string]*packAdmission
+	// packDigest is the SHA-256 of pack, taken once here and never again. It is
+	// what binds a handoff-target rendering to the pack it was minted from
+	// (ADR-0025): a row compares thirty-two bytes instead of a target that §2.1
+	// admits at a megabyte, so the check is flat in the row count where every
+	// comparison of the decoded targets was not.
+	//
+	// This is the one field this record adds to a type it otherwise left exactly
+	// as it found it, and the cost is stated rather than buried: one linear pass
+	// over the pack, once per AdmitPack — which every caller performs once per
+	// pack per run — beside the several passes admission already makes to
+	// validate and decode the same bytes. It is immutable from construction, so
+	// nothing reads it under a lock.
+	packDigest [sha256.Size]byte
 }
 
 // maxAdmissions bounds how many distinct capability sets one AdmittedPack
@@ -306,7 +320,12 @@ type packAdmission struct {
 
 // AdmitPack prepares one pack's bytes for evaluation across many rows.
 func (e *Engine) AdmitPack(pack []byte) *AdmittedPack {
-	return &AdmittedPack{engine: e, pack: pack, admissions: map[string]*packAdmission{}}
+	return &AdmittedPack{
+		engine:     e,
+		pack:       pack,
+		admissions: map[string]*packAdmission{},
+		packDigest: sha256.Sum256(pack),
+	}
 }
 
 // admissionKey is the part of Options the conformance half of the preflight

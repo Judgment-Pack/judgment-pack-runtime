@@ -292,22 +292,52 @@ Settled determinations:
   this determination exists to forbid, reintroduced for the one caller careless enough to take it.
 
   Opacity alone was still not the guarantee this record claimed, and the next review said so.
-  `PackHandoffTarget` renders whatever root it is handed, so a *genuine* rendering minted for one
-  pack could be **transplanted** onto another pack's rows: reported verbatim while the verdict
-  compared the evaluated pack's real target, which is a row passing while `actualHandoffTarget`
-  names a destination that pack never declared — this record's own defect, inverted, and produced by
-  the machinery meant to prevent it. So a rendering **carries the decoded target it was made from**,
-  and a row uses it only when that is the target its evaluation produced. What is reported is then
-  provably a rendering of the same value the verdict compared, whichever engine minted it, and a
-  stale or foreign rendering degrades to `unavailable` instead of lying. The check costs one string
-  comparison per asserting row whose evaluation produced a target — lengths before bytes, nothing
-  allocated, no hash — and it is the same comparison the verdict makes one line later, asked of the
-  other side of the question. That is a cost this record accepts explicitly: a report that cannot
-  name the wrong destination is worth more than a comparison it saves.
+  `PackHandoffTarget` mints from whatever it is handed, so a *genuine* rendering minted for one pack
+  could be **transplanted** onto another pack's rows: reported verbatim while the verdict compared
+  the evaluated pack's real target, which is a row passing while `actualHandoffTarget` names a
+  destination that pack never declared — this record's own defect, inverted, and produced by the
+  machinery meant to prevent it. So a rendering **carries the SHA-256 of the pack bytes it was
+  minted from**, `AdmittedPack` carries the same digest of its own bytes, and a row uses a rendering
+  only when the two agree. A rendering that does not belong degrades to `unavailable`: the report
+  says it cannot state the target rather than stating a false one.
 
-  Where no rendering was supplied, or the supplied one belongs elsewhere, the actual side degrades
-  to the `unavailable` convention and the human surface names the cause; the **verdict is untouched**
-  in every case, because it rests on the decoded values.
+  **The binding is a digest and not a comparison of the decoded targets, and that distinction cost a
+  review round to learn.** The first repair compared them, reasoning that this was the comparison
+  the verdict already makes. It is not, and the difference is exact: R2-1's per-row comparison is
+  bounded because **one of its operands comes from the row**, and `MaxMatrixBytes` bounds the rows —
+  so the total is bounded by the matrix however large the pack's target is. A binding check has
+  **two pack-derived operands**, so that proof does not transfer, and matching targets have equal
+  lengths, which is precisely when a length-first comparison reads every byte. Ten thousand asserting
+  rows against a megabyte-long target is ten gigabytes of comparison — the resource shape this record
+  has now rejected four times, reappearing inside the guard meant to protect the report, and worst
+  for a row asserting `null`, whose *verdict* is settled in constant time while the binding scanned
+  the whole target. A digest comparison is thirty-two bytes whatever the pack weighs, and it is
+  exact.
+
+  The digest is taken once per `AdmitPack` — which every caller performs once per pack per run —
+  beside the several passes admission already makes to validate and decode the same bytes. It is
+  the one field this record adds to a type it otherwise left exactly as it found it, and that
+  departure is disclosed here rather than left for a reader to notice.
+
+  **The digest is checked before anything else the handle carries**, including its error. A foreign
+  handle has nothing to say about this row, and propagating its rendering failure would flip that
+  row's verdict to `mismatch` — a stronger effect than the false report the binding exists to
+  prevent. Wrong pack: `unavailable`, whatever else it carries. Right pack and an error: the error,
+  because then it is *this* pack's target that would not render. Right pack and a rendering: the
+  rendering.
+
+  **Same bytes report honestly, and that is the intended reading.** A rendering minted by another
+  engine over this very pack is used rather than refused, because the same bytes declare the same
+  target — binding by mint identity would degrade a report for a caller who shared work correctly.
+  What it costs is the *scope* of one number: `Engine.HandoffTargetRenders` counts what that engine
+  minted, so a run reusing another's rendering sees fewer mints than were performed. That is a fact
+  about the observation, not a hole in the bound it observes, which is about the loop a run runs.
+
+  Where no rendering was supplied, or the supplied one belongs to other bytes, the actual side
+  degrades to the `unavailable` convention and the human surface groups the two — "no matching
+  rendering was supplied", because naming only the first would be false of the second and the
+  reader's question is the same. The **verdict is untouched** in every case, because it rests on the
+  decoded values.
 
   The count is observable (`Engine.HandoffTargetRenders`) because a bound this record claims and
   nothing can watch is a bound nobody can hold it to — and because the sole rendering site is also

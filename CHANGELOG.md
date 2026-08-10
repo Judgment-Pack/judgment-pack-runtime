@@ -76,13 +76,18 @@ All notable changes to tagged releases are documented here.
   matrix that uses sixty-four one-off capability sets and repeats a sixty-fifth re-renders on every
   remaining row, because `maxAdmissions` bounds what is retained and not what is computed. The
   rendering is a function of the pack's bytes alone, so it belongs where a pack is loaded; the row
-  path then holds no cache, no lock, and no counter. The rendering type is **opaque and bound to what it
-  rendered** — unexported members, `PackHandoffTarget` as its only constructor and the only place a
-  target is rendered, and the decoded target carried alongside so a row uses a rendering only when
-  it is a rendering of the target its own evaluation produced. So "the row path renders nothing" is
-  enforced rather than documented, the render count that makes the bound observable is complete
-  rather than a sample, and a rendering belonging to another pack degrades to `unavailable` instead
-  of putting a destination that pack never declared into the report. A pack's hard byte limit is
+  path then holds no cache, no lock, and no counter. The rendering type is **opaque and bound to the pack it
+  was minted from** — unexported members, `PackHandoffTarget` as its only constructor and the only
+  place a target is rendered, and the SHA-256 of the pack's bytes carried alongside so a row uses a
+  rendering only when it belongs to the pack it evaluated. So "the row path renders nothing" is
+  enforced rather than documented, and a rendering belonging to another pack degrades to
+  `unavailable` instead of putting a destination that pack never declared into the report. The
+  binding is a digest rather than a comparison of the decoded targets, deliberately: both operands
+  of that comparison come from the *pack*, so it would scan a megabyte-long target once per row —
+  unlike the row-versus-pack comparison the verdict makes, which the matrix's own byte limit bounds.
+  Thirty-two bytes, whatever the pack weighs, checked ahead of everything else the handle carries so
+  a foreign one degrades the report rather than failing the row. A rendering minted elsewhere over
+  the *same* bytes reports honestly, since the same bytes declare the same target. A pack's hard byte limit is
   consulted before any of this decodes a pack, so an oversized document is not scanned first — and
   the refusal itself still travels the ordinary row path, so every expectation is canonicalized and
   every payload keeps the shape it had. The actual side of the pair carries a third value, **`unavailable`**
