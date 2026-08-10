@@ -82,7 +82,11 @@ type MatrixCase struct {
 
 // corpusCase is one bundled corpus row: a MatrixCase plus the bundled pack
 // fixture it runs against. A project matrix names its pack in the project
-// configuration instead, which is the only difference between the two carriers.
+// configuration instead. That is the difference this type carries, and not the
+// only difference between the two carriers: the bundled manifest's schema also
+// requires origin, supportedExtensions, focus, and specSection, which a project
+// row need not declare, and refuses expectedHandoffTarget, which only a project
+// row may.
 type corpusCase struct {
 	MatrixCase
 	Pack string `json:"pack"`
@@ -275,8 +279,8 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 		expectedTarget, outcome.ExpectedHandoffTarget = decoded, rendered
 	}
 
-	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability,
-		Options{Command: command, SupportedExtensions: item.SupportedExtensions})
+	options := Options{Command: command, SupportedExtensions: item.SupportedExtensions}
+	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability, options)
 	if failure != nil {
 		outcome.ActualErrorClass, outcome.ActualErrorPhase = failure.Class, failure.Phase
 		if item.ExpectedErrorClass == "" {
@@ -304,15 +308,15 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 	// This is also where "unavailable" stops being the actual side's value —
 	// there is now an evaluation to read one off.
 	//
-	// The rendering goes through the admitted pack's memo rather than being
-	// recomputed. Every row of one matrix evaluates one pack, and §8.1 gives a
-	// pack one escalation target, so without the memo a suite asserting a target
-	// on n rows canonicalizes and hashes the same authored string n times: ten
-	// thousand rows against a pack whose target name is at §2.1's megabyte is
-	// ten gigabytes of repeated work that the retained-bytes budget cannot see,
-	// because what is retained is capped and what is *processed* is not.
+	// The rendering is read off the admission this row evaluated under, where it
+	// was computed once. Every row of one matrix evaluates one pack and §8.1
+	// gives a pack one escalation target, so rendering per row canonicalizes and
+	// hashes the same authored string once per row: ten thousand rows against a
+	// pack whose target name is at §2.1's megabyte is ten gigabytes of repeated
+	// work the retained-bytes budget cannot see, because what is retained is
+	// capped and what is *processed* is not.
 	if item.ExpectedHandoffTarget != nil {
-		actualTarget, err := admitted.renderHandoffTarget(evaluated.HandoffTarget)
+		actualTarget, err := admitted.reportedHandoffTarget(evaluated.HandoffTarget, options)
 		if err != nil {
 			return corpusMismatch(outcome, "The evaluation's handoff target could not be canonicalized: "+err.Error())
 		}
@@ -341,7 +345,7 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, comman
 	// string, and the renderings are carried beside the verdict rather than
 	// standing in for it.
 	if item.ExpectedHandoffTarget != nil && !sameHandoffTarget(expectedTarget, evaluated.HandoffTarget) {
-		return corpusMismatch(outcome, "The evaluation's handoff target differs from the row's expectation: "+handoffTargetDifference(expectedTarget, evaluated.HandoffTarget, false))
+		return corpusMismatch(outcome, "The evaluation's handoff target differs from the row's expectation: "+handoffTargetDifference(expectedTarget, evaluated.HandoffTarget))
 	}
 	return outcome
 }
@@ -372,10 +376,15 @@ func sameHandoffTarget(expected, actual *result.HandoffTarget) bool {
 // It reads the decoded values for the same reason the comparison does: "the row
 // expects no target" is a fact about a nil, not about a rendering that happens
 // to spell null.
-func handoffTargetDifference(expected, actual *result.HandoffTarget, refused bool) string {
+//
+// It is reached only after an evaluation produced a disposition. A refused
+// evaluation returns earlier, with the actual side left at
+// result.HandoffTargetUnavailable and a detail naming the refusal — so there is
+// no refused case to describe here, and an earlier draft's parameter for one was
+// dead in every caller. A branch nothing can reach is a branch that documents a
+// behavior the code does not have.
+func handoffTargetDifference(expected, actual *result.HandoffTarget) string {
 	switch {
-	case refused:
-		return "the evaluation was refused, so it reported no target at all — which is not the same fact as reporting none."
 	case expected == nil:
 		return "the row expects no target and the evaluation reports one."
 	case actual == nil:

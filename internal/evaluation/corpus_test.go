@@ -370,3 +370,78 @@ func TestOnePacksHandoffTargetIsRenderedOncePerRun(t *testing.T) {
 		t.Fatalf("a row that asks nothing costs nothing: %d", renders)
 	}
 }
+
+// The rendering is bounded by the admissions a run makes, not by its rows —
+// which is the path the first version of this cache missed (ADR-0025).
+//
+// options.SupportedExtensions makes a distinct admission, and each admission
+// decodes the pack separately, so the target strings of two admissions are equal
+// in content and separately allocated. A cache keyed on the target's *content*
+// therefore scanned an equal megabyte on every row after the capability set
+// changed: one row with no extensions followed by ten thousand rows declaring
+// one harmless extension was roughly ten gigabytes of comparison, under every
+// byte budget, and a single-capability test cannot see it.
+//
+// What is asserted here is the invariant that replaced it: the number of
+// renderings is the number of admissions and does not move with the number of
+// rows. The count pins the rendering half. The comparison half is structural
+// rather than counted — the row path reads a field and contains no string
+// comparison to count — and that is stated rather than measured, because a test
+// cannot assert the absence of work it has no hook for. Its wall-clock
+// consequence is bounded by the carrier-maximum integration test in the project
+// package.
+func TestTheHandoffTargetRenderingIsBoundedByAdmissionsNotByRows(t *testing.T) {
+	engine := newTestEngine(t)
+	pack, err := os.ReadFile(filepath.Join("testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A megabyte-long target name, which is what §2.1 admits and what makes a
+	// per-row rendering expensive rather than merely wasteful.
+	long := strings.Replace(string(pack), `"name": "Intake reviewer"`, `"name": "`+strings.Repeat("q", 1<<20)+`"`, 1)
+	if long == string(pack) {
+		t.Fatal("the fixture must declare the target this test lengthens")
+	}
+
+	// The same two capability sets over an order of magnitude more rows. Equal
+	// counts are the whole assertion: what the renderings are proportional to is
+	// the admissions, and rows do not enter it.
+	counts := map[int]int64{}
+	for _, rows := range []int{40, 400} {
+		admitted := engine.AdmitPack([]byte(long))
+		row := MatrixCase{
+			Facts:                 json.RawMessage(`{"request":{"type":"unrelated"}}`),
+			ExpectedDisposition:   json.RawMessage(`{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`),
+			ExpectedHandoffTarget: json.RawMessage(`null`),
+		}
+		// One row with no capability set, then the rest with one. Both admit —
+		// the pack requires no extension, so declaring a spare one changes the
+		// admission key and nothing else — which is exactly the adversarial
+		// shape: two admissions, equal targets, separately allocated.
+		for index := range rows {
+			row.ID = fmt.Sprint(index)
+			if index > 0 {
+				row.SupportedExtensions = []string{"https://example.com/spare-extension"}
+			}
+			outcome := engine.RunCaseAdmitted(admitted, row, "test")
+			// Each row mismatches: it expects no target and the pack configures
+			// one. The verdict is not what this test is about; the work behind it
+			// is.
+			if outcome.Status != "mismatch" || outcome.ExpectedHandoffTarget != result.NoHandoffTarget {
+				t.Fatalf("%d rows, row %d: %+v", rows, index, outcome)
+			}
+			if len(outcome.ActualHandoffTarget) > result.HandoffTargetBudget {
+				t.Fatalf("row %d retains more than the budget: %d bytes", index, len(outcome.ActualHandoffTarget))
+			}
+		}
+		counts[rows] = admitted.handoffTargetRenders()
+	}
+	if counts[40] != counts[400] {
+		t.Fatalf("renderings must not grow with rows: %d at 40 rows, %d at 400", counts[40], counts[400])
+	}
+	// And the constant is the number of capability sets the run used, so the
+	// bound is a real one rather than a cache that stopped rendering the truth.
+	if counts[400] != 2 {
+		t.Fatalf("one rendering per admission, and this run made two: %d", counts[400])
+	}
+}

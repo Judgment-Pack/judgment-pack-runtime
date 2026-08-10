@@ -15,7 +15,10 @@ import (
 // code: the RFC 8785 canonical disposition compared byte for byte against the
 // row's, or the §8.4 error class and phase the row expects. A project therefore
 // gets the byte agreement §8.3 defines rather than a looser comparison invented
-// for projects, and a row a builder writes is the same artifact a corpus row is.
+// for projects. What the two carriers share is the fields that comparator reads,
+// which is what makes it one comparison — not the shape of a document: corpus
+// admission requires members a project row need not declare and refuses the one
+// a project row may add (ADR-0012's 2026-08-09 correction, ADR-0025).
 //
 // What this reports is what a project's own rows did. It is not the
 // specification's corpus and says nothing about the evaluator's conformance,

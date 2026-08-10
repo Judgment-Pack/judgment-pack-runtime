@@ -15,8 +15,9 @@ All notable changes to tagged releases are documented here.
   already reached a tool argument. The member has three states and they are three different
   statements: an object with `kind` and `name` (both required, neither empty) asserts that exact
   target by string equality; the literal `null` asserts the evaluation reports **no** target; and
-  **absent asserts nothing**, so a matrix written before this release is judged by byte-identical
-  behavior and its row results carry no new member. It is an **assertion and not a coverage line** —
+  **absent asserts nothing**, so a matrix written before this release — where it was otherwise valid,
+  in the sense the two carrier fixes below narrow — is judged by byte-identical behavior and its row
+  results carry no new member. It is an **assertion and not a coverage line** —
   a mismatch moves the row, the pack entry, the run, and the exit code exactly as a disposition
   mismatch does, which is why ADR-0014 and ADR-0023's never-gate stance for *derived* probes is
   untouched and unamended. It rides beside `expectedDisposition` only, refused at load on the graph
@@ -64,10 +65,13 @@ All notable changes to tagged releases are documented here.
   the comparison is decided on the decoded targets — presence, then each member in full — because
   sixty-four bits of digest deciding whether a suite passes would be a probabilistic answer to a
   question with an exact one. And because a budget on *retained* bytes says nothing about the work
-  spent producing them, the pack's own target is **rendered once per run** rather than once per
-  asserting row: §8.1 gives a pack one escalation target, so without the memo ten thousand rows
-  against a megabyte-long name is ten gigabytes of repeated canonicalizing and hashing that no
-  retained-bytes budget can see. The actual side of the pair carries a third value, **`unavailable`**
+  spent producing them, the pack's own target is **rendered once per admission** — where the pack is
+  decoded — and every row reads a field: §8.1 gives a pack one escalation target, so rendering per
+  row makes ten thousand rows against a megabyte-long name ten gigabytes of repeated canonicalizing
+  and hashing that no retained-bytes budget can see. Keying that cache on the target's *content*
+  rather than on the admission is not enough, and this is recorded because it was the first attempt:
+  `supportedExtensions` selects a distinct admission, each admission decodes the pack separately, so
+  a content check compares an equal megabyte on every row once a run mixes two capability sets. The actual side of the pair carries a third value, **`unavailable`**
   (`unavailable (evaluation refused)` on the human surface), for a row whose evaluation was refused:
   reporting `null` there would say an evaluation reported no target when no evaluation happened. The
   **graph** surface is deliberately unchanged and its matrices stay blind to a target-only pack edit;

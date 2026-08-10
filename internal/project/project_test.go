@@ -2181,15 +2181,16 @@ func TestASuiteThatAssertsNoTargetSerializesNoTargetMembers(t *testing.T) {
 	}
 }
 
-// The one comparison the target assertion runs is string equality over the
-// canonical rendering, so Unicode behaves the way §8.3's byte comparison does
-// and nothing normalizes anything (ADR-0025).
+// The target comparison is exact string equality over the decoded kind and
+// name, so Unicode behaves the way §8.3's byte comparison does and nothing
+// normalizes anything (ADR-0025). The renderings this test also reads are the
+// report's, not the verdict's.
 func TestTheHandoffTargetComparisonIsExactOverUnicode(t *testing.T) {
 	pack := string(packFixture(t))
 	// The fixture's target name, respelled with an escape for one of its own
 	// characters. It is the same string, so it must compare equal to the row's
-	// plain literal: what §8.3's byte comparison is over is the decoded value,
-	// and the canonical writer escapes both sides identically.
+	// plain literal: an escape and the character it names decode to one value,
+	// and the comparison reads decoded values.
 	escaped := strings.Replace(pack, `"name": "Intake reviewer"`, `"name": "Intake \u0072eviewer"`, 1)
 	if escaped == pack {
 		t.Fatal("the fixture must declare the target this test respells")

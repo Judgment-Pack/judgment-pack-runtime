@@ -520,14 +520,16 @@ func TestHandoffTargetCanonicalRefusesATargetNoPackCanDeclare(t *testing.T) {
 	}
 }
 
-// A reported target is bounded, and bounding it does not merge two targets into
-// one (ADR-0025).
+// A reported target is bounded, and the bound is a display bound (ADR-0025).
 //
 // A target's name is an authored string §2.1 bounds only at a megabyte, and a
 // matrix may declare MaxMatrixCases rows; a row result retaining an uncapped
 // rendering is gigabytes built out of inputs every carrier limit admits. The
-// budget is what makes the comparison safe to run on the rendering: the digest
-// tail keeps identity where the text stops.
+// digest tail makes a capped rendering readable as an identifier — two long
+// targets do not print as one line — and that is all it is for. It is **not**
+// what any comparison rests on: the verdict is taken from the decoded values, so
+// nothing here needs the tail to be collision-free, and this test asserts a
+// property of the rendering rather than a guarantee about equality.
 func TestHandoffTargetRenderingIsCappedAndStillDistinct(t *testing.T) {
 	long := &HandoffTarget{Kind: "queue", Name: strings.Repeat("a", 4096)}
 	rendered, err := long.Rendered()

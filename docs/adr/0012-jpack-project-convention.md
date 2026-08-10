@@ -266,3 +266,26 @@ obeys). Specification context: RFC 0002 (graph composition, out of scope here), 
 convention is meant to supply evidence for rather than to answer. The cross-vendor adversarial review
 this decision requires attaches to the pull request, not to this file (`docs/adr/README.md`, "Review
 of material decisions").
+
+## Correction — what "a corpus row" costs (2026-08-09)
+
+One sentence in the consequences above is wrong and is corrected here rather than edited there, on
+the pattern [ADR-0008](0008-mcp-prompts-authoring-method.md) set for a record that has been accepted:
+the text stays as it was decided, and the correction is dated beside it.
+
+The sentence reads "a builder's row is a corpus row once it names its pack fixture — the single
+member a corpus row adds". `pack` is not the single member. The bundled evaluation corpus's own
+manifest schema (`internal/artifacts/jps/0.2.0-draft/evaluation/manifest.schema.json`) *requires*
+`id`, `origin`, `pack`, `facts`, `supportedExtensions`, `focus`, and `specSection`, and closes the
+case object against everything else. A project matrix requires `id`, `facts`, and one expectation;
+`origin`, `focus`, and `specSection` are optional there and a minimal row declares none of them. So
+lifting a project row into a corpus means supplying the corpus-owned members, and — since
+[ADR-0025](0025-assert-the-handoff-target-in-the-matrix.md) — removing any `expectedHandoffTarget`,
+which that closed schema refuses outright.
+
+**What the sentence was reaching for is true and is the part worth keeping**: the two carriers share
+the fields the comparator reads, so a project's rows are judged by the same code and the same RFC
+8785 byte comparison the corpus's are, rather than by a looser comparison written for projects. That
+is the determination. "One member apart" was a claim about document shape that this record did not
+need and did not check, and it has been repeated downstream from here; the surfaces that repeated it
+are corrected in the change that carries this note.

@@ -78,7 +78,7 @@
           "$ref": "#/$defs/relativeFilePath"
         },
         "matrix": {
-          "description": "The pack's instance matrix, relative to this file's directory. Rows use the same case-carrier shape as the bundled evaluation corpus.",
+          "description": "The pack's instance matrix, relative to this file's directory. Rows carry the fields the evaluation comparator reads, shared with the bundled evaluation corpus, plus this convention's own expectedHandoffTarget under matrixVersion 2; the corpus separately requires members a project row need not declare, so the two are judged alike rather than interchangeable.",
           "$ref": "#/$defs/relativeFilePath"
         },
         "description": {
