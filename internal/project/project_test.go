@@ -477,10 +477,23 @@ func TestMatrixWellFormednessIsCheckedBeforeAnyRowRuns(t *testing.T) {
 		"a row with no expectation":   `{"cases":[{"id":"a","facts":{}}]}`,
 		"a row with two expectations": `{"cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input","expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}}}]}`,
 		"a misspelled row member":     `{"cases":[{"id":"a","facts":{},"expectedDispositon":{}}]}`,
-		"an unknown matrixVersion":    `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
+		"an unknown matrixVersion":    `{"matrixVersion":"9","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
 		"a phase without a class":     `{"cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedErrorPhase":"preflight"}]}`,
 		"a non-object root":           `[]`,
 		"unparsable JSON":             `{`,
+		// ADR-0025: the optional second assertion is held to its shape before any
+		// row runs, and it rides only beside a disposition.
+		"a handoff target beside an error class": `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input","expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}}]}`,
+		// The literal null is the same refusal for the same reason: a refused
+		// evaluation reports no target at all, which is not the statement "this
+		// evaluation reported none". Both spellings of the assertion are refused,
+		// or the companionship rule would have a hole in exactly the state the
+		// unavailable rendering exists to keep distinct.
+		"a null handoff target beside an error class": `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input","expectedHandoffTarget":null}]}`,
+		"a handoff target that is not an object":      `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":"Intake reviewer"}]}`,
+		"a handoff target missing a member":           `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role"}}]}`,
+		"a handoff target with an empty member":       `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role","name":""}}]}`,
+		"a handoff target with an unknown member":     `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"none"}},"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer","queue":"triage"}}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
@@ -657,6 +670,163 @@ func TestMatrixRowsAreComparedByCanonicalBytesAndErrorClass(t *testing.T) {
 	mismatched := run.Packs[0].Rows[0]
 	if mismatched.Status != "mismatch" || mismatched.Expected == mismatched.Actual || mismatched.Expected == "" || mismatched.Actual == "" {
 		t.Fatalf("the row must report both canonical byte sequences: %+v", mismatched)
+	}
+	// A row that asserts nothing about the handoff target reports nothing about
+	// it: the members are absent, so the payload is what it was before the
+	// assertion existed (ADR-0025).
+	for _, row := range run.Packs[0].Rows {
+		if row.ExpectedHandoffTarget != "" || row.ActualHandoffTarget != "" {
+			t.Fatalf("a row that asks nothing about the target must report nothing about it: %+v", row)
+		}
+	}
+}
+
+// The escalation target lives outside the disposition (§8.3), so no comparison
+// of dispositions can see a change to it. This is Study 013's holdout cell h02,
+// registered adversarially by that study's cross-vendor reviewer: a pack
+// mutation reaching only escalation.target.name leaves kind, outcomeId,
+// reasons, handoff.state, and handoff.triggeredBy identical, and a matrix that
+// compares only dispositions stays green over the corrupted pack.
+//
+// The first half of this test demonstrates the gap rather than asserting about
+// it; the second half is the row member that closes it (ADR-0025).
+func TestATargetOnlyMutationIsInvisibleToEveryDisposition(t *testing.T) {
+	pack := string(packFixture(t))
+	corrupted := strings.Replace(pack, `"Intake reviewer"`, `"Disclosure office"`, 1)
+	if corrupted == pack {
+		t.Fatal("the fixture must declare the escalation target this test corrupts")
+	}
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	config := `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`
+
+	// Every row of this matrix passes against either pack: the corruption is
+	// outside every byte the rows compare.
+	dispositionOnly := `{"matrixVersion":"1","cases":[
+	  {"id":"out-of-scope","facts":{"request":{"type":"unrelated"}},"expectedDisposition":` + notApplicable + `}
+	]}`
+	for name, document := range map[string]string{"the correct pack": pack, "the corrupted pack": corrupted} {
+		configPath := writeProject(t, config, map[string]string{"packs/a.json": document, "packs/a.matrix.json": dispositionOnly})
+		run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		if run.Status != "passed" {
+			t.Fatalf("%s: a disposition-only matrix cannot see a target-only mutation: %+v", name, run.Packs[0].Rows)
+		}
+	}
+
+	// The same row, asserting the target the correct pack declares, separates
+	// the two packs.
+	asserting := `{"matrixVersion":"2","cases":[
+	  {"id":"out-of-scope","facts":{"request":{"type":"unrelated"}},"expectedDisposition":` + notApplicable + `,
+	   "expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}}
+	]}`
+	configPath := writeProject(t, config, map[string]string{"packs/a.json": pack, "packs/a.matrix.json": asserting})
+	run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Status != "passed" {
+		t.Fatalf("the correct pack still passes: %+v", run.Packs[0].Rows)
+	}
+	configPath = writeProject(t, config, map[string]string{"packs/a.json": corrupted, "packs/a.matrix.json": asserting})
+	run, failure = mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Status != "mismatch" || run.Summary.Mismatched != 1 {
+		t.Fatalf("the corrupted target must fail the row that asserts it: %+v", run.Packs[0].Rows)
+	}
+	row := run.Packs[0].Rows[0]
+	if row.Expected != row.Actual {
+		t.Fatalf("the disposition is unchanged by the mutation, which is the whole point: %+v", row)
+	}
+	if row.ExpectedHandoffTarget != `{"kind":"human-role","name":"Intake reviewer"}` ||
+		row.ActualHandoffTarget != `{"kind":"human-role","name":"Disclosure office"}` {
+		t.Fatalf("the row must report both targets: %+v", row)
+	}
+	if !strings.Contains(row.Detail, "both name a target") {
+		t.Fatalf("the detail must say which side names a destination: %q", row.Detail)
+	}
+}
+
+// The assertion has three states — absent, an object, and null — and the row's
+// status follows all three (ADR-0025). Absent is covered where the canonical
+// comparison is; these are the other two, against a pack whose escalation
+// target is reported for some inputs and not for others.
+func TestExpectedHandoffTargetAssertsThePresenceOfATargetAsWellAsItsIdentity(t *testing.T) {
+	pack := string(packFixture(t))
+	// Out of scope: not-applicable is a declared trigger, so the target is
+	// reported. Hard fail: an outcome requests no handoff, so none is.
+	escalates := `{"request":{"type":"unrelated"}}`
+	outcome := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
+	evidence := `{"intake-form":"present","sponsor-endorsement":"present"}`
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	declineRedirect := `{"kind":"outcome","outcomeId":"decline-redirect","reasons":[],"handoff":{"state":"none"}}`
+	target := `{"kind":"human-role","name":"Intake reviewer"}`
+
+	for name, expectation := range map[string]struct {
+		row    string
+		passes bool
+		detail string
+	}{
+		"the target as declared": {
+			row:    `{"id":"r","facts":` + escalates + `,"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":` + target + `}`,
+			passes: true,
+		},
+		"a mistyped name": {
+			row:    `{"id":"r","facts":` + escalates + `,"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewers"}}`,
+			detail: "both name a target",
+		},
+		"a mistyped kind": {
+			row:    `{"id":"r","facts":` + escalates + `,"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":{"kind":"queue","name":"Intake reviewer"}}`,
+			detail: "both name a target",
+		},
+		"null where no target is reported": {
+			row:    `{"id":"r","facts":` + outcome + `,"evidenceAvailability":` + evidence + `,"expectedDisposition":` + declineRedirect + `,"expectedHandoffTarget":null}`,
+			passes: true,
+		},
+		"null where a target is reported": {
+			row:    `{"id":"r","facts":` + escalates + `,"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":null}`,
+			detail: "the row expects no target and the evaluation reports one",
+		},
+		"a target where none is reported": {
+			row:    `{"id":"r","facts":` + outcome + `,"evidenceAvailability":` + evidence + `,"expectedDisposition":` + declineRedirect + `,"expectedHandoffTarget":` + target + `}`,
+			detail: "the row expects a target and the evaluation reports none",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+				map[string]string{"packs/a.json": pack, "packs/a.matrix.json": `{"matrixVersion":"2","cases":[` + expectation.row + `]}`})
+			run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+			if failure != nil {
+				t.Fatal(failure.Message)
+			}
+			row := run.Packs[0].Rows[0]
+			if expectation.passes {
+				if run.Status != "passed" || row.Status != "passed" {
+					t.Fatalf("this row must pass: %+v", row)
+				}
+				return
+			}
+			// A mismatching target moves the row, the pack entry, and the run,
+			// exactly as a mismatching disposition does: this is an expectation and
+			// not a coverage line.
+			if run.Status != "mismatch" || run.Packs[0].Status != "mismatch" || row.Status != "mismatch" {
+				t.Fatalf("this row must gate: %+v", row)
+			}
+			// The disposition matched, so the row failed on the member the
+			// disposition cannot carry.
+			if row.Expected != row.Actual || row.Expected == "" {
+				t.Fatalf("the disposition is not what differs here: %+v", row)
+			}
+			if !strings.Contains(row.Detail, expectation.detail) {
+				t.Fatalf("detail = %q, want it to contain %q", row.Detail, expectation.detail)
+			}
+			if row.ExpectedHandoffTarget == "" || row.ActualHandoffTarget == "" || row.ExpectedHandoffTarget == row.ActualHandoffTarget {
+				t.Fatalf("both renderings are reported and they differ: %+v", row)
+			}
+		})
 	}
 }
 
@@ -1648,5 +1818,588 @@ func TestConfigVersionThreeDeclaresTheAuditDirectory(t *testing.T) {
 				t.Fatalf("this configuration must be refused by the schema: %+v", failure)
 			}
 		})
+	}
+}
+
+// A matrix is a closed input, so the member that ADR-0025 adds moves
+// matrixVersion to "2" — VERSIONING.md's rule for closed inputs, not its
+// additive rule for output.
+//
+// The grid below is the whole contract: a matrix declaring nothing, or "1", is
+// read as the shape it was written for and refuses the new member by name; a
+// matrix declaring "2" admits all three assertion states. The version is
+// settled before anything version-specific decodes, so a document declaring a
+// version this runtime has never heard of is told that, rather than told that
+// one of its members is unknown — true, uninformative, and pointing at the
+// wrong repair.
+func TestTheHandoffTargetAssertionRequiresMatrixVersionTwo(t *testing.T) {
+	pack := string(packFixture(t))
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	target := `{"kind":"human-role","name":"Intake reviewer"}`
+
+	for _, version := range []struct {
+		declared string
+		prefix   string
+		admits   bool
+	}{
+		{declared: "omitted", prefix: `{`, admits: false},
+		{declared: "1", prefix: `{"matrixVersion":"1",`, admits: false},
+		{declared: "2", prefix: `{"matrixVersion":"2",`, admits: true},
+	} {
+		for _, assertion := range []struct {
+			name   string
+			member string
+			states bool
+		}{
+			{name: "no assertion", member: "", states: false},
+			{name: "null", member: `,"expectedHandoffTarget":null`, states: true},
+			{name: "a target", member: `,"expectedHandoffTarget":` + target, states: true},
+		} {
+			t.Run("matrixVersion "+version.declared+" with "+assertion.name, func(t *testing.T) {
+				matrix := version.prefix + `"cases":[{"id":"out-of-scope","facts":{"request":{"type":"unrelated"}},"expectedDisposition":` +
+					notApplicable + assertion.member + `}]}`
+				configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+					map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+				loaded := mustLoad(t, configPath)
+				_, err := loaded.LoadMatrix(loaded.Config.Packs["a"])
+				if !assertion.states || version.admits {
+					if err != nil {
+						t.Fatalf("this matrix is well formed: %v", err)
+					}
+					return
+				}
+				if err == nil {
+					t.Fatal("a v1 matrix must not admit a v2 member")
+				}
+				// The refusal names the version that would take it, because
+				// "expectedHandoffTarget is not a member" is a false sentence to
+				// print at someone whose only mistake was not moving matrixVersion.
+				for _, want := range []string{"expectedHandoffTarget", "matrixVersion 2", `"2"`} {
+					if !strings.Contains(err.Error(), want) {
+						t.Fatalf("the refusal must contain %q: %v", want, err)
+					}
+				}
+			})
+		}
+	}
+
+	// The version is settled first. A matrix declaring a version this runtime
+	// does not know is told exactly that, even when it also carries a member
+	// that version would have introduced — which is what "preflight before
+	// version-specific decoding" buys.
+	for name, matrix := range map[string]string{
+		"a future version alone":                            `{"matrixVersion":"9","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
+		"a future version with a member it would introduce": `{"matrixVersion":"9","cases":[{"id":"a","facts":{},"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":` + target + `,"somethingFromNine":1}]}`,
+		"a future version with a null assertion":            `{"matrixVersion":"9","cases":[{"id":"a","facts":{},"expectedDisposition":` + notApplicable + `,"expectedHandoffTarget":null}]}`,
+		"a version of the wrong type":                       `{"matrixVersion":2,"cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+				map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+			loaded := mustLoad(t, configPath)
+			_, err := loaded.LoadMatrix(loaded.Config.Packs["a"])
+			if err == nil || !strings.Contains(err.Error(), "matrixVersion") {
+				t.Fatalf("the version is what this refusal is about: %v", err)
+			}
+			if strings.Contains(err.Error(), "member this runtime does not know") {
+				t.Fatalf("the version must be settled before the members are: %v", err)
+			}
+			if !strings.Contains(err.Error(), "1, 2") {
+				t.Fatalf("the refusal must say what it would take: %v", err)
+			}
+		})
+	}
+}
+
+// A member spelled in another case is refused rather than read as the member it
+// case-folds onto (ADR-0025).
+//
+// encoding/json matches member names case-insensitively even under
+// DisallowUnknownFields, so `{"Facts":…}` and `{"ExpectedHandoffTarget":…}`
+// decode into the exact members and a document carrying both spellings has one
+// silently overwrite the other. A closed shape that admits an alias is not
+// closed, so the names are checked against the carrier-decoded document, where
+// every authored name is still present verbatim.
+func TestAMemberSpelledInAnotherCaseIsRefusedRatherThanRead(t *testing.T) {
+	pack := string(packFixture(t))
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	for name, matrix := range map[string]string{
+		"a capitalized row member": `{"matrixVersion":"2","cases":[{"id":"a","Facts":{},"expectedErrorClass":"malformed-input"}]}`,
+		"a capitalized assertion":  `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":` + notApplicable + `,"ExpectedHandoffTarget":{"kind":"queue","name":"Ops"}}]}`,
+		"an alias beside the member": `{"matrixVersion":"2","cases":[{"id":"a","facts":{},"expectedDisposition":` + notApplicable +
+			`,"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"},"ExpectedHandoffTarget":{"kind":"queue","name":"Ops"}}]}`,
+		"a capitalized root member": `{"MatrixVersion":"2","cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
+		"a capitalized cases array": `{"matrixVersion":"2","Cases":[{"id":"a","facts":{},"expectedErrorClass":"malformed-input"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+				map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+			loaded := mustLoad(t, configPath)
+			_, err := loaded.LoadMatrix(loaded.Config.Packs["a"])
+			if err == nil {
+				t.Fatal("an alias must be refused, not read as the member it folds onto")
+			}
+			if !strings.Contains(err.Error(), "only in case") {
+				t.Fatalf("the refusal must say what it saw: %v", err)
+			}
+		})
+	}
+}
+
+// The renderings one run retains are bounded in aggregate, not only per row
+// (ADR-0025).
+//
+// Per-row the budget is result.HandoffTargetBudget; what this bounds is the
+// accumulation, which is the product a pack's authored target and a matrix's
+// row count make. Crossing it refuses the run rather than truncating it: a
+// report cut short looks exactly like a complete one, and a resource limit is a
+// statement about neither the pack nor a row, so it is a failure and not a
+// mismatch.
+func TestTheHandoffTargetReportIsBoundedInAggregate(t *testing.T) {
+	pack := string(packFixture(t))
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	rows := make([]string, 0, 64)
+	for index := range 64 {
+		rows = append(rows, fmt.Sprintf(`{"id":"row-%d","facts":{"request":{"type":"unrelated"}},"expectedDisposition":%s,"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}}`, index, notApplicable))
+	}
+	matrix := `{"matrixVersion":"2","cases":[` + strings.Join(rows, ",") + `]}`
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+
+	// Under the shipped budget the same run is a plain pass, so the refusal
+	// below is the budget firing and not the rows being wrong.
+	run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Status != "passed" || run.Summary.Total != 64 {
+		t.Fatalf("run = %+v", run.Summary)
+	}
+
+	loaded := mustLoad(t, configPath)
+	loaded.handoffTargetReportBudget = 500
+	run, failure = loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure == nil {
+		t.Fatalf("the budget must refuse this run: %+v", run.Summary)
+	}
+	if failure.Code != "JPS-RESOURCE-MATRIX-HANDOFF-TARGETS" || failure.ExitCode != result.ExitIO {
+		t.Fatalf("failure = %+v", failure)
+	}
+	for _, want := range []string{"500-byte budget", "row-", "Nothing is truncated"} {
+		if !strings.Contains(failure.Message, want) {
+			t.Fatalf("the refusal must contain %q: %q", want, failure.Message)
+		}
+	}
+	// Nothing partial is returned beside the refusal.
+	if len(run.Packs) != 0 || run.Summary.Total != 0 {
+		t.Fatalf("a refused run writes no report: %+v", run)
+	}
+	// A run whose rows assert nothing is charged nothing, however many rows it
+	// has: the budget is about the members this record added.
+	silent := strings.ReplaceAll(matrix, `,"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}`, "")
+	configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": silent})
+	quiet := mustLoad(t, configPath)
+	quiet.handoffTargetReportBudget = 1
+	if _, failure := quiet.Test(evaluation.NewEngine(newValidator(t)), "", "packs test"); failure != nil {
+		t.Fatalf("a suite that asserts nothing spends nothing: %s", failure.Message)
+	}
+}
+
+// The remaining shapes an asserting row can take, each pinned once (ADR-0025).
+//
+// Every case here holds the disposition constant or checks it separately, so
+// what each one measures is the second comparison and nothing else.
+func TestTheHandoffTargetComparisonAcrossTheShapesARowCanTake(t *testing.T) {
+	pack := string(packFixture(t))
+	escalates := `{"request":{"type":"unrelated"}}`
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	target := `{"kind":"human-role","name":"Intake reviewer"}`
+	config := `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`
+	run := func(t *testing.T, document, matrix string) result.PackTest {
+		t.Helper()
+		configPath := writeProject(t, config, map[string]string{"packs/a.json": document, "packs/a.matrix.json": matrix})
+		report, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		return report
+	}
+
+	// A passing row reports the exact renderings, not merely equal ones.
+	t.Run("a passing row reports both renderings verbatim", func(t *testing.T) {
+		report := run(t, pack, `{"matrixVersion":"2","cases":[{"id":"r","facts":`+escalates+`,"expectedDisposition":`+notApplicable+`,"expectedHandoffTarget":`+target+`}]}`)
+		row := report.Packs[0].Rows[0]
+		if row.Status != "passed" || row.ExpectedHandoffTarget != target || row.ActualHandoffTarget != target {
+			t.Fatalf("row = %+v", row)
+		}
+	})
+	t.Run("a passing null row reports the literal on both sides", func(t *testing.T) {
+		outcome := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
+		declineRedirect := `{"kind":"outcome","outcomeId":"decline-redirect","reasons":[],"handoff":{"state":"none"}}`
+		report := run(t, pack, `{"matrixVersion":"2","cases":[{"id":"r","facts":`+outcome+`,"evidenceAvailability":{"intake-form":"present","sponsor-endorsement":"present"},"expectedDisposition":`+declineRedirect+`,"expectedHandoffTarget":null}]}`)
+		row := report.Packs[0].Rows[0]
+		if row.Status != "passed" || row.ExpectedHandoffTarget != "null" || row.ActualHandoffTarget != "null" {
+			t.Fatalf("row = %+v", row)
+		}
+	})
+
+	// An unresolved/requested disposition asserting the object target it actually
+	// reaches: the escalating path, passing, with both sides naming a
+	// destination. The not-applicable case above reaches the target through §8's
+	// step 1; this reaches it through a rule that escalated on an unknown, which
+	// is the path a real suite exercises most.
+	t.Run("an unresolved requested disposition with an object target", func(t *testing.T) {
+		unknown := `{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"requested","triggeredBy":["unknown"]}}`
+		facts := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"pass"}}`
+		matrix := `{"matrixVersion":"2","cases":[{"id":"r","facts":` + facts +
+			`,"evidenceAvailability":{"intake-form":"present","sponsor-endorsement":"present"},"expectedDisposition":` + unknown +
+			`,"expectedHandoffTarget":` + target + `}]}`
+		report := run(t, pack, matrix)
+		row := report.Packs[0].Rows[0]
+		if report.Status != "passed" || row.Status != "passed" {
+			t.Fatalf("row = %+v", row)
+		}
+		if row.ExpectedHandoffTarget != target || row.ActualHandoffTarget != target {
+			t.Fatalf("both sides name the destination: %+v", row)
+		}
+		// The same row against a pack whose target name differs fails, so the
+		// pass above is the comparison agreeing rather than the comparison not
+		// running.
+		corrupted := strings.Replace(pack, `"Intake reviewer"`, `"Disclosure office"`, 1)
+		row = run(t, corrupted, matrix).Packs[0].Rows[0]
+		if row.Status != "mismatch" || row.Expected != row.Actual {
+			t.Fatalf("the disposition is unchanged and the target is not: %+v", row)
+		}
+	})
+
+	// A requested handoff with no configured destination is a real §8.1 state:
+	// a direct exception escalation on a pack that declares no escalation
+	// object. Its assertion is null, and null is what it reports.
+	t.Run("a requested handoff with no configured destination", func(t *testing.T) {
+		escalate, err := os.ReadFile(filepath.Join("..", "artifacts", "jps", "0.2.0-draft", "cases", "valid", "exception-escalate.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		requested := `{"kind":"unresolved","reasons":["exception-escalation"],"handoff":{"state":"requested","triggeredBy":["exception-escalation"]}}`
+		matrix := `{"matrixVersion":"2","cases":[{"id":"r","facts":{},"expectedDisposition":` + requested + `,"expectedHandoffTarget":null}]}`
+		report := run(t, string(escalate), matrix)
+		row := report.Packs[0].Rows[0]
+		if row.Status != "passed" || row.ActualHandoffTarget != "null" {
+			t.Fatalf("a requested handoff can have no destination: %+v", row)
+		}
+		// And a row asserting a destination for it fails, naming the direction.
+		report = run(t, string(escalate), strings.Replace(matrix, `"expectedHandoffTarget":null`, `"expectedHandoffTarget":`+target, 1))
+		row = report.Packs[0].Rows[0]
+		if row.Status != "mismatch" || !strings.Contains(row.Detail, "the row expects a target and the evaluation reports none") {
+			t.Fatalf("row = %+v", row)
+		}
+	})
+
+	// A kind outside §8.1's enumeration is a mismatch and not a refusal: the
+	// vocabulary belongs to the pack schema, which has already held the pack to
+	// it, and this runtime does not keep a second copy of the list.
+	t.Run("an unknown kind mismatches rather than being refused", func(t *testing.T) {
+		report := run(t, pack, `{"matrixVersion":"2","cases":[{"id":"r","facts":`+escalates+`,"expectedDisposition":`+notApplicable+`,"expectedHandoffTarget":{"kind":"wizard","name":"Intake reviewer"}}]}`)
+		row := report.Packs[0].Rows[0]
+		if row.Status != "mismatch" || !strings.Contains(row.Detail, "both name a target") {
+			t.Fatalf("row = %+v", row)
+		}
+		if row.ExpectedHandoffTarget != `{"kind":"wizard","name":"Intake reviewer"}` {
+			t.Fatalf("the row's own words are reported back: %+v", row)
+		}
+	})
+
+	// Both comparisons can fail at once. The detail names the disposition,
+	// because that is the first difference, and the payload still carries every
+	// side of both — which is what the two members are for.
+	t.Run("a row that fails both comparisons pins both", func(t *testing.T) {
+		wrong := `{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"requested","triggeredBy":["unknown"]}}`
+		report := run(t, pack, `{"matrixVersion":"2","cases":[{"id":"r","facts":`+escalates+`,"expectedDisposition":`+wrong+`,"expectedHandoffTarget":{"kind":"queue","name":"Ops"}}]}`)
+		row := report.Packs[0].Rows[0]
+		if row.Status != "mismatch" || row.Detail != "The canonical disposition bytes differ." {
+			t.Fatalf("the first difference is the disposition: %+v", row)
+		}
+		if row.Expected == row.Actual || row.ExpectedHandoffTarget == row.ActualHandoffTarget {
+			t.Fatalf("both sides of both comparisons are reported: %+v", row)
+		}
+		if row.ActualHandoffTarget != target {
+			t.Fatalf("the produced target is reported even where the disposition failed: %+v", row)
+		}
+	})
+
+	// An asserting row whose evaluation is refused reports "unavailable" and
+	// never null: no evaluation happened, which is not the same fact as an
+	// evaluation reporting no target. The pair still appears together.
+	t.Run("an unexpected refusal reports the target as unavailable", func(t *testing.T) {
+		report := run(t, pack, `{"matrixVersion":"2","cases":[{"id":"r","facts":{"request":{"type":"data-access"}},"evidenceAvailability":{"not-a-requirement":"present"},"expectedDisposition":`+notApplicable+`,"expectedHandoffTarget":`+target+`}]}`)
+		row := report.Packs[0].Rows[0]
+		if row.Status != "mismatch" {
+			t.Fatalf("row = %+v", row)
+		}
+		if row.ExpectedHandoffTarget != target || row.ActualHandoffTarget != result.HandoffTargetUnavailable {
+			t.Fatalf("the pair appears together, and the actual side is unavailable: %+v", row)
+		}
+		if row.ActualHandoffTarget == "null" {
+			t.Fatal("a refused evaluation reported no target; it did not report none")
+		}
+	})
+}
+
+// A suite that asserts nothing serializes nothing new, in the payload and on
+// the human surface (ADR-0025).
+//
+// Checking that the Go fields are empty would still pass if the members started
+// being written, so this checks the bytes a consumer actually reads.
+func TestASuiteThatAssertsNoTargetSerializesNoTargetMembers(t *testing.T) {
+	pack := string(packFixture(t))
+	facts := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
+	declineRedirect := `{"kind":"outcome","outcomeId":"decline-redirect","reasons":[],"handoff":{"state":"none"}}`
+	matrix := `{"matrixVersion":"1","cases":[
+	  {"id":"hard-fail","facts":` + facts + `,"evidenceAvailability":{"intake-form":"present","sponsor-endorsement":"present"},"expectedDisposition":` + declineRedirect + `},
+	  {"id":"escalates","facts":{"request":{"type":"unrelated"}},"expectedDisposition":{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}}
+	]}`
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+	run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Status != "passed" || run.Summary.Total != 2 {
+		t.Fatalf("run = %+v", run.Summary)
+	}
+	// The second row's evaluation does report a target; not asking about it is
+	// what keeps it out of the payload.
+	encoded, err := json.Marshal(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range []string{"expectedHandoffTarget", "actualHandoffTarget", "Intake reviewer"} {
+		if strings.Contains(string(encoded), member) {
+			t.Fatalf("a suite that asserts nothing must not report %q: %s", member, encoded)
+		}
+	}
+}
+
+// The target comparison is exact string equality over the decoded kind and
+// name, so Unicode behaves the way §8.3's byte comparison does and nothing
+// normalizes anything (ADR-0025). The renderings this test also reads are the
+// report's, not the verdict's.
+func TestTheHandoffTargetComparisonIsExactOverUnicode(t *testing.T) {
+	pack := string(packFixture(t))
+	// The fixture's target name, respelled with an escape for one of its own
+	// characters. It is the same string, so it must compare equal to the row's
+	// plain literal: an escape and the character it names decode to one value,
+	// and the comparison reads decoded values.
+	escaped := strings.Replace(pack, `"name": "Intake reviewer"`, `"name": "Intake \u0072eviewer"`, 1)
+	if escaped == pack {
+		t.Fatal("the fixture must declare the target this test respells")
+	}
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	matrix := `{"matrixVersion":"2","cases":[{"id":"r","facts":{"request":{"type":"unrelated"}},"expectedDisposition":` + notApplicable +
+		`,"expectedHandoffTarget":{"kind":"human-role","name":"Intake reviewer"}}]}`
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": escaped, "packs/a.matrix.json": matrix})
+	run, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Status != "passed" {
+		t.Fatalf("an escape and its literal are one string: %+v", run.Packs[0].Rows)
+	}
+
+	// A pack whose target name carries a lone surrogate escape is refused at the
+	// carrier, before any comparison can be reached: RFC 8785 §3.2.2.2 makes it
+	// invalid rather than replaceable, and repairing it to U+FFFD would let two
+	// different documents compare equal.
+	lone := strings.Replace(pack, `"name": "Intake reviewer"`, `"name": "Intake \ud800reviewer"`, 1)
+	configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": lone, "packs/a.matrix.json": matrix})
+	run, failure = mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Packs[0].Status != "mismatch" || !strings.Contains(run.Packs[0].Detail, "unpaired surrogate") {
+		t.Fatalf("a lone surrogate in a pack is refused: %+v", run.Packs[0])
+	}
+	// And the same in a matrix, on the other side of the same comparison.
+	loneRow := strings.Replace(matrix, `"name":"Intake reviewer"`, `"name":"Intake \udc00reviewer"`, 1)
+	configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": loneRow})
+	run, failure = mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Packs[0].Status != "mismatch" || !strings.Contains(run.Packs[0].Detail, "unpaired surrogate") {
+		t.Fatalf("a lone surrogate in a matrix is refused: %+v", run.Packs[0])
+	}
+}
+
+// The shape the amplification blocker was really about, end to end: a target at
+// the carrier's own maximum string length, asserted by many rows (ADR-0025).
+//
+// Every input here is one this runtime accepts — §2.1 admits a megabyte-long
+// authored string, and MaxMatrixCases admits ten thousand rows — which is the
+// point: the defence cannot be "nobody would write that". Three things are
+// pinned. The per-row rendering stays inside its budget, so no row retains a
+// megabyte. The aggregate budget sees the accumulation and refuses when it is
+// crossed. And the work is bounded too, not only the retained bytes: the pack's
+// target is rendered once for the run rather than once per row, which is what
+// keeps a valid matrix from forcing gigabytes of repeated canonicalizing and
+// hashing that no retained-bytes budget could ever notice.
+func TestACarrierMaximumTargetAcrossManyRowsIsBoundedInWorkAndInBytes(t *testing.T) {
+	const rows = 2000
+	name := strings.Repeat("q", 1<<20)
+	pack := strings.Replace(string(packFixture(t)), `"name": "Intake reviewer"`, `"name": "`+name+`"`, 1)
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+	cases := make([]string, 0, rows)
+	for index := range rows {
+		// Every row asserts null against a pack that reports a megabyte-long
+		// target: the assertion is four bytes and the answer is a megabyte, which
+		// is the asymmetry that made the uncapped version a defect.
+		cases = append(cases, fmt.Sprintf(`{"id":"row-%d","facts":{"request":{"type":"unrelated"}},"expectedDisposition":%s,"expectedHandoffTarget":null}`, index, notApplicable))
+	}
+	matrix := `{"matrixVersion":"2","cases":[` + strings.Join(cases, ",") + `]}`
+	config := `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`
+	configPath := writeProject(t, config, map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+
+	engineForRun := evaluation.NewEngine(newValidator(t))
+	run, failure := mustLoad(t, configPath).Test(engineForRun, "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	// Every row mismatches — each expects no target and the pack configures one —
+	// which is the correct verdict and not what this test is about.
+	if run.Summary.Total != rows || run.Summary.Mismatched != rows {
+		t.Fatalf("run = %+v", run.Summary)
+	}
+	retained := 0
+	for _, row := range run.Packs[0].Rows {
+		if len(row.ActualHandoffTarget) > result.HandoffTargetBudget {
+			t.Fatalf("no row may retain more than the budget: %d bytes", len(row.ActualHandoffTarget))
+		}
+		if !strings.Contains(row.ActualHandoffTarget, "…") {
+			t.Fatalf("a target past the budget is reported as capped: %q", row.ActualHandoffTarget)
+		}
+		if row.ExpectedHandoffTarget != "null" {
+			t.Fatalf("the row's own assertion is reported as it was written: %+v", row)
+		}
+		retained += len(row.ExpectedHandoffTarget) + len(row.ActualHandoffTarget)
+	}
+	// Nor does the row path *compare* the pack's target: the binding a row checks
+	// is a thirty-two-byte digest, which is fixed width whatever the pack weighs.
+	// A draft of this record bound by comparing the decoded targets instead, and
+	// two thousand rows of that is two gigabytes of comparison — the same
+	// resource shape, reappearing in the machinery meant to protect the report.
+	// There is no byte counter here for the same reason there is none for the
+	// rendering: what is asserted is that the mechanism is fixed width, which is
+	// structural, and the rendering count below is what proves nothing recomputes.
+	//
+	// The whole run's target renderings are kilobytes, against a pack whose one
+	// target is a megabyte: two thousand uncapped renderings would have been two
+	// gigabytes.
+	if retained > MaxHandoffTargetReportBytes {
+		t.Fatalf("the aggregate must stay inside its budget: %d bytes", retained)
+	}
+	if retained > rows*(result.HandoffTargetBudget+len("null")) {
+		t.Fatalf("retained = %d, which is past what the per-row budget allows", retained)
+	}
+	// One pack, one run, one rendering — for two thousand rows against a target
+	// at the carrier's maximum.
+	if renders := engineForRun.HandoffTargetRenders(); renders != 1 {
+		t.Fatalf("one rendering per pack per run: %d", renders)
+	}
+
+	// The same run under a budget smaller than it needs is refused whole, and
+	// writes nothing.
+	bounded := mustLoad(t, configPath)
+	bounded.handoffTargetReportBudget = 4096
+	partial, failure := bounded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure == nil || failure.Code != "JPS-RESOURCE-MATRIX-HANDOFF-TARGETS" {
+		t.Fatalf("the aggregate budget must refuse this run: %+v", failure)
+	}
+	if len(partial.Packs) != 0 {
+		t.Fatalf("a refused run writes no report: %+v", partial)
+	}
+}
+
+// One pack's escalation target is rendered once per run, whatever the rows do
+// with capability sets (ADR-0025).
+//
+// This is the shape three earlier attempts got wrong, so it is pinned
+// mechanically rather than argued. The matrix below crosses maxAdmissions on
+// purpose: 64 rows each declaring a one-off supportedExtensions set fill the
+// admission memo, and the rows after them repeat a 65th set that can never be
+// cached — so every one of those rows is revalidated and re-decoded, which is
+// the pre-existing cost of a matrix engineered that way. What must *not* scale
+// with them is the target rendering. Under the admission-keyed design each of
+// those rows rendered a megabyte-long name, twice: once while evaluating and
+// once while reporting.
+//
+// Rows run sequentially in one loop here, and the rendering is computed before
+// that loop begins; there is no concurrency in this path to test, and that is a
+// property of the orchestration rather than a promise made about the engine.
+func TestOnePacksHandoffTargetIsRenderedOncePerRunAcrossAdmissionOverflow(t *testing.T) {
+	name := strings.Repeat("q", 1<<20)
+	pack := strings.Replace(string(packFixture(t)), `"name": "Intake reviewer"`, `"name": "`+name+`"`, 1)
+	if pack == string(packFixture(t)) {
+		t.Fatal("the fixture must declare the target this test lengthens")
+	}
+	notApplicable := `{"kind":"not-applicable","reasons":["not-applicable"],"handoff":{"state":"requested","triggeredBy":["not-applicable"]}}`
+
+	rowsFor := func(total int) string {
+		cases := make([]string, 0, total)
+		for index := range total {
+			// The first maxAdmissions rows each take a distinct capability set,
+			// filling the memo; every row after them repeats one more set, which
+			// is therefore never retained.
+			capability := fmt.Sprintf("https://example.com/one-off-%d", index)
+			if index >= 64 {
+				capability = "https://example.com/the-sixty-fifth"
+			}
+			cases = append(cases, fmt.Sprintf(
+				`{"id":"row-%d","facts":{"request":{"type":"unrelated"}},"supportedExtensions":["%s"],"expectedDisposition":%s,"expectedHandoffTarget":null}`,
+				index, capability, notApplicable))
+		}
+		return `{"matrixVersion":"2","cases":[` + strings.Join(cases, ",") + `]}`
+	}
+
+	// The same shape at two row counts: the rendering count must not move.
+	renders := map[int]int64{}
+	for _, total := range []int{70, 140} {
+		configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+			map[string]string{"packs/a.json": pack, "packs/a.matrix.json": rowsFor(total)})
+		engine := evaluation.NewEngine(newValidator(t))
+		run, failure := mustLoad(t, configPath).Test(engine, "", "packs test")
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		// Every row mismatches — each expects no target and the pack configures
+		// one — which is the correct verdict and not what this test measures.
+		if run.Summary.Total != total || run.Summary.Mismatched != total {
+			t.Fatalf("%d rows: %+v", total, run.Summary)
+		}
+		for _, row := range run.Packs[0].Rows {
+			if len(row.ActualHandoffTarget) > result.HandoffTargetBudget {
+				t.Fatalf("row %s retains more than the budget: %d bytes", row.ID, len(row.ActualHandoffTarget))
+			}
+		}
+		renders[total] = engine.HandoffTargetRenders()
+	}
+	if renders[70] != 1 || renders[140] != 1 {
+		t.Fatalf("one pack, one run, one rendering: %d at 70 rows, %d at 140", renders[70], renders[140])
+	}
+
+	// And a suite that asserts nothing renders nothing at all: absent stays
+	// absent in the work a run does, not only in the payload it writes.
+	silent := strings.ReplaceAll(rowsFor(70), `,"expectedHandoffTarget":null`, "")
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": silent})
+	engine := evaluation.NewEngine(newValidator(t))
+	if _, failure := mustLoad(t, configPath).Test(engine, "", "packs test"); failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if engine.HandoffTargetRenders() != 0 {
+		t.Fatalf("a suite that asks nothing renders nothing: %d", engine.HandoffTargetRenders())
 	}
 }

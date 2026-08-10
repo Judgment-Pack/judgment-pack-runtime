@@ -481,3 +481,94 @@ func TestCanonicalRefusesADispositionSection83Forbids(t *testing.T) {
 		})
 	}
 }
+
+// The one writer of a reported handoff target holds it to §8.1's own shape,
+// exactly as Disposition.Canonical holds a disposition to §8.3's (ADR-0025).
+//
+// The engine builds no target with an empty member — semantic validation
+// refused such a pack long before — but an exported type can be handed one, and
+// serializing it would put a target no pack can declare on both sides of a
+// comparison, where it would compare equal to itself and pass.
+func TestHandoffTargetCanonicalRefusesATargetNoPackCanDeclare(t *testing.T) {
+	for name, target := range map[string]HandoffTarget{
+		"no kind":    {Name: "Intake reviewer"},
+		"no name":    {Kind: "human-role"},
+		"neither":    {},
+		"empty kind": {Kind: "", Name: "Ops"},
+		"empty name": {Kind: "queue", Name: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := target.Canonical(); err == nil {
+				t.Fatal("Canonical must refuse a target §8.1 does not admit")
+			}
+			if _, err := target.Rendered(); err == nil {
+				t.Fatal("Rendered is Canonical under a budget, so it refuses the same values")
+			}
+		})
+	}
+
+	// The nil receiver is the "no target" statement and is answered, not refused.
+	var absent *HandoffTarget
+	canonical, err := absent.Canonical()
+	if err != nil || string(canonical) != NoHandoffTarget {
+		t.Fatalf("a nil target renders as the literal null: %q %v", canonical, err)
+	}
+	legal := &HandoffTarget{Kind: "human-role", Name: "Intake reviewer"}
+	canonical, err = legal.Canonical()
+	if err != nil || string(canonical) != `{"kind":"human-role","name":"Intake reviewer"}` {
+		t.Fatalf("canonical = %q %v", canonical, err)
+	}
+}
+
+// A reported target is bounded, and the bound is a display bound (ADR-0025).
+//
+// A target's name is an authored string §2.1 bounds only at a megabyte, and a
+// matrix may declare MaxMatrixCases rows; a row result retaining an uncapped
+// rendering is gigabytes built out of inputs every carrier limit admits. The
+// digest tail makes a capped rendering readable as an identifier — two long
+// targets do not print as one line — and that is all it is for. It is **not**
+// what any comparison rests on: the verdict is taken from the decoded values, so
+// nothing here needs the tail to be collision-free, and this test asserts a
+// property of the rendering rather than a guarantee about equality.
+func TestHandoffTargetRenderingIsCappedAndStillDistinct(t *testing.T) {
+	long := &HandoffTarget{Kind: "queue", Name: strings.Repeat("a", 4096)}
+	rendered, err := long.Rendered()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rendered) > HandoffTargetBudget {
+		t.Fatalf("a rendering must stay inside the budget: %d bytes", len(rendered))
+	}
+	if !strings.Contains(rendered, "…") {
+		t.Fatalf("a capped rendering says it was capped: %q", rendered)
+	}
+
+	// Two targets that agree for the whole budget still render as two lines, so
+	// a report does not print them as one. No comparison depends on that — the
+	// verdict is taken from the decoded values — and this asserts a property of
+	// the rendering, not a guarantee about equality.
+	other := &HandoffTarget{Kind: "queue", Name: strings.Repeat("a", 4095) + "b"}
+	otherRendered, err := other.Rendered()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered == otherRendered {
+		t.Fatal("the digest tail is what keeps two capped targets readable as two")
+	}
+	// And two equal targets still render equally, on every run.
+	again, err := (&HandoffTarget{Kind: "queue", Name: strings.Repeat("a", 4096)}).Rendered()
+	if err != nil || again != rendered {
+		t.Fatalf("the rendering is a function of the target: %q vs %q", again, rendered)
+	}
+	// A target inside the budget renders exactly as it canonicalizes.
+	canonical, err := legalTargetForBudget.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside, err := legalTargetForBudget.Rendered()
+	if err != nil || inside != string(canonical) {
+		t.Fatalf("inside the budget a rendering is the canonical form: %q", inside)
+	}
+}
+
+var legalTargetForBudget = &HandoffTarget{Kind: "human-role", Name: "Intake reviewer"}

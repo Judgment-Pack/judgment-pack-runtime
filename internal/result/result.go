@@ -1,9 +1,12 @@
 package result
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
@@ -262,6 +265,107 @@ const EvaluatorSpecVersion = "0.2.0-draft"
 type HandoffTarget struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
+}
+
+// NoHandoffTarget is the rendering of "no target at all" — the JSON literal a
+// row writes to assert it, and what Canonical returns for an evaluation that
+// reported none.
+//
+// HandoffTargetUnavailable is the third state a *reported* target can be in, and
+// it is deliberately not null: it says the report cannot state a target, where
+// null says an evaluation reported none. Substituting null would report a §8.3
+// statement no evaluation made.
+//
+// It has three causes, and a consumer tells the first from the others by whether
+// the row carries an §8.4 class. The evaluation was **refused**, so it produced
+// no answer at all. Or the evaluation produced one and **no rendering was
+// computed** for the pack — a state no surface of this runtime reaches, since
+// the caller that owns a row loop renders once for the pack before the loop.
+// Or a rendering was supplied that was minted from **different pack bytes**,
+// which is refused rather than repeated: the report declines to name a
+// destination rather than risk naming the wrong one (ADR-0025). That last
+// refusal is by the bytes and not by the target, so a rendering of a *different*
+// pack that happens to declare the *same* destination degrades too — honest
+// rather than pedantic, because what such a handle proves is only where it came
+// from, and it did not come from here.
+const (
+	NoHandoffTarget          = "null"
+	HandoffTargetUnavailable = "unavailable"
+)
+
+// The rendering budget of a reported handoff target, on ADR-0023's own footing
+// and for its own reason. A target's kind and name are authored strings §2.1
+// bounds only at a megabyte each, and a matrix may declare MaxMatrixCases rows;
+// a report retaining an uncapped rendering per row is gigabytes built out of
+// inputs every carrier limit admits, which crosses the MCP response bound and
+// turns a call that used to succeed into a refusal.
+//
+// So the rendering is bounded here, at the one writer, rather than guarded at
+// each of its readers. Within the budget a target renders exactly as it
+// canonicalizes; beyond it the rendering is the prefix, an ellipsis, and the
+// first HandoffTargetDigestHex hex digits of the SHA-256 of the full canonical
+// bytes.
+//
+// A capped rendering is a **display value and never an equality key.** The
+// digest tail makes an accidental collision between two authored targets
+// unlikely, and unlikely is not the standard a comparison is held to: sixty-four
+// bits of digest deciding whether a suite passes would be a probabilistic answer
+// to a question with an exact one. Whatever compares two targets compares the
+// decoded values — presence, then each member in full — and reads these
+// renderings only to say what it saw.
+const (
+	HandoffTargetBudget    = 256
+	HandoffTargetDigestHex = 16
+)
+
+// Canonical renders one escalation target as the value a row asserts it with:
+// the RFC 8785 form of the {kind, name} object, and the JSON literal null for
+// no target at all. The nil receiver is the "no target" case and is answered
+// rather than refused, because a target's absence is a statement about an
+// evaluation exactly as its presence is (ADR-0025).
+//
+// It is not a disposition and never becomes one: §8.3 keeps the configured
+// target outside the disposition object, so this is a second value reported
+// beside that one. Both sides of the report are produced here, so a row's
+// expectation and an evaluation's report are rendered by one writer and never
+// by two — but what those two sides are *compared* by is the decoded values,
+// not this rendering (see the budget above).
+//
+// Like Disposition.Canonical it refuses a value that is not a legal target
+// rather than serializing one: §8.1 states both members of an escalation
+// target, and a pack declaring an empty kind or name is refused long before an
+// evaluation could report one. The engine builds no such value; an exported
+// type can be handed one, and serializing it would put a target no pack can
+// declare on both sides of a comparison.
+func (h *HandoffTarget) Canonical() ([]byte, error) {
+	if h == nil {
+		return []byte(NoHandoffTarget), nil
+	}
+	if h.Kind == "" || h.Name == "" {
+		return nil, errors.New("an escalation target states a non-empty kind and a non-empty name (§8.1)")
+	}
+	return jcs.Encode(map[string]any{"kind": h.Kind, "name": h.Name})
+}
+
+// Rendered is Canonical under the budget above: the value a row result carries,
+// and only that. Every reader that *reports* a target goes through it, so
+// nothing retains an unbounded rendering — and no reader that *decides*
+// anything goes through it at all.
+func (h *HandoffTarget) Rendered() (string, error) {
+	canonical, err := h.Canonical()
+	if err != nil {
+		return "", err
+	}
+	if len(canonical) <= HandoffTargetBudget {
+		return string(canonical), nil
+	}
+	digest := sha256.Sum256(canonical)
+	tail := "…" + hex.EncodeToString(digest[:])[:HandoffTargetDigestHex]
+	prefix := string(canonical[:max(HandoffTargetBudget-len(tail), 0)])
+	for len(prefix) > 0 && !utf8.ValidString(prefix) {
+		prefix = prefix[:len(prefix)-1]
+	}
+	return prefix + tail, nil
 }
 
 // Handoff is the disposition's handoff object (§8.3): the state, and — exactly
@@ -550,20 +654,40 @@ const EvaluationCorpusLabel = "corpus results, the required evidence for the cla
 // admitted or after, as a reached §10 limit does. The echo is read off the
 // evaluation that produced it, and inventing one from the row's carrier would be
 // the independent truth this echo is deliberately not.
+//
+// ExpectedHandoffTarget and ActualHandoffTarget are the second comparison, and
+// they appear **together**, exactly when the row asked for one (ADR-0025). Each
+// carries one of three values: a target's rendering under the budget above, the
+// literal null for no target, or HandoffTargetUnavailable. So the pair says
+// which of the two sides names a destination as well as which destination it
+// names, and it never quietly loses one half.
+//
+// "unavailable" is the honest third state and the reason the pair is a triple
+// rather than a pair of renderings: it says this report cannot state a target,
+// where null says an evaluation reported none. Its causes are enumerated at
+// HandoffTargetUnavailable — a refused evaluation, no rendering computed for the
+// pack, or a supplied rendering minted from different pack bytes — and the first
+// is told from the rest by ActualErrorClass being set. None of them moves a
+// verdict: the comparison reads the decoded targets, so a degraded report is a
+// report that says less, never a row that decides differently. A row that
+// declares no expectedHandoffTarget carries neither member, and its result is
+// byte for byte what it was before that member existed.
 type EvaluationCorpusCase struct {
-	ID                 string `json:"id"`
-	Origin             string `json:"origin"`
-	SpecSection        string `json:"specSection"`
-	PackID             string `json:"packId,omitempty"`
-	PackVersion        string `json:"packVersion,omitempty"`
-	Status             string `json:"status"`
-	Expected           string `json:"expected"`
-	Actual             string `json:"actual"`
-	ExpectedErrorClass string `json:"expectedErrorClass,omitempty"`
-	ActualErrorClass   string `json:"actualErrorClass,omitempty"`
-	ExpectedErrorPhase string `json:"expectedErrorPhase,omitempty"`
-	ActualErrorPhase   string `json:"actualErrorPhase,omitempty"`
-	Detail             string `json:"detail,omitempty"`
+	ID                    string `json:"id"`
+	Origin                string `json:"origin"`
+	SpecSection           string `json:"specSection"`
+	PackID                string `json:"packId,omitempty"`
+	PackVersion           string `json:"packVersion,omitempty"`
+	Status                string `json:"status"`
+	Expected              string `json:"expected"`
+	Actual                string `json:"actual"`
+	ExpectedErrorClass    string `json:"expectedErrorClass,omitempty"`
+	ActualErrorClass      string `json:"actualErrorClass,omitempty"`
+	ExpectedErrorPhase    string `json:"expectedErrorPhase,omitempty"`
+	ActualErrorPhase      string `json:"actualErrorPhase,omitempty"`
+	ExpectedHandoffTarget string `json:"expectedHandoffTarget,omitempty"`
+	ActualHandoffTarget   string `json:"actualHandoffTarget,omitempty"`
+	Detail                string `json:"detail,omitempty"`
 }
 
 // EvaluationCorpus is one run of the evaluation corpus bundled for an exact

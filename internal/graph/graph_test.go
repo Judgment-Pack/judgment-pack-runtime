@@ -654,6 +654,11 @@ func TestLoadRowsRefusals(t *testing.T) {
 		{"neither expectation", `{"cases":[{"id":"r","inputs":{}}]}`, "JPS-GRAPH-ROWS-ROW"},
 		{"phase without class", `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedErrorPhase":"preflight"}]}`, "JPS-GRAPH-ROWS-ROW"},
 		{"nodes beside error", `{"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c","expectedNodes":{"n":{}}}]}`, "JPS-GRAPH-ROWS-ROW"},
+		// ADR-0025 is a pack-matrix record and the graph surface is deliberately
+		// outside it, which this pins rather than assumes: a graph row stating
+		// the pack matrix's member is refused as the unknown member it is here,
+		// so the deferral cannot be undone by accident on one surface only.
+		{"a pack matrix's handoff-target assertion", `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedHandoffTarget":null}]}`, "JPS-GRAPH-ROWS-SHAPE"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

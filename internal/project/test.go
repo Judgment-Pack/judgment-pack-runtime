@@ -1,6 +1,8 @@
 package project
 
 import (
+	"fmt"
+
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -13,7 +15,10 @@ import (
 // code: the RFC 8785 canonical disposition compared byte for byte against the
 // row's, or the §8.4 error class and phase the row expects. A project therefore
 // gets the byte agreement §8.3 defines rather than a looser comparison invented
-// for projects, and a row a builder writes is the same artifact a corpus row is.
+// for projects. What the two carriers share is the fields that comparator reads,
+// which is what makes it one comparison — not the shape of a document: corpus
+// admission requires members a project row need not declare and refuses the one
+// a project row may add (ADR-0012's 2026-08-09 correction, ADR-0025).
 //
 // What this reports is what a project's own rows did. It is not the
 // specification's corpus and says nothing about the evaluator's conformance,
@@ -58,8 +63,15 @@ func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result
 		ConfigVersion:             p.Config.ConfigVersion,
 		Packs:                     make([]result.PackTestEntry, 0, len(selected)),
 	}
+	// The aggregate handoff-target budget is one counter for the whole run, not
+	// one per pack: what it bounds is what the report retains, and a report is
+	// one document however many packs contributed to it (ADR-0025).
+	spent := 0
 	for _, packID := range selected {
-		entry := p.testPack(evaluator, packID, p.Config.Packs[packID], command)
+		entry, failure := p.testPack(evaluator, packID, p.Config.Packs[packID], command, &spent)
+		if failure != nil {
+			return result.PackTest{}, failure
+		}
 		output.Summary.Total += entry.Summary.Total
 		output.Summary.Passed += entry.Summary.Passed
 		output.Summary.Mismatched += entry.Summary.Mismatched
@@ -85,7 +97,12 @@ func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result
 // be judged — an unreadable pack, an unreadable or malformed matrix — is a
 // mismatch for that pack and not a silent skip: a matrix that will not load has
 // not passed.
-func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, command string) result.PackTestEntry {
+//
+// spent carries the run's aggregate handoff-target budget across packs. Crossing
+// it is the one thing here that is a *failure* rather than a mismatch: a
+// mismatch is a statement about a pack and a row, and "this report does not fit"
+// is a statement about neither.
+func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, command string, spent *int) (result.PackTestEntry, *Failure) {
 	report := result.PackTestEntry{
 		ID:         id,
 		Path:       entry.Path,
@@ -96,7 +113,7 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	if entry.Matrix == "" {
 		report.Status = "skipped"
 		report.Detail = "The entry declares no matrix, so no row ran for this pack."
-		return report
+		return report, nil
 	}
 	found, pack, err := p.readIdentity(entry)
 	if err != nil {
@@ -105,14 +122,14 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		// any case; saying so once is clearer than saying it per row.
 		report.Status = "mismatch"
 		report.Detail = ReadFailureMessage(entry.Path, err)
-		return report
+		return report, nil
 	}
 	report.PackID, report.PackVersion = found.ID, found.Version
 	matrix, err := p.LoadMatrix(entry)
 	if err != nil {
 		report.Status = "mismatch"
 		report.Detail = display.Sanitize(err.Error())
-		return report
+		return report, nil
 	}
 	// The origins the rows declare are counted before any of them runs, because
 	// the count is about the row documents and not about what running them
@@ -121,8 +138,39 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// (ADR-0024).
 	report.Origins = MatrixOrigins(matrix)
 	admitted := evaluator.AdmitPack(pack)
+	// The pack's declared escalation target is rendered here, once, before any
+	// row runs — and only when some row asks about one (ADR-0025). This is the
+	// place that owns the row loop and the place a pack is loaded, so "once per
+	// pack per run" is a property of where the call sits rather than of a cache
+	// that has to decide whether to answer. §8.1 gives a pack one escalation
+	// target and the rendering is a function of the pack's bytes alone, so
+	// nothing below this line can need a second one.
+	//
+	// The rows run sequentially, one after another in this loop. Nothing here is
+	// shared *concurrently*: the rendering is read by every row and written by
+	// none, and the aggregate budget below is deliberately carried across the
+	// successive packs of one run — it bounds a report, and a report is one
+	// document however many packs contributed to it.
+	var declaredTarget evaluation.HandoffTargetRendering
+	if assertsHandoffTarget(matrix) {
+		declaredTarget = evaluator.PackHandoffTarget(pack)
+	}
 	for _, row := range matrix.Cases {
-		outcome := evaluator.RunCaseAdmitted(admitted, row, command)
+		outcome := evaluator.RunCaseAdmitted(admitted, row, declaredTarget, command)
+		// Charged as the row's result is composed, before it is retained, so the
+		// refusal fires instead of the report being built and then rejected. Only
+		// the two target renderings are charged: they are the members whose size a
+		// pack's own authored string decides, and the budget's number was derived
+		// from exactly them (ADR-0025).
+		*spent += len(outcome.ExpectedHandoffTarget) + len(outcome.ActualHandoffTarget)
+		if *spent > p.handoffBudget() {
+			return report, &Failure{
+				Code: "JPS-RESOURCE-MATRIX-HANDOFF-TARGETS",
+				Message: fmt.Sprintf("The handoff-target renderings of this run exceed the %d-byte budget this runtime retains for them, reached at row %q of pack %q. Each rendering is already bounded at %d bytes, so crossing this is a row count rather than one long target: assert expectedHandoffTarget on the rows that probe an escalation path rather than on every row, or select one pack at a time. Nothing is truncated and no partial report is written, because a report cut short looks exactly like a complete one.",
+					p.handoffBudget(), display.Sanitize(row.ID), display.Sanitize(id), result.HandoffTargetBudget),
+				ExitCode: result.ExitIO,
+			}
+		}
 		report.Summary.Total++
 		if outcome.Status == "passed" {
 			report.Summary.Passed++
@@ -145,7 +193,20 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	if admitsForSomeRow(admitted, matrix) {
 		report.Coverage = matrixCoverage(PackRoot(pack), matrix)
 	}
-	return report
+	return report, nil
+}
+
+// assertsHandoffTarget reports whether any row of one matrix declares the
+// optional target assertion. A suite that asks nothing about the escalation
+// target renders nothing and decodes nothing extra: absent stays absent in the
+// work a run does, not only in the payload it writes (ADR-0025).
+func assertsHandoffTarget(matrix Matrix) bool {
+	for _, row := range matrix.Cases {
+		if row.ExpectedHandoffTarget != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // admitsForSomeRow reports whether the pack is admitted under the empty

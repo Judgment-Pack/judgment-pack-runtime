@@ -431,6 +431,14 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 			if row.ExpectedErrorClass != "" || row.ActualErrorClass != "" {
 				fmt.Fprintf(a.out, "    expected class: %s / actual class: %s\n", display.Sanitize(row.ExpectedErrorClass), display.Sanitize(row.ActualErrorClass))
 			}
+			// The second comparison, printed only for a row that asked for one. §8.3
+			// keeps the configured escalation target outside the disposition, so
+			// neither line above can show a difference in it (ADR-0025).
+			if row.ExpectedHandoffTarget != "" || row.ActualHandoffTarget != "" {
+				refused := row.ActualErrorClass != ""
+				fmt.Fprintf(a.out, "    expected target: %s / actual target: %s\n",
+					handoffTargetLine(row.ExpectedHandoffTarget, refused), handoffTargetLine(row.ActualHandoffTarget, refused))
+			}
 		}
 		a.renderCoverage("  ", pack.Coverage)
 		a.renderOrigins("  ", pack.Summary.Total, pack.Origins)
@@ -438,6 +446,32 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	fmt.Fprintln(a.out, "A mismatching row is a statement about the pack and the row, not about this runtime.")
 	return nil
+}
+
+// handoffTargetLine renders one side of a row's handoff-target comparison. The
+// "unavailable" state is spelled out rather than printed as the bare word: a
+// reader meeting it beside a target on the other side needs to know that the
+// report cannot state a target, which is a different fact from an evaluation
+// reporting none (ADR-0025).
+//
+// It has three causes, told apart by what the row already carries rather than by
+// a fourth payload value. A row with an §8.4 class was refused and produced
+// nothing. A row without one produced a target this report has no rendering of:
+// either none was computed for the pack, or the one supplied was minted from
+// other bytes and is refused rather than repeated. Those two are grouped, and
+// deliberately — naming only the first would be false of the second, and the
+// reader's question is the same either way: this report cannot state the
+// destination, and it is not claiming there is none. Neither is reachable from
+// any surface of this runtime; they are named rather than papered over, because
+// the alternative is a blank beside a destination.
+func handoffTargetLine(rendered string, refused bool) string {
+	if rendered != result.HandoffTargetUnavailable {
+		return display.Sanitize(rendered)
+	}
+	if refused {
+		return "unavailable (evaluation refused)"
+	}
+	return "unavailable (no matching rendering was supplied)"
 }
 
 // renderOrigins prints the origins one pack's rows declare, as counts against

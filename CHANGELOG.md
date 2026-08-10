@@ -2,6 +2,110 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A matrix row can assert the handoff target, because no disposition can carry it** (ADR-0025):
+  a `packs test` row may declare `expectedHandoffTarget`, the one further assertion beside
+  `expectedDisposition`. It exists because JPS §8.3 keeps a pack's configured escalation target
+  **outside** the disposition — this runtime reports it beside one, as `handoffTarget` — so a pack
+  edit reaching only `escalation.target.name` leaves `kind`, `outcomeId`, `reasons`,
+  `handoff.state`, and `handoff.triggeredBy` byte-identical and every row of a disposition-only
+  matrix still passes. That is Study 013's holdout cell h02, written adversarially by that study's
+  cross-vendor reviewer and caught in the study only downstream, once the corrupted target had
+  already reached a tool argument. The member has three states and they are three different
+  statements: an object with `kind` and `name` (both required, neither empty) asserts that exact
+  target by string equality; the literal `null` asserts the evaluation reports **no** target; and
+  **absent asserts nothing**, so a matrix written before this release — where it was otherwise valid,
+  in the sense the two carrier fixes below narrow — is judged by byte-identical behavior and its row
+  results carry no new member. It is an **assertion and not a coverage line** —
+  a mismatch moves the row, the pack entry, the run, and the exit code exactly as a disposition
+  mismatch does, which is why ADR-0014 and ADR-0023's never-gate stance for *derived* probes is
+  untouched and unamended. It rides beside `expectedDisposition` only, refused at load on the graph
+  surface's `expectedNodes` precedent: a refused evaluation reports no target to compare. Both sides
+  are rendered by one writer (`result.HandoffTarget.Canonical`), reported as `expectedHandoffTarget`
+  and `actualHandoffTarget` on the row and printed as one line beside the disposition pair; the
+  mismatch detail names which side states a destination rather than repeating two authored strings a
+  third time. Folding the target into `expectedDisposition` was refused because that section's
+  composition is normative and the target's separateness is what makes a disposition portable;
+  always asserting it was refused because it breaks every existing matrix and makes the runtime
+  compare the pack against itself. What it holds is the target the pack *configures* — no delivery
+  is observed, and a green row does not make the destination the right one.
+
+  **`matrixVersion` moves to `"2"`, and this is the compatibility rule.** A matrix is a **closed
+  input** under VERSIONING.md — an older reader *rejects* a document carrying a member it does not
+  know rather than ignoring it — so adding a member moves the version whatever the addition is,
+  exactly as `graphs` moved `configVersion` to `"2"`. A matrix declaring `"1"`, and a matrix
+  declaring no version at all, is read as the shape it was written for and — where it was
+  **otherwise valid**, in the sense the two carrier fixes below narrow — is **unchanged in every
+  byte**; a row in one that asserts a target is refused by name, naming the version it would take.
+  Only `"2"` admits `expectedHandoffTarget`. The declared version is settled before anything
+  version-specific decodes, so a document from a future version gets a refusal about the version
+  rather than about a member. `outputVersion` stays `"2"` — that is the output side, where a
+  consumer ignores what it does not know, and the two rules are deliberately decided separately.
+
+  Two defects older than this change were found by its adversarial review and fixed with it. **A
+  "closed" matrix shape was accepting case-folded aliases**: `encoding/json` matches member names
+  case-insensitively even under `DisallowUnknownFields`, so `{"Facts":…}` decoded into `facts` and a
+  document carrying both spellings had one silently overwrite the other. Member names are now
+  checked against the carrier-decoded document, where the authored spelling still exists, and an
+  alias is refused rather than read — for every row member, not only the new one. **The carrier was
+  silently repairing invalid Unicode**: Go replaces an unpaired surrogate escape such as `"\ud800"`
+  with U+FFFD without complaint, so two different documents could canonicalize to the same bytes and
+  a byte comparison §8.3 requires to be exact quietly stopped being one. RFC 8785 §3.2.2.2 makes
+  such a value invalid rather than replaceable, and `carrier.Decode` now terminates on it — for
+  every pack, matrix, facts, evidence, configuration, and graph document. An escape and the literal
+  it names are still one string; NFC and NFD are still two.
+
+  Both reported renderings are **bounded**, at 256 bytes with a SHA-256 digest tail on ADR-0023's
+  shape, and the run carries a **4 MiB aggregate budget** charged as each row's result is composed:
+  a pack may configure a target name §2.1 admits at a megabyte and a matrix may declare ten thousand
+  rows, which uncapped is a report in the gigabytes built from inputs every carrier limit accepts.
+  Crossing the aggregate budget refuses the run and writes nothing, because a report cut short looks
+  exactly like a complete one. A capped rendering is a **display value and never an equality key**:
+  the comparison is decided on the decoded targets — presence, then each member in full — because
+  sixty-four bits of digest deciding whether a suite passes would be a probabilistic answer to a
+  question with an exact one. And because a budget on *retained* bytes says nothing about the work
+  spent producing them, the pack's target is **rendered once per pack per run** — where the pack is
+  loaded, above the row loop, and only when some row asserts one — and handed to every row as a
+  value: §8.1 gives a pack one escalation target, so rendering per row makes ten thousand rows
+  against a megabyte-long name ten gigabytes of repeated canonicalizing and hashing that no
+  retained-bytes budget can see. Caching it instead of hoisting it is not enough, and the attempts
+  are recorded because each failed the same way: keyed on the target's *content*, a run mixing two
+  capability sets compares an equal megabyte per row, because `supportedExtensions` selects a
+  distinct admission and each admission decodes the pack separately; stored on the *admission*, a
+  matrix that uses sixty-four one-off capability sets and repeats a sixty-fifth re-renders on every
+  remaining row, because `maxAdmissions` bounds what is retained and not what is computed. The
+  rendering is a function of the pack's bytes alone, so it belongs where a pack is loaded; the row
+  path then holds no cache, no lock, and no counter. The rendering type is **opaque and bound to the pack it
+  was minted from** — unexported members, `PackHandoffTarget` as its only constructor and the only
+  place a target is rendered, and the SHA-256 of the pack's bytes carried alongside so a row uses a
+  rendering only when it belongs to the pack it evaluated. So "the row path renders nothing" is
+  enforced rather than documented, and a rendering belonging to another pack degrades to
+  `unavailable` instead of putting a destination that pack never declared into the report. The
+  binding is a digest rather than a comparison of the decoded targets, deliberately: both operands
+  of that comparison come from the *pack*, so it would scan a megabyte-long target once per row —
+  unlike the row-versus-pack comparison the verdict makes, which the matrix's own byte limit bounds.
+  Thirty-two bytes, whatever the pack weighs, checked ahead of everything else the handle carries so
+  a foreign one degrades the report rather than failing the row. A rendering minted elsewhere over
+  the *same* bytes reports honestly, since the same bytes declare the same target. **An admitted
+  pack is now a snapshot**: `AdmitPack` copies the bytes it is given and answers every later
+  question from that copy, because a digest of bytes the caller can still edit binds nothing — edit
+  the slice in place into a same-length pack after admitting it, and the stale digest would accept
+  the first pack's rendering while the evaluation decoded the second. The pack byte limit is decided
+  once, in `AdmitPack`, ahead of both the copy and the digest, so an oversized pack is refused
+  rather than scanned by work this change added; every evaluating path replays that one decision,
+  and `Admits` keeps the conformance-only semantics it documented long before. A pack's hard byte limit is
+  consulted before any of this decodes a pack, so an oversized document is not scanned first — and
+  the refusal itself still travels the ordinary row path, so every expectation is canonicalized and
+  every payload keeps the shape it had. The actual side of the pair carries a third value, **`unavailable`**
+  (`unavailable (evaluation refused)` on the human surface), for a row whose evaluation was refused:
+  reporting `null` there would say an evaluation reported no target when no evaluation happened. The
+  **graph** surface is deliberately unchanged and its matrices stay blind to a target-only pack edit;
+  a graph row stating the member is refused, and the deferral and its remaining gap are recorded.
+  The conformance claim is
+  unaffected and stated, in full and only, in `CONFORMANCE.md`, which no line of this entry
+  restates.
+
 ## 0.16.0 - 2026-08-07
 
 - **Replaying a decision: pin the tuple, not the pack**: `docs/building-with-packs.md` gains a
