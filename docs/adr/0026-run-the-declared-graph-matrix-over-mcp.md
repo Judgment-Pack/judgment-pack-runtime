@@ -62,7 +62,7 @@ reviewed-set lock (ADR-0019). They are guarded independently in the graph layer,
 so a future change could restore one without the other, and each has its own
 regression test.
 
-### The one thing not inherited: where the report is bounded
+### The one thing not inherited: where the budget is checked
 
 The packs tool checks its report size after marshaling. Copying that mechanically
 would have been wrong, and this is the substance of the decision.
