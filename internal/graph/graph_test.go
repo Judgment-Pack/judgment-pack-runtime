@@ -1415,3 +1415,54 @@ func TestProjectWalkChargesTheEntryEnvelopeAndCapsDetail(t *testing.T) {
 		t.Fatal("the entry envelope must be charged: a budget covering only rows and coverage must refuse")
 	}
 }
+
+// The direct Test path charges its own GraphTest envelope, not just the rows
+// and coverage inside it. Round 8 of the review found this: only TestProject
+// charged an envelope, so a caller using Test directly with a budget -- which
+// the option's own comment contemplates -- had one that escaped, and the stated
+// invariant ("only the outer suite envelope is uncharged") was false there.
+func TestDirectGraphTestChargesItsOwnEnvelope(t *testing.T) {
+	loaded := fixtureProject(t)
+	rows, failure := LoadRows(fixtureBytes(t, "onboarding.rows.json"), "onboarding.rows.json")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+
+	full, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows,
+		Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+
+	// Exactly the components charged while building the report, and nothing for
+	// its envelope. A budget of precisely that must refuse, because the envelope
+	// costs something.
+	components := 0
+	for _, row := range full.Rows {
+		encoded, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		components += len(encoded)
+	}
+	encoded, err := json.Marshal(full.Coverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	components += len(encoded)
+
+	if _, budgetFailure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows,
+		Options{Command: "test", ReportBudget: components}); budgetFailure == nil {
+		t.Fatal("the direct path must charge its own envelope: a budget covering only rows and coverage must refuse")
+	}
+
+	// And a generous budget still produces the same report.
+	generous, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows,
+		Options{Command: "test", ReportBudget: components * 8})
+	if failure != nil {
+		t.Fatalf("a generous budget must not refuse: %v", failure.Message)
+	}
+	if generous.Status != full.Status || len(generous.Rows) != len(full.Rows) {
+		t.Fatalf("a generous budget changed the report: %+v", generous)
+	}
+}

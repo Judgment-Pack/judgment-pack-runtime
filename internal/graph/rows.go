@@ -194,6 +194,7 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 	if options.reportSpent != nil {
 		spent = *options.reportSpent
 	}
+	startingSpent := spent
 	for _, row := range rows.Cases {
 		outcome := runRow(loaded, engine, doc, graphPath, row, options)
 		output.Summary.Total++
@@ -234,6 +235,25 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			return result.GraphTest{}, coverageEncodingFailure(doc.ID)
 		}
 		spent += len(encoded)
+		if spent > options.ReportBudget {
+			return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
+		}
+	}
+	// The GraphTest's own envelope is charged too, as whatever the finished
+	// report costs beyond the rows and coverage charged while building it.
+	// Round 8: without this, a caller using Test directly with a budget -- which
+	// the option contemplates -- had an uncharged envelope, so the invariant
+	// "only the outer suite envelope escapes" was false on that path. Inside
+	// TestProject the arithmetic self-corrects, because that charges the entry's
+	// remaining difference.
+	if options.ReportBudget > 0 {
+		encoded, err := json.Marshal(output)
+		if err != nil {
+			return result.GraphTest{}, reportEncodingFailure(doc.ID)
+		}
+		if envelope := len(encoded) - (spent - startingSpent); envelope > 0 {
+			spent += envelope
+		}
 		if spent > options.ReportBudget {
 			return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
 		}
