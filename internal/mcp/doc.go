@@ -5,13 +5,15 @@
 // versioned results. It opens no network connection and holds no credential --
 // an MCP client reaches exactly the same offline core the CLI reaches, over
 // JSON-RPC on stdio instead of argv. The validation tools evaluate no
-// condition and resolve no outcome; the two exceptions are experimental_evaluate
-// and experimental_test_packs (ADR-0007, ADR-0021), which run the evaluation
+// condition and resolve no outcome; the exceptions are experimental_evaluate,
+// experimental_test_packs and experimental_test_graphs (ADR-0007, ADR-0021,
+// ADR-0026), which run the evaluation
 // package on this runtime's experimental surface. experimental_evaluate is the
 // one tool here that can write: in a project whose jpack.json declares an audit
 // directory it appends one record per completed call, through the project's own
 // directory handle and nowhere else (ADR-0018); experimental_test_packs runs
-// declared instance matrices and writes nothing at all, because a matrix row is
+// declared instance matrices, experimental_test_graphs runs declared graph
+// matrices, and neither writes anything at all, because a matrix row is
 // a rehearsal and not a decision. Nothing in this package states a conformance claim: the claim is stated,
 // in full and only, in CONFORMANCE.md, and every payload carries a reference to
 // that file beside the contract version applied

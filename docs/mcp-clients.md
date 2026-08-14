@@ -49,9 +49,11 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
+| `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
 
 None of these evaluate, decide, or authorize anything, except the two that reach the evaluator:
-`experimental_evaluate`, which evaluates one case, and `experimental_test_packs`, which runs the
+`experimental_evaluate`, which evaluates one case, and `experimental_test_packs` and
+`experimental_test_graphs`, which run the
 declared instance matrices through the same evaluator and comparison the CLI's `packs test` uses —
 reporting each row's agreement or divergence with the derived coverage report (ADR-0014, ADR-0023)
 beside it, writing nothing, appending no audit record, and consulting no reviewed set, because a

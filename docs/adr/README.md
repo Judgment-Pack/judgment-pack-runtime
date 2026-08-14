@@ -122,3 +122,4 @@ authority, and following it confers no conformance status on anything.
 | [0023](0023-boundary-probes-for-ordered-comparisons.md)  | Derive a boundary probe for every ordered comparison, witnessed by a row's facts | accepted |
 | [0024](0024-suggest-candidate-row-inputs.md)             | Derive candidate test-row inputs from a pack's own literals, and never their expectations | accepted |
 | [0025](0025-assert-the-handoff-target-in-the-matrix.md)  | Let a matrix row assert the handoff target, because no disposition can carry it | accepted |
+| [0026](0026-run-the-declared-graph-matrix-over-mcp.md)  | Run the declared graph matrix over MCP, and bound the report as it accumulates | accepted |

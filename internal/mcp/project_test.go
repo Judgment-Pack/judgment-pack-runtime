@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +15,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -60,6 +62,26 @@ func toolCall(t *testing.T, id int, name string, arguments map[string]any) strin
 		params["arguments"] = arguments
 	}
 	return message(t, id, "tools/call", params)
+}
+
+// rawToolCall sends arguments verbatim, so a test can present a JSON value the
+// Go type system would not let toolCall express -- a literal null, a wrongly
+// typed member, a null array element.
+func rawToolCall(t *testing.T, id int, name, rawArguments string) string {
+	t.Helper()
+	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":%q,"arguments":%s}}`+"\n",
+		id, name, rawArguments)
+}
+
+// newTestEngine builds the same validation engine the server uses, for tests
+// that compare an MCP payload against the layer beneath it.
+func newTestEngine(t *testing.T) *validation.Engine {
+	t.Helper()
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return engine
 }
 
 // list_packs and get_pack serve the project's own inventory and documents,
@@ -1036,9 +1058,9 @@ func TestExperimentalTestPacksRefusesAnEscapingMatrixPath(t *testing.T) {
 // refusal is testable without building a multi-gigabyte report.
 func TestExperimentalTestPacksRefusesAnOversizedReport(t *testing.T) {
 	matrixProjectFixture(t, matrixConfig, passingMatrix)
-	bound := maxTestPacksResultBytes
-	maxTestPacksResultBytes = 1024
-	defer func() { maxTestPacksResultBytes = bound }()
+	bound := maxMatrixResultBytes
+	maxMatrixResultBytes = 1024
+	defer func() { maxMatrixResultBytes = bound }()
 	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
 	if outcome["isError"] != true {
 		t.Fatalf("an oversized report must be refused: %#v", outcome)
@@ -1111,8 +1133,8 @@ func TestExperimentalTestPacksBoundsBoundaryProbesAtCarrierLimits(t *testing.T) 
 		t.Fatalf("a pack inside every carrier limit must still be reportable: %q", toolText(t, outcome))
 	}
 	payload := toolText(t, outcome)
-	if len(payload) > maxTestPacksResultBytes {
-		t.Fatalf("the report is %d bytes, over the %d-byte response bound", len(payload), maxTestPacksResultBytes)
+	if len(payload) > maxMatrixResultBytes {
+		t.Fatalf("the report is %d bytes, over the %d-byte response bound", len(payload), maxMatrixResultBytes)
 	}
 	// Not merely inside the bound: the rendered size no longer follows the
 	// pack's, so an 8 MiB pack reports in kilobytes.
@@ -1144,4 +1166,243 @@ func TestExperimentalTestPacksBoundsBoundaryProbesAtCarrierLimits(t *testing.T) 
 	// That the same pack renders the same names on every derivation is pinned
 	// in the project package, where a second derivation costs no second
 	// validation of an 8 MiB document.
+}
+
+// --- experimental_test_graphs (issue #95, ADR-0026) ------------------------
+
+// graphProjectFixture copies the graph walk's own fixture project into a
+// temporary tree and points the server at it, so these tests exercise the same
+// declared matrix the CLI walks rather than a second fixture that could drift.
+func graphProjectFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	source := filepath.Join("..", "graph", "testdata", "project")
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(source, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, entry.Name()), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	t.Setenv(project.ConfigEnv, configPath)
+	return root
+}
+
+func TestExperimentalTestGraphsRunsTheDeclaredMatrix(t *testing.T) {
+	graphProjectFixture(t)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("a declared graph matrix runs: %#v", outcome)
+	}
+	var report result.GraphSuite
+	decodeStructured(t, outcome, &report)
+	if report.Status != "passed" || len(report.Graphs) != 1 || report.Summary.Passed != 3 {
+		t.Fatalf("report = %+v", report)
+	}
+	if report.Command != testGraphsCommand {
+		t.Fatalf("the payload names this surface: %q", report.Command)
+	}
+	if report.ConformanceClaimReference == "" {
+		t.Fatalf("the payload carries the claim reference: %+v", report)
+	}
+}
+
+// CLI/MCP parity: the payload is the one the graph project walk emits, so the
+// two surfaces cannot drift into reporting different things about one project.
+func TestExperimentalTestGraphsMatchesTheCLIPayload(t *testing.T) {
+	root := graphProjectFixture(t)
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer loaded.Close()
+	direct, graphFailure := graph.TestProject(loaded, evaluation.NewEngine(newTestEngine(t)), "",
+		graph.Options{Command: testGraphsCommand})
+	if graphFailure != nil {
+		t.Fatal(graphFailure.Message)
+	}
+
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
+	var overMCP result.GraphSuite
+	decodeStructured(t, outcome, &overMCP)
+
+	wantJSON, err := json.Marshal(direct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotJSON, err := json.Marshal(overMCP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(wantJSON) != string(gotJSON) {
+		t.Fatalf("MCP and the graph layer disagree:\n mcp = %s\n cli = %s", gotJSON, wantJSON)
+	}
+}
+
+func TestExperimentalTestGraphsSelectsOneGraphById(t *testing.T) {
+	graphProjectFixture(t)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs",
+		map[string]any{"graph_id": "onboarding"}))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("a configured graph id selects one graph: %#v", outcome)
+	}
+	var report result.GraphSuite
+	decodeStructured(t, outcome, &report)
+	if len(report.Graphs) != 1 || report.Graphs[0].ID != "onboarding" {
+		t.Fatalf("report = %+v", report)
+	}
+
+	unknown := runServer(t, toolCall(t, 1, "experimental_test_graphs",
+		map[string]any{"graph_id": "nope"}))[0]["result"].(map[string]any)
+	if unknown["isError"] != true {
+		t.Fatalf("an unknown graph id is a tool error: %#v", unknown)
+	}
+}
+
+// The advertised schema is object with an optional string and an optional array
+// of strings. Everything that is not that is refused rather than silently
+// becoming a different run.
+func TestExperimentalTestGraphsRefusesBadArguments(t *testing.T) {
+	graphProjectFixture(t)
+	for _, tt := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "a literal null", raw: `null`},
+		{name: "an unknown member", raw: `{"graphs":"onboarding"}`},
+		{name: "a non-string graph id", raw: `{"graph_id":7}`},
+		{name: "a present but empty graph id", raw: `{"graph_id":""}`},
+		{name: "a null extension collection", raw: `{"supported_extensions":null}`},
+		{name: "a null extension element", raw: `{"supported_extensions":[null]}`},
+		{name: "a non-string extension element", raw: `{"supported_extensions":[7]}`},
+		{name: "an extension collection that is not an array", raw: `{"supported_extensions":"a"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			outcome := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", tt.raw))[0]["result"].(map[string]any)
+			if outcome["isError"] != true {
+				t.Fatalf("%s must be refused: %#v", tt.name, outcome)
+			}
+		})
+	}
+}
+
+// Omitting supported_extensions and passing an empty array are the same run,
+// and an empty string or a duplicate inside it is inert rather than an error:
+// the evaluator treats capabilities as a set (design review, answer 1).
+func TestExperimentalTestGraphsTreatsExtensionsAsASet(t *testing.T) {
+	graphProjectFixture(t)
+	payloads := map[string]string{
+		"omitted":    `{}`,
+		"empty":      `{"supported_extensions":[]}`,
+		"duplicated": `{"supported_extensions":["x","x",""]}`,
+	}
+	reports := map[string]string{}
+	for name, raw := range payloads {
+		outcome := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", raw))[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("%s must be accepted: %#v", name, outcome)
+		}
+		var report result.GraphSuite
+		decodeStructured(t, outcome, &report)
+		encoded, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reports[name] = string(encoded)
+	}
+	if reports["omitted"] != reports["empty"] {
+		t.Fatal("an omitted and an empty supported_extensions must be the same run")
+	}
+	if reports["omitted"] != reports["duplicated"] {
+		t.Fatal("an empty string and a duplicate must be inert")
+	}
+}
+
+func TestExperimentalTestGraphsWithNoConfigurationIsAToolError(t *testing.T) {
+	t.Setenv(project.ConfigEnv, filepath.Join(t.TempDir(), "absent.json"))
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != true {
+		t.Fatalf("no configuration is a tool error, not a skipped suite: %#v", outcome)
+	}
+}
+
+// A report past the budget is refused as the suite accumulates, not after a
+// multi-gigabyte one exists (design review F1). The bound is lowered so the
+// refusal is testable without building one.
+func TestExperimentalTestGraphsRefusesAnOversizedReport(t *testing.T) {
+	graphProjectFixture(t)
+	bound := maxMatrixResultBytes
+	maxMatrixResultBytes = 512
+	defer func() { maxMatrixResultBytes = bound }()
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != true {
+		t.Fatalf("an oversized report must be refused: %#v", outcome)
+	}
+	if text := toolText(t, outcome); !strings.Contains(text, "under-report silently") {
+		t.Fatalf("the refusal must say why it is not truncated: %q", text)
+	}
+}
+
+// Two independent invariants, tested separately because a future change could
+// restore one without the other (design review F3): the run appends no audit
+// record even where the project configures a trail, and it consults no
+// reviewed-set lock even where one is present and wrong.
+func TestExperimentalTestGraphsWritesNothingAndConsultsNoLock(t *testing.T) {
+	t.Run("no audit record where the project configures a trail", func(t *testing.T) {
+		root := graphProjectFixture(t)
+		configPath := filepath.Join(root, project.DefaultConfigName)
+		raw, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config map[string]any
+		if err := json.Unmarshal(raw, &config); err != nil {
+			t.Fatal(err)
+		}
+		// configVersion 3 is what declares an audit trail; the key is "dir".
+		config["configVersion"] = "3"
+		config["audit"] = map[string]any{"dir": "audit"}
+		amended, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(configPath, amended, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("a configured audit trail must not change the run: %#v", outcome)
+		}
+		if entries, err := os.ReadDir(filepath.Join(root, "audit")); err == nil && len(entries) > 0 {
+			t.Fatalf("a matrix run is a rehearsal and must append nothing: %d entries", len(entries))
+		}
+	})
+
+	t.Run("no lock consultation where a wrong lock is present", func(t *testing.T) {
+		root := graphProjectFixture(t)
+		// A lock naming digests nothing in this project matches. A run that
+		// consulted it would refuse; a rehearsal never looks.
+		lock := `{"lockVersion":"1","packs":{"sanctions-screening":{"sha256":"` + strings.Repeat("0", 64) + `"}}}`
+		if err := os.WriteFile(filepath.Join(root, "jpack.lock.json"), []byte(lock), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("a matrix run consults no reviewed set: %#v", outcome)
+		}
+		var report result.GraphSuite
+		decodeStructured(t, outcome, &report)
+		if report.Status != "passed" {
+			t.Fatalf("a drifted lock must not touch a rehearsal: %+v", report)
+		}
+	})
 }

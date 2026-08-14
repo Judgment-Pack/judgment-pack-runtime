@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -53,6 +54,7 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 		ConfigVersion:             loaded.Config.ConfigVersion,
 		Graphs:                    make([]result.GraphSuiteEntry, 0, len(selected)),
 	}
+	accumulated := 0
 	for _, graphID := range selected {
 		entry, _ := loaded.GraphEntry(graphID)
 		report := testEntry(loaded, engine, graphID, entry, options)
@@ -63,6 +65,19 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 			output.Status = "mismatch"
 		}
 		output.Graphs = append(output.Graphs, report)
+		// Enforced as the suite accumulates, not after it exists: a report over
+		// the budget is refused at the graph that carried it past, so the run
+		// stops rather than retaining the rest to be measured (ADR-0025).
+		if options.ReportBudget > 0 {
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				return result.GraphSuite{}, reportEncodingFailure(graphID)
+			}
+			accumulated += len(encoded)
+			if accumulated > options.ReportBudget {
+				return result.GraphSuite{}, reportBudgetFailure(graphID, accumulated, options.ReportBudget)
+			}
+		}
 	}
 	if output.Status == "passed" && output.Summary.Total == 0 {
 		output.Status = "skipped"
@@ -198,4 +213,24 @@ func loadEntryDocument(loaded *project.Project, entry project.Graph) (Document, 
 		return Document{}, display.Sanitize(loadFailure.Message)
 	}
 	return document, ""
+}
+
+// reportBudgetFailure refuses a run whose report passed the caller's budget.
+// It names the graph that carried it past and the numbers, because the caller
+// has to decide whether to select one graph or move to the streaming surface.
+func reportBudgetFailure(graphID string, accumulated, budget int) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code: "JPS-GRAPH-REPORT-BUDGET",
+		Message: fmt.Sprintf(
+			"The suite report reached %d bytes at graph %q, over this surface's %d-byte budget, and a truncated suite report would under-report silently.",
+			accumulated, graphID, budget),
+	}
+}
+
+// reportEncodingFailure refuses a run whose own report will not encode.
+func reportEncodingFailure(graphID string) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:    "JPS-GRAPH-REPORT-ENCODE",
+		Message: fmt.Sprintf("The report for graph %q could not be encoded.", graphID),
+	}
 }

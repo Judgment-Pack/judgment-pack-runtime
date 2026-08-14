@@ -45,6 +45,19 @@ type Options struct {
 	// reason it records nothing.
 	LawCheck func(decisionID string, document []byte) *evaluation.Failure
 
+	// ReportBudget bounds the bytes a whole-suite run may accumulate, or 0 for
+	// no bound. A graph matrix multiplies where a pack matrix does not -- up to
+	// 10,000 rows, each re-evaluating up to 64 nodes and retaining each node's
+	// canonical disposition -- so a report can reach gigabytes long before any
+	// check on the marshaled response could see it. ADR-0025 names that
+	// "build gigabytes, then check the MCP size" shape as a defect, so the
+	// budget is enforced AS the suite accumulates rather than after it exists.
+	//
+	// The CLI leaves this 0: it streams to a terminal an operator can interrupt.
+	// A long-lived stdio server handing one frame to a model client cannot be
+	// interrupted, so that surface sets it.
+	ReportBudget int
+
 	// injectionBudget overrides the per-node injected-bytes budget, whose
 	// default is the carrier's hard byte limit. It exists so a test can trip
 	// the budget without megabytes of fixture; no surface sets it.

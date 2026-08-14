@@ -1242,3 +1242,53 @@ func TestProjectWalkRowsContainmentIsExact(t *testing.T) {
 		t.Fatalf("an unloadable graph must not hide an escaped rows path: %+v", output.Graphs[0])
 	}
 }
+
+// The report budget is enforced AS the suite accumulates, not after it exists.
+// A graph matrix multiplies where a pack matrix does not, so a suite can reach
+// gigabytes before any check on a marshaled response could see it; ADR-0025
+// names that "build gigabytes, then check the size" shape as a defect.
+//
+// This is the graph-layer test because the MCP-layer one cannot discriminate:
+// over a small fixture the post-marshal response check refuses an oversized
+// report identically, so it passes with the budget removed. Found by mutation.
+func TestProjectWalkRefusesAReportPastTheBudget(t *testing.T) {
+	loaded := fixtureProject(t)
+
+	// Unbounded is the CLI's behaviour and must be untouched.
+	unbounded, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatalf("an unbounded run is unchanged: %v", failure.Message)
+	}
+	if unbounded.Status != "passed" {
+		t.Fatalf("output = %+v", unbounded)
+	}
+
+	// A budget below the first graph's own report refuses, naming the graph and
+	// both numbers, and returns no suite at all rather than a partial one.
+	bounded, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: 16})
+	if budgetFailure == nil {
+		t.Fatal("a report past the budget must refuse the run")
+	}
+	if budgetFailure.Code != "JPS-GRAPH-REPORT-BUDGET" {
+		t.Fatalf("code = %q", budgetFailure.Code)
+	}
+	for _, required := range []string{"onboarding", "16"} {
+		if !strings.Contains(budgetFailure.Message, required) {
+			t.Fatalf("the refusal must name %q: %q", required, budgetFailure.Message)
+		}
+	}
+	if len(bounded.Graphs) != 0 {
+		t.Fatalf("a refused run returns no suite: %+v", bounded)
+	}
+
+	// A budget above the whole report does not disturb it.
+	generous, failure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: 1 << 20})
+	if failure != nil {
+		t.Fatalf("a generous budget must not refuse: %v", failure.Message)
+	}
+	if generous.Status != unbounded.Status || len(generous.Graphs) != len(unbounded.Graphs) {
+		t.Fatalf("a generous budget changed the run: %+v", generous)
+	}
+}

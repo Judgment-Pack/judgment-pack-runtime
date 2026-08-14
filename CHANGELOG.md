@@ -2,6 +2,25 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The declared graph matrix runs over MCP** (ADR-0026): `experimental_test_graphs` runs every
+  configured graph's matrix, or one by its configured key in `graph_id`, and returns exactly the
+  payload the graph project walk emits. It closes the reopening condition ADR-0021 recorded when
+  it deferred the graph twin. An optional `supported_extensions` list applies uniformly to every
+  node of every row; omitting it and passing an empty array are the same run. Like the packs
+  tool it writes nothing — no audit record (ADR-0018) and no reviewed-set consultation
+  (ADR-0019), which are two independently guarded invariants rather than one — and a mismatching
+  or skipped run is a successful call carrying its status.
+- **A graph matrix report is bounded as it accumulates, not after it exists** (ADR-0026):
+  `graph.Options.ReportBudget` refuses at the graph that carried a suite past the budget. A graph
+  matrix multiplies where a pack matrix does not — up to 10,000 rows, each re-evaluating up to 64
+  nodes and retaining every node's canonical disposition — so a report can reach gigabytes before
+  a check on the marshaled response could see it, which is the shape ADR-0025 names as a defect.
+  The CLI leaves the budget unset and streams to a terminal an operator can interrupt.
+- The conformance claim surface grows from seven to eight; `CONFORMANCE.md` and its mechanical
+  enumeration test name the new tool.
+
 ## 0.17.0 - 2026-08-09
 
 - **A matrix row can assert the handoff target, because no disposition can carry it** (ADR-0025):

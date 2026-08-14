@@ -25,6 +25,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"`experimental graph test`",
 		"`experimental_evaluate`",
 		"`experimental_test_packs`",
+		"`experimental_test_graphs`",
 	}
 
 	// Which file constructs the evaluator, and how many times, is part of what
@@ -36,7 +37,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"app.go":                               2, // experimental evaluate, experimental evaluate-corpus
 		"packs.go":                             1, // packs test
 		"graph.go":                             2, // experimental graph evaluate, experimental graph test
-		filepath.Join("..", "mcp", "tools.go"): 2, // experimental_evaluate, experimental_test_packs
+		filepath.Join("..", "mcp", "tools.go"): 3, // experimental_evaluate, experimental_test_packs, experimental_test_graphs
 	}
 	total := 0
 	for _, count := range expectedSites {
@@ -77,7 +78,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 			t.Fatalf("CONFORMANCE.md's claim-scope enumeration does not name %s", surface)
 		}
 	}
-	if !strings.Contains(text, "the seven surfaces that reach it") {
-		t.Fatalf("CONFORMANCE.md no longer states the enumeration's count as %q; update the sentence and this test together", "the seven surfaces that reach it")
+	if !strings.Contains(text, "the eight surfaces that reach it") {
+		t.Fatalf("CONFORMANCE.md no longer states the enumeration's count as %q; update the sentence and this test together", "the eight surfaces that reach it")
 	}
 }
