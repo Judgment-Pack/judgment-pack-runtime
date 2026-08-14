@@ -13,15 +13,12 @@ All notable changes to tagged releases are documented here.
   (ADR-0019), which are two independently guarded invariants rather than one — and a mismatching
   or skipped run is a successful call carrying its status.
 - **A graph matrix report is bounded as it accumulates, not after it exists** (ADR-0026):
-  `graph.Options.ReportBudget` charges every component a run retains, each exactly once — every
-  row's report, every graph's coverage block, and every entry's envelope — and refuses once the
-  total passes the budget, leaving the remaining rows unevaluated. Each component is metered after
-  it is composed, so a run may overshoot by at most one component; rows abort early, which is where
-  the multiplication lives. A graph
-  matrix multiplies where a pack matrix does not — up to 10,000 rows, each re-evaluating up to 64
-  nodes and retaining every node's canonical disposition — so a report can reach gigabytes before
-  a check on the marshaled response could see it, which is the shape ADR-0025 names as a defect.
-  The CLI leaves the budget unset and streams to a terminal an operator can interrupt.
+  `graph.Options.ReportBudget` stops a run whose retained report components pass the budget — each
+  row's report, each graph's coverage block, each entry's envelope — after which the remaining rows
+  are never evaluated. It is a mitigation with named gaps rather than a guarantee: components are
+  metered after composition, the suite's outer envelope is not charged, and coverage derivation's
+  working memory still scales with the matrix. The CLI leaves the budget unset and streams to a
+  terminal an operator can interrupt.
 - The conformance claim surface grows from seven to eight; `CONFORMANCE.md` and its mechanical
   enumeration test name the new tool.
 

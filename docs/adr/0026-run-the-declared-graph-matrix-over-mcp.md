@@ -74,32 +74,35 @@ node and pack identifiers across probes. A conforming outcome id repeated across
 response could ever see it. ADR-0025 already names that "build gigabytes, then
 check the MCP size" shape as a defect.
 
-`graph.Options.ReportBudget` charges every component a run retains, each exactly
-once: every row's report as it is judged, every graph's coverage block as it is
-derived, and every entry's remaining envelope once that entry is finished. A
-matrix-derived `detail` is capped at `MaxEntryDetailBytes` besides, because
-several entries can reuse one hostile rows file and multiply it by the graph
-count.
+`graph.Options.ReportBudget` stops a run whose retained report components pass
+the budget — every row's report as it is judged, every graph's coverage block as
+it is derived, every entry's remaining envelope once that entry is finished — and
+the remaining rows are then never evaluated. A matrix-derived `detail` is capped
+besides, marker included, because several entries can name one hostile rows file.
 
-**The residue, stated exactly, because four review rounds went into getting this
-sentence right.** The bound is checked *after* each component is composed, not
-during its composition. So a run can overshoot the budget by at most one
-component before it refuses: one row's report, or one graph's coverage block, or
-one entry's envelope. Rows abort early — the remaining rows of a 10,000-row
-matrix are never evaluated — which is where the multiplication that motivated
-this actually lives. Coverage and the envelope are metered after construction,
-so a single pathological graph can exceed the budget by its own coverage block
-before the refusal fires. That is bounded by node count and pack content, not by
-row count, and it is accepted rather than eliminated: metering inside coverage
-derivation would reach into the probe construction this change is otherwise
-careful not to touch.
+**It is a mitigation, not a guarantee, and this ADR says so because five review
+rounds went into learning not to claim otherwise.** The named gaps:
 
-Three earlier attempts are recorded rather than edited away, because each one
-described the finished thing before it existed. The first checked between
-graphs, so a single 10,000-row graph accumulated whole. The second moved into the
-row loop but left coverage outside it. The third charged coverage but left the
-entry envelope uncharged and matrix-derived detail uncapped, so the envelope
-could multiply by graph count — while the ADR said it could not multiply at all.
+- each component is metered *after* it is composed, so a run can overshoot by
+  whichever component crosses the line;
+- the suite's own outer envelope — metadata, top-level summary, the `graphs`
+  framing — is never charged;
+- deriving coverage retains a witness per row and per `expectedNodes` entry, so
+  its **working memory scales with the matrix** even though the probes it emits
+  do not. Mitigating that means restructuring coverage derivation, which is out
+  of scope here and is recorded as an accepted residue rather than left silent.
+
+What the budget does buy, and what is tested, is the one thing that motivated it:
+**the remaining rows of a large matrix are never evaluated once it trips.** The
+caller's check on the finished report is the backstop for everything else.
+
+Five earlier versions of this paragraph were wrong, each recorded rather than
+edited away, because the pattern is the finding. The bound was checked between
+graphs; then in the row loop with coverage outside it; then with coverage charged
+and the entry envelope loose; then with the envelope charged and the outer
+envelope loose and "not row count" asserted about a derivation that does scale
+with rows. Every round the code moved closer and the prose still described a
+finished thing. The prose was the defect, not the mechanism.
 
 ### Consequences
 

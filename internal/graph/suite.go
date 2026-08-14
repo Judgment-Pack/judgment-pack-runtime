@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"unicode/utf8"
+
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -275,14 +277,29 @@ func rowEncodingFailure(rowID string) *evaluation.Failure {
 	}
 }
 
-// MaxEntryDetailBytes caps a graph entry's human-readable detail. Some details
-// echo matrix-supplied values, and an entry's detail is not data a caller reads
-// programmatically, so truncating one costs nothing a reader needs.
+// MaxEntryDetailBytes caps a graph entry's human-readable detail, marker
+// included: the value this returns is never longer than the cap. Some details
+// echo matrix-supplied values, and a detail is a message for a person rather
+// than data a caller reads programmatically, so truncating one costs nothing a
+// reader needs.
 const MaxEntryDetailBytes = 4096
 
+const detailTruncationMarker = "… (truncated)"
+
+// capDetail truncates on a rune boundary and accounts for its own marker.
+// Round 5 caught both: the previous version appended the marker AFTER filling
+// the cap, so the result exceeded the number it stated, and it sliced bytes, so
+// it could cut a multi-byte rune in half.
 func capDetail(detail string) string {
 	if len(detail) <= MaxEntryDetailBytes {
 		return detail
 	}
-	return detail[:MaxEntryDetailBytes] + "… (truncated)"
+	limit := MaxEntryDetailBytes - len(detailTruncationMarker)
+	if limit < 0 {
+		limit = 0
+	}
+	for limit > 0 && !utf8.RuneStart(detail[limit]) {
+		limit--
+	}
+	return detail[:limit] + detailTruncationMarker
 }

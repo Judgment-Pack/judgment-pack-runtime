@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
@@ -1366,8 +1367,19 @@ func TestProjectWalkChargesTheEntryEnvelopeAndCapsDetail(t *testing.T) {
 	}
 	long := strings.Repeat("x", MaxEntryDetailBytes*3)
 	capped := capDetail(long)
-	if len(capped) > MaxEntryDetailBytes+len("… (truncated)") {
-		t.Fatalf("a detail must be capped: %d bytes", len(capped))
+	// The cap includes the marker: a value that states a cap and then exceeds it
+	// is the same defect as an uncapped one (round-5 review).
+	if len(capped) > MaxEntryDetailBytes {
+		t.Fatalf("the capped detail is %d bytes, over the stated %d", len(capped), MaxEntryDetailBytes)
+	}
+	// And truncation lands on a rune boundary rather than splitting one.
+	multibyte := strings.Repeat("é", MaxEntryDetailBytes)
+	cappedRunes := capDetail(multibyte)
+	if len(cappedRunes) > MaxEntryDetailBytes {
+		t.Fatalf("the capped detail is %d bytes, over the stated %d", len(cappedRunes), MaxEntryDetailBytes)
+	}
+	if !utf8.ValidString(cappedRunes) {
+		t.Fatal("truncation split a rune; a detail must stay valid UTF-8")
 	}
 	if !strings.HasSuffix(capped, "(truncated)") {
 		t.Fatal("a truncated detail must say so, so a reader is not misled by a clean ending")

@@ -45,15 +45,23 @@ type Options struct {
 	// reason it records nothing.
 	LawCheck func(decisionID string, document []byte) *evaluation.Failure
 
-	// ReportBudget charges every component a run RETAINS, each exactly once:
+	// ReportBudget stops a run whose RETAINED report components pass the budget:
 	// every row's report as it is judged, every graph's coverage block as it is
 	// derived, and every entry's remaining envelope once that entry is
 	// finished. 0 is no bound.
 	//
-	// Each component is metered AFTER it is composed, so a run may overshoot by
-	// at most one component before refusing. Rows abort early, which is where a
-	// graph matrix multiplies: the remaining rows of a 10,000-row matrix are
-	// never evaluated.
+	// It is a MITIGATION, not a guarantee, and the gaps are named rather than
+	// implied. Each component is metered after it is composed, so a run can
+	// overshoot by the component that crosses the line. The suite's own outer
+	// envelope is never charged. And deriving coverage retains a witness per row
+	// and per expectedNodes entry, so its working memory scales with the matrix
+	// even though the probes it emits do not — mitigating that means
+	// restructuring coverage derivation, which is out of this change's scope.
+	//
+	// What it does buy, and what is tested: the remaining rows of a large matrix
+	// are never evaluated once the budget is passed. That is the multiplication
+	// this exists to stop. The caller's own check on the finished report is the
+	// backstop for everything above.
 	ReportBudget int
 
 	// reportSpent is the running total across a whole run, shared by pointer so
