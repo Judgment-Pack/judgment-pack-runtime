@@ -4,7 +4,7 @@ date: 2026-08-14
 deciders: maintainer
 ---
 
-# Run the declared graph matrix over MCP, and bound the report as it accumulates
+# Run the declared graph matrix over MCP, and stop a runaway matrix early
 
 ## Context and problem statement
 
@@ -90,11 +90,19 @@ rounds went into learning not to claim otherwise.** The named gaps:
 - deriving coverage retains a witness per row and per `expectedNodes` entry, so
   its **working memory scales with the matrix** even though the probes it emits
   do not. Mitigating that means restructuring coverage derivation, which is out
-  of scope here and is recorded as an accepted residue rather than left silent.
+  of scope here and is recorded as an accepted residue rather than left silent;
+- the row slice is **preallocated for the whole declared matrix** before the
+  first row is judged, so even a trip on row one costs memory proportional to the
+  matrix's declared length. `MaxRowsBytes` is what bounds that, not this budget.
 
 What the budget does buy, and what is tested, is the one thing that motivated it:
-**the remaining rows of a large matrix are never evaluated once it trips.** The
-caller's check on the finished report is the backstop for everything else.
+**the remaining rows of a large matrix are never evaluated once it trips.** That
+is evaluation work avoided, not memory reclaimed.
+
+The caller's check on the finished report backstops the **response size** and
+nothing else. It cannot backstop peak working memory, because by the time it runs
+the memory has already been spent — which is the whole reason the row loop needed
+its own check.
 
 Five earlier versions of this paragraph were wrong, each recorded rather than
 edited away, because the pattern is the finding. The bound was checked between

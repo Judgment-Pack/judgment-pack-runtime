@@ -53,15 +53,18 @@ type Options struct {
 	// It is a MITIGATION, not a guarantee, and the gaps are named rather than
 	// implied. Each component is metered after it is composed, so a run can
 	// overshoot by the component that crosses the line. The suite's own outer
-	// envelope is never charged. And deriving coverage retains a witness per row
-	// and per expectedNodes entry, so its working memory scales with the matrix
-	// even though the probes it emits do not — mitigating that means
-	// restructuring coverage derivation, which is out of this change's scope.
+	// envelope is never charged. Deriving coverage retains a witness per row and
+	// per expectedNodes entry, so its working memory scales with the matrix even
+	// though the probes it emits do not. And the row slice is preallocated for
+	// the whole declared matrix before the first row is judged, so even a trip on
+	// row one costs memory proportional to the declared length — MaxRowsBytes is
+	// what bounds that, not this budget.
 	//
 	// What it does buy, and what is tested: the remaining rows of a large matrix
-	// are never evaluated once the budget is passed. That is the multiplication
-	// this exists to stop. The caller's own check on the finished report is the
-	// backstop for everything above.
+	// are never EVALUATED once the budget is passed. That is work avoided, not
+	// memory reclaimed. A caller's check on the finished report backstops the
+	// response size and nothing else; it cannot backstop peak working memory,
+	// because by then the memory has been spent.
 	ReportBudget int
 
 	// reportSpent is the running total across a whole run, shared by pointer so

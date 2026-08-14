@@ -12,7 +12,7 @@ All notable changes to tagged releases are documented here.
   tool it writes nothing — no audit record (ADR-0018) and no reviewed-set consultation
   (ADR-0019), which are two independently guarded invariants rather than one — and a mismatching
   or skipped run is a successful call carrying its status.
-- **A graph matrix report is bounded as it accumulates, not after it exists** (ADR-0026):
+- **A runaway graph matrix stops early instead of running to the end** (ADR-0026):
   `graph.Options.ReportBudget` stops a run whose retained report components pass the budget — each
   row's report, each graph's coverage block, each entry's envelope — after which the remaining rows
   are never evaluated. It is a mitigation with named gaps rather than a guarantee: components are
