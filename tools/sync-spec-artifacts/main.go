@@ -22,6 +22,12 @@ import (
 
 const sourceRepository = "https://github.com/Judgment-Pack/judgment-pack-spec"
 
+// writeFile is a seam. A failure partway through materialization is the case
+// this tool's staging exists for, and it cannot be provoked deterministically
+// from outside, so the test injects one here rather than asserting the
+// behaviour is probably right.
+var writeFile = os.WriteFile
+
 var (
 	fullCommitPattern     = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 	evaluationPackPattern = regexp.MustCompile(`^packs/[a-z0-9][a-z0-9-]*\.json$`)
@@ -185,27 +191,92 @@ func run(source, destination, sourceRef string, allowDirty bool) error {
 	}
 	lock.BundleDigest.Value = hex.EncodeToString(bundle.Sum(nil))
 
-	if err := os.MkdirAll(destinationRoot, 0o755); err != nil {
-		return err
-	}
-	for _, item := range files {
-		target := filepath.Join(destinationRoot, filepath.FromSlash(item.targetPath))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(target, item.data, 0o644); err != nil {
-			return err
-		}
-	}
 	encoded, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
 		return err
 	}
 	encoded = append(encoded, '\n')
-	if err := os.WriteFile(filepath.Join(destinationRoot, "lock.json"), encoded, 0o644); err != nil {
+
+	// Materialize into a staging directory this invocation owns, then publish
+	// the destination with one rename. Writing straight into the destination
+	// meant a late failure left a partial bundle behind -- and because the next
+	// invocation correctly refuses an existing destination, that partial
+	// directory blocked the retry that would have fixed it. Staging sits beside
+	// the destination so the rename stays on one filesystem.
+	if err := os.MkdirAll(filepath.Dir(destinationRoot), 0o755); err != nil {
 		return err
 	}
+	staging, err := os.MkdirTemp(filepath.Dir(destinationRoot), ".sync-spec-artifacts-")
+	if err != nil {
+		return err
+	}
+	published := false
+	defer func() {
+		if !published {
+			// Only ever the directory this invocation created. A failure never
+			// removes the destination, whoever owns it.
+			os.RemoveAll(staging)
+		}
+	}()
+
+	for _, item := range files {
+		target := filepath.Join(staging, filepath.FromSlash(item.targetPath))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if err := writeFile(target, item.data, 0o644); err != nil {
+			return err
+		}
+	}
+	// The lock is the commit artifact and is written last, so a staging tree
+	// without it is unfinished by construction.
+	if err := writeFile(filepath.Join(staging, "lock.json"), encoded, 0o644); err != nil {
+		return err
+	}
+	// Read the materialized bytes back and hold them to the lock that is about
+	// to describe them, rather than trusting the writes that just happened.
+	if err := verifyMaterialized(staging, lock); err != nil {
+		return err
+	}
+
+	// Re-checked immediately before publishing: the destination is refused if
+	// it appeared while this invocation was working. The rename itself refuses
+	// a non-empty directory, so the remaining window is an empty directory
+	// created in between -- Go exposes no portable exclusive directory rename.
+	if _, err := os.Stat(destinationRoot); err == nil {
+		return fmt.Errorf("destination already exists: %s", destinationRoot)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(staging, destinationRoot); err != nil {
+		return fmt.Errorf("publish %s: %w", destinationRoot, err)
+	}
+	published = true
+
 	fmt.Printf("Imported JPS %s (%d files, %s)\n", suite.SpecVersion, len(files), lock.BundleDigest.Value)
+	return nil
+}
+
+// verifyMaterialized re-reads every file the lock names and holds it to the
+// recorded size and digest. The lock is the artifact consumers trust, so it may
+// only describe bytes that are actually on disk.
+func verifyMaterialized(root string, lock lockFile) error {
+	for _, entry := range lock.Files {
+		target := filepath.Join(root, filepath.FromSlash(entry.Path))
+		data, err := readRegular(target)
+		if err != nil {
+			return fmt.Errorf("verify %s: %w", entry.Path, err)
+		}
+		if len(data) != entry.Bytes {
+			return fmt.Errorf("verify %s: materialized %d bytes, lock records %d",
+				entry.Path, len(data), entry.Bytes)
+		}
+		sum := sha256.Sum256(data)
+		if got := hex.EncodeToString(sum[:]); got != entry.SHA256 {
+			return fmt.Errorf("verify %s: materialized digest %s, lock records %s",
+				entry.Path, got, entry.SHA256)
+		}
+	}
 	return nil
 }
 
