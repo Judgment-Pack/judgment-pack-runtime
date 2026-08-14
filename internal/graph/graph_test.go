@@ -1296,3 +1296,62 @@ func TestProjectWalkBoundsRowsAsTheyAccumulate(t *testing.T) {
 		t.Fatalf("a generous budget changed the run: %+v", generous)
 	}
 }
+
+// Coverage is retained per graph exactly as the rows are, and it repeats
+// pack-derived probe strings across every node, so it is charged against the
+// same budget. Round 3 of the review found it built outside the bound while the
+// ADR claimed the whole report was bounded.
+//
+// The budget here is chosen to sit ABOVE every row's total and BELOW rows plus
+// coverage, so the test fails if coverage stops being charged -- which a
+// rows-only bound would not notice.
+func TestProjectWalkChargesCoverageAgainstTheBudget(t *testing.T) {
+	loaded := fixtureProject(t)
+
+	full, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	rowsOnly := 0
+	for _, entry := range full.Graphs {
+		for _, row := range entry.Rows {
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rowsOnly += len(encoded)
+		}
+	}
+	coverageBytes := 0
+	for _, entry := range full.Graphs {
+		encoded, err := json.Marshal(entry.Coverage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		coverageBytes += len(encoded)
+	}
+	if coverageBytes == 0 {
+		t.Fatal("the fixture must derive coverage for this test to mean anything")
+	}
+
+	// Above the rows, below rows+coverage: only a bound that charges coverage
+	// refuses here.
+	budget := rowsOnly + coverageBytes/2
+	if budget <= rowsOnly {
+		t.Fatalf("the fixture's coverage is too small to separate the two bounds")
+	}
+	_, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: budget})
+	if budgetFailure == nil {
+		t.Fatal("coverage must be charged against the budget, not built outside it")
+	}
+	if budgetFailure.Code != CodeReportBudget {
+		t.Fatalf("code = %q", budgetFailure.Code)
+	}
+
+	// And a budget above rows+coverage together does not refuse.
+	if _, failure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: (rowsOnly + coverageBytes) * 4}); failure != nil {
+		t.Fatalf("a budget above the whole retained report must not refuse: %v", failure.Message)
+	}
+}

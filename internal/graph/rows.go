@@ -223,10 +223,24 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			}
 		}
 	}
+	output.Coverage = coverage(loaded, engine, doc, rows, options)
+	// Coverage is retained per graph like the rows are, and it repeats
+	// pack-derived probe strings across up to 64 nodes, so it is charged too.
+	// Round 3 of the review found it outside the budget while the ADR claimed
+	// the whole report was bounded.
+	if options.ReportBudget > 0 {
+		encoded, err := json.Marshal(output.Coverage)
+		if err != nil {
+			return result.GraphTest{}, coverageEncodingFailure(doc.ID)
+		}
+		spent += len(encoded)
+		if spent > options.ReportBudget {
+			return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
+		}
+	}
 	if options.reportSpent != nil {
 		*options.reportSpent = spent
 	}
-	output.Coverage = coverage(loaded, engine, doc, rows, options)
 	return output, nil
 }
 

@@ -1248,7 +1248,7 @@ func TestExperimentalTestGraphsMatchesTheGraphLayerPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(wantJSON) != string(gotJSON) {
-		t.Fatalf("MCP and the graph layer disagree:\n mcp = %s\n cli = %s", gotJSON, wantJSON)
+		t.Fatalf("MCP and the graph layer disagree:\n mcp         = %s\n graph layer = %s", gotJSON, wantJSON)
 	}
 }
 

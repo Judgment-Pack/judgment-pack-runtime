@@ -45,8 +45,11 @@ type Options struct {
 	// reason it records nothing.
 	LawCheck func(decisionID string, document []byte) *evaluation.Failure
 
-	// ReportBudget bounds the bytes a whole-suite run may accumulate, or 0 for
-	// no bound. A graph matrix multiplies where a pack matrix does not -- up to
+	// ReportBudget bounds the bytes a run may accumulate in the components it
+	// RETAINS -- every row's report and every graph's coverage block -- or 0 for
+	// no bound. The suite envelope itself (ids, paths, summaries) is not charged
+	// and is bounded only by the caller's own check on the finished report; it is
+	// small and follows the configuration's size rather than the matrix's. A graph matrix multiplies where a pack matrix does not -- up to
 	// 10,000 rows, each re-evaluating up to 64 nodes and retaining each node's
 	// canonical disposition -- so a report can reach gigabytes long before any
 	// check on the marshaled response could see it. ADR-0025 names that

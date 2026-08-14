@@ -227,6 +227,14 @@ func reportBudgetFailure(graphID string, rowsJudged int, spent, budget int) *eva
 	}
 }
 
+// coverageEncodingFailure refuses a run whose own coverage block will not encode.
+func coverageEncodingFailure(graphID string) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:    "JPS-GRAPH-REPORT-ENCODE",
+		Message: fmt.Sprintf("The coverage report for graph %q could not be encoded.", graphID),
+	}
+}
+
 // rowEncodingFailure refuses a run whose own row report will not encode.
 func rowEncodingFailure(rowID string) *evaluation.Failure {
 	return &evaluation.Failure{

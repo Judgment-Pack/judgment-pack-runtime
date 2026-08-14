@@ -74,16 +74,23 @@ node and pack identifiers across probes. A conforming outcome id repeated across
 response could ever see it. ADR-0025 already names that "build gigabytes, then
 check the MCP size" shape as a defect.
 
-So `graph.Options.ReportBudget` bounds the suite **as its rows accumulate**,
-refusing at the row that carried the report past the budget and leaving the
-remaining rows unevaluated.
+So `graph.Options.ReportBudget` charges **every component the run retains** — each
+row's report as it is judged, and each graph's coverage block as it is derived —
+refusing at the point the total passes the budget and leaving the remaining rows
+unevaluated.
 
-The first attempt at this checked between graphs, and round 2 of the review
-rejected it: a single graph declaring 10,000 rows still accumulated every one of
-them before anything looked, so the bound did not do what this ADR said it did.
-Enforcement sits in the row loop, where the retention actually happens. What is
-still true only at the transport boundary is the marshaled response check, which
-catches the suite envelope. The CLI leaves it zero — it streams to a terminal an operator can
+It took three review rounds to make that sentence true, and the two rejected
+attempts are worth recording rather than editing away. The first checked between
+graphs: a single graph declaring 10,000 rows still accumulated every one of them
+before anything looked. The second moved the check into the row loop but left
+coverage outside it, and coverage repeats pack-derived probe strings across up to
+64 nodes. Each time the code was closer and this ADR still claimed the finished
+thing.
+
+What is deliberately **not** charged is the suite envelope — ids, paths,
+summaries — which is bounded only by the caller's check on the finished report.
+It follows the configuration's size rather than the matrix's, so it cannot
+multiply. The CLI leaves it zero — it streams to a terminal an operator can
 interrupt — and the MCP surface sets it. The bound itself is one shared variable
 across both matrix tools, because 16 MiB is transport and report policy rather
 than a guess at either suite's size; splitting it would need a reason recorded.
