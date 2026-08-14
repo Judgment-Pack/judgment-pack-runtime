@@ -325,3 +325,114 @@ func TestProducesPointerDirections(t *testing.T) {
 		t.Fatal("no producers means even the root is unproduced")
 	}
 }
+
+// ADR-0022 states the reverse evidence check at CONFIGURATION scope. `--id`
+// consults one pack, so "no pack declares this" stops being answerable: the
+// manifest is application-wide, and evidence another configured pack
+// legitimately declares would look orphaned. Before this was fixed, selecting
+// pack A in a two-pack project failed on evidence pack B declares.
+func TestLintWithholdsTheProjectWideCheckUnderPartialSelection(t *testing.T) {
+	pack := string(packFixture(t))
+	configPath := writeProject(t, `{"configVersion":"1","packs":{
+	  "intake":{"path":"packs/a.json","facts":{"/request/type":{"source":"x"}}},
+	  "second":{"path":"packs/b.json","facts":{"/request/type":{"source":"x"}}}
+	}}`, map[string]string{"packs/a.json": pack, "packs/b.json": pack})
+
+	manifest, err := DecodeProducers([]byte(`{"producersVersion":"1",
+	  "facts":["/request"],
+	  "evidence":["intake-form","sponsor-endorsement","sensitive-data-approvals"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Selecting one of two packs: the project-wide check is withheld, and it is
+	// withheld explicitly rather than quietly passing.
+	report, failure := mustLoad(t, configPath).Lint(manifest, "intake", "packs lint")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	check := configCheckNamed(t, report, CheckEvidenceProducers)
+	if check.Status != result.PackCheckSkipped {
+		t.Fatalf("a partial selection cannot answer the project-wide check: %+v", check)
+	}
+	for _, required := range []string{"1 of 2", "--id"} {
+		if !strings.Contains(check.Detail, required) {
+			t.Fatalf("the detail must say why and what to do; missing %q: %q", required, check.Detail)
+		}
+	}
+	if report.Status == "failed" {
+		t.Fatalf("selecting a valid pack must not fail on another pack's evidence: %+v", report)
+	}
+
+	// The selected pack's own checks are untouched by the withholding.
+	if got := lintCheckNamed(t, report, "intake", CheckEvidenceProducers); got.Status != result.PackCheckPassed {
+		t.Fatalf("per-pack coverage still applies under --id: %+v", got)
+	}
+	if report.Summary.Total != 1 {
+		t.Fatalf("only the selected pack is summarized: %+v", report.Summary)
+	}
+
+	// A genuinely orphaned id must still fail on a full run — the withholding
+	// is scoped to partial selection, not a way out of the check.
+	orphaned, err := DecodeProducers([]byte(`{"producersVersion":"1",
+	  "facts":["/request"],
+	  "evidence":["intake-form","sponsor-endorsement","sensitive-data-approvals","ghost-evidence"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, failure := mustLoad(t, configPath).Lint(orphaned, "", "packs lint")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	fullCheck := configCheckNamed(t, full, CheckEvidenceProducers)
+	if fullCheck.Status != result.PackCheckFailed || !strings.Contains(fullCheck.Detail, `"ghost-evidence"`) {
+		t.Fatalf("a full run still fails once for a genuinely orphaned id: %+v", fullCheck)
+	}
+	if full.Status != "failed" {
+		t.Fatalf("report status = %q, want failed", full.Status)
+	}
+
+	// And the same orphan under --id is withheld, not reported: it is exactly
+	// the case the verifier cannot distinguish from another pack's evidence.
+	partialOrphan, failure := mustLoad(t, configPath).Lint(orphaned, "intake", "packs lint")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if got := configCheckNamed(t, partialOrphan, CheckEvidenceProducers); got.Status != result.PackCheckSkipped {
+		t.Fatalf("under --id even a real orphan is unanswerable: %+v", got)
+	}
+}
+
+// A single-pack project selected by --id consults every configured pack, so
+// nothing is withheld: partiality is about coverage, not about the flag.
+func TestLintStillChecksWhenTheSelectionCoversEveryPack(t *testing.T) {
+	pack := string(packFixture(t))
+	configPath := writeProject(t, `{"configVersion":"1","packs":{
+	  "intake":{"path":"packs/a.json","facts":{"/request/type":{"source":"x"}}}
+	}}`, map[string]string{"packs/a.json": pack})
+	orphaned, err := DecodeProducers([]byte(`{"producersVersion":"1",
+	  "facts":["/request"],
+	  "evidence":["intake-form","sponsor-endorsement","sensitive-data-approvals","ghost-evidence"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, failure := mustLoad(t, configPath).Lint(orphaned, "intake", "packs lint")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if got := configCheckNamed(t, report, CheckEvidenceProducers); got.Status != result.PackCheckFailed {
+		t.Fatalf("selecting the only pack consults them all, so the check applies: %+v", got)
+	}
+}
+
+// configCheckNamed returns the configuration-level check by name.
+func configCheckNamed(t *testing.T, report result.PackProducersLint, name string) result.PackCheck {
+	t.Helper()
+	for _, check := range report.Checks {
+		if check.Name == name {
+			return check
+		}
+	}
+	t.Fatalf("no configuration-level check named %q in %+v", name, report.Checks)
+	return result.PackCheck{}
+}
