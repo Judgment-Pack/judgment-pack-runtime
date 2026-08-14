@@ -13,7 +13,8 @@ All notable changes to tagged releases are documented here.
   (ADR-0019), which are two independently guarded invariants rather than one — and a mismatching
   or skipped run is a successful call carrying its status.
 - **A graph matrix report is bounded as it accumulates, not after it exists** (ADR-0026):
-  `graph.Options.ReportBudget` refuses at the graph that carried a suite past the budget. A graph
+  `graph.Options.ReportBudget` refuses at the row that carried a suite past the budget, leaving the
+  remaining rows unevaluated. A graph
   matrix multiplies where a pack matrix does not — up to 10,000 rows, each re-evaluating up to 64
   nodes and retaining every node's canonical disposition — so a report can reach gigabytes before
   a check on the marshaled response could see it, which is the shape ADR-0025 names as a defect.

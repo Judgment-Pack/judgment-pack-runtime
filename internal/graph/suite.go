@@ -1,7 +1,6 @@
 package graph
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -54,10 +53,16 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 		ConfigVersion:             loaded.Config.ConfigVersion,
 		Graphs:                    make([]result.GraphSuiteEntry, 0, len(selected)),
 	}
-	accumulated := 0
+	spent := 0
+	options.reportSpent = &spent
 	for _, graphID := range selected {
 		entry, _ := loaded.GraphEntry(graphID)
-		report := testEntry(loaded, engine, graphID, entry, options)
+		report, budgetFailure := testEntry(loaded, engine, graphID, entry, options)
+		// Only a budget refusal escapes an entry: everything else that stops a
+		// graph is that graph's own in-band mismatch.
+		if budgetFailure != nil {
+			return result.GraphSuite{}, budgetFailure
+		}
 		output.Summary.Total += report.Summary.Total
 		output.Summary.Passed += report.Summary.Passed
 		output.Summary.Mismatched += report.Summary.Mismatched
@@ -65,19 +70,6 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 			output.Status = "mismatch"
 		}
 		output.Graphs = append(output.Graphs, report)
-		// Enforced as the suite accumulates, not after it exists: a report over
-		// the budget is refused at the graph that carried it past, so the run
-		// stops rather than retaining the rest to be measured (ADR-0025).
-		if options.ReportBudget > 0 {
-			encoded, err := json.Marshal(report)
-			if err != nil {
-				return result.GraphSuite{}, reportEncodingFailure(graphID)
-			}
-			accumulated += len(encoded)
-			if accumulated > options.ReportBudget {
-				return result.GraphSuite{}, reportBudgetFailure(graphID, accumulated, options.ReportBudget)
-			}
-		}
 	}
 	if output.Status == "passed" && output.Summary.Total == 0 {
 		output.Status = "skipped"
@@ -90,17 +82,17 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 // unreadable or malformed rows document — is a mismatch for that entry and
 // not a silent skip, exactly as a pack whose matrix will not load has not
 // passed.
-func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, entry project.Graph, options Options) result.GraphSuiteEntry {
+func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, entry project.Graph, options Options) (result.GraphSuiteEntry, *evaluation.Failure) {
 	report := result.GraphSuiteEntry{ID: id, Path: entry.Path, RowsPath: entry.Rows, Status: "passed"}
-	mismatch := func(detail string) result.GraphSuiteEntry {
+	mismatch := func(detail string) (result.GraphSuiteEntry, *evaluation.Failure) {
 		report.Status = "mismatch"
 		report.Detail = detail
-		return report
+		return report, nil
 	}
 	if entry.Rows == "" {
 		report.Status = "skipped"
 		report.Detail = "The entry declares no rows, so no row ran for this graph."
-		return report
+		return report, nil
 	}
 	document, detail := loadEntryDocument(loaded, entry)
 	if detail != "" {
@@ -120,13 +112,16 @@ func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, en
 	}
 	tested, testFailure := Test(loaded, engine, document, entry.Path, entry.Rows, rows, options)
 	if testFailure != nil {
+		if testFailure.Code == CodeReportBudget {
+			return report, testFailure
+		}
 		return mismatch(display.Sanitize(testFailure.Message))
 	}
 	report.Status = tested.Status
 	report.Summary = tested.Summary
 	report.Rows = tested.Rows
 	report.Coverage = tested.Coverage
-	return report
+	return report, nil
 }
 
 // ValidateProject checks every configured graph — or the one graph id selects
@@ -215,22 +210,27 @@ func loadEntryDocument(loaded *project.Project, entry project.Graph) (Document, 
 	return document, ""
 }
 
-// reportBudgetFailure refuses a run whose report passed the caller's budget.
-// It names the graph that carried it past and the numbers, because the caller
-// has to decide whether to select one graph or move to the streaming surface.
-func reportBudgetFailure(graphID string, accumulated, budget int) *evaluation.Failure {
+// CodeReportBudget marks the one failure an entry may raise that is NOT that
+// entry's in-band mismatch: the whole run is refused.
+const CodeReportBudget = "JPS-GRAPH-REPORT-BUDGET"
+
+// reportBudgetFailure refuses a run whose report passed the caller's budget. It
+// names the graph, how many rows had been judged when it tripped, and both
+// numbers, because the caller has to decide whether to select one graph or move
+// to the streaming surface.
+func reportBudgetFailure(graphID string, rowsJudged int, spent, budget int) *evaluation.Failure {
 	return &evaluation.Failure{
-		Code: "JPS-GRAPH-REPORT-BUDGET",
+		Code: CodeReportBudget,
 		Message: fmt.Sprintf(
-			"The suite report reached %d bytes at graph %q, over this surface's %d-byte budget, and a truncated suite report would under-report silently.",
-			accumulated, graphID, budget),
+			"The report reached %d bytes after %d row(s) of graph %q, over this surface's %d-byte budget; the remaining rows were not evaluated, and a truncated suite report would under-report silently.",
+			spent, rowsJudged, graphID, budget),
 	}
 }
 
-// reportEncodingFailure refuses a run whose own report will not encode.
-func reportEncodingFailure(graphID string) *evaluation.Failure {
+// rowEncodingFailure refuses a run whose own row report will not encode.
+func rowEncodingFailure(rowID string) *evaluation.Failure {
 	return &evaluation.Failure{
 		Code:    "JPS-GRAPH-REPORT-ENCODE",
-		Message: fmt.Sprintf("The report for graph %q could not be encoded.", graphID),
+		Message: fmt.Sprintf("The report for row %q could not be encoded.", rowID),
 	}
 }

@@ -74,9 +74,16 @@ node and pack identifiers across probes. A conforming outcome id repeated across
 response could ever see it. ADR-0025 already names that "build gigabytes, then
 check the MCP size" shape as a defect.
 
-So `graph.Options.ReportBudget` bounds the suite **as it accumulates**, refusing
-at the graph that carried the report past the budget rather than after the whole
-thing exists. The CLI leaves it zero — it streams to a terminal an operator can
+So `graph.Options.ReportBudget` bounds the suite **as its rows accumulate**,
+refusing at the row that carried the report past the budget and leaving the
+remaining rows unevaluated.
+
+The first attempt at this checked between graphs, and round 2 of the review
+rejected it: a single graph declaring 10,000 rows still accumulated every one of
+them before anything looked, so the bound did not do what this ADR said it did.
+Enforcement sits in the row loop, where the retention actually happens. What is
+still true only at the transport boundary is the marshaled response check, which
+catches the suite envelope. The CLI leaves it zero — it streams to a terminal an operator can
 interrupt — and the MCP surface sets it. The bound itself is one shared variable
 across both matrix tools, because 16 MiB is transport and report policy rather
 than a guess at either suite's size; splitting it would need a reason recorded.
@@ -84,7 +91,11 @@ than a guess at either suite's size; splitting it would need a reason recorded.
 ### Consequences
 
 - Good, because the authoring loop closes over MCP for graphs as it does for
-  packs, without a client re-implementing the walk.
+  packs, without a client re-implementing the walk — on every pass after the
+  first. The tool runs *declared* graphs, and a graph is declared in `jpack.json`
+  at the hand-over step, so the first run of a newly authored graph still wants
+  the CLI's explicit-path walk. The `author_graph` prompt says so rather than
+  recommending a tool that cannot see the document yet.
 - Good, because the resource shape that distinguishes graphs from packs is
   handled where it arises rather than at the response boundary.
 - Bad, because the claim surface grows from seven to eight, and every inventory

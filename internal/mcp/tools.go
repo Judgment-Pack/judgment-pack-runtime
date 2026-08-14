@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
@@ -21,7 +22,7 @@ import (
 )
 
 // toolDefinitions is the tools/list payload. Every tool wraps a read-only core
-// operation except the two that reach the evaluator on this runtime's
+// operation except the three that reach the evaluator on this runtime's
 // experimental surface (ADR-0007): experimental_evaluate, which appends one
 // record per completed call in a project whose configuration asked for one
 // (ADR-0018) and is the only tool here that can write, and
@@ -146,7 +147,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_test_graphs",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every configured graph's declared matrix through this runtime's evaluator and report every row, or one graph's matrix by its configured key in \"graph_id\". No JPS version defines a graph, a composition, a graph matrix, or a composite result: the graph format is this runtime's own convention, and only each node's pack evaluation reaches the shared evaluator. A row is judged by comparing the canonical composite result, and any named-node results the row declares, against what the walk produced -- or the expected evaluation error class and phase where the row expects a refusal. The derived coverage report sits beside each graph's rows and informs rather than gates. One \"supported_extensions\" list, if supplied, applies uniformly to every node of every row; omitting it and passing an empty array are the same thing. A mismatching or skipped run is a successful call reporting its status: a project that declares no graph matrix is reported skipped and never passed, and a run in which no row ran at all is reported skipped rather than passed -- a green gate over zero rows would say a project was tested when nothing was. Tool errors are kept for what stopped a complete suite from existing: a bad argument, an unknown graph id, a configuration that is there and will not load, no configuration at all, or a report past this surface's size budget. A graph or rows document that cannot be read inside a run is that graph's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the graph and packs a project wrote rather than about this implementation -- and no row is an authorization, a statement that a graph or policy is correct, or a statement that acting on a composite result is safe. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every configured graph's declared matrix through this runtime's evaluator and report every row, or one graph's matrix by its configured key in \"graph_id\". No JPS version defines a graph, a composition, a graph matrix, or a composite result: the graph format is this runtime's own convention, and only each node's pack evaluation reaches the shared evaluator. A row is judged by comparing the composite headline disposition, and any named-node dispositions the row declares, each canonicalized, against what the walk produced -- or the expected evaluation error class and phase where the row expects a refusal. The derived coverage report sits beside each graph's rows and informs rather than gates. One \"supported_extensions\" list, if supplied, applies uniformly to every node of every row; omitting it and passing an empty array are the same thing. A mismatching or skipped run is a successful call reporting its status: a project that declares no graph matrix is reported skipped and never passed. Zero rows is not always skipped: a graph or rows document that cannot be read is a mismatch carrying no rows, because failing to read a matrix is not the same as not having one. Tool errors are kept for what stopped a complete suite from existing: a bad argument, an unknown graph id, a configuration that is there and will not load, no configuration at all, or a report past this surface's size budget. A graph or rows document that cannot be read inside a run is that graph's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the graph and packs a project wrote rather than about this implementation -- and no row is an authorization, a statement that a graph or policy is correct, or a statement that acting on a composite result is safe. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -547,6 +548,27 @@ func stringArrayArgument(name string, raw json.RawMessage) ([]string, string) {
 	return values, ""
 }
 
+// exactMembers holds an arguments object to the exact member names the schema
+// advertises. encoding/json binds "GRAPH_ID" to a `json:"graph_id"` field, so a
+// decoder alone accepts spellings additionalProperties:false forbids.
+func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) string {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(rawArgs, &members); err != nil {
+		return fmt.Sprintf("The %q arguments must be an object.", tool)
+	}
+	permitted := map[string]bool{}
+	for _, name := range allowed {
+		permitted[name] = true
+	}
+	for name := range members {
+		if !permitted[name] {
+			return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
+				tool, name, strings.Join(allowed, " and "))
+		}
+	}
+	return ""
+}
+
 // toolExperimentalTestGraphs runs declared graph matrices through the
 // experimental evaluator and returns exactly what the graph CLI's project walk
 // reports. A mismatching or skipped run is a successful call carrying its
@@ -570,6 +592,14 @@ func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
 	}
 	var args testGraphsArguments
 	if len(rawArgs) > 0 {
+		// DisallowUnknownFields is not sufficient on its own: encoding/json
+		// matches member names case-INSENSITIVELY, so {"GRAPH_ID":"x"} would
+		// bind to GraphID and pass, against an advertised
+		// additionalProperties:false that means the exact spelling. The member
+		// names are therefore checked exactly first.
+		if message := exactMembers("experimental_test_graphs", rawArgs, "graph_id", "supported_extensions"); message != "" {
+			return toolError(message)
+		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {

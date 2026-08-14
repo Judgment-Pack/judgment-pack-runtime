@@ -190,6 +190,10 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		GraphVersion:              doc.Version,
 		Rows:                      make([]result.GraphTestRow, 0, len(rows.Cases)),
 	}
+	spent := 0
+	if options.reportSpent != nil {
+		spent = *options.reportSpent
+	}
 	for _, row := range rows.Cases {
 		outcome := runRow(loaded, engine, doc, graphPath, row, options)
 		output.Summary.Total++
@@ -200,6 +204,27 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			output.Status = "mismatch"
 		}
 		output.Rows = append(output.Rows, outcome)
+		// The budget is enforced HERE, per row, because this is where the
+		// retention happens: a graph may declare 10,000 rows and each retains
+		// its node dispositions. Checking between graphs would still let one
+		// graph accumulate the gigabytes the bound exists to prevent, and the
+		// remaining rows are not evaluated once it trips.
+		if options.ReportBudget > 0 {
+			encoded, err := json.Marshal(outcome)
+			if err != nil {
+				return result.GraphTest{}, rowEncodingFailure(row.ID)
+			}
+			spent += len(encoded)
+			if options.reportSpent != nil {
+				*options.reportSpent = spent
+			}
+			if spent > options.ReportBudget {
+				return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
+			}
+		}
+	}
+	if options.reportSpent != nil {
+		*options.reportSpent = spent
 	}
 	output.Coverage = coverage(loaded, engine, doc, rows, options)
 	return output, nil

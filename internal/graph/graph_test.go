@@ -1243,40 +1243,44 @@ func TestProjectWalkRowsContainmentIsExact(t *testing.T) {
 	}
 }
 
-// The report budget is enforced AS the suite accumulates, not after it exists.
-// A graph matrix multiplies where a pack matrix does not, so a suite can reach
-// gigabytes before any check on a marshaled response could see it; ADR-0025
-// names that "build gigabytes, then check the size" shape as a defect.
+// The report budget is enforced PER ROW, which is where the retention happens.
 //
-// This is the graph-layer test because the MCP-layer one cannot discriminate:
-// over a small fixture the post-marshal response check refuses an oversized
-// report identically, so it passes with the budget removed. Found by mutation.
-func TestProjectWalkRefusesAReportPastTheBudget(t *testing.T) {
+// Round 2 of the cross-vendor review rejected the first attempt at this: the
+// budget was checked between graphs, so a single graph declaring 10,000 rows
+// still accumulated every one of them -- the gigabytes the bound exists to
+// prevent -- before anything looked. Checking later graphs is not the same as
+// bounding the run, and the ADR claimed the stronger thing.
+//
+// The test that matters is therefore not "does it refuse" but "did it stop
+// evaluating": the refusal names how many rows were judged, and that count must
+// be short of the matrix.
+func TestProjectWalkBoundsRowsAsTheyAccumulate(t *testing.T) {
 	loaded := fixtureProject(t)
 
-	// Unbounded is the CLI's behaviour and must be untouched.
 	unbounded, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
 	if failure != nil {
 		t.Fatalf("an unbounded run is unchanged: %v", failure.Message)
 	}
-	if unbounded.Status != "passed" {
+	if unbounded.Status != "passed" || unbounded.Summary.Total != 3 {
 		t.Fatalf("output = %+v", unbounded)
 	}
 
-	// A budget below the first graph's own report refuses, naming the graph and
-	// both numbers, and returns no suite at all rather than a partial one.
+	// A budget smaller than one row's report: the run stops inside the first
+	// graph, having judged fewer rows than the matrix declares.
 	bounded, budgetFailure := TestProject(loaded, newEngine(t), "",
-		Options{Command: "test", ReportBudget: 16})
+		Options{Command: "test", ReportBudget: 8})
 	if budgetFailure == nil {
 		t.Fatal("a report past the budget must refuse the run")
 	}
-	if budgetFailure.Code != "JPS-GRAPH-REPORT-BUDGET" {
+	if budgetFailure.Code != CodeReportBudget {
 		t.Fatalf("code = %q", budgetFailure.Code)
 	}
-	for _, required := range []string{"onboarding", "16"} {
-		if !strings.Contains(budgetFailure.Message, required) {
-			t.Fatalf("the refusal must name %q: %q", required, budgetFailure.Message)
-		}
+	if !strings.Contains(budgetFailure.Message, "after 1 row(s)") {
+		t.Fatalf("the refusal must say how far it got, so that stopping early is observable: %q",
+			budgetFailure.Message)
+	}
+	if !strings.Contains(budgetFailure.Message, "remaining rows were not evaluated") {
+		t.Fatalf("the refusal must say the rest did not run: %q", budgetFailure.Message)
 	}
 	if len(bounded.Graphs) != 0 {
 		t.Fatalf("a refused run returns no suite: %+v", bounded)
@@ -1288,7 +1292,7 @@ func TestProjectWalkRefusesAReportPastTheBudget(t *testing.T) {
 	if failure != nil {
 		t.Fatalf("a generous budget must not refuse: %v", failure.Message)
 	}
-	if generous.Status != unbounded.Status || len(generous.Graphs) != len(unbounded.Graphs) {
+	if generous.Status != unbounded.Status || generous.Summary.Total != unbounded.Summary.Total {
 		t.Fatalf("a generous budget changed the run: %+v", generous)
 	}
 }

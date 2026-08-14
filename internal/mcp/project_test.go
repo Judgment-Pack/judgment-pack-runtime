@@ -1214,9 +1214,14 @@ func TestExperimentalTestGraphsRunsTheDeclaredMatrix(t *testing.T) {
 	}
 }
 
-// CLI/MCP parity: the payload is the one the graph project walk emits, so the
-// two surfaces cannot drift into reporting different things about one project.
-func TestExperimentalTestGraphsMatchesTheCLIPayload(t *testing.T) {
+// The MCP payload is byte-identical to what the graph layer produces for the
+// same project, so the transport adds and drops nothing.
+//
+// Named for what it does: it calls graph.TestProject directly, NOT the CLI, and
+// supplies this surface's own command string. It is a layer-parity test, and
+// the round-2 review was right that calling it a CLI-parity test claimed more
+// than it checks -- the CLI's explicit-path walk reports a different type.
+func TestExperimentalTestGraphsMatchesTheGraphLayerPayload(t *testing.T) {
 	root := graphProjectFixture(t)
 	configPath := filepath.Join(root, project.DefaultConfigName)
 	loaded, failure := project.Load(configPath)
@@ -1284,6 +1289,12 @@ func TestExperimentalTestGraphsRefusesBadArguments(t *testing.T) {
 		{name: "a null extension element", raw: `{"supported_extensions":[null]}`},
 		{name: "a non-string extension element", raw: `{"supported_extensions":[7]}`},
 		{name: "an extension collection that is not an array", raw: `{"supported_extensions":"a"}`},
+		// encoding/json matches member names case-insensitively, so these bind
+		// to the real fields and pass a decoder alone. additionalProperties:
+		// false means the exact spelling (round-2 review).
+		{name: "an upper-case graph id member", raw: `{"GRAPH_ID":"onboarding"}`},
+		{name: "an upper-case extensions member", raw: `{"SUPPORTED_EXTENSIONS":[]}`},
+		{name: "a camel-cased graph id member", raw: `{"graphId":"onboarding"}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			outcome := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", tt.raw))[0]["result"].(map[string]any)

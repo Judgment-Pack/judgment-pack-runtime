@@ -58,6 +58,12 @@ type Options struct {
 	// interrupted, so that surface sets it.
 	ReportBudget int
 
+	// reportSpent is the running total across a whole run, shared by pointer so
+	// one graph's rows count against the same budget as the next graph's.
+	// TestProject sets it; a caller that runs one graph directly leaves it nil
+	// and is bounded within that graph alone.
+	reportSpent *int
+
 	// injectionBudget overrides the per-node injected-bytes budget, whose
 	// default is the carrier's hard byte limit. It exists so a test can trip
 	// the budget without megabytes of fixture; no surface sets it.
