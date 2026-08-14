@@ -239,14 +239,19 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
 		}
 	}
-	// The GraphTest's own envelope is charged too, as whatever the finished
-	// report costs beyond the rows and coverage charged while building it.
-	// Round 8: without this, a caller using Test directly with a budget -- which
-	// the option contemplates -- had an uncharged envelope, so the invariant
-	// "only the outer suite envelope escapes" was false on that path. Inside
-	// TestProject the arithmetic self-corrects, because that charges the entry's
-	// remaining difference.
-	if options.ReportBudget > 0 {
+	// This report's own envelope is charged only when THIS report is what the
+	// caller keeps -- a direct Test, where reportSpent is nil. Inside
+	// TestProject the GraphTest envelope is discarded: testEntry copies the
+	// status, summary, rows and coverage into a GraphSuiteEntry and drops the
+	// rest, and TestProject charges that entry's envelope instead.
+	//
+	// Both directions were wrong once. Round 8 found this envelope uncharged on
+	// the direct path. Round 9 found the fix charging it on the composed path
+	// too, where the bytes are never retained -- so production-only bytes were
+	// consuming the budget, and a positive-only remainder downstream can neither
+	// subtract that nor undo a refusal it already caused. The invariant is
+	// "charge what is RETAINED", and it fails if either side is over-applied.
+	if options.ReportBudget > 0 && options.reportSpent == nil {
 		encoded, err := json.Marshal(output)
 		if err != nil {
 			return result.GraphTest{}, reportEncodingFailure(doc.ID)

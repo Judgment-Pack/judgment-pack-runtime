@@ -1466,3 +1466,46 @@ func TestDirectGraphTestChargesItsOwnEnvelope(t *testing.T) {
 		t.Fatalf("a generous budget changed the report: %+v", generous)
 	}
 }
+
+// The invariant is "charge what is RETAINED", and it fails if either side is
+// over-applied. Round 9 found the round-8 fix charging the GraphTest envelope
+// on the COMPOSED path too, where testEntry discards those bytes — so
+// production-only bytes consumed the budget and could cause a refusal that the
+// downstream positive-only remainder can neither subtract nor undo.
+//
+// This pins the composed path against exactly that: the suite's charge must be
+// what the SUITE retains, not what the transient GraphTest cost to produce.
+func TestProjectWalkDoesNotChargeDiscardedProductionBytes(t *testing.T) {
+	loaded := fixtureProject(t)
+
+	full, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+
+	// Everything the SUITE retains, per entry: the entry as it is finally
+	// carried. Nothing above this is retained anywhere.
+	retained := 0
+	for _, entry := range full.Graphs {
+		encoded, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retained += len(encoded)
+	}
+
+	// A budget of exactly the retained bytes must NOT refuse: charging the
+	// discarded GraphTest envelope on top would push it over.
+	if _, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: retained}); budgetFailure != nil {
+		t.Fatalf("a budget covering everything the suite retains must not refuse; "+
+			"discarded production bytes are being charged: %v", budgetFailure.Message)
+	}
+
+	// One byte less must refuse, so the test is measuring the boundary rather
+	// than passing because the budget is generous.
+	if _, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: retained - 1}); budgetFailure == nil {
+		t.Fatal("a budget one byte short of the retained report must refuse")
+	}
+}
