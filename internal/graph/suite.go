@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -57,6 +58,7 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 	options.reportSpent = &spent
 	for _, graphID := range selected {
 		entry, _ := loaded.GraphEntry(graphID)
+		before := spent
 		report, budgetFailure := testEntry(loaded, engine, graphID, entry, options)
 		// Only a budget refusal escapes an entry: everything else that stops a
 		// graph is that graph's own in-band mismatch.
@@ -70,6 +72,23 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 			output.Status = "mismatch"
 		}
 		output.Graphs = append(output.Graphs, report)
+		// The entry's own envelope -- ids, paths, detail, summaries -- is
+		// charged too, as whatever the finished entry costs beyond the rows and
+		// coverage already charged while building it. Every retained component
+		// is then charged exactly once, which is what the earlier rounds of this
+		// change claimed before it was true.
+		if options.ReportBudget > 0 {
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				return result.GraphSuite{}, reportEncodingFailure(graphID)
+			}
+			if envelope := len(encoded) - (spent - before); envelope > 0 {
+				spent += envelope
+			}
+			if spent > options.ReportBudget {
+				return result.GraphSuite{}, reportBudgetFailure(graphID, report.Summary.Total, spent, options.ReportBudget)
+			}
+		}
 	}
 	if output.Status == "passed" && output.Summary.Total == 0 {
 		output.Status = "skipped"
@@ -86,7 +105,12 @@ func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, en
 	report := result.GraphSuiteEntry{ID: id, Path: entry.Path, RowsPath: entry.Rows, Status: "passed"}
 	mismatch := func(detail string) (result.GraphSuiteEntry, *evaluation.Failure) {
 		report.Status = "mismatch"
-		report.Detail = detail
+		// A detail is a message for a person, and some of them echo values a
+		// MATRIX supplies -- a graph's declared matrix version, a rows loader's
+		// complaint. Uncapped, several entries reusing one hostile rows file
+		// multiply it by the graph count (round-4 review), so it is capped here
+		// rather than trusted to be short.
+		report.Detail = capDetail(detail)
 		return report, nil
 	}
 	if entry.Rows == "" {
@@ -227,6 +251,14 @@ func reportBudgetFailure(graphID string, rowsJudged int, spent, budget int) *eva
 	}
 }
 
+// reportEncodingFailure refuses a run whose own entry report will not encode.
+func reportEncodingFailure(graphID string) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:    "JPS-GRAPH-REPORT-ENCODE",
+		Message: fmt.Sprintf("The report for graph %q could not be encoded.", graphID),
+	}
+}
+
 // coverageEncodingFailure refuses a run whose own coverage block will not encode.
 func coverageEncodingFailure(graphID string) *evaluation.Failure {
 	return &evaluation.Failure{
@@ -241,4 +273,16 @@ func rowEncodingFailure(rowID string) *evaluation.Failure {
 		Code:    "JPS-GRAPH-REPORT-ENCODE",
 		Message: fmt.Sprintf("The report for row %q could not be encoded.", rowID),
 	}
+}
+
+// MaxEntryDetailBytes caps a graph entry's human-readable detail. Some details
+// echo matrix-supplied values, and an entry's detail is not data a caller reads
+// programmatically, so truncating one costs nothing a reader needs.
+const MaxEntryDetailBytes = 4096
+
+func capDetail(detail string) string {
+	if len(detail) <= MaxEntryDetailBytes {
+		return detail
+	}
+	return detail[:MaxEntryDetailBytes] + "… (truncated)"
 }

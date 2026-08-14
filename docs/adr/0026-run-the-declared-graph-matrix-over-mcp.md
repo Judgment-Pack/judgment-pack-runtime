@@ -74,26 +74,32 @@ node and pack identifiers across probes. A conforming outcome id repeated across
 response could ever see it. ADR-0025 already names that "build gigabytes, then
 check the MCP size" shape as a defect.
 
-So `graph.Options.ReportBudget` charges **every component the run retains** — each
-row's report as it is judged, and each graph's coverage block as it is derived —
-refusing at the point the total passes the budget and leaving the remaining rows
-unevaluated.
+`graph.Options.ReportBudget` charges every component a run retains, each exactly
+once: every row's report as it is judged, every graph's coverage block as it is
+derived, and every entry's remaining envelope once that entry is finished. A
+matrix-derived `detail` is capped at `MaxEntryDetailBytes` besides, because
+several entries can reuse one hostile rows file and multiply it by the graph
+count.
 
-It took three review rounds to make that sentence true, and the two rejected
-attempts are worth recording rather than editing away. The first checked between
-graphs: a single graph declaring 10,000 rows still accumulated every one of them
-before anything looked. The second moved the check into the row loop but left
-coverage outside it, and coverage repeats pack-derived probe strings across up to
-64 nodes. Each time the code was closer and this ADR still claimed the finished
-thing.
+**The residue, stated exactly, because four review rounds went into getting this
+sentence right.** The bound is checked *after* each component is composed, not
+during its composition. So a run can overshoot the budget by at most one
+component before it refuses: one row's report, or one graph's coverage block, or
+one entry's envelope. Rows abort early — the remaining rows of a 10,000-row
+matrix are never evaluated — which is where the multiplication that motivated
+this actually lives. Coverage and the envelope are metered after construction,
+so a single pathological graph can exceed the budget by its own coverage block
+before the refusal fires. That is bounded by node count and pack content, not by
+row count, and it is accepted rather than eliminated: metering inside coverage
+derivation would reach into the probe construction this change is otherwise
+careful not to touch.
 
-What is deliberately **not** charged is the suite envelope — ids, paths,
-summaries — which is bounded only by the caller's check on the finished report.
-It follows the configuration's size rather than the matrix's, so it cannot
-multiply. The CLI leaves it zero — it streams to a terminal an operator can
-interrupt — and the MCP surface sets it. The bound itself is one shared variable
-across both matrix tools, because 16 MiB is transport and report policy rather
-than a guess at either suite's size; splitting it would need a reason recorded.
+Three earlier attempts are recorded rather than edited away, because each one
+described the finished thing before it existed. The first checked between
+graphs, so a single 10,000-row graph accumulated whole. The second moved into the
+row loop but left coverage outside it. The third charged coverage but left the
+entry envelope uncharged and matrix-derived detail uncapped, so the envelope
+could multiply by graph count — while the ADR said it could not multiply at all.
 
 ### Consequences
 

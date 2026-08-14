@@ -1355,3 +1355,51 @@ func TestProjectWalkChargesCoverageAgainstTheBudget(t *testing.T) {
 		t.Fatalf("a budget above the whole retained report must not refuse: %v", failure.Message)
 	}
 }
+
+// The entry envelope is charged too, and a matrix-derived detail is capped.
+// Round 4 found both open while the ADR said the envelope could not multiply
+// with the matrix: several entries can reuse one hostile rows file, and the
+// entry's detail echoes what that file supplies.
+func TestProjectWalkChargesTheEntryEnvelopeAndCapsDetail(t *testing.T) {
+	if MaxEntryDetailBytes <= 0 {
+		t.Fatal("a detail cap of zero would bound nothing")
+	}
+	long := strings.Repeat("x", MaxEntryDetailBytes*3)
+	capped := capDetail(long)
+	if len(capped) > MaxEntryDetailBytes+len("… (truncated)") {
+		t.Fatalf("a detail must be capped: %d bytes", len(capped))
+	}
+	if !strings.HasSuffix(capped, "(truncated)") {
+		t.Fatal("a truncated detail must say so, so a reader is not misled by a clean ending")
+	}
+	if short := capDetail("brief"); short != "brief" {
+		t.Fatalf("a detail within the cap is untouched: %q", short)
+	}
+
+	// The envelope is charged: a budget set to exactly the rows plus coverage
+	// leaves nothing for it, so the run refuses.
+	loaded := fixtureProject(t)
+	full, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	components := 0
+	for _, entry := range full.Graphs {
+		for _, row := range entry.Rows {
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			components += len(encoded)
+		}
+		encoded, err := json.Marshal(entry.Coverage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		components += len(encoded)
+	}
+	if _, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: components}); budgetFailure == nil {
+		t.Fatal("the entry envelope must be charged: a budget covering only rows and coverage must refuse")
+	}
+}

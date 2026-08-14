@@ -45,20 +45,15 @@ type Options struct {
 	// reason it records nothing.
 	LawCheck func(decisionID string, document []byte) *evaluation.Failure
 
-	// ReportBudget bounds the bytes a run may accumulate in the components it
-	// RETAINS -- every row's report and every graph's coverage block -- or 0 for
-	// no bound. The suite envelope itself (ids, paths, summaries) is not charged
-	// and is bounded only by the caller's own check on the finished report; it is
-	// small and follows the configuration's size rather than the matrix's. A graph matrix multiplies where a pack matrix does not -- up to
-	// 10,000 rows, each re-evaluating up to 64 nodes and retaining each node's
-	// canonical disposition -- so a report can reach gigabytes long before any
-	// check on the marshaled response could see it. ADR-0025 names that
-	// "build gigabytes, then check the MCP size" shape as a defect, so the
-	// budget is enforced AS the suite accumulates rather than after it exists.
+	// ReportBudget charges every component a run RETAINS, each exactly once:
+	// every row's report as it is judged, every graph's coverage block as it is
+	// derived, and every entry's remaining envelope once that entry is
+	// finished. 0 is no bound.
 	//
-	// The CLI leaves this 0: it streams to a terminal an operator can interrupt.
-	// A long-lived stdio server handing one frame to a model client cannot be
-	// interrupted, so that surface sets it.
+	// Each component is metered AFTER it is composed, so a run may overshoot by
+	// at most one component before refusing. Rows abort early, which is where a
+	// graph matrix multiplies: the remaining rows of a 10,000-row matrix are
+	// never evaluated.
 	ReportBudget int
 
 	// reportSpent is the running total across a whole run, shared by pointer so
