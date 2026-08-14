@@ -130,7 +130,7 @@ func claimSurfaces(t *testing.T) []claimSurface {
 	if len(listed.Result.Tools) == 0 {
 		t.Fatalf("tools/list returned no tool: %q", stdout)
 	}
-	evaluationTools := map[string]bool{"experimental_evaluate": false, "experimental_test_packs": false}
+	evaluationTools := map[string]bool{"experimental_evaluate": false, "experimental_test_packs": false, "experimental_test_graphs": false}
 	for _, tool := range listed.Result.Tools {
 		if tool.Description == "" {
 			t.Fatalf("tool %q has no description", tool.Name)

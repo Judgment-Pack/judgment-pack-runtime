@@ -14,7 +14,8 @@ consults it for one thing —
 
 It cannot distinguish Create from Update, because both arrive as "validate this document." It keeps
 no store of your documents, holds no credential, and opens no network connection; its evaluation surfaces are
-`experimental_evaluate` and `experimental_test_packs` (ADR-0007, ADR-0021), whose surface stability is
+`experimental_evaluate`, `experimental_test_packs` and `experimental_test_graphs` (ADR-0007,
+ADR-0021, ADR-0026), whose surface stability is
 experimental and whose conformance claim
 is stated, in full and only, in [`CONFORMANCE.md`](../CONFORMANCE.md) — a claim about the evaluator, not
 about any pack it reads.
@@ -181,7 +182,8 @@ whatever remains.
 - No credential and no network: the client owns the key; the server opens no connection.
 - No path over the wire: MCP documents are values (text), never references to the server's filesystem.
 - No evaluation in the authoring loop: validation never resolves a condition, chooses an outcome,
-  or authorizes anything. The separate `experimental_evaluate` and `experimental_test_packs` tools
+  or authorizes anything. The separate `experimental_evaluate`, `experimental_test_packs` and
+  `experimental_test_graphs` tools
   evaluate experimentally, say so in every payload, and still authorize nothing.
 
 ## See also

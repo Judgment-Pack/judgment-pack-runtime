@@ -190,6 +190,11 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		GraphVersion:              doc.Version,
 		Rows:                      make([]result.GraphTestRow, 0, len(rows.Cases)),
 	}
+	spent := 0
+	if options.reportSpent != nil {
+		spent = *options.reportSpent
+	}
+	startingSpent := spent
 	for _, row := range rows.Cases {
 		outcome := runRow(loaded, engine, doc, graphPath, row, options)
 		output.Summary.Total++
@@ -200,8 +205,67 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			output.Status = "mismatch"
 		}
 		output.Rows = append(output.Rows, outcome)
+		// The budget is enforced HERE, per row, because this is where the
+		// retention happens: a graph may declare 10,000 rows and each retains
+		// its node dispositions. Checking between graphs would still let one
+		// graph accumulate the gigabytes the bound exists to prevent, and the
+		// remaining rows are not evaluated once it trips.
+		if options.ReportBudget > 0 {
+			encoded, err := json.Marshal(outcome)
+			if err != nil {
+				return result.GraphTest{}, rowEncodingFailure(row.ID)
+			}
+			spent += len(encoded)
+			if options.reportSpent != nil {
+				*options.reportSpent = spent
+			}
+			if spent > options.ReportBudget {
+				return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
+			}
+		}
 	}
 	output.Coverage = coverage(loaded, engine, doc, rows, options)
+	// Coverage is retained per graph like the rows are, and it repeats
+	// pack-derived probe strings across up to 64 nodes, so it is charged too.
+	// Round 3 of the review found it outside the budget while the ADR claimed
+	// the whole report was bounded.
+	if options.ReportBudget > 0 {
+		encoded, err := json.Marshal(output.Coverage)
+		if err != nil {
+			return result.GraphTest{}, coverageEncodingFailure(doc.ID)
+		}
+		spent += len(encoded)
+		if spent > options.ReportBudget {
+			return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
+		}
+	}
+	// This report's own envelope is charged only when THIS report is what the
+	// caller keeps -- a direct Test, where reportSpent is nil. Inside
+	// TestProject the GraphTest envelope is discarded: testEntry copies the
+	// status, summary, rows and coverage into a GraphSuiteEntry and drops the
+	// rest, and TestProject charges that entry's envelope instead.
+	//
+	// Both directions were wrong once. Round 8 found this envelope uncharged on
+	// the direct path. Round 9 found the fix charging it on the composed path
+	// too, where the bytes are never retained -- so production-only bytes were
+	// consuming the budget, and a positive-only remainder downstream can neither
+	// subtract that nor undo a refusal it already caused. The invariant is
+	// "charge what is RETAINED", and it fails if either side is over-applied.
+	if options.ReportBudget > 0 && options.reportSpent == nil {
+		encoded, err := json.Marshal(output)
+		if err != nil {
+			return result.GraphTest{}, reportEncodingFailure(doc.ID)
+		}
+		if envelope := len(encoded) - (spent - startingSpent); envelope > 0 {
+			spent += envelope
+		}
+		if spent > options.ReportBudget {
+			return result.GraphTest{}, reportBudgetFailure(doc.ID, output.Summary.Total, spent, options.ReportBudget)
+		}
+	}
+	if options.reportSpent != nil {
+		*options.reportSpent = spent
+	}
 	return output, nil
 }
 

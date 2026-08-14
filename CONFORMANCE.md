@@ -49,11 +49,12 @@ jpack experimental evaluate-corpus --spec-version 0.2.0-draft --format json
 ```
 
 The claim applies to **conforming Core-class inputs reaching this runtime's one shared evaluator**
-through the seven surfaces that reach it — `experimental evaluate`, `experimental evaluate-corpus`,
+through the eight surfaces that reach it — `experimental evaluate`, `experimental evaluate-corpus`,
 `packs test`, `experimental graph evaluate`, `experimental graph test`, and the
-`experimental_evaluate` and `experimental_test_packs` MCP tools — and **not to draft-RFC prototype
+`experimental_evaluate`, `experimental_test_packs` and `experimental_test_graphs` MCP tools — and
+**not to draft-RFC prototype
 inputs**, which this class does
-not define at all and which the last exclusion below states. One evaluator sits behind all seven, so a
+not define at all and which the last exclusion below states. One evaluator sits behind all eight, so a
 surface selects what reaches it rather than carrying a claim of its own: the project and graph
 surfaces choose which packs and inputs reach the evaluator, and the dispositions they report as
 evaluated — a row's actual disposition, a node's, a composite's echoed headline — are that

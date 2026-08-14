@@ -45,6 +45,42 @@ type Options struct {
 	// reason it records nothing.
 	LawCheck func(decisionID string, document []byte) *evaluation.Failure
 
+	// ReportBudget stops a run whose RETAINED report components pass the budget:
+	// every row's report as it is judged, every graph's coverage block as it is
+	// derived, and every entry's remaining envelope once that entry is
+	// finished. 0 is no bound.
+	//
+	// It is a MITIGATION, not a guarantee, and its scope is an invariant rather
+	// than a list of exceptions -- five review rounds were spent enumerating
+	// those and being told the list was short by one:
+	//
+	//	ReportBudget constrains only the bytes RETAINED IN THE REPORT as it is
+	//	composed. Everything a run holds in order to PRODUCE that report is
+	//	outside it entirely.
+	//
+	// The second category is bounded by MaxRowsBytes and the carrier limits, and
+	// is not small: the rows document is fully decoded before the first row is
+	// judged and stays live, the result-row slice is preallocated for the whole
+	// declared matrix, and coverage retains a witness per row. Examples, not an
+	// exhaustive list.
+	//
+	// Within what it does constrain: components are metered after composition,
+	// so a run overshoots by whichever one crosses the line, and the suite's
+	// outer envelope is never charged.
+	//
+	// What it does buy, and what is tested: the remaining rows of a large matrix
+	// are never EVALUATED once the budget is passed. That is work avoided, not
+	// memory reclaimed. A caller's check on the finished report backstops the
+	// response size and nothing else; it cannot backstop peak working memory,
+	// because by then the memory has been spent.
+	ReportBudget int
+
+	// reportSpent is the running total across a whole run, shared by pointer so
+	// one graph's rows count against the same budget as the next graph's.
+	// TestProject sets it; a caller that runs one graph directly leaves it nil
+	// and is bounded within that graph alone.
+	reportSpent *int
+
 	// injectionBudget overrides the per-node injected-bytes budget, whose
 	// default is the carrier's hard byte limit. It exists so a test can trip
 	// the budget without megabytes of fixture; no surface sets it.
