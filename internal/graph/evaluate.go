@@ -50,15 +50,23 @@ type Options struct {
 	// derived, and every entry's remaining envelope once that entry is
 	// finished. 0 is no bound.
 	//
-	// It is a MITIGATION, not a guarantee, and the gaps are named rather than
-	// implied. Each component is metered after it is composed, so a run can
-	// overshoot by the component that crosses the line. The suite's own outer
-	// envelope is never charged. Deriving coverage retains a witness per row and
-	// per expectedNodes entry, so its working memory scales with the matrix even
-	// though the probes it emits do not. And the row slice is preallocated for
-	// the whole declared matrix before the first row is judged, so even a trip on
-	// row one costs memory proportional to the declared length — MaxRowsBytes is
-	// what bounds that, not this budget.
+	// It is a MITIGATION, not a guarantee, and its scope is an invariant rather
+	// than a list of exceptions -- five review rounds were spent enumerating
+	// those and being told the list was short by one:
+	//
+	//	ReportBudget constrains only the bytes RETAINED IN THE REPORT as it is
+	//	composed. Everything a run holds in order to PRODUCE that report is
+	//	outside it entirely.
+	//
+	// The second category is bounded by MaxRowsBytes and the carrier limits, and
+	// is not small: the rows document is fully decoded before the first row is
+	// judged and stays live, the result-row slice is preallocated for the whole
+	// declared matrix, and coverage retains a witness per row. Examples, not an
+	// exhaustive list.
+	//
+	// Within what it does constrain: components are metered after composition,
+	// so a run overshoots by whichever one crosses the line, and the suite's
+	// outer envelope is never charged.
 	//
 	// What it does buy, and what is tested: the remaining rows of a large matrix
 	// are never EVALUATED once the budget is passed. That is work avoided, not

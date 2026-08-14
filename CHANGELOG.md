@@ -13,12 +13,13 @@ All notable changes to tagged releases are documented here.
   (ADR-0019), which are two independently guarded invariants rather than one — and a mismatching
   or skipped run is a successful call carrying its status.
 - **A runaway graph matrix stops early instead of running to the end** (ADR-0026):
-  `graph.Options.ReportBudget` stops a run whose retained report components pass the budget — each
-  row's report, each graph's coverage block, each entry's envelope — after which the remaining rows
-  are never evaluated. It is a mitigation with named gaps rather than a guarantee: components are
-  metered after composition, the suite's outer envelope is not charged, and coverage derivation's
-  working memory still scales with the matrix. The CLI leaves the budget unset and streams to a
-  terminal an operator can interrupt.
+  `graph.Options.ReportBudget` stops a run whose retained report components pass the budget, after
+  which the remaining rows are never evaluated. It is a mitigation, and its scope is stated as an
+  invariant rather than a list of exceptions: it constrains only the bytes retained in the report
+  as it is composed, and everything a run holds in order to produce that report — the decoded
+  matrix, preallocated slices, coverage witnesses — is bounded by `MaxRowsBytes` and the carrier
+  limits instead. The CLI leaves the budget unset and streams to a terminal an operator can
+  interrupt.
 - The conformance claim surface grows from seven to eight; `CONFORMANCE.md` and its mechanical
   enumeration test name the new tool.
 

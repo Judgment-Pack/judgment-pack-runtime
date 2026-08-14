@@ -80,20 +80,25 @@ it is derived, every entry's remaining envelope once that entry is finished — 
 the remaining rows are then never evaluated. A matrix-derived `detail` is capped
 besides, marker included, because several entries can name one hostile rows file.
 
-**It is a mitigation, not a guarantee, and this ADR says so because five review
-rounds went into learning not to claim otherwise.** The named gaps:
+**It is a mitigation, not a guarantee.** Seven review rounds went into this
+paragraph, and five of them were spent enumerating gaps and being told the list
+was short by one. So the scope is stated as an invariant rather than a list,
+because an invariant cannot be short by one:
 
-- each component is metered *after* it is composed, so a run can overshoot by
-  whichever component crosses the line;
-- the suite's own outer envelope — metadata, top-level summary, the `graphs`
-  framing — is never charged;
-- deriving coverage retains a witness per row and per `expectedNodes` entry, so
-  its **working memory scales with the matrix** even though the probes it emits
-  do not. Mitigating that means restructuring coverage derivation, which is out
-  of scope here and is recorded as an accepted residue rather than left silent;
-- the row slice is **preallocated for the whole declared matrix** before the
-  first row is judged, so even a trip on row one costs memory proportional to the
-  matrix's declared length. `MaxRowsBytes` is what bounds that, not this budget.
+> `ReportBudget` constrains **only the bytes retained in the report as it is
+> composed**. Everything a run holds in order to *produce* that report is outside
+> it entirely.
+
+That second category is bounded by `MaxRowsBytes` and the carrier limits, not by
+this budget, and it is not small: the rows document is fully decoded before the
+first row is judged and stays live through evaluation and coverage; the result-row
+slice is preallocated for the whole declared matrix; coverage derivation retains
+a witness per row and per `expectedNodes` entry. Those are examples, **not an
+exhaustive list** — that is the point of stating an invariant.
+
+Two further limits inside the part it does constrain: each component is metered
+*after* it is composed, so a run overshoots by whichever component crosses the
+line; and the suite's own outer envelope is never charged.
 
 What the budget does buy, and what is tested, is the one thing that motivated it:
 **the remaining rows of a large matrix are never evaluated once it trips.** That
