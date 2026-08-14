@@ -285,15 +285,30 @@ func (p *Project) Lint(manifest *Producers, id, command string) (result.PackProd
 				orphaned = append(orphaned, fmt.Sprintf("%q", supplied))
 			}
 		}
+		// ADR-0022 states this reverse check at CONFIGURATION scope: the
+		// manifest is application-wide, so "no pack declares this" is only
+		// answerable when every configured pack was consulted. Under `--id` it
+		// is not, and evidence another configured pack legitimately declares
+		// would otherwise be reported orphaned. The check is withheld rather
+		// than passed, because a silent pass would let a genuinely orphaned id
+		// survive any run that named a pack.
+		partial := len(selected) < len(p.Config.Packs)
 		check := result.PackCheck{Name: CheckEvidenceProducers, Status: result.PackCheckPassed}
 		switch {
-		case len(orphaned) > 0:
-			check.Status = result.PackCheckFailed
-			check.Detail = "The manifest supplies evidence no selected pack declares: " + strings.Join(orphaned, ", ") + ". Evidence ids are pack-local names; an id nothing declares supplies nothing."
-			anyFailed = true
 		case len(manifest.Evidence) == 0:
 			check.Status = result.PackCheckSkipped
 			check.Detail = "The manifest supplies no evidence."
+		case partial:
+			check.Status = result.PackCheckSkipped
+			check.Detail = fmt.Sprintf(
+				"Selecting %d of %d configured packs cannot answer this: the manifest is "+
+					"application-wide, so evidence another configured pack declares would look "+
+					"orphaned here. Re-run without --id to check it.",
+				len(selected), len(p.Config.Packs))
+		case len(orphaned) > 0:
+			check.Status = result.PackCheckFailed
+			check.Detail = "The manifest supplies evidence no configured pack declares: " + strings.Join(orphaned, ", ") + ". Evidence ids are pack-local names; an id nothing declares supplies nothing."
+			anyFailed = true
 		default:
 			anyPassed = true
 		}
