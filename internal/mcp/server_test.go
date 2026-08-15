@@ -59,6 +59,94 @@ func runServer(t *testing.T, input string) []map[string]any {
 	return responses
 }
 
+func TestServerTransportEdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		responses int
+		check     func(*testing.T, []map[string]any)
+	}{
+		{
+			name:      "malformed JSON returns a parse error",
+			input:     "{not json}\n",
+			responses: 1,
+			check: func(t *testing.T, responses []map[string]any) {
+				t.Helper()
+				err, ok := responses[0]["error"].(map[string]any)
+				if !ok || err["code"] != float64(codeParse) {
+					t.Fatalf("malformed JSON response = %#v, want parse error %d", responses[0], codeParse)
+				}
+			},
+		},
+		{
+			name:      "blank lines emit no response",
+			input:     "\n 	\n",
+			responses: 0,
+		},
+		{
+			name:      "ping returns an empty result",
+			input:     message(t, 1, "ping", nil),
+			responses: 1,
+			check: func(t *testing.T, responses []map[string]any) {
+				t.Helper()
+				result, ok := responses[0]["result"].(map[string]any)
+				if !ok || len(result) != 0 {
+					t.Fatalf("ping result = %#v, want an empty object", responses[0])
+				}
+			},
+		},
+		{
+			name:      "initialize defaults the protocol version",
+			input:     message(t, 1, "initialize", map[string]any{}),
+			responses: 1,
+			check: func(t *testing.T, responses []map[string]any) {
+				t.Helper()
+				result := responses[0]["result"].(map[string]any)
+				if result["protocolVersion"] != protocolVersion {
+					t.Fatalf("default protocolVersion = %v, want %q", result["protocolVersion"], protocolVersion)
+				}
+			},
+		},
+		{
+			name:      "known notifications emit no response",
+			input:     message(t, -1, "notifications/initialized", nil),
+			responses: 0,
+		},
+		{
+			name:      "unknown notifications emit no response",
+			input:     message(t, -1, "notifications/unknown", nil),
+			responses: 0,
+		},
+		{
+			name:      "a valid request is processed after malformed JSON",
+			input:     "{not json}\n" + message(t, 1, "ping", nil),
+			responses: 2,
+			check: func(t *testing.T, responses []map[string]any) {
+				t.Helper()
+				if _, ok := responses[0]["error"]; !ok {
+					t.Fatalf("first response = %#v, want parse error", responses[0])
+				}
+				result, ok := responses[1]["result"].(map[string]any)
+				if !ok || len(result) != 0 {
+					t.Fatalf("second response = %#v, want ping result", responses[1])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			responses := runServer(t, tt.input)
+			if len(responses) != tt.responses {
+				t.Fatalf("response count = %d, want %d: %#v", len(responses), tt.responses, responses)
+			}
+			if tt.check != nil {
+				tt.check(t, responses)
+			}
+		})
+	}
+}
+
 func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	set, err := artifacts.Load(artifacts.DraftVersion)
 	if err != nil {
