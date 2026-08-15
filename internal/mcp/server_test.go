@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -532,5 +533,222 @@ func TestEveryPromptRendersWithDisclaimer(t *testing.T) {
 		if len(text) < 500 {
 			t.Fatalf("%s rendering suspiciously short: %d bytes", name, len(text))
 		}
+	}
+}
+
+// --- the read-only metadata tools, end to end (issue #83) ------------------
+
+// These three carry stable payloads MCP clients depend on, and had no coverage
+// through the stdio harness. Each success case asserts the fields that make the
+// response useful rather than merely that a response arrived — a tool that
+// returned an empty schema, a zero size, or no versions would otherwise pass.
+func TestMetadataToolsServeTheirStablePayloads(t *testing.T) {
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "get_schema", nil),
+		toolCall(t, 2, "describe_runtime", nil),
+		toolCall(t, 3, "test_conformance", nil),
+	}, ""))
+	if len(responses) != 3 {
+		t.Fatalf("expected 3 responses, got %d", len(responses))
+	}
+
+	t.Run("get_schema", func(t *testing.T) {
+		outcome := responses[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("get_schema must succeed: %#v", outcome)
+		}
+		var payload result.Schema
+		decodeStructured(t, outcome, &payload)
+		if payload.SpecVersion == "" || payload.SchemaID == "" {
+			t.Fatalf("the payload must name the version and schema it served: %+v", payload)
+		}
+
+		// The schema itself arrives as the tool's text content, and the
+		// structured payload's bytes and sha256 must describe exactly those
+		// bytes. A digest that does not describe what was served is worse than
+		// no digest, because a caller pins against it.
+		served := toolText(t, outcome)
+		if len(served) != payload.Bytes {
+			t.Fatalf("bytes = %d, served %d", payload.Bytes, len(served))
+		}
+		sum := sha256.Sum256([]byte(served))
+		if got := hex.EncodeToString(sum[:]); got != payload.SHA256 {
+			t.Fatalf("sha256 = %q, but the served bytes hash to %q", payload.SHA256, got)
+		}
+		if !json.Valid([]byte(served)) {
+			t.Fatal("the served schema must itself be valid JSON")
+		}
+	})
+
+	t.Run("describe_runtime", func(t *testing.T) {
+		outcome := responses[1]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("describe_runtime must succeed: %#v", outcome)
+		}
+		var payload struct {
+			Tool struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"tool"`
+			SupportedSpecVersions []string `json:"supportedSpecVersions"`
+			ArtifactProvenance    string   `json:"artifactProvenance"`
+		}
+		decodeStructured(t, outcome, &payload)
+		if payload.Tool.Name == "" || payload.Tool.Version == "" {
+			t.Fatalf("the runtime must identify itself: %+v", payload.Tool)
+		}
+		if len(payload.SupportedSpecVersions) == 0 {
+			t.Fatal("a runtime that supports no version cannot validate anything")
+		}
+		if payload.ArtifactProvenance == "" {
+			t.Fatal("the bundled artifacts' provenance must be stated")
+		}
+		// The versions it claims must be the ones get_schema will actually serve.
+		var schema result.Schema
+		decodeStructured(t, responses[0]["result"].(map[string]any), &schema)
+		if !slices.Contains(payload.SupportedSpecVersions, schema.SpecVersion) {
+			t.Fatalf("get_schema served %q, which describe_runtime does not list: %v",
+				schema.SpecVersion, payload.SupportedSpecVersions)
+		}
+	})
+
+	t.Run("test_conformance", func(t *testing.T) {
+		outcome := responses[2]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("test_conformance must succeed on the bundled corpus: %#v", outcome)
+		}
+		var report result.Suite
+		decodeStructured(t, outcome, &report)
+		if report.Summary.Total == 0 {
+			t.Fatal("a run over zero cases is not a conformance run")
+		}
+		if report.Summary.Mismatched != 0 {
+			t.Fatalf("the bundled corpus must pass against its own runtime: %+v", report.Summary)
+		}
+		if report.Summary.Passed != report.Summary.Total {
+			t.Fatalf("every bundled case must pass: %+v", report.Summary)
+		}
+		if report.CorpusDigest == "" || report.SpecVersion == "" {
+			t.Fatalf("the run must name the corpus it ran and the version it targeted: %+v", report)
+		}
+	})
+}
+
+// A bad argument is a tool error carried inside a SUCCESSFUL JSON-RPC response,
+// not a top-level protocol error. That distinction is what lets a client tell
+// "your call was wrong" from "the transport broke".
+func TestMetadataToolsRejectBadArgumentsAsToolErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "test_conformance with a non-object", raw: rawToolCall(t, 1, "test_conformance", `"suite"`)},
+		{name: "get_schema with a non-object", raw: rawToolCall(t, 1, "get_schema", `["0.2.0-draft"]`)},
+		{name: "get_schema with an unsupported version", raw: toolCall(t, 1, "get_schema", map[string]any{"spec_version": "9.9.9-nope"})},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			response := runServer(t, tt.raw)[0]
+			if _, isProtocolError := response["error"]; isProtocolError {
+				t.Fatalf("a bad argument is a tool error, not a JSON-RPC error: %#v", response)
+			}
+			outcome, ok := response["result"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected a result: %#v", response)
+			}
+			if outcome["isError"] != true {
+				t.Fatalf("expected isError true: %#v", outcome)
+			}
+			if toolText(t, outcome) == "" {
+				t.Fatal("a refusal must say something a caller can act on")
+			}
+		})
+	}
+}
+
+// --- transport edge cases (issue #85) --------------------------------------
+
+// The server reads one JSON-RPC message per line. These pin what must and must
+// NOT produce a response, which is the half a test can silently get wrong: a
+// notification that answered would break clients that do not read one.
+func TestTransportHandlesLineAndRequestEdgeCases(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		input   string
+		want    int
+		inspect func(*testing.T, []map[string]any)
+	}{
+		{
+			name:  "malformed JSON is a parse error",
+			input: "{not json\n",
+			want:  1,
+			inspect: func(t *testing.T, responses []map[string]any) {
+				failure := responses[0]["error"].(map[string]any)
+				if int(failure["code"].(float64)) != codeParse {
+					t.Fatalf("code = %v, want %d", failure["code"], codeParse)
+				}
+				if responses[0]["id"] != nil {
+					t.Fatalf("a message that never parsed has no id to echo: %#v", responses[0]["id"])
+				}
+			},
+		},
+		{
+			name:  "blank and whitespace-only lines are skipped",
+			input: "\n   \n\t\n" + message(t, 1, "ping", nil),
+			want:  1,
+		},
+		{
+			name:  "ping answers",
+			input: message(t, 7, "ping", nil),
+			want:  1,
+			inspect: func(t *testing.T, responses []map[string]any) {
+				if int(responses[0]["id"].(float64)) != 7 {
+					t.Fatalf("ping must echo its id: %#v", responses[0]["id"])
+				}
+			},
+		},
+		{
+			name:  "initialize returns the default protocol version",
+			input: message(t, 1, "initialize", map[string]any{}),
+			want:  1,
+			inspect: func(t *testing.T, responses []map[string]any) {
+				got := responses[0]["result"].(map[string]any)["protocolVersion"]
+				if got != protocolVersion {
+					t.Fatalf("protocolVersion = %v, want %q", got, protocolVersion)
+				}
+			},
+		},
+		{
+			name:  "a notification produces no response",
+			input: message(t, -1, "notifications/initialized", nil),
+			want:  0,
+		},
+		{
+			name:  "an unknown notification is ignored",
+			input: message(t, -1, "notifications/somethingElse", nil),
+			want:  0,
+		},
+		{
+			name:  "a malformed line does not end the stream",
+			input: "{not json\n" + message(t, 2, "ping", nil),
+			want:  2,
+			inspect: func(t *testing.T, responses []map[string]any) {
+				if _, isError := responses[0]["error"]; !isError {
+					t.Fatalf("the first line must still report a parse error: %#v", responses[0])
+				}
+				if int(responses[1]["id"].(float64)) != 2 {
+					t.Fatalf("the request after it must still be answered: %#v", responses[1])
+				}
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			responses := runServer(t, tt.input)
+			if len(responses) != tt.want {
+				t.Fatalf("got %d responses, want %d: %#v", len(responses), tt.want, responses)
+			}
+			if tt.inspect != nil {
+				tt.inspect(t, responses)
+			}
+		})
 	}
 }
