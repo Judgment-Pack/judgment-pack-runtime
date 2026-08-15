@@ -697,12 +697,20 @@ func TestTransportHandlesLineAndRequestEdgeCases(t *testing.T) {
 			want:  1,
 		},
 		{
-			name:  "ping answers",
+			name:  "ping answers with an empty result",
 			input: message(t, 7, "ping", nil),
 			want:  1,
 			inspect: func(t *testing.T, responses []map[string]any) {
 				if int(responses[0]["id"].(float64)) != 7 {
 					t.Fatalf("ping must echo its id: %#v", responses[0]["id"])
+				}
+				// MCP's ping carries an EMPTY result object. Echoing an id only
+				// shows something answered; a ping that returned a payload would
+				// still pass that and would still be wrong. Assertion from
+				// Tethys0's independent coverage of this case in PR #110.
+				result, ok := responses[0]["result"].(map[string]any)
+				if !ok || len(result) != 0 {
+					t.Fatalf("ping result = %#v, want an empty object", responses[0]["result"])
 				}
 			},
 		},
