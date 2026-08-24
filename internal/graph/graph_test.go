@@ -646,7 +646,7 @@ func TestLoadRowsRefusals(t *testing.T) {
 		{"empty", "", "JPS-GRAPH-ROWS-JSON"},
 		{"malformed", "{", "JPS-GRAPH-ROWS-JSON"},
 		{"unknown member", strings.Replace(valid, `"cases"`, `"rows"`, 1), "JPS-GRAPH-ROWS-SHAPE"},
-		{"unsupported version", strings.Replace(valid, `"1"`, `"2"`, 1), "JPS-GRAPH-ROWS-VERSION"},
+		{"unsupported version", strings.Replace(valid, `"1"`, `"3"`, 1), "JPS-GRAPH-ROWS-VERSION"},
 		{"no rows", `{"cases":[]}`, "JPS-GRAPH-ROWS-EMPTY"},
 		{"no id", `{"cases":[{"inputs":{},"expectedErrorClass":"malformed-input"}]}`, "JPS-GRAPH-ROWS-ROW"},
 		{"duplicate id", `{"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c"},{"id":"r","inputs":{},"expectedErrorClass":"c"}]}`, "JPS-GRAPH-ROWS-ROW"},
@@ -655,11 +655,18 @@ func TestLoadRowsRefusals(t *testing.T) {
 		{"neither expectation", `{"cases":[{"id":"r","inputs":{}}]}`, "JPS-GRAPH-ROWS-ROW"},
 		{"phase without class", `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedErrorPhase":"preflight"}]}`, "JPS-GRAPH-ROWS-ROW"},
 		{"nodes beside error", `{"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c","expectedNodes":{"n":{}}}]}`, "JPS-GRAPH-ROWS-ROW"},
-		// ADR-0025 is a pack-matrix record and the graph surface is deliberately
-		// outside it, which this pins rather than assumes: a graph row stating
-		// the pack matrix's member is refused as the unknown member it is here,
-		// so the deferral cannot be undone by accident on one surface only.
-		{"a pack matrix's handoff-target assertion", `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedHandoffTarget":null}]}`, "JPS-GRAPH-ROWS-SHAPE"},
+		// ADR-0032 discharged ADR-0025's graph deferral, so the member is known
+		// — but version-gated: rows read as graphMatrixVersion 1 are refused
+		// with the version the assertion would take, never with a false
+		// "unknown member" sentence.
+		{"a handoff-target assertion under version 1", `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedHandoffTarget":null}]}`, "JPS-GRAPH-ROWS-VERSION"},
+		{"a node target assertion under version 1", `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedNodeHandoffTargets":{"n":null}}]}`, "JPS-GRAPH-ROWS-VERSION"},
+		{"a case-folded target assertion", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"ExpectedHandoffTarget":null}]}`, "JPS-GRAPH-ROWS-SHAPE"},
+		{"a target assertion beside an expected error", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedErrorClass":"c","expectedHandoffTarget":null}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"node targets beside an expected error", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedErrorClass":"c","expectedNodeHandoffTargets":{"n":null}}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"a target assertion of the wrong shape", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedHandoffTarget":"queue"}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"a node target for an unnamed node", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedNodeHandoffTargets":{"n":null}}]}`, "JPS-GRAPH-ROWS-ROW"},
+		{"a node target of the wrong shape", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedNodes":{"n":{}},"expectedNodeHandoffTargets":{"n":7}}]}`, "JPS-GRAPH-ROWS-ROW"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

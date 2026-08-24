@@ -17,10 +17,17 @@ import (
 )
 
 const (
-	// GraphMatrixVersion is the one graphMatrixVersion value this runtime
-	// accepts, optional in a document on the matrixVersion precedent: rows
-	// that declare nothing are read as this version.
-	GraphMatrixVersion = "1"
+	// GraphMatrixVersion is the newest graphMatrixVersion this runtime
+	// accepts. It moved to "2" for the handoff-target assertions (ADR-0032),
+	// on matrixVersion's own reasoning: a matrix is a closed input, so adding
+	// a member moves the version whatever the addition is, and the version
+	// gate is what turns "this member is not known" into "this matrix needs
+	// graphMatrixVersion 2".
+	GraphMatrixVersion = "2"
+	// GraphMatrixVersionDefault is what rows declaring no graphMatrixVersion
+	// are read as, on the matrixVersion precedent: silence is the version
+	// that existed before any member was version-gated, never the newest.
+	GraphMatrixVersionDefault = "1"
 	// MaxRowsBytes bounds one graph matrix document, which carries an inputs
 	// document per row, on the instance-matrix precedent.
 	MaxRowsBytes = int64(16 << 20)
@@ -42,13 +49,21 @@ const (
 // expectation: this runtime's JPS-* codes are provisional detail (§8.4 fixes
 // the class, not the detail), and a row that pinned one would break on
 // wording this runtime is free to change.
+// ExpectedHandoffTarget asserts the composite's configured handoff target —
+// the result node's own — and ExpectedNodeHandoffTargets asserts named nodes'
+// (ADR-0032, graphMatrixVersion "2"): each value is null or a {kind, name}
+// object, exactly a pack row's expectedHandoffTarget. A node whose target a
+// row asserts must also appear in ExpectedNodes: a target is asserted beside
+// the node's disposition, as a pack row asserts it beside its own.
 type RowCase struct {
-	ID                  string                     `json:"id"`
-	Inputs              json.RawMessage            `json:"inputs"`
-	ExpectedDisposition json.RawMessage            `json:"expectedDisposition,omitempty"`
-	ExpectedNodes       map[string]json.RawMessage `json:"expectedNodes,omitempty"`
-	ExpectedErrorClass  string                     `json:"expectedErrorClass,omitempty"`
-	ExpectedErrorPhase  string                     `json:"expectedErrorPhase,omitempty"`
+	ID                         string                     `json:"id"`
+	Inputs                     json.RawMessage            `json:"inputs"`
+	ExpectedDisposition        json.RawMessage            `json:"expectedDisposition,omitempty"`
+	ExpectedNodes              map[string]json.RawMessage `json:"expectedNodes,omitempty"`
+	ExpectedHandoffTarget      json.RawMessage            `json:"expectedHandoffTarget,omitempty"`
+	ExpectedNodeHandoffTargets map[string]json.RawMessage `json:"expectedNodeHandoffTargets,omitempty"`
+	ExpectedErrorClass         string                     `json:"expectedErrorClass,omitempty"`
+	ExpectedErrorPhase         string                     `json:"expectedErrorPhase,omitempty"`
 }
 
 // Rows is one graph's matrix: the rows a project wrote about its own graph.
@@ -57,18 +72,58 @@ type Rows struct {
 	Cases              []RowCase `json:"cases"`
 }
 
+// SupportedGraphMatrixVersions names every graphMatrixVersion this runtime
+// accepts, newest last, so a refusal can say what it would have taken rather
+// than only what was wrong.
+func SupportedGraphMatrixVersions() []string {
+	return []string{GraphMatrixVersionDefault, GraphMatrixVersion}
+}
+
+// graphRowsVersionMembers names the members each graphMatrixVersion
+// introduced, so a document declaring an older version is refused with the
+// version it would take rather than with a generic unknown-member message.
+var graphRowsVersionMembers = map[string]string{
+	"expectedHandoffTarget":      "2",
+	"expectedNodeHandoffTargets": "2",
+}
+
+// declaredGraphMatrixVersion settles which graphMatrixVersion the rows are
+// read under, before anything version-specific looks at them. An absent
+// member is the default; a member of the wrong type is refused as such rather
+// than coerced; an unknown value names every version this runtime accepts.
+func declaredGraphMatrixVersion(root map[string]any, name string) (string, *evaluation.Failure) {
+	refuse := func(message string) (string, *evaluation.Failure) {
+		return "", &evaluation.Failure{Code: "JPS-GRAPH-ROWS-VERSION", Message: message, ExitCode: result.ExitUnsupported}
+	}
+	value, present := root["graphMatrixVersion"]
+	if !present {
+		return GraphMatrixVersionDefault, nil
+	}
+	declared, ok := value.(string)
+	if !ok {
+		return refuse(fmt.Sprintf("The graphMatrixVersion of the graph matrix %s must be a string; this runtime accepts: %s.",
+			display.Sanitize(name), strings.Join(SupportedGraphMatrixVersions(), ", ")))
+	}
+	if slices.Contains(SupportedGraphMatrixVersions(), declared) {
+		return declared, nil
+	}
+	return refuse(fmt.Sprintf("The graph matrix %s declares graphMatrixVersion %q, which this runtime does not support; it accepts: %s.",
+		display.Sanitize(name), display.Sanitize(declared), strings.Join(SupportedGraphMatrixVersions(), ", ")))
+}
+
 // exactRowMembers holds the rows document and each of its cases to the exact
-// member spellings the format declares. Elements that are not objects are left
-// to the strict decoder, whose wrong-type message is the better diagnosis.
-func exactRowMembers(root map[string]any, name string) *evaluation.Failure {
-	if failure := exactMemberSet(root, []string{"graphMatrixVersion", "cases"}, name, "the graph matrix"); failure != nil {
+// member spellings the format declares, under the declared version. Elements
+// that are not objects are left to the strict decoder, whose wrong-type
+// message is the better diagnosis.
+func exactRowMembers(root map[string]any, declared, name string) *evaluation.Failure {
+	if failure := exactMemberSet(root, []string{"graphMatrixVersion", "cases"}, declared, name, "the graph matrix"); failure != nil {
 		return failure
 	}
 	cases, ok := root["cases"].([]any)
 	if !ok {
 		return nil
 	}
-	rowMembers := []string{"id", "inputs", "expectedDisposition", "expectedNodes", "expectedErrorClass", "expectedErrorPhase"}
+	rowMembers := []string{"id", "inputs", "expectedDisposition", "expectedNodes", "expectedHandoffTarget", "expectedNodeHandoffTargets", "expectedErrorClass", "expectedErrorPhase"}
 	for index, element := range cases {
 		row, ok := element.(map[string]any)
 		if !ok {
@@ -82,7 +137,7 @@ func exactRowMembers(root map[string]any, name string) *evaluation.Failure {
 				ExitCode: result.ExitInvalid,
 			}
 		}
-		if failure := exactMemberSet(row, rowMembers, name, fmt.Sprintf("row %d of the graph matrix", index)); failure != nil {
+		if failure := exactMemberSet(row, rowMembers, declared, name, fmt.Sprintf("row %d of the graph matrix", index)); failure != nil {
 			return failure
 		}
 	}
@@ -90,10 +145,26 @@ func exactRowMembers(root map[string]any, name string) *evaluation.Failure {
 }
 
 // exactMemberSet reports the first unknown member of one object, naming the
-// exact spelling where the stranger differs from a known member only in case.
-func exactMemberSet(object map[string]any, known []string, name, subject string) *evaluation.Failure {
+// exact spelling where the stranger differs from a known member only in case
+// — and the first known member the declared version has not introduced yet,
+// naming the version it would take, because "expectedHandoffTarget is not a
+// member" is a false sentence to print at someone whose only mistake was not
+// moving graphMatrixVersion (the pack matrix's closedMembers precedent).
+func exactMemberSet(object map[string]any, known []string, declared, name, subject string) *evaluation.Failure {
 	for _, member := range slices.Sorted(maps.Keys(object)) {
 		if slices.Contains(known, member) {
+			// Ordered by position in the supported list rather than by the
+			// version string, which compares as text and would read "10" as
+			// older than "2".
+			since, versioned := graphRowsVersionMembers[member]
+			if versioned && slices.Index(SupportedGraphMatrixVersions(), declared) < slices.Index(SupportedGraphMatrixVersions(), since) {
+				return &evaluation.Failure{
+					Code: "JPS-GRAPH-ROWS-VERSION",
+					Message: fmt.Sprintf("In %s, %s declares %q, which graphMatrixVersion %s introduced; this matrix is read as graphMatrixVersion %s, so declare graphMatrixVersion %q to use it.",
+						display.Sanitize(name), subject, member, since, declared, since),
+					ExitCode: result.ExitUnsupported,
+				}
+			}
 			continue
 		}
 		for _, candidate := range known {
@@ -144,6 +215,13 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 		return refuse("JPS-GRAPH-ROWS-SHAPE",
 			fmt.Sprintf("The graph matrix %s must be a JSON object with a cases array.", display.Sanitize(name)), result.ExitInvalid)
 	}
+	// The declared version is settled first, because the member check is
+	// version-aware: a version-2 member in version-1 rows is refused with the
+	// version it would take, not as a stranger.
+	declared, versionFailure := declaredGraphMatrixVersion(root, name)
+	if versionFailure != nil {
+		return Rows{}, versionFailure
+	}
 	// Member names are held to their exact spelling before the decoder runs,
 	// because encoding/json case-folds them: "Cases" or "ExpectedDisposition"
 	// would bind and be silently read as the members they are not — the same
@@ -151,7 +229,7 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 	// closed under ADR-0028. A matrix is a closed input; a spelling that
 	// differs only in case is refused rather than read as the member it folds
 	// to.
-	if failure := exactRowMembers(root, name); failure != nil {
+	if failure := exactRowMembers(root, declared, name); failure != nil {
 		return Rows{}, failure
 	}
 	var rows Rows
@@ -163,10 +241,8 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 		return refuse("JPS-GRAPH-ROWS-SHAPE",
 			fmt.Sprintf("The graph matrix %s has a member this runtime does not know, or a member of the wrong type: %s", display.Sanitize(name), display.Sanitize(err.Error())), result.ExitInvalid)
 	}
-	if rows.GraphMatrixVersion != "" && rows.GraphMatrixVersion != GraphMatrixVersion {
-		return refuse("JPS-GRAPH-ROWS-VERSION",
-			fmt.Sprintf("The graph matrix %s declares graphMatrixVersion %q; this runtime accepts %q.", display.Sanitize(name), display.Sanitize(rows.GraphMatrixVersion), GraphMatrixVersion), result.ExitUnsupported)
-	}
+	// The version itself was settled and refused, if refusable, before the
+	// decoder ran — declaredGraphMatrixVersion is the one gate.
 	if len(rows.Cases) == 0 {
 		return refuse("JPS-GRAPH-ROWS-EMPTY",
 			fmt.Sprintf("The graph matrix %s declares no rows; an empty matrix tests nothing.", display.Sanitize(name)), result.ExitInvalid)
@@ -203,6 +279,36 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 		if len(row.ExpectedNodes) > 0 && !hasDisposition {
 			return refuse("JPS-GRAPH-ROWS-ROW",
 				fmt.Sprintf("Row %q declares expectedNodes beside an expected error; a refused run produces no node dispositions to compare.", display.Sanitize(row.ID)), result.ExitInvalid)
+		}
+		// The target assertions ride only beside a disposition expectation, on
+		// the pack matrix's own rule (ADR-0025 via ADR-0032): a refused run
+		// reports no target beside a disposition it never produced, so a row
+		// stating one under an expected error is unsatisfiable rather than
+		// merely unmet, and is refused before it runs. Each value is checked
+		// here through the one decoder the comparator uses.
+		if row.ExpectedHandoffTarget != nil && !hasDisposition {
+			return refuse("JPS-GRAPH-ROWS-ROW",
+				fmt.Sprintf("Row %q declares an expectedHandoffTarget beside an expected error; a refused run reports no handoff target to compare.", display.Sanitize(row.ID)), result.ExitInvalid)
+		}
+		if row.ExpectedHandoffTarget != nil {
+			if _, err := evaluation.DecodeHandoffTarget(row.ExpectedHandoffTarget); err != nil {
+				return refuse("JPS-GRAPH-ROWS-ROW",
+					fmt.Sprintf("Row %q declares an expectedHandoffTarget that is neither null nor a {kind, name} object: %s", display.Sanitize(row.ID), display.Sanitize(err.Error())), result.ExitInvalid)
+			}
+		}
+		if len(row.ExpectedNodeHandoffTargets) > 0 && !hasDisposition {
+			return refuse("JPS-GRAPH-ROWS-ROW",
+				fmt.Sprintf("Row %q declares expectedNodeHandoffTargets beside an expected error; a refused run reports no node targets to compare.", display.Sanitize(row.ID)), result.ExitInvalid)
+		}
+		for _, node := range slices.Sorted(maps.Keys(row.ExpectedNodeHandoffTargets)) {
+			if _, named := row.ExpectedNodes[node]; !named {
+				return refuse("JPS-GRAPH-ROWS-ROW",
+					fmt.Sprintf("Row %q asserts a handoff target for node %q it does not name in expectedNodes; a target is asserted beside the node's disposition, as a pack row asserts it beside its own.", display.Sanitize(row.ID), display.Sanitize(node)), result.ExitInvalid)
+			}
+			if _, err := evaluation.DecodeHandoffTarget(row.ExpectedNodeHandoffTargets[node]); err != nil {
+				return refuse("JPS-GRAPH-ROWS-ROW",
+					fmt.Sprintf("Row %q asserts a handoff target for node %q that is neither null nor a {kind, name} object: %s", display.Sanitize(row.ID), display.Sanitize(node), display.Sanitize(err.Error())), result.ExitInvalid)
+			}
 		}
 	}
 	return rows, nil
@@ -347,6 +453,26 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 // strict gate the comparator applies everywhere (DecodeDisposition), so a row
 // carrying an illegal §8.3 value is a defect in the row, reported as its own
 // mismatch rather than compared loosely.
+// targetAssertion decodes one target assertion and renders both sides by the
+// one writer every report uses (result.HandoffTarget.Rendered); what decides
+// is the decoded values through evaluation.SameHandoffTarget, never these
+// renderings (ADR-0025 via ADR-0032). The expected side was shape-checked at
+// load, so an error here is a row handed around the loader, or an assertion
+// whose members §8.1 refuses — reported as the row defect it is.
+func targetAssertion(expectedRaw json.RawMessage, actual *result.HandoffTarget) (expected *result.HandoffTarget, expectedRendering, actualRendering string, err error) {
+	expected, err = evaluation.DecodeHandoffTarget(expectedRaw)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if expectedRendering, err = expected.Rendered(); err != nil {
+		return nil, "", "", err
+	}
+	if actualRendering, err = actual.Rendered(); err != nil {
+		return nil, "", "", err
+	}
+	return expected, expectedRendering, actualRendering, nil
+}
+
 func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, graphPath string, row RowCase, options Options) result.GraphTestRow {
 	outcome := result.GraphTestRow{
 		ID:                 row.ID,
@@ -375,6 +501,17 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 	if failure != nil {
 		outcome.ActualErrorClass, outcome.ActualErrorPhase = failure.Class, failure.Phase
 		if row.ExpectedErrorClass == "" {
+			// A row that also asserted the composite's target still gets the
+			// pair, with the pack triple's honest third state: this report
+			// cannot state a target, because the run it would have come from
+			// was refused — told from the other causes by ActualErrorClass
+			// being set, exactly as a pack row reports it (ADR-0025).
+			if row.ExpectedHandoffTarget != nil {
+				if _, rendering, _, renderErr := targetAssertion(row.ExpectedHandoffTarget, nil); renderErr == nil {
+					outcome.ExpectedHandoffTarget = rendering
+					outcome.ActualHandoffTarget = result.HandoffTargetUnavailable
+				}
+			}
 			return mismatch("The run was refused where a composite was expected: " + failure.Code + ": " + display.Sanitize(failure.Message))
 		}
 		if failure.Class != row.ExpectedErrorClass {
@@ -394,8 +531,30 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 		return mismatch("The produced composite headline did not canonicalize, which is a defect in this runtime: " + display.Sanitize(err.Error()))
 	}
 	outcome.Actual = string(actual)
+	// The pair is reported before either comparison runs, on the pack matrix's
+	// precedent: a row that mismatches on the headline still says which target
+	// each side named, so a reader is never told less by a row that failed
+	// earlier.
+	var expectedTarget *result.HandoffTarget
+	if row.ExpectedHandoffTarget != nil {
+		var renderErr error
+		var expectedRendering, actualRendering string
+		expectedTarget, expectedRendering, actualRendering, renderErr = targetAssertion(row.ExpectedHandoffTarget, evaluated.HandoffTarget)
+		if renderErr != nil {
+			return mismatch("The row's expectedHandoffTarget could not be decoded or rendered, which is a defect in the row and not a result: " + display.Sanitize(renderErr.Error()))
+		}
+		outcome.ExpectedHandoffTarget, outcome.ActualHandoffTarget = expectedRendering, actualRendering
+	}
 	if outcome.Actual != outcome.Expected {
 		return mismatch("The composite headline differs from the row's expectation.")
+	}
+	// §8.3 keeps the configured target outside the disposition, so this is the
+	// one comparison that can see a target-only edit: every headline byte
+	// above stayed identical (ADR-0025's defect class, closed here for the
+	// composite by ADR-0032). Decided on the decoded values; the renderings
+	// already set are display values beside the verdict.
+	if row.ExpectedHandoffTarget != nil && !evaluation.SameHandoffTarget(expectedTarget, evaluated.HandoffTarget) {
+		return mismatch("The composite's configured handoff target differs from the row's expectation; the renderings are reported beside this verdict.")
 	}
 
 	byNode := map[string]result.GraphNodeEvaluation{}
@@ -424,6 +583,22 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 			}
 			comparison.Trace = &trace
 		}
+		// The node's pair is reported before its comparisons too, for the same
+		// reason the row's is: a mismatching comparison says which target each
+		// side named.
+		expectedNodeTarget, nodeTargetAsserted := (*result.HandoffTarget)(nil), false
+		if raw, asserted := row.ExpectedNodeHandoffTargets[name]; asserted {
+			nodeTargetAsserted = true
+			var renderErr error
+			var expectedRendering, actualRendering string
+			expectedNodeTarget, expectedRendering, actualRendering, renderErr = targetAssertion(raw, nodeEval.HandoffTarget)
+			if renderErr != nil {
+				comparison.Status = "mismatch"
+				outcome.Nodes = append(outcome.Nodes, comparison)
+				return mismatch(fmt.Sprintf("Row's handoff-target assertion for node %q could not be decoded or rendered, which is a defect in the row and not a result: %s", display.Sanitize(name), display.Sanitize(renderErr.Error())))
+			}
+			comparison.ExpectedHandoffTarget, comparison.ActualHandoffTarget = expectedRendering, actualRendering
+		}
 		expected, err := evaluation.DecodeDisposition(expectedRaw)
 		if err != nil {
 			comparison.Status = "mismatch"
@@ -442,6 +617,11 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 			comparison.Status = "mismatch"
 			outcome.Nodes = append(outcome.Nodes, comparison)
 			return mismatch(fmt.Sprintf("Node %q's disposition differs from the row's expectation.", display.Sanitize(name)))
+		}
+		if nodeTargetAsserted && !evaluation.SameHandoffTarget(expectedNodeTarget, nodeEval.HandoffTarget) {
+			comparison.Status = "mismatch"
+			outcome.Nodes = append(outcome.Nodes, comparison)
+			return mismatch(fmt.Sprintf("Node %q's configured handoff target differs from the row's expectation; the renderings are reported beside this verdict.", display.Sanitize(name)))
 		}
 		outcome.Nodes = append(outcome.Nodes, comparison)
 	}

@@ -4,6 +4,21 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A graph row asserts the handoff target** (ADR-0032, closes #128): under `graphMatrixVersion
+  "2"`, `expectedHandoffTarget` asserts the composite's reported target — the result node's own,
+  the value a target-only pack edit reaches while every disposition byte stays identical — and
+  `expectedNodeHandoffTargets` asserts named nodes' (each such node also named in
+  `expectedNodes`). ADR-0025's semantics, extended whole: decoded-value comparison by the one
+  (now exported) comparator, capped renderings reported as `expectedHandoffTarget`/
+  `actualHandoffTarget` pairs on the row and on the node comparison, null as an assertion, and
+  "unavailable" exactly where a run was refused under an expected composite. The version
+  machinery is the pack matrix's, built for this surface: silence reads as version 1, and a
+  version-2 member under version 1 is refused with the version it would take. Unasserted rows
+  and version-1 documents are byte for byte what they were; ADR-0025's graph-surface deferral is
+  discharged via the index annotation, its text untouched. Additive under VERSIONING.md's MINOR
+  rule; the evaluator's conformance claim is unaffected and stated, in full and only, in
+  `CONFORMANCE.md`.
+
 - **The graph matrix reports each compared node's trace, on request** (ADR-0031, closes #127):
   `experimental_test_graphs` accepts an optional boolean `include_traces`, and `experimental
   graph test` grows `--include-traces` on both its forms (JSON report only; the human rendering

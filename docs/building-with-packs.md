@@ -241,10 +241,11 @@ What it holds is the target your pack *configures*: nothing here observes that a
 delivered, that the named role or queue exists, or that anyone acted on it. It is the value
 downstream integrations read to route the request, and this is what pins it.
 
-One surface does not have it: a **graph** matrix (`experimental graph test`) has no
-`expectedHandoffTarget`, so a graph row is still blind to a target-only pack edit. Where a graph's
-nodes are packs you maintain, assert their targets in each pack's own matrix — the graph deferral is
-recorded in ADR-0025 and does not make the gap invisible.
+The **graph** matrix has it too (`experimental graph test`, ADR-0032, `graphMatrixVersion "2"`):
+`expectedHandoffTarget` asserts the composite's reported target — the result node's own — and
+`expectedNodeHandoffTargets` asserts named nodes', each such node also named in `expectedNodes`. The
+same semantics apply: decoded-value comparison, capped renderings in the report, and the target the
+run reported — configured exactly when the disposition requested a handoff, null otherwise.
 
 Beside the rows, `packs test` reports **coverage**: the probe classes your pack's own declarations
 derive, and which of them some row states. There are two families.

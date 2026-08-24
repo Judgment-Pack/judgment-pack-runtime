@@ -304,21 +304,21 @@ func TestHandoffTargetEqualityIsDecidedOnTheDecodedValues(t *testing.T) {
 	prefix := strings.Repeat("a", 4096)
 	left := &result.HandoffTarget{Kind: "queue", Name: prefix + "left"}
 	right := &result.HandoffTarget{Kind: "queue", Name: prefix + "right"}
-	if sameHandoffTarget(left, right) {
+	if SameHandoffTarget(left, right) {
 		t.Fatal("two different targets are two targets, however they render")
 	}
-	if !sameHandoffTarget(left, &result.HandoffTarget{Kind: "queue", Name: prefix + "left"}) {
+	if !SameHandoffTarget(left, &result.HandoffTarget{Kind: "queue", Name: prefix + "left"}) {
 		t.Fatal("two equal targets are one target")
 	}
 	// Presence is compared as presence: neither direction is an equality.
-	if sameHandoffTarget(nil, left) || sameHandoffTarget(left, nil) {
+	if SameHandoffTarget(nil, left) || SameHandoffTarget(left, nil) {
 		t.Fatal("a target and no target are never the same statement")
 	}
-	if !sameHandoffTarget(nil, nil) {
+	if !SameHandoffTarget(nil, nil) {
 		t.Fatal("no target and no target are the same statement")
 	}
 	// Each member is compared in full, so a difference in either separates them.
-	if sameHandoffTarget(left, &result.HandoffTarget{Kind: "system", Name: left.Name}) {
+	if SameHandoffTarget(left, &result.HandoffTarget{Kind: "system", Name: left.Name}) {
 		t.Fatal("the kind is part of the target")
 	}
 }

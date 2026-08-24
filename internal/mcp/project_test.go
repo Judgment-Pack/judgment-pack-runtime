@@ -1427,6 +1427,30 @@ func TestExperimentalTestGraphsIncludeTracesAttachesNodeTraces(t *testing.T) {
 	}
 }
 
+// A version-2 handoff-target assertion flows through the MCP surface
+// unchanged (ADR-0032): the rendered pair is in the payload, and the verdict
+// is the graph layer's.
+func TestExperimentalTestGraphsCarriesTargetAssertions(t *testing.T) {
+	root := graphProjectFixture(t)
+	rows := `{"graphMatrixVersion":"2","cases":[{"id":"escalates",` +
+		`"inputs":{"screening":{"facts":{},"evidence":{"screening-record":"present"}}},` +
+		`"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"requested","triggeredBy":["unknown"]}},` +
+		`"expectedHandoffTarget":{"kind":"human-role","name":"Compliance"}}]}`
+	if err := os.WriteFile(filepath.Join(root, "onboarding.rows.json"), []byte(rows), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("an asserting matrix runs: %#v", outcome)
+	}
+	text := toolText(t, outcome)
+	if !strings.Contains(text, `"expectedHandoffTarget":"{\"kind\":\"human-role\",\"name\":\"Compliance\"}"`) ||
+		!strings.Contains(text, `"actualHandoffTarget":"{\"kind\":\"human-role\",\"name\":\"Compliance\"}"`) ||
+		!strings.Contains(text, `"status":"passed"`) {
+		t.Fatalf("the rendered pair is in the payload: %q", text)
+	}
+}
+
 func TestExperimentalTestGraphsWithNoConfigurationIsAToolError(t *testing.T) {
 	t.Setenv(project.ConfigEnv, filepath.Join(t.TempDir(), "absent.json"))
 	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
