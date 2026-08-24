@@ -185,8 +185,8 @@ func TestProjectToolsServeTheInventoryAndOneDocument(t *testing.T) {
 	if text := toolText(t, results[4]); !strings.Contains(text, "required") {
 		t.Fatalf("an absent pack_id must be a missing-argument error: %q", text)
 	}
-	if text := toolText(t, results[5]); !strings.Contains(text, "unknown keys are rejected") {
-		t.Fatalf("an unknown argument key must be rejected: %q", text)
+	if text := toolText(t, results[5]); !strings.Contains(text, `unknown member "packId"`) {
+		t.Fatalf("an unknown argument key must be rejected, named exactly: %q", text)
 	}
 }
 
@@ -1677,8 +1677,9 @@ func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
 	}
 	row := inventory.Graphs[0]
 	if row.ID != "onboarding" || row.GraphID != "vendor-onboarding-flow" || row.GraphVersion != "0.1.0" ||
-		row.FormatVersion != "1" || row.ResultNode != "onboarding" || row.Nodes != 2 || row.Edges != 1 ||
-		!row.Rows || row.RowsPath != "onboarding.rows.json" || row.Detail != "" {
+		row.FormatVersion != "1" || row.ResultNode != "onboarding" ||
+		row.NodeCount == nil || *row.NodeCount != 2 || row.EdgeCount == nil || *row.EdgeCount != 1 ||
+		!row.RowsDeclared || row.RowsPath != "onboarding.rows.json" || row.Detail != "" {
 		t.Fatalf("row = %+v", row)
 	}
 
@@ -1792,5 +1793,165 @@ func TestExperimentalGraphToolsWithoutConfiguration(t *testing.T) {
 	fetch := responses[1]["result"].(map[string]any)
 	if fetch["isError"] != true || !strings.Contains(toolText(t, fetch), "No project configuration was found") {
 		t.Fatalf("a fetch by id cannot succeed emptily: %#v", fetch)
+	}
+}
+
+// The wire shapes of the graph payloads, asserted on the raw JSON rather than
+// through the production structs, so a renamed tag cannot survive by being
+// renamed in both places at once — plus the shapes only a hostile fixture
+// reaches: a future formatVersion served as declared, counts that go absent
+// rather than zero, bytes no text frame can carry, a document past the byte
+// limit, and a configured path that tries to leave the root.
+func TestExperimentalGraphWireShapes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink shape not exercised on windows")
+	}
+	source := filepath.Join("..", "graph", "testdata", "project")
+	root := t.TempDir()
+	for _, name := range []string{"onboarding.rows.json", "sanctions-screening-0.1.0.pack.json", "vendor-onboarding-0.1.0.pack.json"} {
+		data, err := os.ReadFile(filepath.Join(source, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Decodable, schema-invalid, and from the future: served as declared, with
+	// counts absent because neither member is collection-shaped.
+	future := `{"formatVersion":"future","id":"time-traveller","version":"9.9.9","nodes":[],"edges":{},"result":7}`
+	if err := os.WriteFile(filepath.Join(root, "future.graph.json"), []byte(future), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "binary.graph.json"), []byte{0x7b, 0xff, 0xfe, 0x7d}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "huge.graph.json"), append(bytes.Repeat([]byte(" "), 1<<20), '{', '}'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.graph.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.graph.json"), filepath.Join(root, "escape.graph.json")); err != nil {
+		t.Fatal(err)
+	}
+	config := `{"configVersion":"2","packs":{"screening":{"path":"sanctions-screening-0.1.0.pack.json"}},"graphs":{` +
+		`"future":{"path":"future.graph.json"},` +
+		`"binary":{"path":"binary.graph.json"},` +
+		`"huge":{"path":"huge.graph.json"},` +
+		`"escape":{"path":"escape.graph.json"}}}`
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "future"}),
+		toolCall(t, 3, "experimental_get_graph", map[string]any{"graph_id": "binary"}),
+		toolCall(t, 4, "experimental_get_graph", map[string]any{"graph_id": "huge"}),
+		toolCall(t, 5, "experimental_get_graph", map[string]any{"graph_id": "escape"}),
+	}, ""))
+
+	// Raw wire keys, not struct round-trips.
+	raw, err := json.Marshal(responses[0]["result"].(map[string]any)["structuredContent"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire["experimental"] != true || wire["status"] != "resolved" {
+		t.Fatalf("inventory wire = %s", raw)
+	}
+	rows, ok := wire["graphs"].([]any)
+	if !ok || len(rows) != 4 {
+		t.Fatalf(`"graphs" is a JSON array of the four rows: %s`, raw)
+	}
+	byID := map[string]map[string]any{}
+	for _, item := range rows {
+		row := item.(map[string]any)
+		byID[row["id"].(string)] = row
+	}
+	futureRow := byID["future"]
+	if futureRow["formatVersion"] != "future" || futureRow["graphId"] != "time-traveller" {
+		t.Fatalf("a declared future format is served as declared: %v", futureRow)
+	}
+	if _, present := futureRow["nodeCount"]; present {
+		t.Fatalf("a non-collection nodes member has no count, not zero: %v", futureRow)
+	}
+	if _, present := futureRow["edgeCount"]; present {
+		t.Fatalf("a non-collection edges member has no count, not zero: %v", futureRow)
+	}
+	if futureRow["rowsDeclared"] != false {
+		t.Fatalf("rowsDeclared is the boolean wire member: %v", futureRow)
+	}
+	for _, id := range []string{"binary", "huge", "escape"} {
+		row := byID[id]
+		if detail, _ := row["detail"].(string); detail == "" {
+			t.Fatalf("%s is listed with the reason: %v", id, row)
+		}
+	}
+	if !strings.Contains(byID["huge"]["detail"].(string), "byte limit") {
+		t.Fatalf("the oversized detail names the limit: %v", byID["huge"])
+	}
+
+	served := responses[1]["result"].(map[string]any)
+	rawMeta, err := json.Marshal(served["structuredContent"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(rawMeta, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["experimental"] != true || meta["status"] != "valid" || meta["formatVersion"] != "future" ||
+		meta["sha256"] == "" || meta["graphId"] != "time-traveller" {
+		t.Fatalf("document wire = %s", rawMeta)
+	}
+	if toolText(t, served) != future {
+		t.Fatalf("served bytes = %q", toolText(t, served))
+	}
+
+	// A text frame carries UTF-8 and nothing else: invalid bytes are refused
+	// with the path, never transcoded into agreement-breaking replacements.
+	binary := responses[2]["result"].(map[string]any)
+	if binary["isError"] != true || !strings.Contains(toolText(t, binary), "not valid UTF-8") {
+		t.Fatalf("invalid UTF-8 is refused, not transcoded: %#v", binary)
+	}
+	if oversized := responses[3]["result"].(map[string]any); oversized["isError"] != true {
+		t.Fatalf("an oversized document is a refusal: %#v", oversized)
+	}
+	if escape := responses[4]["result"].(map[string]any); escape["isError"] != true {
+		t.Fatalf("a path leaving the root is refused: %#v", escape)
+	}
+}
+
+// The two missing-configuration notes are one string, asserted exactly on both
+// tools, so they cannot drift apart — and get_pack now refuses the case-folded
+// alias exactly as the graph fetch does, closing the live PACK_ID bypass.
+func TestFetchToolsHoldArgumentsAndNotesExactly(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "jpack.json")
+	t.Setenv(project.ConfigEnv, missing)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "x"}),
+		toolCall(t, 3, "get_pack", map[string]any{"PACK_ID": "intake"}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	if inventory.Note == "" || toolText(t, responses[1]["result"].(map[string]any)) != inventory.Note {
+		t.Fatalf("the fetch error carries the listing's own note, byte for byte:\nnote  %q\nerror %q",
+			inventory.Note, toolText(t, responses[1]["result"].(map[string]any)))
+	}
+	alias := responses[2]["result"].(map[string]any)
+	if alias["isError"] != true ||
+		toolText(t, alias) != `The "get_pack" arguments carry an unknown member "PACK_ID"; the accepted members are pack_id, spelled exactly.` {
+		t.Fatalf("the case-folded pack alias is held to the exact spelling: %#v", alias)
 	}
 }

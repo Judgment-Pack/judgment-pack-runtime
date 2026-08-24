@@ -19,8 +19,8 @@
 // experimental_get_graph serve the graph convention's inventory and documents
 // read-only (ADR-0029): they carry the experimental marker for their
 // surface's stability, and they evaluate nothing and write nothing. Nothing in this package states a conformance claim: the claim is stated,
-// in full and only, in CONFORMANCE.md, and every payload carries a reference to
-// that file beside the contract version applied
+// in full and only, in CONFORMANCE.md, and every evaluation payload carries a
+// reference to that file beside the contract version applied
 // (result.EvaluationClaimReference, result.EvaluatorSpecVersion).
 //
 // The server speaks MCP's newline-delimited JSON-RPC 2.0 stdio framing directly,

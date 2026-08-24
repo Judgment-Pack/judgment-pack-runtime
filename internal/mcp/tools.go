@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
@@ -402,6 +403,12 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 		PackID json.RawMessage `json:"pack_id"`
 	}
 	if len(rawArgs) > 0 {
+		// The exactMembers hold, for the reason its own comment states:
+		// encoding/json case-folds member names, so "PACK_ID" would bind past
+		// DisallowUnknownFields — a live alias this hold closes.
+		if message := exactMembers("get_pack", rawArgs, "pack_id"); message != "" {
+			return toolError(message)
+		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
@@ -427,6 +434,20 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 	meta, data, failure := loaded.Document(packID, "mcp get_pack")
 	if failure != nil {
 		return toolError(failure.Message)
+	}
+	return servedDocument(meta, data, meta.Path)
+}
+
+// servedDocument is the fetch-tool result for one project document: the exact
+// bytes as the text half beside their metadata. A text frame carries UTF-8 and
+// nothing else — Go's JSON encoder silently replaces invalid bytes with
+// U+FFFD, which would make the text disagree with the bytes and sha256 the
+// metadata states — so bytes that are not valid UTF-8 are refused with the
+// path to read directly, rather than served corrupted (ADR-0029). The same
+// rule holds for get_pack, where the silent transcoding was a live defect.
+func servedDocument(meta any, data []byte, path string) any {
+	if !utf8.Valid(data) {
+		return toolError(fmt.Sprintf("The document %s is not valid UTF-8, so a text result cannot carry its exact bytes; read the file directly at its configured path.", display.Sanitize(path)))
 	}
 	return map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": string(data)}},
@@ -492,11 +513,7 @@ func (s *Server) toolExperimentalGetGraph(rawArgs json.RawMessage) any {
 	if failure != nil {
 		return toolError(failure.Message)
 	}
-	return map[string]any{
-		"content":           []map[string]any{{"type": "text", "text": string(data)}},
-		"structuredContent": meta,
-		"isError":           false,
-	}
+	return servedDocument(meta, data, meta.Path)
 }
 
 // evaluateCommand names this surface in every payload it produces, exactly as

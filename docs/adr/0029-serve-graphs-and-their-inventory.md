@@ -38,8 +38,10 @@ they are named, and which of two live digest conventions their payload follows.
   the tool *name* carries the experimental marker, because MCP has no command group to carry it
   instead — and every graph surface, the non-evaluating verbs included, sits inside the CLI's
   `experimental` group.
-- The one-inventory rule the pack side proves in test: the CLI and MCP answers are one function's
-  output, so the two surfaces cannot disagree.
+- The one-inventory rule the pack side proves in test: the CLI and MCP *resolved* inventories are
+  one function's output, so they cannot disagree about a project that exists. Missing-configuration
+  behavior differs by surface, deliberately, exactly as packs': the CLI errors (packs list's own
+  behavior), the MCP listing answers empty with a note.
 - Serving is not validating: the mid-edit document is the one a client most needs to see, and the
   moment validation would refuse it is the moment a serving tool must not go silent.
 - The conformance perimeter: these tools reach no evaluator, so the engine-constructor census
@@ -74,7 +76,9 @@ Settled constraints:
 1. **Two tools, read-only.** `experimental_list_graphs` (no arguments) resolves every configured
    graph: configured id beside the document's own `id` and `version` (two names, two members —
    the pack inventory's rule), the declared `formatVersion` and `result` node, node and edge
-   counts as carried, paths, whether rows are declared, and the configuration's description.
+   counts where those members are collection-shaped — reported as **no count**, never zero, where
+   they are not, so a malformed document cannot look honestly empty — paths, whether rows are
+   declared, and the configuration's description.
    `experimental_get_graph { graph_id }` serves the exact bytes beside their metadata, through
    the same rooted reader every project read uses, under the graph surface's own byte limit
    (ADR-0017 deliberately left the limit with the caller). Neither holds a credential, opens a
@@ -95,10 +99,12 @@ Settled constraints:
    a `PackDocument`'s `specVersion` is — not the format version a walk applied, which is what
    the member means on an evaluation payload, where the distinction is load-bearing and stays as
    the result package states it.
-6. **One inventory function serves both surfaces.** The CLI's `experimental graph list` renders
-   the same `GraphInventory` the MCP tool returns, built in `internal/graph` — the import points
-   from the graph surface to the project convention, never the reverse, which is also why the
-   builders do not live in `internal/project`.
+6. **One inventory function serves both resolved surfaces.** The CLI's `experimental graph list`
+   renders the same `GraphInventory` the MCP tool returns, built in `internal/graph` — the import
+   points from the graph surface to the project convention, never the reverse, which is also why
+   the builders do not live in `internal/project`. Missing configuration is the one deliberate
+   divergence, inherited from the pack side: the CLI errors as packs list does, and only the MCP
+   listing answers empty.
 7. **Arguments are held exactly.** `graph_id` is held to its spelling (the `exactMembers` hold,
    so a case-folded alias is refused) and its type (an explicit null is a bad invocation), and
    the required-argument error names `experimental_list_graphs` as where the ids come from.

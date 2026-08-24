@@ -417,7 +417,8 @@ func TestGraphListInventory(t *testing.T) {
 	}
 	row := inventory.Graphs[0]
 	if row.ID != "onboarding" || row.GraphID != "vendor-onboarding-flow" || row.GraphVersion != "0.1.0" ||
-		row.ResultNode != "onboarding" || row.Nodes != 2 || row.Edges != 1 || !row.Rows {
+		row.ResultNode != "onboarding" || row.NodeCount == nil || *row.NodeCount != 2 ||
+		row.EdgeCount == nil || *row.EdgeCount != 1 || !row.RowsDeclared {
 		t.Fatalf("row = %+v", row)
 	}
 

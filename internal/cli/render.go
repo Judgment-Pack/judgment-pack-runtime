@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -227,15 +228,25 @@ func (a *App) renderGraphInventory(format string, output result.GraphInventory) 
 			fmt.Fprintf(a.out, "  %s\n", display.Sanitize(entry.Description))
 		}
 		rows := "none declared"
-		if entry.Rows {
+		if entry.RowsDeclared {
 			rows = display.Sanitize(entry.RowsPath)
 		}
-		fmt.Fprintf(a.out, "  nodes: %d · edges: %d · result: %s · rows: %s\n", entry.Nodes, entry.Edges, display.Sanitize(entry.ResultNode), rows)
+		fmt.Fprintf(a.out, "  nodes: %s · edges: %s · result: %s · rows: %s\n", countLabel(entry.NodeCount), countLabel(entry.EdgeCount), display.Sanitize(entry.ResultNode), rows)
 		if entry.Detail != "" {
 			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(entry.Detail))
 		}
 	}
 	return nil
+}
+
+// countLabel renders a count that may honestly not exist: a member that is
+// absent or not collection-shaped has no count, and "unknown" is the truthful
+// rendering where 0 would be an invention.
+func countLabel(count *int) string {
+	if count == nil {
+		return "unknown"
+	}
+	return strconv.Itoa(*count)
 }
 
 func (a *App) renderPackInventory(format string, output result.PackInventory) error {

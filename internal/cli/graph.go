@@ -50,7 +50,9 @@ func (a *App) graphCommand() *cobra.Command {
 
 // graphListCommand lists the configured graphs, the graph twin of packs list
 // and the CLI twin of the experimental_list_graphs tool: one inventory
-// function serves both surfaces, so they cannot disagree (ADR-0029).
+// function serves both resolved surfaces, so they cannot disagree about a
+// project that exists (ADR-0029). With no configuration this errors exactly
+// as packs list does; the empty-with-a-note answer is the MCP listing's.
 func (a *App) graphListCommand() *cobra.Command {
 	format := "human"
 	configPath := ""

@@ -64,11 +64,11 @@ func ProjectInventory(loaded *project.Project, command string) result.GraphInven
 	for _, id := range loaded.GraphIDs {
 		entry, _ := loaded.GraphEntry(id)
 		row := result.GraphSummary{
-			ID:          id,
-			Path:        entry.Path,
-			RowsPath:    entry.Rows,
-			Rows:        entry.Rows != "",
-			Description: entry.Description,
+			ID:           id,
+			Path:         entry.Path,
+			RowsPath:     entry.Rows,
+			RowsDeclared: entry.Rows != "",
+			Description:  entry.Description,
 		}
 		found, _, err := readGraphIdentity(loaded, entry)
 		if err != nil {
@@ -78,8 +78,8 @@ func ProjectInventory(loaded *project.Project, command string) result.GraphInven
 			row.GraphVersion = found.version
 			row.FormatVersion = found.formatVersion
 			row.ResultNode = found.resultNode
-			row.Nodes = found.nodes
-			row.Edges = found.edges
+			row.NodeCount = found.nodeCount
+			row.EdgeCount = found.edgeCount
 		}
 		inventory.Graphs = append(inventory.Graphs, row)
 	}
@@ -141,8 +141,10 @@ type graphIdentity struct {
 	version       string
 	formatVersion string
 	resultNode    string
-	nodes         int
-	edges         int
+	// nil when the member is absent or not collection-shaped: a count that
+	// cannot be taken is reported as no count, never as zero.
+	nodeCount *int
+	edgeCount *int
 }
 
 // readGraphIdentity reads one configured graph and pulls its identity off the
@@ -159,7 +161,12 @@ func readGraphIdentity(loaded *project.Project, entry project.Graph) (graphIdent
 		return graphIdentity{}, nil, errors.New(project.ReadFailureMessage(entry.Path, err))
 	}
 	found, err := graphIdentityFrom(data)
-	return found, data, err
+	if err != nil {
+		// The same path framing every pack detail carries: a reader sent to a
+		// message without a path goes looking for which file it was about.
+		return found, data, errors.New(project.ReadFailureMessage(entry.Path, err))
+	}
+	return found, data, nil
 }
 
 // graphIdentityFrom pulls the identity out of bytes already read, the graph
@@ -182,10 +189,12 @@ func graphIdentityFrom(data []byte) (graphIdentity, error) {
 		resultNode:    stringAt(root, "result"),
 	}
 	if nodes, ok := root["nodes"].(map[string]any); ok {
-		found.nodes = len(nodes)
+		count := len(nodes)
+		found.nodeCount = &count
 	}
 	if edges, ok := root["edges"].([]any); ok {
-		found.edges = len(edges)
+		count := len(edges)
+		found.edgeCount = &count
 	}
 	return found, nil
 }

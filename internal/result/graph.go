@@ -356,11 +356,15 @@ type GraphSummary struct {
 	ResultNode    string `json:"resultNode,omitempty"`
 	Path          string `json:"path"`
 	RowsPath      string `json:"rowsPath,omitempty"`
-	Rows          bool   `json:"rows"`
+	RowsDeclared  bool   `json:"rowsDeclared"`
 	Description   string `json:"description,omitempty"`
-	Nodes         int    `json:"nodes"`
-	Edges         int    `json:"edges"`
-	Detail        string `json:"detail,omitempty"`
+	// NodeCount and EdgeCount are counts of the declared collections and are
+	// absent — not zero — when the member is missing or not collection-shaped,
+	// so a malformed document can never look like an honest empty one. The
+	// names avoid nodes and rows, which every walk payload uses for arrays.
+	NodeCount *int   `json:"nodeCount,omitempty"`
+	EdgeCount *int   `json:"edgeCount,omitempty"`
+	Detail    string `json:"detail,omitempty"`
 }
 
 // GraphInventory is the resolved graph inventory of one project, the graph
