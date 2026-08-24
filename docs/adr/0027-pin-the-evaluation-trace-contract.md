@@ -150,7 +150,7 @@ The entry shapes, exhaustively — members serialize in the fixed order `stage`,
 | --- | --- | --- |
 | `applicability` | The pack authors an applicability condition | `stage`, `condition` (no `id`: the condition is unnamed) |
 | `exception` | Every authored exception, once the stage is reached | `stage`, `id`, `condition`; plus `onUnknown` when unknown; plus `effect` when true; plus `outcome` when that effect is `force-outcome` |
-| `rule`, evaluated | The step-7 walk evaluates it | `stage`, `id`, `condition`; plus `outcome` when true; plus `onUnknown` when unknown |
+| `rule`, evaluated | The non-forced branch of step 6 evaluates it | `stage`, `id`, `condition`; plus `outcome` when true; plus `onUnknown` when unknown |
 | `rule`, skipped | A forced outcome ended the walk | `stage`, `id`, `condition: "not-evaluated"`, `skipped: true` |
 | `rule`, suppressed | A true suppression removed it from the walk | `stage`, `id`, `condition: "not-evaluated"`, `suppressed: true` |
 
