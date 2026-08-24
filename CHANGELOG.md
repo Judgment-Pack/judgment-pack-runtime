@@ -2,7 +2,36 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.18.0 - 2026-08-24
+
+- **The evaluation trace is a pinned contract** (ADR-0027): the trace's implemented properties are
+  now stated as contract and held by byte-golden tests, with no change to a single emitted byte.
+  The contract binds successful standalone evaluation payloads and each graph node's evaluation:
+  entries appear in walk order — the authored applicability when one exists, then every exception
+  in document order, then every rule in document order — and once the rule stage is reached every
+  authored rule appears exactly once: evaluated, or `not-evaluated` with `skipped: true` when a
+  forced outcome ended the walk (skipping takes precedence over suppression labels, the
+  suppression's target included), or `not-evaluated` with `suppressed: true`. An unknown that
+  resolution ignored stays visible with its `onUnknown`; the §8 step-2 evidence inspection has no
+  trace stage (its findings surface as disposition reasons); and a §8.4 refusal reports the zero
+  payload, never an in-progress record. The trace is a pure function of the admitted documents,
+  the evidence tri-states, and the caller's effective options under one evaluator release — which
+  is what lets the audit trail store inputs instead of payloads and still answer for the trace by
+  replay. Its status is unchanged: informative, outside every §8.3 equality, and no witness for
+  coverage or conformance.
+- **An evaluation can be declared a rehearsal** (ADR-0028, closes #124): `--rehearsal` on
+  `experimental evaluate` and boolean `"rehearsal"` on the `experimental_evaluate` MCP tool
+  declare one run a rehearsal, not a decision. The evaluation runs identically — same engine,
+  same disposition, same pinned trace — but no audit record is appended (ADR-0018) and no
+  reviewed set is consulted (ADR-0019), which is exactly the standing a matrix row has always had
+  (ADR-0021), and the payload carries `"rehearsal": true` beside `experimental`, stating in band
+  that this was not a decision. The declaration is never inferred: omitting it is the ordinary
+  call, recorded exactly when the project declares a trail, and the MCP argument is held to its
+  exact spelling and type — `"REHEARSAL"`, an explicit `null`, and every non-boolean are refused
+  as the argument errors they are, because a declaration that turns recording off must never be
+  manufactured by a decoding accident. What-if exploration — edit the facts, re-evaluate,
+  compare — now leaves the trail exactly as it found it. The payload member is additive under
+  VERSIONING.md's MINOR rule; `outputVersion` stays `2`.
 
 - **The declared graph matrix runs over MCP** (ADR-0026): `experimental_test_graphs` runs every
   configured graph's matrix, or one by its configured key in `graph_id`, and returns exactly the
