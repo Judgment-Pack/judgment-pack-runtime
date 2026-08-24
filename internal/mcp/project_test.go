@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -1475,5 +1476,157 @@ func TestExperimentalEvaluateRehearsalWritesNothing(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if len(lines) != 1 {
 		t.Fatalf("the undeclared call is the one record, the rehearsal none: %q", data)
+	}
+}
+
+// rehearsalFixture is one audited single-pack project for the rehearsal rows,
+// returning its root and the pack bytes.
+func rehearsalFixture(t *testing.T) (string, []byte) {
+	t.Helper()
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	config := `{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+	return root, pack
+}
+
+// The rehearsal declaration is held to its exact spelling and its exact type,
+// and an explicit false is the ordinary recorded call. encoding/json case-folds
+// member names, so without the exactMembers hold a "REHEARSAL" key would bind
+// to the rehearsal field and reach the guards that turn recording and the lock
+// consult off — the one spelling the closed schema advertises is the one
+// spelling that does anything, and every other shape is an error carrying no
+// disposition at all.
+func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
+	root, _ := rehearsalFixture(t)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": false}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": nil}),
+		toolCall(t, 3, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "REHEARSAL": true}),
+		toolCall(t, 4, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": "true"}),
+	}, ""))
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("an explicit false is the ordinary call: %#v", responses[0])
+	}
+	var recorded result.Evaluation
+	decodeStructured(t, responses[0]["result"].(map[string]any), &recorded)
+	if recorded.Rehearsal {
+		t.Fatalf("false is not a declaration: %+v", recorded)
+	}
+	for index, want := range map[int]string{
+		1: `The "rehearsal" argument must be a JSON boolean; null and every other type are rejected. Omit the key to leave the argument unsupplied.`,
+		2: `The "experimental_evaluate" arguments carry an unknown member "REHEARSAL"`,
+		3: `The "rehearsal" argument must be a JSON boolean; null and every other type are rejected. Omit the key to leave the argument unsupplied.`,
+	} {
+		response := responses[index]["result"].(map[string]any)
+		if response["isError"] != true {
+			t.Fatalf("call %d must be refused: %#v", index+1, response)
+		}
+		if text := toolText(t, response); !strings.Contains(text, want) {
+			t.Fatalf("call %d error = %q, want %q", index+1, text, want)
+		}
+		if structured, present := response["structuredContent"]; present {
+			if _, evaluated := structured.(map[string]any)["disposition"]; evaluated {
+				t.Fatalf("call %d must carry no disposition: %#v", index+1, structured)
+			}
+		}
+	}
+
+	// The one recorded call above is the explicit-false one; every refused
+	// shape recorded nothing because nothing was evaluated.
+	data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Split(strings.TrimSpace(string(data)), "\n"); len(lines) != 1 {
+		t.Fatalf("records = %d, want the explicit-false call's one: %q", len(lines), data)
+	}
+}
+
+// A rehearsal changes exactly one member of the tool payload — the label.
+// Marshaling both structured payloads after deleting only "rehearsal" from the
+// declared one discriminates any rehearsal-conditional change to any other
+// member in one comparison.
+func TestExperimentalEvaluateRehearsalChangesOnlyTheLabel(t *testing.T) {
+	rehearsalFixture(t)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": true}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}),
+	}, ""))
+	rehearsed := responses[0]["result"].(map[string]any)["structuredContent"].(map[string]any)
+	recorded := responses[1]["result"].(map[string]any)["structuredContent"].(map[string]any)
+	if rehearsed["rehearsal"] != true {
+		t.Fatalf("the declared call is labeled: %#v", rehearsed)
+	}
+	delete(rehearsed, "rehearsal")
+	if !reflect.DeepEqual(rehearsed, recorded) {
+		t.Fatalf("a rehearsal changes only the label:\nrehearsed %#v\nrecorded  %#v", rehearsed, recorded)
+	}
+}
+
+// A rehearsal consults no reviewed set on this surface either: law that has
+// left the reviewed set refuses the ordinary call and still rehearses. The
+// refusal is asserted first, so the row cannot pass while the lock catches
+// nothing, and the trail stays empty because neither run recorded — one was
+// refused before evaluating, the other was declared a rehearsal.
+func TestExperimentalEvaluateRehearsalSkipsTheLock(t *testing.T) {
+	root, _ := rehearsalFixture(t)
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		t.Fatalf("loading the project: %+v", failure)
+	}
+	document, lockFailure := lock.Generate(loaded)
+	if lockFailure != nil {
+		t.Fatalf("generating the lock: %+v", lockFailure)
+	}
+	encoded, err := lock.Encode(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "jpack.lock.json"), encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	packPath := filepath.Join(root, "packs", "intake-0.1.0.pack.json")
+	body, err := os.ReadFile(packPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(packPath, append(body, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": true}),
+	}, ""))
+	if responses[0]["result"].(map[string]any)["isError"] != true {
+		t.Fatalf("the ordinary call must be refused under drifted law: %#v", responses[0])
+	}
+	if responses[1]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("the declared rehearsal evaluates: %#v", responses[1])
+	}
+	var rehearsed result.Evaluation
+	decodeStructured(t, responses[1]["result"].(map[string]any), &rehearsed)
+	if !rehearsed.Rehearsal || rehearsed.Disposition.Kind == "" {
+		t.Fatalf("a rehearsal under drifted law is still a labeled, complete evaluation: %+v", rehearsed)
+	}
+	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); err == nil {
+		t.Fatal("neither run records: the refusal evaluated nothing and the rehearsal declared nothing")
 	}
 }

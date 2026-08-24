@@ -117,7 +117,7 @@ rather than guessed, so the pack can escalate instead of deciding on an inventio
 
 One thing a configuration can ask this server to write, and nothing else can: under `configVersion
 "3"` an `audit` member names a directory relative to `jpack.json`, and each completed
-`experimental_evaluate` call then appends one record to `evaluations.jsonl` in it — the pack's
+`experimental_evaluate` call — a declared rehearsal excepted (ADR-0028) — then appends one record to `evaluations.jsonl` in it — the pack's
 identity and digest, the documents it was evaluated against, and the disposition in canonical form
 ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)). The record goes through the same rooted
 handle every read is bound to, into the project's own tree; a refused evaluation records nothing, and a

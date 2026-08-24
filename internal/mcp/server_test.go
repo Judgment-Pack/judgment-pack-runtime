@@ -109,6 +109,18 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 			t.Fatalf("tools/list must advertise %q; got %v", want, advertised)
 		}
 	}
+	// The rehearsal declaration is advertised exactly as the handler holds it:
+	// an optional boolean on a closed schema (ADR-0028). A schema that stopped
+	// saying so, or said something looser, would let a bridge drop the member
+	// or a client learn it only from an error.
+	evaluateSchema := advertised["experimental_evaluate"]["inputSchema"].(map[string]any)
+	if evaluateSchema["additionalProperties"] != false {
+		t.Fatalf("the evaluate schema is closed: %v", evaluateSchema)
+	}
+	rehearsalProperty, ok := evaluateSchema["properties"].(map[string]any)["rehearsal"].(map[string]any)
+	if !ok || rehearsalProperty["type"] != "boolean" {
+		t.Fatalf("the evaluate schema advertises an optional boolean rehearsal: %v", evaluateSchema)
+	}
 	if len(advertised) != 11 {
 		t.Fatalf("expected 11 distinct tools, got %d", len(advertised))
 	}

@@ -612,9 +612,10 @@ type DraftPrototype struct {
 //
 // Rehearsal is present exactly when the caller declared the run a rehearsal
 // (ADR-0028): the evaluation ran identically, no audit record was appended and
-// no reviewed set was consulted, and the payload says so in band — a stored
-// rehearsal can never pass as a decision. It is never inferred; absence means
-// the caller made no such declaration, not that one was recorded.
+// no reviewed set was consulted, and the payload states in band that this was
+// not a decision — a consumer that reads the member cannot mistake a rehearsal
+// for one. It is never inferred; absence means the caller made no such
+// declaration, not that one was recorded.
 //
 // PackID and PackVersion echo the evaluated pack's own id and version members.
 // They are additive members and not a new fact: they are read off the document

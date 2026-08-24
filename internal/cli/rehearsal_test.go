@@ -103,3 +103,86 @@ func TestRehearsalEvaluatesLawTheLockWouldRefuse(t *testing.T) {
 	}
 	noAuditTrail(t, configPath)
 }
+
+// A rehearsal changes exactly one thing in the payload — the label — and
+// exactly one line in the human rendering. Byte-comparing the two runs after
+// deleting only `"rehearsal":true,` from the declared one discriminates any
+// rehearsal-conditional change to any other member: disposition, trace,
+// handoff, draftPrototype, artifact, all of them at once. The second case runs
+// the same comparison under the draft-quantifier opt-in, so the draftPrototype
+// member sits inside the compared bytes rather than outside them.
+func TestRehearsalChangesOnlyTheLabel(t *testing.T) {
+	configPath := auditProject(t)
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+	evidence := writeDocument(t, "evidence.json", presentEvidence)
+
+	quantifierPack := writeDocument(t, "quantifier.pack.json", `{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/rehearsal-identity",
+  "version": "0.1.0",
+  "title": "Synthetic rehearsal-identity row",
+  "description": "Invented content for specification testing; it authorizes nothing.",
+  "decision": {
+    "intent": "Exercise the rehearsal identity under the draft-quantifier opt-in.",
+    "question": "Did any element hold?"
+  },
+  "outcomes": [
+    {"id": "held", "label": "Held"},
+    {"id": "did-not-hold", "label": "Did not hold"}
+  ],
+  "rules": [
+    {
+      "id": "the-rule",
+      "description": "One draft-RFC quantifier, so the payload carries draftPrototype.",
+      "when": {"op": "exists", "path": "/items", "where": {"op": "literal", "value": true}},
+      "outcome": "held",
+      "onUnknown": "ignore"
+    }
+  ],
+  "fallbackOutcome": "did-not-hold"
+}`)
+	quantifierFacts := writeDocument(t, "quantifier-facts.json", `{"items":[null]}`)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{name: "core", args: []string{"experimental", "evaluate", "--pack-id", "intake",
+			"--config", configPath, "--facts", facts, "--evidence", evidence}},
+		{name: "draft-quantifiers", args: []string{"experimental", "evaluate", quantifierPack, "--rfc0008-quantifiers",
+			"--config", configPath, "--facts", quantifierFacts}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			code, recorded, stderr := runTest(t, append(append([]string{}, testCase.args...), "--format", "json"), "")
+			if code != 0 || stderr != "" {
+				t.Fatalf("recorded run: exit=%d stderr=%q", code, stderr)
+			}
+			code, rehearsed, stderr := runTest(t, append(append([]string{}, testCase.args...), "--rehearsal", "--format", "json"), "")
+			if code != 0 || stderr != "" {
+				t.Fatalf("rehearsal run: exit=%d stderr=%q", code, stderr)
+			}
+			stripped := strings.Replace(rehearsed, `"rehearsal":true,`, "", 1)
+			if stripped == rehearsed {
+				t.Fatalf("the rehearsal payload must carry the label: %q", rehearsed)
+			}
+			if stripped != recorded {
+				t.Fatalf("a rehearsal changes only the label:\nrecorded  %q\nstripped  %q", recorded, stripped)
+			}
+
+			code, recordedHuman, stderr := runTest(t, append([]string{}, testCase.args...), "")
+			if code != 0 || stderr != "" {
+				t.Fatalf("recorded human run: exit=%d stderr=%q", code, stderr)
+			}
+			code, rehearsedHuman, stderr := runTest(t, append(append([]string{}, testCase.args...), "--rehearsal"), "")
+			if code != 0 || stderr != "" {
+				t.Fatalf("rehearsal human run: exit=%d stderr=%q", code, stderr)
+			}
+			strippedHuman := strings.Replace(rehearsedHuman,
+				"REHEARSAL: declared not a decision; no audit record was appended and no reviewed set was consulted\n", "", 1)
+			if strippedHuman == rehearsedHuman || strippedHuman != recordedHuman {
+				t.Fatalf("the human renderings differ by exactly the rehearsal line:\nrecorded  %q\nrehearsal %q", recordedHuman, rehearsedHuman)
+			}
+		})
+	}
+}

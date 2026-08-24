@@ -581,8 +581,8 @@ Three tools then matter:
   project that declares none it writes nothing. A call declaring `"rehearsal": true` (the CLI's
   `--rehearsal`) writes nothing even there and consults no reviewed set — a rehearsal is not a
   decision, the standing a matrix row already has (ADR-0021, extended by ADR-0028) — and its
-  payload carries `"rehearsal": true` in band, so a stored rehearsal can never pass as a
-  decision. Use it for what-if exploration: edit the facts, re-evaluate, compare — and leave the
+  payload carries `"rehearsal": true`, stating in band that this was not a decision — a
+  consumer that reads the member cannot mistake a rehearsal for one. Use it for what-if exploration: edit the facts, re-evaluate, compare — and leave the
   trail exactly as you found it.
 
 A workable agent loop: `list_packs` → the application (not the model) names the decision id →
@@ -601,8 +601,8 @@ handle rather than a pathname, containment holds through the open itself — the
 "this path is inside the project" and "open it" for the directory structure to be rearranged
 underneath the answer. The server stays keyless and offline, and it reads only — with the single
 exception a project asks for in writing: when `jpack.json` declares an `audit` directory, each
-completed `experimental_evaluate` call appends one record to it, inside the project's own tree and
-through that same handle.
+completed non-rehearsal `experimental_evaluate` call (ADR-0028) appends one record to it, inside
+the project's own tree and through that same handle.
 
 ## When the data isn't good enough: another pack
 

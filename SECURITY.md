@@ -39,7 +39,7 @@ pathname the operator named and refuses to overwrite an existing one. A project 
 what its packs decided by declaring an `audit` directory in its `jpack.json`
 ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)); with that member, each completed
 evaluation on the CLI's `experimental evaluate`, `experimental graph evaluate`, and the MCP
-`experimental_evaluate` tool appends one record to one file in that directory. And an operator can
+`experimental_evaluate` tool — a declared rehearsal excepted ([ADR-0028](docs/adr/0028-declare-an-evaluation-a-rehearsal.md)) — appends one record to one file in that directory. And an operator can
 run `packs lock` ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), which generates one file beside
 the configuration declaring the digests of the documents the project reviewed. Nothing else is
 created, named, overwritten, or deleted anywhere.

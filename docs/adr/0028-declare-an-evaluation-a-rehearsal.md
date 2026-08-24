@@ -57,6 +57,12 @@ payload it produces says what it is.
 
 Chosen option: **A**.
 
+This is a **partial supersession** of two accepted records, named per the index convention and
+annotated there without editing either body: ADR-0018's determination that every completed
+evaluation appends a record is narrowed — a *declared rehearsal* appends none — and ADR-0019's
+determination that the deciding surfaces consult the reviewed set is narrowed the same way. Both
+records otherwise stand whole.
+
 Option D is rejected on the explicit-over-inferred driver alone: an inference that turns off
 recording is an inference that can be gamed, and the caller who wants the ordinary call must
 never wonder what was recorded. Option C makes the honest path the awkward one — authoring a

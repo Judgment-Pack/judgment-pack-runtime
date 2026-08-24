@@ -421,7 +421,7 @@ The one thing this file can ask the runtime to **write** is a record of what it 
 ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)). Under `configVersion "3"`, an
 `audit` member names a directory relative to the configuration — `"audit": { "dir": "audit" }` —
 and each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the
-MCP `experimental_evaluate` tool then appends one JSON line to `evaluations.jsonl` in it: the
+MCP `experimental_evaluate` tool — unless it was declared a rehearsal (ADR-0028) — then appends one JSON line to `evaluations.jsonl` in it: the
 pack's id, version, `specVersion` and the digest of its exact bytes, the facts and evidence
 documents as evaluated, and the disposition in its canonical form. Test runs never record —
 `packs test`, `experimental graph test`, and `experimental evaluate-corpus` are checks on packs,
