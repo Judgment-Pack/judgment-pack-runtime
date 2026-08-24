@@ -286,6 +286,19 @@ func TestGraphTestCommand(t *testing.T) {
 	if len(output.Coverage) != 13 {
 		t.Fatalf("the fixture derives thirteen probes: %+v", output.Coverage)
 	}
+	if strings.Contains(stdout, `"trace"`) {
+		t.Fatalf("not asked, no trace member anywhere in the report: %q", stdout)
+	}
+
+	// --include-traces attaches each compared node's evaluation trace to its
+	// comparison (ADR-0031); the fixture rows name three node comparisons.
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "test", graphPath, "--rows", rowsPath, "--config", configPath, "--format", "json", "--include-traces"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if strings.Count(stdout, `"trace":[`) != 3 {
+		t.Fatalf("each compared node carries its trace: %q", stdout)
+	}
 
 	// The human surface prints the coverage block, and missing probes move
 	// nothing: the run above already exited 0 with probes missing, and the

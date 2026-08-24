@@ -1298,6 +1298,10 @@ func TestExperimentalTestGraphsRefusesBadArguments(t *testing.T) {
 		{name: "an upper-case graph id member", raw: `{"GRAPH_ID":"onboarding"}`},
 		{name: "an upper-case extensions member", raw: `{"SUPPORTED_EXTENSIONS":[]}`},
 		{name: "a camel-cased graph id member", raw: `{"graphId":"onboarding"}`},
+		{name: "a null include_traces", raw: `{"include_traces":null}`},
+		{name: "a string include_traces", raw: `{"include_traces":"yes"}`},
+		{name: "an upper-case include_traces member", raw: `{"INCLUDE_TRACES":true}`},
+		{name: "a camel-cased include_traces member", raw: `{"includeTraces":true}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			outcome := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", tt.raw))[0]["result"].(map[string]any)
@@ -1337,6 +1341,59 @@ func TestExperimentalTestGraphsTreatsExtensionsAsASet(t *testing.T) {
 	}
 	if reports["omitted"] != reports["duplicated"] {
 		t.Fatal("an empty string and a duplicate must be inert")
+	}
+}
+
+// A call declaring include_traces attaches each compared node's evaluation
+// trace to its comparison (ADR-0031); declaring it false and omitting it are
+// the same run, byte for byte.
+func TestExperimentalTestGraphsIncludeTracesAttachesNodeTraces(t *testing.T) {
+	graphProjectFixture(t)
+	asked := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", `{"include_traces":true}`))[0]["result"].(map[string]any)
+	if asked["isError"] != false {
+		t.Fatalf("asking for traces is a successful call: %#v", asked)
+	}
+	var report result.GraphSuite
+	decodeStructured(t, asked, &report)
+	compared := 0
+	for _, row := range report.Graphs[0].Rows {
+		for _, node := range row.Nodes {
+			compared++
+			if node.Trace == nil {
+				t.Fatalf("a compared node carries its trace: %+v", node)
+			}
+		}
+	}
+	if compared != 3 {
+		t.Fatalf("the fixture rows name three node comparisons: %+v", report.Graphs[0].Rows)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"trace":[`) {
+		t.Fatalf("the trace member reaches the wire: %s", encoded)
+	}
+
+	reports := map[string]string{}
+	for name, raw := range map[string]string{"omitted": `{}`, "declined": `{"include_traces":false}`} {
+		outcome := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", raw))[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("%s must be accepted: %#v", name, outcome)
+		}
+		var declined result.GraphSuite
+		decodeStructured(t, outcome, &declined)
+		flat, err := json.Marshal(declined)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reports[name] = string(flat)
+	}
+	if reports["omitted"] != reports["declined"] {
+		t.Fatal("declining traces and omitting the key must be the same run")
+	}
+	if strings.Contains(reports["omitted"], `"trace"`) {
+		t.Fatal("not asked, no trace member anywhere in the report")
 	}
 }
 

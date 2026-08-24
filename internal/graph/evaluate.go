@@ -75,6 +75,14 @@ type Options struct {
 	// because by then the memory has been spent.
 	ReportBudget int
 
+	// IncludeTraces attaches each compared node's evaluation trace — the
+	// ADR-0027 member the walk already holds — to that node's comparison in
+	// the matrix report (ADR-0031). Off is today's payload, byte for byte.
+	// The traces ride inside each row's marshaled report, so ReportBudget
+	// charges them with no new machinery: a matrix that fits without traces
+	// may be refused with them, and that is the budget doing its job.
+	IncludeTraces bool
+
 	// reportSpent is the running total across a whole run, shared by pointer so
 	// one graph's rows count against the same budget as the next graph's.
 	// TestProject sets it; a caller that runs one graph directly leaves it nil

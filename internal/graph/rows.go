@@ -411,6 +411,19 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 			outcome.Nodes = append(outcome.Nodes, comparison)
 			return mismatch(fmt.Sprintf("Row names node %q, which the graph does not declare.", display.Sanitize(name)))
 		}
+		if options.IncludeTraces {
+			// Attached the moment the evaluation is in hand, so every reported
+			// comparison of an evaluated node carries it — the mismatching ones
+			// most of all, since "why" is what the ask is for (ADR-0031). The
+			// contract's floor is [] and never null (ADR-0027 §1); the trace is
+			// a pointer member, so a nil here would marshal the null the
+			// contract forbids, and the floor is held at the one assignment.
+			trace := nodeEval.Trace
+			if trace == nil {
+				trace = []result.TraceEntry{}
+			}
+			comparison.Trace = &trace
+		}
 		expected, err := evaluation.DecodeDisposition(expectedRaw)
 		if err != nil {
 			comparison.Status = "mismatch"
