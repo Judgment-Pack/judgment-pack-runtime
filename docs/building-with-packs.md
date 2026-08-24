@@ -578,7 +578,12 @@ Three tools then matter:
   text. `pack` and `pack_id` are mutually exclusive: supplying both is refused rather than given a
   precedence rule nobody asked for. It is the one tool that can write: in a project whose
   `jpack.json` declares an `audit` directory it appends one record per completed call, and in a
-  project that declares none it writes nothing.
+  project that declares none it writes nothing. A call declaring `"rehearsal": true` (the CLI's
+  `--rehearsal`) writes nothing even there and consults no reviewed set — a rehearsal is not a
+  decision, the standing a matrix row already has (ADR-0021, extended by ADR-0028) — and its
+  payload carries `"rehearsal": true` in band, so a stored rehearsal can never pass as a
+  decision. Use it for what-if exploration: edit the facts, re-evaluate, compare — and leave the
+  trail exactly as you found it.
 
 A workable agent loop: `list_packs` → the application (not the model) names the decision id →
 gather each hinted fact, reporting `unknown` for anything you could not source → `experimental_evaluate`

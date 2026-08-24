@@ -610,6 +610,12 @@ type DraftPrototype struct {
 // present, and this evaluator requires them to agree: §11 makes the declared value
 // exact, so a pack declaring another version is refused rather than evaluated.
 //
+// Rehearsal is present exactly when the caller declared the run a rehearsal
+// (ADR-0028): the evaluation ran identically, no audit record was appended and
+// no reviewed set was consulted, and the payload says so in band — a stored
+// rehearsal can never pass as a decision. It is never inferred; absence means
+// the caller made no such declaration, not that one was recorded.
+//
 // PackID and PackVersion echo the evaluated pack's own id and version members.
 // They are additive members and not a new fact: they are read off the document
 // that was evaluated, so a payload cannot name a pack the evaluation did not
@@ -628,6 +634,7 @@ type Evaluation struct {
 	Command                   string          `json:"command"`
 	Status                    string          `json:"status"`
 	Experimental              bool            `json:"experimental"`
+	Rehearsal                 bool            `json:"rehearsal,omitempty"`
 	ConformanceClaimReference string          `json:"conformanceClaimReference"`
 	SpecVersion               string          `json:"specVersion"`
 	EvaluatorSpecVersion      string          `json:"evaluatorSpecVersion"`

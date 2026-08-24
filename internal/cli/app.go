@@ -155,6 +155,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	evidencePath := ""
 	supported := []string{}
 	quantifiers := false
+	rehearsal := false
 	packID := ""
 	configPath := ""
 	command := &cobra.Command{
@@ -281,9 +282,14 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// so an unreadable one does not stop a draft; a run that does
 			// applies it once, and the record names the revision it was judged
 			// under.
+			// A rehearsal consults no reviewed set and appends no record —
+			// exactly the standing a matrix row has (ADR-0021), extended to one
+			// declared exploratory run by ADR-0028. It is the caller's explicit
+			// declaration, never inferred, and the payload it produces says so
+			// in band.
 			var set *lock.Set
 			reviewed := lock.DraftRun(loaded)
-			if len(applied) > 0 {
+			if len(applied) > 0 && !rehearsal {
 				opened, lockFailure := lock.Open(loaded)
 				if lockFailure != nil {
 					return a.lockFailure("experimental evaluate", format, lockFailure)
@@ -313,8 +319,11 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// failed write refuses the run. A project that asked to be told what
 			// its packs decided is not served by an answer it has no record of;
 			// the evaluation itself is untouched either way, having already
-			// happened.
-			if err := auditWriter.Evaluation(output, audit.Inputs{
+			// happened. A declared rehearsal writes nothing even here, and its
+			// payload carries the label instead of a record (ADR-0028).
+			if rehearsal {
+				output.Rehearsal = true
+			} else if err := auditWriter.Evaluation(output, audit.Inputs{
 				Facts:            facts,
 				Evidence:         evidence,
 				EvidenceSupplied: evidencePath != "",
@@ -332,6 +341,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command.Flags().StringVar(&evidencePath, "evidence", evidencePath, "optional tri-state evidence availability: {\"<requirement-id>\": \"present\"|\"absent\"|\"unknown\"}")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports (repeatable)")
 	command.Flags().BoolVar(&quantifiers, "rfc0008-quantifiers", quantifiers, "DRAFT-RFC PROTOTYPE: admit the spec's RFC 0008 (Draft) collection quantifiers -- exists, every, uniform -- in conditions. A pack using them is NOT valid under any published JPS version; spec validate rejects it, and every successful evaluation payload produced this way is labeled a draft-RFC prototype (a refusal is reported as an operational error and carries no such label)")
+	command.Flags().BoolVar(&rehearsal, "rehearsal", rehearsal, "declare this run a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true so a stored copy can never pass as a decision")
 	command.Flags().StringVar(&packID, "pack-id", packID, "decision id of a pack declared in the project's jpack.json; mutually exclusive with the pack argument")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	return command

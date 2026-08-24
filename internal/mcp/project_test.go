@@ -1417,3 +1417,63 @@ func TestExperimentalTestGraphsWritesNothingAndConsultsNoLock(t *testing.T) {
 		}
 	})
 }
+
+// A call declaring rehearsal writes nothing in a project that asked for a
+// trail, and its payload says what it is; the undeclared call beside it writes
+// the one record. The declaration is held to its type: an explicit null is a
+// bad invocation, never a silent false, because a declaration this member
+// exists to make explicit must not be manufactured by a decoding accident
+// (ADR-0028).
+func TestExperimentalEvaluateRehearsalWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	config := `{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": true}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}),
+		toolCall(t, 3, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": nil}),
+	}, ""))
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("the rehearsal must succeed: %#v", responses[0])
+	}
+	var rehearsed result.Evaluation
+	decodeStructured(t, responses[0]["result"].(map[string]any), &rehearsed)
+	if !rehearsed.Rehearsal || rehearsed.Disposition.Kind == "" {
+		t.Fatalf("a rehearsal is a labeled, complete evaluation: %+v", rehearsed)
+	}
+	if responses[1]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("the undeclared call must succeed: %#v", responses[1])
+	}
+	var recorded result.Evaluation
+	decodeStructured(t, responses[1]["result"].(map[string]any), &recorded)
+	if recorded.Rehearsal {
+		t.Fatalf("an undeclared call carries no rehearsal label: %+v", recorded)
+	}
+	if responses[2]["result"].(map[string]any)["isError"] != true {
+		t.Fatalf("an explicit null is a bad invocation, never a silent false: %#v", responses[2])
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("the undeclared call is the one record, the rehearsal none: %q", data)
+	}
+}
