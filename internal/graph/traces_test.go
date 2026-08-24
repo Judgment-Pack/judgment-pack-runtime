@@ -49,6 +49,51 @@ func TestIncludeTracesCarriesEachComparedNodesTrace(t *testing.T) {
 	}
 }
 
+// The trace on a comparison is the evaluation's own, untransformed: byte for
+// byte what the graph evaluate composite reports for the same node under the
+// same inputs. An empty or reshaped substitute is not a trace of this run.
+func TestComparedNodeTraceIsTheEvaluationsOwn(t *testing.T) {
+	loaded := fixtureProject(t)
+	graphBytes, err := os.ReadFile(filepath.Join("testdata", "project", "onboarding.graph.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, loadFailure := Load(graphBytes, "onboarding.graph.json")
+	if loadFailure != nil {
+		t.Fatal(loadFailure.Message)
+	}
+	inputs := []byte(`{"screening":{"facts":{"screening":{"matches":"0"}},"evidence":{"screening-record":"present"}}}`)
+	engine := newEngine(t)
+	evaluated, failure := Evaluate(loaded, engine, document, "onboarding.graph.json", inputs, true, Options{Command: "evaluate"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	want := ""
+	for _, node := range evaluated.Nodes {
+		if node.Node == "screening" {
+			if len(node.Trace) == 0 {
+				t.Fatalf("the fixture screening evaluation carries a nonempty trace: %+v", node)
+			}
+			want = rawJSON(t, node.Trace)
+		}
+	}
+
+	tested, failure := TestProject(loaded, engine, "", Options{Command: "test", IncludeTraces: true})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	for _, row := range tested.Graphs[0].Rows {
+		if row.ID != "clear-approves" {
+			continue
+		}
+		if len(row.Nodes) != 1 || row.Nodes[0].Trace == nil || rawJSON(t, *row.Nodes[0].Trace) != want {
+			t.Fatalf("the comparison carries the evaluation's own trace:\n got  %s\n want %s", rawJSON(t, row.Nodes[0].Trace), want)
+		}
+		return
+	}
+	t.Fatal("the clear-approves row was not reported")
+}
+
 // A mismatching comparison carries the trace most of all: "why" is what the
 // ask is for, and the walk attaches it the moment the evaluation is in hand,
 // before any comparison can end the row.
