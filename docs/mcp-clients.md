@@ -117,7 +117,7 @@ rather than guessed, so the pack can escalate instead of deciding on an inventio
 
 One thing a configuration can ask this server to write, and nothing else can: under `configVersion
 "3"` an `audit` member names a directory relative to `jpack.json`, and each completed
-`experimental_evaluate` call then appends one record to `evaluations.jsonl` in it — the pack's
+`experimental_evaluate` call — a declared rehearsal excepted (ADR-0028) — then appends one record to `evaluations.jsonl` in it — the pack's
 identity and digest, the documents it was evaluated against, and the disposition in canonical form
 ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)). The record goes through the same rooted
 handle every read is bound to, into the project's own tree; a refused evaluation records nothing, and a
@@ -182,7 +182,10 @@ Or equivalently: `codex mcp add jpack -- jpack mcp`. Start `codex` and confirm
 with `/mcp`. Judge an automatic approval mode on three facts. Every tool here is read-only except
 the experimental evaluator. The evaluator writes only where the project told it to: in a project
 whose `jpack.json` declares no `audit` directory nothing is written at all, and in one that
-declares an `audit` directory each completed evaluation appends one record there and nowhere else.
+declares an `audit` directory each completed evaluation — a declared rehearsal excepted (ADR-0028) — appends one record there and nowhere else.
+A call carrying `"rehearsal": true` also consults no reviewed set (ADR-0019), so an approval mode
+that trusts the lock to catch drifted law is trusting a check a rehearsal deliberately skips —
+which is safe exactly because the payload it returns is labeled a rehearsal, never a decision.
 And `test_conformance` reads any suite path the caller names, so it is not confined to the
 directory the server was launched in — the rest of the tools read the project's own files and the
 documents you pass.

@@ -578,7 +578,12 @@ Three tools then matter:
   text. `pack` and `pack_id` are mutually exclusive: supplying both is refused rather than given a
   precedence rule nobody asked for. It is the one tool that can write: in a project whose
   `jpack.json` declares an `audit` directory it appends one record per completed call, and in a
-  project that declares none it writes nothing.
+  project that declares none it writes nothing. A call declaring `"rehearsal": true` (the CLI's
+  `--rehearsal`) writes nothing even there and consults no reviewed set — a rehearsal is not a
+  decision, the standing a matrix row already has (ADR-0021, extended by ADR-0028) — and its
+  payload carries `"rehearsal": true`, stating in band that this was not a decision — a
+  consumer that reads the member cannot mistake a rehearsal for one. Use it for what-if exploration: edit the facts, re-evaluate, compare — and leave the
+  trail exactly as you found it.
 
 A workable agent loop: `list_packs` → the application (not the model) names the decision id →
 gather each hinted fact, reporting `unknown` for anything you could not source → `experimental_evaluate`
@@ -596,8 +601,8 @@ handle rather than a pathname, containment holds through the open itself — the
 "this path is inside the project" and "open it" for the directory structure to be rearranged
 underneath the answer. The server stays keyless and offline, and it reads only — with the single
 exception a project asks for in writing: when `jpack.json` declares an `audit` directory, each
-completed `experimental_evaluate` call appends one record to it, inside the project's own tree and
-through that same handle.
+completed non-rehearsal `experimental_evaluate` call (ADR-0028) appends one record to it, inside
+the project's own tree and through that same handle.
 
 ## When the data isn't good enough: another pack
 
@@ -649,8 +654,8 @@ already says what the project owns:
 ```
 
 That is the whole of the opt-in ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)). With it,
-each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the MCP
-`experimental_evaluate` tool appends one JSON line to `audit/evaluations.jsonl`, relative to the
+each completed non-rehearsal evaluation (ADR-0028) of `experimental evaluate`, `experimental graph
+evaluate`, and the MCP `experimental_evaluate` tool appends one JSON line to `audit/evaluations.jsonl`, relative to the
 configuration: a run id and a timestamp, which surface ran, which build of this runtime ran it and
 against which bundled specification artifacts, the pack's id, version, `specVersion` and the SHA-256
 of its exact bytes, the facts and evidence documents as evaluated, and the disposition in the same
@@ -666,7 +671,9 @@ as `{"x":1}` and the line is the source compacted rather than the source itself.
 gives the evaluation that ran, because evaluation is a function of the value; keeping the caller's
 exact bytes, if you need those, is the caller's job.
 
-Four things it deliberately does not do. It does not record test runs: `packs test`, `experimental
+Five things it deliberately does not do. It does not record a declared rehearsal: `--rehearsal`
+and the tool's `rehearsal` argument say this run decides nothing, and the payload's own label is
+what that run leaves behind (ADR-0028). It does not record test runs: `packs test`, `experimental
 graph test`, and `experimental evaluate-corpus` run the same evaluator over the same project and
 write nothing, because a matrix row is a check on a pack and not a decision anyone took. It does
 not record refusals: an evaluation the preflight refused has no disposition at all, and a trail

@@ -39,13 +39,14 @@ pathname the operator named and refuses to overwrite an existing one. A project 
 what its packs decided by declaring an `audit` directory in its `jpack.json`
 ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)); with that member, each completed
 evaluation on the CLI's `experimental evaluate`, `experimental graph evaluate`, and the MCP
-`experimental_evaluate` tool appends one record to one file in that directory. And an operator can
+`experimental_evaluate` tool — a declared rehearsal excepted ([ADR-0028](docs/adr/0028-declare-an-evaluation-a-rehearsal.md)) — appends one record to one file in that directory. And an operator can
 run `packs lock` ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), which generates one file beside
 the configuration declaring the digests of the documents the project reviewed. Nothing else is
 created, named, overwritten, or deleted anywhere.
 
 The reviewed-set lock is evidence, not a control. With one in place the deciding surfaces refuse to
-evaluate declared law whose bytes differ from it, which turns a silent edit into a refusal and an
+evaluate declared law whose bytes differ from it — a declared rehearsal excepted (ADR-0028),
+which evaluates without consulting it and records nothing — which turns a silent edit into a refusal and an
 explicit re-lock; it does not and cannot stop an editor with write access to the tree, because
 `packs lock` is available to whatever can edit a pack and a runtime cannot tell an amendment from
 tampering. Treat it as a record that an amendment happened, and place the deciding party outside the

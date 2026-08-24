@@ -420,6 +420,15 @@ func TestRehearsalSurfacesIgnoreTheLockEntirely(t *testing.T) {
 	if code == 0 {
 		t.Fatal("a deciding surface must not evaluate under a lock it cannot read")
 	}
+	// The same command declared a rehearsal never opens the lock at all
+	// (ADR-0028): an unreadable one stops nothing, exactly as it stops no
+	// matrix run above. This is the discriminator for the Open call itself,
+	// where the drift tests discriminate only Consult.
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--rehearsal",
+		"--config", configPath, "--facts", facts}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("a declared rehearsal never opens the lock: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
 }
 
 // The graph surface holds every node's declared pack and the graph document

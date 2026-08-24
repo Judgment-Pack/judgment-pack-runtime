@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
@@ -25,7 +26,8 @@ import (
 // operation except the three that reach the evaluator on this runtime's
 // experimental surface (ADR-0007): experimental_evaluate, which appends one
 // record per completed call in a project whose configuration asked for one
-// (ADR-0018) and is the only tool here that can write, and
+// (ADR-0018) — unless the call declares itself a rehearsal (ADR-0028) — and
+// is the only tool here that can write, and
 // experimental_test_packs and experimental_test_graphs, which run declared
 // instance and graph matrices and write nothing — a matrix row is a rehearsal,
 // not a decision (ADR-0021, ADR-0026). Every
@@ -123,7 +125,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -142,6 +144,7 @@ func toolDefinitions() []map[string]any {
 					"facts":                map[string]any{"type": "string", "description": "One JSON facts document, as JSON text; fact.path pointers resolve against it. It is the NESTED document those pointers descend into: for the pointer /request/type write {\"request\":{\"type\":\"data-access\"}}. A flat member literally named \"/request/type\" does not resolve that pointer -- the shape mirrors how jpack.json fact hints are keyed, and every condition reading the pointer then evaluates unknown."},
 					"evidence":             map[string]any{"type": "string", "description": "Optional tri-state evidence availability, as JSON text: an object mapping declared evidence-requirement ids to \"present\", \"absent\", or \"unknown\". An omitted id is unknown. Omit this key entirely to supply no document at all, which makes every declared requirement unknown; a key present with an empty string is a supplied empty document, which is not a JSON text and is refused as malformed-input."},
 					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports."},
+					"rehearsal":            map[string]any{"type": "boolean", "description": "Declare this call a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision. Never inferred: omitting the key is the ordinary call, recorded exactly when the project declares a trail."},
 				},
 			},
 		},
@@ -560,11 +563,19 @@ func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) strin
 	for _, name := range allowed {
 		permitted[name] = true
 	}
+	unknown := []string{}
 	for name := range members {
 		if !permitted[name] {
-			return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
-				tool, name, strings.Join(allowed, " and "))
+			unknown = append(unknown, name)
 		}
+	}
+	if len(unknown) > 0 {
+		// Sorted so the reported member is a function of the arguments rather
+		// than of map iteration order: the same bad call gets the same
+		// diagnostic every time.
+		sort.Strings(unknown)
+		return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
+			tool, unknown[0], strings.Join(allowed, " and "))
 	}
 	return ""
 }
@@ -661,6 +672,27 @@ type evaluateArguments struct {
 	Facts               json.RawMessage `json:"facts"`
 	Evidence            json.RawMessage `json:"evidence"`
 	SupportedExtensions []string        `json:"supported_extensions"`
+	Rehearsal           json.RawMessage `json:"rehearsal"`
+}
+
+// boolArgument decodes one boolean argument, returning its value and an
+// argument-type message when the value is not a JSON boolean. The declared
+// schema says boolean, so an explicit null — or a string, number, object, or
+// array — is a bad invocation, held to its type by hand for the same reason
+// textArgument holds null: a lenient decode would silently read a malformed
+// declaration as false, and a declaration this member exists to make explicit
+// must never be inferred from a decoding accident.
+func boolArgument(name string, raw json.RawMessage) (bool, string) {
+	if len(raw) == 0 {
+		return false, ""
+	}
+	switch string(bytes.TrimSpace(raw)) {
+	case "true":
+		return true, ""
+	case "false":
+		return false, ""
+	}
+	return false, fmt.Sprintf("The %q argument must be a JSON boolean; null and every other type are rejected. Omit the key to leave the argument unsupplied.", name)
 }
 
 // textArgument decodes one document argument, returning its text, whether the key
@@ -703,11 +735,18 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	if len(rawArgs) > 0 {
 		// Strict decoding honors the declared additionalProperties: false — a
 		// misspelled key (say "evidnce") must be an error, not a silently
-		// different disposition.
+		// different disposition. The decoder alone is not enough: encoding/json
+		// case-folds member names, so "REHEARSAL" would bind to the rehearsal
+		// field and reach the guards that turn recording and the lock consult
+		// off — exactMembers holds every spelling to the schema's exact one
+		// first.
+		if message := exactMembers("experimental_evaluate", rawArgs, "pack", "pack_id", "facts", "evidence", "supported_extensions", "rehearsal"); message != "" {
+			return toolError(message)
+		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
-			return toolError(`The "experimental_evaluate" arguments must be an object with a string "facts", exactly one of string "pack" and string "pack_id", optional string "evidence", and optional "supported_extensions" (an array of strings); unknown keys are rejected.`)
+			return toolError(`The "experimental_evaluate" arguments must be an object with a string "facts", exactly one of string "pack" and string "pack_id", optional string "evidence", optional "supported_extensions" (an array of strings), and optional boolean "rehearsal"; unknown keys are rejected.`)
 		}
 	}
 	pack, packPresent, argumentError := textArgument("pack", args.Pack)
@@ -723,6 +762,10 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		return toolError(argumentError)
 	}
 	evidence, evidenceSupplied, argumentError := textArgument("evidence", args.Evidence)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	rehearsal, argumentError := boolArgument("rehearsal", args.Rehearsal)
 	if argumentError != "" {
 		return toolError(argumentError)
 	}
@@ -792,9 +835,13 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	// A call applying no declared document never reads the lock at all, so an
 	// unreadable one does not stop a draft; a call that does applies it once,
 	// and the record names the revision it was judged under.
+	// A rehearsal consults no reviewed set and appends no record — exactly the
+	// standing a matrix row has (ADR-0021), extended to one declared
+	// exploratory call by ADR-0028. It is the caller's explicit declaration,
+	// never inferred, and the payload it produces says so in band.
 	var set *lock.Set
 	reviewed := lock.DraftRun(loaded)
-	if len(applied) > 0 {
+	if len(applied) > 0 && !rehearsal {
 		opened, lockFailure := lock.Open(loaded)
 		if lockFailure != nil {
 			return lockToolError(lockFailure)
@@ -822,8 +869,12 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	// The record is written before the disposition is returned, and a failed
 	// write refuses the call: a project that asked to be told what its packs
 	// decided is not served by an answer it has no record of. The evaluation
-	// itself is untouched either way, having already happened.
-	if err := auditWriter.Evaluation(output, audit.Inputs{
+	// itself is untouched either way, having already happened. A declared
+	// rehearsal writes nothing even here, and its payload carries the label
+	// instead of a record (ADR-0028).
+	if rehearsal {
+		output.Rehearsal = true
+	} else if err := auditWriter.Evaluation(output, audit.Inputs{
 		Facts:            json.RawMessage(facts),
 		Evidence:         json.RawMessage(evidence),
 		EvidenceSupplied: evidenceSupplied,

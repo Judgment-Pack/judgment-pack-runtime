@@ -597,6 +597,12 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		return a.writeJSON(output)
 	}
 	fmt.Fprintln(a.out, "EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)")
+	if output.Rehearsal {
+		// The one line mirrors the payload's own rehearsal member: this run was
+		// declared a rehearsal, so no record was appended and no reviewed set
+		// was consulted, and a reader of either output learns it (ADR-0028).
+		fmt.Fprintln(a.out, "REHEARSAL: declared not a decision; no audit record was appended and no reviewed set was consulted")
+	}
 	if prototype := output.DraftPrototype; prototype != nil {
 		// The two wordings mirror the JSON marker's own: a pack that used no
 		// draft operator is a plain pack the published validator accepts, and

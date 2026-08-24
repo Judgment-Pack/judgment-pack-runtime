@@ -288,7 +288,7 @@ func (a *App) packsLockCommand() *cobra.Command {
 			"deterministic, so re-running it over an unchanged tree rewrites identical bytes and leaves no diff " +
 			"to read. Its presence is what turns verification on: with no lock file, nothing anywhere in this " +
 			"runtime behaves differently, and with one, the deciding surfaces refuse to evaluate law that differs " +
-			"from it. A configuration that does not load is refused before anything is written -- a lock over a " +
+			"from it (declared rehearsals excepted, ADR-0028). A configuration that does not load is refused before anything is written -- a lock over a " +
 			"configuration this runtime cannot read would declare a set nobody can check.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {

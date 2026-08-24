@@ -10,7 +10,8 @@
 // ADR-0026), which run the evaluation
 // package on this runtime's experimental surface. experimental_evaluate is the
 // one tool here that can write: in a project whose jpack.json declares an audit
-// directory it appends one record per completed call, through the project's own
+// directory it appends one record per completed non-rehearsal call (ADR-0028),
+// through the project's own
 // directory handle and nowhere else (ADR-0018); experimental_test_packs runs
 // declared instance matrices, experimental_test_graphs runs declared graph
 // matrices, and neither writes anything at all, because a matrix row is

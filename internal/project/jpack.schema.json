@@ -20,7 +20,7 @@
   ],
   "properties": {
     "audit": {
-      "description": "The directory this project's evaluation records are appended to (ADR-0018), relative to this file's own directory. Declaring it is what turns recording on: with no audit member this runtime writes nothing at all, and with one, every evaluation the CLI's experimental evaluate, experimental graph evaluate, and the MCP experimental_evaluate tool complete appends one record. Test runs — packs test, experimental graph test, experimental evaluate-corpus — never record: a run of a matrix is not a decision anyone took. Declaring it requires configVersion \"3\".",
+      "description": "The directory this project's evaluation records are appended to (ADR-0018), relative to this file's own directory. Declaring it is what turns recording on: with no audit member this runtime writes nothing at all, and with one, every evaluation the CLI's experimental evaluate, experimental graph evaluate, and the MCP experimental_evaluate tool complete appends one record. Test runs — packs test, experimental graph test, experimental evaluate-corpus — never record: a run of a matrix is not a decision anyone took. A run declared a rehearsal (the CLI's --rehearsal, the tool's rehearsal argument) never records either (ADR-0028). Declaring it requires configVersion \"3\".",
       "$ref": "#/$defs/audit"
     },
     "configVersion": {
