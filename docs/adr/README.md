@@ -125,4 +125,4 @@ authority, and following it confers no conformance status on anything.
 | [0026](0026-run-the-declared-graph-matrix-over-mcp.md)  | Run the declared graph matrix over MCP, and stop a runaway matrix early | accepted |
 | [0027](0027-pin-the-evaluation-trace-contract.md)        | Pin the evaluation trace: deterministic, complete, ordered, and still informative | accepted |
 | [0028](0028-declare-an-evaluation-a-rehearsal.md)        | Declare an evaluation a rehearsal, so exploration never writes a decision record | accepted |
-| [0029](0029-serve-graphs-and-their-inventory.md)         | Serve the configured graphs and their inventory over the wire, read-only        | proposed |
+| [0029](0029-serve-graphs-and-their-inventory.md)         | Serve the configured graphs and their inventory over the wire, read-only        | accepted |
