@@ -1682,6 +1682,24 @@ func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
 		!row.RowsDeclared || row.RowsPath != "onboarding.rows.json" || row.Detail != "" {
 		t.Fatalf("row = %+v", row)
 	}
+	// The wire keys themselves: present counts by their new names, and never
+	// the array-typed names the walk payloads own.
+	rawRow, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wireRow map[string]any
+	if err := json.Unmarshal(rawRow, &wireRow); err != nil {
+		t.Fatal(err)
+	}
+	if wireRow["nodeCount"] != float64(2) || wireRow["edgeCount"] != float64(1) || wireRow["rowsDeclared"] != true {
+		t.Fatalf("wire row = %s", rawRow)
+	}
+	for _, legacy := range []string{"nodes", "edges", "rows"} {
+		if _, present := wireRow[legacy]; present {
+			t.Fatalf("the walk payloads own %q; the inventory must not reuse it: %s", legacy, rawRow)
+		}
+	}
 
 	served := responses[1]["result"].(map[string]any)
 	if served["isError"] != false {
@@ -1756,8 +1774,11 @@ func TestExperimentalGraphToolsServeTheUndecodable(t *testing.T) {
 
 	var inventory result.GraphInventory
 	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
-	if len(inventory.Graphs) != 1 || inventory.Graphs[0].Detail == "" || inventory.Graphs[0].GraphID != "" {
-		t.Fatalf("an undecodable graph is listed with the reason, identity empty: %+v", inventory.Graphs)
+	if len(inventory.Graphs) != 1 || inventory.Graphs[0].GraphID != "" {
+		t.Fatalf("an undecodable graph is listed with identity empty: %+v", inventory.Graphs)
+	}
+	if detail := inventory.Graphs[0].Detail; !strings.HasPrefix(detail, `The file "onboarding.graph.json" could not be used:`) {
+		t.Fatalf("the detail carries the pack-style path framing: %q", detail)
 	}
 
 	served := responses[1]["result"].(map[string]any)
@@ -1803,9 +1824,7 @@ func TestExperimentalGraphToolsWithoutConfiguration(t *testing.T) {
 // rather than zero, bytes no text frame can carry, a document past the byte
 // limit, and a configured path that tries to leave the root.
 func TestExperimentalGraphWireShapes(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink shape not exercised on windows")
-	}
+	symlinks := runtime.GOOS != "windows"
 	source := filepath.Join("..", "graph", "testdata", "project")
 	root := t.TempDir()
 	for _, name := range []string{"onboarding.rows.json", "sanctions-screening-0.1.0.pack.json", "vendor-onboarding-0.1.0.pack.json"} {
@@ -1829,31 +1848,42 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "huge.graph.json"), append(bytes.Repeat([]byte(" "), 1<<20), '{', '}'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	outside := t.TempDir()
-	if err := os.WriteFile(filepath.Join(outside, "secret.graph.json"), []byte(`{}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "binary.pack.json"), []byte{0x7b, 0xff, 0xfe, 0x7d}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(outside, "secret.graph.json"), filepath.Join(root, "escape.graph.json")); err != nil {
-		t.Fatal(err)
-	}
-	config := `{"configVersion":"2","packs":{"screening":{"path":"sanctions-screening-0.1.0.pack.json"}},"graphs":{` +
-		`"future":{"path":"future.graph.json"},` +
+	graphEntries := `"future":{"path":"future.graph.json"},` +
 		`"binary":{"path":"binary.graph.json"},` +
-		`"huge":{"path":"huge.graph.json"},` +
-		`"escape":{"path":"escape.graph.json"}}}`
+		`"huge":{"path":"huge.graph.json"}`
+	if symlinks {
+		outside := t.TempDir()
+		if err := os.WriteFile(filepath.Join(outside, "secret.graph.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(outside, "secret.graph.json"), filepath.Join(root, "escape.graph.json")); err != nil {
+			t.Fatal(err)
+		}
+		graphEntries += `,"escape":{"path":"escape.graph.json"}`
+	}
+	config := `{"configVersion":"2","packs":{` +
+		`"screening":{"path":"sanctions-screening-0.1.0.pack.json"},` +
+		`"binpack":{"path":"binary.pack.json"}},"graphs":{` + graphEntries + `}}`
 	configPath := filepath.Join(root, project.DefaultConfigName)
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(project.ConfigEnv, configPath)
 
-	responses := runServer(t, strings.Join([]string{
+	calls := []string{
 		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
 		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "future"}),
 		toolCall(t, 3, "experimental_get_graph", map[string]any{"graph_id": "binary"}),
 		toolCall(t, 4, "experimental_get_graph", map[string]any{"graph_id": "huge"}),
-		toolCall(t, 5, "experimental_get_graph", map[string]any{"graph_id": "escape"}),
-	}, ""))
+		toolCall(t, 5, "get_pack", map[string]any{"pack_id": "binpack"}),
+	}
+	if symlinks {
+		calls = append(calls, toolCall(t, 6, "experimental_get_graph", map[string]any{"graph_id": "escape"}))
+	}
+	responses := runServer(t, strings.Join(calls, ""))
 
 	// Raw wire keys, not struct round-trips.
 	raw, err := json.Marshal(responses[0]["result"].(map[string]any)["structuredContent"])
@@ -1867,9 +1897,13 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 	if wire["experimental"] != true || wire["status"] != "resolved" {
 		t.Fatalf("inventory wire = %s", raw)
 	}
+	wantRows := 3
+	if symlinks {
+		wantRows = 4
+	}
 	rows, ok := wire["graphs"].([]any)
-	if !ok || len(rows) != 4 {
-		t.Fatalf(`"graphs" is a JSON array of the four rows: %s`, raw)
+	if !ok || len(rows) != wantRows {
+		t.Fatalf(`"graphs" is a JSON array of the configured rows: %s`, raw)
 	}
 	byID := map[string]map[string]any{}
 	for _, item := range rows {
@@ -1889,7 +1923,11 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 	if futureRow["rowsDeclared"] != false {
 		t.Fatalf("rowsDeclared is the boolean wire member: %v", futureRow)
 	}
-	for _, id := range []string{"binary", "huge", "escape"} {
+	detailed := []string{"binary", "huge"}
+	if symlinks {
+		detailed = append(detailed, "escape")
+	}
+	for _, id := range detailed {
 		row := byID[id]
 		if detail, _ := row["detail"].(string); detail == "" {
 			t.Fatalf("%s is listed with the reason: %v", id, row)
@@ -1917,16 +1955,25 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 	}
 
 	// A text frame carries UTF-8 and nothing else: invalid bytes are refused
-	// with the path, never transcoded into agreement-breaking replacements.
+	// on BOTH fetch tools, naming the quoted configured path, never transcoded
+	// into agreement-breaking replacements.
 	binary := responses[2]["result"].(map[string]any)
-	if binary["isError"] != true || !strings.Contains(toolText(t, binary), "not valid UTF-8") {
-		t.Fatalf("invalid UTF-8 is refused, not transcoded: %#v", binary)
+	if binary["isError"] != true || !strings.Contains(toolText(t, binary), "not valid UTF-8") ||
+		!strings.Contains(toolText(t, binary), `"binary.graph.json"`) {
+		t.Fatalf("invalid UTF-8 is refused with the quoted path: %#v", binary)
 	}
 	if oversized := responses[3]["result"].(map[string]any); oversized["isError"] != true {
 		t.Fatalf("an oversized document is a refusal: %#v", oversized)
 	}
-	if escape := responses[4]["result"].(map[string]any); escape["isError"] != true {
-		t.Fatalf("a path leaving the root is refused: %#v", escape)
+	binpack := responses[4]["result"].(map[string]any)
+	if binpack["isError"] != true || !strings.Contains(toolText(t, binpack), "not valid UTF-8") ||
+		!strings.Contains(toolText(t, binpack), `"binary.pack.json"`) {
+		t.Fatalf("get_pack refuses invalid UTF-8 with the quoted path: %#v", binpack)
+	}
+	if symlinks {
+		if escape := responses[5]["result"].(map[string]any); escape["isError"] != true {
+			t.Fatalf("a path leaving the root is refused: %#v", escape)
+		}
 	}
 }
 
@@ -1951,7 +1998,7 @@ func TestFetchToolsHoldArgumentsAndNotesExactly(t *testing.T) {
 	}
 	alias := responses[2]["result"].(map[string]any)
 	if alias["isError"] != true ||
-		toolText(t, alias) != `The "get_pack" arguments carry an unknown member "PACK_ID"; the accepted members are pack_id, spelled exactly.` {
+		toolText(t, alias) != `The "get_pack" arguments carry an unknown member "PACK_ID"; the accepted member is "pack_id", spelled exactly.` {
 		t.Fatalf("the case-folded pack alias is held to the exact spelling: %#v", alias)
 	}
 }

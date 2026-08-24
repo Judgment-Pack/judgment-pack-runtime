@@ -358,10 +358,11 @@ type GraphSummary struct {
 	RowsPath      string `json:"rowsPath,omitempty"`
 	RowsDeclared  bool   `json:"rowsDeclared"`
 	Description   string `json:"description,omitempty"`
-	// NodeCount and EdgeCount are counts of the declared collections and are
-	// absent — not zero — when the member is missing or not collection-shaped,
-	// so a malformed document can never look like an honest empty one. The
-	// names avoid nodes and rows, which every walk payload uses for arrays.
+	// NodeCount and EdgeCount exist exactly when identity decoding succeeded
+	// and the member has its declared shape — nodes a JSON object, edges a
+	// JSON array — and are absent, not zero, otherwise, so a malformed
+	// document can never look like an honest empty one. The names avoid nodes
+	// and rows, which every walk payload uses for arrays.
 	NodeCount *int   `json:"nodeCount,omitempty"`
 	EdgeCount *int   `json:"edgeCount,omitempty"`
 	Detail    string `json:"detail,omitempty"`

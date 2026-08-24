@@ -806,7 +806,7 @@ func requestedCommand(args []string) string {
 				case "graph":
 					if index+2 < len(args) {
 						switch args[index+2] {
-						case "validate", "evaluate", "explain", "test", "schema":
+						case "list", "validate", "evaluate", "explain", "test", "schema":
 							return "experimental graph " + args[index+2]
 						}
 					}

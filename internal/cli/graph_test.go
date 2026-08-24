@@ -430,4 +430,20 @@ func TestGraphListInventory(t *testing.T) {
 	if !strings.Contains(human, "EXPERIMENTAL SURFACE") || !strings.Contains(human, "onboarding (vendor-onboarding-flow 0.1.0)") {
 		t.Fatalf("human = %q", human)
 	}
+	if !strings.Contains(human, "nodes: 2 · edges: 1") {
+		t.Fatalf("present counts render as numbers: %q", human)
+	}
+
+	// A count that cannot be taken renders as unknown, never as zero: the
+	// document below is decodable with nodes and edges in the wrong shapes.
+	futureConfig, _ := graphProject(t, `{"formatVersion":"future","id":"t","version":"1","nodes":[],"edges":{},"result":7}`, map[string]string{
+		"onboarding.rows.json": graphFixture(t, "onboarding.rows.json"),
+	})
+	code, human, stderr = runTest(t, []string{"experimental", "graph", "list", "--config", futureConfig}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(human, "nodes: unknown · edges: unknown") {
+		t.Fatalf("an untakeable count renders unknown, never zero: %q", human)
+	}
 }

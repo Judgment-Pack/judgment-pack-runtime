@@ -75,18 +75,22 @@ Settled constraints:
 
 1. **Two tools, read-only.** `experimental_list_graphs` (no arguments) resolves every configured
    graph: configured id beside the document's own `id` and `version` (two names, two members —
-   the pack inventory's rule), the declared `formatVersion` and `result` node, node and edge
-   counts where those members are collection-shaped — reported as **no count**, never zero, where
-   they are not, so a malformed document cannot look honestly empty — paths, whether rows are
-   declared, and the configuration's description.
+   the pack inventory's rule), the declared `formatVersion` and `result` node, and node and edge
+   counts (`nodeCount`, `edgeCount`) that exist exactly when identity decoding succeeded and the
+   member has its declared shape — `nodes` a JSON object, `edges` a JSON array — and are absent,
+   never zero, otherwise, so a malformed document cannot look honestly empty; plus paths,
+   `rowsDeclared`, and the configuration's description.
    `experimental_get_graph { graph_id }` serves the exact bytes beside their metadata, through
    the same rooted reader every project read uses, under the graph surface's own byte limit
    (ADR-0017 deliberately left the limit with the caller). Neither holds a credential, opens a
    connection, writes anything, or constructs an engine.
 2. **Lenient identity, exactly as packs.** Identity is read off the served bytes by a bare
    carrier decode — never the closed-schema `Load`, which would make a schema-invalid graph
-   unservable. An unreadable or undecodable document is a listed row whose `detail` says why
-   (identity members empty, never guessed) and a served document with `status` `"undecodable"`;
+   unservable. The boundary is exact: readable, in-limit, valid-UTF-8 bytes that fail decoding
+   are a listed row whose `detail` says why (identity members empty, never guessed) and a served
+   document with `status` `"undecodable"`; a read failure, a path leaving the root, a document
+   over the byte limit, or bytes that are not valid UTF-8 — which no text result can carry
+   exactly, and this surface refuses to carry approximately — are refusals carrying the reason.
    `experimental graph validate` is where a broken graph is an error.
 3. **Missing configuration, the established asymmetry.** The listing answers empty with a note
    saying where the runtime looked; the fetch is an error carrying the same note, because a fetch

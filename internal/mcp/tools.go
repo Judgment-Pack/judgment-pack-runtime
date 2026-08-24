@@ -177,7 +177,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_list_graphs",
-			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): list the graphs this project configures in its jpack.json, resolved: the configured graph id, the graph document's own id and version, its declared formatVersion and result node, the node and edge counts as carried, the paths, whether a rows document is declared, and the configuration's description. The graph convention is this runtime's own (no JPS version defines a graph) and the shape is ADR-0017's. Reading it is how you learn what a project composes without fetching a document; call experimental_get_graph for one. It lists and does not validate: a document that cannot be read or decoded is a row whose detail says why, with its identity members empty rather than guessed, and experimental graph validate is where a broken graph is an error. The configuration is the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in, and an absent configuration is an empty answer with an explanation rather than an error. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): list the graphs this project configures in its jpack.json, resolved: the configured graph id, the graph document's own id and version, its declared formatVersion and result node, nodeCount and edgeCount (present exactly when identity decoding succeeded and nodes is a JSON object / edges a JSON array; absent, never zero, otherwise), the paths, rowsDeclared, and the configuration's description. The graph convention is this runtime's own (no JPS version defines a graph) and the shape is ADR-0017's. Reading it is how you learn what a project composes without fetching a document; call experimental_get_graph for one. It lists and does not validate: a document that cannot be read or decoded is a row whose detail says why, with its identity members empty rather than guessed, and experimental graph validate is where a broken graph is an error. The configuration is the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in, and an absent configuration is an empty answer with an explanation rather than an error. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -186,7 +186,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_get_graph",
-			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): return one graph document this project configures in its jpack.json, by its configured graph id, as JSON text, with the document's own id and version, its declared formatVersion and result node, its digest, and its byte size. The document is the project's own file, served unaltered and read-only through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed; this tool stores nothing and returns nothing you did not already have on disk. Serving is not validating: a document that does not decode is still served, with status undecodable and a detail saying why, and experimental graph validate is what reports a verdict. Call experimental_list_graphs for the available graph ids. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): return one graph document this project configures in its jpack.json, by its configured graph id, as JSON text, with the document's own id and version, its declared formatVersion and result node, its digest, and its byte size. The document is the project's own file, served unaltered and read-only through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed; this tool stores nothing and returns nothing you did not already have on disk. Serving is not validating: readable, in-limit, valid-UTF-8 bytes that fail decoding are still served, with status undecodable and a detail saying why (experimental graph validate is what reports a verdict); a read failure, a path leaving the configuration's directory, a document over the byte limit, or bytes that are not valid UTF-8 (which no text result can carry exactly) are refused with the reason. Call experimental_list_graphs for the available graph ids. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -435,7 +435,7 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 	if failure != nil {
 		return toolError(failure.Message)
 	}
-	return servedDocument(meta, data, meta.Path)
+	return servedDocument(meta, data, meta.Path, meta.ConfigPath)
 }
 
 // servedDocument is the fetch-tool result for one project document: the exact
@@ -445,9 +445,9 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 // metadata states — so bytes that are not valid UTF-8 are refused with the
 // path to read directly, rather than served corrupted (ADR-0029). The same
 // rule holds for get_pack, where the silent transcoding was a live defect.
-func servedDocument(meta any, data []byte, path string) any {
+func servedDocument(meta any, data []byte, path, configPath string) any {
 	if !utf8.Valid(data) {
-		return toolError(fmt.Sprintf("The document %s is not valid UTF-8, so a text result cannot carry its exact bytes; read the file directly at its configured path.", display.Sanitize(path)))
+		return toolError(fmt.Sprintf("The document %q (a path relative to the configuration at %q) is not valid UTF-8, so a text result cannot carry its exact bytes; read the file itself instead.", display.Sanitize(path), display.Sanitize(configPath)))
 	}
 	return map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": string(data)}},
@@ -513,7 +513,7 @@ func (s *Server) toolExperimentalGetGraph(rawArgs json.RawMessage) any {
 	if failure != nil {
 		return toolError(failure.Message)
 	}
-	return servedDocument(meta, data, meta.Path)
+	return servedDocument(meta, data, meta.Path, meta.ConfigPath)
 }
 
 // evaluateCommand names this surface in every payload it produces, exactly as
@@ -683,8 +683,12 @@ func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) strin
 		// than of map iteration order: the same bad call gets the same
 		// diagnostic every time.
 		sort.Strings(unknown)
-		return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
-			tool, unknown[0], strings.Join(allowed, " and "))
+		accepted := fmt.Sprintf("the accepted members are %s", strings.Join(allowed, " and "))
+		if len(allowed) == 1 {
+			accepted = fmt.Sprintf("the accepted member is %q", allowed[0])
+		}
+		return fmt.Sprintf("The %q arguments carry an unknown member %q; %s, spelled exactly.",
+			tool, unknown[0], accepted)
 	}
 	return ""
 }
