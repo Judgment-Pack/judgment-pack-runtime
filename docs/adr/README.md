@@ -124,4 +124,4 @@ authority, and following it confers no conformance status on anything.
 | [0025](0025-assert-the-handoff-target-in-the-matrix.md)  | Let a matrix row assert the handoff target, because no disposition can carry it | accepted |
 | [0026](0026-run-the-declared-graph-matrix-over-mcp.md)  | Run the declared graph matrix over MCP, and stop a runaway matrix early | accepted |
 | [0027](0027-pin-the-evaluation-trace-contract.md)        | Pin the evaluation trace: deterministic, complete, ordered, and still informative | accepted |
-| [0028](0028-declare-an-evaluation-a-rehearsal.md)        | Declare an evaluation a rehearsal, so exploration never writes a decision record | proposed |
+| [0028](0028-declare-an-evaluation-a-rehearsal.md)        | Declare an evaluation a rehearsal, so exploration never writes a decision record | accepted |
