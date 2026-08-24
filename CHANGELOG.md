@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.19.0 - 2026-08-24
 
 - **A graph row asserts the handoff target** (ADR-0032, closes #128): under `graphMatrixVersion
   "2"`, `expectedHandoffTarget` asserts the composite's reported target — the result node's own,
