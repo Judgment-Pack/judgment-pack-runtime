@@ -175,6 +175,9 @@ type GraphSchema struct {
 // references against the project — every node resolves through the
 // configuration, every evidence feed names a requirement its target pack
 // declares. Diagnostics carry every finding rather than the first one.
+// GraphSHA256 is the bare-hex digest of the exact bytes this validation
+// decoded (ADR-0030); the payload exists only after the document loaded, so
+// unlike the walk entries the member is required.
 type GraphValidation struct {
 	OutputVersion string       `json:"outputVersion"`
 	Tool          Tool         `json:"tool"`
@@ -186,6 +189,7 @@ type GraphValidation struct {
 	GraphPath     string       `json:"graphPath"`
 	GraphID       string       `json:"graphId,omitempty"`
 	GraphVersion  string       `json:"graphVersion,omitempty"`
+	GraphSHA256   string       `json:"graphSha256"`
 	Diagnostics   []Diagnostic `json:"diagnostics"`
 }
 

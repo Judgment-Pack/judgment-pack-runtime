@@ -4,14 +4,14 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- **Every graph run binds itself to the document it loaded** (ADR-0030, closes #132): the matrix
-  suite entry, its validation twin, and the direct single-graph test envelope carry
-  `graphSha256` — the bare-hex digest of the exact bytes the run decoded, read off the one load.
-  Equality with `experimental_get_graph`'s own `sha256` proves rows fetched in one call and the
-  document fetched in another describe one revision; the member is absent exactly when the
-  document did not load, beside the detail that says why. Additive under VERSIONING.md's MINOR
-  rule; the evaluator's conformance claim is unaffected and stated, in full and only, in
-  `CONFORMANCE.md`.
+- **Graph matrix runs and validations bind themselves to the document they loaded** (ADR-0030,
+  closes #132): the matrix suite entry, its validation twin, and the direct single-graph test
+  and validation envelopes carry `graphSha256` — the bare-hex digest of the exact bytes the run
+  decoded, read off the one load. Equality with `experimental_get_graph`'s own `sha256` proves
+  rows fetched in one call and the document fetched in another describe one revision; the member
+  is absent exactly when the document did not load, beside the detail or diagnostics that say
+  why. Additive under VERSIONING.md's MINOR rule; the evaluator's conformance claim is
+  unaffected and stated, in full and only, in `CONFORMANCE.md`.
 
 - **Graph rows members are held to their exact spelling** — `encoding/json` case-folds member
   names, so a rows document carrying `"Cases"` or `"ID"` bound past the strict decoder and was

@@ -4,7 +4,7 @@ date: 2026-08-24
 deciders: maintainer
 ---
 
-# Bind every graph run to the document it loaded, on the wire
+# Bind graph matrix runs and validations to the loaded document
 
 ## Context and problem statement
 
@@ -35,8 +35,8 @@ entry. Only the wire omits it.
 
 ## Considered options
 
-- **A. `graphSha256` on the three run payloads** — the suite entry, its validation twin, and the
-  direct single-graph test envelope — read off the loaded document's own digest.
+- **A. `graphSha256` on the four run payloads** — the suite entry, its validation twin, and the
+  direct single-graph test and validation envelopes — read off the loaded document's own digest.
 - **B. Client-side binding only** (epoch gating, as the desk does today).
 - **C. A digest member on the rows instead of the entry.**
 
@@ -45,16 +45,20 @@ entry. Only the wire omits it.
 Chosen option: **A**. Option B bounds staleness and proves nothing — it is the mitigation this
 member exists to retire, not an answer. Option C repeats one fact per row on a surface whose
 report budget was redesigned once already for exactly that multiplication (ADR-0026); the
-document is loaded once per entry, and the entry is where a per-load fact belongs.
+document is loaded at most once per entry — a rowless entry skips before loading — and the
+entry is where a per-load fact belongs.
 
 Settled constraints:
 
 1. **Member and format.** `graphSha256`, bare hex, on `GraphSuiteEntry`, `GraphValidationEntry`,
-   and `GraphTest` — the digest `graph.Load` computed from the exact bytes this run decoded,
-   with the lock/audit `sha256:` prefix stripped at the payload boundary, matching every other
-   payload digest member.
+   `GraphTest`, and `GraphValidation` — the digest `graph.Load` computed from the exact bytes
+   this run decoded, with the lock/audit `sha256:` prefix stripped at the payload boundary,
+   matching every other payload digest member.
 2. **Present exactly when the document loaded.** An entry whose document could not be read or
-   loaded carries no digest, beside the detail or diagnostics that say why.
+   loaded carries no digest, beside the detail or diagnostics that say why; a rows failure after
+   a successful load keeps it, because the bytes the binding names did load. The direct
+   envelopes exist only after their caller's load succeeded, so their member is required where
+   the walk entries' is `omitempty`.
 3. **The binding it enables, stated for consumers:** equality with `experimental_get_graph`'s
    `sha256` proves the served document and this run's results are about one revision; inequality
    proves an edit happened between the calls. It is a binding of bytes, not a verdict about
@@ -67,8 +71,9 @@ Settled constraints:
 
 - Good, because the client's document/matrix join becomes provable instead of epoch-bounded, and
   the desk's recorded mitigation can be retired for a real binding.
-- Good, because the member costs one string per entry, charged by the existing report budget like
-  every retained member.
+- Good, because the member costs one string per entry, charged by the existing report budget on
+  the budgeted matrix-test paths; the validation walk has no budget, and one string per entry
+  does not create the multiplication a budget exists for.
 - Neutral, because human renderings are unchanged: the member exists for machine consumers doing
   the join; a person reading the walk report is not comparing digests.
 - Neutral, because `outputVersion` stays: additive members under the MINOR rule.

@@ -158,6 +158,7 @@ func (a *App) graphValidateCommand() *cobra.Command {
 				GraphPath:     graphPath,
 				GraphID:       document.ID,
 				GraphVersion:  document.Version,
+				GraphSHA256:   strings.TrimPrefix(document.Digest, "sha256:"),
 				Diagnostics:   document.Semantic(loaded),
 			}
 			if len(output.Diagnostics) > 0 {
