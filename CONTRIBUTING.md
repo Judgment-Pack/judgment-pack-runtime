@@ -3,6 +3,36 @@
 This repository implements a nonnormative tool for the Judgment Pack Specification. The tagged
 specification artifacts remain authoritative when implementation behavior disagrees with them.
 
+## Quickstart
+
+**Go 1.24 or newer.** `go.mod` carries a `go 1.24.0` directive, and the requirement is real
+rather than conservative: the runtime reads through `os.Root`, a standard-library type
+introduced in Go 1.24 — see [Build and try it locally](README.md#build-and-try-it-locally) for
+why every read goes through a directory handle.
+
+Build it and check it runs:
+
+```bash
+mkdir -p bin
+env GO111MODULE=on CGO_ENABLED=0 go build -trimpath -o ./bin/jpack ./cmd/jpack
+./bin/jpack version
+```
+
+`version` prints the runtime's own version, the specification versions it can serve, and the
+provenance of its bundled artifacts — which is the fastest way to confirm a build is wired up.
+
+While iterating, run one package or one test rather than the whole suite:
+
+```bash
+env GO111MODULE=on go test ./internal/carrier
+env GO111MODULE=on go test ./internal/carrier -run '^TestDuplicateMemberReportsNestedPointer$'
+```
+
+The `^...$` anchors matter: `-run` takes a regular expression, so an unanchored name also
+matches every test whose name contains it.
+
+Run the full checks below before opening a pull request.
+
 ## Before opening a pull request
 
 ```bash

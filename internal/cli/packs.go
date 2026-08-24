@@ -221,7 +221,12 @@ func (a *App) packsLintCommand() *cobra.Command {
 			"system looks conservative rather than broken — this command is where that defect fails loudly " +
 			"instead. A pack using draft-RFC collection quantifiers reports its fact half as skipped rather than " +
 			"checked, because element-relative pointers cannot be held to a flat producer set (ADR-0020, " +
-			"ADR-0022); a skipped check is reported, never silently passed. Exit 0 when a check passed and none " +
+			"ADR-0022); a skipped check is reported, never silently passed. The project-wide evidence check " +
+			"asks whether the manifest supplies anything no configured pack declares, so --id withholds it: " +
+			"selecting one pack cannot distinguish an orphaned id from evidence another configured pack " +
+			"legitimately declares. It is reported skipped with that reason, never passed, and a full run " +
+			"still fails on a genuine orphan — the selected pack's own coverage checks are unaffected. " +
+			"Exit 0 when a check passed and none " +
 			"failed, 1 otherwise — a run in which nothing was checkable is skipped, not passed.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {

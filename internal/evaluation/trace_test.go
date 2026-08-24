@@ -10,7 +10,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
-// The rows below pin ADR-0026's trace contract byte for byte, at the resolver,
+// The rows below pin ADR-0027's trace contract byte for byte, at the resolver,
 // against the exact serialized record: entry order is walk order (applicability
 // when authored, then every exception in document order, then every rule in
 // document order), each entry's member set is the smallest one that states what
@@ -129,7 +129,7 @@ func TestForcedOutcomeSkipsEveryRuleVisibly(t *testing.T) {
 // then step 6 ends the walk before suppression filtering runs: every rule —
 // the suppression's target included — is skipped, because suppressed labels
 // belong to the evaluated walk that never happened. This is the overlap
-// ADR-0026 clause 4 states, pinned so neither label ever leaks into the
+// ADR-0027 clause 4 states, pinned so neither label ever leaks into the
 // other's territory.
 func TestForcedOutcomeOverridesSuppressionLabels(t *testing.T) {
 	pack := map[string]any{
@@ -262,7 +262,7 @@ func TestEvidenceInspectionIsNeverTraced(t *testing.T) {
 // omitted. The pack below authors no applicability and no exceptions, and its
 // unknown required evidence blocks the walk before any rule, so the record is
 // empty while the payload is a normal unresolved evaluation. This is the
-// serialization half of ADR-0026 clause 1, which no resolver-level golden can
+// serialization half of ADR-0027 clause 1, which no resolver-level golden can
 // see.
 func TestSuccessfulEnvelopeCarriesTheEmptyTraceFloor(t *testing.T) {
 	engine := newTestEngine(t)

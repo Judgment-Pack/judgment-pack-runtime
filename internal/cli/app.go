@@ -423,8 +423,8 @@ func (a *App) specCommand() *cobra.Command {
 func (a *App) mcpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
-		Short: "Serve the offline validator and two experimental tools to an MCP client over stdio",
-		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus two tools on this runtime's experimental surface (experimental_evaluate and experimental_test_packs; ADR-0007, ADR-0011, ADR-0021), whose surfaces may still change without notice. That evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim. It holds no credential, opens no network connection, and authorizes nothing.",
+		Short: "Serve the offline validator and three experimental tools to an MCP client over stdio",
+		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus three tools on this runtime's experimental surface (experimental_evaluate, experimental_test_packs and experimental_test_graphs; ADR-0007, ADR-0011, ADR-0021, ADR-0026), whose surfaces may still change without notice. That evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim. It holds no credential, opens no network connection, and authorizes nothing.",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			server := mcp.NewServer(a.engine, a.runner)

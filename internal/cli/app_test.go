@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -130,7 +131,7 @@ func claimSurfaces(t *testing.T) []claimSurface {
 	if len(listed.Result.Tools) == 0 {
 		t.Fatalf("tools/list returned no tool: %q", stdout)
 	}
-	evaluationTools := map[string]bool{"experimental_evaluate": false, "experimental_test_packs": false}
+	evaluationTools := map[string]bool{"experimental_evaluate": false, "experimental_test_packs": false, "experimental_test_graphs": false}
 	for _, tool := range listed.Result.Tools {
 		if tool.Description == "" {
 			t.Fatalf("tool %q has no description", tool.Name)
@@ -1556,5 +1557,99 @@ func TestTheWholeCorpusEnvelopeIsUnchangedByTheHandoffTargetMember(t *testing.T)
 	digest := sha256.Sum256([]byte(stdout))
 	if hex.EncodeToString(digest[:]) != goldenEnvelope {
 		t.Fatalf("the corpus envelope changed: %s\nwant %s", hex.EncodeToString(digest[:]), goldenEnvelope)
+	}
+}
+
+// --- human output for the stable discovery commands (issue #87) ------------
+//
+// These three are what a contributor runs before reaching validation, and their
+// human paths had far less coverage than their importance warrants — renderSchema
+// had none. Each asserts the stable fields that make the output useful rather
+// than the whole block as one brittle snapshot, so a wording change stays cheap
+// while a dropped digest or a lost version does not.
+
+func TestVersionHumanOutputNamesTheRuntimeAndItsSpecVersions(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"version"}, "")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr %q)", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("success must leave stderr empty, got %q", stderr)
+	}
+	if !strings.HasPrefix(stdout, "jpack ") {
+		t.Fatalf("the first line must name the tool: %q", stdout)
+	}
+	// The versions it claims must be the ones it can actually serve, so the
+	// line is not merely non-empty but agrees with the artifact set.
+	for _, version := range artifacts.SupportedVersions() {
+		if !strings.Contains(stdout, version) {
+			t.Fatalf("version output omits supported %s: %q", version, stdout)
+		}
+	}
+	if !strings.Contains(stdout, "JPS:") {
+		t.Fatalf("the specification line must be labelled: %q", stdout)
+	}
+	if !strings.Contains(stdout, "immutable-git-ref") {
+		t.Fatalf("provenance must be stated: %q", stdout)
+	}
+}
+
+func TestSpecSchemaHumanOutputCarriesIdentityDigestAndSize(t *testing.T) {
+	version := artifacts.DraftVersion
+	code, stdout, stderr := runTest(t, []string{"spec", "schema", version}, "")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr %q)", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("success must leave stderr empty, got %q", stderr)
+	}
+
+	// The digest and size must describe the schema this runtime would serve,
+	// not merely be present and plausible.
+	set, err := artifacts.Load(version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaBytes, err := set.Schema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(schemaBytes)
+	for _, want := range []string{
+		"JPS schema " + version,
+		"sha256: " + hex.EncodeToString(sum[:]),
+		fmt.Sprintf("bytes: %d", len(schemaBytes)),
+		"id: ",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("schema output missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestSpecExamplesHumanOutputKeepsTheFixturesNotTemplatesFraming(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"spec", "examples"}, "")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (stderr %q)", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("success must leave stderr empty, got %q", stderr)
+	}
+	// This framing is the point of the command's wording: a reader who treats a
+	// conformance fixture as an authored starting point has misunderstood what
+	// the runtime bundles, so the phrase is pinned rather than left to drift.
+	if !strings.Contains(stdout, "not authored templates") {
+		t.Fatalf("the fixtures-not-templates framing must survive:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "conformance fixtures") {
+		t.Fatalf("the output must say what these actually are:\n%s", stdout)
+	}
+	if strings.Count(stdout, "\n- ") == 0 {
+		t.Fatalf("at least one example must be listed:\n%s", stdout)
+	}
+	// Each listed example cites the section it exercises, which is what makes
+	// the list navigable rather than decorative.
+	if !strings.Contains(stdout, "[§") {
+		t.Fatalf("listed examples must cite their specification sections:\n%s", stdout)
 	}
 }

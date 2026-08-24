@@ -487,9 +487,14 @@ func buildAuthorGraph(args map[string]string) string {
    to exit 0 -- and "jpack experimental graph explain <file>" prints the evaluation plan
    without evaluating anything, which is the artifact a reviewer reads beside the document.
 
-6. GIVE THE GRAPH ITS ROWS, where a terminal is available. Write a graph matrix --
+6. GIVE THE GRAPH ITS ROWS. Write a graph matrix --
    {"cases":[{"id","inputs","expectedDisposition"|"expectedErrorClass"[,"expectedNodes"]}]} --
-   and run "jpack experimental graph test <file> --rows <rows> --config <jpack.json>": every
+   and run it. A graph you have just authored is not yet declared in jpack.json -- that is
+   step 7 -- so where a terminal is available run "jpack experimental graph test <file> --rows
+   <rows> --config <jpack.json>", which takes the document by path. Once the entry from step 7
+   is committed, the experimental_test_graphs tool re-runs every declared graph over MCP, which
+   is how this loop closes without a terminal on every pass after the first. Neither writes
+   anything -- a matrix row is a rehearsal, not a decision. Every
    disposition is compared byte for byte, and expectedNodes is what pins an UPSTREAM node,
    because a row that checks only the headline says nothing about the decision that fed it.
    expectedNodes rides only beside expectedDisposition -- a refused run produces no node

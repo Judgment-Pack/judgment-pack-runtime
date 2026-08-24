@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
@@ -1240,5 +1241,271 @@ func TestProjectWalkRowsContainmentIsExact(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("an unloadable graph must not hide an escaped rows path: %+v", output.Graphs[0])
+	}
+}
+
+// The report budget is enforced PER ROW, which is where the retention happens.
+//
+// Round 2 of the cross-vendor review rejected the first attempt at this: the
+// budget was checked between graphs, so a single graph declaring 10,000 rows
+// still accumulated every one of them -- the gigabytes the bound exists to
+// prevent -- before anything looked. Checking later graphs is not the same as
+// bounding the run, and the ADR claimed the stronger thing.
+//
+// The test that matters is therefore not "does it refuse" but "did it stop
+// evaluating": the refusal names how many rows were judged, and that count must
+// be short of the matrix.
+func TestProjectWalkBoundsRowsAsTheyAccumulate(t *testing.T) {
+	loaded := fixtureProject(t)
+
+	unbounded, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatalf("an unbounded run is unchanged: %v", failure.Message)
+	}
+	if unbounded.Status != "passed" || unbounded.Summary.Total != 3 {
+		t.Fatalf("output = %+v", unbounded)
+	}
+
+	// A budget smaller than one row's report: the run stops inside the first
+	// graph, having judged fewer rows than the matrix declares.
+	bounded, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: 8})
+	if budgetFailure == nil {
+		t.Fatal("a report past the budget must refuse the run")
+	}
+	if budgetFailure.Code != CodeReportBudget {
+		t.Fatalf("code = %q", budgetFailure.Code)
+	}
+	if !strings.Contains(budgetFailure.Message, "after 1 row(s)") {
+		t.Fatalf("the refusal must say how far it got, so that stopping early is observable: %q",
+			budgetFailure.Message)
+	}
+	if !strings.Contains(budgetFailure.Message, "remaining rows were not evaluated") {
+		t.Fatalf("the refusal must say the rest did not run: %q", budgetFailure.Message)
+	}
+	if len(bounded.Graphs) != 0 {
+		t.Fatalf("a refused run returns no suite: %+v", bounded)
+	}
+
+	// A budget above the whole report does not disturb it.
+	generous, failure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: 1 << 20})
+	if failure != nil {
+		t.Fatalf("a generous budget must not refuse: %v", failure.Message)
+	}
+	if generous.Status != unbounded.Status || generous.Summary.Total != unbounded.Summary.Total {
+		t.Fatalf("a generous budget changed the run: %+v", generous)
+	}
+}
+
+// Coverage is retained per graph exactly as the rows are, and it repeats
+// pack-derived probe strings across every node, so it is charged against the
+// same budget. Round 3 of the review found it built outside the bound while the
+// ADR claimed the whole report was bounded.
+//
+// The budget here is chosen to sit ABOVE every row's total and BELOW rows plus
+// coverage, so the test fails if coverage stops being charged -- which a
+// rows-only bound would not notice.
+func TestProjectWalkChargesCoverageAgainstTheBudget(t *testing.T) {
+	loaded := fixtureProject(t)
+
+	full, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	rowsOnly := 0
+	for _, entry := range full.Graphs {
+		for _, row := range entry.Rows {
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rowsOnly += len(encoded)
+		}
+	}
+	coverageBytes := 0
+	for _, entry := range full.Graphs {
+		encoded, err := json.Marshal(entry.Coverage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		coverageBytes += len(encoded)
+	}
+	if coverageBytes == 0 {
+		t.Fatal("the fixture must derive coverage for this test to mean anything")
+	}
+
+	// Above the rows, below rows+coverage: only a bound that charges coverage
+	// refuses here.
+	budget := rowsOnly + coverageBytes/2
+	if budget <= rowsOnly {
+		t.Fatalf("the fixture's coverage is too small to separate the two bounds")
+	}
+	_, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: budget})
+	if budgetFailure == nil {
+		t.Fatal("coverage must be charged against the budget, not built outside it")
+	}
+	if budgetFailure.Code != CodeReportBudget {
+		t.Fatalf("code = %q", budgetFailure.Code)
+	}
+
+	// And a budget above rows+coverage together does not refuse.
+	if _, failure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: (rowsOnly + coverageBytes) * 4}); failure != nil {
+		t.Fatalf("a budget above the whole retained report must not refuse: %v", failure.Message)
+	}
+}
+
+// The entry envelope is charged too, and a matrix-derived detail is capped.
+// Round 4 found both open while the ADR said the envelope could not multiply
+// with the matrix: several entries can reuse one hostile rows file, and the
+// entry's detail echoes what that file supplies.
+func TestProjectWalkChargesTheEntryEnvelopeAndCapsDetail(t *testing.T) {
+	if MaxEntryDetailBytes <= 0 {
+		t.Fatal("a detail cap of zero would bound nothing")
+	}
+	long := strings.Repeat("x", MaxEntryDetailBytes*3)
+	capped := capDetail(long)
+	// The cap includes the marker: a value that states a cap and then exceeds it
+	// is the same defect as an uncapped one (round-5 review).
+	if len(capped) > MaxEntryDetailBytes {
+		t.Fatalf("the capped detail is %d bytes, over the stated %d", len(capped), MaxEntryDetailBytes)
+	}
+	// And truncation lands on a rune boundary rather than splitting one.
+	multibyte := strings.Repeat("é", MaxEntryDetailBytes)
+	cappedRunes := capDetail(multibyte)
+	if len(cappedRunes) > MaxEntryDetailBytes {
+		t.Fatalf("the capped detail is %d bytes, over the stated %d", len(cappedRunes), MaxEntryDetailBytes)
+	}
+	if !utf8.ValidString(cappedRunes) {
+		t.Fatal("truncation split a rune; a detail must stay valid UTF-8")
+	}
+	if !strings.HasSuffix(capped, "(truncated)") {
+		t.Fatal("a truncated detail must say so, so a reader is not misled by a clean ending")
+	}
+	if short := capDetail("brief"); short != "brief" {
+		t.Fatalf("a detail within the cap is untouched: %q", short)
+	}
+
+	// The envelope is charged: a budget set to exactly the rows plus coverage
+	// leaves nothing for it, so the run refuses.
+	loaded := fixtureProject(t)
+	full, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	components := 0
+	for _, entry := range full.Graphs {
+		for _, row := range entry.Rows {
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			components += len(encoded)
+		}
+		encoded, err := json.Marshal(entry.Coverage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		components += len(encoded)
+	}
+	if _, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: components}); budgetFailure == nil {
+		t.Fatal("the entry envelope must be charged: a budget covering only rows and coverage must refuse")
+	}
+}
+
+// The direct Test path charges its own GraphTest envelope, not just the rows
+// and coverage inside it. Round 8 of the review found this: only TestProject
+// charged an envelope, so a caller using Test directly with a budget -- which
+// the option's own comment contemplates -- had one that escaped, and the stated
+// invariant ("only the outer suite envelope is uncharged") was false there.
+func TestDirectGraphTestChargesItsOwnEnvelope(t *testing.T) {
+	loaded := fixtureProject(t)
+	rows, failure := LoadRows(fixtureBytes(t, "onboarding.rows.json"), "onboarding.rows.json")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+
+	full, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows,
+		Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+
+	// Exactly the components charged while building the report, and nothing for
+	// its envelope. A budget of precisely that must refuse, because the envelope
+	// costs something.
+	components := 0
+	for _, row := range full.Rows {
+		encoded, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		components += len(encoded)
+	}
+	encoded, err := json.Marshal(full.Coverage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	components += len(encoded)
+
+	if _, budgetFailure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows,
+		Options{Command: "test", ReportBudget: components}); budgetFailure == nil {
+		t.Fatal("the direct path must charge its own envelope: a budget covering only rows and coverage must refuse")
+	}
+
+	// And a generous budget still produces the same report.
+	generous, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows,
+		Options{Command: "test", ReportBudget: components * 8})
+	if failure != nil {
+		t.Fatalf("a generous budget must not refuse: %v", failure.Message)
+	}
+	if generous.Status != full.Status || len(generous.Rows) != len(full.Rows) {
+		t.Fatalf("a generous budget changed the report: %+v", generous)
+	}
+}
+
+// The invariant is "charge what is RETAINED", and it fails if either side is
+// over-applied. Round 9 found the round-8 fix charging the GraphTest envelope
+// on the COMPOSED path too, where testEntry discards those bytes — so
+// production-only bytes consumed the budget and could cause a refusal that the
+// downstream positive-only remainder can neither subtract nor undo.
+//
+// This pins the composed path against exactly that: the suite's charge must be
+// what the SUITE retains, not what the transient GraphTest cost to produce.
+func TestProjectWalkDoesNotChargeDiscardedProductionBytes(t *testing.T) {
+	loaded := fixtureProject(t)
+
+	full, failure := TestProject(loaded, newEngine(t), "", Options{Command: "test"})
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+
+	// Everything the SUITE retains, per entry: the entry as it is finally
+	// carried. Nothing above this is retained anywhere.
+	retained := 0
+	for _, entry := range full.Graphs {
+		encoded, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		retained += len(encoded)
+	}
+
+	// A budget of exactly the retained bytes must NOT refuse: charging the
+	// discarded GraphTest envelope on top would push it over.
+	if _, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: retained}); budgetFailure != nil {
+		t.Fatalf("a budget covering everything the suite retains must not refuse; "+
+			"discarded production bytes are being charged: %v", budgetFailure.Message)
+	}
+
+	// One byte less must refuse, so the test is measuring the boundary rather
+	// than passing because the budget is generous.
+	if _, budgetFailure := TestProject(loaded, newEngine(t), "",
+		Options{Command: "test", ReportBudget: retained - 1}); budgetFailure == nil {
+		t.Fatal("a budget one byte short of the retained report must refuse")
 	}
 }

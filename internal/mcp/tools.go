@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
@@ -13,6 +14,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -20,12 +22,13 @@ import (
 )
 
 // toolDefinitions is the tools/list payload. Every tool wraps a read-only core
-// operation except the two that reach the evaluator on this runtime's
+// operation except the three that reach the evaluator on this runtime's
 // experimental surface (ADR-0007): experimental_evaluate, which appends one
 // record per completed call in a project whose configuration asked for one
 // (ADR-0018) and is the only tool here that can write, and
-// experimental_test_packs, which runs declared instance matrices and writes
-// nothing — a matrix row is a rehearsal, not a decision (ADR-0021). Every
+// experimental_test_packs and experimental_test_graphs, which run declared
+// instance and graph matrices and write nothing — a matrix row is a rehearsal,
+// not a decision (ADR-0021, ADR-0026). Every
 // other tool evaluates nothing and writes nothing. No description here states
 // a conformance claim: the claim is stated, in full and only, in
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
@@ -143,6 +146,18 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		{
+			"name":        "experimental_test_graphs",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every configured graph's declared matrix through this runtime's evaluator and report every row, or one graph's matrix by its configured key in \"graph_id\". No JPS version defines a graph, a composition, a graph matrix, or a composite result: the graph format is this runtime's own convention, and only each node's pack evaluation reaches the shared evaluator. A row is judged by comparing the composite headline disposition, and any named-node dispositions the row declares, each canonicalized, against what the walk produced -- or the expected evaluation error class and phase where the row expects a refusal. The derived coverage report sits beside each graph's rows and informs rather than gates. One \"supported_extensions\" list, if supplied, applies uniformly to every node of every row; omitting it and passing an empty array are the same thing. A mismatching or skipped run is a successful call reporting its status: a project that declares no graph matrix is reported skipped and never passed. Zero rows is not always skipped: a graph or rows document that cannot be read is a mismatch carrying no rows, because failing to read a matrix is not the same as not having one. Tool errors are kept for what stopped a complete suite from existing: a bad argument, an unknown graph id, a configuration that is there and will not load, no configuration at all, or a report past this surface's size budget. A graph or rows document that cannot be read inside a run is that graph's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the graph and packs a project wrote rather than about this implementation -- and no row is an authorization, a statement that a graph or policy is correct, or a statement that acting on a composite result is safe. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"graph_id":             map[string]any{"type": "string", "description": "A graph key declared in the project's jpack.json: run only that graph's matrix. Omit the key to run every configured graph."},
+					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports, applied uniformly to every node of every row. Omitting the key and passing an empty array are the same."},
+				},
+			},
+		},
+		{
 			"name":        "experimental_test_packs",
 			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every declared pack's instance matrix through this runtime's evaluator and report every row, or one pack's matrix by its decision id in \"pack_id\". A row is judged exactly as a row of the bundled evaluation corpus is, by the same code: the RFC 8785 canonical §8.3 disposition compared byte for byte against the row's, or the §8.4 error class and phase the row expects. Beside a disposition a row may declare one further expectation, expectedHandoffTarget (ADR-0025): an object naming kind and name, or the literal null for no target at all, compared against the handoffTarget §8.3 keeps outside the disposition and this runtime reports beside it. It is optional -- a row that omits it is judged exactly as it was before the member existed, for a matrix that is otherwise valid (member names are now held to their exact spelling rather than case-folded, and an unpaired surrogate escape is refused, so a document relying on either is newly refused) -- and where a row declares it, the row must declare matrixVersion \"2\", it is an expectation and gates like one, and it is reported as expectedHandoffTarget and actualHandoffTarget on that row (either a target rendering, the literal null, or \"unavailable\" where the evaluation was refused and reported nothing at all). A project matrix and the bundled corpus share the fields this comparator reads rather than being the same document: corpus admission additionally requires pack, origin, supportedExtensions, focus, and specSection, and its closed schema refuses expectedHandoffTarget. It holds the target the pack configures; no delivery is observed. The payload is the one jpack packs test --format json emits, with the derived coverage report (ADR-0014, ADR-0023) beside each pack's rows, informing and never gating. A mismatching or skipped run is a successful call reporting its status: a pack that declares no matrix is reported skipped and never passed, and a run in which no row ran at all is reported skipped rather than passed -- a green gate over zero rows would say a project was tested when nothing was. Tool errors are kept for what stopped the run from happening: a bad argument, an unknown decision id, a configuration that is there and will not load, or no configuration at all. A pack or matrix that cannot be read inside a run is that pack's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the pack a project wrote rather than about this implementation, and no row is an authorization or a statement that acting on a disposition is correct (§3.5). Call list_packs for the available decision ids. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
@@ -185,6 +200,8 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolExperimentalEvaluate(params.Arguments), nil
 	case "experimental_test_packs":
 		return s.toolExperimentalTestPacks(params.Arguments), nil
+	case "experimental_test_graphs":
+		return s.toolExperimentalTestGraphs(params.Arguments), nil
 	default:
 		return nil, &rpcError{Code: codeInvalidParams, Message: "Unknown tool: " + params.Name}
 	}
@@ -418,7 +435,7 @@ type testPacksArguments struct {
 // inventory answers "what can this project decide", but "your suite was
 // skipped" does not answer "run the suite", and a caller reading skipped as
 // green is the exact misreading the payload's own status exists to prevent.
-// maxTestPacksResultBytes bounds the marshaled experimental_test_packs
+// maxMatrixResultBytes bounds the marshaled experimental_test_packs
 // payload, symmetric with the transport's inbound line bound. The CLI writes
 // the same report to a stream the operator can interrupt; a long-lived stdio
 // server handing one frame to a model client cannot, so a report over the
@@ -426,7 +443,13 @@ type testPacksArguments struct {
 // truncated — a truncated suite report would under-report silently
 // (ADR-0021). A variable rather than a constant so the refusal is testable
 // without building a multi-gigabyte report.
-var maxTestPacksResultBytes = 16 << 20
+// maxMatrixResultBytes bounds a marshaled matrix report on this surface --
+// packs and graphs share it, because the 16 MiB figure is transport and report
+// policy rather than a guess at either suite's size. It is one variable so the
+// two cannot drift apart with no reason recorded; a later ADR splitting them
+// would say why. It bounds the REPORT, not the whole JSON-RPC frame: toolResult
+// carries the report twice, as text and as structured content.
+var maxMatrixResultBytes = 16 << 20
 
 func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 	// The advertised schema says object; a JSON null is a malformed
@@ -472,8 +495,153 @@ func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 	if err != nil {
 		return toolError("The report could not be encoded.")
 	}
-	if len(encoded) > maxTestPacksResultBytes {
-		return toolError(fmt.Sprintf("The report is %d bytes, over this surface's %d-byte response bound, and a truncated suite report would under-report silently. Run jpack packs test --format json, which streams the same report.", len(encoded), maxTestPacksResultBytes))
+	if len(encoded) > maxMatrixResultBytes {
+		return toolError(fmt.Sprintf("The report is %d bytes, over this surface's %d-byte response bound, and a truncated suite report would under-report silently. Run jpack packs test --format json, which streams the same report.", len(encoded), maxMatrixResultBytes))
+	}
+	return toolResult(output)
+}
+
+// testGraphsCommand names the graph-matrix surface in every payload it produces.
+const testGraphsCommand = "mcp experimental_test_graphs"
+
+// testGraphsArguments is one experimental_test_graphs invocation as it arrived
+// on the wire. Both members are raw so presence stays separate from value, and
+// so the advertised schema is actually enforced: a plain []string field accepts
+// a JSON null collection and null elements, neither of which is an
+// array-of-strings (design review F2).
+type testGraphsArguments struct {
+	GraphID             json.RawMessage `json:"graph_id"`
+	SupportedExtensions json.RawMessage `json:"supported_extensions"`
+}
+
+// stringArrayArgument decodes an advertised array of strings strictly. A null
+// collection, a null element, and a non-string element are all refused: the
+// schema says array of strings, and silently accepting less would let a client
+// believe it had constrained a run it had not.
+func stringArrayArgument(name string, raw json.RawMessage) ([]string, string) {
+	if len(raw) == 0 {
+		return nil, ""
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, fmt.Sprintf("The %q argument must be an array of strings; omit the key to supply none.", name)
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, fmt.Sprintf("The %q argument must be an array of strings.", name)
+	}
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		// A literal null must be checked before unmarshaling: encoding/json
+		// treats null into a string as a no-op and reports no error, so a
+		// decode alone would silently accept [null] as [""]. This is the same
+		// accidental null acceptance the design review found in the plain
+		// []string field, one level further in.
+		if bytes.Equal(bytes.TrimSpace(item), []byte("null")) {
+			return nil, fmt.Sprintf("The %q argument must be an array of strings; an element is null.", name)
+		}
+		var value string
+		if err := json.Unmarshal(item, &value); err != nil {
+			return nil, fmt.Sprintf("The %q argument must be an array of strings; an element is not a string.", name)
+		}
+		values = append(values, value)
+	}
+	return values, ""
+}
+
+// exactMembers holds an arguments object to the exact member names the schema
+// advertises. encoding/json binds "GRAPH_ID" to a `json:"graph_id"` field, so a
+// decoder alone accepts spellings additionalProperties:false forbids.
+func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) string {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(rawArgs, &members); err != nil {
+		return fmt.Sprintf("The %q arguments must be an object.", tool)
+	}
+	permitted := map[string]bool{}
+	for _, name := range allowed {
+		permitted[name] = true
+	}
+	for name := range members {
+		if !permitted[name] {
+			return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
+				tool, name, strings.Join(allowed, " and "))
+		}
+	}
+	return ""
+}
+
+// toolExperimentalTestGraphs runs declared graph matrices through the
+// experimental evaluator and returns exactly what the graph CLI's project walk
+// reports. A mismatching or skipped run is a successful call carrying its
+// status -- passed, mismatch and skipped all mean the report was produced --
+// and a tool error is what stopped a complete suite from existing.
+//
+// Nothing is written and no reviewed set is consulted, and those are two
+// independent invariants rather than one: graph.Options.Audit nil is what makes
+// the run record nothing (ADR-0018), and graph.Options.LawCheck nil is what
+// makes it consult no lock (ADR-0019). Leaving the struct literal's fields
+// unset satisfies both, and a test covers each separately, because a future
+// change could restore one without the other (design review F3).
+//
+// The report budget is passed down rather than applied to the marshaled result
+// alone. A graph matrix multiplies where a pack matrix does not, so a suite can
+// reach gigabytes before any check on the response could see it (design review
+// F1).
+func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
+	if len(rawArgs) > 0 && bytes.Equal(bytes.TrimSpace(rawArgs), []byte("null")) {
+		return toolError(`The "experimental_test_graphs" arguments must be an object with an optional string "graph_id" and an optional array of strings "supported_extensions"; omit the arguments entirely to run every declared graph.`)
+	}
+	var args testGraphsArguments
+	if len(rawArgs) > 0 {
+		// DisallowUnknownFields is not sufficient on its own: encoding/json
+		// matches member names case-INSENSITIVELY, so {"GRAPH_ID":"x"} would
+		// bind to GraphID and pass, against an advertised
+		// additionalProperties:false that means the exact spelling. The member
+		// names are therefore checked exactly first.
+		if message := exactMembers("experimental_test_graphs", rawArgs, "graph_id", "supported_extensions"); message != "" {
+			return toolError(message)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil {
+			return toolError(`The "experimental_test_graphs" arguments must be an object with an optional string "graph_id" and an optional array of strings "supported_extensions"; unknown keys are rejected.`)
+		}
+	}
+	graphID, graphIDPresent, argumentError := textArgument("graph_id", args.GraphID)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	if graphIDPresent && graphID == "" {
+		return toolError(`The "graph_id" argument is present but empty: pass a configured graph id, or omit the key to run every declared graph.`)
+	}
+	extensions, extensionsError := stringArrayArgument("supported_extensions", args.SupportedExtensions)
+	if extensionsError != "" {
+		return toolError(extensionsError)
+	}
+	configPath := project.Locate("")
+	if !project.Present(configPath) {
+		return toolError(fmt.Sprintf("No project configuration was found at %s, so there is no declared graph matrix to run. The convention is optional: a %s at the project root, or the %s environment variable, declares graphs and their rows.",
+			display.Sanitize(configPath), project.DefaultConfigName, project.ConfigEnv))
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	defer loaded.Close()
+	output, graphFailure := graph.TestProject(loaded, evaluation.NewEngine(s.engine), graphID, graph.Options{
+		Command:             testGraphsCommand,
+		SupportedExtensions: extensions,
+		ReportBudget:        maxMatrixResultBytes,
+		// Audit and LawCheck are deliberately left nil; see the doc comment.
+	})
+	if graphFailure != nil {
+		return toolError(graphFailure.Message)
+	}
+	encoded, err := json.Marshal(output)
+	if err != nil {
+		return toolError("The report could not be encoded.")
+	}
+	if len(encoded) > maxMatrixResultBytes {
+		return toolError(fmt.Sprintf("The report is %d bytes, over this surface's %d-byte response bound, and a truncated suite report would under-report silently. Run the graph project walk with --format json, which streams the same report.", len(encoded), maxMatrixResultBytes))
 	}
 	return toolResult(output)
 }

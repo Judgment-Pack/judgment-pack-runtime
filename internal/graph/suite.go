@@ -1,8 +1,11 @@
 package graph
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -53,9 +56,17 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 		ConfigVersion:             loaded.Config.ConfigVersion,
 		Graphs:                    make([]result.GraphSuiteEntry, 0, len(selected)),
 	}
+	spent := 0
+	options.reportSpent = &spent
 	for _, graphID := range selected {
 		entry, _ := loaded.GraphEntry(graphID)
-		report := testEntry(loaded, engine, graphID, entry, options)
+		before := spent
+		report, budgetFailure := testEntry(loaded, engine, graphID, entry, options)
+		// Only a budget refusal escapes an entry: everything else that stops a
+		// graph is that graph's own in-band mismatch.
+		if budgetFailure != nil {
+			return result.GraphSuite{}, budgetFailure
+		}
 		output.Summary.Total += report.Summary.Total
 		output.Summary.Passed += report.Summary.Passed
 		output.Summary.Mismatched += report.Summary.Mismatched
@@ -63,6 +74,23 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 			output.Status = "mismatch"
 		}
 		output.Graphs = append(output.Graphs, report)
+		// The entry's own envelope -- ids, paths, detail, summaries -- is
+		// charged too, as whatever the finished entry costs beyond the rows and
+		// coverage already charged while building it. Every retained component
+		// is then charged exactly once, which is what the earlier rounds of this
+		// change claimed before it was true.
+		if options.ReportBudget > 0 {
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				return result.GraphSuite{}, reportEncodingFailure(graphID)
+			}
+			if envelope := len(encoded) - (spent - before); envelope > 0 {
+				spent += envelope
+			}
+			if spent > options.ReportBudget {
+				return result.GraphSuite{}, reportBudgetFailure(graphID, report.Summary.Total, spent, options.ReportBudget)
+			}
+		}
 	}
 	if output.Status == "passed" && output.Summary.Total == 0 {
 		output.Status = "skipped"
@@ -75,17 +103,22 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 // unreadable or malformed rows document — is a mismatch for that entry and
 // not a silent skip, exactly as a pack whose matrix will not load has not
 // passed.
-func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, entry project.Graph, options Options) result.GraphSuiteEntry {
+func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, entry project.Graph, options Options) (result.GraphSuiteEntry, *evaluation.Failure) {
 	report := result.GraphSuiteEntry{ID: id, Path: entry.Path, RowsPath: entry.Rows, Status: "passed"}
-	mismatch := func(detail string) result.GraphSuiteEntry {
+	mismatch := func(detail string) (result.GraphSuiteEntry, *evaluation.Failure) {
 		report.Status = "mismatch"
-		report.Detail = detail
-		return report
+		// A detail is a message for a person, and some of them echo values a
+		// MATRIX supplies -- a graph's declared matrix version, a rows loader's
+		// complaint. Uncapped, several entries reusing one hostile rows file
+		// multiply it by the graph count (round-4 review), so it is capped here
+		// rather than trusted to be short.
+		report.Detail = capDetail(detail)
+		return report, nil
 	}
 	if entry.Rows == "" {
 		report.Status = "skipped"
 		report.Detail = "The entry declares no rows, so no row ran for this graph."
-		return report
+		return report, nil
 	}
 	document, detail := loadEntryDocument(loaded, entry)
 	if detail != "" {
@@ -105,13 +138,16 @@ func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, en
 	}
 	tested, testFailure := Test(loaded, engine, document, entry.Path, entry.Rows, rows, options)
 	if testFailure != nil {
+		if testFailure.Code == CodeReportBudget {
+			return report, testFailure
+		}
 		return mismatch(display.Sanitize(testFailure.Message))
 	}
 	report.Status = tested.Status
 	report.Summary = tested.Summary
 	report.Rows = tested.Rows
 	report.Coverage = tested.Coverage
-	return report
+	return report, nil
 }
 
 // ValidateProject checks every configured graph — or the one graph id selects
@@ -198,4 +234,72 @@ func loadEntryDocument(loaded *project.Project, entry project.Graph) (Document, 
 		return Document{}, display.Sanitize(loadFailure.Message)
 	}
 	return document, ""
+}
+
+// CodeReportBudget marks the one failure an entry may raise that is NOT that
+// entry's in-band mismatch: the whole run is refused.
+const CodeReportBudget = "JPS-GRAPH-REPORT-BUDGET"
+
+// reportBudgetFailure refuses a run whose report passed the caller's budget. It
+// names the graph, how many rows had been judged when it tripped, and both
+// numbers, because the caller has to decide whether to select one graph or move
+// to the streaming surface.
+func reportBudgetFailure(graphID string, rowsJudged int, spent, budget int) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code: CodeReportBudget,
+		Message: fmt.Sprintf(
+			"The report reached %d bytes after %d row(s) of graph %q, over this surface's %d-byte budget; the remaining rows were not evaluated, and a truncated suite report would under-report silently.",
+			spent, rowsJudged, graphID, budget),
+	}
+}
+
+// reportEncodingFailure refuses a run whose own entry report will not encode.
+func reportEncodingFailure(graphID string) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:    "JPS-GRAPH-REPORT-ENCODE",
+		Message: fmt.Sprintf("The report for graph %q could not be encoded.", graphID),
+	}
+}
+
+// coverageEncodingFailure refuses a run whose own coverage block will not encode.
+func coverageEncodingFailure(graphID string) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:    "JPS-GRAPH-REPORT-ENCODE",
+		Message: fmt.Sprintf("The coverage report for graph %q could not be encoded.", graphID),
+	}
+}
+
+// rowEncodingFailure refuses a run whose own row report will not encode.
+func rowEncodingFailure(rowID string) *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:    "JPS-GRAPH-REPORT-ENCODE",
+		Message: fmt.Sprintf("The report for row %q could not be encoded.", rowID),
+	}
+}
+
+// MaxEntryDetailBytes caps a graph entry's human-readable detail, marker
+// included: the value this returns is never longer than the cap. Some details
+// echo matrix-supplied values, and a detail is a message for a person rather
+// than data a caller reads programmatically, so truncating one costs nothing a
+// reader needs.
+const MaxEntryDetailBytes = 4096
+
+const detailTruncationMarker = "… (truncated)"
+
+// capDetail truncates on a rune boundary and accounts for its own marker.
+// Round 5 caught both: the previous version appended the marker AFTER filling
+// the cap, so the result exceeded the number it stated, and it sliced bytes, so
+// it could cut a multi-byte rune in half.
+func capDetail(detail string) string {
+	if len(detail) <= MaxEntryDetailBytes {
+		return detail
+	}
+	limit := MaxEntryDetailBytes - len(detailTruncationMarker)
+	if limit < 0 {
+		limit = 0
+	}
+	for limit > 0 && !utf8.RuneStart(detail[limit]) {
+		limit--
+	}
+	return detail[:limit] + detailTruncationMarker
 }
