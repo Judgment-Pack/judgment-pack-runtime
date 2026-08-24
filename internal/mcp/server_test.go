@@ -124,6 +124,19 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	if required, ok := evaluateSchema["required"].([]any); !ok || len(required) != 1 || required[0] != "facts" {
 		t.Fatalf(`"facts" is the one required member — optional means absent from required: %v`, evaluateSchema["required"])
 	}
+	// The include_traces declaration is advertised the same way (ADR-0031): an
+	// optional boolean on a closed schema, with no required member at all.
+	graphsSchema := advertised["experimental_test_graphs"]["inputSchema"].(map[string]any)
+	if graphsSchema["additionalProperties"] != false {
+		t.Fatalf("the test_graphs schema is closed: %v", graphsSchema)
+	}
+	tracesProperty, ok := graphsSchema["properties"].(map[string]any)["include_traces"].(map[string]any)
+	if !ok || tracesProperty["type"] != "boolean" {
+		t.Fatalf("the test_graphs schema advertises an optional boolean include_traces: %v", graphsSchema)
+	}
+	if _, present := graphsSchema["required"]; present {
+		t.Fatalf("every test_graphs member is optional: %v", graphsSchema["required"])
+	}
 	if len(advertised) != 13 {
 		t.Fatalf("expected 13 distinct tools, got %d", len(advertised))
 	}

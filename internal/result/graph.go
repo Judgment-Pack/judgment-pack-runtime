@@ -203,11 +203,20 @@ const GraphMatrixLabel = "graph matrix results: rows a project wrote about its o
 // for byte by the same canonicalizer every other comparison uses. Only the
 // nodes a row names are compared; an unnamed node is unchecked, and saying so
 // is the row author's choice made visible.
+//
+// Trace is the node evaluation's own trace under ADR-0027's pinned contract,
+// carried only when the run was asked (ADR-0031). A pointer so presence
+// tracks the request exactly: asked and evaluated is present, [] at minimum,
+// mirroring the contract's never-omitted rule; not asked is absent. A node
+// the graph does not declare was never evaluated and has no trace even when
+// asked. The comparison list is lexicographic by node name; each trace stays
+// walk-ordered internally — two different orders, deliberately.
 type GraphTestNode struct {
-	Node     string `json:"node"`
-	Status   string `json:"status"`
-	Expected string `json:"expected"`
-	Actual   string `json:"actual"`
+	Node     string        `json:"node"`
+	Status   string        `json:"status"`
+	Expected string        `json:"expected"`
+	Actual   string        `json:"actual"`
+	Trace    *[]TraceEntry `json:"trace,omitempty"`
 }
 
 // GraphTestRow is one graph matrix row's result: the composite headline

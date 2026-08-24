@@ -123,7 +123,8 @@ authority, and following it confers no conformance status on anything.
 | [0024](0024-suggest-candidate-row-inputs.md)             | Derive candidate test-row inputs from a pack's own literals, and never their expectations | accepted |
 | [0025](0025-assert-the-handoff-target-in-the-matrix.md)  | Let a matrix row assert the handoff target, because no disposition can carry it | accepted |
 | [0026](0026-run-the-declared-graph-matrix-over-mcp.md)  | Run the declared graph matrix over MCP, and stop a runaway matrix early | accepted |
-| [0027](0027-pin-the-evaluation-trace-contract.md)        | Pin the evaluation trace: deterministic, complete, ordered, and still informative | accepted |
+| [0027](0027-pin-the-evaluation-trace-contract.md)        | Pin the evaluation trace: deterministic, complete, ordered, and still informative | accepted; §0's matrix-results-carry-no-traces determination partially superseded for graph matrix node comparisons by [0031](0031-report-node-traces-in-the-graph-matrix-on-request.md) |
 | [0028](0028-declare-an-evaluation-a-rehearsal.md)        | Declare an evaluation a rehearsal, so exploration never writes a decision record | accepted |
 | [0029](0029-serve-graphs-and-their-inventory.md)         | Serve the configured graphs and their inventory over the wire, read-only        | accepted |
 | [0030](0030-bind-graph-matrix-runs-and-validations-to-the-loaded-document.md) | Bind graph matrix runs and validations to the loaded document                   | accepted |
+| [0031](0031-report-node-traces-in-the-graph-matrix-on-request.md) | Report node traces in the graph matrix on request                               | accepted |

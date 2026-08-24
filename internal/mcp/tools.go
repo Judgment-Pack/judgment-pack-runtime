@@ -154,13 +154,14 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_test_graphs",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every configured graph's declared matrix through this runtime's evaluator and report every row, or one graph's matrix by its configured key in \"graph_id\". No JPS version defines a graph, a composition, a graph matrix, or a composite result: the graph format is this runtime's own convention, and only each node's pack evaluation reaches the shared evaluator. A row is judged by comparing the composite headline disposition, and any named-node dispositions the row declares, each canonicalized, against what the walk produced -- or the expected evaluation error class and phase where the row expects a refusal. The derived coverage report sits beside each graph's rows and informs rather than gates. One \"supported_extensions\" list, if supplied, applies uniformly to every node of every row; omitting it and passing an empty array are the same thing. A mismatching or skipped run is a successful call reporting its status: a project that declares no graph matrix is reported skipped and never passed. Zero rows is not always skipped: a graph or rows document that cannot be read is a mismatch carrying no rows, because failing to read a matrix is not the same as not having one. Tool errors are kept for what stopped a complete suite from existing: a bad argument, an unknown graph id, a configuration that is there and will not load, no configuration at all, or a report past this surface's size budget. A graph or rows document that cannot be read inside a run is that graph's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the graph and packs a project wrote rather than about this implementation -- and no row is an authorization, a statement that a graph or policy is correct, or a statement that acting on a composite result is safe. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every configured graph's declared matrix through this runtime's evaluator and report every row, or one graph's matrix by its configured key in \"graph_id\". No JPS version defines a graph, a composition, a graph matrix, or a composite result: the graph format is this runtime's own convention, and only each node's pack evaluation reaches the shared evaluator. A row is judged by comparing the composite headline disposition, and any named-node dispositions the row declares, each canonicalized, against what the walk produced -- or the expected evaluation error class and phase where the row expects a refusal. The derived coverage report sits beside each graph's rows and informs rather than gates. One \"supported_extensions\" list, if supplied, applies uniformly to every node of every row; omitting it and passing an empty array are the same thing. A call declaring \"include_traces\": true attaches each compared node's evaluation trace -- the ADR-0027 pinned contract, exactly what experimental_evaluate reports -- to that node's comparison (ADR-0031); traces are charged by the report budget like every retained member, so a large matrix that fits without them may be refused with them, and omitting the key is today's payload, byte for byte. A mismatching or skipped run is a successful call reporting its status: a project that declares no graph matrix is reported skipped and never passed. Zero rows is not always skipped: a graph or rows document that cannot be read is a mismatch carrying no rows, because failing to read a matrix is not the same as not having one. Tool errors are kept for what stopped a complete suite from existing: a bad argument, an unknown graph id, a configuration that is there and will not load, no configuration at all, or a report past this surface's size budget. A graph or rows document that cannot be read inside a run is that graph's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the graph and packs a project wrote rather than about this implementation -- and no row is an authorization, a statement that a graph or policy is correct, or a statement that acting on a composite result is safe. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
 					"graph_id":             map[string]any{"type": "string", "description": "A graph key declared in the project's jpack.json: run only that graph's matrix. Omit the key to run every configured graph."},
 					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports, applied uniformly to every node of every row. Omitting the key and passing an empty array are the same."},
+					"include_traces":       map[string]any{"type": "boolean", "description": "Attach each compared node's evaluation trace (the ADR-0027 contract, exactly what experimental_evaluate reports for that node) to its comparison (ADR-0031). Only nodes a row names are compared, and only compared nodes carry a trace; a row that mismatches on the composite headline, or expects a refusal, reports no node comparisons and so no traces. Traces multiply the payload and are charged by the report budget like every retained member, so a suite that fits without them may be refused with them. Never inferred: omitting the key is today's payload, byte for byte."},
 				},
 			},
 		},
@@ -632,13 +633,14 @@ func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 const testGraphsCommand = "mcp experimental_test_graphs"
 
 // testGraphsArguments is one experimental_test_graphs invocation as it arrived
-// on the wire. Both members are raw so presence stays separate from value, and
+// on the wire. All three members are raw so presence stays separate from value, and
 // so the advertised schema is actually enforced: a plain []string field accepts
 // a JSON null collection and null elements, neither of which is an
 // array-of-strings (design review F2).
 type testGraphsArguments struct {
 	GraphID             json.RawMessage `json:"graph_id"`
 	SupportedExtensions json.RawMessage `json:"supported_extensions"`
+	IncludeTraces       json.RawMessage `json:"include_traces"`
 }
 
 // stringArrayArgument decodes an advertised array of strings strictly. A null
@@ -730,7 +732,7 @@ func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) strin
 // F1).
 func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
 	if len(rawArgs) > 0 && bytes.Equal(bytes.TrimSpace(rawArgs), []byte("null")) {
-		return toolError(`The "experimental_test_graphs" arguments must be an object with an optional string "graph_id" and an optional array of strings "supported_extensions"; omit the arguments entirely to run every declared graph.`)
+		return toolError(`The "experimental_test_graphs" arguments must be an object with an optional string "graph_id", an optional array of strings "supported_extensions", and an optional boolean "include_traces"; omit the arguments entirely to run every declared graph.`)
 	}
 	var args testGraphsArguments
 	if len(rawArgs) > 0 {
@@ -739,13 +741,13 @@ func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
 		// bind to GraphID and pass, against an advertised
 		// additionalProperties:false that means the exact spelling. The member
 		// names are therefore checked exactly first.
-		if message := exactMembers("experimental_test_graphs", rawArgs, "graph_id", "supported_extensions"); message != "" {
+		if message := exactMembers("experimental_test_graphs", rawArgs, "graph_id", "supported_extensions", "include_traces"); message != "" {
 			return toolError(message)
 		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
-			return toolError(`The "experimental_test_graphs" arguments must be an object with an optional string "graph_id" and an optional array of strings "supported_extensions"; unknown keys are rejected.`)
+			return toolError(`The "experimental_test_graphs" arguments must be an object with an optional string "graph_id", an optional array of strings "supported_extensions", and an optional boolean "include_traces"; unknown keys are rejected.`)
 		}
 	}
 	graphID, graphIDPresent, argumentError := textArgument("graph_id", args.GraphID)
@@ -758,6 +760,10 @@ func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
 	extensions, extensionsError := stringArrayArgument("supported_extensions", args.SupportedExtensions)
 	if extensionsError != "" {
 		return toolError(extensionsError)
+	}
+	includeTraces, tracesError := boolArgument("include_traces", args.IncludeTraces)
+	if tracesError != "" {
+		return toolError(tracesError)
 	}
 	configPath := project.Locate("")
 	if !project.Present(configPath) {
@@ -772,6 +778,7 @@ func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
 	output, graphFailure := graph.TestProject(loaded, evaluation.NewEngine(s.engine), graphID, graph.Options{
 		Command:             testGraphsCommand,
 		SupportedExtensions: extensions,
+		IncludeTraces:       includeTraces,
 		ReportBudget:        maxMatrixResultBytes,
 		// Audit and LawCheck are deliberately left nil; see the doc comment.
 	})

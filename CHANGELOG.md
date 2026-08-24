@@ -4,6 +4,20 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **The graph matrix reports each compared node's trace, on request** (ADR-0031, closes #127):
+  `experimental_test_graphs` accepts an optional boolean `include_traces`, and `experimental
+  graph test` grows `--include-traces` on both its forms (JSON report only; the human rendering
+  is unchanged). Asked, each reported node comparison
+  whose node the walk evaluated carries `trace` — the node evaluation's own member under
+  ADR-0027's pinned contract, `[]` at minimum, walk-ordered internally while the comparison list
+  stays lexicographic. Only nodes a row names are compared and only compared nodes carry one, so
+  a row that fails before node comparisons carries none; traces are charged by the existing
+  report budget, so a matrix that fits without them may be refused with them. Omitted is off,
+  and off is the previous payload byte for byte. ADR-0027 §0's determination that matrix row
+  results carry no traces is partially superseded, for graph matrix node comparisons only, by
+  the index annotation; its text is untouched. Additive under VERSIONING.md's MINOR rule; the
+  evaluator's conformance claim is unaffected and stated, in full and only, in `CONFORMANCE.md`.
+
 - **Graph matrix runs and validations bind themselves to the document they loaded** (ADR-0030,
   closes #132): the matrix suite entry, its validation twin, and the direct single-graph test
   and validation envelopes carry `graphSha256` — the bare-hex digest of the exact bytes the run

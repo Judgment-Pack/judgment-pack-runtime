@@ -331,6 +331,7 @@ func (a *App) graphTestCommand() *cobra.Command {
 	supported := []string{}
 	configPath := ""
 	graphID := ""
+	includeTraces := false
 	command := &cobra.Command{
 		Use:   "test [graph-or-]",
 		Short: "EXPERIMENTAL SURFACE: run graph matrix rows and compare every disposition byte for byte",
@@ -342,7 +343,10 @@ func (a *App) graphTestCommand() *cobra.Command {
 			"inputs document for the whole graph and exactly one expectation: the composite headline " +
 			"disposition, or the evaluation error class (and optionally phase) of a refused run. A row may " +
 			"also pin named nodes' dispositions with expectedNodes; a node a row does not name is unchecked, " +
-			"which is the row author's stated choice. Every disposition comparison is the RFC 8785 canonical " +
+			"which is the row author's stated choice. --include-traces attaches each compared node's " +
+			"evaluation trace (ADR-0027's pinned contract, ADR-0031) to its comparison in the JSON report; " +
+			"the human rendering is unchanged. Only compared nodes carry one, a row that fails before node " +
+			"comparisons carries none, and traces enlarge the report. Every disposition comparison is the RFC 8785 canonical " +
 			"byte comparison used everywhere else -- the composite headline and each named node -- and a row " +
 			"whose expectation is not a legal disposition is a mismatch of the row, never compared loosely. A " +
 			"refusal carrying no error class -- a graph-layer or invocation refusal, such as a feed colliding " +
@@ -377,6 +381,7 @@ func (a *App) graphTestCommand() *cobra.Command {
 				output, walkFailure := graph.TestProject(loaded, evaluator, graphID, graph.Options{
 					Command:             commandName,
 					SupportedExtensions: supported,
+					IncludeTraces:       includeTraces,
 				})
 				if walkFailure != nil {
 					return a.evaluationFailure(commandName, format, walkFailure)
@@ -421,6 +426,7 @@ func (a *App) graphTestCommand() *cobra.Command {
 			output, testFailure := graph.Test(loaded, evaluator, document, graphPath, rowsPath, rows, graph.Options{
 				Command:             commandName,
 				SupportedExtensions: supported,
+				IncludeTraces:       includeTraces,
 			})
 			if testFailure != nil {
 				return a.evaluationFailure(commandName, format, testFailure)
@@ -440,6 +446,7 @@ func (a *App) graphTestCommand() *cobra.Command {
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, applied to every node (repeatable)")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().StringVar(&graphID, "id", graphID, "run one declared graph's rows by its configured id instead of all of them (project walk only)")
+	command.Flags().BoolVar(&includeTraces, "include-traces", includeTraces, "attach each compared node's evaluation trace (the ADR-0027 contract) to its comparison in the JSON report (the human rendering is unchanged); only nodes a row names are compared, and traces enlarge the report")
 	return command
 }
 
