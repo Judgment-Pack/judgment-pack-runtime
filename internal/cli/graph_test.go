@@ -350,6 +350,37 @@ func TestGraphTestCommand(t *testing.T) {
 	}
 }
 
+// A graphMatrixVersion 2 row's handoff-target assertion flows through the CLI
+// surface (ADR-0032): the pair reaches the JSON report, and a mismatching
+// assertion moves the exit code exactly as any row mismatch does.
+func TestGraphTestCommandCarriesTargetAssertions(t *testing.T) {
+	rows := `{"graphMatrixVersion":"2","cases":[{"id":"escalates",` +
+		`"inputs":{"screening":{"facts":{},"evidence":{"screening-record":"present"}}},` +
+		`"expectedDisposition":{"kind":"unresolved","reasons":["unknown"],"handoff":{"state":"requested","triggeredBy":["unknown"]}},` +
+		`"expectedHandoffTarget":{"kind":"human-role","name":"Compliance"}}]}`
+	configPath, graphPath := graphProject(t, graphFixture(t, "onboarding.graph.json"), map[string]string{
+		"assert.rows.json": rows,
+	})
+	rowsPath := filepath.Join(filepath.Dir(configPath), "assert.rows.json")
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "test", graphPath, "--rows", rowsPath, "--config", configPath, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, `"expectedHandoffTarget":"{\"kind\":\"human-role\",\"name\":\"Compliance\"}"`) ||
+		!strings.Contains(stdout, `"actualHandoffTarget":"{\"kind\":\"human-role\",\"name\":\"Compliance\"}"`) {
+		t.Fatalf("the pair reaches the JSON report: %q", stdout)
+	}
+
+	wrong := strings.Replace(rows, `"name":"Compliance"`, `"name":"Nobody"`, 1)
+	if err := os.WriteFile(rowsPath, []byte(wrong), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "test", graphPath, "--rows", rowsPath, "--config", configPath}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, "reported handoff target") {
+		t.Fatalf("a target mismatch moves the exit code and the human surface names it: exit=%d %q", code, stdout)
+	}
+}
+
 // With no argument the two verbs walk the project's declared graphs
 // (ADR-0017): the fixture's one graph runs its declared rows — coverage
 // included — and validates; --id selects; the flag combinations that mix the

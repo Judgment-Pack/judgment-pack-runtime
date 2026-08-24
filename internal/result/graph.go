@@ -211,28 +211,53 @@ const GraphMatrixLabel = "graph matrix results: rows a project wrote about its o
 // the graph does not declare was never evaluated and has no trace even when
 // asked. The comparison list is lexicographic by node name; each trace stays
 // walk-ordered internally — two different orders, deliberately.
+//
+// ExpectedHandoffTarget and ActualHandoffTarget appear together, exactly when
+// the row's well-formed assertion named a node this run evaluated (ADR-0032):
+// each is a rendering under the pack matrix's budget or the literal null, and
+// the comparison that decides reads the decoded values, never these
+// renderings. A row-defect mismatch — an undecodable expectation, a node the
+// graph does not declare — reports the defect in the row's detail and no
+// pair. The pack triple's third state, "unavailable", is unreachable here —
+// a target rides only beside a disposition expectation, and a comparison
+// exists only for a node this run evaluated — so these members never carry
+// it.
 type GraphTestNode struct {
-	Node     string        `json:"node"`
-	Status   string        `json:"status"`
-	Expected string        `json:"expected"`
-	Actual   string        `json:"actual"`
-	Trace    *[]TraceEntry `json:"trace,omitempty"`
+	Node                  string        `json:"node"`
+	Status                string        `json:"status"`
+	Expected              string        `json:"expected"`
+	Actual                string        `json:"actual"`
+	ExpectedHandoffTarget string        `json:"expectedHandoffTarget,omitempty"`
+	ActualHandoffTarget   string        `json:"actualHandoffTarget,omitempty"`
+	Trace                 *[]TraceEntry `json:"trace,omitempty"`
 }
 
 // GraphTestRow is one graph matrix row's result: the composite headline
 // compared canonically, the §8.4 class and phase for a row that expects a
 // refusal instead, and the per-node comparisons the row asked for.
+//
+// ExpectedHandoffTarget and ActualHandoffTarget appear together, exactly when
+// the row's well-formed assertion rode a run this walk performed (ADR-0032)
+// — the composite's reported target is the result node's own, the value a
+// target-only pack edit reaches while every disposition byte stays
+// identical; a row-defect mismatch reports the defect in the detail and no
+// pair. The actual side is the rendering or the literal null, or
+// "unavailable" exactly where a run was refused under an expected composite:
+// a §8.4-classed refusal sets ActualErrorClass beside it, and a graph-layer
+// refusal that carries no class is told by the detail naming the refusal.
 type GraphTestRow struct {
-	ID                 string          `json:"id"`
-	Status             string          `json:"status"`
-	Expected           string          `json:"expected"`
-	Actual             string          `json:"actual"`
-	ExpectedErrorClass string          `json:"expectedErrorClass,omitempty"`
-	ActualErrorClass   string          `json:"actualErrorClass,omitempty"`
-	ExpectedErrorPhase string          `json:"expectedErrorPhase,omitempty"`
-	ActualErrorPhase   string          `json:"actualErrorPhase,omitempty"`
-	Nodes              []GraphTestNode `json:"nodes,omitempty"`
-	Detail             string          `json:"detail,omitempty"`
+	ID                    string          `json:"id"`
+	Status                string          `json:"status"`
+	Expected              string          `json:"expected"`
+	Actual                string          `json:"actual"`
+	ExpectedErrorClass    string          `json:"expectedErrorClass,omitempty"`
+	ActualErrorClass      string          `json:"actualErrorClass,omitempty"`
+	ExpectedErrorPhase    string          `json:"expectedErrorPhase,omitempty"`
+	ActualErrorPhase      string          `json:"actualErrorPhase,omitempty"`
+	ExpectedHandoffTarget string          `json:"expectedHandoffTarget,omitempty"`
+	ActualHandoffTarget   string          `json:"actualHandoffTarget,omitempty"`
+	Nodes                 []GraphTestNode `json:"nodes,omitempty"`
+	Detail                string          `json:"detail,omitempty"`
 }
 
 // GraphTest is one graph matrix run. It carries Experimental and

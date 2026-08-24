@@ -125,7 +125,7 @@ type corpusCase struct {
 // result.HandoffTargetUnavailable convention on the actual side rather than
 // having one rendered for it — the report degrades and says so, and the verdict
 // is unaffected, because the verdict rests on the decoded values (see
-// sameHandoffTarget). No in-tree caller reaches that state: the project runner
+// SameHandoffTarget). No in-tree caller reaches that state: the project runner
 // computes a rendering whenever a row asserts, RunCase computes its own, and no
 // bundled corpus row can assert at all.
 //
@@ -535,22 +535,24 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declar
 	// exact. So presence is compared as presence and each member as its whole
 	// string, and the renderings are carried beside the verdict rather than
 	// standing in for it.
-	if item.ExpectedHandoffTarget != nil && !sameHandoffTarget(expectedTarget, evaluated.HandoffTarget) {
+	if item.ExpectedHandoffTarget != nil && !SameHandoffTarget(expectedTarget, evaluated.HandoffTarget) {
 		return corpusMismatch(outcome, "The evaluation's handoff target differs from the row's expectation: "+handoffTargetDifference(expectedTarget, evaluated.HandoffTarget))
 	}
 	return outcome
 }
 
-// sameHandoffTarget is the whole of the target comparison: presence against
-// presence, then each member in full.
+// SameHandoffTarget is the whole of the target comparison: presence against
+// presence, then each member in full. It is exported because the graph
+// matrix's target assertions (ADR-0032) are decided by this comparison and
+// no other — two comparators would be two chances to disagree.
 //
 // Comparing the authored strings rather than their capped renderings costs
-// nothing a suite can feel. A row's expectation lives in the matrix, which
-// MaxMatrixBytes bounds whole, so the total length compared across a run is
-// bounded by the matrix rather than by the pack — and Go compares a string's
-// length before its bytes, so an assertion of a different length is settled
-// without reading either.
-func sameHandoffTarget(expected, actual *result.HandoffTarget) bool {
+// nothing a suite can feel. A row's expectation lives in its matrix document,
+// whose own byte bound — the pack matrix's or the graph rows' — bounds the
+// total length compared across a run by the matrix rather than by the pack,
+// and Go compares a string's length before its bytes, so an assertion of a
+// different length is settled without reading either.
+func SameHandoffTarget(expected, actual *result.HandoffTarget) bool {
 	if expected == nil || actual == nil {
 		return expected == nil && actual == nil
 	}

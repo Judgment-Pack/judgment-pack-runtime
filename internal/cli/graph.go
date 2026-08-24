@@ -343,7 +343,16 @@ func (a *App) graphTestCommand() *cobra.Command {
 			"inputs document for the whole graph and exactly one expectation: the composite headline " +
 			"disposition, or the evaluation error class (and optionally phase) of a refused run. A row may " +
 			"also pin named nodes' dispositions with expectedNodes; a node a row does not name is unchecked, " +
-			"which is the row author's stated choice. --include-traces attaches each compared node's " +
+			"which is the row author's stated choice. Under graphMatrixVersion 2 a row may also assert " +
+			"handoff targets (ADR-0025's member, extended to this surface by ADR-0032): expectedHandoffTarget " +
+			"holds the composite's reported target — the result node's own, the value a target-only pack " +
+			"edit reaches while every disposition byte stays identical — and expectedNodeHandoffTargets " +
+			"asserts named nodes' (each such node also named in expectedNodes). Each value is null or a " +
+			"{kind, name} object; the comparison reads the decoded values, the reported pair is the capped " +
+			"renderings, and a run refused where a composite was expected reports the expected rendering " +
+			"beside \"unavailable\". The target is what the run reported: the configured target exactly when " +
+			"the disposition requested a handoff, null otherwise, and no delivery is observed. " +
+			"--include-traces attaches each compared node's " +
 			"evaluation trace (ADR-0027's pinned contract, ADR-0031) to its comparison in the JSON report; " +
 			"the human rendering is unchanged. Only compared nodes carry one, a row that fails before node " +
 			"comparisons carries none, and traces enlarge the report. Every disposition comparison is the RFC 8785 canonical " +
@@ -442,7 +451,7 @@ func (a *App) graphTestCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
-	command.Flags().StringVar(&rowsPath, "rows", rowsPath, "the graph matrix document: {\"cases\":[{\"id\",\"inputs\",\"expectedDisposition\"|\"expectedErrorClass\"[,\"expectedNodes\"]}]}; a file path, or - for standard input (required with a path-named graph)")
+	command.Flags().StringVar(&rowsPath, "rows", rowsPath, "the graph matrix document: {\"cases\":[{\"id\",\"inputs\",\"expectedDisposition\"|\"expectedErrorClass\"[,\"expectedNodes\",\"expectedHandoffTarget\",\"expectedNodeHandoffTargets\"]}]}; the target assertions need graphMatrixVersion \"2\"; a file path, or - for standard input (required with a path-named graph)")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, applied to every node (repeatable)")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().StringVar(&graphID, "id", graphID, "run one declared graph's rows by its configured id instead of all of them (project walk only)")
