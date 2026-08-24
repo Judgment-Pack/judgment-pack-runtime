@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -54,6 +57,57 @@ type Rows struct {
 	Cases              []RowCase `json:"cases"`
 }
 
+// exactRowMembers holds the rows document and each of its cases to the exact
+// member spellings the format declares. Elements that are not objects are left
+// to the strict decoder, whose wrong-type message is the better diagnosis.
+func exactRowMembers(root map[string]any, name string) *evaluation.Failure {
+	if failure := exactMemberSet(root, []string{"graphMatrixVersion", "cases"}, name, "the graph matrix"); failure != nil {
+		return failure
+	}
+	cases, ok := root["cases"].([]any)
+	if !ok {
+		return nil
+	}
+	rowMembers := []string{"id", "inputs", "expectedDisposition", "expectedNodes", "expectedErrorClass", "expectedErrorPhase"}
+	for index, element := range cases {
+		row, ok := element.(map[string]any)
+		if !ok {
+			continue
+		}
+		if failure := exactMemberSet(row, rowMembers, name, fmt.Sprintf("row %d of the graph matrix", index)); failure != nil {
+			return failure
+		}
+	}
+	return nil
+}
+
+// exactMemberSet reports the first unknown member of one object, naming the
+// exact spelling where the stranger differs from a known member only in case.
+func exactMemberSet(object map[string]any, known []string, name, subject string) *evaluation.Failure {
+	for _, member := range slices.Sorted(maps.Keys(object)) {
+		if slices.Contains(known, member) {
+			continue
+		}
+		for _, candidate := range known {
+			if strings.EqualFold(candidate, member) {
+				return &evaluation.Failure{
+					Code: "JPS-GRAPH-ROWS-SHAPE",
+					Message: fmt.Sprintf("In %s, %s carries a member this runtime does not know: %q. The member is spelled %q, and a spelling that differs from it only in case is refused rather than read as it.",
+						display.Sanitize(name), subject, display.Sanitize(member), candidate),
+					ExitCode: result.ExitInvalid,
+				}
+			}
+		}
+		return &evaluation.Failure{
+			Code: "JPS-GRAPH-ROWS-SHAPE",
+			Message: fmt.Sprintf("In %s, %s carries a member this runtime does not know: %q.",
+				display.Sanitize(name), subject, display.Sanitize(member)),
+			ExitCode: result.ExitInvalid,
+		}
+	}
+	return nil
+}
+
 // LoadRows reads and checks one graph matrix document. "Well-formed" here is
 // the carrier and the shape, exactly as a pack matrix's loader draws the
 // line: strict JSON with no duplicate member names, a closed member set, a
@@ -77,13 +131,24 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 		return refuse("JPS-GRAPH-ROWS-JSON",
 			fmt.Sprintf("The graph matrix %s is not acceptable JSON: %s", display.Sanitize(name), display.Sanitize(carrierFailure.Diagnostic.Message)), result.ExitInvocation)
 	}
-	if _, ok := decoded.(map[string]any); !ok {
+	root, ok := decoded.(map[string]any)
+	if !ok {
 		return refuse("JPS-GRAPH-ROWS-SHAPE",
 			fmt.Sprintf("The graph matrix %s must be a JSON object with a cases array.", display.Sanitize(name)), result.ExitInvalid)
 	}
+	// Member names are held to their exact spelling before the decoder runs,
+	// because encoding/json case-folds them: "Cases" or "ExpectedDisposition"
+	// would bind and be silently read as the members they are not — the same
+	// hole the pack matrix closed under ADR-0025 and the argument decoders
+	// closed under ADR-0028. A matrix is a closed input; a spelling that
+	// differs only in case is refused rather than read as the member it folds
+	// to.
+	if failure := exactRowMembers(root, name); failure != nil {
+		return Rows{}, failure
+	}
 	var rows Rows
-	// Strict decoding closes the shape: a misspelled "expectedDispositon" must
-	// be an error, not a row that silently expects nothing.
+	// Strict decoding closes the remaining shape questions: a member of the
+	// wrong type must be an error, not a row that silently expects nothing.
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&rows); err != nil {

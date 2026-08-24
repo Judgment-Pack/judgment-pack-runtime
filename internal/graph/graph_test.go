@@ -1509,3 +1509,38 @@ func TestProjectWalkDoesNotChargeDiscardedProductionBytes(t *testing.T) {
 		t.Fatal("a budget one byte short of the retained report must refuse")
 	}
 }
+
+// Member names are held to their exact spelling, at the document and at every
+// row: encoding/json case-folds names, so without the hold "Cases" and "ID"
+// would bind and be silently read as the members they are not — the pack
+// matrix's ADR-0025 rule, applied to the rows document that predates it.
+func TestLoadRowsHoldsMemberSpelling(t *testing.T) {
+	for name, tc := range map[string]struct {
+		data string
+		want string
+	}{
+		"a case-folded document member": {
+			data: `{"Cases":[{"id":"r","inputs":{},"expectedDisposition":{}}]}`,
+			want: `spelled "cases"`,
+		},
+		"a case-folded row member": {
+			data: `{"cases":[{"ID":"r","inputs":{},"expectedDisposition":{}}]}`,
+			want: `spelled "id"`,
+		},
+		"a wholly unknown row member": {
+			data: `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"wholly":1}]}`,
+			want: `does not know: "wholly"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, failure := LoadRows([]byte(tc.data), "rows.json")
+			if failure == nil || failure.Code != "JPS-GRAPH-ROWS-SHAPE" || !strings.Contains(failure.Message, tc.want) {
+				t.Fatalf("failure = %+v, want code JPS-GRAPH-ROWS-SHAPE containing %q", failure, tc.want)
+			}
+		})
+	}
+	// The exactly spelled document still loads.
+	if _, failure := LoadRows(fixtureBytes(t, "onboarding.rows.json"), "onboarding.rows.json"); failure != nil {
+		t.Fatalf("the fixture rows must load: %+v", failure)
+	}
+}
