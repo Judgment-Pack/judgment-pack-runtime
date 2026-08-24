@@ -245,24 +245,27 @@ type GraphTestRow struct {
 // additive, so outputVersion is unchanged by the VERSIONING.md machine-output
 // rules.
 type GraphTest struct {
-	OutputVersion             string         `json:"outputVersion"`
-	Tool                      Tool           `json:"tool"`
-	Command                   string         `json:"command"`
-	Status                    string         `json:"status"`
-	Experimental              bool           `json:"experimental"`
-	ConformanceClaimReference string         `json:"conformanceClaimReference"`
-	Label                     string         `json:"label"`
-	Kind                      string         `json:"kind"`
-	FormatVersion             string         `json:"formatVersion"`
-	EvaluatorSpecVersion      string         `json:"evaluatorSpecVersion"`
-	ConfigPath                string         `json:"configPath"`
-	GraphPath                 string         `json:"graphPath"`
-	RowsPath                  string         `json:"rowsPath"`
-	GraphID                   string         `json:"graphId"`
-	GraphVersion              string         `json:"graphVersion"`
-	Summary                   SuiteSummary   `json:"summary"`
-	Rows                      []GraphTestRow `json:"rows"`
-	Coverage                  []MatrixProbe  `json:"coverage,omitempty"`
+	OutputVersion             string `json:"outputVersion"`
+	Tool                      Tool   `json:"tool"`
+	Command                   string `json:"command"`
+	Status                    string `json:"status"`
+	Experimental              bool   `json:"experimental"`
+	ConformanceClaimReference string `json:"conformanceClaimReference"`
+	Label                     string `json:"label"`
+	Kind                      string `json:"kind"`
+	FormatVersion             string `json:"formatVersion"`
+	EvaluatorSpecVersion      string `json:"evaluatorSpecVersion"`
+	ConfigPath                string `json:"configPath"`
+	GraphPath                 string `json:"graphPath"`
+	RowsPath                  string `json:"rowsPath"`
+	GraphID                   string `json:"graphId"`
+	GraphVersion              string `json:"graphVersion"`
+	// GraphSHA256 binds this run to the exact document bytes it loaded
+	// (ADR-0030), bare hex per the payload convention.
+	GraphSHA256 string         `json:"graphSha256"`
+	Summary     SuiteSummary   `json:"summary"`
+	Rows        []GraphTestRow `json:"rows"`
+	Coverage    []MatrixProbe  `json:"coverage,omitempty"`
 }
 
 // GraphSuiteEntry is one configured graph's matrix run inside the project walk
@@ -273,16 +276,22 @@ type GraphTest struct {
 // which case the identity echoes are empty rather than guessed and Rows and
 // Coverage are absent.
 type GraphSuiteEntry struct {
-	ID           string         `json:"id"`
-	Path         string         `json:"path"`
-	RowsPath     string         `json:"rowsPath,omitempty"`
-	GraphID      string         `json:"graphId,omitempty"`
-	GraphVersion string         `json:"graphVersion,omitempty"`
-	Status       string         `json:"status"`
-	Summary      SuiteSummary   `json:"summary"`
-	Rows         []GraphTestRow `json:"rows,omitempty"`
-	Coverage     []MatrixProbe  `json:"coverage,omitempty"`
-	Detail       string         `json:"detail,omitempty"`
+	ID           string `json:"id"`
+	Path         string `json:"path"`
+	RowsPath     string `json:"rowsPath,omitempty"`
+	GraphID      string `json:"graphId,omitempty"`
+	GraphVersion string `json:"graphVersion,omitempty"`
+	// GraphSHA256 is the bare-hex digest of the exact bytes this entry's run
+	// loaded (ADR-0030), read off the one load: a consumer holding the served
+	// document from another call binds these rows to that revision by equality
+	// rather than by hope. Absent exactly when the document did not load,
+	// beside the detail that says why.
+	GraphSHA256 string         `json:"graphSha256,omitempty"`
+	Status      string         `json:"status"`
+	Summary     SuiteSummary   `json:"summary"`
+	Rows        []GraphTestRow `json:"rows,omitempty"`
+	Coverage    []MatrixProbe  `json:"coverage,omitempty"`
+	Detail      string         `json:"detail,omitempty"`
 }
 
 // GraphSuite is the project graph-matrix walk: every configured graph's rows,
@@ -314,13 +323,19 @@ type GraphSuite struct {
 // applies — plus the declared rows document's containment when one is
 // declared. Diagnostics carry every finding rather than the first one.
 type GraphValidationEntry struct {
-	ID           string       `json:"id"`
-	Path         string       `json:"path"`
-	RowsPath     string       `json:"rowsPath,omitempty"`
-	GraphID      string       `json:"graphId,omitempty"`
-	GraphVersion string       `json:"graphVersion,omitempty"`
-	Status       string       `json:"status"`
-	Diagnostics  []Diagnostic `json:"diagnostics"`
+	ID           string `json:"id"`
+	Path         string `json:"path"`
+	RowsPath     string `json:"rowsPath,omitempty"`
+	GraphID      string `json:"graphId,omitempty"`
+	GraphVersion string `json:"graphVersion,omitempty"`
+	// GraphSHA256 is the bare-hex digest of the exact bytes this walk loaded
+	// (ADR-0030): the member that lets a consumer holding the document from
+	// another call know these results are about the same revision, read off
+	// the one load rather than a second one. Absent exactly when the document
+	// did not load, beside the diagnostics that say why.
+	GraphSHA256 string       `json:"graphSha256,omitempty"`
+	Status      string       `json:"status"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
 // GraphValidationSuite is the project graph-validation walk, on

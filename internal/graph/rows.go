@@ -261,6 +261,7 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		RowsPath:                  rowsPath,
 		GraphID:                   doc.ID,
 		GraphVersion:              doc.Version,
+		GraphSHA256:               strings.TrimPrefix(doc.Digest, "sha256:"),
 		Rows:                      make([]result.GraphTestRow, 0, len(rows.Cases)),
 	}
 	spent := 0

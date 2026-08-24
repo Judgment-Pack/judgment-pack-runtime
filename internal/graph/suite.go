@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"unicode/utf8"
 
@@ -125,6 +126,7 @@ func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, en
 		return mismatch(detail)
 	}
 	report.GraphID, report.GraphVersion = document.ID, document.Version
+	report.GraphSHA256 = strings.TrimPrefix(document.Digest, "sha256:")
 	rowsBytes, err := loaded.ReadGraphRows(entry, MaxRowsBytes)
 	if err != nil {
 		if errors.Is(err, fssecure.ErrTooLarge) {
@@ -210,6 +212,7 @@ func validateEntry(loaded *project.Project, id string, entry project.Graph) resu
 		return report
 	}
 	report.GraphID, report.GraphVersion = document.ID, document.Version
+	report.GraphSHA256 = strings.TrimPrefix(document.Digest, "sha256:")
 	report.Diagnostics = append(report.Diagnostics, document.Semantic(loaded)...)
 	if len(report.Diagnostics) > 0 {
 		report.Status = "invalid"

@@ -126,3 +126,4 @@ authority, and following it confers no conformance status on anything.
 | [0027](0027-pin-the-evaluation-trace-contract.md)        | Pin the evaluation trace: deterministic, complete, ordered, and still informative | accepted |
 | [0028](0028-declare-an-evaluation-a-rehearsal.md)        | Declare an evaluation a rehearsal, so exploration never writes a decision record | accepted |
 | [0029](0029-serve-graphs-and-their-inventory.md)         | Serve the configured graphs and their inventory over the wire, read-only        | accepted |
+| [0030](0030-bind-graph-runs-to-the-loaded-document.md)   | Bind every graph run to the document it loaded, on the wire                     | proposed |
