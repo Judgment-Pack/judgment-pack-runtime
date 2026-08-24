@@ -10,7 +10,14 @@ All notable changes to tagged releases are documented here.
   and the argument decoders since ADR-0028, now runs on the graph rows document and on every row
   before decoding: a spelling that differs from a known member only in case is refused naming
   the exact one, and a wholly unknown member is refused as such — so a document relying on the
-  fold is newly refused. The evaluator's conformance claim is unaffected and stated, in full and
+  fold is newly refused. The review of this change found the same fold one level deeper, in the
+  one gate every expected disposition passes (`DecodeDisposition`): `"Kind"`, `"OutcomeID"`, or a
+  handoff carrying `"State"` bound and canonicalized as the members they are not — on the pack
+  matrix as much as the graph rows — including beside the canonical spelling, which the fold
+  silently overwrote. The gate now holds the disposition's members and its handoff member's to
+  their exact §8.3 spellings, once, for every reader; and a `cases` element that is not a JSON
+  object is refused as the shape defect it is rather than misdiagnosed as a row without an id.
+  The evaluator's conformance claim is unaffected and stated, in full and
   only, in `CONFORMANCE.md`.
 
 - **The configured graphs are served over the wire, read-only** (ADR-0029, closes #126):

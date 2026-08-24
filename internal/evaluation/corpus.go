@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -708,6 +711,15 @@ func canonicalDisposition(raw json.RawMessage) (string, error) {
 // decoder could accept as a witness the exact expectation the comparator
 // refuses. One gate, however many readers.
 func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
+	// Member names are held to their exact §8.3 spellings before the decoder
+	// runs, because encoding/json case-folds them: "Kind" or a handoff
+	// carrying "State" would bind past DisallowUnknownFields and canonicalize
+	// as the members they are not — the same hole the row carriers close for
+	// their own members, closed here once for every reader of an expected
+	// disposition.
+	if err := exactDispositionMembers(raw); err != nil {
+		return result.Disposition{}, err
+	}
 	var disposition result.Disposition
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -718,6 +730,44 @@ func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
 		return result.Disposition{}, err
 	}
 	return disposition, nil
+}
+
+// exactDispositionMembers refuses a member whose spelling differs from a §8.3
+// member's, at the disposition and inside its handoff member. A value that is
+// not an object is left to the strict decoder, whose wrong-type message is the
+// better diagnosis.
+func exactDispositionMembers(raw json.RawMessage) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil
+	}
+	if err := memberSpellings(object, []string{"kind", "outcomeId", "reasons", "handoff"}, "the disposition"); err != nil {
+		return err
+	}
+	handoffRaw, declared := object["handoff"]
+	if !declared {
+		return nil
+	}
+	var handoff map[string]json.RawMessage
+	if err := json.Unmarshal(handoffRaw, &handoff); err != nil {
+		return nil
+	}
+	return memberSpellings(handoff, []string{"state", "triggeredBy"}, "the disposition's handoff member")
+}
+
+func memberSpellings(object map[string]json.RawMessage, known []string, subject string) error {
+	for _, member := range slices.Sorted(maps.Keys(object)) {
+		if slices.Contains(known, member) {
+			continue
+		}
+		for _, candidate := range known {
+			if strings.EqualFold(candidate, member) {
+				return fmt.Errorf("%s carries a member this runtime does not know: %q. The member is spelled %q, and a spelling that differs from it only in case is refused rather than read as it", subject, member, candidate)
+			}
+		}
+		return fmt.Errorf("%s carries a member this runtime does not know: %q", subject, member)
+	}
+	return nil
 }
 
 func internalCorpusFailure(message string) *Failure {

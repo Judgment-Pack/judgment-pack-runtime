@@ -72,7 +72,15 @@ func exactRowMembers(root map[string]any, name string) *evaluation.Failure {
 	for index, element := range cases {
 		row, ok := element.(map[string]any)
 		if !ok {
-			continue
+			// The decoder would silently skip a null element into a zero row
+			// that then fails as "declares no id" — the wrong diagnosis for a
+			// document whose defect is shape, not content.
+			return &evaluation.Failure{
+				Code: "JPS-GRAPH-ROWS-SHAPE",
+				Message: fmt.Sprintf("In %s, row %d of the graph matrix is not a JSON object.",
+					display.Sanitize(name), index),
+				ExitCode: result.ExitInvalid,
+			}
 		}
 		if failure := exactMemberSet(row, rowMembers, name, fmt.Sprintf("row %d of the graph matrix", index)); failure != nil {
 			return failure

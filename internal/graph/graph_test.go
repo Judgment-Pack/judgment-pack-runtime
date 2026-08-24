@@ -1531,6 +1531,10 @@ func TestLoadRowsHoldsMemberSpelling(t *testing.T) {
 			data: `{"cases":[{"id":"r","inputs":{},"expectedDisposition":{},"wholly":1}]}`,
 			want: `does not know: "wholly"`,
 		},
+		"a non-object row": {
+			data: `{"cases":[null]}`,
+			want: `is not a JSON object`,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, failure := LoadRows([]byte(tc.data), "rows.json")
