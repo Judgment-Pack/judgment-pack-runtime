@@ -1730,8 +1730,10 @@ func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
 	if unknown["isError"] != true || !strings.Contains(toolText(t, unknown), "onboarding") {
 		t.Fatalf("an unknown id lists the configured ids: %#v", unknown)
 	}
-	if null := responses[3]["result"].(map[string]any); null["isError"] != true {
-		t.Fatalf("an explicit null is a bad invocation: %#v", null)
+	null := responses[3]["result"].(map[string]any)
+	if null["isError"] != true ||
+		toolText(t, null) != `The "graph_id" argument must be a JSON string; null and every other type are rejected. Omit the key to leave the argument unsupplied.` {
+		t.Fatalf("an explicit null is the string-type refusal: %#v", null)
 	}
 	alias := responses[4]["result"].(map[string]any)
 	if alias["isError"] != true || !strings.Contains(toolText(t, alias), `unknown member "GRAPH_ID"`) {
@@ -1774,8 +1776,10 @@ func TestExperimentalGraphToolsServeTheUndecodable(t *testing.T) {
 
 	var inventory result.GraphInventory
 	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
-	if len(inventory.Graphs) != 1 || inventory.Graphs[0].GraphID != "" {
-		t.Fatalf("an undecodable graph is listed with identity empty: %+v", inventory.Graphs)
+	broken := inventory.Graphs[0]
+	if len(inventory.Graphs) != 1 || broken.GraphID != "" || broken.GraphVersion != "" ||
+		broken.FormatVersion != "" || broken.ResultNode != "" || broken.NodeCount != nil || broken.EdgeCount != nil {
+		t.Fatalf("an undecodable graph is listed with every identity member empty: %+v", inventory.Graphs)
 	}
 	if detail := inventory.Graphs[0].Detail; !strings.HasPrefix(detail, `The file "onboarding.graph.json" could not be used:`) {
 		t.Fatalf("the detail carries the pack-style path framing: %q", detail)
@@ -1837,9 +1841,15 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 		}
 	}
 	// Decodable, schema-invalid, and from the future: served as declared, with
-	// counts absent because neither member is collection-shaped.
+	// counts absent because neither member has its declared shape.
 	future := `{"formatVersion":"future","id":"time-traveller","version":"9.9.9","nodes":[],"edges":{},"result":7}`
 	if err := os.WriteFile(filepath.Join(root, "future.graph.json"), []byte(future), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Correctly shaped and empty: zero is an honest count and must survive as
+	// one — a regression to scalar members with omitempty would drop it.
+	hollow := `{"formatVersion":"1","id":"hollow","version":"0.0.1","nodes":{},"edges":[],"result":"none"}`
+	if err := os.WriteFile(filepath.Join(root, "hollow.graph.json"), []byte(hollow), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "binary.graph.json"), []byte{0x7b, 0xff, 0xfe, 0x7d}, 0o600); err != nil {
@@ -1851,7 +1861,8 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "binary.pack.json"), []byte{0x7b, 0xff, 0xfe, 0x7d}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	graphEntries := `"future":{"path":"future.graph.json"},` +
+	graphEntries := `"future":{"path":"future.graph.json","description":"a description the inventory echoes"},` +
+		`"hollow":{"path":"hollow.graph.json"},` +
 		`"binary":{"path":"binary.graph.json"},` +
 		`"huge":{"path":"huge.graph.json"}`
 	if symlinks {
@@ -1897,9 +1908,9 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 	if wire["experimental"] != true || wire["status"] != "resolved" {
 		t.Fatalf("inventory wire = %s", raw)
 	}
-	wantRows := 3
+	wantRows := 4
 	if symlinks {
-		wantRows = 4
+		wantRows = 5
 	}
 	rows, ok := wire["graphs"].([]any)
 	if !ok || len(rows) != wantRows {
@@ -1922,6 +1933,13 @@ func TestExperimentalGraphWireShapes(t *testing.T) {
 	}
 	if futureRow["rowsDeclared"] != false {
 		t.Fatalf("rowsDeclared is the boolean wire member: %v", futureRow)
+	}
+	if futureRow["path"] != "future.graph.json" || futureRow["description"] != "a description the inventory echoes" {
+		t.Fatalf("the row echoes the configured path and description: %v", futureRow)
+	}
+	hollowRow := byID["hollow"]
+	if hollowRow["nodeCount"] != float64(0) || hollowRow["edgeCount"] != float64(0) {
+		t.Fatalf("zero is an honest count and survives on the wire: %v", hollowRow)
 	}
 	detailed := []string{"binary", "huge"}
 	if symlinks {
@@ -2000,5 +2018,36 @@ func TestFetchToolsHoldArgumentsAndNotesExactly(t *testing.T) {
 	if alias["isError"] != true ||
 		toolText(t, alias) != `The "get_pack" arguments carry an unknown member "PACK_ID"; the accepted member is "pack_id", spelled exactly.` {
 		t.Fatalf("the case-folded pack alias is held to the exact spelling: %#v", alias)
+	}
+}
+
+// A no-argument tool holds its closed empty schema: an argument it silently
+// ignored would teach a client a member that does nothing.
+func TestExperimentalListGraphsRefusesArguments(t *testing.T) {
+	fixture, err := filepath.Abs(filepath.Join("..", "graph", "testdata", "project", "jpack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, fixture)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_list_graphs", map[string]any{"typo": true}),
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"experimental_list_graphs","arguments":null}}` + "\n",
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"experimental_list_graphs","arguments":[1]}}` + "\n",
+	}, ""))
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("an empty object is the ordinary call: %#v", responses[0])
+	}
+	if typo := responses[1]["result"].(map[string]any); typo["isError"] != true ||
+		toolText(t, typo) != `The "experimental_list_graphs" arguments carry an unknown member "typo"; it accepts no members, spelled exactly.` {
+		t.Fatalf("a member on a no-member schema is refused: %#v", typo)
+	}
+	if null := responses[2]["result"].(map[string]any); null["isError"] != true {
+		t.Fatalf("an explicit null is not an object: %#v", null)
+	}
+	if array := responses[3]["result"].(map[string]any); array["isError"] != true ||
+		!strings.Contains(toolText(t, array), "must be an object") {
+		t.Fatalf("a non-object is refused before any project read: %#v", array)
 	}
 }

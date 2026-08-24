@@ -446,4 +446,27 @@ func TestGraphListInventory(t *testing.T) {
 	if !strings.Contains(human, "nodes: unknown · edges: unknown") {
 		t.Fatalf("an untakeable count renders unknown, never zero: %q", human)
 	}
+
+	// Correctly shaped and empty renders the honest zero, distinct from
+	// unknown above.
+	hollowConfig, _ := graphProject(t, `{"formatVersion":"1","id":"hollow","version":"0.0.1","nodes":{},"edges":[],"result":"none"}`, map[string]string{
+		"onboarding.rows.json": graphFixture(t, "onboarding.rows.json"),
+	})
+	code, human, stderr = runTest(t, []string{"experimental", "graph", "list", "--config", hollowConfig}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(human, "nodes: 0 · edges: 0") {
+		t.Fatalf("zero is an honest count: %q", human)
+	}
+
+	// A bad invocation names this exact command in the JSON envelope: the
+	// invocation-error roster learned the list verb with the verb itself.
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "list", "extra", "--format", "json"}, "")
+	if code == 0 {
+		t.Fatal("an extra operand is a bad invocation")
+	}
+	if !strings.Contains(stdout, `"command":"experimental graph list"`) {
+		t.Fatalf("the envelope names the command exactly: %q", stdout)
+	}
 }

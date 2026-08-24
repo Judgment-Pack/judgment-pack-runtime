@@ -198,10 +198,10 @@ func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorp
 	return nil
 }
 
-// renderPackInventory reports one project's resolved inventory. The two names a
-// row carries are printed as two names: the project's decision id leads the
-// line, and the pack document's own id and version follow it in parentheses, so
-// no reader takes the short id for the pack's identity.
+// renderGraphInventory reports the configured graphs, under the same two-name
+// rule the pack inventory prints by: the configured graph id leads the line
+// and the document's own id and version follow in parentheses. Counts that
+// could not be taken render as unknown, never as zero.
 func (a *App) renderGraphInventory(format string, output result.GraphInventory) error {
 	if format == "json" {
 		return a.writeJSON(output)
@@ -221,7 +221,10 @@ func (a *App) renderGraphInventory(format string, output result.GraphInventory) 
 		case entry.GraphID != "":
 			identity = display.Sanitize(entry.GraphID) + " " + display.Sanitize(entry.GraphVersion)
 		case entry.Detail != "":
-			identity = "document unreadable"
+			// The detail line below says whether the file was unreadable or
+			// merely undecodable; this label claims only what is true either
+			// way.
+			identity = "identity unavailable"
 		}
 		fmt.Fprintf(a.out, "- %s (%s): %s\n", display.Sanitize(entry.ID), identity, display.Sanitize(entry.Path))
 		if entry.Description != "" {
@@ -249,6 +252,10 @@ func countLabel(count *int) string {
 	return strconv.Itoa(*count)
 }
 
+// renderPackInventory reports one project's resolved inventory. The two names a
+// row carries are printed as two names: the project's decision id leads the
+// line, and the pack document's own id and version follow it in parentheses, so
+// no reader takes the short id for the pack's identity.
 func (a *App) renderPackInventory(format string, output result.PackInventory) error {
 	if format == "json" {
 		return a.writeJSON(output)

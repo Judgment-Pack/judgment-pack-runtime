@@ -20,6 +20,21 @@ import (
 // because the byte limit these reads run under is this package's own
 // (MaxGraphBytes), by ADR-0017's deliberate decision.
 
+// inventoryBudget bounds one inventory build: the bytes read off disk — each
+// unique path charged once, because aliased entries share one cached read —
+// plus the identity bytes echoed into rows, charged per row, because echoing
+// is what a marshal multiplies. It exists because the configuration bounds
+// neither how many entries a graphs member carries nor how many of them alias
+// one document, so without it a small configuration could ask this builder for
+// gigabytes of reads and echoes. It is a var only so this package's tests can
+// exercise the refusal without a gigabyte fixture.
+var inventoryBudget = int64(8 * MaxGraphBytes)
+
+// CodeInventoryBudget marks an inventory refused at its byte budget, the
+// inventory sibling of the walk's JPS-GRAPH-REPORT-BUDGET: a truncated
+// inventory would under-report silently, so none is produced.
+const CodeInventoryBudget = "JPS-GRAPH-INVENTORY-BUDGET"
+
 // EmptyInventory is the graph inventory of a project with no configuration at
 // all: an answer with its own explanation, never an error, exactly as the pack
 // inventory's is.
@@ -49,7 +64,7 @@ func EmptyInventory(configPath, command string) result.GraphInventory {
 // saying why and its identity members empty. Listing is not validating: the
 // document is identity-read leniently, exactly as a pack inventory row is, and
 // experimental graph validate is where a broken graph is an error.
-func ProjectInventory(loaded *project.Project, command string) result.GraphInventory {
+func ProjectInventory(loaded *project.Project, command string) (result.GraphInventory, *project.Failure) {
 	inventory := result.GraphInventory{
 		OutputVersion: result.OutputVersion,
 		Tool:          result.CurrentTool(),
@@ -61,6 +76,13 @@ func ProjectInventory(loaded *project.Project, command string) result.GraphInven
 		ConfigVersion: loaded.Config.ConfigVersion,
 		Graphs:        []result.GraphSummary{},
 	}
+	type outcome struct {
+		found graphIdentity
+		size  int64
+		err   error
+	}
+	cache := map[string]outcome{}
+	var spent int64
 	for _, id := range loaded.GraphIDs {
 		entry, _ := loaded.GraphEntry(id)
 		row := result.GraphSummary{
@@ -70,20 +92,39 @@ func ProjectInventory(loaded *project.Project, command string) result.GraphInven
 			RowsDeclared: entry.Rows != "",
 			Description:  entry.Description,
 		}
-		found, _, err := readGraphIdentity(loaded, entry)
-		if err != nil {
-			row.Detail = err.Error()
+		read, cached := cache[entry.Path]
+		if !cached {
+			found, data, err := readGraphIdentity(loaded, entry)
+			read = outcome{found: found, size: int64(len(data)), err: err}
+			cache[entry.Path] = read
+			// One unique path is one read, charged once at its full size.
+			spent += read.size
+		}
+		if read.err != nil {
+			row.Detail = read.err.Error()
 		} else {
-			row.GraphID = found.id
-			row.GraphVersion = found.version
-			row.FormatVersion = found.formatVersion
-			row.ResultNode = found.resultNode
-			row.NodeCount = found.nodeCount
-			row.EdgeCount = found.edgeCount
+			row.GraphID = read.found.id
+			row.GraphVersion = read.found.version
+			row.FormatVersion = read.found.formatVersion
+			row.ResultNode = read.found.resultNode
+			row.NodeCount = read.found.nodeCount
+			row.EdgeCount = read.found.edgeCount
+			// The echo is charged per row: aliased entries repeat these
+			// strings in the payload however few reads they shared.
+			spent += int64(len(read.found.id) + len(read.found.version) + len(read.found.formatVersion) + len(read.found.resultNode))
+		}
+		if spent > inventoryBudget {
+			return result.GraphInventory{}, &project.Failure{
+				Code: CodeInventoryBudget,
+				Message: fmt.Sprintf(
+					"The graph inventory reached %d bytes of reads and echoes after %d of %d configured entries, over this surface's %d-byte budget; a truncated inventory would under-report silently, so none is produced.",
+					spent, len(inventory.Graphs)+1, len(loaded.GraphIDs), inventoryBudget),
+				ExitCode: result.ExitUnsupported,
+			}
 		}
 		inventory.Graphs = append(inventory.Graphs, row)
 	}
-	return inventory
+	return inventory, nil
 }
 
 // ProjectDocument serves one configured graph document by its configured id:

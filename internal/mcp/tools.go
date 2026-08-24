@@ -117,7 +117,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "get_pack",
-			"description": "Return one pack document this project declares in its jpack.json, by its decision id, as JSON text, with the document's own id and version, its declared specVersion, its digest, and its byte size. The document is the project's own file, served unaltered and read-only; this tool stores nothing and returns nothing you did not already have on disk. Call list_packs for the available decision ids. The file is read through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed.",
+			"description": "Return one pack document this project declares in its jpack.json, by its decision id, as text, with the document's own id and version, its declared specVersion, its digest, and its byte size. The document is the project's own file, served unaltered and read-only when its bytes are valid UTF-8 — invalid bytes are refused with the configured path, because a text result carries nothing else losslessly — and this tool stores nothing and returns nothing you did not already have on disk. Call list_packs for the available decision ids. The file is read through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -186,7 +186,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_get_graph",
-			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): return one graph document this project configures in its jpack.json, by its configured graph id, as JSON text, with the document's own id and version, its declared formatVersion and result node, its digest, and its byte size. The document is the project's own file, served unaltered and read-only through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed; this tool stores nothing and returns nothing you did not already have on disk. Serving is not validating: readable, in-limit, valid-UTF-8 bytes that fail decoding are still served, with status undecodable and a detail saying why (experimental graph validate is what reports a verdict); a read failure, a path leaving the configuration's directory, a document over the byte limit, or bytes that are not valid UTF-8 (which no text result can carry exactly) are refused with the reason. Call experimental_list_graphs for the available graph ids. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): return one graph document this project configures in its jpack.json, by its configured graph id, as text, with the document's own id and version, its declared formatVersion and result node, its digest, and its byte size. The document is the project's own file, served unaltered and read-only through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed; this tool stores nothing and returns nothing you did not already have on disk. Serving is not validating: readable, in-limit, valid-UTF-8 bytes that fail decoding are still served, with status undecodable and a detail saying why (experimental graph validate is what reports a verdict); a read failure, a path leaving the configuration's directory, a document over the byte limit, or bytes that are not valid UTF-8 (which no text result can carry exactly) are refused with the reason. Call experimental_list_graphs for the available graph ids. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -231,7 +231,7 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 	case "experimental_test_graphs":
 		return s.toolExperimentalTestGraphs(params.Arguments), nil
 	case "experimental_list_graphs":
-		return s.toolExperimentalListGraphs(), nil
+		return s.toolExperimentalListGraphs(params.Arguments), nil
 	case "experimental_get_graph":
 		return s.toolExperimentalGetGraph(params.Arguments), nil
 	default:
@@ -461,7 +461,18 @@ func servedDocument(meta any, data []byte, path, configPath string) any {
 // rule list_packs follows: an empty inventory carrying its own explanation is
 // an answer, and only a configuration that exists and will not load is an
 // error.
-func (s *Server) toolExperimentalListGraphs() any {
+func (s *Server) toolExperimentalListGraphs(rawArgs json.RawMessage) any {
+	// The schema is a closed empty object, and the hold enforces it: an
+	// argument this tool silently ignored would teach a client a member that
+	// does nothing, and an explicit null is not an object at all.
+	if trimmed := bytes.TrimSpace(rawArgs); len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("{}")) {
+		if bytes.Equal(trimmed, []byte("null")) {
+			return toolError(`The "experimental_list_graphs" arguments must be an object; it accepts no members, so pass {} or omit the arguments entirely.`)
+		}
+		if message := exactMembers("experimental_list_graphs", rawArgs); message != "" {
+			return toolError(message)
+		}
+	}
 	configPath := project.Locate("")
 	if !project.Exists(configPath) {
 		return toolResult(graph.EmptyInventory(configPath, "mcp experimental_list_graphs"))
@@ -471,7 +482,11 @@ func (s *Server) toolExperimentalListGraphs() any {
 		return toolError(failure.Message)
 	}
 	defer loaded.Close()
-	return toolResult(graph.ProjectInventory(loaded, "mcp experimental_list_graphs"))
+	inventory, budgetFailure := graph.ProjectInventory(loaded, "mcp experimental_list_graphs")
+	if budgetFailure != nil {
+		return toolError(budgetFailure.Message)
+	}
+	return toolResult(inventory)
 }
 
 // toolExperimentalGetGraph serves one configured graph document by its
@@ -684,7 +699,10 @@ func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) strin
 		// diagnostic every time.
 		sort.Strings(unknown)
 		accepted := fmt.Sprintf("the accepted members are %s", strings.Join(allowed, " and "))
-		if len(allowed) == 1 {
+		switch len(allowed) {
+		case 0:
+			accepted = "it accepts no members"
+		case 1:
 			accepted = fmt.Sprintf("the accepted member is %q", allowed[0])
 		}
 		return fmt.Sprintf("The %q arguments carry an unknown member %q; %s, spelled exactly.",

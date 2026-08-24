@@ -77,7 +77,11 @@ func (a *App) graphListCommand() *cobra.Command {
 				return a.projectFailure(commandName, format, projectFailure)
 			}
 			defer loaded.Close()
-			if err := a.renderGraphInventory(format, graph.ProjectInventory(loaded, commandName)); err != nil {
+			inventory, budgetFailure := graph.ProjectInventory(loaded, commandName)
+			if budgetFailure != nil {
+				return a.projectFailure(commandName, format, budgetFailure)
+			}
+			if err := a.renderGraphInventory(format, inventory); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}
 			return nil
