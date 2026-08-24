@@ -75,6 +75,7 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// about the evaluator, so they say where the claim is stated; the other
 		// verbs evaluate nothing and are inventoried for the phrase scans.
 		{args: []string{"experimental", "graph", "--help"}, mustReference: true},
+		{args: []string{"experimental", "graph", "list", "--help"}},
 		{args: []string{"experimental", "graph", "validate", "--help"}},
 		{args: []string{"experimental", "graph", "evaluate", "--help"}, mustReference: true},
 		{args: []string{"experimental", "graph", "explain", "--help"}},
@@ -557,6 +558,7 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 	for _, required := range []string{
 		"cli packs --help",
 		"cli packs list --help",
+		"cli experimental graph list --help",
 		"cli packs validate --help",
 		"cli packs test --help",
 		"cli packs schema --help",

@@ -391,3 +391,82 @@ func TestGraphWalkCommands(t *testing.T) {
 		t.Fatalf("validating nothing is an answer, not a failure: exit=%d %q", code, stdout)
 	}
 }
+
+// The graph inventory on the CLI, the twin of experimental_list_graphs: one
+// function builds both payloads, so the two surfaces cannot disagree
+// (ADR-0029). Listing reads each document's identity and does not validate it.
+func TestGraphListInventory(t *testing.T) {
+	configPath, _ := graphProject(t, graphFixture(t, "onboarding.graph.json"), map[string]string{
+		"onboarding.rows.json": graphFixture(t, "onboarding.rows.json"),
+	})
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "list",
+		"--config", configPath, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var inventory result.GraphInventory
+	if err := json.Unmarshal([]byte(stdout), &inventory); err != nil {
+		t.Fatal(err)
+	}
+	if inventory.Status != "resolved" || !inventory.Experimental || inventory.Command != "experimental graph list" {
+		t.Fatalf("inventory = %+v", inventory)
+	}
+	if len(inventory.Graphs) != 1 {
+		t.Fatalf("graphs = %+v", inventory.Graphs)
+	}
+	row := inventory.Graphs[0]
+	if row.ID != "onboarding" || row.GraphID != "vendor-onboarding-flow" || row.GraphVersion != "0.1.0" ||
+		row.ResultNode != "onboarding" || row.NodeCount == nil || *row.NodeCount != 2 ||
+		row.EdgeCount == nil || *row.EdgeCount != 1 || !row.RowsDeclared {
+		t.Fatalf("row = %+v", row)
+	}
+
+	// The human rendering names the experimental surface and the two-name rule.
+	code, human, stderr := runTest(t, []string{"experimental", "graph", "list", "--config", configPath}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(human, "EXPERIMENTAL SURFACE") || !strings.Contains(human, "onboarding (vendor-onboarding-flow 0.1.0)") {
+		t.Fatalf("human = %q", human)
+	}
+	if !strings.Contains(human, "nodes: 2 · edges: 1") {
+		t.Fatalf("present counts render as numbers: %q", human)
+	}
+
+	// A count that cannot be taken renders as unknown, never as zero: the
+	// document below is decodable with nodes and edges in the wrong shapes.
+	futureConfig, _ := graphProject(t, `{"formatVersion":"future","id":"t","version":"1","nodes":[],"edges":{},"result":7}`, map[string]string{
+		"onboarding.rows.json": graphFixture(t, "onboarding.rows.json"),
+	})
+	code, human, stderr = runTest(t, []string{"experimental", "graph", "list", "--config", futureConfig}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(human, "nodes: unknown · edges: unknown") {
+		t.Fatalf("an untakeable count renders unknown, never zero: %q", human)
+	}
+
+	// Correctly shaped and empty renders the honest zero, distinct from
+	// unknown above.
+	hollowConfig, _ := graphProject(t, `{"formatVersion":"1","id":"hollow","version":"0.0.1","nodes":{},"edges":[],"result":"none"}`, map[string]string{
+		"onboarding.rows.json": graphFixture(t, "onboarding.rows.json"),
+	})
+	code, human, stderr = runTest(t, []string{"experimental", "graph", "list", "--config", hollowConfig}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(human, "nodes: 0 · edges: 0") {
+		t.Fatalf("zero is an honest count: %q", human)
+	}
+
+	// A bad invocation names this exact command in the JSON envelope: the
+	// invocation-error roster learned the list verb with the verb itself.
+	code, stdout, _ = runTest(t, []string{"experimental", "graph", "list", "extra", "--format", "json"}, "")
+	if code == 0 {
+		t.Fatal("an extra operand is a bad invocation")
+	}
+	if !strings.Contains(stdout, `"command":"experimental graph list"`) {
+		t.Fatalf("the envelope names the command exactly: %q", stdout)
+	}
+}

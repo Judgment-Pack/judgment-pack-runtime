@@ -558,7 +558,9 @@ Launch the MCP server in the project root, or point `JPACK_CONFIG` at the config
 }
 ```
 
-Three tools then matter:
+Three tools then matter for packs (and where a project configures graphs, the same pair exists
+one surface over: `experimental_list_graphs` for the inventory and `experimental_get_graph` for
+one document, ADR-0029):
 
 - **`list_packs`** — the resolved inventory: decision id, the document's own id and version, the
   description, the evidence-requirement ids, the fact pointers the pack's conditions read
@@ -573,7 +575,9 @@ Three tools then matter:
   rather than proof of a read. With no configuration it answers **empty, with an explanation of where the runtime
   looked** — not an error, because a project that does not use the convention is an ordinary
   project.
-- **`get_pack { pack_id }`** — the full document, read-only, exactly the bytes on disk.
+- **`get_pack { pack_id }`** — the full document as text, read-only: exactly the bytes on disk
+  when they are valid UTF-8, and a refusal naming the configured path when they are not, because
+  a text result carries nothing else losslessly.
 - **`experimental_evaluate { pack_id, facts, evidence }`** — evaluation by id instead of by pasted
   text. `pack` and `pack_id` are mutually exclusive: supplying both is refused rather than given a
   precedence rule nobody asked for. It is the one tool that can write: in a project whose

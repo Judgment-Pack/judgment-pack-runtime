@@ -50,8 +50,11 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
 | `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
+| `experimental_list_graphs` / `experimental_get_graph` | EXPERIMENTAL SURFACE (ADR-0029): this project's configured graphs, by configured id — the graph siblings of `list_packs`/`get_pack`, read-only |
 
-None of these evaluate, decide, or authorize anything, except the three that reach the evaluator:
+None of these evaluate, decide, or authorize anything — `experimental_list_graphs` and
+`experimental_get_graph` carry the experimental marker for their surface's stability, not because
+they evaluate — except the three that reach the evaluator:
 `experimental_evaluate`, which evaluates one case, and `experimental_test_packs` and
 `experimental_test_graphs`, which run declared instance and graph matrices respectively — each
 through the same evaluator and comparison its own CLI counterpart uses, `packs test` and the graph
@@ -78,9 +81,11 @@ pointers an escalation may be waiting on, and checks that every consulted pointe
 it over-approximates by design, so its values are untrusted document content), whether an
 instance matrix exists, and the project's non-normative hints about where each fact and each piece
 of evidence is held.
-`get_pack { pack_id }` returns one document, read-only and unaltered — and a document that was read
-and did not decode is served with a status saying so and a `detail`, rather than as a valid document
-with empty identity members. `experimental_evaluate` accepts `pack_id` in place of `pack`; the two are
+`get_pack { pack_id }` returns one document as text, read-only — served exactly when its bytes are
+valid UTF-8, which is the one thing a text result can carry losslessly (invalid bytes are refused
+with the configured path rather than silently transcoded); a served document that did not decode
+carries a status saying so and a `detail`, rather than posing as a valid document with empty
+identity members. `experimental_evaluate` accepts `pack_id` in place of `pack`; the two are
 mutually exclusive, and supplying both is refused rather than given a precedence rule. That exclusion
 is stated in both property descriptions and enforced by the server, and deliberately not advertised as
 a composed schema keyword: every tool's `inputSchema` here is a flat object, so a client or a bridge

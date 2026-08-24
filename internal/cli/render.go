@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -195,6 +196,60 @@ func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorp
 		display.Sanitize(output.CorpusStatus), display.Sanitize(output.CorpusLabel), display.Sanitize(output.Provenance))
 	fmt.Fprintln(a.out, "A mismatching row decides nothing by itself: a divergence is as likely to be a defect in the row as in this implementation.")
 	return nil
+}
+
+// renderGraphInventory reports the configured graphs, under the same two-name
+// rule the pack inventory prints by: the configured graph id leads the line
+// and the document's own id and version follow in parentheses. Counts that
+// could not be taken render as unknown, never as zero.
+func (a *App) renderGraphInventory(format string, output result.GraphInventory) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintln(a.out, "EXPERIMENTAL SURFACE graph inventory (a convention of this runtime, not of any JPS version)")
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	if len(output.Graphs) == 0 {
+		fmt.Fprintln(a.out, "no graphs configured")
+		return nil
+	}
+	for _, entry := range output.Graphs {
+		// The same three-way identity label the pack inventory draws, for the
+		// same reason: an unreadable file and a document that states no id call
+		// for different fixes.
+		identity := "no id declared"
+		switch {
+		case entry.GraphID != "":
+			identity = display.Sanitize(entry.GraphID) + " " + display.Sanitize(entry.GraphVersion)
+		case entry.Detail != "":
+			// The detail line below says whether the file was unreadable or
+			// merely undecodable; this label claims only what is true either
+			// way.
+			identity = "identity unavailable"
+		}
+		fmt.Fprintf(a.out, "- %s (%s): %s\n", display.Sanitize(entry.ID), identity, display.Sanitize(entry.Path))
+		if entry.Description != "" {
+			fmt.Fprintf(a.out, "  %s\n", display.Sanitize(entry.Description))
+		}
+		rows := "none declared"
+		if entry.RowsDeclared {
+			rows = display.Sanitize(entry.RowsPath)
+		}
+		fmt.Fprintf(a.out, "  nodes: %s · edges: %s · result: %s · rows: %s\n", countLabel(entry.NodeCount), countLabel(entry.EdgeCount), display.Sanitize(entry.ResultNode), rows)
+		if entry.Detail != "" {
+			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(entry.Detail))
+		}
+	}
+	return nil
+}
+
+// countLabel renders a count that may honestly not exist: a member that is
+// absent or not collection-shaped has no count, and "unknown" is the truthful
+// rendering where 0 would be an invention.
+func countLabel(count *int) string {
+	if count == nil {
+		return "unknown"
+	}
+	return strconv.Itoa(*count)
 }
 
 // renderPackInventory reports one project's resolved inventory. The two names a

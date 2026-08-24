@@ -80,6 +80,7 @@ jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMAN
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
 jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
+jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
 jpack experimental graph evaluate <graph-or-> [--inputs <file-or->]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph explain <graph-or->   (the evaluation plan; nothing is evaluated)
@@ -492,7 +493,9 @@ manifest) and fails the build where that defect otherwise hides (ADR-0022).
 
 From a shell, `jpack experimental evaluate --pack-id expense-approval --facts facts.json`
 reaches the same pack by the same name. Over MCP the same inventory is `list_packs`, one document is
-`get_pack`, and `experimental_evaluate` accepts `pack_id` instead of pasted `pack` text. With no configuration,
+`get_pack`, and `experimental_evaluate` accepts `pack_id` instead of pasted `pack` text; the graph
+convention has the same pair, `experimental_list_graphs` and `experimental_get_graph`, beside the
+CLI's `experimental graph list` (ADR-0029). With no configuration,
 `list_packs` answers empty with an explanation of where the runtime looked, rather than failing.
 
 [docs/building-with-packs.md](docs/building-with-packs.md) is the builder's guide: the packs-as-code

@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -183,8 +185,8 @@ func TestProjectToolsServeTheInventoryAndOneDocument(t *testing.T) {
 	if text := toolText(t, results[4]); !strings.Contains(text, "required") {
 		t.Fatalf("an absent pack_id must be a missing-argument error: %q", text)
 	}
-	if text := toolText(t, results[5]); !strings.Contains(text, "unknown keys are rejected") {
-		t.Fatalf("an unknown argument key must be rejected: %q", text)
+	if text := toolText(t, results[5]); !strings.Contains(text, `unknown member "packId"`) {
+		t.Fatalf("an unknown argument key must be rejected, named exactly: %q", text)
 	}
 }
 
@@ -1645,5 +1647,407 @@ func TestExperimentalEvaluateRehearsalSkipsTheLock(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); err == nil {
 		t.Fatal("neither run records: the refusal evaluated nothing and the rehearsal declared nothing")
+	}
+}
+
+// The graph inventory and document tools serve the configured graphs exactly
+// as list_packs and get_pack serve the packs (ADR-0029): the configured id
+// beside the document's own identity, the exact bytes as the text half, and
+// listing that survives what validation would refuse.
+func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
+	fixture, err := filepath.Abs(filepath.Join("..", "graph", "testdata", "project", "jpack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, fixture)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "onboarding"}),
+		toolCall(t, 3, "experimental_get_graph", map[string]any{"graph_id": "missing"}),
+		toolCall(t, 4, "experimental_get_graph", map[string]any{"graph_id": nil}),
+		toolCall(t, 5, "experimental_get_graph", map[string]any{"GRAPH_ID": "onboarding"}),
+		toolCall(t, 6, "experimental_get_graph", map[string]any{}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	if inventory.Status != "resolved" || !inventory.Experimental || len(inventory.Graphs) != 1 {
+		t.Fatalf("inventory = %+v", inventory)
+	}
+	row := inventory.Graphs[0]
+	if row.ID != "onboarding" || row.GraphID != "vendor-onboarding-flow" || row.GraphVersion != "0.1.0" ||
+		row.FormatVersion != "1" || row.ResultNode != "onboarding" ||
+		row.NodeCount == nil || *row.NodeCount != 2 || row.EdgeCount == nil || *row.EdgeCount != 1 ||
+		!row.RowsDeclared || row.RowsPath != "onboarding.rows.json" || row.Detail != "" {
+		t.Fatalf("row = %+v", row)
+	}
+	// The wire keys themselves: present counts by their new names, and never
+	// the array-typed names the walk payloads own.
+	rawRow, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wireRow map[string]any
+	if err := json.Unmarshal(rawRow, &wireRow); err != nil {
+		t.Fatal(err)
+	}
+	if wireRow["nodeCount"] != float64(2) || wireRow["edgeCount"] != float64(1) || wireRow["rowsDeclared"] != true {
+		t.Fatalf("wire row = %s", rawRow)
+	}
+	for _, legacy := range []string{"nodes", "edges", "rows"} {
+		if _, present := wireRow[legacy]; present {
+			t.Fatalf("the walk payloads own %q; the inventory must not reuse it: %s", legacy, rawRow)
+		}
+	}
+
+	served := responses[1]["result"].(map[string]any)
+	if served["isError"] != false {
+		t.Fatalf("the configured graph must be served: %#v", served)
+	}
+	var meta result.GraphDocument
+	decodeStructured(t, served, &meta)
+	if meta.Status != "valid" || meta.ID != "onboarding" || meta.GraphID != "vendor-onboarding-flow" ||
+		meta.GraphVersion != "0.1.0" || meta.FormatVersion != "1" || meta.ResultNode != "onboarding" {
+		t.Fatalf("meta = %+v", meta)
+	}
+	disk, err := os.ReadFile(filepath.Join(filepath.Dir(fixture), "onboarding.graph.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := toolText(t, served); text != string(disk) {
+		t.Fatalf("the served bytes are the file's exact bytes: %d vs %d", len(text), len(disk))
+	}
+	if meta.Bytes != len(disk) {
+		t.Fatalf("bytes = %d, want %d", meta.Bytes, len(disk))
+	}
+	sum := sha256.Sum256(disk)
+	if meta.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("sha256 = %q", meta.SHA256)
+	}
+
+	unknown := responses[2]["result"].(map[string]any)
+	if unknown["isError"] != true || !strings.Contains(toolText(t, unknown), "onboarding") {
+		t.Fatalf("an unknown id lists the configured ids: %#v", unknown)
+	}
+	null := responses[3]["result"].(map[string]any)
+	if null["isError"] != true ||
+		toolText(t, null) != `The "graph_id" argument must be a JSON string; null and every other type are rejected. Omit the key to leave the argument unsupplied.` {
+		t.Fatalf("an explicit null is the string-type refusal: %#v", null)
+	}
+	alias := responses[4]["result"].(map[string]any)
+	if alias["isError"] != true || !strings.Contains(toolText(t, alias), `unknown member "GRAPH_ID"`) {
+		t.Fatalf("a case-folded alias is held to the exact spelling: %#v", alias)
+	}
+	if absent := responses[5]["result"].(map[string]any); absent["isError"] != true ||
+		!strings.Contains(toolText(t, absent), `"graph_id" argument is required`) {
+		t.Fatalf("an absent id is required: %#v", absent)
+	}
+}
+
+// Listing is not validating, and serving is not validating either: a graph
+// document that does not decode is listed with the reason and served with
+// status undecodable — the mid-edit moment is the moment the tools must not
+// go silent.
+func TestExperimentalGraphToolsServeTheUndecodable(t *testing.T) {
+	// The real fixture project, with only the graph document replaced by bytes
+	// that do not decode: everything else must keep working around it.
+	source := filepath.Join("..", "graph", "testdata", "project")
+	root := t.TempDir()
+	for _, name := range []string{"jpack.json", "onboarding.rows.json", "sanctions-screening-0.1.0.pack.json", "vendor-onboarding-0.1.0.pack.json"} {
+		data, err := os.ReadFile(filepath.Join(source, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "onboarding.graph.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, "jpack.json")
+	t.Setenv(project.ConfigEnv, configPath)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "onboarding"}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	broken := inventory.Graphs[0]
+	if len(inventory.Graphs) != 1 || broken.GraphID != "" || broken.GraphVersion != "" ||
+		broken.FormatVersion != "" || broken.ResultNode != "" || broken.NodeCount != nil || broken.EdgeCount != nil {
+		t.Fatalf("an undecodable graph is listed with every identity member empty: %+v", inventory.Graphs)
+	}
+	if detail := inventory.Graphs[0].Detail; !strings.HasPrefix(detail, `The file "onboarding.graph.json" could not be used:`) {
+		t.Fatalf("the detail carries the pack-style path framing: %q", detail)
+	}
+
+	served := responses[1]["result"].(map[string]any)
+	if served["isError"] != false {
+		t.Fatalf("the undecodable graph is still served: %#v", served)
+	}
+	var meta result.GraphDocument
+	decodeStructured(t, served, &meta)
+	if meta.Status != "undecodable" || meta.Detail == "" || meta.GraphID != "" {
+		t.Fatalf("meta = %+v", meta)
+	}
+	if toolText(t, served) != "{not json" {
+		t.Fatalf("the served bytes are the file's exact bytes: %q", toolText(t, served))
+	}
+}
+
+// With no configuration at all, the inventory answers empty with its own
+// explanation and the fetch is an error that says where the runtime looked —
+// the exact asymmetry list_packs and get_pack draw, for the same reasons.
+func TestExperimentalGraphToolsWithoutConfiguration(t *testing.T) {
+	t.Setenv(project.ConfigEnv, filepath.Join(t.TempDir(), "jpack.json"))
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "onboarding"}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	if responses[0]["result"].(map[string]any)["isError"] != false || inventory.Status != "none" || inventory.Note == "" {
+		t.Fatalf("no configuration is an empty answer with an explanation: %#v", responses[0])
+	}
+	fetch := responses[1]["result"].(map[string]any)
+	if fetch["isError"] != true || !strings.Contains(toolText(t, fetch), "No project configuration was found") {
+		t.Fatalf("a fetch by id cannot succeed emptily: %#v", fetch)
+	}
+}
+
+// The wire shapes of the graph payloads, asserted on the raw JSON rather than
+// through the production structs, so a renamed tag cannot survive by being
+// renamed in both places at once — plus the shapes only a hostile fixture
+// reaches: a future formatVersion served as declared, counts that go absent
+// rather than zero, bytes no text frame can carry, a document past the byte
+// limit, and a configured path that tries to leave the root.
+func TestExperimentalGraphWireShapes(t *testing.T) {
+	symlinks := runtime.GOOS != "windows"
+	source := filepath.Join("..", "graph", "testdata", "project")
+	root := t.TempDir()
+	for _, name := range []string{"onboarding.rows.json", "sanctions-screening-0.1.0.pack.json", "vendor-onboarding-0.1.0.pack.json"} {
+		data, err := os.ReadFile(filepath.Join(source, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Decodable, schema-invalid, and from the future: served as declared, with
+	// counts absent because neither member has its declared shape.
+	future := `{"formatVersion":"future","id":"time-traveller","version":"9.9.9","nodes":[],"edges":{},"result":7}`
+	if err := os.WriteFile(filepath.Join(root, "future.graph.json"), []byte(future), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Correctly shaped and empty: zero is an honest count and must survive as
+	// one — a regression to scalar members with omitempty would drop it.
+	hollow := `{"formatVersion":"1","id":"hollow","version":"0.0.1","nodes":{},"edges":[],"result":"none"}`
+	if err := os.WriteFile(filepath.Join(root, "hollow.graph.json"), []byte(hollow), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "binary.graph.json"), []byte{0x7b, 0xff, 0xfe, 0x7d}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "huge.graph.json"), append(bytes.Repeat([]byte(" "), 1<<20), '{', '}'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "binary.pack.json"), []byte{0x7b, 0xff, 0xfe, 0x7d}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graphEntries := `"future":{"path":"future.graph.json","description":"a description the inventory echoes"},` +
+		`"hollow":{"path":"hollow.graph.json"},` +
+		`"binary":{"path":"binary.graph.json"},` +
+		`"huge":{"path":"huge.graph.json"}`
+	if symlinks {
+		outside := t.TempDir()
+		if err := os.WriteFile(filepath.Join(outside, "secret.graph.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(outside, "secret.graph.json"), filepath.Join(root, "escape.graph.json")); err != nil {
+			t.Fatal(err)
+		}
+		graphEntries += `,"escape":{"path":"escape.graph.json"}`
+	}
+	config := `{"configVersion":"2","packs":{` +
+		`"screening":{"path":"sanctions-screening-0.1.0.pack.json"},` +
+		`"binpack":{"path":"binary.pack.json"}},"graphs":{` + graphEntries + `}}`
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+
+	calls := []string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "future"}),
+		toolCall(t, 3, "experimental_get_graph", map[string]any{"graph_id": "binary"}),
+		toolCall(t, 4, "experimental_get_graph", map[string]any{"graph_id": "huge"}),
+		toolCall(t, 5, "get_pack", map[string]any{"pack_id": "binpack"}),
+	}
+	if symlinks {
+		calls = append(calls, toolCall(t, 6, "experimental_get_graph", map[string]any{"graph_id": "escape"}))
+	}
+	responses := runServer(t, strings.Join(calls, ""))
+
+	// Raw wire keys, not struct round-trips.
+	raw, err := json.Marshal(responses[0]["result"].(map[string]any)["structuredContent"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire["experimental"] != true || wire["status"] != "resolved" {
+		t.Fatalf("inventory wire = %s", raw)
+	}
+	wantRows := 4
+	if symlinks {
+		wantRows = 5
+	}
+	rows, ok := wire["graphs"].([]any)
+	if !ok || len(rows) != wantRows {
+		t.Fatalf(`"graphs" is a JSON array of the configured rows: %s`, raw)
+	}
+	byID := map[string]map[string]any{}
+	for _, item := range rows {
+		row := item.(map[string]any)
+		byID[row["id"].(string)] = row
+	}
+	futureRow := byID["future"]
+	if futureRow["formatVersion"] != "future" || futureRow["graphId"] != "time-traveller" {
+		t.Fatalf("a declared future format is served as declared: %v", futureRow)
+	}
+	if _, present := futureRow["nodeCount"]; present {
+		t.Fatalf("a non-collection nodes member has no count, not zero: %v", futureRow)
+	}
+	if _, present := futureRow["edgeCount"]; present {
+		t.Fatalf("a non-collection edges member has no count, not zero: %v", futureRow)
+	}
+	if futureRow["rowsDeclared"] != false {
+		t.Fatalf("rowsDeclared is the boolean wire member: %v", futureRow)
+	}
+	if futureRow["path"] != "future.graph.json" || futureRow["description"] != "a description the inventory echoes" {
+		t.Fatalf("the row echoes the configured path and description: %v", futureRow)
+	}
+	hollowRow := byID["hollow"]
+	if hollowRow["nodeCount"] != float64(0) || hollowRow["edgeCount"] != float64(0) {
+		t.Fatalf("zero is an honest count and survives on the wire: %v", hollowRow)
+	}
+	detailed := []string{"binary", "huge"}
+	if symlinks {
+		detailed = append(detailed, "escape")
+	}
+	for _, id := range detailed {
+		row := byID[id]
+		if detail, _ := row["detail"].(string); detail == "" {
+			t.Fatalf("%s is listed with the reason: %v", id, row)
+		}
+	}
+	if !strings.Contains(byID["huge"]["detail"].(string), "byte limit") {
+		t.Fatalf("the oversized detail names the limit: %v", byID["huge"])
+	}
+
+	served := responses[1]["result"].(map[string]any)
+	rawMeta, err := json.Marshal(served["structuredContent"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(rawMeta, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["experimental"] != true || meta["status"] != "valid" || meta["formatVersion"] != "future" ||
+		meta["sha256"] == "" || meta["graphId"] != "time-traveller" {
+		t.Fatalf("document wire = %s", rawMeta)
+	}
+	if toolText(t, served) != future {
+		t.Fatalf("served bytes = %q", toolText(t, served))
+	}
+
+	// A text frame carries UTF-8 and nothing else: invalid bytes are refused
+	// on BOTH fetch tools, naming the quoted configured path, never transcoded
+	// into agreement-breaking replacements.
+	binary := responses[2]["result"].(map[string]any)
+	if binary["isError"] != true || !strings.Contains(toolText(t, binary), "not valid UTF-8") ||
+		!strings.Contains(toolText(t, binary), `"binary.graph.json"`) {
+		t.Fatalf("invalid UTF-8 is refused with the quoted path: %#v", binary)
+	}
+	if oversized := responses[3]["result"].(map[string]any); oversized["isError"] != true {
+		t.Fatalf("an oversized document is a refusal: %#v", oversized)
+	}
+	binpack := responses[4]["result"].(map[string]any)
+	if binpack["isError"] != true || !strings.Contains(toolText(t, binpack), "not valid UTF-8") ||
+		!strings.Contains(toolText(t, binpack), `"binary.pack.json"`) {
+		t.Fatalf("get_pack refuses invalid UTF-8 with the quoted path: %#v", binpack)
+	}
+	if symlinks {
+		if escape := responses[5]["result"].(map[string]any); escape["isError"] != true {
+			t.Fatalf("a path leaving the root is refused: %#v", escape)
+		}
+	}
+}
+
+// The two missing-configuration notes are one string, asserted exactly on both
+// tools, so they cannot drift apart — and get_pack now refuses the case-folded
+// alias exactly as the graph fetch does, closing the live PACK_ID bypass.
+func TestFetchToolsHoldArgumentsAndNotesExactly(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "jpack.json")
+	t.Setenv(project.ConfigEnv, missing)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "x"}),
+		toolCall(t, 3, "get_pack", map[string]any{"PACK_ID": "intake"}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	if inventory.Note == "" || toolText(t, responses[1]["result"].(map[string]any)) != inventory.Note {
+		t.Fatalf("the fetch error carries the listing's own note, byte for byte:\nnote  %q\nerror %q",
+			inventory.Note, toolText(t, responses[1]["result"].(map[string]any)))
+	}
+	alias := responses[2]["result"].(map[string]any)
+	if alias["isError"] != true ||
+		toolText(t, alias) != `The "get_pack" arguments carry an unknown member "PACK_ID"; the accepted member is "pack_id", spelled exactly.` {
+		t.Fatalf("the case-folded pack alias is held to the exact spelling: %#v", alias)
+	}
+}
+
+// A no-argument tool holds its closed empty schema: an argument it silently
+// ignored would teach a client a member that does nothing.
+func TestExperimentalListGraphsRefusesArguments(t *testing.T) {
+	fixture, err := filepath.Abs(filepath.Join("..", "graph", "testdata", "project", "jpack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, fixture)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_list_graphs", map[string]any{"typo": true}),
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"experimental_list_graphs","arguments":null}}` + "\n",
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"experimental_list_graphs","arguments":[1]}}` + "\n",
+	}, ""))
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("an empty object is the ordinary call: %#v", responses[0])
+	}
+	if typo := responses[1]["result"].(map[string]any); typo["isError"] != true ||
+		toolText(t, typo) != `The "experimental_list_graphs" arguments carry an unknown member "typo"; it accepts no members, spelled exactly.` {
+		t.Fatalf("a member on a no-member schema is refused: %#v", typo)
+	}
+	if null := responses[2]["result"].(map[string]any); null["isError"] != true {
+		t.Fatalf("an explicit null is not an object: %#v", null)
+	}
+	if array := responses[3]["result"].(map[string]any); array["isError"] != true ||
+		!strings.Contains(toolText(t, array), "must be an object") {
+		t.Fatalf("a non-object is refused before any project read: %#v", array)
 	}
 }

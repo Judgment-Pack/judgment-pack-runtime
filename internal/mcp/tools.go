@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
@@ -30,7 +31,10 @@ import (
 // is the only tool here that can write, and
 // experimental_test_packs and experimental_test_graphs, which run declared
 // instance and graph matrices and write nothing — a matrix row is a rehearsal,
-// not a decision (ADR-0021, ADR-0026). Every
+// not a decision (ADR-0021, ADR-0026). experimental_list_graphs and
+// experimental_get_graph carry the experimental marker for their surface's
+// stability, not for evaluation: they serve the graph convention's inventory
+// and documents read-only (ADR-0029) and reach no evaluator. Every
 // other tool evaluates nothing and writes nothing. No description here states
 // a conformance claim: the claim is stated, in full and only, in
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
@@ -113,7 +117,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "get_pack",
-			"description": "Return one pack document this project declares in its jpack.json, by its decision id, as JSON text, with the document's own id and version, its declared specVersion, its digest, and its byte size. The document is the project's own file, served unaltered and read-only; this tool stores nothing and returns nothing you did not already have on disk. Call list_packs for the available decision ids. The file is read through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed.",
+			"description": "Return one pack document this project declares in its jpack.json, by its decision id, as text, with the document's own id and version, its declared specVersion, its digest, and its byte size. The document is the project's own file, served unaltered and read-only when its bytes are valid UTF-8 — invalid bytes are refused with the configured path, because a text result carries nothing else losslessly — and this tool stores nothing and returns nothing you did not already have on disk. Call list_packs for the available decision ids. The file is read through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -171,6 +175,27 @@ func toolDefinitions() []map[string]any {
 				},
 			},
 		},
+		{
+			"name":        "experimental_list_graphs",
+			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): list the graphs this project configures in its jpack.json, resolved: the configured graph id, the graph document's own id and version, its declared formatVersion and result node, nodeCount and edgeCount (present exactly when identity decoding succeeded and nodes is a JSON object / edges a JSON array; absent, never zero, otherwise), the paths, rowsDeclared, and the configuration's description. The graph convention is this runtime's own (no JPS version defines a graph) and the shape is ADR-0017's. Reading it is how you learn what a project composes without fetching a document; call experimental_get_graph for one. It lists and does not validate: a document that cannot be read or decoded is a row whose detail says why, with its identity members empty rather than guessed, and experimental graph validate is where a broken graph is an error. The configuration is the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in, and an absent configuration is an empty answer with an explanation rather than an error. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties":           map[string]any{},
+			},
+		},
+		{
+			"name":        "experimental_get_graph",
+			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): return one graph document this project configures in its jpack.json, by its configured graph id, as text, with the document's own id and version, its declared formatVersion and result node, its digest, and its byte size. The document is the project's own file, served unaltered and read-only through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed; this tool stores nothing and returns nothing you did not already have on disk. Serving is not validating: readable, in-limit, valid-UTF-8 bytes that fail decoding are still served, with status undecodable and a detail saying why (experimental graph validate is what reports a verdict); a read failure, a path leaving the configuration's directory, a document over the byte limit, or bytes that are not valid UTF-8 (which no text result can carry exactly) are refused with the reason. Call experimental_list_graphs for the available graph ids. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"graph_id"},
+				"properties": map[string]any{
+					"graph_id": map[string]any{"type": "string", "description": "The configured graph id, as reported by experimental_list_graphs (for example, onboarding)."},
+				},
+			},
+		},
 	}
 }
 
@@ -205,6 +230,10 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolExperimentalTestPacks(params.Arguments), nil
 	case "experimental_test_graphs":
 		return s.toolExperimentalTestGraphs(params.Arguments), nil
+	case "experimental_list_graphs":
+		return s.toolExperimentalListGraphs(params.Arguments), nil
+	case "experimental_get_graph":
+		return s.toolExperimentalGetGraph(params.Arguments), nil
 	default:
 		return nil, &rpcError{Code: codeInvalidParams, Message: "Unknown tool: " + params.Name}
 	}
@@ -374,6 +403,12 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 		PackID json.RawMessage `json:"pack_id"`
 	}
 	if len(rawArgs) > 0 {
+		// The exactMembers hold, for the reason its own comment states:
+		// encoding/json case-folds member names, so "PACK_ID" would bind past
+		// DisallowUnknownFields — a live alias this hold closes.
+		if message := exactMembers("get_pack", rawArgs, "pack_id"); message != "" {
+			return toolError(message)
+		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
@@ -400,11 +435,100 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 	if failure != nil {
 		return toolError(failure.Message)
 	}
+	return servedDocument(meta, data, meta.Path, meta.ConfigPath)
+}
+
+// servedDocument is the fetch-tool result for one project document: the exact
+// bytes as the text half beside their metadata. A text frame carries UTF-8 and
+// nothing else — Go's JSON encoder silently replaces invalid bytes with
+// U+FFFD, which would make the text disagree with the bytes and sha256 the
+// metadata states — so bytes that are not valid UTF-8 are refused with the
+// path to read directly, rather than served corrupted (ADR-0029). The same
+// rule holds for get_pack, where the silent transcoding was a live defect.
+func servedDocument(meta any, data []byte, path, configPath string) any {
+	if !utf8.Valid(data) {
+		return toolError(fmt.Sprintf("The document %q (a path relative to the configuration at %q) is not valid UTF-8, so a text result cannot carry its exact bytes; read the file itself instead.", display.Sanitize(path), display.Sanitize(configPath)))
+	}
 	return map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": string(data)}},
 		"structuredContent": meta,
 		"isError":           false,
 	}
+}
+
+// toolExperimentalListGraphs reports the resolved graph inventory of the
+// project this server was launched in, under exactly the missing-configuration
+// rule list_packs follows: an empty inventory carrying its own explanation is
+// an answer, and only a configuration that exists and will not load is an
+// error.
+func (s *Server) toolExperimentalListGraphs(rawArgs json.RawMessage) any {
+	// The schema is a closed empty object, and the hold enforces it: an
+	// argument this tool silently ignored would teach a client a member that
+	// does nothing, and an explicit null is not an object at all.
+	if trimmed := bytes.TrimSpace(rawArgs); len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("{}")) {
+		if bytes.Equal(trimmed, []byte("null")) {
+			return toolError(`The "experimental_list_graphs" arguments must be an object; it accepts no members, so pass {} or omit the arguments entirely.`)
+		}
+		if message := exactMembers("experimental_list_graphs", rawArgs); message != "" {
+			return toolError(message)
+		}
+	}
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return toolResult(graph.EmptyInventory(configPath, "mcp experimental_list_graphs"))
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	defer loaded.Close()
+	inventory, budgetFailure := graph.ProjectInventory(loaded, "mcp experimental_list_graphs")
+	if budgetFailure != nil {
+		return toolError(budgetFailure.Message)
+	}
+	return toolResult(inventory)
+}
+
+// toolExperimentalGetGraph serves one configured graph document by its
+// configured id, under exactly get_pack's discipline: the exact bytes as the
+// text half, the metadata as the structured half, a missing configuration as
+// an error that says where the runtime looked (a fetch by id cannot succeed
+// emptily), and serving without validating.
+func (s *Server) toolExperimentalGetGraph(rawArgs json.RawMessage) any {
+	var args struct {
+		GraphID json.RawMessage `json:"graph_id"`
+	}
+	if len(rawArgs) > 0 {
+		if message := exactMembers("experimental_get_graph", rawArgs, "graph_id"); message != "" {
+			return toolError(message)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil {
+			return toolError(`The "experimental_get_graph" arguments must be an object with a string "graph_id"; unknown keys are rejected.`)
+		}
+	}
+	graphID, present, argumentError := textArgument("graph_id", args.GraphID)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	if !present || graphID == "" {
+		return toolError(`The "graph_id" argument is required: pass a configured graph id, and call experimental_list_graphs for the available ids.`)
+	}
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return toolError(graph.EmptyInventory(configPath, "mcp experimental_get_graph").Note)
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	defer loaded.Close()
+	meta, data, failure := graph.ProjectDocument(loaded, graphID, "mcp experimental_get_graph")
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	return servedDocument(meta, data, meta.Path, meta.ConfigPath)
 }
 
 // evaluateCommand names this surface in every payload it produces, exactly as
@@ -574,8 +698,15 @@ func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) strin
 		// than of map iteration order: the same bad call gets the same
 		// diagnostic every time.
 		sort.Strings(unknown)
-		return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
-			tool, unknown[0], strings.Join(allowed, " and "))
+		accepted := fmt.Sprintf("the accepted members are %s", strings.Join(allowed, " and "))
+		switch len(allowed) {
+		case 0:
+			accepted = "it accepts no members"
+		case 1:
+			accepted = fmt.Sprintf("the accepted member is %q", allowed[0])
+		}
+		return fmt.Sprintf("The %q arguments carry an unknown member %q; %s, spelled exactly.",
+			tool, unknown[0], accepted)
 	}
 	return ""
 }

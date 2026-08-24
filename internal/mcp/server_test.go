@@ -104,7 +104,7 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 		tool := entry.(map[string]any)
 		advertised[tool["name"].(string)] = tool
 	}
-	for _, want := range []string{"validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example", "list_packs", "get_pack", "experimental_evaluate", "experimental_test_packs", "experimental_test_graphs"} {
+	for _, want := range []string{"validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example", "list_packs", "get_pack", "experimental_evaluate", "experimental_test_packs", "experimental_test_graphs", "experimental_list_graphs", "experimental_get_graph"} {
 		if _, ok := advertised[want]; !ok {
 			t.Fatalf("tools/list must advertise %q; got %v", want, advertised)
 		}
@@ -124,8 +124,8 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	if required, ok := evaluateSchema["required"].([]any); !ok || len(required) != 1 || required[0] != "facts" {
 		t.Fatalf(`"facts" is the one required member — optional means absent from required: %v`, evaluateSchema["required"])
 	}
-	if len(advertised) != 11 {
-		t.Fatalf("expected 11 distinct tools, got %d", len(advertised))
+	if len(advertised) != 13 {
+		t.Fatalf("expected 13 distinct tools, got %d", len(advertised))
 	}
 	required := advertised["get_example"]["inputSchema"].(map[string]any)["required"].([]any)
 	if len(required) != 1 || required[0] != "name" {
