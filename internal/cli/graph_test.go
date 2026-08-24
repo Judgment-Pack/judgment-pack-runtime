@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -84,6 +86,13 @@ func TestGraphValidateCommand(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("the cycle must be a diagnostic: %+v", validation.Diagnostics)
+	}
+	// The envelope binds the exact bytes this validation decoded (ADR-0030):
+	// bare hex on the wire, and present even when the document is invalid —
+	// it loaded, and these findings are about that revision.
+	sum := sha256.Sum256([]byte(looped))
+	if !strings.Contains(stdout, `"graphSha256":"`+hex.EncodeToString(sum[:])+`"`) {
+		t.Fatalf("the validation envelope binds the loaded bytes: %q", stdout)
 	}
 }
 
