@@ -213,12 +213,15 @@ const GraphMatrixLabel = "graph matrix results: rows a project wrote about its o
 // walk-ordered internally — two different orders, deliberately.
 //
 // ExpectedHandoffTarget and ActualHandoffTarget appear together, exactly when
-// the row asserted this node's configured target (ADR-0032): each is a
-// rendering under the pack matrix's budget or the literal null, and the
-// comparison that decides reads the decoded values, never these renderings.
-// The pack triple's third state, "unavailable", is unreachable here — a
-// target rides only beside a disposition expectation, and a comparison exists
-// only for a node this run evaluated — so these members never carry it.
+// the row's well-formed assertion named a node this run evaluated (ADR-0032):
+// each is a rendering under the pack matrix's budget or the literal null, and
+// the comparison that decides reads the decoded values, never these
+// renderings. A row-defect mismatch — an undecodable expectation, a node the
+// graph does not declare — reports the defect in the row's detail and no
+// pair. The pack triple's third state, "unavailable", is unreachable here —
+// a target rides only beside a disposition expectation, and a comparison
+// exists only for a node this run evaluated — so these members never carry
+// it.
 type GraphTestNode struct {
 	Node                  string        `json:"node"`
 	Status                string        `json:"status"`
@@ -234,12 +237,14 @@ type GraphTestNode struct {
 // refusal instead, and the per-node comparisons the row asked for.
 //
 // ExpectedHandoffTarget and ActualHandoffTarget appear together, exactly when
-// the row asserted the composite's configured target (ADR-0032) — the result
-// node's own, the value a target-only pack edit reaches while every
-// disposition byte stays identical. The actual side is the rendering or the
-// literal null, or "unavailable" exactly where the pack matrix reports it: an
-// evaluation refused where the row expected a composite, told from the rest
-// by ActualErrorClass being set.
+// the row's well-formed assertion rode a run this walk performed (ADR-0032)
+// — the composite's reported target is the result node's own, the value a
+// target-only pack edit reaches while every disposition byte stays
+// identical; a row-defect mismatch reports the defect in the detail and no
+// pair. The actual side is the rendering or the literal null, or
+// "unavailable" exactly where a run was refused under an expected composite:
+// a §8.4-classed refusal sets ActualErrorClass beside it, and a graph-layer
+// refusal that carries no class is told by the detail naming the refusal.
 type GraphTestRow struct {
 	ID                    string          `json:"id"`
 	Status                string          `json:"status"`

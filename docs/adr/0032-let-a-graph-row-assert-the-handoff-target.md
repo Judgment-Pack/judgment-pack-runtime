@@ -73,17 +73,32 @@ Settled constraints:
    as `expectedHandoffTarget`/`actualHandoffTarget` pairs — on the row for the composite, on the
    named node's comparison for the map — rendered under the pack matrix's budget by the one
    writer, set before the comparisons run so a row that mismatches earlier still says which
-   destination each side named. The single reachable "unavailable": a run refused where the row
-   expected a composite, told from every other cause by the actual error class being set.
+   destination each side named — exactly when a well-formed assertion rode a run this walk
+   performed: a row-defect mismatch (an undecodable expectation, a node the graph does not
+   declare) reports the defect in the detail and no pair. The single reachable "unavailable": a
+   run refused where the row expected a composite — a §8.4-classed refusal sets the actual error
+   class beside it, and a graph-layer refusal that carries no class is told by the detail naming
+   the refusal.
 4. **Cost is the existing accounting.** Renderings ride inside each row's marshaled report, so
    the report budget charges them; the pack side's dedicated 4 MiB target-report counter is
    deliberately not ported, because it exists there to meter a report nothing else meters, and
    duplicating it here would be second bookkeeping over the same bytes. The render-once pass and
    the digest-binding guard are likewise not ported: with both renderings minted at the
    comparison from reported values, there is no cross-boundary handle for either to protect.
-5. **Unasserted rows are untouched.** A row asserting no target carries neither member, byte for
-   byte the previous payload; version-1 documents load exactly as before. Coverage is untouched:
-   a target expectation witnesses no probe, because the probe grammar is dispositions
+   Per-assertion rendering is bounded by work this surface already does: unlike the pack walk,
+   which loads each pack once per run and so had to render once to stay that way, the graph walk
+   reads and re-admits every node's pack per row by design, so one canonicalization of one
+   member of those same bytes per asserted row is a constant factor on the run's existing cost,
+   never a new class of it.
+5. **Unasserted rows are untouched; the version gate is stricter, declared.** A row asserting no
+   target carries neither member, and a document that omits `graphMatrixVersion` or declares a
+   supported version loads to the byte what it did. Three refusals moved, declared in the
+   changelog rather than smuggled: a wrong-typed `graphMatrixVersion` keeps its shape
+   classification but is caught at the gate with a better sentence; a null or empty
+   `graphMatrixVersion`, which the old decoder silently read as the default, is refused —
+   neither is silence, and reading them as silence is the looseness this loader has been
+   shedding; and the unsupported-version message now names every accepted version. Coverage is
+   untouched: a target expectation witnesses no probe, because the probe grammar is dispositions
    (ADR-0016/ADR-0023).
 
 ### Consequences

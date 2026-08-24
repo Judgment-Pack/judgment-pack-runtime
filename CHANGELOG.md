@@ -13,11 +13,16 @@ All notable changes to tagged releases are documented here.
   `actualHandoffTarget` pairs on the row and on the node comparison, null as an assertion, and
   "unavailable" exactly where a run was refused under an expected composite. The version
   machinery is the pack matrix's, built for this surface: silence reads as version 1, and a
-  version-2 member under version 1 is refused with the version it would take. Unasserted rows
-  and version-1 documents are byte for byte what they were; ADR-0025's graph-surface deferral is
-  discharged via the index annotation, its text untouched. Additive under VERSIONING.md's MINOR
-  rule; the evaluator's conformance claim is unaffected and stated, in full and only, in
-  `CONFORMANCE.md`.
+  version-2 member under version 1 is refused with the version it would take. Unasserted rows,
+  and documents that omit `graphMatrixVersion` or declare a supported version, are byte for byte
+  what they were; the gate itself is stricter in three declared ways — a wrong-typed
+  `graphMatrixVersion` keeps its shape classification with a better sentence, a null or empty
+  `graphMatrixVersion` that the old decoder silently read as the default is now refused, and the
+  unsupported-version refusal now names every accepted version. ADR-0025's graph-surface
+  deferral is discharged via the index annotation, its text untouched. The row members are a
+  closed-input change gated by `graphMatrixVersion "2"` under VERSIONING.md's closed-input rule;
+  the result members are additive output under its MINOR rule and move no `outputVersion`; the
+  evaluator's conformance claim is unaffected and stated, in full and only, in `CONFORMANCE.md`.
 
 - **The graph matrix reports each compared node's trace, on request** (ADR-0031, closes #127):
   `experimental_test_graphs` accepts an optional boolean `include_traces`, and `experimental

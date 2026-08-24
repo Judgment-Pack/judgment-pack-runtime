@@ -376,7 +376,7 @@ func TestGraphTestCommandCarriesTargetAssertions(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, stdout, _ = runTest(t, []string{"experimental", "graph", "test", graphPath, "--rows", rowsPath, "--config", configPath}, "")
-	if code != result.ExitInvalid || !strings.Contains(stdout, "configured handoff target") {
+	if code != result.ExitInvalid || !strings.Contains(stdout, "reported handoff target") {
 		t.Fatalf("a target mismatch moves the exit code and the human surface names it: exit=%d %q", code, stdout)
 	}
 }

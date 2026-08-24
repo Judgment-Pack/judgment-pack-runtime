@@ -667,6 +667,13 @@ func TestLoadRowsRefusals(t *testing.T) {
 		{"a target assertion of the wrong shape", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedHandoffTarget":"queue"}]}`, "JPS-GRAPH-ROWS-ROW"},
 		{"a node target for an unnamed node", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedNodeHandoffTargets":{"n":null}}]}`, "JPS-GRAPH-ROWS-ROW"},
 		{"a node target of the wrong shape", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedNodes":{"n":{}},"expectedNodeHandoffTargets":{"n":7}}]}`, "JPS-GRAPH-ROWS-ROW"},
+		// The struct decoder reads an explicit null map as an absent member,
+		// which would silently erase an assertion the author wrote — refused as
+		// the shape defect it is (ADR-0032 round-1 review).
+		{"a null node-target map", `{"graphMatrixVersion":"2","cases":[{"id":"r","inputs":{},"expectedDisposition":{},"expectedNodeHandoffTargets":null}]}`, "JPS-GRAPH-ROWS-SHAPE"},
+		{"a wrong-typed version", `{"graphMatrixVersion":2,"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c"}]}`, "JPS-GRAPH-ROWS-SHAPE"},
+		{"a null version", `{"graphMatrixVersion":null,"cases":[{"id":"r","inputs":{},"expectedErrorClass":"c"}]}`, "JPS-GRAPH-ROWS-SHAPE"},
+		{"an empty-string version", `{"graphMatrixVersion":"","cases":[{"id":"r","inputs":{},"expectedErrorClass":"c"}]}`, "JPS-GRAPH-ROWS-VERSION"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

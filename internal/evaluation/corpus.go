@@ -547,11 +547,11 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declar
 // no other — two comparators would be two chances to disagree.
 //
 // Comparing the authored strings rather than their capped renderings costs
-// nothing a suite can feel. A row's expectation lives in the matrix, which
-// MaxMatrixBytes bounds whole, so the total length compared across a run is
-// bounded by the matrix rather than by the pack — and Go compares a string's
-// length before its bytes, so an assertion of a different length is settled
-// without reading either.
+// nothing a suite can feel. A row's expectation lives in its matrix document,
+// whose own byte bound — the pack matrix's or the graph rows' — bounds the
+// total length compared across a run by the matrix rather than by the pack,
+// and Go compares a string's length before its bytes, so an assertion of a
+// different length is settled without reading either.
 func SameHandoffTarget(expected, actual *result.HandoffTarget) bool {
 	if expected == nil || actual == nil {
 		return expected == nil && actual == nil
