@@ -564,14 +564,17 @@ type EvaluationError struct {
 	EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
 }
 
-// TraceEntry records one applicability, exception, or rule evaluation. The
+// TraceEntry records one stage of the §8 walk — the applicability, an
+// exception, or a rule — including rules the walk never evaluated, which appear
+// as not-evaluated with the skipped or suppressed label that says why. The
 // trace is informative: §8 requires an unknown that resolution ignored to remain
 // visible, and permits recording contributing ids. A pack's applicability is one
 // unnamed condition rather than an authored declaration, so its entry carries no
-// id at all rather than an empty one. ADR-0026 states the record's full
-// contract — walk order, exactly-once rule completeness, the skipped and
-// suppressed shapes, no entry for evidence inspection, and no partial trace on
-// a refused evaluation — and the byte-goldens that pin it.
+// id at all rather than an empty one. ADR-0026 states the record's contract —
+// walk order, exactly-once rule completeness and the precedence between its
+// not-evaluated shapes, no stage for the step-2 evidence inspection, and no
+// leaked in-progress record on a refused evaluation — and the byte-goldens
+// that pin it.
 type TraceEntry struct {
 	Stage      string `json:"stage"`
 	ID         string `json:"id,omitempty"`
