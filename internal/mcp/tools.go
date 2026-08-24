@@ -633,7 +633,7 @@ func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 const testGraphsCommand = "mcp experimental_test_graphs"
 
 // testGraphsArguments is one experimental_test_graphs invocation as it arrived
-// on the wire. Both members are raw so presence stays separate from value, and
+// on the wire. All three members are raw so presence stays separate from value, and
 // so the advertised schema is actually enforced: a plain []string field accepts
 // a JSON null collection and null elements, neither of which is an
 // array-of-strings (design review F2).

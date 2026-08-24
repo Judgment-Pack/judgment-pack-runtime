@@ -85,4 +85,6 @@ Settled constraints:
   contract gains a transport without gaining a variant.
 - Bad, because an asked-for run can trip the report budget where the bare run did not; that is
   the budget doing its job, and the refusal names it.
+- Neutral, because human renderings are unchanged: the trace is for machine consumers, the JSON
+  report carries it, and the CLI's help says so.
 - Neutral, because `outputVersion` stays: additive members under VERSIONING.md's MINOR rule.

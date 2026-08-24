@@ -300,6 +300,16 @@ func TestGraphTestCommand(t *testing.T) {
 		t.Fatalf("each compared node carries its trace: %q", stdout)
 	}
 
+	// The project walk is the other form of the same flag: the configured
+	// graph's declared rows, the same three comparisons, the same traces.
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "test", "--config", configPath, "--format", "json", "--include-traces"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if strings.Count(stdout, `"trace":[`) != 3 {
+		t.Fatalf("the walk form attaches the same traces: %q", stdout)
+	}
+
 	// The human surface prints the coverage block, and missing probes move
 	// nothing: the run above already exited 0 with probes missing, and the
 	// exact count line is pinned so the informs-never-gates block is a

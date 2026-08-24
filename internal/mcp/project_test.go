@@ -1275,9 +1275,9 @@ func TestExperimentalTestGraphsSelectsOneGraphById(t *testing.T) {
 	}
 }
 
-// The advertised schema is object with an optional string and an optional array
-// of strings. Everything that is not that is refused rather than silently
-// becoming a different run.
+// The advertised schema is object with an optional string, an optional array
+// of strings, and an optional boolean. Everything that is not that is refused
+// rather than silently becoming a different run.
 func TestExperimentalTestGraphsRefusesBadArguments(t *testing.T) {
 	graphProjectFixture(t)
 	for _, tt := range []struct {
@@ -1344,6 +1344,40 @@ func TestExperimentalTestGraphsTreatsExtensionsAsASet(t *testing.T) {
 	}
 }
 
+// The include_traces declaration is held to its exact spelling and its exact
+// type, like the rehearsal boolean it is modeled on (ADR-0028, ADR-0031):
+// full-message equality on every refusal, because the diagnostic is part of
+// the contract.
+func TestExperimentalTestGraphsIncludeTracesArgumentIsHeldExactly(t *testing.T) {
+	graphProjectFixture(t)
+	booleanError := `The "include_traces" argument must be a JSON boolean; null and every other type are rejected. Omit the key to leave the argument unsupplied.`
+	unknownError := func(member string) string {
+		return `The "experimental_test_graphs" arguments carry an unknown member "` + member + `"; the accepted members are graph_id and supported_extensions and include_traces, spelled exactly.`
+	}
+	for name, tt := range map[string]struct {
+		raw  string
+		want string
+	}{
+		"a null value":         {raw: `{"include_traces":null}`, want: booleanError},
+		"a string value":       {raw: `{"include_traces":"true"}`, want: booleanError},
+		"a number value":       {raw: `{"include_traces":1}`, want: booleanError},
+		"an object value":      {raw: `{"include_traces":{}}`, want: booleanError},
+		"an array value":       {raw: `{"include_traces":[]}`, want: booleanError},
+		"an upper-case member": {raw: `{"INCLUDE_TRACES":true}`, want: unknownError("INCLUDE_TRACES")},
+		"a camel-cased member": {raw: `{"includeTraces":true}`, want: unknownError("includeTraces")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			outcome := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", tt.raw))[0]["result"].(map[string]any)
+			if outcome["isError"] != true {
+				t.Fatalf("%s must be refused: %#v", name, outcome)
+			}
+			if text := toolText(t, outcome); text != tt.want {
+				t.Fatalf("the refusal is part of the contract:\n got  %q\n want %q", text, tt.want)
+			}
+		})
+	}
+}
+
 // A call declaring include_traces attaches each compared node's evaluation
 // trace to its comparison (ADR-0031); declaring it false and omitting it are
 // the same run, byte for byte.
@@ -1375,22 +1409,18 @@ func TestExperimentalTestGraphsIncludeTracesAttachesNodeTraces(t *testing.T) {
 		t.Fatalf("the trace member reaches the wire: %s", encoded)
 	}
 
+	// Literal wire bytes, not a remarshal of the typed suite: a remarshal
+	// would hide an extra member the type does not model.
 	reports := map[string]string{}
 	for name, raw := range map[string]string{"omitted": `{}`, "declined": `{"include_traces":false}`} {
 		outcome := runServer(t, rawToolCall(t, 1, "experimental_test_graphs", raw))[0]["result"].(map[string]any)
 		if outcome["isError"] != false {
 			t.Fatalf("%s must be accepted: %#v", name, outcome)
 		}
-		var declined result.GraphSuite
-		decodeStructured(t, outcome, &declined)
-		flat, err := json.Marshal(declined)
-		if err != nil {
-			t.Fatal(err)
-		}
-		reports[name] = string(flat)
+		reports[name] = toolText(t, outcome)
 	}
 	if reports["omitted"] != reports["declined"] {
-		t.Fatal("declining traces and omitting the key must be the same run")
+		t.Fatal("declining traces and omitting the key must be the same run, byte for byte")
 	}
 	if strings.Contains(reports["omitted"], `"trace"`) {
 		t.Fatal("not asked, no trace member anywhere in the report")
