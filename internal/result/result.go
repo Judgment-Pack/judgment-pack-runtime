@@ -568,7 +568,10 @@ type EvaluationError struct {
 // trace is informative: §8 requires an unknown that resolution ignored to remain
 // visible, and permits recording contributing ids. A pack's applicability is one
 // unnamed condition rather than an authored declaration, so its entry carries no
-// id at all rather than an empty one.
+// id at all rather than an empty one. ADR-0026 states the record's full
+// contract — walk order, exactly-once rule completeness, the skipped and
+// suppressed shapes, no entry for evidence inspection, and no partial trace on
+// a refused evaluation — and the byte-goldens that pin it.
 type TraceEntry struct {
 	Stage      string `json:"stage"`
 	ID         string `json:"id,omitempty"`
