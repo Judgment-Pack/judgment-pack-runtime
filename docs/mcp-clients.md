@@ -182,7 +182,10 @@ Or equivalently: `codex mcp add jpack -- jpack mcp`. Start `codex` and confirm
 with `/mcp`. Judge an automatic approval mode on three facts. Every tool here is read-only except
 the experimental evaluator. The evaluator writes only where the project told it to: in a project
 whose `jpack.json` declares no `audit` directory nothing is written at all, and in one that
-declares an `audit` directory each completed evaluation appends one record there and nowhere else.
+declares an `audit` directory each completed evaluation — a declared rehearsal excepted (ADR-0028) — appends one record there and nowhere else.
+A call carrying `"rehearsal": true` also consults no reviewed set (ADR-0019), so an approval mode
+that trusts the lock to catch drifted law is trusting a check a rehearsal deliberately skips —
+which is safe exactly because the payload it returns is labeled a rehearsal, never a decision.
 And `test_conformance` reads any suite path the caller names, so it is not confined to the
 directory the server was launched in — the rest of the tools read the project's own files and the
 documents you pass.

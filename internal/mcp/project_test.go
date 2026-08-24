@@ -1513,11 +1513,16 @@ func rehearsalFixture(t *testing.T) (string, []byte) {
 func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
 	root, _ := rehearsalFixture(t)
 
+	booleanError := `The "rehearsal" argument must be a JSON boolean; null and every other type are rejected. Omit the key to leave the argument unsupplied.`
 	responses := runServer(t, strings.Join([]string{
 		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": false}),
 		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": nil}),
 		toolCall(t, 3, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "REHEARSAL": true}),
 		toolCall(t, 4, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": "true"}),
+		toolCall(t, 5, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": 1}),
+		toolCall(t, 6, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": map[string]any{}}),
+		toolCall(t, 7, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "rehearsal": []any{}}),
+		toolCall(t, 8, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "zzz": true, "aaa": true}),
 	}, ""))
 	if responses[0]["result"].(map[string]any)["isError"] != false {
 		t.Fatalf("an explicit false is the ordinary call: %#v", responses[0])
@@ -1527,16 +1532,23 @@ func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
 	if recorded.Rehearsal {
 		t.Fatalf("false is not a declaration: %+v", recorded)
 	}
+	// Full-message equality, not substrings: the diagnostic is part of the
+	// contract, and call 8's two unknown members pin the sorted, deterministic
+	// choice of which one the message names.
 	for index, want := range map[int]string{
-		1: `The "rehearsal" argument must be a JSON boolean; null and every other type are rejected. Omit the key to leave the argument unsupplied.`,
-		2: `The "experimental_evaluate" arguments carry an unknown member "REHEARSAL"`,
-		3: `The "rehearsal" argument must be a JSON boolean; null and every other type are rejected. Omit the key to leave the argument unsupplied.`,
+		1: booleanError,
+		2: `The "experimental_evaluate" arguments carry an unknown member "REHEARSAL"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal, spelled exactly.`,
+		3: booleanError,
+		4: booleanError,
+		5: booleanError,
+		6: booleanError,
+		7: `The "experimental_evaluate" arguments carry an unknown member "aaa"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal, spelled exactly.`,
 	} {
 		response := responses[index]["result"].(map[string]any)
 		if response["isError"] != true {
 			t.Fatalf("call %d must be refused: %#v", index+1, response)
 		}
-		if text := toolText(t, response); !strings.Contains(text, want) {
+		if text := toolText(t, response); text != want {
 			t.Fatalf("call %d error = %q, want %q", index+1, text, want)
 		}
 		if structured, present := response["structuredContent"]; present {
@@ -1599,7 +1611,12 @@ func TestExperimentalEvaluateRehearsalSkipsTheLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "jpack.lock.json"), encoded, 0o600); err != nil {
+	if err := loaded.WriteLock(encoded); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture's own project handle is done before the server opens its
+	// own: a loaded project holds its directory descriptor open.
+	if err := loaded.Close(); err != nil {
 		t.Fatal(err)
 	}
 	packPath := filepath.Join(root, "packs", "intake-0.1.0.pack.json")

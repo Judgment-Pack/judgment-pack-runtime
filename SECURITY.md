@@ -45,7 +45,8 @@ the configuration declaring the digests of the documents the project reviewed. N
 created, named, overwritten, or deleted anywhere.
 
 The reviewed-set lock is evidence, not a control. With one in place the deciding surfaces refuse to
-evaluate declared law whose bytes differ from it, which turns a silent edit into a refusal and an
+evaluate declared law whose bytes differ from it — a declared rehearsal excepted (ADR-0028),
+which evaluates without consulting it and records nothing — which turns a silent edit into a refusal and an
 explicit re-lock; it does not and cannot stop an editor with write access to the tree, because
 `packs lock` is available to whatever can edit a pack and a runtime cannot tell an amendment from
 tampering. Treat it as a record that an amendment happened, and place the deciding party outside the

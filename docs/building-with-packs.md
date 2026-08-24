@@ -654,8 +654,8 @@ already says what the project owns:
 ```
 
 That is the whole of the opt-in ([ADR-0018](adr/0018-opt-in-evaluation-audit-trail.md)). With it,
-each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the MCP
-`experimental_evaluate` tool appends one JSON line to `audit/evaluations.jsonl`, relative to the
+each completed non-rehearsal evaluation (ADR-0028) of `experimental evaluate`, `experimental graph
+evaluate`, and the MCP `experimental_evaluate` tool appends one JSON line to `audit/evaluations.jsonl`, relative to the
 configuration: a run id and a timestamp, which surface ran, which build of this runtime ran it and
 against which bundled specification artifacts, the pack's id, version, `specVersion` and the SHA-256
 of its exact bytes, the facts and evidence documents as evaluated, and the disposition in the same
@@ -671,7 +671,9 @@ as `{"x":1}` and the line is the source compacted rather than the source itself.
 gives the evaluation that ran, because evaluation is a function of the value; keeping the caller's
 exact bytes, if you need those, is the caller's job.
 
-Four things it deliberately does not do. It does not record test runs: `packs test`, `experimental
+Five things it deliberately does not do. It does not record a declared rehearsal: `--rehearsal`
+and the tool's `rehearsal` argument say this run decides nothing, and the payload's own label is
+what that run leaves behind (ADR-0028). It does not record test runs: `packs test`, `experimental
 graph test`, and `experimental evaluate-corpus` run the same evaluator over the same project and
 write nothing, because a matrix row is a check on a pack and not a decision anyone took. It does
 not record refusals: an evaluation the preflight refused has no disposition at all, and a trail

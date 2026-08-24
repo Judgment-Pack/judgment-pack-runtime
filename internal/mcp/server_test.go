@@ -121,6 +121,9 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	if !ok || rehearsalProperty["type"] != "boolean" {
 		t.Fatalf("the evaluate schema advertises an optional boolean rehearsal: %v", evaluateSchema)
 	}
+	if required, ok := evaluateSchema["required"].([]any); !ok || len(required) != 1 || required[0] != "facts" {
+		t.Fatalf(`"facts" is the one required member — optional means absent from required: %v`, evaluateSchema["required"])
+	}
 	if len(advertised) != 11 {
 		t.Fatalf("expected 11 distinct tools, got %d", len(advertised))
 	}

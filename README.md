@@ -444,7 +444,8 @@ over an unchanged tree leaves no diff. `jpack packs verify` names every differen
 Its **presence** is the opt-in, and it is found by convention rather than declared: no
 `configVersion` moves, the schema does not change, and a project with no lock file behaves exactly
 as it did. With one, the deciding surfaces — `experimental evaluate`, `experimental graph evaluate`,
-and the MCP `experimental_evaluate` tool — hold the law they are about to apply to it and refuse a
+and the MCP `experimental_evaluate` tool — hold the law they are about to apply to it, declared
+rehearsals excepted (ADR-0028), and refuse a
 mismatch (`JPS-LOCK-VERIFY`, exit 1) with the two honest ways forward: declare the amendment, or
 restore the reviewed bytes. `packs test`, `experimental graph test`, and `experimental
 evaluate-corpus` consult it never: the author's loop is free and decisions are classified. A pack
@@ -525,7 +526,7 @@ The current implementation:
 - accepts one explicitly selected regular file or standard input, not URLs or special files;
 - writes only where it was told to, in three ways and no others: a copy of a bundled schema or
   example at the target an operator names with `--write`, which refuses to overwrite an existing
-  file; one appended record per completed evaluation when a project's `jpack.json` declares an
+  file; one appended record per completed non-rehearsal evaluation (ADR-0028) when a project's `jpack.json` declares an
   `audit` directory ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)), into that
   directory, through the handle held open on the configuration's own directory — a record is not a
   diagnostic, and it carries the documents the project asked to have recorded; and the reviewed-set

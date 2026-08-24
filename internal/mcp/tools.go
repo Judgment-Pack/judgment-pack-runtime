@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
@@ -143,7 +144,7 @@ func toolDefinitions() []map[string]any {
 					"facts":                map[string]any{"type": "string", "description": "One JSON facts document, as JSON text; fact.path pointers resolve against it. It is the NESTED document those pointers descend into: for the pointer /request/type write {\"request\":{\"type\":\"data-access\"}}. A flat member literally named \"/request/type\" does not resolve that pointer -- the shape mirrors how jpack.json fact hints are keyed, and every condition reading the pointer then evaluates unknown."},
 					"evidence":             map[string]any{"type": "string", "description": "Optional tri-state evidence availability, as JSON text: an object mapping declared evidence-requirement ids to \"present\", \"absent\", or \"unknown\". An omitted id is unknown. Omit this key entirely to supply no document at all, which makes every declared requirement unknown; a key present with an empty string is a supplied empty document, which is not a JSON text and is refused as malformed-input."},
 					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports."},
-					"rehearsal":            map[string]any{"type": "boolean", "description": "Declare this call a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision. Never inferred: omitting the key is the ordinary recorded call."},
+					"rehearsal":            map[string]any{"type": "boolean", "description": "Declare this call a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision. Never inferred: omitting the key is the ordinary call, recorded exactly when the project declares a trail."},
 				},
 			},
 		},
@@ -562,11 +563,19 @@ func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) strin
 	for _, name := range allowed {
 		permitted[name] = true
 	}
+	unknown := []string{}
 	for name := range members {
 		if !permitted[name] {
-			return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
-				tool, name, strings.Join(allowed, " and "))
+			unknown = append(unknown, name)
 		}
+	}
+	if len(unknown) > 0 {
+		// Sorted so the reported member is a function of the arguments rather
+		// than of map iteration order: the same bad call gets the same
+		// diagnostic every time.
+		sort.Strings(unknown)
+		return fmt.Sprintf("The %q arguments carry an unknown member %q; the accepted members are %s, spelled exactly.",
+			tool, unknown[0], strings.Join(allowed, " and "))
 	}
 	return ""
 }
