@@ -558,7 +558,9 @@ Launch the MCP server in the project root, or point `JPACK_CONFIG` at the config
 }
 ```
 
-Three tools then matter:
+Three tools then matter for packs (and where a project configures graphs, the same pair exists
+one surface over: `experimental_list_graphs` for the inventory and `experimental_get_graph` for
+one document, ADR-0029):
 
 - **`list_packs`** — the resolved inventory: decision id, the document's own id and version, the
   description, the evidence-requirement ids, the fact pointers the pack's conditions read

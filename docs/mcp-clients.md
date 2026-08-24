@@ -50,8 +50,11 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
 | `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
+| `experimental_list_graphs` / `experimental_get_graph` | EXPERIMENTAL SURFACE (ADR-0029): this project's configured graphs, by configured id — the graph siblings of `list_packs`/`get_pack`, read-only |
 
-None of these evaluate, decide, or authorize anything, except the three that reach the evaluator:
+None of these evaluate, decide, or authorize anything — `experimental_list_graphs` and
+`experimental_get_graph` carry the experimental marker for their surface's stability, not because
+they evaluate — except the three that reach the evaluator:
 `experimental_evaluate`, which evaluates one case, and `experimental_test_packs` and
 `experimental_test_graphs`, which run declared instance and graph matrices respectively — each
 through the same evaluator and comparison its own CLI counterpart uses, `packs test` and the graph

@@ -492,7 +492,9 @@ manifest) and fails the build where that defect otherwise hides (ADR-0022).
 
 From a shell, `jpack experimental evaluate --pack-id expense-approval --facts facts.json`
 reaches the same pack by the same name. Over MCP the same inventory is `list_packs`, one document is
-`get_pack`, and `experimental_evaluate` accepts `pack_id` instead of pasted `pack` text. With no configuration,
+`get_pack`, and `experimental_evaluate` accepts `pack_id` instead of pasted `pack` text; the graph
+convention has the same pair, `experimental_list_graphs` and `experimental_get_graph`, beside the
+CLI's `experimental graph list` (ADR-0029). With no configuration,
 `list_packs` answers empty with an explanation of where the runtime looked, rather than failing.
 
 [docs/building-with-packs.md](docs/building-with-packs.md) is the builder's guide: the packs-as-code

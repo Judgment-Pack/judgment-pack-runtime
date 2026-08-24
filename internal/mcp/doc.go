@@ -15,7 +15,10 @@
 // directory handle and nowhere else (ADR-0018); experimental_test_packs runs
 // declared instance matrices, experimental_test_graphs runs declared graph
 // matrices, and neither writes anything at all, because a matrix row is
-// a rehearsal and not a decision. Nothing in this package states a conformance claim: the claim is stated,
+// a rehearsal and not a decision. experimental_list_graphs and
+// experimental_get_graph serve the graph convention's inventory and documents
+// read-only (ADR-0029): they carry the experimental marker for their
+// surface's stability, and they evaluate nothing and write nothing. Nothing in this package states a conformance claim: the claim is stated,
 // in full and only, in CONFORMANCE.md, and every payload carries a reference to
 // that file beside the contract version applied
 // (result.EvaluationClaimReference, result.EvaluatorSpecVersion).

@@ -509,7 +509,9 @@ func buildAuthorGraph(args map[string]string) string {
    together, for review exactly as a pack is reviewed -- and propose, beside them, the
    jpack.json entry that makes the suite a project gate: under configVersion "2" a graphs
    entry names the document and its rows, and "jpack experimental graph test" with no
-   argument then walks every declared graph. You propose; the human commits, the
+   argument then walks every declared graph, and over MCP experimental_list_graphs
+   and experimental_get_graph then serve what was configured, so a later session
+   needs no terminal to read it back. You propose; the human commits, the
    configuration edit included.
 
 (Method guidance from the judgment-pack runtime, non-normative and for an experimental

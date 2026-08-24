@@ -339,3 +339,77 @@ type GraphValidationSuite struct {
 	Summary       PackCounts             `json:"summary"`
 	Graphs        []GraphValidationEntry `json:"graphs"`
 }
+
+// GraphSummary is one configured graph's inventory row: the project's
+// configured id beside the document's own identity, two different names
+// reported as two members exactly as a PackSummary does. Detail is present
+// when the document could not be read or decoded, in which case the identity
+// members are empty rather than guessed — listing is not validating, and
+// experimental graph validate is where a broken graph is an error. ResultNode
+// echoes the document's declared result member, the one node whose disposition
+// is the composite headline.
+type GraphSummary struct {
+	ID            string `json:"id"`
+	GraphID       string `json:"graphId"`
+	GraphVersion  string `json:"graphVersion"`
+	FormatVersion string `json:"formatVersion"`
+	ResultNode    string `json:"resultNode,omitempty"`
+	Path          string `json:"path"`
+	RowsPath      string `json:"rowsPath,omitempty"`
+	Rows          bool   `json:"rows"`
+	Description   string `json:"description,omitempty"`
+	Nodes         int    `json:"nodes"`
+	Edges         int    `json:"edges"`
+	Detail        string `json:"detail,omitempty"`
+}
+
+// GraphInventory is the resolved graph inventory of one project, the graph
+// sibling of PackInventory and deliberately not a member of it: the pack
+// inventory is a stable command's payload, and this surface is experimental,
+// so folding one into the other would put a removable member inside a payload
+// that must not shrink (the separation ADR-0015 drew and ADR-0017 kept).
+// Status is "none" when no configuration was found, which is an answer and not
+// a failure, and Note says where the runtime looked.
+type GraphInventory struct {
+	OutputVersion string         `json:"outputVersion"`
+	Tool          Tool           `json:"tool"`
+	Command       string         `json:"command"`
+	Status        string         `json:"status"`
+	Experimental  bool           `json:"experimental"`
+	Kind          string         `json:"kind"`
+	ConfigPath    string         `json:"configPath"`
+	ConfigVersion string         `json:"configVersion,omitempty"`
+	Note          string         `json:"note,omitempty"`
+	Graphs        []GraphSummary `json:"graphs"`
+}
+
+// GraphDocument is the metadata beside one graph document served by configured
+// id; the bytes travel separately, exactly as a served pack's do. Status is
+// "valid" when the served bytes decoded and the identity members were read off
+// them, and "undecodable" when they did not, in which case Detail says why and
+// those members are empty rather than guessed. Neither value is a verdict on
+// the document against the graph schema: serving a graph does not validate it,
+// and experimental graph validate is what reports that. FormatVersion here is
+// the version the document itself declares, read off the served bytes the way
+// a PackDocument's specVersion is — not the format version a walk applied,
+// which is what the member means on an evaluation payload.
+type GraphDocument struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	Experimental  bool   `json:"experimental"`
+	Kind          string `json:"kind"`
+	ConfigPath    string `json:"configPath"`
+	ID            string `json:"id"`
+	GraphID       string `json:"graphId"`
+	GraphVersion  string `json:"graphVersion"`
+	FormatVersion string `json:"formatVersion"`
+	ResultNode    string `json:"resultNode,omitempty"`
+	Path          string `json:"path"`
+	RowsPath      string `json:"rowsPath,omitempty"`
+	Description   string `json:"description,omitempty"`
+	Bytes         int    `json:"bytes"`
+	SHA256        string `json:"sha256"`
+	Detail        string `json:"detail,omitempty"`
+}

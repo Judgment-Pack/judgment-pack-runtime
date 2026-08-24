@@ -201,6 +201,43 @@ func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorp
 // row carries are printed as two names: the project's decision id leads the
 // line, and the pack document's own id and version follow it in parentheses, so
 // no reader takes the short id for the pack's identity.
+func (a *App) renderGraphInventory(format string, output result.GraphInventory) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	fmt.Fprintln(a.out, "EXPERIMENTAL SURFACE graph inventory (a convention of this runtime, not of any JPS version)")
+	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
+	if len(output.Graphs) == 0 {
+		fmt.Fprintln(a.out, "no graphs configured")
+		return nil
+	}
+	for _, entry := range output.Graphs {
+		// The same three-way identity label the pack inventory draws, for the
+		// same reason: an unreadable file and a document that states no id call
+		// for different fixes.
+		identity := "no id declared"
+		switch {
+		case entry.GraphID != "":
+			identity = display.Sanitize(entry.GraphID) + " " + display.Sanitize(entry.GraphVersion)
+		case entry.Detail != "":
+			identity = "document unreadable"
+		}
+		fmt.Fprintf(a.out, "- %s (%s): %s\n", display.Sanitize(entry.ID), identity, display.Sanitize(entry.Path))
+		if entry.Description != "" {
+			fmt.Fprintf(a.out, "  %s\n", display.Sanitize(entry.Description))
+		}
+		rows := "none declared"
+		if entry.Rows {
+			rows = display.Sanitize(entry.RowsPath)
+		}
+		fmt.Fprintf(a.out, "  nodes: %d · edges: %d · result: %s · rows: %s\n", entry.Nodes, entry.Edges, display.Sanitize(entry.ResultNode), rows)
+		if entry.Detail != "" {
+			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(entry.Detail))
+		}
+	}
+	return nil
+}
+
 func (a *App) renderPackInventory(format string, output result.PackInventory) error {
 	if format == "json" {
 		return a.writeJSON(output)

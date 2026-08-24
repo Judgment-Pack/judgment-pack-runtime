@@ -2,6 +2,24 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The configured graphs are served over the wire, read-only** (ADR-0029, closes #126):
+  `experimental_list_graphs` resolves every configured graph — the configured id beside the
+  document's own id and version, the declared result node, node and edge counts as carried, the
+  paths, and the description the configuration schema always said was "for a human or an agent
+  reading the inventory" — and `experimental_get_graph { graph_id }` serves one document's exact
+  bytes beside its metadata, through the same rooted reader every project read uses, under the
+  graph surface's own byte limit. The CLI twin `experimental graph list` renders the same
+  inventory from the same function, so the two surfaces cannot disagree. Listing and serving are
+  not validating: a mid-edit document is listed with the reason and served with status
+  `undecodable`, and `experimental graph validate` is where a broken graph is an error. Neither
+  tool evaluates, writes, holds a credential, or opens a connection; the payload digest is
+  `sha256` bare hex per the payload convention, and `formatVersion` on these payloads is the
+  document's own declaration, read off the served bytes the way a served pack's `specVersion` is.
+  The evaluator's conformance claim is unaffected and stated, in full and only, in
+  `CONFORMANCE.md`, which no line of this entry restates.
+
 ## 0.18.0 - 2026-08-24
 
 - **The evaluation trace is a pinned contract** (ADR-0027): the trace's implemented properties are

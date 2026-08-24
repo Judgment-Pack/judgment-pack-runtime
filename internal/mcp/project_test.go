@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -1645,5 +1647,150 @@ func TestExperimentalEvaluateRehearsalSkipsTheLock(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); err == nil {
 		t.Fatal("neither run records: the refusal evaluated nothing and the rehearsal declared nothing")
+	}
+}
+
+// The graph inventory and document tools serve the configured graphs exactly
+// as list_packs and get_pack serve the packs (ADR-0029): the configured id
+// beside the document's own identity, the exact bytes as the text half, and
+// listing that survives what validation would refuse.
+func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
+	fixture, err := filepath.Abs(filepath.Join("..", "graph", "testdata", "project", "jpack.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, fixture)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "onboarding"}),
+		toolCall(t, 3, "experimental_get_graph", map[string]any{"graph_id": "missing"}),
+		toolCall(t, 4, "experimental_get_graph", map[string]any{"graph_id": nil}),
+		toolCall(t, 5, "experimental_get_graph", map[string]any{"GRAPH_ID": "onboarding"}),
+		toolCall(t, 6, "experimental_get_graph", map[string]any{}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	if inventory.Status != "resolved" || !inventory.Experimental || len(inventory.Graphs) != 1 {
+		t.Fatalf("inventory = %+v", inventory)
+	}
+	row := inventory.Graphs[0]
+	if row.ID != "onboarding" || row.GraphID != "vendor-onboarding-flow" || row.GraphVersion != "0.1.0" ||
+		row.FormatVersion != "1" || row.ResultNode != "onboarding" || row.Nodes != 2 || row.Edges != 1 ||
+		!row.Rows || row.RowsPath != "onboarding.rows.json" || row.Detail != "" {
+		t.Fatalf("row = %+v", row)
+	}
+
+	served := responses[1]["result"].(map[string]any)
+	if served["isError"] != false {
+		t.Fatalf("the configured graph must be served: %#v", served)
+	}
+	var meta result.GraphDocument
+	decodeStructured(t, served, &meta)
+	if meta.Status != "valid" || meta.ID != "onboarding" || meta.GraphID != "vendor-onboarding-flow" ||
+		meta.GraphVersion != "0.1.0" || meta.FormatVersion != "1" || meta.ResultNode != "onboarding" {
+		t.Fatalf("meta = %+v", meta)
+	}
+	disk, err := os.ReadFile(filepath.Join(filepath.Dir(fixture), "onboarding.graph.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := toolText(t, served); text != string(disk) {
+		t.Fatalf("the served bytes are the file's exact bytes: %d vs %d", len(text), len(disk))
+	}
+	if meta.Bytes != len(disk) {
+		t.Fatalf("bytes = %d, want %d", meta.Bytes, len(disk))
+	}
+	sum := sha256.Sum256(disk)
+	if meta.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("sha256 = %q", meta.SHA256)
+	}
+
+	unknown := responses[2]["result"].(map[string]any)
+	if unknown["isError"] != true || !strings.Contains(toolText(t, unknown), "onboarding") {
+		t.Fatalf("an unknown id lists the configured ids: %#v", unknown)
+	}
+	if null := responses[3]["result"].(map[string]any); null["isError"] != true {
+		t.Fatalf("an explicit null is a bad invocation: %#v", null)
+	}
+	alias := responses[4]["result"].(map[string]any)
+	if alias["isError"] != true || !strings.Contains(toolText(t, alias), `unknown member "GRAPH_ID"`) {
+		t.Fatalf("a case-folded alias is held to the exact spelling: %#v", alias)
+	}
+	if absent := responses[5]["result"].(map[string]any); absent["isError"] != true ||
+		!strings.Contains(toolText(t, absent), `"graph_id" argument is required`) {
+		t.Fatalf("an absent id is required: %#v", absent)
+	}
+}
+
+// Listing is not validating, and serving is not validating either: a graph
+// document that does not decode is listed with the reason and served with
+// status undecodable — the mid-edit moment is the moment the tools must not
+// go silent.
+func TestExperimentalGraphToolsServeTheUndecodable(t *testing.T) {
+	// The real fixture project, with only the graph document replaced by bytes
+	// that do not decode: everything else must keep working around it.
+	source := filepath.Join("..", "graph", "testdata", "project")
+	root := t.TempDir()
+	for _, name := range []string{"jpack.json", "onboarding.rows.json", "sanctions-screening-0.1.0.pack.json", "vendor-onboarding-0.1.0.pack.json"} {
+		data, err := os.ReadFile(filepath.Join(source, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "onboarding.graph.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, "jpack.json")
+	t.Setenv(project.ConfigEnv, configPath)
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "onboarding"}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	if len(inventory.Graphs) != 1 || inventory.Graphs[0].Detail == "" || inventory.Graphs[0].GraphID != "" {
+		t.Fatalf("an undecodable graph is listed with the reason, identity empty: %+v", inventory.Graphs)
+	}
+
+	served := responses[1]["result"].(map[string]any)
+	if served["isError"] != false {
+		t.Fatalf("the undecodable graph is still served: %#v", served)
+	}
+	var meta result.GraphDocument
+	decodeStructured(t, served, &meta)
+	if meta.Status != "undecodable" || meta.Detail == "" || meta.GraphID != "" {
+		t.Fatalf("meta = %+v", meta)
+	}
+	if toolText(t, served) != "{not json" {
+		t.Fatalf("the served bytes are the file's exact bytes: %q", toolText(t, served))
+	}
+}
+
+// With no configuration at all, the inventory answers empty with its own
+// explanation and the fetch is an error that says where the runtime looked —
+// the exact asymmetry list_packs and get_pack draw, for the same reasons.
+func TestExperimentalGraphToolsWithoutConfiguration(t *testing.T) {
+	t.Setenv(project.ConfigEnv, filepath.Join(t.TempDir(), "jpack.json"))
+
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_list_graphs", map[string]any{}),
+		toolCall(t, 2, "experimental_get_graph", map[string]any{"graph_id": "onboarding"}),
+	}, ""))
+
+	var inventory result.GraphInventory
+	decodeStructured(t, responses[0]["result"].(map[string]any), &inventory)
+	if responses[0]["result"].(map[string]any)["isError"] != false || inventory.Status != "none" || inventory.Note == "" {
+		t.Fatalf("no configuration is an empty answer with an explanation: %#v", responses[0])
+	}
+	fetch := responses[1]["result"].(map[string]any)
+	if fetch["isError"] != true || !strings.Contains(toolText(t, fetch), "No project configuration was found") {
+		t.Fatalf("a fetch by id cannot succeed emptily: %#v", fetch)
 	}
 }

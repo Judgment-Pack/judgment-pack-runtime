@@ -38,6 +38,7 @@ func (a *App) graphCommand() *cobra.Command {
 		},
 	}
 	graphGroup.AddCommand(
+		a.graphListCommand(),
 		a.graphValidateCommand(),
 		a.graphEvaluateCommand(),
 		a.graphExplainCommand(),
@@ -45,6 +46,44 @@ func (a *App) graphCommand() *cobra.Command {
 		a.graphSchemaCommand(),
 	)
 	return graphGroup
+}
+
+// graphListCommand lists the configured graphs, the graph twin of packs list
+// and the CLI twin of the experimental_list_graphs tool: one inventory
+// function serves both surfaces, so they cannot disagree (ADR-0029).
+func (a *App) graphListCommand() *cobra.Command {
+	format := "human"
+	configPath := ""
+	command := &cobra.Command{
+		Use:   "list",
+		Short: "List the project's graphs: configured id, the document's own id and version, path, description",
+		Long: "List every graph the project's jpack.json configures. Each row carries the configured graph id " +
+			"beside the graph document's own id and version, which are two different names and are reported as " +
+			"two members for that reason, plus the declared result node, the paths, whether a rows document is " +
+			"declared, and the description. It reads each document to report its identity and does not validate " +
+			"it: an inventory has to be readable while one graph is mid-edit, and a document that could not be " +
+			"read is listed with the reason instead of being dropped. Run experimental graph validate for the " +
+			"verdict on each document.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			const commandName = "experimental graph list"
+			if err := validateFormat(format); err != nil {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			loaded, projectFailure := project.Load(project.Locate(configPath))
+			if projectFailure != nil {
+				return a.projectFailure(commandName, format, projectFailure)
+			}
+			defer loaded.Close()
+			if err := a.renderGraphInventory(format, graph.ProjectInventory(loaded, commandName)); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			return nil
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	return command
 }
 
 func (a *App) graphValidateCommand() *cobra.Command {

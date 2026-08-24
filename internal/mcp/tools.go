@@ -30,7 +30,10 @@ import (
 // is the only tool here that can write, and
 // experimental_test_packs and experimental_test_graphs, which run declared
 // instance and graph matrices and write nothing — a matrix row is a rehearsal,
-// not a decision (ADR-0021, ADR-0026). Every
+// not a decision (ADR-0021, ADR-0026). experimental_list_graphs and
+// experimental_get_graph carry the experimental marker for their surface's
+// stability, not for evaluation: they serve the graph convention's inventory
+// and documents read-only (ADR-0029) and reach no evaluator. Every
 // other tool evaluates nothing and writes nothing. No description here states
 // a conformance claim: the claim is stated, in full and only, in
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
@@ -171,6 +174,27 @@ func toolDefinitions() []map[string]any {
 				},
 			},
 		},
+		{
+			"name":        "experimental_list_graphs",
+			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): list the graphs this project configures in its jpack.json, resolved: the configured graph id, the graph document's own id and version, its declared formatVersion and result node, the node and edge counts as carried, the paths, whether a rows document is declared, and the configuration's description. The graph convention is this runtime's own (no JPS version defines a graph) and the shape is ADR-0017's. Reading it is how you learn what a project composes without fetching a document; call experimental_get_graph for one. It lists and does not validate: a document that cannot be read or decoded is a row whose detail says why, with its identity members empty rather than guessed, and experimental graph validate is where a broken graph is an error. The configuration is the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in, and an absent configuration is an empty answer with an explanation rather than an error. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties":           map[string]any{},
+			},
+		},
+		{
+			"name":        "experimental_get_graph",
+			"description": "EXPERIMENTAL SURFACE (ADR-0015, ADR-0017, ADR-0029): return one graph document this project configures in its jpack.json, by its configured graph id, as JSON text, with the document's own id and version, its declared formatVersion and result node, its digest, and its byte size. The document is the project's own file, served unaltered and read-only through a reader rooted at the configuration's own directory, so a configured path that leaves that directory is refused rather than followed; this tool stores nothing and returns nothing you did not already have on disk. Serving is not validating: a document that does not decode is still served, with status undecodable and a detail saying why, and experimental graph validate is what reports a verdict. Call experimental_list_graphs for the available graph ids. This tool evaluates nothing, holds no credential, opens no network connection, and writes nothing. This surface may change or be removed without compatibility promise.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"graph_id"},
+				"properties": map[string]any{
+					"graph_id": map[string]any{"type": "string", "description": "The configured graph id, as reported by experimental_list_graphs (for example, onboarding)."},
+				},
+			},
+		},
 	}
 }
 
@@ -205,6 +229,10 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolExperimentalTestPacks(params.Arguments), nil
 	case "experimental_test_graphs":
 		return s.toolExperimentalTestGraphs(params.Arguments), nil
+	case "experimental_list_graphs":
+		return s.toolExperimentalListGraphs(), nil
+	case "experimental_get_graph":
+		return s.toolExperimentalGetGraph(params.Arguments), nil
 	default:
 		return nil, &rpcError{Code: codeInvalidParams, Message: "Unknown tool: " + params.Name}
 	}
@@ -397,6 +425,70 @@ func (s *Server) toolGetPack(rawArgs json.RawMessage) any {
 	}
 	defer loaded.Close()
 	meta, data, failure := loaded.Document(packID, "mcp get_pack")
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	return map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": string(data)}},
+		"structuredContent": meta,
+		"isError":           false,
+	}
+}
+
+// toolExperimentalListGraphs reports the resolved graph inventory of the
+// project this server was launched in, under exactly the missing-configuration
+// rule list_packs follows: an empty inventory carrying its own explanation is
+// an answer, and only a configuration that exists and will not load is an
+// error.
+func (s *Server) toolExperimentalListGraphs() any {
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return toolResult(graph.EmptyInventory(configPath, "mcp experimental_list_graphs"))
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	defer loaded.Close()
+	return toolResult(graph.ProjectInventory(loaded, "mcp experimental_list_graphs"))
+}
+
+// toolExperimentalGetGraph serves one configured graph document by its
+// configured id, under exactly get_pack's discipline: the exact bytes as the
+// text half, the metadata as the structured half, a missing configuration as
+// an error that says where the runtime looked (a fetch by id cannot succeed
+// emptily), and serving without validating.
+func (s *Server) toolExperimentalGetGraph(rawArgs json.RawMessage) any {
+	var args struct {
+		GraphID json.RawMessage `json:"graph_id"`
+	}
+	if len(rawArgs) > 0 {
+		if message := exactMembers("experimental_get_graph", rawArgs, "graph_id"); message != "" {
+			return toolError(message)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&args); err != nil {
+			return toolError(`The "experimental_get_graph" arguments must be an object with a string "graph_id"; unknown keys are rejected.`)
+		}
+	}
+	graphID, present, argumentError := textArgument("graph_id", args.GraphID)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	if !present || graphID == "" {
+		return toolError(`The "graph_id" argument is required: pass a configured graph id, and call experimental_list_graphs for the available ids.`)
+	}
+	configPath := project.Locate("")
+	if !project.Exists(configPath) {
+		return toolError(graph.EmptyInventory(configPath, "mcp experimental_get_graph").Note)
+	}
+	loaded, failure := project.Load(configPath)
+	if failure != nil {
+		return toolError(failure.Message)
+	}
+	defer loaded.Close()
+	meta, data, failure := graph.ProjectDocument(loaded, graphID, "mcp experimental_get_graph")
 	if failure != nil {
 		return toolError(failure.Message)
 	}
