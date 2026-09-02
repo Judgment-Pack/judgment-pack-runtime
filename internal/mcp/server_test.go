@@ -1,10 +1,12 @@
 package mcp
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -786,5 +788,46 @@ func TestTransportHandlesLineAndRequestEdgeCases(t *testing.T) {
 				tt.inspect(t, responses)
 			}
 		})
+	}
+}
+
+func TestTransportAcceptsLineUnderMaxMessageBytes(t *testing.T) {
+	base := message(t, 1, "ping", nil)
+	pad := maxMessageBytes - len(base) - 64
+	big := `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"` + strings.Repeat("x", pad) + `"}}` + "\n"
+	if len(big) >= maxMessageBytes {
+		t.Fatalf("under-bound fixture is %d bytes, want less than %d", len(big), maxMessageBytes)
+	}
+
+	responses := runServer(t, big)
+	if len(responses) != 1 {
+		t.Fatalf("got %d responses, want 1", len(responses))
+	}
+	if int(responses[0]["id"].(float64)) != 1 {
+		t.Fatalf("under-bound ping response = %#v, want id 1", responses[0])
+	}
+}
+
+func TestTransportRefusesOversizedLineAndEndsStream(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(engine, conformance.NewRunner(engine))
+
+	var out, logw bytes.Buffer
+	input := strings.Repeat("x", maxMessageBytes+1) + "\n" + message(t, 1, "ping", nil)
+	err = server.Serve(strings.NewReader(input), &out, &logw)
+	if err == nil {
+		t.Fatal("Serve returned nil for an oversized input line")
+	}
+	if !errors.Is(err, bufio.ErrTooLong) {
+		t.Fatalf("Serve error = %v, want scanner ErrTooLong", err)
+	}
+	if out.String() != "" {
+		t.Fatalf("oversized line must emit no response and stop before later requests, got %q", out.String())
+	}
+	if !strings.Contains(logw.String(), "mcp: input error:") {
+		t.Fatalf("log = %q, want input error diagnostic", logw.String())
 	}
 }
