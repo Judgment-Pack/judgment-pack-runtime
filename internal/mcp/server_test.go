@@ -831,3 +831,102 @@ func TestTransportRefusesOversizedLineAndEndsStream(t *testing.T) {
 		t.Fatalf("log = %q, want input error diagnostic", logw.String())
 	}
 }
+
+// encoding/json matches struct tags case-insensitively, so DisallowUnknownFields
+// alone accepts PACK_ID for pack_id. exactMembers holds every tool that decodes
+// an arguments object to the advertised spelling (issue #115).
+func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
+	projectFixture(t)
+
+	cases := []struct {
+		name      string
+		tool      string
+		arguments map[string]any
+		member    string
+		accepted  string
+	}{
+		{
+			name:      "get_pack PACK_ID",
+			tool:      "get_pack",
+			arguments: map[string]any{"PACK_ID": "intake"},
+			member:    "PACK_ID",
+			accepted:  `the accepted member is "pack_id"`,
+		},
+		{
+			name:      "get_pack Pack_Id",
+			tool:      "get_pack",
+			arguments: map[string]any{"Pack_Id": "intake"},
+			member:    "Pack_Id",
+			accepted:  `the accepted member is "pack_id"`,
+		},
+		{
+			name:      "experimental_evaluate PACK_ID",
+			tool:      "experimental_evaluate",
+			arguments: map[string]any{"PACK_ID": "intake", "facts": projectFacts},
+			member:    "PACK_ID",
+			accepted:  "the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal",
+		},
+		{
+			name:      "experimental_test_packs PACK_ID",
+			tool:      "experimental_test_packs",
+			arguments: map[string]any{"PACK_ID": "intake"},
+			member:    "PACK_ID",
+			accepted:  `the accepted member is "pack_id"`,
+		},
+		{
+			name:      "experimental_test_packs Pack_Id",
+			tool:      "experimental_test_packs",
+			arguments: map[string]any{"Pack_Id": "intake"},
+			member:    "Pack_Id",
+			accepted:  `the accepted member is "pack_id"`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			responses := runServer(t, toolCall(t, 1, tc.tool, tc.arguments))
+			if len(responses) != 1 {
+				t.Fatalf("got %d responses, want 1", len(responses))
+			}
+			if _, protocol := responses[0]["error"]; protocol {
+				t.Fatalf("refusal must be an in-band tool error, not a protocol error: %#v", responses[0])
+			}
+			result, ok := responses[0]["result"].(map[string]any)
+			if !ok || result["isError"] != true {
+				t.Fatalf("want isError tool result, got %#v", responses[0])
+			}
+			want := `The "` + tc.tool + `" arguments carry an unknown member "` + tc.member + `"; ` + tc.accepted + `, spelled exactly.`
+			if text := toolText(t, result); text != want {
+				t.Fatalf("error = %q, want %q", text, want)
+			}
+		})
+	}
+
+	t.Run("get_pack spelled correctly still succeeds", func(t *testing.T) {
+		outcome := runServer(t, toolCall(t, 1, "get_pack", map[string]any{"pack_id": "intake"}))[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("correct spelling must succeed: %#v", outcome)
+		}
+	})
+
+	t.Run("experimental_evaluate spelled correctly still succeeds", func(t *testing.T) {
+		outcome := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}))[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("correct spelling must succeed: %#v", outcome)
+		}
+	})
+}
+
+func TestExperimentalTestPacksExactMembersLeavesOmittedOptionalUntouched(t *testing.T) {
+	matrixProjectFixture(t, matrixConfig, passingMatrix)
+	outcome := runServer(t, toolCall(t, 1, "experimental_test_packs", nil))[0]["result"].(map[string]any)
+	if outcome["isError"] != false {
+		t.Fatalf("omitted arguments must still run every declared pack: %#v", outcome)
+	}
+	t.Run("correct pack_id still succeeds", func(t *testing.T) {
+		selected := runServer(t, toolCall(t, 1, "experimental_test_packs", map[string]any{"pack_id": "intake"}))[0]["result"].(map[string]any)
+		if selected["isError"] != false {
+			t.Fatalf("correct spelling must succeed: %#v", selected)
+		}
+	})
+}
