@@ -590,6 +590,11 @@ func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 	if len(rawArgs) > 0 {
 		// Strict decoding honors the declared additionalProperties: false — a
 		// misspelled key must be an error, not a silently different run.
+		// DisallowUnknownFields alone is not enough: encoding/json matches
+		// field names case-insensitively, so PACK_ID would bind to pack_id.
+		if message := exactMembers("experimental_test_packs", rawArgs, "pack_id"); message != "" {
+			return toolError(message)
+		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {

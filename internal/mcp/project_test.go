@@ -901,6 +901,31 @@ func TestExperimentalTestPacksRefusesBadArguments(t *testing.T) {
 	}
 }
 
+func TestExperimentalTestPacksRefusesCaseFoldedPackID(t *testing.T) {
+	// encoding/json would bind PACK_ID to pack_id without exactMembers, so the
+	// advertised additionalProperties:false contract would not hold.
+	matrixProjectFixture(t, matrixConfig, passingMatrix)
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_test_packs", map[string]any{"PACK_ID": "intake"}),
+		toolCall(t, 2, "experimental_test_packs", map[string]any{"Pack_Id": "intake"}),
+		toolCall(t, 3, "experimental_test_packs", map[string]any{"pack_id": "intake"}),
+	}, ""))
+	for _, index := range []int{0, 1} {
+		outcome := responses[index]["result"].(map[string]any)
+		if outcome["isError"] != true {
+			t.Fatalf("call %d must refuse a case-folded member: %#v", index+1, outcome)
+		}
+		text := toolText(t, outcome)
+		if !strings.Contains(text, "unknown member") {
+			t.Fatalf("call %d refusal must name the unknown member: %q", index+1, text)
+		}
+	}
+	ok := responses[2]["result"].(map[string]any)
+	if ok["isError"] != false {
+		t.Fatalf("correctly spelled pack_id must still succeed: %#v", ok)
+	}
+}
+
 // No configuration is a tool error here, unlike list_packs: an empty inventory
 // answers "what can this project decide", but a skipped suite does not answer
 // "run the suite", and a caller reading it as green is the misreading the
