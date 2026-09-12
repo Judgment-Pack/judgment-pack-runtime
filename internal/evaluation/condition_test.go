@@ -236,6 +236,45 @@ func TestResolverEdges(t *testing.T) {
 		}
 	})
 
+	// The twin of the case above: §8 collects forced outcomes into a set and calls
+	// only a set with more than one member incompatible. Two exceptions forcing
+	// the same outcome are one compatible forced outcome, produced without
+	// evaluating any rule.
+	//
+	// Single obstacle: both exceptions are literally true and force "a", and the
+	// one rule would be true and names "b" — so a set that counted agreement
+	// twice reports conflict, and a walk that evaluated rules anyway would have
+	// "b" as a candidate. Nothing else can make this unresolved: no condition is
+	// unknown, nothing escalates or suppresses, and no evidence is required.
+	t.Run("agreeing-forced-outcomes", func(t *testing.T) {
+		pack := base()
+		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": true}, "outcome": "b", "onUnknown": "ignore"}}
+		pack["exceptions"] = []any{
+			map[string]any{"id": "x1", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "a", "onUnknown": "ignore"},
+			map[string]any{"id": "x2", "when": map[string]any{"op": "literal", "value": true}, "effect": "force-outcome", "outcome": "a", "onUnknown": "ignore"},
+		}
+		disposition, _, trace, _ := resolve(pack, map[string]any{}, coreEvaluator())
+		if disposition.Kind != "outcome" || disposition.OutcomeID != "a" || len(disposition.Reasons) != 0 {
+			t.Fatalf("two forced outcomes that agree are one compatible forced outcome, not a conflict: %+v", disposition)
+		}
+		if disposition.Handoff.State != "none" {
+			t.Fatalf("a compatible forced outcome requests no handoff: %+v", disposition.Handoff)
+		}
+		skipped := 0
+		for _, entry := range trace {
+			if entry.Stage != "rule" {
+				continue
+			}
+			if !entry.Skipped || entry.Condition != "not-evaluated" {
+				t.Fatalf("§8 produces a compatible forced outcome without evaluating any rule: %+v", entry)
+			}
+			skipped++
+		}
+		if skipped != 1 {
+			t.Fatalf("every rule is traced as skipped; got %d skipped rule entries in %+v", skipped, trace)
+		}
+	})
+
 	t.Run("suppressed-rule-restores-fallback", func(t *testing.T) {
 		pack := base()
 		pack["rules"] = []any{map[string]any{"id": "r", "when": map[string]any{"op": "literal", "value": true}, "outcome": "a", "onUnknown": "ignore"}}
@@ -495,5 +534,55 @@ func TestOrderedOperatorsMatchTheSchemasDecimalOperandRule(t *testing.T) {
 	}
 	if !reflect.DeepEqual(declared, orderedOperators) {
 		t.Fatalf("the schema declares %v, the evaluator orders %v", declared, orderedOperators)
+	}
+}
+
+// Two rules that name one outcome are two reasons for the same destination, not
+// a contradiction: §8 collects true rules' outcomes into a set and calls only a
+// set with more than one member a conflict. The bundled
+// partial-trigger-conflict pack ships that shape — select-track-a and
+// hold-for-review-decision both name track-a — so this case runs through
+// Engine.Evaluate over the real pack, which also makes it the proof that no
+// layer refuses a pack whose rules agree: the schema constrains rule ids, not
+// outcomes, and semantic validation only requires each outcome to resolve.
+//
+// Single obstacle: the facts make both track-a rules true and leave
+// select-track-b present and false, so nothing is unknown, nothing escalates,
+// and the only route to unresolved is the clause under test. A set that counted
+// agreement twice reports conflict here — and because conflict is in this
+// pack's trigger list, it also requests the Routing coordinator, which is why
+// the handoff state and target are asserted and not just the outcome id.
+func TestAgreeingRulesAreOneCandidateNotAConflict(t *testing.T) {
+	set, err := artifacts.Load(artifacts.EvaluatorDraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, err := set.EvaluationPack("packs/partial-trigger-conflict.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := []byte(`{"flags":{"trackA":true,"trackB":false,"reviewDecided":true}}`)
+	output, failure := newTestEngine(t).Evaluate(pack, facts, nil, nil, "test")
+	if failure != nil {
+		t.Fatalf("%s: %s", failure.Code, failure.Message)
+	}
+	disposition := output.Disposition
+	if disposition.Kind != "outcome" || disposition.OutcomeID != "track-a" || len(disposition.Reasons) != 0 {
+		t.Fatalf("two rules agreeing on track-a produce track-a, not a conflict: %+v", disposition)
+	}
+	if disposition.Handoff.State != "none" || len(disposition.Handoff.TriggeredBy) != 0 {
+		t.Fatalf("agreement triggers no handoff: %+v", disposition.Handoff)
+	}
+	if output.HandoffTarget != nil {
+		t.Fatalf("agreement reports no handoff target: %+v", output.HandoffTarget)
+	}
+	agreeing := map[string]bool{}
+	for _, entry := range output.Trace {
+		if entry.Stage == "rule" && entry.Condition == "true" && entry.Outcome == "track-a" {
+			agreeing[entry.ID] = true
+		}
+	}
+	if !agreeing["select-track-a"] || !agreeing["hold-for-review-decision"] {
+		t.Fatalf("both agreeing rules are traced true with their shared outcome: %+v", output.Trace)
 	}
 }
