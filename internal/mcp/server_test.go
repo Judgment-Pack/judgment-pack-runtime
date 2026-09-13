@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -21,6 +20,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func message(t *testing.T, id int, method string, params any) string {
@@ -965,32 +965,23 @@ func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 	if len(excluded) != 2 || excluded[0] != "." || excluded[1] != ".." {
 		t.Fatalf("the schema excludes . and ..: %v", session["not"])
 	}
-	// The schema, evaluated on a value as a client would evaluate it: the
-	// pattern, the lengths, the exclusions, the integer bounds, the
-	// required members and nothing else.
+	// The advertised schema itself, compiled by the validator this runtime
+	// validates packs with, evaluated on each value: what it admits, the
+	// handler admits, and the reverse.
+	schemaBytes, err := json.Marshal(cites)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := validation.CompileSchema(schemaBytes, "urn:judgmentpack:test:cites")
+	if err != nil {
+		t.Fatalf("the advertised cites schema does not compile: %v", err)
+	}
 	admits := func(document string) bool {
-		var elements []map[string]any
-		if json.Unmarshal([]byte(document), &elements) != nil {
+		instance, err := jsonschema.UnmarshalJSON(strings.NewReader(document))
+		if err != nil {
 			return false
 		}
-		for _, e := range elements {
-			if len(e) != 3 {
-				return false
-			}
-			s, ok := e["sessionId"].(string)
-			if !ok || len(s) < 1 || len(s) > 128 || !regexp.MustCompile(session["pattern"].(string)).MatchString(s) || s == "." || s == ".." {
-				return false
-			}
-			n, ok := e["callIndex"].(float64)
-			if !ok || n != float64(int64(n)) || n < 0 || n > 9007199254740991 {
-				return false
-			}
-			g, ok := e["signature"].(string)
-			if !ok || !regexp.MustCompile(signature["pattern"].(string)).MatchString(g) {
-				return false
-			}
-		}
-		return true
+		return compiled.Validate(instance) == nil
 	}
 	// What the schema admits, the handler admits, and the reverse, on the
 	// values the patterns and bounds decide.

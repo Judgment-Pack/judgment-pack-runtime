@@ -2290,8 +2290,31 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); !os.IsNotExist(err) {
 		t.Fatalf("a refused envelope records nothing: %v", err)
 	}
+	// An id given twice is no one id: the refusal carries null (JSON-RPC
+	// §5); a refusal in params, under one id, carries that id.
+	responses := runServer(t, `{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":`+good+`}`)
+	if id, present := responses[0]["id"]; !present || id != nil {
+		t.Fatalf("an ambiguous id is answered with null: %#v", responses[0])
+	}
+	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":`+string(facts)+`},"arguments":{}}}`)
+	if responses[0]["id"] != float64(5) {
+		t.Fatalf("a refusal in params carries the request's id: %#v", responses[0])
+	}
+	// A notification -- no id -- is answered by nothing, its errors
+	// included (§4.1), and is not dispatched: nothing is recorded.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","method":"tools/call","params":` + rehearsing + `,"params":` + good + `}`,
+		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`,
+	} {
+		if responses := runServer(t, line); len(responses) != 0 {
+			t.Fatalf("a notification is answered by nothing: %#v", responses)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("a refused notification records nothing: %v", err)
+	}
 	// The ordinary envelope, once and exactly, is answered.
-	responses := runServer(t, `{"jsonrpc":"2.0","id":9,"method":"tools/call","params":`+good+`}`)
+	responses = runServer(t, `{"jsonrpc":"2.0","id":9,"method":"tools/call","params":`+good+`}`)
 	if responses[0]["result"].(map[string]any)["isError"] != false {
 		t.Fatalf("the ordinary call: %#v", responses[0])
 	}

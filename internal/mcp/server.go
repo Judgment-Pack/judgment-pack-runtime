@@ -81,8 +81,19 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 		// vanish behind a second. Refused as the malformed request it is,
 		// with the id the struct read, since a message that carries two ids
 		// has no one id to answer under.
-		if rpcErr := exactEnvelope(line); rpcErr != nil {
-			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": rpcErr})
+		if rpcErr, idTrusted := exactEnvelope(line); rpcErr != nil {
+			// A notification -- no id -- is answered by nothing, errors
+			// included (JSON-RPC §4.1), and is not dispatched either. An id
+			// that the walk found given twice is no one id, and the answer
+			// carries null (§5).
+			if len(request.ID) == 0 {
+				continue
+			}
+			var id any = request.ID
+			if !idTrusted {
+				id = nil
+			}
+			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": id, "error": rpcErr})
 			continue
 		}
 		if response, ok := s.handle(&request); ok {
@@ -169,20 +180,22 @@ func (s *Server) initializeResult(rawParams json.RawMessage) map[string]any {
 // to being given once and spelled exactly: a member twice, or a member that
 // differs from a known one only by case, is refused before any decoder reads
 // the last of two or folds the case.
-func exactEnvelope(line []byte) *rpcError {
+func exactEnvelope(line []byte) (rpcErr *rpcError, idTrusted bool) {
 	if message := membersOnce(line, []string{"jsonrpc", "id", "method", "params"}); message != "" {
-		return &rpcError{Code: codeInvalidRequest, Message: "The request " + message}
+		// The id the struct read is one of possibly two, or one bound by
+		// case; it cannot be answered under.
+		return &rpcError{Code: codeInvalidRequest, Message: "The request " + message}, false
 	}
 	var envelope struct {
 		Params json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(line, &envelope); err != nil || len(envelope.Params) == 0 || envelope.Params[0] != '{' {
-		return nil
+		return nil, true
 	}
 	if message := membersOnce(envelope.Params, []string{"name", "arguments", "_meta", "protocolVersion", "capabilities", "clientInfo", "cursor", "uri"}); message != "" {
-		return &rpcError{Code: codeInvalidParams, Message: "The params " + message}
+		return &rpcError{Code: codeInvalidParams, Message: "The params " + message}, true
 	}
-	return nil
+	return nil, true
 }
 
 // membersOnce walks one JSON object's members as tokens and reports the
