@@ -864,7 +864,7 @@ func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 			tool:      "experimental_evaluate",
 			arguments: map[string]any{"PACK_ID": "intake", "facts": projectFacts},
 			member:    "PACK_ID",
-			accepted:  "the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal",
+			accepted:  "the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites",
 		},
 		{
 			name:      "experimental_test_packs PACK_ID",

@@ -183,6 +183,7 @@ func (a *App) graphValidateCommand() *cobra.Command {
 func (a *App) graphEvaluateCommand() *cobra.Command {
 	format := "human"
 	inputsPath := ""
+	citesPath := ""
 	supported := []string{}
 	configPath := ""
 	command := &cobra.Command{
@@ -243,6 +244,12 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			// not declared is a draft — evaluated, never refused for being
 			// unlocked, and recorded as a draft run.
 			auditWriter := loaded.AuditWriter()
+			// The citations are held to their shape here, as an invocation
+			// is, and every record of the run carries them (ADR-0033).
+			cites, invocation := a.readCites(citesPath)
+			if invocation != "" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-CITES", invocation)
+			}
 			// One read of the reviewed set for the whole run. The configuration
 			// and the graph document are checked against it here; each node's
 			// pack is checked against the same retained revision where its bytes
@@ -268,6 +275,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				// matrix row is a check on a graph, not a decision the project
 				// took (ADR-0018).
 				Audit:    auditWriter,
+				Cites:    cites,
 				LawCheck: nodeCheck,
 			})
 			if evaluateFailure != nil {
@@ -281,6 +289,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&inputsPath, "inputs", inputsPath, "JSON inputs document keyed by node id, each entry {\"facts\": <document>, \"evidence\": {\"<requirement-id>\": \"present\"|\"absent\"|\"unknown\"}}: a file path, or - for standard input")
+	command.Flags().StringVar(&citesPath, "cites", citesPath, "optional citations document, a file path: a JSON array of the gateway receipts this run relied on, each {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} as the gateway's action receipt cites them (ADR-0033); held to that shape and recorded as given on every record of the run, node and composite alike; nothing is verified and no store is read")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, applied to every node (repeatable)")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	return command

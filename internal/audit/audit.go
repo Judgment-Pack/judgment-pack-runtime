@@ -69,7 +69,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"path"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -141,7 +146,145 @@ type Record struct {
 	Artifact             *result.Artifact       `json:"artifact,omitempty"`
 	Reviewed             *bool                  `json:"reviewed,omitempty"`
 	ReviewedSet          *ReviewedSet           `json:"reviewedSet,omitempty"`
+	Cites                []Citation             `json:"cites,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
+}
+
+// Citation names one gateway receipt the caller said this decision relied
+// on (ADR-0033), in the shape the gateway's action receipt gives the same
+// member: the session, the receipt's index in it, and the receipt's own
+// signature. It is recorded as given. This runtime holds a supplied
+// document to the shape below and to nothing else: it does not know
+// whether the session exists, whether the signature is one, or whether the
+// receipt has anything to do with the facts — those are the gateway
+// verifier's findings, made against its own store with the trail beside
+// it. The member is additive, so recordVersion stays "1", as it did for
+// Reviewed.
+type Citation struct {
+	SessionID string `json:"sessionId"`
+	CallIndex int64  `json:"callIndex"`
+	Signature string `json:"signature"`
+}
+
+// MaxCitesBytes bounds a citations document: a citation is under two
+// hundred bytes, and a decision that relied on more than a few thousand
+// receipts is not one this trail was built for.
+const MaxCitesBytes = 1 << 20
+
+// ParseCites holds a citations document to its shape: a JSON array whose
+// every element is an object with exactly sessionId (a non-empty string),
+// callIndex (a non-negative integer) and signature (a non-empty string).
+// Member names are matched exactly and a member twice is refused, since
+// encoding/json would fold "SessionId" onto sessionId and keep the last of
+// two — and a citation is recorded as given, so what is given must be one
+// thing. Nothing is resolved or verified. An empty array is no citation,
+// and is returned as nil so that the record omits the member.
+func ParseCites(document []byte) ([]Citation, error) {
+	if len(document) > MaxCitesBytes {
+		return nil, fmt.Errorf("the citations document exceeds %d bytes", MaxCitesBytes)
+	}
+	// An array and nothing else: null would decode into an empty slice
+	// and pass for no citation, and null is not what a caller who wrote
+	// it meant.
+	trimmed := bytes.TrimSpace(document)
+	if len(trimmed) == 0 || trimmed[0] != '[' {
+		return nil, errors.New("the citations document is not a JSON array")
+	}
+	var raw []json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, errors.New("the citations document is not a JSON array")
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, errors.New("the citations document carries more than one JSON text")
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	cites := make([]Citation, 0, len(raw))
+	for i, element := range raw {
+		members, err := exactObject(element)
+		if err != nil {
+			return nil, fmt.Errorf("citation %d: %v", i, err)
+		}
+		for name := range members {
+			if name != "sessionId" && name != "callIndex" && name != "signature" {
+				return nil, fmt.Errorf("citation %d: unknown member %q", i, name)
+			}
+		}
+		var c Citation
+		if err := decodeString(members["sessionId"], &c.SessionID); err != nil || c.SessionID == "" {
+			return nil, fmt.Errorf("citation %d: sessionId must be a non-empty string", i)
+		}
+		if err := decodeInteger(members["callIndex"], &c.CallIndex); err != nil || c.CallIndex < 0 {
+			return nil, fmt.Errorf("citation %d: callIndex must be a non-negative integer", i)
+		}
+		if err := decodeString(members["signature"], &c.Signature); err != nil || c.Signature == "" {
+			return nil, fmt.Errorf("citation %d: signature must be a non-empty string", i)
+		}
+		cites = append(cites, c)
+	}
+	return cites, nil
+}
+
+// exactObject reads one JSON object into its members by exact name,
+// refusing anything that is not an object and any member given twice.
+func exactObject(element json.RawMessage) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(element))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("not an object")
+	}
+	members := map[string]json.RawMessage{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, errors.New("not an object")
+		}
+		name, ok := token.(string)
+		if !ok {
+			return nil, errors.New("not an object")
+		}
+		if _, dup := members[name]; dup {
+			return nil, fmt.Errorf("member %q given twice", name)
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return nil, errors.New("not an object")
+		}
+		members[name] = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return nil, errors.New("not an object")
+	}
+	return members, nil
+}
+
+// decodeString reads a JSON string and nothing else; an absent member is
+// an error.
+func decodeString(raw json.RawMessage, into *string) error {
+	if len(raw) == 0 || raw[0] != '"' {
+		return errors.New("not a string")
+	}
+	return json.Unmarshal(raw, into)
+}
+
+// decodeInteger reads a JSON number that is an integer literal -- no
+// fraction, no exponent, no leading zero -- and nothing else.
+func decodeInteger(raw json.RawMessage, into *int64) error {
+	text := string(bytes.TrimSpace(raw))
+	if text == "" || strings.ContainsAny(text, ".eE") {
+		return errors.New("not an integer")
+	}
+	if len(text) > 1 && (text[0] == '0' || (text[0] == '-' && text[1] == '0')) {
+		return errors.New("not an integer")
+	}
+	n, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return errors.New("not an integer")
+	}
+	*into = n
+	return nil
 }
 
 // ReviewedSet names the revision of the reviewed set that made Reviewed true:
@@ -262,7 +405,7 @@ func newRun() string {
 // its records until the whole run has completed. The record is stamped here,
 // when the evaluation it describes finished, rather than when the line is
 // written — a held record's own time is when its node ran.
-func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, pack []byte, graph *Graph) (Record, error) {
+func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, cites []Citation, pack []byte, graph *Graph) (Record, error) {
 	disposition, err := evaluated.Disposition.Canonical()
 	if err != nil {
 		return Record{}, err
@@ -286,6 +429,7 @@ func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, pack []byte, g
 		Inputs:         &inputs,
 		DraftPrototype: evaluated.DraftPrototype,
 		Artifact:       evaluated.Artifact,
+		Cites:          cites,
 		Disposition:    disposition,
 	}), nil
 }
@@ -294,7 +438,7 @@ func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, pack []byte, g
 // leaves. It repeats no node's inputs or pack: the node records carry those.
 // digest names the graph document's exact bytes, which the composite payload
 // does not carry — the caller that read those bytes is the one that knows them.
-func CompositeRecord(evaluated result.GraphEvaluation, digest string) (Record, error) {
+func CompositeRecord(evaluated result.GraphEvaluation, digest string, cites []Citation) (Record, error) {
 	disposition, err := evaluated.Disposition.Canonical()
 	if err != nil {
 		return Record{}, err
@@ -311,6 +455,7 @@ func CompositeRecord(evaluated result.GraphEvaluation, digest string) (Record, e
 			ResultNode:    evaluated.ResultNode,
 		},
 		Artifact:    evaluated.Artifact,
+		Cites:       cites,
 		Disposition: disposition,
 	}), nil
 }
@@ -329,11 +474,11 @@ func stamp(record Record) Record {
 }
 
 // Evaluation composes and appends one completed single-pack evaluation's record.
-func (w *Writer) Evaluation(evaluated result.Evaluation, inputs Inputs, pack []byte, graph *Graph) error {
+func (w *Writer) Evaluation(evaluated result.Evaluation, inputs Inputs, cites []Citation, pack []byte, graph *Graph) error {
 	if w == nil {
 		return nil
 	}
-	record, err := EvaluationRecord(evaluated, inputs, pack, graph)
+	record, err := EvaluationRecord(evaluated, inputs, cites, pack, graph)
 	if err != nil {
 		return err
 	}

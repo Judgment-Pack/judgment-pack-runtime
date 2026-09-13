@@ -1650,12 +1650,12 @@ func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
 	// choice of which one the message names.
 	for index, want := range map[int]string{
 		1: booleanError,
-		2: `The "experimental_evaluate" arguments carry an unknown member "REHEARSAL"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal, spelled exactly.`,
+		2: `The "experimental_evaluate" arguments carry an unknown member "REHEARSAL"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites, spelled exactly.`,
 		3: booleanError,
 		4: booleanError,
 		5: booleanError,
 		6: booleanError,
-		7: `The "experimental_evaluate" arguments carry an unknown member "aaa"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal, spelled exactly.`,
+		7: `The "experimental_evaluate" arguments carry an unknown member "aaa"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites, spelled exactly.`,
 	} {
 		response := responses[index]["result"].(map[string]any)
 		if response["isError"] != true {
@@ -2160,5 +2160,62 @@ func TestExperimentalListGraphsRefusesArguments(t *testing.T) {
 	if array := responses[3]["result"].(map[string]any); array["isError"] != true ||
 		!strings.Contains(toolText(t, array), "must be an object") {
 		t.Fatalf("a non-object is refused before any project read: %#v", array)
+	}
+}
+
+// The cites argument lands on the record as given (ADR-0033); one not of
+// the gateway's shape, or of the wrong type, is a tool error before the
+// evaluator runs, and leaves no record.
+func TestExperimentalEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+	cites := []map[string]any{{"sessionId": "s-2026-09-12-a", "callIndex": 17, "signature": strings.Repeat("a", 128)}}
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": cites}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []map[string]any{{"sessionId": "s", "callIndex": -1, "signature": "x"}}}),
+		toolCall(t, 3, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": "not an array"}),
+		toolCall(t, 4, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": nil}),
+		toolCall(t, 5, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []any{}}),
+		toolCall(t, 6, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": cites, "rehearsal": true}),
+	}, ""))
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("with citations: %#v", responses[0])
+	}
+	for _, index := range []int{1, 2, 3} {
+		result := responses[index]["result"].(map[string]any)
+		if result["isError"] != true || !strings.Contains(toolText(t, result), `"cites"`) {
+			t.Fatalf("call %d must be refused for its citations: %#v", index+1, responses[index])
+		}
+	}
+	if responses[4]["result"].(map[string]any)["isError"] != false || responses[5]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("an empty array cites nothing, and a rehearsal runs: %#v %#v", responses[4], responses[5])
+	}
+	data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("two records -- the cited call and the empty-array call; the refused calls and the rehearsal leave none: %q", data)
+	}
+	if !strings.Contains(lines[0], `"cites":[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"`+strings.Repeat("a", 128)+`"}]`) {
+		t.Fatalf("the citations as given: %s", lines[0])
+	}
+	if strings.Contains(lines[1], `"cites"`) {
+		t.Fatalf("an empty array leaves no member: %s", lines[1])
 	}
 }

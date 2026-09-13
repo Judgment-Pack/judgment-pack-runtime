@@ -157,6 +157,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	quantifiers := false
 	rehearsal := false
 	packID := ""
+	citesPath := ""
 	configPath := ""
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
@@ -268,6 +269,13 @@ func (a *App) evaluateCommand() *cobra.Command {
 					oversized = append(oversized, "evidence")
 				}
 			}
+			// The citations are not an input the engine sees: they are held
+			// to their shape here, as an invocation is, and recorded as given
+			// (ADR-0033).
+			cites, invocation := a.readCites(citesPath)
+			if invocation != "" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-CITES", invocation)
+			}
 			// The reviewed set is consulted on the bytes this run is about to
 			// evaluate, never on a second read of the path they came from
 			// (ADR-0019): a claim about a review has to be about the document
@@ -327,7 +335,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 				Facts:            facts,
 				Evidence:         evidence,
 				EvidenceSupplied: evidencePath != "",
-			}, pack, nil); err != nil {
+			}, cites, pack, nil); err != nil {
 				return a.operational("experimental evaluate", format, result.ExitIO, audit.FailureCode, audit.FailureMessage)
 			}
 			if err := a.renderEvaluation(format, output); err != nil {
@@ -342,6 +350,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports (repeatable)")
 	command.Flags().BoolVar(&quantifiers, "rfc0008-quantifiers", quantifiers, "DRAFT-RFC PROTOTYPE: admit the spec's RFC 0008 (Draft) collection quantifiers -- exists, every, uniform -- in conditions. A pack using them is NOT valid under any published JPS version; spec validate rejects it, and every successful evaluation payload produced this way is labeled a draft-RFC prototype (a refusal is reported as an operational error and carries no such label)")
 	command.Flags().BoolVar(&rehearsal, "rehearsal", rehearsal, "declare this run a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision")
+	command.Flags().StringVar(&citesPath, "cites", citesPath, "optional citations document, a file path: a JSON array of the gateway receipts this decision relied on, each {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} as the gateway's action receipt cites them (ADR-0033). Held to that shape and recorded as given on the audit record; nothing is verified and no store is read. A rehearsal records nothing, citations included")
 	command.Flags().StringVar(&packID, "pack-id", packID, "decision id of a pack declared in the project's jpack.json; mutually exclusive with the pack argument")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	return command
@@ -412,6 +421,28 @@ func (a *App) readEvaluationInput(argument string) ([]byte, bool, error) {
 // evaluateReadFailure reports a failed evaluation-input read. An input above the
 // byte limit does not reach here: readEvaluationInput hands that condition to the
 // engine, which reports it as the §8.4 evaluation error it is.
+// readCites reads and holds a citations document (ADR-0033), returning the
+// citations or the sentence that refuses the invocation. It is a file
+// path, never standard input, which the pack and the facts may already be
+// reading; an absent flag is no citation at all.
+func (a *App) readCites(path string) ([]audit.Citation, string) {
+	if path == "" {
+		return nil, ""
+	}
+	if path == "-" {
+		return nil, "--cites takes a file path, not -: the citations document is not read from standard input."
+	}
+	data, err := a.readPack(path, audit.MaxCitesBytes)
+	if err != nil {
+		return nil, "The --cites document could not be read as one bounded regular file."
+	}
+	cites, err := audit.ParseCites(data)
+	if err != nil {
+		return nil, "The --cites document must be a JSON array of {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} objects: " + err.Error() + "."
+	}
+	return cites, ""
+}
+
 func (a *App) evaluateReadFailure(format, name string) error {
 	return a.operational("experimental evaluate", format, result.ExitIO, "JPS-INPUT-READ", fmt.Sprintf("The %s input could not be read as one bounded regular file or standard input stream.", name))
 }

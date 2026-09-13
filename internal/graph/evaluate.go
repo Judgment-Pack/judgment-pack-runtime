@@ -35,6 +35,13 @@ type Options struct {
 	// with the same configuration, records nothing.
 	Audit *audit.Writer
 
+	// Cites are the receipts the caller said this run relied on (ADR-0033),
+	// already held to their shape by the surface; every record the run
+	// leaves carries them, node and composite alike, since they belong to
+	// the run's inputs and every record of a run shares its id. Nil when
+	// none were given.
+	Cites []audit.Citation
+
 	// LawCheck is a caller-supplied check on each node's pack, applied to the
 	// exact bytes this run is about to evaluate, at the one point they are in
 	// hand. It is a function rather than anything this package understands:
@@ -363,7 +370,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 				Facts:            factsBytes,
 				Evidence:         evidenceBytes,
 				EvidenceSupplied: evidenceSupplied,
-			}, packBytes, &audit.Graph{
+			}, options.Cites, packBytes, &audit.Graph{
 				ID:            doc.ID,
 				Version:       doc.Version,
 				FormatVersion: doc.FormatVersion,
@@ -434,7 +441,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 	// holds — the headline this run produced, and which node the graph declared
 	// it comes from.
 	if options.Audit != nil {
-		composite, err := audit.CompositeRecord(output, doc.Digest)
+		composite, err := audit.CompositeRecord(output, doc.Digest, options.Cites)
 		if err != nil {
 			return result.GraphEvaluation{}, auditWriteFailure()
 		}

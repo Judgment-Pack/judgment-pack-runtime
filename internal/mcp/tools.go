@@ -149,6 +149,11 @@ func toolDefinitions() []map[string]any {
 					"evidence":             map[string]any{"type": "string", "description": "Optional tri-state evidence availability, as JSON text: an object mapping declared evidence-requirement ids to \"present\", \"absent\", or \"unknown\". An omitted id is unknown. Omit this key entirely to supply no document at all, which makes every declared requirement unknown; a key present with an empty string is a supplied empty document, which is not a JSON text and is refused as malformed-input."},
 					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports."},
 					"rehearsal":            map[string]any{"type": "boolean", "description": "Declare this call a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision. Never inferred: omitting the key is the ordinary call, recorded exactly when the project declares a trail."},
+					"cites": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"sessionId", "callIndex", "signature"}, "properties": map[string]any{
+						"sessionId": map[string]any{"type": "string", "description": "The gateway session the cited receipt is in."},
+						"callIndex": map[string]any{"type": "integer", "minimum": 0, "description": "The receipt's index in that session."},
+						"signature": map[string]any{"type": "string", "description": "The cited receipt's own signature."},
+					}}, "description": "Optional: the gateway receipts this decision relied on, each named as the gateway's action receipt cites one (ADR-0033). Held to this shape and recorded as given on the audit record; nothing is verified and no store is read, so a citation is the caller's assertion and the gateway verifier's finding. A rehearsal records nothing, citations included. Omit the key, or pass an empty array, to cite nothing."},
 				},
 			},
 		},
@@ -817,6 +822,7 @@ type evaluateArguments struct {
 	Evidence            json.RawMessage `json:"evidence"`
 	SupportedExtensions []string        `json:"supported_extensions"`
 	Rehearsal           json.RawMessage `json:"rehearsal"`
+	Cites               json.RawMessage `json:"cites"`
 }
 
 // boolArgument decodes one boolean argument, returning its value and an
@@ -884,14 +890,25 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		// field and reach the guards that turn recording and the lock consult
 		// off — exactMembers holds every spelling to the schema's exact one
 		// first.
-		if message := exactMembers("experimental_evaluate", rawArgs, "pack", "pack_id", "facts", "evidence", "supported_extensions", "rehearsal"); message != "" {
+		if message := exactMembers("experimental_evaluate", rawArgs, "pack", "pack_id", "facts", "evidence", "supported_extensions", "rehearsal", "cites"); message != "" {
 			return toolError(message)
 		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
-			return toolError(`The "experimental_evaluate" arguments must be an object with a string "facts", exactly one of string "pack" and string "pack_id", optional string "evidence", optional "supported_extensions" (an array of strings), and optional boolean "rehearsal"; unknown keys are rejected.`)
+			return toolError(`The "experimental_evaluate" arguments must be an object with a string "facts", exactly one of string "pack" and string "pack_id", optional string "evidence", optional "supported_extensions" (an array of strings), optional boolean "rehearsal", and optional "cites" (an array of {"sessionId": string, "callIndex": integer, "signature": string} objects); unknown keys are rejected.`)
 		}
+	}
+	// The citations are held to their shape as an argument is, and recorded
+	// as given (ADR-0033); an explicit null is not an array, and is refused
+	// as the wrong type like any other null on this surface.
+	var cites []audit.Citation
+	if len(args.Cites) > 0 {
+		parsed, err := audit.ParseCites(args.Cites)
+		if err != nil {
+			return toolError(`The "cites" argument must be an array of {"sessionId": string, "callIndex": integer, "signature": string} objects: ` + err.Error() + ".")
+		}
+		cites = parsed
 	}
 	pack, packPresent, argumentError := textArgument("pack", args.Pack)
 	if argumentError != "" {
@@ -1022,7 +1039,7 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		Facts:            json.RawMessage(facts),
 		Evidence:         json.RawMessage(evidence),
 		EvidenceSupplied: evidenceSupplied,
-	}, []byte(pack), nil); err != nil {
+	}, cites, []byte(pack), nil); err != nil {
 		return auditToolError()
 	}
 	return toolResult(output)

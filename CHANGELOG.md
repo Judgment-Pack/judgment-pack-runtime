@@ -2,6 +2,20 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A decision record cites the receipts it relied on** (ADR-0033): `experimental evaluate
+  --cites <file>`, `experimental graph evaluate --cites <file>` and the MCP `experimental_evaluate`
+  tool's `cites` argument take an array of `{sessionId, callIndex, signature}` — the shape the
+  gateway's action receipt gives the same member — and every record the run leaves carries it as
+  `cites`, recorded as given: the runtime holds the document to that shape and to nothing else,
+  verifies no receipt and reads no store. A document not of the shape is refused as a bad
+  invocation before the evaluator is reached. The member is omitted when none were supplied, so
+  existing records are unchanged; it is additive, and `recordVersion` stays `"1"` as it did for
+  `reviewed`. A rehearsal records nothing, citations included. Additive output under
+  VERSIONING.md's MINOR rule; the evaluator's conformance claim is unaffected and stated, in full
+  and only, in `CONFORMANCE.md`.
+
 ## 0.19.0 - 2026-08-24
 
 - **A graph row asserts the handoff target** (ADR-0032, closes #128): under `graphMatrixVersion
