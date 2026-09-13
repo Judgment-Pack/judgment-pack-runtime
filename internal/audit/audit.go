@@ -204,7 +204,9 @@ func ParseCites(document []byte) ([]Citation, error) {
 	// An array and nothing else: null would decode into an empty slice
 	// and pass for no citation, and null is not what a caller who wrote
 	// it meant.
-	trimmed := bytes.TrimSpace(document)
+	// Only JSON's own whitespace is passed over on the way to the array;
+	// a form feed or a Unicode space is not JSON and is not read past.
+	trimmed := bytes.Trim(document, " \t\r\n")
 	if len(trimmed) == 0 || trimmed[0] != '[' {
 		return nil, errors.New("the citations document is not a JSON array")
 	}

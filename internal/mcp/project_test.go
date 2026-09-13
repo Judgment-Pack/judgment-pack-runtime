@@ -2235,3 +2235,64 @@ func TestExperimentalEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
 		t.Fatalf("a refused call records nothing: %v %q", err, data)
 	}
 }
+
+// The envelope is read exactly and once (round 2 of ADR-0033's review): a
+// params or arguments object given twice, or spelled by another case,
+// is refused before any decoder keeps the last of two -- so a first
+// arguments object that cites nothing, or declares a rehearsal, cannot
+// vanish behind a second that does not. Every tool's arguments are held
+// the same way, centrally.
+func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+	facts, _ := json.Marshal(projectFacts)
+	good := `{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `}}`
+	rehearsing := `{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"rehearsal":true}}`
+	citingNothing := `{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null}}`
+	for name, tc := range map[string]struct{ line, want string }{
+		"params twice, the first a rehearsal":     {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + rehearsing + `,"params":` + good + `}`, `carries the member "params" twice`},
+		"params twice, the first citing null":     {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + citingNothing + `,"params":` + good + `}`, `carries the member "params" twice`},
+		"Params by another case":                  {`{"jsonrpc":"2.0","id":1,"method":"tools/call","Params":` + good + `}`, `"Params", which is not the member "params"`},
+		"id twice":                                {`{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":` + good + `}`, `carries the member "id" twice`},
+		"arguments twice inside params":           {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`, `carries the member "arguments" twice`},
+		"Arguments by another case":               {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"experimental_evaluate","Arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`, `"Arguments", which is not the member "arguments"`},
+		"an argument twice for another tool":      {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_schema","arguments":{"name":"a","name":"b"}}}`, `The "get_schema" arguments carries the member "name" twice`},
+		"an argument twice for the validate tool": {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate","arguments":{"document":"{}","document":"[]"}}}`, `The "validate" arguments carries the member "document" twice`},
+	} {
+		responses := runServer(t, tc.line)
+		if len(responses) != 1 {
+			t.Fatalf("%s: %d responses", name, len(responses))
+		}
+		text := ""
+		if e, ok := responses[0]["error"].(map[string]any); ok {
+			text = e["message"].(string)
+		} else if r, ok := responses[0]["result"].(map[string]any); ok && r["isError"] == true {
+			text = toolText(t, r)
+		}
+		if !strings.Contains(text, tc.want) {
+			t.Fatalf("%s: want %q, got %#v", name, tc.want, responses[0])
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("a refused envelope records nothing: %v", err)
+	}
+	// The ordinary envelope, once and exactly, is answered.
+	responses := runServer(t, `{"jsonrpc":"2.0","id":9,"method":"tools/call","params":`+good+`}`)
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("the ordinary call: %#v", responses[0])
+	}
+}

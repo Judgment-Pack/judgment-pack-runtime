@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -957,23 +958,62 @@ func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 		t.Fatalf("the cites schema does not state the handler's shape: %v", cites)
 	}
 	required, _ := items["required"].([]any)
-	if len(required) != 3 {
-		t.Fatalf("every member is required: %v", required)
+	if len(required) != 3 || required[0] != "sessionId" || required[1] != "callIndex" || required[2] != "signature" {
+		t.Fatalf("exactly the three members are required: %v", required)
+	}
+	excluded, _ := session["not"].(map[string]any)["enum"].([]any)
+	if len(excluded) != 2 || excluded[0] != "." || excluded[1] != ".." {
+		t.Fatalf("the schema excludes . and ..: %v", session["not"])
+	}
+	// The schema, evaluated on a value as a client would evaluate it: the
+	// pattern, the lengths, the exclusions, the integer bounds, the
+	// required members and nothing else.
+	admits := func(document string) bool {
+		var elements []map[string]any
+		if json.Unmarshal([]byte(document), &elements) != nil {
+			return false
+		}
+		for _, e := range elements {
+			if len(e) != 3 {
+				return false
+			}
+			s, ok := e["sessionId"].(string)
+			if !ok || len(s) < 1 || len(s) > 128 || !regexp.MustCompile(session["pattern"].(string)).MatchString(s) || s == "." || s == ".." {
+				return false
+			}
+			n, ok := e["callIndex"].(float64)
+			if !ok || n != float64(int64(n)) || n < 0 || n > 9007199254740991 {
+				return false
+			}
+			g, ok := e["signature"].(string)
+			if !ok || !regexp.MustCompile(signature["pattern"].(string)).MatchString(g) {
+				return false
+			}
+		}
+		return true
 	}
 	// What the schema admits, the handler admits, and the reverse, on the
 	// values the patterns and bounds decide.
-	for value, admitted := range map[string]bool{
-		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                             true,
-		`[{"sessionId":"` + strings.Repeat("s", 128) + `","callIndex":9007199254740991,"signature":"` + strings.Repeat("f", 128) + `"}]`: true,
-		`[{"sessionId":"","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                                false,
-		`[{"sessionId":"s/1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                             false,
-		`[{"sessionId":"s-1","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                            false,
-		`[{"sessionId":"s-1","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`:                              false,
-		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("A", 128) + `"}]`:                                             false,
-		`[{"sessionId":"s-1","callIndex":0,"signature":""}]`:                                                                             false,
+	for _, value := range []string{
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"` + strings.Repeat("s", 128) + `","callIndex":9007199254740991,"signature":"` + strings.Repeat("f", 128) + `"}]`,
+		`[{"sessionId":"","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":".","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"..","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"...","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s/1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"` + strings.Repeat("s", 129) + `","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("A", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 127) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":""}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `","more":1}]`,
+		`[{"sessionId":"s-1","signature":"` + strings.Repeat("a", 128) + `"}]`,
 	} {
-		if _, err := audit.ParseCites([]byte(value)); (err == nil) != admitted {
-			t.Errorf("%s: handler admitted=%v, schema admits=%v", value, err == nil, admitted)
+		_, err := audit.ParseCites([]byte(value))
+		if (err == nil) != admits(value) {
+			t.Errorf("%s: handler admits=%v, schema admits=%v", value, err == nil, admits(value))
 		}
 	}
 }

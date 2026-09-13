@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -24,6 +25,7 @@ const maxMessageBytes = 16 * 1024 * 1024
 
 const (
 	codeParse          = -32700
+	codeInvalidRequest = -32600
 	codeMethodNotFound = -32601
 	codeInvalidParams  = -32602
 )
@@ -70,6 +72,17 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 		var request rpcRequest
 		if err := json.Unmarshal(line, &request); err != nil {
 			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": nil, "error": &rpcError{Code: codeParse, Message: "Message is not valid JSON."}})
+			continue
+		}
+		// The envelope's members are read exactly and once, before the
+		// struct above is trusted: encoding/json would bind "Params" to
+		// params and keep the last of two, so a first params or arguments
+		// object -- one declaring a rehearsal, or citing nothing -- could
+		// vanish behind a second. Refused as the malformed request it is,
+		// with the id the struct read, since a message that carries two ids
+		// has no one id to answer under.
+		if rpcErr := exactEnvelope(line); rpcErr != nil {
+			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": request.ID, "error": rpcErr})
 			continue
 		}
 		if response, ok := s.handle(&request); ok {
@@ -150,4 +163,57 @@ func (s *Server) initializeResult(rawParams json.RawMessage) map[string]any {
 			"version": result.CLIVersion,
 		},
 	}
+}
+
+// exactEnvelope holds a request's top-level members, and its params object's,
+// to being given once and spelled exactly: a member twice, or a member that
+// differs from a known one only by case, is refused before any decoder reads
+// the last of two or folds the case.
+func exactEnvelope(line []byte) *rpcError {
+	if message := membersOnce(line, []string{"jsonrpc", "id", "method", "params"}); message != "" {
+		return &rpcError{Code: codeInvalidRequest, Message: "The request " + message}
+	}
+	var envelope struct {
+		Params json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(line, &envelope); err != nil || len(envelope.Params) == 0 || envelope.Params[0] != '{' {
+		return nil
+	}
+	if message := membersOnce(envelope.Params, []string{"name", "arguments", "_meta", "protocolVersion", "capabilities", "clientInfo", "cursor", "uri"}); message != "" {
+		return &rpcError{Code: codeInvalidParams, Message: "The params " + message}
+	}
+	return nil
+}
+
+// membersOnce walks one JSON object's members as tokens and reports the
+// first given twice, or the first spelled as a known member by another
+// case; "" when the object is not one (a later decoder says so) or is in
+// order.
+func membersOnce(object []byte, known []string) string {
+	decoder := json.NewDecoder(bytes.NewReader(object))
+	if tok, err := decoder.Token(); err != nil || tok != json.Delim('{') {
+		return ""
+	}
+	seen := map[string]bool{}
+	for decoder.More() {
+		tok, err := decoder.Token()
+		if err != nil {
+			return ""
+		}
+		name, _ := tok.(string)
+		if seen[name] {
+			return fmt.Sprintf("carries the member %q twice; each member is given once.", name)
+		}
+		seen[name] = true
+		for _, k := range known {
+			if name != k && strings.EqualFold(name, k) {
+				return fmt.Sprintf("carries %q, which is not the member %q spelled exactly.", name, k)
+			}
+		}
+		var skip json.RawMessage
+		if err := decoder.Decode(&skip); err != nil {
+			return ""
+		}
+	}
+	return ""
 }
