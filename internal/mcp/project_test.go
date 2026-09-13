@@ -2300,11 +2300,21 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	if responses[0]["id"] != float64(5) {
 		t.Fatalf("a refusal in params carries the request's id: %#v", responses[0])
 	}
+	// An id beside a member spelled as it by another case is answered,
+	// since an id is there, and under null, since which is not.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":6,"ID":7,"method":"tools/call","params":`+good+`}`)
+	if len(responses) != 1 || responses[0]["id"] != nil {
+		t.Fatalf("an id beside an ID: %#v", responses)
+	}
 	// A notification -- no id -- is answered by nothing, its errors
 	// included (§4.1), and is not dispatched: nothing is recorded.
 	for _, line := range []string{
 		`{"jsonrpc":"2.0","method":"tools/call","params":` + rehearsing + `,"params":` + good + `}`,
 		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`,
+		// An "ID" or an "Id" is not an id: the struct would bind it, the
+		// walk does not, and a refused notification stays unanswered.
+		`{"jsonrpc":"2.0","ID":1,"method":"ping"}`,
+		`{"jsonrpc":"2.0","Id":1,"method":"tools/call","params":` + good + `}`,
 	} {
 		if responses := runServer(t, line); len(responses) != 0 {
 			t.Fatalf("a notification is answered by nothing: %#v", responses)

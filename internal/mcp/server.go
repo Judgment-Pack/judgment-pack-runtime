@@ -81,12 +81,15 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 		// vanish behind a second. Refused as the malformed request it is,
 		// with the id the struct read, since a message that carries two ids
 		// has no one id to answer under.
-		if rpcErr, idTrusted := exactEnvelope(line); rpcErr != nil {
-			// A notification -- no id -- is answered by nothing, errors
-			// included (JSON-RPC §4.1), and is not dispatched either. An id
-			// that the walk found given twice is no one id, and the answer
-			// carries null (§5).
-			if len(request.ID) == 0 {
+		if rpcErr, idPresent, idTrusted := exactEnvelope(line); rpcErr != nil {
+			// A notification -- no member spelled exactly "id" -- is
+			// answered by nothing, errors included (JSON-RPC §4.1), and is
+			// not dispatched either; the struct above would have bound an
+			// "ID" to its id, which is why presence is the walk's finding
+			// and not the struct's. An id the walk found given twice, or
+			// beside a member spelled as it by another case, is no one id,
+			// and the answer carries null (§5).
+			if !idPresent {
 				continue
 			}
 			var id any = request.ID
@@ -180,22 +183,46 @@ func (s *Server) initializeResult(rawParams json.RawMessage) map[string]any {
 // to being given once and spelled exactly: a member twice, or a member that
 // differs from a known one only by case, is refused before any decoder reads
 // the last of two or folds the case.
-func exactEnvelope(line []byte) (rpcErr *rpcError, idTrusted bool) {
+func exactEnvelope(line []byte) (rpcErr *rpcError, idPresent bool, idTrusted bool) {
+	idPresent = exactMemberPresent(line, "id")
 	if message := membersOnce(line, []string{"jsonrpc", "id", "method", "params"}); message != "" {
 		// The id the struct read is one of possibly two, or one bound by
 		// case; it cannot be answered under.
-		return &rpcError{Code: codeInvalidRequest, Message: "The request " + message}, false
+		return &rpcError{Code: codeInvalidRequest, Message: "The request " + message}, idPresent, false
 	}
 	var envelope struct {
 		Params json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(line, &envelope); err != nil || len(envelope.Params) == 0 || envelope.Params[0] != '{' {
-		return nil, true
+		return nil, idPresent, true
 	}
 	if message := membersOnce(envelope.Params, []string{"name", "arguments", "_meta", "protocolVersion", "capabilities", "clientInfo", "cursor", "uri"}); message != "" {
-		return &rpcError{Code: codeInvalidParams, Message: "The params " + message}, true
+		return &rpcError{Code: codeInvalidParams, Message: "The params " + message}, idPresent, true
 	}
-	return nil, true
+	return nil, idPresent, true
+}
+
+// exactMemberPresent reports whether an object carries a member spelled
+// exactly name, by the same token walk, so that "ID" is not "id".
+func exactMemberPresent(object []byte, name string) bool {
+	decoder := json.NewDecoder(bytes.NewReader(object))
+	if tok, err := decoder.Token(); err != nil || tok != json.Delim('{') {
+		return false
+	}
+	for decoder.More() {
+		tok, err := decoder.Token()
+		if err != nil {
+			return false
+		}
+		if key, _ := tok.(string); key == name {
+			return true
+		}
+		var skip json.RawMessage
+		if err := decoder.Decode(&skip); err != nil {
+			return false
+		}
+	}
+	return false
 }
 
 // membersOnce walks one JSON object's members as tokens and reports the
