@@ -221,6 +221,13 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			if inputsPath != "" && inputsPath != "-" && (strings.Contains(inputsPath, "://") || fssecure.IsRemotePath(inputsPath)) {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
 			}
+			// The citations are held to their shape here, as an invocation
+			// is, before the project is consulted, and every record of the
+			// run carries them (ADR-0033).
+			cites, invocation := a.readCites(citesPath)
+			if invocation != "" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-CITES", invocation)
+			}
 			document, graphPath, loaded, failure := a.loadGraph(commandName, format, args[0], configPath)
 			if failure != nil {
 				return failure
@@ -244,12 +251,6 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			// not declared is a draft — evaluated, never refused for being
 			// unlocked, and recorded as a draft run.
 			auditWriter := loaded.AuditWriter()
-			// The citations are held to their shape here, as an invocation
-			// is, and every record of the run carries them (ADR-0033).
-			cites, invocation := a.readCites(citesPath)
-			if invocation != "" {
-				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-CITES", invocation)
-			}
 			// One read of the reviewed set for the whole run. The configuration
 			// and the graph document are checked against it here; each node's
 			// pack is checked against the same retained revision where its bytes

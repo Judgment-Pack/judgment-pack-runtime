@@ -582,7 +582,7 @@ func TestEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
 	malformed := writeDocument(t, "malformed.json", `[{"sessionId":"s","callIndex":"17","signature":"x"}]`)
 	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
 		"--config", configPath, "--facts", facts, "--cites", malformed, "--format", "json"}, "")
-	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") || !strings.Contains(stdout+stderr, "callIndex must be a non-negative integer") {
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") || !strings.Contains(stdout+stderr, "callIndex must be an integer from 0 to 9007199254740991") {
 		t.Fatalf("a malformed citations document: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if len(auditRecords(t, configPath)) != 2 {
@@ -599,6 +599,23 @@ func TestEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
 		"--config", configPath, "--facts", facts, "--cites", filepath.Join(t.TempDir(), "absent.json"), "--format", "json"}, "")
 	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") {
 		t.Fatalf("an absent citations document: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	// A URL is refused as every input is, before the project is consulted:
+	// under a configuration that does not load, the citation refusal is
+	// what is reported.
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--cites", "https://example.invalid/cites.json", "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") || !strings.Contains(stdout+stderr, "remote") {
+		t.Fatalf("a URL for the citations: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	broken := filepath.Join(t.TempDir(), "jpack.json")
+	if err := os.WriteFile(broken, []byte(`{"configVersion":"3","audit":{},"packs":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", broken, "--facts", facts, "--cites", "-", "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") {
+		t.Fatalf("the citation refusal precedes the configuration: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	// A rehearsal records nothing, citations included.
 	code, _, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
@@ -622,7 +639,7 @@ func TestGraphEvaluateRecordsTheCitationsOnEveryRecord(t *testing.T) {
 	configPath := writeProjectFixture(t, config, files)
 	graphPath := filepath.Join(filepath.Dir(configPath), "onboarding.graph.json")
 	inputs := writeGraphInputs(t, graphHappyInputs)
-	cites := writeDocument(t, "cites.json", `[{"sessionId":"s-1","callIndex":0,"signature":"sig-0"},{"sessionId":"s-1","callIndex":1,"signature":"sig-1"}]`)
+	cites := writeDocument(t, "cites.json", `[{"sessionId":"s-1","callIndex":0,"signature":"`+strings.Repeat("0", 128)+`"},{"sessionId":"s-1","callIndex":1,"signature":"`+strings.Repeat("1", 128)+`"}]`)
 
 	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
 		"--config", configPath, "--inputs", inputs, "--cites", cites, "--format", "json"}, "")
@@ -637,7 +654,7 @@ func TestGraphEvaluateRecordsTheCitationsOnEveryRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `"cites":[{"sessionId":"s-1","callIndex":0,"signature":"sig-0"},{"sessionId":"s-1","callIndex":1,"signature":"sig-1"}]`
+	want := `"cites":[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("0", 128) + `"},{"sessionId":"s-1","callIndex":1,"signature":"` + strings.Repeat("1", 128) + `"}]`
 	if strings.Count(string(line), want) != len(records) {
 		t.Fatalf("every record of the run carries the citations (%d of %d): %s", strings.Count(string(line), want), len(records), line)
 	}

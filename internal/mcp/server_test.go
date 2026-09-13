@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -929,4 +930,50 @@ func TestExperimentalTestPacksExactMembersLeavesOmittedOptionalUntouched(t *test
 			t.Fatalf("correct spelling must succeed: %#v", selected)
 		}
 	})
+}
+
+// The cites argument's advertised schema states what the handler enforces
+// (ADR-0033): a client that generates arguments from the schema cannot
+// produce a citation the handler refuses for its shape.
+func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
+	responses := runServer(t, message(t, 1, "tools/list", nil))
+	tools := responses[0]["result"].(map[string]any)["tools"].([]any)
+	var cites map[string]any
+	for _, tool := range tools {
+		if tool.(map[string]any)["name"] == "experimental_evaluate" {
+			cites = tool.(map[string]any)["inputSchema"].(map[string]any)["properties"].(map[string]any)["cites"].(map[string]any)
+		}
+	}
+	if cites == nil {
+		t.Fatal("experimental_evaluate advertises no cites argument")
+	}
+	items := cites["items"].(map[string]any)
+	properties := items["properties"].(map[string]any)
+	session, index, signature := properties["sessionId"].(map[string]any), properties["callIndex"].(map[string]any), properties["signature"].(map[string]any)
+	if cites["type"] != "array" || items["type"] != "object" || items["additionalProperties"] != false ||
+		session["minLength"] != float64(1) || session["maxLength"] != float64(128) || session["pattern"] != "^[A-Za-z0-9._-]+$" ||
+		index["type"] != "integer" || index["minimum"] != float64(0) || index["maximum"] != float64(9007199254740991) ||
+		signature["pattern"] != "^[0-9a-f]{128}$" {
+		t.Fatalf("the cites schema does not state the handler's shape: %v", cites)
+	}
+	required, _ := items["required"].([]any)
+	if len(required) != 3 {
+		t.Fatalf("every member is required: %v", required)
+	}
+	// What the schema admits, the handler admits, and the reverse, on the
+	// values the patterns and bounds decide.
+	for value, admitted := range map[string]bool{
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                             true,
+		`[{"sessionId":"` + strings.Repeat("s", 128) + `","callIndex":9007199254740991,"signature":"` + strings.Repeat("f", 128) + `"}]`: true,
+		`[{"sessionId":"","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                                false,
+		`[{"sessionId":"s/1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                             false,
+		`[{"sessionId":"s-1","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                            false,
+		`[{"sessionId":"s-1","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`:                              false,
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("A", 128) + `"}]`:                                             false,
+		`[{"sessionId":"s-1","callIndex":0,"signature":""}]`:                                                                             false,
+	} {
+		if _, err := audit.ParseCites([]byte(value)); (err == nil) != admitted {
+			t.Errorf("%s: handler admitted=%v, schema admits=%v", value, err == nil, admitted)
+		}
+	}
 }

@@ -73,6 +73,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -166,19 +167,36 @@ type Citation struct {
 	Signature string `json:"signature"`
 }
 
+// The gateway's grammar for what a citation names: a session id is a flat
+// token (SPEC.md §3a), a signature 128 lowercase hex characters (§1.2a),
+// an index an integer the gateway's canonical domain holds (§1.1).
+var (
+	flatToken    = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+	signatureHex = regexp.MustCompile(`^[0-9a-f]{128}$`)
+)
+
+const maxSafeInteger = 9007199254740991
+
 // MaxCitesBytes bounds a citations document: a citation is under two
 // hundred bytes, and a decision that relied on more than a few thousand
 // receipts is not one this trail was built for.
 const MaxCitesBytes = 1 << 20
 
-// ParseCites holds a citations document to its shape: a JSON array whose
-// every element is an object with exactly sessionId (a non-empty string),
-// callIndex (a non-negative integer) and signature (a non-empty string).
-// Member names are matched exactly and a member twice is refused, since
-// encoding/json would fold "SessionId" onto sessionId and keep the last of
-// two — and a citation is recorded as given, so what is given must be one
-// thing. Nothing is resolved or verified. An empty array is no citation,
-// and is returned as nil so that the record omits the member.
+// ParseCites holds a citations document to the gateway's shape: a JSON
+// array whose every element is an object with exactly sessionId (a flat
+// token, [A-Za-z0-9._-]{1,128} and never "." or ".."), callIndex (an
+// integer literal from 0 to 2^53-1) and signature (exactly 128 lowercase
+// hexadecimal characters) — the structural constraints the gateway's
+// SPEC.md §§1.2a and 3a put on an action receipt's citation, so nothing is
+// recorded that no conforming receipt could carry. Member names are
+// matched exactly and a member twice is refused, since encoding/json would
+// fold "SessionId" onto sessionId and keep the last of two — and a citation
+// is recorded as given, so what is given must be one thing. A string is
+// its value: a JSON escape is read as the character it spells, and a
+// value the grammar admits is ASCII, so a lone surrogate or invalid UTF-8
+// cannot pass as anything. Nothing is resolved or verified. An empty array
+// is no citation, and is returned as nil so that the record omits the
+// member.
 func ParseCites(document []byte) ([]Citation, error) {
 	if len(document) > MaxCitesBytes {
 		return nil, fmt.Errorf("the citations document exceeds %d bytes", MaxCitesBytes)
@@ -213,14 +231,14 @@ func ParseCites(document []byte) ([]Citation, error) {
 			}
 		}
 		var c Citation
-		if err := decodeString(members["sessionId"], &c.SessionID); err != nil || c.SessionID == "" {
-			return nil, fmt.Errorf("citation %d: sessionId must be a non-empty string", i)
+		if err := decodeString(members["sessionId"], &c.SessionID); err != nil || !flatToken.MatchString(c.SessionID) || c.SessionID == "." || c.SessionID == ".." {
+			return nil, fmt.Errorf("citation %d: sessionId must be a flat token of 1 to 128 characters from A-Z, a-z, 0-9, dot, underscore and hyphen, and not . or ..", i)
 		}
-		if err := decodeInteger(members["callIndex"], &c.CallIndex); err != nil || c.CallIndex < 0 {
-			return nil, fmt.Errorf("citation %d: callIndex must be a non-negative integer", i)
+		if err := decodeInteger(members["callIndex"], &c.CallIndex); err != nil || c.CallIndex < 0 || c.CallIndex > maxSafeInteger {
+			return nil, fmt.Errorf("citation %d: callIndex must be an integer from 0 to 9007199254740991", i)
 		}
-		if err := decodeString(members["signature"], &c.Signature); err != nil || c.Signature == "" {
-			return nil, fmt.Errorf("citation %d: signature must be a non-empty string", i)
+		if err := decodeString(members["signature"], &c.Signature); err != nil || !signatureHex.MatchString(c.Signature) {
+			return nil, fmt.Errorf("citation %d: signature must be exactly 128 lowercase hexadecimal characters", i)
 		}
 		cites = append(cites, c)
 	}

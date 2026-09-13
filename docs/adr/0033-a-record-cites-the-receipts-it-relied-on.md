@@ -57,16 +57,22 @@ Chosen option: **A**, because the record then names, in the gateway's own gramma
 caller says entered the decision — and says nothing more than that.
 
 **The shape.** `cites` is an array of objects, each with exactly three members: `sessionId`, a
-non-empty string; `callIndex`, a non-negative integer; `signature`, a non-empty string. It is
-the shape the gateway's action receipt gives the same member. The runtime holds a supplied
-document to that shape and to nothing else: it does not check that a session exists, that a
-signature is hex, that a receipt verifies, or that the cited receipts have anything to do with
-the facts. A document that is not of the shape is refused as a bad invocation before the
+flat token (`[A-Za-z0-9._-]{1,128}`, never `.` or `..`); `callIndex`, an integer from 0 to
+2^53−1; `signature`, exactly 128 lowercase hexadecimal characters. These are the structural
+constraints the gateway's SPEC.md (§§1.1, 1.2a, 3a) puts on an action receipt's citation, so
+nothing is recorded that no conforming receipt could carry. A string is its value — a JSON
+escape is read as the character it spells, and what the grammar admits is ASCII, so no
+malformed Unicode passes as anything. The runtime holds a supplied document to that shape and
+to nothing else: it does not check that a session exists, that a receipt verifies, or that the
+cited receipts have anything to do with the facts. A document that is not of the shape is refused as a bad invocation before the
 evaluator is reached, on every surface, exactly as a misspelled argument is.
 
-**Where it enters.** `experimental evaluate --cites <file>` (a path, or `-` for standard input,
-exclusive with `--facts -`), `experimental graph evaluate --cites <file>`, and the MCP
-`experimental_evaluate` tool's `cites` argument (the array itself, not text). The test verbs and
+**Where it enters.** `experimental evaluate --cites <file>` (a local file path; `-` is refused,
+since the pack and the facts may already be standard input, and a URL or a remote path is
+refused as every input is), `experimental graph evaluate --cites <file>`, and the MCP
+`experimental_evaluate` tool's `cites` argument (the array itself, not text; a member given
+twice is refused, not read last-wins). On every surface the document is held before the
+project is consulted or an input read. The test verbs and
 the matrix tools take no citations: they record nothing (ADR-0018), and a citation on a
 rehearsal would be a claim about a decision nobody took.
 

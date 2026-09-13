@@ -2218,4 +2218,20 @@ func TestExperimentalEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
 	if strings.Contains(lines[1], `"cites"`) {
 		t.Fatalf("an empty array leaves no member: %s", lines[1])
 	}
+	// A member given twice is refused, in either order, before anything
+	// runs: the first cannot be lost to the second.
+	factsArg, _ := json.Marshal(projectFacts)
+	for _, raw := range []string{
+		`{"pack_id":"intake","facts":` + string(factsArg) + `,"cites":null,"cites":[]}`,
+		`{"pack_id":"intake","facts":` + string(factsArg) + `,"cites":[],"cites":null}`,
+	} {
+		responses := runServer(t, rawToolCall(t, 7, "experimental_evaluate", raw))
+		result := responses[0]["result"].(map[string]any)
+		if result["isError"] != true || !strings.Contains(toolText(t, result), `the member "cites" twice`) {
+			t.Fatalf("a member twice: %#v", responses[0])
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName)); err != nil || len(strings.Split(strings.TrimSpace(string(data)), "\n")) != 2 {
+		t.Fatalf("a refused call records nothing: %v %q", err, data)
+	}
 }

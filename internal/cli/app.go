@@ -199,6 +199,14 @@ func (a *App) evaluateCommand() *cobra.Command {
 					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
 				}
 			}
+			// The citations are not an input the engine sees: they are held
+			// to their shape here, as an invocation is, before the project
+			// is consulted or an input read, and recorded as given
+			// (ADR-0033).
+			cites, invocation := a.readCites(citesPath)
+			if invocation != "" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-CITES", invocation)
+			}
 			// The project is consulted on every evaluation this command runs, not
 			// only on the ones that name a pack by id: whether an evaluation is
 			// recorded is the configuration's to say (ADR-0018), and a pack named
@@ -268,13 +276,6 @@ func (a *App) evaluateCommand() *cobra.Command {
 				if evidenceOversized {
 					oversized = append(oversized, "evidence")
 				}
-			}
-			// The citations are not an input the engine sees: they are held
-			// to their shape here, as an invocation is, and recorded as given
-			// (ADR-0033).
-			cites, invocation := a.readCites(citesPath)
-			if invocation != "" {
-				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-CITES", invocation)
 			}
 			// The reviewed set is consulted on the bytes this run is about to
 			// evaluate, never on a second read of the path they came from
@@ -431,6 +432,9 @@ func (a *App) readCites(path string) ([]audit.Citation, string) {
 	}
 	if path == "-" {
 		return nil, "--cites takes a file path, not -: the citations document is not read from standard input."
+	}
+	if strings.Contains(path, "://") || fssecure.IsRemotePath(path) {
+		return nil, "URL and remote filesystem inputs are not supported for --cites; use a local file."
 	}
 	data, err := a.readPack(path, audit.MaxCitesBytes)
 	if err != nil {

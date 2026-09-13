@@ -528,42 +528,64 @@ func TestAnIllegalDispositionIsNotRecorded(t *testing.T) {
 // else (ADR-0033): what passes is recorded as given, and what does not is
 // refused before anything is recorded.
 func TestParseCitesHoldsTheShapeAndNothingElse(t *testing.T) {
-	good := `[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"` + strings.Repeat("a", 128) + `"},{"sessionId":"s-2026-09-12-a","callIndex":0,"signature":"not-checked-here"}]`
+	good := `[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"` + strings.Repeat("a", 128) + `"},{"sessionId":"s.2026_09_12-b","callIndex":9007199254740991,"signature":"` + strings.Repeat("0123456789abcdef", 8) + `"}]`
 	cites, err := ParseCites([]byte(good))
-	if err != nil || len(cites) != 2 || cites[0].SessionID != "s-2026-09-12-a" || cites[0].CallIndex != 17 || cites[1].CallIndex != 0 || cites[1].Signature != "not-checked-here" {
+	if err != nil || len(cites) != 2 || cites[0].SessionID != "s-2026-09-12-a" || cites[0].CallIndex != 17 || cites[1].CallIndex != 9007199254740991 || cites[1].Signature != strings.Repeat("0123456789abcdef", 8) {
 		t.Fatalf("as given: %+v %v", cites, err)
+	}
+	// A JSON escape is read as the character it spells: the value is what
+	// is recorded, and the grammar admits only ASCII.
+	if cites, err := ParseCites([]byte(`[{"sessionId":"s\u002d1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`)); err != nil || cites[0].SessionID != "s-1" {
+		t.Fatalf("an escaped hyphen is a hyphen: %+v %v", cites, err)
 	}
 	if cites, err := ParseCites([]byte(`  [ ]  `)); err != nil || cites != nil {
 		t.Fatalf("an empty array is no citation: %+v %v", cites, err)
 	}
 	for name, document := range map[string]string{
-		"not an array":                 `{"sessionId":"s","callIndex":1,"signature":"x"}`,
-		"not JSON":                     `[`,
-		"null":                         `null`,
-		"empty":                        ``,
-		"whitespace":                   `   `,
-		"two texts":                    `[] []`,
-		"an element not an object":     `["s"]`,
-		"an extra member":              `[{"sessionId":"s","callIndex":1,"signature":"x","note":"y"}]`,
-		"a member by another case":     `[{"SessionId":"s","callIndex":1,"signature":"x"}]`,
-		"a member twice":               `[{"sessionId":"s","sessionId":"t","callIndex":1,"signature":"x"}]`,
-		"no signature":                 `[{"sessionId":"s","callIndex":1}]`,
-		"an empty session":             `[{"sessionId":"","callIndex":1,"signature":"x"}]`,
-		"a session not a string":       `[{"sessionId":7,"callIndex":1,"signature":"x"}]`,
-		"a negative index":             `[{"sessionId":"s","callIndex":-1,"signature":"x"}]`,
-		"an index as a string":         `[{"sessionId":"s","callIndex":"1","signature":"x"}]`,
-		"an index with a fraction":     `[{"sessionId":"s","callIndex":1.0,"signature":"x"}]`,
-		"an index in exponent form":    `[{"sessionId":"s","callIndex":1e2,"signature":"x"}]`,
-		"an index with a leading zero": `[{"sessionId":"s","callIndex":01,"signature":"x"}]`,
-		"an empty signature":           `[{"sessionId":"s","callIndex":1,"signature":""}]`,
-		"a null signature":             `[{"sessionId":"s","callIndex":1,"signature":null}]`,
+		"not an array":                    `{"sessionId":"s","callIndex":1,"signature":"x"}`,
+		"not JSON":                        `[`,
+		"null":                            `null`,
+		"empty":                           ``,
+		"whitespace":                      `   `,
+		"two texts":                       `[] []`,
+		"an element not an object":        `["s"]`,
+		"an extra member":                 `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `","note":"y"}]`,
+		"a member by another case":        `[{"SessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a member twice":                  `[{"sessionId":"s","sessionId":"t","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"no signature":                    `[{"sessionId":"s","callIndex":1}]`,
+		"an empty session":                `[{"sessionId":"","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session not a string":          `[{"sessionId":7,"callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a negative index":                `[{"sessionId":"s","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index as a string":            `[{"sessionId":"s","callIndex":"1","signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index with a fraction":        `[{"sessionId":"s","callIndex":1.0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index in exponent form":       `[{"sessionId":"s","callIndex":1e2,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index with a leading zero":    `[{"sessionId":"s","callIndex":01,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an empty signature":              `[{"sessionId":"s","callIndex":1,"signature":""}]`,
+		"a signature not 128 hex":         `[{"sessionId":"s","callIndex":1,"signature":"x"}]`,
+		"a signature in uppercase hex":    `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("A", 128) + `"}]`,
+		"a signature of 127 hex":          `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 127) + `"}]`,
+		"a session with a slash":          `[{"sessionId":"../x","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of a dot":              `[{"sessionId":".","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of two dots":           `[{"sessionId":"..","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of 129 characters":     `[{"sessionId":"` + strings.Repeat("s", 129) + `","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session with a space":          `[{"sessionId":"s 1","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a lone surrogate in the session": `[{"sessionId":"s\ud800","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index beyond 2^53-1":          `[{"sessionId":"s","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a null signature":                `[{"sessionId":"s","callIndex":1,"signature":null}]`,
 	} {
 		if cites, err := ParseCites([]byte(document)); err == nil {
 			t.Errorf("%s: accepted as %+v", name, cites)
 		}
 	}
-	if _, err := ParseCites(bytes.Repeat([]byte(" "), MaxCitesBytes+1)); err == nil {
-		t.Fatal("a document over the bound is refused before it is read")
+	// The bound: a valid document padded to exactly the limit reads; one
+	// byte over is refused for its size, before it is read.
+	one := `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`
+	atLimit := append([]byte(one), bytes.Repeat([]byte(" "), MaxCitesBytes-len(one))...)
+	if cites, err := ParseCites(atLimit); err != nil || len(cites) != 1 {
+		t.Fatalf("a document of exactly the bound reads: %v", err)
+	}
+	if _, err := ParseCites(append(atLimit, ' ')); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("a document one byte over the bound is refused for its size: %v", err)
 	}
 }
 
@@ -571,7 +593,7 @@ func TestParseCitesHoldsTheShapeAndNothingElse(t *testing.T) {
 // were given; on a graph run every record of the run carries them.
 func TestCitationsAreRecordedAsGivenOnEveryRecordOfARun(t *testing.T) {
 	writer, root := writerAt(t, "audit")
-	cites := []Citation{{SessionID: "s-1", CallIndex: 3, Signature: "sig-3"}}
+	cites := []Citation{{SessionID: "s-1", CallIndex: 3, Signature: strings.Repeat("3", 128)}}
 	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, cites, []byte(`{}`), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +619,7 @@ func TestCitationsAreRecordedAsGivenOnEveryRecordOfARun(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("four records, got %d", len(lines))
 	}
-	want := `"cites":[{"sessionId":"s-1","callIndex":3,"signature":"sig-3"}]`
+	want := `"cites":[{"sessionId":"s-1","callIndex":3,"signature":"` + strings.Repeat("3", 128) + `"}]`
 	for i, line := range lines {
 		has := bytes.Contains(line, []byte(want))
 		if (i == 1) == has {

@@ -150,9 +150,9 @@ func toolDefinitions() []map[string]any {
 					"supported_extensions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Extension names this consumer supports."},
 					"rehearsal":            map[string]any{"type": "boolean", "description": "Declare this call a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision. Never inferred: omitting the key is the ordinary call, recorded exactly when the project declares a trail."},
 					"cites": map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"sessionId", "callIndex", "signature"}, "properties": map[string]any{
-						"sessionId": map[string]any{"type": "string", "description": "The gateway session the cited receipt is in."},
-						"callIndex": map[string]any{"type": "integer", "minimum": 0, "description": "The receipt's index in that session."},
-						"signature": map[string]any{"type": "string", "description": "The cited receipt's own signature."},
+						"sessionId": map[string]any{"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._-]+$", "description": "The gateway session the cited receipt is in: a flat token, never . or .. (the gateway's SPEC.md 3a)."},
+						"callIndex": map[string]any{"type": "integer", "minimum": 0, "maximum": 9007199254740991, "description": "The receipt's index in that session."},
+						"signature": map[string]any{"type": "string", "pattern": "^[0-9a-f]{128}$", "description": "The cited receipt's own signature: exactly 128 lowercase hexadecimal characters."},
 					}}, "description": "Optional: the gateway receipts this decision relied on, each named as the gateway's action receipt cites one (ADR-0033). Held to this shape and recorded as given on the audit record; nothing is verified and no store is read, so a citation is the caller's assertion and the gateway verifier's finding. A rehearsal records nothing, citations included. Omit the key, or pass an empty array, to cite nothing."},
 				},
 			},
@@ -695,6 +695,30 @@ func exactMembers(tool string, rawArgs json.RawMessage, allowed ...string) strin
 	var members map[string]json.RawMessage
 	if err := json.Unmarshal(rawArgs, &members); err != nil {
 		return fmt.Sprintf("The %q arguments must be an object.", tool)
+	}
+	// A member given twice is refused, not read last-wins: an arguments
+	// object with "cites": null and then "cites": [] would otherwise reach
+	// the handler as the second and lose the first, which a caller may
+	// have meant. Walked as tokens, since the map above has already kept
+	// one of the two.
+	decoder := json.NewDecoder(bytes.NewReader(rawArgs))
+	if tok, err := decoder.Token(); err == nil && tok == json.Delim('{') {
+		seen := map[string]bool{}
+		for decoder.More() {
+			tok, err := decoder.Token()
+			if err != nil {
+				break
+			}
+			name, _ := tok.(string)
+			if seen[name] {
+				return fmt.Sprintf("The %q arguments carry the member %q twice; each member is given once.", tool, name)
+			}
+			seen[name] = true
+			var skip json.RawMessage
+			if err := decoder.Decode(&skip); err != nil {
+				break
+			}
+		}
 	}
 	permitted := map[string]bool{}
 	for _, name := range allowed {
