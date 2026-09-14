@@ -1,6 +1,7 @@
 package project
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2444,8 +2445,9 @@ func TestMatrixRowsCiteReceiptsUnderVersionThreeAsGiven(t *testing.T) {
 		})
 	}
 	// Under matrixVersion 3 the citations load, the row runs, and its result
-	// carries them byte for byte -- whitespace, member order and the integer's
-	// spelling as the matrix wrote them, since nothing re-encodes them.
+	// carries them as the values the row declared -- whatever whitespace or
+	// member order the matrix used -- through the report's own JSON writer,
+	// compact and indented alike, with the integer index spelled as one.
 	spelled := `[ {"signature":"` + signature + `", "callIndex": 17, "sessionId":"s-2026-09"} ]`
 	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
 		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": row("3", `,"cites":`+spelled)})
@@ -2456,34 +2458,45 @@ func TestMatrixRowsCiteReceiptsUnderVersionThreeAsGiven(t *testing.T) {
 	if run.Status != "passed" || len(run.Packs[0].Rows) != 1 {
 		t.Fatalf("run = %+v", run.Packs[0])
 	}
-	if got := string(run.Packs[0].Rows[0].Cites); got != spelled {
-		t.Fatalf("the row's citations are carried as given:\n got  %s\n want %s", got, spelled)
+	want := []result.Citation{{SessionID: "s-2026-09", CallIndex: 17, Signature: signature}}
+	if !reflect.DeepEqual(run.Packs[0].Rows[0].Cites, want) {
+		t.Fatalf("the row's citations are carried as declared: %+v", run.Packs[0].Rows[0].Cites)
 	}
-	// An empty array is the member with nothing in it: loaded, carried as the
-	// bytes it is, and no claim about any receipt.
-	configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
-		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": row("3", `,"cites":[]`)})
-	run, failure = mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
-	if failure != nil {
-		t.Fatal(failure.Message)
+	for _, indent := range []string{"", "  "} {
+		var out bytes.Buffer
+		encoder := json.NewEncoder(&out)
+		encoder.SetIndent("", indent)
+		if err := encoder.Encode(run); err != nil {
+			t.Fatal(err)
+		}
+		var decoded result.PackTest
+		if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(decoded.Packs[0].Rows[0].Cites, want) {
+			t.Fatalf("the citations survive the report's writer (indent %q): %s", indent, out.String())
+		}
+		if !strings.Contains(out.String(), `"callIndex":`+strings.TrimSpace(strings.Repeat(" ", len(indent)))+`17`) && !strings.Contains(out.String(), `"callIndex": 17`) {
+			t.Fatalf("the index is spelled as the integer it is (indent %q): %s", indent, out.String())
+		}
 	}
-	if run.Status != "passed" || string(run.Packs[0].Rows[0].Cites) != "[]" {
-		t.Fatalf("an empty citation list is carried as itself: %+v", run.Packs[0].Rows[0])
-	}
-	// A row that cites nothing reports nothing about it: the member is absent,
-	// so a matrix written before the member existed produces the payload it did.
-	configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
-		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": row("3", "")})
-	run, failure = mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
-	if failure != nil {
-		t.Fatal(failure.Message)
-	}
-	encoded, err := json.Marshal(run.Packs[0].Rows[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), `"cites"`) {
-		t.Fatalf("a row that cites nothing carries no member: %s", encoded)
+	// An empty array cites nothing, as an absent member does: the report
+	// carries no member for either, and a matrix written before the member
+	// existed produces the payload it did.
+	for name, extra := range map[string]string{"an empty array": `,"cites":[]`, "no member": ""} {
+		configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+			map[string]string{"packs/a.json": pack, "packs/a.matrix.json": row("3", extra)})
+		run, failure = mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		encoded, err := json.Marshal(run.Packs[0].Rows[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.Status != "passed" || strings.Contains(string(encoded), `"cites"`) {
+			t.Fatalf("%s: a row that cites nothing carries no member: %s", name, encoded)
+		}
 	}
 }
 
@@ -2590,56 +2603,71 @@ func TestMatrixProfilePlacesEachOriginAgainstEachThreshold(t *testing.T) {
 	row := func(id, origin, amount string) evaluation.MatrixCase {
 		return evaluation.MatrixCase{ID: id, Origin: origin, Facts: json.RawMessage(`{"expense":{"amount":` + amount + `}}`), ExpectedDisposition: outcome}
 	}
-	matrix := Matrix{Cases: []evaluation.MatrixCase{
+	// Several candidates on each side, disagreeing and not, so that the
+	// nearest is the nearest and not the first or the last seen: below,
+	// 10 and 4000 disagree and 4990.50 agrees, so the nearest disagreeing
+	// (4000) is not the nearest (4990.50); above, 9000 and 6000 disagree
+	// and 5001 agrees, likewise.
+	cases := []evaluation.MatrixCase{
 		row("w-low", "warehouse", `"10"`),
+		row("w-mid-below", "warehouse", `"4000"`),
 		row("w-near-below", "warehouse", `"4990.50"`),
 		row("w-at", "warehouse", `"5000.0"`),
 		row("w-near-above", "warehouse", `"5001"`),
+		row("w-mid-above", "warehouse", `"6000"`),
 		row("w-far-above", "warehouse", `"9000"`),
 		row("w-number", "warehouse", `5000`),
 		row("t-below", "tickets", `"4000"`),
 		{ID: "t-absent", Origin: "tickets", Facts: json.RawMessage(`{"expense":{}}`), ExpectedDisposition: outcome},
 		row("no-origin", "", `"5000"`),
-	}}
-	status := func(passed bool) string {
-		if passed {
-			return "passed"
-		}
-		return "mismatch"
 	}
-	rows := make([]result.EvaluationCorpusCase, len(matrix.Cases))
-	for index, c := range matrix.Cases {
-		rows[index] = result.EvaluationCorpusCase{ID: c.ID, Origin: c.Origin, Status: status(c.ID != "w-near-below" && c.ID != "w-far-above" && c.ID != "t-below")}
-	}
-	profile := matrixProfile(pack, matrix, rows, false)
-	if profile == nil || profile.Coverage != nil || len(profile.Thresholds) != 1 {
-		t.Fatalf("one boundary, no coverage asked for: %+v", profile)
-	}
-	threshold := profile.Thresholds[0]
-	if threshold.Pointer != "/expense/amount" || threshold.Literal != "5000" || len(threshold.Origins) != 2 {
-		t.Fatalf("threshold = %+v", threshold)
-	}
+	disagrees := map[string]bool{"w-low": true, "w-mid-below": true, "w-mid-above": true, "w-far-above": true, "t-below": true}
 	want := []result.ThresholdOrigin{
 		{Origin: "tickets",
 			Below: result.ThresholdSide{Rows: 1, Disagreeing: 1, Nearest: "4000", NearestDisagreeing: "4000"}},
 		{Origin: "warehouse",
-			Below: result.ThresholdSide{Rows: 2, Disagreeing: 1, Nearest: "4990.50", NearestDisagreeing: "4990.50"},
+			Below: result.ThresholdSide{Rows: 3, Disagreeing: 2, Nearest: "4990.50", NearestDisagreeing: "4000"},
 			At:    result.ThresholdSide{Rows: 1, Nearest: "5000.0"},
-			Above: result.ThresholdSide{Rows: 2, Disagreeing: 1, Nearest: "5001", NearestDisagreeing: "9000"}},
+			Above: result.ThresholdSide{Rows: 3, Disagreeing: 2, Nearest: "5001", NearestDisagreeing: "6000"}},
 	}
-	if !reflect.DeepEqual(threshold.Origins, want) {
-		t.Fatalf("placement:\n got  %+v\n want %+v", threshold.Origins, want)
-	}
-	// Agreement counts the same rows the placement read, and the row with no
-	// origin is in neither.
-	agreement := []result.OriginAgreement{{Origin: "tickets", Rows: 2, Passed: 1, Mismatched: 1}, {Origin: "warehouse", Rows: 6, Passed: 4, Mismatched: 2}}
-	if !reflect.DeepEqual(profile.Agreement, agreement) {
-		t.Fatalf("agreement = %+v", profile.Agreement)
-	}
-	// A result list that is not the matrix's, row for row, profiles nothing:
-	// the profile is a reading of one run and never a guess.
-	if matrixProfile(pack, matrix, rows[:3], false) != nil {
-		t.Fatal("rows that are not the matrix's own profile nothing")
+	agreement := []result.OriginAgreement{{Origin: "tickets", Rows: 2, Passed: 1, Mismatched: 1}, {Origin: "warehouse", Rows: 8, Passed: 4, Mismatched: 4}}
+	// In the matrix's order and in the reverse of it: the placement is a
+	// function of the rows and not of the order they were read in.
+	for _, order := range []string{"as written", "reversed"} {
+		ordered := slices.Clone(cases)
+		if order == "reversed" {
+			slices.Reverse(ordered)
+		}
+		matrix := Matrix{Cases: ordered}
+		rows := make([]result.EvaluationCorpusCase, len(ordered))
+		for index, c := range ordered {
+			status := "passed"
+			if disagrees[c.ID] {
+				status = "mismatch"
+			}
+			rows[index] = result.EvaluationCorpusCase{ID: c.ID, Origin: c.Origin, Status: status}
+		}
+		profile := matrixProfile(pack, matrix, rows, false)
+		if profile == nil || profile.Coverage != nil || len(profile.Thresholds) != 1 {
+			t.Fatalf("%s: one boundary, no coverage asked for: %+v", order, profile)
+		}
+		threshold := profile.Thresholds[0]
+		if threshold.Pointer != "/expense/amount" || threshold.Literal != "5000" || len(threshold.Origins) != 2 {
+			t.Fatalf("%s: threshold = %+v", order, threshold)
+		}
+		if !reflect.DeepEqual(threshold.Origins, want) {
+			t.Fatalf("%s: placement:\n got  %+v\n want %+v", order, threshold.Origins, want)
+		}
+		// Agreement counts the same rows the placement read, and the row
+		// with no origin is in neither.
+		if !reflect.DeepEqual(profile.Agreement, agreement) {
+			t.Fatalf("%s: agreement = %+v", order, profile.Agreement)
+		}
+		// A result list that is not the matrix's, row for row, profiles
+		// nothing: the profile is a reading of one run and never a guess.
+		if matrixProfile(pack, matrix, rows[:3], false) != nil {
+			t.Fatal("rows that are not the matrix's own profile nothing")
+		}
 	}
 }
 

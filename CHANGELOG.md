@@ -13,8 +13,8 @@ All notable changes to tagged releases are documented here.
   the nearest value on each side, with the nearest disagreeing one. It reads the run already made,
   evaluates nothing twice and moves no status. A row may carry `cites` under `matrixVersion "3"`:
   the receipts its facts were transcribed under, in the gateway's citation shape and held to the
-  grammar a decision record's citations are (ADR-0033), carried on the row's result as given and
-  verified by nothing here. The `replay_history` MCP prompt states the method: documents write
+  grammar a decision record's citations are (ADR-0033), carried on the row's result as the values
+  it declared (session, index, signature) and verified by nothing here. The `replay_history` MCP prompt states the method: documents write
   the rules, past decisions test them, a slice is held out until the draft is frozen, and every
   disagreement and every threshold is a question for the policy owner. The report members are
   additive output under VERSIONING.md's MINOR rule and move no `outputVersion`; `cites` is a

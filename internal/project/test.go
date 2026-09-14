@@ -3,6 +3,7 @@ package project
 import (
 	"fmt"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -157,6 +158,11 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	}
 	for _, row := range matrix.Cases {
 		outcome := evaluator.RunCaseAdmitted(admitted, row, declaredTarget, command)
+		// The row's citations, as the values it declared (ADR-0034): parsed
+		// by the grammar LoadMatrix held them to, so what the report carries
+		// is what the gateway would resolve -- session, index, signature --
+		// and never a re-spelling of the row's bytes.
+		outcome.Cites = rowCitations(row)
 		// Charged as the row's result is composed, before it is retained, so the
 		// refusal fires instead of the report being built and then rejected. Only
 		// the two target renderings are charged: they are the members whose size a
@@ -199,6 +205,26 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// suite's own coverage was.
 	report.Profile = matrixProfile(PackRoot(pack), matrix, report.Rows, report.Coverage != nil)
 	return report, nil
+}
+
+// rowCitations is a row's citations as values, or nil for a row that cites
+// nothing (an absent member, or an empty array, which is the same claim). The
+// parse cannot fail here -- LoadMatrix refused any row whose citations it
+// could not read -- and a row that somehow reaches this with unreadable ones
+// reports none rather than a guess.
+func rowCitations(row evaluation.MatrixCase) []result.Citation {
+	if row.Cites == nil {
+		return nil
+	}
+	parsed, err := audit.ParseCites(row.Cites)
+	if err != nil || len(parsed) == 0 {
+		return nil
+	}
+	cites := make([]result.Citation, 0, len(parsed))
+	for _, c := range parsed {
+		cites = append(cites, result.Citation{SessionID: c.SessionID, CallIndex: c.CallIndex, Signature: c.Signature})
+	}
+	return cites
 }
 
 // assertsHandoffTarget reports whether any row of one matrix declares the

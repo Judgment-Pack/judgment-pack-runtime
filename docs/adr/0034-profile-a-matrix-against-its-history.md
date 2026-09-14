@@ -56,9 +56,12 @@ for, and the policy owner's ruling on each disagreement is the only thing that s
 Each pack entry of `packs test` gains one optional member, `profile`, present when at least one of
 the pack's rows declares an `origin`, with:
 
-- `agreement`: for each origin, in sorted order, the rows that declare it and how many passed,
-  mismatched, errored and were skipped — the statuses the run already assigned, grouped. A row
-  with no origin is not in any group and not in the profile: absence of the marker is not a claim.
+- `agreement`: for each origin, in sorted order, the rows that declare it and how many passed
+  and how many mismatched — the two statuses the run assigns a row, grouped. A row that expects
+  a refusal (`expectedErrorClass`) passes when the evaluator refuses as expected and mismatches
+  otherwise, and is counted by that status like any row; a pack whose matrix does not load runs
+  no row and profiles nothing. A row with no origin is not in any group and not in the profile:
+  absence of the marker is not a claim.
 - `coverage`: for each origin, how many of the derived probes (ADR-0014, ADR-0023) some row of
   that origin witnesses, out of the probes there are — the same derivation, restricted to that
   origin's rows. Coverage over history is what this reads: which of the pack's reachable behaviors
@@ -74,7 +77,9 @@ the pack's rows declares an `origin`, with:
 Each matrix row may carry `cites`: an array of `{sessionId, callIndex, signature}` in the gateway's
 citation shape, held to the rules ADR-0033 fixed for a decision record's member — the flat-token
 session, the integer index, the 128-hex signature, exactly the three members, each once — and
-carried on the row's entry in the report as given. `matrixVersion` moves to `"3"` for it, the
+carried on the row's entry in the report as the values it declared, in the citation's own shape,
+which is what the gateway resolves; the row's spelling of them is not a claim and is not kept. An
+empty array cites nothing and carries no member. `matrixVersion` moves to `"3"` for it, the
 closed-input rule of VERSIONING.md, as `"2"` did for `expectedHandoffTarget`. The runtime resolves
 no citation; the gateway's `verify` is what reads one.
 

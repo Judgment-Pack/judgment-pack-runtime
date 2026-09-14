@@ -517,8 +517,9 @@ gateway receipts the row's facts were transcribed under, in the gateway's own ci
 **`cites` needs `matrixVersion: "3"`**, by the same closed-input rule. It is held to the grammar a
 decision record's citations are held to (ADR-0033) when the matrix loads — an array of objects with
 exactly `sessionId`, `callIndex` and `signature`, each once — and carried on the row's entry in the
-`packs test` report byte for byte as you wrote it. The runtime verifies nothing about a citation;
-the gateway's `verify` is what resolves one.
+`packs test` report as the values you declared, in that shape; an empty array cites nothing and
+carries no member. The runtime verifies nothing about a citation; the gateway's `verify` is what
+resolves one.
 
 When any row declares an `origin`, the pack's `packs test` entry carries a `profile`: `agreement`
 (rows, passed, mismatched, per origin), `coverage` (how many derived probes that origin's rows

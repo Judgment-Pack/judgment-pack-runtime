@@ -3,7 +3,6 @@ package result
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -704,10 +703,20 @@ type EvaluationCorpusCase struct {
 	ActualHandoffTarget   string `json:"actualHandoffTarget,omitempty"`
 	// Cites is the row's own citations, when a project row declares them
 	// (ADR-0034): the receipts the row's facts were transcribed under, in the
-	// gateway's shape, carried as given -- the bytes the matrix wrote, held
-	// to their grammar when the matrix loaded and re-encoded by nothing here.
-	Cites  json.RawMessage `json:"cites,omitempty"`
-	Detail string          `json:"detail,omitempty"`
+	// gateway's shape, carried as the values the row declared -- session,
+	// index and signature, held to their grammar when the matrix loaded --
+	// and verified by nothing here. Omitted when the row cites nothing.
+	Cites  []Citation `json:"cites,omitempty"`
+	Detail string     `json:"detail,omitempty"`
+}
+
+// Citation names one gateway receipt by session, index and signature -- the
+// shape an action receipt's citations have and a decision record's (ADR-0033)
+// -- as a matrix row declared it. The runtime resolves none.
+type Citation struct {
+	SessionID string `json:"sessionId"`
+	CallIndex int64  `json:"callIndex"`
+	Signature string `json:"signature"`
 }
 
 // EvaluationCorpus is one run of the evaluation corpus bundled for an exact
