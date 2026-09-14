@@ -48,6 +48,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `list_examples` / `get_example` | The embedded valid fixtures, read-only |
 | `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
+| `experimental_validate_expectations` | EXPERIMENTAL SURFACE (ADR-0035): validate proposed exact Core 0.2.0-draft dispositions before authoring admission; no project or evaluation |
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
 | `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
 | `experimental_list_graphs` / `experimental_get_graph` | EXPERIMENTAL SURFACE (ADR-0029): this project's configured graphs, by configured id — the graph siblings of `list_packs`/`get_pack`, read-only |
@@ -68,6 +69,31 @@ member pointing at [`CONFORMANCE.md`](../CONFORMANCE.md), where the conformance 
 and only; no tool description, and no line of this document, states any part of it. Whatever that claim
 says, it is about this implementation and not about the pack, the facts, or the wisdom of acting on a
 disposition (JPS §3.5). It evaluates only a pack declaring `specVersion` `0.2.0-draft` (§11).
+
+### Proposed test expectations
+
+`experimental_validate_expectations` is a read-only check of complete expected
+§8.3 dispositions. Discover it in `tools/list`; older runtimes do not have it.
+
+```json
+{"spec_version":"0.2.0-draft","expectations":["{\"kind\":\"unresolved\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}"]}
+```
+
+This returns an aggregate `status: "invalid"`, `specVersion: "0.2.0-draft"`, and
+one `results` entry per input. Each entry has its input `index` and `status`.
+Valid entries include `canonical` JSON text. Invalid entries include a `code`
+and `message`; the example is `JPS-EXPECTATION-INVALID` because an unresolved
+disposition must retain reasons. Invalid expectations are reported rather than
+dropped; the report itself is a successful tool call. Unknown versions,
+unknown arguments, empty/oversized batches, and non-string entries are tool errors.
+
+A call accepts 1–256 strings; each is limited to 16 KiB, depth 16, 1,024 JSON
+value nodes and 8 KiB per string. Limit findings use `JPS-EXPECTATION-LIMIT` and
+mean the input was not admitted, not that its meaning violates Core. The tool
+checks only the disposition's local contract. It cannot prove a pack produces
+that disposition, validate business intent, or supply a corrected expectation.
+It accesses no project, source, credential, evaluator, audit record or network.
+See [ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md).
 
 ### The project tools
 

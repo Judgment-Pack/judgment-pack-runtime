@@ -742,8 +742,8 @@ func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
 	return disposition, nil
 }
 
-// exactDispositionMembers refuses a member whose spelling differs from a §8.3
-// member's, at the disposition and inside its handoff member. A value that is
+// exactDispositionMembers enforces exact §8.3 member spellings and raw presence
+// rules at the disposition and inside its handoff member. A value that is
 // not an object is left to the strict decoder, whose wrong-type message is the
 // better diagnosis.
 func exactDispositionMembers(raw json.RawMessage) error {
@@ -754,15 +754,41 @@ func exactDispositionMembers(raw json.RawMessage) error {
 	if err := memberSpellings(object, []string{"kind", "outcomeId", "reasons", "handoff"}, "the disposition"); err != nil {
 		return err
 	}
-	handoffRaw, declared := object["handoff"]
-	if !declared {
-		return nil
+	// Typed Go decoding loses the difference between absent/null/empty members.
+	// Preserve §8.3's required members and iff-presence rules before decoding.
+	for _, name := range []string{"kind", "reasons", "handoff"} {
+		value, present := object[name]
+		if !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return fmt.Errorf("§8.3: %s must be present and non-null", name)
+		}
 	}
+	var kind string
+	_ = json.Unmarshal(object["kind"], &kind)
+	_, hasOutcome := object["outcomeId"]
+	if hasOutcome != (kind == "outcome") {
+		return errors.New("§8.3: outcomeId must be present if and only if kind is outcome")
+	}
+	if bytes.Equal(bytes.TrimSpace(object["outcomeId"]), []byte("null")) {
+		return errors.New("§8.3: outcomeId must not be null")
+	}
+	handoffRaw := object["handoff"]
 	var handoff map[string]json.RawMessage
 	if err := json.Unmarshal(handoffRaw, &handoff); err != nil {
 		return nil
 	}
-	return memberSpellings(handoff, []string{"state", "triggeredBy"}, "the disposition's handoff member")
+	if err := memberSpellings(handoff, []string{"state", "triggeredBy"}, "the disposition's handoff member"); err != nil {
+		return err
+	}
+	if value, present := handoff["state"]; !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return errors.New("§8.3: handoff.state must be present and non-null")
+	}
+	var state string
+	_ = json.Unmarshal(handoff["state"], &state)
+	_, hasTriggers := handoff["triggeredBy"]
+	if hasTriggers != (state == "requested") {
+		return errors.New("§8.3: handoff.triggeredBy must be present if and only if state is requested")
+	}
+	return nil
 }
 
 func memberSpellings(object map[string]json.RawMessage, known []string, subject string) error {
