@@ -2,7 +2,9 @@ package project
 
 import (
 	"fmt"
+	"math/big"
 	"slices"
+	"sync/atomic"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -54,16 +56,20 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 		return nil, nil
 	}
 	slices.Sort(origins)
+	profiled := 0
+	for _, origin := range origins {
+		profiled += len(byOrigin[origin])
+	}
 	probes := 0
 	if withCoverage {
 		probes = set.count() + len(groups)
 	}
-	entries := profileEntries(len(origins), len(groups), probes)
-	if entries > budget {
+	work := profileWork(profiled, len(groups), probes)
+	if work > budget {
 		return nil, &Failure{
 			Code: "JPS-RESOURCE-MATRIX-PROFILE",
-			Message: fmt.Sprintf("The history profile of this pack would cost %d entries -- %d origins against %d comparison boundaries and %d coverage probes -- beyond the %d this runtime spends on one pack. Nothing is truncated and no partial profile is written, because a profile cut short looks exactly like a complete one. The budget is per pack: group this matrix's rows under fewer origins, or split the pack's comparisons across packs.",
-				entries, len(origins), len(groups), probes, budget),
+			Message: fmt.Sprintf("The history profile of this pack would cost %d units of work -- %d rows with an origin against %d comparison boundaries and %d coverage probes -- beyond the %d this runtime spends on one pack. Nothing is truncated and no partial profile is written, because a profile cut short looks exactly like a complete one. The budget is per pack: give fewer rows an origin, or split the pack's comparisons across packs.",
+				work, profiled, len(groups), probes, budget),
 			ExitCode: result.ExitIO,
 		}
 	}
@@ -100,13 +106,16 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 	return profile, nil
 }
 
-// profileEntries is what a profile costs: an agreement entry per origin, a
-// witnessing of every probe per origin when coverage is derived (work, not
-// retention, and charged as work), and a placement per boundary per origin.
-// Counted in this arithmetic before anything is built or witnessed, so the
-// product of two bounded inputs is judged rather than spent.
-func profileEntries(origins, groups, probes int) int {
-	return origins + origins*probes + origins*groups
+// profileWork is what a profile costs, per row with an origin: its
+// agreement, one witnessing of every coverage probe (an outcome or reason
+// probe reads the row's expectation; a boundary probe resolves and compares
+// its fact), and one placement per boundary (a resolution and a comparison,
+// and at most one more comparison for the nearest). Counted in this
+// arithmetic before anything is built or witnessed, so the product of two
+// bounded inputs is judged rather than spent. Retention is a lesser count:
+// origins are at most rows, and every retained string is capped.
+func profileWork(rows, groups, probes int) int {
+	return rows + rows*probes + rows*groups
 }
 
 // thresholdProfiles places each origin's rows against each comparison
@@ -114,6 +123,10 @@ func profileEntries(origins, groups, probes int) int {
 // (one per distinct pointer and literal value), each row's fact resolved at
 // the pointer and compared by the evaluator's own comparison, so a JSON
 // number or an absent fact -- what §7.4 cannot compare -- sits on no side.
+// Every decimal is read once: the literal once per group, a row's fact once
+// per group, and the nearest value on a side is kept as the number it was
+// read into beside the spelling it was written in, so no retained spelling
+// is read again for the next row.
 func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int, groups []boundaryGroup) []result.ThresholdProfile {
 	if len(groups) == 0 {
 		return nil
@@ -131,11 +144,14 @@ func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origin
 	}
 	profiles := make([]result.ThresholdProfile, 0, len(groups))
 	for _, group := range groups {
+		literal, ok := parseDecimal(group.literal)
+		if !ok {
+			continue // a boundary the derivation admitted is a decimal; defensively, one that is not places nothing
+		}
 		profile := result.ThresholdProfile{Pointer: capRendered(group.path), Literal: capRendered(group.literal)}
 		for _, origin := range origins {
 			placed := result.ThresholdOrigin{Origin: capRendered(origin)}
-			var nearest [3]any
-			var nearestDisagreeing [3]any
+			var nearest, nearestDisagreeing [3]*nearestValue
 			for _, index := range byOrigin[origin] {
 				if !decoded[index] {
 					continue
@@ -144,16 +160,28 @@ func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origin
 				if !resolved {
 					continue
 				}
-				comparison, comparable := evaluation.DecimalCompare(value, group.literal)
-				if !comparable {
+				number, ok := parseDecimal(value)
+				if !ok {
 					continue
 				}
-				side := comparison + 1 // 0 below, 1 at, 2 above
+				side := number.Cmp(literal) + 1 // 0 below, 1 at, 2 above
 				disagrees := rows[index].Status != "passed"
 				count(&placed, side, disagrees)
-				nearest[side] = nearer(nearest[side], value, side)
+				if side == 1 {
+					// At the literal every value is the literal; the nearest
+					// is any of them, and no comparison chooses among them.
+					if nearest[1] == nil {
+						nearest[1] = &nearestValue{number: number, spelling: value}
+					}
+					if disagrees && nearestDisagreeing[1] == nil {
+						nearestDisagreeing[1] = &nearestValue{number: number, spelling: value}
+					}
+					continue
+				}
+				candidate := &nearestValue{number: number, spelling: value}
+				nearest[side] = nearer(nearest[side], candidate, side)
 				if disagrees {
-					nearestDisagreeing[side] = nearer(nearestDisagreeing[side], value, side)
+					nearestDisagreeing[side] = nearer(nearestDisagreeing[side], candidate, side)
 				}
 			}
 			for side := range 3 {
@@ -166,6 +194,23 @@ func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origin
 		profiles = append(profiles, profile)
 	}
 	return profiles
+}
+
+// nearestValue is a compared fact as the number it was read into and the
+// spelling it was written in: compared by the one, rendered as the other.
+type nearestValue struct {
+	number   *big.Rat
+	spelling any
+}
+
+// decimalParses counts the decimals the profile reads; a test holds a
+// profile to one reading per fact per boundary and one per literal.
+var decimalParses atomic.Int64
+
+// parseDecimal reads one value through the evaluator's grammar (§7.4), once.
+func parseDecimal(value any) (*big.Rat, bool) {
+	decimalParses.Add(1)
+	return evaluation.DecimalValue(value)
 }
 
 // sideOf addresses one side of a placement: 0 below, 1 at, 2 above.
@@ -189,17 +234,14 @@ func count(placed *result.ThresholdOrigin, side int, disagrees bool) {
 }
 
 // nearer keeps whichever of two values on one side is closer to the literal:
-// the greater of two values below it, the lesser of two above it, and either
-// of two at it. Both are decimal strings the evaluator could compare against
-// the literal, so it can compare them with each other.
-func nearer(current, candidate any, side int) any {
+// the greater of two values below it, the lesser of two above it -- compared
+// as the numbers they were read into, so a retained spelling is never read
+// again.
+func nearer(current, candidate *nearestValue, side int) *nearestValue {
 	if current == nil {
 		return candidate
 	}
-	comparison, comparable := evaluation.DecimalCompare(candidate, current)
-	if !comparable {
-		return current
-	}
+	comparison := candidate.number.Cmp(current.number)
 	if (side == 0 && comparison > 0) || (side == 2 && comparison < 0) {
 		return candidate
 	}
@@ -210,8 +252,11 @@ func nearer(current, candidate any, side int) any {
 // since that is the only value §7.4 compares -- under the boundary text
 // budget; "" for none. The spelling is the row's own, so a reader finds the
 // case by the value on file, not by a normalisation of it.
-func renderFact(value any) string {
-	text, ok := value.(string)
+func renderFact(value *nearestValue) string {
+	if value == nil {
+		return ""
+	}
+	text, ok := value.spelling.(string)
 	if !ok {
 		return ""
 	}

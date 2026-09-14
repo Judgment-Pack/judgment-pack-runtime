@@ -12,10 +12,10 @@ All notable changes to tagged releases are documented here.
   at and above the literal by the evaluator's own comparison — how many of those disagree, and
   the nearest value on each side, with the nearest disagreeing one. It reads the run already made,
   evaluates nothing twice and moves no status; the pack is read once for the suite's coverage and
-  every origin's alike, its cost — an agreement per origin, a witnessing of every probe per origin,
-  a placement per boundary per origin — is counted before anything is built, and a profile beyond
-  `MaxProfileEntries` (65536) refuses the run as one that does not fit
-  (`JPS-RESOURCE-MATRIX-PROFILE`) rather than truncating it. A row may carry `cites` under `matrixVersion "3"`:
+  every origin's alike, every decimal is read once, its work — per row with an origin, an agreement,
+  a witnessing of every coverage probe, a placement per boundary — is counted before anything is
+  witnessed or placed, and a profile beyond `MaxProfileWork` (2^20 units) refuses the run as one
+  that does not fit (`JPS-RESOURCE-MATRIX-PROFILE`) rather than truncating it. A row may carry `cites` under `matrixVersion "3"`:
   the receipts its facts were transcribed under, in the gateway's citation shape and held to the
   grammar a decision record's citations are (ADR-0033), carried on the row's result as the values
   it declared (session, index, signature) and verified by nothing here. The `replay_history` MCP prompt states the method: documents write

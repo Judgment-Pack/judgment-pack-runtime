@@ -248,87 +248,94 @@ func derivePackProbes(pack map[string]any, reach Reach) packProbeSet {
 // count is how many probes the set derives, the work a witnessing does.
 func (set packProbeSet) count() int { return len(set.outcomes) + len(set.reasons) }
 
+// probeRenderings counts the probes rendered as records with their
+// sentences; a test holds a profile over many origins to the suite's own
+// rendering and no more, since an origin's coverage is a count.
+var probeRenderings atomic.Int64
+
 // covered is how many of the set's probes some witness witnesses: the
-// predicates alone, with no probe record and no sentence built.
+// predicates alone -- no probe name, no sentence, no sanitising of an id
+// -- so an origin's coverage costs the witnessing and nothing else.
 func (set packProbeSet) covered(witnesses []ProbeWitness) int {
 	covered := 0
-	set.each(witnesses, func(_ string, _ string, witness *ProbeWitness) {
-		if witness != nil {
+	for index := range set.count() {
+		if set.witness(index, witnesses) != nil {
 			covered++
 		}
-	})
+	}
 	return covered
 }
 
-// probes renders the set's probes against the witnesses (ADR-0014).
+// probes renders the set's probes against the witnesses (ADR-0014): the
+// name and the sentence are built here and only here.
 func (set packProbeSet) probes(witnesses []ProbeWitness) []result.MatrixProbe {
 	// nil until a probe is derived: a pack whose declarations derive none — a
 	// shape only a document far from conformant can reach — carries no coverage
 	// member rather than an empty one.
 	var probes []result.MatrixProbe
-	set.each(witnesses, func(probe, missingDetail string, witness *ProbeWitness) {
-		if witness != nil {
-			probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeCovered, Detail: witness.Label + " expects it."})
-			return
+	for index := range set.count() {
+		probeRenderings.Add(1)
+		name, missingDetail := set.render(index)
+		if witness := set.witness(index, witnesses); witness != nil {
+			probes = append(probes, result.MatrixProbe{Probe: name, Status: result.MatrixProbeCovered, Detail: witness.Label + " expects it."})
+			continue
 		}
-		probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeMissing, Detail: missingDetail})
-	})
+		probes = append(probes, result.MatrixProbe{Probe: name, Status: result.MatrixProbeMissing, Detail: missingDetail})
+	}
 	return probes
 }
 
-// each visits every probe of the set with the first witness that witnesses
-// it, or nil, and the sentence a missing one reports.
-func (set packProbeSet) each(witnesses []ProbeWitness, visit func(probe, missingDetail string, witness *ProbeWitness)) {
-	add := func(probe, missingDetail string, witnessed func(ProbeWitness) bool) {
-		for index := range witnesses {
-			if witnessed(witnesses[index]) {
-				visit(probe, missingDetail, &witnesses[index])
-				return
-			}
-		}
-		visit(probe, missingDetail, nil)
-	}
-	expectsReason := func(reason string) func(ProbeWitness) bool {
-		return func(witness ProbeWitness) bool { return witness.Reasons[reason] }
-	}
-
-	for _, id := range set.outcomes {
-		add("outcome:"+id,
-			fmt.Sprintf("No row expects an outcome disposition naming %q.", display.Sanitize(id)),
-			func(witness ProbeWitness) bool { return witness.Kind == "outcome" && witness.OutcomeID == id })
-	}
-
-	for _, reason := range set.reasons {
-		switch reason {
-		case evaluation.ReasonNotApplicable:
-			// A not-applicable disposition carries its kind, not a reason, so
-			// this one probe is witnessed by the kind.
-			add(reason,
-				"The pack declares applicability, and no row expects a not-applicable disposition.",
-				func(witness ProbeWitness) bool { return witness.Kind == "not-applicable" })
-		case evaluation.ReasonMissingEvidence:
-			add(reason,
-				`The pack declares required evidence, and no row's expected reasons include "missing-required-evidence".`,
-				expectsReason(reason))
-		case evaluation.ReasonUnknown:
-			add(reason,
-				`The pack can reach reason "unknown", and no row's expected reasons include it.`,
-				expectsReason(reason))
-		case evaluation.ReasonConflict:
-			add(reason,
-				`Rules or forced outcomes name different outcomes, and no row's expected reasons include "conflict". Either construct facts that make two of them fire together, or confirm against the policy text that they exclude each other.`,
-				expectsReason(reason))
-		case evaluation.ReasonExceptionEscalation:
-			add(reason,
-				`An exception declares effect "escalate", and no row's expected reasons include "exception-escalation".`,
-				expectsReason(reason))
-		case evaluation.ReasonNoMatch:
-			add(reason,
-				`The pack declares no fallbackOutcome, and no row's expected reasons include "no-match".`,
-				expectsReason(reason))
+// witness is the first witness that witnesses the set's index-th probe --
+// the outcomes first, in order, then the reasons -- or nil.
+func (set packProbeSet) witness(index int, witnesses []ProbeWitness) *ProbeWitness {
+	witnessed := set.predicate(index)
+	for i := range witnesses {
+		if witnessed(witnesses[i]) {
+			return &witnesses[i]
 		}
 	}
+	return nil
+}
 
+// predicate is what witnesses the set's index-th probe, with no string
+// built: an outcome probe by the kind and the outcome id, a reason probe by
+// the reason -- the not-applicable one by its kind, since that disposition
+// carries its kind and not a reason.
+func (set packProbeSet) predicate(index int) func(ProbeWitness) bool {
+	if index < len(set.outcomes) {
+		id := set.outcomes[index]
+		return func(witness ProbeWitness) bool { return witness.Kind == "outcome" && witness.OutcomeID == id }
+	}
+	reason := set.reasons[index-len(set.outcomes)]
+	if reason == evaluation.ReasonNotApplicable {
+		return func(witness ProbeWitness) bool { return witness.Kind == "not-applicable" }
+	}
+	return func(witness ProbeWitness) bool { return witness.Reasons[reason] }
+}
+
+// render is the index-th probe's name and the sentence a missing one
+// reports, built only when a probe record is.
+func (set packProbeSet) render(index int) (name, missingDetail string) {
+	if index < len(set.outcomes) {
+		id := set.outcomes[index]
+		return "outcome:" + id, fmt.Sprintf("No row expects an outcome disposition naming %q.", display.Sanitize(id))
+	}
+	reason := set.reasons[index-len(set.outcomes)]
+	switch reason {
+	case evaluation.ReasonNotApplicable:
+		return reason, "The pack declares applicability, and no row expects a not-applicable disposition."
+	case evaluation.ReasonMissingEvidence:
+		return reason, `The pack declares required evidence, and no row's expected reasons include "missing-required-evidence".`
+	case evaluation.ReasonUnknown:
+		return reason, `The pack can reach reason "unknown", and no row's expected reasons include it.`
+	case evaluation.ReasonConflict:
+		return reason, `Rules or forced outcomes name different outcomes, and no row's expected reasons include "conflict". Either construct facts that make two of them fire together, or confirm against the policy text that they exclude each other.`
+	case evaluation.ReasonExceptionEscalation:
+		return reason, `An exception declares effect "escalate", and no row's expected reasons include "exception-escalation".`
+	case evaluation.ReasonNoMatch:
+		return reason, `The pack declares no fallbackOutcome, and no row's expected reasons include "no-match".`
+	}
+	return reason, ""
 }
 
 // siteStage is where in §8's evaluation order a comparison sits, which decides

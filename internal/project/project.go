@@ -241,7 +241,7 @@ type Project struct {
 	// allowed, and the number here is derived from two other limits rather than
 	// being a preference.
 	handoffTargetReportBudget int
-	// profileEntryBudget, when a test sets it, replaces MaxProfileEntries.
+	// profileEntryBudget, when a test sets it, replaces MaxProfileWork.
 	profileEntryBudget int
 }
 
@@ -254,15 +254,17 @@ func (p *Project) handoffBudget() int {
 	return MaxHandoffTargetReportBytes
 }
 
-// MaxProfileEntries bounds one pack's history profile (ADR-0034): the
-// entries it retains -- one agreement and one coverage entry per origin,
-// and one placement per comparison boundary per origin. A pack's boundaries
-// and a matrix's origins are each bounded only by their documents' sizes,
-// and their product is not: a matrix of ten thousand origins against a pack
-// of ten thousand boundaries would retain a hundred million placements
-// before any response cap saw them. A profile that would exceed this is
-// refused as a run that does not fit, before an entry is retained.
-const MaxProfileEntries = 65536
+// MaxProfileWork bounds one pack's history profile (ADR-0034) by the work
+// it does, counted per row with an origin: its agreement, one witnessing of
+// every coverage probe, and one placement per comparison boundary
+// (profileWork). A pack's probes and boundaries and a matrix's rows are each
+// bounded only by their documents' sizes, and their products are not: ten
+// thousand rows against ten thousand boundaries is a hundred million
+// resolutions and comparisons before any response cap saw one. A profile
+// that would cost more than this is refused as a run that does not fit,
+// before anything is witnessed or placed. A unit is one predicate, one
+// pointer resolution or one decimal comparison over capped inputs.
+const MaxProfileWork = 1 << 20
 
 // profileBudget is the run's profile budget, with the injected value
 // winning only when a test set one.
@@ -270,7 +272,7 @@ func (p *Project) profileBudget() int {
 	if p.profileEntryBudget > 0 {
 		return p.profileEntryBudget
 	}
-	return MaxProfileEntries
+	return MaxProfileWork
 }
 
 // Close releases the project's directory handle.

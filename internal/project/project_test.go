@@ -2647,7 +2647,7 @@ func TestMatrixProfilePlacesEachOriginAgainstEachThreshold(t *testing.T) {
 			}
 			rows[index] = result.EvaluationCorpusCase{ID: c.ID, Origin: c.Origin, Status: status}
 		}
-		profile, failure := matrixProfile(pack, matrix, rows, false, MaxProfileEntries)
+		profile, failure := matrixProfile(pack, matrix, rows, false, MaxProfileWork)
 		if failure != nil {
 			t.Fatal(failure.Message)
 		}
@@ -2668,7 +2668,7 @@ func TestMatrixProfilePlacesEachOriginAgainstEachThreshold(t *testing.T) {
 		}
 		// A result list that is not the matrix's, row for row, profiles
 		// nothing: the profile is a reading of one run and never a guess.
-		if profile, _ := matrixProfile(pack, matrix, rows[:3], false, MaxProfileEntries); profile != nil {
+		if profile, _ := matrixProfile(pack, matrix, rows[:3], false, MaxProfileWork); profile != nil {
 			t.Fatal("rows that are not the matrix's own profile nothing")
 		}
 	}
@@ -2710,11 +2710,11 @@ func TestMatrixProfileDerivesCoverageOnlyWhenTheSuiteDoes(t *testing.T) {
 // profile beyond the budget refuses the run as one that does not fit, at
 // the same exit class the handoff-target budget uses.
 func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
-	if got := profileEntries(3, 4, 5); got != 3+15+12 {
-		t.Fatalf("entries = %d", got)
+	if got := profileWork(3, 4, 5); got != 3+15+12 {
+		t.Fatalf("work = %d", got)
 	}
-	if got := profileEntries(3, 4, 0); got != 3+12 {
-		t.Fatalf("entries without coverage = %d", got)
+	if got := profileWork(3, 4, 0); got != 3+12 {
+		t.Fatalf("work without coverage = %d", got)
 	}
 	pack := string(packFixture(t))
 	facts := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
@@ -2726,17 +2726,22 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 	]}`
 	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
 		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
-	// Two origins, coverage derived over this pack's seven probes, no
-	// boundary: two agreements and fourteen witnessings, sixteen entries. A
-	// budget of fifteen refuses; a budget of sixteen does not.
+	// Three rows under two origins, coverage derived over this pack's seven
+	// probes, no boundary: three agreements and twenty-one witnessings,
+	// twenty-four units. A budget of twenty-three refuses; twenty-four does
+	// not. Charged per row, not per origin: two origins would be sixteen.
+	matrix = strings.Replace(matrix, `{"id":"t1","origin":"tickets"`, `{"id":"t0","origin":"tickets","facts":`+facts+`,"evidenceAvailability":`+evidence+`,"expectedDisposition":`+declineRedirect+`},
+	  {"id":"t1","origin":"tickets"`, 1)
+	configPath = writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
 	loaded := mustLoad(t, configPath)
-	loaded.profileEntryBudget = 15
-	if _, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test"); failure == nil || failure.Code != "JPS-RESOURCE-MATRIX-PROFILE" || failure.ExitCode != result.ExitIO || !strings.Contains(failure.Message, "16 entries") {
+	loaded.profileEntryBudget = 23
+	if _, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test"); failure == nil || failure.Code != "JPS-RESOURCE-MATRIX-PROFILE" || failure.ExitCode != result.ExitIO || !strings.Contains(failure.Message, "24 units of work") {
 		t.Fatalf("a profile beyond the budget refuses the run: %+v", failure)
 	}
 	loaded = mustLoad(t, configPath)
-	loaded.profileEntryBudget = 16
-	before := probeDerivations.Load()
+	loaded.profileEntryBudget = 24
+	derivations, renderings := probeDerivations.Load(), probeRenderings.Load()
 	run, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
 	if failure != nil {
 		t.Fatal(failure.Message)
@@ -2745,9 +2750,13 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 		t.Fatalf("a profile within the budget is built: %+v", run.Packs[0].Profile)
 	}
 	// The pack is read once for the suite's coverage and every origin's
-	// alike: the work of a profile is the witnessing, not the derivation.
-	if got := probeDerivations.Load() - before; got != 1 {
+	// alike, and its probes are rendered -- named, sanitised, sentenced --
+	// once, for the suite: an origin's coverage is a count of predicates.
+	if got := probeDerivations.Load() - derivations; got != 1 {
 		t.Fatalf("a run derives the pack's probes once, not %d times", got)
+	}
+	if got := probeRenderings.Load() - renderings; got != 7 {
+		t.Fatalf("a run renders the suite's seven probes and no origin's: %d renderings", got)
 	}
 	// The placement product is what the budget exists for: one boundary
 	// against two origins is two placements on top of the two agreements.
@@ -2758,13 +2767,47 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 	outcome := json.RawMessage(`{"kind":"outcome","outcomeId":"review","reasons":[],"handoff":{"state":"none"}}`)
 	cases := Matrix{Cases: []evaluation.MatrixCase{
 		{ID: "a", Origin: "x", Facts: json.RawMessage(`{"expense":{"amount":"1"}}`), ExpectedDisposition: outcome},
-		{ID: "b", Origin: "y", Facts: json.RawMessage(`{"expense":{"amount":"1"}}`), ExpectedDisposition: outcome},
+		{ID: "b", Origin: "x", Facts: json.RawMessage(`{"expense":{"amount":"2"}}`), ExpectedDisposition: outcome},
 	}}
-	rows := []result.EvaluationCorpusCase{{ID: "a", Origin: "x", Status: "passed"}, {ID: "b", Origin: "y", Status: "passed"}}
-	if _, failure := matrixProfile(boundary, cases, rows, false, 3); failure == nil || !strings.Contains(failure.Message, "2 origins against 1 comparison boundaries and 0 coverage probes") {
+	rows := []result.EvaluationCorpusCase{{ID: "a", Origin: "x", Status: "passed"}, {ID: "b", Origin: "x", Status: "passed"}}
+	if _, failure := matrixProfile(boundary, cases, rows, false, 3); failure == nil || !strings.Contains(failure.Message, "2 rows with an origin against 1 comparison boundaries and 0 coverage probes") {
 		t.Fatalf("the placements count against the budget: %+v", failure)
 	}
+	parses := decimalParses.Load()
 	if profile, failure := matrixProfile(boundary, cases, rows, false, 4); failure != nil || profile == nil || len(profile.Thresholds) != 1 {
 		t.Fatalf("within the budget the placements are built: %+v %+v", profile, failure)
+	}
+	// Every decimal is read once: the literal, and each row's fact at the
+	// boundary; the two rows sit below it in one origin, so the second is
+	// compared against the first as the number it was read into, and no
+	// spelling is read again.
+	if got := decimalParses.Load() - parses; got != 1+2 {
+		t.Fatalf("a profile reads each decimal once: %d readings for one literal and two facts", got)
+	}
+	// Many rows at the literal choose no nearest by comparison, and a long
+	// spelling kept as nearest is read once however many rows follow it.
+	long := `"0.` + strings.Repeat("0", 4000) + `"`
+	many := Matrix{Cases: []evaluation.MatrixCase{{ID: "long", Origin: "x", Facts: json.RawMessage(`{"expense":{"amount":` + long + `}}`), ExpectedDisposition: outcome}}}
+	manyRows := []result.EvaluationCorpusCase{{ID: "long", Origin: "x", Status: "passed"}}
+	for i := range 50 {
+		id := fmt.Sprintf("r%d", i)
+		many.Cases = append(many.Cases, evaluation.MatrixCase{ID: id, Origin: "x", Facts: json.RawMessage(`{"expense":{"amount":"0"}}`), ExpectedDisposition: outcome})
+		manyRows = append(manyRows, result.EvaluationCorpusCase{ID: id, Origin: "x", Status: "mismatch"})
+	}
+	zero := map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules":    []any{map[string]any{"id": "r", "outcome": "review", "when": map[string]any{"op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "0"}}},
+	}
+	parses = decimalParses.Load()
+	profile, failure := matrixProfile(zero, many, manyRows, false, MaxProfileWork)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if got := decimalParses.Load() - parses; got != 1+51 {
+		t.Fatalf("fifty-one rows at the literal read fifty-one facts and one literal, not %d", got)
+	}
+	at := profile.Thresholds[0].Origins[0].At
+	if at.Rows != 51 || at.Disagreeing != 50 || at.Nearest != capRendered(strings.Trim(long, `"`)) || at.NearestDisagreeing != "0" {
+		t.Fatalf("at the literal, the first seen is the nearest and the first disagreeing the nearest disagreeing: %+v", at)
 	}
 }
