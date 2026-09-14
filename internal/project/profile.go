@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -40,24 +41,18 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 	if len(rows) != len(matrix.Cases) {
 		return nil, nil
 	}
-	origins := []string{}
-	byOrigin := map[string][]int{}
-	for index, row := range matrix.Cases {
-		if row.Origin == "" {
-			continue
-		}
-		if _, seen := byOrigin[row.Origin]; !seen {
-			origins = append(origins, row.Origin)
-		}
-		byOrigin[row.Origin] = append(byOrigin[row.Origin], index)
-	}
+	// The origins, each read once into a record -- its spelling rendered
+	// under the budget, the rows that declare it -- and from here on
+	// walked as records: a map keyed by the origin's text would hash that
+	// text again at every boundary, and an origin is authored text the
+	// carrier bounds only at a megabyte.
+	origins := originRecords(matrix)
 	if len(origins) == 0 {
 		return nil, nil
 	}
-	slices.Sort(origins)
 	profiled := 0
 	for _, origin := range origins {
-		profiled += len(byOrigin[origin])
+		profiled += len(origin.rows)
 	}
 	probes := 0
 	if withCoverage {
@@ -72,18 +67,10 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 			ExitCode: result.ExitIO,
 		}
 	}
-	// Each origin's spelling is rendered under the budget once, here, and
-	// reused by every entry that names it: an origin is authored text the
-	// carrier bounds only at a megabyte, and a profile names it once per
-	// boundary.
-	rendered := make(map[string]string, len(origins))
-	for _, origin := range origins {
-		rendered[origin] = capRendered(origin)
-	}
 	profile := &result.MatrixProfile{}
 	for _, origin := range origins {
-		agreement := result.OriginAgreement{Origin: rendered[origin]}
-		for _, index := range byOrigin[origin] {
+		agreement := result.OriginAgreement{Origin: origin.rendered}
+		for _, index := range origin.rows {
 			agreement.Rows++
 			if rows[index].Status == "passed" {
 				agreement.Passed++
@@ -96,21 +83,51 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 	if withCoverage {
 		for _, origin := range origins {
 			subset := Matrix{MatrixVersion: matrix.MatrixVersion}
-			for _, index := range byOrigin[origin] {
+			for _, index := range origin.rows {
 				subset.Cases = append(subset.Cases, matrix.Cases[index])
 			}
 			// The same probes the suite's coverage reports, witnessed by
 			// this origin's rows alone: predicates over the derivation
 			// made once, nothing rendered.
 			profile.Coverage = append(profile.Coverage, result.OriginCoverage{
-				Origin:  rendered[origin],
+				Origin:  origin.rendered,
 				Covered: set.covered(matrixWitnesses(subset)) + boundaryCovered(groups, subset),
 				Probes:  probes,
 			})
 		}
 	}
-	profile.Thresholds = thresholdProfiles(matrix, rows, origins, byOrigin, groups, rendered)
+	profile.Thresholds = thresholdProfiles(matrix, rows, origins, groups)
 	return profile, nil
+}
+
+// originRecord is one origin as the profile walks it: its text, its
+// spelling rendered once under the budget, and the rows that declare it in
+// the matrix's order.
+type originRecord struct {
+	name     string
+	rendered string
+	rows     []int
+}
+
+// originRecords reads the matrix's origins once, in sorted order of the
+// origin, each with its rows; a row with no origin is in no record.
+func originRecords(matrix Matrix) []originRecord {
+	index := map[string]int{}
+	var records []originRecord
+	for i, row := range matrix.Cases {
+		if row.Origin == "" {
+			continue
+		}
+		at, seen := index[row.Origin]
+		if !seen {
+			at = len(records)
+			index[row.Origin] = at
+			records = append(records, originRecord{name: row.Origin, rendered: capRendered(row.Origin)})
+		}
+		records[at].rows = append(records[at].rows, i)
+	}
+	slices.SortFunc(records, func(a, b originRecord) int { return strings.Compare(a.name, b.name) })
+	return records
 }
 
 // profileWork is what a profile costs, per row with an origin: its
@@ -134,7 +151,7 @@ func profileWork(rows, groups, probes int) int {
 // was formed; a row's fact once per group; and the nearest value on a side
 // is kept as the number it was read into beside the spelling it was written
 // in, so no retained spelling is read again for the next row.
-func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int, groups []boundaryGroup, rendered map[string]string) []result.ThresholdProfile {
+func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origins []originRecord, groups []boundaryGroup) []result.ThresholdProfile {
 	if len(groups) == 0 {
 		return nil
 	}
@@ -159,9 +176,9 @@ func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origin
 		}
 		profile := result.ThresholdProfile{Pointer: capRendered(group.path), Literal: capRendered(group.literal)}
 		for _, origin := range origins {
-			placed := result.ThresholdOrigin{Origin: rendered[origin]}
+			placed := result.ThresholdOrigin{Origin: origin.rendered}
 			var nearest, nearestDisagreeing [3]*nearestValue
-			for _, index := range byOrigin[origin] {
+			for _, index := range origin.rows {
 				if !decoded[index] {
 					continue
 				}
@@ -268,4 +285,16 @@ func renderFact(value *nearestValue) string {
 		return ""
 	}
 	return capRendered(text)
+}
+
+// coveredIn counts the covered probes of a rendered list; the profile never
+// renders one to count it, and this exists for the mutation that would.
+func coveredIn(probes []result.MatrixProbe) int {
+	covered := 0
+	for _, probe := range probes {
+		if probe.Status == result.MatrixProbeCovered {
+			covered++
+		}
+	}
+	return covered
 }

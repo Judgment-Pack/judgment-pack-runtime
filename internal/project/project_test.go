@@ -2839,4 +2839,27 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 	if len(profile.Thresholds) != 3 || profile.Thresholds[0].Origins[0].Origin != capRendered(origin) || profile.Agreement[0].Origin != capRendered(origin) {
 		t.Fatalf("the rendered origin names every entry: %+v", profile.Agreement)
 	}
+	// With coverage derived, an origin's boundary coverage is a count and
+	// renders no boundary probe: two origins against one boundary render
+	// each origin once, the boundary's pointer and literal once, each
+	// origin's nearest value, and the derivation's one site owner -- seven
+	// renderings -- where a rendering of the boundary probe per origin
+	// would be two more.
+	twoOrigins := Matrix{Cases: []evaluation.MatrixCase{
+		{ID: "a", Origin: "x", Facts: json.RawMessage(`{"expense":{"amount":"1"}}`), ExpectedDisposition: outcome},
+		{ID: "b", Origin: "y", Facts: json.RawMessage(`{"expense":{"amount":"2"}}`), ExpectedDisposition: outcome},
+	}}
+	twoRows := []result.EvaluationCorpusCase{{ID: "a", Origin: "x", Status: "passed"}, {ID: "b", Origin: "y", Status: "passed"}}
+	textBefore = textRenderings.Load()
+	profile, failure = matrixProfile(boundary, twoOrigins, twoRows, true, MaxProfileWork)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if got := textRenderings.Load() - textBefore; got != 2+2+2+1 {
+		t.Fatalf("coverage by origin renders no boundary probe: %d renderings for two origins, one boundary, two nearest values and one site owner", got)
+	}
+	probeCount := derivePackProbes(boundary, Reach{}).count() + 1
+	if len(profile.Coverage) != 2 || profile.Coverage[0].Probes != probeCount || profile.Coverage[0].Covered != 1 || profile.Coverage[1].Covered != 1 {
+		t.Fatalf("each origin's coverage counts the pack's probes and the boundary, and witnesses the outcome its row expects: %+v", profile.Coverage)
+	}
 }
