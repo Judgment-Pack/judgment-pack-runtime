@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // tri is the three-valued condition result of the §7 experiment.
@@ -761,7 +762,13 @@ func decimalCompare(fact, operand any) (int, bool) {
 // into a number: the grammar check and the parse together, so every surface
 // that asks about a decimal — the comparison, the identity key — asks the same
 // question of the same tokens.
+// DecimalReadings counts every reading of a value through this grammar --
+// a comparison reads two, a key or a value one -- so a surface that claims
+// to read each decimal once can be held to it by a test.
+var DecimalReadings atomic.Int64
+
 func decimalValue(value any) (*big.Rat, bool) {
+	DecimalReadings.Add(1)
 	text, ok := value.(string)
 	if !ok || !decimalPattern.MatchString(text) {
 		return nil, false

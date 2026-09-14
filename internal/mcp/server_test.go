@@ -501,13 +501,13 @@ func TestPromptsSurface(t *testing.T) {
 	for _, entry := range prompts {
 		names[entry.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph"} {
+	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph", "replay_history"} {
 		if !names[want] {
 			t.Fatalf("prompts/list must include %q: %v", want, names)
 		}
 	}
-	if len(names) != 6 {
-		t.Fatalf("expected exactly 6 prompts, got %d", len(names))
+	if len(names) != 7 {
+		t.Fatalf("expected exactly 7 prompts, got %d", len(names))
 	}
 
 	rendered := responses[2]["result"].(map[string]any)
@@ -555,7 +555,7 @@ func TestPromptsSurface(t *testing.T) {
 // the no-claim disclaimer -- the guardrail that the method text can never be
 // read as the runtime blessing a pack.
 func TestEveryPromptRendersWithDisclaimer(t *testing.T) {
-	for _, name := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph"} {
+	for _, name := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph", "replay_history"} {
 		responses := runServer(t, message(t, 1, "prompts/get", map[string]any{"name": name}))
 		result := responses[0]["result"].(map[string]any)
 		text := result["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
@@ -1053,5 +1053,52 @@ func TestEveryToolRefusesAWhollyUnknownMember(t *testing.T) {
 		if len(responses) != 1 || responses[0]["result"].(map[string]any)["isError"] != false {
 			t.Fatalf("list_examples with %v arguments: %#v", arguments, responses)
 		}
+	}
+}
+
+// The replay_history prompt (ADR-0034) renders its method -- the two lanes,
+// the held-out slice, the policy owner as the only arbiter -- carries the
+// draft pack when one is given and not otherwise, and ends with the
+// disclaimer every prompt carries.
+func TestReplayHistoryPromptRendersItsMethod(t *testing.T) {
+	render := func(args map[string]any) string {
+		t.Helper()
+		params := map[string]any{"name": "replay_history"}
+		if args != nil {
+			params["arguments"] = args
+		}
+		responses := runServer(t, message(t, 1, "prompts/get", params))
+		result, ok := responses[0]["result"].(map[string]any)
+		if !ok {
+			t.Fatalf("prompts/get replay_history: %#v", responses[0])
+		}
+		return result["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	}
+	bare := render(nil)
+	for _, sentence := range []string{
+		"DOCUMENTS WRITE THE RULES, PAST DECISIONS TEST THEM",
+		"Do not read the past decisions while drafting",
+		"expectedDisposition is what was recorded, never what the draft produces",
+		`matrixVersion "3"`,
+		"Hold out a slice of the history",
+		"Only the policy owner can say which",
+		"Never weaken a rule to make history pass",
+		"Nothing moves a threshold but the policy owner's answer",
+		"experimental_test_packs",
+		"non-normative",
+	} {
+		if !strings.Contains(bare, sentence) {
+			t.Fatalf("the method must say %q:\n%s", sentence, bare)
+		}
+	}
+	if strings.Contains(bare, "The draft pack:") {
+		t.Fatalf("no pack given, no pack block:\n%s", bare)
+	}
+	withPack := render(map[string]any{"pack": `{"id":"draft"}`})
+	if !strings.Contains(withPack, "The draft pack:") || !strings.Contains(withPack, `{"id":"draft"}`) {
+		t.Fatalf("the given pack is rendered in its block:\n%s", withPack)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(withPack), strings.TrimSpace(authoringDisclaimer)) {
+		t.Fatalf("the disclaimer ends the rendering:\n%s", withPack)
 	}
 }

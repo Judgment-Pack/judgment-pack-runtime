@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -59,6 +61,18 @@ func matrixCoverage(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 	if pack == nil {
 		return nil
 	}
+	return coverageFor(derivePackProbes(pack, Reach{}), boundaryGroups(comparisonSites(pack)), matrix)
+}
+
+// coverageFor renders the coverage of one matrix against probes derived
+// once, so a profile over many origins reads the pack a single time.
+func coverageFor(set packProbeSet, groups []boundaryGroup, matrix Matrix) []result.MatrixProbe {
+	return append(set.probes(matrixWitnesses(matrix)), boundaryProbesFor(groups, matrix)...)
+}
+
+// matrixWitnesses decodes the rows' expectations into witnesses, the half of
+// a coverage derivation that is the matrix's and not the pack's.
+func matrixWitnesses(matrix Matrix) []ProbeWitness {
 	witnesses := make([]ProbeWitness, 0, len(matrix.Cases))
 	for _, row := range matrix.Cases {
 		if len(row.ExpectedDisposition) == 0 {
@@ -68,7 +82,7 @@ func matrixCoverage(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 			witnesses = append(witnesses, witness)
 		}
 	}
-	return append(PackProbes(pack, witnesses, Reach{}), boundaryProbes(pack, matrix)...)
+	return witnesses
 }
 
 // ProbeWitness is the slice of one expectation coverage reads: a label naming
@@ -211,65 +225,120 @@ func PackProbes(pack map[string]any, witnesses []ProbeWitness, reach Reach) []re
 	if pack == nil {
 		return nil
 	}
+	return derivePackProbes(pack, reach).probes(witnesses)
+}
+
+// packProbeSet is what a pack's declarations derive, read once: the outcomes
+// it can produce and the reasons it can reach. Witnessing them against rows
+// is a walk over the set, never a second reading of the pack -- what makes a
+// profile over many origins cost the derivation once (ADR-0034).
+type packProbeSet struct {
+	outcomes []string
+	reasons  []string
+}
+
+// probeDerivations counts the pack readings a coverage derivation makes; a
+// test holds a profile over many origins to one.
+var probeDerivations atomic.Int64
+
+func derivePackProbes(pack map[string]any, reach Reach) packProbeSet {
+	probeDerivations.Add(1)
+	return packProbeSet{outcomes: ProducibleOutcomes(pack), reasons: ReachableReasons(pack, reach)}
+}
+
+// count is how many probes the set derives, the work a witnessing does.
+func (set packProbeSet) count() int { return len(set.outcomes) + len(set.reasons) }
+
+// probeRenderings counts the probes rendered -- named, sanitised,
+// sentenced -- and textRenderings the authored strings rendered under the
+// budget; a test holds a profile to the suite's own probe renderings and to
+// one rendering of each origin, since an origin's coverage is a count and
+// an origin's spelling is rendered once and reused.
+var probeRenderings, textRenderings atomic.Int64
+
+// covered is how many of the set's probes some witness witnesses: the
+// predicates alone -- no probe name, no sentence, no sanitising of an id
+// -- so an origin's coverage costs the witnessing and nothing else.
+func (set packProbeSet) covered(witnesses []ProbeWitness) int {
+	covered := 0
+	for index := range set.count() {
+		if set.witness(index, witnesses) != nil {
+			covered++
+		}
+	}
+	return covered
+}
+
+// probes renders the set's probes against the witnesses (ADR-0014): the
+// name and the sentence are built here and only here.
+func (set packProbeSet) probes(witnesses []ProbeWitness) []result.MatrixProbe {
 	// nil until a probe is derived: a pack whose declarations derive none — a
 	// shape only a document far from conformant can reach — carries no coverage
 	// member rather than an empty one.
 	var probes []result.MatrixProbe
-	add := func(probe, missingDetail string, witnessed func(ProbeWitness) bool) {
-		for _, witness := range witnesses {
-			if witnessed(witness) {
-				probes = append(probes, result.MatrixProbe{
-					Probe:  probe,
-					Status: result.MatrixProbeCovered,
-					Detail: witness.Label + " expects it.",
-				})
-				return
-			}
+	for index := range set.count() {
+		name, missingDetail := set.render(index)
+		if witness := set.witness(index, witnesses); witness != nil {
+			probes = append(probes, result.MatrixProbe{Probe: name, Status: result.MatrixProbeCovered, Detail: witness.Label + " expects it."})
+			continue
 		}
-		probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeMissing, Detail: missingDetail})
+		probes = append(probes, result.MatrixProbe{Probe: name, Status: result.MatrixProbeMissing, Detail: missingDetail})
 	}
-	expectsReason := func(reason string) func(ProbeWitness) bool {
-		return func(witness ProbeWitness) bool { return witness.Reasons[reason] }
-	}
-
-	for _, id := range ProducibleOutcomes(pack) {
-		add("outcome:"+id,
-			fmt.Sprintf("No row expects an outcome disposition naming %q.", display.Sanitize(id)),
-			func(witness ProbeWitness) bool { return witness.Kind == "outcome" && witness.OutcomeID == id })
-	}
-
-	for _, reason := range ReachableReasons(pack, reach) {
-		switch reason {
-		case evaluation.ReasonNotApplicable:
-			// A not-applicable disposition carries its kind, not a reason, so
-			// this one probe is witnessed by the kind.
-			add(reason,
-				"The pack declares applicability, and no row expects a not-applicable disposition.",
-				func(witness ProbeWitness) bool { return witness.Kind == "not-applicable" })
-		case evaluation.ReasonMissingEvidence:
-			add(reason,
-				`The pack declares required evidence, and no row's expected reasons include "missing-required-evidence".`,
-				expectsReason(reason))
-		case evaluation.ReasonUnknown:
-			add(reason,
-				`The pack can reach reason "unknown", and no row's expected reasons include it.`,
-				expectsReason(reason))
-		case evaluation.ReasonConflict:
-			add(reason,
-				`Rules or forced outcomes name different outcomes, and no row's expected reasons include "conflict". Either construct facts that make two of them fire together, or confirm against the policy text that they exclude each other.`,
-				expectsReason(reason))
-		case evaluation.ReasonExceptionEscalation:
-			add(reason,
-				`An exception declares effect "escalate", and no row's expected reasons include "exception-escalation".`,
-				expectsReason(reason))
-		case evaluation.ReasonNoMatch:
-			add(reason,
-				`The pack declares no fallbackOutcome, and no row's expected reasons include "no-match".`,
-				expectsReason(reason))
-		}
-	}
-
 	return probes
+}
+
+// witness is the first witness that witnesses the set's index-th probe --
+// the outcomes first, in order, then the reasons -- or nil.
+func (set packProbeSet) witness(index int, witnesses []ProbeWitness) *ProbeWitness {
+	witnessed := set.predicate(index)
+	for i := range witnesses {
+		if witnessed(witnesses[i]) {
+			return &witnesses[i]
+		}
+	}
+	return nil
+}
+
+// predicate is what witnesses the set's index-th probe, with no string
+// built: an outcome probe by the kind and the outcome id, a reason probe by
+// the reason -- the not-applicable one by its kind, since that disposition
+// carries its kind and not a reason.
+func (set packProbeSet) predicate(index int) func(ProbeWitness) bool {
+	if index < len(set.outcomes) {
+		id := set.outcomes[index]
+		return func(witness ProbeWitness) bool { return witness.Kind == "outcome" && witness.OutcomeID == id }
+	}
+	reason := set.reasons[index-len(set.outcomes)]
+	if reason == evaluation.ReasonNotApplicable {
+		return func(witness ProbeWitness) bool { return witness.Kind == "not-applicable" }
+	}
+	return func(witness ProbeWitness) bool { return witness.Reasons[reason] }
+}
+
+// render is the index-th probe's name and the sentence a missing one
+// reports, built only when a probe record is.
+func (set packProbeSet) render(index int) (name, missingDetail string) {
+	probeRenderings.Add(1)
+	if index < len(set.outcomes) {
+		id := set.outcomes[index]
+		return "outcome:" + id, fmt.Sprintf("No row expects an outcome disposition naming %q.", display.Sanitize(id))
+	}
+	reason := set.reasons[index-len(set.outcomes)]
+	switch reason {
+	case evaluation.ReasonNotApplicable:
+		return reason, "The pack declares applicability, and no row expects a not-applicable disposition."
+	case evaluation.ReasonMissingEvidence:
+		return reason, `The pack declares required evidence, and no row's expected reasons include "missing-required-evidence".`
+	case evaluation.ReasonUnknown:
+		return reason, `The pack can reach reason "unknown", and no row's expected reasons include it.`
+	case evaluation.ReasonConflict:
+		return reason, `Rules or forced outcomes name different outcomes, and no row's expected reasons include "conflict". Either construct facts that make two of them fire together, or confirm against the policy text that they exclude each other.`
+	case evaluation.ReasonExceptionEscalation:
+		return reason, `An exception declares effect "escalate", and no row's expected reasons include "exception-escalation".`
+	case evaluation.ReasonNoMatch:
+		return reason, `The pack declares no fallbackOutcome, and no row's expected reasons include "no-match".`
+	}
+	return reason, ""
 }
 
 // siteStage is where in §8's evaluation order a comparison sits, which decides
@@ -384,10 +453,13 @@ func (stage siteStage) exercisedBy(witness ProbeWitness) bool {
 type comparisonSite struct {
 	path    string
 	literal string
-	// key is the literal's canonical decimal value (evaluation.DecimalKey),
-	// read once here so grouping folds by value in one pass rather than by
-	// comparing every pair of literals.
+	// key is the literal's canonical decimal value (evaluation.DecimalKey's
+	// form), read once here so grouping folds by value in one pass rather
+	// than by comparing every pair of literals; number is that one reading,
+	// kept so the profile's placement compares against it without reading
+	// the literal again.
 	key      string
+	number   *big.Rat
 	operator string
 	owner    string
 	stage    siteStage
@@ -409,6 +481,9 @@ type boundaryGroup struct {
 	literal string
 	sites   []comparisonSite
 	stages  []siteStage
+	// number is the literal as read once by the derivation (the first
+	// site's; every site of a group reads to the same value).
+	number *big.Rat
 	// pathIndex addresses this group's pointer in the derivation's
 	// distinct-path list, so a pointer compared against several literals is
 	// resolved once per row rather than once per probe.
@@ -481,10 +556,58 @@ func (group boundaryGroup) unwitnessedSites(found stageWitnesses) []comparisonSi
 // and re-validates nothing (issue #78), and the cost stays one decode and one
 // resolution per row and pointer rather than one per probe.
 func boundaryProbes(pack map[string]any, matrix Matrix) []result.MatrixProbe {
-	groups := boundaryGroups(comparisonSites(pack))
+	return boundaryProbesFor(boundaryGroups(comparisonSites(pack)), matrix)
+}
+
+// boundaryCovered is how many of the groups some row of the matrix
+// witnesses at every stage: the witnessing alone, nothing rendered.
+func boundaryCovered(groups []boundaryGroup, matrix Matrix) int {
+	found := boundaryWitnesses(groups, matrix)
+	covered := 0
+	for index, group := range groups {
+		if found[index].complete(group.stages) {
+			covered++
+		}
+	}
+	return covered
+}
+
+// boundaryProbesFor renders the boundary probes for groups derived once.
+func boundaryProbesFor(groups []boundaryGroup, matrix Matrix) []result.MatrixProbe {
 	if len(groups) == 0 {
 		return nil
 	}
+	found := boundaryWitnesses(groups, matrix)
+	probes := make([]result.MatrixProbe, 0, len(groups))
+	for index, group := range groups {
+		// The pointer and the literal are rendered under a fixed budget in the
+		// name and in the sentence alike: both are authored strings the carrier
+		// bounds only at a megabyte each, and a probe is emitted per distinct
+		// pair (ADR-0023).
+		probe := "boundary:" + capRendered(group.path) + ":" + capRendered(group.literal)
+		if found[index].complete(group.stages) {
+			labels := found[index].labels(group.stages)
+			detail := labels[0] + " places the compared value there."
+			if len(labels) > 1 {
+				detail = joinCapped(labels, boundarySiteCap) + " place the compared value there, one for each stage of the evaluation order this boundary is compared at."
+			}
+			probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeCovered, Detail: detail})
+			continue
+		}
+		probes = append(probes, result.MatrixProbe{
+			Probe:  probe,
+			Status: result.MatrixProbeMissing,
+			Detail: fmt.Sprintf("No row's facts place %q at %s under an expected disposition that could have reached %s. A row at exactly that value is the one input where a strict and a non-strict encoding of this threshold differ; the policy text is the arbiter of which one the pack should carry.",
+				capRendered(group.path), capRendered(group.literal), joinCapped(siteDescriptions(group.unwitnessedSites(found[index])), boundarySiteCap)),
+		})
+	}
+	return probes
+}
+
+// boundaryWitnesses finds, for each group and each stage it is compared at,
+// the first row whose facts place the compared value exactly at the literal
+// under an expectation that could have reached that stage.
+func boundaryWitnesses(groups []boundaryGroup, matrix Matrix) []stageWitnesses {
 	paths := make([]string, 0, len(groups))
 	pathIndex := map[string]int{}
 	for index := range groups {
@@ -536,30 +659,7 @@ func boundaryProbes(pack map[string]any, matrix Matrix) []result.MatrixProbe {
 			}
 		}
 	}
-	probes := make([]result.MatrixProbe, 0, len(groups))
-	for index, group := range groups {
-		// The pointer and the literal are rendered under a fixed budget in the
-		// name and in the sentence alike: both are authored strings the carrier
-		// bounds only at a megabyte each, and a probe is emitted per distinct
-		// pair (ADR-0023).
-		probe := "boundary:" + capRendered(group.path) + ":" + capRendered(group.literal)
-		if found[index].complete(group.stages) {
-			labels := found[index].labels(group.stages)
-			detail := labels[0] + " places the compared value there."
-			if len(labels) > 1 {
-				detail = joinCapped(labels, boundarySiteCap) + " place the compared value there, one for each stage of the evaluation order this boundary is compared at."
-			}
-			probes = append(probes, result.MatrixProbe{Probe: probe, Status: result.MatrixProbeCovered, Detail: detail})
-			continue
-		}
-		probes = append(probes, result.MatrixProbe{
-			Probe:  probe,
-			Status: result.MatrixProbeMissing,
-			Detail: fmt.Sprintf("No row's facts place %q at %s under an expected disposition that could have reached %s. A row at exactly that value is the one input where a strict and a non-strict encoding of this threshold differ; the policy text is the arbiter of which one the pack should carry.",
-				capRendered(group.path), capRendered(group.literal), joinCapped(siteDescriptions(group.unwitnessedSites(found[index])), boundarySiteCap)),
-		})
-	}
-	return probes
+	return found
 }
 
 // The rendering budget of the boundary family. A fact pointer, a decimal
@@ -604,6 +704,7 @@ const (
 // '?' — and the truncation is taken at a rune boundary, so the rendered value
 // is well-formed text whatever was authored.
 func capRendered(text string) string {
+	textRenderings.Add(1)
 	rendered := display.Sanitize(text)
 	if len(rendered) <= boundaryTextBudget {
 		return rendered
@@ -666,7 +767,7 @@ func boundaryGroups(sites []comparisonSite) []boundaryGroup {
 		if !opened {
 			at = len(groups)
 			index[site.path+"\x00"+site.key] = at
-			groups = append(groups, boundaryGroup{path: site.path, literal: site.literal})
+			groups = append(groups, boundaryGroup{path: site.path, literal: site.literal, number: site.number})
 		}
 		groups[at].sites = append(groups[at].sites, site)
 		if !slices.Contains(groups[at].stages, site.stage) {
@@ -712,11 +813,11 @@ func comparisonSites(pack map[string]any) []comparisonSite {
 			if !ok {
 				return
 			}
-			key, decimal := evaluation.DecimalKey(literal)
+			number, decimal := evaluation.DecimalValue(literal)
 			if !decimal {
 				return
 			}
-			sites = append(sites, comparisonSite{path: path, literal: literal, key: key, operator: operator, owner: owner, stage: stage})
+			sites = append(sites, comparisonSite{path: path, literal: literal, key: number.RatString(), number: number, operator: operator, owner: owner, stage: stage})
 		})
 	})
 	return sites

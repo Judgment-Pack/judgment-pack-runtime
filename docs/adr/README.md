@@ -129,3 +129,5 @@ authority, and following it confers no conformance status on anything.
 | [0030](0030-bind-graph-matrix-runs-and-validations-to-the-loaded-document.md) | Bind graph matrix runs and validations to the loaded document                   | accepted |
 | [0031](0031-report-node-traces-in-the-graph-matrix-on-request.md) | Report node traces in the graph matrix on request                               | accepted |
 | [0032](0032-let-a-graph-row-assert-the-handoff-target.md) | Let a graph row assert the handoff target                                       | accepted |
+| [0033](0033-a-record-cites-the-receipts-it-relied-on.md) | A decision record cites the receipts it relied on, as given                     | accepted |
+| [0034](0034-profile-a-matrix-against-its-history.md) | Profile a matrix against its history: agreement by origin, values at each threshold, rows that cite receipts; never gated | proposed |

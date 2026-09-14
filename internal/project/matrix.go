@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -25,8 +26,9 @@ import (
 // not know instead of ignoring it, so adding a member moves the version whatever
 // the addition is — exactly as `graphs` moved configVersion to "2" and `audit`
 // moved it to "3". The version gate is what turns "this member is not known"
-// into "this matrix needs matrixVersion 2".
-const MatrixVersion = "2"
+// into "this matrix needs matrixVersion 2". It moved to "3" for `cites`
+// (ADR-0034), by the same rule.
+const MatrixVersion = "3"
 
 // MatrixVersionDefault is what a matrix declaring no matrixVersion is read as.
 // The rows are the specification's own case-carrier shape, and a matrix written
@@ -38,7 +40,7 @@ const MatrixVersionDefault = "1"
 // SupportedMatrixVersions names every matrixVersion this runtime accepts, newest
 // last, so a refusal can say what it would have taken rather than only what was
 // wrong.
-func SupportedMatrixVersions() []string { return []string{"1", MatrixVersion} }
+func SupportedMatrixVersions() []string { return []string{"1", "2", MatrixVersion} }
 
 // matrixRootMembers and matrixRowMembers are the exact member names a matrix
 // document may carry, spelled as they must be spelled.
@@ -55,14 +57,14 @@ var (
 	matrixRowMembers  = []string{
 		"id", "origin", "facts", "evidenceAvailability", "supportedExtensions",
 		"expectedDisposition", "expectedHandoffTarget", "expectedErrorClass",
-		"expectedErrorPhase", "focus", "specSection",
+		"expectedErrorPhase", "focus", "specSection", "cites",
 	}
 )
 
 // matrixVersionMembers names the members each matrixVersion introduced, so a
 // document declaring an older version is refused with the version it would take
 // rather than with a generic unknown-member message.
-var matrixVersionMembers = map[string]string{"expectedHandoffTarget": "2"}
+var matrixVersionMembers = map[string]string{"expectedHandoffTarget": "2", "cites": "3"}
 
 // Matrix is one pack's instance matrix: the rows a project wrote about its own
 // pack.
@@ -185,6 +187,17 @@ func (p *Project) LoadMatrix(entry Pack) (Matrix, error) {
 		if row.ExpectedHandoffTarget != nil {
 			if _, err := evaluation.DecodeHandoffTarget(row.ExpectedHandoffTarget); err != nil {
 				return Matrix{}, fmt.Errorf("row %q declares an expectedHandoffTarget that is neither null nor a {kind, name} object: %s", display.Sanitize(row.ID), display.Sanitize(err.Error()))
+			}
+		}
+		// A row's citations are held to the grammar a decision record's are
+		// (ADR-0033): the same parser, so a row cannot cite what a record could
+		// not, and a citation that would not resolve at the gateway is refused
+		// here, where the row is, rather than found later in a report. The
+		// values are what the report carries, converted where the row runs;
+		// a null is a member with nothing in it and is refused as such.
+		if row.Cites != nil {
+			if _, err := audit.ParseCites(row.Cites); err != nil {
+				return Matrix{}, fmt.Errorf("row %q declares cites that are not an array of {sessionId, callIndex, signature} in the gateway's shape: %s", display.Sanitize(row.ID), display.Sanitize(err.Error()))
 			}
 		}
 	}

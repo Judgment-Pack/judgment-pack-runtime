@@ -701,7 +701,22 @@ type EvaluationCorpusCase struct {
 	ActualErrorPhase      string `json:"actualErrorPhase,omitempty"`
 	ExpectedHandoffTarget string `json:"expectedHandoffTarget,omitempty"`
 	ActualHandoffTarget   string `json:"actualHandoffTarget,omitempty"`
-	Detail                string `json:"detail,omitempty"`
+	// Cites is the row's own citations, when a project row declares them
+	// (ADR-0034): the receipts the row's facts were transcribed under, in the
+	// gateway's shape, carried as the values the row declared -- session,
+	// index and signature, held to their grammar when the matrix loaded --
+	// and verified by nothing here. Omitted when the row cites nothing.
+	Cites  []Citation `json:"cites,omitempty"`
+	Detail string     `json:"detail,omitempty"`
+}
+
+// Citation names one gateway receipt by session, index and signature -- the
+// shape an action receipt's citations have and a decision record's (ADR-0033)
+// -- as a matrix row declared it. The runtime resolves none.
+type Citation struct {
+	SessionID string `json:"sessionId"`
+	CallIndex int64  `json:"callIndex"`
+	Signature string `json:"signature"`
 }
 
 // EvaluationCorpus is one run of the evaluation corpus bundled for an exact
@@ -1069,7 +1084,71 @@ type PackTestEntry struct {
 	Rows        []EvaluationCorpusCase `json:"rows"`
 	Coverage    []MatrixProbe          `json:"coverage,omitempty"`
 	Origins     []OriginCount          `json:"origins,omitempty"`
+	Profile     *MatrixProfile         `json:"profile,omitempty"`
 	Detail      string                 `json:"detail,omitempty"`
+}
+
+// MatrixProfile reads one pack's matrix against the history its rows came
+// from (ADR-0034): the statuses the run assigned, grouped by the origin each
+// row declares; the derived coverage restricted to each origin's rows; and,
+// for each comparison boundary the pack draws, where each origin's rows place
+// the compared fact and how many of those disagree. It is present only when
+// some row declares an origin, it is derived from the run already made, and
+// it moves no status: a disagreement is one of a pack defect, a past
+// inconsistency and a policy change, and which is the policy owner's to say.
+type MatrixProfile struct {
+	Agreement  []OriginAgreement  `json:"agreement"`
+	Coverage   []OriginCoverage   `json:"coverage,omitempty"`
+	Thresholds []ThresholdProfile `json:"thresholds,omitempty"`
+}
+
+// OriginAgreement is how one origin's rows fared: the rows that declare it,
+// how many passed and how many did not, in the run's own terms.
+type OriginAgreement struct {
+	Origin     string `json:"origin"`
+	Rows       int    `json:"rows"`
+	Passed     int    `json:"passed"`
+	Mismatched int    `json:"mismatched"`
+}
+
+// OriginCoverage is how many of the derived probes some row of one origin
+// witnesses, out of the probes there are: which of the pack's reachable
+// behaviors that history ever exercised.
+type OriginCoverage struct {
+	Origin  string `json:"origin"`
+	Covered int    `json:"covered"`
+	Probes  int    `json:"probes"`
+}
+
+// ThresholdProfile is one comparison boundary the pack draws -- a fact
+// pointer against a decimal literal -- and, per origin, where that origin's
+// rows place the fact against it.
+type ThresholdProfile struct {
+	Pointer string            `json:"pointer"`
+	Literal string            `json:"literal"`
+	Origins []ThresholdOrigin `json:"origins"`
+}
+
+// ThresholdOrigin is one origin's rows against one boundary: below, at and
+// above the literal, by the evaluator's own comparison (§7.4); a row whose
+// fact is absent or not comparable there is counted on no side.
+type ThresholdOrigin struct {
+	Origin string        `json:"origin"`
+	Below  ThresholdSide `json:"below"`
+	At     ThresholdSide `json:"at"`
+	Above  ThresholdSide `json:"above"`
+}
+
+// ThresholdSide counts the rows on one side of a boundary and how many of
+// them disagree, and names the value nearest the literal on that side and
+// the nearest disagreeing one, spelled as the row wrote them: the cases a
+// policy owner asks about before moving a line. Nothing is a window; nearest
+// is nearest.
+type ThresholdSide struct {
+	Rows               int    `json:"rows"`
+	Disagreeing        int    `json:"disagreeing"`
+	Nearest            string `json:"nearest,omitempty"`
+	NearestDisagreeing string `json:"nearestDisagreeing,omitempty"`
 }
 
 // OriginCount is how many of one pack's matrix rows declare one origin, in

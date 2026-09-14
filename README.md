@@ -477,12 +477,15 @@ backwards.
 evaluator and compares every row the way the bundled evaluation corpus is compared: the RFC 8785
 canonical §8.3 disposition byte for byte, or the expected §8.4 error class and phase, plus the one
 optional per-row assertion about the escalation target §8.3 keeps *outside* the disposition
-(`expectedHandoffTarget`, which needs `matrixVersion: "2"`). The two carriers share the fields the
+(`expectedHandoffTarget`, which needs `matrixVersion: "2"`). A row may also carry `cites` (which
+needs `matrixVersion: "3"`): the gateway receipts its facts were transcribed under, validated when
+the matrix loads and carried on the row's result as values — metadata the comparator never reads
+(ADR-0034). The two carriers share the fields the
 comparator reads, which is what makes the comparison one implementation rather than two — not a
 claim that a row moves between them untouched. Corpus admission additionally requires its own
 members (`pack`, `origin`, `supportedExtensions`, `focus`, `specSection`), and its closed schema
-forbids `expectedHandoffTarget`, so lifting a project row means supplying those and removing any
-target assertion. Both commands exit `1` on any failure, a pack with no
+forbids `expectedHandoffTarget` and `cites`, so lifting a project row means supplying those and
+removing any target assertion and any citations. Both commands exit `1` on any failure, a pack with no
 matrix is reported *skipped* rather than passed, and a `packs test` run in which no row ran at all
 is reported *skipped* and exits `1`: a green gate over zero rows would say a project was tested when
 nothing was. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no
