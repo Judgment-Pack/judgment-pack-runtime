@@ -80,6 +80,16 @@ func promptDefinitions() []promptDefinition {
 			build: buildPresentPack,
 		},
 		{
+			name: "replay_history",
+			description: "Guide a history-replay session: draft a pack from the policy documents alone, " +
+				"transcribe past decisions into matrix rows whose expectation is what was recorded, and read " +
+				"the profile packs test reports as questions for the policy owner. Non-normative method guidance.",
+			arguments: []promptArgument{
+				{Name: "pack", Description: "The draft pack, as JSON text (optional; you may also reference a file you hold).", Required: false},
+			},
+			build: buildReplayHistory,
+		},
+		{
 			name: "author_graph",
 			description: "Guide a composition session: declare how existing packs' decisions feed one " +
 				"another as an experimental graph document, and record verbatim what cannot be " +
@@ -220,6 +230,45 @@ matrix after any change. Keep the matrix with the pack; it is the pack's regress
 Where the project's jpack.json declares the pack and its matrix, run the whole suite with the
 experimental_test_packs tool instead of replaying rows one by one: it compares every row with the
 same code the CLI uses and reports the derived coverage the rows do not probe.
+
+`)
+	b.WriteString(authoringDisclaimer)
+	return b.String()
+}
+
+func buildReplayHistory(args map[string]string) string {
+	var b strings.Builder
+	b.WriteString("Test a pack drafted from policy documents against the decisions that were actually made,\n")
+	b.WriteString("using the experimental_test_packs tool and the profile it reports (ADR-0034). Two lanes,\n")
+	b.WriteString("and they never cross: DOCUMENTS WRITE THE RULES, PAST DECISIONS TEST THEM. A pack tuned to\n")
+	b.WriteString("fit the past would pass its own test and prove nothing.\n\n")
+	if pack := strings.TrimSpace(args["pack"]); pack != "" {
+		writeFencedBlock(&b, "The draft pack:", pack)
+	}
+	b.WriteString(`1. Draft the pack from the policy documents alone -- the author_pack method -- and validate it
+   until valid. Do not read the past decisions while drafting.
+2. Transcribe past decisions into matrix rows MECHANICALLY: the facts are what was on file, the
+   expectedDisposition is what was recorded, never what the draft produces. Give every row an
+   origin naming the history it came from (a system, a table, a period), and, where the records
+   arrived under a gateway page receipt, a cites member naming that receipt ({sessionId,
+   callIndex, signature}; matrixVersion "3"). The runtime records a citation as given and
+   verifies nothing; the gateway's verify is what resolves one.
+3. Hold out a slice of the history, unseen, until the draft is frozen. Replay the rest with
+   experimental_test_packs: every row is a rehearsal, and nothing is recorded as a decision.
+4. Read the profile, per origin. agreement says which history disagrees; coverage says which of
+   the pack's reachable behaviors that history ever exercised; thresholds says, for each line the
+   pack draws, how many cases sit below, at and above it, how many of those disagree, and the
+   nearest case on each side. None of it is a verdict.
+5. Triage each disagreement with the policy owner. Exactly one of three things is true: the draft
+   has a defect, the past decision was inconsistent, or the policy changed between then and now.
+   Only the policy owner can say which. A defect is fixed FROM THE POLICY TEXT and the whole
+   matrix replayed; the other two are recorded as findings against the row, never as edits to
+   the pack. Never weaken a rule to make history pass.
+6. Turn the thresholds profile into questions, not changes: "eleven past cases sit just under this
+   line and four of them were decided the other way -- is the line where the policy means it to
+   be?" Nothing moves a threshold but the policy owner's answer, written back from the documents.
+7. When the draft is frozen, replay the held-out slice once. That run is the test; the earlier
+   runs were the drafting.
 
 `)
 	b.WriteString(authoringDisclaimer)

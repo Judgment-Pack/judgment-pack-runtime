@@ -2,6 +2,25 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A matrix is profiled against its history** (ADR-0034): when any row of a pack's matrix
+  declares an `origin`, the pack's `packs test` entry carries a `profile` — agreement by origin
+  (rows, passed, mismatched, in the run's own terms), coverage by origin (how many derived probes
+  that origin's rows witness, derived exactly when the suite's coverage is), and, for each
+  comparison boundary the pack draws, where each origin's rows place the compared fact — below,
+  at and above the literal by the evaluator's own comparison — how many of those disagree, and
+  the nearest value on each side, with the nearest disagreeing one. It reads the run already made,
+  evaluates nothing twice and moves no status. A row may carry `cites` under `matrixVersion "3"`:
+  the receipts its facts were transcribed under, in the gateway's citation shape and held to the
+  grammar a decision record's citations are (ADR-0033), carried on the row's result as given and
+  verified by nothing here. The `replay_history` MCP prompt states the method: documents write
+  the rules, past decisions test them, a slice is held out until the draft is frozen, and every
+  disagreement and every threshold is a question for the policy owner. The report members are
+  additive output under VERSIONING.md's MINOR rule and move no `outputVersion`; `cites` is a
+  closed-input change gated by `matrixVersion "3"` under its closed-input rule; the evaluator's
+  conformance claim is unaffected and stated, in full and only, in `CONFORMANCE.md`.
+
 ## 0.20.0 - 2026-09-13
 
 - **A decision record cites the receipts it relied on** (ADR-0033): `experimental evaluate

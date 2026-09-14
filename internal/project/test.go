@@ -193,6 +193,11 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	if admitsForSomeRow(admitted, matrix) {
 		report.Coverage = matrixCoverage(PackRoot(pack), matrix)
 	}
+	// The profile reads what this run already produced -- the rows' statuses,
+	// the same derivations -- against the origins the rows declare, and moves
+	// no status (ADR-0034). Coverage by origin is derived exactly when the
+	// suite's own coverage was.
+	report.Profile = matrixProfile(PackRoot(pack), matrix, report.Rows, report.Coverage != nil)
 	return report, nil
 }
 

@@ -501,13 +501,13 @@ func TestPromptsSurface(t *testing.T) {
 	for _, entry := range prompts {
 		names[entry.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph"} {
+	for _, want := range []string{"author_pack", "test_pack", "fix_pack", "explain_disposition", "present_pack", "author_graph", "replay_history"} {
 		if !names[want] {
 			t.Fatalf("prompts/list must include %q: %v", want, names)
 		}
 	}
-	if len(names) != 6 {
-		t.Fatalf("expected exactly 6 prompts, got %d", len(names))
+	if len(names) != 7 {
+		t.Fatalf("expected exactly 7 prompts, got %d", len(names))
 	}
 
 	rendered := responses[2]["result"].(map[string]any)

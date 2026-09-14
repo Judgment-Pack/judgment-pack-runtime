@@ -82,6 +82,14 @@ type MatrixCase struct {
 	ExpectedErrorPhase    string          `json:"expectedErrorPhase"`
 	Focus                 string          `json:"focus"`
 	SpecSection           string          `json:"specSection"`
+	// Cites is the second project-only extension (ADR-0034), on the same
+	// footing as ExpectedHandoffTarget: the receipts a row's facts were
+	// transcribed under, in the gateway's citation shape, reachable only from
+	// a project matrix declaring matrixVersion 3, held to its grammar by the
+	// project loader and carried into the row's result as given. The
+	// comparator never reads it; the bundled corpus's schema closes its case
+	// object and never carries it.
+	Cites json.RawMessage `json:"cites,omitempty"`
 }
 
 // corpusCase is one bundled corpus row: a MatrixCase plus the bundled pack
@@ -441,6 +449,7 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declar
 		Status:             "passed",
 		ExpectedErrorClass: item.ExpectedErrorClass,
 		ExpectedErrorPhase: item.ExpectedErrorPhase,
+		Cites:              item.Cites,
 	}
 	if item.ExpectedDisposition != nil {
 		expected, err := canonicalDisposition(item.ExpectedDisposition)

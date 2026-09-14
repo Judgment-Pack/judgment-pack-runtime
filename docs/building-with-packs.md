@@ -200,7 +200,7 @@ are optional and none of them decides anything: `origin`, a free string saying w
 *input* came from (`jpack packs suggest` writes `"generated"`, and `packs test` reports a count per
 origin — see below); `focus`, one line saying what the row is probing; and `specSection`, the
 section of the specification the row is about, which is what the bundled evaluation corpus uses the
-member for. `matrixVersion` is optional and, when present, must be `"1"` or `"2"`; an omitted
+member for. `matrixVersion` is optional and, when present, must be `"1"`, `"2"` or `"3"`; an omitted
 version is read as `"1"`. Unknown members are rejected: a misspelled `expectedDispositon` has to be
 an error, not a row that silently expects nothing — and so is a member spelled in another case, so
 `Facts` and `ExpectedHandoffTarget` are refused rather than read as the members they resemble.
@@ -503,6 +503,31 @@ the audit trail draws.
 
 Nothing to deploy: the packs are files in your repository and your application reads them. When you
 change one, bump its `version`, and read the next two sections.
+
+### Rows that cite receipts, and the history profile
+
+A row transcribed from a past decision can say where it came from and what it rests on
+(ADR-0034). `origin` names the history — a system, a table, a period — and `cites` names the
+gateway receipts the row's facts were transcribed under, in the gateway's own citation shape:
+
+```json
+{"id": "case-2026-0117", "origin": "warehouse", "cites": [{"sessionId": "s-2026-09-a", "callIndex": 17, "signature": "<128 hex>"}], "facts": {"...": "..."}, "expectedDisposition": {"...": "..."}}
+```
+
+**`cites` needs `matrixVersion: "3"`**, by the same closed-input rule. It is held to the grammar a
+decision record's citations are held to (ADR-0033) when the matrix loads — an array of objects with
+exactly `sessionId`, `callIndex` and `signature`, each once — and carried on the row's entry in the
+`packs test` report byte for byte as you wrote it. The runtime verifies nothing about a citation;
+the gateway's `verify` is what resolves one.
+
+When any row declares an `origin`, the pack's `packs test` entry carries a `profile`: `agreement`
+(rows, passed, mismatched, per origin), `coverage` (how many derived probes that origin's rows
+witness, out of the probes there are), and `thresholds` — for each comparison boundary the pack
+draws, where each origin's rows place the compared fact (below, at, above the literal, by the
+evaluator's own comparison), how many of those disagree, and the nearest value on each side with
+the nearest disagreeing one, spelled as the row wrote it. The profile reads the run already made
+and moves no status: a disagreement is a pack defect, a past inconsistency or a policy change,
+and only the policy owner can say which. The `replay_history` MCP prompt states the method.
 
 ## `expectedVersion`: a reference, never a truth
 

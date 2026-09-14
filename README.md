@@ -477,7 +477,7 @@ backwards.
 evaluator and compares every row the way the bundled evaluation corpus is compared: the RFC 8785
 canonical §8.3 disposition byte for byte, or the expected §8.4 error class and phase, plus the one
 optional per-row assertion about the escalation target §8.3 keeps *outside* the disposition
-(`expectedHandoffTarget`, which needs `matrixVersion: "2"`). The two carriers share the fields the
+(`expectedHandoffTarget`, which needs `matrixVersion: "2"`, and `cites`, which needs `"3"`). The two carriers share the fields the
 comparator reads, which is what makes the comparison one implementation rather than two — not a
 claim that a row moves between them untouched. Corpus admission additionally requires its own
 members (`pack`, `origin`, `supportedExtensions`, `focus`, `specSection`), and its closed schema
