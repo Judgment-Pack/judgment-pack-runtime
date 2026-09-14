@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.21.0 - 2026-09-14
 
 - **A matrix is profiled against its history** (ADR-0034): when any row of a pack's matrix
   declares an `origin`, the pack's `packs test` entry carries a `profile` — agreement by origin
