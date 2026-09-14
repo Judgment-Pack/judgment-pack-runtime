@@ -17,6 +17,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
@@ -1363,7 +1364,7 @@ func TestExperimentalTestGraphsIncludeTracesArgumentIsHeldExactly(t *testing.T) 
 		"a number value":       {raw: `{"include_traces":1}`, want: booleanError},
 		"an object value":      {raw: `{"include_traces":{}}`, want: booleanError},
 		"an array value":       {raw: `{"include_traces":[]}`, want: booleanError},
-		"an upper-case member": {raw: `{"INCLUDE_TRACES":true}`, want: unknownError("INCLUDE_TRACES")},
+		"an upper-case member": {raw: `{"INCLUDE_TRACES":true}`, want: spelledError("experimental_test_graphs", "INCLUDE_TRACES", "include_traces")},
 		"a camel-cased member": {raw: `{"includeTraces":true}`, want: unknownError("includeTraces")},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1650,12 +1651,12 @@ func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
 	// choice of which one the message names.
 	for index, want := range map[int]string{
 		1: booleanError,
-		2: `The "experimental_evaluate" arguments carry an unknown member "REHEARSAL"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal, spelled exactly.`,
+		2: spelledError("experimental_evaluate", "REHEARSAL", "rehearsal"),
 		3: booleanError,
 		4: booleanError,
 		5: booleanError,
 		6: booleanError,
-		7: `The "experimental_evaluate" arguments carry an unknown member "aaa"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal, spelled exactly.`,
+		7: `The "experimental_evaluate" arguments carry an unknown member "aaa"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites, spelled exactly.`,
 	} {
 		response := responses[index]["result"].(map[string]any)
 		if response["isError"] != true {
@@ -1847,7 +1848,7 @@ func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
 		t.Fatalf("an explicit null is the string-type refusal: %#v", null)
 	}
 	alias := responses[4]["result"].(map[string]any)
-	if alias["isError"] != true || !strings.Contains(toolText(t, alias), `unknown member "GRAPH_ID"`) {
+	if alias["isError"] != true || toolText(t, alias) != spelledError("experimental_get_graph", "GRAPH_ID", "graph_id") {
 		t.Fatalf("a case-folded alias is held to the exact spelling: %#v", alias)
 	}
 	if absent := responses[5]["result"].(map[string]any); absent["isError"] != true ||
@@ -2127,7 +2128,7 @@ func TestFetchToolsHoldArgumentsAndNotesExactly(t *testing.T) {
 	}
 	alias := responses[2]["result"].(map[string]any)
 	if alias["isError"] != true ||
-		toolText(t, alias) != `The "get_pack" arguments carry an unknown member "PACK_ID"; the accepted member is "pack_id", spelled exactly.` {
+		toolText(t, alias) != spelledError("get_pack", "PACK_ID", "pack_id") {
 		t.Fatalf("the case-folded pack alias is held to the exact spelling: %#v", alias)
 	}
 }
@@ -2161,4 +2162,351 @@ func TestExperimentalListGraphsRefusesArguments(t *testing.T) {
 		!strings.Contains(toolText(t, array), "must be an object") {
 		t.Fatalf("a non-object is refused before any project read: %#v", array)
 	}
+}
+
+// The cites argument lands on the record as given (ADR-0033); one not of
+// the gateway's shape, or of the wrong type, is a tool error before the
+// evaluator runs, and leaves no record.
+func TestExperimentalEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+	cites := []map[string]any{{"sessionId": "s-2026-09-12-a", "callIndex": 17, "signature": strings.Repeat("a", 128)}}
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": cites}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []map[string]any{{"sessionId": "s", "callIndex": -1, "signature": "x"}}}),
+		toolCall(t, 3, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": "not an array"}),
+		toolCall(t, 4, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": nil}),
+		toolCall(t, 5, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []any{}}),
+		toolCall(t, 6, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": cites, "rehearsal": true}),
+	}, ""))
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("with citations: %#v", responses[0])
+	}
+	for _, index := range []int{1, 2, 3} {
+		result := responses[index]["result"].(map[string]any)
+		if result["isError"] != true || !strings.Contains(toolText(t, result), `"cites"`) {
+			t.Fatalf("call %d must be refused for its citations: %#v", index+1, responses[index])
+		}
+	}
+	if responses[4]["result"].(map[string]any)["isError"] != false || responses[5]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("an empty array cites nothing, and a rehearsal runs: %#v %#v", responses[4], responses[5])
+	}
+	data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("two records -- the cited call and the empty-array call; the refused calls and the rehearsal leave none: %q", data)
+	}
+	if !strings.Contains(lines[0], `"cites":[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"`+strings.Repeat("a", 128)+`"}]`) {
+		t.Fatalf("the citations as given: %s", lines[0])
+	}
+	if strings.Contains(lines[1], `"cites"`) {
+		t.Fatalf("an empty array leaves no member: %s", lines[1])
+	}
+	// A member given twice is refused, in either order, before anything
+	// runs: the first cannot be lost to the second.
+	factsArg, _ := json.Marshal(projectFacts)
+	for _, raw := range []string{
+		`{"pack_id":"intake","facts":` + string(factsArg) + `,"cites":null,"cites":[]}`,
+		`{"pack_id":"intake","facts":` + string(factsArg) + `,"cites":[],"cites":null}`,
+	} {
+		responses := runServer(t, rawToolCall(t, 7, "experimental_evaluate", raw))
+		result := responses[0]["result"].(map[string]any)
+		if result["isError"] != true || !strings.Contains(toolText(t, result), `the member "cites" twice`) {
+			t.Fatalf("a member twice: %#v", responses[0])
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName)); err != nil || len(strings.Split(strings.TrimSpace(string(data)), "\n")) != 2 {
+		t.Fatalf("a refused call records nothing: %v %q", err, data)
+	}
+}
+
+// The envelope is read exactly and once (round 2 of ADR-0033's review): a
+// params or arguments object given twice, or spelled by another case,
+// is refused before any decoder keeps the last of two -- so a first
+// arguments object that cites nothing, or declares a rehearsal, cannot
+// vanish behind a second that does not. Every tool's arguments are held
+// the same way, centrally.
+func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
+	root := t.TempDir()
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "packs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "packs", "intake-0.1.0.pack.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, configPath)
+	facts, _ := json.Marshal(projectFacts)
+	good := `{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `}}`
+	rehearsing := `{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"rehearsal":true}}`
+	citingNothing := `{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null}}`
+	for name, tc := range map[string]struct{ line, want string }{
+		"params twice, the first a rehearsal":     {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + rehearsing + `,"params":` + good + `}`, `carries the member "params" twice`},
+		"params twice, the first citing null":     {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + citingNothing + `,"params":` + good + `}`, `carries the member "params" twice`},
+		"Params by another case":                  {`{"jsonrpc":"2.0","id":1,"method":"tools/call","Params":` + good + `}`, `"Params", which is not the member "params"`},
+		"id twice":                                {`{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":` + good + `}`, `carries the member "id" twice`},
+		"arguments twice inside params":           {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`, `carries the member "arguments" twice`},
+		"Arguments by another case":               {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"experimental_evaluate","Arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`, `"Arguments", which is not the member "arguments"`},
+		"an argument twice for another tool":      {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_schema","arguments":{"name":"a","name":"b"}}}`, `The "get_schema" arguments carries the member "name" twice`},
+		"an argument twice for the validate tool": {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate","arguments":{"document":"{}","document":"[]"}}}`, `The "validate" arguments carries the member "document" twice`},
+	} {
+		responses := runServer(t, tc.line)
+		if len(responses) != 1 {
+			t.Fatalf("%s: %d responses", name, len(responses))
+		}
+		text := ""
+		if e, ok := responses[0]["error"].(map[string]any); ok {
+			text = e["message"].(string)
+		} else if r, ok := responses[0]["result"].(map[string]any); ok && r["isError"] == true {
+			text = toolText(t, r)
+		}
+		if !strings.Contains(text, tc.want) {
+			t.Fatalf("%s: want %q, got %#v", name, tc.want, responses[0])
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("a refused envelope records nothing: %v", err)
+	}
+	// An id given twice is no one id: the refusal carries null (JSON-RPC
+	// §5); a refusal in params, under one id, carries that id.
+	responses := runServer(t, `{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":`+good+`}`)
+	if id, present := responses[0]["id"]; !present || id != nil {
+		t.Fatalf("an ambiguous id is answered with null: %#v", responses[0])
+	}
+	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":`+string(facts)+`},"arguments":{}}}`)
+	if responses[0]["id"] != float64(5) || responses[0]["error"].(map[string]any)["code"] != float64(-32602) {
+		t.Fatalf("a refusal in params carries the request's id and the invalid-params code: %#v", responses[0])
+	}
+	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"experimental_evaluate","Arguments":{"pack_id":"intake","facts":`+string(facts)+`}}}`)
+	if responses[0]["id"] != float64(5) || responses[0]["error"].(map[string]any)["code"] != float64(-32602) {
+		t.Fatalf("a params member by another case is invalid params under the id: %#v", responses[0])
+	}
+	// An id beside a member spelled as it by another case is answered,
+	// since an id is there, and under null, since which is not.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":6,"ID":7,"method":"tools/call","params":`+good+`}`)
+	if len(responses) != 1 || responses[0]["id"] != nil {
+		t.Fatalf("an id beside an ID: %#v", responses)
+	}
+	// One id, another member refused: answered under that id, since it
+	// is the one id there is.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"ping","params":{},"params":{}}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(5) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) || !strings.Contains(responses[0]["error"].(map[string]any)["message"].(string), `"params" twice`) {
+		t.Fatalf("a unique id survives another member's refusal: %#v", responses)
+	}
+	// A member of the wrong type is an invalid request, not a parse
+	// error: answered under the one id, and not at all without one --
+	// including when a case-folded "Method" or "ID" would have bound to
+	// the struct before any walk.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":3,"method":0}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(3) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+		t.Fatalf("a member of the wrong type under one id: %#v", responses)
+	}
+	// Without an id, an object that is not a Request object is not a
+	// notification either (§4.1 exempts notifications, which are Request
+	// objects): it is an invalid request, answered under null -- §5's own
+	// example answers {"method": 1, "params": "bar"} so. What makes it
+	// not one: a member spelled by another case, a member twice, no
+	// "jsonrpc" of "2.0", no "method" string, params that are not an
+	// object or an array.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","method":"ping","Method":0,"ID":1}`,
+		`{"jsonrpc":"2.0","method":0}`,
+		`{"jsonrpc":"2.0","method":1,"params":"bar"}`,
+		`{"jsonrpc":"2.0","method":"ping","params":{},"params":{}}`,
+		`{"method":"ping"}`,
+		`{"jsonrpc":"2.0","method":"ping","params":null}`,
+	} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("an invalid request without an id is answered under null: %s: %#v", line, responses)
+		}
+	}
+	// With an id, what a Request object must have is held before
+	// dispatch: "jsonrpc" the string "2.0" -- null, absent, or another
+	// version is not -- "method" a string -- null or absent is not --
+	// and "params", when there, an object or an array -- a string or
+	// null is not. Each is an invalid request under the id; an array of
+	// params passes.
+	for _, line := range []string{
+		`{"jsonrpc":null,"id":1,"method":"ping"}`,
+		`{"id":1,"method":"ping"}`,
+		`{"jsonrpc":"1.0","id":1,"method":"ping"}`,
+		`{"jsonrpc":"2.0","id":1,"method":null}`,
+		`{"jsonrpc":"2.0","id":1}`,
+		`{"jsonrpc":"2.0","id":1,"method":"ping","params":"bar"}`,
+		`{"jsonrpc":"2.0","id":1,"method":"ping","params":null}`,
+	} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != float64(1) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("a request missing what a Request object must have: %s: %#v", line, responses)
+		}
+	}
+	if responses := runServer(t, `{"jsonrpc":"2.0","id":1,"method":"ping","params":[]}`); len(responses) != 1 || responses[0]["error"] != nil {
+		t.Fatalf("params as an array is a structured value: %#v", responses)
+	}
+	// The envelope is judged before its params: a request whose method
+	// is not a string and whose params carry a member twice is an
+	// invalid request (-32600) under its id, not invalid params.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":7,"method":0,"params":{"name":"a","name":"b"}}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(7) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+		t.Fatalf("the envelope's refusal comes before the params': %#v", responses)
+	}
+	// A notification by name that carries an id is a request, and a
+	// request is answered: the method is not a request method.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":7,"method":"notifications/initialized"}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(7) || responses[0]["error"].(map[string]any)["code"] != float64(-32601) {
+		t.Fatalf("a request form of a notification is answered under its id: %#v", responses)
+	}
+	if responses := runServer(t, `{"jsonrpc":"2.0","method":"notifications/initialized"}`); len(responses) != 0 {
+		t.Fatalf("the notification itself is answered by nothing: %#v", responses)
+	}
+	// JSON's own whitespace around a message is passed over; any other
+	// is part of the message, which is then not JSON: a parse error.
+	if responses := runServer(t, " \t{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\t\r\n"); len(responses) != 1 || responses[0]["error"] != nil {
+		t.Fatalf("JSON whitespace around a message: %#v", responses)
+	}
+	for _, line := range []string{"\v{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}", "\u00a0{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\f"} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32700) {
+			t.Fatalf("other whitespace is part of the message: %q: %#v", line, responses)
+		}
+	}
+	// What is not an object is not a notification: an array (this server
+	// batches nothing) or a scalar is an invalid request, under null.
+	for _, line := range []string{`[]`, `[{"jsonrpc":"2.0","id":1,"method":"ping"}]`, `42`, `"ping"`, `null`} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) ||
+			!strings.Contains(responses[0]["error"].(map[string]any)["message"].(string), "batches are not supported") {
+			t.Fatalf("a non-object message %s is refused as one, naming the batch limit: %#v", line, responses)
+		}
+	}
+	// An id is a string or an integer: one of another kind is refused
+	// under null, before anything is dispatched; a string and an integer
+	// are answered under themselves.
+	for _, id := range []string{`{}`, `1.5`, `true`, `[1]`, `1e2`} {
+		responses := runServer(t, `{"jsonrpc":"2.0","id":`+id+`,"method":"ping"}`)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("an id of %s: %#v", id, responses)
+		}
+	}
+	for _, id := range []string{`"abc"`, `7`, `-1`, `0`, `18446744073709551616`} {
+		line := `{"jsonrpc":"2.0","id":` + id + `,"method":"ping"}`
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["error"] != nil {
+			t.Fatalf("an id of %s is answered under itself: %#v", id, responses)
+		}
+		// As given: the raw bytes, so an integer beyond float64's exactness
+		// is not decoded and re-encoded into a neighbour.
+		if got := rawResponseID(t, line); got != id {
+			t.Fatalf("an id of %s echoed as %s", id, got)
+		}
+	}
+	// What is not JSON at all is the one thing answered under null with
+	// a parse error.
+	if responses := runServer(t, `{"jsonrpc":"2.0","id":4,`); len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32700) {
+		t.Fatalf("not JSON: %#v", responses)
+	}
+	// A notification -- a Request object with no id -- is answered by
+	// nothing, its errors included (§4.1): a refusal of its params goes
+	// unanswered, and is not dispatched.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`,
+		// An "ID" or an "Id" inside params, as a name or a value, is not
+		// an id: the walk finds the id at the top level and nowhere else.
+		`{"jsonrpc":"2.0","method":"ping","params":{"ID":"Id","ID":1}}`,
+	} {
+		if responses := runServer(t, line); len(responses) != 0 {
+			t.Fatalf("a notification with refused params is answered by nothing: %s: %#v", line, responses)
+		}
+	}
+	// An id-less object that is not a Request object is answered under
+	// null and dispatched no more than a notification is: an "ID" or an
+	// "Id" is not an id, and the struct would have bound it.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","method":"tools/call","params":` + rehearsing + `,"params":` + good + `}`,
+		`{"jsonrpc":"2.0","ID":1,"method":"ping"}`,
+		`{"jsonrpc":"2.0","Id":1,"method":"tools/call","params":` + good + `}`,
+	} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("an invalid request with no id is answered under null: %#v", responses)
+		}
+	}
+	// A refusal comes before dispatch, whatever it is answered under: a
+	// recording call under an id that is not one, under null, inside a
+	// batch, or under another protocol version, is refused and records
+	// nothing.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","id":{},"method":"tools/call","params":` + good + `}`,
+		`{"jsonrpc":"2.0","id":1.5,"method":"tools/call","params":` + good + `}`,
+		`{"jsonrpc":"2.0","id":null,"method":"tools/call","params":` + good + `}`,
+		`[{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + good + `}]`,
+		`{"jsonrpc":"1.0","id":1,"method":"tools/call","params":` + good + `}`,
+		`{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":` + good + `}`,
+	} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["error"] == nil {
+			t.Fatalf("a refused recording call is answered with its refusal: %s: %#v", line, responses)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("a refused message records nothing: %v", err)
+	}
+	// The ordinary envelope, once and exactly, is answered.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":9,"method":"tools/call","params":`+good+`}`)
+	if responses[0]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("the ordinary call: %#v", responses[0])
+	}
+}
+
+// rawResponseID serves one line and returns the answer's id as written on
+// the wire, undecoded.
+func rawResponseID(t *testing.T, line string) string {
+	t.Helper()
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(engine, conformance.NewRunner(engine))
+	var out, logw bytes.Buffer
+	if err := server.Serve(strings.NewReader(line), &out, &logw); err != nil {
+		t.Fatalf("serve: %v (log %q)", err, logw.String())
+	}
+	var answer struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &answer); err != nil {
+		t.Fatalf("undecodable response %q: %v", out.String(), err)
+	}
+	return string(answer.ID)
+}
+
+// spelledError is the central refusal of an argument spelled as a known
+// member by another case, for every tool alike.
+func spelledError(tool, member, exact string) string {
+	return `The "` + tool + `" arguments carries "` + member + `", which is not the member "` + exact + `" spelled exactly.`
 }

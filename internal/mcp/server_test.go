@@ -15,10 +15,12 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/describe"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func message(t *testing.T, id int, method string, params any) string {
@@ -833,8 +835,8 @@ func TestTransportRefusesOversizedLineAndEndsStream(t *testing.T) {
 }
 
 // encoding/json matches struct tags case-insensitively, so DisallowUnknownFields
-// alone accepts PACK_ID for pack_id. exactMembers holds every tool that decodes
-// an arguments object to the advertised spelling (issue #115).
+// alone accepts PACK_ID for pack_id. callTool holds every tool's arguments to
+// the spelling its schema advertises, before any handler decodes (issue #115).
 func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 	projectFixture(t)
 
@@ -843,43 +845,43 @@ func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 		tool      string
 		arguments map[string]any
 		member    string
-		accepted  string
 	}{
 		{
 			name:      "get_pack PACK_ID",
 			tool:      "get_pack",
 			arguments: map[string]any{"PACK_ID": "intake"},
 			member:    "PACK_ID",
-			accepted:  `the accepted member is "pack_id"`,
 		},
 		{
 			name:      "get_pack Pack_Id",
 			tool:      "get_pack",
 			arguments: map[string]any{"Pack_Id": "intake"},
 			member:    "Pack_Id",
-			accepted:  `the accepted member is "pack_id"`,
 		},
 		{
 			name:      "experimental_evaluate PACK_ID",
 			tool:      "experimental_evaluate",
 			arguments: map[string]any{"PACK_ID": "intake", "facts": projectFacts},
 			member:    "PACK_ID",
-			accepted:  "the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal",
 		},
 		{
 			name:      "experimental_test_packs PACK_ID",
 			tool:      "experimental_test_packs",
 			arguments: map[string]any{"PACK_ID": "intake"},
 			member:    "PACK_ID",
-			accepted:  `the accepted member is "pack_id"`,
 		},
 		{
 			name:      "experimental_test_packs Pack_Id",
 			tool:      "experimental_test_packs",
 			arguments: map[string]any{"Pack_Id": "intake"},
 			member:    "Pack_Id",
-			accepted:  `the accepted member is "pack_id"`,
 		},
+		// The tools that decode without a member list of their own are
+		// held by the same central check, from their schemas' names.
+		{name: "validate DOCUMENT", tool: "validate", arguments: map[string]any{"DOCUMENT": "{}"}, member: "DOCUMENT"},
+		{name: "test_conformance SPEC_VERSION", tool: "test_conformance", arguments: map[string]any{"SPEC_VERSION": "0.2.0-draft"}, member: "SPEC_VERSION"},
+		{name: "get_schema Spec_Version", tool: "get_schema", arguments: map[string]any{"Spec_Version": "0.2.0-draft"}, member: "Spec_Version"},
+		{name: "get_example NAME", tool: "get_example", arguments: map[string]any{"NAME": "minimal-expense-approval"}, member: "NAME"},
 	}
 
 	for _, tc := range cases {
@@ -895,7 +897,7 @@ func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 			if !ok || result["isError"] != true {
 				t.Fatalf("want isError tool result, got %#v", responses[0])
 			}
-			want := `The "` + tc.tool + `" arguments carry an unknown member "` + tc.member + `"; ` + tc.accepted + `, spelled exactly.`
+			want := spelledError(tc.tool, tc.member, strings.ToLower(tc.member))
 			if text := toolText(t, result); text != want {
 				t.Fatalf("error = %q, want %q", text, want)
 			}
@@ -929,4 +931,127 @@ func TestExperimentalTestPacksExactMembersLeavesOmittedOptionalUntouched(t *test
 			t.Fatalf("correct spelling must succeed: %#v", selected)
 		}
 	})
+}
+
+// The cites argument's advertised schema states what the handler enforces
+// (ADR-0033): a client that generates arguments from the schema cannot
+// produce a citation the handler refuses for its shape.
+func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
+	responses := runServer(t, message(t, 1, "tools/list", nil))
+	tools := responses[0]["result"].(map[string]any)["tools"].([]any)
+	var cites map[string]any
+	for _, tool := range tools {
+		if tool.(map[string]any)["name"] == "experimental_evaluate" {
+			cites = tool.(map[string]any)["inputSchema"].(map[string]any)["properties"].(map[string]any)["cites"].(map[string]any)
+		}
+	}
+	if cites == nil {
+		t.Fatal("experimental_evaluate advertises no cites argument")
+	}
+	items := cites["items"].(map[string]any)
+	properties := items["properties"].(map[string]any)
+	session, index, signature := properties["sessionId"].(map[string]any), properties["callIndex"].(map[string]any), properties["signature"].(map[string]any)
+	if cites["type"] != "array" || items["type"] != "object" || items["additionalProperties"] != false ||
+		session["minLength"] != float64(1) || session["maxLength"] != float64(128) || session["pattern"] != "^[A-Za-z0-9._-]+$" ||
+		index["type"] != "integer" || index["minimum"] != float64(0) || index["maximum"] != float64(9007199254740991) ||
+		signature["pattern"] != "^[0-9a-f]{128}$" {
+		t.Fatalf("the cites schema does not state the handler's shape: %v", cites)
+	}
+	required, _ := items["required"].([]any)
+	if len(required) != 3 || required[0] != "sessionId" || required[1] != "callIndex" || required[2] != "signature" {
+		t.Fatalf("exactly the three members are required: %v", required)
+	}
+	excluded, _ := session["not"].(map[string]any)["enum"].([]any)
+	if len(excluded) != 2 || excluded[0] != "." || excluded[1] != ".." {
+		t.Fatalf("the schema excludes . and ..: %v", session["not"])
+	}
+	// The advertised schema itself, compiled by the validator this runtime
+	// validates packs with, evaluated on each value: what it admits, the
+	// handler admits, and the reverse.
+	schemaBytes, err := json.Marshal(cites)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := validation.CompileSchema(schemaBytes, "urn:judgmentpack:test:cites")
+	if err != nil {
+		t.Fatalf("the advertised cites schema does not compile: %v", err)
+	}
+	admits := func(document string) bool {
+		instance, err := jsonschema.UnmarshalJSON(strings.NewReader(document))
+		if err != nil {
+			return false
+		}
+		return compiled.Validate(instance) == nil
+	}
+	// What the schema admits, the handler admits, and the reverse, on the
+	// values the patterns and bounds decide.
+	for _, value := range []string{
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"` + strings.Repeat("s", 128) + `","callIndex":9007199254740991,"signature":"` + strings.Repeat("f", 128) + `"}]`,
+		`[{"sessionId":"","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":".","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"..","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"...","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s/1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"` + strings.Repeat("s", 129) + `","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":-0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("A", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 127) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":""}]`,
+		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `","more":1}]`,
+		`[{"sessionId":"s-1","signature":"` + strings.Repeat("a", 128) + `"}]`,
+	} {
+		_, err := audit.ParseCites([]byte(value))
+		if (err == nil) != admits(value) {
+			t.Errorf("%s: handler admits=%v, schema admits=%v", value, err == nil, admits(value))
+		}
+	}
+}
+
+// The central check refuses a member spelled as a known one by another case;
+// what a schema forbids by additionalProperties:false is a wholly unknown
+// member too, and every tool holds that itself: the four that decode with
+// a member list of their own, and the three whose schemas advertise none.
+func TestEveryToolRefusesAWhollyUnknownMember(t *testing.T) {
+	projectFixture(t)
+	for _, tc := range []struct {
+		tool      string
+		arguments map[string]any
+		accepted  string
+	}{
+		{"validate", map[string]any{"document": "{}", "typo": 1}, "the accepted members are document and through"},
+		{"test_conformance", map[string]any{"typo": 1}, "the accepted members are suite and spec_version"},
+		{"get_schema", map[string]any{"typo": 1}, `the accepted member is "spec_version"`},
+		{"get_example", map[string]any{"name": "minimal-expense-approval", "typo": 1}, `the accepted member is "name"`},
+		{"describe_runtime", map[string]any{"typo": true}, "it accepts no members"},
+		{"list_examples", map[string]any{"typo": true}, "it accepts no members"},
+		{"list_packs", map[string]any{"typo": true}, "it accepts no members"},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			responses := runServer(t, toolCall(t, 1, tc.tool, tc.arguments))
+			if len(responses) != 1 {
+				t.Fatalf("got %d responses, want 1", len(responses))
+			}
+			if _, protocol := responses[0]["error"]; protocol {
+				t.Fatalf("refusal must be an in-band tool error, not a protocol error: %#v", responses[0])
+			}
+			result, ok := responses[0]["result"].(map[string]any)
+			if !ok || result["isError"] != true {
+				t.Fatalf("want isError tool result, got %#v", responses[0])
+			}
+			want := `The "` + tc.tool + `" arguments carry an unknown member "typo"; ` + tc.accepted + `, spelled exactly.`
+			if text := toolText(t, result); text != want {
+				t.Fatalf("error = %q, want %q", text, want)
+			}
+		})
+	}
+	// An empty object, or none, is what an argument-less tool takes.
+	for _, arguments := range []map[string]any{{}, nil} {
+		responses := runServer(t, toolCall(t, 1, "list_examples", arguments))
+		if len(responses) != 1 || responses[0]["result"].(map[string]any)["isError"] != false {
+			t.Fatalf("list_examples with %v arguments: %#v", arguments, responses)
+		}
+	}
 }

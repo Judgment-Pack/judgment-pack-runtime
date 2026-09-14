@@ -536,3 +536,133 @@ func TestARefusedGraphRunLeavesNoPartialTrail(t *testing.T) {
 	}
 	noAuditTrail(t, configPath)
 }
+
+// The receipts a caller says an evaluation relied on land on its record as
+// given (ADR-0033); a document not of the gateway's shape is refused as an
+// invocation before anything runs; a rehearsal records nothing, citations
+// included.
+func TestEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
+	configPath := auditProject(t)
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+	cites := writeDocument(t, "cites.json", `[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"`+strings.Repeat("a", 128)+`"}]`)
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--cites", cites, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	records := auditRecords(t, configPath)
+	if len(records) != 1 {
+		t.Fatalf("one record: %v", records)
+	}
+	line, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(line), `"cites":[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"`+strings.Repeat("a", 128)+`"}]`) {
+		t.Fatalf("the citations as given: %s", line)
+	}
+
+	// A run without citations omits the member.
+	code, _, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q", code, stderr)
+	}
+	records = auditRecords(t, configPath)
+	if len(records) != 2 {
+		t.Fatalf("two records: %v", records)
+	}
+	if _, present := records[1]["cites"]; present {
+		t.Fatalf("no citations, no member: %v", records[1])
+	}
+
+	// Not of the shape: refused as an invocation, before the evaluator,
+	// and nothing recorded.
+	malformed := writeDocument(t, "malformed.json", `[{"sessionId":"s","callIndex":"17","signature":"x"}]`)
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--cites", malformed, "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") || !strings.Contains(stdout+stderr, "callIndex must be an integer from 0 to 9007199254740991") {
+		t.Fatalf("a malformed citations document: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if len(auditRecords(t, configPath)) != 2 {
+		t.Fatal("a refused invocation records nothing")
+	}
+	// Not standard input.
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--cites", "-", "--format", "json"}, "[]")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") {
+		t.Fatalf("citations from standard input: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	// An absent file.
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--cites", filepath.Join(t.TempDir(), "absent.json"), "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") {
+		t.Fatalf("an absent citations document: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	// A URL is refused as every input is, before the project is consulted:
+	// under a configuration that does not load, the citation refusal is
+	// what is reported.
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--cites", "https://example.invalid/cites.json", "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") || !strings.Contains(stdout+stderr, "remote") {
+		t.Fatalf("a URL for the citations: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	broken := filepath.Join(t.TempDir(), "jpack.json")
+	if err := os.WriteFile(broken, []byte(`{"configVersion":"3","audit":{},"packs":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", broken, "--facts", facts, "--cites", "-", "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") {
+		t.Fatalf("the citation refusal precedes the configuration: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	// A rehearsal records nothing, citations included.
+	code, _, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--cites", cites, "--rehearsal", "--format", "json"}, "")
+	if code != 0 || stderr != "" || len(auditRecords(t, configPath)) != 2 {
+		t.Fatalf("a rehearsal with citations: exit=%d stderr=%q records=%d", code, stderr, len(auditRecords(t, configPath)))
+	}
+}
+
+// On the graph surface every record of the run carries the citations,
+// node and composite alike (ADR-0033).
+func TestGraphEvaluateRecordsTheCitationsOnEveryRecord(t *testing.T) {
+	config := strings.Replace(graphFixture(t, "jpack.json"),
+		`"configVersion": "2",`, `"configVersion": "3",`+"\n"+`  "audit": {"dir": "audit"},`, 1)
+	files := map[string]string{
+		"sanctions-screening-0.1.0.pack.json": graphFixture(t, "sanctions-screening-0.1.0.pack.json"),
+		"vendor-onboarding-0.1.0.pack.json":   graphFixture(t, "vendor-onboarding-0.1.0.pack.json"),
+		"onboarding.graph.json":               graphFixture(t, "onboarding.graph.json"),
+		"onboarding.rows.json":                graphFixture(t, "onboarding.rows.json"),
+	}
+	configPath := writeProjectFixture(t, config, files)
+	graphPath := filepath.Join(filepath.Dir(configPath), "onboarding.graph.json")
+	inputs := writeGraphInputs(t, graphHappyInputs)
+	cites := writeDocument(t, "cites.json", `[{"sessionId":"s-1","callIndex":0,"signature":"`+strings.Repeat("0", 128)+`"},{"sessionId":"s-1","callIndex":1,"signature":"`+strings.Repeat("1", 128)+`"}]`)
+
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", inputs, "--cites", cites, "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	records := auditRecords(t, configPath)
+	if len(records) < 2 {
+		t.Fatalf("nodes and a composite: %v", records)
+	}
+	line, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"cites":[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("0", 128) + `"},{"sessionId":"s-1","callIndex":1,"signature":"` + strings.Repeat("1", 128) + `"}]`
+	if strings.Count(string(line), want) != len(records) {
+		t.Fatalf("every record of the run carries the citations (%d of %d): %s", strings.Count(string(line), want), len(records), line)
+	}
+	// Not of the shape: refused before any node runs, nothing recorded.
+	malformed := writeDocument(t, "malformed.json", `{"sessionId":"s-1"}`)
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", inputs, "--cites", malformed, "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout+stderr, "JPS-INVOCATION-CITES") || len(auditRecords(t, configPath)) != len(records) {
+		t.Fatalf("a malformed citations document on the graph surface: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}

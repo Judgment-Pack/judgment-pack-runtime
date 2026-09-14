@@ -82,7 +82,7 @@ func TestOneEvaluationLeavesOneRecord(t *testing.T) {
 		Facts:            facts,
 		Evidence:         []byte(`{"itemised-receipt":"present"}`),
 		EvidenceSupplied: true,
-	}, []byte(`{"id":"expense-approval"}`), nil); err != nil {
+	}, nil, []byte(`{"id":"expense-approval"}`), nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -176,7 +176,7 @@ func TestInputsAreRecordedAsValuesAndNotAsSourceBytes(t *testing.T) {
 	for name, spelling := range spellings {
 		t.Run(name, func(t *testing.T) {
 			writer, root := writerAt(t, "audit")
-			if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(spelling)}, []byte(`{}`), nil); err != nil {
+			if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(spelling)}, nil, []byte(`{}`), nil); err != nil {
 				t.Fatal(err)
 			}
 			// Every spelling decodes back to the one value that was evaluated,
@@ -208,7 +208,7 @@ func TestInputsAreRecordedAsValuesAndNotAsSourceBytes(t *testing.T) {
 // under §8.2, so they are two different records.
 func TestAnOmittedEvidenceDocumentIsRecordedAsOmitted(t *testing.T) {
 	writer, root := writerAt(t, "audit")
-	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, []byte(`{}`), nil); err != nil {
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
 		t.Fatal(err)
 	}
 	inputs := decodeLines(t, root, "audit")[0]["inputs"].(map[string]any)
@@ -232,7 +232,7 @@ func TestAGraphRunLeavesNodeRecordsAndOneComposite(t *testing.T) {
 	writer, root := writerAt(t, "audit")
 	node := evaluated()
 	node.Command = "experimental graph evaluate"
-	if err := writer.Evaluation(node, Inputs{Facts: []byte(`{"screening":{"matches":"0"}}`)}, []byte(`{}`),
+	if err := writer.Evaluation(node, Inputs{Facts: []byte(`{"screening":{"matches":"0"}}`)}, nil, []byte(`{}`),
 		&Graph{ID: "vendor-onboarding-flow", Version: "0.1.0", Node: "screening"}); err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestAGraphRunLeavesNodeRecordsAndOneComposite(t *testing.T) {
 		FormatVersion:        "1",
 		ResultNode:           "onboarding",
 		Disposition:          evaluated().Disposition,
-	}, "sha256:"+strings.Repeat("b", 64))
+	}, "sha256:"+strings.Repeat("b", 64), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestAGraphRunLeavesNodeRecordsAndOneComposite(t *testing.T) {
 // cannot be undone by an appender, so a reader has to be able to tell.
 func TestAnUnfinishedRunIsIdentifiableInTheTrail(t *testing.T) {
 	writer, root := writerAt(t, "audit")
-	node, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":1}`)}, []byte(`{}`),
+	node, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":1}`)}, nil, []byte(`{}`),
 		&Graph{ID: "g", Version: "0.1.0", Node: "first"})
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +298,7 @@ func TestAnUnfinishedRunIsIdentifiableInTheTrail(t *testing.T) {
 	// A second, complete run over the same trail.
 	finished, _ := writerAt(t, "audit")
 	finished.root, finished.dir = writer.root, writer.dir
-	second, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":2}`)}, []byte(`{}`),
+	second, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":2}`)}, nil, []byte(`{}`),
 		&Graph{ID: "g", Version: "0.1.0", Node: "first"})
 	if err != nil {
 		t.Fatal(err)
@@ -310,7 +310,7 @@ func TestAnUnfinishedRunIsIdentifiableInTheTrail(t *testing.T) {
 		GraphVersion:         "0.1.0",
 		ResultNode:           "first",
 		Disposition:          evaluated().Disposition,
-	}, "sha256:"+strings.Repeat("c", 64))
+	}, "sha256:"+strings.Repeat("c", 64), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestTheDraftPrototypeLabelSurvivesIntoTheRecord(t *testing.T) {
 			writer, root := writerAt(t, "audit")
 			labeled := evaluated()
 			labeled.DraftPrototype = prototype
-			if err := writer.Evaluation(labeled, Inputs{Facts: []byte(`{}`)}, []byte(`{}`), nil); err != nil {
+			if err := writer.Evaluation(labeled, Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
 				t.Fatal(err)
 			}
 			record := decodeLines(t, root, "audit")[0]
@@ -420,7 +420,7 @@ func TestTheDraftPrototypeLabelSurvivesIntoTheRecord(t *testing.T) {
 // evaluation in every project that opted out.
 func TestTheNilWriterWritesNothing(t *testing.T) {
 	var writer *Writer
-	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, []byte(`{}`), nil); err != nil {
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
 		t.Fatalf("a project that asked for no trail has no failure to report: %v", err)
 	}
 	if err := writer.Append(Record{}); err != nil {
@@ -435,11 +435,11 @@ func TestTheNilWriterWritesNothing(t *testing.T) {
 // carries its own moment rather than the moment the batch was written.
 func TestAppendAllWritesEveryRecordOrNone(t *testing.T) {
 	writer, root := writerAt(t, "audit")
-	first, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":1}`)}, []byte(`{}`), &Graph{ID: "g", Version: "0.1.0", Node: "a"})
+	first, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":1}`)}, nil, []byte(`{}`), &Graph{ID: "g", Version: "0.1.0", Node: "a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":2}`)}, []byte(`{}`), &Graph{ID: "g", Version: "0.1.0", Node: "b"})
+	second, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{"n":2}`)}, nil, []byte(`{}`), &Graph{ID: "g", Version: "0.1.0", Node: "b"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,13 +498,13 @@ func TestAFailedWriteIsReported(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "audit"), []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, []byte(`{}`), nil); err == nil {
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err == nil {
 		t.Fatal("a record that could not be written must be reported")
 	}
 
 	// A path leaving the project is refused before anything is opened.
 	escaping, _ := writerAt(t, "../outside")
-	if err := escaping.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, []byte(`{}`), nil); err == nil {
+	if err := escaping.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err == nil {
 		t.Fatal("an audit directory outside the project must be refused")
 	}
 }
@@ -516,10 +516,128 @@ func TestAnIllegalDispositionIsNotRecorded(t *testing.T) {
 	writer, root := writerAt(t, "audit")
 	illegal := evaluated()
 	illegal.Disposition = result.Disposition{Kind: "approved", Reasons: []string{}, Handoff: result.Handoff{State: "none"}}
-	if err := writer.Evaluation(illegal, Inputs{Facts: []byte(`{}`)}, []byte(`{}`), nil); err == nil {
+	if err := writer.Evaluation(illegal, Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err == nil {
 		t.Fatal("a value that is not a §8.3 disposition must not be recorded as one")
 	}
 	if _, err := os.Stat(filepath.Join(root, "audit", FileName)); err == nil {
 		t.Fatal("nothing is written for a record that could not be composed")
+	}
+}
+
+// A citations document is held to the gateway's shape and to nothing
+// else (ADR-0033): what passes is recorded as given, and what does not is
+// refused before anything is recorded.
+func TestParseCitesHoldsTheShapeAndNothingElse(t *testing.T) {
+	good := `[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"` + strings.Repeat("a", 128) + `"},{"sessionId":"s.2026_09_12-b","callIndex":9007199254740991,"signature":"` + strings.Repeat("0123456789abcdef", 8) + `"}]`
+	cites, err := ParseCites([]byte(good))
+	if err != nil || len(cites) != 2 || cites[0].SessionID != "s-2026-09-12-a" || cites[0].CallIndex != 17 || cites[1].CallIndex != 9007199254740991 || cites[1].Signature != strings.Repeat("0123456789abcdef", 8) {
+		t.Fatalf("as given: %+v %v", cites, err)
+	}
+	// A JSON escape is read as the character it spells: the value is what
+	// is recorded, and the grammar admits only ASCII.
+	if cites, err := ParseCites([]byte(`[{"sessionId":"s\u002d1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`)); err != nil || cites[0].SessionID != "s-1" {
+		t.Fatalf("an escaped hyphen is a hyphen: %+v %v", cites, err)
+	}
+	if cites, err := ParseCites([]byte(" \t\r\n[ ]\n\t")); err != nil || cites != nil {
+		t.Fatalf("an empty array is no citation, JSON's own whitespace around it: %+v %v", cites, err)
+	}
+	if cites, err := ParseCites([]byte(`[{"sessionId":"s","callIndex":-0,"signature":"` + strings.Repeat("a", 128) + `"}]`)); err != nil || len(cites) != 1 || cites[0].CallIndex != 0 {
+		t.Fatalf("-0 is 0, as the gateway's grammar reads it: %+v %v", cites, err)
+	}
+	for name, document := range map[string]string{
+		"not an array":                         `{"sessionId":"s","callIndex":1,"signature":"x"}`,
+		"not JSON":                             `[`,
+		"null":                                 `null`,
+		"empty":                                ``,
+		"whitespace":                           `   `,
+		"a form feed before the array":         "\f[]",
+		"a vertical tab after the array":       "[]\v",
+		"a Unicode space before the array":     "\u00a0[]",
+		"two texts":                            `[] []`,
+		"an element not an object":             `["s"]`,
+		"an extra member":                      `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `","note":"y"}]`,
+		"a member by another case":             `[{"SessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a member twice":                       `[{"sessionId":"s","sessionId":"t","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"no signature":                         `[{"sessionId":"s","callIndex":1}]`,
+		"an empty session":                     `[{"sessionId":"","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session not a string":               `[{"sessionId":7,"callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a negative index":                     `[{"sessionId":"s","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index as a string":                 `[{"sessionId":"s","callIndex":"1","signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index with a fraction":             `[{"sessionId":"s","callIndex":1.0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index in exponent form":            `[{"sessionId":"s","callIndex":1e2,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index with a leading zero":         `[{"sessionId":"s","callIndex":01,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a negative index with a leading zero": `[{"sessionId":"s","callIndex":-01,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an empty signature":                   `[{"sessionId":"s","callIndex":1,"signature":""}]`,
+		"a signature not 128 hex":              `[{"sessionId":"s","callIndex":1,"signature":"x"}]`,
+		"a signature in uppercase hex":         `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("A", 128) + `"}]`,
+		"a signature of 127 hex":               `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 127) + `"}]`,
+		"a session with a slash":               `[{"sessionId":"../x","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of a dot":                   `[{"sessionId":".","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of two dots":                `[{"sessionId":"..","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of 129 characters":          `[{"sessionId":"` + strings.Repeat("s", 129) + `","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session with a space":               `[{"sessionId":"s 1","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a lone surrogate in the session":      `[{"sessionId":"s\ud800","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"an index beyond 2^53-1":               `[{"sessionId":"s","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a null signature":                     `[{"sessionId":"s","callIndex":1,"signature":null}]`,
+	} {
+		if cites, err := ParseCites([]byte(document)); err == nil {
+			t.Errorf("%s: accepted as %+v", name, cites)
+		}
+	}
+	// The bound: a valid document padded to exactly the limit reads; one
+	// byte over is refused for its size, before it is read.
+	one := `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`
+	atLimit := append([]byte(one), bytes.Repeat([]byte(" "), MaxCitesBytes-len(one))...)
+	if cites, err := ParseCites(atLimit); err != nil || len(cites) != 1 {
+		t.Fatalf("a document of exactly the bound reads: %v", err)
+	}
+	if _, err := ParseCites(append(atLimit, ' ')); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("a document one byte over the bound is refused for its size: %v", err)
+	}
+}
+
+// The citations land on the record as given, and are omitted when none
+// were given; on a graph run every record of the run carries them.
+func TestCitationsAreRecordedAsGivenOnEveryRecordOfARun(t *testing.T) {
+	writer, root := writerAt(t, "audit")
+	cites := []Citation{{SessionID: "s-1", CallIndex: 3, Signature: strings.Repeat("3", 128)}}
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, cites, []byte(`{}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	node, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{}`)}, cites, []byte(`{}`), &Graph{ID: "g", Version: "0.1.0", Node: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite, err := CompositeRecord(result.GraphEvaluation{Command: "experimental graph evaluate", EvaluatorSpecVersion: result.EvaluatorSpecVersion, GraphID: "g", GraphVersion: "0.1.0", ResultNode: "a", Disposition: evaluated().Disposition}, "sha256:"+strings.Repeat("d", 64), cites)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.AppendAll([]Record{node, composite}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "audit", "evaluations.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	if len(lines) != 4 {
+		t.Fatalf("four records, got %d", len(lines))
+	}
+	want := `"cites":[{"sessionId":"s-1","callIndex":3,"signature":"` + strings.Repeat("3", 128) + `"}]`
+	for i, line := range lines {
+		has := bytes.Contains(line, []byte(want))
+		if (i == 1) == has {
+			t.Fatalf("record %d: cites present = %v: %s", i, has, line)
+		}
+		if i == 1 && bytes.Contains(line, []byte(`"cites"`)) {
+			t.Fatalf("a run with no citations omits the member: %s", line)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(line, &decoded); err != nil || decoded["recordVersion"] != RecordVersion {
+			t.Fatalf("record %d: %v %v", i, err, decoded["recordVersion"])
+		}
 	}
 }
