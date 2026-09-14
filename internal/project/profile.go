@@ -28,6 +28,14 @@ import (
 // entries the profile would retain are counted before any is, and a profile
 // beyond the budget is refused rather than built.
 func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationCorpusCase, withCoverage bool, budget int) (*result.MatrixProfile, *Failure) {
+	return profileFor(derivePackProbes(pack, Reach{}), boundaryGroups(comparisonSites(pack)), matrix, rows, withCoverage, budget)
+}
+
+// profileFor builds the profile over a derivation made once -- the pack's
+// probe set and its boundary groups -- so that many origins cost one reading
+// of the pack, and each origin's coverage is a count of predicates over that
+// set with nothing rendered.
+func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []result.EvaluationCorpusCase, withCoverage bool, budget int) (*result.MatrixProfile, *Failure) {
 	if len(rows) != len(matrix.Cases) {
 		return nil, nil
 	}
@@ -46,13 +54,16 @@ func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationC
 		return nil, nil
 	}
 	slices.Sort(origins)
-	groups := boundaryGroups(comparisonSites(pack))
-	entries := profileEntries(len(origins), len(groups), withCoverage)
+	probes := 0
+	if withCoverage {
+		probes = set.count() + len(groups)
+	}
+	entries := profileEntries(len(origins), len(groups), probes)
 	if entries > budget {
 		return nil, &Failure{
 			Code: "JPS-RESOURCE-MATRIX-PROFILE",
-			Message: fmt.Sprintf("The history profile of this pack would retain %d entries -- %d origins against %d comparison boundaries -- beyond the %d this runtime retains for one pack. Nothing is truncated and no partial profile is written, because a profile cut short looks exactly like a complete one: group the rows under fewer origins, or profile one pack at a time.",
-				entries, len(origins), len(groups), budget),
+			Message: fmt.Sprintf("The history profile of this pack would cost %d entries -- %d origins against %d comparison boundaries and %d coverage probes -- beyond the %d this runtime spends on one pack. Nothing is truncated and no partial profile is written, because a profile cut short looks exactly like a complete one. The budget is per pack: group this matrix's rows under fewer origins, or split the pack's comparisons across packs.",
+				entries, len(origins), len(groups), probes, budget),
 			ExitCode: result.ExitIO,
 		}
 	}
@@ -75,30 +86,27 @@ func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationC
 			for _, index := range byOrigin[origin] {
 				subset.Cases = append(subset.Cases, matrix.Cases[index])
 			}
-			coverage := result.OriginCoverage{Origin: capRendered(origin)}
-			for _, probe := range matrixCoverage(pack, subset) {
-				coverage.Probes++
-				if probe.Status == result.MatrixProbeCovered {
-					coverage.Covered++
-				}
-			}
-			profile.Coverage = append(profile.Coverage, coverage)
+			// The same probes the suite's coverage reports, witnessed by
+			// this origin's rows alone: predicates over the derivation
+			// made once, nothing rendered.
+			profile.Coverage = append(profile.Coverage, result.OriginCoverage{
+				Origin:  capRendered(origin),
+				Covered: set.covered(matrixWitnesses(subset)) + boundaryCovered(groups, subset),
+				Probes:  probes,
+			})
 		}
 	}
-	profile.Thresholds = thresholdProfiles(pack, matrix, rows, origins, byOrigin, groups)
+	profile.Thresholds = thresholdProfiles(matrix, rows, origins, byOrigin, groups)
 	return profile, nil
 }
 
-// profileEntries is what a profile retains: an agreement entry per origin,
-// a coverage entry per origin when coverage is derived, and a placement per
-// boundary per origin. Counted in this arithmetic before anything is built,
-// so the product of two bounded inputs is judged rather than allocated.
-func profileEntries(origins, groups int, withCoverage bool) int {
-	entries := origins
-	if withCoverage {
-		entries += origins
-	}
-	return entries + origins*groups
+// profileEntries is what a profile costs: an agreement entry per origin, a
+// witnessing of every probe per origin when coverage is derived (work, not
+// retention, and charged as work), and a placement per boundary per origin.
+// Counted in this arithmetic before anything is built or witnessed, so the
+// product of two bounded inputs is judged rather than spent.
+func profileEntries(origins, groups, probes int) int {
+	return origins + origins*probes + origins*groups
 }
 
 // thresholdProfiles places each origin's rows against each comparison
@@ -106,7 +114,7 @@ func profileEntries(origins, groups int, withCoverage bool) int {
 // (one per distinct pointer and literal value), each row's fact resolved at
 // the pointer and compared by the evaluator's own comparison, so a JSON
 // number or an absent fact -- what §7.4 cannot compare -- sits on no side.
-func thresholdProfiles(pack map[string]any, matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int, groups []boundaryGroup) []result.ThresholdProfile {
+func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int, groups []boundaryGroup) []result.ThresholdProfile {
 	if len(groups) == 0 {
 		return nil
 	}

@@ -11,8 +11,10 @@ All notable changes to tagged releases are documented here.
   comparison boundary the pack draws, where each origin's rows place the compared fact — below,
   at and above the literal by the evaluator's own comparison — how many of those disagree, and
   the nearest value on each side, with the nearest disagreeing one. It reads the run already made,
-  evaluates nothing twice and moves no status; its entries are counted before any is retained, and
-  a profile beyond `MaxProfileEntries` (65536) refuses the run as one that does not fit
+  evaluates nothing twice and moves no status; the pack is read once for the suite's coverage and
+  every origin's alike, its cost — an agreement per origin, a witnessing of every probe per origin,
+  a placement per boundary per origin — is counted before anything is built, and a profile beyond
+  `MaxProfileEntries` (65536) refuses the run as one that does not fit
   (`JPS-RESOURCE-MATRIX-PROFILE`) rather than truncating it. A row may carry `cites` under `matrixVersion "3"`:
   the receipts its facts were transcribed under, in the gateway's citation shape and held to the
   grammar a decision record's citations are (ADR-0033), carried on the row's result as the values

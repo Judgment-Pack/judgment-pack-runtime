@@ -196,14 +196,20 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// error rows, would be told it misses probes it can never cover. A row
 	// that supports a required extension reaches §8, and its coverage is not
 	// forfeited to a stricter set than any row uses.
-	if admitsForSomeRow(admitted, matrix) {
-		report.Coverage = matrixCoverage(PackRoot(pack), matrix)
+	// The pack's probes and boundaries are derived once here and read by
+	// the suite's coverage and by the profile's every origin alike: a pack
+	// is read one time however many origins its matrix declares.
+	root := PackRoot(pack)
+	set, groups := derivePackProbes(root, Reach{}), boundaryGroups(comparisonSites(root))
+	withCoverage := admitsForSomeRow(admitted, matrix)
+	if withCoverage {
+		report.Coverage = coverageFor(set, groups, matrix)
 	}
 	// The profile reads what this run already produced -- the rows' statuses,
-	// the same derivations -- against the origins the rows declare, and moves
+	// the same derivation -- against the origins the rows declare, and moves
 	// no status (ADR-0034). Coverage by origin is derived exactly when the
 	// suite's own coverage was.
-	profile, failure := matrixProfile(PackRoot(pack), matrix, report.Rows, report.Coverage != nil, p.profileBudget())
+	profile, failure := profileFor(set, groups, matrix, report.Rows, withCoverage, p.profileBudget())
 	if failure != nil {
 		return report, failure
 	}

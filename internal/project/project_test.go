@@ -2710,10 +2710,10 @@ func TestMatrixProfileDerivesCoverageOnlyWhenTheSuiteDoes(t *testing.T) {
 // profile beyond the budget refuses the run as one that does not fit, at
 // the same exit class the handoff-target budget uses.
 func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
-	if got := profileEntries(3, 4, true); got != 3+3+12 {
+	if got := profileEntries(3, 4, 5); got != 3+15+12 {
 		t.Fatalf("entries = %d", got)
 	}
-	if got := profileEntries(3, 4, false); got != 3+12 {
+	if got := profileEntries(3, 4, 0); got != 3+12 {
 		t.Fatalf("entries without coverage = %d", got)
 	}
 	pack := string(packFixture(t))
@@ -2726,21 +2726,28 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 	]}`
 	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
 		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
-	// Two origins, coverage derived, no boundary: four entries. A budget of
-	// three refuses; a budget of four does not.
+	// Two origins, coverage derived over this pack's seven probes, no
+	// boundary: two agreements and fourteen witnessings, sixteen entries. A
+	// budget of fifteen refuses; a budget of sixteen does not.
 	loaded := mustLoad(t, configPath)
-	loaded.profileEntryBudget = 3
-	if _, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test"); failure == nil || failure.Code != "JPS-RESOURCE-MATRIX-PROFILE" || failure.ExitCode != result.ExitIO || !strings.Contains(failure.Message, "4 entries") {
+	loaded.profileEntryBudget = 15
+	if _, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test"); failure == nil || failure.Code != "JPS-RESOURCE-MATRIX-PROFILE" || failure.ExitCode != result.ExitIO || !strings.Contains(failure.Message, "16 entries") {
 		t.Fatalf("a profile beyond the budget refuses the run: %+v", failure)
 	}
 	loaded = mustLoad(t, configPath)
-	loaded.profileEntryBudget = 4
+	loaded.profileEntryBudget = 16
+	before := probeDerivations.Load()
 	run, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
 	if failure != nil {
 		t.Fatal(failure.Message)
 	}
-	if run.Packs[0].Profile == nil || len(run.Packs[0].Profile.Agreement) != 2 || len(run.Packs[0].Profile.Coverage) != 2 {
+	if run.Packs[0].Profile == nil || len(run.Packs[0].Profile.Agreement) != 2 || len(run.Packs[0].Profile.Coverage) != 2 || len(run.Packs[0].Coverage) != 7 {
 		t.Fatalf("a profile within the budget is built: %+v", run.Packs[0].Profile)
+	}
+	// The pack is read once for the suite's coverage and every origin's
+	// alike: the work of a profile is the witnessing, not the derivation.
+	if got := probeDerivations.Load() - before; got != 1 {
+		t.Fatalf("a run derives the pack's probes once, not %d times", got)
 	}
 	// The placement product is what the budget exists for: one boundary
 	// against two origins is two placements on top of the two agreements.
@@ -2754,7 +2761,7 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 		{ID: "b", Origin: "y", Facts: json.RawMessage(`{"expense":{"amount":"1"}}`), ExpectedDisposition: outcome},
 	}}
 	rows := []result.EvaluationCorpusCase{{ID: "a", Origin: "x", Status: "passed"}, {ID: "b", Origin: "y", Status: "passed"}}
-	if _, failure := matrixProfile(boundary, cases, rows, false, 3); failure == nil || !strings.Contains(failure.Message, "2 origins against 1 comparison boundaries") {
+	if _, failure := matrixProfile(boundary, cases, rows, false, 3); failure == nil || !strings.Contains(failure.Message, "2 origins against 1 comparison boundaries and 0 coverage probes") {
 		t.Fatalf("the placements count against the budget: %+v", failure)
 	}
 	if profile, failure := matrixProfile(boundary, cases, rows, false, 4); failure != nil || profile == nil || len(profile.Thresholds) != 1 {

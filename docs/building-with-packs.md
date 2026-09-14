@@ -152,8 +152,8 @@ it. Corpus admission requires members a project matrix has no place for — `pac
 `supportedExtensions`, `focus`, and `specSection`, all required there and optional or absent here —
 and its schema closes the case object, so `expectedHandoffTarget` (below) is refused outright.
 Lifting one of your rows into a corpus means supplying those members and removing any target
-assertion. What you never rewrite is the expectation, which is the half the shared comparator
-judges.
+assertion and any citations (`cites`, below, which the closed schema refuses too). What you never
+rewrite is the expectation, which is the half the shared comparator judges.
 
 ```json
 {
