@@ -15,6 +15,17 @@ All notable changes to tagged releases are documented here.
   `reviewed`. A rehearsal records nothing, citations included. Additive output under
   VERSIONING.md's MINOR rule; the evaluator's conformance claim is unaffected and stated, in full
   and only, in `CONFORMANCE.md`.
+- **The MCP server reads the JSON-RPC envelope exactly and once**: a request's members, its
+  `params` object's, and every tool's `arguments` are held to being given once and spelled
+  exactly — a member twice, or one that differs from a known member only by case, is refused
+  where Go's decoder used to keep the last of two and fold the case. Syntax is judged first (not
+  JSON is the parse error under a null id, the one answer without an id), then the envelope, then
+  the types. A message that is not a JSON object — an array, since batches are not served, or a
+  scalar — is an invalid request under null. A refused request is answered under its id when a
+  member spelled exactly `id` is there once and nothing is spelled as it by another case, under
+  null when that id is ambiguous or is not a string or an integer, and by nothing at all when
+  there is no id, since a notification gets no answer, errors included. A stricter gate on the
+  transport, declared here; the tools' inputs and outputs are unchanged.
 
 ## 0.19.0 - 2026-08-24
 

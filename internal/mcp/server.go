@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
@@ -75,6 +76,13 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": nil, "error": &rpcError{Code: codeParse, Message: "Message is not valid JSON."}})
 			continue
 		}
+		// A message that is not an object -- an array, which this server
+		// does not batch, or a scalar -- is not a notification: it is an
+		// invalid request, answered under null (JSON-RPC §4.2, §5).
+		if line[0] != '{' {
+			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": nil, "error": &rpcError{Code: codeInvalidRequest, Message: "The request is not a JSON object; batches are not supported."}})
+			continue
+		}
 		// Then the envelope's members, read exactly and once, before any
 		// typed decoding is trusted: encoding/json would bind "Params" to
 		// params and keep the last of two, so a first params or arguments
@@ -88,6 +96,14 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 		var request rpcRequest
 		if err := json.Unmarshal(line, &request); err != nil && env.err == nil {
 			env.err = &rpcError{Code: codeInvalidRequest, Message: "The request's members are not of their types."}
+		}
+		// An id is a string or an integer (MCP; JSON-RPC allows a number and
+		// discourages fractions, MCP allows neither a fraction nor null nor
+		// anything else): one of another kind cannot be answered under and
+		// is refused under null, before dispatch.
+		if env.idPresent && env.idUnique && !validID(env.id) {
+			env.err = &rpcError{Code: codeInvalidRequest, Message: "The request's id is not a string or an integer."}
+			env.idUnique = false
 		}
 		if env.err != nil {
 			// A notification -- no member spelled exactly "id" -- is
@@ -283,4 +299,23 @@ func membersOnce(object []byte, known []string) string {
 		}
 	}
 	return ""
+}
+
+// integerLiteral is a JSON integer: no fraction, no exponent, no leading
+// zero (json.Valid has already refused one), of any magnitude -- the id is
+// echoed as given, never decoded, so its size is not this server's concern.
+var integerLiteral = regexp.MustCompile(`^-?(0|[1-9][0-9]*)$`)
+
+// validID reports whether a raw id is a JSON string or an integer literal,
+// which is what an MCP request id may be.
+func validID(raw json.RawMessage) bool {
+	text := bytes.TrimSpace(raw)
+	if len(text) == 0 {
+		return false
+	}
+	if text[0] == '"' {
+		var s string
+		return json.Unmarshal(text, &s) == nil
+	}
+	return integerLiteral.Match(text)
 }

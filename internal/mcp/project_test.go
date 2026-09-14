@@ -17,6 +17,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
@@ -2326,6 +2327,35 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	if responses := runServer(t, `{"jsonrpc":"2.0","method":0}`); len(responses) != 0 {
 		t.Fatalf("a mistyped notification is answered by nothing: %#v", responses)
 	}
+	// What is not an object is not a notification: an array (this server
+	// batches nothing) or a scalar is an invalid request, under null.
+	for _, line := range []string{`[]`, `[{"jsonrpc":"2.0","id":1,"method":"ping"}]`, `42`, `"ping"`, `null`} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("a non-object message %s: %#v", line, responses)
+		}
+	}
+	// An id is a string or an integer: one of another kind is refused
+	// under null, before anything is dispatched; a string and an integer
+	// are answered under themselves.
+	for _, id := range []string{`{}`, `1.5`, `true`, `[1]`, `1e2`} {
+		responses := runServer(t, `{"jsonrpc":"2.0","id":`+id+`,"method":"ping"}`)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("an id of %s: %#v", id, responses)
+		}
+	}
+	for _, id := range []string{`"abc"`, `7`, `-1`, `0`, `18446744073709551616`} {
+		line := `{"jsonrpc":"2.0","id":` + id + `,"method":"ping"}`
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["error"] != nil {
+			t.Fatalf("an id of %s is answered under itself: %#v", id, responses)
+		}
+		// As given: the raw bytes, so an integer beyond float64's exactness
+		// is not decoded and re-encoded into a neighbour.
+		if got := rawResponseID(t, line); got != id {
+			t.Fatalf("an id of %s echoed as %s", id, got)
+		}
+	}
 	// What is not JSON at all is the one thing answered under null with
 	// a parse error.
 	if responses := runServer(t, `{"jsonrpc":"2.0","id":4,`); len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32700) {
@@ -2353,4 +2383,26 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	if responses[0]["result"].(map[string]any)["isError"] != false {
 		t.Fatalf("the ordinary call: %#v", responses[0])
 	}
+}
+
+// rawResponseID serves one line and returns the answer's id as written on
+// the wire, undecoded.
+func rawResponseID(t *testing.T, line string) string {
+	t.Helper()
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(engine, conformance.NewRunner(engine))
+	var out, logw bytes.Buffer
+	if err := server.Serve(strings.NewReader(line), &out, &logw); err != nil {
+		t.Fatalf("serve: %v (log %q)", err, logw.String())
+	}
+	var answer struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &answer); err != nil {
+		t.Fatalf("undecodable response %q: %v", out.String(), err)
+	}
+	return string(answer.ID)
 }
