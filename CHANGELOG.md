@@ -11,7 +11,9 @@ All notable changes to tagged releases are documented here.
   comparison boundary the pack draws, where each origin's rows place the compared fact — below,
   at and above the literal by the evaluator's own comparison — how many of those disagree, and
   the nearest value on each side, with the nearest disagreeing one. It reads the run already made,
-  evaluates nothing twice and moves no status. A row may carry `cites` under `matrixVersion "3"`:
+  evaluates nothing twice and moves no status; its entries are counted before any is retained, and
+  a profile beyond `MaxProfileEntries` (65536) refuses the run as one that does not fit
+  (`JPS-RESOURCE-MATRIX-PROFILE`) rather than truncating it. A row may carry `cites` under `matrixVersion "3"`:
   the receipts its facts were transcribed under, in the gateway's citation shape and held to the
   grammar a decision record's citations are (ADR-0033), carried on the row's result as the values
   it declared (session, index, signature) and verified by nothing here. The `replay_history` MCP prompt states the method: documents write

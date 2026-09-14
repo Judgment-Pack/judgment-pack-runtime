@@ -97,6 +97,11 @@ the draft to make history pass.
   the boundary it sits against, with nothing decided on the reader's behalf.
 - Good, because the profile costs no second evaluation and changes no status: a suite passes or
   fails exactly as it did.
+- Bad, because a profile is a product — origins against boundaries — of two inputs each bounded
+  only by its document's size, so it is counted before it is built and a profile beyond
+  `MaxProfileEntries` refuses the run as one that does not fit (`JPS-RESOURCE-MATRIX-PROFILE`,
+  the handoff-target budget's precedent), rather than truncated: a profile cut short reads exactly
+  like a complete one.
 - Bad, because a matrix that cites receipts declares `matrixVersion "3"` and is refused by an older
   runtime with the version it would take — the closed-input rule's price, paid once.
 - Bad, because "nearest value" is a reading of the rows' own facts, and a row transcribed wrongly

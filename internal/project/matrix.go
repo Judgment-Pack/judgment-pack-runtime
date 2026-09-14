@@ -193,8 +193,8 @@ func (p *Project) LoadMatrix(entry Pack) (Matrix, error) {
 		// (ADR-0033): the same parser, so a row cannot cite what a record could
 		// not, and a citation that would not resolve at the gateway is refused
 		// here, where the row is, rather than found later in a report. The
-		// bytes themselves are what the report carries; a null is a member
-		// with nothing in it and is refused as such.
+		// values are what the report carries, converted where the row runs;
+		// a null is a member with nothing in it and is refused as such.
 		if row.Cites != nil {
 			if _, err := audit.ParseCites(row.Cites); err != nil {
 				return Matrix{}, fmt.Errorf("row %q declares cites that are not an array of {sessionId, callIndex, signature} in the gateway's shape: %s", display.Sanitize(row.ID), display.Sanitize(err.Error()))

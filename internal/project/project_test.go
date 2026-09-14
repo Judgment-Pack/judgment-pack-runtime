@@ -2647,7 +2647,10 @@ func TestMatrixProfilePlacesEachOriginAgainstEachThreshold(t *testing.T) {
 			}
 			rows[index] = result.EvaluationCorpusCase{ID: c.ID, Origin: c.Origin, Status: status}
 		}
-		profile := matrixProfile(pack, matrix, rows, false)
+		profile, failure := matrixProfile(pack, matrix, rows, false, MaxProfileEntries)
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
 		if profile == nil || profile.Coverage != nil || len(profile.Thresholds) != 1 {
 			t.Fatalf("%s: one boundary, no coverage asked for: %+v", order, profile)
 		}
@@ -2665,7 +2668,7 @@ func TestMatrixProfilePlacesEachOriginAgainstEachThreshold(t *testing.T) {
 		}
 		// A result list that is not the matrix's, row for row, profiles
 		// nothing: the profile is a reading of one run and never a guess.
-		if matrixProfile(pack, matrix, rows[:3], false) != nil {
+		if profile, _ := matrixProfile(pack, matrix, rows[:3], false, MaxProfileEntries); profile != nil {
 			t.Fatal("rows that are not the matrix's own profile nothing")
 		}
 	}
@@ -2700,5 +2703,61 @@ func TestMatrixProfileDerivesCoverageOnlyWhenTheSuiteDoes(t *testing.T) {
 	want := []result.OriginAgreement{{Origin: "warehouse", Rows: 2, Passed: 1, Mismatched: 1}}
 	if !reflect.DeepEqual(entry.Profile.Agreement, want) {
 		t.Fatalf("agreement counts refused rows by their status: %+v", entry.Profile.Agreement)
+	}
+}
+
+// ADR-0034: the profile's entries are counted before any is retained, and a
+// profile beyond the budget refuses the run as one that does not fit, at
+// the same exit class the handoff-target budget uses.
+func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
+	if got := profileEntries(3, 4, true); got != 3+3+12 {
+		t.Fatalf("entries = %d", got)
+	}
+	if got := profileEntries(3, 4, false); got != 3+12 {
+		t.Fatalf("entries without coverage = %d", got)
+	}
+	pack := string(packFixture(t))
+	facts := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
+	evidence := `{"intake-form":"present","sponsor-endorsement":"present"}`
+	declineRedirect := `{"kind":"outcome","outcomeId":"decline-redirect","reasons":[],"handoff":{"state":"none"}}`
+	matrix := `{"matrixVersion":"3","cases":[
+	  {"id":"w1","origin":"warehouse","facts":` + facts + `,"evidenceAvailability":` + evidence + `,"expectedDisposition":` + declineRedirect + `},
+	  {"id":"t1","origin":"tickets","facts":` + facts + `,"evidenceAvailability":` + evidence + `,"expectedDisposition":` + declineRedirect + `}
+	]}`
+	configPath := writeProject(t, `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`,
+		map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix})
+	// Two origins, coverage derived, no boundary: four entries. A budget of
+	// three refuses; a budget of four does not.
+	loaded := mustLoad(t, configPath)
+	loaded.profileEntryBudget = 3
+	if _, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test"); failure == nil || failure.Code != "JPS-RESOURCE-MATRIX-PROFILE" || failure.ExitCode != result.ExitIO || !strings.Contains(failure.Message, "4 entries") {
+		t.Fatalf("a profile beyond the budget refuses the run: %+v", failure)
+	}
+	loaded = mustLoad(t, configPath)
+	loaded.profileEntryBudget = 4
+	run, failure := loaded.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if run.Packs[0].Profile == nil || len(run.Packs[0].Profile.Agreement) != 2 || len(run.Packs[0].Profile.Coverage) != 2 {
+		t.Fatalf("a profile within the budget is built: %+v", run.Packs[0].Profile)
+	}
+	// The placement product is what the budget exists for: one boundary
+	// against two origins is two placements on top of the two agreements.
+	boundary := map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules":    []any{map[string]any{"id": "r", "outcome": "review", "when": map[string]any{"op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "5000"}}},
+	}
+	outcome := json.RawMessage(`{"kind":"outcome","outcomeId":"review","reasons":[],"handoff":{"state":"none"}}`)
+	cases := Matrix{Cases: []evaluation.MatrixCase{
+		{ID: "a", Origin: "x", Facts: json.RawMessage(`{"expense":{"amount":"1"}}`), ExpectedDisposition: outcome},
+		{ID: "b", Origin: "y", Facts: json.RawMessage(`{"expense":{"amount":"1"}}`), ExpectedDisposition: outcome},
+	}}
+	rows := []result.EvaluationCorpusCase{{ID: "a", Origin: "x", Status: "passed"}, {ID: "b", Origin: "y", Status: "passed"}}
+	if _, failure := matrixProfile(boundary, cases, rows, false, 3); failure == nil || !strings.Contains(failure.Message, "2 origins against 1 comparison boundaries") {
+		t.Fatalf("the placements count against the budget: %+v", failure)
+	}
+	if profile, failure := matrixProfile(boundary, cases, rows, false, 4); failure != nil || profile == nil || len(profile.Thresholds) != 1 {
+		t.Fatalf("within the budget the placements are built: %+v %+v", profile, failure)
 	}
 }

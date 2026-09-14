@@ -203,7 +203,11 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 	// the same derivations -- against the origins the rows declare, and moves
 	// no status (ADR-0034). Coverage by origin is derived exactly when the
 	// suite's own coverage was.
-	report.Profile = matrixProfile(PackRoot(pack), matrix, report.Rows, report.Coverage != nil)
+	profile, failure := matrixProfile(PackRoot(pack), matrix, report.Rows, report.Coverage != nil, p.profileBudget())
+	if failure != nil {
+		return report, failure
+	}
+	report.Profile = profile
 	return report, nil
 }
 

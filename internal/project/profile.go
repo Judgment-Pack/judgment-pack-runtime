@@ -1,6 +1,7 @@
 package project
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -23,10 +24,12 @@ import (
 // matrixProfile builds the profile for one pack's rows, or nil when no row
 // declares an origin -- absence of the marker is not a claim. rows are the
 // run's results in the matrix's own order, one per case; coverage is derived
-// per origin only when the suite's own coverage was (withCoverage).
-func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationCorpusCase, withCoverage bool) *result.MatrixProfile {
+// per origin only when the suite's own coverage was (withCoverage). The
+// entries the profile would retain are counted before any is, and a profile
+// beyond the budget is refused rather than built.
+func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationCorpusCase, withCoverage bool, budget int) (*result.MatrixProfile, *Failure) {
 	if len(rows) != len(matrix.Cases) {
-		return nil
+		return nil, nil
 	}
 	origins := []string{}
 	byOrigin := map[string][]int{}
@@ -40,9 +43,19 @@ func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationC
 		byOrigin[row.Origin] = append(byOrigin[row.Origin], index)
 	}
 	if len(origins) == 0 {
-		return nil
+		return nil, nil
 	}
 	slices.Sort(origins)
+	groups := boundaryGroups(comparisonSites(pack))
+	entries := profileEntries(len(origins), len(groups), withCoverage)
+	if entries > budget {
+		return nil, &Failure{
+			Code: "JPS-RESOURCE-MATRIX-PROFILE",
+			Message: fmt.Sprintf("The history profile of this pack would retain %d entries -- %d origins against %d comparison boundaries -- beyond the %d this runtime retains for one pack. Nothing is truncated and no partial profile is written, because a profile cut short looks exactly like a complete one: group the rows under fewer origins, or profile one pack at a time.",
+				entries, len(origins), len(groups), budget),
+			ExitCode: result.ExitIO,
+		}
+	}
 	profile := &result.MatrixProfile{}
 	for _, origin := range origins {
 		agreement := result.OriginAgreement{Origin: capRendered(origin)}
@@ -72,8 +85,20 @@ func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationC
 			profile.Coverage = append(profile.Coverage, coverage)
 		}
 	}
-	profile.Thresholds = thresholdProfiles(pack, matrix, rows, origins, byOrigin)
-	return profile
+	profile.Thresholds = thresholdProfiles(pack, matrix, rows, origins, byOrigin, groups)
+	return profile, nil
+}
+
+// profileEntries is what a profile retains: an agreement entry per origin,
+// a coverage entry per origin when coverage is derived, and a placement per
+// boundary per origin. Counted in this arithmetic before anything is built,
+// so the product of two bounded inputs is judged rather than allocated.
+func profileEntries(origins, groups int, withCoverage bool) int {
+	entries := origins
+	if withCoverage {
+		entries += origins
+	}
+	return entries + origins*groups
 }
 
 // thresholdProfiles places each origin's rows against each comparison
@@ -81,8 +106,7 @@ func matrixProfile(pack map[string]any, matrix Matrix, rows []result.EvaluationC
 // (one per distinct pointer and literal value), each row's fact resolved at
 // the pointer and compared by the evaluator's own comparison, so a JSON
 // number or an absent fact -- what §7.4 cannot compare -- sits on no side.
-func thresholdProfiles(pack map[string]any, matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int) []result.ThresholdProfile {
-	groups := boundaryGroups(comparisonSites(pack))
+func thresholdProfiles(pack map[string]any, matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int, groups []boundaryGroup) []result.ThresholdProfile {
 	if len(groups) == 0 {
 		return nil
 	}
