@@ -40,6 +40,7 @@ import (
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
+		expectationToolDefinition(),
 		{
 			"name":        "validate",
 			"description": "Validate one JPS document for carrier, structural, and semantic conformance. It does not evaluate rules, choose an outcome, or authorize anything.",
@@ -236,6 +237,8 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return toolError(fmt.Sprintf("The %q arguments %s", params.Name, message)), nil
 	}
 	switch params.Name {
+	case "experimental_validate_expectations":
+		return s.toolValidateExpectations(params.Arguments), nil
 	case "validate":
 		return s.toolValidate(params.Arguments), nil
 	case "test_conformance":

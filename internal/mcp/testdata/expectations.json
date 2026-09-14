@@ -1,0 +1,152 @@
+[
+  {
+    "name": "outcome",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true
+  },
+  {
+    "name": "unknown without handoff",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true
+  },
+  {
+    "name": "requested handoff",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]}}",
+    "valid": true
+  },
+  {
+    "name": "set order is immaterial",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\",\"conflict\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true
+  },
+  {
+    "name": "not applicable",
+    "text": "{\"kind\":\"not-applicable\",\"reasons\":[\"not-applicable\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true
+  },
+  {
+    "name": "reasonless unresolved",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "unknown kind",
+    "text": "{\"kind\":\"pending\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "unknown reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"guess\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "outcome retaining reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "unresolved with outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":\"allow\"}",
+    "valid": false
+  },
+  {
+    "name": "unresolved with empty outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":\"\"}",
+    "valid": false
+  },
+  {
+    "name": "unresolved with null outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":null}",
+    "valid": false
+  },
+  {
+    "name": "not applicable wrong reason",
+    "text": "{\"kind\":\"not-applicable\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "handoff trigger outside reasons",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"conflict\"]}}",
+    "valid": false
+  },
+  {
+    "name": "handoff with empty triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[]}}",
+    "valid": false
+  },
+  {
+    "name": "handoff none with null triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\",\"triggeredBy\":null}}",
+    "valid": false
+  },
+  {
+    "name": "handoff none with empty triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\",\"triggeredBy\":[]}}",
+    "valid": false
+  },
+  {
+    "name": "unknown member",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"},\"extra\":true}",
+    "valid": false
+  },
+  {
+    "name": "wrong case member",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"},\"Kind\":\"outcome\"}",
+    "valid": false
+  },
+  {
+    "name": "missing kind",
+    "text": "{\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "null kind",
+    "text": "{\"kind\":null,\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "missing reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "null reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":null,\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "missing handoff",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[]}",
+    "valid": false
+  },
+  {
+    "name": "null handoff",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":null}",
+    "valid": false
+  },
+  {
+    "name": "missing outcomeId",
+    "text": "{\"kind\":\"outcome\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "null outcomeId",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":null,\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false
+  },
+  {
+    "name": "duplicate kind",
+    "text": "{\"kind\":\"outcome\",\"kind\":\"unresolved\"}",
+    "valid": false
+  },
+  {
+    "name": "unpaired surrogate",
+    "text": "{\"kind\":\"\\ud800\"}",
+    "valid": false
+  },
+  {
+    "name": "malformed JSON",
+    "text": "{",
+    "valid": false
+  }
+]
