@@ -243,12 +243,21 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 	case "get_schema":
 		return s.toolGetSchema(params.Arguments), nil
 	case "describe_runtime":
+		if message := noArguments("describe_runtime", params.Arguments); message != "" {
+			return toolError(message), nil
+		}
 		return s.toolDescribeRuntime(), nil
 	case "list_examples":
+		if message := noArguments("list_examples", params.Arguments); message != "" {
+			return toolError(message), nil
+		}
 		return s.toolListExamples(), nil
 	case "get_example":
 		return s.toolGetExample(params.Arguments), nil
 	case "list_packs":
+		if message := noArguments("list_packs", params.Arguments); message != "" {
+			return toolError(message), nil
+		}
 		return s.toolListPacks(), nil
 	case "get_pack":
 		return s.toolGetPack(params.Arguments), nil
@@ -720,6 +729,16 @@ func stringArrayArgument(name string, raw json.RawMessage) ([]string, string) {
 		values = append(values, value)
 	}
 	return values, ""
+}
+
+// noArguments holds the arguments of a tool whose schema advertises no
+// member: an arguments object, when given, carries nothing, as the schema's
+// additionalProperties:false states; omitted or null, it is none.
+func noArguments(tool string, rawArgs json.RawMessage) string {
+	if len(rawArgs) == 0 {
+		return ""
+	}
+	return exactMembers(tool, rawArgs)
 }
 
 // exactMembers holds an arguments object to the exact member names the schema

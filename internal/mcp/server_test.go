@@ -1009,3 +1009,49 @@ func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 		}
 	}
 }
+
+// The central check refuses a member spelled as a known one by another case;
+// what a schema forbids by additionalProperties:false is a wholly unknown
+// member too, and every tool holds that itself: the four that decode with
+// a member list of their own, and the three whose schemas advertise none.
+func TestEveryToolRefusesAWhollyUnknownMember(t *testing.T) {
+	projectFixture(t)
+	for _, tc := range []struct {
+		tool      string
+		arguments map[string]any
+		accepted  string
+	}{
+		{"validate", map[string]any{"document": "{}", "typo": 1}, "the accepted members are document and through"},
+		{"test_conformance", map[string]any{"typo": 1}, "the accepted members are suite and spec_version"},
+		{"get_schema", map[string]any{"typo": 1}, `the accepted member is "spec_version"`},
+		{"get_example", map[string]any{"name": "minimal-expense-approval", "typo": 1}, `the accepted member is "name"`},
+		{"describe_runtime", map[string]any{"typo": true}, "it accepts no members"},
+		{"list_examples", map[string]any{"typo": true}, "it accepts no members"},
+		{"list_packs", map[string]any{"typo": true}, "it accepts no members"},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			responses := runServer(t, toolCall(t, 1, tc.tool, tc.arguments))
+			if len(responses) != 1 {
+				t.Fatalf("got %d responses, want 1", len(responses))
+			}
+			if _, protocol := responses[0]["error"]; protocol {
+				t.Fatalf("refusal must be an in-band tool error, not a protocol error: %#v", responses[0])
+			}
+			result, ok := responses[0]["result"].(map[string]any)
+			if !ok || result["isError"] != true {
+				t.Fatalf("want isError tool result, got %#v", responses[0])
+			}
+			want := `The "` + tc.tool + `" arguments carry an unknown member "typo"; ` + tc.accepted + `, spelled exactly.`
+			if text := toolText(t, result); text != want {
+				t.Fatalf("error = %q, want %q", text, want)
+			}
+		})
+	}
+	// An empty object, or none, is what an argument-less tool takes.
+	for _, arguments := range []map[string]any{{}, nil} {
+		responses := runServer(t, toolCall(t, 1, "list_examples", arguments))
+		if len(responses) != 1 || responses[0]["result"].(map[string]any)["isError"] != false {
+			t.Fatalf("list_examples with %v arguments: %#v", arguments, responses)
+		}
+	}
+}

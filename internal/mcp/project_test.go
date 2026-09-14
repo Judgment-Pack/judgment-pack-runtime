@@ -2298,8 +2298,12 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 		t.Fatalf("an ambiguous id is answered with null: %#v", responses[0])
 	}
 	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":`+string(facts)+`},"arguments":{}}}`)
-	if responses[0]["id"] != float64(5) {
-		t.Fatalf("a refusal in params carries the request's id: %#v", responses[0])
+	if responses[0]["id"] != float64(5) || responses[0]["error"].(map[string]any)["code"] != float64(-32602) {
+		t.Fatalf("a refusal in params carries the request's id and the invalid-params code: %#v", responses[0])
+	}
+	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"experimental_evaluate","Arguments":{"pack_id":"intake","facts":`+string(facts)+`}}}`)
+	if responses[0]["id"] != float64(5) || responses[0]["error"].(map[string]any)["code"] != float64(-32602) {
+		t.Fatalf("a params member by another case is invalid params under the id: %#v", responses[0])
 	}
 	// An id beside a member spelled as it by another case is answered,
 	// since an id is there, and under null, since which is not.
@@ -2310,7 +2314,7 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	// One id, another member refused: answered under that id, since it
 	// is the one id there is.
 	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"ping","params":{},"params":{}}`)
-	if len(responses) != 1 || responses[0]["id"] != float64(5) || !strings.Contains(responses[0]["error"].(map[string]any)["message"].(string), `"params" twice`) {
+	if len(responses) != 1 || responses[0]["id"] != float64(5) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) || !strings.Contains(responses[0]["error"].(map[string]any)["message"].(string), `"params" twice`) {
 		t.Fatalf("a unique id survives another member's refusal: %#v", responses)
 	}
 	// A member of the wrong type is an invalid request, not a parse
