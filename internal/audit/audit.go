@@ -290,13 +290,14 @@ func decodeString(raw json.RawMessage, into *string) error {
 }
 
 // decodeInteger reads a JSON number that is an integer literal -- no
-// fraction, no exponent, no leading zero -- and nothing else.
+// fraction, no exponent, no leading zero -- and nothing else. -0 is 0, as
+// the gateway's grammar reads it (SPEC.md §1.1).
 func decodeInteger(raw json.RawMessage, into *int64) error {
 	text := string(bytes.TrimSpace(raw))
 	if text == "" || strings.ContainsAny(text, ".eE") {
 		return errors.New("not an integer")
 	}
-	if len(text) > 1 && (text[0] == '0' || (text[0] == '-' && text[1] == '0')) {
+	if (len(text) > 1 && text[0] == '0') || (len(text) > 2 && text[0] == '-' && text[1] == '0') {
 		return errors.New("not an integer")
 	}
 	n, err := strconv.ParseInt(text, 10, 64)

@@ -1364,7 +1364,7 @@ func TestExperimentalTestGraphsIncludeTracesArgumentIsHeldExactly(t *testing.T) 
 		"a number value":       {raw: `{"include_traces":1}`, want: booleanError},
 		"an object value":      {raw: `{"include_traces":{}}`, want: booleanError},
 		"an array value":       {raw: `{"include_traces":[]}`, want: booleanError},
-		"an upper-case member": {raw: `{"INCLUDE_TRACES":true}`, want: unknownError("INCLUDE_TRACES")},
+		"an upper-case member": {raw: `{"INCLUDE_TRACES":true}`, want: spelledError("experimental_test_graphs", "INCLUDE_TRACES", "include_traces")},
 		"a camel-cased member": {raw: `{"includeTraces":true}`, want: unknownError("includeTraces")},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1651,7 +1651,7 @@ func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
 	// choice of which one the message names.
 	for index, want := range map[int]string{
 		1: booleanError,
-		2: `The "experimental_evaluate" arguments carry an unknown member "REHEARSAL"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites, spelled exactly.`,
+		2: spelledError("experimental_evaluate", "REHEARSAL", "rehearsal"),
 		3: booleanError,
 		4: booleanError,
 		5: booleanError,
@@ -1848,7 +1848,7 @@ func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
 		t.Fatalf("an explicit null is the string-type refusal: %#v", null)
 	}
 	alias := responses[4]["result"].(map[string]any)
-	if alias["isError"] != true || !strings.Contains(toolText(t, alias), `unknown member "GRAPH_ID"`) {
+	if alias["isError"] != true || toolText(t, alias) != spelledError("experimental_get_graph", "GRAPH_ID", "graph_id") {
 		t.Fatalf("a case-folded alias is held to the exact spelling: %#v", alias)
 	}
 	if absent := responses[5]["result"].(map[string]any); absent["isError"] != true ||
@@ -2128,7 +2128,7 @@ func TestFetchToolsHoldArgumentsAndNotesExactly(t *testing.T) {
 	}
 	alias := responses[2]["result"].(map[string]any)
 	if alias["isError"] != true ||
-		toolText(t, alias) != `The "get_pack" arguments carry an unknown member "PACK_ID"; the accepted member is "pack_id", spelled exactly.` {
+		toolText(t, alias) != spelledError("get_pack", "PACK_ID", "pack_id") {
 		t.Fatalf("the case-folded pack alias is held to the exact spelling: %#v", alias)
 	}
 }
@@ -2321,18 +2321,83 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	if len(responses) != 1 || responses[0]["id"] != float64(3) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
 		t.Fatalf("a member of the wrong type under one id: %#v", responses)
 	}
-	if responses := runServer(t, `{"jsonrpc":"2.0","method":"ping","Method":0,"ID":1}`); len(responses) != 0 {
-		t.Fatalf("a refused notification with a mistyped case-folded member is answered by nothing: %#v", responses)
+	// Without an id, an object that is not a Request object is not a
+	// notification either (§4.1 exempts notifications, which are Request
+	// objects): it is an invalid request, answered under null -- §5's own
+	// example answers {"method": 1, "params": "bar"} so. What makes it
+	// not one: a member spelled by another case, a member twice, no
+	// "jsonrpc" of "2.0", no "method" string, params that are not an
+	// object or an array.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","method":"ping","Method":0,"ID":1}`,
+		`{"jsonrpc":"2.0","method":0}`,
+		`{"jsonrpc":"2.0","method":1,"params":"bar"}`,
+		`{"jsonrpc":"2.0","method":"ping","params":{},"params":{}}`,
+		`{"method":"ping"}`,
+		`{"jsonrpc":"2.0","method":"ping","params":null}`,
+	} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("an invalid request without an id is answered under null: %s: %#v", line, responses)
+		}
 	}
-	if responses := runServer(t, `{"jsonrpc":"2.0","method":0}`); len(responses) != 0 {
-		t.Fatalf("a mistyped notification is answered by nothing: %#v", responses)
+	// With an id, what a Request object must have is held before
+	// dispatch: "jsonrpc" the string "2.0" -- null, absent, or another
+	// version is not -- "method" a string -- null or absent is not --
+	// and "params", when there, an object or an array -- a string or
+	// null is not. Each is an invalid request under the id; an array of
+	// params passes.
+	for _, line := range []string{
+		`{"jsonrpc":null,"id":1,"method":"ping"}`,
+		`{"id":1,"method":"ping"}`,
+		`{"jsonrpc":"1.0","id":1,"method":"ping"}`,
+		`{"jsonrpc":"2.0","id":1,"method":null}`,
+		`{"jsonrpc":"2.0","id":1}`,
+		`{"jsonrpc":"2.0","id":1,"method":"ping","params":"bar"}`,
+		`{"jsonrpc":"2.0","id":1,"method":"ping","params":null}`,
+	} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != float64(1) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("a request missing what a Request object must have: %s: %#v", line, responses)
+		}
+	}
+	if responses := runServer(t, `{"jsonrpc":"2.0","id":1,"method":"ping","params":[]}`); len(responses) != 1 || responses[0]["error"] != nil {
+		t.Fatalf("params as an array is a structured value: %#v", responses)
+	}
+	// The envelope is judged before its params: a request whose method
+	// is not a string and whose params carry a member twice is an
+	// invalid request (-32600) under its id, not invalid params.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":7,"method":0,"params":{"name":"a","name":"b"}}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(7) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+		t.Fatalf("the envelope's refusal comes before the params': %#v", responses)
+	}
+	// A notification by name that carries an id is a request, and a
+	// request is answered: the method is not a request method.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":7,"method":"notifications/initialized"}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(7) || responses[0]["error"].(map[string]any)["code"] != float64(-32601) {
+		t.Fatalf("a request form of a notification is answered under its id: %#v", responses)
+	}
+	if responses := runServer(t, `{"jsonrpc":"2.0","method":"notifications/initialized"}`); len(responses) != 0 {
+		t.Fatalf("the notification itself is answered by nothing: %#v", responses)
+	}
+	// JSON's own whitespace around a message is passed over; any other
+	// is part of the message, which is then not JSON: a parse error.
+	if responses := runServer(t, " \t{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\t\r\n"); len(responses) != 1 || responses[0]["error"] != nil {
+		t.Fatalf("JSON whitespace around a message: %#v", responses)
+	}
+	for _, line := range []string{"\v{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}", "\u00a0{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\f"} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32700) {
+			t.Fatalf("other whitespace is part of the message: %q: %#v", line, responses)
+		}
 	}
 	// What is not an object is not a notification: an array (this server
 	// batches nothing) or a scalar is an invalid request, under null.
 	for _, line := range []string{`[]`, `[{"jsonrpc":"2.0","id":1,"method":"ping"}]`, `42`, `"ping"`, `null`} {
 		responses := runServer(t, line)
-		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
-			t.Fatalf("a non-object message %s: %#v", line, responses)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) ||
+			!strings.Contains(responses[0]["error"].(map[string]any)["message"].(string), "batches are not supported") {
+			t.Fatalf("a non-object message %s is refused as one, naming the batch limit: %#v", line, responses)
 		}
 	}
 	// An id is a string or an integer: one of another kind is refused
@@ -2361,22 +2426,51 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	if responses := runServer(t, `{"jsonrpc":"2.0","id":4,`); len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32700) {
 		t.Fatalf("not JSON: %#v", responses)
 	}
-	// A notification -- no id -- is answered by nothing, its errors
-	// included (§4.1), and is not dispatched: nothing is recorded.
+	// A notification -- a Request object with no id -- is answered by
+	// nothing, its errors included (§4.1): a refusal of its params goes
+	// unanswered, and is not dispatched.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`,
+		// An "ID" or an "Id" inside params, as a name or a value, is not
+		// an id: the walk finds the id at the top level and nowhere else.
+		`{"jsonrpc":"2.0","method":"ping","params":{"ID":"Id","ID":1}}`,
+	} {
+		if responses := runServer(t, line); len(responses) != 0 {
+			t.Fatalf("a notification with refused params is answered by nothing: %s: %#v", line, responses)
+		}
+	}
+	// An id-less object that is not a Request object is answered under
+	// null and dispatched no more than a notification is: an "ID" or an
+	// "Id" is not an id, and the struct would have bound it.
 	for _, line := range []string{
 		`{"jsonrpc":"2.0","method":"tools/call","params":` + rehearsing + `,"params":` + good + `}`,
-		`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`,
-		// An "ID" or an "Id" is not an id: the struct would bind it, the
-		// walk does not, and a refused notification stays unanswered.
 		`{"jsonrpc":"2.0","ID":1,"method":"ping"}`,
 		`{"jsonrpc":"2.0","Id":1,"method":"tools/call","params":` + good + `}`,
 	} {
-		if responses := runServer(t, line); len(responses) != 0 {
-			t.Fatalf("a notification is answered by nothing: %#v", responses)
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+			t.Fatalf("an invalid request with no id is answered under null: %#v", responses)
+		}
+	}
+	// A refusal comes before dispatch, whatever it is answered under: a
+	// recording call under an id that is not one, under null, inside a
+	// batch, or under another protocol version, is refused and records
+	// nothing.
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","id":{},"method":"tools/call","params":` + good + `}`,
+		`{"jsonrpc":"2.0","id":1.5,"method":"tools/call","params":` + good + `}`,
+		`{"jsonrpc":"2.0","id":null,"method":"tools/call","params":` + good + `}`,
+		`[{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + good + `}]`,
+		`{"jsonrpc":"1.0","id":1,"method":"tools/call","params":` + good + `}`,
+		`{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":` + good + `}`,
+	} {
+		responses := runServer(t, line)
+		if len(responses) != 1 || responses[0]["error"] == nil {
+			t.Fatalf("a refused recording call is answered with its refusal: %s: %#v", line, responses)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(root, "audit", audit.FileName)); !os.IsNotExist(err) {
-		t.Fatalf("a refused notification records nothing: %v", err)
+		t.Fatalf("a refused message records nothing: %v", err)
 	}
 	// The ordinary envelope, once and exactly, is answered.
 	responses = runServer(t, `{"jsonrpc":"2.0","id":9,"method":"tools/call","params":`+good+`}`)
@@ -2405,4 +2499,10 @@ func rawResponseID(t *testing.T, line string) string {
 		t.Fatalf("undecodable response %q: %v", out.String(), err)
 	}
 	return string(answer.ID)
+}
+
+// spelledError is the central refusal of an argument spelled as a known
+// member by another case, for every tool alike.
+func spelledError(tool, member, exact string) string {
+	return `The "` + tool + `" arguments carries "` + member + `", which is not the member "` + exact + `" spelled exactly.`
 }

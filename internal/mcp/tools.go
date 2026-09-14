@@ -205,6 +205,22 @@ func toolDefinitions() []map[string]any {
 	}
 }
 
+// toolArgumentNames is each tool's argument names as its schema advertises
+// them, derived from the definitions so that the two cannot drift.
+var toolArgumentNames = func() map[string][]string {
+	names := map[string][]string{}
+	for _, definition := range toolDefinitions() {
+		properties := definition["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		list := make([]string, 0, len(properties))
+		for name := range properties {
+			list = append(list, name)
+		}
+		sort.Strings(list)
+		names[definition["name"].(string)] = list
+	}
+	return names
+}()
+
 func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 	var params struct {
 		Name      string          `json:"name"`
@@ -213,9 +229,10 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 	if err := json.Unmarshal(rawParams, &params); err != nil {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "Invalid tools/call parameters."}
 	}
-	// Every tool's arguments are held to being given once, here, before
-	// any handler reads the last of two.
-	if message := membersOnce(params.Arguments, nil); message != "" {
+	// Every tool's arguments are held to being given once and spelled
+	// exactly as its schema advertises, here, before any handler reads
+	// the last of two or folds the case.
+	if message := membersOnce(params.Arguments, toolArgumentNames[params.Name]); message != "" {
 		return toolError(fmt.Sprintf("The %q arguments %s", params.Name, message)), nil
 	}
 	switch params.Name {
@@ -255,6 +272,9 @@ func (s *Server) toolValidate(rawArgs json.RawMessage) any {
 		Document string `json:"document"`
 		Through  string `json:"through"`
 	}
+	if message := exactMembers("validate", rawArgs, "document", "through"); message != "" {
+		return toolError(message)
+	}
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
 		return toolError(`The "validate" arguments must be an object with a string "document".`)
 	}
@@ -281,6 +301,9 @@ func (s *Server) toolTestConformance(rawArgs json.RawMessage) any {
 		SpecVersion string `json:"spec_version"`
 	}
 	if len(rawArgs) > 0 {
+		if message := exactMembers("test_conformance", rawArgs, "suite", "spec_version"); message != "" {
+			return toolError(message)
+		}
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return toolError(`Invalid "test_conformance" arguments.`)
 		}
@@ -297,6 +320,9 @@ func (s *Server) toolGetSchema(rawArgs json.RawMessage) any {
 		SpecVersion string `json:"spec_version"`
 	}
 	if len(rawArgs) > 0 {
+		if message := exactMembers("get_schema", rawArgs, "spec_version"); message != "" {
+			return toolError(message)
+		}
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return toolError(`Invalid "get_schema" arguments.`)
 		}
@@ -349,6 +375,9 @@ func (s *Server) toolGetExample(rawArgs json.RawMessage) any {
 		Name string `json:"name"`
 	}
 	if len(rawArgs) > 0 {
+		if message := exactMembers("get_example", rawArgs, "name"); message != "" {
+			return toolError(message)
+		}
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return toolError(`The "get_example" arguments must be an object with a string "name".`)
 		}

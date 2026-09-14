@@ -835,8 +835,8 @@ func TestTransportRefusesOversizedLineAndEndsStream(t *testing.T) {
 }
 
 // encoding/json matches struct tags case-insensitively, so DisallowUnknownFields
-// alone accepts PACK_ID for pack_id. exactMembers holds every tool that decodes
-// an arguments object to the advertised spelling (issue #115).
+// alone accepts PACK_ID for pack_id. callTool holds every tool's arguments to
+// the spelling its schema advertises, before any handler decodes (issue #115).
 func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 	projectFixture(t)
 
@@ -845,43 +845,43 @@ func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 		tool      string
 		arguments map[string]any
 		member    string
-		accepted  string
 	}{
 		{
 			name:      "get_pack PACK_ID",
 			tool:      "get_pack",
 			arguments: map[string]any{"PACK_ID": "intake"},
 			member:    "PACK_ID",
-			accepted:  `the accepted member is "pack_id"`,
 		},
 		{
 			name:      "get_pack Pack_Id",
 			tool:      "get_pack",
 			arguments: map[string]any{"Pack_Id": "intake"},
 			member:    "Pack_Id",
-			accepted:  `the accepted member is "pack_id"`,
 		},
 		{
 			name:      "experimental_evaluate PACK_ID",
 			tool:      "experimental_evaluate",
 			arguments: map[string]any{"PACK_ID": "intake", "facts": projectFacts},
 			member:    "PACK_ID",
-			accepted:  "the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites",
 		},
 		{
 			name:      "experimental_test_packs PACK_ID",
 			tool:      "experimental_test_packs",
 			arguments: map[string]any{"PACK_ID": "intake"},
 			member:    "PACK_ID",
-			accepted:  `the accepted member is "pack_id"`,
 		},
 		{
 			name:      "experimental_test_packs Pack_Id",
 			tool:      "experimental_test_packs",
 			arguments: map[string]any{"Pack_Id": "intake"},
 			member:    "Pack_Id",
-			accepted:  `the accepted member is "pack_id"`,
 		},
+		// The tools that decode without a member list of their own are
+		// held by the same central check, from their schemas' names.
+		{name: "validate DOCUMENT", tool: "validate", arguments: map[string]any{"DOCUMENT": "{}"}, member: "DOCUMENT"},
+		{name: "test_conformance SPEC_VERSION", tool: "test_conformance", arguments: map[string]any{"SPEC_VERSION": "0.2.0-draft"}, member: "SPEC_VERSION"},
+		{name: "get_schema Spec_Version", tool: "get_schema", arguments: map[string]any{"Spec_Version": "0.2.0-draft"}, member: "Spec_Version"},
+		{name: "get_example NAME", tool: "get_example", arguments: map[string]any{"NAME": "minimal-expense-approval"}, member: "NAME"},
 	}
 
 	for _, tc := range cases {
@@ -897,7 +897,7 @@ func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 			if !ok || result["isError"] != true {
 				t.Fatalf("want isError tool result, got %#v", responses[0])
 			}
-			want := `The "` + tc.tool + `" arguments carry an unknown member "` + tc.member + `"; ` + tc.accepted + `, spelled exactly.`
+			want := spelledError(tc.tool, tc.member, strings.ToLower(tc.member))
 			if text := toolText(t, result); text != want {
 				t.Fatalf("error = %q, want %q", text, want)
 			}
@@ -995,6 +995,7 @@ func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 		`[{"sessionId":"s/1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"` + strings.Repeat("s", 129) + `","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"s-1","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"s-1","callIndex":-0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"s-1","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("A", 128) + `"}]`,
 		`[{"sessionId":"s-1","callIndex":0,"signature":"` + strings.Repeat("a", 127) + `"}]`,

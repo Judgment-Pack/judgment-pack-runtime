@@ -66,7 +66,10 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 	encoder.SetEscapeHTML(false)
 
 	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+		// JSON's own whitespace around a message is passed over; any
+		// other -- a vertical tab, a no-break space -- is part of the
+		// message, and not JSON.
+		line := bytes.Trim(scanner.Bytes(), " \t\r\n")
 		if len(line) == 0 {
 			continue
 		}
@@ -77,42 +80,32 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 			continue
 		}
 		// A message that is not an object -- an array, which this server
-		// does not batch, or a scalar -- is not a notification: it is an
+		// does not batch, or a scalar -- is not a request at all: it is an
 		// invalid request, answered under null (JSON-RPC §4.2, §5).
 		if line[0] != '{' {
 			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": nil, "error": &rpcError{Code: codeInvalidRequest, Message: "The request is not a JSON object; batches are not supported."}})
 			continue
 		}
-		// Then the envelope's members, read exactly and once, before any
-		// typed decoding is trusted: encoding/json would bind "Params" to
-		// params and keep the last of two, so a first params or arguments
-		// object -- one declaring a rehearsal, or citing nothing -- could
-		// vanish behind a second, and it would bind a "Method" of the wrong
-		// type to method and fail before anything held the envelope. The
-		// id is the walk's finding too: present when a member spelled
-		// exactly "id" is there, its own when that member is there once
-		// and nothing is spelled as it by another case.
-		env := exactEnvelope(line)
-		var request rpcRequest
-		if err := json.Unmarshal(line, &request); err != nil && env.err == nil {
-			env.err = &rpcError{Code: codeInvalidRequest, Message: "The request's members are not of their types."}
-		}
-		// An id is a string or an integer (MCP; JSON-RPC allows a number and
-		// discourages fractions, MCP allows neither a fraction nor null nor
-		// anything else): one of another kind cannot be answered under and
-		// is refused under null, before dispatch.
-		if env.idPresent && env.idUnique && !validID(env.id) {
-			env.err = &rpcError{Code: codeInvalidRequest, Message: "The request's id is not a string or an integer."}
-			env.idUnique = false
-		}
+		// Then the envelope, judged in the order exactEnvelope states,
+		// before any typed decoding is trusted: encoding/json would bind
+		// "Params" to params and keep the last of two, so a first params
+		// or arguments object -- one declaring a rehearsal, or citing
+		// nothing -- could vanish behind a second; it would bind a
+		// "Method" of the wrong type to method and fail before anything
+		// held the envelope; and it would read null into a string.
+		env, request := exactEnvelope(line)
 		if env.err != nil {
-			// A notification -- no member spelled exactly "id" -- is
-			// answered by nothing, errors included (§4.1), and is not
-			// dispatched either. An id given twice, or beside a member
-			// spelled as it by another case, is no one id, and the answer
-			// carries null; an id that is there once is answered under,
-			// whatever else in the envelope was refused.
-			if !env.idPresent {
+			// An invalid request (-32600) is answered whether or not an
+			// id is there: §4.1 exempts a notification, which is a
+			// Request object without an id, and an object that is not a
+			// Request object is not one -- §5's own example answers
+			// {"method": 1, "params": "bar"} under null. It is answered
+			// under the one id when a member spelled exactly "id" is
+			// there once, valid, and spelled by nothing else; under null
+			// otherwise. A valid request with no id is a notification,
+			// answered by nothing, its errors included: a refusal of its
+			// params, an unknown method.
+			if env.err.Code != codeInvalidRequest && !env.idPresent {
 				continue
 			}
 			var id any
@@ -144,7 +137,12 @@ func writeMessage(encoder *json.Encoder, logw io.Writer, response map[string]any
 func (s *Server) handle(request *rpcRequest) (map[string]any, bool) {
 	switch request.Method {
 	case "notifications/initialized":
-		return nil, false
+		// A notification by name; carrying an id, it is a request for a
+		// method that is not one, and a request is answered (§5).
+		if len(request.ID) == 0 {
+			return nil, false
+		}
+		return s.reply(request, nil, &rpcError{Code: codeMethodNotFound, Message: "notifications/initialized is a notification, not a request method."})
 	case "initialize":
 		return s.reply(request, s.initializeResult(request.Params), nil)
 	case "ping":
@@ -202,10 +200,6 @@ func (s *Server) initializeResult(rawParams json.RawMessage) map[string]any {
 	}
 }
 
-// exactEnvelope holds a request's top-level members, and its params object's,
-// to being given once and spelled exactly: a member twice, or a member that
-// differs from a known one only by case, is refused before any decoder reads
-// the last of two or folds the case.
 // envelope is what the exact walk found of a request: the refusal, if
 // any, and the id as the walk saw it -- present when a member spelled
 // exactly "id" is there, unique when it is there once and no member is
@@ -217,23 +211,60 @@ type envelope struct {
 	id        json.RawMessage
 }
 
-func exactEnvelope(line []byte) envelope {
+// exactEnvelope judges a request object in the order JSON-RPC's answers
+// need. The id first, since it is what any refusal is answered under: the
+// member spelled exactly "id", once, a string or an integer. Then the
+// top-level members, once and spelled exactly: a member twice, or one that
+// differs from a known member only by case, is refused before any decoder
+// reads the last of two or folds the case. Then what a Request object must
+// have (§4): "jsonrpc" the string "2.0", "method" a string, "params" an
+// object or an array when there -- null is none of those. Each of these
+// refuses an invalid request (-32600). Last, the params object's own
+// members, once and spelled exactly, which refuses invalid params
+// (-32602): a request's own fault, which a notification carries
+// unanswered. The request returned is the one to dispatch when nothing
+// was refused.
+func exactEnvelope(line []byte) (envelope, rpcRequest) {
 	env := envelope{}
 	env.id, env.idPresent, env.idUnique = exactID(line)
+	if env.idPresent && env.idUnique && !validID(env.id) {
+		env.idUnique = false
+		env.err = &rpcError{Code: codeInvalidRequest, Message: "The request's id is not a string or an integer."}
+		return env, rpcRequest{}
+	}
 	if message := membersOnce(line, []string{"jsonrpc", "id", "method", "params"}); message != "" {
 		env.err = &rpcError{Code: codeInvalidRequest, Message: "The request " + message}
-		return env
+		return env, rpcRequest{}
 	}
-	var params struct {
-		Params json.RawMessage `json:"params"`
+	var shape struct {
+		JSONRPC *string         `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Method  *string         `json:"method"`
+		Params  json.RawMessage `json:"params"`
 	}
-	if err := json.Unmarshal(line, &params); err != nil || len(params.Params) == 0 || params.Params[0] != '{' {
-		return env
+	if err := json.Unmarshal(line, &shape); err != nil {
+		env.err = &rpcError{Code: codeInvalidRequest, Message: "The request's members are not of their types."}
+		return env, rpcRequest{}
 	}
-	if message := membersOnce(params.Params, []string{"name", "arguments", "_meta", "protocolVersion", "capabilities", "clientInfo", "cursor", "uri"}); message != "" {
-		env.err = &rpcError{Code: codeInvalidParams, Message: "The params " + message}
+	if shape.JSONRPC == nil || *shape.JSONRPC != "2.0" {
+		env.err = &rpcError{Code: codeInvalidRequest, Message: `The request's "jsonrpc" is not the string "2.0".`}
+		return env, rpcRequest{}
 	}
-	return env
+	if shape.Method == nil {
+		env.err = &rpcError{Code: codeInvalidRequest, Message: `The request's "method" is not a string.`}
+		return env, rpcRequest{}
+	}
+	if len(shape.Params) > 0 && shape.Params[0] != '{' && shape.Params[0] != '[' {
+		env.err = &rpcError{Code: codeInvalidRequest, Message: `The request's "params" is not an object or an array.`}
+		return env, rpcRequest{}
+	}
+	request := rpcRequest{JSONRPC: *shape.JSONRPC, ID: shape.ID, Method: *shape.Method, Params: shape.Params}
+	if len(shape.Params) > 0 && shape.Params[0] == '{' {
+		if message := membersOnce(shape.Params, []string{"name", "arguments", "_meta", "protocolVersion", "capabilities", "clientInfo", "cursor", "uri"}); message != "" {
+			env.err = &rpcError{Code: codeInvalidParams, Message: "The params " + message}
+		}
+	}
+	return env, request
 }
 
 // exactID walks an object for its id: the value of the member spelled

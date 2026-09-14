@@ -8,8 +8,9 @@ All notable changes to tagged releases are documented here.
   --cites <file>`, `experimental graph evaluate --cites <file>` and the MCP `experimental_evaluate`
   tool's `cites` argument take an array of `{sessionId, callIndex, signature}` — the shape the
   gateway's action receipt gives the same member — and every record the run leaves carries it as
-  `cites`, recorded as given: the runtime holds the document to that shape and to nothing else,
-  verifies no receipt and reads no store. A document not of the shape is refused as a bad
+  `cites`, recorded as given: the runtime holds the document to that shape and to nothing else
+  (`callIndex` an integer literal, `-0` read as `0` as the gateway's grammar reads it), verifies
+  no receipt and reads no store. A document not of the shape is refused as a bad
   invocation before the evaluator is reached. The member is omitted when none were supplied, so
   existing records are unchanged; it is additive, and `recordVersion` stays `"1"` as it did for
   `reviewed`. A rehearsal records nothing, citations included. Additive output under
@@ -17,15 +18,22 @@ All notable changes to tagged releases are documented here.
   and only, in `CONFORMANCE.md`.
 - **The MCP server reads the JSON-RPC envelope exactly and once**: a request's members, its
   `params` object's, and every tool's `arguments` are held to being given once and spelled
-  exactly — a member twice, or one that differs from a known member only by case, is refused
-  where Go's decoder used to keep the last of two and fold the case. Syntax is judged first (not
-  JSON is the parse error under a null id, the one answer without an id), then the envelope, then
-  the types. A message that is not a JSON object — an array, since batches are not served, or a
-  scalar — is an invalid request under null. A refused request is answered under its id when a
-  member spelled exactly `id` is there once and nothing is spelled as it by another case, under
-  null when that id is ambiguous or is not a string or an integer, and by nothing at all when
-  there is no id, since a notification gets no answer, errors included. A stricter gate on the
-  transport, declared here; the tools' inputs and outputs are unchanged.
+  exactly as the schema advertises — a member twice, or one that differs from a known member
+  only by case, is refused where Go's decoder used to keep the last of two and fold the case;
+  the four tools that held no member list of their own (`validate`, `test_conformance`,
+  `get_schema`, `get_example`) now refuse an unknown member too, as their schemas'
+  `additionalProperties: false` always said. Syntax is judged first: only JSON's own whitespace
+  is passed over around a message, and what is not JSON is the parse error under a null id. A
+  message that is valid JSON but not a Request object is an invalid request (`-32600`) whether or
+  not it carries an id — not an object (an array, since batches are not served, or a scalar); a
+  member twice or by another case; no `jsonrpc` of `"2.0"`; no `method` string; `params` that
+  are not an object or an array; an id that is not a string or an integer — answered under the
+  id when a member spelled exactly `id` is there once, valid, and nothing is spelled as it by
+  another case, and under null otherwise. A valid request with no id is a notification and gets
+  no answer, its errors included: a refusal of its params or an unknown method goes unanswered,
+  and nothing is dispatched. A request that names a notification method under an id is answered
+  with method-not-found rather than dropped. A stricter gate on the transport, declared here;
+  the tools' inputs and outputs are unchanged.
 
 ## 0.19.0 - 2026-08-24
 
