@@ -2306,6 +2306,31 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	if len(responses) != 1 || responses[0]["id"] != nil {
 		t.Fatalf("an id beside an ID: %#v", responses)
 	}
+	// One id, another member refused: answered under that id, since it
+	// is the one id there is.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":5,"method":"ping","params":{},"params":{}}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(5) || !strings.Contains(responses[0]["error"].(map[string]any)["message"].(string), `"params" twice`) {
+		t.Fatalf("a unique id survives another member's refusal: %#v", responses)
+	}
+	// A member of the wrong type is an invalid request, not a parse
+	// error: answered under the one id, and not at all without one --
+	// including when a case-folded "Method" or "ID" would have bound to
+	// the struct before any walk.
+	responses = runServer(t, `{"jsonrpc":"2.0","id":3,"method":0}`)
+	if len(responses) != 1 || responses[0]["id"] != float64(3) || responses[0]["error"].(map[string]any)["code"] != float64(-32600) {
+		t.Fatalf("a member of the wrong type under one id: %#v", responses)
+	}
+	if responses := runServer(t, `{"jsonrpc":"2.0","method":"ping","Method":0,"ID":1}`); len(responses) != 0 {
+		t.Fatalf("a refused notification with a mistyped case-folded member is answered by nothing: %#v", responses)
+	}
+	if responses := runServer(t, `{"jsonrpc":"2.0","method":0}`); len(responses) != 0 {
+		t.Fatalf("a mistyped notification is answered by nothing: %#v", responses)
+	}
+	// What is not JSON at all is the one thing answered under null with
+	// a parse error.
+	if responses := runServer(t, `{"jsonrpc":"2.0","id":4,`); len(responses) != 1 || responses[0]["id"] != nil || responses[0]["error"].(map[string]any)["code"] != float64(-32700) {
+		t.Fatalf("not JSON: %#v", responses)
+	}
 	// A notification -- no id -- is answered by nothing, its errors
 	// included (§4.1), and is not dispatched: nothing is recorded.
 	for _, line := range []string{
