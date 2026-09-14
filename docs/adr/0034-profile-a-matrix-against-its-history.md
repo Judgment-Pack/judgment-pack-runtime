@@ -104,9 +104,12 @@ the draft to make history pass.
   run as one that does not fit (`JPS-RESOURCE-MATRIX-PROFILE`, the handoff-target budget's
   precedent), rather than truncated: a profile cut short reads exactly like a complete one. The
   pack itself is read once for the suite's coverage and every origin's alike, its probes are
-  rendered once for the suite and never for an origin, whose coverage is a count of predicates;
-  every decimal is read once, and the nearest value on a side is kept as the number it was read
-  into beside its spelling, so no retained spelling is read again.
+  rendered once for the suite and never for an origin, whose coverage is a count of predicates
+  (its boundary witnessing compares through the evaluator's own comparison, charged per row);
+  within the threshold placement the literal is read once per boundary and each fact once per
+  row per boundary, the nearest value on a side is kept as the number it was read into beside
+  its spelling, so no retained spelling is read again, and each origin's spelling is rendered
+  once and reused by every entry that names it.
 - Bad, because a matrix that cites receipts declares `matrixVersion "3"` and is refused by an older
   runtime with the version it would take — the closed-input rule's price, paid once.
 - Bad, because "nearest value" is a reading of the rows' own facts, and a row transcribed wrongly

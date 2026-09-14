@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -248,10 +249,12 @@ func derivePackProbes(pack map[string]any, reach Reach) packProbeSet {
 // count is how many probes the set derives, the work a witnessing does.
 func (set packProbeSet) count() int { return len(set.outcomes) + len(set.reasons) }
 
-// probeRenderings counts the probes rendered as records with their
-// sentences; a test holds a profile over many origins to the suite's own
-// rendering and no more, since an origin's coverage is a count.
-var probeRenderings atomic.Int64
+// probeRenderings counts the probes rendered -- named, sanitised,
+// sentenced -- and textRenderings the authored strings rendered under the
+// budget; a test holds a profile to the suite's own probe renderings and to
+// one rendering of each origin, since an origin's coverage is a count and
+// an origin's spelling is rendered once and reused.
+var probeRenderings, textRenderings atomic.Int64
 
 // covered is how many of the set's probes some witness witnesses: the
 // predicates alone -- no probe name, no sentence, no sanitising of an id
@@ -274,7 +277,6 @@ func (set packProbeSet) probes(witnesses []ProbeWitness) []result.MatrixProbe {
 	// member rather than an empty one.
 	var probes []result.MatrixProbe
 	for index := range set.count() {
-		probeRenderings.Add(1)
 		name, missingDetail := set.render(index)
 		if witness := set.witness(index, witnesses); witness != nil {
 			probes = append(probes, result.MatrixProbe{Probe: name, Status: result.MatrixProbeCovered, Detail: witness.Label + " expects it."})
@@ -316,6 +318,7 @@ func (set packProbeSet) predicate(index int) func(ProbeWitness) bool {
 // render is the index-th probe's name and the sentence a missing one
 // reports, built only when a probe record is.
 func (set packProbeSet) render(index int) (name, missingDetail string) {
+	probeRenderings.Add(1)
 	if index < len(set.outcomes) {
 		id := set.outcomes[index]
 		return "outcome:" + id, fmt.Sprintf("No row expects an outcome disposition naming %q.", display.Sanitize(id))
@@ -450,10 +453,13 @@ func (stage siteStage) exercisedBy(witness ProbeWitness) bool {
 type comparisonSite struct {
 	path    string
 	literal string
-	// key is the literal's canonical decimal value (evaluation.DecimalKey),
-	// read once here so grouping folds by value in one pass rather than by
-	// comparing every pair of literals.
+	// key is the literal's canonical decimal value (evaluation.DecimalKey's
+	// form), read once here so grouping folds by value in one pass rather
+	// than by comparing every pair of literals; number is that one reading,
+	// kept so the profile's placement compares against it without reading
+	// the literal again.
 	key      string
+	number   *big.Rat
 	operator string
 	owner    string
 	stage    siteStage
@@ -475,6 +481,9 @@ type boundaryGroup struct {
 	literal string
 	sites   []comparisonSite
 	stages  []siteStage
+	// number is the literal as read once by the derivation (the first
+	// site's; every site of a group reads to the same value).
+	number *big.Rat
 	// pathIndex addresses this group's pointer in the derivation's
 	// distinct-path list, so a pointer compared against several literals is
 	// resolved once per row rather than once per probe.
@@ -695,6 +704,7 @@ const (
 // '?' — and the truncation is taken at a rune boundary, so the rendered value
 // is well-formed text whatever was authored.
 func capRendered(text string) string {
+	textRenderings.Add(1)
 	rendered := display.Sanitize(text)
 	if len(rendered) <= boundaryTextBudget {
 		return rendered
@@ -757,7 +767,7 @@ func boundaryGroups(sites []comparisonSite) []boundaryGroup {
 		if !opened {
 			at = len(groups)
 			index[site.path+"\x00"+site.key] = at
-			groups = append(groups, boundaryGroup{path: site.path, literal: site.literal})
+			groups = append(groups, boundaryGroup{path: site.path, literal: site.literal, number: site.number})
 		}
 		groups[at].sites = append(groups[at].sites, site)
 		if !slices.Contains(groups[at].stages, site.stage) {
@@ -803,11 +813,11 @@ func comparisonSites(pack map[string]any) []comparisonSite {
 			if !ok {
 				return
 			}
-			key, decimal := evaluation.DecimalKey(literal)
+			number, decimal := evaluation.DecimalValue(literal)
 			if !decimal {
 				return
 			}
-			sites = append(sites, comparisonSite{path: path, literal: literal, key: key, operator: operator, owner: owner, stage: stage})
+			sites = append(sites, comparisonSite{path: path, literal: literal, key: number.RatString(), number: number, operator: operator, owner: owner, stage: stage})
 		})
 	})
 	return sites

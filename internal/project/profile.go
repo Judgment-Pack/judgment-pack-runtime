@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
-	"sync/atomic"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -73,9 +72,17 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 			ExitCode: result.ExitIO,
 		}
 	}
+	// Each origin's spelling is rendered under the budget once, here, and
+	// reused by every entry that names it: an origin is authored text the
+	// carrier bounds only at a megabyte, and a profile names it once per
+	// boundary.
+	rendered := make(map[string]string, len(origins))
+	for _, origin := range origins {
+		rendered[origin] = capRendered(origin)
+	}
 	profile := &result.MatrixProfile{}
 	for _, origin := range origins {
-		agreement := result.OriginAgreement{Origin: capRendered(origin)}
+		agreement := result.OriginAgreement{Origin: rendered[origin]}
 		for _, index := range byOrigin[origin] {
 			agreement.Rows++
 			if rows[index].Status == "passed" {
@@ -96,13 +103,13 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 			// this origin's rows alone: predicates over the derivation
 			// made once, nothing rendered.
 			profile.Coverage = append(profile.Coverage, result.OriginCoverage{
-				Origin:  capRendered(origin),
+				Origin:  rendered[origin],
 				Covered: set.covered(matrixWitnesses(subset)) + boundaryCovered(groups, subset),
 				Probes:  probes,
 			})
 		}
 	}
-	profile.Thresholds = thresholdProfiles(matrix, rows, origins, byOrigin, groups)
+	profile.Thresholds = thresholdProfiles(matrix, rows, origins, byOrigin, groups, rendered)
 	return profile, nil
 }
 
@@ -123,11 +130,11 @@ func profileWork(rows, groups, probes int) int {
 // (one per distinct pointer and literal value), each row's fact resolved at
 // the pointer and compared by the evaluator's own comparison, so a JSON
 // number or an absent fact -- what §7.4 cannot compare -- sits on no side.
-// Every decimal is read once: the literal once per group, a row's fact once
-// per group, and the nearest value on a side is kept as the number it was
-// read into beside the spelling it was written in, so no retained spelling
-// is read again for the next row.
-func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int, groups []boundaryGroup) []result.ThresholdProfile {
+// Every decimal is read once: the literal by the derivation, when the group
+// was formed; a row's fact once per group; and the nearest value on a side
+// is kept as the number it was read into beside the spelling it was written
+// in, so no retained spelling is read again for the next row.
+func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origins []string, byOrigin map[string][]int, groups []boundaryGroup, rendered map[string]string) []result.ThresholdProfile {
 	if len(groups) == 0 {
 		return nil
 	}
@@ -144,13 +151,15 @@ func thresholdProfiles(matrix Matrix, rows []result.EvaluationCorpusCase, origin
 	}
 	profiles := make([]result.ThresholdProfile, 0, len(groups))
 	for _, group := range groups {
-		literal, ok := parseDecimal(group.literal)
-		if !ok {
-			continue // a boundary the derivation admitted is a decimal; defensively, one that is not places nothing
+		// The literal as the derivation read it, once; a group without one
+		// is a shape the derivation cannot produce, and places nothing.
+		literal := group.number
+		if literal == nil {
+			continue
 		}
 		profile := result.ThresholdProfile{Pointer: capRendered(group.path), Literal: capRendered(group.literal)}
 		for _, origin := range origins {
-			placed := result.ThresholdOrigin{Origin: capRendered(origin)}
+			placed := result.ThresholdOrigin{Origin: rendered[origin]}
 			var nearest, nearestDisagreeing [3]*nearestValue
 			for _, index := range byOrigin[origin] {
 				if !decoded[index] {
@@ -203,13 +212,11 @@ type nearestValue struct {
 	spelling any
 }
 
-// decimalParses counts the decimals the profile reads; a test holds a
-// profile to one reading per fact per boundary and one per literal.
-var decimalParses atomic.Int64
-
-// parseDecimal reads one value through the evaluator's grammar (§7.4), once.
+// parseDecimal reads one value through the evaluator's grammar (§7.4). The
+// evaluator counts every such reading (evaluation.DecimalReadings), which
+// is what holds this profile to one reading of each fact per row per
+// boundary, the literal having been read once when its group was formed.
 func parseDecimal(value any) (*big.Rat, bool) {
-	decimalParses.Add(1)
 	return evaluation.DecimalValue(value)
 }
 

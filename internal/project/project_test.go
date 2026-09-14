@@ -2773,15 +2773,16 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 	if _, failure := matrixProfile(boundary, cases, rows, false, 3); failure == nil || !strings.Contains(failure.Message, "2 rows with an origin against 1 comparison boundaries and 0 coverage probes") {
 		t.Fatalf("the placements count against the budget: %+v", failure)
 	}
-	parses := decimalParses.Load()
+	parses := evaluation.DecimalReadings.Load()
 	if profile, failure := matrixProfile(boundary, cases, rows, false, 4); failure != nil || profile == nil || len(profile.Thresholds) != 1 {
 		t.Fatalf("within the budget the placements are built: %+v %+v", profile, failure)
 	}
-	// Every decimal is read once: the literal, and each row's fact at the
-	// boundary; the two rows sit below it in one origin, so the second is
-	// compared against the first as the number it was read into, and no
-	// spelling is read again.
-	if got := decimalParses.Load() - parses; got != 1+2 {
+	// Every decimal is read once: the literal, when the derivation forms
+	// its group, and each row's fact at the boundary; the two rows sit
+	// below it in one origin, so the second is compared against the first
+	// as the number it was read into, and no spelling is read again. The
+	// evaluator's own count of readings is what says so.
+	if got := evaluation.DecimalReadings.Load() - parses; got != 1+2 {
 		t.Fatalf("a profile reads each decimal once: %d readings for one literal and two facts", got)
 	}
 	// Many rows at the literal choose no nearest by comparison, and a long
@@ -2798,16 +2799,44 @@ func TestMatrixProfileIsBoundedBeforeItIsBuilt(t *testing.T) {
 		"outcomes": []any{map[string]any{"id": "review"}},
 		"rules":    []any{map[string]any{"id": "r", "outcome": "review", "when": map[string]any{"op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "0"}}},
 	}
-	parses = decimalParses.Load()
+	parses = evaluation.DecimalReadings.Load()
 	profile, failure := matrixProfile(zero, many, manyRows, false, MaxProfileWork)
 	if failure != nil {
 		t.Fatal(failure.Message)
 	}
-	if got := decimalParses.Load() - parses; got != 1+51 {
+	if got := evaluation.DecimalReadings.Load() - parses; got != 1+51 {
 		t.Fatalf("fifty-one rows at the literal read fifty-one facts and one literal, not %d", got)
 	}
 	at := profile.Thresholds[0].Origins[0].At
 	if at.Rows != 51 || at.Disagreeing != 50 || at.Nearest != capRendered(strings.Trim(long, `"`)) || at.NearestDisagreeing != "0" {
 		t.Fatalf("at the literal, the first seen is the nearest and the first disagreeing the nearest disagreeing: %+v", at)
+	}
+	// An origin's spelling is rendered once and reused by every entry that
+	// names it: one row under a long origin against three boundaries
+	// renders the origin once, each boundary's pointer and literal, the
+	// nearest value the row is on each boundary, and -- the derivation's
+	// own, once per site as the group is formed -- each site's owner:
+	// thirteen renderings, not one more per boundary for the origin.
+	three := map[string]any{
+		"outcomes": []any{map[string]any{"id": "review"}},
+		"rules": []any{
+			map[string]any{"id": "a", "outcome": "review", "when": map[string]any{"op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "1"}},
+			map[string]any{"id": "b", "outcome": "review", "when": map[string]any{"op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "2"}},
+			map[string]any{"id": "c", "outcome": "review", "when": map[string]any{"op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "3"}},
+		},
+	}
+	origin := strings.Repeat("o", 5000)
+	one := Matrix{Cases: []evaluation.MatrixCase{{ID: "one", Origin: origin, Facts: json.RawMessage(`{"expense":{"amount":"0"}}`), ExpectedDisposition: outcome}}}
+	oneRow := []result.EvaluationCorpusCase{{ID: "one", Origin: origin, Status: "passed"}}
+	textBefore := textRenderings.Load()
+	profile, failure = matrixProfile(three, one, oneRow, false, MaxProfileWork)
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	if got := textRenderings.Load() - textBefore; got != 1+3*2+3+3 {
+		t.Fatalf("the origin is rendered once and reused: %d renderings for one origin, three boundaries, three nearest values and three site owners", got)
+	}
+	if len(profile.Thresholds) != 3 || profile.Thresholds[0].Origins[0].Origin != capRendered(origin) || profile.Agreement[0].Origin != capRendered(origin) {
+		t.Fatalf("the rendered origin names every entry: %+v", profile.Agreement)
 	}
 }
