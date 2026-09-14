@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.20.0 - 2026-09-13
 
 - **A decision record cites the receipts it relied on** (ADR-0033): `experimental evaluate
   --cites <file>`, `experimental graph evaluate --cites <file>` and the MCP `experimental_evaluate`
