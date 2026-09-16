@@ -3,6 +3,7 @@ package carrier
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDuplicateMemberReportsNestedPointer(t *testing.T) {
@@ -241,6 +242,7 @@ func TestPointerEscapesReservedCharacters(t *testing.T) {
 		{name: "empty parts", parts: []string{}, want: ""},
 		{name: "plain path", parts: []string{"rules", "0", "when"}, want: "/rules/0/when"},
 		{name: "reserved characters", parts: []string{"a/b", "c~d"}, want: "/a~1b/c~0d"},
+		{name: "multi-byte characters", parts: []string{"café", "東京"}, want: "/café/東京"},
 		{name: "a literal tilde-one stays recoverable", parts: []string{"~1"}, want: "/~01"},
 		{name: "empty member name", parts: []string{""}, want: "/"},
 	} {
@@ -249,6 +251,20 @@ func TestPointerEscapesReservedCharacters(t *testing.T) {
 				t.Fatalf("Pointer(%#v) = %q, want %q", tt.parts, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPointerLargeMemberCompletesWithinOneSecond(t *testing.T) {
+	member := strings.Repeat("a", DefaultMaxStringBytes)
+	started := time.Now()
+	got := Pointer([]string{member})
+	elapsed := time.Since(started)
+
+	if got != "/"+member {
+		t.Fatal("Pointer did not preserve the large member name")
+	}
+	if elapsed >= time.Second {
+		t.Fatalf("Pointer took %v for a one-megabyte member name, want less than one second", elapsed)
 	}
 }
 
