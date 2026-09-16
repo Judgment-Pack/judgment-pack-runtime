@@ -101,15 +101,6 @@ this runtime compared: store that. It accesses no project, source, credential,
 evaluator, audit record or network. See
 [ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md).
 
-Those bound what one expectation may be, not what one message may carry: this
-server reads a JSON-RPC line of at most 16 MiB, so a full batch of maximal
-expectations need not fit one — 256 of 16 KiB each measure about 24 MiB when
-every character is written as a `\u00XX` escape — and an over-long line is never
-parsed, ending the stdio session with `mcp: input error: bufio.Scanner: token
-too long` and leaving anything queued behind it unanswered, while a reply
-carries the report twice, as `content[0].text` and as `structuredContent`, so a
-batch answered in full comes back about twice the size it was sent.
-
 A stored expectation that a matrix, graph or corpus row already carries is read
 by the same decoder, which now refuses four shapes it accepted before: `reasons`
 missing or null on an outcome, `outcomeId` as `""` or `null` on a non-outcome

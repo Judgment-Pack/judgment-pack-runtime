@@ -157,6 +157,36 @@ func TestExpectationAdmissionArgumentsAndLimits(t *testing.T) {
 			t.Fatalf("bad arguments accepted: %#v", result)
 		}
 	}
+	// Which gate answers, and in what words -- not only that a bad call is
+	// refused. A call wrong in two ways is answered for its shape, because the
+	// shape of the expectations member is settled ahead of the version; and
+	// absent or null is the empty batch the count refuses, not a wrong shape.
+	// Asserting isError alone passes for either answer, so the order and the
+	// two arms of that shape gate are held here by their text.
+	for _, refusal := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"a string batch under a wrong version", map[string]any{"spec_version": "0.1.0-draft", "expectations": "nope"},
+			"Expected spec_version and an array of expectation JSON strings."},
+		{"an object batch under a wrong version", map[string]any{"spec_version": "0.1.0-draft", "expectations": map[string]any{}},
+			"Expected spec_version and an array of expectation JSON strings."},
+		{"a null batch", map[string]any{"spec_version": expectationSpec, "expectations": nil},
+			"An expectation validation call must carry 1–256 expectations."},
+		{"no batch at all", map[string]any{"spec_version": expectationSpec},
+			"An expectation validation call must carry 1–256 expectations."},
+	} {
+		t.Run(refusal.name, func(t *testing.T) {
+			result := expectationCall(t, refusal.args)
+			if result["isError"] != true {
+				t.Fatalf("bad arguments accepted: %#v", result)
+			}
+			if text := result["content"].([]any)[0].(map[string]any)["text"].(string); text != refusal.want {
+				t.Fatalf("refused with %q, want %q", text, refusal.want)
+			}
+		})
+	}
 	// Both sides of every documented bound, written as the literals the ADR, the
 	// tool description and docs/mcp-clients.md state. A bound derived from the
 	// constant it guards moves with a typo; these do not.
