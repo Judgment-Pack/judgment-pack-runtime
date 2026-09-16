@@ -972,20 +972,41 @@ func TestGraphCoverageWitnessesExpectationsOnly(t *testing.T) {
 // either — a refused run produces no disposition.
 func TestGraphCoverageRefusesIllegalWitnesses(t *testing.T) {
 	loaded := fixtureProject(t)
+	legalHeadline := `{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`
 	// The second expectation is one the gate began refusing where the first was
 	// always refused: an empty triggeredBy beside "state": "none" is the absent
 	// member once it is decoded into a Go value, so it witnesses here unless
-	// this derivation reads it through the gate's own raw pass.
-	for name, expectation := range map[string]string{
-		"a reason set an outcome cannot carry": `{"kind":"outcome","outcomeId":"clear","reasons":["unknown"],"handoff":{"state":"none"}}`,
-		"an empty trigger set beside none":     `{"kind":"outcome","outcomeId":"clear","reasons":[],"handoff":{"state":"none","triggeredBy":[]}}`,
+	// this derivation reads it through the gate's own raw pass. The third case
+	// carries that shape in the headline instead, because this derivation reads
+	// two witness sites — the headline and each expectedNodes entry — and either
+	// one can be given a decoder of its own; a case that only ever varies the
+	// node expectation leaves the headline site unpinned.
+	for name, illegal := range map[string]struct {
+		headline string
+		nodes    map[string]json.RawMessage
+		probe    string
+	}{
+		"a reason set an outcome cannot carry": {
+			headline: legalHeadline,
+			nodes:    map[string]json.RawMessage{"screening": json.RawMessage(`{"kind":"outcome","outcomeId":"clear","reasons":["unknown"],"handoff":{"state":"none"}}`)},
+			probe:    "node:screening:outcome:clear",
+		},
+		"an empty trigger set beside none": {
+			headline: legalHeadline,
+			nodes:    map[string]json.RawMessage{"screening": json.RawMessage(`{"kind":"outcome","outcomeId":"clear","reasons":[],"handoff":{"state":"none","triggeredBy":[]}}`)},
+			probe:    "node:screening:outcome:clear",
+		},
+		"an empty trigger set in the headline": {
+			headline: `{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none","triggeredBy":[]}}`,
+			probe:    "node:onboarding:outcome:approve",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			rows := Rows{Cases: []RowCase{{
-				ID:                  "illegal-node-expectation",
+				ID:                  "illegal-expectation",
 				Inputs:              json.RawMessage(happyInputs),
-				ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`),
-				ExpectedNodes:       map[string]json.RawMessage{"screening": json.RawMessage(expectation)},
+				ExpectedDisposition: json.RawMessage(illegal.headline),
+				ExpectedNodes:       illegal.nodes,
 			}, {
 				ID:                 "error-row",
 				Inputs:             json.RawMessage(happyInputs),
@@ -995,10 +1016,20 @@ func TestGraphCoverageRefusesIllegalWitnesses(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure.Message)
 			}
+			derived := false
 			for _, probe := range output.Coverage {
-				if probe.Probe == "node:screening:outcome:clear" && probe.Status == result.MatrixProbeCovered {
+				if probe.Probe != illegal.probe {
+					continue
+				}
+				derived = true
+				if probe.Status == result.MatrixProbeCovered {
 					t.Fatalf("an illegal expectation must not witness: %+v", probe)
 				}
+			}
+			// The probe the row would otherwise have covered has to be on the
+			// sheet, or the case above asserts about nothing.
+			if !derived {
+				t.Fatalf("probe %q is not derived at all: %+v", illegal.probe, output.Coverage)
 			}
 		})
 	}

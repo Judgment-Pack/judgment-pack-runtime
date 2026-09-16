@@ -725,8 +725,11 @@ func TestAStoredExpectationInheritsTheStrictDispositionGate(t *testing.T) {
 	}
 	// Such a row witnesses nothing either: it fails its own comparison, so a
 	// probe it appeared to cover would be covered by a row that can never hold.
+	// The one probe it would have witnessed is the statement — asserting every
+	// probe in the pack is missing would also fail for a second, legal row
+	// somebody later adds to this fixture, which says nothing about the gate.
 	for _, probe := range refused.Packs[0].Coverage {
-		if probe.Status != result.MatrixProbeMissing {
+		if probe.Probe == "outcome:decline-redirect" && probe.Status != result.MatrixProbeMissing {
 			t.Fatalf("a refused expectation witnesses no probe: %+v", probe)
 		}
 	}
