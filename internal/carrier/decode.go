@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -240,24 +241,25 @@ func (p *parser) array(location []string, depth int) ([]any, *Failure) {
 }
 
 func Pointer(parts []string) string {
-	if len(parts) == 0 {
+	l := len(parts)
+	if l == 0 {
 		return ""
 	}
-	value := ""
-	for _, part := range parts {
-		value += "/"
-		for _, char := range part {
-			switch char {
+	var value strings.Builder
+	for i := 0; i < l; i++ {
+		value.WriteByte('/')
+		for _, c := range parts[i] {
+			switch c {
 			case '~':
-				value += "~0"
+				value.WriteString("~0")
 			case '/':
-				value += "~1"
+				value.WriteString("~1")
 			default:
-				value += string(char)
+				value.WriteRune(c)
 			}
 		}
 	}
-	return value
+	return value.String()
 }
 
 func appendLocation(location []string, part string) []string {
