@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.22.0 - 2026-09-16
 
 - **Proposed exact expectations are checked before an authoring client admits them**
   (ADR-0035): the new `experimental_validate_expectations` MCP tool takes 1–256 complete expected
