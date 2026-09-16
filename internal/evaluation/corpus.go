@@ -736,6 +736,15 @@ func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
 	if err := decoder.Decode(&disposition); err != nil {
 		return result.Disposition{}, err
 	}
+	// One value, and nothing after it. Decode reads the first value and stops,
+	// so without this a caller whose bytes did not come through a carrier could
+	// hand the gate a disposition followed by anything at all — and the raw pass
+	// above, which needs the whole text to parse as one object, would have been
+	// skipped for exactly those bytes. The sibling gate for an expected handoff
+	// target refuses trailing data for the same reason.
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return result.Disposition{}, errors.New("§8.3: the disposition carries trailing data after its value")
+	}
 	if _, err := disposition.Canonical(); err != nil {
 		return result.Disposition{}, err
 	}
@@ -743,13 +752,22 @@ func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
 }
 
 // exactDispositionMembers enforces exact §8.3 member spellings and raw presence
-// rules at the disposition and inside its handoff member. A value that is
-// not an object is left to the strict decoder, whose wrong-type message is the
-// better diagnosis.
+// rules at the disposition and inside its handoff member. A value that is a
+// legal JSON value of the wrong type is left to the strict decoder, whose
+// wrong-type message is the better diagnosis; text that is not one JSON value
+// at all is refused here rather than passed on, because the pass below would
+// otherwise be skipped for the one input that most needs it.
 func exactDispositionMembers(raw json.RawMessage) error {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {
-		return nil
+		var wrongType *json.UnmarshalTypeError
+		if errors.As(err, &wrongType) {
+			return nil
+		}
+		return fmt.Errorf("§8.3: the disposition must be one JSON object: %w", err)
+	}
+	if object == nil {
+		return errors.New("§8.3: the disposition must be a JSON object, not null")
 	}
 	if err := memberSpellings(object, []string{"kind", "outcomeId", "reasons", "handoff"}, "the disposition"); err != nil {
 		return err
@@ -762,10 +780,15 @@ func exactDispositionMembers(raw json.RawMessage) error {
 			return fmt.Errorf("§8.3: %s must be present and non-null", name)
 		}
 	}
-	var kind string
-	_ = json.Unmarshal(object["kind"], &kind)
+	// The iff rules below are about presence, and they can only be read against a
+	// kind or state this section admits. A misspelled, wrong-cased or wrong-typed
+	// value is a defect in that member, not in the member whose presence it
+	// governs, so it goes to the decoder and to Canonical's vocabularies, which
+	// name it. Reporting "outcomeId must be present if and only if kind is
+	// outcome" for a kind of "Outcome" sends the fixer to the wrong member.
+	kind, kindKnown := knownValue(object["kind"], "outcome", "not-applicable", "unresolved")
 	_, hasOutcome := object["outcomeId"]
-	if hasOutcome != (kind == "outcome") {
+	if kindKnown && hasOutcome != (kind == "outcome") {
 		return errors.New("§8.3: outcomeId must be present if and only if kind is outcome")
 	}
 	if bytes.Equal(bytes.TrimSpace(object["outcomeId"]), []byte("null")) {
@@ -782,13 +805,23 @@ func exactDispositionMembers(raw json.RawMessage) error {
 	if value, present := handoff["state"]; !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 		return errors.New("§8.3: handoff.state must be present and non-null")
 	}
-	var state string
-	_ = json.Unmarshal(handoff["state"], &state)
+	state, stateKnown := knownValue(handoff["state"], "none", "requested")
 	_, hasTriggers := handoff["triggeredBy"]
-	if hasTriggers != (state == "requested") {
+	if stateKnown && hasTriggers != (state == "requested") {
 		return errors.New("§8.3: handoff.triggeredBy must be present if and only if state is requested")
 	}
 	return nil
+}
+
+// knownValue reads one raw member as a string from a closed §8.3 vocabulary,
+// reporting whether it is one of them. Anything else — a wrong type, a case
+// variant, a value outside the enumeration — is not this function's to diagnose.
+func knownValue(raw json.RawMessage, admitted ...string) (string, bool) {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false
+	}
+	return value, slices.Contains(admitted, value)
 }
 
 func memberSpellings(object map[string]json.RawMessage, known []string, subject string) error {

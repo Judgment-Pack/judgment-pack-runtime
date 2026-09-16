@@ -2,6 +2,47 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Proposed exact expectations are checked before an authoring client admits them**
+  (ADR-0035): the new `experimental_validate_expectations` MCP tool takes 1–256 complete expected
+  §8.3 dispositions as JSON text and reports one indexed finding for each — the runtime's canonical
+  disposition text where the expectation is a legal §8.3 value, and a code and the rule that refused
+  it where it is not. It reaches no pack, project, evaluator, audit record, source, credential or
+  network, and only `0.2.0-draft` is supported. Each input is bounded at 16 KiB, depth 16, 1,024 JSON
+  value nodes and 8 KiB per string; a `JPS-EXPECTATION-LIMIT` finding means the input was not
+  admitted rather than that Core prohibits its meaning, so branch on the code and not the status.
+  A valid finding is necessary and not sufficient: it says the text is a legal disposition, not that
+  any pack can produce it, and not that an outcome id it admits names a declared outcome. Reason and
+  trigger sets are normalized rather than refused, so the canonical text of a valid finding — not the
+  text submitted — is what this runtime compared. The payload carries the usual versioned envelope
+  and `experimental: true`.
+- **The shared disposition decoder holds three representation rules it previously lost**, and one
+  §8.3 rule about the disposition itself. Typed Go decoding cannot tell absent from null from empty,
+  so these were accepted before and are refused now: `reasons` missing or null on an `outcome`
+  result; `outcomeId` present as `""` or `null` on a result whose kind is not `outcome`; and
+  `triggeredBy` present as `[]` or `null` beside `"state": "none"`. Separately, a retained
+  `exception-escalation` reason is a direct handoff request whatever the pack's escalation object
+  says (§8, §8.1), so a disposition that retains it without a `requested` handoff naming it is
+  refused as the unproducible value it is.
+  **Migration:** every reader of an expected disposition inherits these — `packs test` and
+  `experimental_test_packs`, the graph matrix's headline and `expectedNodes` rows through
+  `experimental graph test` and `experimental_test_graphs`, the coverage and profile derivations
+  that witness probes from those rows, and `evaluate-corpus`. A stored row carrying one of these
+  shapes passed before and is reported as a mismatch now, naming the rule; `packs validate` does not
+  flag it, because a matrix loads without decoding its expectations. Correct the stored expectation
+  to an explicit §8.3 value: write `"reasons": []`, drop the `outcomeId` member rather than emptying
+  it, drop `triggeredBy` rather than emptying it, and give a retained `exception-escalation` reason
+  its `"state": "requested"` and a `triggeredBy` naming it. Empty arrays are not wildcards. No
+  bundled corpus, example or fixture changes: both bundled suites and the evaluation corpus pass
+  unchanged, and the evaluator's conformance claim is unaffected and stated, in full and only, in
+  `CONFORMANCE.md`.
+- A defect in `kind` or `handoff.state` is now named where it is. A misspelled, wrong-cased or
+  wrong-typed value beside a member whose presence that value governs was reported as a presence
+  defect in the other member — a `kind` of `"Outcome"` was reported as an `outcomeId` rule. The
+  presence rules now read only a value their section admits, and anything else is reported as the
+  vocabulary or type error it is.
+
 ## 0.21.0 - 2026-09-14
 
 - **A matrix is profiled against its history** (ADR-0034): when any row of a pack's matrix

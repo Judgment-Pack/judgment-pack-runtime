@@ -18,7 +18,10 @@
 // a rehearsal and not a decision. experimental_list_graphs and
 // experimental_get_graph serve the graph convention's inventory and documents
 // read-only (ADR-0029): they carry the experimental marker for their
-// surface's stability, and they evaluate nothing and write nothing. Nothing in this package states a conformance claim: the claim is stated,
+// surface's stability, and they evaluate nothing and write nothing.
+// experimental_validate_expectations checks proposed exact §8.3 dispositions
+// through the same decoder the matrix comparator uses (ADR-0035), reaching no
+// pack, project or evaluator at all: it reads its arguments and nothing else. Nothing in this package states a conformance claim: the claim is stated,
 // in full and only, in CONFORMANCE.md, and the payloads reference it by their
 // own contracts — a successful evaluation or matrix payload carries the
 // reference beside the contract version applied

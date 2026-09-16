@@ -1142,7 +1142,9 @@ func TestMatrixCoverageWitnessesEveryProbeClass(t *testing.T) {
 		{ID: "w-evidence", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("missing-required-evidence")},
 		{ID: "w-unknown", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("unknown")},
 		{ID: "w-conflict", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("conflict")},
-		{ID: "w-escalation", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("exception-escalation")},
+		// A retained exception-escalation reason is a direct request (§8.1), so
+		// the only shape this witness can take is a requested handoff naming it.
+		{ID: "w-escalation", Facts: json.RawMessage(`{}`), ExpectedDisposition: json.RawMessage(`{"kind":"unresolved","reasons":["exception-escalation"],"handoff":{"state":"requested","triggeredBy":["exception-escalation"]}}`)},
 		{ID: "w-no-match", Facts: json.RawMessage(`{}`), ExpectedDisposition: unresolved("no-match")},
 	}}
 	probes := matrixCoverage(pack, matrix)

@@ -89,11 +89,25 @@ unknown arguments, empty/oversized batches, and non-string entries are tool erro
 
 A call accepts 1–256 strings; each is limited to 16 KiB, depth 16, 1,024 JSON
 value nodes and 8 KiB per string. Limit findings use `JPS-EXPECTATION-LIMIT` and
-mean the input was not admitted, not that its meaning violates Core. The tool
-checks only the disposition's local contract. It cannot prove a pack produces
-that disposition, validate business intent, or supply a corrected expectation.
-It accesses no project, source, credential, evaluator, audit record or network.
-See [ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md).
+mean the input was not admitted, not that its meaning violates Core, so branch on
+`code` rather than on `status`. The tool checks only the disposition's local
+contract. A valid finding is necessary and not sufficient: it cannot prove a pack
+produces that disposition — and some valid dispositions are produced by no pack at
+all, because §8's step order rules them out rather than §8.3's grammar — it does
+not hold an `outcomeId` to §5's local-id grammar, and it does not validate
+business intent or supply a corrected expectation. Reason and trigger sets are
+normalized rather than refused, so `canonical`, not the text you sent, is what
+this runtime compared: store that. It accesses no project, source, credential,
+evaluator, audit record or network. See
+[ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md).
+
+A stored expectation that a matrix, graph or corpus row already carries is read
+by the same decoder, which now refuses four shapes it accepted before: `reasons`
+missing or null on an outcome, `outcomeId` as `""` or `null` on a non-outcome
+kind, `triggeredBy` as `[]` or `null` beside `"state": "none"`, and a retained
+`exception-escalation` reason without a `requested` handoff naming it — §8.1
+makes that reason a direct request whatever the pack configures. Such a row is
+reported as a mismatch naming the rule.
 
 ### The project tools
 

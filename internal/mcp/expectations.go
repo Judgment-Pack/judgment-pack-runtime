@@ -6,6 +6,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 const expectationTool = "experimental_validate_expectations"
@@ -16,7 +17,7 @@ const expectationSpec = "0.2.0-draft"
 func expectationToolDefinition() map[string]any {
 	return map[string]any{
 		"name":        expectationTool,
-		"description": "Check proposed exact JPS dispositions before admitting authoring test cases (ADR-0035). This read-only operation uses the same strict disposition decoder as the runtime's matrix comparator. It checks representation and disposition-local constraints, not whether a pack produces the expectation, whether the policy is correct, or whether a declared outcome or handoff agrees with a particular pack. Every input has one indexed valid/invalid result. Invalid expectations remain reported; none are silently dropped. No pack, project, evaluator, audit record, source, credential or network is accessed. Only JPS 0.2.0-draft is supported. Each expectation is JSON text, limited to 16 KiB, depth 16, 1024 nodes and 8 KiB per string; a call carries 1–256 expectations.",
+		"description": "EXPERIMENTAL SURFACE (ADR-0035): check proposed exact JPS dispositions before admitting authoring test cases. This surface may change or be removed without compatibility promise. This read-only operation uses the same strict disposition decoder as the runtime's matrix comparator. It checks representation and disposition-local constraints, not whether a pack produces the expectation, whether the policy is correct, or whether a declared outcome or handoff agrees with a particular pack. A valid finding is therefore necessary, not sufficient: some valid dispositions are reachable by no pack at all, and an outcome id it admits may name no declared outcome. Reason and trigger sets are normalized rather than refused — duplicates and order carry no meaning in a §8.3 set — so the canonical text of a valid finding, not the text submitted, is what this runtime compared. Every input has one indexed valid/invalid result, and an invalid finding carries the code and the rule that refused it; none are silently dropped. A JPS-EXPECTATION-LIMIT finding means the input was not admitted, not that Core prohibits its meaning, so branch on the code rather than the status. No pack, project, evaluator, audit record, source, credential or network is accessed. Only JPS 0.2.0-draft is supported. Each expectation is JSON text, limited to 16 KiB, depth 16, 1024 nodes and 8 KiB per string; a call carries 1–256 expectations.",
 		"inputSchema": map[string]any{
 			"type": "object", "additionalProperties": false,
 			"required": []string{"spec_version", "expectations"},
@@ -27,14 +28,6 @@ func expectationToolDefinition() map[string]any {
 			},
 		},
 	}
-}
-
-type expectationResult struct {
-	Index     int    `json:"index"`
-	Status    string `json:"status"`
-	Canonical string `json:"canonical,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Message   string `json:"message,omitempty"`
 }
 
 func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
@@ -61,10 +54,9 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 			return toolError(fmt.Sprintf("expectations[%d] must be a JSON string.", i))
 		}
 	}
-	status := "valid"
-	results := make([]expectationResult, len(texts))
+	results := make([]result.ExpectationFinding, len(texts))
 	for i, text := range texts {
-		row := expectationResult{Index: i, Status: "invalid", Code: "JPS-EXPECTATION-INVALID"}
+		row := result.ExpectationFinding{Index: i, Status: "invalid", Code: "JPS-EXPECTATION-INVALID"}
 		switch {
 		case len(text) > maxExpectationBytes:
 			row.Code, row.Message = "JPS-EXPECTATION-LIMIT", "The expectation exceeds the 16 KiB limit."
@@ -82,10 +74,7 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 				row.Status, row.Canonical, row.Code = "valid", string(canonical), ""
 			}
 		}
-		if row.Status != "valid" {
-			status = "invalid"
-		}
 		results[i] = row
 	}
-	return toolResult(map[string]any{"status": status, "specVersion": expectationSpec, "results": results})
+	return toolResult(result.NewExpectationReport("mcp "+expectationTool, expectationSpec, results))
 }

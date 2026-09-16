@@ -17,58 +17,127 @@ func expectationCall(t *testing.T, arguments any) map[string]any {
 	return result
 }
 
-func TestExpectationAdmissionContract(t *testing.T) {
+type expectationFixture struct {
+	Name      string
+	Text      string
+	Valid     bool
+	Canonical string
+	Message   string
+}
+
+func expectationFixtures(t *testing.T) []expectationFixture {
+	t.Helper()
 	data, err := os.ReadFile("testdata/expectations.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fixtures []struct {
-		Name  string
-		Text  string
-		Valid bool
-	}
+	var fixtures []expectationFixture
 	if err := json.Unmarshal(data, &fixtures); err != nil {
 		t.Fatal(err)
 	}
+	return fixtures
+}
+
+// expectationRows calls the tool with every text and returns one row per input.
+func expectationRows(t *testing.T, texts []string, wantStatus string) []map[string]any {
+	t.Helper()
+	result := expectationCall(t, map[string]any{"spec_version": expectationSpec, "expectations": texts})
+	if result["isError"] == true {
+		t.Fatalf("invalid assertions are indexed findings, not a failed call: %#v", result)
+	}
+	report := result["structuredContent"].(map[string]any)
+	if report["status"] != wantStatus || report["specVersion"] != expectationSpec {
+		t.Fatalf("aggregate %v for %d inputs, want %q: %#v", report["status"], len(texts), wantStatus, report)
+	}
+	// The versioned envelope every payload this runtime writes carries, so a
+	// later reshape has an outputVersion to move and a client can tell an
+	// experimental payload from a stable one (VERSIONING.md, ADR-0007).
+	if report["outputVersion"] != "2" || report["command"] != "mcp "+expectationTool || report["experimental"] != true {
+		t.Fatalf("the report carries the versioned experimental envelope: %#v", report)
+	}
+	if tool := report["tool"].(map[string]any); tool["name"] != "jpack" {
+		t.Fatalf("the report names the tool that wrote it: %#v", tool)
+	}
+	rows := report["results"].([]any)
+	if len(rows) != len(texts) {
+		t.Fatalf("a case was lost: %d rows for %d inputs", len(rows), len(texts))
+	}
+	out := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		out[i] = row.(map[string]any)
+	}
+	return out
+}
+
+func TestExpectationAdmissionContract(t *testing.T) {
+	fixtures := expectationFixtures(t)
 	texts := make([]string, len(fixtures))
 	for i, fixture := range fixtures {
 		texts[i] = fixture.Text
 	}
-	result := expectationCall(t, map[string]any{"spec_version": expectationSpec, "expectations": texts})
-	if result["isError"] == true {
-		t.Fatalf("invalid assertions are indexed findings: %#v", result)
-	}
-	report := result["structuredContent"].(map[string]any)
-	if report["status"] != "invalid" || report["specVersion"] != expectationSpec {
-		t.Fatal(report)
-	}
-	rows := report["results"].([]any)
-	if len(rows) != len(fixtures) {
-		t.Fatalf("a case was lost: %d", len(rows))
-	}
+	rows := expectationRows(t, texts, "invalid")
 	for i, fixture := range fixtures {
 		t.Run(fixture.Name, func(t *testing.T) {
-			row := rows[i].(map[string]any)
+			row := rows[i]
 			if row["index"] != float64(i) || (row["status"] == "valid") != fixture.Valid {
 				t.Fatal(row)
 			}
 			if fixture.Valid {
-				canonical, ok := row["canonical"].(string)
-				if !ok || !json.Valid([]byte(canonical)) {
-					t.Fatalf("valid expectation has no canonical form: %#v", row)
+				// The canonical text is what a client stores and compares, so it
+				// is asserted byte for byte: member order, sorted sets and
+				// de-duplication are the whole of what "canonical" promises.
+				if row["canonical"] != fixture.Canonical {
+					t.Fatalf("canonical is %q, want %q", row["canonical"], fixture.Canonical)
 				}
-			} else {
-				message, ok := row["message"].(string)
-				if !ok || message == "" || row["code"] != "JPS-EXPECTATION-INVALID" {
-					t.Fatal(row)
+				if _, present := row["code"]; present {
+					t.Fatalf("a valid finding carries no code: %#v", row)
 				}
+				if _, present := row["message"]; present {
+					t.Fatalf("a valid finding carries no message: %#v", row)
+				}
+				return
+			}
+			// An invalid finding must name the rule this fixture is named for.
+			// Without that, a fixture that happens to be invalid for some other
+			// reason stands in for the rule it was written to pin.
+			message, ok := row["message"].(string)
+			if !ok || !strings.Contains(message, fixture.Message) {
+				t.Fatalf("message %q does not name %q", row["message"], fixture.Message)
+			}
+			if row["code"] != "JPS-EXPECTATION-INVALID" {
+				t.Fatal(row)
+			}
+			if _, present := row["canonical"]; present {
+				t.Fatalf("an invalid finding carries no canonical text: %#v", row)
 			}
 		})
 	}
+}
+
+func TestExpectationAdmissionAggregate(t *testing.T) {
+	fixtures := expectationFixtures(t)
+	var valid, invalid string
+	for _, fixture := range fixtures {
+		if fixture.Valid && valid == "" {
+			valid = fixture.Text
+		}
+		if !fixture.Valid && invalid == "" {
+			invalid = fixture.Text
+		}
+	}
 	// Asking only about valid inputs is a valid report, independent of any project.
-	only := expectationCall(t, map[string]any{"spec_version": expectationSpec, "expectations": texts[:5]})
-	if only["structuredContent"].(map[string]any)["status"] != "valid" {
-		t.Fatal(only)
+	for _, row := range expectationRows(t, []string{valid, valid}, "valid") {
+		if row["status"] != "valid" {
+			t.Fatal(row)
+		}
+	}
+	// "The aggregate is valid only when every finding is valid" (ADR-0035), so
+	// the invalid row decides it wherever it sits in the batch.
+	for _, texts := range [][]string{{invalid, valid}, {valid, invalid}} {
+		rows := expectationRows(t, texts, "invalid")
+		if (rows[0]["status"] == "invalid") != (texts[0] == invalid) {
+			t.Fatalf("rows follow their inputs: %#v", rows)
+		}
 	}
 }
 
@@ -85,11 +154,87 @@ func TestExpectationAdmissionArgumentsAndLimits(t *testing.T) {
 			t.Fatalf("bad arguments accepted: %#v", result)
 		}
 	}
-	for _, text := range []string{strings.Repeat(" ", maxExpectationBytes+1), `"` + strings.Repeat("x", 8193) + `"`, strings.Repeat("[", 18) + "0" + strings.Repeat("]", 18), "[" + strings.Repeat("0,", 1024) + "0]"} {
-		result := expectationCall(t, map[string]any{"spec_version": expectationSpec, "expectations": []string{text}})
-		row := result["structuredContent"].(map[string]any)["results"].([]any)[0].(map[string]any)
-		if row["code"] != "JPS-EXPECTATION-LIMIT" {
-			t.Fatal(row)
+	// Both sides of every documented bound, written as the literals the ADR, the
+	// tool description and docs/mcp-clients.md state. A bound derived from the
+	// constant it guards moves with a typo; these do not.
+	padded := func(size int) string {
+		text := `{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`
+		return text[:len(text)-1] + strings.Repeat(" ", size-len(text)) + "}"
+	}
+	nested := func(depth int) string { return strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth) }
+	elements := func(count int) string { return "[" + strings.Repeat("0,", count-1) + "0]" }
+	outcomeOf := func(size int) string {
+		return `{"kind":"outcome","outcomeId":"` + strings.Repeat("x", size) + `","reasons":[],"handoff":{"state":"none"}}`
+	}
+	// "admitted" means decoded and judged as a disposition, whatever the verdict:
+	// a padded disposition and an 8 KiB outcome id are legal §8.3 values, while a
+	// bare nested array is admitted and then refused as a disposition. Only the
+	// oversized inputs are refused for their size.
+	for _, bound := range []struct {
+		name  string
+		text  string
+		admit bool
+		valid bool
+	}{
+		{"16 KiB", padded(16384), true, true},
+		{"16 KiB and one byte", padded(16385), false, false},
+		{"depth 16", nested(16), true, false},
+		{"depth 17", nested(17), false, false},
+		{"1,024 nodes", elements(1023), true, false},
+		{"1,025 nodes", elements(1024), false, false},
+		{"an 8 KiB string", outcomeOf(8192), true, true},
+		{"an 8 KiB string and one byte", outcomeOf(8193), false, false},
+	} {
+		t.Run(bound.name, func(t *testing.T) {
+			aggregate := "invalid"
+			if bound.valid {
+				aggregate = "valid"
+			}
+			row := expectationRows(t, []string{bound.text}, aggregate)[0]
+			if limited := row["code"] == "JPS-EXPECTATION-LIMIT"; limited == bound.admit {
+				t.Fatalf("admitted=%v at the documented bound: %#v", bound.admit, row)
+			}
+		})
+	}
+	// A full batch is carried, and one more is refused as a whole call.
+	texts := make([]string, maxExpectations)
+	for i := range texts {
+		texts[i] = `{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`
+	}
+	if rows := expectationRows(t, texts, "valid"); len(rows) != 256 {
+		t.Fatalf("a 256-expectation call is carried: %d", len(rows))
+	}
+}
+
+// TestExpectationToolIsAdvertisedAsItBehaves holds the advertised schema to the
+// arguments the tool actually accepts: a model that builds a call from the
+// schema must not be told a batch may be larger, or a member optional, than the
+// tool admits.
+func TestExpectationToolIsAdvertisedAsItBehaves(t *testing.T) {
+	schema := expectationToolDefinition()["inputSchema"].(map[string]any)
+	if schema["additionalProperties"] != false {
+		t.Fatal(schema)
+	}
+	required := schema["required"].([]string)
+	if len(required) != 2 || required[0] != "spec_version" || required[1] != "expectations" {
+		t.Fatal(required)
+	}
+	properties := schema["properties"].(map[string]any)
+	version := properties["spec_version"].(map[string]any)
+	if enum := version["enum"].([]string); len(enum) != 1 || enum[0] != expectationSpec {
+		t.Fatal(version)
+	}
+	expectations := properties["expectations"].(map[string]any)
+	if expectations["minItems"] != 1 || expectations["maxItems"] != maxExpectations {
+		t.Fatal(expectations)
+	}
+	if items := expectations["items"].(map[string]any); items["type"] != "string" {
+		t.Fatal(items)
+	}
+	description := expectationToolDefinition()["description"].(string)
+	for _, phrase := range []string{"EXPERIMENTAL SURFACE (ADR-0035)", "without compatibility promise", "necessary, not sufficient"} {
+		if !strings.Contains(description, phrase) {
+			t.Fatalf("the description states %q", phrase)
 		}
 	}
 }
