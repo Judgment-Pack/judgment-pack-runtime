@@ -411,7 +411,8 @@ type Disposition struct {
 // members), the three iff rules a Go struct cannot express — outcomeId is present
 // iff kind is "outcome", reasons is empty iff kind is "outcome", and triggeredBy
 // is present iff the handoff state is "requested" — the exact reason set of a
-// not-applicable result, and triggeredBy being a subset of reasons. The one place
+// not-applicable result, triggeredBy being a subset of reasons, and the direct
+// request a retained exception-escalation reason is. The one place
 // canonicalization lives is therefore also the place that holds a caller to them.
 // The engine builds no illegal value; an exported type can be handed one.
 //
@@ -460,9 +461,15 @@ var (
 		"unknown",
 		"conflict",
 		"no-match",
-		"exception-escalation",
+		ReasonExceptionEscalation,
 	}
 )
+
+// ReasonExceptionEscalation is the one reason of §8.3 that is a direct handoff
+// request rather than a trigger-selected one (§8, §8.1). It is named here
+// because the disposition's own validity depends on it, and not only the
+// engine's accounting of what it produced.
+const ReasonExceptionEscalation = "exception-escalation"
 
 // validate holds one disposition to every §8.3 invariant that is about the
 // disposition alone: the three closed vocabularies, the three presence iff rules,
@@ -517,6 +524,19 @@ func (d Disposition) validate() error {
 		if !slices.Contains(reasons, trigger) {
 			return fmt.Errorf("§8.3: handoff.triggeredBy must be a subset of reasons; %q is not a retained reason", trigger)
 		}
+	}
+	// The other direction of that membership, for one reason only. §8 records
+	// exception-escalation exactly when a true exception with effect escalate
+	// made a direct request, §8.1 makes that request regardless of the trigger
+	// list — "including a direct exception request made when the pack carries no
+	// escalation object" — and §8.3 puts exception-escalation in triggeredBy
+	// whenever that request was made. So a retained exception-escalation reason
+	// is a requested handoff naming itself, for every pack: no escalation
+	// configuration can make it anything else, which is what keeps this beside
+	// the other rules here rather than with the pack-dependent ones the engine
+	// owns. With the presence iff above, this also settles the state.
+	if slices.Contains(reasons, ReasonExceptionEscalation) != slices.Contains(d.Handoff.TriggeredBy, ReasonExceptionEscalation) {
+		return errors.New("§8.3: a retained \"exception-escalation\" reason is a direct request, so handoff.state must be \"requested\" and handoff.triggeredBy must name it (§8.1)")
 	}
 	return nil
 }
@@ -1316,5 +1336,56 @@ func NewOperationalResult(command, status, code, message string) OperationalErro
 		Diagnostics: []Diagnostic{
 			ErrorDiagnostic(code, "operation", "", message),
 		},
+	}
+}
+
+// ExpectationFinding is one proposed expectation's admission finding (ADR-0035).
+// A valid finding carries the canonical §8.3 text the runtime would compare
+// against; an invalid one carries the code and the message that says which rule
+// refused it. Neither carries the other's members, so a reader can tell the two
+// apart without consulting the aggregate.
+type ExpectationFinding struct {
+	Index     int    `json:"index"`
+	Status    string `json:"status"`
+	Canonical string `json:"canonical,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
+// ExpectationReport is one admission check of proposed exact expectations
+// (ADR-0035): one finding per input, in the order they were given, and an
+// aggregate that is valid only when every finding is. It carries the same
+// versioned envelope as every other payload this runtime writes, so a later
+// change that breaks machine-output compatibility has an OutputVersion to move
+// (VERSIONING.md), and it carries Experimental like every other payload on this
+// runtime's experimental surface.
+//
+// Status is about admission, never about reachability: a valid finding says the
+// text is a legal §8.3 disposition, not that any pack can produce it.
+type ExpectationReport struct {
+	OutputVersion string               `json:"outputVersion"`
+	Tool          Tool                 `json:"tool"`
+	Command       string               `json:"command"`
+	Status        string               `json:"status"`
+	Experimental  bool                 `json:"experimental"`
+	SpecVersion   string               `json:"specVersion"`
+	Results       []ExpectationFinding `json:"results"`
+}
+
+func NewExpectationReport(command, specVersion string, findings []ExpectationFinding) ExpectationReport {
+	status := "valid"
+	for _, finding := range findings {
+		if finding.Status != "valid" {
+			status = "invalid"
+		}
+	}
+	return ExpectationReport{
+		OutputVersion: OutputVersion,
+		Tool:          CurrentTool(),
+		Command:       command,
+		Status:        status,
+		Experimental:  true,
+		SpecVersion:   specVersion,
+		Results:       findings,
 	}
 }

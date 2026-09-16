@@ -1,0 +1,266 @@
+[
+  {
+    "name": "outcome",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[]}"
+  },
+  {
+    "name": "unknown without handoff",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"unresolved\",\"reasons\":[\"unknown\"]}"
+  },
+  {
+    "name": "requested handoff",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]},\"kind\":\"unresolved\",\"reasons\":[\"unknown\"]}"
+  },
+  {
+    "name": "set order is immaterial",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\",\"conflict\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"unresolved\",\"reasons\":[\"conflict\",\"unknown\"]}"
+  },
+  {
+    "name": "duplicate reasons are one set member",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\",\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"unresolved\",\"reasons\":[\"unknown\"]}"
+  },
+  {
+    "name": "duplicate triggers are one set member",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\",\"unknown\"]}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]},\"kind\":\"unresolved\",\"reasons\":[\"unknown\"]}"
+  },
+  {
+    "name": "not applicable",
+    "text": "{\"kind\":\"not-applicable\",\"reasons\":[\"not-applicable\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"not-applicable\",\"reasons\":[\"not-applicable\"]}"
+  },
+  {
+    "name": "not applicable with a requested handoff",
+    "text": "{\"kind\":\"not-applicable\",\"reasons\":[\"not-applicable\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"not-applicable\"]}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"not-applicable\"]},\"kind\":\"not-applicable\",\"reasons\":[\"not-applicable\"]}"
+  },
+  {
+    "name": "direct exception escalation",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"exception-escalation\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"exception-escalation\"]}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"exception-escalation\"]},\"kind\":\"unresolved\",\"reasons\":[\"exception-escalation\"]}"
+  },
+  {
+    "name": "direct escalation beside a trigger-selected reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"conflict\",\"exception-escalation\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"exception-escalation\",\"conflict\"]}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"conflict\",\"exception-escalation\"]},\"kind\":\"unresolved\",\"reasons\":[\"conflict\",\"exception-escalation\"]}"
+  },
+  {
+    "name": "reasonless unresolved",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "reasons is empty if and only if kind is \"outcome\""
+  },
+  {
+    "name": "unknown kind",
+    "text": "{\"kind\":\"pending\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "§8.3: kind must be \"outcome\", \"not-applicable\", or \"unresolved\"; got \"pending\""
+  },
+  {
+    "name": "unknown reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"guess\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "\"guess\" is not a reason the disposition admits"
+  },
+  {
+    "name": "outcome retaining reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "reasons is empty if and only if kind is \"outcome\""
+  },
+  {
+    "name": "unresolved with outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":\"allow\"}",
+    "valid": false,
+    "message": "outcomeId must be present if and only if kind is outcome"
+  },
+  {
+    "name": "unresolved with empty outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":\"\"}",
+    "valid": false,
+    "message": "outcomeId must be present if and only if kind is outcome"
+  },
+  {
+    "name": "unresolved with null outcome",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":null}",
+    "valid": false,
+    "message": "outcomeId must be present if and only if kind is outcome"
+  },
+  {
+    "name": "not applicable wrong reason",
+    "text": "{\"kind\":\"not-applicable\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "the reason set of a not-applicable result is exactly {\"not-applicable\"}"
+  },
+  {
+    "name": "handoff trigger outside reasons",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"conflict\"]}}",
+    "valid": false,
+    "message": "handoff.triggeredBy must be a subset of reasons; \"conflict\" is not a retained reason"
+  },
+  {
+    "name": "handoff with empty triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[]}}",
+    "valid": false,
+    "message": "handoff.triggeredBy is present, and non-empty, if and only if state is \"requested\""
+  },
+  {
+    "name": "handoff none with null triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\",\"triggeredBy\":null}}",
+    "valid": false,
+    "message": "handoff.triggeredBy must be present if and only if state is requested"
+  },
+  {
+    "name": "handoff none with empty triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\",\"triggeredBy\":[]}}",
+    "valid": false,
+    "message": "handoff.triggeredBy must be present if and only if state is requested"
+  },
+  {
+    "name": "escalation reason without a requested handoff",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"exception-escalation\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "a retained \"exception-escalation\" reason is a direct request"
+  },
+  {
+    "name": "escalation reason outside the triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"exception-escalation\",\"unknown\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"unknown\"]}}",
+    "valid": false,
+    "message": "a retained \"exception-escalation\" reason is a direct request"
+  },
+  {
+    "name": "unknown member",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"},\"extra\":true}",
+    "valid": false,
+    "message": "the disposition carries a member this runtime does not know: \"extra\""
+  },
+  {
+    "name": "wrong case member",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"},\"Kind\":\"outcome\"}",
+    "valid": false,
+    "message": "a spelling that differs from it only in case is refused"
+  },
+  {
+    "name": "wrong case handoff member",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"State\":\"none\"}}",
+    "valid": false,
+    "message": "the disposition's handoff member carries a member this runtime does not know"
+  },
+  {
+    "name": "missing kind",
+    "text": "{\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "§8.3: kind must be present and non-null"
+  },
+  {
+    "name": "null kind",
+    "text": "{\"kind\":null,\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "§8.3: kind must be present and non-null"
+  },
+  {
+    "name": "missing reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "§8.3: reasons must be present and non-null"
+  },
+  {
+    "name": "null reasons",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":null,\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "§8.3: reasons must be present and non-null"
+  },
+  {
+    "name": "missing handoff",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[]}",
+    "valid": false,
+    "message": "§8.3: handoff must be present and non-null"
+  },
+  {
+    "name": "null handoff",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":null}",
+    "valid": false,
+    "message": "§8.3: handoff must be present and non-null"
+  },
+  {
+    "name": "missing handoff state",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{}}",
+    "valid": false,
+    "message": "§8.3: handoff.state must be present and non-null"
+  },
+  {
+    "name": "missing outcomeId",
+    "text": "{\"kind\":\"outcome\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "outcomeId must be present if and only if kind is outcome"
+  },
+  {
+    "name": "null outcomeId",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":null,\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "§8.3: outcomeId must not be null"
+  },
+  {
+    "name": "wrong case kind beside an outcomeId",
+    "text": "{\"kind\":\"Outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "§8.3: kind must be \"outcome\", \"not-applicable\", or \"unresolved\"; got \"Outcome\""
+  },
+  {
+    "name": "wrong type kind beside an outcomeId",
+    "text": "{\"kind\":5,\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "Disposition.kind of type string"
+  },
+  {
+    "name": "wrong case state beside triggers",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"Requested\",\"triggeredBy\":[\"unknown\"]}}",
+    "valid": false,
+    "message": "§8.3: handoff.state must be \"requested\" or \"none\"; got \"Requested\""
+  },
+  {
+    "name": "duplicate member",
+    "text": "{\"kind\":\"unresolved\",\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "duplicated"
+  },
+  {
+    "name": "unpaired surrogate",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"a\\ud800\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "message": "unpaired surrogate escape"
+  },
+  {
+    "name": "trailing data",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}} {}",
+    "valid": false,
+    "message": "trailing data"
+  },
+  {
+    "name": "malformed JSON",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}",
+    "valid": false,
+    "message": "JSON"
+  },
+  {
+    "name": "not an object",
+    "text": "null",
+    "valid": false,
+    "message": "the disposition must be a JSON object, not null"
+  }
+]
