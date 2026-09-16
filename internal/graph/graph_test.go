@@ -751,6 +751,60 @@ func TestGraphTestJudgesRowsByteExactly(t *testing.T) {
 	}
 }
 
+// A graph row states dispositions in two places, and both read them through
+// the shared §8.3 gate rather than a decoder of their own. An empty
+// triggeredBy beside "state": "none" is the case that separates the gate from
+// typed decoding — the member survives decoding as the absent member it is
+// not — so it is the one that catches a reader given its own decoder, in
+// either position, with the evaluation package's own tests still green.
+//
+// The rows go through the carrier, because that is how a project's rows
+// arrive: the carrier admits the shape (it checks member spellings, not
+// disposition validity) and the verdict is the row's alone.
+func TestGraphRowsInheritTheStrictDispositionGate(t *testing.T) {
+	loaded := fixtureProject(t)
+	const rule = "handoff.triggeredBy must be present if and only if state is requested"
+	run := func(t *testing.T, headlineHandoff, nodeHandoff string) result.GraphTestRow {
+		t.Helper()
+		document := `{"graphMatrixVersion":"1","cases":[{"id":"r","inputs":` + happyInputs +
+			`,"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":` + headlineHandoff + `}` +
+			`,"expectedNodes":{"screening":{"kind":"outcome","outcomeId":"clear","reasons":[],"handoff":` + nodeHandoff + `}}}]}`
+		rows, failure := LoadRows([]byte(document), "rows.json")
+		if failure != nil {
+			t.Fatalf("the carrier admits the row: %s", failure.Message)
+		}
+		output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		return output.Rows[0]
+	}
+
+	// The control: this is what the fixture graph produces for these inputs, in
+	// both positions, so every refusal below is the empty trigger set alone.
+	if row := run(t, `{"state":"none"}`, `{"state":"none"}`); row.Status != "passed" {
+		t.Fatalf("the legal row holds in both positions: %+v", row)
+	}
+	t.Run("the headline position", func(t *testing.T) {
+		row := run(t, `{"state":"none","triggeredBy":[]}`, `{"state":"none"}`)
+		if row.Status != "mismatch" || !strings.Contains(row.Detail, "defect in the row") {
+			t.Fatalf("the headline expectation is the row's own defect: %+v", row)
+		}
+		if !strings.Contains(row.Detail, rule) {
+			t.Fatalf("the detail must name the rule the row broke: %q", row.Detail)
+		}
+	})
+	t.Run("an expectedNodes entry", func(t *testing.T) {
+		row := run(t, `{"state":"none"}`, `{"state":"none","triggeredBy":[]}`)
+		if row.Status != "mismatch" || !strings.Contains(row.Detail, `node "screening"`) {
+			t.Fatalf("the node expectation is refused, naming the node: %+v", row)
+		}
+		if !strings.Contains(row.Detail, rule) {
+			t.Fatalf("the detail must name the rule the row broke: %q", row.Detail)
+		}
+	})
+}
+
 // A row expecting a refusal passes exactly when the run is refused with that
 // class (and phase, when named) — the same discipline a pack matrix's error
 // rows have.
@@ -918,26 +972,66 @@ func TestGraphCoverageWitnessesExpectationsOnly(t *testing.T) {
 // either — a refused run produces no disposition.
 func TestGraphCoverageRefusesIllegalWitnesses(t *testing.T) {
 	loaded := fixtureProject(t)
-	rows := Rows{Cases: []RowCase{{
-		ID:                  "illegal-node-expectation",
-		Inputs:              json.RawMessage(happyInputs),
-		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`),
-		ExpectedNodes: map[string]json.RawMessage{
-			"screening": json.RawMessage(`{"kind":"outcome","outcomeId":"clear","reasons":["unknown"],"handoff":{"state":"none"}}`),
+	legalHeadline := `{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`
+	// The second expectation is one the gate began refusing where the first was
+	// always refused: an empty triggeredBy beside "state": "none" is the absent
+	// member once it is decoded into a Go value, so it witnesses here unless
+	// this derivation reads it through the gate's own raw pass. The third case
+	// carries that shape in the headline instead, because this derivation reads
+	// two witness sites — the headline and each expectedNodes entry — and either
+	// one can be given a decoder of its own; a case that only ever varies the
+	// node expectation leaves the headline site unpinned.
+	for name, illegal := range map[string]struct {
+		headline string
+		nodes    map[string]json.RawMessage
+		probe    string
+	}{
+		"a reason set an outcome cannot carry": {
+			headline: legalHeadline,
+			nodes:    map[string]json.RawMessage{"screening": json.RawMessage(`{"kind":"outcome","outcomeId":"clear","reasons":["unknown"],"handoff":{"state":"none"}}`)},
+			probe:    "node:screening:outcome:clear",
 		},
-	}, {
-		ID:                 "error-row",
-		Inputs:             json.RawMessage(happyInputs),
-		ExpectedErrorClass: result.ClassPackNotConformant,
-	}}}
-	output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
-	if failure != nil {
-		t.Fatal(failure.Message)
-	}
-	for _, probe := range output.Coverage {
-		if probe.Probe == "node:screening:outcome:clear" && probe.Status == result.MatrixProbeCovered {
-			t.Fatalf("an illegal expectation must not witness: %+v", probe)
-		}
+		"an empty trigger set beside none": {
+			headline: legalHeadline,
+			nodes:    map[string]json.RawMessage{"screening": json.RawMessage(`{"kind":"outcome","outcomeId":"clear","reasons":[],"handoff":{"state":"none","triggeredBy":[]}}`)},
+			probe:    "node:screening:outcome:clear",
+		},
+		"an empty trigger set in the headline": {
+			headline: `{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none","triggeredBy":[]}}`,
+			probe:    "node:onboarding:outcome:approve",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rows := Rows{Cases: []RowCase{{
+				ID:                  "illegal-expectation",
+				Inputs:              json.RawMessage(happyInputs),
+				ExpectedDisposition: json.RawMessage(illegal.headline),
+				ExpectedNodes:       illegal.nodes,
+			}, {
+				ID:                 "error-row",
+				Inputs:             json.RawMessage(happyInputs),
+				ExpectedErrorClass: result.ClassPackNotConformant,
+			}}}
+			output, failure := Test(loaded, newEngine(t), fixtureDocument(t), "g", "r", rows, Options{Command: "test"})
+			if failure != nil {
+				t.Fatal(failure.Message)
+			}
+			derived := false
+			for _, probe := range output.Coverage {
+				if probe.Probe != illegal.probe {
+					continue
+				}
+				derived = true
+				if probe.Status == result.MatrixProbeCovered {
+					t.Fatalf("an illegal expectation must not witness: %+v", probe)
+				}
+			}
+			// The probe the row would otherwise have covered has to be on the
+			// sheet, or the case above asserts about nothing.
+			if !derived {
+				t.Fatalf("probe %q is not derived at all: %+v", illegal.probe, output.Coverage)
+			}
+		})
 	}
 }
 
