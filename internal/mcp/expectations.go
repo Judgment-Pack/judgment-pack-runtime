@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -34,22 +35,39 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 	if message := exactMembers(expectationTool, rawArgs, "spec_version", "expectations"); message != "" {
 		return toolError(message)
 	}
+	const notABatch = "Expected spec_version and an array of expectation JSON strings."
+	// The batch is held as raw bytes, not as a slice of elements: decoding the
+	// elements here would build every one of them -- a maximal frame carries
+	// millions of short ones -- before the count that refuses the call is
+	// known, so the refusal would cost more than the work it refuses. Whether
+	// the member is an array at all is still settled here, so a batch of the
+	// wrong shape is refused where it always was, ahead of the version.
 	var args struct {
-		SpecVersion  string            `json:"spec_version"`
-		Expectations []json.RawMessage `json:"expectations"`
+		SpecVersion  string          `json:"spec_version"`
+		Expectations json.RawMessage `json:"expectations"`
 	}
-	if err := json.Unmarshal(rawArgs, &args); err != nil {
-		return toolError("Expected spec_version and an array of expectation JSON strings.")
+	if err := json.Unmarshal(rawArgs, &args); err != nil || !isBatchArray(args.Expectations) {
+		return toolError(notABatch)
 	}
 	if args.SpecVersion != expectationSpec {
 		return toolError("Expectation validation supports exactly spec_version 0.2.0-draft.")
 	}
-	if len(args.Expectations) == 0 || len(args.Expectations) > maxExpectations {
+	count, counted := countBatch(args.Expectations)
+	if !counted {
+		return toolError(notABatch)
+	}
+	if count == 0 || count > maxExpectations {
 		return toolError("An expectation validation call must carry 1–256 expectations.")
 	}
+	// Within the count bound the batch is small enough to hold, so its elements
+	// are read the way every other tool reads its arguments.
+	var elements []json.RawMessage
+	if err := json.Unmarshal(args.Expectations, &elements); err != nil {
+		return toolError(notABatch)
+	}
 	// Reject malformed arguments as a whole, before reporting any disposition.
-	texts := make([]string, len(args.Expectations))
-	for i, raw := range args.Expectations {
+	texts := make([]string, len(elements))
+	for i, raw := range elements {
 		if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &texts[i]) != nil {
 			return toolError(fmt.Sprintf("expectations[%d] must be a JSON string.", i))
 		}
@@ -77,4 +95,43 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 		results[i] = row
 	}
 	return toolResult(result.NewExpectationReport("mcp "+expectationTool, expectationSpec, results))
+}
+
+// isBatchArray reports whether the expectations member is an array, or is
+// absent or null -- both of which are the empty batch the count bound refuses,
+// as they were when a typed slice read them.
+func isBatchArray(batch json.RawMessage) bool {
+	text := bytes.TrimSpace(batch)
+	return len(text) == 0 || text[0] == '[' || bytes.Equal(text, []byte("null"))
+}
+
+// countBatch counts the elements of the batch, keeping none of them: one
+// buffer is reused for every element, so the count costs the bytes of the
+// largest element and not of the array. It stops at the first element past the
+// bound, because nothing beyond the count is decided for a call that is
+// refused for its count. The bool is false only for bytes that are not an
+// array of complete values -- unreachable through the server, which has
+// already held the whole message to being valid JSON.
+func countBatch(batch json.RawMessage) (int, bool) {
+	text := bytes.TrimSpace(batch)
+	if len(text) == 0 || bytes.Equal(text, []byte("null")) {
+		return 0, true
+	}
+	decoder := json.NewDecoder(bytes.NewReader(text))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('[') {
+		return 0, false
+	}
+	count := 0
+	element := make(json.RawMessage, 0, 64)
+	for decoder.More() {
+		count++
+		if count > maxExpectations {
+			return count, true
+		}
+		element = element[:0]
+		if err := decoder.Decode(&element); err != nil {
+			return 0, false
+		}
+	}
+	return count, true
 }

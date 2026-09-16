@@ -5,6 +5,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
 func expectationCall(t *testing.T, arguments any) map[string]any {
@@ -203,6 +206,51 @@ func TestExpectationAdmissionArgumentsAndLimits(t *testing.T) {
 	}
 	if rows := expectationRows(t, texts, "valid"); len(rows) != 256 {
 		t.Fatalf("a 256-expectation call is carried: %d", len(rows))
+	}
+}
+
+// TestExpectationBatchIsCountedBeforeItIsHeld pins what the refusal of an
+// over-large batch costs, not only how it is worded. One frame can carry
+// millions of short elements, so a bound read off a materialized array makes
+// the call that is refused outright the most expensive one the server answers.
+// The measure is allocations rather than bytes or wall time, because the count
+// of allocations does not move with the machine: an implementation that holds
+// the array pays one allocation per element sent, and one that counts first
+// pays for the 256 it is allowed to hold.
+func TestExpectationBatchIsCountedBeforeItIsHeld(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(engine, conformance.NewRunner(engine))
+	const elements = 1 << 20
+	var call strings.Builder
+	call.WriteString(`{"spec_version":"` + expectationSpec + `","expectations":[0`)
+	for i := 1; i < elements; i++ {
+		call.WriteString(",0")
+	}
+	call.WriteString("]}")
+	arguments := json.RawMessage(call.String())
+
+	var answer any
+	allocations := testing.AllocsPerRun(1, func() { answer = server.toolValidateExpectations(arguments) })
+
+	// The refusal itself is unchanged: same message, and still a tool error and
+	// not an indexed finding. Nothing past the count is decided, so the
+	// elements are never held to being strings.
+	result, ok := answer.(map[string]any)
+	if !ok || result["isError"] != true {
+		t.Fatalf("an over-large batch is a tool error: %#v", answer)
+	}
+	if text := result["content"].([]map[string]any)[0]["text"]; text != "An expectation validation call must carry 1–256 expectations." {
+		t.Fatalf("the count refusal reads %q", text)
+	}
+	// Far above what counting to 257 costs (about 1,100 here, most of it the
+	// 256 elements the bound does allow) and far below one allocation per
+	// element sent (1,048,640 when the array is built first): only an
+	// implementation that holds what it refuses reaches this number.
+	if allocations > 8192 {
+		t.Fatalf("refusing %d elements took %.0f allocations; the count is read before the batch is held", elements, allocations)
 	}
 }
 
