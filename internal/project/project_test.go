@@ -683,6 +683,72 @@ func TestMatrixRowsAreComparedByCanonicalBytesAndErrorClass(t *testing.T) {
 	}
 }
 
+// §8.3's presence rules are about the raw text a project stored, and typed
+// decoding cannot recover them: an empty triggeredBy beside "state": "none"
+// reaches the canonicalizer as the absent member it is not, so only the shared
+// gate's raw pass can tell the two apart. This is where a person meets that
+// gate — a mismatch on their own row — and the gate is inherited rather than
+// this reader's own, so a reader given a decoder of its own would re-admit the
+// shape here with the evaluation package's tests still green.
+//
+// The detail names the rule, not the member's value: what is wrong is that the
+// member is there at all beside this state, and a fixer told only "triggeredBy"
+// would go looking for a bad trigger.
+func TestAStoredExpectationInheritsTheStrictDispositionGate(t *testing.T) {
+	pack := string(packFixture(t))
+	facts := `{"request":{"type":"data-access","completeness":"complete","appropriateness":"hard-fail","embargoedInformationToUnauthorizedRecipients":false}}`
+	evidence := `{"intake-form":"present","sponsor-endorsement":"present"}`
+	matrix := func(handoff string) string {
+		return `{"matrixVersion":"1","cases":[
+		  {"id":"hard-fail","facts":` + facts + `,"evidenceAvailability":` + evidence + `,
+		   "expectedDisposition":{"kind":"outcome","outcomeId":"decline-redirect","reasons":[],"handoff":` + handoff + `}}
+		]}`
+	}
+	config := `{"configVersion":"1","packs":{"a":{"path":"packs/a.json","matrix":"packs/a.matrix.json"}}}`
+	run := func(handoff string) result.PackTest {
+		t.Helper()
+		configPath := writeProject(t, config, map[string]string{"packs/a.json": pack, "packs/a.matrix.json": matrix(handoff)})
+		output, failure := mustLoad(t, configPath).Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		return output
+	}
+
+	refused := run(`{"state":"none","triggeredBy":[]}`)
+	if refused.Status != "mismatch" || refused.Summary.Mismatched != 1 {
+		t.Fatalf("an expectation the gate refuses is a mismatch: %+v", refused.Packs[0].Rows)
+	}
+	row := refused.Packs[0].Rows[0]
+	if !strings.Contains(row.Detail, "handoff.triggeredBy must be present if and only if state is requested") {
+		t.Fatalf("the detail must name the rule the row broke: %q", row.Detail)
+	}
+	// Such a row witnesses nothing either: it fails its own comparison, so a
+	// probe it appeared to cover would be covered by a row that can never hold.
+	for _, probe := range refused.Packs[0].Coverage {
+		if probe.Status != result.MatrixProbeMissing {
+			t.Fatalf("a refused expectation witnesses no probe: %+v", probe)
+		}
+	}
+
+	// The same row without the member is the disposition the pack produces, and
+	// it both passes and witnesses — so the refusal above is the empty trigger
+	// set and nothing else about this row.
+	passing := run(`{"state":"none"}`)
+	if passing.Status != "passed" || passing.Summary.Passed != 1 {
+		t.Fatalf("the same row without the member holds: %+v", passing.Packs[0].Rows)
+	}
+	witnessed := false
+	for _, probe := range passing.Packs[0].Coverage {
+		if probe.Probe == "outcome:decline-redirect" && probe.Status == result.MatrixProbeCovered {
+			witnessed = true
+		}
+	}
+	if !witnessed {
+		t.Fatalf("the legal expectation witnesses its outcome: %+v", passing.Packs[0].Coverage)
+	}
+}
+
 // The escalation target lives outside the disposition (§8.3), so no comparison
 // of dispositions can see a change to it. This is Study 013's holdout cell h02,
 // registered adversarially by that study's cross-vendor reviewer: a pack
@@ -1003,14 +1069,22 @@ func TestMatrixCoverageRefusesIllegalWitnesses(t *testing.T) {
 		"rules":           []any{map[string]any{"id": "r1", "outcome": "allow"}},
 		"fallbackOutcome": "allow",
 	}
-	illegal := Matrix{Cases: []evaluation.MatrixCase{{
-		ID:                  "outcome-with-reasons",
-		ExpectedDisposition: json.RawMessage(`{"kind":"outcome","outcomeId":"allow","reasons":["unknown"],"handoff":{"state":"none"}}`),
-	}}}
-	for _, probe := range matrixCoverage(pack, illegal) {
-		if probe.Status != result.MatrixProbeMissing {
-			t.Fatalf("an illegal expectation witnesses nothing: %+v", probe)
-		}
+	// The second shape is one the gate began refusing where the first was
+	// always refused: an empty triggeredBy beside "state": "none" survives
+	// typed decoding as the absent member, so only the raw pass separates them
+	// — and the witness gate inherits that pass or it does not have it.
+	for name, expectation := range map[string]string{
+		"outcome-with-reasons": `{"kind":"outcome","outcomeId":"allow","reasons":["unknown"],"handoff":{"state":"none"}}`,
+		"empty-trigger-set":    `{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none","triggeredBy":[]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			illegal := Matrix{Cases: []evaluation.MatrixCase{{ID: name, ExpectedDisposition: json.RawMessage(expectation)}}}
+			for _, probe := range matrixCoverage(pack, illegal) {
+				if probe.Status != result.MatrixProbeMissing {
+					t.Fatalf("an illegal expectation witnesses nothing: %+v", probe)
+				}
+			}
+		})
 	}
 	legal := Matrix{Cases: []evaluation.MatrixCase{{
 		ID:                  "plain-allow",
