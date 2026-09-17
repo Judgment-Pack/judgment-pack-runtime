@@ -131,4 +131,5 @@ authority, and following it confers no conformance status on anything.
 | [0032](0032-let-a-graph-row-assert-the-handoff-target.md) | Let a graph row assert the handoff target                                       | accepted |
 | [0033](0033-a-record-cites-the-receipts-it-relied-on.md) | A decision record cites the receipts it relied on, as given                     | accepted |
 | [0034](0034-profile-a-matrix-against-its-history.md) | Profile a matrix against its history: agreement by origin, values at each threshold, rows that cite receipts; never gated | accepted |
-| [0035](0035-validate-proposed-expectations-before-admission.md) | Validate proposed exact expectations before authoring admission | accepted |
+| [0035](0035-validate-proposed-expectations-before-admission.md) | Validate proposed exact expectations before authoring admission | accepted; reachability-finding deferral discharged by [0036](0036-report-pack-independent-unreachable-expectations.md) |
+| [0036](0036-report-pack-independent-unreachable-expectations.md) | Report an expectation no pack can reach under its own code, in the admission tool alone | proposed |

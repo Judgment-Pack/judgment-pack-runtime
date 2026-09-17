@@ -90,16 +90,34 @@ unknown arguments, empty/oversized batches, and non-string entries are tool erro
 A call accepts 1–256 strings; each is limited to 16 KiB, depth 16, 1,024 JSON
 value nodes and 8 KiB per string. Limit findings use `JPS-EXPECTATION-LIMIT` and
 mean the input was not admitted, not that its meaning violates Core, so branch on
-`code` rather than on `status`. The tool checks only the disposition's local
-contract. A valid finding is necessary and not sufficient: it cannot prove a pack
-produces that disposition — and some valid dispositions are produced by no pack at
-all, because §8's step order rules them out rather than §8.3's grammar — it does
-not hold an `outcomeId` to §5's local-id grammar, and it does not validate
+`code` rather than on `status`.
+
+Three shapes that §8.3's grammar admits are reported under a third code,
+`JPS-EXPECTATION-UNREACHABLE` (ADR-0036): an `unresolved` result retaining
+`not-applicable`, which §8 step 1 produces only under kind `not-applicable`;
+`no-match` beside any other reason, which §8 records only at step 10, after every
+step that records another reason has already produced `unresolved`; and an
+`outcomeId` outside §5's local-id grammar `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, a
+string no conforming pack can declare. Sending
+`{"kind":"unresolved","reasons":["not-applicable"],"handoff":{"state":"none"}}`
+returns that code with the step it names. The code means no pack can produce the
+expectation, so it is the expectation and not the candidate that must change —
+here, kind `not-applicable`. The check runs after the §8.3 grammar gate, so an
+input that is both malformed and unreachable is reported for the grammar defect
+under `JPS-EXPECTATION-INVALID`; only an input that is legal §8.3 and unreachable
+gets the new code. An unreachable entry carries no `canonical`: it is not text to
+store.
+
+A valid finding is still necessary and not sufficient: it cannot prove *your*
+pack produces that disposition, because pack-dependent reachability is not
+checked — an admitted `outcomeId` may name no declared outcome of your pack, and
+a handoff may be one your pack does not configure — and it does not validate
 business intent or supply a corrected expectation. Reason and trigger sets are
 normalized rather than refused, so `canonical`, not the text you sent, is what
 this runtime compared: store that. It accesses no project, source, credential,
 evaluator, audit record or network. See
-[ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md).
+[ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md) and
+[ADR-0036](adr/0036-report-pack-independent-unreachable-expectations.md).
 
 A stored expectation that a matrix, graph or corpus row already carries is read
 by the same decoder, which now refuses four shapes it accepted before: `reasons`
