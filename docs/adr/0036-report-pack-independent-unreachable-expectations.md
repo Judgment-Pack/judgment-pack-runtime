@@ -170,11 +170,15 @@ to `unresolved` and changing nothing else leaves it decoding and makes
 `evaluate-corpus` answer 19/20, with that detail and no other. The costs are
 different ones, and two of them decide it. The refusal would move from the
 comparison to the decode: a decode refusal naming the reachability rule, raised
-before any evaluation runs and by every reader of a stored expectation —
-including the ones that only derive and never compare — in place of a mismatch
-naming the bytes that differ. That is a compatibility cost on rows that are legal
-§8.3 today, and at the same time a worse diagnosis, because a reader that only
-derives coverage would refuse a row it was never going to compare.
+by every reader of a stored expectation — including the ones that only derive
+and never compare — in place of a mismatch naming the bytes that differ. Where
+it is raised depends on the reader. A pack-matrix or corpus row and a graph's
+headline expectation are decoded before the row is evaluated, so there the
+refusal would come before any evaluation runs; a graph node's expectation is
+decoded only after the graph has run, so there it would come beside the
+completed trace. That is a compatibility cost on rows that are legal §8.3 today,
+and at the same time a worse diagnosis, because a reader that only derives
+coverage would refuse a row it was never going to compare.
 
 The third cost is a coverage loss, and it is a migration rather than a
 derivation an author cannot recover — which is why it is not the cost that
