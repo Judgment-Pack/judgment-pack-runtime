@@ -116,16 +116,16 @@ so a client that sends one restarts the server rather than waits for a reply.
 This tool's reply is bounded by neither of those limits and can be larger than
 the call that asked for it, because the report is carried twice, once as
 `content[0].text` and once as `structuredContent`, and each valid entry carries
-its canonical text: that same batch, escaped only where JSON requires it, is a
-4,895,138-byte call — well inside the line bound — answered by 10.7 MiB, 2.29
-times what it sent. The ratio is the construction's, not a constant: canonical
-text can be shorter than what was sent — an expectation padded with whitespace
-loses the padding — so a reply can also be smaller than its call, as a short
-disposition padded to the bound is answered by less than it sent. Size the reply
-from what is sent, not from the bound; this tool bounds nothing on the way out.
-Where a reply on this surface is bounded, the bound refuses rather than
-truncates: `experimental_test_packs` and `experimental_test_graphs` refuse a
-marshaled report over 16 MiB
+its canonical text: 256 expectations each naming an outcome id of 8,192 letters,
+escaped only where JSON requires it, are a 2,120,866-byte call answered by
+4.08 MiB, 2.02 times what it sent. The ratio is the construction's, not a
+constant: canonical text can be shorter than what was sent — an expectation
+padded with whitespace loses the padding — so a reply can also be smaller than
+its call, as a short disposition padded to the bound is answered by less than it
+sent. Size the reply from what is sent, not from the bound; this tool bounds
+nothing on the way out. Where a reply on this surface is bounded, the bound
+refuses rather than truncates: `experimental_test_packs` and
+`experimental_test_graphs` refuse a marshaled report over 16 MiB
 ([ADR-0021](adr/0021-run-the-declared-matrix-over-mcp.md)), and
 `experimental_list_graphs` refuses an inventory whose bytes read and identities
 echoed would pass its 8 MiB budget.
