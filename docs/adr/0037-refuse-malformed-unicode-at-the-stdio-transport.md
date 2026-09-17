@@ -148,7 +148,15 @@ Three further determinations:
 - **A notification carrying such bytes is answered too.** A parse error is answered under
   `null` whatever the line would have been, because whether it carries an `id` is a fact about
   a request this runtime never read (JSON-RPC §5). That is the existing branch's behaviour and
-  it stays consistent with it.
+  it stays consistent with it. It is also why a null-`id` refusal cannot be attributed by
+  counting outstanding requests, and the Compatibility bullet below states the rule that
+  follows: measured on this branch,
+  `{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"note":"\ud800"}}}`
+  followed by `{"jsonrpc":"2.0","id":99,"method":"ping"}` answers the refusal under `null` and
+  then the `ping` under 99 — one request outstanding, and that request the one that succeeded.
+  On `d891b05` the notification drew no response at all, so a client following a rule that
+  attributes a null-`id` error to the request in flight would fail the only request that was
+  answered.
 
 Two levels of the same escape remain distinct, and both are refused, by different code for
 different reasons. An escape written **in the message itself** — anywhere in the JSON-RPC line,
@@ -175,16 +183,20 @@ one level down by the carrier.
   "method":"ping"}` was answered as an ordinary result and is now refused; and
   `{"a":"x\x80`, defective both ways, answered `Message is not valid JSON.` and now answers
   `Message is not valid UTF-8 JSON.` A client that correlates strictly by `id` sees a null-id
-  parse error where an id-bearing error used to come back, and a null-id error is uncorrelated:
-  JSON-RPC §5 answers under null whenever the request's id could not be read — for a parse error
-  and for an invalid request alike — and supplies no rule tying such an answer to the request the
-  client wrote last. A client with one request outstanding can attribute the refusal to it; a
-  client that pipelines cannot, from the `id` alone, and must not fail its most recently written
-  request on the strength of a null-id error. The sequence every refusal test sends
-  (`internal/mcp/server_test.go:1041`) is why: the malformed line and then a valid `ping` under
-  `id: 99`, both written before anything is read, and the refusal comes back under null while the
-  `ping` is answered under 99 — so failing the last-written request would fail the one request
-  that succeeded and leave the refused one outstanding.
+  parse error where an id-bearing error used to come back, and a null-`id` error names no
+  request: JSON-RPC §5 answers under null whenever the request's id could not be read — for a
+  parse error and for an invalid request alike — and supplies no rule tying such an answer to
+  anything the client sent. A client may attribute such a refusal to one of its messages only
+  when it knows that no other message it sent could have earned it — a notification included,
+  since a notification carrying either defect is refused under `null` exactly as a request is,
+  so having one request outstanding does not make the refusal that request's. Otherwise the
+  error stays uncorrelated, and no client may fail a request on the strength of it. The
+  sequences the refusal tests send (`internal/mcp/server_test.go:1084`) are why: a malformed
+  line and then a valid `ping` under `id: 99`, both written before anything is read, answer as
+  the refusal under null and the `ping` under 99 — so failing the last-written request would
+  fail the one request that succeeded and leave the refused one outstanding; and when the
+  malformed line is a `notifications/initialized` notification, the `ping` is the only request
+  there was, and it is the one that succeeded.
   The two refusals differ in what they ask of a client. A raw invalid byte was never valid UTF-8,
   and [MCP's stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
   requires UTF-8, so *that* refusal changes nothing a conforming client sends. An unpaired
@@ -237,7 +249,11 @@ one level down by the carrier.
   four lines carrying the defect outside any argument — in a method name as an escape and as a
   raw byte, in a string `id`, and in a line that is not an object — each refused the same way,
   so narrowing either check to lines that carry tool arguments fails a test rather than
-  passing silently. Negative controls hold the other half: a
+  passing silently — as do the doubly-defective line and the two notification lines, which
+  carry no arguments either. A `notifications/initialized` notification carrying a lone escape,
+  and one carrying a raw `0x80`, are each refused under a null id with the `ping` behind them
+  still answered under 99, which is what holds the attribution rule above: the one request in
+  that sequence is the one that succeeded. Negative controls hold the other half: a
   well-formed pair as an escape and as literal UTF-8, and a literal U+FFFD character, are all
   admitted and answered normally, and the pair survives into an expectation's canonical text.
   One control is U+10FFFF, the largest scalar value there is and one of the 1,024
