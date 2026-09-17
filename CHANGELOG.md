@@ -2,6 +2,34 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **An expectation no pack can reach is reported under its own finding code** (ADR-0036):
+  `experimental_validate_expectations` now answers `JPS-EXPECTATION-UNREACHABLE`, beside a message
+  quoting the rule, for the three shapes §8.3's grammar admits and §8's step order or §5's identifier
+  grammar rule out for every conforming pack — an `unresolved` result retaining `not-applicable`,
+  which §8 step 1 produces only under kind `not-applicable`; `no-match` beside any other reason,
+  which §8 records only at step 10, after every step that records another reason has already produced
+  `unresolved`; and an `outcomeId` outside `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`, a string no conforming
+  pack can declare. The code means the expectation and not the candidate has to change, so branch on
+  the code and not the status, as `JPS-EXPECTATION-LIMIT` already asks. It is not a third `status` and
+  not a new member; the aggregate rule is unchanged, and an unreachable entry carries no `canonical`,
+  because it is not text to store. The check runs after the §8.3 grammar gate: an input that is both
+  malformed and unreachable is reported for its grammar defect under `JPS-EXPECTATION-INVALID`, and
+  only an input that is legal §8.3 and unreachable gets the new code. A valid finding is still
+  necessary and not sufficient — pack-dependent reachability, an outcome a particular pack declares
+  or a handoff it configures, is not checked and needs a pack this tool never sees.
+  **Migration:** an expectation of one of those three shapes was reported `valid` before and is
+  reported `invalid` under `JPS-EXPECTATION-UNREACHABLE` now; correct the expectation, which the
+  message names the rule for. Nothing stored or evaluated changes, because no pack produced any of
+  these shapes: the shared disposition decoder is untouched, and so are `packs test`,
+  `experimental_test_packs`, the graph matrix rows, the coverage and profile derivations that witness
+  probes from those rows, and `evaluate-corpus` — an `unresolved` row retaining `not-applicable`
+  still decodes, still witnesses the step-1 halt the coverage derivation reads it as, and is still
+  compared exactly as before. No bundled artifact, corpus, example or conformance fixture changes —
+  the new fixtures are this runtime's own MCP tests — and the evaluator's conformance claim is
+  untouched and stated, in full and only, in `CONFORMANCE.md`.
+
 ## 0.22.0 - 2026-09-16
 
 - **Proposed exact expectations are checked before an authoring client admits them**

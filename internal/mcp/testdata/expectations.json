@@ -60,6 +60,24 @@
     "canonical": "{\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"conflict\",\"exception-escalation\"]},\"kind\":\"unresolved\",\"reasons\":[\"conflict\",\"exception-escalation\"]}"
   },
   {
+    "name": "no match alone",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"no-match\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"unresolved\",\"reasons\":[\"no-match\"]}"
+  },
+  {
+    "name": "duplicate no match is one set member and still alone",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"no-match\",\"no-match\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"unresolved\",\"reasons\":[\"no-match\"]}"
+  },
+  {
+    "name": "hyphenated outcome id",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"needs-human-review\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": true,
+    "canonical": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"needs-human-review\",\"reasons\":[]}"
+  },
+  {
     "name": "reasonless unresolved",
     "text": "{\"kind\":\"unresolved\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
     "valid": false,
@@ -262,5 +280,73 @@
     "text": "null",
     "valid": false,
     "message": "the disposition must be a JSON object, not null"
+  },
+  {
+    "name": "unresolved retaining not-applicable",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"not-applicable\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "no evaluation produces an unresolved result retaining that reason"
+  },
+  {
+    "name": "unresolved retaining not-applicable beside another reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\",\"not-applicable\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "no evaluation produces an unresolved result retaining that reason"
+  },
+  {
+    "name": "unresolved retaining both not-applicable and no-match is reported at step 1",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"not-applicable\",\"no-match\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "no evaluation produces an unresolved result retaining that reason"
+  },
+  {
+    "name": "no match beside another reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"no-match\",\"unknown\"],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "no evaluation produces \"no-match\" beside another reason"
+  },
+  {
+    "name": "no match beside a triggering reason",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"no-match\",\"conflict\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[\"conflict\"]}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "no evaluation produces \"no-match\" beside another reason"
+  },
+  {
+    "name": "outcome id outside the local-id grammar",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"Allow\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "\"Allow\" is a string no conforming pack can declare as an outcome id"
+  },
+  {
+    "name": "outcome id with a separator the grammar does not admit",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"needs_human_review\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "\"needs_human_review\" is a string no conforming pack can declare as an outcome id"
+  },
+  {
+    "name": "outcome id with a trailing hyphen",
+    "text": "{\"kind\":\"outcome\",\"outcomeId\":\"allow-\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}",
+    "valid": false,
+    "code": "JPS-EXPECTATION-UNREACHABLE",
+    "message": "\"allow-\" is a string no conforming pack can declare as an outcome id"
+  },
+  {
+    "name": "malformed and unreachable is reported for the grammar defect",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"not-applicable\"],\"handoff\":{\"state\":\"requested\",\"triggeredBy\":[]}}",
+    "valid": false,
+    "message": "handoff.triggeredBy is present, and non-empty, if and only if state is \"requested\""
+  },
+  {
+    "name": "an unadmitted outcome id under a non-outcome kind is a grammar defect",
+    "text": "{\"kind\":\"unresolved\",\"reasons\":[\"unknown\"],\"handoff\":{\"state\":\"none\"},\"outcomeId\":\"Allow\"}",
+    "valid": false,
+    "message": "outcomeId must be present if and only if kind is outcome"
   }
 ]
