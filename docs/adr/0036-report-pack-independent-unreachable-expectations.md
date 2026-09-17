@@ -290,12 +290,15 @@ than only documented.
   which locates each finding inside the payload rather than re-serializing one of
   its own, and asserts every figure twice: once derived from the message and the
   escaping rule, so a changed escaping fails it, and once against the literal
-  written here, so a reworded sentence fails it. A fourth figure is a client's to
-  allow for and is not one of the three, because it is not a finding: the text
+  written here, so a reworded sentence fails it. A fourth size is not one of the
+  three, and no bound is stated for it, because it is not a finding: the text
   block is itself a JSON string in the response, so each escape inside it is
-  escaped once more, and the whole block reaches 57,848 bytes on the wire for a
-  one-expectation call — the same figure under both worst identifiers, at seven
-  bytes per character — and grows with every other row the batch carries.
+  escaped once more, and it grows with every other row the batch carries. For a
+  one-expectation call the test measures it at 57,848 bytes under both of the
+  identifiers above, at seven bytes per character — a figure for those two
+  identifiers, not the largest one row can reach: an identifier chosen for that
+  extra layer, such as one of backslashes, which `%q` doubles and each JSON
+  layer doubles again, makes the block larger.
 - **Validation:** native wire tests, in the shape ADR-0035 established. Each new
   fixture in `internal/mcp/testdata/expectations.json` is named for the rule it
   pins, states the `message` fragment the finding must contain, and now states the
