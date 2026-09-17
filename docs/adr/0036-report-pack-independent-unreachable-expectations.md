@@ -104,15 +104,32 @@ expected-disposition schema states it once more at `$defs/localId`, which
 `$defs/disposition` names for `outcomeId` — so a move would be caught by that
 schema and by the conformance corpora, not only by reading four files.
 
-**Not a third status, and not a new member.** A third `status` value would break
-every reader that branches on `valid` versus anything else, including this
-runtime's own aggregate rule, and would make "did this pass?" a three-way question
-for a payload whose aggregate stays two-way. A `reachable` boolean would put a
-second, silently defaulted axis on a finding whose meaning is already carried by
-one string, and a client that did not read the new member would treat an
-unreachable row as a plain §8.3 defect — the same failure as doing nothing. The
-code carries it instead, exactly as `JPS-EXPECTATION-LIMIT` carries "not admitted,
-rather than prohibited by Core". Clients branch on `code`.
+**Not a third status, and not a new member.** The objection is not that a third
+value would break this runtime's own readers. `NewExpectationReport` reads
+`if finding.Status != "valid" { status = "invalid" }`, so a row carrying
+`unreachable` would already aggregate to `invalid`; and a client branching on
+`valid` versus anything else would take the refusal branch it already has. The
+objection is the contract and the dispatch. ADR-0035 wrote two statuses down —
+"the aggregate is `valid` only when every finding is valid" — and
+`result.ExpectationFinding` gives a valid and an invalid finding disjoint
+members, so "a reader can tell the two apart without consulting the aggregate";
+`docs/mcp-clients.md` describes exactly those two entry shapes, the valid one
+carrying `canonical` and the invalid one a `code` and a `message`. A third
+status would have to declare which of those two member sets it carries, and
+would carry no member the code does not carry already. ADR-0035 also established
+with `JPS-EXPECTATION-LIMIT` that a refusal *class* is told apart by `code` and
+never by `status`; a second mechanism for the same question is one a client has
+to choose between. And the readers a third value does break are the ones that
+switch on `status` exhaustively rather than on `valid`-versus-else — the shape
+the disjoint-member contract invites, because the two arms read different members
+— which have no arm for it and fail closed or open by their default. An unknown
+`code` cannot do that: it arrives on a row whose `status` already says `invalid`.
+A `reachable` boolean would put a second, silently defaulted axis on a finding
+whose meaning is already carried by one string, and a client that did not read
+the new member would treat an unreachable row as a plain §8.3 defect — the same
+failure as doing nothing. The code carries it instead, exactly as
+`JPS-EXPECTATION-LIMIT` carries "not admitted, rather than prohibited by Core".
+Clients branch on `code`.
 
 **No `canonical`.** An unreachable row carries none. `result.ExpectationFinding`
 makes a valid and an invalid finding carry disjoint members — "Neither carries the
@@ -139,10 +156,28 @@ spelling decodes and must mean the same halt here." `internal/project`'s tests p
 that spelling as a distinct table case, `not-applicable-as-reason`, carrying
 `{"kind":"unresolved","reasons":["not-applicable"],"handoff":{"state":"none"}}`
 under a comment reading "The same halt spelled as an unresolved carrying the
-not-applicable reason". Refusing it in the decoder would delete a witness the
-coverage derivation needs and turn an author's generous spelling into a mismatch
-in `packs test`, `experimental graph test` and `evaluate-corpus`. The distinction
-is real rather than convenient: the decoder answers "is this a §8.3 disposition?",
+not-applicable reason".
+
+What moving the rule into the decoder would cost is not a passing row turned
+failing. A stored row spelled that way already fails its comparison today.
+`internal/evaluation/resolve.go` records the `not-applicable` reason on the line
+before it disposes under kind `not-applicable`, and nowhere else, so no
+evaluation produces that reason under `unresolved`; the row comparator compares
+canonical bytes — `if outcome.Actual != outcome.Expected` — and reports "The
+canonical disposition bytes differ." That was measured rather than reasoned:
+changing the bundled `not-applicable-request-type` corpus case's expected `kind`
+to `unresolved` and changing nothing else leaves it decoding and makes
+`evaluate-corpus` answer 19/20, with that detail and no other. The costs are
+different ones, and they are real. The refusal would move from the comparison to
+the decode: a decode refusal naming the reachability rule, raised before any
+evaluation runs and by every reader of a stored expectation — including the ones
+that only derive and never compare — in place of a mismatch naming the bytes that
+differ. And `internal/project.DecodeWitness` returns no witness for a text that
+does not decode, so the step-1 witness that comment deliberately admits would
+disappear, taking with it the applicability-stage coverage the row contributes:
+a derivation loss rather than a comparison loss, and the one an author cannot
+recover by rewording anything. The distinction is real rather than convenient:
+the decoder answers "is this a §8.3 disposition?",
 which a stored row must be; the tool answers "can any pack produce it?", which
 only a *proposed* row has to be. The three rules are therefore stated once, in the
 one place whose question they answer.
@@ -201,10 +236,26 @@ than only documented.
   string already bounded at 8 KiB. An offending `outcomeId` is quoted back to the
   caller that sent it and to nobody else, and it is quoted whole rather than
   truncated, exactly as the §8.3 refusals beside it quote an unadmitted kind or
-  reason: `%q` expands a string already bounded at 8 KiB by at most four
-  characters per byte, so one message stays under 32 KiB, and truncating only the
-  new one would make two refusals in the same response disagree about whether the
-  author gets to see what they sent.
+  reason; truncating only the new one would make two refusals in the same
+  response disagree about whether the author gets to see what they sent. The
+  echo is bounded, and the bound is neither 32 KiB nor one number: a decoded
+  message and a serialized finding are different sizes and a consumer sizes a
+  limit against the second. `carrier.Limits`'s `MaxStringBytes` is measured on
+  the *decoded* string and the 16 KiB input bound on the JSON text, so the
+  largest identifier admitted is 8,192 bytes, and the character that reaches the
+  most expansion under `%q` while still fitting both bounds is U+007F: one byte
+  decoded, one byte of JSON text, four bytes quoted. A maximal identifier of
+  8,192 of them arrives in 8,265 bytes of text, quotes to 32,770 bytes, and sits
+  inside a fixed sentence of 166 bytes, so the decoded message reaches 32,936
+  bytes — over 32,768, under 33 KiB. The finding is larger again once
+  serialized, because JSON escapes each of the 8,192 backslashes `%q` introduced
+  and the four quotation marks: 41,212 bytes, under 41 KiB. Both figures are
+  measured against the message template itself by
+  `TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase`, so rewording the
+  sentence moves them here too. One multiplier is left for a client to allow for
+  and is not counted above: `toolResult` carries the report twice, as
+  `structuredContent` and as a text block that escapes those backslashes a
+  second time.
 - **Validation:** native wire tests, in the shape ADR-0035 established. Each new
   fixture in `internal/mcp/testdata/expectations.json` is named for the rule it
   pins, states the `message` fragment the finding must contain, and now states the
@@ -226,11 +277,18 @@ than only documented.
   description-to-behaviour test is extended to hold the tool's advertised text to
   naming the new code, each class it reports and the order sentence whole, to
   compare the advertised code against the code the tool emits, and to compare the
-  advertised grammar against the compiled pattern the tool applies. Each guard was
-  mutation-checked: each of the three checks deleted, the order reversed in the
-  code and separately inverted in the advertised text, the two overlapping arms
-  swapped, the code dropped, and the no-canonical decision neutralized, each
-  against the test paired with it.
+  advertised grammar against the compiled pattern the tool applies. One further
+  test sends the maximally escaped identifier the carrier admits and holds the
+  two sizes the Security and privacy consequence states — the decoded message and
+  the serialized finding — to exact figures, one derived from the message template
+  and one written as the documented literal, so a reworded sentence fails against
+  the documented number and a changed escaping fails against the derived one; a
+  one-character-longer identifier is held to the string limit beside it, which is
+  what makes the measured case the worst one. Each guard was mutation-checked:
+  each of the three checks deleted, the order reversed in the code and separately
+  inverted in the advertised text, the two overlapping arms swapped, the code
+  dropped, the no-canonical decision neutralized, and the message template
+  lengthened, each against the test paired with it.
 
 Material impact is public-surface (a new finding code on an advertised MCP tool)
 and documented-claim (the tool description, `docs/mcp-clients.md` and ADR-0035's
@@ -242,6 +300,11 @@ repository's existing review regime.
 
 - [ADR-0035](0035-validate-proposed-expectations-before-admission.md), whose
   Authority consequence states the gap and defers this finding to the tool.
-- `internal/mcp/expectations.go` (`unreachableExpectation`, `localIdentifier`),
-  `internal/result/result.go` (`ExpectationFinding`, `ExpectationReport`).
+- `internal/mcp/expectations.go` (`unreachableExpectation`, `localIdentifier`,
+  `unreachableOutcomeIDRule`), `internal/result/result.go`
+  (`ExpectationFinding`, `ExpectationReport`, `NewExpectationReport`).
+- `internal/evaluation/resolve.go` and `internal/evaluation/corpus.go` for where a
+  stored `unresolved` retaining `not-applicable` is refused today, and
+  `internal/project/coverage.go` (`DecodeWitness`) for the witness a decoder rule
+  would remove.
 - JPS Core `0.2.0-draft` §5, §8 steps 1, 5, 8 and 10, and §8.3.
