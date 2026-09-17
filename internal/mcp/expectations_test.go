@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -197,6 +198,85 @@ func TestUnreachableExpectationIsAnInvalidFindingOfItsOwn(t *testing.T) {
 		if (rows[0]["status"] == "invalid") != (texts[0] == unreachable) {
 			t.Fatalf("rows follow their inputs: %#v", rows)
 		}
+	}
+}
+
+// TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase measures the bound the §5
+// message's echo actually has. ADR-0036's Security and privacy consequence
+// states the two figures this test measures — the decoded message and the
+// serialized finding — so a consumer that sizes a limit against them is reading
+// numbers a test holds, and rewording the sentence around the identifier moves
+// both of them here.
+//
+// The worst case is not the longest identifier but the most escaped one, and the
+// two limits it has to pass are measured on different bytes.
+// carrier.Limits{MaxStringBytes: 8192} is measured on the DECODED string —
+// internal/carrier/decode.go compares len(typed), the Go string after JSON
+// unescaping, against it — while the 16 KiB input bound is measured on the JSON
+// text. U+007F is the character that satisfies both at the largest expansion
+// %q can reach: one byte decoded, one byte of JSON text, and four bytes under
+// %q (a backslash, x, 7 and f). So 8,192 of them is the largest identifier
+// admitted — at the 8 KiB string limit rather than over it, in 8,265 bytes of
+// text. A backslash or a double quote expands only two bytes under %q and costs
+// two bytes of JSON text, so 8,192 of either would exceed 16 KiB before reaching
+// the string limit; an escaped control character reaches four bytes under %q but
+// costs six bytes of JSON text; and a non-printable multi-byte rune such as
+// U+0085 writes six bytes under %q for two decoded bytes, so it reaches the
+// string limit in half as many runes and 24,576 bytes of %q.
+func TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase(t *testing.T) {
+	const characters = 8192
+	identifier := strings.Repeat("", characters)
+	text := `{"kind":"outcome","outcomeId":"` + identifier + `","reasons":[],"handoff":{"state":"none"}}`
+	if len(text) != 8265 {
+		t.Fatalf("the expectation text is %d bytes, want 8265", len(text))
+	}
+	row := expectationRows(t, []string{text}, "invalid")[0]
+	if row["code"] != "JPS-EXPECTATION-UNREACHABLE" {
+		t.Fatalf("an identifier outside §5's grammar is unreachable however it is spelled: %#v", row)
+	}
+	// One character more is refused for the string limit, in 8,266 bytes of text
+	// that the 16 KiB bound admits: that is what makes 8,192 the largest
+	// identifier this message can ever have to quote.
+	over := `{"kind":"outcome","outcomeId":"` + identifier + "" + `","reasons":[],"handoff":{"state":"none"}}`
+	if refused := expectationRows(t, []string{over}, "invalid")[0]; refused["code"] != "JPS-EXPECTATION-LIMIT" {
+		t.Fatalf("8,193 decoded bytes is over the 8 KiB string limit: %#v", refused)
+	}
+	message, ok := row["message"].(string)
+	if !ok {
+		t.Fatalf("the finding names the rule that refused it: %#v", row)
+	}
+	// Derived from the template rather than guessed: the sentence with the verb
+	// removed, plus the two quotation marks %q adds, plus four bytes for each of
+	// the 8,192 characters it escapes.
+	if want := len(unreachableOutcomeIDRule) - len("%q") + 2 + 4*characters; len(message) != want {
+		t.Fatalf("the decoded message is %d bytes; the template gives %d", len(message), want)
+	}
+	// And against the figure ADR-0036 states, which the derivation above cannot
+	// hold on its own: it moves with the sentence, and the documented number does
+	// not. 32,936 bytes is over 32,768 and under 33 KiB.
+	if len(message) != 32936 {
+		t.Fatalf("the documented decoded bound is 32,936 bytes; this message is %d", len(message))
+	}
+	// On the wire the finding is larger again, because JSON escapes every
+	// backslash %q introduced. 32 KiB is the wrong number to size a limit
+	// against in both directions, which is why both figures are stated.
+	if row["status"] != "invalid" || row["index"] != float64(0) {
+		t.Fatalf("the finding measured here is the row the tool returned: %#v", row)
+	}
+	if _, present := row["canonical"]; present {
+		t.Fatalf("an unreachable expectation is not text a client stores: %#v", row)
+	}
+	encoded, err := json.Marshal(result.ExpectationFinding{Index: 0, Status: "invalid",
+		Code: "JPS-EXPECTATION-UNREACHABLE", Message: message})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const envelope = `{"index":0,"status":"invalid","code":"JPS-EXPECTATION-UNREACHABLE","message":""}`
+	if want := len(envelope) + len(message) + strings.Count(message, `\`) + strings.Count(message, `"`); len(encoded) != want {
+		t.Fatalf("the serialized finding is %d bytes; escaping the message in the envelope gives %d", len(encoded), want)
+	}
+	if len(encoded) != 41212 {
+		t.Fatalf("the documented serialized bound is 41,212 bytes; this finding is %d", len(encoded))
 	}
 }
 

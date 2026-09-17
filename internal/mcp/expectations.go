@@ -127,6 +127,16 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 // for outcomeId.
 var localIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
 
+// unreachableOutcomeIDRule is class 3's message, with the offending identifier
+// quoted into it by %q. It is a named constant because the size of that echo is
+// a documented bound (ADR-0036, Security and privacy) and the bound is derived
+// from this text rather than asserted beside it: the sentence is 166 bytes with
+// the verb removed, the largest identifier the carrier admits expands to 32,770
+// bytes under %q -- 8,192 decoded bytes of U+007F, four bytes each -- so the
+// decoded message reaches 32,936 bytes and the serialized finding 41,212, both
+// measured by TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase.
+const unreachableOutcomeIDRule = `§5: "Local object identifiers are non-empty ASCII strings matching ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", so %q is a string no conforming pack can declare as an outcome id.`
+
 // unreachableExpectation names the rule that puts a legal §8.3 disposition
 // beyond every conforming pack, or returns "" when none does (ADR-0036).
 //
@@ -154,7 +164,7 @@ func unreachableExpectation(disposition result.Disposition) string {
 	case reasons["no-match"] && len(reasons) > 1:
 		return `§8 step 10: "If no fallback is present, produce unresolved with reason no-match" is the only step that records "no-match", and every step that records another reason returns before it — step 5 "produce unresolved after all exception effects have been inspected, and do not evaluate normal rules", step 8 "Produce unresolved whenever either reason is present" — so no evaluation produces "no-match" beside another reason.`
 	case disposition.Kind == "outcome" && !localIdentifier.MatchString(disposition.OutcomeID):
-		return fmt.Sprintf(`§5: "Local object identifiers are non-empty ASCII strings matching ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", so %q is a string no conforming pack can declare as an outcome id.`, disposition.OutcomeID)
+		return fmt.Sprintf(unreachableOutcomeIDRule, disposition.OutcomeID)
 	}
 	return ""
 }
