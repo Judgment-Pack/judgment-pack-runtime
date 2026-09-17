@@ -39,7 +39,12 @@ func message(t *testing.T, id int, method string, params any) string {
 	return string(data) + "\n"
 }
 
-func runServer(t *testing.T, input string) []map[string]any {
+// serveLines runs one server over input and returns its response lines exactly
+// as it wrote them, before any decoding. A test that measures the size of a
+// payload measures it on these bytes -- written by the server's own encoder,
+// with the escaping that encoder is configured for -- rather than on a payload
+// the test re-serialized itself.
+func serveLines(t *testing.T, input string) []string {
 	t.Helper()
 	engine, err := validation.NewEngine()
 	if err != nil {
@@ -50,11 +55,20 @@ func runServer(t *testing.T, input string) []map[string]any {
 	if err := server.Serve(strings.NewReader(input), &out, &logw); err != nil {
 		t.Fatalf("serve: %v (log %q)", err, logw.String())
 	}
-	var responses []map[string]any
+	var lines []string
 	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
 		if line == "" {
 			continue
 		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func runServer(t *testing.T, input string) []map[string]any {
+	t.Helper()
+	var responses []map[string]any
+	for _, line := range serveLines(t, input) {
 		var decoded map[string]any
 		if err := json.Unmarshal([]byte(line), &decoded); err != nil {
 			t.Fatalf("undecodable response line %q: %v", line, err)

@@ -168,19 +168,37 @@ canonical disposition bytes differ." That was measured rather than reasoned:
 changing the bundled `not-applicable-request-type` corpus case's expected `kind`
 to `unresolved` and changing nothing else leaves it decoding and makes
 `evaluate-corpus` answer 19/20, with that detail and no other. The costs are
-different ones, and they are real. The refusal would move from the comparison to
-the decode: a decode refusal naming the reachability rule, raised before any
-evaluation runs and by every reader of a stored expectation — including the ones
-that only derive and never compare — in place of a mismatch naming the bytes that
-differ. And `internal/project.DecodeWitness` returns no witness for a text that
-does not decode, so the step-1 witness that comment deliberately admits would
-disappear, taking with it the applicability-stage coverage the row contributes:
-a derivation loss rather than a comparison loss, and the one an author cannot
-recover by rewording anything. The distinction is real rather than convenient:
-the decoder answers "is this a §8.3 disposition?",
-which a stored row must be; the tool answers "can any pack produce it?", which
-only a *proposed* row has to be. The three rules are therefore stated once, in the
-one place whose question they answer.
+different ones, and two of them decide it. The refusal would move from the
+comparison to the decode: a decode refusal naming the reachability rule, raised
+before any evaluation runs and by every reader of a stored expectation —
+including the ones that only derive and never compare — in place of a mismatch
+naming the bytes that differ. That is a compatibility cost on rows that are legal
+§8.3 today, and at the same time a worse diagnosis, because a reader that only
+derives coverage would refuse a row it was never going to compare.
+
+The third cost is a coverage loss, and it is a migration rather than a
+derivation an author cannot recover — which is why it is not the cost that
+decides. `internal/project.DecodeWitness` returns `ProbeWitness{}, false` for a
+text that does not decode, and its callers take a witness only when that bool is
+true, so a row left in the `unresolved` spelling would contribute no probe
+witness at all and the applicability-stage coverage it contributes today would go
+with it. An author recovers that witness by correcting the stored row rather than
+by rewording it: the same disposition under `"kind":"not-applicable"`, carrying
+the same sole reason, is admitted by the rules this record decides, and
+`internal/project/coverage.go` reads the two spellings as the same step-1 halt —
+`halted` is `witness.Kind == "not-applicable"` OR the not-applicable reason, and
+the applicability stage is exercised by any witness that decodes — so the
+corrected row witnesses exactly what the old one did. `internal/project`'s table
+pins that equivalence: `not-applicable` and `not-applicable-as-reason` are two
+cases with identical expectations, covered applicability and neither the
+exception nor the rule stage reached. So the honest statement of this cost is a
+migration on every stored row of that spelling, and the reasons that decide
+against the decoder are the compatibility and diagnostic-timing ones above.
+
+The distinction is real rather than convenient: the decoder answers "is this a
+§8.3 disposition?", which a stored row must be; the tool answers "can any pack
+produce it?", which only a *proposed* row has to be. The three rules are
+therefore stated once, in the one place whose question they answer.
 
 **Aggregate.** Unchanged: `NewExpectationReport` makes the aggregate `invalid` when
 any row is not valid, and an unreachable row is not valid. `internal/result` gains
@@ -238,24 +256,46 @@ than only documented.
   truncated, exactly as the §8.3 refusals beside it quote an unadmitted kind or
   reason; truncating only the new one would make two refusals in the same
   response disagree about whether the author gets to see what they sent. The
-  echo is bounded, and the bound is neither 32 KiB nor one number: a decoded
-  message and a serialized finding are different sizes and a consumer sizes a
-  limit against the second. `carrier.Limits`'s `MaxStringBytes` is measured on
-  the *decoded* string and the 16 KiB input bound on the JSON text, so the
-  largest identifier admitted is 8,192 bytes, and the character that reaches the
-  most expansion under `%q` while still fitting both bounds is U+007F: one byte
-  decoded, one byte of JSON text, four bytes quoted. A maximal identifier of
-  8,192 of them arrives in 8,265 bytes of text, quotes to 32,770 bytes, and sits
-  inside a fixed sentence of 166 bytes, so the decoded message reaches 32,936
-  bytes — over 32,768, under 33 KiB. The finding is larger again once
-  serialized, because JSON escapes each of the 8,192 backslashes `%q` introduced
-  and the four quotation marks: 41,212 bytes, under 41 KiB. Both figures are
-  measured against the message template itself by
-  `TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase`, so rewording the
-  sentence moves them here too. One multiplier is left for a client to allow for
-  and is not counted above: `toolResult` carries the report twice, as
-  `structuredContent` and as a text block that escapes those backslashes a
-  second time.
+  echo is bounded, but not by one number and not by 32 KiB: the message, and each
+  of the two payloads that carry it, are three different sizes with three
+  different worst cases, and a client sizes a limit from the largest of them.
+  `carrier.Limits`'s `MaxStringBytes` is measured on the *decoded* string and the
+  16 KiB input bound on the JSON text, so the largest identifier admitted is
+  8,192 single-byte characters, arriving in 8,265 bytes of expectation text.
+  Which character is the worst one depends on who writes it next, because
+  `toolResult` writes the report twice and the two writers escape different
+  characters: `structuredContent` is written by the server's encoder, which is
+  configured `SetEscapeHTML(false)`, while `content[0].text` is
+  `jsonText(structured)` — `json.Marshal`, with HTML escaping on. The three
+  measured figures, each at its own worst identifier and at index 255, the
+  largest index a 256-expectation batch can report:
+  - **The decoded message, 32,936 bytes**, which carries no index and so has one
+    figure. Worst identifier U+007F: one byte decoded, one byte of input text and
+    four bytes under `%q`, so 8,192 of them quote to 32,770 bytes inside a fixed
+    sentence of 166 — over 32,768, under 33 KiB.
+  - **The finding inside `structuredContent`, 41,214 bytes.** Worst identifier
+    U+007F again, at five bytes per character, because JSON escapes each of the
+    8,192 backslashes `%q` introduced, and the four quotation marks, inside an
+    82-byte envelope. HTML escaping is off on this path, so U+003C costs one byte
+    here and the finding is 8,446 bytes.
+  - **The finding inside `content[0].text`, 49,406 bytes.** Worst identifier
+    U+003C — or U+003E, or U+0026 — at six bytes per character: `%q` leaves it
+    printable, and `json.Marshal` then writes it as a six-byte escape. Six is
+    more than U+007F's five, so the worst identifier flips between the two paths,
+    and this figure is the largest of the three: it is the one a client sizing a
+    limit has to size it from. U+007F reaches 41,214 bytes here too.
+
+  All three are measured on the bytes the server wrote — at both indexes and under
+  both identifiers — by `TestUnreachableFindingIsBoundedOnEachSerializationPath`,
+  which locates each finding inside the payload rather than re-serializing one of
+  its own, and asserts every figure twice: once derived from the message and the
+  escaping rule, so a changed escaping fails it, and once against the literal
+  written here, so a reworded sentence fails it. A fourth figure is a client's to
+  allow for and is not one of the three, because it is not a finding: the text
+  block is itself a JSON string in the response, so each escape inside it is
+  escaped once more, and the whole block reaches 57,848 bytes on the wire for a
+  one-expectation call — the same figure under both worst identifiers, at seven
+  bytes per character — and grows with every other row the batch carries.
 - **Validation:** native wire tests, in the shape ADR-0035 established. Each new
   fixture in `internal/mcp/testdata/expectations.json` is named for the rule it
   pins, states the `message` fragment the finding must contain, and now states the
@@ -277,17 +317,21 @@ than only documented.
   description-to-behaviour test is extended to hold the tool's advertised text to
   naming the new code, each class it reports and the order sentence whole, to
   compare the advertised code against the code the tool emits, and to compare the
-  advertised grammar against the compiled pattern the tool applies. One further
-  test sends the maximally escaped identifier the carrier admits and holds the
-  two sizes the Security and privacy consequence states — the decoded message and
-  the serialized finding — to exact figures, one derived from the message template
-  and one written as the documented literal, so a reworded sentence fails against
-  the documented number and a changed escaping fails against the derived one; a
-  one-character-longer identifier is held to the string limit beside it, which is
-  what makes the measured case the worst one. Each guard was mutation-checked:
+  advertised grammar against the compiled pattern the tool applies. Two further
+  tests carry the sizes: one sends the maximally escaped identifier the carrier
+  admits and holds the decoded message to an exact figure, derived from the
+  message template and written again as the documented literal, with a
+  one-character-longer identifier held to the string limit beside it, which is
+  what makes that identifier the worst case for `%q`; the other sends both worst
+  identifiers, at index 0 and at index 255, and holds each of the three figures
+  the Security and privacy consequence states — the decoded message and the
+  finding on each of the two serialization paths — against a derivation and
+  against the documented literal, measuring the finding where the server wrote
+  it rather than re-serializing one of its own. Each guard was mutation-checked:
   each of the three checks deleted, the order reversed in the code and separately
   inverted in the advertised text, the two overlapping arms swapped, the code
-  dropped, the no-canonical decision neutralized, and the message template
+  dropped, the no-canonical decision neutralized, the reported index changed, the
+  HTML escaping of the text block switched off, and the message template
   lengthened, each against the test paired with it.
 
 Material impact is public-surface (a new finding code on an advertised MCP tool)
@@ -305,6 +349,7 @@ repository's existing review regime.
   (`ExpectationFinding`, `ExpectationReport`, `NewExpectationReport`).
 - `internal/evaluation/resolve.go` and `internal/evaluation/corpus.go` for where a
   stored `unresolved` retaining `not-applicable` is refused today, and
-  `internal/project/coverage.go` (`DecodeWitness`) for the witness a decoder rule
-  would remove.
+  `internal/project/coverage.go` (`DecodeWitness`, `siteStage.exercisedBy`) for
+  the witness a decoder rule would remove from an uncorrected row, and for the
+  correction that recovers it.
 - JPS Core `0.2.0-draft` §5, §8 steps 1, 5, 8 and 10, and §8.3.
