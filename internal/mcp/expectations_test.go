@@ -2,12 +2,12 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
-	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -202,16 +202,16 @@ func TestUnreachableExpectationIsAnInvalidFindingOfItsOwn(t *testing.T) {
 }
 
 // TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase measures the bound the §5
-// message's echo actually has. ADR-0036's Security and privacy consequence
-// states the two figures this test measures — the decoded message and the
-// serialized finding — so a consumer that sizes a limit against them is reading
-// numbers a test holds, and rewording the sentence around the identifier moves
-// both of them here.
+// message's echo has as a DECODED message, and pins the identifier admission
+// that bounds it. The message is not the payload: a finding is serialized twice
+// on its way out, each time under different escaping, and each of those paths
+// has a worst identifier of its own — all three figures are measured by
+// TestUnreachableFindingIsBoundedOnEachSerializationPath beside this.
 //
-// The worst case is not the longest identifier but the most escaped one, and the
-// two limits it has to pass are measured on different bytes.
-// carrier.Limits{MaxStringBytes: 8192} is measured on the DECODED string —
-// internal/carrier/decode.go compares len(typed), the Go string after JSON
+// The worst case for the decoded message is not the longest identifier but the
+// most escaped one, and the two limits it has to pass are measured on different
+// bytes. carrier.Limits{MaxStringBytes: 8192} is measured on the DECODED string
+// — internal/carrier/decode.go compares len(typed), the Go string after JSON
 // unescaping, against it — while the 16 KiB input bound is measured on the JSON
 // text. U+007F is the character that satisfies both at the largest expansion
 // %q can reach: one byte decoded, one byte of JSON text, and four bytes under
@@ -223,6 +223,11 @@ func TestUnreachableExpectationIsAnInvalidFindingOfItsOwn(t *testing.T) {
 // costs six bytes of JSON text; and a non-printable multi-byte rune such as
 // U+0085 writes six bytes under %q for two decoded bytes, so it reaches the
 // string limit in half as many runes and 24,576 bytes of %q.
+//
+// It is only the worst case for %q, though, and %q is not the last writer to
+// touch this string: a character %q leaves printable can still be escaped by
+// encoding/json, and U+003C is escaped to six bytes there. So this test bounds
+// the message and the sibling bounds the payload.
 func TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase(t *testing.T) {
 	const characters = 8192
 	identifier := strings.Repeat("", characters)
@@ -257,27 +262,211 @@ func TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase(t *testing.T) {
 	if len(message) != 32936 {
 		t.Fatalf("the documented decoded bound is 32,936 bytes; this message is %d", len(message))
 	}
-	// On the wire the finding is larger again, because JSON escapes every
-	// backslash %q introduced. 32 KiB is the wrong number to size a limit
-	// against in both directions, which is why both figures are stated.
+	// 32 KiB is the wrong number to size a limit against in both directions:
+	// this message is over it, and the payload that carries the message is over
+	// this message. The sibling test measures the payload.
 	if row["status"] != "invalid" || row["index"] != float64(0) {
 		t.Fatalf("the finding measured here is the row the tool returned: %#v", row)
 	}
 	if _, present := row["canonical"]; present {
 		t.Fatalf("an unreachable expectation is not text a client stores: %#v", row)
 	}
-	encoded, err := json.Marshal(result.ExpectationFinding{Index: 0, Status: "invalid",
-		Code: "JPS-EXPECTATION-UNREACHABLE", Message: message})
-	if err != nil {
-		t.Fatal(err)
+}
+
+// findingSize is one measured figure of the sibling test's table: the size of
+// one unreachable finding as each of the two serialization paths writes it, at
+// one index.
+type findingSize struct {
+	index int
+	// structured is the finding inside structuredContent, which the server's
+	// own encoder writes with HTML escaping OFF (internal/mcp/server.go).
+	structured int
+	// text is the finding inside content[0].text, which jsonText writes with
+	// json.Marshal -- HTML escaping ON, so U+003C, U+003E and U+0026 each
+	// become a six-byte escape there and nowhere else.
+	text int
+}
+
+// TestUnreachableFindingIsBoundedOnEachSerializationPath measures the size the
+// §5 echo actually reaches on the wire, on each path that carries it and at the
+// largest index a batch can report. The decoded message is not the bound a
+// client sizes a limit from, and neither path's bound is the other's: toolResult
+// writes the report twice, and the two writers escape different characters, so
+// the worst identifier for one is not the worst identifier for the other.
+//
+//   - structuredContent is written by the server's json.Encoder, which is
+//     configured SetEscapeHTML(false). It escapes what JSON must: the
+//     backslashes %q introduced, and the quotation marks. The worst identifier
+//     is therefore the worst one for %q, U+007F, at five bytes per character.
+//   - content[0].text is jsonText(structured), which is json.Marshal with HTML
+//     escaping ON. There U+003C costs six bytes -- one byte decoded, one byte of
+//     input text, left printable by %q, then escaped to a six-byte sequence --
+//     which is more than U+007F's five, so the worst identifier flips.
+//
+// Both figures move with the index, because the index sits inside the finding
+// whose bytes are being counted, and 255 is the largest a 256-expectation batch
+// can report. Each figure is asserted twice: once derived from the message and
+// the escaping rule, so a change of escaping fails it, and once against the
+// literal ADR-0036 documents, so rewording the sentence fails it. Each is also
+// held to being the bytes the server actually wrote, by locating the finding
+// inside the payload rather than re-serializing it here: a figure measured on a
+// finding this test built itself would be a figure about this test.
+func TestUnreachableFindingIsBoundedOnEachSerializationPath(t *testing.T) {
+	const characters = 8192
+	const filler = `{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`
+	// The largest index a call can report, where the finding's own envelope is
+	// two bytes longer than at index 0.
+	const lastIndex = maxExpectations - 1
+	for _, worst := range []struct {
+		name string
+		// character is repeated 8,192 times, which is the largest identifier
+		// the carrier admits for either of them: one decoded byte and one byte
+		// of input text each.
+		character string
+		// quoted is the bytes %q writes for one such character.
+		quoted int
+		// decoded is the message, which carries no index and so has one figure.
+		decoded int
+		sizes   []findingSize
+		// block is the whole content[0].text string as the client receives it,
+		// for the one-expectation call: the text block is itself escaped into
+		// the response, so every backslash in it is doubled again.
+		block int
+	}{
+		{name: "U+007F", character: "\x7f", quoted: 4, decoded: 32936, block: 57848,
+			sizes: []findingSize{{index: 0, structured: 41212, text: 41212},
+				{index: lastIndex, structured: 41214, text: 41214}}},
+		{name: "U+003C", character: "<", quoted: 1, decoded: 8360, block: 57848,
+			sizes: []findingSize{{index: 0, structured: 8444, text: 49404},
+				{index: lastIndex, structured: 8446, text: 49406}}},
+	} {
+		t.Run(worst.name, func(t *testing.T) {
+			identifier := strings.Repeat(worst.character, characters)
+			text := `{"kind":"outcome","outcomeId":"` + identifier + `","reasons":[],"handoff":{"state":"none"}}`
+			if len(text) != 8265 {
+				t.Fatalf("the expectation text is %d bytes, want 8265", len(text))
+			}
+			for _, size := range worst.sizes {
+				// The batch is padded with a valid expectation so the measured
+				// finding lands at the index this case is about.
+				texts := make([]string, size.index+1)
+				for i := range texts {
+					texts[i] = filler
+				}
+				texts[size.index] = text
+				line := expectationWireLine(t, texts)
+				var response map[string]any
+				if err := json.Unmarshal([]byte(line), &response); err != nil {
+					t.Fatalf("undecodable response line: %v", err)
+				}
+				answer := response["result"].(map[string]any)
+				report := answer["structuredContent"].(map[string]any)
+				row := report["results"].([]any)[size.index].(map[string]any)
+				// Reported compactly rather than with the row: the row is
+				// 40 KiB of escaped identifier, and a failure here is about
+				// two members of it.
+				if row["code"] != "JPS-EXPECTATION-UNREACHABLE" || row["index"] != float64(size.index) {
+					t.Fatalf("the finding measured here is the row the tool returned: code %v at index %v, want index %d", row["code"], row["index"], size.index)
+				}
+				if _, present := row["canonical"]; present {
+					t.Fatalf("an unreachable expectation is not text a client stores: index %v carries canonical", row["index"])
+				}
+				message := row["message"].(string)
+				// The message carries no brace, so the spans located below end
+				// at the finding's own closing brace and nowhere earlier.
+				if strings.ContainsAny(message, "{}") {
+					t.Fatalf("the message carries a brace, so a finding's span cannot be located by one: %q", message[:64])
+				}
+				if want := len(unreachableOutcomeIDRule) - len("%q") + 2 + worst.quoted*characters; len(message) != want {
+					t.Errorf("index %d: the decoded message is %d bytes; the template gives %d", size.index, len(message), want)
+				}
+				if len(message) != worst.decoded {
+					t.Errorf("index %d: the documented decoded message is %d bytes; this one is %d", size.index, worst.decoded, len(message))
+				}
+
+				envelope := len(fmt.Sprintf(`{"index":%d,"status":"invalid","code":"JPS-EXPECTATION-UNREACHABLE","message":""}`, size.index))
+				// What JSON has to escape whatever it is configured for: the
+				// backslashes %q introduced, one byte each, and the quotation
+				// marks, the two the sentence carries and the two %q added.
+				mandatory := strings.Count(message, `\`) + strings.Count(message, `"`)
+				// And what only HTML escaping adds: five more bytes for each
+				// character it rewrites as a six-byte escape.
+				htmlEscaped := 5 * (strings.Count(message, "<") + strings.Count(message, ">") + strings.Count(message, "&"))
+
+				structured := findingSpan(t, line, size.index)
+				if want := envelope + len(message) + mandatory; len(structured) != want {
+					t.Errorf("index %d: the finding in structuredContent is %d bytes; the envelope and JSON's own escaping give %d", size.index, len(structured), want)
+				}
+				if len(structured) != size.structured {
+					t.Errorf("index %d: the documented finding in structuredContent is %d bytes; this one is %d", size.index, size.structured, len(structured))
+				}
+
+				block := answer["content"].([]any)[0].(map[string]any)["text"].(string)
+				inText := findingSpan(t, block, size.index)
+				if want := envelope + len(message) + mandatory + htmlEscaped; len(inText) != want {
+					t.Errorf("index %d: the finding in content[0].text is %d bytes; the envelope with HTML escaping gives %d", size.index, len(inText), want)
+				}
+				if len(inText) != size.text {
+					t.Errorf("index %d: the documented finding in content[0].text is %d bytes; this one is %d", size.index, size.text, len(inText))
+				}
+
+				// The text block is a JSON string in the response, so what the
+				// client reads off the wire escapes those escapes once more. The
+				// block carries every row, so this figure belongs to the
+				// one-expectation call: at index 255 it also carries 255 others.
+				if size.index == 0 {
+					if literal := blockLiteral(t, line); len(literal) != worst.block {
+						t.Errorf("the whole text block on the wire is %d bytes; the documented figure is %d", len(literal), worst.block)
+					}
+				}
+			}
+		})
 	}
-	const envelope = `{"index":0,"status":"invalid","code":"JPS-EXPECTATION-UNREACHABLE","message":""}`
-	if want := len(envelope) + len(message) + strings.Count(message, `\`) + strings.Count(message, `"`); len(encoded) != want {
-		t.Fatalf("the serialized finding is %d bytes; escaping the message in the envelope gives %d", len(encoded), want)
+}
+
+// expectationWireLine makes one expectation call and returns the response line
+// as the server wrote it.
+func expectationWireLine(t *testing.T, texts []string) string {
+	t.Helper()
+	lines := serveLines(t, message(t, 1, "tools/call", map[string]any{"name": expectationTool,
+		"arguments": map[string]any{"spec_version": expectationSpec, "expectations": texts}}))
+	if len(lines) != 1 {
+		t.Fatalf("one call is one response line: %d", len(lines))
 	}
-	if len(encoded) != 41212 {
-		t.Fatalf("the documented serialized bound is 41,212 bytes; this finding is %d", len(encoded))
+	return lines[0]
+}
+
+// findingSpan returns the unreachable finding carrying index, as the bytes
+// payload holds it in: from its own opening brace to the first closing brace
+// after it. The caller has checked that the message carries no brace, so the
+// span is the finding and the whole finding. Locating it rather than
+// re-serializing it is the point: the bytes measured are the writer's.
+func findingSpan(t *testing.T, payload string, index int) string {
+	t.Helper()
+	prefix := fmt.Sprintf(`{"index":%d,"status":"invalid","code":"JPS-EXPECTATION-UNREACHABLE","message":"`, index)
+	start := strings.Index(payload, prefix)
+	if start < 0 {
+		t.Fatalf("no unreachable finding at index %d in %d bytes of payload", index, len(payload))
 	}
+	end := strings.Index(payload[start:], "}")
+	if end < 0 {
+		t.Fatalf("the finding at index %d is not closed", index)
+	}
+	return payload[start : start+end+1]
+}
+
+// blockLiteral returns the content[0].text member of a tool response as the
+// JSON string literal the server wrote, quotation marks and all.
+func blockLiteral(t *testing.T, line string) string {
+	t.Helper()
+	const opener = `"content":[{"text":`
+	const closer = `,"type":"text"}]`
+	start := strings.Index(line, opener)
+	end := strings.Index(line, closer)
+	if start < 0 || end < start {
+		t.Fatalf("no text block in %d bytes of response", len(line))
+	}
+	return line[start+len(opener) : end]
 }
 
 func TestExpectationAdmissionArgumentsAndLimits(t *testing.T) {

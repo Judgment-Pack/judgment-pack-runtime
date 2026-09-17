@@ -131,10 +131,20 @@ var localIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
 // quoted into it by %q. It is a named constant because the size of that echo is
 // a documented bound (ADR-0036, Security and privacy) and the bound is derived
 // from this text rather than asserted beside it: the sentence is 166 bytes with
-// the verb removed, the largest identifier the carrier admits expands to 32,770
-// bytes under %q -- 8,192 decoded bytes of U+007F, four bytes each -- so the
-// decoded message reaches 32,936 bytes and the serialized finding 41,212, both
-// measured by TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase.
+// the verb removed, and the largest identifier the carrier admits is 8,192
+// single-byte characters.
+//
+// That bound is three figures rather than one, because the message is not the
+// payload: toolResult writes the report twice and the two writers escape
+// different characters, so each path has a worst identifier of its own. The
+// decoded message reaches 32,936 bytes (8,192 U+007F, four bytes each under %q);
+// the finding inside structuredContent, which the server's encoder writes with
+// HTML escaping off, reaches 41,214 bytes at index 255 on the same identifier;
+// the finding inside content[0].text, which jsonText writes with HTML escaping
+// on, reaches 49,406 bytes at index 255 on 8,192 U+003C, six bytes each, and is
+// the largest of the three. Measured by
+// TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase and
+// TestUnreachableFindingIsBoundedOnEachSerializationPath.
 const unreachableOutcomeIDRule = `§5: "Local object identifiers are non-empty ASCII strings matching ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", so %q is a string no conforming pack can declare as an outcome id.`
 
 // unreachableExpectation names the rule that puts a legal §8.3 disposition
