@@ -1200,11 +1200,23 @@ func TestTransportAcceptsWellFormedUnicodeArguments(t *testing.T) {
 				}
 				report := result["structuredContent"].(map[string]any)
 				row := report["results"].([]any)[0].(map[string]any)
-				if row["status"] != "valid" {
-					t.Fatalf("row = %#v, want valid", row)
+				// Which finding this expectation earns is not this test's question.
+				// "allow" and an astral character is a legal §8.3 outcome id and
+				// outside §5's local-identifier grammar, so a tool that admits it
+				// carries the id in the canonical text of a valid finding, and a
+				// tool that holds ids to that grammar quotes it in the message of
+				// an invalid one. Either way the finding repeats the id the tool
+				// read, and what this test holds is that the id is the character
+				// the caller's pair names and not the U+FFFD a repair would leave.
+				read, _ := row["canonical"].(string)
+				if read == "" {
+					read, _ = row["message"].(string)
 				}
-				if canonical := row["canonical"].(string); !strings.Contains(canonical, `"outcomeId":"allow`+character+`"`) {
-					t.Fatalf("canonical = %q, want the character the pair the caller sent names", canonical)
+				if !strings.Contains(read, "allow"+character) {
+					t.Fatalf("finding = %#v, want it to repeat the character the pair the caller sent names", row)
+				}
+				if strings.Contains(read, replacement) {
+					t.Fatalf("finding = %#v repeats U+FFFD, a repair of the pair the caller sent", row)
 				}
 			},
 		},
