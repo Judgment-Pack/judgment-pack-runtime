@@ -122,10 +122,13 @@ times what it sent. The ratio is the construction's, not a constant: canonical
 text can be shorter than what was sent — an expectation padded with whitespace
 loses the padding — so a reply can also be smaller than its call, as a short
 disposition padded to the bound is answered by less than it sent. Size the reply
-from what is sent, not from the bound. Of the tools here only `experimental_test_packs` and
-`experimental_test_graphs` bound a reply at all, refusing a marshaled report over
-16 MiB rather than truncating it
-([ADR-0021](adr/0021-run-the-declared-matrix-over-mcp.md)).
+from what is sent, not from the bound; this tool bounds nothing on the way out.
+Where a reply on this surface is bounded, the bound refuses rather than
+truncates: `experimental_test_packs` and `experimental_test_graphs` refuse a
+marshaled report over 16 MiB
+([ADR-0021](adr/0021-run-the-declared-matrix-over-mcp.md)), and
+`experimental_list_graphs` refuses an inventory whose bytes read and identities
+echoed would pass its 8 MiB budget.
 
 A stored expectation that a matrix, graph or corpus row already carries is read
 by the same decoder, which now refuses four shapes it accepted before: `reasons`
