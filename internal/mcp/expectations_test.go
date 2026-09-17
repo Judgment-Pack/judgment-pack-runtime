@@ -330,7 +330,9 @@ func TestUnreachableFindingIsBoundedOnEachSerializationPath(t *testing.T) {
 		sizes   []findingSize
 		// block is the whole content[0].text string as the client receives it,
 		// for the one-expectation call: the text block is itself escaped into
-		// the response, so every backslash in it is doubled again.
+		// the response, so every backslash in it is doubled again. It is a
+		// measurement of these two identifiers and not a bound: an identifier of
+		// backslashes, doubled by %q and again by each JSON layer, makes it larger.
 		block int
 	}{
 		{name: "U+007F", character: "\x7f", quoted: 4, decoded: 32936, block: 57848,
