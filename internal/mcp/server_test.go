@@ -980,12 +980,14 @@ func TestTransportRefusesMalformedUnicodeInEveryStringArgument(t *testing.T) {
 // object; batches are not supported." under null. All four are -32700 under
 // null now, so a client correlating by id sees a null-id parse error where an
 // id-bearing error, or a result, used to come back (ADR-0037). These cases are
-// most of what pins the scope: narrowing either check to lines that carry tool
+// most of what pins the scope: narrowing both checks to lines that carry tool
 // arguments fails all four of them, and with them the doubly-defective case of
 // TestTransportRefusesMalformedUnicodeInEveryStringArgument (the line
 // {"a":"x\x80 with no closing quote, which carries no arguments either) and
-// both cases of TestTransportRefusesMalformedUnicodeInANotification — and
-// nothing else in this package.
+// both cases of TestTransportRefusesMalformedUnicodeInANotification — seven,
+// and nothing else in this package. Narrowed alone, the UTF-8 check fails the
+// three of those lines that carry a raw 0x80 and the surrogate scan the four
+// that carry a lone escape.
 func TestTransportRefusesMalformedUnicodeOutsideToolArguments(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -1201,13 +1203,15 @@ func TestTransportAcceptsWellFormedUnicodeArguments(t *testing.T) {
 				report := result["structuredContent"].(map[string]any)
 				row := report["results"].([]any)[0].(map[string]any)
 				// Which finding this expectation earns is not this test's question.
-				// "allow" and an astral character is a legal §8.3 outcome id and
-				// outside §5's local-identifier grammar, so a tool that admits it
-				// carries the id in the canonical text of a valid finding, and a
-				// tool that holds ids to that grammar quotes it in the message of
-				// an invalid one. Either way the finding repeats the id the tool
-				// read, and what this test holds is that the id is the character
-				// the caller's pair names and not the U+FFFD a repair would leave.
+				// "allow" and an astral character is well-formed Unicode that the
+				// disposition decoder accepts, and not a valid outcome id: §5 holds
+				// local identifiers to an ASCII grammar. A tool that checks only the
+				// decoder carries the id in the canonical text of a valid finding,
+				// and a tool that also holds ids to §5's grammar quotes it in the
+				// message of an invalid one. Either way the finding repeats the id
+				// the tool read, and what this test holds is that the id is the
+				// character the caller's pair names and not the U+FFFD a repair
+				// would leave.
 				read, _ := row["canonical"].(string)
 				if read == "" {
 					read, _ = row["message"].(string)
