@@ -113,13 +113,17 @@ and delimiter counted with them. A longer line is never parsed and is answered
 by nothing: the server reports `mcp: input error: bufio.Scanner: token too long`
 on stderr and exits 4, leaving every request queued behind that line unanswered,
 so a client that sends one restarts the server rather than waits for a reply.
-This tool's reply is bounded by neither of those limits and is larger than the
-call that asked for it, because the report is carried twice, once as
-`content[0].text` and once as `structuredContent`: that same batch, escaped only
-where JSON requires it, is a 4,895,138-byte call — well inside the line bound —
-answered by 10.7 MiB, 2.29 times what it sent; of the tools here only
-`experimental_test_packs` and `experimental_test_graphs` bound a reply at all,
-refusing a marshaled report over 16 MiB rather than truncating it
+This tool's reply is bounded by neither of those limits and can be larger than
+the call that asked for it, because the report is carried twice, once as
+`content[0].text` and once as `structuredContent`, and each valid entry carries
+its canonical text: that same batch, escaped only where JSON requires it, is a
+4,895,138-byte call — well inside the line bound — answered by 10.7 MiB, 2.29
+times what it sent. The ratio is the construction's, not a constant — an
+expectation padded with whitespace canonicalizes to less than it was sent as, and
+its reply is smaller than the call — so size the reply from what is sent, not from
+the bound. Of the tools here only `experimental_test_packs` and
+`experimental_test_graphs` bound a reply at all, refusing a marshaled report over
+16 MiB rather than truncating it
 ([ADR-0021](adr/0021-run-the-declared-matrix-over-mcp.md)).
 
 A stored expectation that a matrix, graph or corpus row already carries is read
