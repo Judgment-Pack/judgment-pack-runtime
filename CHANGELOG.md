@@ -2,6 +2,40 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The stdio transport refuses a request line whose Unicode is malformed, for every string
+  argument of every tool — and everywhere else in the line** (ADR-0037): a line is now held to
+  `utf8.Valid` before `json.Valid`,
+  and to the carrier's unpaired-surrogate scan immediately after it. `json.Valid` does not judge
+  UTF-8 — Go's decoder replaces invalid UTF-8 and invalid surrogate pairs with U+FFFD while
+  unmarshalling a quoted string — so a raw invalid byte, or a lone `\ud800` escape written at the
+  JSON-RPC argument level, used to reach `validate`, `experimental_validate_expectations` and
+  every other tool as text the client never sent: `validate` answered `"status":"valid"` with all
+  three layers passed for a pack whose title carried either defect, and
+  `experimental_validate_expectations` answered `"status":"valid"` with a `canonical` `outcomeId`
+  reading `allow` followed by U+FFFD. Both defects are answered as the parse errors they are —
+  JSON-RPC `-32700` under a null `id`, with `Message is not valid UTF-8 JSON.` or
+  `Message contains an unpaired surrogate escape at byte offset N.` and the rest of the carrier's
+  sentence — and the session continues, so the next request is answered normally. §2.1 requires
+  malformed input to be rejected rather than processed, and §8.3 requires canonicalized
+  dispositions to compare byte for byte; the carrier already held both one level down, and the
+  outbound half of the same standard is already held when a project document is served (ADR-0029).
+  **Migration:** a client that sent such bytes and got an answer about repaired text gets a parse
+  error now. Both checks read the whole line, before the request is read, so a line carrying
+  either defect outside its arguments changes answer too, and one of those answers changes `id`:
+  a method name carrying a lone escape was `-32601` `Unknown method: …` under the request's own
+  `id` and is now `-32700` under a null one, a line that is not a JSON object was `-32600`, and a
+  line that is neither valid UTF-8 nor valid JSON now names the encoding defect rather than the
+  JSON one. A client that correlates strictly by `id` must treat a parse error as ending the
+  request it last wrote, as JSON-RPC §5 already requires, rather than waiting for that `id`.
+  Nothing a conforming client sends changes: a well-formed surrogate pair is a
+  character and is admitted, a literal U+FFFD the client authored is valid UTF-8 and is admitted,
+  and an escape written inside a document's or an expectation's own JSON is refused where it
+  always was, by the carrier. No tool schema, payload member, exit code or CLI surface changes,
+  and both bundled suites and the evaluation corpus pass unchanged; the evaluator's conformance
+  claim is unaffected and stated, in full and only, in `CONFORMANCE.md`.
+
 ## 0.22.0 - 2026-09-16
 
 - **Proposed exact expectations are checked before an authoring client admits them**

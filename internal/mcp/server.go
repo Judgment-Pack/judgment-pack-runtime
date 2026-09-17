@@ -8,7 +8,9 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
@@ -75,8 +77,45 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 		}
 		// Syntax first: what is not JSON at all is a parse error under null,
 		// the one case JSON-RPC answers without an id (§5).
+		//
+		// Encoding too, because json.Valid does not judge it at all:
+		// encoding/json states that "when unmarshaling quoted strings,
+		// invalid UTF-8 or invalid UTF-16 surrogate pairs are not treated as
+		// an error. Instead, they are replaced by the Unicode replacement
+		// character U+FFFD." A line admitted on json.Valid alone therefore
+		// reaches every tool -- validate's document, each expectation, every
+		// argument of every tool added later -- as text the client did not
+		// send, and no gate below can tell repaired text from authored text.
+		// §2.1 requires this runtime to reject malformed input rather than
+		// process it, and the carrier already refuses both defects one level
+		// down, so the same two refusals are held here, once, for the whole
+		// wire (ADR-0037).
+		//
+		// Both read the whole line, before the envelope below, so the defect
+		// is refused wherever it is written -- a method name and a string id
+		// included, and a line that is no object at all. Narrowing either to
+		// a tool's arguments would leave the rest repaired, and neither can
+		// be moved below the envelope checks without answering about bytes
+		// that were never read. Encoding runs first so that a line defective
+		// both ways is named by its encoding, the defect a client must fix
+		// before its JSON can be read.
+		if !utf8.Valid(line) {
+			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": nil, "error": &rpcError{Code: codeParse, Message: "Message is not valid UTF-8 JSON."}})
+			continue
+		}
 		if !json.Valid(line) {
 			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": nil, "error": &rpcError{Code: codeParse, Message: "Message is not valid JSON."}})
+			continue
+		}
+		// The surrogate scan runs immediately after, over bytes now known to
+		// be well-formed JSON, so its string tracking is exact rather than a
+		// guess about where a string begins: a line that is not JSON is
+		// reported as the parse error above, which is the defect this runtime
+		// can actually locate. What the scan refuses is what json.Unmarshal
+		// would have repaired into U+FFFD, and the offset is into the message
+		// line as the transport read it.
+		if offset, found := carrier.UnpairedSurrogateEscape(line); found {
+			writeMessage(encoder, logw, map[string]any{"jsonrpc": "2.0", "id": nil, "error": &rpcError{Code: codeParse, Message: fmt.Sprintf("Message contains an unpaired surrogate escape at byte offset %d. RFC 8785 §3.2.2.2 makes such a value invalid rather than replaceable, and this runtime refuses it rather than substituting U+FFFD.", offset)}})
 			continue
 		}
 		// A message that is not an object -- an array, which this server

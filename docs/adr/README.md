@@ -134,3 +134,4 @@ authority, and following it confers no conformance status on anything.
 | [0035](0035-validate-proposed-expectations-before-admission.md) | Validate proposed exact expectations before authoring admission | accepted |
 
 | [0036](0036-admit-test-matrices-and-rehearse-snapshots.md) | Admit test matrices and rehearse exact pack snapshots through MCP | accepted |
+| [0037](0037-refuse-malformed-unicode-at-the-stdio-transport.md) | Refuse malformed Unicode at the stdio transport, for every string argument and everywhere else in the request line | proposed |

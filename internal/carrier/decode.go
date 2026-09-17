@@ -67,14 +67,14 @@ func Decode(data []byte, limits Limits) (any, *Failure) {
 	// The surrogate scan runs last, over bytes now known to be well-formed JSON,
 	// so its string tracking is exact rather than a guess about where a string
 	// begins. What it refuses is what the decoder above silently repaired.
-	if offset, found := unpairedSurrogateEscape(data); found {
+	if offset, found := UnpairedSurrogateEscape(data); found {
 		return nil, invalid("JPS-CARRIER-INVALID-JSON", "",
 			fmt.Sprintf("Input contains an unpaired surrogate escape at byte offset %d. RFC 8785 §3.2.2.2 makes such a value invalid rather than replaceable, and this decoder refuses it rather than substituting U+FFFD.", offset))
 	}
 	return value, nil
 }
 
-// unpairedSurrogateEscape reports the offset of the first \uD800-\uDFFF escape
+// UnpairedSurrogateEscape reports the offset of the first \uD800-\uDFFF escape
 // that is not one half of a well-formed pair, and whether one was found.
 //
 // Go's decoder replaces such an escape with U+FFFD without complaint, which is
@@ -86,10 +86,19 @@ func Decode(data []byte, limits Limits) (any, *Failure) {
 // matrix, facts, evidence, configuration, and graph — rather than once per
 // reader.
 //
-// It runs over JSON already parsed successfully, so a backslash appears only
-// inside a string and every escape is well-formed; the walk still checks its
-// own bounds rather than trusting that.
-func unpairedSurrogateEscape(data []byte) (int, bool) {
+// It is exported for the one caller outside this package that faces the same
+// defect one level up: the MCP stdio transport, where the escape is written in
+// the JSON-RPC message rather than in a document it carries, and no carrier is
+// reached because the tool argument has already been repaired into a Go string
+// (ADR-0037). Every other reader gets this through Decode.
+//
+// Callers must hand it bytes that already parsed as JSON, so a backslash
+// appears only inside a string and every escape is well-formed; the walk still
+// checks its own bounds rather than trusting that. Over bytes that are not
+// JSON its string tracking is a guess — an unterminated string makes the rest
+// of the input look like string content — so a caller settles JSON validity
+// first and reports that defect instead.
+func UnpairedSurrogateEscape(data []byte) (int, bool) {
 	inString := false
 	for index := 0; index < len(data); index++ {
 		if !inString {
