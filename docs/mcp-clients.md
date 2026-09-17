@@ -79,10 +79,18 @@ a validator answering about a document nobody sent would come to
 ([ADR-0037](adr/0037-refuse-malformed-unicode-at-the-stdio-transport.md)). The check is the whole
 line's, so it runs before the request is read at all: a line carrying the defect outside its
 arguments is answered under a null `id` too, where an unknown method or a request that is not an
-object used to be answered as `-32601` under the request's own `id` or as `-32600`. Correlate by
-`id`, but do not wait on one: a parse error never carries the id of the line that earned it.
-Well-formed input is untouched: a surrogate pair is a character, and a literal U+FFFD you authored
-is ordinary UTF-8. The same escape one level deeper — written inside a document's or an
+object used to be answered as `-32601` under the request's own `id` or as `-32600`. An error under
+a null `id` is uncorrelated: JSON-RPC §5 answers under null whenever the request's id could not be
+read — for a parse error and for an invalid request alike — and it gives no rule tying such an
+answer to the request you wrote last. Send one request at a time and the refusal is the one in
+flight; pipeline, and the `id` alone cannot say which line earned it, so do not fail your most
+recently written request on the strength of it — a valid request behind a refused one is still
+answered. Well-formed input is untouched: a surrogate pair is a character, and a literal U+FFFD you
+authored is ordinary UTF-8. An unpaired escape, by contrast, is admitted by JSON's own grammar —
+RFC 8259 §8.2 says the behaviour of software that receives one is unpredictable, not that the text
+is malformed — so refusing it anywhere in the line is this runtime's transport policy, taken
+because a canonical disposition §8.3 requires to compare byte for byte cannot be built out of a
+repaired escape. The same escape one level deeper — written inside a document's or an
 expectation's own JSON text, which reaches the tool as the six characters `\ud800` — is refused by
 the carrier where it always was, as that tool's own diagnostic rather than as a parse error.
 

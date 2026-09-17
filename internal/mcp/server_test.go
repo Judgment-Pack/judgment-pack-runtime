@@ -1122,11 +1122,15 @@ func TestTransportAcceptsWellFormedUnicodeArguments(t *testing.T) {
 			inspect: validDocument,
 		},
 		{
-			// U+10FFFF is the one character whose high unit is 0xDBFF, the
-			// last high surrogate: the boundary the scan splits high from low
-			// on. A pair anywhere below it is admitted even if that split is
-			// off by one, so without this case the split is untested — and
-			// this record is what makes it a refusal on the wire.
+			// U+10FFFF is the largest scalar value there is, and one of the
+			// 1,024 (U+10FC00–U+10FFFF) whose high unit is 0xDBFF, the last
+			// high surrogate: the boundary the scan splits high from low on.
+			// utf16.EncodeRune reports DBFF DFFF for it and DBFF DC00 for
+			// U+10FC00, the bottom of that range. A pair whose high unit is
+			// lower is admitted even if the split is off by one, so without a
+			// case from this range the split is untested; the value >= 0xDBFF
+			// mutation refuses every pair in it, this one included — and this
+			// record is what makes it a refusal on the wire.
 			name:    "the highest pair there is, U+10FFFF, in validate's document",
 			line:    wireCall(1, "validate", validateArguments(t, "Minimal "+topPair+" decision")),
 			carries: topPair,
