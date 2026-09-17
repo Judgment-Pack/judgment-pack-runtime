@@ -7,12 +7,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
@@ -831,6 +834,348 @@ func TestTransportRefusesOversizedLineAndEndsStream(t *testing.T) {
 	}
 	if !strings.Contains(logw.String(), "mcp: input error:") {
 		t.Fatalf("log = %q, want input error diagnostic", logw.String())
+	}
+}
+
+// The two transport refusals ADR-0037 adds, quoted here so a change to either
+// wording is a change to a test and not a silent change to the wire.
+const (
+	transportNotUTF8   = "Message is not valid UTF-8 JSON."
+	transportSurrogate = "Message contains an unpaired surrogate escape at byte offset %d. RFC 8785 §3.2.2.2 makes such a value invalid rather than replaceable, and this runtime refuses it rather than substituting U+FFFD."
+)
+
+// wireCall writes one tools/call line byte for byte rather than through
+// message(): the defects under test are exactly what a Go encoder repairs or
+// re-escapes on the way out, so a marshalled fixture could not carry them.
+func wireCall(id int, tool, arguments string) string {
+	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"%s","arguments":%s}}`, id, tool, arguments) + "\n"
+}
+
+// validateArguments is the minimal-literal pack as validate's one string
+// argument, carrying title's bytes exactly as given in place of its title.
+func validateArguments(t *testing.T, title string) string {
+	t.Helper()
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := set.Case("valid/minimal-literal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted, err := json.Marshal(string(document))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const authored = "Minimal literal decision"
+	if !bytes.Contains(quoted, []byte(authored)) {
+		t.Fatalf("the fixture no longer carries the title this helper rewrites: %s", quoted)
+	}
+	return `{"document":` + strings.Replace(string(quoted), authored, title, 1) + `}`
+}
+
+// expectationArguments is one complete §8.3 disposition as the single string
+// element of an expectations batch, carrying outcome's bytes exactly as given.
+// The escapes are written doubled because the disposition is itself JSON text
+// inside a JSON string: what reaches the wire is one backslash.
+func expectationArguments(outcome string) string {
+	return `{"spec_version":"` + expectationSpec + `","expectations":["` +
+		`{\"kind\":\"outcome\",\"outcomeId\":\"` + outcome + `\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}"]}`
+}
+
+// Before ADR-0037 a request line was admitted on json.Valid alone, and
+// json.Valid does not judge UTF-8: encoding/json states that "when unmarshaling
+// quoted strings, invalid UTF-8 or invalid UTF-16 surrogate pairs are not
+// treated as an error. Instead, they are replaced by the Unicode replacement
+// character U+FFFD." Measured against d891b05, validate answered "valid" with
+// all three layers passed for a pack whose title carried a raw 0x80 byte and
+// again for one carrying a lone \ud800 escape written at the argument level,
+// and experimental_validate_expectations answered "valid" with a canonical
+// outcomeId reading "allow" followed by U+FFFD — a disposition no caller sent.
+// Both defects are parse errors at the transport now, for every string argument
+// of every tool, and a refusal is not a session end (issue #153).
+func TestTransportRefusesMalformedUnicodeInEveryStringArgument(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		line    string
+		message string // the exact message expected, when no offset is named
+		escape  string // when set, the message must name this escape's own offset
+	}{
+		{
+			name:    "a raw 0x80 byte in validate's document",
+			line:    wireCall(1, "validate", validateArguments(t, "Minimal \x80 decision")),
+			message: transportNotUTF8,
+		},
+		{
+			name:    "a truncated three-byte sequence in validate's document",
+			line:    wireCall(1, "validate", validateArguments(t, "Minimal \xe2\x82 decision")),
+			message: transportNotUTF8,
+		},
+		{
+			name:    "a raw 0x80 byte in an expectation",
+			line:    wireCall(1, expectationTool, expectationArguments("allow\x80")),
+			message: transportNotUTF8,
+		},
+		{
+			name:    "a truncated three-byte sequence in an expectation",
+			line:    wireCall(1, expectationTool, expectationArguments("allow\xe2\x82")),
+			message: transportNotUTF8,
+		},
+		{
+			name:   "a lone high surrogate escape in validate's document",
+			line:   wireCall(1, "validate", validateArguments(t, `Minimal \ud800 decision`)),
+			escape: `\ud800`,
+		},
+		{
+			name:   "a lone low surrogate escape in validate's document",
+			line:   wireCall(1, "validate", validateArguments(t, `Minimal \udc00 decision`)),
+			escape: `\udc00`,
+		},
+		{
+			name:   "a lone high surrogate escape in an expectation",
+			line:   wireCall(1, expectationTool, expectationArguments(`allow\ud800`)),
+			escape: `\ud800`,
+		},
+		{
+			name:   "a lone low surrogate escape in an expectation",
+			line:   wireCall(1, expectationTool, expectationArguments(`allow\udc00`)),
+			escape: `\udc00`,
+		},
+		{
+			// The scan reads a backslash as an escape only inside a string, so
+			// over bytes that are not JSON its string tracking is a guess: this
+			// line's last quote opens a string that never closes. The JSON
+			// defect is the one this runtime can locate, so json.Valid is
+			// settled first and names it; the scan never sees the line.
+			name:    "an unterminated string carrying a lone escape reports the JSON defect",
+			line:    `{"jsonrpc":"2.0","id":7,"method":"ping","params":{"a":"\ud800` + "\n",
+			message: "Message is not valid JSON.",
+		},
+		{
+			// The mirror image, and the only kind of line whose answer the
+			// UTF-8 check's position decides: this one is neither valid UTF-8
+			// nor valid JSON, so whichever check runs first names its defect.
+			// utf8.Valid runs first, so the encoding defect is named. Both
+			// diagnostics are true of this line; which one it gets is the
+			// choice ADR-0037 records, and this case is what holds it.
+			name:    "a line that is neither valid UTF-8 nor valid JSON reports the encoding defect",
+			line:    "{\"a\":\"x\x80\n",
+			message: transportNotUTF8,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			refuseAndContinue(t, tt.line, wantRefusal(t, tt.line, tt.escape, tt.message))
+		})
+	}
+}
+
+// Both checks read the whole request line, before the envelope is read, so the
+// defect is refused wherever it is written; a tool argument is where it was
+// found, not the limit of the rule. That widens what the parse-error branch
+// answers, measured against d891b05: {"jsonrpc":"2.0","id":1,"method":
+// "pi\ud800ng"} was answered -32601 "Unknown method: pi<U+FFFD>ng" under id 1,
+// and the same line with a raw 0x80 in place of the escape the same way;
+// {"jsonrpc":"2.0","id":"a\ud800b","method":"ping"} was answered as an ordinary
+// ping result; ["\ud800"] was answered -32600 "The request is not a JSON
+// object; batches are not supported." under null. All four are -32700 under
+// null now, so a client correlating by id sees a null-id parse error where an
+// id-bearing error, or a result, used to come back (ADR-0037). These cases are
+// also what pins the scope: narrowing either check to lines that carry tool
+// arguments leaves every other test in this package green.
+func TestTransportRefusesMalformedUnicodeOutsideToolArguments(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		line    string
+		message string // the exact message expected, when no offset is named
+		escape  string // when set, the message must name this escape's own offset
+	}{
+		{
+			name:   "a lone escape in the method name",
+			line:   `{"jsonrpc":"2.0","id":1,"method":"pi\ud800ng"}` + "\n",
+			escape: `\ud800`,
+		},
+		{
+			name:    "a raw 0x80 byte in the method name",
+			line:    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"pi\x80ng\"}\n",
+			message: transportNotUTF8,
+		},
+		{
+			name:   "a lone escape in a string id",
+			line:   `{"jsonrpc":"2.0","id":"a\ud800b","method":"ping"}` + "\n",
+			escape: `\ud800`,
+		},
+		{
+			name:   "a lone escape in a line that is not an object",
+			line:   `["\ud800"]` + "\n",
+			escape: `\ud800`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			refuseAndContinue(t, tt.line, wantRefusal(t, tt.line, tt.escape, tt.message))
+		})
+	}
+}
+
+// wantRefusal is the message a case expects: the one it names, or the surrogate
+// sentence carrying the offset of the escape in the line the case built, so a
+// wrong offset fails.
+func wantRefusal(t *testing.T, line, escape, message string) string {
+	t.Helper()
+	if escape == "" {
+		return message
+	}
+	offset := strings.Index(line, escape)
+	if offset < 0 {
+		t.Fatalf("the fixture does not carry %s: %q", escape, line)
+	}
+	return fmt.Sprintf(transportSurrogate, offset)
+}
+
+// refuseAndContinue sends one malformed line with an ordinary ping behind it,
+// and holds the answer to the shape both transport refusals share: a -32700
+// parse error under a null id, carrying no tool result and the exact message —
+// with the ping behind it still answered, because a refusal is one message
+// refused and not the end of the session.
+func refuseAndContinue(t *testing.T, line, want string) {
+	t.Helper()
+	responses := runServer(t, line+message(t, 99, "ping", nil))
+	if len(responses) != 2 {
+		t.Fatalf("got %d responses, want the refusal and the request after it: %#v", len(responses), responses)
+	}
+	refusal := responses[0]
+	if _, served := refusal["result"]; served {
+		t.Fatalf("a refused line must reach no tool: %#v", refusal)
+	}
+	id, present := refusal["id"]
+	if !present || id != nil {
+		t.Fatalf("a parse error is answered under a null id (JSON-RPC §5): %#v", refusal)
+	}
+	failure, ok := refusal["error"].(map[string]any)
+	if !ok || failure["code"].(float64) != codeParse {
+		t.Fatalf("refusal = %#v, want a %d parse error", refusal, codeParse)
+	}
+	if failure["message"] != want {
+		t.Fatalf("message = %q, want %q", failure["message"], want)
+	}
+	if int(responses[1]["id"].(float64)) != 99 {
+		t.Fatalf("the request after the refusal must still be answered: %#v", responses[1])
+	}
+	if _, answered := responses[1]["result"]; !answered {
+		t.Fatalf("the request after the refusal must be answered normally: %#v", responses[1])
+	}
+}
+
+// escapedPair writes one astral character as the two \u escapes JSON gives it,
+// built from its own UTF-16 code units rather than spelled out. A literal
+// "😀" written in a source file is one careless editor away from
+// being folded into the character it names — which would silently turn the
+// escape cases below into copies of the literal one beside them, and leave the
+// scan's pairing arm untested. Built this way it cannot be folded.
+func escapedPair(t *testing.T, astral rune) string {
+	t.Helper()
+	high, low := utf16.EncodeRune(astral)
+	if high == utf8.RuneError || low == utf8.RuneError {
+		t.Fatalf("%q is in the basic plane, so it has no surrogate pair", astral)
+	}
+	return fmt.Sprintf(`\u%04x\u%04x`, high, low)
+}
+
+// The other half of the rule: what is well-formed is admitted unchanged. A
+// surrogate pair is a character, not a defect, and U+FFFD is an ordinary
+// character when a client authored it — only the repair of bytes that were
+// never sent is refused.
+func TestTransportAcceptsWellFormedUnicodeArguments(t *testing.T) {
+	pair, character := escapedPair(t, '\U0001F600'), string(rune(0x1F600))
+	topPair, topCharacter := escapedPair(t, '\U0010FFFF'), string(rune(0x10FFFF))
+	replacement := string(utf8.RuneError)
+
+	validDocument := func(t *testing.T, response map[string]any) {
+		t.Helper()
+		result, ok := response["result"].(map[string]any)
+		if !ok || result["isError"] != false {
+			t.Fatalf("want a successful validate call: %#v", response)
+		}
+		if structured := result["structuredContent"].(map[string]any); structured["status"] != "valid" {
+			t.Fatalf("status = %v, want valid: %#v", structured["status"], structured)
+		}
+	}
+
+	for _, tt := range []struct {
+		name    string
+		line    string
+		carries string // bytes the composed line must hold, or the case tests something else
+		absent  string // bytes it must not hold, which is what keeps these cases apart
+		inspect func(*testing.T, map[string]any)
+	}{
+		{
+			name:    "a well-formed surrogate pair escape in validate's document",
+			line:    wireCall(1, "validate", validateArguments(t, "Minimal "+pair+" decision")),
+			carries: pair,
+			absent:  character,
+			inspect: validDocument,
+		},
+		{
+			name:    "the same character written as literal UTF-8",
+			line:    wireCall(1, "validate", validateArguments(t, "Minimal "+character+" decision")),
+			carries: character,
+			absent:  `\u`,
+			inspect: validDocument,
+		},
+		{
+			// U+10FFFF is the one character whose high unit is 0xDBFF, the
+			// last high surrogate: the boundary the scan splits high from low
+			// on. A pair anywhere below it is admitted even if that split is
+			// off by one, so without this case the split is untested — and
+			// this record is what makes it a refusal on the wire.
+			name:    "the highest pair there is, U+10FFFF, in validate's document",
+			line:    wireCall(1, "validate", validateArguments(t, "Minimal "+topPair+" decision")),
+			carries: topPair,
+			absent:  topCharacter,
+			inspect: validDocument,
+		},
+		{
+			name:    "a literal U+FFFD character in validate's document",
+			line:    wireCall(1, "validate", validateArguments(t, "Minimal "+replacement+" decision")),
+			carries: replacement,
+			absent:  `\u`,
+			inspect: validDocument,
+		},
+		{
+			name:    "a well-formed surrogate pair escape in an expectation",
+			line:    wireCall(1, expectationTool, expectationArguments("allow"+pair)),
+			carries: pair,
+			absent:  character,
+			inspect: func(t *testing.T, response map[string]any) {
+				t.Helper()
+				result, ok := response["result"].(map[string]any)
+				if !ok || result["isError"] != false {
+					t.Fatalf("want a successful expectation call: %#v", response)
+				}
+				report := result["structuredContent"].(map[string]any)
+				row := report["results"].([]any)[0].(map[string]any)
+				if row["status"] != "valid" {
+					t.Fatalf("row = %#v, want valid", row)
+				}
+				if canonical := row["canonical"].(string); !strings.Contains(canonical, `"outcomeId":"allow`+character+`"`) {
+					t.Fatalf("canonical = %q, want the character the pair the caller sent names", canonical)
+				}
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if !strings.Contains(tt.line, tt.carries) {
+				t.Fatalf("the composed line does not carry %q: %q", tt.carries, tt.line)
+			}
+			if strings.Contains(tt.line, tt.absent) {
+				t.Fatalf("the composed line carries %q, so it is not the case it names: %q", tt.absent, tt.line)
+			}
+
+			responses := runServer(t, tt.line)
+			if len(responses) != 1 {
+				t.Fatalf("got %d responses, want 1: %#v", len(responses), responses)
+			}
+			tt.inspect(t, responses[0])
+		})
 	}
 }
 

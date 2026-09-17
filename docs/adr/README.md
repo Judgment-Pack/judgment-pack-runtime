@@ -132,3 +132,4 @@ authority, and following it confers no conformance status on anything.
 | [0033](0033-a-record-cites-the-receipts-it-relied-on.md) | A decision record cites the receipts it relied on, as given                     | accepted |
 | [0034](0034-profile-a-matrix-against-its-history.md) | Profile a matrix against its history: agreement by origin, values at each threshold, rows that cite receipts; never gated | accepted |
 | [0035](0035-validate-proposed-expectations-before-admission.md) | Validate proposed exact expectations before authoring admission | accepted |
+| [0037](0037-refuse-malformed-unicode-at-the-stdio-transport.md) | Refuse malformed Unicode at the stdio transport, for every string argument and everywhere else in the request line | proposed |
