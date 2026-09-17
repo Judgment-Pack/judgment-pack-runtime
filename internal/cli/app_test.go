@@ -1027,6 +1027,31 @@ func TestMCPSubcommandRespondsToInitialize(t *testing.T) {
 	}
 }
 
+// A line past the transport's bound ends the session, and docs/mcp-clients.md
+// tells a client what it then sees: the input-error diagnostic on stderr, an
+// exit code of 4, and nothing answered -- the request queued behind the long
+// line included, which is why that document says to restart the server. The
+// server package holds the refusal itself; what is held here is the process
+// surface a client reads, since Serve's error reaches it only through this
+// command's exit code.
+func TestMCPSubcommandExitsFourOnAnOversizedLine(t *testing.T) {
+	const documentedLineBytes = 16 * 1024 * 1024
+	oversized := `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"`
+	oversized += strings.Repeat("x", documentedLineBytes+1-len(oversized)-len(`"}}`+"\n")) + `"}}` + "\n"
+	input := oversized + `{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n"
+
+	code, stdout, stderr := runTest(t, []string{"mcp"}, input)
+	if code != result.ExitIO {
+		t.Fatalf("exit=%d, want %d for a line the transport refuses", code, result.ExitIO)
+	}
+	if stdout != "" {
+		t.Fatalf("nothing may be answered after an oversized line, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "mcp: input error: bufio.Scanner: token too long") {
+		t.Fatalf("stderr = %q, want the input-error diagnostic docs/mcp-clients.md quotes", stderr)
+	}
+}
+
 // The experimental evaluate command produces a labeled disposition and exits 0
 // for any produced disposition; its invocation guards use the standard codes.
 func TestExperimentalEvaluateCommand(t *testing.T) {

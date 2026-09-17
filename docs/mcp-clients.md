@@ -101,6 +101,35 @@ this runtime compared: store that. It accesses no project, source, credential,
 evaluator, audit record or network. See
 [ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md).
 
+Those limits are per expectation; the message carrying them has one of its own,
+and it belongs to the transport rather than to this tool. One request is one
+line, and the longest line this server reads is 16,777,216 bytes counting the
+delimiter that ends it — a carriage return before the newline counts toward it
+too — so 16 MiB exactly, 16,777,215 bytes of JSON and a newline, which a full
+batch need not fit: sent as one `tools/call` line with every character written
+as a `\u00XX` escape, a spelling JSON admits for any of them, 256 expectations
+at the 16 KiB limit measure 25,166,754 bytes as one line, that call's framing
+and delimiter counted with them. A longer line is never parsed and is answered
+by nothing: the server reports `mcp: input error: bufio.Scanner: token too long`
+on stderr and exits 4, leaving every request queued behind that line unanswered,
+so a client that sends one restarts the server rather than waits for a reply.
+This tool's reply is bounded by neither of those limits and can be larger than
+the call that asked for it, because the report is carried twice, once as
+`content[0].text` and once as `structuredContent`, and each valid entry carries
+its canonical text: 256 expectations each naming an outcome id of 8,192 letters,
+escaped only where JSON requires it, are a 2,120,866-byte call answered by
+4.08 MiB, 2.02 times what it sent. The ratio is the construction's, not a
+constant: canonical text can be shorter than what was sent — an expectation
+padded with whitespace loses the padding — so a reply can also be smaller than
+its call, as a short disposition padded to the bound is answered by less than it
+sent. Size the reply from what is sent, not from the bound; this tool bounds
+nothing on the way out. Where a reply on this surface is bounded, the bound
+refuses rather than truncates: `experimental_test_packs` and
+`experimental_test_graphs` refuse a marshaled report over 16 MiB
+([ADR-0021](adr/0021-run-the-declared-matrix-over-mcp.md)), and
+`experimental_list_graphs` refuses an inventory whose bytes read and identities
+echoed would pass its 8 MiB budget.
+
 A stored expectation that a matrix, graph or corpus row already carries is read
 by the same decoder, which now refuses four shapes it accepted before: `reasons`
 missing or null on an outcome, `outcomeId` as `""` or `null` on a non-outcome
