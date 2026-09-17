@@ -118,10 +118,11 @@ the call that asked for it, because the report is carried twice, once as
 `content[0].text` and once as `structuredContent`, and each valid entry carries
 its canonical text: that same batch, escaped only where JSON requires it, is a
 4,895,138-byte call — well inside the line bound — answered by 10.7 MiB, 2.29
-times what it sent. The ratio is the construction's, not a constant — an
-expectation padded with whitespace canonicalizes to less than it was sent as, and
-its reply is smaller than the call — so size the reply from what is sent, not from
-the bound. Of the tools here only `experimental_test_packs` and
+times what it sent. The ratio is the construction's, not a constant: canonical
+text can be shorter than what was sent — an expectation padded with whitespace
+loses the padding — so a reply can also be smaller than its call, as a short
+disposition padded to the bound is answered by less than it sent. Size the reply
+from what is sent, not from the bound. Of the tools here only `experimental_test_packs` and
 `experimental_test_graphs` bound a reply at all, refusing a marshaled report over
 16 MiB rather than truncating it
 ([ADR-0021](adr/0021-run-the-declared-matrix-over-mcp.md)).
