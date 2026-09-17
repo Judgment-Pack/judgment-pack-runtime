@@ -834,6 +834,95 @@ func TestTransportRefusesOversizedLineAndEndsStream(t *testing.T) {
 	}
 }
 
+// The two tests above size their fixtures from maxMessageBytes, so both stay
+// green wherever that constant is set, and the edge between the longest line
+// this server answers and the first it refuses was held by nothing.
+// docs/mcp-clients.md now states that edge to clients as a number, so the number
+// is what this test holds: the bound is on the line the scanner reads, every
+// byte of the delimiter that ends it counted, so 16,777,215 bytes of JSON and a
+// newline are answered, the same request one byte longer is refused unparsed,
+// and a client that ends its lines with CRLF reaches the same bound one byte of
+// JSON sooner -- which is the parenthesis that document puts on the number.
+func TestTransportAnswersTheDocumentedLineEdgeAndRefusesOneByteMore(t *testing.T) {
+	const documentedLineBytes = 16 * 1024 * 1024
+	// One ping request padded to exactly total bytes, its newline counted.
+	line := func(total int) string {
+		prefix := `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"`
+		suffix := `"}}` + "\n"
+		return prefix + strings.Repeat("x", total-len(prefix)-len(suffix)) + suffix
+	}
+	// The same request of total bytes, ended with CRLF instead: total-2 bytes
+	// of JSON rather than total-1.
+	crlfLine := func(total int) string {
+		return strings.TrimSuffix(line(total-1), "\n") + "\r\n"
+	}
+
+	t.Run("the longest line is answered", func(t *testing.T) {
+		input := line(documentedLineBytes)
+		if len(input) != documentedLineBytes {
+			t.Fatalf("fixture is %d bytes, want %d", len(input), documentedLineBytes)
+		}
+		responses := runServer(t, input)
+		if len(responses) != 1 {
+			t.Fatalf("got %d responses, want 1", len(responses))
+		}
+		if int(responses[0]["id"].(float64)) != 1 {
+			t.Fatalf("edge ping response = %#v, want id 1", responses[0])
+		}
+	})
+
+	t.Run("one byte more is refused", func(t *testing.T) {
+		engine, err := validation.NewEngine()
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := NewServer(engine, conformance.NewRunner(engine))
+
+		input := line(documentedLineBytes + 1)
+		if len(input) != documentedLineBytes+1 {
+			t.Fatalf("fixture is %d bytes, want %d", len(input), documentedLineBytes+1)
+		}
+		var out, logw bytes.Buffer
+		if err := server.Serve(strings.NewReader(input), &out, &logw); !errors.Is(err, bufio.ErrTooLong) {
+			t.Fatalf("Serve error = %v, want scanner ErrTooLong", err)
+		}
+		if out.String() != "" {
+			t.Fatalf("a line past the bound must be answered by nothing, got %q", out.String())
+		}
+	})
+
+	t.Run("a carriage return counts toward the bound", func(t *testing.T) {
+		answered := crlfLine(documentedLineBytes)
+		if len(answered) != documentedLineBytes {
+			t.Fatalf("CRLF fixture is %d bytes, want %d", len(answered), documentedLineBytes)
+		}
+		responses := runServer(t, answered)
+		if len(responses) != 1 {
+			t.Fatalf("got %d responses, want 1", len(responses))
+		}
+
+		engine, err := validation.NewEngine()
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := NewServer(engine, conformance.NewRunner(engine))
+
+		// The JSON the first arm answered under a bare newline, ended with
+		// CRLF: one byte more on the line, and refused for that byte alone.
+		refused := crlfLine(documentedLineBytes + 1)
+		if len(refused) != documentedLineBytes+1 {
+			t.Fatalf("CRLF fixture is %d bytes, want %d", len(refused), documentedLineBytes+1)
+		}
+		var out, logw bytes.Buffer
+		if err := server.Serve(strings.NewReader(refused), &out, &logw); !errors.Is(err, bufio.ErrTooLong) {
+			t.Fatalf("Serve error = %v, want scanner ErrTooLong for CRLF at the bound", err)
+		}
+		if out.String() != "" {
+			t.Fatalf("a CRLF line past the bound must be answered by nothing, got %q", out.String())
+		}
+	})
+}
+
 // encoding/json matches struct tags case-insensitively, so DisallowUnknownFields
 // alone accepts PACK_ID for pack_id. callTool holds every tool's arguments to
 // the spelling its schema advertises, before any handler decodes (issue #115).
