@@ -255,7 +255,9 @@ one level down by the carrier.
   still answered under 99, which is what holds the attribution rule above: the one request in
   that sequence is the one that succeeded. Negative controls hold the other half: a
   well-formed pair as an escape and as literal UTF-8, and a literal U+FFFD character, are all
-  admitted and answered normally, and the pair survives into an expectation's canonical text.
+  admitted and answered normally, and the character a pair names reaches the expectation tool
+  unrepaired: the finding it writes repeats that character and not U+FFFD, whether it carries
+  the outcome id as canonical text or quotes it in a message.
   One control is U+10FFFF, the largest scalar value there is and one of the 1,024
   (U+10FC00–U+10FFFF) whose high unit is the last high surrogate `0xDBFF`, so it exercises the
   scan's final high-surrogate boundary rather than leaving it assumed: the `value >= 0xDBFF`
