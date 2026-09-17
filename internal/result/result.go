@@ -1360,8 +1360,12 @@ type ExpectationFinding struct {
 // (VERSIONING.md), and it carries Experimental like every other payload on this
 // runtime's experimental surface.
 //
-// Status is about admission, never about reachability: a valid finding says the
-// text is a legal §8.3 disposition, not that any pack can produce it.
+// Status is about admission, and reachability enters it only where reachability
+// is a fact about the disposition alone: a valid finding says the text is a legal
+// §8.3 disposition that §8's step order and §5's identifier grammar do not put
+// beyond every conforming pack (ADR-0036). It does not say that any particular
+// pack can produce it — pack-dependent reachability, an outcome this pack
+// declares or a handoff it configures, is still not checked here.
 type ExpectationReport struct {
 	OutputVersion string               `json:"outputVersion"`
 	Tool          Tool                 `json:"tool"`

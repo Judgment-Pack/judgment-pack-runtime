@@ -25,7 +25,12 @@ type expectationFixture struct {
 	Text      string
 	Valid     bool
 	Canonical string
-	Message   string
+	// Code is the finding code an invalid fixture must be reported under, so a
+	// fixture written for §8's step order cannot pass by being refused as a §8.3
+	// grammar defect, or the reverse. It defaults to JPS-EXPECTATION-INVALID,
+	// which is what every fixture that does not state one means.
+	Code    string
+	Message string
 }
 
 func expectationFixtures(t *testing.T) []expectationFixture {
@@ -37,6 +42,17 @@ func expectationFixtures(t *testing.T) []expectationFixture {
 	var fixtures []expectationFixture
 	if err := json.Unmarshal(data, &fixtures); err != nil {
 		t.Fatal(err)
+	}
+	for i, fixture := range fixtures {
+		if fixture.Valid {
+			if fixture.Code != "" {
+				t.Fatalf("%s: a valid fixture carries no code", fixture.Name)
+			}
+			continue
+		}
+		if fixture.Code == "" {
+			fixtures[i].Code = "JPS-EXPECTATION-INVALID"
+		}
 	}
 	return fixtures
 }
@@ -107,9 +123,16 @@ func TestExpectationAdmissionContract(t *testing.T) {
 			if !ok || !strings.Contains(message, fixture.Message) {
 				t.Fatalf("message %q does not name %q", row["message"], fixture.Message)
 			}
-			if row["code"] != "JPS-EXPECTATION-INVALID" {
-				t.Fatal(row)
+			// And under the code its class is reported by: a §8.3 grammar defect
+			// under JPS-EXPECTATION-INVALID, a disposition §8's step order or §5's
+			// grammar puts beyond every pack under JPS-EXPECTATION-UNREACHABLE.
+			// The two are told apart by the code alone (ADR-0035, ADR-0036), so a
+			// fixture that swapped them would otherwise pass.
+			if row["code"] != fixture.Code {
+				t.Fatalf("code is %v, want %q: %#v", row["code"], fixture.Code, row)
 			}
+			// Including an unreachable one: a client must not store the canonical
+			// text of an expectation no pack can produce.
 			if _, present := row["canonical"]; present {
 				t.Fatalf("an invalid finding carries no canonical text: %#v", row)
 			}
@@ -139,6 +162,39 @@ func TestExpectationAdmissionAggregate(t *testing.T) {
 	for _, texts := range [][]string{{invalid, valid}, {valid, invalid}} {
 		rows := expectationRows(t, texts, "invalid")
 		if (rows[0]["status"] == "invalid") != (texts[0] == invalid) {
+			t.Fatalf("rows follow their inputs: %#v", rows)
+		}
+	}
+}
+
+// TestUnreachableExpectationIsAnInvalidFindingOfItsOwn holds the wire shape of
+// the one finding ADR-0036 adds, on its own rather than beside the fixtures of
+// every other rule: a legal §8.3 disposition that §8's step order puts beyond
+// every pack decides the aggregate the way any other non-valid row does, is
+// reported under its own code, and carries no canonical text. Asserting this
+// inside the whole-fixture batch would prove none of it, because that batch is
+// already invalid for two dozen other reasons.
+func TestUnreachableExpectationIsAnInvalidFindingOfItsOwn(t *testing.T) {
+	const unreachable = `{"kind":"unresolved","reasons":["not-applicable"],"handoff":{"state":"none"}}`
+	row := expectationRows(t, []string{unreachable}, "invalid")[0]
+	if row["status"] != "invalid" || row["code"] != "JPS-EXPECTATION-UNREACHABLE" {
+		t.Fatalf("an unreachable expectation is an invalid finding under its own code: %#v", row)
+	}
+	message, ok := row["message"].(string)
+	if !ok || !strings.Contains(message, "§8 step 1") {
+		t.Fatalf("the finding names the step that rules the shape out: %#v", row)
+	}
+	// The whole point of the code: the client must change the expectation, not
+	// the candidate, so it must not keep the text as something to compare.
+	if _, present := row["canonical"]; present {
+		t.Fatalf("an unreachable expectation is not text a client stores: %#v", row)
+	}
+	// And the row is not valid by another name: a batch holding one decides the
+	// aggregate exactly as ADR-0035's rule says any non-valid row does.
+	valid := `{"kind":"outcome","outcomeId":"allow","reasons":[],"handoff":{"state":"none"}}`
+	for _, texts := range [][]string{{unreachable, valid}, {valid, unreachable}} {
+		rows := expectationRows(t, texts, "invalid")
+		if (rows[0]["status"] == "invalid") != (texts[0] == unreachable) {
 			t.Fatalf("rows follow their inputs: %#v", rows)
 		}
 	}
@@ -310,9 +366,54 @@ func TestExpectationToolIsAdvertisedAsItBehaves(t *testing.T) {
 		t.Fatal(items)
 	}
 	description := expectationToolDefinition()["description"].(string)
-	for _, phrase := range []string{"EXPERIMENTAL SURFACE (ADR-0035)", "without compatibility promise", "necessary, not sufficient"} {
+	for _, phrase := range []string{"EXPERIMENTAL SURFACE (ADR-0035)", "without compatibility promise", "necessary, not sufficient",
+		// A code a client is told to branch on has to be in the text the client
+		// reads, beside what it means and beside each class it is reported for.
+		"JPS-EXPECTATION-UNREACHABLE",
+		"an unresolved result retaining not-applicable", "no-match beside another reason",
+		"the expectation and not the candidate is what must change",
+		"pack-dependent reachability is not checked",
+		// And the order, as a whole sentence and with the code it decides. The
+		// behaviour is pinned by the malformed-and-unreachable fixture; what is
+		// pinned here is that the advertised text says the same thing. Holding
+		// only a prefix such as "Pack-independent reachability is checked" leaves
+		// a description that states the reverse order — the one case where a
+		// client cannot recover the answer from the code it receives — passing.
+		"Pack-independent reachability is checked after that grammar gate and only when the grammar gate passes",
+		"an input that is both malformed and unreachable is reported for its grammar defect, under JPS-EXPECTATION-INVALID"} {
 		if !strings.Contains(description, phrase) {
 			t.Fatalf("the description states %q", phrase)
+		}
+	}
+	// The third class is held to the grammar the tool actually applies rather
+	// than to a copy of it: respelling localIdentifier without respelling the
+	// description fails here, which a phrase list of its own could not catch.
+	if !strings.Contains(description, localIdentifier.String()) {
+		t.Fatalf("the description states the grammar the tool applies, %q", localIdentifier.String())
+	}
+	// Every code the tool actually emits is named in the text a client reads, in
+	// the spelling it is emitted in. A description held only to phrases it happens
+	// to contain drifts the moment a code beside it is added or respelled; this
+	// reads the codes off the wire instead, over the whole fixture corpus, so it
+	// stays a description-to-behaviour check and not a second copy of the fixture
+	// table.
+	fixtures := expectationFixtures(t)
+	texts := make([]string, len(fixtures))
+	for i, fixture := range fixtures {
+		texts[i] = fixture.Text
+	}
+	emitted := map[string]bool{}
+	for _, row := range expectationRows(t, texts, "invalid") {
+		if code, ok := row["code"].(string); ok {
+			emitted[code] = true
+		}
+	}
+	if len(emitted) < 2 {
+		t.Fatalf("the corpus emits too few codes to hold the description to any: %v", emitted)
+	}
+	for code := range emitted {
+		if !strings.Contains(description, code) {
+			t.Fatalf("the tool emits %q and the description does not name it", code)
 		}
 	}
 }

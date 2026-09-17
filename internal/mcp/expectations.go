@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -18,7 +19,7 @@ const expectationSpec = "0.2.0-draft"
 func expectationToolDefinition() map[string]any {
 	return map[string]any{
 		"name":        expectationTool,
-		"description": "EXPERIMENTAL SURFACE (ADR-0035): check proposed exact JPS dispositions before admitting authoring test cases. This surface may change or be removed without compatibility promise. This read-only operation uses the same strict disposition decoder as the runtime's matrix comparator. It checks representation and disposition-local constraints, not whether a pack produces the expectation, whether the policy is correct, or whether a declared outcome or handoff agrees with a particular pack. A valid finding is therefore necessary, not sufficient: some valid dispositions are reachable by no pack at all, and an outcome id it admits may name no declared outcome. Reason and trigger sets are normalized rather than refused — duplicates and order carry no meaning in a §8.3 set — so the canonical text of a valid finding, not the text submitted, is what this runtime compared. Every input has one indexed valid/invalid result, and an invalid finding carries the code and the rule that refused it; none are silently dropped. A JPS-EXPECTATION-LIMIT finding means the input was not admitted, not that Core prohibits its meaning, so branch on the code rather than the status. No pack, project, evaluator, audit record, source, credential or network is accessed. Only JPS 0.2.0-draft is supported. Each expectation is JSON text, limited to 16 KiB, depth 16, 1024 nodes and 8 KiB per string; a call carries 1–256 expectations.",
+		"description": "EXPERIMENTAL SURFACE (ADR-0035): check proposed exact JPS dispositions before admitting authoring test cases. This surface may change or be removed without compatibility promise. This read-only operation uses the same strict disposition decoder as the runtime's matrix comparator. It checks representation and disposition-local constraints, not whether a pack produces the expectation, whether the policy is correct, or whether a declared outcome or handoff agrees with a particular pack. Pack-independent reachability is checked after that grammar gate and only when the grammar gate passes: a JPS-EXPECTATION-UNREACHABLE finding means §8's step order or §5's local-identifier grammar puts the disposition beyond every conforming pack — an unresolved result retaining not-applicable, no-match beside another reason, or an outcomeId outside ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$ — so the expectation and not the candidate is what must change; an input that is both malformed and unreachable is reported for its grammar defect, under JPS-EXPECTATION-INVALID. A valid finding is therefore necessary, not sufficient: pack-dependent reachability is not checked, so an outcome id it admits may name no declared outcome of your pack and a handoff may be one your pack does not configure. Reason and trigger sets are normalized rather than refused — duplicates and order carry no meaning in a §8.3 set — so the canonical text of a valid finding, not the text submitted, is what this runtime compared. Every input has one indexed valid/invalid result, and an invalid finding carries the code and the rule that refused it; none are silently dropped. A JPS-EXPECTATION-LIMIT finding means the input was not admitted, not that Core prohibits its meaning, so branch on the code rather than the status. No pack, project, evaluator, audit record, source, credential or network is accessed. Only JPS 0.2.0-draft is supported. Each expectation is JSON text, limited to 16 KiB, depth 16, 1024 nodes and 8 KiB per string; a call carries 1–256 expectations.",
 		"inputSchema": map[string]any{
 			"type": "object", "additionalProperties": false,
 			"required": []string{"spec_version", "expectations"},
@@ -87,6 +88,19 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 				}
 			} else if disposition, err := evaluation.DecodeDisposition(json.RawMessage(text)); err != nil {
 				row.Message = err.Error()
+			} else if unreachable := unreachableExpectation(disposition); unreachable != "" {
+				// After the §8.3 grammar gate, never before it. A shape that is
+				// not a disposition at all has no reachability to speak of, and
+				// an author cannot act on the second diagnosis before the first,
+				// so a text that is both malformed and unreachable keeps the
+				// code that means "not a disposition".
+				//
+				// The row keeps the empty Canonical it was built with. A valid
+				// and an invalid finding carry disjoint members (ADR-0035,
+				// result.ExpectationFinding), and the canonical text is what a
+				// client stores and compares — the one thing it must not do with
+				// an expectation no pack can produce.
+				row.Code, row.Message = "JPS-EXPECTATION-UNREACHABLE", unreachable
 			} else {
 				canonical, _ := disposition.Canonical() // DecodeDisposition already applied this gate.
 				row.Status, row.Canonical, row.Code = "valid", string(canonical), ""
@@ -95,6 +109,54 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 		results[i] = row
 	}
 	return toolResult(result.NewExpectationReport("mcp "+expectationTool, expectationSpec, results))
+}
+
+// localIdentifier is §5's local-object-identifier grammar, quoted from the
+// section itself: "Local object identifiers are non-empty ASCII strings matching
+// `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`."
+//
+// It is a fourth copy of that literal rather than a reuse of an existing one,
+// deliberately. internal/validation holds the same characters as a lookup key
+// that maps a JSON Schema `pattern` to a diagnostic code, not as a matcher, so
+// sharing it would couple this gate to that table's job; internal/project's
+// compiled copy is unexported in a package the MCP server does not and should
+// not import for one regexp. The grammar is a normative constant of §5, not an
+// implementation detail that can drift: every place that enforces it in this
+// repository already states it, and the specification's own expected-disposition
+// schema states it once more, at $defs/localId, which $defs/disposition names
+// for outcomeId.
+var localIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
+
+// unreachableExpectation names the rule that puts a legal §8.3 disposition
+// beyond every conforming pack, or returns "" when none does (ADR-0036).
+//
+// Every rule here is pack-independent: it holds for all packs, so it can be
+// decided from the disposition alone, which is all this tool ever sees.
+// Pack-dependent reachability — whether this pack declares that outcome, whether
+// it configures that handoff — is not decided here and is not decidable here.
+// Two of the three are §8's step order rather than §8.3's grammar, which is why
+// the §8.3 decoder admits them and this check, running after it, does not.
+//
+// The classes are tested in §8's own order, then §5; the first two overlap only
+// for an unresolved result retaining both not-applicable and no-match, which is
+// ruled out at step 1 and reported there. That precedence is a fixture of its
+// own ("unresolved retaining both not-applicable and no-match is reported at
+// step 1"), because the two arms differ only in which repair they instruct and
+// swapping them changes no status and no code.
+func unreachableExpectation(disposition result.Disposition) string {
+	reasons := make(map[string]bool, len(disposition.Reasons))
+	for _, reason := range disposition.Reasons {
+		reasons[reason] = true
+	}
+	switch {
+	case disposition.Kind == "unresolved" && reasons["not-applicable"]:
+		return `§8 step 1: "If applicability is false, produce a terminal not-applicable result carrying reason not-applicable and do not evaluate exceptions or rules" is the only step that records that reason, and it reports the halt under kind "not-applicable", so no evaluation produces an unresolved result retaining that reason. Expect kind "not-applicable" instead.`
+	case reasons["no-match"] && len(reasons) > 1:
+		return `§8 step 10: "If no fallback is present, produce unresolved with reason no-match" is the only step that records "no-match", and every step that records another reason returns before it — step 5 "produce unresolved after all exception effects have been inspected, and do not evaluate normal rules", step 8 "Produce unresolved whenever either reason is present" — so no evaluation produces "no-match" beside another reason.`
+	case disposition.Kind == "outcome" && !localIdentifier.MatchString(disposition.OutcomeID):
+		return fmt.Sprintf(`§5: "Local object identifiers are non-empty ASCII strings matching ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", so %q is a string no conforming pack can declare as an outcome id.`, disposition.OutcomeID)
+	}
+	return ""
 }
 
 // isBatchArray reports whether the expectations member is an array, or is
