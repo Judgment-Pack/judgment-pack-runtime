@@ -80,19 +80,22 @@ a validator answering about a document nobody sent would come to
 line's, so it runs before the request is read at all: a line carrying the defect outside its
 arguments is answered under a null `id` too, where an unknown method or a request that is not an
 object used to be answered as `-32601` under the request's own `id` or as `-32600`. An error under
-a null `id` is uncorrelated: JSON-RPC §5 answers under null whenever the request's id could not be
-read — for a parse error and for an invalid request alike — and it gives no rule tying such an
-answer to the request you wrote last. Send one request at a time and the refusal is the one in
-flight; pipeline, and the `id` alone cannot say which line earned it, so do not fail your most
-recently written request on the strength of it — a valid request behind a refused one is still
-answered. Well-formed input is untouched: a surrogate pair is a character, and a literal U+FFFD you
-authored is ordinary UTF-8. An unpaired escape, by contrast, is admitted by JSON's own grammar —
-RFC 8259 §8.2 says the behaviour of software that receives one is unpredictable, not that the text
-is malformed — so refusing it anywhere in the line is this runtime's transport policy, taken
-because a canonical disposition §8.3 requires to compare byte for byte cannot be built out of a
-repaired escape. The same escape one level deeper — written inside a document's or an
-expectation's own JSON text, which reaches the tool as the six characters `\ud800` — is refused by
-the carrier where it always was, as that tool's own diagnostic rather than as a parse error.
+a null `id` names no request: JSON-RPC §5 answers under null whenever the request's id could not
+be read — for a parse error and for an invalid request alike — and it gives no rule tying such an
+answer to anything you sent. Attribute one to a message only when you know that no other message
+you sent could have earned it — a notification included, because a notification carrying either
+defect is refused under null exactly as a request is, so having one request outstanding is not
+enough to make the refusal that request's. Otherwise the error stays uncorrelated, and never fail
+a request on the strength of it: a valid request written behind a refused message is still
+answered under its own `id`. Well-formed input is untouched: a surrogate pair is a character, and
+a literal U+FFFD you authored is ordinary UTF-8. An unpaired escape, by contrast, is admitted by
+JSON's own grammar — RFC 8259 §8.2 says the behaviour of software that receives one is
+unpredictable, not that the text is malformed — so refusing it anywhere in the line is this
+runtime's transport policy, taken because a canonical disposition §8.3 requires to compare byte
+for byte cannot be built out of a repaired escape. The same escape one level deeper — written
+inside a document's or an expectation's own JSON text, which reaches the tool as the six
+characters `\ud800` — is refused by the carrier where it always was, as that tool's own
+diagnostic rather than as a parse error.
 
 ### Proposed test expectations
 

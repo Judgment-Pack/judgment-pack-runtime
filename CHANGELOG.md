@@ -27,14 +27,17 @@ All notable changes to tagged releases are documented here.
   a method name carrying a lone escape was `-32601` `Unknown method: …` under the request's own
   `id` and is now `-32700` under a null one, a line that is not a JSON object was `-32600`, and a
   line that is neither valid UTF-8 nor valid JSON now names the encoding defect rather than the
-  JSON one. An error under a null `id` is uncorrelated, by JSON-RPC §5's own rule: null is the
+  JSON one. An error under a null `id` names no request, by JSON-RPC §5's own rule: null is the
   `id` of any answer whose request id could not be read — for a parse error and for an invalid
-  request alike — and §5 supplies no rule tying such an answer to the request written last. A
-  client that sends one request at a time can attribute the refusal to the request in flight; a
-  client that pipelines cannot, from the `id` alone, and must not fail its most recently written
-  request on the strength of it: a malformed line followed by a valid `ping` written behind it
-  gets the refusal under null and the `ping` answered under its own `id`, which is the sequence
-  every refusal test here sends.
+  request alike — and §5 supplies no rule tying such an answer to any message sent. A client may
+  attribute such a refusal to one of its messages only when it knows that no other message it
+  sent could have earned it — a notification included, since a notification carrying either
+  defect is refused under null exactly as a request is, so having one request outstanding does
+  not make the refusal that request's. Otherwise the error stays uncorrelated, and no client may
+  fail a request on the strength of it: a malformed line followed by a valid `ping` written
+  behind it gets the refusal under null and the `ping` answered under its own `id`, which is the
+  sequence every refusal test here sends — and when the malformed line is a notification, that
+  `ping` is the only request there was.
   The two refusals differ in what they ask of a client. A raw invalid byte was never valid UTF-8,
   and MCP's stdio transport requires UTF-8, so that refusal changes nothing a conforming client
   sends. An unpaired surrogate **escape** is another matter: RFC 8259 §8.2 admits one in JSON's

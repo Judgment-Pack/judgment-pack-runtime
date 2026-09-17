@@ -980,8 +980,12 @@ func TestTransportRefusesMalformedUnicodeInEveryStringArgument(t *testing.T) {
 // object; batches are not supported." under null. All four are -32700 under
 // null now, so a client correlating by id sees a null-id parse error where an
 // id-bearing error, or a result, used to come back (ADR-0037). These cases are
-// also what pins the scope: narrowing either check to lines that carry tool
-// arguments leaves every other test in this package green.
+// most of what pins the scope: narrowing either check to lines that carry tool
+// arguments fails all four of them, and with them the doubly-defective case of
+// TestTransportRefusesMalformedUnicodeInEveryStringArgument (the line
+// {"a":"x\x80 with no closing quote, which carries no arguments either) and
+// both cases of TestTransportRefusesMalformedUnicodeInANotification — and
+// nothing else in this package.
 func TestTransportRefusesMalformedUnicodeOutsideToolArguments(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -1011,6 +1015,45 @@ func TestTransportRefusesMalformedUnicodeOutsideToolArguments(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			refuseAndContinue(t, tt.line, wantRefusal(t, tt.line, tt.escape, tt.message))
+		})
+	}
+}
+
+// A notification carrying either defect is refused under a null id exactly as a
+// request is, because both checks run before the envelope is read and so before
+// anything knows whether the line would have carried an id at all. That is what
+// a client's correlation rule has to hold: a null-id error does not even mean
+// that a request earned it. Measured against d891b05 the notification below drew
+// no response whatever — notifications/initialized with no id is a notification
+// by name, answered by nothing — so the only response was the ping's, and a
+// client following "one request outstanding, so the refusal is that request's"
+// would have failed the one message that succeeded. ADR-0037, docs/mcp-clients.md
+// and the CHANGELOG state the rule instead: attribute a null-id error to a
+// message only when no other message sent could have earned it, and never fail a
+// request on the strength of one.
+func TestTransportRefusesMalformedUnicodeInANotification(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		line    string
+		message string // the exact message expected, when no offset is named
+		escape  string // when set, the message must name this escape's own offset
+	}{
+		{
+			name:   "a lone escape in a notification's params",
+			line:   `{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"note":"\ud800"}}}` + "\n",
+			escape: `\ud800`,
+		},
+		{
+			name:    "a raw 0x80 byte in a notification's params",
+			line:    "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{\"_meta\":{\"note\":\"\x80\"}}}\n",
+			message: transportNotUTF8,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// The ping refuseAndContinue writes behind the notification is the
+			// only request in the sequence, so the two responses it insists on
+			// are the notification's refusal under null and that ping's result.
 			refuseAndContinue(t, tt.line, wantRefusal(t, tt.line, tt.escape, tt.message))
 		})
 	}
