@@ -26,7 +26,11 @@ a truncated three-byte sequence produces two U+FFFD in that same message.
 §2.1 of Core requires that "implementations MUST reject malformed or incomplete input … rather
 than process only a silent prefix", and §8.3 requires that "Two conforming implementations
 given the same pack, facts document, evidence-availability document, and supported-extension
-set MUST produce byte-identical canonicalized dispositions." `internal/carrier` already holds
+set MUST produce byte-identical canonicalized dispositions." Neither is a rule about this wire,
+and Core says so in as many words: "Core defines no transport, file layout, or command-line
+surface for these inputs. It defines what they mean." (§8.2, l.612). What follows is therefore
+this runtime's own transport policy, with §2.1 and §8.3 as its reasons rather than its mandate.
+`internal/carrier` already holds
 both rules one level down — `Decode` refuses non-UTF-8 bytes and refuses an unpaired surrogate
 escape, so that an authored `"\ud800"` cannot canonicalize to the same bytes as a literal
 U+FFFD — but nothing reaches a carrier until a tool has already unquoted its argument into a
@@ -137,8 +141,10 @@ Three further determinations:
   out of these bytes, but they are not a JSON text this runtime accepts: the same bytes one
   level down are refused by the carrier as `JPS-CARRIER-INVALID-JSON`, and answering them as
   an ordinary error against an id would say the runtime read the request and disagreed with
-  its content, which is not what happened. JSON-RPC §5 makes the parse error the one answer
-  given without an id, and the existing parse-error branch already answers there.
+  its content, which is not what happened. JSON-RPC §5 answers under a null id whenever the
+  request's id could not be read — for a parse error and for an invalid request alike, so a null
+  id is not the mark of a parse error — and the existing parse-error branch already answers
+  there.
 - **A notification carrying such bytes is answered too.** A parse error is answered under
   `null` whatever the line would have been, because whether it carries an `id` is a fact about
   a request this runtime never read (JSON-RPC §5). That is the existing branch's behaviour and
@@ -169,11 +175,28 @@ one level down by the carrier.
   "method":"ping"}` was answered as an ordinary result and is now refused; and
   `{"a":"x\x80`, defective both ways, answered `Message is not valid JSON.` and now answers
   `Message is not valid UTF-8 JSON.` A client that correlates strictly by `id` sees a null-id
-  parse error where an id-bearing error used to come back, and must treat a parse error as
-  ending whatever request it last wrote rather than waiting for that id — which is what
-  JSON-RPC §5 already requires of it, since a parse error never carries one. Nothing a
-  conforming client sends changes: valid UTF-8 is what
-  JSON-RPC over stdio already requires, a well-formed surrogate pair (a high escape followed
+  parse error where an id-bearing error used to come back, and a null-id error is uncorrelated:
+  JSON-RPC §5 answers under null whenever the request's id could not be read — for a parse error
+  and for an invalid request alike — and supplies no rule tying such an answer to the request the
+  client wrote last. A client with one request outstanding can attribute the refusal to it; a
+  client that pipelines cannot, from the `id` alone, and must not fail its most recently written
+  request on the strength of a null-id error. The sequence every refusal test sends
+  (`internal/mcp/server_test.go:1041`) is why: the malformed line and then a valid `ping` under
+  `id: 99`, both written before anything is read, and the refusal comes back under null while the
+  `ping` is answered under 99 — so failing the last-written request would fail the one request
+  that succeeded and leave the refused one outstanding.
+  The two refusals differ in what they ask of a client. A raw invalid byte was never valid UTF-8,
+  and [MCP's stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
+  requires UTF-8, so *that* refusal changes nothing a conforming client sends. An unpaired
+  surrogate *escape* is a different claim: RFC 8259 §8.2 admits one in JSON's grammar — it says
+  the behaviour of software that receives such a value is unpredictable, not that the text is
+  malformed — and the escape is plain ASCII on the wire, so it satisfies that transport's UTF-8
+  requirement as well. Refusing it anywhere in the line is therefore this runtime's stricter
+  transport policy, not a rule inherited from JSON or mandated by Core, and it is taken because
+  the carrier already refuses the same escape one level down under RFC 8785 §3.2.2.2 — whose
+  reason is §8.3's byte-identical canonical requirement, which a repaired escape defeats. A
+  client that sent such an escape got a repaired answer before and gets a parse error now.
+  Well-formed input is untouched either way: a well-formed surrogate pair (a high escape followed
   immediately by its low one, `\ud83d\ude00`) is a character and is admitted, and a literal
   U+FFFD the client actually authored is valid UTF-8 and is admitted. No tool schema, tool
   name, payload member, exit code, or CLI surface
@@ -189,7 +212,8 @@ one level down by the carrier.
 - **Authority:** nothing about what a pack means, what the bundled suites accept, or what this
   runtime states about itself changes — `spec test-conformance` reports what it reported for
   both versions, and a document's verdict is the verdict it always had. What changes is where
-  §2.1's obligation on *this implementation* is held: malformed input arriving on the MCP wire
+  §2.1's standard is held by *this implementation* — Core states no transport rule to hold, only
+  what the inputs mean (§8.2, l.612) — so malformed input arriving on the MCP wire
   is now rejected rather than processed as repaired text. This decides only which byte
   sequences are a message this runtime will read; it states nothing new about the
   specification. The carrier keeps its own refusals, word for word; this record does not
@@ -216,8 +240,11 @@ one level down by the carrier.
   passing silently. Negative controls hold the other half: a
   well-formed pair as an escape and as literal UTF-8, and a literal U+FFFD character, are all
   admitted and answered normally, and the pair survives into an expectation's canonical text.
-  One control is U+10FFFF, the only character whose high unit is the last high surrogate
-  `0xDBFF`, so the scan's high/low boundary is exercised rather than assumed. Each control also
+  One control is U+10FFFF, the largest scalar value there is and one of the 1,024
+  (U+10FC00–U+10FFFF) whose high unit is the last high surrogate `0xDBFF`, so it exercises the
+  scan's final high-surrogate boundary rather than leaving it assumed: the `value >= 0xDBFF`
+  mutation refuses every pair in that range, this control among them, and admits every pair
+  below it. Each control also
   asserts the bytes its line must carry and the bytes it must not, so an
   escape case cannot quietly become a copy of the literal case beside it — which is a real
   failure mode, since a spelled-out pair in a source file can be folded into the character it
@@ -226,6 +253,7 @@ one level down by the carrier.
 
 Material impact is public-surface, conformance and security: a new refusal on the wire — and,
 for a line whose defect lies outside its arguments, a `-32601` answered under the request's own
-`id` becoming a `-32700` answered under `null` — §2.1's reject-malformed-input obligation now
-held where repaired text used to pass, and input handling with the silent repair removed. Cross-vendor review and maintainer dispositions are
+`id` becoming a `-32700` answered under `null` — §2.1's reject-malformed-input standard now
+held, as this runtime's own transport policy, where repaired text used to pass, and input
+handling with the silent repair removed. Cross-vendor review and maintainer dispositions are
 required on the introducing PR before merge, under the repository's existing review regime.

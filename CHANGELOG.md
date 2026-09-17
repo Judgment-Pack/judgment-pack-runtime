@@ -27,9 +27,23 @@ All notable changes to tagged releases are documented here.
   a method name carrying a lone escape was `-32601` `Unknown method: …` under the request's own
   `id` and is now `-32700` under a null one, a line that is not a JSON object was `-32600`, and a
   line that is neither valid UTF-8 nor valid JSON now names the encoding defect rather than the
-  JSON one. A client that correlates strictly by `id` must treat a parse error as ending the
-  request it last wrote, as JSON-RPC §5 already requires, rather than waiting for that `id`.
-  Nothing a conforming client sends changes: a well-formed surrogate pair is a
+  JSON one. An error under a null `id` is uncorrelated, by JSON-RPC §5's own rule: null is the
+  `id` of any answer whose request id could not be read — for a parse error and for an invalid
+  request alike — and §5 supplies no rule tying such an answer to the request written last. A
+  client that sends one request at a time can attribute the refusal to the request in flight; a
+  client that pipelines cannot, from the `id` alone, and must not fail its most recently written
+  request on the strength of it: a malformed line followed by a valid `ping` written behind it
+  gets the refusal under null and the `ping` answered under its own `id`, which is the sequence
+  every refusal test here sends.
+  The two refusals differ in what they ask of a client. A raw invalid byte was never valid UTF-8,
+  and MCP's stdio transport requires UTF-8, so that refusal changes nothing a conforming client
+  sends. An unpaired surrogate **escape** is another matter: RFC 8259 §8.2 admits one in JSON's
+  grammar — it says the behaviour of software that receives it is unpredictable, not that the text
+  is malformed — and the escape is plain ASCII on the wire, so refusing it anywhere in the line is
+  this runtime's stricter transport policy, taken because the carrier already refuses the same
+  escape under RFC 8785 §3.2.2.2 one level down and §8.3's byte-identical canonical requirement is
+  what that protects. A client that sent one got a repaired answer before and gets a parse error
+  now. Well-formed input is untouched either way: a well-formed surrogate pair is a
   character and is admitted, a literal U+FFFD the client authored is valid UTF-8 and is admitted,
   and an escape written inside a document's or an expectation's own JSON is refused where it
   always was, by the carrier. No tool schema, payload member, exit code or CLI surface changes,
