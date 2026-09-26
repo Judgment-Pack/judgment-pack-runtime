@@ -132,6 +132,10 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		report.Detail = display.Sanitize(err.Error())
 		return report, nil
 	}
+	return p.testLoadedPack(evaluator, id, report, pack, matrix, command, spent)
+}
+
+func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report result.PackTestEntry, pack []byte, matrix Matrix, command string, spent *int) (result.PackTestEntry, *Failure) {
 	// The origins the rows declare are counted before any of them runs, because
 	// the count is about the row documents and not about what running them
 	// produced. It moves no status: the member that decides a row is its
@@ -265,4 +269,24 @@ func admitsForSomeRow(admitted *evaluation.AdmittedPack, matrix Matrix) bool {
 		}
 	}
 	return false
+}
+
+// TestSnapshot runs exact supplied bytes without file reads, registration or audit writes.
+// It shares matrix admission, canonical comparisons, target budgets and coverage with Project.Test.
+func TestSnapshot(evaluator *evaluation.Engine, pack, cases []byte, command string) (result.PackTest, error) {
+	found, err := identityFrom(pack)
+	if err != nil {
+		return result.PackTest{}, err
+	}
+	matrix, err := DecodeMatrix(cases)
+	if err != nil {
+		return result.PackTest{}, err
+	}
+	p := &Project{}
+	spent := 0
+	report, failure := p.testLoadedPack(evaluator, found.ID, result.PackTestEntry{ID: found.ID, PackID: found.ID, PackVersion: found.Version, Status: "passed", Rows: []result.EvaluationCorpusCase{}}, pack, matrix, command, &spent)
+	if failure != nil {
+		return result.PackTest{}, fmt.Errorf("%s", failure.Message)
+	}
+	return result.PackTest{OutputVersion: result.OutputVersion, Tool: result.CurrentTool(), Command: command, Status: report.Status, Experimental: true, EvaluatorSpecVersion: result.EvaluatorSpecVersion, ConformanceClaimReference: result.EvaluationClaimReference, Label: result.PackMatrixLabel, Kind: result.ProjectKind, Summary: report.Summary, Packs: []result.PackTestEntry{report}}, nil
 }

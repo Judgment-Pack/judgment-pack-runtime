@@ -40,6 +40,7 @@ import (
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
+		{"name": "experimental_test_cases", "description": "Rehearse a matrix against exact supplied pack bytes. Uses the same canonical comparison and coverage as experimental_test_packs. Reads no project files, writes nothing, and appends no audit record. This experimental surface may change.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "matrix"}, "properties": map[string]any{"pack": map[string]any{"type": "string", "description": "Exact pack JSON text."}, "matrix": map[string]any{"type": "string", "description": "Matrix JSON text in the project's supported matrix format. At least one case with an independently established expectation is required."}}}},
 		{
 			"name":        "validate",
 			"description": "Validate one JPS document for carrier, structural, and semantic conformance. It does not evaluate rules, choose an outcome, or authorize anything.",
@@ -128,6 +129,8 @@ func toolDefinitions() []map[string]any {
 			},
 		},
 		expectationToolDefinition(),
+		matrixContractDefinition(),
+		matrixValidationDefinition(),
 		{
 			"name":        "experimental_evaluate",
 			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
@@ -262,10 +265,16 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolListPacks(), nil
 	case "get_pack":
 		return s.toolGetPack(params.Arguments), nil
+	case matrixContractTool:
+		return s.toolMatrixContract(params.Arguments), nil
+	case matrixValidationTool:
+		return s.toolValidateMatrix(params.Arguments), nil
 	case "experimental_validate_expectations":
 		return s.toolValidateExpectations(params.Arguments), nil
 	case "experimental_evaluate":
 		return s.toolExperimentalEvaluate(params.Arguments), nil
+	case "experimental_test_cases":
+		return s.toolExperimentalTestCases(params.Arguments), nil
 	case "experimental_test_packs":
 		return s.toolExperimentalTestPacks(params.Arguments), nil
 	case "experimental_test_graphs":
@@ -1225,4 +1234,29 @@ func jsonText(value any) string {
 		return "{}"
 	}
 	return string(data)
+}
+
+func (s *Server) toolExperimentalTestCases(raw json.RawMessage) any {
+	if message := exactMembers("experimental_test_cases", raw, "pack", "matrix"); message != "" {
+		return toolError(message)
+	}
+	var args struct {
+		Pack   string `json:"pack"`
+		Matrix string `json:"matrix"`
+	}
+	if err := json.Unmarshal(raw, &args); err != nil || args.Pack == "" || args.Matrix == "" {
+		return toolError("Supply nonempty pack and matrix JSON text.")
+	}
+	if len(args.Pack) > int(carrier.HardMaxBytes) || int64(len(args.Matrix)) > project.MaxMatrixBytes {
+		return toolError("The supplied test inputs exceed the runtime input bound.")
+	}
+	output, err := project.TestSnapshot(evaluation.NewEngine(s.engine), []byte(args.Pack), []byte(args.Matrix), "mcp experimental_test_cases")
+	if err != nil {
+		return toolError(err.Error())
+	}
+	encoded, err := json.Marshal(output)
+	if err != nil || len(encoded) > maxMatrixResultBytes {
+		return toolError("The test report exceeds the response bound; select fewer cases.")
+	}
+	return toolResult(output)
 }
