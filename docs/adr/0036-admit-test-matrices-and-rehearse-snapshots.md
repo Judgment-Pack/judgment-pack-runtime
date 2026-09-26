@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-26
 deciders: repository maintainer
 ---
@@ -54,5 +54,8 @@ require a separately versioned API.
 MCP tests cover exact member admission, row findings, shared snapshot comparison,
 empty suites and snapshot isolation. The full runtime suite, static analysis and
 bundled JPS conformance suite pass. This public-surface and documented-claim change
-requires the recorded cross-vendor review specified in this directory's README
-before the proposed record can be accepted.
+ordinarily requires the recorded cross-vendor review specified in this directory's
+README. For runtime PR #164, the maintainer explicitly authorized an exception
+to that requirement on 2026-09-26 after reviewing the tested PR. No cross-vendor
+review was performed or claimed. This exception applies only to this change;
+the repository review policy remains in force for future material decisions.
