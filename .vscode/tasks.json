@@ -5,7 +5,13 @@
       "label": "judgment-pack: Build CLI",
       "type": "process",
       "command": "go",
-      "args": ["build", "-trimpath", "-o", "${workspaceFolder}/bin/jpack", "./cmd/jpack"],
+      "args": [
+        "build",
+        "-trimpath",
+        "-o",
+        "${workspaceFolder}/bin/jpack",
+        "./cmd/jpack"
+      ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -17,13 +23,18 @@
         "kind": "build",
         "isDefault": true
       },
-      "problemMatcher": ["$go"]
+      "problemMatcher": [
+        "$go"
+      ]
     },
     {
       "label": "judgment-pack: Test CLI",
       "type": "process",
       "command": "go",
-      "args": ["test", "./..."],
+      "args": [
+        "test",
+        "./..."
+      ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -31,13 +42,20 @@
         }
       },
       "group": "test",
-      "problemMatcher": ["$go"]
+      "problemMatcher": [
+        "$go"
+      ]
     },
     {
       "label": "judgment-pack: Run JPS conformance",
       "type": "process",
       "command": "go",
-      "args": ["run", "./cmd/jpack", "spec", "test-conformance"],
+      "args": [
+        "run",
+        "./cmd/jpack",
+        "spec",
+        "test-conformance"
+      ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
@@ -45,7 +63,143 @@
         }
       },
       "dependsOn": "judgment-pack: Test CLI",
-      "problemMatcher": ["$go"]
+      "problemMatcher": [
+        "$go"
+      ]
+    },
+    {
+      "label": "runtime: watch + rebuild jpack",
+      "detail": "rebuilds bin/jpack whenever a .go file changes (inotifywait if installed, else a two-second poll); the desk spawns the new binary on the next connection — reload the page",
+      "type": "shell",
+      "command": "build() { go build -trimpath -o \"${workspaceFolder}/bin/jpack\" ./cmd/jpack && echo \"[$(date +%H:%M:%S)] bin/jpack rebuilt — reload the desk page to pick it up\"; }; build; if command -v inotifywait >/dev/null 2>&1; then while inotifywait -qq -r -e modify,create,delete,move --include '\\.go$' . ; do build; done; else last=$(find . -name '*.go' -newer bin/jpack | wc -l); while sleep 2; do n=$(find . -name '*.go' -newer bin/jpack | wc -l); if [ \"$n\" -gt 0 ]; then build; fi; done; fi",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "CGO_ENABLED": "0"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "go",
+        "pattern": {
+          "regexp": "^(.+\\.go):(\\d+):(\\d+): (.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^go build|^\\[",
+          "endsPattern": "rebuilt|^$"
+        }
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always",
+        "group": "desk"
+      }
+    },
+    {
+      "label": "desk: pull + install",
+      "detail": "git pull --ff-only in ../judgment-pack-desk, then npm ci for its page with Node 22 (nvm reads the desk's .nvmrc after the pull, falling back to 22)",
+      "type": "shell",
+      "command": "git pull --ff-only && if [ -s \"$HOME/.nvm/nvm.sh\" ]; then . \"$HOME/.nvm/nvm.sh\" >/dev/null 2>&1; { nvm use >/dev/null 2>&1 || nvm use 22 >/dev/null; }; fi; npm --prefix web ci",
+      "options": {
+        "cwd": "${workspaceFolder}/../judgment-pack-desk"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always",
+        "group": "desk"
+      }
+    },
+    {
+      "label": "desk: chassis (dev, this runtime)",
+      "detail": "builds jpack from THIS checkout and the Desk chassis beside its installed gateway companions, then runs on 8790. Requires the complete Desk bundle in bin. Restart after a Go change; rebuild the complete bundle when the gateway pin changes.",
+      "type": "shell",
+      "command": "go build -trimpath -o bin/jpack-desk . && exec ./bin/jpack-desk --dev-token dev --port 8790 --jpack \"${workspaceFolder}/bin/jpack\" \"${env:JPACK_PROJECT}\"",
+      "options": {
+        "cwd": "${workspaceFolder}/../judgment-pack-desk",
+        "env": {
+          "JPACK_DESK_LOCAL_ACCESS": "1"
+        }
+      },
+      "dependsOn": [
+        "judgment-pack: Build CLI"
+      ],
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "jpack-desk",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "judgment-pack desk",
+          "endsPattern": "open:"
+        }
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always",
+        "group": "desk"
+      }
+    },
+    {
+      "label": "desk: vite (hot reload)",
+      "detail": "the page from source with hot reload, proxying /launch, /ws and /api to the chassis on 8790",
+      "type": "shell",
+      "command": "if [ -s \"$HOME/.nvm/nvm.sh\" ]; then . \"$HOME/.nvm/nvm.sh\" >/dev/null 2>&1; { nvm use >/dev/null 2>&1 || nvm use 22 >/dev/null; }; fi; npm --prefix web run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/../judgment-pack-desk",
+        "env": {
+          "JPACK_DESK_CHASSIS": "http://127.0.0.1:8790"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      },
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always",
+        "group": "desk"
+      }
+    },
+    {
+      "label": "desk: open (hot reload)",
+      "detail": "starts the chassis and Vite, then opens http://localhost:5173/",
+      "type": "shell",
+      "command": "sh -c 'sleep 2; url=http://localhost:5173/; if command -v wslview >/dev/null 2>&1; then wslview \"$url\"; else xdg-open \"$url\"; fi'",
+      "dependsOn": [
+        "desk: chassis (dev, this runtime)",
+        "desk: vite (hot reload)"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "desk: dev (end to end)",
+      "detail": "pull + install the desk, build jpack from this checkout, start the chassis against it and Vite, open the Desk URL; start 'runtime: watch + rebuild jpack' beside it for runtime hot reload",
+      "dependsOn": [
+        "desk: pull + install",
+        "desk: open (hot reload)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
     }
   ]
 }
