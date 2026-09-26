@@ -48,7 +48,10 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `list_examples` / `get_example` | The embedded valid fixtures, read-only |
 | `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
+| `experimental_get_test_matrix_contract` | EXPERIMENTAL: discover the project matrix version, closed members, types and authoring rules without reading a project |
+| `experimental_validate_test_matrix` | EXPERIMENTAL: validate matrix carrier and disposition-local constraints; indexed case findings with codes and JSON pointers; no evaluation or writes |
 | `experimental_validate_expectations` | EXPERIMENTAL SURFACE (ADR-0035): validate proposed exact Core 0.2.0-draft dispositions before authoring admission; no project or evaluation |
+| `experimental_test_cases` | EXPERIMENTAL SURFACE: rehearse an exact `pack` JSON string against a `matrix` JSON string, with the same matrix admission, canonical comparison and coverage as `packs test`; reads no project files and appends no audit record |
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
 | `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
 | `experimental_list_graphs` / `experimental_get_graph` | EXPERIMENTAL SURFACE (ADR-0029): this project's configured graphs, by configured id — the graph siblings of `list_packs`/`get_pack`, read-only |
@@ -280,3 +283,19 @@ The end-to-end authoring loop these tools support — create, read, update, dele
 runtime as a stateless oracle for every step of it — is described in
 [authoring-lifecycle.md](authoring-lifecycle.md), and the agent-driven testing protocol in
 [agent-testing.md](agent-testing.md).
+
+### Test proposal correction
+
+Clients can fetch `experimental_get_test_matrix_contract` before generating tests
+and call `experimental_validate_test_matrix` with a `matrix` JSON string afterward.
+The versioned report has `contractVersion: "1"`, aggregate `status`, root `findings`,
+and ordered `results` containing `index`, optional `id`, `status`, and `findings`.
+Each finding has `code`, `path` (JSON Pointer) and `message`. Root/carrier failures
+may prevent row admission; otherwise every row is accounted for. `MATRIX-LIMIT`
+means the input was not admitted and is not a policy defect to repair.
+
+The validator reuses `DecodeMatrix` and the exact disposition decoder. It does not
+evaluate the pack, infer expected answers, verify source authority, or establish
+reachability. Desk source mappings and other application metadata stay outside the
+matrix. Clients retain rejected proposals and control bounded correction and
+human review; a valid report never means tests passed or cases were saved.

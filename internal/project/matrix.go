@@ -120,6 +120,14 @@ func (p *Project) LoadMatrix(entry Pack) (Matrix, error) {
 	if err != nil {
 		return Matrix{}, errors.New(ReadFailureMessage(entry.Matrix, err))
 	}
+	return DecodeMatrix(data)
+}
+
+// DecodeMatrix admits an in-memory suite using the same closed contract as project files.
+func DecodeMatrix(data []byte) (Matrix, error) {
+	if int64(len(data)) > MaxMatrixBytes {
+		return Matrix{}, errors.New("matrix exceeds the input limit")
+	}
 	document, carrierFailure := carrier.Decode(data, carrier.DefaultLimits())
 	if carrierFailure != nil {
 		return Matrix{}, fmt.Errorf("the matrix is not acceptable JSON: %s", display.Sanitize(carrierFailure.Diagnostic.Message))
