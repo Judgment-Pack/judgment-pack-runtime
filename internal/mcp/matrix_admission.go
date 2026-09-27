@@ -19,7 +19,7 @@ func matrixEnvelope(command string) map[string]any {
 	return map[string]any{"outputVersion": result.OutputVersion, "tool": result.CurrentTool(), "command": "mcp " + command, "experimental": true, "contractVersion": "1", "specVersion": expectationSpec}
 }
 func (s *Server) toolMatrixContract(args json.RawMessage) any {
-	if message := exactMembers(matrixContractTool, args); message != "" {
+	if message := noArguments(matrixContractTool, args); message != "" {
 		return toolError(message)
 	}
 	report := matrixEnvelope(matrixContractTool)

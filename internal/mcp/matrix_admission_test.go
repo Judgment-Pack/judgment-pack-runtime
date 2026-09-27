@@ -73,12 +73,25 @@ func TestMatrixContractDiscoveryAndArgumentBoundary(t *testing.T) {
 	if !found[matrixContractTool] || !found[matrixValidationTool] {
 		t.Fatal(found)
 	}
-	r := runServer(t, toolCall(t, 2, matrixContractTool, map[string]any{}))[0]["result"].(map[string]any)
-	contract := r["structuredContent"].(map[string]any)["contract"]
 	expected, _ := json.Marshal(project.MatrixContract())
-	actual, _ := json.Marshal(contract)
-	if !reflect.DeepEqual(expected, actual) {
-		t.Fatal("contract drift", contract)
+	// MCP makes arguments optional, so a call that omits the member is the
+	// same call as one carrying {} or null.
+	for form, call := range map[string]string{
+		"omitted": toolCall(t, 2, matrixContractTool, nil),
+		"empty":   rawToolCall(t, 2, matrixContractTool, `{}`),
+		"null":    rawToolCall(t, 2, matrixContractTool, `null`),
+	} {
+		r := runServer(t, call)[0]["result"].(map[string]any)
+		if r["isError"] == true {
+			t.Fatal(form, toolText(t, r))
+		}
+		actual, _ := json.Marshal(r["structuredContent"].(map[string]any)["contract"])
+		if !reflect.DeepEqual(expected, actual) {
+			t.Fatal("contract drift", form, string(actual))
+		}
+	}
+	if r := runServer(t, rawToolCall(t, 2, matrixContractTool, `{"matrix":"{}"}`))[0]["result"].(map[string]any); r["isError"] != true {
+		t.Fatal("accepted a member the contract tool does not declare")
 	}
 	for _, args := range []map[string]any{nil, {"Matrix": "{}"}, {"matrix": nil}, {"matrix": "{}", "pack": "{}"}} {
 		r := runServer(t, toolCall(t, 3, matrixValidationTool, args))[0]["result"].(map[string]any)

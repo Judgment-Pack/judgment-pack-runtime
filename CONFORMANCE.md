@@ -54,7 +54,7 @@ through the nine surfaces that reach it — `experimental evaluate`, `experiment
 `experimental_evaluate`, `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools — and
 **not to draft-RFC prototype
 inputs**, which this class does
-not define at all and which the last exclusion below states. One evaluator sits behind all eight, so a
+not define at all and which the last exclusion below states. One evaluator sits behind all nine, so a
 surface selects what reaches it rather than carrying a claim of its own: the project and graph
 surfaces choose which packs and inputs reach the evaluator, and the dispositions they report as
 evaluated — a row's actual disposition, a node's, a composite's echoed headline — are that

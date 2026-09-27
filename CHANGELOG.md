@@ -2,6 +2,21 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`experimental_get_test_matrix_contract` answers a call that omits `arguments`**: MCP makes the
+  member optional, and 0.23.0 refused the omitted form with
+  `The "experimental_get_test_matrix_contract" arguments must be an object.` while answering `{}`
+  and `null`. The three forms are now the same call and return the same contract, as they already
+  did for `describe_runtime`, `list_examples` and `list_packs`. A call carrying any member is
+  refused as before.
+
+- **`README.md` and `CONFORMANCE.md` count nine surfaces reaching the evaluator in every sentence
+  that counts them**: `README.md` said eight above a list of nine, and `CONFORMANCE.md` said
+  "all eight" three lines after naming nine. No surface, list or claim changes. The test that
+  holds `CONFORMANCE.md`'s list to the evaluator's call sites now holds each of the three counts,
+  and the length of `README.md`'s list, to the same number.
+
 ## 0.23.0 - 2026-09-27
 
 - **The stdio transport refuses a request line whose Unicode is malformed, for every string
