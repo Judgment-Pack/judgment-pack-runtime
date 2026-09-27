@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.23.0 - 2026-09-27
 
 - **The stdio transport refuses a request line whose Unicode is malformed, for every string
   argument of every tool — and everywhere else in the line** (ADR-0038): a line is now held to
@@ -77,6 +77,98 @@ All notable changes to tagged releases are documented here.
   compared exactly as before. No bundled artifact, corpus, example or conformance fixture changes —
   the new fixtures are this runtime's own MCP tests — and the evaluator's conformance claim is
   untouched and stated, in full and only, in `CONFORMANCE.md`.
+
+- **A project configuration may declare an empty `packs` object, so a new project can be read
+  before its first pack exists**: the embedded `jpack.json` schema required at least one pack, so
+  `{"configVersion":"3","packs":{}}` was refused by every surface that reads the configuration —
+  by the CLI with `JPS-PROJECT-CONFIG-SCHEMA` at exit `1`, and by the MCP server's project tools
+  with a tool error quoting the schema failure. That minimum is gone, under every `configVersion`,
+  and the configuration now loads: `packs list` reports no packs declared and `packs validate`
+  reports `valid` over 0/0 packs, both at exit `0`, and the MCP server's `list_packs` answers
+  `valid` with an empty `packs` list. `packs lock` writes a lock that pins the configuration's
+  digest and no document, and `packs verify` against it reports `valid` over 0/0 documents, both
+  at exit `0`. A pack named by path to `experimental evaluate`, or passed as text to
+  `experimental_evaluate`, is now evaluated in such a project rather than refused, and recorded
+  when the configuration declares `audit`. Loading is not testing: `packs test` and
+  `experimental_test_packs` answer `skipped` with a zero summary, and `packs test` and `packs lint`
+  exit `1`, under the existing rules that a run over zero rows or zero checks is never reported as
+  passed. The `packs` member is still required and must still be an object, so a configuration that
+  omits it or sets it to `null` is refused as before. `packs schema` reports new `bytes` and
+  `sha256` under the same `schemaId`; the configuration versions the schema accepts, pack
+  documents, matrices and the evaluator are unchanged.
+  **Migration:** a check that relied on the schema refusal to fail a project declaring no packs now
+  gets exit `0` from `packs list`, `packs validate`, `packs lock` and `packs verify`; `packs test`
+  and `packs lint` still exit `1` over an empty project. A copy of the schema written by an earlier
+  `packs schema --write` still refuses an empty `packs` object; write it again.
+
+- **Three experimental MCP tools check a proposed test matrix and run one against exact pack
+  text, without a project** (ADR-0036): `experimental_get_test_matrix_contract` takes no
+  arguments, though a call must still carry `arguments` (`{}` or `null`) — one that omits the
+  member is refused, which `describe_runtime` does not do — and returns the matrix carrier this
+  runtime admits: `matrixVersion` `"3"`, the supported and default versions, the closed root and
+  row member names, the version that introduced each later member, the required and exactly-one
+  members, each row member's type, and the 16 MiB and 10,000-case limits.
+  `experimental_validate_test_matrix` takes a `matrix` JSON string and answers, under
+  `contractVersion` `"1"`, an aggregate `status`, root `findings`, and one `results` entry per case
+  carrying its `index`, its `id` where it has one, its `status` and its `findings`; each finding
+  has a `code`, a JSON Pointer `path` and a `message`, and the codes are `MATRIX-JSON`,
+  `MATRIX-SHAPE`, `MATRIX-VERSION`, `MATRIX-MEMBER`, `MATRIX-ID`, `MATRIX-FACTS`, `MATRIX-ROW`,
+  `MATRIX-EXPECTATION` and `MATRIX-LIMIT`. A root defect is reported with an empty `results`;
+  otherwise every case is accounted for. Each case is held to the decoder a project matrix file
+  passes and its `expectedDisposition` to the shared disposition decoder, so an unreadable
+  expectation that `packs validate` lets through, and `packs test` reports as a mismatching row,
+  is reported here. `MATRIX-LIMIT` means the input was not admitted, not that a case is wrong. The
+  tool evaluates no pack and checks no policy, coverage or reachability: a valid report does not
+  mean any case would pass, and an expectation `experimental_validate_expectations` reports under
+  `JPS-EXPECTATION-UNREACHABLE` can be `valid` here. `experimental_test_cases` takes `pack` and
+  `matrix` as JSON strings and runs the matrix against exactly that pack through the path
+  `experimental_test_packs` uses — the same row comparison, handoff-target budget, coverage and
+  profile — and answers with the same payload, with `configPath` and `configVersion` empty and the
+  pack entry named by the pack's own `id`, with an empty `path`. It needs no configured project,
+  reads no project file, consults no reviewed set and appends no audit record. The pack is refused
+  over 10 MiB and the matrix over 16 MiB before anything runs (both travel in one request line,
+  which the transport bounds at 16 MiB), and a report over 16 MiB is refused rather than
+  truncated. A pack that is not acceptable JSON or not a JSON object, or a matrix the project
+  matrix decoder refuses — an empty one included — is a tool error rather than a `mismatch` entry;
+  a pack that decodes but is not conformant is reported row by row, and an unreadable
+  `expectedDisposition` as a mismatching row, as `packs test` reports them. All three tools carry
+  `experimental: true`, refuse any argument they do not name, and write nothing.
+  `CONFORMANCE.md`'s claim scope now names `experimental_test_cases` among the nine surfaces
+  reaching the shared evaluator; the evaluator is unchanged, and `packs test` and
+  `experimental_test_packs` answer as before.
+
+- **An `experimental_validate_expectations` call over 256 expectations is refused before its
+  array is built**: the 1–256 bound on `expectations` was checked only after the whole array had
+  been decoded into one value per element, so a call over the bound paid to hold every element it
+  sent before it was refused, and one request line of short elements carries millions of them. The
+  elements are now counted by a streaming decoder that reuses one buffer, keeps none of them and
+  stops at the 257th, and only a batch within the bound is built into one value per element; a
+  test holds the refusal of 1,048,576 elements to at most 8,192 allocations, where building the
+  array first took 1,048,640. The checks that run before the count still read the arguments whole
+  as raw bytes, so what the refusal no longer pays for is holding the elements, not reading the
+  line. Every answer is unchanged: an `expectations` member that is not an array is still
+  refused for its shape ahead of `spec_version`, an absent or `null` member is still the empty
+  batch the count refuses, the count refusal still reads
+  `An expectation validation call must carry 1–256 expectations.`, and a non-string element is
+  still named by its index. No schema, payload member, finding code or CLI surface changes.
+
+- **Reporting a diagnostic located under a long member name no longer takes time quadratic in
+  the name's length**: the JSON Pointer a carrier, structural or semantic diagnostic reports as its
+  `instancePath` is now accumulated in one buffer, where it used to be rebuilt by string
+  concatenation one character at a time, copying everything already written at each step. Every
+  reader held to the default carrier limits admits a member name of up to one megabyte, or as long
+  as its own cap on the whole file allows — among them the MCP `validate` tool and `spec validate`,
+  the pack, facts and evidence an evaluation reads, and the project, graph, lock and conformance
+  readers — so a document with a name that long and a defect located under it, such as
+  `JPS-CARRIER-DUPLICATE-MEMBER` for the name itself, held the call for tens of seconds to minutes
+  before the answer came back, and a name over that bound cost more still: the
+  `JPS-RESOURCE-STRING-LIMIT` refusal reports no location, but it built the pointer to the whole
+  name first. A regression test now requires a one-megabyte name's pointer within one second. The
+  escaping is unchanged and every `instancePath` stays byte-identical: `~` and `/` still become
+  `~0` and `~1`, multi-byte names pass through as written, and a test now pins that case beside the
+  reserved ones. No finding code, message, schema, exit code or CLI surface changes, and no client
+  needs to change anything.
+
 
 ## 0.22.0 - 2026-09-16
 

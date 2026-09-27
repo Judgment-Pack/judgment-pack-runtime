@@ -134,5 +134,5 @@ authority, and following it confers no conformance status on anything.
 | [0035](0035-validate-proposed-expectations-before-admission.md) | Validate proposed exact expectations before authoring admission | accepted; reachability-finding deferral discharged by [0037](0037-report-pack-independent-unreachable-expectations.md) |
 
 | [0036](0036-admit-test-matrices-and-rehearse-snapshots.md) | Admit test matrices and rehearse exact pack snapshots through MCP | accepted |
-| [0037](0037-report-pack-independent-unreachable-expectations.md) | Report an expectation no pack can reach under its own code, in the admission tool alone | proposed |
-| [0038](0038-refuse-malformed-unicode-at-the-stdio-transport.md) | Refuse malformed Unicode at the stdio transport, for every string argument and everywhere else in the request line | proposed |
+| [0037](0037-report-pack-independent-unreachable-expectations.md) | Report an expectation no pack can reach under its own code, in the admission tool alone | accepted |
+| [0038](0038-refuse-malformed-unicode-at-the-stdio-transport.md) | Refuse malformed Unicode at the stdio transport, for every string argument and everywhere else in the request line | accepted |
