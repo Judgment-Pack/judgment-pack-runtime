@@ -90,7 +90,7 @@ func Decode(data []byte, limits Limits) (any, *Failure) {
 // defect one level up: the MCP stdio transport, where the escape is written in
 // the JSON-RPC message rather than in a document it carries, and no carrier is
 // reached because the tool argument has already been repaired into a Go string
-// (ADR-0037). Every other reader gets this through Decode.
+// (ADR-0038). Every other reader gets this through Decode.
 //
 // Callers must hand it bytes that already parsed as JSON, so a backslash
 // appears only inside a string and every escape is well-formed; the walk still

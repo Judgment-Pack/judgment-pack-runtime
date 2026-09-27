@@ -79,7 +79,7 @@ anywhere in it — in a tool argument, in a method name, in a string `id`, in an
 refused with a JSON-RPC parse error (`-32700`) under a null `id`, and the session continues with
 the next request — so no tool ever receives text Go's decoder repaired into U+FFFD, which is what
 a validator answering about a document nobody sent would come to
-([ADR-0037](adr/0037-refuse-malformed-unicode-at-the-stdio-transport.md)). The check is the whole
+([ADR-0038](adr/0038-refuse-malformed-unicode-at-the-stdio-transport.md)). The check is the whole
 line's, so it runs before the request is read at all: a line carrying the defect outside its
 arguments is answered under a null `id` too, where an unknown method or a request that is not an
 object used to be answered as `-32601` under the request's own `id` or as `-32600`. An error under

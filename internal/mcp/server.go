@@ -89,7 +89,7 @@ func (s *Server) Serve(in io.Reader, out, logw io.Writer) error {
 		// §2.1 requires this runtime to reject malformed input rather than
 		// process it, and the carrier already refuses both defects one level
 		// down, so the same two refusals are held here, once, for the whole
-		// wire (ADR-0037).
+		// wire (ADR-0038).
 		//
 		// Both read the whole line, before the envelope below, so the defect
 		// is refused wherever it is written -- a method name and a string id

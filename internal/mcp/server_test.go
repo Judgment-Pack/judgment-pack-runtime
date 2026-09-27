@@ -926,7 +926,7 @@ func TestTransportAnswersTheDocumentedLineEdgeAndRefusesOneByteMore(t *testing.T
 	})
 }
 
-// The two transport refusals ADR-0037 adds, quoted here so a change to either
+// The two transport refusals ADR-0038 adds, quoted here so a change to either
 // wording is a change to a test and not a silent change to the wire.
 const (
 	transportNotUTF8   = "Message is not valid UTF-8 JSON."
@@ -972,7 +972,7 @@ func expectationArguments(outcome string) string {
 		`{\"kind\":\"outcome\",\"outcomeId\":\"` + outcome + `\",\"reasons\":[],\"handoff\":{\"state\":\"none\"}}"]}`
 }
 
-// Before ADR-0037 a request line was admitted on json.Valid alone, and
+// Before ADR-0038 a request line was admitted on json.Valid alone, and
 // json.Valid does not judge UTF-8: encoding/json states that "when unmarshaling
 // quoted strings, invalid UTF-8 or invalid UTF-16 surrogate pairs are not
 // treated as an error. Instead, they are replaced by the Unicode replacement
@@ -1046,7 +1046,7 @@ func TestTransportRefusesMalformedUnicodeInEveryStringArgument(t *testing.T) {
 			// nor valid JSON, so whichever check runs first names its defect.
 			// utf8.Valid runs first, so the encoding defect is named. Both
 			// diagnostics are true of this line; which one it gets is the
-			// choice ADR-0037 records, and this case is what holds it.
+			// choice ADR-0038 records, and this case is what holds it.
 			name:    "a line that is neither valid UTF-8 nor valid JSON reports the encoding defect",
 			line:    "{\"a\":\"x\x80\n",
 			message: transportNotUTF8,
@@ -1068,7 +1068,7 @@ func TestTransportRefusesMalformedUnicodeInEveryStringArgument(t *testing.T) {
 // ping result; ["\ud800"] was answered -32600 "The request is not a JSON
 // object; batches are not supported." under null. All four are -32700 under
 // null now, so a client correlating by id sees a null-id parse error where an
-// id-bearing error, or a result, used to come back (ADR-0037). These cases are
+// id-bearing error, or a result, used to come back (ADR-0038). These cases are
 // most of what pins the scope: narrowing both checks to lines that carry tool
 // arguments fails all four of them, and with them the doubly-defective case of
 // TestTransportRefusesMalformedUnicodeInEveryStringArgument (the line
@@ -1119,7 +1119,7 @@ func TestTransportRefusesMalformedUnicodeOutsideToolArguments(t *testing.T) {
 // no response whatever — notifications/initialized with no id is a notification
 // by name, answered by nothing — so the only response was the ping's, and a
 // client following "one request outstanding, so the refusal is that request's"
-// would have failed the one message that succeeded. ADR-0037, docs/mcp-clients.md
+// would have failed the one message that succeeded. ADR-0038, docs/mcp-clients.md
 // and the CHANGELOG state the rule instead: attribute a null-id error to a
 // message only when no other message sent could have earned it, and never fail a
 // request on the strength of one.

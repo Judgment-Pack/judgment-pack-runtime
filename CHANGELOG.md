@@ -5,7 +5,7 @@ All notable changes to tagged releases are documented here.
 ## Unreleased
 
 - **The stdio transport refuses a request line whose Unicode is malformed, for every string
-  argument of every tool — and everywhere else in the line** (ADR-0037): a line is now held to
+  argument of every tool — and everywhere else in the line** (ADR-0038): a line is now held to
   `utf8.Valid` before `json.Valid`,
   and to the carrier's unpaired-surrogate scan immediately after it. `json.Valid` does not judge
   UTF-8 — Go's decoder replaces invalid UTF-8 and invalid surrogate pairs with U+FFFD while
