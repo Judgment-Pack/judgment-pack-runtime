@@ -2,6 +2,25 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`experimental_get_test_matrix_contract` answers a call that omits `arguments`**: MCP makes the
+  member optional, and 0.23.0 refused the omitted form with
+  `The "experimental_get_test_matrix_contract" arguments must be an object.` while answering `{}`
+  and `null`. The three forms are now the same call and return the same contract, as they already
+  did for `describe_runtime`, `list_examples` and `list_packs`. A call carrying any member is
+  refused as before.
+
+- **Four counts of the surfaces reaching the evaluator, or of the experimental MCP tools, agree
+  with the lists beside them again**: `README.md` said eight surfaces above a list of nine, and
+  `CONFORMANCE.md` said "all eight" three lines after naming nine. `docs/mcp-clients.md` counted
+  three MCP tools reaching the evaluator where there are four, leaving out
+  `experimental_test_cases`. `jpack mcp --help` counted six experimental tools where the server
+  lists nine, leaving out `experimental_test_cases`, `experimental_get_test_matrix_contract` and
+  `experimental_validate_test_matrix`. No surface, tool or claim changes. Tests now hold each of
+  these counts, and the names listed beside it, to the evaluator's call sites or to the server's
+  own tool listing; they check the numbers and the names, not the prose around them.
+
 ## 0.23.0 - 2026-09-27
 
 - **The stdio transport refuses a request line whose Unicode is malformed, for every string

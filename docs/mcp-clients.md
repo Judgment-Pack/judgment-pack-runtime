@@ -58,12 +58,14 @@ gitignored in this repository. Copy a snippet, don't commit one.
 
 None of these evaluate, decide, or authorize anything — `experimental_list_graphs` and
 `experimental_get_graph` carry the experimental marker for their surface's stability, not because
-they evaluate — except the three that reach the evaluator:
-`experimental_evaluate`, which evaluates one case, and `experimental_test_packs` and
+they evaluate — except the four that reach the evaluator:
+`experimental_evaluate`, which evaluates one case; `experimental_test_packs` and
 `experimental_test_graphs`, which run declared instance and graph matrices respectively — each
 through the same evaluator and comparison its own CLI counterpart uses, `packs test` and the graph
-project walk —
-reporting each row's agreement or divergence with the derived coverage report (ADR-0014, ADR-0023)
+project walk; and `experimental_test_cases`, which runs a supplied matrix against supplied pack
+text through the evaluator and comparison `packs test` uses, and reads no project file (ADR-0036).
+The three matrix tools report
+each row's agreement or divergence with the derived coverage report (ADR-0014, ADR-0023)
 beside it, writing nothing, appending no audit record, and consulting no reviewed set, because a
 matrix row is a rehearsal and not a decision. Each payload names the contract version it applied and
 carries a
