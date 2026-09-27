@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.23.1 - 2026-09-27
 
 - **`experimental_get_test_matrix_contract` answers a call that omits `arguments`**: MCP makes the
   member optional, and 0.23.0 refused the omitted form with
