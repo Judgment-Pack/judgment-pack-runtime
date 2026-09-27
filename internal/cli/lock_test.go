@@ -100,7 +100,7 @@ func TestPacksLockIsDeterministicAndPinsEveryDeclaredDocument(t *testing.T) {
 // lock over a configuration this runtime cannot read would declare a reviewed
 // set nobody can check.
 func TestPacksLockRefusesAConfigurationThatDoesNotLoad(t *testing.T) {
-	configPath := writeProjectFixture(t, `{"configVersion":"3","packs":{}}`, nil)
+	configPath := writeProjectFixture(t, `{"configVersion":"3","packs":null}`, nil)
 	code, _, stderr := runTest(t, []string{"packs", "lock", "--config", configPath}, "")
 	if code != result.ExitInvalid || !strings.Contains(stderr, "jpack.json") {
 		t.Fatalf("exit=%d stderr=%q", code, stderr)
