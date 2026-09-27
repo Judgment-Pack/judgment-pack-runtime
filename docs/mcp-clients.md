@@ -123,7 +123,7 @@ mean the input was not admitted, not that its meaning violates Core, so branch o
 `code` rather than on `status`.
 
 Three shapes that §8.3's grammar admits are reported under a third code,
-`JPS-EXPECTATION-UNREACHABLE` (ADR-0036): an `unresolved` result retaining
+`JPS-EXPECTATION-UNREACHABLE` (ADR-0037): an `unresolved` result retaining
 `not-applicable`, which §8 step 1 produces only under kind `not-applicable`;
 `no-match` beside any other reason, which §8 records only at step 10, after every
 step that records another reason has already produced `unresolved`; and an
@@ -147,7 +147,7 @@ normalized rather than refused, so `canonical`, not the text you sent, is what
 this runtime compared: store that. It accesses no project, source, credential,
 evaluator, audit record or network. See
 [ADR-0035](adr/0035-validate-proposed-expectations-before-admission.md) and
-[ADR-0036](adr/0036-report-pack-independent-unreachable-expectations.md).
+[ADR-0037](adr/0037-report-pack-independent-unreachable-expectations.md).
 
 Those limits are per expectation; the message carrying them has one of its own,
 and it belongs to the transport rather than to this tool. One request is one

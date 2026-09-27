@@ -127,7 +127,7 @@ func TestExpectationAdmissionContract(t *testing.T) {
 			// And under the code its class is reported by: a §8.3 grammar defect
 			// under JPS-EXPECTATION-INVALID, a disposition §8's step order or §5's
 			// grammar puts beyond every pack under JPS-EXPECTATION-UNREACHABLE.
-			// The two are told apart by the code alone (ADR-0035, ADR-0036), so a
+			// The two are told apart by the code alone (ADR-0035, ADR-0037), so a
 			// fixture that swapped them would otherwise pass.
 			if row["code"] != fixture.Code {
 				t.Fatalf("code is %v, want %q: %#v", row["code"], fixture.Code, row)
@@ -169,7 +169,7 @@ func TestExpectationAdmissionAggregate(t *testing.T) {
 }
 
 // TestUnreachableExpectationIsAnInvalidFindingOfItsOwn holds the wire shape of
-// the one finding ADR-0036 adds, on its own rather than beside the fixtures of
+// the one finding ADR-0037 adds, on its own rather than beside the fixtures of
 // every other rule: a legal §8.3 disposition that §8's step order puts beyond
 // every pack decides the aggregate the way any other non-valid row does, is
 // reported under its own code, and carries no canonical text. Asserting this
@@ -256,7 +256,7 @@ func TestUnreachableOutcomeIDEchoIsBoundedAtItsWorstCase(t *testing.T) {
 	if want := len(unreachableOutcomeIDRule) - len("%q") + 2 + 4*characters; len(message) != want {
 		t.Fatalf("the decoded message is %d bytes; the template gives %d", len(message), want)
 	}
-	// And against the figure ADR-0036 states, which the derivation above cannot
+	// And against the figure ADR-0037 states, which the derivation above cannot
 	// hold on its own: it moves with the sentence, and the documented number does
 	// not. 32,936 bytes is over 32,768 and under 33 KiB.
 	if len(message) != 32936 {
@@ -307,7 +307,7 @@ type findingSize struct {
 // whose bytes are being counted, and 255 is the largest a 256-expectation batch
 // can report. Each figure is asserted twice: once derived from the message and
 // the escaping rule, so a change of escaping fails it, and once against the
-// literal ADR-0036 documents, so rewording the sentence fails it. Each is also
+// literal ADR-0037 documents, so rewording the sentence fails it. Each is also
 // held to being the bytes the server actually wrote, by locating the finding
 // inside the payload rather than re-serializing it here: a figure measured on a
 // finding this test built itself would be a figure about this test.

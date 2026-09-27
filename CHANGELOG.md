@@ -52,7 +52,7 @@ All notable changes to tagged releases are documented here.
   always was, by the carrier. No tool schema, payload member, exit code or CLI surface changes,
   and both bundled suites and the evaluation corpus pass unchanged; the evaluator's conformance
   claim is unaffected and stated, in full and only, in `CONFORMANCE.md`.
-- **An expectation no pack can reach is reported under its own finding code** (ADR-0036):
+- **An expectation no pack can reach is reported under its own finding code** (ADR-0037):
   `experimental_validate_expectations` now answers `JPS-EXPECTATION-UNREACHABLE`, beside a message
   quoting the rule, for the three shapes §8.3's grammar admits and §8's step order or §5's identifier
   grammar rule out for every conforming pack — an `unresolved` result retaining `not-applicable`,

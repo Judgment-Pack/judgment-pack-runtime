@@ -129,7 +129,7 @@ var localIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
 
 // unreachableOutcomeIDRule is class 3's message, with the offending identifier
 // quoted into it by %q. It is a named constant because the size of that echo is
-// a documented bound (ADR-0036, Security and privacy) and the bound is derived
+// a documented bound (ADR-0037, Security and privacy) and the bound is derived
 // from this text rather than asserted beside it: the sentence is 166 bytes with
 // the verb removed, and the largest identifier the carrier admits is 8,192
 // single-byte characters.
@@ -148,7 +148,7 @@ var localIdentifier = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
 const unreachableOutcomeIDRule = `§5: "Local object identifiers are non-empty ASCII strings matching ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", so %q is a string no conforming pack can declare as an outcome id.`
 
 // unreachableExpectation names the rule that puts a legal §8.3 disposition
-// beyond every conforming pack, or returns "" when none does (ADR-0036).
+// beyond every conforming pack, or returns "" when none does (ADR-0037).
 //
 // Every rule here is pack-independent: it holds for all packs, so it can be
 // decided from the disposition alone, which is all this tool ever sees.
