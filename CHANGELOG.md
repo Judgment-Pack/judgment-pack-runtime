@@ -11,11 +11,14 @@ All notable changes to tagged releases are documented here.
   did for `describe_runtime`, `list_examples` and `list_packs`. A call carrying any member is
   refused as before.
 
-- **`README.md` and `CONFORMANCE.md` count nine surfaces reaching the evaluator in every sentence
-  that counts them**: `README.md` said eight above a list of nine, and `CONFORMANCE.md` said
-  "all eight" three lines after naming nine. No surface, list or claim changes. The test that
-  holds `CONFORMANCE.md`'s list to the evaluator's call sites now holds each of the three counts,
-  and the length of `README.md`'s list, to the same number.
+- **Every sentence that counts the surfaces reaching the evaluator, or the experimental MCP
+  tools, agrees with its list**: `README.md` said eight surfaces above a list of nine, and
+  `CONFORMANCE.md` said "all eight" three lines after naming nine. `docs/mcp-clients.md` counted
+  three MCP tools reaching the evaluator where there are four, leaving out
+  `experimental_test_cases`. `jpack mcp --help` counted six experimental tools where the server
+  lists nine, leaving out `experimental_test_cases`, `experimental_get_test_matrix_contract` and
+  `experimental_validate_test_matrix`. No surface, tool or claim changes. Each of these counts and
+  lists is now held by test to the evaluator's call sites, or to the server's own tool listing.
 
 ## 0.23.0 - 2026-09-27
 

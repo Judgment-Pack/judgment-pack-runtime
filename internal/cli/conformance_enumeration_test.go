@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -79,48 +81,190 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 			t.Fatalf("CONFORMANCE.md's claim-scope enumeration does not name %s", surface)
 		}
 	}
-	if !strings.Contains(text, "the nine surfaces that reach it") {
-		t.Fatalf("CONFORMANCE.md no longer states the enumeration's count as %q; update the sentence and this test together", "the nine surfaces that reach it")
-	}
-
-	// The count is written three times, and two of the three still read eight
-	// after the ninth surface was named. Each sentence is held to the number
-	// enumerated above, and README.md's own list to the same number: it spells
-	// the surfaces its own way, so what is counted there is the code spans
-	// between the count and the end of its sentence.
+	// The count is written in more places than the list is, and two of them
+	// still read eight after the ninth surface was named. Each sentence is held
+	// to the number enumerated above rather than to a number written here, and
+	// the sentence that carries the list is held to the list by name: each code
+	// span in it names one enumerated surface, and each surface is named once.
 	count := countWord(t, len(enumerated))
-	flat := strings.Join(strings.Fields(text), " ")
-	for _, sentence := range []string{"the " + count + " surfaces that reach it", "One evaluator sits behind all " + count + ","} {
-		if !strings.Contains(flat, sentence) {
-			t.Fatalf("CONFORMANCE.md does not state %q, and the enumeration names %d surfaces", sentence, len(enumerated))
+	flat := flatten(text)
+	if sentence := "One evaluator sits behind all " + count + ","; !strings.Contains(flat, sentence) {
+		t.Fatalf("CONFORMANCE.md does not state %q, and the enumeration names %d surfaces", sentence, len(enumerated))
+	}
+	claimed := sentenceAfter(t, "CONFORMANCE.md", flat, "the "+count+" surfaces that reach it", len(enumerated))
+	heldToList(t, "CONFORMANCE.md", enumerated, codeSpans(t, "CONFORMANCE.md", claimed))
+
+	// README.md spells the surfaces its own way — `jpack packs test`, and
+	// `graph test` once the verb group is named — which surfaceSpelled admits.
+	readme := flatten(readDocument(t, "README.md"))
+	listed := sentenceAfter(t, "README.md", readme, "and "+count+" surfaces reach it:", len(enumerated))
+	heldToList(t, "README.md", enumerated, codeSpans(t, "README.md", listed))
+
+	// The MCP tools among them are counted and listed twice more, in the client
+	// guide and in the mcp command's help, and both still counted three after
+	// the fourth was added. The guide's sentence names CLI counterparts beside
+	// the tools, so only its tool names are held.
+	tools := []string{}
+	for _, surface := range enumerated {
+		if strings.HasPrefix(surface, "`experimental_") {
+			tools = append(tools, surface)
 		}
 	}
-	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-	if err != nil {
-		t.Fatalf("reading README.md: %v", err)
+	if sites := expectedSites[filepath.Join("..", "mcp", "tools.go")]; sites != len(tools) {
+		t.Fatalf("this test expects %d constructor sites in the MCP package but enumerates %d MCP tools", sites, len(tools))
 	}
-	opening := "and " + count + " surfaces reach it:"
-	_, list, stated := strings.Cut(strings.Join(strings.Fields(string(readme)), " "), opening)
+	guide := flatten(readDocument(t, filepath.Join("docs", "mcp-clients.md")))
+	reaching := sentenceAfter(t, "docs/mcp-clients.md", guide, "except the "+countWord(t, len(tools))+" that reach the evaluator:", len(tools))
+	named := []string{}
+	for _, span := range codeSpans(t, "docs/mcp-clients.md", reaching) {
+		if strings.HasPrefix(span, "experimental_") {
+			named = append(named, span)
+		}
+	}
+	heldToList(t, "docs/mcp-clients.md", tools, named)
+
+	help := sentenceAfter(t, "jpack mcp --help", mcpHelp(t), "tools on this runtime's experimental surface (", len(tools))
+	before, _, stated := strings.Cut(help, ", which reach the evaluator")
 	if !stated {
-		t.Fatalf("README.md does not state %q, and the enumeration names %d surfaces", opening, len(enumerated))
+		t.Fatalf("jpack mcp --help no longer says which of its tools reach the evaluator: %q", help)
 	}
-	list, closed := cutBefore(list, " MCP tools.")
-	if spans := strings.Count(list, "`") / 2; !closed || spans != len(enumerated) {
-		t.Fatalf("README.md names %d surfaces after %q and the enumeration names %d", spans, opening, len(enumerated))
-	}
+	heldToList(t, "jpack mcp --help", tools, experimentalName.FindAllString(before, -1))
 }
 
-// countWord spells a surface count the way the two documents do.
+// The mcp command's help counts the tools on the experimental surface and names
+// each, and it said six when the server listed nine. The names are read from a
+// real tools/list response, so a tool added to the server fails here until the
+// help counts and names it.
+func TestMCPHelpNamesEveryExperimentalTool(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"mcp"}, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")
+	if code != 0 || stderr != "" {
+		t.Fatalf("mcp tools/list: exit=%d stderr=%q", code, stderr)
+	}
+	var listed struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &listed); err != nil {
+		t.Fatalf("undecodable tools/list response %q: %v", stdout, err)
+	}
+	tools := []string{}
+	for _, tool := range listed.Result.Tools {
+		if strings.HasPrefix(tool.Name, "experimental_") {
+			tools = append(tools, tool.Name)
+		}
+	}
+	if len(tools) == 0 {
+		t.Fatal("tools/list names no experimental tool, so nothing would be held")
+	}
+	opening := "plus " + countWord(t, len(tools)) + " tools on this runtime's experimental surface ("
+	heldToList(t, "jpack mcp --help", tools, experimentalName.FindAllString(sentenceAfter(t, "jpack mcp --help", mcpHelp(t), opening, len(tools)), -1))
+}
+
+var experimentalName = regexp.MustCompile(`experimental_[a-z_]+`)
+
+func mcpHelp(t *testing.T) string {
+	t.Helper()
+	code, stdout, stderr := runTest(t, []string{"mcp", "--help"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("mcp --help: exit=%d stderr=%q", code, stderr)
+	}
+	return flatten(stdout)
+}
+
+func readDocument(t *testing.T, name string) string {
+	t.Helper()
+	document, err := os.ReadFile(filepath.Join("..", "..", name))
+	if err != nil {
+		t.Fatalf("reading %s: %v", name, err)
+	}
+	return string(document)
+}
+
+// flatten folds each run of white space to one space, so a sentence is found
+// however its lines are wrapped.
+func flatten(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// countWord spells a count the way the documents do.
 func countWord(t *testing.T, n int) string {
 	t.Helper()
 	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"}
 	if n < 0 || n >= len(words) {
-		t.Fatalf("no spelling for a count of %d surfaces; extend countWord", n)
+		t.Fatalf("no spelling for a count of %d; extend countWord", n)
 	}
 	return words[n]
 }
 
-func cutBefore(text, end string) (string, bool) {
-	before, _, found := strings.Cut(text, end)
-	return before, found
+// sentenceAfter returns what follows opening, up to the end of its sentence. A
+// missing opening and a sentence with no end are two failures, reported apart:
+// the first is a wrong count, the second a list this test can no longer bound.
+func sentenceAfter(t *testing.T, document, text, opening string, surfaces int) string {
+	t.Helper()
+	_, rest, stated := strings.Cut(text, opening)
+	if !stated {
+		t.Fatalf("%s does not state %q, and %d are enumerated", document, opening, surfaces)
+	}
+	sentence, _, ended := strings.Cut(rest, ". ")
+	if !ended {
+		t.Fatalf("%s: the sentence after %q has no end this test can find, so its list cannot be bounded", document, opening)
+	}
+	return sentence
+}
+
+func codeSpans(t *testing.T, document, text string) []string {
+	t.Helper()
+	parts := strings.Split(text, "`")
+	if len(parts)%2 == 0 {
+		t.Fatalf("%s leaves a code span open in %q", document, text)
+	}
+	spans := []string{}
+	for i := 1; i < len(parts); i += 2 {
+		spans = append(spans, parts[i])
+	}
+	return spans
+}
+
+// surfaceSpelled returns the one surface a spelling names: the surface itself,
+// a longer spelling that ends with it (`jpack packs test`), or a shorter one
+// that ends it (`graph test`). It returns "" when the spelling names none, or
+// more than one.
+func surfaceSpelled(surfaces []string, spelling string) string {
+	match := ""
+	for _, surface := range surfaces {
+		name := strings.Trim(surface, "`")
+		if spelling == name || strings.HasSuffix(spelling, " "+name) || strings.HasSuffix(name, " "+spelling) {
+			if match != "" {
+				return ""
+			}
+			match = surface
+		}
+	}
+	return match
+}
+
+// heldToList requires the spellings to name each surface once and nothing
+// else. A surface written without a code span is reported as not named: the
+// list is code spans in every document that carries it.
+func heldToList(t *testing.T, document string, surfaces, spellings []string) {
+	t.Helper()
+	named := map[string]string{}
+	for _, spelling := range spellings {
+		surface := surfaceSpelled(surfaces, spelling)
+		if surface == "" {
+			t.Fatalf("%s lists %q, which names no one surface among the %d enumerated", document, spelling, len(surfaces))
+		}
+		if earlier, twice := named[surface]; twice {
+			t.Fatalf("%s names %s twice, as %q and %q", document, surface, earlier, spelling)
+		}
+		named[surface] = spelling
+	}
+	for _, surface := range surfaces {
+		if _, found := named[surface]; !found {
+			t.Fatalf("%s does not name %s in the sentence that counts %d", document, surface, len(surfaces))
+		}
+	}
 }

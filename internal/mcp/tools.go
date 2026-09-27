@@ -24,14 +24,16 @@ import (
 )
 
 // toolDefinitions is the tools/list payload. Every tool wraps a read-only core
-// operation except the three that reach the evaluator on this runtime's
+// operation except the four that reach the evaluator on this runtime's
 // experimental surface (ADR-0007): experimental_evaluate, which appends one
 // record per completed call in a project whose configuration asked for one
 // (ADR-0018) — unless the call declares itself a rehearsal (ADR-0028) — and
 // is the only tool here that can write, and
 // experimental_test_packs and experimental_test_graphs, which run declared
-// instance and graph matrices and write nothing — a matrix row is a rehearsal,
-// not a decision (ADR-0021, ADR-0026). experimental_list_graphs and
+// instance and graph matrices, and experimental_test_cases, which runs a
+// supplied matrix against supplied pack text and reads no project file; the
+// three write nothing — a matrix row is a rehearsal, not a decision
+// (ADR-0021, ADR-0026, ADR-0036). experimental_list_graphs and
 // experimental_get_graph carry the experimental marker for their surface's
 // stability, not for evaluation: they serve the graph convention's inventory
 // and documents read-only (ADR-0029) and reach no evaluator. Every
