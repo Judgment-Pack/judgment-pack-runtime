@@ -583,7 +583,7 @@ func TestABrokenConfigurationRefusesAPackPassedAsText(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(root, project.DefaultConfigName)
-	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","packs":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"3","packs":null}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(project.ConfigEnv, configPath)

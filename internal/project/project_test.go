@@ -551,19 +551,10 @@ func TestMatrixWellFormednessIsCheckedBeforeAnyRowRuns(t *testing.T) {
 
 // The demotion is about rows, not about how many packs were selected.
 //
-// The schema refuses an empty packs object, so this state cannot be reached
-// through a configuration — which is exactly why it is asserted here, against
-// the runner directly. A guard that additionally required a non-empty selection
-// would report a clean run over zero rows for a project that configures nothing,
-// and it would do so silently the moment anything else produced an empty
-// selection. Two independent refusals, and this is the one that does not depend
-// on the schema being right.
+// A new desk starts with an empty project. Loading it is valid; claiming that
+// its nonexistent tests passed would not be. Exercise the actual load path.
 func TestAnEmptySelectionIsNotACleanRun(t *testing.T) {
-	empty := &Project{
-		ConfigPath: "jpack.json",
-		Config:     Config{ConfigVersion: ConfigVersion, Packs: map[string]Pack{}},
-		IDs:        []string{},
-	}
+	empty := mustLoad(t, writeProject(t, `{"configVersion":"3","packs":{}}`, nil))
 	run, failure := empty.Test(evaluation.NewEngine(newValidator(t)), "", "packs test")
 	if failure != nil {
 		t.Fatal(failure.Message)

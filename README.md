@@ -488,7 +488,8 @@ forbids `expectedHandoffTarget` and `cites`, so lifting a project row means supp
 removing any target assertion and any citations. Both commands exit `1` on any failure, a pack with no
 matrix is reported *skipped* rather than passed, and a `packs test` run in which no row ran at all
 is reported *skipped* and exits `1`: a green gate over zero rows would say a project was tested when
-nothing was. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no
+nothing was. A new project may start with an empty `packs` object: inventory and structural
+validation accept it, while `packs test` remains skipped with exit `1`. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no
 source feeds raises no error anywhere — the condition is unknowable, every rule touching it
 escalates, and the system looks conservative rather than broken — so the lint holds every consulted
 pointer to a producer declaration (the configuration's own hints, or an explicit `--producers`

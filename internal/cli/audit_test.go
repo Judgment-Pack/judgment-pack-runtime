@@ -219,7 +219,7 @@ func TestAFailedRecordRefusesTheRun(t *testing.T) {
 // that asked to be recorded, and evaluating it unrecorded answers a question
 // nobody can afterward show was asked.
 func TestABrokenConfigurationRefusesAPathNamedEvaluation(t *testing.T) {
-	configPath := writeProjectFixture(t, `{"configVersion":"3","packs":{}}`, map[string]string{
+	configPath := writeProjectFixture(t, `{"configVersion":"3","packs":null}`, map[string]string{
 		"pack.json": evaluatorPack(t),
 	})
 	facts := writeDocument(t, "facts.json", hardFailFacts)

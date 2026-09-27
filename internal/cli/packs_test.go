@@ -342,27 +342,23 @@ func TestPacksTestDoesNotReportACleanRunOverZeroRows(t *testing.T) {
 		t.Fatalf("the human surface must say no row ran: exit=%d %q", code, stdout)
 	}
 
-	// A project that configures no pack at all is the same failure reached
-	// earlier: the schema requires at least one, so an empty packs object never
-	// becomes a run. Both refusals matter and neither replaces the other — the
-	// schema stops a configuration nobody can have meant, and the runner's
-	// zero-row demotion stops a green result over nothing however the selection
-	// came to be empty.
+	// A newly created desk may be empty. Inventory and structural validation
+	// succeed, but testing must still report skipped and exit non-zero.
 	emptyConfig := writeProjectFixture(t, `{"configVersion":"1","packs":{}}`, nil)
 	code, stdout, stderr = runTest(t, []string{"packs", "test", "--config", emptyConfig, "--format", "json"}, "")
-	if code == result.ExitSuccess {
-		t.Fatalf("a project declaring no packs must not exit 0: stdout=%q stderr=%q", stdout, stderr)
+	if code != result.ExitInvalid {
+		t.Fatalf("empty tests must exit non-zero: %d %s", code, stderr)
 	}
-	if !strings.Contains(stdout+stderr, "JPS-PROJECT-CONFIG-SCHEMA") {
-		t.Fatalf("an empty packs object must be refused by the schema: stdout=%q stderr=%q", stdout, stderr)
+	if err := json.Unmarshal([]byte(stdout), &run); err != nil {
+		t.Fatal(err)
 	}
-	// The same configuration is refused identically by the surfaces that read it
-	// for anything else, so an empty project is never half-usable.
-	if code, _, _ := runTest(t, []string{"packs", "validate", "--config", emptyConfig, "--format", "json"}, ""); code == result.ExitSuccess {
-		t.Fatal("packs validate must refuse a project declaring no packs")
+	if run.Status != "skipped" || run.Summary.Total != 0 || len(run.Packs) != 0 {
+		t.Fatalf("empty test run: %+v", run)
 	}
-	if code, _, _ := runTest(t, []string{"packs", "list", "--config", emptyConfig, "--format", "json"}, ""); code == result.ExitSuccess {
-		t.Fatal("packs list must refuse a project declaring no packs")
+	for _, command := range []string{"validate", "list"} {
+		if code, _, stderr := runTest(t, []string{"packs", command, "--config", emptyConfig, "--format", "json"}, ""); code != result.ExitSuccess {
+			t.Fatalf("%s must accept an empty new project: %d %s", command, code, stderr)
+		}
 	}
 }
 
