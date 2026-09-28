@@ -360,12 +360,14 @@ func TestEveryDispositionMemberReachesTheCanonicalForm(t *testing.T) {
 	// reasons, so a disposition carrying outcomeId can carry neither. Each type's
 	// members are therefore canonicalized from the legal value that carries them and
 	// the two results are read together. Assembling one illegal value carrying all
-	// four would test nothing: Canonical refuses it.
+	// four would test nothing: Canonical refuses it. The value member of draft
+	// RFC 0016 is carried by an outcome and by nothing else, so it is here.
 	outcome := Disposition{
 		Kind:      "outcome",
 		OutcomeID: "proceed",
 		Reasons:   []string{},
 		Handoff:   Handoff{State: "none"},
+		Value:     map[string]any{"currency": "CAD"},
 	}
 	unresolved := Disposition{
 		Kind:    "unresolved",
@@ -572,3 +574,120 @@ func TestHandoffTargetRenderingIsCappedAndStillDistinct(t *testing.T) {
 }
 
 var legalTargetForBudget = &HandoffTarget{Kind: "human-role", Name: "Intake reviewer"}
+
+// The value member of draft RFC 0016 reaches the canonical form as the RFC
+// writes it, to the byte, and a disposition without one is what it was before
+// the member existed.
+func TestTheValueMemberOfDraftRFC0016IsCanonical(t *testing.T) {
+	for _, row := range []struct {
+		name  string
+		value map[string]any
+		want  string
+	}{
+		{
+			"the example of the RFC",
+			map[string]any{"refundAmount": "149.50", "currency": "CAD"},
+			`{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"approve-refund","reasons":[],"value":{"currency":"CAD","refundAmount":"149.50"}}`,
+		},
+		{
+			"a Boolean of each value, and the empty string",
+			map[string]any{"b": false, "a": true, "c": ""},
+			`{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"approve-refund","reasons":[],"value":{"a":true,"b":false,"c":""}}`,
+		},
+		{
+			"names are ordered by code unit, so a capital comes before a small letter",
+			map[string]any{"ab": "2", "aB": "1", "a1": "0"},
+			`{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"approve-refund","reasons":[],"value":{"a1":"0","aB":"1","ab":"2"}}`,
+		},
+		{
+			"a string is written with the escapes of RFC 8785 and is otherwise itself",
+			map[string]any{"v": "a\"b\\c\nd\x00\U0001F600 "},
+			"{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"approve-refund\",\"reasons\":[],\"value\":{\"v\":\"a\\\"b\\\\c\\nd\\u0000\U0001F600 \"}}",
+		},
+		{
+			"no value member",
+			nil,
+			`{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"approve-refund","reasons":[]}`,
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			disposition := Disposition{Kind: "outcome", OutcomeID: "approve-refund", Reasons: []string{}, Handoff: Handoff{State: "none"}, Value: row.value}
+			canonical, err := disposition.Canonical()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(canonical) != row.want {
+				t.Fatalf("canonical form = %s, want %s", canonical, row.want)
+			}
+			marshalled, err := json.Marshal(struct {
+				Disposition Disposition `json:"disposition"`
+			}{disposition})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(marshalled) != `{"disposition":`+row.want+`}` {
+				t.Fatalf("a payload must carry the canonical form: %s", marshalled)
+			}
+		})
+	}
+}
+
+// Canonical refuses a value member draft RFC 0016 does not admit, as it
+// refuses a disposition §8.3 does not.
+func TestCanonicalRefusesAValueDraftRFC0016Forbids(t *testing.T) {
+	outcome := func(value map[string]any) Disposition {
+		return Disposition{Kind: "outcome", OutcomeID: "approve", Reasons: []string{}, Handoff: Handoff{State: "none"}, Value: value}
+	}
+	for _, row := range []struct {
+		name        string
+		disposition Disposition
+		says        string
+	}{
+		{"a value on an unresolved result", Disposition{Kind: "unresolved", Reasons: []string{"unknown"}, Handoff: Handoff{State: "none"}, Value: map[string]any{"v": "1"}}, "must be absent when kind is not"},
+		{"a value on a not-applicable result", Disposition{Kind: "not-applicable", Reasons: []string{"not-applicable"}, Handoff: Handoff{State: "none"}, Value: map[string]any{"v": "1"}}, "must be absent when kind is not"},
+		{"an empty value on an unresolved result", Disposition{Kind: "unresolved", Reasons: []string{"unknown"}, Handoff: Handoff{State: "none"}, Value: map[string]any{}}, "must be absent when kind is not"},
+		{"a value with no member", outcome(map[string]any{}), "a declaration is not empty"},
+		{"a name that begins with a capital", outcome(map[string]any{"Amount": "1"}), "is not a value name"},
+		{"a name that begins with a digit", outcome(map[string]any{"1st": "1"}), "is not a value name"},
+		{"a name that ends in a line feed", outcome(map[string]any{"amount\n": "1"}), "is not a value name"},
+		{"an empty name", outcome(map[string]any{"": "1"}), "is not a value name"},
+		{"a name with a hyphen", outcome(map[string]any{"refund-amount": "1"}), "is not a value name"},
+		{"a name with a letter outside ASCII", outcome(map[string]any{"montré": "1"}), "is not a value name"},
+		{"a number", outcome(map[string]any{"v": 1}), "must be a string or a Boolean"},
+		{"a number as the decoder holds one", outcome(map[string]any{"v": json.Number("1")}), "must be a string or a Boolean"},
+		{"a floating-point number", outcome(map[string]any{"v": 1.5}), "must be a string or a Boolean"},
+		{"null", outcome(map[string]any{"v": nil}), "must be a string or a Boolean"},
+		{"an array", outcome(map[string]any{"v": []any{"1"}}), "must be a string or a Boolean"},
+		{"an object", outcome(map[string]any{"v": map[string]any{"w": "1"}}), "must be a string or a Boolean"},
+		{"a string that is not valid UTF-8", outcome(map[string]any{"v": string([]byte{0xff})}), "not a sequence of Unicode scalar values"},
+		{"one member admitted and one not", outcome(map[string]any{"a": "1", "b": 2}), `value "b" must be a string or a Boolean`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			canonical, err := row.disposition.Canonical()
+			if err == nil {
+				t.Fatalf("the disposition must be refused, and was written as %s", canonical)
+			}
+			if !strings.Contains(err.Error(), "draft RFC 0016") || !strings.Contains(err.Error(), row.says) {
+				t.Fatalf("error = %v, want one of draft RFC 0016 that says %q", err, row.says)
+			}
+			if _, err := json.Marshal(row.disposition); err == nil {
+				t.Fatal("a payload must not carry it either")
+			}
+		})
+	}
+}
+
+// A value name is one lowercase ASCII letter, then ASCII letters and digits,
+// and the whole name is held to that.
+func TestOutcomeValueName(t *testing.T) {
+	for _, name := range []string{"a", "z", "aZ", "a0", "a9", "refundAmount", "aAzZ09", "creditLimit2"} {
+		if !OutcomeValueName(name) {
+			t.Errorf("%q is a value name", name)
+		}
+	}
+	for _, name := range []string{"", "A", "Z", "0", "9a", "_a", "a_", "a-b", "a.b", "a b", " a", "a ", "a\n", "\na", "a\x00", "a\r", "aé", "é", "a`", "a{", "a@", "a[", "a/", "a:", "`a", "{a"} {
+		if OutcomeValueName(name) {
+			t.Errorf("%q is not a value name", name)
+		}
+	}
+}

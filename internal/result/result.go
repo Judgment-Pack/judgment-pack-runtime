@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"unicode/utf8"
 
@@ -380,8 +381,17 @@ type Handoff struct {
 // Disposition is the portable disposition of JPS Core §8.3: kind ("outcome",
 // "not-applicable", or "unresolved"), the outcome id exactly when kind is
 // "outcome", the retained reason set as a sorted duplicate-free array (empty
-// exactly when kind is "outcome"), and the handoff object. It carries these
-// members and no others.
+// exactly when kind is "outcome"), and the handoff object. Under JPS Core
+// 0.2.0-draft it carries these members and no others.
+//
+// Value is the one member that is not Core's. The specification's RFC 0016
+// (Draft) proposes it, and the evaluator sets it under that RFC's opt-in and
+// nowhere else (ADR-0039): the values the produced outcome declares, each a
+// string or a Boolean. It is nil for every disposition made without the opt-in,
+// and the canonical form then has no such member, so those bytes are what they
+// were before the member existed. A reader of expected dispositions refuses the
+// member (evaluation.DecodeDisposition), because an expectation is held to §8.3
+// as published.
 //
 // It serializes as its own RFC 8785 canonical form, so the disposition member of
 // any JSON payload this runtime writes without --pretty is the byte sequence
@@ -392,10 +402,11 @@ type Handoff struct {
 // is required", and a byte comparison must recanonicalize either side it did not
 // itself produce.
 type Disposition struct {
-	Kind      string   `json:"kind"`
-	OutcomeID string   `json:"outcomeId,omitempty"`
-	Reasons   []string `json:"reasons"`
-	Handoff   Handoff  `json:"handoff"`
+	Kind      string         `json:"kind"`
+	OutcomeID string         `json:"outcomeId,omitempty"`
+	Reasons   []string       `json:"reasons"`
+	Handoff   Handoff        `json:"handoff"`
+	Value     map[string]any `json:"value,omitempty"`
 }
 
 // Canonical returns the disposition's RFC 8785 canonicalization: members ordered
@@ -438,6 +449,9 @@ func (d Disposition) Canonical() ([]byte, error) {
 	}
 	if d.OutcomeID != "" {
 		object["outcomeId"] = d.OutcomeID
+	}
+	if d.Value != nil {
+		object["value"] = d.Value
 	}
 	return jcs.Encode(object)
 }
@@ -538,7 +552,67 @@ func (d Disposition) validate() error {
 	if slices.Contains(reasons, ReasonExceptionEscalation) != slices.Contains(d.Handoff.TriggeredBy, ReasonExceptionEscalation) {
 		return errors.New("§8.3: a retained \"exception-escalation\" reason is a direct request, so handoff.state must be \"requested\" and handoff.triggeredBy must name it (§8.1)")
 	}
+	return d.validateValue()
+}
+
+// validateValue holds the value member to what draft RFC 0016 states about the
+// disposition alone: the member is present only when kind is "outcome", it is
+// then a non-empty object, every member name is a value name, and every member
+// is a string or a Boolean. A nil map is the absent member. A map that is not
+// nil and holds nothing is refused, because the RFC makes a value declaration
+// non-empty and an empty object would be a member no declaration produces.
+//
+// The other half of the RFC's rule is not about the disposition alone. That the
+// member is present whenever the named outcome carries a declaration, and that
+// its names are the declared ones, are facts about a pack this type never sees.
+// They stay with the evaluator, as the rule that outcomeId names a declared
+// outcome does.
+func (d Disposition) validateValue() error {
+	if d.Value == nil {
+		return nil
+	}
+	if d.Kind != "outcome" {
+		return errors.New("draft RFC 0016: value must be absent when kind is not \"outcome\"")
+	}
+	if len(d.Value) == 0 {
+		return errors.New("draft RFC 0016: value, when present, has one member for each declared value and a declaration is not empty")
+	}
+	for _, name := range slices.Sorted(maps.Keys(d.Value)) {
+		if !OutcomeValueName(name) {
+			return fmt.Errorf("draft RFC 0016: %q is not a value name", name)
+		}
+		switch member := d.Value[name].(type) {
+		case bool:
+		case string:
+			if !utf8.ValidString(member) {
+				return fmt.Errorf("draft RFC 0016: value %q is a string that is not a sequence of Unicode scalar values", name)
+			}
+		default:
+			return fmt.Errorf("draft RFC 0016: value %q must be a string or a Boolean; got %T", name, member)
+		}
+	}
 	return nil
+}
+
+// OutcomeValueName reports whether name is a value name of draft RFC 0016: one
+// lowercase ASCII letter, then ASCII letters and digits. The whole name is held
+// to that, so a name that ends in a line feed is refused. It is written as a
+// loop over the bytes and not as a pattern, because the RFC warns that a
+// pattern's end anchor may admit what the rule refuses, and a loop has no
+// anchor to get wrong. The evaluator's admission gate reads the same function,
+// so the gate and the disposition cannot disagree about a name.
+func OutcomeValueName(name string) bool {
+	if name == "" || name[0] < 'a' || name[0] > 'z' {
+		return false
+	}
+	for index := 1; index < len(name); index++ {
+		character := name[index]
+		letter := (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+		if !letter && (character < '0' || character > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // sortedSet is one §8.3 reason set as it must be serialized: ascending by
@@ -612,10 +686,20 @@ type TraceEntry struct {
 // and that the pack carrying them is not valid under the specification the rest
 // of the payload names. A consumer that ignores it is reading a disposition
 // produced by operators no JPS version defines.
+//
+// One evaluation runs under at most one draft RFC, so RFC names one (ADR-0039).
+// Operators lists the draft condition operators the pack uses, which only
+// RFC 0008 adds; under any other draft it is the empty array and not absent,
+// because the member was always present and a consumer may read it without
+// asking first. Outcomes lists the ids of the outcomes that carry a value
+// declaration of RFC 0016, sorted. It is absent under RFC 0008, so the marker
+// of that draft is byte for byte what it was before this member existed, and
+// absent under RFC 0016 for a pack that declares no value.
 type DraftPrototype struct {
 	RFC                       string   `json:"rfc"`
 	Status                    string   `json:"status"`
 	Operators                 []string `json:"operators"`
+	Outcomes                  []string `json:"outcomes,omitempty"`
 	PackValidUnderSpecVersion bool     `json:"packValidUnderSpecVersion"`
 	Note                      string   `json:"note"`
 }

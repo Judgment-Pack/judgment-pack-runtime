@@ -86,6 +86,13 @@ type Options struct {
 	// so every evaluation made under this opt-in is labeled a draft-RFC
 	// prototype in its output.
 	RFC0008Quantifiers bool
+	// RFC0016OutcomeValues admits the value declarations of the draft RFC 0016
+	// and resolves them once an outcome is produced (ADR-0039). A pack carrying
+	// one is not valid under any published JPS version, so every evaluation made
+	// under this opt-in is labeled a draft-RFC prototype in its output. One
+	// evaluation runs under one draft: a caller that sets this and
+	// RFC0008Quantifiers is refused before any input is read.
+	RFC0016OutcomeValues bool
 	// WorkBudget overrides this evaluation's §10 evaluation-work limit. Zero or
 	// negative selects the default for the path in force: DefaultCoreWorkLimit on
 	// the Core path, and the draft grammar's smaller DefaultWorkBudget under the
@@ -177,6 +184,12 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 // any other input is touched, so the §8.4 precedence a per-row caller saw is
 // byte-identical.
 func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte, options Options) (result.Evaluation, *Failure) {
+	// Two drafts in one evaluation is a call this engine does not take, and it
+	// is refused as the invocation it is: before any input is looked at, and
+	// with no §8.4 class, because nothing was evaluated.
+	if failure := oneDraft(options); failure != nil {
+		return result.Evaluation{}, failure
+	}
 	// The limit was decided in AdmitPack, over the bytes as they were handed in;
 	// this replays it rather than re-deciding it, and additionally honours the
 	// Options report a CLI makes when its own bounded read stopped at the limit
@@ -218,9 +231,10 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 	}
 
 	disposition, target, trace, failure := resolve(packRoot, factsDocument, &evaluator{
-		evidence:    presence,
-		quantifiers: options.RFC0008Quantifiers,
-		budget:      options.workLimit(),
+		evidence:      presence,
+		quantifiers:   options.RFC0008Quantifiers,
+		outcomeValues: options.RFC0016OutcomeValues,
+		budget:        options.workLimit(),
 	})
 	if failure != nil {
 		return result.Evaluation{}, failure
@@ -245,6 +259,9 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 	}
 	if options.RFC0008Quantifiers {
 		evaluation.DraftPrototype = draftPrototype(packRoot, validated.SpecVersion)
+	}
+	if options.RFC0016OutcomeValues {
+		evaluation.DraftPrototype = outcomeValuesPrototype(packRoot, validated.SpecVersion)
 	}
 	if set, err := artifacts.Load(validated.SpecVersion); err == nil {
 		evaluation.Artifact = &result.Artifact{
@@ -386,7 +403,8 @@ func admissionKey(options Options) string {
 	encoded, _ := json.Marshal(struct {
 		Supported []string `json:"s"`
 		RFC0008   bool     `json:"r"`
-	}{supported, options.RFC0008Quantifiers})
+		RFC0016   bool     `json:"v"`
+	}{supported, options.RFC0008Quantifiers, options.RFC0016OutcomeValues})
 	return string(encoded)
 }
 
@@ -442,9 +460,9 @@ func packIdentity(packRoot map[string]any, member string) string {
 }
 
 // conformance establishes the pack's conformance status and returns its decoded
-// root. Without the draft opt-in this is the published path unchanged: full
-// document conformance against the bundled schema, or a refusal. Under the
-// opt-in it is the RFC 0008 gate, which no pack reaches by accident.
+// root. Without a draft opt-in this is the published path unchanged: full
+// document conformance against the bundled schema, or a refusal. Under an
+// opt-in it is that draft's gate, which no pack reaches by accident.
 //
 // The third result is the deferred unsupported-required-extension error of
 // §8.4, non-nil when the pack is semantically conforming but requires a
@@ -453,7 +471,10 @@ func packIdentity(packRoot map[string]any, member string) string {
 // documents are admitted, and §8.4 makes that order the error precedence.
 func (e *Engine) conformance(pack []byte, options Options) (result.Validation, map[string]any, *Failure, *Failure) {
 	if options.RFC0008Quantifiers {
-		return e.rfc0008Conformance(pack, options)
+		return e.draftConformance(pack, options, rfc0008Grammar)
+	}
+	if options.RFC0016OutcomeValues {
+		return e.draftConformance(pack, options, rfc0016Grammar)
 	}
 	validated, operational := e.validator.Validate(pack, validation.Options{
 		Through:             "semantic",

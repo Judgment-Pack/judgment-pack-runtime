@@ -176,7 +176,7 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 					r.trace = append(r.trace, result.TraceEntry{Stage: "rule", ID: id, Condition: "not-evaluated", Skipped: true})
 				}
 			}
-			return r.dispose("outcome", outcome)
+			return r.produce(outcome)
 		}
 	}
 
@@ -224,17 +224,48 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 	// Step 9: one distinct outcome and no blocking reason: produce it.
 	if len(candidates) == 1 {
 		for outcome := range candidates {
-			return r.dispose("outcome", outcome)
+			return r.produce(outcome)
 		}
 	}
 
 	// Step 10: no true rule contributed an outcome. Use the fallback when
 	// declared; otherwise unresolved with reason no-match.
 	if fallback, ok := r.pack["fallbackOutcome"].(string); ok {
-		return r.dispose("outcome", fallback)
+		return r.produce(fallback)
 	}
 	r.reasons[ReasonNoMatch] = true
 	return r.dispose("unresolved", "")
+}
+
+// produce returns the result of an evaluation in which §8 has produced an
+// outcome: the forced outcome of step 6, the outcome of step 9 or the fallback
+// of step 10. Without the draft RFC 0016 opt-in it is that outcome's
+// disposition and nothing else.
+//
+// Under the opt-in it is where that RFC's resolution step runs, because every
+// outcome §8 produces passes through here and no other result does. The step
+// runs once, for that outcome alone. Where a declared value does not resolve,
+// no outcome is produced: the result is unresolved with the one reason unknown,
+// and the handoff follows §8.1 as for any other unknown. The reason set is
+// empty when an outcome is reached, so unknown is the only reason the result
+// retains. The result is final, and step 10 is not tried in its place, because
+// this is reached after §8 has chosen. Reaching the evaluation-work limit in
+// the step is the error it is anywhere else.
+func (r *resolver) produce(outcomeID string) (result.Disposition, *result.HandoffTarget, []result.TraceEntry, *Failure) {
+	if !r.eval.outcomeValues {
+		return r.dispose("outcome", outcomeID)
+	}
+	value, complete := r.resolveValues(outcomeID)
+	if r.eval.exceeded {
+		return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
+	}
+	if !complete {
+		r.reasons[ReasonUnknown] = true
+		return r.dispose("unresolved", "")
+	}
+	disposition, target, trace, failure := r.dispose("outcome", outcomeID)
+	disposition.Value = value
+	return disposition, target, trace, failure
 }
 
 // dispose returns one resolution's §8.3 disposition, the configured escalation

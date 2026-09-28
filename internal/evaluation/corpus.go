@@ -769,6 +769,14 @@ func exactDispositionMembers(raw json.RawMessage) error {
 	if object == nil {
 		return errors.New("§8.3: the disposition must be a JSON object, not null")
 	}
+	// The value member is named before the spellings are read, because "a
+	// member this runtime does not know" would not be true of it. This runtime
+	// produces it under the draft RFC 0016 opt-in (ADR-0039). An expectation is
+	// held to §8.3 as it is published, which has no such member, and no surface
+	// that reads an expectation evaluates under that opt-in.
+	if _, present := object["value"]; present {
+		return errors.New("§8.3: the disposition carries \"value\", which is the member of the specification's draft RFC 0016 and no member of §8.3. An expected disposition is held to §8.3 as JPS Core " + result.EvaluatorSpecVersion + " publishes it")
+	}
 	if err := memberSpellings(object, []string{"kind", "outcomeId", "reasons", "handoff"}, "the disposition"); err != nil {
 		return err
 	}

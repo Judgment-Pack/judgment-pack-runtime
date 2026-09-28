@@ -1,0 +1,57 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/rfc0016-refund-pass-through",
+  "version": "0.1.0",
+  "title": "Synthetic refund approval that states the amount approved",
+  "description": "Invented content for specification testing; it authorizes nothing.",
+  "decision": {
+    "intent": "Exercise a value drawn from a fact under the specification's draft RFC 0016.",
+    "question": "Is the proposed refund approved, and for how much?"
+  },
+  "outcomes": [
+    {
+      "id": "approve-refund",
+      "label": "Approve the proposed refund",
+      "extensions": {
+        "org.judgmentpack.outcome-values": {
+          "refundAmount": { "type": "decimal", "fromFact": "/proposed/refundAmount" },
+          "currency": { "type": "string", "constant": "CAD" }
+        }
+      }
+    },
+    { "id": "manual-review", "label": "Send to manual review" }
+  ],
+  "rules": [
+    {
+      "id": "small-refund-in-good-standing",
+      "description": "A customer in good standing is refunded 200 or less.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          { "op": "fact", "path": "/customer/goodStanding", "operator": "equals", "value": true },
+          { "op": "fact", "path": "/proposed/refundAmount", "operator": "less-than-or-equal", "value": "200" }
+        ]
+      },
+      "outcome": "approve-refund",
+      "onUnknown": "escalate"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "goodwill-override",
+      "description": "A goodwill override approves the refund without reading the amount.",
+      "when": { "op": "fact", "path": "/override/goodwill", "operator": "equals", "value": true },
+      "effect": "force-outcome",
+      "outcome": "approve-refund",
+      "onUnknown": "ignore"
+    }
+  ],
+  "fallbackOutcome": "manual-review",
+  "escalation": {
+    "triggers": ["unknown"],
+    "target": { "kind": "queue", "name": "refund-review" }
+  },
+  "metadata": {
+    "requiredExtensions": ["org.judgmentpack.outcome-values"]
+  }
+}
