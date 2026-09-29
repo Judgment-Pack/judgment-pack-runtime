@@ -69,10 +69,12 @@ Settled constraints:
   other object still carries it in the projection, and the validator refuses the reserved name
   there. A test reads the bundled schema for every object that has an `extensions` member and fails
   if one is not tried.
-- **Semantics.** The RFC's Resolution section as written. Resolution runs once, for the one outcome
-  §8 produced, whether by a forced outcome, by true rules or by `fallbackOutcome`. A value that does
-  not resolve withholds the outcome: the result is `unresolved` with the one reason `unknown`, the
-  fallback is not tried, and handoff follows §8.1. A value is copied as found.
+- **Semantics.** The RFC's Resolution section as written, for every input this runtime admits. The
+  one input it does not admit and the RFC does is the first finding below. Resolution runs once,
+  for the one outcome §8 produced, whether by a forced outcome, by true rules or by
+  `fallbackOutcome`. A value that does not resolve withholds the outcome: the result is
+  `unresolved` with the one reason `unknown`, the fallback is not tried, and handoff follows §8.1.
+  A value is copied as found.
 - **The disposition.** It gains the member `value`, present exactly when an outcome that declares
   values is produced. The canonical encoder admits a Boolean for it, which it refused before.
   Canonicalization refuses a `value` the RFC does not admit: one beside a kind that is not `outcome`,
@@ -80,11 +82,17 @@ Settled constraints:
 - **Expected dispositions.** Every reader of an expected disposition refuses `value`: matrix rows,
   graph rows, corpus rows and proposed expectations. None of those surfaces evaluates under the
   opt-in, so an expectation that carried the member could not be met.
-- **Limits.** The step is charged to the §10 evaluation-work limit in force, before the work is
-  done: one unit for each outcome of the pack and for each declared value, the resolution of each
-  pointer, and the size of each value carried. An outcome that declares no value is charged nothing.
-  Reaching the limit is `resource-exhaustion`. The draft gets no limit of its own, and the number of
-  values and the size of a string are bounded by the carrier layer alone.
+- **Limits.** The step is charged to the §10 evaluation-work limit in force. Each charge is made
+  before the work it pays for: one unit for each outcome of the pack, before the produced one is
+  looked for; the size of the declaration, its value names and constants included, before its
+  names are ordered; each pointer, before it is scanned and resolved; and the size of each value a
+  pointer selected, before it is checked and carried. What a charge cannot come before is its own
+  measuring, which walks the declaration or the value once. An outcome that declares no value is
+  charged the search for it and nothing else. The work stops at the first charge the limit does
+  not hold, and reaching the limit is `resource-exhaustion`. The draft adds no limit of its own:
+  a declaration is bounded by the carrier layer when the pack is admitted, and what it costs to
+  resolve is bounded by the work limit. Nineteen values that each select one string of the
+  largest size the carrier admits are carried. Twenty pass the first bound and reach the second.
 - **The trace.** One entry for each value the produced outcome declares, in the order of the value
   names, after the entries that produced the outcome. The stage is `outcome-value`. The entry names
   the value and the outcome and says `resolved` or `unresolved`. It never carries the value. The
@@ -93,15 +101,19 @@ Settled constraints:
   not resolve.
 - **Labeling.** Every successful payload carries `draftPrototype` with `rfc` of `"0016"`. Its
   `operators` member is the empty array. A new member, `outcomes`, lists the outcomes that declare
-  values; it is absent under RFC 0008, whose marker is unchanged. A pack that declares no value is
-  reported as a plain pack. A refusal is the ordinary error envelope and carries no marker.
+  values. It is absent where no outcome declares one, and absent under RFC 0008, whose marker is
+  unchanged. A pack that declares no value is reported as a plain pack, which it is. A refusal is
+  the ordinary error envelope and carries no marker.
 - **The record.** An evaluation recorded under [0018](0018-opt-in-evaluation-audit-trail.md) carries
   the disposition whole, `value` included, and the marker. The record already holds the facts
   document whole, so a value drawn from a fact adds nothing to what the trail holds.
-- **What does not change.** `spec validate`, the conformance and evaluation corpora, the exit
-  classes, the MCP surface, the project and graph surfaces, and the evaluator without the flag. A
-  pack evaluated under the flag is not an input the evaluator class defines, and `CONFORMANCE.md`
-  says so where it lists what it does not cover.
+- **What does not change.** What `spec validate` accepts, the conformance and evaluation corpora,
+  the exit classes, the MCP surface, the project and graph surfaces, and what the evaluator without
+  the flag admits and produces. One message changes without the flag: an expected disposition
+  that carries `value` was refused as a member this runtime does not know, and is now refused
+  under a sentence that names the draft. A pack that carries a value declaration is not an input
+  the evaluator class defines, and `CONFORMANCE.md` says so where it lists what it does not cover.
+  A pack that carries none is the input it was, with the flag or without it.
 
 ### What building it found
 
@@ -116,9 +128,12 @@ These are findings for the RFC. None is decided here.
 2. **The `unsupported-required-extension` row needs a schema that admits the name.** Under the
    published schema a pack that requires the extension is `pack-not-conformant` for a consumer that
    does not support it. The RFC's Compatibility section says as much.
-3. **Two faults are hidden by removing the name and have to be checked by the gate.** The name
-   listed as required while no outcome carries a declaration is §9's fault, and the name listed twice
-   is the schema's. The RFC's text covers neither in its own words.
+3. **Two faults are hidden by removing the name and have to be checked by the gate.** One is the
+   name listed as required while no outcome carries a declaration. Where the name is on no object
+   of the pack that is §9's fault. Where it is on another object and on no outcome, §9 is met and
+   the fault is the RFC's own rule of place. The other is the name listed twice, which is the
+   schema's. The gate finds each of them, because the projection no longer holds the entry the
+   validator would have read.
 4. **The rule "on an outcome and nowhere else" needs no list of places.** It follows from removing
    the name from outcomes only.
 5. **A consumer can tell a missing quantity from an unknown condition only outside the disposition.**
@@ -126,9 +141,12 @@ These are findings for the RFC. None is decided here.
 
 ### Consequences
 
-- Good, because RFC 0016 gains an implementation, the rows its Conformance section lists as
-  executable tests, and the findings above.
-- Good, because nothing outside the flag changes, and the tests hold that in place.
+- Good, because RFC 0016 gains an implementation, the findings above, and the rows its
+  Conformance section lists as executable tests. Four of those rows are run as tests of a stated
+  difference and not of the answer the RFC gives: the fact that holds an unpaired surrogate, and
+  the three for a consumer that does not support the extension.
+- Good, because without the flag no input is admitted, refused or answered differently, and the
+  tests hold that in place.
 - Bad, because the disposition type now has a member Core does not define. It is nil everywhere but
   under the flag, and canonicalization and the readers of expectations hold it there.
 - Bad, because the canonical encoder admits a Boolean anywhere in a value it is handed. The

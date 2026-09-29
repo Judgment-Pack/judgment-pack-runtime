@@ -46,8 +46,8 @@ var rfc0016Grammar = draftGrammar{
 
 // oneDraft refuses a call that opts into both drafts. One evaluation runs under
 // one draft grammar, and the marker of a payload names one RFC (ADR-0039). The
-// refusal is an invocation's: it has no §8.4 class, because no input was read
-// and nothing was evaluated.
+// refusal is an invocation's: it has no §8.4 class, because no input was
+// decoded or validated and nothing was evaluated.
 func oneDraft(options Options) *Failure {
 	if !options.RFC0008Quantifiers || !options.RFC0016OutcomeValues {
 		return nil
@@ -83,10 +83,13 @@ func rfc0016Diagnostics(root map[string]any) []result.Diagnostic {
 
 	// The rule between the declarations and the name's entry as required. An
 	// outcome that carries a declaration needs the entry, which is the RFC's
-	// rule. An entry with no outcome carrying a declaration is §9's fault, a
-	// required name with no value, which the validator cannot find in a
-	// projection that no longer holds the entry. And an entry made twice is the
-	// schema's uniqueItems, lost the same way.
+	// rule. An entry with no outcome carrying a declaration is one of two
+	// faults. Where the name is on no object of the pack it is §9's: a required
+	// name with no value. Where the name is on another object and on no outcome
+	// it is the RFC's rule of place, since §9 is met by a value anywhere. The
+	// validator can find neither in a projection that no longer holds the
+	// entry, so both are found here, as one diagnostic. And an entry made twice
+	// is the schema's uniqueItems, lost the same way.
 	listed := []int{}
 	if metadata, ok := root["metadata"].(map[string]any); ok {
 		for index, item := range asArray(metadata["requiredExtensions"]) {
@@ -328,37 +331,53 @@ const (
 // not depend on that: one value that does not resolve withholds the outcome
 // whatever the others did.
 //
-// The work is charged to the evaluation's §10 limit before it is done, as a
-// condition tree's is: one unit for each outcome the pack declares, which is
-// what finding the produced one among them costs, one for each declared value,
-// the resolution of each pointer, and the size of each value that is carried,
-// which is what the type check reads and what the canonical form writes. An
-// outcome that declares no value is charged nothing, so a pack without a
-// declaration is charged under the opt-in exactly what it is charged without
-// it. The caller reads exceeded before it reads the result.
+// The work is charged to the evaluation's §10 limit, and each charge is made
+// before the work it pays for:
+//
+//   - one unit for each outcome the pack declares, before the produced one is
+//     looked for among them. It is charged under the opt-in for every outcome
+//     produced, whether or not that outcome declares a value;
+//   - the size of the declaration, before its names are put in order or a
+//     value is read. The size is that of the whole object: its value names,
+//     which the result carries, and its sources with their constants;
+//   - each pointer, before it is scanned and before it is resolved;
+//   - the size of each value a pointer selected, before its type is checked
+//     and it is carried.
+//
+// What a charge cannot come before is its own measuring. The size of a
+// declaration and of a selected value is found by walking it once, as the size
+// of an operand is for a condition. A constant is part of the declaration and is
+// charged with it, once.
+//
+// The work stops at the first charge the limit does not hold. The caller reads
+// exceeded before it reads the result.
 func (r *resolver) resolveValues(outcomeID string) (map[string]any, bool) {
+	if !r.eval.charge(len(asArray(r.pack["outcomes"])) * unitNode) {
+		return nil, false
+	}
 	declaration := r.declaredValues(outcomeID)
 	if declaration == nil {
 		return nil, true
 	}
-	names := sortedMembers(declaration)
-	if !r.eval.charge((len(asArray(r.pack["outcomes"])) + len(names)) * unitNode) {
+	if !r.eval.charge(valueUnits(declaration)) {
 		return nil, false
 	}
+	names := sortedMembers(declaration)
 	resolved := make(map[string]any, len(names))
 	complete := true
 	for _, name := range names {
 		source, _ := declaration[name].(map[string]any)
 		declared, _ := source["type"].(string)
-		value, selected := source["constant"]
+		value := source["constant"]
 		if pointer, from := source["fromFact"].(string); from {
 			if !r.eval.chargePointer(pointer) {
 				return nil, false
 			}
-			value, selected = r.eval.resolve(r.facts, pointer)
-		}
-		if selected && !r.eval.charge(valueUnits(value)) {
-			return nil, false
+			selected, found := r.eval.resolve(r.facts, pointer)
+			if found && !r.eval.charge(valueUnits(selected)) {
+				return nil, false
+			}
+			value = selected
 		}
 		// A pointer that did not resolve selected nothing, and nothing is of no
 		// type, so the one question covers both ways a value does not resolve.

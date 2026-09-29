@@ -145,6 +145,9 @@ func TestRFC0016TheExampleOfTheRFC(t *testing.T) {
 // Document cases, positive: each is admitted, and each is evaluated to the
 // outcome with the values it declares.
 func TestRFC0016DeclarationsTheGateAdmits(t *testing.T) {
+	// A row that says it writes a surrogate pair has to hold the escape and
+	// not the character, or it runs another case under that name.
+	surrogatePair := string([]byte{0x5c}) + "ud83d" + string([]byte{0x5c}) + "ude00"
 	for _, row := range []struct {
 		name        string
 		declaration string
@@ -159,7 +162,11 @@ func TestRFC0016DeclarationsTheGateAdmits(t *testing.T) {
 		{"a constant and a value drawn from a fact", exampleDeclaration, `{"go": true, "proposed": {"refundAmount": "1"}}`, `{"currency":"CAD","refundAmount":"1"}`},
 		{
 			"a string constant outside the Basic Multilingual Plane, written as a surrogate pair",
-			`{"mark": {"type": "string", "constant": "😀"}}`, `{"go": true}`, "{\"mark\":\"\U0001F600\"}",
+			`{"mark": {"type": "string", "constant": "\ud83d\ude00"}}`, `{"go": true}`, "{\"mark\":\"\U0001F600\"}",
+		},
+		{
+			"the same constant written as the character itself",
+			"{\"mark\": {\"type\": \"string\", \"constant\": \"\U0001F600\"}}", `{"go": true}`, "{\"mark\":\"\U0001F600\"}",
 		},
 		{"a value name of one letter", `{"a": {"type": "boolean", "constant": false}}`, `{"go": true}`, `{"a":false}`},
 		{"a value name with capitals and digits after the first letter", `{"aB9z": {"type": "string", "constant": ""}}`, `{"go": true}`, `{"aB9z":""}`},
@@ -167,6 +174,9 @@ func TestRFC0016DeclarationsTheGateAdmits(t *testing.T) {
 		{"a pointer with both escapes", `{"odd": {"type": "string", "fromFact": "/a~1b/c~0d"}}`, `{"go": true, "a/b": {"c~d": "found"}}`, `{"odd":"found"}`},
 	} {
 		t.Run(row.name, func(t *testing.T) {
+			if strings.Contains(row.name, "surrogate pair") != strings.Contains(row.declaration, surrogatePair) {
+				t.Fatalf("the row's name and its declaration disagree about the escape: %s", row.declaration)
+			}
 			pack := valuesPack{outcomes: "[" + declaring("approve", row.declaration) + ", " + plain("decline") + "]"}
 			if row.value == "" {
 				// The facts document is the Boolean true, so /go does not resolve
@@ -554,7 +564,8 @@ func TestRFC0016WhatIsSelectedFromTheFacts(t *testing.T) {
 		{"string: the empty string", "string", `""`, `""`},
 		{"string: surrounding whitespace is copied unchanged", "string", `"  CAD \t"`, `"  CAD \t"`},
 		{"string: a string that looks like a decimal", "string", `"149.50"`, `"149.50"`},
-		{"string: a character outside the Basic Multilingual Plane", "string", `"😀"`, "\"\U0001F600\""},
+		{"string: a character outside the Basic Multilingual Plane, written as a surrogate pair", "string", `"\ud83d\ude00"`, "\"\U0001F600\""},
+		{"string: the same character written as itself", "string", "\"\U0001F600\"", "\"\U0001F600\""},
 		{"string: a control character is written with its escape", "string", `"a\u0000b"`, `"a\u0000b"`},
 		{"string: a JSON number", "string", `1`, ``},
 		{"string: a Boolean", "string", `true`, ``},
@@ -567,6 +578,9 @@ func TestRFC0016WhatIsSelectedFromTheFacts(t *testing.T) {
 		{"boolean: null", "boolean", `null`, ``},
 	} {
 		t.Run(row.name, func(t *testing.T) {
+			if strings.Contains(row.name, "surrogate pair") != strings.Contains(row.fact, string([]byte{0x5c})+"ud83d"+string([]byte{0x5c})+"ude00") {
+				t.Fatalf("the row's name and its fact disagree about the escape: %s", row.fact)
+			}
 			pack := valuesPack{outcomes: "[" + declaring("approve", `{"v": {"type": "`+row.declared+`", "fromFact": "/selected"}}`) + ", " + plain("decline") + "]"}
 			want := unresolvedNoHandoff
 			if row.value != "" {
@@ -605,6 +619,34 @@ func TestRFC0016PointersResolveAsFactPathsDo(t *testing.T) {
 	}
 }
 
+// A pointer that selects the root of the facts document selects the whole
+// document, and the declared type is asked of that.
+func TestRFC0016APointerToTheRootSelectsTheDocument(t *testing.T) {
+	always := `[{"id": "the-rule", "description": "A rule that is true.", "when": {"op": "literal", "value": true}, "outcome": "approve", "onUnknown": "ignore"}]`
+	for _, row := range []struct {
+		declared string
+		facts    string
+		value    string
+	}{
+		{"string", `" root "`, `" root "`},
+		{"decimal", `"0.10"`, `"0.10"`},
+		{"boolean", `false`, `false`},
+		{"string", `{}`, ``},
+		{"decimal", `1`, ``},
+		{"boolean", `null`, ``},
+		{"string", `["a"]`, ``},
+	} {
+		pack := valuesPack{outcomes: "[" + declaring("approve", `{"v": {"type": "`+row.declared+`", "fromFact": ""}}`) + ", " + plain("decline") + "]", rules: always}
+		want := unresolvedNoHandoff
+		if row.value != "" {
+			want = `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"approve","reasons":[],"value":{"v":` + row.value + `}}`
+		}
+		if got := disposed(t, pack, row.facts); got != want {
+			t.Errorf("type %s, facts %s: disposition = %s, want %s", row.declared, row.facts, got, want)
+		}
+	}
+}
+
 // Two true rules naming the same outcome carry its values once. The same
 // declaration with its members authored in another order yields the
 // byte-identical disposition. And only the produced outcome is inspected: a
@@ -626,6 +668,21 @@ func TestRFC0016OnlyTheProducedOutcomeIsResolvedAndOnce(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			if got := disposed(t, row.pack, facts); got != want {
 				t.Fatalf("disposition = %s, want %s", got, want)
+			}
+			// Once: the trace holds one entry for each of the two values, and
+			// none for a value of another outcome.
+			evaluated, failure := newTestEngine(t).EvaluateWith(row.pack.bytes(), []byte(facts), nil, valuesOptions())
+			if failure != nil {
+				t.Fatal(failure.Message)
+			}
+			traced := []string{}
+			for _, entry := range evaluated.Trace {
+				if entry.Stage == traceStageOutcomeValue {
+					traced = append(traced, entry.ID+" of "+entry.Outcome)
+				}
+			}
+			if !reflect.DeepEqual(traced, []string{"currency of approve", "refundAmount of approve"}) {
+				t.Fatalf("values traced = %v", traced)
 			}
 		})
 	}
@@ -707,6 +764,27 @@ func TestRFC0016AFactHoldingAnUnpairedSurrogateIsAMalformedInput(t *testing.T) {
 // name, which no published version has.
 func TestRFC0016WithoutTheOptInThePackIsRefusedAsBefore(t *testing.T) {
 	engine := newTestEngine(t)
+	// The RFC's three rows for a consumer that does not support the extension
+	// expect unsupported-required-extension for a declaration that is well
+	// formed, empty, or of an unknown type, and pack-not-conformant for one
+	// with a member given twice. The first three differ here, for the reason
+	// above, and the difference is a stated one (ADR-0039). The fourth agrees.
+	for _, row := range []struct {
+		name        string
+		declaration string
+		says        string
+	}{
+		{"a well-formed declaration", exampleDeclaration, "JPS-STRUCTURE-EXTENSION-NAME"},
+		{"an empty declaration", `{}`, "JPS-STRUCTURE-EXTENSION-NAME"},
+		{"a declaration of an unknown type", `{"v": {"type": "money", "constant": "1"}}`, "JPS-STRUCTURE-EXTENSION-NAME"},
+		{"a declaration with a member given twice", `{"v": {"type": "string", "constant": "a"}, "v": {"type": "string", "constant": "b"}}`, "JPS-CARRIER-DUPLICATE-MEMBER"},
+	} {
+		pack := valuesPack{outcomes: "[" + declaring("approve", row.declaration) + ", " + plain("decline") + "]"}
+		_, failure := engine.EvaluateWith(pack.bytes(), []byte(`{"go": true}`), nil, Options{Command: "test"})
+		if failure == nil || failure.Class != result.ClassPackNotConformant || failure.Phase != result.PhasePreflight || !strings.Contains(failure.Message, row.says) {
+			t.Fatalf("%s: refusal = %+v", row.name, failure)
+		}
+	}
 	for _, supported := range [][]string{nil, {OutcomeValuesExtension}} {
 		_, failure := engine.EvaluateWith(valuesPack{}.bytes(), []byte(`{"go": true}`), nil, Options{Command: "test", SupportedExtensions: supported})
 		if failure == nil || failure.Class != result.ClassPackNotConformant || failure.Code != "JPS-EVALUATION-PACK-NOT-CONFORMANT" {
@@ -997,20 +1075,16 @@ func TestRFC0016TheResolutionStepIsCharged(t *testing.T) {
 		return eval.charged
 	}
 	without, with := charged(false), charged(true)
-	const pointer = "/proposed/refundAmount"
-	step := 2 + 2 + // the pack's outcomes, and the declared values
-		(unitPointerScan + len(pointer)) + (2*unitPointerStep + len("proposed") + len("refundAmount")) + // one pointer, scanned and resolved
-		(unitValue + len("CAD")) + (unitValue + len(amount)) // the two values carried
-	if with-without != step {
-		t.Fatalf("the step is charged %d units, and its terms come to %d", with-without, step)
+	if with-without != stepOutcomes+stepDeclaration+stepScan+stepResolution+stepSelected {
+		t.Fatalf("the step is charged %d units, and its terms come to %d", with-without, stepOutcomes+stepDeclaration+stepScan+stepResolution+stepSelected)
 	}
 
 	// A pointer that selects nothing is charged for its resolution, and no
 	// value is charged for it, because none is carried.
 	resolving := facts
 	facts = `{"go": true, "proposed": {}}`
-	if nothing := charged(true) - charged(false); nothing != step-(unitValue+len(amount)) {
-		t.Fatalf("with nothing selected the step is charged %d units, and its terms come to %d", nothing, step-(unitValue+len(amount)))
+	if nothing := charged(true) - charged(false); nothing != stepOutcomes+stepDeclaration+stepScan+stepResolution {
+		t.Fatalf("with nothing selected the step is charged %d units, and its terms come to %d", nothing, stepOutcomes+stepDeclaration+stepScan+stepResolution)
 	}
 	facts = resolving
 
@@ -1028,10 +1102,169 @@ func TestRFC0016TheResolutionStepIsCharged(t *testing.T) {
 		}
 	}
 
-	// An outcome that declares nothing is charged nothing by the step.
+	// An outcome that declares nothing is charged the search for it and
+	// nothing else.
 	pack = valuesPack{rules: strings.Replace("["+goRule+"]", `"outcome": "approve"`, `"outcome": "decline"`, 1)}
-	if without, with := charged(false), charged(true); without != with {
-		t.Fatalf("an outcome with no declaration is charged %d under the opt-in and %d without", with, without)
+	if without, with := charged(false), charged(true); with-without != stepOutcomes {
+		t.Fatalf("an outcome with no declaration is charged %d units by the step, and the search comes to %d", with-without, stepOutcomes)
+	}
+}
+
+// The draft adds no limit of its own. A declaration is bounded by the carrier
+// layer when the pack is admitted, and what it costs to resolve by the work
+// limit: values that each select one string of the largest size the carrier
+// admits are carried while their sizes fit the limit together, and reach it
+// when they do not.
+func TestRFC0016ManyLargeValuesReachTheWorkLimit(t *testing.T) {
+	largest := strings.Repeat("x", carrier.DefaultMaxStringBytes)
+	facts := `{"go": true, "s": "` + largest + `"}`
+	most := DefaultCoreWorkLimit / (unitValue + len(largest))
+	for _, row := range []struct {
+		values   int
+		produced bool
+	}{
+		{most, true},
+		{most + 1, false},
+	} {
+		sources := []string{}
+		for index := 0; index < row.values; index++ {
+			sources = append(sources, fmt.Sprintf(`"v%d": {"type": "string", "fromFact": "/s"}`, index))
+		}
+		pack := valuesPack{outcomes: "[" + declaring("approve", "{"+strings.Join(sources, ", ")+"}") + ", " + plain("decline") + "]"}
+		evaluated, failure := newTestEngine(t).EvaluateWith(pack.bytes(), []byte(facts), nil, valuesOptions())
+		if row.produced {
+			if failure != nil || evaluated.Disposition.Kind != "outcome" || len(evaluated.Disposition.Value) != row.values || evaluated.Disposition.Value["v0"] != largest {
+				t.Fatalf("%d values: refusal = %+v, kind = %q, values = %d", row.values, failure, evaluated.Disposition.Kind, len(evaluated.Disposition.Value))
+			}
+			continue
+		}
+		if failure == nil || failure.Class != result.ClassResourceExhaustion || failure.Phase != result.PhaseEvaluation {
+			t.Fatalf("%d values: refusal = %+v", row.values, failure)
+		}
+	}
+	if most != 19 {
+		t.Fatalf("the limit holds %d such values, and the decision record says nineteen", most)
+	}
+}
+
+// The terms of the step's charge for the pack valuesPack writes by default and
+// facts that supply the amount as "149.50", each counted here by hand from the
+// documents and not by the function that charges them.
+const (
+	// The pack declares two outcomes.
+	stepOutcomes = 2
+	// The declaration is one object of two members. Each member costs its
+	// name and its source, and a source is one object whose members each cost
+	// their name and their string.
+	stepDeclaration = 1 +
+		len("refundAmount") + (1 + len("type") + (1 + len("decimal")) + len("fromFact") + (1 + len("/proposed/refundAmount"))) +
+		len("currency") + (1 + len("type") + (1 + len("string")) + len("constant") + (1 + len("CAD")))
+	// The pointer is scanned once, and resolved in two steps over its tokens.
+	stepScan       = 1 + len("/proposed/refundAmount")
+	stepResolution = 2 + len("proposed") + len("refundAmount")
+	// The value the pointer selects.
+	stepSelected = 1 + len("149.50")
+)
+
+// The work stops at the first charge the limit does not hold. Each row gives
+// the step a limit one unit short of one of its charges and reads what was
+// done: which values were traced, and whether the pointer was scanned. The
+// values are read in the order of their names, the constant first.
+//
+// The first row cannot tell a step that stops at the search from one that goes
+// on to the next charge, which stops it before anything it does can be seen.
+// What the first stop saves is the search itself.
+func TestRFC0016TheWorkStopsWhereTheLimitIsReached(t *testing.T) {
+	const pointer = "/proposed/refundAmount"
+	run := func(budget int, values bool) (*evaluator, []string, *Failure) {
+		packRoot, failure := carrier.Decode(valuesPack{}.bytes(), carrier.DefaultLimits())
+		if failure != nil {
+			t.Fatal(failure.Diagnostic.Message)
+		}
+		factsRoot, failure := carrier.Decode([]byte(`{"go": true, "proposed": {"refundAmount": "149.50"}}`), carrier.DefaultLimits())
+		if failure != nil {
+			t.Fatal(failure.Diagnostic.Message)
+		}
+		eval := &evaluator{outcomeValues: values, budget: budget}
+		_, _, trace, refusal := resolve(packRoot.(map[string]any), factsRoot, eval)
+		traced := []string{}
+		for _, entry := range trace {
+			if entry.Stage == traceStageOutcomeValue {
+				traced = append(traced, entry.ID)
+			}
+		}
+		return eval, traced, refusal
+	}
+	core, _, refusal := run(DefaultCoreWorkLimit, false)
+	if refusal != nil {
+		t.Fatal(refusal.Message)
+	}
+	before := core.charged
+	for _, row := range []struct {
+		name    string
+		budget  int
+		traced  []string
+		scanned bool
+		refused bool
+	}{
+		{"at the search among the outcomes", before + stepOutcomes - 1, []string{}, false, true},
+		{"at the declaration", before + stepOutcomes + stepDeclaration - 1, []string{}, false, true},
+		{"at the pointer's scan", before + stepOutcomes + stepDeclaration + stepScan - 1, []string{"currency"}, false, true},
+		{"at the pointer's resolution", before + stepOutcomes + stepDeclaration + stepScan + stepResolution - 1, []string{"currency"}, true, true},
+		{"at the value selected", before + stepOutcomes + stepDeclaration + stepScan + stepResolution + stepSelected - 1, []string{"currency"}, true, true},
+		{"nowhere", before + stepOutcomes + stepDeclaration + stepScan + stepResolution + stepSelected, []string{"currency", "refundAmount"}, true, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			eval, traced, refusal := run(row.budget, true)
+			if row.refused != (refusal != nil) {
+				t.Fatalf("refusal = %+v", refusal)
+			}
+			if refusal != nil && (refusal.Class != result.ClassResourceExhaustion || refusal.Phase != result.PhaseEvaluation) {
+				t.Fatalf("refusal = %+v", refusal)
+			}
+			if !reflect.DeepEqual(traced, row.traced) {
+				t.Errorf("values traced = %v, want %v", traced, row.traced)
+			}
+			if _, scanned := eval.pointers[pointer]; scanned != row.scanned {
+				t.Errorf("pointer scanned = %v, want %v", scanned, row.scanned)
+			}
+		})
+	}
+}
+
+// What a declared type admits, asked of the function itself. The gate refuses
+// a type that is none of the three before resolution can ask about one, so no
+// evaluation reaches the last rows, and they are held here.
+func TestRFC0016WhatATypeAdmits(t *testing.T) {
+	for _, row := range []struct {
+		declared string
+		value    any
+		admitted bool
+	}{
+		{"string", "", true},
+		{"string", "CAD", true},
+		{"string", true, false},
+		{"string", nil, false},
+		{"string", json.Number("1"), false},
+		{"string", []any{"CAD"}, false},
+		{"decimal", "149.50", true},
+		{"decimal", "-0", true},
+		{"decimal", "1e3", false},
+		{"decimal", "", false},
+		{"decimal", json.Number("1"), false},
+		{"decimal", nil, false},
+		{"boolean", true, true},
+		{"boolean", false, true},
+		{"boolean", "true", false},
+		{"boolean", nil, false},
+		{"money", "1", false},
+		{"money", true, false},
+		{"", "1", false},
+		{"String", "1", false},
+	} {
+		if admittedValue(row.declared, row.value) != row.admitted {
+			t.Errorf("type %q, value %#v: admitted = %v, want %v", row.declared, row.value, !row.admitted, row.admitted)
+		}
 	}
 }
 

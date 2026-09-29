@@ -91,7 +91,7 @@ type Options struct {
 	// one is not valid under any published JPS version, so every evaluation made
 	// under this opt-in is labeled a draft-RFC prototype in its output. One
 	// evaluation runs under one draft: a caller that sets this and
-	// RFC0008Quantifiers is refused before any input is read.
+	// RFC0008Quantifiers is refused before any input is decoded.
 	RFC0016OutcomeValues bool
 	// WorkBudget overrides this evaluation's §10 evaluation-work limit. Zero or
 	// negative selects the default for the path in force: DefaultCoreWorkLimit on
@@ -185,8 +185,9 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 // byte-identical.
 func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte, options Options) (result.Evaluation, *Failure) {
 	// Two drafts in one evaluation is a call this engine does not take, and it
-	// is refused as the invocation it is: before any input is looked at, and
-	// with no §8.4 class, because nothing was evaluated.
+	// is refused as the invocation it is: before anything is decoded, validated
+	// or evaluated, and with no §8.4 class. The pack has been admitted by then,
+	// which copies it and takes its digest and reads nothing in it.
 	if failure := oneDraft(options); failure != nil {
 		return result.Evaluation{}, failure
 	}

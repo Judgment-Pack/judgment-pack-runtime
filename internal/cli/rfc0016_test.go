@@ -259,7 +259,7 @@ func TestExperimentalEvaluateRFC0016ValuesAreWrittenSafely(t *testing.T) {
 	asText := strings.Replace(string(data), `"type": "decimal", "fromFact"`, `"type": "string", "fromFact"`, 1)
 	asText = strings.Replace(asText, `{ "op": "fact", "path": "/proposed/refundAmount", "operator": "less-than-or-equal", "value": "200" }`, `{ "op": "literal", "value": true }`, 1)
 	pack := writeDocument(t, "pack.json", asText)
-	facts := writeDocument(t, "facts.json", `{"customer":{"goodStanding":true},"proposed":{"refundAmount":"1\u001b[31m‮\n2"}}`)
+	facts := writeDocument(t, "facts.json", `{"customer":{"goodStanding":true},"proposed":{"refundAmount":"1\u001b[31m\u202e\n2"}}`)
 	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--rfc0016-outcome-values"}, "")
 	if code != result.ExitSuccess || stderr != "" {
 		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
@@ -267,14 +267,14 @@ func TestExperimentalEvaluateRFC0016ValuesAreWrittenSafely(t *testing.T) {
 	if !strings.Contains(stdout, "value: refundAmount = \"1?[31m??2\"\n") {
 		t.Fatalf("human output = %q", stdout)
 	}
-	if strings.ContainsAny(stdout, "\x1b‮") {
+	if strings.ContainsAny(stdout, "\x1b\u202e") {
 		t.Fatalf("the human surface must write no control: %q", stdout)
 	}
 	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--rfc0016-outcome-values", "--format", "json"}, "")
 	if code != result.ExitSuccess || stderr != "" {
 		t.Fatalf("exit=%d stderr=%q", code, stderr)
 	}
-	want := `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"approve-refund","reasons":[],"value":{"currency":"CAD","refundAmount":"1\u001b[31m` + "‮" + `\n2"}}`
+	want := `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"approve-refund","reasons":[],"value":{"currency":"CAD","refundAmount":"1\u001b[31m` + "\u202e" + `\n2"}}`
 	if got := dispositionOf(t, stdout); got != want {
 		t.Fatalf("disposition = %q, want %q", got, want)
 	}

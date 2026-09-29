@@ -90,7 +90,7 @@ jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
 jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
-jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PROTOTYPE; not an input the class defines)
+jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PROTOTYPE; a pack that declares values is not an input the class defines)
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
