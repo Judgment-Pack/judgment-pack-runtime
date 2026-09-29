@@ -16,9 +16,9 @@ All notable changes to tagged releases are documented here.
   name is reserved, so a pack carrying a declaration is not valid under any published JPS version:
   `spec validate` rejects it and the evaluator without the flag refuses it, both as before. The
   flag is CLI only and is mutually exclusive with `--rfc0008-quantifiers`
-  (`JPS-INVOCATION-DRAFT-RFC`). Three refusal codes are minted, `codeStability: "provisional"` like
-  every other: `JPS-EVALUATION-RFC0016-GRAMMAR`, with `JPS-EVALUATION-RFC0016-DECLARATION` and
-  `JPS-EVALUATION-RFC0016-REQUIRED` as the diagnostics it names.
+  (`JPS-INVOCATION-DRAFT-RFC`). Four codes are minted, `codeStability: "provisional"` like every
+  other: that one, and `JPS-EVALUATION-RFC0016-GRAMMAR` with `JPS-EVALUATION-RFC0016-DECLARATION`
+  and `JPS-EVALUATION-RFC0016-REQUIRED` as the diagnostics it names.
 
   Without the flag no input is admitted, refused or answered differently. A disposition made
   without it has no `value` member and is byte for byte what it was, the `draftPrototype` member of

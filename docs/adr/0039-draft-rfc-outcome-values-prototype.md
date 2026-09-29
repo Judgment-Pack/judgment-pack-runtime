@@ -83,16 +83,19 @@ Settled constraints:
   graph rows, corpus rows and proposed expectations. None of those surfaces evaluates under the
   opt-in, so an expectation that carried the member could not be met.
 - **Limits.** The step is charged to the §10 evaluation-work limit in force. Each charge is made
-  before the work it pays for: one unit for each outcome of the pack, before the produced one is
-  looked for; the size of the declaration, its value names and constants included, before its
+  before the work it pays for: one unit for each outcome of the pack and the bytes of its id,
+  before the produced one is looked for; the size of the declaration, its value names and constants included, before its
   names are ordered; each pointer, before it is scanned and resolved; and the size of each value a
   pointer selected, before it is checked and carried. What a charge cannot come before is its own
-  measuring, which walks the declaration or the value once. An outcome that declares no value is
+  measuring, which walks the declaration or the value once and reads the length of each id. An outcome that declares no value is
   charged the search for it and nothing else. The work stops at the first charge the limit does
   not hold, and reaching the limit is `resource-exhaustion`. The draft adds no limit of its own:
   a declaration is bounded by the carrier layer when the pack is admitted, and what it costs to
-  resolve is bounded by the work limit. Nineteen values that each select one string of the
-  largest size the carrier admits are carried. Twenty pass the first bound and reach the second.
+  resolve is bounded by the work limit. One measurement shows the two apart: in a pack of one
+  rule whose values have short names and select one string of the largest size the carrier
+  admits through one short pointer, nineteen values are carried under the default limit, and
+  twenty pass the first bound and reach the second. Longer names or costlier rules leave room
+  for fewer.
 - **The trace.** One entry for each value the produced outcome declares, in the order of the value
   names, after the entries that produced the outcome. The stage is `outcome-value`. The entry names
   the value and the outcome and says `resolved` or `unresolved`. It never carries the value. The
@@ -129,11 +132,13 @@ These are findings for the RFC. None is decided here.
    published schema a pack that requires the extension is `pack-not-conformant` for a consumer that
    does not support it. The RFC's Compatibility section says as much.
 3. **Two faults are hidden by removing the name and have to be checked by the gate.** One is the
-   name listed as required while no outcome carries a declaration. Where the name is on no object
-   of the pack that is §9's fault. Where it is on another object and on no outcome, §9 is met and
-   the fault is the RFC's own rule of place. The other is the name listed twice, which is the
-   schema's. The gate finds each of them, because the projection no longer holds the entry the
-   validator would have read.
+   name listed as required and carried on no object of the pack, which is §9's fault. The other
+   is the name listed twice, which is the schema's. The projection no longer holds the entry the
+   validator would have read for either. A third case is not hidden: the name listed as required
+   and carried on another object and on no outcome. §9 is met there and the fault is the RFC's
+   own rule of place. The validator would refuse that pack for the reserved name, which the
+   projection leaves where it is. The gate reports it first, in the same sentence as the first
+   fault.
 4. **The rule "on an outcome and nowhere else" needs no list of places.** It follows from removing
    the name from outcomes only.
 5. **A consumer can tell a missing quantity from an unknown condition only outside the disposition.**
@@ -152,7 +157,8 @@ These are findings for the RFC. None is decided here.
 - Bad, because the canonical encoder admits a Boolean anywhere in a value it is handed. The
   disposition's own checks are what keep one inside `value`.
 - Bad, because a disposition printed under the flag can hold a copy of a fact. The marker's note says
-  so, and the human surface writes a string with its controls removed.
+  so, and the human surface writes a string with its controls removed. The JSON surface writes
+  the canonical form, in which a direction control is written as itself.
 - Bad, because two flags that cannot be combined is one more thing to explain.
 - Revisit when RFC 0016 is accepted, rejected or superseded; when the specification decides between
   the extension and the Core form; when a published schema admits the name; or when a pack needs

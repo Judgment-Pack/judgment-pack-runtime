@@ -805,7 +805,9 @@ func TestRFC0016WithoutTheOptInThePackIsRefusedAsBefore(t *testing.T) {
 }
 
 // One evaluation runs under one draft. The pair is refused as an invocation,
-// with no §8.4 class, before any input is looked at.
+// with no §8.4 class, before anything is decoded, validated or evaluated. The
+// bytes handed in as the pack are not read for what they hold, so the refusal
+// is the same for a pack, for bytes that are none and for no bytes.
 func TestRFC0016TheTwoDraftsAreNotCombined(t *testing.T) {
 	options := Options{Command: "test", RFC0008Quantifiers: true, RFC0016OutcomeValues: true}
 	for name, pack := range map[string][]byte{"a pack that would evaluate": valuesPack{}.bytes(), "bytes that are no pack": []byte(`{`), "no bytes": nil} {
@@ -1052,9 +1054,10 @@ func TestRFC0016EveryValueIsTracedAfterOneThatDidNotResolve(t *testing.T) {
 
 // The resolution step is charged to the evaluation-work limit, and reaching the
 // limit in it is the resource-exhaustion error and no disposition. The charge
-// is what the step's comment says it is: one unit for each outcome of the pack
-// and for each declared value, the resolution of each pointer, and the size of
-// each value carried.
+// is what the step's comment says it is: the search among the outcomes, by
+// their number and the bytes of their ids; the declaration, by its whole size;
+// each pointer, scanned and resolved; and each value a pointer selected,
+// whether or not its type then admits it.
 func TestRFC0016TheResolutionStepIsCharged(t *testing.T) {
 	const amount = "149.50"
 	pack := valuesPack{}
@@ -1114,7 +1117,9 @@ func TestRFC0016TheResolutionStepIsCharged(t *testing.T) {
 // layer when the pack is admitted, and what it costs to resolve by the work
 // limit: values that each select one string of the largest size the carrier
 // admits are carried while their sizes fit the limit together, and reach it
-// when they do not.
+// when they do not. The number that fit is a measurement of this pack under the
+// default limit, with its short names, its one short pointer and its one rule.
+// Longer names or a costlier rule leave room for fewer.
 func TestRFC0016ManyLargeValuesReachTheWorkLimit(t *testing.T) {
 	largest := strings.Repeat("x", carrier.DefaultMaxStringBytes)
 	facts := `{"go": true, "s": "` + largest + `"}`
@@ -1143,7 +1148,7 @@ func TestRFC0016ManyLargeValuesReachTheWorkLimit(t *testing.T) {
 		}
 	}
 	if most != 19 {
-		t.Fatalf("the limit holds %d such values, and the decision record says nineteen", most)
+		t.Fatalf("the limit holds %d such values of this pack, and the decision record says nineteen", most)
 	}
 }
 
@@ -1151,8 +1156,8 @@ func TestRFC0016ManyLargeValuesReachTheWorkLimit(t *testing.T) {
 // facts that supply the amount as "149.50", each counted here by hand from the
 // documents and not by the function that charges them.
 const (
-	// The pack declares two outcomes.
-	stepOutcomes = 2
+	// The pack declares two outcomes, and the search may read each id.
+	stepOutcomes = (1 + len("approve")) + (1 + len("decline"))
 	// The declaration is one object of two members. Each member costs its
 	// name and its source, and a source is one object whose members each cost
 	// their name and their string.
@@ -1168,12 +1173,15 @@ const (
 
 // The work stops at the first charge the limit does not hold. Each row gives
 // the step a limit one unit short of one of its charges and reads what was
-// done: which values were traced, and whether the pointer was scanned. The
-// values are read in the order of their names, the constant first.
+// done: which values were traced, whether the pointer was scanned, and what
+// had been charged when the step stopped. The values are read in the order of
+// their names, the constant first.
 //
-// The first row cannot tell a step that stops at the search from one that goes
-// on to the next charge, which stops it before anything it does can be seen.
-// What the first stop saves is the search itself.
+// What was charged is what tells a step that stopped from one that went on to
+// the next charge and was stopped there: a charge that is not held is still
+// added, so a step that goes on has charged more. It is the only thing that
+// tells the two apart at the search, where going on does nothing else that can
+// be seen.
 func TestRFC0016TheWorkStopsWhereTheLimitIsReached(t *testing.T) {
 	const pointer = "/proposed/refundAmount"
 	run := func(budget int, values bool) (*evaluator, []string, *Failure) {
@@ -1201,21 +1209,30 @@ func TestRFC0016TheWorkStopsWhereTheLimitIsReached(t *testing.T) {
 	}
 	before := core.charged
 	for _, row := range []struct {
-		name    string
-		budget  int
+		name string
+		// charged is what the step has charged when it stops: every charge up
+		// to the one the limit does not hold, that one included.
+		charged int
 		traced  []string
 		scanned bool
 		refused bool
 	}{
-		{"at the search among the outcomes", before + stepOutcomes - 1, []string{}, false, true},
-		{"at the declaration", before + stepOutcomes + stepDeclaration - 1, []string{}, false, true},
-		{"at the pointer's scan", before + stepOutcomes + stepDeclaration + stepScan - 1, []string{"currency"}, false, true},
-		{"at the pointer's resolution", before + stepOutcomes + stepDeclaration + stepScan + stepResolution - 1, []string{"currency"}, true, true},
-		{"at the value selected", before + stepOutcomes + stepDeclaration + stepScan + stepResolution + stepSelected - 1, []string{"currency"}, true, true},
-		{"nowhere", before + stepOutcomes + stepDeclaration + stepScan + stepResolution + stepSelected, []string{"currency", "refundAmount"}, true, false},
+		{"at the search among the outcomes", stepOutcomes, []string{}, false, true},
+		{"at the declaration", stepOutcomes + stepDeclaration, []string{}, false, true},
+		{"at the pointer's scan", stepOutcomes + stepDeclaration + stepScan, []string{"currency"}, false, true},
+		{"at the pointer's resolution", stepOutcomes + stepDeclaration + stepScan + stepResolution, []string{"currency"}, true, true},
+		{"at the value selected", stepOutcomes + stepDeclaration + stepScan + stepResolution + stepSelected, []string{"currency"}, true, true},
+		{"nowhere", stepOutcomes + stepDeclaration + stepScan + stepResolution + stepSelected, []string{"currency", "refundAmount"}, true, false},
 	} {
 		t.Run(row.name, func(t *testing.T) {
-			eval, traced, refusal := run(row.budget, true)
+			budget := before + row.charged
+			if row.refused {
+				budget--
+			}
+			eval, traced, refusal := run(budget, true)
+			if eval.charged != before+row.charged {
+				t.Errorf("charged = %d units by the step, want %d", eval.charged-before, row.charged)
+			}
 			if row.refused != (refusal != nil) {
 				t.Fatalf("refusal = %+v", refusal)
 			}

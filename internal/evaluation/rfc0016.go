@@ -85,11 +85,14 @@ func rfc0016Diagnostics(root map[string]any) []result.Diagnostic {
 	// outcome that carries a declaration needs the entry, which is the RFC's
 	// rule. An entry with no outcome carrying a declaration is one of two
 	// faults. Where the name is on no object of the pack it is §9's: a required
-	// name with no value. Where the name is on another object and on no outcome
-	// it is the RFC's rule of place, since §9 is met by a value anywhere. The
-	// validator can find neither in a projection that no longer holds the
-	// entry, so both are found here, as one diagnostic. And an entry made twice
-	// is the schema's uniqueItems, lost the same way.
+	// name with no value. The validator cannot find that one in a projection
+	// that no longer holds the entry, so it has to be found here. Where the
+	// name is on another object and on no outcome it is the RFC's rule of
+	// place, since §9 is met by a value anywhere. The validator would refuse
+	// that pack too, for the reserved name the projection leaves where it is;
+	// the gate reports it first, under the one diagnostic that covers both. An
+	// entry made twice is the schema's uniqueItems, and is lost with the entry
+	// as the first fault is.
 	listed := []int{}
 	if metadata, ok := root["metadata"].(map[string]any); ok {
 		for index, item := range asArray(metadata["requiredExtensions"]) {
@@ -324,7 +327,8 @@ const (
 // resolveValues is the resolution step of draft RFC 0016, run once for the one
 // outcome §8 produced. It returns the resolved values, or reports that one did
 // not resolve. A nil map with a true report is an outcome that declares no
-// value, for which the step does nothing.
+// value: the step looks for the outcome, is charged for that, and resolves
+// nothing.
 //
 // Every declared value is resolved, including those after one that did not
 // resolve, so the trace says of each value whether it resolved. The result does
@@ -334,9 +338,10 @@ const (
 // The work is charged to the evaluation's §10 limit, and each charge is made
 // before the work it pays for:
 //
-//   - one unit for each outcome the pack declares, before the produced one is
-//     looked for among them. It is charged under the opt-in for every outcome
-//     produced, whether or not that outcome declares a value;
+//   - one unit for each outcome the pack declares and the bytes of its id,
+//     before the produced one is looked for among them by comparing ids. It
+//     is charged under the opt-in for every outcome produced, whether or not
+//     that outcome declares a value;
 //   - the size of the declaration, before its names are put in order or a
 //     value is read. The size is that of the whole object: its value names,
 //     which the result carries, and its sources with their constants;
@@ -346,13 +351,14 @@ const (
 //
 // What a charge cannot come before is its own measuring. The size of a
 // declaration and of a selected value is found by walking it once, as the size
-// of an operand is for a condition. A constant is part of the declaration and is
-// charged with it, once.
+// of an operand is for a condition, and the lengths of the ids by reading each
+// outcome's once. A constant is part of the declaration and is charged with
+// it, once.
 //
 // The work stops at the first charge the limit does not hold. The caller reads
 // exceeded before it reads the result.
 func (r *resolver) resolveValues(outcomeID string) (map[string]any, bool) {
-	if !r.eval.charge(len(asArray(r.pack["outcomes"])) * unitNode) {
+	if !r.eval.charge(searchUnits(asArray(r.pack["outcomes"]))) {
 		return nil, false
 	}
 	declaration := r.declaredValues(outcomeID)
@@ -394,6 +400,19 @@ func (r *resolver) resolveValues(outcomeID string) (map[string]any, bool) {
 		return nil, false
 	}
 	return resolved, true
+}
+
+// searchUnits is what looking for one outcome among the pack's can cost: one
+// unit for each outcome, and the bytes of its id, which a comparison with the
+// id looked for may read to the last.
+func searchUnits(outcomes []any) int {
+	units := 0
+	for _, entry := range outcomes {
+		outcome, _ := entry.(map[string]any)
+		id, _ := outcome["id"].(string)
+		units += unitNode + len(id)
+	}
+	return units
 }
 
 // declaredValues returns the value declaration of the outcome the pack declares

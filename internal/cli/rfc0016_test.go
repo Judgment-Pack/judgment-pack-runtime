@@ -249,8 +249,11 @@ func TestExperimentalEvaluateRFC0016RefusalCarriesNoMarker(t *testing.T) {
 }
 
 // A value drawn from a fact is text somebody else wrote. The human surface
-// writes it with its controls taken out, and the JSON surface with the escapes
-// of RFC 8785, so neither puts a terminal control on the wire.
+// writes it with its controls taken out. The JSON surface writes what RFC 8785
+// writes: a control below U+0020 as its escape, and a direction control as
+// itself. That is the canonical form and is not changed here, so whatever
+// shows the JSON to a person has to treat the value as it treats any string it
+// did not write.
 func TestExperimentalEvaluateRFC0016ValuesAreWrittenSafely(t *testing.T) {
 	data, err := os.ReadFile(rfc0016Fixture(refundPack))
 	if err != nil {
