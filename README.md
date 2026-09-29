@@ -56,6 +56,17 @@ successful evaluation payload produced under the flag says so in band through a 
 member — a refusal is an operational error and carries none. The flag is CLI only; the MCP tool does
 not expose it.
 
+A second opt-in, `--rfc0016-outcome-values`, is a **draft-RFC prototype** on the same terms, per
+[ADR-0039](docs/adr/0039-draft-rfc-outcome-values-prototype.md). It admits the value declarations
+proposed by the specification's RFC 0016 (Draft): an outcome declares named values under
+`org.judgmentpack.outcome-values`, each a constant or a copy of one fact, and the disposition of that
+outcome carries them in a `value` member. That member is the draft's and no member of §8.3. A
+declared value that does not resolve withholds the outcome, and the result is `unresolved` with
+reason `unknown`. The name is reserved, so a pack carrying a declaration is **not valid** under any
+published JPS version, `spec validate` rejects it, and the evaluator without the flag refuses it.
+A value drawn from a fact is a copy of that fact and is not verified. The two flags are mutually
+exclusive, and this one is CLI only too.
+
 The command binary is `jpack`. The project, repository, and release archives keep the
 `judgment-pack` name; the executable they carry is `jpack`.
 
@@ -79,6 +90,7 @@ jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
 jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
+jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PROTOTYPE; a pack that declares values is not an input the class defines)
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
@@ -346,8 +358,9 @@ rather than a disposition. Both are defined here and enforced in
   claim that only amplification is refused. Against a 100 KB facts document the limit still admits about
   two hundred whole-document comparisons, and every row of the bundled evaluation corpus charges under
   1,000 units: measurements of those inputs, not bounds on inputs no row contains.
-  Callers may configure a lower limit per evaluation; the draft-RFC prototype has its own, smaller
-  budget of 100,000 units (ADR-0009).
+  Callers may configure a lower limit per evaluation; the draft RFC 0008 prototype has its own,
+  smaller budget of 100,000 units (ADR-0009), and the draft RFC 0016 prototype is charged to this
+  limit (ADR-0039).
 - **Collection-size limit: 250,000 members** — the 250,000-node carrier cap above, stated as the §10
   limit it is. Every input is admitted under that cap, so no admitted document holds a larger
   collection, and every collection this evaluator traverses comes from an admitted document: Core

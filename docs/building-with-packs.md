@@ -695,7 +695,9 @@ node — the facts there are the assembled document, after the upstream outcomes
 because that is what the node was evaluated against, and each line names the graph's `formatVersion`
 and the digest of its exact bytes — plus one for the composite headline. An evaluation run under
 `--rfc0008-quantifiers` carries the same draft-RFC label its payload carries, because a disposition
-produced by operators no published JPS version defines is not an ordinary one.
+produced by operators no published JPS version defines is not an ordinary one. One run under
+`--rfc0016-outcome-values` carries its label for the same reason, and its disposition is recorded
+whole, with the `value` member where the outcome declared values (ADR-0039).
 
 The documents are recorded as JSON *values*: the encoder compacts them, so `{ "x": 1 }` is written
 as `{"x":1}` and the line is the source compacted rather than the source itself. Replaying a record

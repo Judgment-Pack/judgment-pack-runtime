@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -658,7 +660,17 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		// was consulted, and a reader of either output learns it (ADR-0028).
 		fmt.Fprintln(a.out, "REHEARSAL: declared not a decision; no audit record was appended and no reviewed set was consulted")
 	}
-	if prototype := output.DraftPrototype; prototype != nil {
+	if prototype := output.DraftPrototype; prototype != nil && prototype.RFC == "0016" {
+		// The marker of the other draft, in the same two wordings and for the
+		// same reason: a pack that declares no value is a plain pack.
+		if prototype.PackValidUnderSpecVersion {
+			fmt.Fprintf(a.out, "DRAFT-RFC PROTOTYPE: RFC %s outcome values enabled; no outcome of this pack declares a value and it remains a plain JPS %s pack\n",
+				display.Sanitize(prototype.RFC), display.Sanitize(output.SpecVersion))
+		} else {
+			fmt.Fprintf(a.out, "DRAFT-RFC PROTOTYPE: RFC %s outcome values declared by %s; this pack is NOT valid under JPS %s and spec validate rejects it\n",
+				display.Sanitize(prototype.RFC), display.Sanitize(strings.Join(prototype.Outcomes, ", ")), display.Sanitize(output.SpecVersion))
+		}
+	} else if prototype != nil {
 		// The two wordings mirror the JSON marker's own: a pack that used no
 		// draft operator is a plain pack the published validator accepts, and
 		// saying otherwise would contradict the same run's JSON output.
@@ -675,6 +687,18 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		fmt.Fprintf(a.out, "disposition: outcome %s\n", display.Sanitize(output.Disposition.OutcomeID))
 	default:
 		fmt.Fprintf(a.out, "disposition: %s (%s)\n", display.Sanitize(output.Disposition.Kind), display.Sanitize(strings.Join(output.Disposition.Reasons, ", ")))
+	}
+	// The values of draft RFC 0016, one to a line in the order of their names.
+	// A string is a copy of a fact or of what the author wrote, so it is
+	// sanitized as any label is and then quoted, which shows where it begins and
+	// ends and tells the string "true" from the Boolean.
+	for _, name := range slices.Sorted(maps.Keys(output.Disposition.Value)) {
+		switch value := output.Disposition.Value[name].(type) {
+		case string:
+			fmt.Fprintf(a.out, "value: %s = %q\n", display.Sanitize(name), display.Sanitize(value))
+		default:
+			fmt.Fprintf(a.out, "value: %s = %v\n", display.Sanitize(name), value)
+		}
 	}
 	if output.Disposition.Handoff.State == "requested" {
 		triggers := display.Sanitize(strings.Join(output.Disposition.Handoff.TriggeredBy, ", "))

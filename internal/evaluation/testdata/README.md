@@ -24,3 +24,14 @@ re-encodes the availability conjunct of `R3:/modification/allNewItemsAvailable`
 (and its `R5` twin). The prepared packs are valid JPS 0.1.0-draft documents;
 the quantifier packs are deliberately not, and the tests assert both facts. All
 content is invented for specification testing and authorizes nothing.
+
+rfc0016/ holds two packs written for the specification's RFC 0016 (Draft),
+outcome values, one for each of the two cases its Problem section names.
+refund-pass-through.json draws the approved amount from the fact the rule
+compares, and carries a constant beside it; its forced outcome and its
+escalation are there so that a value that does not resolve can be reached
+without a rule reading the fact. credit-limit-tiers.json carries one constant
+on each of two tiers and none on the third outcome. Both carry a reserved
+extension name, so neither is a valid document under any published JPS
+version, and the tests assert that. All content is invented for specification
+testing and authorizes nothing.

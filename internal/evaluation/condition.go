@@ -45,9 +45,13 @@ type evaluator struct {
 	// quantifiers admits the draft RFC 0008 aggregates and turns on the work
 	// accounting they require. Without it nothing about §7 changes.
 	quantifiers bool
-	budget      int
-	charged     int
-	exceeded    bool
+	// outcomeValues turns on the resolution step of draft RFC 0016: the values a
+	// produced outcome declares are resolved, and an outcome whose values do not
+	// all resolve is not produced. Without it nothing about §8 changes.
+	outcomeValues bool
+	budget        int
+	charged       int
+	exceeded      bool
 	// pointers memoizes the compiled form of every authored pointer this
 	// evaluation has resolved, keyed by the pointer text as the pack wrote it.
 	// Compiling scans the path's bytes; the cache is what makes a per-element

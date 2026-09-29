@@ -242,6 +242,28 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		mustReference: true,
 	})
 
+	// The note of the other draft, read off a real payload in the same way.
+	pack = filepath.Join("..", "evaluation", "testdata", "rfc0016", "refund-pass-through.json")
+	if err := os.WriteFile(facts, []byte(`{"customer":{"goodStanding":true},"proposed":{"refundAmount":"149.50"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", pack, "--facts", facts, "--rfc0016-outcome-values", "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("prototype evaluation: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	prototype.DraftPrototype = nil
+	if err := json.Unmarshal([]byte(stdout), &prototype); err != nil {
+		t.Fatal(err)
+	}
+	if prototype.DraftPrototype == nil || !strings.Contains(prototype.DraftPrototype.Note, "RFC 0016") {
+		t.Fatalf("an evaluation under the draft RFC 0016 opt-in must carry its in-band note: %q", stdout)
+	}
+	surfaces = append(surfaces, claimSurface{
+		name:          "payload draftPrototype.note (RFC 0016)",
+		text:          prototype.DraftPrototype.Note,
+		mustReference: true,
+	})
+
 	return append(surfaces, claimProse(t)...)
 }
 
@@ -569,6 +591,9 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 		"mcp tools/list get_pack",
 		"mcp tools/list experimental_test_packs",
 		"prose docs/building-with-packs.md",
+		"payload draftPrototype.note",
+		"payload draftPrototype.note (RFC 0016)",
+		"prose docs/adr/0039-draft-rfc-outcome-values-prototype.md",
 	} {
 		if !named[required] {
 			t.Fatalf("the inventory must include %q; it has %v", required, named)

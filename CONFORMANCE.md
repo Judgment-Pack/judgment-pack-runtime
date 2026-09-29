@@ -156,11 +156,13 @@ above — for every input it admits, not merely for the inputs it happened to ru
   When a later `specVersion` publishes this class, this claim does not extend to it: the corpus
   published for that exact version must be run and this file restated before anything is claimed under
   it.
-- **Nothing about the draft-RFC prototype.** With `--rfc0008-quantifiers` this runtime admits
+- **Nothing about the draft-RFC prototypes.** With `--rfc0008-quantifiers` this runtime admits
   condition operators no published JPS version defines, so a pack using one is not a semantically
-  conforming document and is not an input this class describes. That is not an exception to a
-  requirement of the class; it is a surface whose inputs the class does not define, and no claim is
-  made on it.
+  conforming document and is not an input this class describes. With `--rfc0016-outcome-values` it
+  admits a value declaration under a reserved extension name, so a pack carrying one is not a
+  structurally conforming document, and it writes a disposition with a member §8.3 does not define.
+  Neither is an exception to a requirement of the class; each is a surface whose inputs the class
+  does not define, and no claim is made on either.
 
 ## Corroboration, which is not the claim's basis
 

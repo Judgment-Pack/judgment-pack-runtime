@@ -25,14 +25,44 @@ import (
 // carrying an op §7 does not define reaches evaluation through neither step but
 // is still refused.
 
-// rfc0008Conformance admits a pack that may use the draft operators. The pack's
+// draftGrammar is what one draft RFC's opt-in adds to admission. Two drafts are
+// prototyped, RFC 0008 here and RFC 0016 in rfc0016.go, and both are admitted by
+// the same steps in the same order (draftConformance). What differs between them
+// is stated in one value of this type, so the steps are written once.
+type draftGrammar struct {
+	// rfc is the RFC's number as the specification writes it, such as "0008". It
+	// names the refusal code of a pack that fails the draft grammar.
+	rfc string
+	// diagnostics reports what the draft grammar refuses in one decoded pack. It
+	// checks what the draft adds and nothing else.
+	diagnostics func(root map[string]any) []result.Diagnostic
+	// project returns the pack's Core projection: the same document with what
+	// the draft adds taken out, which the untouched validator then judges. It
+	// does not change the document it is given.
+	project func(root map[string]any) map[string]any
+	// projection ends the refusal of a pack whose Core projection did not
+	// conform. It tells the author how a location in the projection differs from
+	// the location in the pack they wrote.
+	projection string
+}
+
+// rfc0008Grammar is the draft RFC 0008 gate: aggregate shape and depth, and a
+// projection that replaces each aggregate by a condition Core defines.
+var rfc0008Grammar = draftGrammar{
+	rfc:         "0008",
+	diagnostics: rfc0008Diagnostics,
+	project:     projectPack,
+	projection:  "The instance path is relative to that projection, in which each exists and every is replaced by its where and each uniform by a true literal, so a location inside a where is named with the /where segments elided.",
+}
+
+// draftConformance admits a pack that may use what one draft RFC adds. The pack's
 // real bytes still pass the carrier layer, the draft grammar is checked against
-// the RFC's shape and depth bound, and the pack's Core projection is then put
+// the RFC's own rules, and the pack's Core projection is then put
 // through the untouched validator, so everything the draft grammar does not add
 // is held to full document conformance. What is not claimed, and what the
 // output marker says out loud, is that the pack is valid: it is not, under any
 // published JPS version, and spec validate rejects it.
-func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Validation, map[string]any, *Failure, *Failure) {
+func (e *Engine) draftConformance(pack []byte, options Options, grammar draftGrammar) (result.Validation, map[string]any, *Failure, *Failure) {
 	carrierOnly, operational := e.validator.Validate(pack, validation.Options{
 		Through: "carrier",
 		Limits:  carrier.DefaultLimits(),
@@ -57,10 +87,10 @@ func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Valida
 		}
 		return result.Validation{}, nil, nil, packNotConformant(validated)
 	}
-	if diagnostics := rfc0008Diagnostics(packRoot); len(diagnostics) > 0 {
-		return result.Validation{}, nil, nil, draftGrammarFailure(diagnostics)
+	if diagnostics := grammar.diagnostics(packRoot); len(diagnostics) > 0 {
+		return result.Validation{}, nil, nil, draftGrammarFailure(diagnostics, grammar)
 	}
-	projected, err := json.Marshal(projectPack(packRoot))
+	projected, err := json.Marshal(grammar.project(packRoot))
 	if err != nil {
 		return result.Validation{}, nil, nil, &Failure{Code: "JPS-EVALUATION-INTERNAL", Message: "The pack's Core projection could not be re-encoded for validation.", ExitCode: result.ExitInternal}
 	}
@@ -73,7 +103,7 @@ func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Valida
 		return result.Validation{}, nil, nil, packOperationalFailure(operational)
 	}
 	if validated.Status != "valid" && unsupportedRequiredExtension(validated) == nil {
-		return result.Validation{}, nil, nil, projectionNotConformant(validated)
+		return result.Validation{}, nil, nil, projectionNotConformant(validated, grammar)
 	}
 	return validated, packRoot, unsupportedRequiredExtension(validated), nil
 }
@@ -81,13 +111,14 @@ func (e *Engine) rfc0008Conformance(pack []byte, options Options) (result.Valida
 // projectionNotConformant refuses a pack whose Core projection did not reach
 // full document conformance. It is packNotConformant's finding with two
 // corrections the projection forces. The instance path names a location in the
-// projection, not in the author's pack: every exists and every is replaced by
-// its where and every uniform by a true literal, so a diagnostic inside a where
-// is reported with the intervening /where segments elided. And spec validate
-// cannot reproduce the finding for a pack using a draft operator — it rejects
-// that pack at the aggregate itself — so the refusal does not send the author
-// there for a report that will say something else.
-func projectionNotConformant(validated result.Validation) *Failure {
+// projection, not in the author's pack: under RFC 0008 every exists and every is
+// replaced by its where and every uniform by a true literal, so a diagnostic
+// inside a where is reported with the intervening /where segments elided, and
+// the grammar's own sentence says what differs under another draft. And spec
+// validate cannot reproduce the finding for a pack using what a draft adds — it
+// rejects that pack at the addition itself — so the refusal does not send the
+// author there for a report that will say something else.
+func projectionNotConformant(validated result.Validation, grammar draftGrammar) *Failure {
 	exitCode := result.ExitInvalid
 	if validated.Status == "unsupported" {
 		exitCode = result.ExitUnsupported
@@ -106,16 +137,17 @@ func projectionNotConformant(validated result.Validation) *Failure {
 		Phase: result.PhasePreflight,
 		Code:  "JPS-EVALUATION-PACK-NOT-CONFORMANT",
 		Message: fmt.Sprintf(
-			"The pack is not evaluated because the document conformance status of its Core projection is %q; evaluation requires a fully conformant pack.%s The instance path is relative to that projection, in which each exists and every is replaced by its where and each uniform by a true literal, so a location inside a where is named with the /where segments elided.",
-			validated.Status, detail),
+			"The pack is not evaluated because the document conformance status of its Core projection is %q; evaluation requires a fully conformant pack.%s %s",
+			validated.Status, detail, grammar.projection),
 		ExitCode: exitCode,
 	}
 }
 
-// draftGrammarFailure refuses a pack whose draft-operator use is malformed or
-// too deep, naming the first diagnostic so the refusal is self-sufficient. A
-// depth-three aggregate is refused here, before any condition is evaluated.
-func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
+// draftGrammarFailure refuses a pack that fails one draft grammar, naming the
+// first diagnostic so the refusal is self-sufficient. Under RFC 0008 that is an
+// aggregate that is malformed or too deep: a depth-three aggregate is refused
+// here, before any condition is evaluated.
+func draftGrammarFailure(diagnostics []result.Diagnostic, grammar draftGrammar) *Failure {
 	first := diagnostics[0]
 	location := first.InstancePath
 	if location == "" {
@@ -124,10 +156,10 @@ func draftGrammarFailure(diagnostics []result.Diagnostic) *Failure {
 	return &Failure{
 		Class: result.ClassPackNotConformant,
 		Phase: result.PhasePreflight,
-		Code:  "JPS-EVALUATION-RFC0008-GRAMMAR",
+		Code:  "JPS-EVALUATION-RFC" + grammar.rfc + "-GRAMMAR",
 		Message: fmt.Sprintf(
-			"The pack is not evaluated because it does not satisfy the draft RFC 0008 grammar. First diagnostic: %s at %s: %s",
-			first.Code, location, first.Message),
+			"The pack is not evaluated because it does not satisfy the draft RFC %s grammar. First diagnostic: %s at %s: %s",
+			grammar.rfc, first.Code, location, first.Message),
 		ExitCode: result.ExitInvalid,
 	}
 }

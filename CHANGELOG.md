@@ -2,6 +2,32 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`experimental evaluate --rfc0016-outcome-values`: a draft-RFC prototype of the specification's
+  RFC 0016 (Draft), outcome values** (ADR-0039). An outcome declares named values under
+  `org.judgmentpack.outcome-values`, each a constant or a copy of one fact, of type `string`,
+  `decimal` or `boolean`. When evaluation produces that outcome, the disposition carries them in a
+  `value` member. When a declared value does not resolve, no outcome is produced: the result is
+  `unresolved` with reason `unknown`, the fallback is not tried, and handoff follows §8.1. The trace
+  names each value of the produced outcome under the stage `outcome-value` and says whether it
+  resolved; it never carries a value. Every successful payload carries `draftPrototype` with `rfc`
+  of `"0016"`, and with a new `outcomes` member where an outcome of the pack declares values. The
+  name is reserved, so a pack carrying a declaration is not valid under any published JPS version:
+  `spec validate` rejects it and the evaluator without the flag refuses it, both as before. The
+  flag is CLI only and is mutually exclusive with `--rfc0008-quantifiers`
+  (`JPS-INVOCATION-DRAFT-RFC`). Four codes are minted, `codeStability: "provisional"` like every
+  other: that one, and `JPS-EVALUATION-RFC0016-GRAMMAR` with `JPS-EVALUATION-RFC0016-DECLARATION`
+  and `JPS-EVALUATION-RFC0016-REQUIRED` as the diagnostics it names.
+
+  Without the flag no input is admitted, refused or answered differently. A disposition made
+  without it has no `value` member and is byte for byte what it was, the `draftPrototype` member of
+  a run under `--rfc0008-quantifiers` is what it was, and every reader of an expected disposition
+  refuses `value`. One message changes: such an expectation was refused as a member this runtime
+  does not know, and is now refused under a sentence that names the draft. A pack that carries a
+  value declaration is not an input the evaluator class of JPS Core defines; see `CONFORMANCE.md`.
+  A pack that carries none is the input it was.
+
 ## 0.23.1 - 2026-09-27
 
 - **`experimental_get_test_matrix_contract` answers a call that omits `arguments`**: MCP makes the

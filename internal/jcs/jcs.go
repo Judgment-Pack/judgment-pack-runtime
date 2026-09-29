@@ -5,10 +5,17 @@
 // RFC 8785 (JCS) is implemented here only over the value space a disposition
 // occupies — objects, arrays, and strings — because that is the whole of what
 // §8.3 admits: "A disposition contains no numbers, so that specification's
-// number rules never engage." A number, a boolean, or a null is refused rather
-// than serialized on a guess, so a disposition that grows a member of another
-// type has to extend this encoder deliberately instead of silently acquiring an
+// number rules never engage." A number or a null is refused rather than
+// serialized on a guess, so a disposition that grows a member of another type
+// has to extend this encoder deliberately instead of silently acquiring an
 // ordering RFC 8785 does not give it.
+//
+// A Boolean is the one deliberate extension so far. The value member of the
+// specification's RFC 0016 (Draft) holds strings and Booleans, and this runtime
+// produces that member under an opt-in only (ADR-0039). RFC 8785 §3.2.2 writes a
+// Boolean as the literal true or false, which leaves nothing to choose. No
+// disposition of JPS Core 0.2.0-draft holds one, and the type that builds a
+// disposition admits one inside that member and nowhere else.
 //
 // Two rules are the whole of the canonicalization at this value space: object
 // members are ordered by the UTF-16 code units of their names, and strings carry
@@ -26,7 +33,7 @@ import (
 )
 
 // Encode returns the RFC 8785 canonical form of value. Admitted values are
-// map[string]any, []any, []string, and string, nested arbitrarily.
+// map[string]any, []any, []string, string, and bool, nested arbitrarily.
 func Encode(value any) ([]byte, error) {
 	var builder strings.Builder
 	if err := write(&builder, value); err != nil {
@@ -39,6 +46,13 @@ func write(builder *strings.Builder, value any) error {
 	switch typed := value.(type) {
 	case string:
 		return writeString(builder, typed)
+	case bool:
+		if typed {
+			builder.WriteString("true")
+		} else {
+			builder.WriteString("false")
+		}
+		return nil
 	case []string:
 		items := make([]any, 0, len(typed))
 		for _, item := range typed {

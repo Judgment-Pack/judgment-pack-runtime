@@ -42,6 +42,11 @@ func TestCanonicalForm(t *testing.T) {
 			want:  `{"k":"é☂"}`,
 		},
 		{
+			name:  "a Boolean is written as its literal, inside an object and inside an array",
+			value: map[string]any{"value": map[string]any{"b": false, "a": true}, "list": []any{true, false}},
+			want:  `{"list":[true,false],"value":{"a":true,"b":false}}`,
+		},
+		{
 			name: "names are ordered by UTF-16 code units, not by UTF-8 bytes",
 			// U+10000 is one supplementary code point: its UTF-8 bytes sort after
 			// U+FFFD's, and its UTF-16 code units (a surrogate pair) sort before.
@@ -80,10 +85,10 @@ func TestCanonicalizationIsIdempotent(t *testing.T) {
 }
 
 // The value space is deliberately narrow: §8.3's disposition is strings, arrays,
-// and objects, and a value of any other type is refused rather than serialized
-// on a guess.
+// and objects, the value member of draft RFC 0016 adds Booleans, and a value of
+// any other type is refused rather than serialized on a guess.
 func TestValuesOutsideTheDispositionSpaceAreRefused(t *testing.T) {
-	for _, value := range []any{nil, true, 1, 1.5, map[string]any{"n": 1}, []any{false}} {
+	for _, value := range []any{nil, 1, 1.5, int64(1), map[string]any{"n": 1}, []any{nil}, map[string]any{"n": nil}, []bool{true}} {
 		if _, err := Encode(value); err == nil {
 			t.Fatalf("value %#v must be refused", value)
 		}
