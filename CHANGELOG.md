@@ -13,6 +13,40 @@ All notable changes to tagged releases are documented here.
   argument is a strict boolean; null and every other type are refused. Coverage still never gates
   (ADR-0014).
 
+- **`experimental graph evaluate --rehearsal`** (ADR-0041; #182). A graph run can now be declared a
+  rehearsal on ADR-0028's terms: every node evaluates as it would otherwise, no audit record is
+  appended for any node or for the composite, no reviewed set is consulted for the configuration,
+  the graph or any node's pack, and the composite payload carries `"rehearsal": true`, with the
+  same `REHEARSAL:` line in the human output. The README already listed graph evaluation among the
+  surfaces a declared rehearsal exempts; that is now true. The member is additive output under
+  VERSIONING.md's MINOR rule; `outputVersion` stays `"2"`. There is no MCP graph evaluation tool, so
+  there is no MCP form. The README, `docs/architecture.md` and the audit description in the
+  `jpack.json` schema now say that a graph evaluation records one line per node and one for the
+  composite, where they said one line per evaluation.
+
+- **The evaluation payload says what left a result unknown** (ADR-0040; #178, #186). Three members
+  are added, each omitted when it has nothing to say, so a payload where nothing was unknown,
+  nothing crossed JSON types and no required evidence went wanting is byte for byte what it was.
+  - `unknownCauses` on a trace entry whose condition is `unknown` names the leaves the unknown came
+    from: a fact pointer that is `absent`, a value an ordered comparison finds `not-comparable` (a
+    JSON number where a decimal string is required, with its `factType`), or an evidence
+    requirement whose presence is `unknown`. A leaf whose unknown a sibling's verdict overrode is not
+    a cause and is not listed. The root pointer `""` is kept as `"path": ""`.
+  - `typeMismatches` on any trace entry names each distinct `equals`, `not-equals` or `in`
+    comparison it evaluated whose fact value has a JSON type no operand has, once, whatever the
+    verdict. `"true"` compared with `true` is unequal under §7.4, and the entry now says the two
+    could not have been equal.
+  - `unmetEvidence` beside the trace, and on each graph node evaluation, names every required
+    requirement §8 step 2 found `absent` or `unknown`, in declared order. Step 2 still has no trace
+    stage (ADR-0027 clause 6).
+
+  No verdict, disposition, reason or handoff changes. The members are additive output under
+  VERSIONING.md's MINOR rule; `outputVersion` stays `"2"`. The two ADR-0027 byte-goldens that hold
+  an unknown entry now carry its cause. The human output adds an `unmet evidence:` line and one
+  bracket per cause and per mismatch on a trace line, and the `explain_disposition` prompt names the
+  members and tells a narrator to name no cause the record does not hold. ADR-0020's statement that
+  a trace entry carries no pointer is superseded for these two members.
+
 - **`packs suggest --base` keeps the base row's evidence** (#177). A candidate made from a base row
   carried the row's facts and dropped its `evidenceAvailability`. On the specification's
   `minimal-expense-approval`, with a base row that marks both required requirements `present`, every

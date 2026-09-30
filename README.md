@@ -94,7 +94,7 @@ jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PRO
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
-jpack experimental graph evaluate <graph-or-> [--inputs <file-or->]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack experimental graph evaluate <graph-or-> [--inputs <file-or->] [--rehearsal]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph explain <graph-or->   (the evaluation plan; nothing is evaluated)
 jpack experimental graph test <graph-or-> --rows <file-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph schema
@@ -171,6 +171,80 @@ gh attestation verify judgment-pack_0.1.0_linux_amd64.tar.gz --repo Judgment-Pac
 Packages for Homebrew, Scoop, `apt`, and `go install` are not published yet. In particular, source
 installation with `go install` does not receive the release linker metadata, so use a release
 archive when you need an accurately reported runtime version.
+
+## Evaluate one decision
+
+With `jpack` on your `PATH`, this is the whole loop: a pack, a facts document, and a disposition.
+Save a pack that approves an expense unless its amount is over 5000:
+
+```bash
+cat > pack.json <<'EOF'
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/expense-approval",
+  "version": "0.1.0",
+  "title": "Expense approval",
+  "decision": {
+    "intent": "Approve ordinary expenses without review.",
+    "question": "May this expense be approved?"
+  },
+  "outcomes": [
+    { "id": "approve", "label": "Approve" },
+    { "id": "decline", "label": "Decline" }
+  ],
+  "rules": [
+    {
+      "id": "over-limit",
+      "description": "An amount over 5000 is declined.",
+      "when": { "op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "5000" },
+      "outcome": "decline",
+      "onUnknown": "escalate"
+    }
+  ],
+  "fallbackOutcome": "approve",
+  "escalation": {
+    "triggers": ["unknown"],
+    "target": { "kind": "human-role", "name": "Finance reviewer" }
+  }
+}
+EOF
+jpack spec validate pack.json
+```
+
+Give it the facts of one expense and evaluate. The amount is a decimal string, as the
+specification requires for a number a rule compares:
+
+```console
+$ echo '{"expense": {"amount": "120"}}' > facts.json
+$ jpack experimental evaluate pack.json --facts facts.json
+EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)
+disposition: outcome approve
+trace: rule over-limit: false
+artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185
+```
+
+Now remove the amount. The rule cannot be decided, its `onUnknown` is `escalate`, and the pack
+names who takes the case, so the answer is a handoff rather than a guess. The trace line names the
+fact that was missing:
+
+```console
+$ echo '{"expense": {}}' > facts.json
+$ jpack experimental evaluate pack.json --facts facts.json
+EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)
+disposition: unresolved (unknown)
+handoff: requested -> human-role "Finance reviewer" (triggered by unknown)
+trace: rule over-limit: unknown onUnknown=escalate [fact /expense/amount absent]
+artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185
+```
+
+Releases up to 0.23.1 print the last trace line without the bracket naming the missing fact.
+Both runs exit 0: producing a disposition is success, whichever it is. `--format json` gives the
+same result as a payload, with the disposition in its canonical form. A disposition is data. It
+authorizes nothing, and acting on it is the caller's decision.
+
+From here, [docs/building-with-packs.md](docs/building-with-packs.md) covers a project of several
+packs, their test matrices, and the audit trail; `jpack spec examples --spec-version 0.2.0-draft`
+lists larger starting points the evaluator accepts, from the release after 0.23.1.
 
 ## Build and try it locally
 
@@ -434,8 +508,10 @@ pathname to open for itself.
 The one thing this file can ask the runtime to **write** is a record of what it evaluated
 ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)). Under `configVersion "3"`, an
 `audit` member names a directory relative to the configuration — `"audit": { "dir": "audit" }` —
-and each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the
-MCP `experimental_evaluate` tool — unless it was declared a rehearsal (ADR-0028) — then appends one JSON line to `evaluations.jsonl` in it: the
+and each completed evaluation of `experimental evaluate` and the MCP `experimental_evaluate`
+tool — unless it was declared a rehearsal (ADR-0028) — then appends one JSON line to
+`evaluations.jsonl` in it, and each completed `experimental graph evaluate` appends one per node
+and one for the composite, unless declared a rehearsal (ADR-0041). Each line holds the
 pack's id, version, `specVersion` and the digest of its exact bytes, the facts and evidence
 documents as evaluated, and the disposition in its canonical form. Test runs never record —
 `packs test`, `experimental graph test`, and `experimental evaluate-corpus` are checks on packs,
@@ -459,7 +535,7 @@ Its **presence** is the opt-in, and it is found by convention rather than declar
 `configVersion` moves, the schema does not change, and a project with no lock file behaves exactly
 as it did. With one, the deciding surfaces — `experimental evaluate`, `experimental graph evaluate`,
 and the MCP `experimental_evaluate` tool — hold the law they are about to apply to it, declared
-rehearsals excepted (ADR-0028), and refuse a
+rehearsals excepted (ADR-0028, ADR-0041), and refuse a
 mismatch (`JPS-LOCK-VERIFY`, exit 1) with the two honest ways forward: declare the amendment, or
 restore the reviewed bytes. `packs test`, `experimental graph test`, and `experimental
 evaluate-corpus` consult it never: the author's loop is free and decisions are classified. A pack
@@ -547,7 +623,7 @@ The current implementation:
 - accepts one explicitly selected regular file or standard input, not URLs or special files;
 - writes only where it was told to, in three ways and no others: a copy of a bundled schema or
   example at the target an operator names with `--write`, which refuses to overwrite an existing
-  file; one appended record per completed non-rehearsal evaluation (ADR-0028) when a project's `jpack.json` declares an
+  file; one appended record per completed non-rehearsal evaluation (ADR-0028), and for a non-rehearsal graph evaluation one per node and one for the composite (ADR-0041), when a project's `jpack.json` declares an
   `audit` directory ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)), into that
   directory, through the handle held open on the configuration's own directory — a record is not a
   diagnostic, and it carries the documents the project asked to have recorded; and the reviewed-set

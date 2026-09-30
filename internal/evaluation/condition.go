@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 // tri is the three-valued condition result of the §7 experiment.
@@ -58,6 +61,133 @@ type evaluator struct {
 	// resolution cost its steps rather than a fresh scan, and the accounting
 	// model on evaluate charges each scan exactly once to match.
 	pointers map[string]compiledPointer
+	// causes and mismatches are what one stage's condition is recorded with
+	// (ADR-0040). A leaf that evaluates unknown appends its cause, and a
+	// combinator whose own verdict is not unknown truncates back to where it
+	// started, because an unknown a sibling's verdict overrode caused nothing.
+	// What remains when a stage is unknown is exactly the leaves it came from.
+	// An equality comparison across JSON types appends a mismatch whatever the
+	// verdict, and nothing truncates those. evaluateStage resets both, so
+	// neither ever reaches past one stage; neither changes a verdict.
+	causes     []result.UnknownCause
+	mismatches []result.TypeMismatch
+	// collectionFailure is why an aggregate's collection pointer selected no
+	// array, held until withinCollection has labelled the element-level causes.
+	collectionFailure *result.UnknownCause
+	// unmetEvidence is what §8 step 2 found wanting: every required
+	// requirement whose presence is absent or unknown, in declared order
+	// (ADR-0040). The payload reports it beside the trace, because step 2
+	// evaluates no condition and ADR-0027 gives it no trace stage.
+	unmetEvidence []result.UnmetEvidence
+}
+
+// noteUnknown records the leaf an unknown came from.
+func (e *evaluator) noteUnknown(cause result.UnknownCause) {
+	e.causes = append(e.causes, cause)
+}
+
+// keepCausesIf keeps what was recorded since mark only when the verdict it
+// explains is unknown.
+func (e *evaluator) keepCausesIf(verdict tri, mark int) tri {
+	if verdict != triUnknown && len(e.causes) > mark {
+		e.causes = e.causes[:mark]
+	}
+	return verdict
+}
+
+// evaluateStage charges and evaluates one stage's condition and returns what
+// ADR-0040 records beside its verdict: the causes when the verdict is unknown,
+// and every cross-type equality comparison the condition evaluated. Both are in
+// first-occurrence order with repeats removed, which keeps the record a pure
+// function of the inputs whatever the tree's shape. The repeats are found by
+// map lookup rather than by scanning what was kept, so removing them costs
+// work in proportion to what was recorded, as the rest of the walk does.
+func (e *evaluator) evaluateStage(node any, root any) (tri, []result.UnknownCause, []result.TypeMismatch) {
+	e.causes, e.mismatches = nil, nil
+	verdict := e.evaluate(node, root)
+	var causes []result.UnknownCause
+	if verdict == triUnknown && !e.exceeded {
+		seen := make(map[causeKey]bool, len(e.causes))
+		for _, cause := range e.causes {
+			key := keyOfCause(cause)
+			if !seen[key] {
+				seen[key] = true
+				causes = append(causes, cause)
+			}
+		}
+	}
+	var mismatches []result.TypeMismatch
+	seen := make(map[mismatchKey]bool, len(e.mismatches))
+	for _, mismatch := range e.mismatches {
+		key := keyOfMismatch(mismatch)
+		if !seen[key] {
+			seen[key] = true
+			mismatches = append(mismatches, mismatch)
+		}
+	}
+	e.causes, e.mismatches = nil, nil
+	return verdict, causes, mismatches
+}
+
+// causeKey and mismatchKey are the values two records are the same by. The
+// pointers in a record are compared by the text they point at, with whether
+// they are set kept apart from what they say, so the root pointer "" and an
+// unset pointer are two different keys.
+type causeKey struct {
+	pathSet, withinSet                         bool
+	path, requirement, within, cause, factType string
+}
+
+type mismatchKey struct {
+	withinSet                                      bool
+	path, within, operator, factType, operandTypes string
+}
+
+func keyOfCause(cause result.UnknownCause) causeKey {
+	key := causeKey{requirement: cause.EvidenceRequirement, cause: cause.Cause, factType: cause.FactType}
+	if cause.Path != nil {
+		key.pathSet, key.path = true, *cause.Path
+	}
+	if cause.Within != nil {
+		key.withinSet, key.within = true, *cause.Within
+	}
+	return key
+}
+
+func keyOfMismatch(mismatch result.TypeMismatch) mismatchKey {
+	key := mismatchKey{path: mismatch.Path, operator: mismatch.Operator, factType: mismatch.FactType,
+		operandTypes: strings.Join(mismatch.OperandTypes, "\x00")}
+	if mismatch.Within != nil {
+		key.withinSet, key.within = true, *mismatch.Within
+	}
+	return key
+}
+
+// pointer is a pointer to one pointer's text, which is how a record carries a
+// JSON Pointer that may be "".
+func pointer(text string) *string {
+	return &text
+}
+
+// jsonType names the JSON type of one decoded value as the carrier decodes it:
+// objects to maps, arrays to slices, and numbers to json.Number.
+func jsonType(value any) string {
+	switch value.(type) {
+	case nil:
+		return "null"
+	case bool:
+		return "boolean"
+	case string:
+		return "string"
+	case json.Number, float64:
+		return "number"
+	case map[string]any:
+		return "object"
+	case []any:
+		return "array"
+	default:
+		return "unknown"
+	}
 }
 
 // condition evaluates one node against the current condition root: the runtime
@@ -69,6 +199,7 @@ type evaluator struct {
 func (e *evaluator) condition(node any, root any) tri {
 	condition, ok := node.(map[string]any)
 	if !ok {
+		e.noteUnknown(result.UnknownCause{Cause: "unsupported"})
 		return triUnknown
 	}
 	switch condition["op"] {
@@ -76,11 +207,14 @@ func (e *evaluator) condition(node any, root any) tri {
 		if value, ok := condition["value"].(bool); ok {
 			return triFromBool(value)
 		}
+		e.noteUnknown(result.UnknownCause{Cause: "unsupported"})
 		return triUnknown
 	case "all":
-		return e.all(condition["conditions"], root)
+		mark := len(e.causes)
+		return e.keepCausesIf(e.all(condition["conditions"], root), mark)
 	case "any":
-		return e.any(condition["conditions"], root)
+		mark := len(e.causes)
+		return e.keepCausesIf(e.any(condition["conditions"], root), mark)
 	case "not":
 		switch e.condition(condition["condition"], root) {
 		case triTrue:
@@ -95,26 +229,62 @@ func (e *evaluator) condition(node any, root any) tri {
 	case "evidence-present":
 		name, ok := condition["evidenceRequirement"].(string)
 		if !ok {
+			e.noteUnknown(result.UnknownCause{Cause: "unsupported"})
 			return triUnknown
 		}
 		presence, declared := e.evidence[name]
-		if !declared {
+		if !declared || presence == triUnknown {
+			e.noteUnknown(result.UnknownCause{EvidenceRequirement: name, Cause: "unknown"})
 			return triUnknown
 		}
 		return presence
 	case "exists", "every":
 		if !e.quantifiers {
+			e.noteUnknown(result.UnknownCause{Cause: "unsupported"})
 			return triUnknown
 		}
-		return e.quantify(condition, root)
+		return e.withinCollection(condition, func() tri { return e.quantify(condition, root) })
 	case "uniform":
 		if !e.quantifiers {
+			e.noteUnknown(result.UnknownCause{Cause: "unsupported"})
 			return triUnknown
 		}
-		return e.uniform(condition, root)
+		return e.withinCollection(condition, func() tri { return e.uniform(condition, root) })
 	default:
+		e.noteUnknown(result.UnknownCause{Cause: "unsupported"})
 		return triUnknown
 	}
+}
+
+// withinCollection runs one draft RFC 0008 aggregate and labels what its
+// element-level leaves recorded with the aggregate's collection pointer, since
+// their paths are relative to an element rather than to the facts document. A
+// label already set by an inner aggregate is kept, so the innermost collection
+// names each leaf. An unknown the aggregate's own verdict overrode is discarded
+// as it is for all and any.
+func (e *evaluator) withinCollection(node map[string]any, run func() tri) tri {
+	collection, _ := node["path"].(string)
+	causeMark, mismatchMark := len(e.causes), len(e.mismatches)
+	e.collectionFailure = nil
+	verdict := run()
+	for index := causeMark; index < len(e.causes); index++ {
+		if e.causes[index].Within == nil && e.causes[index].Path != nil {
+			e.causes[index].Within = pointer(collection)
+		}
+	}
+	for index := mismatchMark; index < len(e.mismatches); index++ {
+		if e.mismatches[index].Within == nil {
+			e.mismatches[index].Within = pointer(collection)
+		}
+	}
+	// The collection pointer itself is resolved against the aggregate's own
+	// root, not an element, so its failure is added after the labelling and is
+	// labelled only by an enclosing aggregate, if there is one.
+	if e.collectionFailure != nil {
+		e.noteUnknown(*e.collectionFailure)
+		e.collectionFailure = nil
+	}
+	return e.keepCausesIf(verdict, causeMark)
 }
 
 // all is strong three-valued conjunction (§7.1): false if any child is
@@ -169,10 +339,12 @@ func (e *evaluator) any(children any, root any) tri {
 func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	path, ok := condition["path"].(string)
 	if !ok {
+		e.noteUnknown(result.UnknownCause{Cause: "unsupported"})
 		return triUnknown
 	}
 	value, resolved := e.resolve(root, path)
 	if !resolved {
+		e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "absent"})
 		return triUnknown
 	}
 	operand := condition["value"]
@@ -180,6 +352,7 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	if orderedOperators[operator] {
 		comparison, comparable := decimalCompare(value, operand)
 		if !comparable {
+			e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "not-comparable", FactType: jsonType(value)})
 			return triUnknown
 		}
 		switch operator {
@@ -195,16 +368,20 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	}
 	switch operator {
 	case "equals":
+		e.noteTypeMismatch(path, operator, value, []any{operand})
 		return triFromBool(jsonEqual(value, operand))
 	case "not-equals":
 		// §7.4: equality is total over carrier-valid JSON, so not-equals is
 		// simply its Boolean inverse.
+		e.noteTypeMismatch(path, operator, value, []any{operand})
 		return triFromBool(!jsonEqual(value, operand))
 	case "in":
 		items, ok := operand.([]any)
 		if !ok {
+			e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "unsupported"})
 			return triUnknown
 		}
+		e.noteTypeMismatch(path, operator, value, items)
 		for _, item := range items {
 			if jsonEqual(value, item) {
 				return triTrue
@@ -212,8 +389,32 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 		}
 		return triFalse
 	default:
+		e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "unsupported"})
 		return triUnknown
 	}
+}
+
+// noteTypeMismatch records an equality comparison whose fact value has a JSON
+// type none of the operand values has (ADR-0040). §7.4 equality never coerces
+// between types, so such a comparison could not have been equal whatever the
+// values were. An in whose operand is empty states no type and records nothing.
+func (e *evaluator) noteTypeMismatch(path, operator string, value any, operands []any) {
+	if len(operands) == 0 {
+		return
+	}
+	factType := jsonType(value)
+	var operandTypes []string
+	for _, operand := range operands {
+		if kind := jsonType(operand); !slices.Contains(operandTypes, kind) {
+			operandTypes = append(operandTypes, kind)
+		}
+	}
+	if slices.Contains(operandTypes, factType) {
+		return
+	}
+	e.mismatches = append(e.mismatches, result.TypeMismatch{
+		Path: path, Operator: operator, FactType: factType, OperandTypes: operandTypes,
+	})
 }
 
 // orderedOperators is §7.4's ordered-comparison operator set: the operators

@@ -186,6 +186,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 	citesPath := ""
 	supported := []string{}
 	configPath := ""
+	rehearsal := false
 	command := &cobra.Command{
 		Use:   "evaluate <graph-or->",
 		Short: "EXPERIMENTAL SURFACE: evaluate every node of one graph in dependency order",
@@ -208,7 +209,11 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			"correct (§3.5). Producing a composite exits 0. Under configVersion \"3\" a project may declare an " +
 			"audit directory (ADR-0018), and this verb then appends one record per node plus one for the " +
 			"composite headline; experimental graph test runs the same nodes over the same project and records " +
-			"nothing, because a matrix row is a check on the graph rather than a decision the project took.",
+			"nothing, because a matrix row is a check on the graph rather than a decision the project took. " +
+			"--rehearsal declares one run a rehearsal, as experimental evaluate --rehearsal does (ADR-0028, " +
+			"ADR-0041): the nodes evaluate identically, no record is appended for any node or for the composite, " +
+			"no reviewed set is consulted for the configuration, the graph or any node's pack, and the payload " +
+			"carries \"rehearsal\": true.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			const commandName = "experimental graph evaluate"
@@ -244,44 +249,53 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				}
 				inputs = data
 			}
-			// The law this run would apply is held to the reviewed set before
-			// any node evaluates (ADR-0019): the configuration, every node's
-			// declared pack, and the graph document itself when the argument
-			// names one the configuration declares. A graph document that is
-			// not declared is a draft — evaluated, never refused for being
-			// unlocked, and recorded as a draft run.
-			auditWriter := loaded.AuditWriter()
-			// One read of the reviewed set for the whole run. The configuration
-			// and the graph document are checked against it here; each node's
-			// pack is checked against the same retained revision where its bytes
-			// are read, inside the run. Reading twice could see two revisions,
-			// and a run that passed one check against each would record a review
-			// no single reviewed set ever declared.
-			set, lockFailure := lock.Open(loaded)
-			if lockFailure != nil {
-				return a.lockFailure(commandName, format, lockFailure)
-			}
-			applied, declared := appliedGraph(loaded, document, graphPath)
-			reviewed, lockFailure := set.Consult(loaded, applied, !declared)
-			if lockFailure != nil {
-				return a.lockFailure(commandName, format, lockFailure)
-			}
-			auditWriter.UnderLaw(reviewed, set.Provenance())
-			nodeCheck := a.nodeCheck(loaded, set)
-			output, evaluateFailure := graph.Evaluate(loaded, evaluation.NewEngine(a.engine), document, graphPath, inputs, inputsPath != "", graph.Options{
+			// On an ordinary run the law it would apply is held to the reviewed
+			// set before any node evaluates (ADR-0019): the configuration, every
+			// node's declared pack, and the graph document itself when the
+			// argument names one the configuration declares. A graph document
+			// that is not declared is a draft — evaluated, never refused for
+			// being unlocked, and recorded as a draft run. A declared rehearsal
+			// does neither, below.
+			options := graph.Options{
 				Command:             commandName,
 				SupportedExtensions: supported,
+				Cites:               cites,
+			}
+			// A declared rehearsal consults no reviewed set and appends no
+			// record, for any node or for the composite: the standing
+			// experimental graph test has, extended to one declared run
+			// (ADR-0028, ADR-0041). It leaves Audit and LawCheck nil, as that
+			// verb does, and its payload says what it is.
+			if !rehearsal {
+				auditWriter := loaded.AuditWriter()
+				// One read of the reviewed set for the whole run. The configuration
+				// and the graph document are checked against it here; each node's
+				// pack is checked against the same retained revision where its bytes
+				// are read, inside the run. Reading twice could see two revisions,
+				// and a run that passed one check against each would record a review
+				// no single reviewed set ever declared.
+				set, lockFailure := lock.Open(loaded)
+				if lockFailure != nil {
+					return a.lockFailure(commandName, format, lockFailure)
+				}
+				applied, declared := appliedGraph(loaded, document, graphPath)
+				reviewed, lockFailure := set.Consult(loaded, applied, !declared)
+				if lockFailure != nil {
+					return a.lockFailure(commandName, format, lockFailure)
+				}
+				auditWriter.UnderLaw(reviewed, set.Provenance())
 				// This verb records and experimental graph test does not,
 				// though both run the same evaluator over the same project: a
 				// matrix row is a check on a graph, not a decision the project
 				// took (ADR-0018).
-				Audit:    auditWriter,
-				Cites:    cites,
-				LawCheck: nodeCheck,
-			})
+				options.Audit = auditWriter
+				options.LawCheck = a.nodeCheck(loaded, set)
+			}
+			output, evaluateFailure := graph.Evaluate(loaded, evaluation.NewEngine(a.engine), document, graphPath, inputs, inputsPath != "", options)
 			if evaluateFailure != nil {
 				return a.evaluationFailure(commandName, format, evaluateFailure)
 			}
+			output.Rehearsal = rehearsal
 			if err := a.renderGraphEvaluation(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}
@@ -293,6 +307,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 	command.Flags().StringVar(&citesPath, "cites", citesPath, "optional citations document, a file path: a JSON array of the gateway receipts this run relied on, each {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} as the gateway's action receipt cites them (ADR-0033); held to that shape and recorded as given on every record of the run, node and composite alike; nothing is verified and no store is read")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, applied to every node (repeatable)")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().BoolVar(&rehearsal, "rehearsal", rehearsal, "declare this run a rehearsal, not a decision: every node evaluates identically, but no audit record is appended for any node or the composite (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing experimental graph test already has -- and the payload carries \"rehearsal\": true (ADR-0041)")
 	return command
 }
 

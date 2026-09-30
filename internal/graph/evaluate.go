@@ -30,8 +30,9 @@ type Options struct {
 	// Audit is the trail this run's records are appended to, or nil for a run
 	// that records nothing. It is a field rather than something derived from
 	// the project, because the project is live on both graph paths and only
-	// one of them is a decision: experimental graph evaluate sets it and
-	// experimental graph test does not, so a matrix run over the same graph,
+	// one of them is a decision: an ordinary experimental graph evaluate sets
+	// it, and experimental graph test and a declared graph rehearsal
+	// (ADR-0041) do not, so a matrix run or a rehearsal over the same graph,
 	// with the same configuration, records nothing.
 	Audit *audit.Writer
 
@@ -393,6 +394,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			EvidenceFeeds: evidenceFeeds,
 			Disposition:   evaluated.Disposition,
 			HandoffTarget: evaluated.HandoffTarget,
+			UnmetEvidence: evaluated.UnmetEvidence,
 			Trace:         evaluated.Trace,
 		})
 	}

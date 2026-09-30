@@ -104,7 +104,7 @@ func TestExperimentalEvaluateRFC0016OutcomeValuesFlag(t *testing.T) {
 		"disposition: outcome approve-refund\n" +
 		"value: currency = \"CAD\"\n" +
 		"value: refundAmount = \"149.50\"\n" +
-		"trace: exception goodwill-override: unknown onUnknown=ignore\n" +
+		"trace: exception goodwill-override: unknown onUnknown=ignore [fact /override/goodwill absent]\n" +
 		"trace: rule small-refund-in-good-standing: true outcome=approve-refund\n" +
 		"trace: outcome-value currency: resolved outcome=approve-refund\n" +
 		"trace: outcome-value refundAmount: resolved outcome=approve-refund\n"
