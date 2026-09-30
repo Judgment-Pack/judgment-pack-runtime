@@ -4,6 +4,15 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`packs test --require-matrix`, and `require_matrix` on `experimental_test_packs`** (ADR-0042;
+  #179). A run can now require every selected pack to have a matrix. A selected pack that declares
+  none is then reported `mismatch` with a detail saying so, the run's status is `mismatch`, and the
+  CLI exits 1. Without the opt-in such a pack is reported `skipped`, as before, and a run whose
+  other packs passed still exits 0. The payload carries `requireMatrix: true` exactly when asked:
+  additive output under VERSIONING.md's MINOR rule, and `outputVersion` stays `"2"`. The MCP
+  argument is a strict boolean; null and every other type are refused. Coverage still never gates
+  (ADR-0014).
+
 - **`packs suggest --base` keeps the base row's evidence** (#177). A candidate made from a base row
   carried the row's facts and dropped its `evidenceAvailability`. On the specification's
   `minimal-expense-approval`, with a base row that marks both required requirements `present`, every

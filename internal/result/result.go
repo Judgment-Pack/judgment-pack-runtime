@@ -1280,19 +1280,23 @@ type OriginCount struct {
 // additive member, so outputVersion stays "2" by the same two VERSIONING.md
 // rules ADR-0012 cites.
 type PackTest struct {
-	OutputVersion             string          `json:"outputVersion"`
-	Tool                      Tool            `json:"tool"`
-	Command                   string          `json:"command"`
-	Status                    string          `json:"status"`
-	Experimental              bool            `json:"experimental"`
-	EvaluatorSpecVersion      string          `json:"evaluatorSpecVersion"`
-	ConformanceClaimReference string          `json:"conformanceClaimReference"`
-	Label                     string          `json:"label"`
-	Kind                      string          `json:"kind"`
-	ConfigPath                string          `json:"configPath"`
-	ConfigVersion             string          `json:"configVersion"`
-	Summary                   SuiteSummary    `json:"summary"`
-	Packs                     []PackTestEntry `json:"packs"`
+	OutputVersion             string `json:"outputVersion"`
+	Tool                      Tool   `json:"tool"`
+	Command                   string `json:"command"`
+	Status                    string `json:"status"`
+	Experimental              bool   `json:"experimental"`
+	EvaluatorSpecVersion      string `json:"evaluatorSpecVersion"`
+	ConformanceClaimReference string `json:"conformanceClaimReference"`
+	Label                     string `json:"label"`
+	Kind                      string `json:"kind"`
+	ConfigPath                string `json:"configPath"`
+	ConfigVersion             string `json:"configVersion"`
+	// RequireMatrix is true exactly when the caller asked that a declared pack
+	// with no matrix fail the run rather than be skipped (ADR-0042). Absent
+	// otherwise, so a run that did not ask reads as it did before.
+	RequireMatrix bool            `json:"requireMatrix,omitempty"`
+	Summary       SuiteSummary    `json:"summary"`
+	Packs         []PackTestEntry `json:"packs"`
 }
 
 // PackSuggestionLabel labels every packs suggest report with what the run

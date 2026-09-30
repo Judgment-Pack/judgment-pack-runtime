@@ -603,6 +603,7 @@ func (a *App) packsTestCommand() *cobra.Command {
 	format := "human"
 	id := ""
 	configPath := ""
+	requireMatrix := false
 	command := &cobra.Command{
 		Use:   "test",
 		Short: "EXPERIMENTAL SURFACE: run each pack's instance matrix through the evaluator",
@@ -626,8 +627,10 @@ func (a *App) packsTestCommand() *cobra.Command {
 			"implementation, and no row is an authorization or a statement that acting on a disposition is correct " +
 			"(§3.5). A pack that declares no matrix is reported as skipped and never as passed, and a run in which " +
 			"no row ran at all is reported skipped rather than passed: a green gate over zero rows would say a " +
-			"project was tested when nothing was. Exit 0 when every row matched its expectation, 1 when any did " +
-			"not and 1 when no row ran.",
+			"project was tested when nothing was. With --require-matrix, a selected pack that declares no matrix " +
+			"fails the run instead of being skipped (ADR-0042), and the payload carries requireMatrix: true. Exit " +
+			"0 when every row matched its expectation, 1 when any did not, 1 when no row ran, and 1 under " +
+			"--require-matrix when a selected pack declares no matrix.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if err := validateFormat(format); err != nil {
@@ -638,7 +641,7 @@ func (a *App) packsTestCommand() *cobra.Command {
 				return failure
 			}
 			defer loaded.Close()
-			output, projectFailure := loaded.Test(evaluation.NewEngine(a.engine), id, "packs test")
+			output, projectFailure := loaded.TestWith(evaluation.NewEngine(a.engine), id, "packs test", project.TestOptions{RequireMatrix: requireMatrix})
 			if projectFailure != nil {
 				return a.projectFailure("packs test", format, projectFailure)
 			}
@@ -655,6 +658,7 @@ func (a *App) packsTestCommand() *cobra.Command {
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&id, "id", id, "run one declared pack's matrix by its decision id instead of all of them")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().BoolVar(&requireMatrix, "require-matrix", requireMatrix, "fail the run when a selected pack declares no matrix, instead of reporting it skipped (ADR-0042)")
 	return command
 }
 

@@ -46,6 +46,22 @@ import (
 // coverage it moves no status and no exit code, and unlike coverage there is
 // nothing here to satisfy.
 func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result.PackTest, *Failure) {
+	return p.TestWith(evaluator, id, command, TestOptions{})
+}
+
+// TestOptions are a packs test run's caller-chosen options.
+type TestOptions struct {
+	// RequireMatrix makes a declared pack with no matrix fail the run instead
+	// of being skipped (ADR-0042). It is the caller's opt-in, per run: the
+	// default stays skipped, because a project may declare a pack before it
+	// has written its rows, and ADR-0014's rule that nothing derived gates is
+	// untouched — a missing matrix is a declared pack that nothing checks, not a
+	// probe the pack's content derived.
+	RequireMatrix bool
+}
+
+// TestWith is Test with options.
+func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, options TestOptions) (result.PackTest, *Failure) {
 	selected, failure := p.selection(id)
 	if failure != nil {
 		return result.PackTest{}, failure
@@ -62,6 +78,7 @@ func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result
 		Kind:                      result.ProjectKind,
 		ConfigPath:                p.ConfigPath,
 		ConfigVersion:             p.Config.ConfigVersion,
+		RequireMatrix:             options.RequireMatrix,
 		Packs:                     make([]result.PackTestEntry, 0, len(selected)),
 	}
 	// The aggregate handoff-target budget is one counter for the whole run, not
@@ -72,6 +89,10 @@ func (p *Project) Test(evaluator *evaluation.Engine, id, command string) (result
 		entry, failure := p.testPack(evaluator, packID, p.Config.Packs[packID], command, &spent)
 		if failure != nil {
 			return result.PackTest{}, failure
+		}
+		if options.RequireMatrix && p.Config.Packs[packID].Matrix == "" {
+			entry.Status = "mismatch"
+			entry.Detail = "The entry declares no matrix, and this run requires every selected pack to have one, so the pack has not passed."
 		}
 		output.Summary.Total += entry.Summary.Total
 		output.Summary.Passed += entry.Summary.Passed

@@ -181,12 +181,13 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "experimental_test_packs",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every declared pack's instance matrix through this runtime's evaluator and report every row, or one pack's matrix by its decision id in \"pack_id\". A row is judged exactly as a row of the bundled evaluation corpus is, by the same code: the RFC 8785 canonical §8.3 disposition compared byte for byte against the row's, or the §8.4 error class and phase the row expects. Beside a disposition a row may declare one further expectation, expectedHandoffTarget (ADR-0025): an object naming kind and name, or the literal null for no target at all, compared against the handoffTarget §8.3 keeps outside the disposition and this runtime reports beside it. It is optional -- a row that omits it is judged exactly as it was before the member existed, for a matrix that is otherwise valid (member names are now held to their exact spelling rather than case-folded, an unpaired surrogate escape is refused, and four representations a stored row could carry before are refused as the values they are -- reasons missing or null on an outcome, outcomeId as \"\" or null on a kind that admits none, triggeredBy as [] or null beside state none, and a retained exception-escalation reason without the requested handoff naming it that \u00a78.1 makes it (ADR-0035) -- so a document relying on any of them is newly refused) -- and where a row declares it, the row must declare matrixVersion \"2\", it is an expectation and gates like one, and it is reported as expectedHandoffTarget and actualHandoffTarget on that row (either a target rendering, the literal null, or \"unavailable\" where the evaluation was refused and reported nothing at all). A project matrix and the bundled corpus share the fields this comparator reads rather than being the same document: corpus admission additionally requires pack, origin, supportedExtensions, focus, and specSection, and its closed schema refuses expectedHandoffTarget. It holds the target the pack configures; no delivery is observed. The payload is the one jpack packs test --format json emits, with the derived coverage report (ADR-0014, ADR-0023) beside each pack's rows, informing and never gating. A mismatching or skipped run is a successful call reporting its status: a pack that declares no matrix is reported skipped and never passed, and a run in which no row ran at all is reported skipped rather than passed -- a green gate over zero rows would say a project was tested when nothing was. Tool errors are kept for what stopped the run from happening: a bad argument, an unknown decision id, a configuration that is there and will not load, or no configuration at all. A pack or matrix that cannot be read inside a run is that pack's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the pack a project wrote rather than about this implementation, and no row is an authorization or a statement that acting on a disposition is correct (§3.5). Call list_packs for the available decision ids. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007, ADR-0011): run every declared pack's instance matrix through this runtime's evaluator and report every row, or one pack's matrix by its decision id in \"pack_id\". A row is judged exactly as a row of the bundled evaluation corpus is, by the same code: the RFC 8785 canonical §8.3 disposition compared byte for byte against the row's, or the §8.4 error class and phase the row expects. Beside a disposition a row may declare one further expectation, expectedHandoffTarget (ADR-0025): an object naming kind and name, or the literal null for no target at all, compared against the handoffTarget §8.3 keeps outside the disposition and this runtime reports beside it. It is optional -- a row that omits it is judged exactly as it was before the member existed, for a matrix that is otherwise valid (member names are now held to their exact spelling rather than case-folded, an unpaired surrogate escape is refused, and four representations a stored row could carry before are refused as the values they are -- reasons missing or null on an outcome, outcomeId as \"\" or null on a kind that admits none, triggeredBy as [] or null beside state none, and a retained exception-escalation reason without the requested handoff naming it that \u00a78.1 makes it (ADR-0035) -- so a document relying on any of them is newly refused) -- and where a row declares it, the row must declare matrixVersion \"2\", it is an expectation and gates like one, and it is reported as expectedHandoffTarget and actualHandoffTarget on that row (either a target rendering, the literal null, or \"unavailable\" where the evaluation was refused and reported nothing at all). A project matrix and the bundled corpus share the fields this comparator reads rather than being the same document: corpus admission additionally requires pack, origin, supportedExtensions, focus, and specSection, and its closed schema refuses expectedHandoffTarget. It holds the target the pack configures; no delivery is observed. The payload is the one jpack packs test --format json emits, with the derived coverage report (ADR-0014, ADR-0023) beside each pack's rows, informing and never gating. A mismatching or skipped run is a successful call reporting its status: a pack that declares no matrix is reported skipped and never passed (or mismatch when require_matrix is true), and a run in which no row ran at all is reported skipped rather than passed -- a green gate over zero rows would say a project was tested when nothing was. Tool errors are kept for what stopped the run from happening: a bad argument, an unknown decision id, a configuration that is there and will not load, or no configuration at all. A pack or matrix that cannot be read inside a run is that pack's own in-band report -- a mismatch whose detail names the failure, exactly as the CLI reports it. This tool reads the selected configuration's project tree (the JPACK_CONFIG file if that variable is set, otherwise jpack.json in the directory this server was launched in), holds no credential, opens no connection, and writes nothing at all: a matrix row is a rehearsal, not a decision, so no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019). What it reports is what one project's own rows did -- evidence about the pack a project wrote rather than about this implementation, and no row is an authorization or a statement that acting on a disposition is correct (§3.5). Call list_packs for the available decision ids. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. This surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
 				"properties": map[string]any{
-					"pack_id": map[string]any{"type": "string", "description": "A decision id declared in the project's jpack.json: run only that pack's matrix. Omit the key to run every declared pack; call list_packs for the available ids."},
+					"pack_id":        map[string]any{"type": "string", "description": "A decision id declared in the project's jpack.json: run only that pack's matrix. Omit the key to run every declared pack; call list_packs for the available ids."},
+					"require_matrix": map[string]any{"type": "boolean", "description": "When true, a selected pack that declares no matrix fails the run (its entry and the run report mismatch) instead of being skipped, and the payload carries requireMatrix: true (ADR-0042). Omit it, or pass false, for the default: such a pack is skipped."},
 				},
 			},
 		},
@@ -638,7 +639,8 @@ const testPacksCommand = "mcp experimental_test_packs"
 // that computed an empty id must not silently get a whole-project run — and
 // omitting the key is the only form "run every declared pack" takes.
 type testPacksArguments struct {
-	PackID json.RawMessage `json:"pack_id"`
+	PackID        json.RawMessage `json:"pack_id"`
+	RequireMatrix json.RawMessage `json:"require_matrix"`
 }
 
 // toolExperimentalTestPacks runs declared instance matrices through the
@@ -686,16 +688,20 @@ func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 		// against an advertised additionalProperties:false that means the
 		// exact spelling. Check member names exactly first, as the other
 		// argument-taking tools do.
-		if message := exactMembers("experimental_test_packs", rawArgs, "pack_id"); message != "" {
+		if message := exactMembers("experimental_test_packs", rawArgs, "pack_id", "require_matrix"); message != "" {
 			return toolError(message)
 		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
-			return toolError(`The "experimental_test_packs" arguments must be an object with an optional string "pack_id"; unknown keys are rejected.`)
+			return toolError(`The "experimental_test_packs" arguments must be an object with an optional string "pack_id" and an optional boolean "require_matrix"; unknown keys are rejected.`)
 		}
 	}
 	packID, packIDPresent, argumentError := textArgument("pack_id", args.PackID)
+	if argumentError != "" {
+		return toolError(argumentError)
+	}
+	requireMatrix, argumentError := boolArgument("require_matrix", args.RequireMatrix)
 	if argumentError != "" {
 		return toolError(argumentError)
 	}
@@ -714,7 +720,7 @@ func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 		return toolError(failure.Message)
 	}
 	defer loaded.Close()
-	output, projectFailure := loaded.Test(evaluation.NewEngine(s.engine), packID, testPacksCommand)
+	output, projectFailure := loaded.TestWith(evaluation.NewEngine(s.engine), packID, testPacksCommand, project.TestOptions{RequireMatrix: requireMatrix})
 	if projectFailure != nil {
 		return toolError(projectFailure.Message)
 	}

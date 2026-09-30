@@ -137,3 +137,4 @@ authority, and following it confers no conformance status on anything.
 | [0037](0037-report-pack-independent-unreachable-expectations.md) | Report an expectation no pack can reach under its own code, in the admission tool alone | accepted |
 | [0038](0038-refuse-malformed-unicode-at-the-stdio-transport.md) | Refuse malformed Unicode at the stdio transport, for every string argument and everywhere else in the request line | accepted |
 | [0039](0039-draft-rfc-outcome-values-prototype.md) | Prototype spec RFC 0016 outcome values behind an opt-in experimental flag | accepted |
+| [0042](0042-let-packs-test-require-a-matrix.md) | Let a packs test run require every selected pack to have a matrix | accepted |
