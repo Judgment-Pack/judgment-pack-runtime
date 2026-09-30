@@ -27,8 +27,9 @@
 // one value spelled two ways leave two differently spelled records. Nothing
 // about replay is lost, because evaluation is a function of the value and not of
 // its spelling; but a reader who wants the exact bytes a caller sent must keep
-// those bytes itself, and the pack and graph digests are the only places this
-// trail speaks about bytes at all.
+// those bytes itself, and the pack and graph digests, with the executable's
+// digest on each record's tool, are the only places this trail speaks about
+// bytes at all.
 //
 // Three things a record is not. It is not on the deterministic payload path:
 // every record carries a wall-clock timestamp, which nothing in an evaluation
@@ -72,6 +73,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"regexp"
@@ -79,6 +81,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -158,11 +161,11 @@ type Record struct {
 // Tool is the build that wrote a record: the name and version every payload
 // carries, and the SHA-256 of the executable that ran (ADR-0043). The digest is
 // the third fact of the replay tuple docs/building-with-packs.md names, beside
-// the pack's digest and the version, and the only one a version string cannot
-// stand in for: a version names a release, and the digest names the bytes. It
-// is the running program's account of itself, so it is evidence of which build
-// ran and not proof of it: a modified binary can report any digest it likes.
-// Where the executable cannot be read, the member is omitted and the record is
+// the pack's digest and the version, and a version string cannot stand in for
+// it: a version names a release, and the digest names the bytes. It is the
+// running program's account of itself, so it is evidence of which build ran and
+// not proof of it: a modified binary can report any digest it likes. Where the
+// executable cannot be read whole, the member is omitted and the record is
 // otherwise whole. It is additive, so recordVersion stays "1".
 type Tool struct {
 	Name    string `json:"name"`
@@ -171,22 +174,39 @@ type Tool struct {
 }
 
 // toolDigest answers the running executable's digest, or "" when it cannot be
-// read. It is computed once per process, the first time a record is stamped,
-// so an invocation that records nothing never reads its own executable, and a
-// long-lived server hashes itself once however many records it writes. A test
-// replaces it.
+// read whole. It is computed once per process, the first time a record is
+// composed, so an invocation that composes no record never reads its own
+// executable, and a long-lived server hashes itself once however many records
+// it writes. A graph run composes its node records as the nodes complete, so a
+// graph run refused after its first node has read the executable though it
+// writes nothing. A test replaces it.
 var toolDigest = sync.OnceValue(func() string { return digestOf(openRunningExecutable) })
 
-// openRunningExecutable opens the program that is running. On Linux that is
-// /proc/self/exe, which names the running file itself: a binary replaced on disk
-// after this process started, as an upgrade under a running server does, is
-// still the one hashed. Elsewhere it is the path os.Executable reports, which
-// names whatever is at that path when the first record is written.
-func openRunningExecutable() (io.ReadCloser, error) {
+// executableReads counts the times openRunningExecutable has run in this
+// process, so a test can hold toolDigest to reading once, and not before a
+// record is composed.
+var executableReads atomic.Int64
+
+// procSelfExe is the Linux name of the running program's own file. A test
+// replaces it with a name that resolves to nothing.
+var procSelfExe = "/proc/self/exe"
+
+// openRunningExecutable opens the program that is running.
+//
+// On Linux that is /proc/self/exe, which names the running file itself: a binary
+// replaced on disk after this process started, as an upgrade under a running
+// server does, is still the one hashed. If it cannot be opened there is no
+// fallback, because the path os.Executable reports may by then name another
+// file, and a digest of that file would name bytes that did not run.
+//
+// Elsewhere it is the path os.Executable reports, read when the first record is
+// composed. That is the running program unless the path was replaced or
+// retargeted after the process started, in which case the digest names what is
+// at the path then. ADR-0043 states this limit.
+func openRunningExecutable() (executableFile, error) {
+	executableReads.Add(1)
 	if runtime.GOOS == "linux" {
-		if file, err := os.Open("/proc/self/exe"); err == nil {
-			return file, nil
-		}
+		return os.Open(procSelfExe)
 	}
 	name, err := os.Executable()
 	if err != nil {
@@ -195,17 +215,34 @@ func openRunningExecutable() (io.ReadCloser, error) {
 	return os.Open(name)
 }
 
+// executableFile is what digestOf reads: an open file that can say its size.
+type executableFile interface {
+	io.ReadCloser
+	Stat() (fs.FileInfo, error)
+}
+
 // digestOf hashes what open yields, in the form Digest writes, or answers ""
-// when it cannot be opened or read to the end: a digest of part of a file is
-// not the digest of the file.
-func digestOf(open func() (io.ReadCloser, error)) string {
+// when it cannot be opened, read to the end, or read whole: a file whose size
+// or modification time changed while it was read, or that yielded a different
+// number of bytes than its size, is not one file's bytes, and a digest of it
+// would name nothing that ran.
+func digestOf(open func() (executableFile, error)) string {
 	file, err := open()
 	if err != nil {
 		return ""
 	}
 	defer file.Close()
+	before, err := file.Stat()
+	if err != nil {
+		return ""
+	}
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	read, err := io.Copy(hash, file)
+	if err != nil {
+		return ""
+	}
+	after, err := file.Stat()
+	if err != nil || read != before.Size() || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
 		return ""
 	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))

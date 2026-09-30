@@ -39,16 +39,24 @@ Chosen option: **A**.
 1. **The member.** A record's `tool` carries `digest`: `"sha256:"` and the lowercase hexadecimal
    SHA-256 of the executable's bytes, the form every other digest on the record takes. It is
    present on every record kind and every recording surface, because every record is stamped in one
-   place.
+   place. An evaluation record then carries the whole replay tuple. A graph composite carries no
+   pack, as before; its node records carry the packs, and replaying a graph run reads both.
 2. **Where the bytes come from.** On Linux the runtime reads `/proc/self/exe`, which names the running
-   file even when the path has since been replaced, as an upgrade under a running MCP server does.
-   Elsewhere it reads the path `os.Executable` reports, which names whatever is at that path when the
-   first record is written.
-3. **When.** Once per process, when the first record is stamped. An invocation that records nothing
-   never reads its own executable, and a long-lived server hashes itself once.
-4. **When it cannot.** Where the executable cannot be opened or read to the end, `digest` is omitted
-   and the record is otherwise whole. An absent member says nothing was established; an empty string
-   or a digest of part of a file would read as a digest.
+   file even when its path has since been replaced, as an upgrade under a running MCP server does.
+   If that cannot be opened there is no fallback: the path `os.Executable` reports may by then name
+   another file, and a digest of it would name bytes that did not run. Elsewhere the runtime reads
+   the path `os.Executable` reports, which is the running program unless that path was replaced or
+   retargeted after the process started; the digest then names what is at the path when the first
+   record is composed. That is a limit of those platforms, stated here rather than hidden.
+3. **When.** Once per process, when the first record is composed. An invocation that composes no
+   record never reads its own executable, and a long-lived server hashes itself once. A graph run
+   composes node records as its nodes complete, so a graph run refused after its first node has
+   read the executable though it writes nothing.
+4. **When it cannot.** Where the executable cannot be opened or read whole, `digest` is omitted and
+   the record is otherwise whole. A file whose size or modification time changed while it was read,
+   or that yielded a different number of bytes than its size, counts as not read whole. An absent
+   member says nothing was established; an empty string or a digest of part of a file would read as
+   a digest.
 5. **What it is.** The running program's account of itself: evidence of which build ran, not proof.
    A modified binary can report any digest it likes, as it can report any version. It is compared by
    nobody inside this runtime.
@@ -58,11 +66,13 @@ Chosen option: **A**.
 
 ### Consequences
 
-- Good, because a record now carries the whole replay tuple, and the guidance can say so.
+- Good, because an evaluation record now carries the whole replay tuple, and the guidance can say
+  so.
 - Good, because the fact is written by the process that ran, at the moment it ran, beside the other
   two.
-- Bad, because the first record of each process costs one read of the executable, in the tens of
-  milliseconds for a binary of this size.
+- Bad, because the first record of each process costs one read of the executable, in time
+  proportional to its size (a third of a second for a 256 MiB file, measured in review).
+- Bad, because outside Linux the digest can name a replaced file rather than the running one.
 - Neutral, because a build run from `go run` or a test binary names that binary, which is what ran.
 - Revisit if the runtime is ever distributed in a form where the running bytes are not one file.
 

@@ -7,10 +7,13 @@ All notable changes to tagged releases are documented here.
 - **An audit record names the executable that wrote it** (ADR-0043; #181). A record's `tool` member
   now carries `digest`, the SHA-256 of the running executable in the `sha256:` form, the third fact
   of the replay tuple `docs/building-with-packs.md` names beside the pack's digest and the version.
-  The runtime reads it once per process, when the first record is written (on Linux from
-  `/proc/self/exe`, so a binary replaced after start is still the one hashed), and omits the member
-  where the executable cannot be read. It is the program's account of itself, evidence and not
-  proof. The member is additive, so `recordVersion` stays `"1"`; payloads are unchanged.
+  The runtime reads it once per process, when the first record is composed. On Linux it reads
+  `/proc/self/exe`, so a binary replaced after start is still the one hashed, and it omits the
+  member rather than fall back to the path when that cannot be opened. Elsewhere it reads the path
+  the platform reports, which names a replaced file if the path was replaced after start. The member
+  is omitted wherever the executable cannot be read whole. It is the program's account of itself,
+  evidence and not proof. The member is additive, so `recordVersion` stays `"1"`; payloads are
+  unchanged.
 
 - **`packs test --require-matrix`, and `require_matrix` on `experimental_test_packs`** (ADR-0042;
   #179). A run can now require every selected pack to have a matrix. A selected pack that declares
