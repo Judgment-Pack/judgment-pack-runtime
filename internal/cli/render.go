@@ -142,10 +142,22 @@ func (a *App) renderExamples(format string, output result.Examples) error {
 	}
 	fmt.Fprintf(a.out, "JPS examples %s (%s)\n", display.Sanitize(output.SpecVersion), display.Sanitize(output.Provenance))
 	fmt.Fprintln(a.out, "version-pinned conformance fixtures, not authored templates")
+	a.renderExampleEvaluatorNote(output.SpecVersion, output.EvaluatorSpecVersion)
 	for _, example := range output.Examples {
 		fmt.Fprintf(a.out, "- %s: %s [%s]\n", display.Sanitize(example.Name), display.Sanitize(example.Focus), display.Sanitize(example.SpecSection))
 	}
 	return nil
+}
+
+// renderExampleEvaluatorNote says whether a pack made from these examples can be
+// evaluated as it stands. A document declaring another version is refused by the
+// evaluator (§11), and the one edit it needs is its specVersion.
+func (a *App) renderExampleEvaluatorNote(specVersion, evaluatorSpecVersion string) {
+	if specVersion == evaluatorSpecVersion {
+		fmt.Fprintf(a.out, "the evaluator admits %s: a pack made from this set needs no re-declaration\n", display.Sanitize(evaluatorSpecVersion))
+		return
+	}
+	fmt.Fprintf(a.out, "the evaluator admits only %s: re-declare specVersion before evaluating, or use --spec-version %s\n", display.Sanitize(evaluatorSpecVersion), display.Sanitize(evaluatorSpecVersion))
 }
 
 func (a *App) renderExample(format string, output result.Example) error {
@@ -153,6 +165,8 @@ func (a *App) renderExample(format string, output result.Example) error {
 		return a.writeJSON(output)
 	}
 	fmt.Fprintf(a.out, "JPS example %s\n", display.Sanitize(output.Name))
+	fmt.Fprintf(a.out, "declares: %s\n", display.Sanitize(output.SpecVersion))
+	a.renderExampleEvaluatorNote(output.SpecVersion, output.EvaluatorSpecVersion)
 	fmt.Fprintf(a.out, "focus: %s\n", display.Sanitize(output.Focus))
 	fmt.Fprintf(a.out, "spec: %s\n", display.Sanitize(output.SpecSection))
 	fmt.Fprintf(a.out, "sha256: %s\n", output.SHA256)

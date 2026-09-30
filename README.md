@@ -77,7 +77,7 @@ jpack version
 jpack spec validate <pack-or->
 jpack spec test-conformance [suite]
 jpack spec schema <spec-version>
-jpack spec examples [name]
+jpack spec examples [name] [--spec-version V]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
 jpack packs validate [--id X]
 jpack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)

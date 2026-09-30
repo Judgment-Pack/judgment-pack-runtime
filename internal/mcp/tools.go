@@ -90,11 +90,13 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "list_examples",
-			"description": "List the bundled valid JPS example documents: version-pinned conformance fixtures the runtime embeds and digest-locks, offered read-only as starting points for authoring. They are not authored templates. Use get_example to fetch one by name.",
+			"description": "List the bundled valid JPS example documents: version-pinned conformance fixtures the runtime embeds and digest-locks, offered read-only as starting points for authoring. They are not authored templates. Use get_example to fetch one by name. Each bundled version has its own set, and spec_version chooses it; with no argument the set is " + artifacts.DraftVersion + ". The evaluator admits only " + result.EvaluatorSpecVersion + " (Core §11), and the result names both versions: a pack made from an example of another version must have its specVersion re-declared before it is evaluated, so pass spec_version \"" + result.EvaluatorSpecVersion + "\" when you mean to evaluate what you author. That clears the evaluator's version check and nothing else: required-extension-supported declares a required extension, and the evaluator refuses it unless that extension is supported.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
-				"properties":           map[string]any{},
+				"properties": map[string]any{
+					"spec_version": map[string]any{"type": "string", "description": "Optional exact JPS version whose examples to list; defaults to " + artifacts.DraftVersion + ". The evaluator admits " + result.EvaluatorSpecVersion + "."},
+				},
 			},
 		},
 		{
@@ -105,7 +107,8 @@ func toolDefinitions() []map[string]any {
 				"additionalProperties": false,
 				"required":             []string{"name"},
 				"properties": map[string]any{
-					"name": map[string]any{"type": "string", "description": "The example name, as reported by list_examples (for example, minimal-expense-approval)."},
+					"name":         map[string]any{"type": "string", "description": "The example name, as reported by list_examples (for example, minimal-expense-approval)."},
+					"spec_version": map[string]any{"type": "string", "description": "Optional exact JPS version whose example to return; defaults to " + artifacts.DraftVersion + ". The evaluator admits " + result.EvaluatorSpecVersion + ", so pass \"" + result.EvaluatorSpecVersion + "\" for a document that needs no specVersion re-declaration before it is evaluated."},
 				},
 			},
 		},
@@ -254,10 +257,7 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		}
 		return s.toolDescribeRuntime(), nil
 	case "list_examples":
-		if message := noArguments("list_examples", params.Arguments); message != "" {
-			return toolError(message), nil
-		}
-		return s.toolListExamples(), nil
+		return s.toolListExamples(params.Arguments), nil
 	case "get_example":
 		return s.toolGetExample(params.Arguments), nil
 	case "list_packs":
@@ -381,10 +381,21 @@ func (s *Server) toolDescribeRuntime() any {
 	return toolResult(describe.Runtime(set, "mcp describe_runtime"))
 }
 
-func (s *Server) toolListExamples() any {
-	set, err := artifacts.Load(artifacts.DraftVersion)
-	if err != nil {
-		return toolError("The bundled artifact metadata is unavailable.")
+func (s *Server) toolListExamples(rawArgs json.RawMessage) any {
+	var args struct {
+		SpecVersion string `json:"spec_version"`
+	}
+	if len(rawArgs) > 0 {
+		if message := exactMembers("list_examples", rawArgs, "spec_version"); message != "" {
+			return toolError(message)
+		}
+		if err := json.Unmarshal(rawArgs, &args); err != nil {
+			return toolError(`The "list_examples" arguments must be an object with an optional string "spec_version".`)
+		}
+	}
+	set, failure := loadExampleSet(args.SpecVersion)
+	if failure != nil {
+		return failure
 	}
 	output, err := describe.Examples(set, "mcp list_examples")
 	if err != nil {
@@ -395,22 +406,23 @@ func (s *Server) toolListExamples() any {
 
 func (s *Server) toolGetExample(rawArgs json.RawMessage) any {
 	var args struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		SpecVersion string `json:"spec_version"`
 	}
 	if len(rawArgs) > 0 {
-		if message := exactMembers("get_example", rawArgs, "name"); message != "" {
+		if message := exactMembers("get_example", rawArgs, "name", "spec_version"); message != "" {
 			return toolError(message)
 		}
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
-			return toolError(`The "get_example" arguments must be an object with a string "name".`)
+			return toolError(`The "get_example" arguments must be an object with a string "name" and an optional string "spec_version".`)
 		}
 	}
 	if args.Name == "" {
 		return toolError(`The "name" argument is required; call list_examples for the available names.`)
 	}
-	set, err := artifacts.Load(artifacts.DraftVersion)
-	if err != nil {
-		return toolError("The bundled artifact metadata is unavailable.")
+	set, failure := loadExampleSet(args.SpecVersion)
+	if failure != nil {
+		return failure
 	}
 	meta, data, err := describe.Example(set, args.Name, "mcp get_example")
 	if err != nil {
@@ -425,6 +437,25 @@ func (s *Server) toolGetExample(rawArgs json.RawMessage) any {
 		"structuredContent": meta,
 		"isError":           false,
 	}
+}
+
+// loadExampleSet resolves the version an example tool was asked for: the default
+// set when none is named, as before spec_version existed, and otherwise exactly
+// the named one. A version this runtime does not bundle is refused in the words
+// get_schema uses, never answered with another version's examples.
+func loadExampleSet(specVersion string) (*artifacts.Set, any) {
+	if specVersion == "" {
+		specVersion = artifacts.DraftVersion
+	}
+	set, err := artifacts.Load(specVersion)
+	if err != nil {
+		var unsupported *artifacts.UnsupportedVersionError
+		if errors.As(err, &unsupported) {
+			return nil, toolError("The exact JPS specification version is not bundled with this runtime.")
+		}
+		return nil, toolError("The bundled artifact metadata is unavailable.")
+	}
+	return set, nil
 }
 
 // The project-convention surfaces (ADR-0012). Everything they read goes through
