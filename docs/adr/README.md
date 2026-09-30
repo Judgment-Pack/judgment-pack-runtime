@@ -139,3 +139,4 @@ authority, and following it confers no conformance status on anything.
 | [0039](0039-draft-rfc-outcome-values-prototype.md) | Prototype spec RFC 0016 outcome values behind an opt-in experimental flag | accepted |
 | [0040](0040-say-what-left-a-result-unknown.md) | Say what left a result unknown: causes and cross-type comparisons in the trace, unmet evidence beside it | accepted |
 | [0041](0041-declare-a-graph-evaluation-a-rehearsal.md) | Declare a graph evaluation a rehearsal, on ADR-0028's terms | accepted |
+| [0042](0042-let-packs-test-require-a-matrix.md) | Let a packs test run require every selected pack to have a matrix | accepted |

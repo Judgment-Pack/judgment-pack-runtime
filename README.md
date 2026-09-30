@@ -80,7 +80,7 @@ jpack spec schema <spec-version>
 jpack spec examples [name] [--spec-version V]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
 jpack packs validate [--id X]
-jpack packs test [--id X]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack packs test [--id X] [--require-matrix]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack packs suggest [--id X] [--base ROW] [--write F|-] [--max N] [--include-hugs]   (candidate row INPUTS, never rows; ADR-0024)
 jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
 jpack packs verify      (check the project against that reviewed set)
@@ -575,9 +575,10 @@ claim that a row moves between them untouched. Corpus admission additionally req
 members (`pack`, `origin`, `supportedExtensions`, `focus`, `specSection`), and its closed schema
 forbids `expectedHandoffTarget` and `cites`, so lifting a project row means supplying those and
 removing any target assertion and any citations. Both commands exit `1` on any failure, a pack with no
-matrix is reported *skipped* rather than passed, and a `packs test` run in which no row ran at all
-is reported *skipped* and exits `1`: a green gate over zero rows would say a project was tested when
-nothing was. A new project may start with an empty `packs` object: inventory and structural
+matrix is reported *skipped* rather than passed by default (with `packs test --require-matrix` it is
+reported *mismatch* instead; ADR-0042), and a `packs test` run in which no row ran at all is reported
+*skipped* and exits `1` unless a mismatch was found: a green gate over zero rows would say a project
+was tested when nothing was. A new project may start with an empty `packs` object: inventory and structural
 validation accept it, while `packs test` remains skipped with exit `1`. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no
 source feeds raises no error anywhere — the condition is unknowable, every rule touching it
 escalates, and the system looks conservative rather than broken — so the lint holds every consulted

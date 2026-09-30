@@ -482,9 +482,12 @@ loads as rows. `packs test` then runs every row. Both exit `1` on any failure. E
 reported with its status — `passed`, `failed`, or `skipped` — so you can tell a check that passed
 from one the configuration never asked for.
 
-A pack that declares no matrix is reported **skipped**, never passed — and a run in which no row ran
-at all is reported `skipped` and exits `1`, so a project with no matrices anywhere cannot get a green
-gate for a suite that tested nothing. The coverage report never moves the exit code: a green gate
+By default a pack that declares no matrix is reported **skipped**, never passed — and a run in which no
+row ran at all is reported `skipped` and exits `1` unless a mismatch was found, so a project with no
+matrices anywhere cannot get a green gate for a suite that tested nothing. A run where other packs' rows passed still exits `0` beside a
+pack with no matrix. To make the gate fail on such a pack, run `packs test --require-matrix`
+(`require_matrix: true` over MCP): the pack is then reported `mismatch` and the run exits `1`
+(ADR-0042). The coverage report never moves the exit code: a green gate
 with missing probes is a passing suite that has not probed everything, and the report says which.
 
 `packs verify` is there so a pull request that changes a pack and forgets `packs lock` fails the

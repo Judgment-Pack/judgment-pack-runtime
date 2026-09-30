@@ -4,6 +4,15 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`packs test --require-matrix`, and `require_matrix` on `experimental_test_packs`** (ADR-0042;
+  #179). A run can now require every selected pack to have a matrix. A selected pack that declares
+  none is then reported `mismatch` with a detail saying so, the run's status is `mismatch`, and the
+  CLI exits 1. Without the opt-in such a pack is reported `skipped`, as before, and a run whose
+  other packs passed still exits 0. The payload carries `requireMatrix: true` exactly when asked:
+  additive output under VERSIONING.md's MINOR rule, and `outputVersion` stays `"2"`. The MCP
+  argument is a strict boolean; null and every other type are refused. Coverage still never gates
+  (ADR-0014).
+
 - **`experimental graph evaluate --rehearsal`** (ADR-0041; #182). A graph run can now be declared a
   rehearsal on ADR-0028's terms: every node evaluates as it would otherwise, no audit record is
   appended for any node or for the composite, no reviewed set is consulted for the configuration,
