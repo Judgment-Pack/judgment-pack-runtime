@@ -206,7 +206,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			"and composition is the specification's RFC 0002, a draft proposal. The evaluator's conformance claim " +
 			"is stated, in full and only, in CONFORMANCE.md; this text states no part of it, and no result is an " +
 			"authorization, an executed action, or any statement about whether acting on any disposition is " +
-			"correct (§3.5). Producing a composite exits 0. Under configVersion \"3\" a project may declare an " +
+			"correct (§3.5). Producing a composite exits 0. From configVersion \"3\" a project may declare an " +
 			"audit directory (ADR-0018), and this verb then appends one record per node plus one for the " +
 			"composite headline; experimental graph test runs the same nodes over the same project and records " +
 			"nothing, because a matrix row is a check on the graph rather than a decision the project took. " +
@@ -286,7 +286,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				if lockFailure != nil {
 					return a.lockFailure(commandName, format, lockFailure)
 				}
-				if lockFailure := lock.RequireReviewed(loaded, reviewed); lockFailure != nil {
+				if lockFailure := lock.RequireReviewed(loaded, reviewed, declared); lockFailure != nil {
 					return a.lockFailure(commandName, format, lockFailure)
 				}
 				if reviewed != nil && *reviewed {

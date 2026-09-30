@@ -514,7 +514,8 @@ authoring. The payload's `reviewed` member says which of the two a run was (ADR-
 that wants drafts refused on its deciding surfaces sets `"requireReviewed": true` under
 configVersion `"4"`: every run that applies a draft, and every run while no lock exists, is then
 refused (`JPS-LOCK-REVIEW-REQUIRED`), and the author's loop moves to `--rehearsal`, which records
-nothing and consults no lock. `packs test`, `experimental graph test`, and `experimental evaluate-corpus` consult the
+nothing and consults no lock. It binds a caller that neither chooses the configuration a run reads
+nor can edit it, not whoever chooses it; `SECURITY.md` states the boundary. `packs test`, `experimental graph test`, and `experimental evaluate-corpus` consult the
 lock never — the author's loop is free and only decisions are classified, which is the same split
 the audit trail draws.
 

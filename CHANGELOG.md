@@ -17,9 +17,10 @@ All notable changes to tagged releases are documented here.
     surfaces then refuse, before evaluating, every run that applies a draft and every run while the
     project has no lock (`JPS-LOCK-REVIEW-REQUIRED`, exit 1, no record). Declared rehearsals are not
     refused.
-  - The member binds only a caller who cannot edit the project, such as an agent limited to the MCP
-    tools. Turning it off is an edit the lock records as drift for declared runs. `SECURITY.md`, the
-    README and the guide say so.
+  - The member binds only a caller who neither chooses the configuration a run reads nor can edit it
+    or the lock, such as an agent limited to the tools of an MCP server someone else launched. Naming
+    another configuration, or one that is not there, applies no requirement, and turning it off is an
+    edit the lock records as drift for declared runs. `SECURITY.md`, the README and the ADR say so.
   - The schema's `$id` is now `urn:judgmentpack:runtime:jpack-config:4`. Configurations under `"1"`
     to `"3"` read as before.
 

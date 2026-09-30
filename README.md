@@ -549,10 +549,11 @@ rehearsal consulted no lock and carries neither.
 **Requiring it.** A project whose `jpack.json` sets `"requireReviewed": true` (configVersion `"4"`,
 ADR-0044) has the deciding surfaces refuse, before evaluating, every run that applies a draft and
 every run while the project has no lock (`JPS-LOCK-REVIEW-REQUIRED`, exit 1). A declared rehearsal
-is not a decision and is not refused. This binds a caller that cannot edit the project, such as an
-agent limited to the MCP tools; it cannot bind whatever can edit `jpack.json` or the lock, and
-turning it off is itself an edit the lock records, so a by-id run is refused until the project
-locks again.
+is not a decision and is not refused. This binds a caller that neither chooses the configuration a
+run reads nor can edit it, such as an agent limited to the tools of an MCP server someone else
+launched. It cannot bind whoever chooses the configuration (`--config`, `JPACK_CONFIG`, the working
+directory) or can edit `jpack.json` or the lock, and turning it off is itself an edit the lock
+records, so a by-id run is refused until the project locks again.
 
 **What it is not.** It is not a wall. Anything that can edit a pack can run `packs lock` again, and
 this runtime cannot tell that from an author amending policy on purpose — they are the same act.

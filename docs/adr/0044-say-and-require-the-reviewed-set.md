@@ -65,11 +65,19 @@ Chosen option: **B**.
    id (or declare the reviewed set), or declare the run a rehearsal.
 4. **What it does not refuse.** A declared rehearsal is not a decision: it consults no reviewed set
    and records nothing, so it is not refused (ADR-0028, ADR-0041). The test surfaces are untouched.
-5. **Whom it binds.** A caller who cannot edit `jpack.json` or the lock, such as an agent limited to
-   the MCP tools or to the CLI's arguments. Whoever can edit them can turn it off. Because the lock
-   pins the configuration's digest, turning it off is itself drift that refuses every by-id run until
-   the project locks again, so the edit is recorded rather than silent, as every other amendment is.
-   `SECURITY.md` says so.
+5. **Whom it binds.** A caller who neither chooses which configuration a run reads nor can edit
+   that configuration or its lock, such as an agent limited to the tools of an MCP server someone
+   else launched. Whoever chooses the configuration (the `--config` argument, `JPACK_CONFIG`, the
+   working directory, the server's launch) chooses whether the requirement applies: naming another
+   configuration applies that one's rules, and naming a file that is not there means no project and
+   no requirement, as it always has. So a caller who controls the CLI's arguments is not bound.
+   Whoever can edit the configuration or the lock can turn it off; because the lock pins the
+   configuration's digest, turning it off is drift that refuses every by-id run until the project
+   locks again, so the edit is recorded rather than silent. `SECURITY.md` says so.
+6. **Declared law whose bytes never arrived.** A pack named by decision id that is over the byte
+   limit is not consulted against the lock, because there are no bytes to check; the evaluator
+   refuses it at that limit. It is not a draft, and the requirement does not call it one: with a
+   lock present it passes to that refusal, and with none it is refused for having no lock.
 
 This is a **partial supersession**, annotated in the index without editing either body:
 [ADR-0019](0019-reviewed-set-lock.md)'s determination that a draft is never refused for being
@@ -86,7 +94,8 @@ extended by `"4"`, as ADR-0018 extended ADR-0017's.
 - Bad, because a project that sets the member and has no lock refuses every deciding run until it
   runs `packs lock`; the refusal says so.
 - Bad, because the lock now has a mode in which it is a control, and a reader can over-read that. It
-  binds only callers who cannot edit the project, and the documents say so wherever they describe it.
+  binds only callers who neither choose the configuration nor can edit it or the lock, and the
+  documents say so wherever they describe it.
 - Revisit when the decision desk holds its own checkout (ADR-0019's first revisit condition): the
   member then protects a tree the deciding party does not write.
 

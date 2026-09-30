@@ -732,19 +732,29 @@ const ReviewRequiredCode = "JPS-LOCK-REVIEW-REQUIRED"
 // whose configuration sets requireReviewed (ADR-0044): nil when the run applies
 // the reviewed set, and otherwise the refusal, before any evaluation.
 //
-// reviewed is the bit Consult or DraftRun answered. True passes. False is a run
-// that applies a draft, which such a project refuses however the draft was
-// named. nil is a project with no lock at all, which has no reviewed set to
-// apply, so every deciding run is refused until one is declared. A declared
-// rehearsal is not a decision, consults no reviewed set, and never reaches
-// this: the surfaces skip it for a rehearsal, as they skip Consult.
+// reviewed is the bit Consult or DraftRun answered, and declared says the run
+// names declared law: a pack by decision id, or a graph the configuration
+// declares. True passes. A project with no lock has no reviewed set to apply,
+// so every deciding run is refused until one is declared. A run naming declared
+// law that is not reviewed was not consulted only because its bytes never
+// arrived -- a pack over the byte limit -- and the evaluator refuses it at that
+// limit, so it passes here. Anything else applies a draft, which such a project
+// refuses however it was named. A declared rehearsal is not a decision,
+// consults no reviewed set, and never reaches this: the surfaces skip it for a
+// rehearsal, as they skip Consult.
 //
-// It refuses only a caller who cannot edit the configuration or the lock.
-// Whoever can edit them can turn it off, and the lock records the
-// configuration's digest, so turning it off is itself an amendment a by-id run
-// is refused for until the project re-locks.
-func RequireReviewed(loaded *project.Project, reviewed *bool) *Failure {
+// It binds only as far as the configuration's selection and its files are
+// trusted. Whoever chooses which configuration a run reads -- the --config
+// argument, JPACK_CONFIG, the working directory, the MCP server's launch --
+// chooses whether this applies, and whoever can edit the configuration or the
+// lock can turn it off; the lock records the configuration's digest, so that
+// edit is itself an amendment a by-id run is refused for until the project
+// re-locks.
+func RequireReviewed(loaded *project.Project, reviewed *bool, declared bool) *Failure {
 	if loaded == nil || !loaded.Config.RequireReviewed || (reviewed != nil && *reviewed) {
+		return nil
+	}
+	if declared && loaded.HasLock() {
 		return nil
 	}
 	config := display.Sanitize(loaded.ConfigPath)

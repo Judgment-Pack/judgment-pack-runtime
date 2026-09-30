@@ -1,11 +1,14 @@
 package mcp
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -79,7 +82,7 @@ func reviewRefusal(t *testing.T, outcome map[string]any, want string) {
 // passed as text however its bytes compare, while a rehearsal of it is not
 // refused.
 func TestExperimentalEvaluateSaysAndCanRequireTheReviewedSet(t *testing.T) {
-	pack, contents := reviewProject(t, `{"configVersion":"3","packs":{"intake":{"path":"packs/intake.json"}}}`, true)
+	pack, contents := reviewProject(t, `{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs/intake.json"}}}`, true)
 	responses := runServer(t, strings.Join([]string{
 		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}),
 		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack": string(pack), "facts": projectFacts}),
@@ -97,6 +100,27 @@ func TestExperimentalEvaluateSaysAndCanRequireTheReviewedSet(t *testing.T) {
 	}
 	if !rehearsed.Rehearsal || rehearsed.Reviewed != nil {
 		t.Fatalf("a rehearsal says nothing about a reviewed set: %+v", rehearsed)
+	}
+	// The payload says what the same call's record says, member by member.
+	trail, err := os.ReadFile(filepath.Join(filepath.Dir(os.Getenv(project.ConfigEnv)), "audit", audit.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(trail)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("the two decisions are recorded and the rehearsal is not: %q", trail)
+	}
+	for index, payload := range []result.Evaluation{declared, draft} {
+		var record struct {
+			Reviewed    *bool               `json:"reviewed"`
+			ReviewedSet *result.ReviewedSet `json:"reviewedSet"`
+		}
+		if err := json.Unmarshal([]byte(lines[index]), &record); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(record.Reviewed, payload.Reviewed) || !reflect.DeepEqual(record.ReviewedSet, payload.ReviewedSet) {
+			t.Fatalf("call %d: payload %v %+v, record %v %+v", index+1, payload.Reviewed, payload.ReviewedSet, record.Reviewed, record.ReviewedSet)
+		}
 	}
 
 	required := `{"configVersion":"4","requireReviewed":true,"packs":{"intake":{"path":"packs/intake.json"}}}`

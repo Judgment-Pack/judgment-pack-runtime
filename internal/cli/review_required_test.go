@@ -41,6 +41,7 @@ func TestThePayloadSaysWhichLawTheDecisionWasJudgedUnder(t *testing.T) {
 	if unlocked.Reviewed != nil || unlocked.ReviewedSet != nil {
 		t.Fatalf("a project with no lock says nothing about one: %v %v", unlocked.Reviewed, unlocked.ReviewedSet)
 	}
+	sameAsRecord(t, unlocked.Reviewed, unlocked.ReviewedSet, lastRecord(t, configPath))
 	_, human, _ := runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--facts", facts}, "")
 	if strings.Contains(human, "reviewed set:") {
 		t.Fatalf("no line for a project with no lock: %q", human)
@@ -55,11 +56,7 @@ func TestThePayloadSaysWhichLawTheDecisionWasJudgedUnder(t *testing.T) {
 	if declared.Reviewed == nil || !*declared.Reviewed || declared.ReviewedSet == nil || declared.ReviewedSet.LockDigest != lock.Digest(lockBytes) {
 		t.Fatalf("declared law that matched: reviewed=%v set=%+v", declared.Reviewed, declared.ReviewedSet)
 	}
-	records := auditRecords(t, configPath)
-	recorded := records[len(records)-1]["reviewedSet"].(map[string]any)
-	if recorded["lockDigest"] != declared.ReviewedSet.LockDigest || recorded["configDigest"] != declared.ReviewedSet.ConfigDigest {
-		t.Fatalf("the payload names the revision the record names: %v vs %+v", recorded, declared.ReviewedSet)
-	}
+	sameAsRecord(t, declared.Reviewed, declared.ReviewedSet, lastRecord(t, configPath))
 	_, human, _ = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--facts", facts}, "")
 	if !strings.Contains(human, "reviewed set: applied") || !strings.Contains(human, lock.Digest(lockBytes)) {
 		t.Fatalf("the human output says the law was reviewed, and under which lock: %q", human)
@@ -69,14 +66,44 @@ func TestThePayloadSaysWhichLawTheDecisionWasJudgedUnder(t *testing.T) {
 	if draft.Reviewed == nil || *draft.Reviewed || draft.ReviewedSet != nil {
 		t.Fatalf("a draft: reviewed=%v set=%+v", draft.Reviewed, draft.ReviewedSet)
 	}
+	sameAsRecord(t, draft.Reviewed, draft.ReviewedSet, lastRecord(t, configPath))
 	_, human, _ = runTest(t, []string{"experimental", "evaluate", packPath, "--config", configPath, "--facts", facts}, "")
 	if !strings.Contains(human, "reviewed set: NOT applied") {
 		t.Fatalf("the human output says a draft was evaluated: %q", human)
 	}
 
+	before := len(auditRecords(t, configPath))
 	rehearsed := evaluateJSON(t, "--pack-id", "intake", "--rehearsal", "--config", configPath, "--facts", facts)
 	if !rehearsed.Rehearsal || rehearsed.Reviewed != nil || rehearsed.ReviewedSet != nil {
 		t.Fatalf("a rehearsal consulted no reviewed set and says nothing about one: %+v", rehearsed)
+	}
+	if after := len(auditRecords(t, configPath)); after != before {
+		t.Fatalf("a rehearsal leaves no record: %d then %d", before, after)
+	}
+}
+
+// lastRecord is the newest line of a project's trail.
+func lastRecord(t *testing.T, configPath string) map[string]any {
+	t.Helper()
+	records := auditRecords(t, configPath)
+	return records[len(records)-1]
+}
+
+// sameAsRecord holds a payload's reviewed and reviewedSet to the record the
+// same run wrote, member by member: present in both or neither, and equal.
+func sameAsRecord(t *testing.T, reviewed *bool, set *result.ReviewedSet, record map[string]any) {
+	t.Helper()
+	recordedReviewed, hasReviewed := record["reviewed"]
+	if (reviewed == nil) != !hasReviewed || (reviewed != nil && recordedReviewed != *reviewed) {
+		t.Fatalf("payload reviewed %v, record %v", reviewed, recordedReviewed)
+	}
+	recordedSet, hasSet := record["reviewedSet"].(map[string]any)
+	if (set == nil) != !hasSet {
+		t.Fatalf("payload reviewedSet %+v, record %v", set, record["reviewedSet"])
+	}
+	if set != nil && (recordedSet["lockDigest"] != set.LockDigest || recordedSet["lockVersion"] != set.LockVersion ||
+		recordedSet["configDigest"] != set.ConfigDigest || len(recordedSet) != 3) {
+		t.Fatalf("payload reviewedSet %+v, record %v", set, recordedSet)
 	}
 }
 
@@ -182,18 +209,26 @@ func TestAProjectThatRequiresReviewRefusesWhatItDidNotReview(t *testing.T) {
 // the configuration does not declare is a draft the project refuses.
 func TestAProjectThatRequiresReviewRefusesAnUndeclaredGraph(t *testing.T) {
 	config := strings.Replace(graphFixture(t, "jpack.json"),
-		`"configVersion": "2",`, `"configVersion": "4",`+"\n"+`  "requireReviewed": true,`, 1)
+		`"configVersion": "2",`, `"configVersion": "4",`+"\n"+`  "requireReviewed": true,`+"\n"+`  "audit": {"dir": "audit"},`, 1)
 	configPath := writeProjectFixture(t, config, map[string]string{
 		"sanctions-screening-0.1.0.pack.json": graphFixture(t, "sanctions-screening-0.1.0.pack.json"),
 		"vendor-onboarding-0.1.0.pack.json":   graphFixture(t, "vendor-onboarding-0.1.0.pack.json"),
 		"onboarding.graph.json":               graphFixture(t, "onboarding.graph.json"),
 		"onboarding.rows.json":                graphFixture(t, "onboarding.rows.json"),
 	})
-	mustLock(t, configPath)
 	graphPath := filepath.Join(filepath.Dir(configPath), "onboarding.graph.json")
 	inputs := writeGraphInputs(t, graphHappyInputs)
 
+	// With no lock, even the declared graph is refused: there is no reviewed
+	// set to apply.
 	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", inputs}, "")
+	if code != result.ExitInvalid || !strings.Contains(stderr, "there is no reviewed-set lock") || strings.Contains(stdout, "disposition") {
+		t.Fatalf("a graph run with no lock is refused: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	mustLock(t, configPath)
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
 		"--config", configPath, "--inputs", inputs, "--format", "json"}, "")
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
@@ -205,6 +240,8 @@ func TestAProjectThatRequiresReviewRefusesAnUndeclaredGraph(t *testing.T) {
 	if composite.Reviewed == nil || !*composite.Reviewed || composite.ReviewedSet == nil {
 		t.Fatalf("a declared graph over reviewed packs says so: reviewed=%v set=%+v", composite.Reviewed, composite.ReviewedSet)
 	}
+	// The composite's record is the run's last line.
+	sameAsRecord(t, composite.Reviewed, composite.ReviewedSet, lastRecord(t, configPath))
 
 	body, err := os.ReadFile(graphPath)
 	if err != nil {
@@ -258,5 +295,37 @@ func TestAnUndeclaredGraphNamesNoReviewedSet(t *testing.T) {
 	}
 	if composite.Reviewed == nil || *composite.Reviewed || composite.ReviewedSet != nil {
 		t.Fatalf("an undeclared graph is a draft: reviewed=%v set=%+v", composite.Reviewed, composite.ReviewedSet)
+	}
+}
+
+// A pack named by decision id that is over the byte limit is declared law whose
+// bytes never arrived, not a draft: in a project that requires review and has
+// a lock, the evaluator's own byte-limit refusal answers; with no lock, the
+// requirement refuses it for having none.
+func TestAnOversizedDeclaredPackIsNotCalledADraft(t *testing.T) {
+	configPath := requireReviewedProject(t)
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+	packPath := filepath.Join(filepath.Dir(configPath), "packs", "intake-0.1.0.pack.json")
+	body, err := os.ReadFile(packPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized := append(append([]byte{}, body[:len(body)-1]...), []byte(`,"x-padding":"`+strings.Repeat("a", 11<<20)+`"}`)...)
+
+	if err := os.WriteFile(packPath, oversized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refusedForReview(t, "there is no reviewed-set lock", "--pack-id", "intake", "--config", configPath, "--facts", facts)
+
+	if err := os.WriteFile(packPath, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mustLock(t, configPath)
+	if err := os.WriteFile(packPath, oversized, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--format", "json", "--pack-id", "intake", "--config", configPath, "--facts", facts}, "")
+	if code == 0 || strings.Contains(stdout, lock.ReviewRequiredCode) || !strings.Contains(stdout, `"evaluationError"`) {
+		t.Fatalf("the byte limit answers, not the requirement: exit=%d stdout=%.400q stderr=%q", code, stdout, stderr)
 	}
 }

@@ -1131,7 +1131,7 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		}
 	}
 	if !rehearsal {
-		if lockFailure := lock.RequireReviewed(loaded, reviewed); lockFailure != nil {
+		if lockFailure := lock.RequireReviewed(loaded, reviewed, packIDPresent); lockFailure != nil {
 			return lockToolError(lockFailure)
 		}
 	}
