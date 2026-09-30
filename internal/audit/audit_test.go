@@ -3,6 +3,8 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -159,6 +161,116 @@ func TestOneEvaluationLeavesOneRecord(t *testing.T) {
 	}
 	if !strings.Contains(string(line), `"disposition":`+string(canonical)) {
 		t.Fatalf("the record must embed the canonical disposition %s: %s", canonical, line)
+	}
+}
+
+// executableOnDisk hashes the running test binary by the path the platform
+// reports, which is a second way of reaching the same file than the one the
+// package uses on Linux, so the two cannot agree by sharing a mistake.
+func executableOnDisk(t *testing.T) string {
+	t.Helper()
+	name, err := os.Executable()
+	if err != nil {
+		t.Skipf("this platform cannot name the running executable: %v", err)
+	}
+	data, err := os.ReadFile(name)
+	if err != nil {
+		t.Skipf("the running executable cannot be read: %v", err)
+	}
+	return Digest(data)
+}
+
+// Every record names the bytes of the executable that wrote it (ADR-0043): the
+// third fact of the replay tuple, which a version string cannot stand in for.
+// A graph run's node records and its composite are stamped alike.
+func TestEveryRecordNamesTheExecutableThatRan(t *testing.T) {
+	want := executableOnDisk(t)
+	writer, root := writerAt(t, "audit")
+	node, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{"id":"a"}`), &Graph{ID: "g", Node: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite, err := CompositeRecord(result.GraphEvaluation{GraphID: "g", Disposition: evaluated().Disposition}, Digest([]byte(`{}`)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.AppendAll([]Record{node, composite}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{"id":"b"}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	records := decodeLines(t, root, "audit")
+	if len(records) != 3 {
+		t.Fatalf("records = %d, want 3", len(records))
+	}
+	for _, record := range records {
+		tool := record["tool"].(map[string]any)
+		if tool["digest"] != want {
+			t.Fatalf("tool = %v, want the digest of the running executable %s", tool, want)
+		}
+		if tool["name"] != result.CurrentTool().Name || tool["version"] != result.CurrentTool().Version {
+			t.Fatalf("tool = %v", tool)
+		}
+	}
+}
+
+// Where the executable cannot be read, the record omits the digest and is
+// otherwise whole: an absent member says nothing was established, where an
+// empty string would read as a digest.
+func TestAnUnreadableExecutableLeavesTheDigestOut(t *testing.T) {
+	saved := toolDigest
+	t.Cleanup(func() { toolDigest = saved })
+	toolDigest = func() string {
+		return digestOf(func() (io.ReadCloser, error) { return nil, os.ErrPermission })
+	}
+	writer, root := writerAt(t, "audit")
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	record := decodeLines(t, root, "audit")[0]
+	tool := record["tool"].(map[string]any)
+	if _, present := tool["digest"]; present {
+		t.Fatalf("an unreadable executable is no digest: %v", tool)
+	}
+	if tool["name"] != result.CurrentTool().Name || record["disposition"] == nil || record["pack"] == nil {
+		t.Fatalf("the rest of the record stands: %v", record)
+	}
+}
+
+// A read that fails partway is no digest either: the hash of part of a file is
+// a digest of nothing that ran.
+func TestAPartlyReadExecutableIsNoDigest(t *testing.T) {
+	partial := func() (io.ReadCloser, error) {
+		return io.NopCloser(io.MultiReader(strings.NewReader("ELF"), failingReader{})), nil
+	}
+	if got := digestOf(partial); got != "" {
+		t.Fatalf("digest of a failed read = %q, want none", got)
+	}
+	whole := func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("ELF")), nil }
+	if got := digestOf(whole); got != Digest([]byte("ELF")) {
+		t.Fatalf("digest = %q, want %q", got, Digest([]byte("ELF")))
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
+
+// An invocation that records nothing never reads its own executable: the
+// digest is computed when a record is stamped, and a writer for a project with
+// no audit member stamps nothing.
+func TestNothingRecordedMeansTheExecutableIsNotRead(t *testing.T) {
+	saved := toolDigest
+	t.Cleanup(func() { toolDigest = saved })
+	reads := 0
+	toolDigest = func() string { reads++; return "" }
+	var writer *Writer
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	if reads != 0 {
+		t.Fatalf("the executable was read %d times for a run that recorded nothing", reads)
 	}
 }
 

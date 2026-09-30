@@ -104,6 +104,15 @@ func TestEvaluateRecordsOneEvaluationPerRun(t *testing.T) {
 	if inputs["evidenceSupplied"] != true || inputs["facts"] == nil || inputs["evidence"] == nil {
 		t.Fatalf("inputs = %v", inputs)
 	}
+	// The record names the bytes that ran (ADR-0043), which here is this test
+	// binary, hashed by the path the platform reports for it.
+	if executable, err := os.Executable(); err == nil {
+		if data, err := os.ReadFile(executable); err == nil {
+			if tool := record["tool"].(map[string]any); tool["digest"] != audit.Digest(data) {
+				t.Fatalf("tool = %v, want the digest of the running executable", tool)
+			}
+		}
+	}
 	// The recorded disposition is the one the run reported, in the canonical
 	// form §8.3 compares byte for byte — read off the line rather than off a
 	// decoded value, because the bytes are what the record is for.

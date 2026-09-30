@@ -72,10 +72,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -114,7 +117,8 @@ const (
 //
 // Tool and Artifact are the provenance an evaluation payload already carries and
 // a record would be unreconstructible without: which build produced the record,
-// and which bundled specification artifacts it evaluated against.
+// and which bundled specification artifacts it evaluated against. A record's
+// Tool also names the executable's bytes, which no payload does (ADR-0043).
 // DraftPrototype is carried exactly when the payload carries it, because a
 // disposition produced under draft-RFC operators is not a disposition any
 // published JPS version defines and a record that dropped the label would say
@@ -138,7 +142,7 @@ type Record struct {
 	At                   string                 `json:"at"`
 	Kind                 string                 `json:"kind"`
 	Surface              string                 `json:"surface"`
-	Tool                 result.Tool            `json:"tool"`
+	Tool                 Tool                   `json:"tool"`
 	EvaluatorSpecVersion string                 `json:"evaluatorSpecVersion"`
 	Pack                 *Pack                  `json:"pack,omitempty"`
 	Graph                *Graph                 `json:"graph,omitempty"`
@@ -149,6 +153,62 @@ type Record struct {
 	ReviewedSet          *ReviewedSet           `json:"reviewedSet,omitempty"`
 	Cites                []Citation             `json:"cites,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
+}
+
+// Tool is the build that wrote a record: the name and version every payload
+// carries, and the SHA-256 of the executable that ran (ADR-0043). The digest is
+// the third fact of the replay tuple docs/building-with-packs.md names, beside
+// the pack's digest and the version, and the only one a version string cannot
+// stand in for: a version names a release, and the digest names the bytes. It
+// is the running program's account of itself, so it is evidence of which build
+// ran and not proof of it: a modified binary can report any digest it likes.
+// Where the executable cannot be read, the member is omitted and the record is
+// otherwise whole. It is additive, so recordVersion stays "1".
+type Tool struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Digest  string `json:"digest,omitempty"`
+}
+
+// toolDigest answers the running executable's digest, or "" when it cannot be
+// read. It is computed once per process, the first time a record is stamped,
+// so an invocation that records nothing never reads its own executable, and a
+// long-lived server hashes itself once however many records it writes. A test
+// replaces it.
+var toolDigest = sync.OnceValue(func() string { return digestOf(openRunningExecutable) })
+
+// openRunningExecutable opens the program that is running. On Linux that is
+// /proc/self/exe, which names the running file itself: a binary replaced on disk
+// after this process started, as an upgrade under a running server does, is
+// still the one hashed. Elsewhere it is the path os.Executable reports, which
+// names whatever is at that path when the first record is written.
+func openRunningExecutable() (io.ReadCloser, error) {
+	if runtime.GOOS == "linux" {
+		if file, err := os.Open("/proc/self/exe"); err == nil {
+			return file, nil
+		}
+	}
+	name, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(name)
+}
+
+// digestOf hashes what open yields, in the form Digest writes, or answers ""
+// when it cannot be opened or read to the end: a digest of part of a file is
+// not the digest of the file.
+func digestOf(open func() (io.ReadCloser, error)) string {
+	file, err := open()
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return ""
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
 // Citation names one gateway receipt the caller said this decision relied
@@ -489,7 +549,8 @@ func CompositeRecord(evaluated result.GraphEvaluation, digest string, cites []Ci
 // to order them. The run id is not set here — it belongs to the writer.
 func stamp(record Record) Record {
 	record.RecordVersion = RecordVersion
-	record.Tool = result.CurrentTool()
+	current := result.CurrentTool()
+	record.Tool = Tool{Name: current.Name, Version: current.Version, Digest: toolDigest()}
 	record.At = time.Now().UTC().Format(time.RFC3339Nano)
 	return record
 }
