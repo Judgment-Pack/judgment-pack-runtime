@@ -12,7 +12,8 @@ All notable changes to tagged releases are documented here.
   expectations play no part (it is still admitted under its own rules), or a `packs suggest`
   candidates document, which this command is the first to read back under its closed shape. The
   command opens no project, records nothing, consults no lock, carries `"rehearsal": true`, and
-  exits 0 whenever it ran; a report that would exceed 16 MiB is refused rather than truncated. It is
+  exits 0 whenever it ran; a run whose differences would pass 16 MiB of compact JSON is refused
+  rather than truncated. It is
   the tenth surface to reach the evaluator, and `CONFORMANCE.md`'s claim-scope sentence and the
   README name it. No MCP tool yet.
 

@@ -1647,8 +1647,8 @@ func MatrixOrigins(matrix Matrix) []result.OriginCount {
 // its inputs and leaves everything else alone. It is held to the same closed
 // shape this file emits, as strictly as a matrix is held to its own: strict
 // JSON with no duplicate member names, the exact members spelled exactly, the
-// one candidatesVersion this runtime writes, at least one candidate and no more
-// than a matrix may carry rows, unique non-empty ids, a facts document per
+// one candidatesVersion this runtime writes, no more candidates than a matrix
+// may carry rows (none is what the writer emits when it derived nothing), unique non-empty ids, a facts document per
 // candidate (null included, as a --base row may state it), and origin and
 // rationale as strings. The rationale is read and not interpreted; origin is
 // provenance.
@@ -1699,9 +1699,8 @@ func DecodeCandidates(data []byte) (Candidates, error) {
 	if err := decoder.Decode(&candidates); err != nil {
 		return Candidates{}, fmt.Errorf("the candidates document has a member of the wrong type: %s", display.Sanitize(err.Error()))
 	}
-	if len(candidates.Candidates) == 0 {
-		return Candidates{}, errors.New("the candidates document declares no candidates")
-	}
+	// An empty candidates array is what packs suggest writes when every
+	// dimension was skipped, so it is read as the zero inputs it states.
 	if len(candidates.Candidates) > MaxMatrixCases {
 		return Candidates{}, fmt.Errorf("the candidates document declares more than the %d supported candidates", MaxMatrixCases)
 	}

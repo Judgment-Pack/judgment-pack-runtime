@@ -30,7 +30,7 @@ func (a *App) compareCommand() *cobra.Command {
 			"Inputs that are the same are counted, not listed. " +
 			"A difference says the two versions decide an input differently and nothing about which is right: it is not an expectation, and nothing here is a decision. " +
 			"The command opens no project, so it appends no audit record and consults no reviewed set, and its payload carries \"rehearsal\": true (ADR-0028). " +
-			"It exits 0 whenever the comparison ran, however many inputs differ; a report that would exceed 16 MiB is refused rather than truncated. " +
+			"It exits 0 whenever the comparison ran, however many inputs differ; a run whose differences would pass 16 MiB of compact JSON is refused rather than truncated, and the rendered report is bounded by that and proportional to it. " +
 			"The draft-RFC opt-ins of experimental evaluate are not offered here. " +
 			"This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim.",
 		Args: cobra.ArbitraryArgs,
@@ -74,7 +74,7 @@ func (a *App) compareCommand() *cobra.Command {
 			}
 			comparison, err := compare.Run(evaluation.NewEngine(a.engine), sides[0], sides[1], kind, inputs, supported, commandName)
 			if errors.Is(err, compare.ErrReportTooLarge) {
-				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-COMPARE-REPORT-LIMIT", fmt.Sprintf("The comparison's report would exceed %d bytes; compare fewer inputs at a time.", compare.MaxReportBytes))
+				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-COMPARE-REPORT-LIMIT", fmt.Sprintf("The comparison's differences would exceed %d bytes of JSON; compare fewer inputs at a time.", compare.MaxReportBytes))
 			}
 			if err != nil {
 				return a.operational(commandName, format, result.ExitIO, "JPS-COMPARE-REPORT", "The comparison's report could not be composed.")

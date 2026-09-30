@@ -68,8 +68,12 @@ Chosen option: **B**.
    is absent for a pack over the byte limit, whose bytes were never whole in hand), the kind of
    inputs, the counts of inputs, same and different, and every difference in input order. Inputs
    that are the same are counted, not listed. A difference repeats two dispositions and two handoff
-   targets whose strings a pack may make large, so the report is charged as it is built and the run
-   is refused past 16 MiB, the matrix's own limit, rather than truncated.
+   targets whose strings a pack may make large, so the differences are charged as they are built, as
+   the compact JSON the CLI writes, and the run is refused once they pass 16 MiB, the matrix's own
+   limit, rather than truncated. The rendered output adds the packs' identities and framing, and
+   `--pretty` or the human rendering their layout, so it is bounded by that figure and proportional
+   to it rather than equal to it. A candidates document with no candidates, which `packs suggest`
+   writes when it derived nothing, is read as zero inputs.
 5. **Exit status.** 0 whenever the comparison ran, however many inputs differ. Producing a
    disposition is success, and so is producing a comparison. Unreadable or malformed arguments and
    inputs are refused with the runtime's usual classes.

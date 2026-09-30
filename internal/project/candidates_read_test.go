@@ -21,6 +21,10 @@ func TestDecodeCandidatesHoldsTheShapeItWrites(t *testing.T) {
 	if len(decoded.Candidates) != 2 || string(decoded.Candidates[0].EvidenceAvailability) != `{"r":"present"}` || decoded.Candidates[1].EvidenceAvailability != nil {
 		t.Fatalf("decoded = %+v", decoded)
 	}
+	// No candidates is what the writer emits when it derived nothing.
+	if empty, err := DecodeCandidates([]byte(`{"candidatesVersion":"1","candidates":[]}`)); err != nil || len(empty.Candidates) != 0 {
+		t.Fatalf("an empty candidates array is zero inputs: %+v %v", empty, err)
+	}
 	// A facts document of null is a document, as a --base row may state it.
 	if _, err := DecodeCandidates([]byte(`{"candidatesVersion":"1","candidates":[{"id":"a","origin":"generated","facts":null,"rationale":"r"}]}`)); err != nil {
 		t.Fatalf("null facts is a supplied document: %v", err)
@@ -32,7 +36,6 @@ func TestDecodeCandidatesHoldsTheShapeItWrites(t *testing.T) {
 		"a root member":             {`{"candidatesVersion":"1","candidates":[` + one + `],"cases":[]}`, `"cases"`},
 		"a member cased apart":      {`{"candidatesVersion":"1","candidates":[{"id":"a","origin":"generated","Facts":{},"rationale":"r"}]}`, `"Facts"`},
 		"an expectation":            {`{"candidatesVersion":"1","candidates":[{"id":"a","origin":"generated","facts":{},"rationale":"r","expectedDisposition":{}}]}`, `"expectedDisposition"`},
-		"no candidates":             {`{"candidatesVersion":"1","candidates":[]}`, "declares no candidates"},
 		"a repeated id":             {`{"candidatesVersion":"1","candidates":[` + one + `,` + one + `]}`, "more than once"},
 		"no id":                     {`{"candidatesVersion":"1","candidates":[{"origin":"generated","facts":{},"rationale":"r"}]}`, "declares no id"},
 		"no facts":                  {`{"candidatesVersion":"1","candidates":[{"id":"a","origin":"generated","rationale":"r"}]}`, "declares no facts"},

@@ -31,11 +31,15 @@ type Input struct {
 	SupportedExtensions []string
 }
 
-// MaxReportBytes bounds one comparison's report: the JSON of every difference
-// it lists, both sides of each. A difference repeats two dispositions and two
+// MaxReportBytes bounds what one comparison retains: the differences it lists,
+// both sides of each, charged as the compact JSON the CLI writes them in (no
+// HTML escaping, no indentation). A difference repeats two dispositions and two
 // handoff targets whose strings a pack may make large, and a matrix may carry
-// ten thousand rows, so the report is charged as it is built and the run is
-// refused rather than truncated past this, as a matrix is at its own limit.
+// ten thousand rows, so the differences are charged as they are built and the
+// run is refused rather than truncated past this, as a matrix is at its own
+// limit. The rendered output adds the packs' identities and the framing, and
+// --pretty or the human rendering add their own layout: it is bounded by this
+// and proportional to it, not equal to it.
 const MaxReportBytes = project.MaxMatrixBytes
 
 // ErrReportTooLarge is the one failure Run returns: the differences would not
@@ -127,11 +131,13 @@ func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs [
 		}
 		comparison.Inputs.Different++
 		difference := result.InputDifference{ID: input.ID, Changed: changed, Old: side(before), New: side(after)}
-		encoded, err := json.Marshal(difference)
-		if err != nil {
+		var encoded bytes.Buffer
+		encoder := json.NewEncoder(&encoded)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(difference); err != nil {
 			return result.PackComparison{}, err
 		}
-		if charged += int64(len(encoded)); charged > MaxReportBytes {
+		if charged += int64(encoded.Len()); charged > MaxReportBytes {
 			return result.PackComparison{}, ErrReportTooLarge
 		}
 		comparison.Differences = append(comparison.Differences, difference)

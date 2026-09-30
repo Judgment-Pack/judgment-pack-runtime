@@ -250,6 +250,13 @@ func TestCompareEvaluatesEachInputsEvidence(t *testing.T) {
 		!slices.Contains(comparison.Differences[0].New.Disposition.Reasons, "missing-required-evidence") {
 		t.Fatalf("evidence decides this comparison: %+v", comparison)
 	}
+	// The same pair the other way round: the old side's evaluation must see the
+	// evidence too.
+	reversed := compareJSON(t, newPack, oldPack, "--inputs", matrix)
+	if reversed.Inputs.Same != 1 || reversed.Inputs.Different != 1 ||
+		!slices.Contains(reversed.Differences[0].Old.Disposition.Reasons, "missing-required-evidence") {
+		t.Fatalf("evidence reaches the old side too: %+v", reversed)
+	}
 }
 
 // Two refusals of the same class and phase with different codes differ, and a
@@ -360,5 +367,32 @@ func TestCompareReadsSuggestOutputFromANullFactsRow(t *testing.T) {
 	pack := filepath.Join(filepath.Dir(configPath), "packs", "intake-0.1.0.pack.json")
 	if comparison := compareJSON(t, pack, pack, "--inputs", written); comparison.Inputs.Count == 0 || comparison.Inputs.Same != comparison.Inputs.Count {
 		t.Fatalf("comparison = %+v", comparison.Inputs)
+	}
+}
+
+// A candidates document with no candidates, which packs suggest writes when it
+// derives nothing, is read as zero inputs rather than refused.
+func TestCompareReadsAnEmptyCandidatesDocument(t *testing.T) {
+	pack := writeDocument(t, "pack.json", expensePack("5000", "Finance reviewer"))
+	empty := writeDocument(t, "empty.json", `{"candidatesVersion":"1","candidates":[]}`)
+	if comparison := compareJSON(t, pack, pack, "--inputs", empty); comparison.Inputs != (result.ComparedInputs{Kind: "candidates"}) || len(comparison.Differences) != 0 {
+		t.Fatalf("comparison = %+v", comparison)
+	}
+}
+
+// The differences are charged as the CLI writes them, without HTML escaping:
+// targets made of characters an HTML-escaping encoder would inflate sixfold
+// stay within the limit when their written size does.
+func TestCompareChargesTheWrittenBytes(t *testing.T) {
+	angled := strings.Repeat("<", 700<<10)
+	oldPack := writeDocument(t, "old.json", expensePack("5000", "a"+angled))
+	newPack := writeDocument(t, "new.json", expensePack("5000", "b"+angled))
+	var rows []string
+	for index := range 4 {
+		rows = append(rows, `{"id":"row-`+string(rune('a'+index))+`","facts":{"expense":{}},"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}`)
+	}
+	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[`+strings.Join(rows, ",")+`]}`)
+	if comparison := compareJSON(t, oldPack, newPack, "--inputs", matrix); comparison.Inputs.Different != 4 {
+		t.Fatalf("about 5.6 MiB written is within the limit: %+v", comparison.Inputs)
 	}
 }
