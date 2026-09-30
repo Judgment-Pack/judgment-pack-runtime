@@ -4,15 +4,21 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- **The `test_pack` prompt's evidence probes say what the evaluator answers** (#176). The prompt
+- **The `test_pack` prompt's probes say what the evaluator answers, and when** (#176). The prompt
   told an agent to probe required evidence by evaluating with no evidence document and to expect
   `missing-required-evidence`; that run answers `unknown`, because an omitted requirement is unknown
   and only one marked `absent` gives `missing-required-evidence`. The probe now marks one
-  requirement `absent`, a new probe runs with no document and expects `unknown`, both name the
-  `unmetEvidence` they produce, and the repair guidance says `absent` where it said omitted. The
-  ordered-comparison probe also names the `not-comparable` cause the trace now records. A test
-  holds every answer the prompt states to the evaluator's answer on the specification's expense
-  example, through `experimental_evaluate`, with each claim's wording pinned beside its probe.
+  requirement `absent`, a new probe runs with no document, and the repair guidance says `absent`
+  where it said omitted. Review of that change found the other probes' predictions true only under
+  conditions the prompt did not state, so every probe now starts from a stated baseline (the pack
+  applicable, required evidence present, no exception true) and says what it assumes: a leaf that
+  an `all` or `any` sibling decides changes nothing; `onUnknown` is read in the pack rather than
+  inferred from the result; a handoff follows only a configured trigger; an absent requirement
+  outranks an omitted one; applicability that reads evidence answers first; and each exception
+  effect has its own probe. The ordered-comparison probe names the `not-comparable` cause the trace
+  records. A test holds every answer the probes and the repair guidance predict to the evaluator's
+  answer through `experimental_evaluate`, on a pack built so each probe can be made alone, with each claim's words
+  pinned beside its probe.
 
 - **An audit record names the executable that wrote it** (ADR-0043; #181). A record's `tool` member
   now carries `digest`, the SHA-256 of the running executable in the `sha256:` form, the third fact

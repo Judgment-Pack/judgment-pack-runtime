@@ -203,30 +203,43 @@ func buildTestPack(args map[string]string) string {
 	if pack := strings.TrimSpace(args["pack"]); pack != "" {
 		writeFencedBlock(&b, "The pack under test:", pack)
 	}
-	b.WriteString(`Build an instance matrix -- one facts document per row -- and evaluate each:
+	b.WriteString(`Build an instance matrix -- one facts document per row, with an evidence document where the pack
+declares evidence -- and evaluate each row. Start every row from a baseline: facts that make the
+pack applicable, every required evidence requirement marked "present", and no exception's
+condition true. Change one thing per row, and read the rule's condition before predicting: an all
+that another of its conditions makes false, or an any that another makes true, is decided whatever
+the changed leaf says, so change a leaf the rule actually turns on.
 
-1. One instance per declared outcome, engineered so exactly that outcome's rule fires.
-2. A conflict probe: facts that make two rules with DIFFERENT outcomes true at once. Expect
-   unresolved with reason "conflict" -- if you get an outcome instead, the rules cannot actually
-   fire together and your probe is wrong, or the pack shape differs from what you think.
-3. An unknown probe per escalating rule: omit one fact that rule needs. Expect unresolved with
-   reason "unknown" and a handoff if the trigger is wired. If the fallback outcome appears instead,
-   the rule has onUnknown: ignore -- check that is intended.
-4. A missing-evidence probe per required evidence requirement: an evidence document that marks
-   that one requirement "absent" and every other one "present". Expect unresolved with reason
-   "missing-required-evidence", and unmetEvidence naming that requirement as absent.
+1. One instance per reachable outcome, reached the way the pack reaches it: a rule, an exception
+   that forces it, or the fallbackOutcome when no rule fires. An outcome nothing can reach is a
+   finding to report, not a row to write.
+2. A conflict probe: facts that make two rules with DIFFERENT outcomes true at once, with no
+   exception forcing an outcome or suppressing either. Expect unresolved with reason "conflict".
+3. An unknown probe per rule: omit one fact the rule turns on, so its condition is unknown, and
+   read its onUnknown in the pack rather than inferring it from the result. With "escalate",
+   expect unresolved with reason "unknown", and a handoff when the escalation triggers include
+   "unknown". With "ignore", the rule does not fire and the rest of the pack answers.
+4. A missing-evidence probe per required evidence requirement: mark that one requirement
+   "absent". Expect unresolved with reason "missing-required-evidence", and unmetEvidence naming
+   that requirement as absent.
 5. An unknown-evidence probe if the pack declares required evidence: evaluate with no evidence
    document at all. Every requirement is then unknown, not absent: expect unresolved with reason
    "unknown", and unmetEvidence naming each required requirement as unknown. A document that
-   omits a requirement does the same for that one requirement.
-6. A not-applicable probe if the pack declares applicability: facts outside scope. Expect a
-   not-applicable result, not an outcome.
-7. A forced-outcome probe per exception: facts that satisfy the exception AND a rule it should
-   override. Expect the exception's outcome with the rule skipped.
+   omits one required requirement does the same for that one; if another is marked absent, the
+   reason is "missing-required-evidence" and unmetEvidence names both.
+6. A not-applicable probe if the pack declares applicability: facts that make its condition
+   false. Expect a not-applicable result, not an outcome. Facts that leave it unknown give unknown
+   instead, and an applicability condition that reads evidence is decided before evidence is
+   checked, so probes 4 and 5 then answer not-applicable or unknown first.
+7. An exception probe per exception, by its effect. A force-outcome exception: facts that satisfy
+   the exception AND a rule it should override; expect the exception's outcome with the rules
+   skipped. A suppress-rule exception: expect its target rule suppressed and the rest of the pack
+   deciding. An escalate exception: expect unresolved with reason "exception-escalation" and a
+   requested handoff.
 8. An ordered-comparison probe if any rule compares magnitudes: supply the value as a JSON number
-   instead of a decimal string. Expect unknown behavior per the rule's onUnknown, and the rule's
-   trace entry naming the fact as not-comparable -- this catches the most common silent authoring
-   mistake.
+   instead of a decimal string, in a row where that comparison decides the rule. Expect the rule's
+   condition unknown, handled per its onUnknown, and its trace entry naming the fact as
+   not-comparable -- this catches the most common silent authoring mistake.
 
 Read each disposition fully: kind, outcomeId, reasons, handoff, and the trace (which rules fired,
 which were skipped). A divergence between expectation and disposition is either a pack bug or a
@@ -234,9 +247,10 @@ wrong row, and THE POLICY TEXT IS THE ARBITER: decide which is wrong before touc
 never weaken the pack -- a required flag, a gate, a rule -- just to make your own expectation
 pass. Two facts that prevent common misdiagnoses: a missing-required-evidence reason means the
 row's evidenceAvailability marked a requirement the pack requires "absent", while one the row
-omits is unknown and gives reason "unknown" (unmetEvidence names which, and the row is usually
-what needs fixing); and evidenceRequirementRefs is a citation the evaluator never reads. Re-run the whole
-matrix after any change. Keep the matrix with the pack; it is the pack's regression suite.
+omits is unknown, and gives reason "unknown" when none is absent (unmetEvidence names which, and
+the row is usually what needs fixing); and evidenceRequirementRefs is a citation the evaluator
+never reads. Re-run the whole matrix after any change. Keep the matrix with the pack; it is the
+pack's regression suite.
 Where the project's jpack.json declares the pack and its matrix, run the whole suite with the
 experimental_test_packs tool instead of replaying rows one by one: it compares every row with the
 same code the CLI uses and reports the derived coverage the rows do not probe.
