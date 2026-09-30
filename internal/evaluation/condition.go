@@ -99,30 +99,74 @@ func (e *evaluator) keepCausesIf(verdict tri, mark int) tri {
 // ADR-0040 records beside its verdict: the causes when the verdict is unknown,
 // and every cross-type equality comparison the condition evaluated. Both are in
 // first-occurrence order with repeats removed, which keeps the record a pure
-// function of the inputs whatever the tree's shape.
+// function of the inputs whatever the tree's shape. The repeats are found by
+// map lookup rather than by scanning what was kept, so removing them costs
+// work in proportion to what was recorded, as the rest of the walk does.
 func (e *evaluator) evaluateStage(node any, root any) (tri, []result.UnknownCause, []result.TypeMismatch) {
 	e.causes, e.mismatches = nil, nil
 	verdict := e.evaluate(node, root)
 	var causes []result.UnknownCause
 	if verdict == triUnknown && !e.exceeded {
+		seen := make(map[causeKey]bool, len(e.causes))
 		for _, cause := range e.causes {
-			if !slices.Contains(causes, cause) {
+			key := keyOfCause(cause)
+			if !seen[key] {
+				seen[key] = true
 				causes = append(causes, cause)
 			}
 		}
 	}
 	var mismatches []result.TypeMismatch
+	seen := make(map[mismatchKey]bool, len(e.mismatches))
 	for _, mismatch := range e.mismatches {
-		if !slices.ContainsFunc(mismatches, func(seen result.TypeMismatch) bool {
-			return seen.Path == mismatch.Path && seen.Within == mismatch.Within &&
-				seen.Operator == mismatch.Operator && seen.FactType == mismatch.FactType &&
-				slices.Equal(seen.OperandTypes, mismatch.OperandTypes)
-		}) {
+		key := keyOfMismatch(mismatch)
+		if !seen[key] {
+			seen[key] = true
 			mismatches = append(mismatches, mismatch)
 		}
 	}
 	e.causes, e.mismatches = nil, nil
 	return verdict, causes, mismatches
+}
+
+// causeKey and mismatchKey are the values two records are the same by. The
+// pointers in a record are compared by the text they point at, with whether
+// they are set kept apart from what they say, so the root pointer "" and an
+// unset pointer are two different keys.
+type causeKey struct {
+	pathSet, withinSet                         bool
+	path, requirement, within, cause, factType string
+}
+
+type mismatchKey struct {
+	withinSet                                      bool
+	path, within, operator, factType, operandTypes string
+}
+
+func keyOfCause(cause result.UnknownCause) causeKey {
+	key := causeKey{requirement: cause.EvidenceRequirement, cause: cause.Cause, factType: cause.FactType}
+	if cause.Path != nil {
+		key.pathSet, key.path = true, *cause.Path
+	}
+	if cause.Within != nil {
+		key.withinSet, key.within = true, *cause.Within
+	}
+	return key
+}
+
+func keyOfMismatch(mismatch result.TypeMismatch) mismatchKey {
+	key := mismatchKey{path: mismatch.Path, operator: mismatch.Operator, factType: mismatch.FactType,
+		operandTypes: strings.Join(mismatch.OperandTypes, "\x00")}
+	if mismatch.Within != nil {
+		key.withinSet, key.within = true, *mismatch.Within
+	}
+	return key
+}
+
+// pointer is a pointer to one pointer's text, which is how a record carries a
+// JSON Pointer that may be "".
+func pointer(text string) *string {
+	return &text
 }
 
 // jsonType names the JSON type of one decoded value as the carrier decodes it:
@@ -224,13 +268,13 @@ func (e *evaluator) withinCollection(node map[string]any, run func() tri) tri {
 	e.collectionFailure = nil
 	verdict := run()
 	for index := causeMark; index < len(e.causes); index++ {
-		if e.causes[index].Within == "" && e.causes[index].Path != "" {
-			e.causes[index].Within = collection
+		if e.causes[index].Within == nil && e.causes[index].Path != nil {
+			e.causes[index].Within = pointer(collection)
 		}
 	}
 	for index := mismatchMark; index < len(e.mismatches); index++ {
-		if e.mismatches[index].Within == "" {
-			e.mismatches[index].Within = collection
+		if e.mismatches[index].Within == nil {
+			e.mismatches[index].Within = pointer(collection)
 		}
 	}
 	// The collection pointer itself is resolved against the aggregate's own
@@ -300,7 +344,7 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	}
 	value, resolved := e.resolve(root, path)
 	if !resolved {
-		e.noteUnknown(result.UnknownCause{Path: path, Cause: "absent"})
+		e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "absent"})
 		return triUnknown
 	}
 	operand := condition["value"]
@@ -308,7 +352,7 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	if orderedOperators[operator] {
 		comparison, comparable := decimalCompare(value, operand)
 		if !comparable {
-			e.noteUnknown(result.UnknownCause{Path: path, Cause: "not-comparable", FactType: jsonType(value)})
+			e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "not-comparable", FactType: jsonType(value)})
 			return triUnknown
 		}
 		switch operator {
@@ -334,7 +378,7 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 	case "in":
 		items, ok := operand.([]any)
 		if !ok {
-			e.noteUnknown(result.UnknownCause{Path: path, Cause: "unsupported"})
+			e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "unsupported"})
 			return triUnknown
 		}
 		e.noteTypeMismatch(path, operator, value, items)
@@ -345,7 +389,7 @@ func (e *evaluator) evalFact(condition map[string]any, root any) tri {
 		}
 		return triFalse
 	default:
-		e.noteUnknown(result.UnknownCause{Path: path, Cause: "unsupported"})
+		e.noteUnknown(result.UnknownCause{Path: pointer(path), Cause: "unsupported"})
 		return triUnknown
 	}
 }

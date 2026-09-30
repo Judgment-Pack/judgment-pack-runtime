@@ -697,6 +697,11 @@ func TestPromptsSurface(t *testing.T) {
 		// and nothing beyond them, and say so when an entry records none.
 		"and nothing beyond it",
 		"names no cause, so say the record does not",
+		"not-an-array",
+		`"unsupported"`,
+		"it is a scope, and says nothing",
+		"reads not-evaluated",
+		"outcome-value entry",
 		"could not have been equal",
 		"unmetEvidence",
 		"no Core-defined destination",

@@ -162,7 +162,7 @@ func (e *evaluator) uniform(node map[string]any, root any) tri {
 	if missing {
 		// The at that failed to resolve in some member, relative to that
 		// member; withinCollection names the collection it was read in.
-		e.noteUnknown(result.UnknownCause{Path: at, Cause: "absent"})
+		e.noteUnknown(result.UnknownCause{Path: pointer(at), Cause: "absent"})
 		return triUnknown // clause 4
 	}
 	return triTrue // clause 5
@@ -181,12 +181,12 @@ func (e *evaluator) selectArray(node map[string]any, root any) ([]any, bool) {
 	}
 	selected, resolved := e.resolve(root, path)
 	if !resolved {
-		e.collectionFailure = &result.UnknownCause{Path: path, Cause: "absent"}
+		e.collectionFailure = &result.UnknownCause{Path: pointer(path), Cause: "absent"}
 		return nil, false
 	}
 	elements, isArray := selected.([]any)
 	if !isArray {
-		e.collectionFailure = &result.UnknownCause{Path: path, Cause: "not-an-array", FactType: jsonType(selected)}
+		e.collectionFailure = &result.UnknownCause{Path: pointer(path), Cause: "not-an-array", FactType: jsonType(selected)}
 		return nil, false
 	}
 	return elements, true

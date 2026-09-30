@@ -73,7 +73,8 @@ a stage of it. B spends clause 6 for the sake of a place, and C spends the entry
      not listed. An `all` or `any` that is itself unknown lists every unknown child it saw, and `not`
      passes its child's causes through.
    - Each cause names a fact pointer (`path`) or an evidence requirement (`evidenceRequirement`), and
-     says why (`cause`):
+     says why (`cause`). An `unsupported` cause on a node that states neither names neither. The
+     root pointer `""` is a pointer like any other and is kept, as `"path": ""`, never dropped.
      - `absent`: the pointer selects nothing;
      - `not-comparable`: an ordered comparison selected a value that is not a §2.2 decimal string, and
        `factType` names the JSON type it has;
@@ -83,17 +84,23 @@ a stage of it. B spends clause 6 for the sake of a place, and C spends the entry
        something else, whose type `factType` names;
      - `unsupported`: a condition shape this evaluator does not decide, which a conformant pack cannot
        state, is reported rather than hidden.
-   - Under the draft RFC 0008 opt-in, a leaf inside a quantifier's `where`, or a `uniform`'s `at`, is
-     resolved against an element, and its cause carries `within`, the collection pointer. The
-     innermost collection names it.
+   - Under the draft RFC 0008 opt-in, a fact pointer inside a quantifier's `where`, or a `uniform`'s
+     `at`, is resolved against an element, and its cause carries `within`, the collection pointer,
+     `""` included. The innermost collection names it. `within` is a scope: it does not say how
+     many elements lacked the value. An `evidence-present` condition inside `where` still reads the
+     evaluation's evidence, so its cause carries no `within`.
 2. **`typeMismatches`** is present on any entry whose condition evaluated an `equals`, `not-equals` or
    `in` comparison whose fact value has a JSON type no operand value has. It is recorded whatever the
    verdict, because such a comparison could not have been equal and the verdict cannot say so.
    - Each mismatch carries `path` (and `within`, as above), `operator`, `factType`, and
      `operandTypes`: the operand's types in first-appearance order, one for `equals` and `not-equals`,
      the distinct member types for `in`.
+   - Across types the two values are unequal, so `equals` and `in` are false and `not-equals` is
+     true.
    - An `in` with an empty operand states no type and records nothing.
    - Only comparisons the walk evaluated are recorded; a short-circuited leaf is not.
+   - An entry lists each distinct mismatch once, in the order the walk first met it, however many
+     times its condition made that comparison. Causes are listed the same way.
 3. **`unmetEvidence`** is a member of the evaluation payload beside `trace`, and of each node
    evaluation of a graph run. It is present only when §8 step 2 found a required requirement `absent`
    or `unknown`, and lists every such requirement with its state, in the order the pack declares them.
@@ -112,6 +119,17 @@ a stage of it. B spends clause 6 for the sake of a place, and C spends the entry
    one bracket per cause and per mismatch on a trace line. The `explain_disposition` prompt names the
    three members: a narrator names the recorded causes and nothing beyond them, and says so when an
    unknown entry records none.
+
+Removing repeats is done by lookup, so it costs work in proportion to what was recorded, as the walk
+does, and this evaluator's §10 evaluation-work accounting needs no new term for it.
+
+**Partial supersession.** [ADR-0020](0020-report-consulted-fact-pointers.md) said that "a trace
+entry carries no pointer", so intersecting `consultedFactPaths` with the supplied facts names only
+*candidate* missing pointers, and that per-escalation attribution "would need trace-level pointers,
+which is a different decision nobody has asked for yet". This is that decision, for an unknown
+entry's causes and for cross-type comparisons: those entries now carry the pointers. ADR-0020's
+inventory member is unchanged and still candidates, because evaluation can stop before a rule is
+reached and a pointer no evaluated condition read is named by no entry.
 
 ### Consequences
 

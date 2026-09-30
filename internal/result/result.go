@@ -684,8 +684,8 @@ type EvaluationError struct {
 // those: a leaf whose unknown a sibling's verdict overrode is not a cause.
 // TypeMismatches names every equality comparison the entry's condition
 // evaluated whose fact value and operand differ in JSON type, whatever the
-// verdict, because such a comparison is false for a reason a reader cannot see
-// in the verdict. Neither member changes a verdict or a disposition.
+// verdict, because the two values could not have been equal and the verdict
+// does not say so. Neither member changes a verdict or a disposition.
 type TraceEntry struct {
 	Stage          string         `json:"stage"`
 	ID             string         `json:"id,omitempty"`
@@ -701,9 +701,16 @@ type TraceEntry struct {
 
 // UnknownCause is one leaf of a condition that evaluated unknown and left its
 // entry unknown (ADR-0040). Path names a fact pointer, or EvidenceRequirement an
-// evidence-present condition's requirement; exactly one of the two is set.
-// Within is the collection pointer of the draft RFC 0008 quantifier whose
-// elements Path was resolved against, and is absent at the top level.
+// evidence-present condition's requirement; one of the two is set, except for
+// the cause "unsupported" on a node that states neither, which sets neither.
+// Path and Within are pointers to strings because "" is a JSON Pointer of its
+// own, selecting the whole document it is resolved against, and must survive
+// serialization as "" rather than vanish as an unset member would. Within is
+// the collection pointer of the draft RFC 0008 aggregate whose elements Path
+// was resolved against, the innermost one when aggregates nest, and is absent
+// for a pointer resolved against the facts document itself. An
+// evidence-present condition inside an aggregate still reads the evaluation's
+// evidence, not an element, so its cause carries no Within.
 //
 // Cause is one of:
 //   - "absent": the pointer selects nothing in the document it was resolved in;
@@ -716,23 +723,26 @@ type TraceEntry struct {
 //   - "unsupported": a condition shape this evaluator does not decide, which a
 //     conformant pack cannot state and is reported rather than hidden.
 type UnknownCause struct {
-	Path                string `json:"path,omitempty"`
-	EvidenceRequirement string `json:"evidenceRequirement,omitempty"`
-	Within              string `json:"within,omitempty"`
-	Cause               string `json:"cause"`
-	FactType            string `json:"factType,omitempty"`
+	Path                *string `json:"path,omitempty"`
+	EvidenceRequirement string  `json:"evidenceRequirement,omitempty"`
+	Within              *string `json:"within,omitempty"`
+	Cause               string  `json:"cause"`
+	FactType            string  `json:"factType,omitempty"`
 }
 
 // TypeMismatch is one equality comparison (equals, not-equals or in) whose fact
 // value has a different JSON type from its operand, or for in from every member
-// of its operand (ADR-0040). §7.4 makes equality type-preserving, so such a
-// comparison is simply false and not-equals simply true; this records that the
-// values could not have been equal, which the verdict alone does not say.
-// OperandTypes lists the operand's JSON types in first-appearance order: one for
-// equals and not-equals, the distinct member types for in.
+// of its operand (ADR-0040). §7.4 makes equality type-preserving, so the two
+// values are unequal whatever they are: equals and in are false, not-equals is
+// true. This records that they could not have been equal, which the verdict
+// alone does not say. OperandTypes lists the operand's JSON types in
+// first-appearance order: one for equals and not-equals, the distinct member
+// types for in. Path is always present, "" included; Within is as for
+// UnknownCause. One entry lists a mismatch once however many times its
+// condition compared it, in the order the walk first met it.
 type TypeMismatch struct {
 	Path         string   `json:"path"`
-	Within       string   `json:"within,omitempty"`
+	Within       *string  `json:"within,omitempty"`
 	Operator     string   `json:"operator"`
 	FactType     string   `json:"factType"`
 	OperandTypes []string `json:"operandTypes"`

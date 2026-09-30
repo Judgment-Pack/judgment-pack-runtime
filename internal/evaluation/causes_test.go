@@ -3,6 +3,7 @@ package evaluation
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -124,7 +125,7 @@ func TestAnOverriddenUnknownIsNotACause(t *testing.T) {
 // fact's type in any member.
 func TestAnEqualityAcrossJSONTypesIsRecorded(t *testing.T) {
 	e := &evaluator{evidence: map[string]tri{}, budget: DefaultCoreWorkLimit}
-	document := facts(t, `{"expense":{"flag":"true","count":1,"state":"open"}}`)
+	document := facts(t, `{"expense":{"flag":"true","count":1,"state":"open","none":null,"object":{},"array":[]}}`)
 	for _, tc := range []struct {
 		name       string
 		node       map[string]any
@@ -136,7 +137,11 @@ func TestAnEqualityAcrossJSONTypesIsRecorded(t *testing.T) {
 		{"string against no member's type", fact("/expense/state", "in", []any{true, json.Number("2")}), "false", `[{"path":"/expense/state","operator":"in","factType":"string","operandTypes":["boolean","number"]}]`},
 		{"in with a member of the fact's type", fact("/expense/state", "in", []any{true, "closed"}), "false", `null`},
 		{"same type", fact("/expense/state", "equals", "closed"), "false", `null`},
-		{"inside an all a sibling decided", map[string]any{"op": "all", "conditions": []any{fact("/expense/flag", "equals", true), fact("/expense/state", "equals", "open")}}, "false", `[{"path":"/expense/flag","operator":"equals","factType":"string","operandTypes":["boolean"]}]`},
+		{"in an any a later sibling decided", map[string]any{"op": "any", "conditions": []any{fact("/expense/flag", "equals", true), fact("/expense/state", "equals", "open")}}, "true", `[{"path":"/expense/flag","operator":"equals","factType":"string","operandTypes":["boolean"]}]`},
+		{"null against string", fact("/expense/none", "equals", "x"), "false", `[{"path":"/expense/none","operator":"equals","factType":"null","operandTypes":["string"]}]`},
+		{"object against string", fact("/expense/object", "equals", "x"), "false", `[{"path":"/expense/object","operator":"equals","factType":"object","operandTypes":["string"]}]`},
+		{"array against string", fact("/expense/array", "not-equals", "x"), "true", `[{"path":"/expense/array","operator":"not-equals","factType":"array","operandTypes":["string"]}]`},
+		{"one comparison made twice is one mismatch", map[string]any{"op": "all", "conditions": []any{fact("/expense/flag", "not-equals", true), fact("/expense/flag", "not-equals", true)}}, "true", `[{"path":"/expense/flag","operator":"not-equals","factType":"string","operandTypes":["boolean"]}]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			verdict, _, mismatches := stage(t, e, tc.node, document)
@@ -175,10 +180,70 @@ func TestACauseInsideAQuantifierNamesItsCollection(t *testing.T) {
 			}
 		})
 	}
-	// A quantifier that decided despite an unknown element records no cause.
-	verdict, causes, _ := stage(t, e, map[string]any{"op": "exists", "path": "/lines", "where": fact("/sku", "equals", "a")}, document)
-	if verdict != "true" || causes != "null" {
-		t.Fatalf("an exists a member decided records no cause: %s %s", verdict, causes)
+	// An aggregate its own verdict decided records no cause even when an outer
+	// condition stays unknown: the first element leaves the where unknown, the
+	// second makes the exists true, and only /c, absent beside it, is a cause.
+	unknownFirst := facts(t, `{"lines":[{},{"sku":"a"}]}`)
+	verdict, causes, _ := stage(t, e, map[string]any{"op": "all", "conditions": []any{
+		map[string]any{"op": "exists", "path": "/lines", "where": fact("/sku", "equals", "a")},
+		fact("/c", "equals", "x"),
+	}}, unknownFirst)
+	if verdict != "unknown" || causes != `[{"path":"/c","cause":"absent"}]` {
+		t.Fatalf("an exists its own members decided is no cause of an outer unknown: %s %s", verdict, causes)
+	}
+}
+
+// The root pointer "" is a pointer: it selects the whole document it is
+// resolved against, and it is kept in a cause, a mismatch and a scope rather
+// than dropped as an unset member would be. With aggregates nested, the
+// innermost collection names the scope, the root one included.
+func TestTheRootPointerIsKept(t *testing.T) {
+	core := &evaluator{evidence: map[string]tri{}, budget: DefaultCoreWorkLimit}
+	verdict, causes, _ := stage(t, core, fact("", "greater-than", "5"), facts(t, `9`))
+	if verdict != "unknown" || causes != `[{"path":"","cause":"not-comparable","factType":"number"}]` {
+		t.Fatalf("a root comparison names its pointer: %s %s", verdict, causes)
+	}
+	_, _, mismatches := stage(t, core, fact("", "equals", "9"), facts(t, `9`))
+	if mismatches != `[{"path":"","operator":"equals","factType":"number","operandTypes":["string"]}]` {
+		t.Fatalf("a root mismatch names its pointer: %s", mismatches)
+	}
+
+	nested := &evaluator{evidence: map[string]tri{}, quantifiers: true, budget: DefaultWorkBudget}
+	groups := facts(t, `{"groups":[[{"sku":1}],[{}]]}`)
+	inner := map[string]any{"op": "exists", "path": "", "where": fact("/sku", "equals", "a")}
+	verdict, causes, mismatches = stage(t, nested, map[string]any{"op": "exists", "path": "/groups", "where": inner}, groups)
+	if verdict != "unknown" || causes != `[{"path":"/sku","within":"","cause":"absent"}]` {
+		t.Fatalf("the innermost collection, the root one, names the scope: %s %s", verdict, causes)
+	}
+	if mismatches != `[{"path":"/sku","within":"","operator":"equals","factType":"number","operandTypes":["string"]}]` {
+		t.Fatalf("a mismatch inside nested aggregates names the innermost scope: %s", mismatches)
+	}
+}
+
+// What the resolver records reaches the payload on every stage that
+// evaluates a condition: an applicability, an exception and a rule each carry
+// their own members, serialized after the members ADR-0027 pinned.
+func TestEveryStageCarriesItsMembersInThePayload(t *testing.T) {
+	pack := []byte(`{
+	  "specVersion": "0.2.0-draft", "id": "https://example.invalid/p", "version": "0.1.0", "title": "P",
+	  "decision": {"intent": "i", "question": "q"},
+	  "applicability": {"op": "any", "conditions": [{"op": "fact", "path": "/flag", "operator": "equals", "value": true}, {"op": "literal", "value": true}]},
+	  "outcomes": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+	  "exceptions": [{"id": "x", "description": "d", "when": {"op": "fact", "path": "/count", "operator": "equals", "value": "1"}, "effect": "escalate", "onUnknown": "ignore"}],
+	  "rules": [{"id": "r", "description": "d", "when": {"op": "any", "conditions": [
+	    {"op": "fact", "path": "/state", "operator": "equals", "value": true},
+	    {"op": "fact", "path": "/missing", "operator": "equals", "value": "x"}]}, "outcome": "a", "onUnknown": "ignore"}],
+	  "fallbackOutcome": "b"
+	}`)
+	evaluated, failure := admittedEngine(t).Evaluate(pack, []byte(`{"flag":"true","count":1,"state":"open"}`), nil, nil, "test")
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	want := `[{"stage":"applicability","condition":"true","typeMismatches":[{"path":"/flag","operator":"equals","factType":"string","operandTypes":["boolean"]}]},` +
+		`{"stage":"exception","id":"x","condition":"false","typeMismatches":[{"path":"/count","operator":"equals","factType":"number","operandTypes":["string"]}]},` +
+		`{"stage":"rule","id":"r","condition":"unknown","onUnknown":"ignore","unknownCauses":[{"path":"/missing","cause":"absent"}],"typeMismatches":[{"path":"/state","operator":"equals","factType":"string","operandTypes":["boolean"]}]}]`
+	if got := traceJSON(t, evaluated.Trace); got != want {
+		t.Fatalf("trace = %s\nwant   %s", got, want)
 	}
 }
 
@@ -258,5 +323,46 @@ func TestThePayloadCarriesUnmetEvidence(t *testing.T) {
 	}
 	if passed.UnmetEvidence != nil || passed.Disposition.OutcomeID != "a" {
 		t.Fatalf("met evidence stops nothing and names nothing: %+v", passed)
+	}
+}
+
+// manyAbsent is an all over n distinct pointers the facts do not hold, which
+// leaves n distinct causes for one stage to record.
+func manyAbsent(n int) map[string]any {
+	conditions := make([]any, n)
+	for index := range conditions {
+		conditions[index] = fact("/missing/"+strconv.Itoa(index), "equals", "x")
+	}
+	return map[string]any{"op": "all", "conditions": conditions}
+}
+
+// Many distinct causes are all kept, once each and in walk order: the repeats
+// are found by lookup, and nothing distinct is mistaken for a repeat.
+func TestManyDistinctCausesAreAllKept(t *testing.T) {
+	const n = 5000
+	e := &evaluator{evidence: map[string]tri{}, budget: DefaultCoreWorkLimit}
+	verdict, causes, _ := e.evaluateStage(manyAbsent(n), map[string]any{})
+	if verdict != triUnknown || len(causes) != n {
+		t.Fatalf("verdict %v, %d causes, want unknown and %d", verdict, len(causes), n)
+	}
+	for index, cause := range causes {
+		if cause.Path == nil || *cause.Path != "/missing/"+strconv.Itoa(index) {
+			t.Fatalf("cause %d = %+v, out of walk order", index, cause)
+		}
+	}
+}
+
+// BenchmarkDistinctCauses measures one stage with many distinct causes, so the
+// cost of removing repeats can be read against the cost of the walk. It is a
+// benchmark and not a test because wall-clock bounds are noisy on shared CI.
+func BenchmarkDistinctCauses(b *testing.B) {
+	for _, n := range []int{4000, 16000} {
+		node := manyAbsent(n)
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			for range b.N {
+				e := &evaluator{evidence: map[string]tri{}, budget: DefaultCoreWorkLimit * 64}
+				e.evaluateStage(node, map[string]any{})
+			}
+		})
 	}
 }

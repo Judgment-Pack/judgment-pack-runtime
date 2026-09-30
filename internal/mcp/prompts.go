@@ -356,16 +356,24 @@ Work in this order:
 4. WALK THE TRACE, in order, for what it holds. Each entry names its stage -- applicability,
    exception, or rule -- what its condition evaluated to (true, false, or unknown), and, for
    an authored declaration, its id; members that do not apply are simply absent, and a pack's
-   applicability is one unnamed condition, so its entry carries no id. An applicability that
+   applicability is one unnamed condition, so its entry carries no id. A rule the walk did not
+   evaluate reads not-evaluated, with skipped (a forced outcome ended the walk) or suppressed
+   (a true exception removed it). Under the draft RFC 0016 prototype an outcome-value entry
+   names a declared value and reads resolved or unresolved; it is not a condition. An applicability that
    evaluated false or unknown is the entire trace: §8 stops there, and the disposition is
    not-applicable or unresolved on that account alone. Report it as the pack declining the
    question or failing to reach it -- never as a rule that did not fire, and never as an
    absence of record. For a fired rule, quote its condition from the pack and the facts it
    addresses. For an unknown, say the condition evaluated unknown and name what its
-   unknownCauses member records -- each cause is a fact pointer that was absent, a value
-   that was present but not comparable (a JSON number where a decimal string is required),
-   or an evidence requirement whose presence is unknown -- and nothing beyond it; an unknown
-   entry without that member names no cause, so say the record does not. onUnknown:
+   unknownCauses member records, and nothing beyond it; an unknown entry without that member
+   names no cause, so say the record does not. Each cause names a fact pointer ("path", where
+   "" is the whole document) or an evidence requirement, and why: "absent" (the pointer
+   selects nothing), "not-comparable" (present, but not a decimal string an ordered comparison
+   takes; factType says what it is), "unknown" (the requirement's presence is unknown),
+   "not-an-array" (a draft aggregate's collection is something else), or "unsupported" (a
+   shape this evaluator does not decide). A "within" member names the draft aggregate
+   collection the pointer was read in, element by element: it is a scope, and says nothing
+   about how many elements lacked the value. onUnknown:
    escalate retains reason "unknown" and blocks resolution; ignore contributes nothing,
    without converting unknown to false. Where an entry carries typeMismatches, say that the
    named comparison crossed JSON types and so could not have been equal (§7.4 does not

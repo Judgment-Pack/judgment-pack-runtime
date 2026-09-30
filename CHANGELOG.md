@@ -11,11 +11,11 @@ All notable changes to tagged releases are documented here.
     from: a fact pointer that is `absent`, a value an ordered comparison finds `not-comparable` (a
     JSON number where a decimal string is required, with its `factType`), or an evidence
     requirement whose presence is `unknown`. A leaf whose unknown a sibling's verdict overrode is not
-    a cause and is not listed.
-  - `typeMismatches` on any trace entry names each `equals`, `not-equals` or `in` comparison it
-    evaluated whose fact value has a JSON type no operand has, whatever the verdict. `"true"`
-    compared with `true` is false under §7.4, and the entry now says the two could not have been
-    equal.
+    a cause and is not listed. The root pointer `""` is kept as `"path": ""`.
+  - `typeMismatches` on any trace entry names each distinct `equals`, `not-equals` or `in`
+    comparison it evaluated whose fact value has a JSON type no operand has, once, whatever the
+    verdict. `"true"` compared with `true` is unequal under §7.4, and the entry now says the two
+    could not have been equal.
   - `unmetEvidence` beside the trace, and on each graph node evaluation, names every required
     requirement §8 step 2 found `absent` or `unknown`, in declared order. Step 2 still has no trace
     stage (ADR-0027 clause 6).
@@ -24,7 +24,8 @@ All notable changes to tagged releases are documented here.
   VERSIONING.md's MINOR rule; `outputVersion` stays `"2"`. The two ADR-0027 byte-goldens that hold
   an unknown entry now carry its cause. The human output adds an `unmet evidence:` line and one
   bracket per cause and per mismatch on a trace line, and the `explain_disposition` prompt names the
-  members and tells a narrator to name no cause the record does not hold.
+  members and tells a narrator to name no cause the record does not hold. ADR-0020's statement that
+  a trace entry carries no pointer is superseded for these two members.
 
 - **`packs suggest --base` keeps the base row's evidence** (#177). A candidate made from a base row
   carried the row's facts and dropped its `evidenceAvailability`. On the specification's

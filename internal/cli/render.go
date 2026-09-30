@@ -1037,8 +1037,9 @@ func traceLine(entry result.TraceEntry) string {
 		detail += " [" + causeText(cause) + "]"
 	}
 	for _, mismatch := range entry.TypeMismatches {
+		path := mismatch.Path
 		detail += fmt.Sprintf(" [%s %s: fact is %s, operand is %s]", mismatch.Operator,
-			pointerText(mismatch.Path, mismatch.Within), mismatch.FactType, strings.Join(mismatch.OperandTypes, " or "))
+			pointerText(&path, mismatch.Within), mismatch.FactType, strings.Join(mismatch.OperandTypes, " or "))
 	}
 	return fmt.Sprintf("trace: %s: %s%s", stage, display.Sanitize(note), display.Sanitize(detail))
 }
@@ -1067,15 +1068,26 @@ func causeText(cause result.UnknownCause) string {
 }
 
 // pointerText names a fact pointer, and the collection it was read in when a
-// draft quantifier resolved it against an element.
-func pointerText(path, within string) string {
-	if within != "" {
-		return "fact " + path + " in each of " + within
-	}
-	if path == "" {
+// draft aggregate resolved it against an element. It names the scope and not a
+// count: a cause recorded within a collection may concern one element of it.
+// The root pointer "" is named as such rather than printed as nothing.
+func pointerText(path, within *string) string {
+	if path == nil {
 		return ""
 	}
-	return "fact " + path
+	text := "fact " + pointerName(*path)
+	if within != nil {
+		text += " within collection " + pointerName(*within)
+	}
+	return text
+}
+
+// pointerName prints one JSON Pointer, the empty one as the root it selects.
+func pointerName(pointer string) string {
+	if pointer == "" {
+		return `"" (the root)`
+	}
+	return pointer
 }
 
 // operatorList names the draft operators a pack actually used. The empty case
