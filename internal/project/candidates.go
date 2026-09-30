@@ -3,7 +3,9 @@ package project
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"slices"
 	"strconv"
@@ -1638,4 +1640,84 @@ func MatrixOrigins(matrix Matrix) []result.OriginCount {
 		rendered = append(rendered, result.OriginCount{Origin: capRendered(origin), Rows: counts[origin]})
 	}
 	return rendered
+}
+
+// DecodeCandidates reads a candidates document back (ADR-0045): the one
+// consumer of that document is a comparison of two pack versions, which takes
+// its inputs and leaves everything else alone. It is held to the same closed
+// shape this file emits, as strictly as a matrix is held to its own: strict
+// JSON with no duplicate member names, the exact members spelled exactly, the
+// one candidatesVersion this runtime writes, at least one candidate and no more
+// than a matrix may carry rows, unique non-empty ids, and a facts document per
+// candidate. The rationale is read and not interpreted; origin is provenance.
+func DecodeCandidates(data []byte) (Candidates, error) {
+	if int64(len(data)) > MaxMatrixBytes {
+		return Candidates{}, errors.New("the candidates document exceeds the input limit")
+	}
+	document, carrierFailure := carrier.Decode(data, carrier.DefaultLimits())
+	if carrierFailure != nil {
+		return Candidates{}, fmt.Errorf("the candidates document is not acceptable JSON: %s", display.Sanitize(carrierFailure.Diagnostic.Message))
+	}
+	root, ok := document.(map[string]any)
+	if !ok {
+		return Candidates{}, errors.New("the candidates document root must be a JSON object with candidatesVersion and candidates")
+	}
+	if version, _ := root["candidatesVersion"].(string); version != CandidatesVersion {
+		return Candidates{}, fmt.Errorf("the candidates document must declare candidatesVersion %q, the one this runtime reads", CandidatesVersion)
+	}
+	if err := exactMembers(root, []string{"candidatesVersion", "candidates"}, "the candidates document"); err != nil {
+		return Candidates{}, err
+	}
+	items, ok := root["candidates"].([]any)
+	if !ok {
+		return Candidates{}, errors.New("the candidates document's candidates member must be an array")
+	}
+	for index, item := range items {
+		candidate, ok := item.(map[string]any)
+		if !ok {
+			return Candidates{}, fmt.Errorf("candidate %d is not a JSON object", index)
+		}
+		if err := exactMembers(candidate, []string{"id", "origin", "facts", "evidenceAvailability", "rationale"}, fmt.Sprintf("candidate %d", index)); err != nil {
+			return Candidates{}, err
+		}
+	}
+	var candidates Candidates
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&candidates); err != nil {
+		return Candidates{}, fmt.Errorf("the candidates document has a member of the wrong type: %s", display.Sanitize(err.Error()))
+	}
+	if len(candidates.Candidates) == 0 {
+		return Candidates{}, errors.New("the candidates document declares no candidates")
+	}
+	if len(candidates.Candidates) > MaxMatrixCases {
+		return Candidates{}, fmt.Errorf("the candidates document declares more than the %d supported candidates", MaxMatrixCases)
+	}
+	seen := map[string]bool{}
+	for index, candidate := range candidates.Candidates {
+		if candidate.ID == "" {
+			return Candidates{}, fmt.Errorf("candidate %d declares no id", index)
+		}
+		if seen[candidate.ID] {
+			return Candidates{}, fmt.Errorf("candidate id %q appears more than once", display.Sanitize(candidate.ID))
+		}
+		seen[candidate.ID] = true
+		if len(candidate.Facts) == 0 || string(candidate.Facts) == "null" {
+			return Candidates{}, fmt.Errorf("candidate %q declares no facts document", display.Sanitize(candidate.ID))
+		}
+	}
+	return candidates, nil
+}
+
+// exactMembers refuses a member of one object that is not exactly one of the
+// known names, visiting them in sorted order so one document always names the
+// same first defect. encoding/json alone would fold a differently cased name
+// onto a known one.
+func exactMembers(object map[string]any, known []string, subject string) error {
+	for _, name := range slices.Sorted(maps.Keys(object)) {
+		if !slices.Contains(known, name) {
+			return fmt.Errorf("%s has a member this runtime does not know: %q", subject, display.Sanitize(name))
+		}
+	}
+	return nil
 }

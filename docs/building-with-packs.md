@@ -432,6 +432,25 @@ count never gates: `origin` is deletable in one edit, so a gate would teach the 
 the only signal there is. If you find yourself writing an expectation for *every* candidate rather
 than deleting some, that is the signature this design is watching for.
 
+### Before you move a line, compare the versions
+
+A revised rule changes answers, and `packs test` only finds the changes where a row with an
+expectation already sits. To see every input the revision decides differently before you write any
+new expectation, evaluate one set of inputs under both versions
+([ADR-0045](adr/0045-compare-two-versions-of-a-pack.md)):
+
+```bash
+git show HEAD:packs/expense.json > expense-before.json
+jpack experimental compare expense-before.json packs/expense.json --inputs candidates.json
+```
+
+The inputs are your matrix, whose expectations are left unread, or the candidates document
+`packs suggest` wrote, which holds the inputs nearest each line the pack draws. The report lists the
+inputs whose results differ, with both results and what changed, and counts the rest. A difference
+says the two versions disagree; the policy text says which is right, and a difference is not an
+expectation. The command opens no project, so it records nothing and consults no lock, and it exits
+0 whenever it ran.
+
 ### Review
 
 **Approval is the pull request.** There is no approval state in the file, no `approved: true`, and

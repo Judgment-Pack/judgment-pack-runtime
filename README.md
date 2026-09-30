@@ -21,9 +21,10 @@ document declares; `0.1.0-draft` defines carrier, structural, and semantic docum
 only, and `0.2.0-draft` changes no part of the document format.
 
 One shared evaluator applies the specification's §§7–8 resolution model per
-[ADR-0007](docs/adr/0007-experimental-evaluator.md), and nine surfaces reach it: `jpack experimental
+[ADR-0007](docs/adr/0007-experimental-evaluator.md), and ten surfaces reach it: `jpack experimental
 evaluate` and `evaluate-corpus`, the project walk `jpack packs test`, the graph verbs
-`jpack experimental graph evaluate` and `graph test`, and the `experimental_evaluate`,
+`jpack experimental graph evaluate` and `graph test`, the version comparison
+`jpack experimental compare`, and the `experimental_evaluate`,
 `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools. The `experimental` namespace is a **stability**
 statement: such a surface may change or be removed without compatibility promise. It is not a statement
 about conformance. That evaluator implements the evaluator conformance class Core `0.2.0-draft` adds —
@@ -92,6 +93,7 @@ jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one de
 jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
 jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PROTOTYPE; a pack that declares values is not an input the class defines)
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
+jpack experimental compare <old-pack> <new-pack> --inputs <file>   (EXPERIMENTAL SURFACE; the inputs two versions decide differently; ADR-0045)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
 jpack experimental graph evaluate <graph-or-> [--inputs <file-or->] [--rehearsal]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
