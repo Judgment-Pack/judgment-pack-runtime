@@ -134,10 +134,11 @@ func buildAuthorPack(args map[string]string) string {
 
 1. ORIENT. Call get_schema with spec_version "0.2.0-draft" for the format reference -- the
    tool's no-argument default serves 0.1.0-draft, which is not the version you are declaring.
-   Then list_examples for the bundled valid fixtures; fetch the one closest to your decision
-   with get_example and use its SHAPE (not its content) as scaffolding. Fixtures are
-   version-pinned 0.1.0-draft conformance cases, not templates: the two drafts share one
-   document format, so the only member your pack declares differently is specVersion.
+   Then call list_examples with spec_version "0.2.0-draft" for the bundled valid fixtures the
+   evaluator admits; fetch the one closest to your decision with get_example, passing the same
+   spec_version, and use its SHAPE (not its content) as scaffolding. Fixtures are version-pinned
+   conformance cases, not templates. Without spec_version both tools serve the 0.1.0-draft set,
+   which the evaluator refuses until its specVersion is re-declared.
 
 2. SCOPE. One pack = one decision ("may X be done?"), with the outcomes the policy itself names.
    Agent procedure ("confirm before acting") is not a decision; leave it out. If the policy names a

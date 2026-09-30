@@ -1679,6 +1679,110 @@ func TestSpecSchemaHumanOutputCarriesIdentityDigestAndSize(t *testing.T) {
 	}
 }
 
+// --spec-version chooses which bundled version's examples are served (runtime
+// #175). The default is unchanged; the evaluator's version gives a document it
+// evaluates as it stands; an unbundled version is refused as spec schema refuses
+// one. Every output names the set's version and the evaluator's.
+func TestExamplesSpecVersionServesTheSetTheEvaluatorAdmits(t *testing.T) {
+	const name = "minimal-expense-approval"
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, artifacts.DraftVersion},
+		{[]string{"--spec-version", result.EvaluatorSpecVersion}, result.EvaluatorSpecVersion},
+	} {
+		code, stdout, stderr := runTest(t, append([]string{"spec", "examples", "--format", "json"}, tc.args...), "")
+		if code != 0 || stderr != "" {
+			t.Fatalf("%v: exit=%d stderr=%q", tc.args, code, stderr)
+		}
+		var catalog map[string]any
+		if err := json.Unmarshal([]byte(stdout), &catalog); err != nil {
+			t.Fatal(err)
+		}
+		if catalog["specVersion"] != tc.want || catalog["evaluatorSpecVersion"] != result.EvaluatorSpecVersion {
+			t.Fatalf("%v: specVersion %v, evaluatorSpecVersion %v", tc.args, catalog["specVersion"], catalog["evaluatorSpecVersion"])
+		}
+
+		code, single, stderr := runTest(t, append([]string{"spec", "examples", name, "--format", "json"}, tc.args...), "")
+		if code != 0 || stderr != "" {
+			t.Fatalf("%v: exit=%d stderr=%q", tc.args, code, stderr)
+		}
+		set, err := artifacts.Load(tc.want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		meta, _, err := describe.Example(set, name, "spec examples")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal([]byte(single), &got); err != nil {
+			t.Fatal(err)
+		}
+		if want := jsonRoundTrip(t, meta); !reflect.DeepEqual(got, want) {
+			t.Fatalf("%v: CLI JSON drifted from describe.Example:\n got=%v\nwant=%v", tc.args, got, want)
+		}
+	}
+
+	// What the flag is for. The example written under the evaluator's version is
+	// evaluated as it stands; the default one is refused until re-declared.
+	t.Setenv("JPACK_CONFIG", filepath.Join(t.TempDir(), "no-project.json"))
+	dir := t.TempDir()
+	facts := filepath.Join(dir, "facts.json")
+	if err := os.WriteFile(facts, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		version string
+		code    int
+	}{
+		{result.EvaluatorSpecVersion, 0},
+		{artifacts.DraftVersion, 1},
+	} {
+		target := filepath.Join(dir, tc.version+".json")
+		code, _, stderr := runTest(t, []string{"spec", "examples", name, "--spec-version", tc.version, "--write", target}, "")
+		if code != 0 || stderr != "" {
+			t.Fatalf("write %s: exit=%d stderr=%q", tc.version, code, stderr)
+		}
+		code, stdout, _ := runTest(t, []string{"experimental", "evaluate", target, "--facts", facts, "--rehearsal", "--format", "json"}, "")
+		if code != tc.code {
+			t.Fatalf("evaluate the %s example: exit=%d, want %d: %s", tc.version, code, tc.code, stdout)
+		}
+		if tc.code != 0 && !strings.Contains(stdout, "JPS-EVALUATION-PACK-SPEC-VERSION") {
+			t.Fatalf("the %s example must be refused for its version: %s", tc.version, stdout)
+		}
+	}
+
+	// A version this CLI does not bundle is unsupported, as it is for spec schema.
+	for _, args := range [][]string{
+		{"spec", "examples", "--spec-version", "9.9.9-draft", "--format", "json"},
+		{"spec", "examples", name, "--spec-version", "9.9.9-draft", "--format", "json"},
+	} {
+		code, stdout, stderr := runTest(t, args, "")
+		if code != 2 || stderr != "" {
+			t.Fatalf("%v: exit=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+		if !strings.Contains(stdout, `"JPS-CAPABILITY-SPEC-VERSION"`) || !strings.Contains(stdout, `"unsupported"`) {
+			t.Fatalf("%v: %s", args, stdout)
+		}
+	}
+
+	// The human output says whether a pack made from the listed set needs re-declaring.
+	_, listed, _ := runTest(t, []string{"spec", "examples"}, "")
+	if !strings.Contains(listed, "the evaluator admits only "+result.EvaluatorSpecVersion+": re-declare specVersion before evaluating, or use --spec-version "+result.EvaluatorSpecVersion) {
+		t.Fatalf("the default listing must say the evaluator refuses its version:\n%s", listed)
+	}
+	_, listed, _ = runTest(t, []string{"spec", "examples", "--spec-version", result.EvaluatorSpecVersion}, "")
+	if !strings.Contains(listed, "the evaluator admits "+result.EvaluatorSpecVersion+": a pack made from this set needs no re-declaration") {
+		t.Fatalf("the evaluator's own set must say it needs no re-declaration:\n%s", listed)
+	}
+	_, shown, _ := runTest(t, []string{"spec", "examples", name}, "")
+	if !strings.Contains(shown, "declares: "+artifacts.DraftVersion) || !strings.Contains(shown, "the evaluator admits only "+result.EvaluatorSpecVersion) {
+		t.Fatalf("one example's human output must name both versions:\n%s", shown)
+	}
+}
+
 func TestSpecExamplesHumanOutputKeepsTheFixturesNotTemplatesFraming(t *testing.T) {
 	code, stdout, stderr := runTest(t, []string{"spec", "examples"}, "")
 	if code != 0 {

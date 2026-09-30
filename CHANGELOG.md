@@ -4,6 +4,20 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`spec examples --spec-version`, and `spec_version` on `list_examples` and `get_example`: the
+  examples the evaluator admits can now be reached** (#175). The runtime bundles a valid example set
+  for each specification version it carries, and every surface served the `0.1.0-draft` set only,
+  which the evaluator refuses (§11). Naming `0.2.0-draft` serves that version's set: the same eight
+  fixtures, each declaring `0.2.0-draft`, so a pack made from one is evaluated as it stands. The
+  default is unchanged, and a version this runtime does not bundle is refused as `spec schema` and
+  `get_schema` refuse one (`JPS-CAPABILITY-SPEC-VERSION`, exit 2, on the CLI). Every listing and
+  every example payload gains `evaluatorSpecVersion` beside `specVersion`, and the human output says
+  whether a pack made from the set must be re-declared before it is evaluated. The `author_pack`
+  prompt now asks for the examples with `spec_version` `"0.2.0-draft"`. The members are additive
+  output under VERSIONING.md's MINOR rule; `outputVersion` stays `"2"`. An unknown member of
+  `list_examples` or `get_example` is refused as before, and its message now names `spec_version`
+  among the accepted members.
+
 - **`experimental evaluate --rfc0016-outcome-values`: a draft-RFC prototype of the specification's
   RFC 0016 (Draft), outcome values** (ADR-0039). An outcome declares named values under
   `org.judgmentpack.outcome-values`, each a constant or a copy of one fact, of type `string`,

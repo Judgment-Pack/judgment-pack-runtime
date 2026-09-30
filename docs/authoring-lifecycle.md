@@ -41,7 +41,7 @@ The runtime serves both without knowing which it is talking to.
 | --- | --- | --- |
 | Invocation | one-shot process per call | long-lived, JSON-RPC 2.0 over stdio |
 | Validate | `spec validate <path-or->` | `validate { document }` |
-| Seed a draft | `spec examples [name] [--write …]` | `list_examples` / `get_example { name }` |
+| Seed a draft | `spec examples [name] [--spec-version V] [--write …]` | `list_examples { spec_version }` / `get_example { name, spec_version }` |
 | Reference schema | `spec schema <version> [--write …]` | `get_schema { spec_version }` |
 | Self-check | `spec test-conformance` | `test_conformance` |
 | How a document is passed | a **path** is allowed | **text only**, never a path |
@@ -66,6 +66,16 @@ They exist to give a filesystem-less client a conformant *starting point* for Cr
 document of your own and edit from there; it is not your pack, and the runtime never stores or serves
 your pack back.
 
+**Each bundled specification version has its own set.** The two sets hold the same eight fixtures,
+and each fixture differs from its counterpart only in the `specVersion` it declares. With no version
+named, the tools serve the `0.1.0-draft` set, as they always have. The evaluator admits only
+`0.2.0-draft` (Core §11), so a pack seeded from the default set is refused by
+`experimental evaluate` until its `specVersion` is re-declared; that is one edit and nothing else.
+When the pack will be evaluated, ask for the evaluator's set: `--spec-version 0.2.0-draft` on the
+CLI, `spec_version: "0.2.0-draft"` on either tool. Every listing and every example payload names both
+versions, as `specVersion` and `evaluatorSpecVersion`, and the CLI's human output says whether the
+set needs re-declaring.
+
 > **One fixture reports `unsupported`, not `valid`, and that is correct.**
 > `required-extension-supported` declares a *required extension*, so `validate` reports `unsupported`
 > (exit 2, `JPS-CAPABILITY-REQUIRED-EXTENSION`) unless the consumer supports that extension — and the
@@ -82,12 +92,12 @@ your pack back.
 
 The client produces the initial bytes, then validates until the runtime reports `valid`.
 
-- **Filesystem-less client:** call `list_examples`, pick a fixture whose focus is closest to the
-  target, call `get_example { name }` to receive its text, copy that into a working document in
-  context, edit, and call `validate { document }`. The [self-sufficient diagnostics](agent-testing.md)
+- **Filesystem-less client:** call `list_examples { spec_version }`, pick a fixture whose focus is
+  closest to the target, call `get_example { name, spec_version }` to receive its text, copy that
+  into a working document in context, edit, and call `validate { document }`. The [self-sufficient diagnostics](agent-testing.md)
   drive the fix loop; `get_schema` is the reference of last resort.
 - **Filesystem client:** the same, but the working document is a file — either seeded from a fixture
-  (`spec examples <name> --write pack.json`) or written from scratch — and validated with
+  (`spec examples <name> --spec-version 0.2.0-draft --write pack.json`) or written from scratch — and validated with
   `spec validate pack.json`.
 
 ### Read
@@ -115,19 +125,21 @@ Seed a draft from a fixture, validate it, break it, read the diagnostic, fix it,
 real output from this runtime:
 
 ```console
-$ jpack spec examples minimal-literal --write pack.json
+$ jpack spec examples minimal-literal --spec-version 0.2.0-draft --write pack.json
 JPS example minimal-literal
+declares: 0.2.0-draft
+the evaluator admits 0.2.0-draft: a pack made from this set needs no re-declaration
 focus: minimal structurally and semantically conforming document
 spec: §§2–7
-sha256: 516a9d6c92052b291f7e065d514ba89169975e50c216b9b4f59b729a274a52dd
+sha256: 0ea1a0c23cbc43609d6ab458694072ca08f620126b86a35369f1f3afaa98742c
 bytes: 611
 kind: version-pinned-conformance-fixture
 artifacts: immutable-git-ref
 written: pack.json
 
 $ jpack spec validate pack.json
-valid: JPS document conformance passed (0.1.0-draft)
-artifacts: immutable-git-ref · sha256 abc3d3371db5be6c0b63639d399fbe42e3f3e136a162d8d6c2b50503634bbe70
+valid: JPS document conformance passed (0.2.0-draft)
+artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185
 
 # ...edit pack.json so a rule points at an outcome that was never declared...
 
@@ -139,8 +151,8 @@ exit=1
 # ...the diagnostic named the offending value, the location, and the valid set; fix it...
 
 $ jpack spec validate pack.json ; echo "exit=$?"
-valid: JPS document conformance passed (0.1.0-draft)
-artifacts: immutable-git-ref · sha256 abc3d3371db5be6c0b63639d399fbe42e3f3e136a162d8d6c2b50503634bbe70
+valid: JPS document conformance passed (0.2.0-draft)
+artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185
 exit=0
 ```
 
@@ -156,8 +168,9 @@ it — so the fix loop needs nothing beyond the message.
 A filesystem-less client drives the identical loop with tool calls; the document crosses the wire as
 text at every step:
 
-1. `list_examples` → choose `minimal-literal` from the returned catalog.
-2. `get_example { "name": "minimal-literal" }` → the fixture text arrives as the tool result's
+1. `list_examples { "spec_version": "0.2.0-draft" }` → choose `minimal-literal` from the returned
+   catalog.
+2. `get_example { "name": "minimal-literal", "spec_version": "0.2.0-draft" }` → the fixture text arrives as the tool result's
    `content`; its digest and byte size arrive as `structuredContent`.
 3. Copy that text into a working document in context, edit it.
 4. `validate { "document": "<the edited text>" }` → `structuredContent.status` is `invalid` with the

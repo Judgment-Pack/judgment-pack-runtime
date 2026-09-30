@@ -191,31 +191,38 @@ type ExampleSummary struct {
 	SpecSection string `json:"specSection"`
 }
 
+// Examples lists one bundled version's valid examples. SpecVersion is the
+// version the listed documents declare; EvaluatorSpecVersion is the only version
+// the evaluator admits (§11). The two differ for the default set, and a reader
+// needs both to know whether a document made from an example can be evaluated
+// without re-declaring it.
 type Examples struct {
-	OutputVersion string           `json:"outputVersion"`
-	Tool          Tool             `json:"tool"`
-	Command       string           `json:"command"`
-	Status        string           `json:"status"`
-	SpecVersion   string           `json:"specVersion"`
-	Provenance    string           `json:"provenance"`
-	Kind          string           `json:"kind"`
-	Examples      []ExampleSummary `json:"examples"`
+	OutputVersion        string           `json:"outputVersion"`
+	Tool                 Tool             `json:"tool"`
+	Command              string           `json:"command"`
+	Status               string           `json:"status"`
+	SpecVersion          string           `json:"specVersion"`
+	EvaluatorSpecVersion string           `json:"evaluatorSpecVersion"`
+	Provenance           string           `json:"provenance"`
+	Kind                 string           `json:"kind"`
+	Examples             []ExampleSummary `json:"examples"`
 }
 
 type Example struct {
-	OutputVersion string `json:"outputVersion"`
-	Tool          Tool   `json:"tool"`
-	Command       string `json:"command"`
-	Status        string `json:"status"`
-	SpecVersion   string `json:"specVersion"`
-	Name          string `json:"name"`
-	Focus         string `json:"focus"`
-	SpecSection   string `json:"specSection"`
-	Bytes         int    `json:"bytes"`
-	SHA256        string `json:"sha256"`
-	Provenance    string `json:"provenance"`
-	Kind          string `json:"kind"`
-	WrittenTo     string `json:"writtenTo,omitempty"`
+	OutputVersion        string `json:"outputVersion"`
+	Tool                 Tool   `json:"tool"`
+	Command              string `json:"command"`
+	Status               string `json:"status"`
+	SpecVersion          string `json:"specVersion"`
+	EvaluatorSpecVersion string `json:"evaluatorSpecVersion"`
+	Name                 string `json:"name"`
+	Focus                string `json:"focus"`
+	SpecSection          string `json:"specSection"`
+	Bytes                int    `json:"bytes"`
+	SHA256               string `json:"sha256"`
+	Provenance           string `json:"provenance"`
+	Kind                 string `json:"kind"`
+	WrittenTo            string `json:"writtenTo,omitempty"`
 }
 
 // --- experimental evaluation (ADR-0007; spec RFC 0006) ---

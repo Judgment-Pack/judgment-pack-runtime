@@ -282,6 +282,104 @@ func TestExampleToolsSurfaceEmbeddedFixtures(t *testing.T) {
 	}
 }
 
+// Each bundled version has its own example set, and spec_version chooses it
+// (runtime #175). With no argument the tools serve what they served before;
+// asked for the version the evaluator admits, they serve documents it evaluates
+// as they stand; asked for a version this runtime does not bundle, they refuse
+// rather than answer with another version's examples. Every answer names both
+// the set's version and the evaluator's.
+func TestExampleToolsServeTheVersionTheyAreAskedFor(t *testing.T) {
+	const name = "minimal-expense-approval"
+	input := strings.Join([]string{
+		message(t, 1, "tools/call", map[string]any{"name": "list_examples", "arguments": map[string]any{}}),
+		message(t, 2, "tools/call", map[string]any{"name": "list_examples", "arguments": map[string]any{"spec_version": result.EvaluatorSpecVersion}}),
+		message(t, 3, "tools/call", map[string]any{"name": "get_example", "arguments": map[string]any{"name": name}}),
+		message(t, 4, "tools/call", map[string]any{"name": "get_example", "arguments": map[string]any{"name": name, "spec_version": result.EvaluatorSpecVersion}}),
+		message(t, 5, "tools/call", map[string]any{"name": "list_examples", "arguments": map[string]any{"spec_version": "9.9.9-draft"}}),
+		message(t, 6, "tools/call", map[string]any{"name": "get_example", "arguments": map[string]any{"name": name, "spec_version": "9.9.9-draft"}}),
+		message(t, 7, "tools/call", map[string]any{"name": "list_examples", "arguments": map[string]any{"spec_version": 2}}),
+	}, "")
+	responses := runServer(t, input)
+	if len(responses) != 7 {
+		t.Fatalf("got %d responses, want 7", len(responses))
+	}
+	call := func(i int) map[string]any { return responses[i]["result"].(map[string]any) }
+
+	for i, want := range map[int]string{0: artifacts.DraftVersion, 1: result.EvaluatorSpecVersion} {
+		listed := call(i)
+		if listed["isError"] != false {
+			t.Fatalf("list_examples call %d should succeed: %#v", i+1, listed)
+		}
+		structured := listed["structuredContent"].(map[string]any)
+		if structured["specVersion"] != want || structured["evaluatorSpecVersion"] != result.EvaluatorSpecVersion {
+			t.Fatalf("list_examples call %d names specVersion %v and evaluatorSpecVersion %v, want %s and %s",
+				i+1, structured["specVersion"], structured["evaluatorSpecVersion"], want, result.EvaluatorSpecVersion)
+		}
+		if len(structured["examples"].([]any)) == 0 {
+			t.Fatalf("list_examples call %d listed nothing", i+1)
+		}
+	}
+
+	for i, version := range map[int]string{2: artifacts.DraftVersion, 3: result.EvaluatorSpecVersion} {
+		got := call(i)
+		if got["isError"] != false {
+			t.Fatalf("get_example call %d should succeed: %#v", i+1, got)
+		}
+		set, err := artifacts.Load(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := set.Case("valid/" + name + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text := toolText(t, got); text != string(want) {
+			t.Fatalf("get_example call %d returned bytes that differ from the %s fixture", i+1, version)
+		}
+		meta, _, err := describe.Example(set, name, "mcp get_example")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wantMeta map[string]any
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(metaBytes, &wantMeta); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got["structuredContent"], wantMeta) {
+			t.Fatalf("get_example call %d drifted from describe.Example:\n got=%v\nwant=%v", i+1, got["structuredContent"], wantMeta)
+		}
+	}
+
+	for _, i := range []int{4, 5} {
+		refused := call(i)
+		if refused["isError"] != true {
+			t.Fatalf("call %d named a version this runtime does not bundle and must be refused: %#v", i+1, refused)
+		}
+		if text := toolText(t, refused); text != "The exact JPS specification version is not bundled with this runtime." {
+			t.Fatalf("call %d refusal = %q", i+1, text)
+		}
+	}
+	if call(6)["isError"] != true {
+		t.Fatalf("a spec_version that is not a string must be refused: %#v", call(6))
+	}
+
+	// What the argument is for: the example the evaluator's version serves is
+	// evaluated as it stands, and the default one is refused until re-declared.
+	evaluate := func(pack string) map[string]any {
+		return runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack": pack, "facts": `{}`, "rehearsal": true}))[0]["result"].(map[string]any)
+	}
+	if evaluated := evaluate(toolText(t, call(3))); evaluated["isError"] != false {
+		t.Fatalf("the %s example must be evaluated as it stands: %#v", result.EvaluatorSpecVersion, evaluated)
+	}
+	refused := evaluate(toolText(t, call(2)))
+	if refused["isError"] != true || !strings.Contains(toolText(t, refused), "JPS-EVALUATION-PACK-SPEC-VERSION") {
+		t.Fatalf("the %s example is refused by the evaluator until re-declared: %#v", artifacts.DraftVersion, refused)
+	}
+}
+
 // experimental_evaluate is labeled, produces a disposition for a conformant
 // pack, and refuses a non-conformant pack as an in-band tool error.
 func TestExperimentalEvaluateTool(t *testing.T) {
@@ -581,6 +679,22 @@ func TestEveryPromptRendersWithDisclaimer(t *testing.T) {
 		}
 		if len(text) < 500 {
 			t.Fatalf("%s rendering suspiciously short: %d bytes", name, len(text))
+		}
+	}
+}
+
+// author_pack points an author to the examples, and must name the argument that
+// serves the ones the evaluator admits: without it both example tools serve
+// 0.1.0-draft documents, which the evaluator refuses (runtime #175).
+func TestAuthorPackAsksForTheExamplesTheEvaluatorAdmits(t *testing.T) {
+	responses := runServer(t, message(t, 1, "prompts/get", map[string]any{"name": "author_pack"}))
+	text := responses[0]["result"].(map[string]any)["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
+	for _, want := range []string{
+		`call list_examples with spec_version "` + result.EvaluatorSpecVersion + `"`,
+		"with get_example, passing the same\n   spec_version",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("author_pack must name spec_version where it points to the examples; missing %q", want)
 		}
 	}
 }
@@ -1535,9 +1649,9 @@ func TestEveryToolRefusesAWhollyUnknownMember(t *testing.T) {
 		{"validate", map[string]any{"document": "{}", "typo": 1}, "the accepted members are document and through"},
 		{"test_conformance", map[string]any{"typo": 1}, "the accepted members are suite and spec_version"},
 		{"get_schema", map[string]any{"typo": 1}, `the accepted member is "spec_version"`},
-		{"get_example", map[string]any{"name": "minimal-expense-approval", "typo": 1}, `the accepted member is "name"`},
+		{"get_example", map[string]any{"name": "minimal-expense-approval", "typo": 1}, "the accepted members are name and spec_version"},
 		{"describe_runtime", map[string]any{"typo": true}, "it accepts no members"},
-		{"list_examples", map[string]any{"typo": true}, "it accepts no members"},
+		{"list_examples", map[string]any{"typo": true}, `the accepted member is "spec_version"`},
 		{"list_packs", map[string]any{"typo": true}, "it accepts no members"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
@@ -1558,7 +1672,7 @@ func TestEveryToolRefusesAWhollyUnknownMember(t *testing.T) {
 			}
 		})
 	}
-	// An empty object, or none, is what an argument-less tool takes.
+	// An empty object, or none, still lists the default set.
 	for _, arguments := range []map[string]any{{}, nil} {
 		responses := runServer(t, toolCall(t, 1, "list_examples", arguments))
 		if len(responses) != 1 || responses[0]["result"].(map[string]any)["isError"] != false {

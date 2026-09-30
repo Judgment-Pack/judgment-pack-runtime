@@ -113,14 +113,15 @@ func Examples(set *artifacts.Set, command string) (result.Examples, error) {
 		})
 	}
 	return result.Examples{
-		OutputVersion: result.OutputVersion,
-		Tool:          result.CurrentTool(),
-		Command:       command,
-		Status:        "valid",
-		SpecVersion:   set.Lock().SpecVersion,
-		Provenance:    set.Lock().Source.Kind,
-		Kind:          result.ExampleKind,
-		Examples:      summaries,
+		OutputVersion:        result.OutputVersion,
+		Tool:                 result.CurrentTool(),
+		Command:              command,
+		Status:               "valid",
+		SpecVersion:          set.Lock().SpecVersion,
+		EvaluatorSpecVersion: result.EvaluatorSpecVersion,
+		Provenance:           set.Lock().Source.Kind,
+		Kind:                 result.ExampleKind,
+		Examples:             summaries,
 	}, nil
 }
 
@@ -135,18 +136,19 @@ func Example(set *artifacts.Set, name, command string) (result.Example, []byte, 
 	}
 	sum := sha256.Sum256(data)
 	return result.Example{
-		OutputVersion: result.OutputVersion,
-		Tool:          result.CurrentTool(),
-		Command:       command,
-		Status:        "valid",
-		SpecVersion:   set.Lock().SpecVersion,
-		Name:          info.Name,
-		Focus:         info.Focus,
-		SpecSection:   info.SpecSection,
-		Bytes:         len(data),
-		SHA256:        hex.EncodeToString(sum[:]),
-		Provenance:    set.Lock().Source.Kind,
-		Kind:          result.ExampleKind,
+		OutputVersion:        result.OutputVersion,
+		Tool:                 result.CurrentTool(),
+		Command:              command,
+		Status:               "valid",
+		SpecVersion:          set.Lock().SpecVersion,
+		EvaluatorSpecVersion: result.EvaluatorSpecVersion,
+		Name:                 info.Name,
+		Focus:                info.Focus,
+		SpecSection:          info.SpecSection,
+		Bytes:                len(data),
+		SHA256:               hex.EncodeToString(sum[:]),
+		Provenance:           set.Lock().Source.Kind,
+		Kind:                 result.ExampleKind,
 	}, data, nil
 }
 
