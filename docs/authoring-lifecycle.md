@@ -72,9 +72,12 @@ named, the tools serve the `0.1.0-draft` set, as they always have. The evaluator
 `0.2.0-draft` (Core §11), so a pack seeded from the default set is refused by
 `experimental evaluate` until its `specVersion` is re-declared; that is one edit and nothing else.
 When the pack will be evaluated, ask for the evaluator's set: `--spec-version 0.2.0-draft` on the
-CLI, `spec_version: "0.2.0-draft"` on either tool. Every listing and every example payload names both
-versions, as `specVersion` and `evaluatorSpecVersion`, and the CLI's human output says whether the
-set needs re-declaring.
+CLI, `spec_version: "0.2.0-draft"` on either tool. That clears the evaluator's version check and
+nothing else: `required-extension-supported` declares a required extension, and the evaluator refuses
+it unless that extension is supported (see the note below). Every listing and every example's
+metadata names both versions, as `specVersion` and `evaluatorSpecVersion`; `--write` copies the
+fixture's exact bytes and adds nothing. The CLI's human output says whether the set needs
+re-declaring.
 
 > **One fixture reports `unsupported`, not `valid`, and that is correct.**
 > `required-extension-supported` declares a *required extension*, so `validate` reports `unsupported`

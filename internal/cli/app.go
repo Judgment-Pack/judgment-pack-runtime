@@ -673,11 +673,16 @@ func (a *App) examplesCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "examples [name]",
 		Short: "List or print bundled valid JPS example documents",
-		Long:  "List the valid, version-pinned example documents this CLI embeds, or print one by name. These are digest-locked conformance fixtures from the specification, offered read-only as authoring starting points -- not authored templates. With no name, list them; with a name, show its metadata, or write its exact bytes with --write. --spec-version selects which bundled version's examples are served; the default is " + artifacts.DraftVersion + ", and the evaluator admits only " + result.EvaluatorSpecVersion + " (Core §11), so a pack made from a default example must be re-declared before it is evaluated, while one made from --spec-version " + result.EvaluatorSpecVersion + " needs no edit. Every output names both versions.",
+		Long:  "List the valid, version-pinned example documents this CLI embeds, or print one by name. These are digest-locked conformance fixtures from the specification, offered read-only as authoring starting points -- not authored templates. With no name, list them; with a name, show its metadata, or write its exact bytes with --write. --spec-version selects which bundled version's examples are served; the default is " + artifacts.DraftVersion + ", and the evaluator admits only " + result.EvaluatorSpecVersion + " (Core §11), so a pack made from a default example must have its specVersion re-declared before it is evaluated, while one made from --spec-version " + result.EvaluatorSpecVersion + " needs no re-declaration. That clears the evaluator's version check and nothing else: required-extension-supported declares a required extension, and the evaluator refuses it unless that extension is supported. The listing and each example's metadata name both versions; --write copies the fixture's exact bytes and adds nothing.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
 				return a.operational("spec examples", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			// An explicitly empty version is the default, as it is for
+			// spec test-conformance and for every MCP tool's spec_version.
+			if specVersion == "" {
+				specVersion = artifacts.DraftVersion
 			}
 			set, err := artifacts.Load(specVersion)
 			if err != nil {

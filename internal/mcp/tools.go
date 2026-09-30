@@ -90,7 +90,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "list_examples",
-			"description": "List the bundled valid JPS example documents: version-pinned conformance fixtures the runtime embeds and digest-locks, offered read-only as starting points for authoring. They are not authored templates. Use get_example to fetch one by name. Each bundled version has its own set, and spec_version chooses it; with no argument the set is " + artifacts.DraftVersion + ". The evaluator admits only " + result.EvaluatorSpecVersion + " (Core §11), and the result names both versions: a pack made from an example of another version must have its specVersion re-declared before it is evaluated, so pass spec_version \"" + result.EvaluatorSpecVersion + "\" when you mean to evaluate what you author.",
+			"description": "List the bundled valid JPS example documents: version-pinned conformance fixtures the runtime embeds and digest-locks, offered read-only as starting points for authoring. They are not authored templates. Use get_example to fetch one by name. Each bundled version has its own set, and spec_version chooses it; with no argument the set is " + artifacts.DraftVersion + ". The evaluator admits only " + result.EvaluatorSpecVersion + " (Core §11), and the result names both versions: a pack made from an example of another version must have its specVersion re-declared before it is evaluated, so pass spec_version \"" + result.EvaluatorSpecVersion + "\" when you mean to evaluate what you author. That clears the evaluator's version check and nothing else: required-extension-supported declares a required extension, and the evaluator refuses it unless that extension is supported.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -108,7 +108,7 @@ func toolDefinitions() []map[string]any {
 				"required":             []string{"name"},
 				"properties": map[string]any{
 					"name":         map[string]any{"type": "string", "description": "The example name, as reported by list_examples (for example, minimal-expense-approval)."},
-					"spec_version": map[string]any{"type": "string", "description": "Optional exact JPS version whose example to return; defaults to " + artifacts.DraftVersion + ". The evaluator admits " + result.EvaluatorSpecVersion + ", so pass \"" + result.EvaluatorSpecVersion + "\" for a document it evaluates without re-declaration."},
+					"spec_version": map[string]any{"type": "string", "description": "Optional exact JPS version whose example to return; defaults to " + artifacts.DraftVersion + ". The evaluator admits " + result.EvaluatorSpecVersion + ", so pass \"" + result.EvaluatorSpecVersion + "\" for a document that needs no specVersion re-declaration before it is evaluated."},
 				},
 			},
 		},

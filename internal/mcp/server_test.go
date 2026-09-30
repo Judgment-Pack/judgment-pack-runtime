@@ -145,6 +145,30 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	if required, ok := evaluateSchema["required"].([]any); !ok || len(required) != 1 || required[0] != "facts" {
 		t.Fatalf(`"facts" is the one required member — optional means absent from required: %v`, evaluateSchema["required"])
 	}
+	// spec_version on the two example tools is advertised as the handlers hold
+	// it (runtime #175): an optional string on a closed schema. A schema that
+	// dropped it would leave a schema-driven client unable to find the examples
+	// the evaluator admits.
+	for _, tc := range []struct {
+		tool     string
+		required []any
+	}{
+		{"list_examples", nil},
+		{"get_example", []any{"name"}},
+	} {
+		schema := advertised[tc.tool]["inputSchema"].(map[string]any)
+		if schema["additionalProperties"] != false {
+			t.Fatalf("the %s schema is closed: %v", tc.tool, schema)
+		}
+		property, ok := schema["properties"].(map[string]any)["spec_version"].(map[string]any)
+		if !ok || property["type"] != "string" {
+			t.Fatalf("the %s schema advertises an optional string spec_version: %v", tc.tool, schema)
+		}
+		required, _ := schema["required"].([]any)
+		if !reflect.DeepEqual(required, tc.required) {
+			t.Fatalf("the %s schema requires %v, want %v: spec_version is optional", tc.tool, required, tc.required)
+		}
+	}
 	// The include_traces declaration is advertised the same way (ADR-0031): an
 	// optional boolean on a closed schema, with no required member at all.
 	graphsSchema := advertised["experimental_test_graphs"]["inputSchema"].(map[string]any)
@@ -351,6 +375,18 @@ func TestExampleToolsServeTheVersionTheyAreAskedFor(t *testing.T) {
 		if !reflect.DeepEqual(got["structuredContent"], wantMeta) {
 			t.Fatalf("get_example call %d drifted from describe.Example:\n got=%v\nwant=%v", i+1, got["structuredContent"], wantMeta)
 		}
+		// Held apart from the shared seam, which the comparison above cannot
+		// see past: the wire payload itself names both versions.
+		structured := got["structuredContent"].(map[string]any)
+		if structured["specVersion"] != version || structured["evaluatorSpecVersion"] != "0.2.0-draft" {
+			t.Fatalf("get_example call %d must name specVersion %s and evaluatorSpecVersion 0.2.0-draft: %v", i+1, version, structured)
+		}
+	}
+
+	// An explicitly empty spec_version is the default, as it is for get_schema.
+	empty := runServer(t, toolCall(t, 1, "list_examples", map[string]any{"spec_version": ""}))[0]["result"].(map[string]any)
+	if empty["isError"] != false || empty["structuredContent"].(map[string]any)["specVersion"] != "0.1.0-draft" {
+		t.Fatalf("an empty spec_version lists the default set: %#v", empty)
 	}
 
 	for _, i := range []int{4, 5} {
@@ -367,7 +403,8 @@ func TestExampleToolsServeTheVersionTheyAreAskedFor(t *testing.T) {
 	}
 
 	// What the argument is for: the example the evaluator's version serves is
-	// evaluated as it stands, and the default one is refused until re-declared.
+	// evaluated as it stands (this one declares no required extension), and the
+	// default one is refused until re-declared.
 	evaluate := func(pack string) map[string]any {
 		return runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack": pack, "facts": `{}`, "rehearsal": true}))[0]["result"].(map[string]any)
 	}
@@ -691,7 +728,7 @@ func TestAuthorPackAsksForTheExamplesTheEvaluatorAdmits(t *testing.T) {
 	text := responses[0]["result"].(map[string]any)["messages"].([]any)[0].(map[string]any)["content"].(map[string]any)["text"].(string)
 	for _, want := range []string{
 		`call list_examples with spec_version "` + result.EvaluatorSpecVersion + `"`,
-		"with get_example, passing the same\n   spec_version",
+		"get_example, passing the same spec_version",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("author_pack must name spec_version where it points to the examples; missing %q", want)

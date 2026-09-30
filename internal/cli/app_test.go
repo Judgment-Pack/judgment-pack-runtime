@@ -1681,8 +1681,9 @@ func TestSpecSchemaHumanOutputCarriesIdentityDigestAndSize(t *testing.T) {
 
 // --spec-version chooses which bundled version's examples are served (runtime
 // #175). The default is unchanged; the evaluator's version gives a document it
-// evaluates as it stands; an unbundled version is refused as spec schema refuses
-// one. Every output names the set's version and the evaluator's.
+// admits without re-declaration; an unbundled version is refused as spec schema
+// refuses one. The listing and each example's metadata name the set's version
+// and the evaluator's.
 func TestExamplesSpecVersionServesTheSetTheEvaluatorAdmits(t *testing.T) {
 	const name = "minimal-expense-approval"
 	for _, tc := range []struct {
@@ -1723,10 +1724,41 @@ func TestExamplesSpecVersionServesTheSetTheEvaluatorAdmits(t *testing.T) {
 		if want := jsonRoundTrip(t, meta); !reflect.DeepEqual(got, want) {
 			t.Fatalf("%v: CLI JSON drifted from describe.Example:\n got=%v\nwant=%v", tc.args, got, want)
 		}
+		// Held apart from the shared seam, which the comparison above cannot
+		// see past: the serialized metadata itself names both versions.
+		if got["specVersion"] != tc.want || got["evaluatorSpecVersion"] != "0.2.0-draft" {
+			t.Fatalf("%v: one example's metadata names specVersion %v and evaluatorSpecVersion %v", tc.args, got["specVersion"], got["evaluatorSpecVersion"])
+		}
+
+		// The bytes written are the bundled fixture's, to stdout and to a file.
+		fixture, err := set.Case("valid/" + name + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		code, printed, stderr := runTest(t, append([]string{"spec", "examples", name, "--write", "-"}, tc.args...), "")
+		if code != 0 || stderr != "" || printed != string(fixture) {
+			t.Fatalf("%v: --write - must print the %s fixture's exact bytes: exit=%d stderr=%q", tc.args, tc.want, code, stderr)
+		}
+		target := filepath.Join(t.TempDir(), "example.json")
+		if code, _, stderr := runTest(t, append([]string{"spec", "examples", name, "--write", target}, tc.args...), ""); code != 0 || stderr != "" {
+			t.Fatalf("%v: --write to a file: exit=%d stderr=%q", tc.args, code, stderr)
+		}
+		if written, err := os.ReadFile(target); err != nil || string(written) != string(fixture) {
+			t.Fatalf("%v: the file must hold the %s fixture's exact bytes: %v", tc.args, tc.want, err)
+		}
+	}
+
+	// An explicitly empty version is the default, as it is for spec
+	// test-conformance and for every MCP spec_version.
+	code, stdout, stderr := runTest(t, []string{"spec", "examples", "--spec-version", "", "--format", "json"}, "")
+	var emptyVersion map[string]any
+	if err := json.Unmarshal([]byte(stdout), &emptyVersion); err != nil || code != 0 || stderr != "" || emptyVersion["specVersion"] != "0.1.0-draft" {
+		t.Fatalf("an empty --spec-version lists the default set: exit=%d stderr=%q %s", code, stderr, stdout)
 	}
 
 	// What the flag is for. The example written under the evaluator's version is
-	// evaluated as it stands; the default one is refused until re-declared.
+	// evaluated as it stands (this one declares no required extension); the
+	// default one is refused until re-declared.
 	t.Setenv("JPACK_CONFIG", filepath.Join(t.TempDir(), "no-project.json"))
 	dir := t.TempDir()
 	facts := filepath.Join(dir, "facts.json")
