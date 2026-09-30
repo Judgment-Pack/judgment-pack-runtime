@@ -31,16 +31,18 @@ type PackComparison struct {
 // ComparedPack names one of the two documents: the path it was read from, its
 // own id and version as an evaluation read them (empty when every evaluation of
 // it was refused before its identity could be read), and the digest of its
-// exact bytes.
+// exact bytes, absent when the read stopped at the byte limit and the whole
+// document was never in hand.
 type ComparedPack struct {
 	Path        string `json:"path"`
 	PackID      string `json:"packId,omitempty"`
 	PackVersion string `json:"packVersion,omitempty"`
-	Digest      string `json:"digest"`
+	Digest      string `json:"digest,omitempty"`
 }
 
 // ComparedInputs says what the inputs were and how they compared: kind is
-// "matrix" (expectations unread) or "candidates" (a packs suggest document).
+// "matrix" (admitted under its own rules, its expectations playing no part) or
+// "candidates" (a packs suggest document).
 type ComparedInputs struct {
 	Kind      string `json:"kind"`
 	Count     int    `json:"count"`

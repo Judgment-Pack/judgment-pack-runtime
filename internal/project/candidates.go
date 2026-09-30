@@ -1648,8 +1648,10 @@ func MatrixOrigins(matrix Matrix) []result.OriginCount {
 // shape this file emits, as strictly as a matrix is held to its own: strict
 // JSON with no duplicate member names, the exact members spelled exactly, the
 // one candidatesVersion this runtime writes, at least one candidate and no more
-// than a matrix may carry rows, unique non-empty ids, and a facts document per
-// candidate. The rationale is read and not interpreted; origin is provenance.
+// than a matrix may carry rows, unique non-empty ids, a facts document per
+// candidate (null included, as a --base row may state it), and origin and
+// rationale as strings. The rationale is read and not interpreted; origin is
+// provenance.
 func DecodeCandidates(data []byte) (Candidates, error) {
 	if int64(len(data)) > MaxMatrixBytes {
 		return Candidates{}, errors.New("the candidates document exceeds the input limit")
@@ -1680,6 +1682,16 @@ func DecodeCandidates(data []byte) (Candidates, error) {
 		if err := exactMembers(candidate, []string{"id", "origin", "facts", "evidenceAvailability", "rationale"}, fmt.Sprintf("candidate %d", index)); err != nil {
 			return Candidates{}, err
 		}
+		// The writer always states these two as strings; null would decode
+		// into a Go string as if it were empty, so each is checked here.
+		for _, name := range []string{"origin", "rationale"} {
+			if _, isString := candidate[name].(string); !isString {
+				return Candidates{}, fmt.Errorf("candidate %d must state %s as a string", index, name)
+			}
+		}
+		if _, present := candidate["facts"]; !present {
+			return Candidates{}, fmt.Errorf("candidate %d declares no facts document", index)
+		}
 	}
 	var candidates Candidates
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -1702,7 +1714,9 @@ func DecodeCandidates(data []byte) (Candidates, error) {
 			return Candidates{}, fmt.Errorf("candidate id %q appears more than once", display.Sanitize(candidate.ID))
 		}
 		seen[candidate.ID] = true
-		if len(candidate.Facts) == 0 || string(candidate.Facts) == "null" {
+		// A facts document of null is a document: a --base row may state
+		// one, and the evaluator takes it as the input it is.
+		if len(candidate.Facts) == 0 {
 			return Candidates{}, fmt.Errorf("candidate %q declares no facts document", display.Sanitize(candidate.ID))
 		}
 	}

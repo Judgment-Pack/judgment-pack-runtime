@@ -50,10 +50,12 @@ Chosen option: **B**.
 1. **The command.** `jpack experimental compare <old-pack> <new-pack> --inputs <file>`, under
    `experimental` because it runs the experimental evaluator (ADR-0007). The two packs are documents
    by path, typically the committed version and the working copy. The inputs are either a matrix,
-   whose expectations are left unread, or a candidates document from `packs suggest`
+   admitted under the matrix's own rules but whose expectations play no part in the comparison,
+   or a candidates document from `packs suggest`
    (`candidatesVersion` `"1"`), which this command is the first to read. Each is held to its own
    closed shape; a document that is neither is refused.
-2. **The run.** Every input is evaluated under both packs, as `packs test` evaluates a row: its facts,
+2. **The run.** Every input is evaluated under both packs, as `packs test` evaluates a row that
+   reaches evaluation (a row `packs test` stops on its own expectation still reaches compare): its facts,
    its evidence availability, and its own supported extensions, joined by any the caller names. No
    project is opened. No audit record is written and no reviewed set is consulted, and the payload
    carries `"rehearsal": true`. The draft-RFC opt-ins are not offered.
@@ -62,9 +64,12 @@ Chosen option: **B**.
    are refused differently. Two refusals of the same class, phase and code are the same. Each
    difference lists both sides and names what changed: `kind`, `outcomeId`, `reasons`, `handoff`,
    `handoffTarget`, or `refusal`. The names describe; the canonical bytes decide.
-4. **The report.** It names both packs (path, id, version, digest of the exact bytes), the kind of
+4. **The report.** It names both packs (path, id, version, and the digest of the exact bytes, which
+   is absent for a pack over the byte limit, whose bytes were never whole in hand), the kind of
    inputs, the counts of inputs, same and different, and every difference in input order. Inputs
-   that are the same are counted, not listed.
+   that are the same are counted, not listed. A difference repeats two dispositions and two handoff
+   targets whose strings a pack may make large, so the report is charged as it is built and the run
+   is refused past 16 MiB, the matrix's own limit, rather than truncated.
 5. **Exit status.** 0 whenever the comparison ran, however many inputs differ. Producing a
    disposition is success, and so is producing a comparison. Unreadable or malformed arguments and
    inputs are refused with the runtime's usual classes.

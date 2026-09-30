@@ -94,7 +94,7 @@ func TestCompareListsTheInputsTwoVersionsDecideDifferently(t *testing.T) {
 	}
 	for _, line := range []string{
 		"REHEARSAL: not a decision",
-		"inputs: 4 from a matrix (expectations unread); 2 differ, 2 the same",
+		"inputs: 4 from a matrix (its expectations play no part); 2 differ, 2 the same",
 		"- between: outcome approve -> outcome decline [outcomeId]",
 		`- no-amount: unresolved (unknown), handoff to human-role "Finance reviewer" -> unresolved (unknown), handoff to human-role "Finance lead" [handoffTarget]`,
 	} {
@@ -226,5 +226,139 @@ func TestCompareJoinsTheSupportedExtensions(t *testing.T) {
 	}
 	if rowed := compareJSON(t, plain, requiring, "--inputs", named); rowed.Inputs.Same != 1 {
 		t.Fatalf("the row's own extension is applied: %+v", rowed)
+	}
+}
+
+// Evidence reaches both evaluations: an input whose evidence decides the
+// difference differs, and one whose evidence makes both versions agree does
+// not.
+func TestCompareEvaluatesEachInputsEvidence(t *testing.T) {
+	withReceipt := func(required string) string {
+		return strings.Replace(expensePack("5000", "Finance reviewer"), `"outcomes":`,
+			`"evidenceRequirements": [{"id": "receipt", "description": "A receipt.", "required": `+required+`, "kind": "document"}],
+  "outcomes":`, 1)
+	}
+	oldPack := writeDocument(t, "old.json", withReceipt("false"))
+	newPack := writeDocument(t, "new.json", withReceipt("true"))
+	approve := `"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`
+	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[
+	  {"id":"with-receipt","facts":{"expense":{"amount":"100"}},"evidenceAvailability":{"receipt":"present"},`+approve+`},
+	  {"id":"without-receipt","facts":{"expense":{"amount":"100"}},"evidenceAvailability":{"receipt":"absent"},`+approve+`}
+	]}`)
+	comparison := compareJSON(t, oldPack, newPack, "--inputs", matrix)
+	if comparison.Inputs.Same != 1 || comparison.Inputs.Different != 1 || comparison.Differences[0].ID != "without-receipt" ||
+		!slices.Contains(comparison.Differences[0].New.Disposition.Reasons, "missing-required-evidence") {
+		t.Fatalf("evidence decides this comparison: %+v", comparison)
+	}
+}
+
+// Two refusals of the same class and phase with different codes differ, and a
+// pack over the byte limit is named with no digest, because its bytes were
+// never whole in hand.
+func TestCompareTellsRefusalsApartByCode(t *testing.T) {
+	malformed := writeDocument(t, "malformed.json", strings.Replace(expensePack("5000", "Finance reviewer"), `"title": "Expense approval",`, ``, 1))
+	oversized := writeDocument(t, "oversized.json", strings.Replace(expensePack("5000", "Finance reviewer"),
+		`"title": "Expense approval",`, `"title": "Expense approval", "x-padding": "`+strings.Repeat("a", 11<<20)+`",`, 1))
+	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[
+	  {"id":"small","facts":{"expense":{"amount":"100"}},"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}
+	]}`)
+	comparison := compareJSON(t, malformed, oversized, "--inputs", matrix)
+	if comparison.Inputs.Different != 1 {
+		t.Fatalf("different codes differ: %+v", comparison)
+	}
+	before, after := comparison.Differences[0].Old.EvaluationError, comparison.Differences[0].New.EvaluationError
+	if before == nil || after == nil || before.Class != after.Class || before.Phase != after.Phase || before.Code == after.Code {
+		t.Fatalf("the two refusals share class and phase and differ in code: %+v %+v", before, after)
+	}
+	if comparison.New.Digest != "" || comparison.Old.Digest == "" {
+		t.Fatalf("an oversized pack has no digest: old %q new %q", comparison.Old.Digest, comparison.New.Digest)
+	}
+	_, human, _ := runTest(t, []string{"experimental", "compare", malformed, oversized, "--inputs", matrix}, "")
+	if !strings.Contains(human, "digest unavailable (over the byte limit)") {
+		t.Fatalf("the human output says the digest is unavailable: %q", human)
+	}
+}
+
+// A row's own supported extensions and the caller's are joined: a pack that
+// requires two extensions is evaluated only when the row names one and the
+// flag the other.
+func TestCompareJoinsARowsExtensionsWithTheCallers(t *testing.T) {
+	requiring := writeDocument(t, "requiring.json", strings.Replace(strings.Replace(expensePack("5000", "Finance reviewer"),
+		`"version": "0.1.0",`, `"version": "0.1.0", "metadata": {"requiredExtensions": ["com.example.first", "com.example.second"]},`, 1),
+		`"onUnknown": "escalate"}]`, `"onUnknown": "escalate", "extensions": {"com.example.first": {"on": true}, "com.example.second": {"on": true}}}]`, 1))
+	named := writeDocument(t, "named.json", `{"matrixVersion":"1","cases":[{"id":"small","facts":{"expense":{"amount":"100"}},"supportedExtensions":["com.example.first"],"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}]}`)
+	plain := writeDocument(t, "plain.json", expensePack("5000", "Finance reviewer"))
+	if alone := compareJSON(t, plain, requiring, "--inputs", named); alone.Inputs.Different != 1 {
+		t.Fatalf("the row's one extension is not enough: %+v", alone)
+	}
+	if joined := compareJSON(t, plain, requiring, "--inputs", named, "--supported-extension", "com.example.second"); joined.Inputs.Same != 1 {
+		t.Fatalf("the row's and the caller's together are: %+v", joined)
+	}
+}
+
+// A report that would exceed its byte limit is refused rather than truncated:
+// every difference here carries two large handoff targets.
+func TestCompareRefusesAReportPastItsLimit(t *testing.T) {
+	// Just under the carrier's string limit, so both packs are conformant and
+	// every row differs in its target.
+	long := strings.Repeat("r", (1<<20)-8)
+	oldPack := writeDocument(t, "old.json", expensePack("5000", "old "+long))
+	newPack := writeDocument(t, "new.json", expensePack("5000", "new "+long))
+	var rows []string
+	for index := range 10 {
+		rows = append(rows, `{"id":"row-`+string(rune('a'+index))+`","facts":{"expense":{}},"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}`)
+	}
+	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[`+strings.Join(rows, ",")+`]}`)
+	code, stdout, _ := runTest(t, []string{"experimental", "compare", "--format", "json", oldPack, newPack, "--inputs", matrix}, "")
+	if code != result.ExitIO || !strings.Contains(stdout, "JPS-RESOURCE-COMPARE-REPORT-LIMIT") || strings.Contains(stdout, `"differences"`) {
+		t.Fatalf("exit=%d stdout=%.300q", code, stdout)
+	}
+}
+
+// The command opens no project whatever the environment names: a
+// configuration that does not parse, beside a lock that matches nothing, is
+// not read.
+func TestCompareReadsNoConfigurationItIsPointedAt(t *testing.T) {
+	root := t.TempDir()
+	broken := filepath.Join(root, "jpack.json")
+	if err := os.WriteFile(broken, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "jpack.lock.json"), []byte(`{"lockVersion":"1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, broken)
+	pack := writeDocument(t, "pack.json", expensePack("5000", "Finance reviewer"))
+	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[{"id":"small","facts":{"expense":{"amount":"100"}},"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}]}`)
+	if comparison := compareJSON(t, pack, pack, "--inputs", matrix); comparison.Inputs.Same != 1 {
+		t.Fatalf("comparison = %+v", comparison)
+	}
+}
+
+// A --base row may state a facts document of null, and packs suggest carries
+// it into every candidate; compare reads what suggest wrote.
+func TestCompareReadsSuggestOutputFromANullFactsRow(t *testing.T) {
+	matrix := `{"matrixVersion":"1","cases":[
+	  {"id":"null-facts","facts":null,"evidenceAvailability":` + presentEvidence + `,"expectedDisposition":` + declineRedirect + `}
+	]}`
+	configPath := writeProjectFixture(t, `{"configVersion":"1","packs":{"intake":{
+	  "path":"packs/intake-0.1.0.pack.json",
+	  "matrix":"packs/intake.matrix.json"
+	}}}`, map[string]string{
+		"packs/intake-0.1.0.pack.json": evaluatorPack(t),
+		"packs/intake.matrix.json":     matrix,
+	})
+	written := filepath.Join(t.TempDir(), "candidates.json")
+	code, stdout, stderr := runTest(t, []string{"packs", "suggest", "--config", configPath, "--id", "intake", "--base", "null-facts", "--write", written}, "")
+	if code != 0 {
+		t.Fatalf("packs suggest: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	body, err := os.ReadFile(written)
+	if err != nil || !strings.Contains(string(body), `"facts": null`) {
+		t.Fatalf("the candidates carry the base row's null facts: %v %.300q", err, body)
+	}
+	pack := filepath.Join(filepath.Dir(configPath), "packs", "intake-0.1.0.pack.json")
+	if comparison := compareJSON(t, pack, pack, "--inputs", written); comparison.Inputs.Count == 0 || comparison.Inputs.Same != comparison.Inputs.Count {
+		t.Fatalf("comparison = %+v", comparison.Inputs)
 	}
 }

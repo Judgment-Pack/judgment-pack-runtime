@@ -31,6 +31,17 @@ type Input struct {
 	SupportedExtensions []string
 }
 
+// MaxReportBytes bounds one comparison's report: the JSON of every difference
+// it lists, both sides of each. A difference repeats two dispositions and two
+// handoff targets whose strings a pack may make large, and a matrix may carry
+// ten thousand rows, so the report is charged as it is built and the run is
+// refused rather than truncated past this, as a matrix is at its own limit.
+const MaxReportBytes = project.MaxMatrixBytes
+
+// ErrReportTooLarge is the one failure Run returns: the differences would not
+// fit MaxReportBytes.
+var ErrReportTooLarge = errors.New("the comparison's report would exceed its byte limit")
+
 // Side is one of the two packs as the caller read it: the path it names, its
 // bytes, and whether the bounded read stopped at the limit.
 type Side struct {
@@ -82,7 +93,7 @@ type outcome struct {
 // Each evaluation is the one packs test makes for a row: the input's facts and
 // evidence availability, and its supported extensions joined by the caller's.
 // A pack is admitted once per side, as packs test admits it once per matrix.
-func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs []Input, supported []string, command string) result.PackComparison {
+func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs []Input, supported []string, command string) (result.PackComparison, error) {
 	comparison := result.PackComparison{
 		OutputVersion:             result.OutputVersion,
 		Tool:                      result.CurrentTool(),
@@ -93,12 +104,13 @@ func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs [
 		ConformanceClaimReference: result.EvaluationClaimReference,
 		Label:                     result.ComparisonLabel,
 		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
-		Old:                       result.ComparedPack{Path: oldPack.Path, Digest: audit.Digest(oldPack.Pack)},
-		New:                       result.ComparedPack{Path: newPack.Path, Digest: audit.Digest(newPack.Pack)},
+		Old:                       result.ComparedPack{Path: oldPack.Path, Digest: digest(oldPack)},
+		New:                       result.ComparedPack{Path: newPack.Path, Digest: digest(newPack)},
 		Inputs:                    result.ComparedInputs{Kind: kind, Count: len(inputs)},
 		Differences:               []result.InputDifference{},
 	}
 	oldAdmitted, newAdmitted := engine.AdmitPack(oldPack.Pack), engine.AdmitPack(newPack.Pack)
+	charged := int64(0)
 	for _, input := range inputs {
 		extensions := slices.Clone(input.SupportedExtensions)
 		for _, name := range supported {
@@ -114,11 +126,26 @@ func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs [
 			continue
 		}
 		comparison.Inputs.Different++
-		comparison.Differences = append(comparison.Differences, result.InputDifference{
-			ID: input.ID, Changed: changed, Old: side(before), New: side(after),
-		})
+		difference := result.InputDifference{ID: input.ID, Changed: changed, Old: side(before), New: side(after)}
+		encoded, err := json.Marshal(difference)
+		if err != nil {
+			return result.PackComparison{}, err
+		}
+		if charged += int64(len(encoded)); charged > MaxReportBytes {
+			return result.PackComparison{}, ErrReportTooLarge
+		}
+		comparison.Differences = append(comparison.Differences, difference)
 	}
-	return comparison
+	return comparison, nil
+}
+
+// digest names one pack's exact bytes, or nothing when the bounded read
+// stopped at the limit and the bytes in hand are not the document's.
+func digest(pack Side) string {
+	if pack.Oversized {
+		return ""
+	}
+	return audit.Digest(pack.Pack)
 }
 
 // evaluate runs one input under one pack and, the first time an evaluation of

@@ -444,7 +444,7 @@ git show HEAD:packs/expense.json > expense-before.json
 jpack experimental compare expense-before.json packs/expense.json --inputs candidates.json
 ```
 
-The inputs are your matrix, whose expectations are left unread, or the candidates document
+The inputs are your matrix, whose expectations play no part in the comparison, or the candidates document
 `packs suggest` wrote, which holds the inputs nearest each line the pack draws. The report lists the
 inputs whose results differ, with both results and what changed, and counts the rest. A difference
 says the two versions disagree; the policy text says which is right, and a difference is not an
