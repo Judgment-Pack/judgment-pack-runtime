@@ -212,23 +212,30 @@ func buildTestPack(args map[string]string) string {
 3. An unknown probe per escalating rule: omit one fact that rule needs. Expect unresolved with
    reason "unknown" and a handoff if the trigger is wired. If the fallback outcome appears instead,
    the rule has onUnknown: ignore -- check that is intended.
-4. A missing-evidence probe if the pack declares required evidence: evaluate without an evidence
-   document. Expect unresolved with reason "missing-required-evidence".
-5. A not-applicable probe if the pack declares applicability: facts outside scope. Expect a
+4. A missing-evidence probe per required evidence requirement: an evidence document that marks
+   that one requirement "absent" and every other one "present". Expect unresolved with reason
+   "missing-required-evidence", and unmetEvidence naming that requirement as absent.
+5. An unknown-evidence probe if the pack declares required evidence: evaluate with no evidence
+   document at all. Every requirement is then unknown, not absent: expect unresolved with reason
+   "unknown", and unmetEvidence naming each required requirement as unknown. A document that
+   omits a requirement does the same for that one requirement.
+6. A not-applicable probe if the pack declares applicability: facts outside scope. Expect a
    not-applicable result, not an outcome.
-6. A forced-outcome probe per exception: facts that satisfy the exception AND a rule it should
+7. A forced-outcome probe per exception: facts that satisfy the exception AND a rule it should
    override. Expect the exception's outcome with the rule skipped.
-7. An ordered-comparison probe if any rule compares magnitudes: supply the value as a JSON number
-   instead of a decimal string. Expect unknown behavior per the rule's onUnknown -- this catches
-   the most common silent authoring mistake.
+8. An ordered-comparison probe if any rule compares magnitudes: supply the value as a JSON number
+   instead of a decimal string. Expect unknown behavior per the rule's onUnknown, and the rule's
+   trace entry naming the fact as not-comparable -- this catches the most common silent authoring
+   mistake.
 
 Read each disposition fully: kind, outcomeId, reasons, handoff, and the trace (which rules fired,
 which were skipped). A divergence between expectation and disposition is either a pack bug or a
 wrong row, and THE POLICY TEXT IS THE ARBITER: decide which is wrong before touching either, and
 never weaken the pack -- a required flag, a gate, a rule -- just to make your own expectation
 pass. Two facts that prevent common misdiagnoses: a missing-required-evidence reason means the
-row's evidenceAvailability omitted evidence the pack requires (the row is usually what needs
-fixing), and evidenceRequirementRefs is a citation the evaluator never reads. Re-run the whole
+row's evidenceAvailability marked a requirement the pack requires "absent", while one the row
+omits is unknown and gives reason "unknown" (unmetEvidence names which, and the row is usually
+what needs fixing); and evidenceRequirementRefs is a citation the evaluator never reads. Re-run the whole
 matrix after any change. Keep the matrix with the pack; it is the pack's regression suite.
 Where the project's jpack.json declares the pack and its matrix, run the whole suite with the
 experimental_test_packs tool instead of replaying rows one by one: it compares every row with the
