@@ -408,21 +408,10 @@ func decodeInteger(raw json.RawMessage, into *int64) error {
 	return nil
 }
 
-// ReviewedSet names the revision of the reviewed set that made Reviewed true:
-// the digest of the exact lock bytes the checks used, the shape those bytes
-// declared, and the configuration digest that was compared.
-//
-// It is here because the lock is replaced in place. Without it a reader holding
-// a record and a lock file cannot tell whether that lock is the one the decision
-// was judged under, and the Boolean would be a claim nothing outside the run can
-// re-derive — which is the opposite of what a trail is for. It is present
-// exactly when Reviewed is true: a draft was judged under no reviewed set, and a
-// project with no lock has none to name.
-type ReviewedSet struct {
-	LockDigest   string `json:"lockDigest"`
-	LockVersion  string `json:"lockVersion"`
-	ConfigDigest string `json:"configDigest"`
-}
+// ReviewedSet names the revision of the reviewed set that made Reviewed true.
+// It is the payload's type (ADR-0044), so a record and the payload beside it
+// name a revision in one shape; its members are documented there.
+type ReviewedSet = result.ReviewedSet
 
 // Pack is the identity of the document that was evaluated, plus the digest of
 // its exact bytes — the one fact no payload carries, and the one that lets a

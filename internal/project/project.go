@@ -71,11 +71,12 @@ const (
 	// on the outputVersion precedent and deliberately not semantic versioning:
 	// this file describes a shape a program reads, and a shape either is one this
 	// program knows or is not. "2" added the experimental graphs member
-	// (ADR-0017) and "3" the audit member (ADR-0018); the earlier shapes, without
-	// them, are still read — see SupportedConfigVersions.
-	ConfigVersion = "3"
+	// (ADR-0017), "3" the audit member (ADR-0018) and "4" the requireReviewed
+	// member (ADR-0044); the earlier shapes, without them, are still read — see
+	// SupportedConfigVersions.
+	ConfigVersion = "4"
 	// SchemaID is the embedded schema's own $id.
-	SchemaID = "urn:judgmentpack:runtime:jpack-config:3"
+	SchemaID = "urn:judgmentpack:runtime:jpack-config:4"
 	// MaxConfigBytes bounds one configuration document. It is an index of a
 	// project's packs, not a pack.
 	MaxConfigBytes = int64(1 << 20)
@@ -117,10 +118,11 @@ var schemaBytes []byte
 
 // SupportedConfigVersions names every configVersion this runtime accepts, so a
 // refusal can say what would have been accepted instead of only what was not.
-// A "1" configuration is exactly a "2" without graphs, and a "2" exactly a "3"
-// without audit, so all three are read by one schema and each version gate
-// lives in that schema's own bytes.
-func SupportedConfigVersions() []string { return []string{"1", "2", ConfigVersion} }
+// A "1" configuration is exactly a "2" without graphs, a "2" exactly a "3"
+// without audit, and a "3" exactly a "4" without requireReviewed, so all four
+// are read by one schema and each version gate lives in that schema's own
+// bytes.
+func SupportedConfigVersions() []string { return []string{"1", "2", "3", ConfigVersion} }
 
 // Schema returns the exact embedded configuration schema bytes.
 func Schema() []byte { return schemaBytes }
@@ -193,16 +195,21 @@ type Audit struct {
 
 // Config is one jpack.json document. It is a closed shape: the embedded schema
 // rejects every member not named here, so a misspelled key is an error rather
-// than a silently ignored intention. Graphs exists only under configVersion
-// "2" and Audit only under "3" — the schema's own version gates hold that,
-// each stated once in its bytes. Audit is a pointer because a single-object
-// member has no other way to tell "declared, with defaults" from "absent"; a
-// map member gets that distinction for free.
+// than a silently ignored intention. Graphs exists only from configVersion
+// "2", Audit only from "3" and RequireReviewed only under "4" — the schema's
+// own version gates hold that, each stated once in its bytes. Audit is a
+// pointer because a single-object member has no other way to tell "declared,
+// with defaults" from "absent"; a map member gets that distinction for free.
+//
+// RequireReviewed makes the deciding surfaces refuse any run that does not
+// apply the project's reviewed set (ADR-0044); absent is false, which is the
+// behaviour every earlier shape has.
 type Config struct {
-	ConfigVersion string           `json:"configVersion"`
-	Audit         *Audit           `json:"audit,omitempty"`
-	Packs         map[string]Pack  `json:"packs"`
-	Graphs        map[string]Graph `json:"graphs,omitempty"`
+	ConfigVersion   string           `json:"configVersion"`
+	Audit           *Audit           `json:"audit,omitempty"`
+	Packs           map[string]Pack  `json:"packs"`
+	Graphs          map[string]Graph `json:"graphs,omitempty"`
+	RequireReviewed bool             `json:"requireReviewed,omitempty"`
 }
 
 // Project is one loaded configuration together with the directory every path in

@@ -44,13 +44,18 @@ run `packs lock` ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), which generat
 the configuration declaring the digests of the documents the project reviewed. Nothing else is
 created, named, overwritten, or deleted anywhere.
 
-The reviewed-set lock is evidence, not a control. With one in place the deciding surfaces refuse to
+By default the reviewed-set lock is evidence, not a control. With one in place the deciding surfaces refuse to
 evaluate declared law whose bytes differ from it — a declared rehearsal excepted (ADR-0028),
 which evaluates without consulting it and records nothing — which turns a silent edit into a refusal and an
 explicit re-lock; it does not and cannot stop an editor with write access to the tree, because
 `packs lock` is available to whatever can edit a pack and a runtime cannot tell an amendment from
 tampering. Treat it as a record that an amendment happened, and place the deciding party outside the
-law's write domain if you need more than that.
+law's write domain if you need more than that. A project can make it a control for callers that
+cannot edit the project: with `requireReviewed` (configVersion `"4"`, [ADR-0044](docs/adr/0044-say-and-require-the-reviewed-set.md))
+the deciding surfaces also refuse every run that applies a draft and every run while no lock exists,
+declared rehearsals excepted. That binds a caller limited to the MCP tools or to the CLI's
+arguments. It does not bind anything that can edit `jpack.json` or the lock: turning the member off
+is an edit like any other, which the lock records as drift for declared runs.
 
 The append is bounded by the directory handle held open on the configuration's own directory and
 refuses every escape a read refuses — an absolute or traversing path, a path leaving the root

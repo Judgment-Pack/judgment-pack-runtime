@@ -110,7 +110,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 		code   string
 	}{
 		"no configVersion":                     {`{"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
-		"a later configVersion":                {`{"configVersion":"4","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
+		"a later configVersion":                {`{"configVersion":"5","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a semver configVersion":               {`{"configVersion":"1.0.0","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a numeric configVersion":              {`{"configVersion":1,"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"no packs member":                      {`{"configVersion":"1"}`, "JPS-PROJECT-CONFIG-SCHEMA"},
@@ -139,7 +139,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 
 	// The version refusal names what would have been accepted; a message that only
 	// said "no" would leave a caller guessing.
-	_, failure := Load(writeProject(t, `{"configVersion":"4","packs":{}}`, nil))
+	_, failure := Load(writeProject(t, `{"configVersion":"5","packs":{}}`, nil))
 	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+strings.Join(SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must be unsupported and name this runtime's versions: exit=%d %q", failure.ExitCode, failure.Message)
 	}
@@ -1817,9 +1817,44 @@ func TestConfigVersionTwoDeclaresGraphs(t *testing.T) {
 	// The schema payload names the newest shape and every shape read, so it
 	// cannot imply an earlier one stopped being accepted.
 	description := SchemaDescription("packs schema")
-	if description.ConfigVersion != "3" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3"}) ||
-		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:3" {
+	if description.ConfigVersion != "4" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3", "4"}) ||
+		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:4" {
 		t.Fatalf("schema description = %+v", description)
+	}
+}
+
+// configVersion "4" is the shape that may require its deciding runs to apply
+// its reviewed set (ADR-0044). The gate lives in the schema's bytes like every
+// other: the member under an earlier version names the value to change, it is
+// a strict boolean, and a "4" still reads every earlier member.
+func TestConfigVersionFourMayRequireReviewedLaw(t *testing.T) {
+	for _, version := range []string{"1", "2", "3"} {
+		_, failure := Load(writeProject(t, `{"configVersion":"`+version+`","requireReviewed":true,"packs":{}}`, nil))
+		if failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" || !strings.Contains(failure.Message, "'4'") {
+			t.Fatalf("requireReviewed under %s names the version to change: %+v", version, failure)
+		}
+	}
+	for _, value := range []string{`"true"`, `1`, `null`} {
+		if _, failure := Load(writeProject(t, `{"configVersion":"4","requireReviewed":`+value+`,"packs":{}}`, nil)); failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" {
+			t.Fatalf("requireReviewed %s is refused: %+v", value, failure)
+		}
+	}
+	loaded, failure := Load(writeProject(t, `{"configVersion":"4","requireReviewed":true,"audit":{"dir":"audit"},
+	  "packs":{"a":{"path":"a.json"}},"graphs":{"g":{"path":"g.json"}}}`, nil))
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer loaded.Close()
+	if !loaded.Config.RequireReviewed || loaded.Config.Audit == nil || len(loaded.Config.Graphs) != 1 {
+		t.Fatalf("config = %+v", loaded.Config)
+	}
+	plain, failure := Load(writeProject(t, `{"configVersion":"4","packs":{}}`, nil))
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer plain.Close()
+	if plain.Config.RequireReviewed {
+		t.Fatal("absent is false")
 	}
 }
 

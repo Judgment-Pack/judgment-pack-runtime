@@ -674,6 +674,7 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		// was consulted, and a reader of either output learns it (ADR-0028).
 		fmt.Fprintln(a.out, "REHEARSAL: declared not a decision; no audit record was appended and no reviewed set was consulted")
 	}
+	a.printReviewed(output.Reviewed, output.ReviewedSet)
 	if prototype := output.DraftPrototype; prototype != nil && prototype.RFC == "0016" {
 		// The marker of the other draft, in the same two wordings and for the
 		// same reason: a pack that declares no value is a plain pack.
@@ -770,6 +771,20 @@ func (a *App) renderGraphValidation(format string, output result.GraphValidation
 	return nil
 }
 
+// printReviewed mirrors the payload's reviewed member (ADR-0044) in one line,
+// and prints nothing where the payload carries none: a project with no lock,
+// and a rehearsal, were judged against no reviewed set.
+func (a *App) printReviewed(reviewed *bool, set *result.ReviewedSet) {
+	if reviewed == nil {
+		return
+	}
+	if *reviewed && set != nil {
+		fmt.Fprintf(a.out, "reviewed set: applied; every document this run applied matched the lock (%s)\n", display.Sanitize(set.LockDigest))
+		return
+	}
+	fmt.Fprintln(a.out, "reviewed set: NOT applied; this run evaluated a draft, not the law the project's lock declares")
+}
+
 // renderGraphEvaluation reports one graph run. The label leads for the same
 // reason every experimental label does, the composite headline echoes the
 // result node, and every requested handoff is printed before the per-node
@@ -782,6 +797,7 @@ func (a *App) renderGraphEvaluation(format string, output result.GraphEvaluation
 	if output.Rehearsal {
 		fmt.Fprintln(a.out, "REHEARSAL: declared not a decision; no audit record was appended and no reviewed set was consulted")
 	}
+	a.printReviewed(output.Reviewed, output.ReviewedSet)
 	fmt.Fprintf(a.out, "graph: %s %s · result node: %s\n", display.Sanitize(output.GraphID), display.Sanitize(output.GraphVersion), display.Sanitize(output.ResultNode))
 	a.printDisposition("disposition", output.Disposition, output.HandoffTarget)
 	for _, handoff := range output.Handoffs {

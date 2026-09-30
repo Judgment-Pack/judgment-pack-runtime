@@ -724,6 +724,46 @@ func (s *Set) Consult(loaded *project.Project, applied []Applied, draft bool) (*
 	return &reviewed, nil
 }
 
+// ReviewRequiredCode is the refusal a project that requires reviewed law gives
+// a deciding run that does not apply it (ADR-0044).
+const ReviewRequiredCode = "JPS-LOCK-REVIEW-REQUIRED"
+
+// RequireReviewed is what a deciding surface does, after Consult, for a project
+// whose configuration sets requireReviewed (ADR-0044): nil when the run applies
+// the reviewed set, and otherwise the refusal, before any evaluation.
+//
+// reviewed is the bit Consult or DraftRun answered. True passes. False is a run
+// that applies a draft, which such a project refuses however the draft was
+// named. nil is a project with no lock at all, which has no reviewed set to
+// apply, so every deciding run is refused until one is declared. A declared
+// rehearsal is not a decision, consults no reviewed set, and never reaches
+// this: the surfaces skip it for a rehearsal, as they skip Consult.
+//
+// It refuses only a caller who cannot edit the configuration or the lock.
+// Whoever can edit them can turn it off, and the lock records the
+// configuration's digest, so turning it off is itself an amendment a by-id run
+// is refused for until the project re-locks.
+func RequireReviewed(loaded *project.Project, reviewed *bool) *Failure {
+	if loaded == nil || !loaded.Config.RequireReviewed || (reviewed != nil && *reviewed) {
+		return nil
+	}
+	config := display.Sanitize(loaded.ConfigPath)
+	if reviewed == nil {
+		return &Failure{
+			Code: ReviewRequiredCode,
+			Message: fmt.Sprintf("This evaluation was refused because %s requires every decision to apply the project's reviewed set, and there is no reviewed-set lock at %s. Run jpack packs lock to declare the reviewed set, or declare the run a rehearsal.",
+				config, display.Sanitize(loaded.LockPath())),
+			ExitCode: result.ExitInvalid,
+		}
+	}
+	return &Failure{
+		Code: ReviewRequiredCode,
+		Message: fmt.Sprintf("This evaluation was refused because %s requires every decision to apply the project's reviewed set, and this run applies a draft: a pack named by path or passed as text, or a graph document the configuration does not declare. Name the pack by its decision id, or declare the run a rehearsal.",
+			config),
+		ExitCode: result.ExitInvalid,
+	}
+}
+
 // LawCheck is the deciding check a surface hands to a caller that reads
 // documents itself — the graph evaluator, which resolves each node's pack
 // inside its own loop.

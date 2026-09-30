@@ -289,7 +289,8 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// (ADR-0019): a claim about a review has to be about the document
 			// that produced the disposition. A pack named by decision id is
 			// declared law; a pack named by path is a draft, never refused for
-			// being unlocked, and the record it leaves says so.
+			// being unlocked unless the project requires reviewed law
+			// (ADR-0044), and the record and the payload say so.
 			var applied []lock.Applied
 			if packID != "" && pack != nil {
 				applied = []lock.Applied{lock.AppliedPack(packID, pack)}
@@ -316,6 +317,11 @@ func (a *App) evaluateCommand() *cobra.Command {
 					return a.lockFailure("experimental evaluate", format, lockFailure)
 				}
 			}
+			if !rehearsal {
+				if lockFailure := lock.RequireReviewed(loaded, reviewed); lockFailure != nil {
+					return a.lockFailure("experimental evaluate", format, lockFailure)
+				}
+			}
 			auditWriter.UnderLaw(reviewed, set.Provenance())
 			evaluator := evaluation.NewEngine(a.engine)
 			output, failure := evaluator.EvaluateWith(pack, facts, evidence, evaluation.Options{
@@ -338,6 +344,15 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// the evaluation itself is untouched either way, having already
 			// happened. A declared rehearsal writes nothing even here, and its
 			// payload carries the label instead of a record (ADR-0028).
+			// The payload says what the record says about the reviewed set
+			// (ADR-0044), so a caller learns it without reading the trail. A
+			// rehearsal consulted none and says nothing about one.
+			if !rehearsal {
+				output.Reviewed = reviewed
+				if reviewed != nil && *reviewed {
+					output.ReviewedSet = set.Provenance()
+				}
+			}
 			if rehearsal {
 				output.Rehearsal = true
 			} else if err := auditWriter.Evaluation(output, audit.Inputs{
