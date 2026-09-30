@@ -22,7 +22,9 @@
 // ADR-0019 names that as the product-side work it does not build.
 //
 // Presence is the opt-in. A project with no lock file reaches nothing here: no
-// verification, no refusal, no member in an audit record. That is the same shape
+// verification, no refusal, no member in an audit record -- unless its
+// configuration sets requireReviewed (ADR-0044), which refuses every deciding
+// run until the project declares a reviewed set. That is the same shape
 // the audit trail takes (ADR-0018), and for the same reason — a convention this
 // runtime invented must cost nothing to a project that never adopted it.
 //

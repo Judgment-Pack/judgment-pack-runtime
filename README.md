@@ -550,8 +550,8 @@ rehearsal consulted no lock and carries neither.
 ADR-0044) has the deciding surfaces refuse, before evaluating, every run that applies a draft and
 every run while the project has no lock (`JPS-LOCK-REVIEW-REQUIRED`, exit 1). A declared rehearsal
 is not a decision and is not refused. This binds a caller that neither chooses the configuration a
-run reads nor can edit it, such as an agent limited to the tools of an MCP server someone else
-launched. It cannot bind whoever chooses the configuration (`--config`, `JPACK_CONFIG`, the working
+run reads nor can edit it or its lock, such as an agent limited to the tools of an MCP server
+someone else launched. It cannot bind whoever chooses the configuration (`--config`, `JPACK_CONFIG`, the working
 directory) or can edit `jpack.json` or the lock, and turning it off is itself an edit the lock
 records, so a by-id run is refused until the project locks again.
 

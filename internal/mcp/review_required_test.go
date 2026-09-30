@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -111,15 +110,24 @@ func TestExperimentalEvaluateSaysAndCanRequireTheReviewedSet(t *testing.T) {
 		t.Fatalf("the two decisions are recorded and the rehearsal is not: %q", trail)
 	}
 	for index, payload := range []result.Evaluation{declared, draft} {
-		var record struct {
-			Reviewed    *bool               `json:"reviewed"`
-			ReviewedSet *result.ReviewedSet `json:"reviewedSet"`
-		}
+		var record map[string]any
 		if err := json.Unmarshal([]byte(lines[index]), &record); err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(record.Reviewed, payload.Reviewed) || !reflect.DeepEqual(record.ReviewedSet, payload.ReviewedSet) {
-			t.Fatalf("call %d: payload %v %+v, record %v %+v", index+1, payload.Reviewed, payload.ReviewedSet, record.Reviewed, record.ReviewedSet)
+		recordedReviewed, hasReviewed := record["reviewed"]
+		if flag, isBool := recordedReviewed.(bool); !hasReviewed || !isBool || payload.Reviewed == nil || flag != *payload.Reviewed {
+			t.Fatalf("call %d: payload reviewed %v, record %#v", index+1, payload.Reviewed, recordedReviewed)
+		}
+		rawSet, hasSet := record["reviewedSet"]
+		if hasSet != (payload.ReviewedSet != nil) {
+			t.Fatalf("call %d: payload reviewedSet %+v, record %#v (present %v)", index+1, payload.ReviewedSet, rawSet, hasSet)
+		}
+		if payload.ReviewedSet != nil {
+			recordedSet, isObject := rawSet.(map[string]any)
+			if !isObject || len(recordedSet) != 3 || recordedSet["lockDigest"] != payload.ReviewedSet.LockDigest ||
+				recordedSet["lockVersion"] != payload.ReviewedSet.LockVersion || recordedSet["configDigest"] != payload.ReviewedSet.ConfigDigest {
+				t.Fatalf("call %d: payload reviewedSet %+v, record %#v", index+1, payload.ReviewedSet, rawSet)
+			}
 		}
 	}
 

@@ -93,17 +93,36 @@ func lastRecord(t *testing.T, configPath string) map[string]any {
 // same run wrote, member by member: present in both or neither, and equal.
 func sameAsRecord(t *testing.T, reviewed *bool, set *result.ReviewedSet, record map[string]any) {
 	t.Helper()
+	sameReviewedAsRecord(t, reviewed, set, record)
+}
+
+// sameReviewedAsRecord compares on the record's own keys, so a member present
+// as null, or of another type, is not mistaken for an absent one: reviewed
+// present exactly when the payload's is, and a Boolean equal to it; reviewedSet
+// present exactly when the payload's is, and an object of exactly its three
+// members, each equal.
+func sameReviewedAsRecord(t *testing.T, reviewed *bool, set *result.ReviewedSet, record map[string]any) {
+	t.Helper()
 	recordedReviewed, hasReviewed := record["reviewed"]
-	if (reviewed == nil) != !hasReviewed || (reviewed != nil && recordedReviewed != *reviewed) {
-		t.Fatalf("payload reviewed %v, record %v", reviewed, recordedReviewed)
+	if hasReviewed != (reviewed != nil) {
+		t.Fatalf("payload reviewed %v, record %v (present %v)", reviewed, recordedReviewed, hasReviewed)
 	}
-	recordedSet, hasSet := record["reviewedSet"].(map[string]any)
-	if (set == nil) != !hasSet {
-		t.Fatalf("payload reviewedSet %+v, record %v", set, record["reviewedSet"])
+	if reviewed != nil {
+		if flag, isBool := recordedReviewed.(bool); !isBool || flag != *reviewed {
+			t.Fatalf("payload reviewed %v, record %#v", *reviewed, recordedReviewed)
+		}
 	}
-	if set != nil && (recordedSet["lockDigest"] != set.LockDigest || recordedSet["lockVersion"] != set.LockVersion ||
-		recordedSet["configDigest"] != set.ConfigDigest || len(recordedSet) != 3) {
-		t.Fatalf("payload reviewedSet %+v, record %v", set, recordedSet)
+	rawSet, hasSet := record["reviewedSet"]
+	if hasSet != (set != nil) {
+		t.Fatalf("payload reviewedSet %+v, record %#v (present %v)", set, rawSet, hasSet)
+	}
+	if set == nil {
+		return
+	}
+	recordedSet, isObject := rawSet.(map[string]any)
+	if !isObject || len(recordedSet) != 3 || recordedSet["lockDigest"] != set.LockDigest ||
+		recordedSet["lockVersion"] != set.LockVersion || recordedSet["configDigest"] != set.ConfigDigest {
+		t.Fatalf("payload reviewedSet %+v, record %#v", set, rawSet)
 	}
 }
 
@@ -325,7 +344,24 @@ func TestAnOversizedDeclaredPackIsNotCalledADraft(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--format", "json", "--pack-id", "intake", "--config", configPath, "--facts", facts}, "")
-	if code == 0 || strings.Contains(stdout, lock.ReviewRequiredCode) || !strings.Contains(stdout, `"evaluationError"`) {
-		t.Fatalf("the byte limit answers, not the requirement: exit=%d stdout=%.400q stderr=%q", code, stdout, stderr)
+	var refused struct {
+		EvaluationError struct {
+			Class string `json:"class"`
+			Phase string `json:"phase"`
+		} `json:"evaluationError"`
+		Diagnostics []struct {
+			Code string `json:"code"`
+		} `json:"diagnostics"`
+		Disposition any `json:"disposition"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &refused); err != nil {
+		t.Fatalf("undecodable refusal %.300q: %v", stdout, err)
+	}
+	if code != result.ExitIO || refused.EvaluationError.Class != "pack-not-conformant" || refused.EvaluationError.Phase != "preflight" ||
+		len(refused.Diagnostics) != 1 || refused.Diagnostics[0].Code != "JPS-RESOURCE-INPUT-BYTE-LIMIT" || refused.Disposition != nil {
+		t.Fatalf("the byte limit answers, not the requirement: exit=%d refusal=%+v stderr=%q", code, refused, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), "audit", audit.FileName)); err == nil {
+		t.Fatal("a refused evaluation leaves no record")
 	}
 }

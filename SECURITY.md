@@ -56,8 +56,8 @@ the deciding surfaces also refuse every run that applies a draft and every run w
 declared rehearsals excepted. That binds a caller who neither chooses which configuration a run
 reads nor can edit it or its lock, such as an agent limited to the tools of an MCP server someone
 else launched. It does not bind whoever chooses the configuration (`--config`, `JPACK_CONFIG`, the
-working directory, the server's launch): naming another configuration, or a file that is not there,
-applies no requirement. Nor does it bind anything that can edit `jpack.json` or the lock: turning
+working directory, the server's launch): naming another configuration applies that configuration's
+rules, and naming a file that is not there means no project and no requirement. Nor does it bind anything that can edit `jpack.json` or the lock: turning
 the member off is an edit like any other, which the lock records as drift for declared runs.
 
 The append is bounded by the directory handle held open on the configuration's own directory and
