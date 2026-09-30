@@ -94,7 +94,7 @@ jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PRO
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
-jpack experimental graph evaluate <graph-or-> [--inputs <file-or->]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack experimental graph evaluate <graph-or-> [--inputs <file-or->] [--rehearsal]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph explain <graph-or->   (the evaluation plan; nothing is evaluated)
 jpack experimental graph test <graph-or-> --rows <file-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph schema
@@ -435,7 +435,7 @@ The one thing this file can ask the runtime to **write** is a record of what it 
 ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)). Under `configVersion "3"`, an
 `audit` member names a directory relative to the configuration — `"audit": { "dir": "audit" }` —
 and each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the
-MCP `experimental_evaluate` tool — unless it was declared a rehearsal (ADR-0028) — then appends one JSON line to `evaluations.jsonl` in it: the
+MCP `experimental_evaluate` tool — unless it was declared a rehearsal (ADR-0028, ADR-0041) — then appends one JSON line to `evaluations.jsonl` in it: the
 pack's id, version, `specVersion` and the digest of its exact bytes, the facts and evidence
 documents as evaluated, and the disposition in its canonical form. Test runs never record —
 `packs test`, `experimental graph test`, and `experimental evaluate-corpus` are checks on packs,
@@ -459,7 +459,7 @@ Its **presence** is the opt-in, and it is found by convention rather than declar
 `configVersion` moves, the schema does not change, and a project with no lock file behaves exactly
 as it did. With one, the deciding surfaces — `experimental evaluate`, `experimental graph evaluate`,
 and the MCP `experimental_evaluate` tool — hold the law they are about to apply to it, declared
-rehearsals excepted (ADR-0028), and refuse a
+rehearsals excepted (ADR-0028, ADR-0041), and refuse a
 mismatch (`JPS-LOCK-VERIFY`, exit 1) with the two honest ways forward: declare the amendment, or
 restore the reviewed bytes. `packs test`, `experimental graph test`, and `experimental
 evaluate-corpus` consult it never: the author's loop is free and decisions are classified. A pack

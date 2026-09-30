@@ -4,6 +4,15 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`experimental graph evaluate --rehearsal`** (ADR-0041; #182). A graph run can now be declared a
+  rehearsal on ADR-0028's terms: every node evaluates as it would otherwise, no audit record is
+  appended for any node or for the composite, no reviewed set is consulted for the configuration,
+  the graph or any node's pack, and the composite payload carries `"rehearsal": true`, with the
+  same `REHEARSAL:` line in the human output. The README already listed graph evaluation among the
+  surfaces a declared rehearsal exempts; that is now true. The member is additive output under
+  VERSIONING.md's MINOR rule; `outputVersion` stays `"2"`. There is no MCP graph evaluation tool, so
+  there is no MCP form.
+
 - **`packs suggest --base` keeps the base row's evidence** (#177). A candidate made from a base row
   carried the row's facts and dropped its `evidenceAvailability`. On the specification's
   `minimal-expense-approval`, with a base row that marks both required requirements `present`, every
