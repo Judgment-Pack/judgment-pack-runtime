@@ -102,7 +102,8 @@ func (a *App) packsSuggestCommand() *cobra.Command {
 			"product. --base names an already-reviewed row of that pack's matrix " +
 			"to vary from, which is what makes a candidate read as \"this reviewed row, with one pointer moved\": " +
 			"every candidate holds that row's facts and its evidenceAvailability, and an evidence candidate moves " +
-			"one requirement within the row's document; without it the facts carry only the varied pointer. It " +
+			"one requirement within the row's document, or states only that requirement when the row states " +
+			"none; without it the facts carry only the varied pointer. It " +
 			"runs no evaluator, derives no expectation, " +
 			"decides nothing, and moves no exit code: a value the policy text does not decide is a candidate you " +
 			"delete, and deleting one is a first-class outcome of reviewing this file. --format renders the report " +

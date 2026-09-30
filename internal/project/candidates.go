@@ -148,9 +148,10 @@ type Candidates struct {
 }
 
 // Candidate is one suggested test-row input: an id, the provenance marker, the
-// facts document, the evidence availability where the candidate varies that
-// axis, and one sentence saying what the input places and why the pack's own
-// declarations imply it.
+// facts document, the evidence availability — the one it varies, for an
+// evidence candidate, or the --base row's own, carried unchanged, for every
+// other candidate made from a row that states one — and one sentence saying
+// what the input places and why the pack's own declarations imply it.
 //
 // There is no expectation member and there must not be one, not even an empty
 // or sentinel one. The rationale is prose about the *pack*, never about what an
@@ -171,8 +172,8 @@ type SuggestOptions struct {
 	// empty.
 	ID string
 	// BaseRow names an already-reviewed row of the selected pack's matrix whose
-	// facts every candidate starts from. It requires ID, because a row id is a
-	// name inside one pack's matrix and nowhere else.
+	// facts and evidenceAvailability every candidate starts from. It requires
+	// ID, because a row id is a name inside one pack's matrix and nowhere else.
 	BaseRow string
 	// Max bounds the candidates one run emits; past it the run refuses rather
 	// than truncating, naming the flag. MaxCandidatesUnset means the caller
