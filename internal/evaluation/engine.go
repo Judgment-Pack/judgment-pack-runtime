@@ -231,12 +231,13 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 		return result.Evaluation{}, unsupportedExtensions
 	}
 
-	disposition, target, trace, failure := resolve(packRoot, factsDocument, &evaluator{
+	walk := &evaluator{
 		evidence:      presence,
 		quantifiers:   options.RFC0008Quantifiers,
 		outcomeValues: options.RFC0016OutcomeValues,
 		budget:        options.workLimit(),
-	})
+	}
+	disposition, target, trace, failure := resolve(packRoot, factsDocument, walk)
 	if failure != nil {
 		return result.Evaluation{}, failure
 	}
@@ -256,6 +257,7 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 		PackVersion:               packIdentity(packRoot, "version"),
 		Disposition:               disposition,
 		HandoffTarget:             target,
+		UnmetEvidence:             walk.unmetEvidence,
 		Trace:                     trace,
 	}
 	if options.RFC0008Quantifiers {

@@ -67,13 +67,16 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 	// report, and records nothing.
 	applicability := triTrue
 	if condition, present := pack["applicability"]; present {
-		applicability = r.eval.evaluate(condition, facts)
+		verdict, causes, mismatches := r.eval.evaluateStage(condition, facts)
+		applicability = verdict
 		if r.eval.exceeded {
 			return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
 		}
 		r.trace = append(r.trace, result.TraceEntry{
-			Stage:     "applicability",
-			Condition: applicability.String(),
+			Stage:          "applicability",
+			Condition:      applicability.String(),
+			UnknownCauses:  causes,
+			TypeMismatches: mismatches,
 		})
 	}
 	switch applicability {
@@ -101,8 +104,10 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 		switch r.eval.evidence[id] {
 		case triFalse:
 			requiredFalse = true
+			r.eval.unmetEvidence = append(r.eval.unmetEvidence, result.UnmetEvidence{Requirement: id, State: "absent"})
 		case triUnknown:
 			requiredUnknown = true
+			r.eval.unmetEvidence = append(r.eval.unmetEvidence, result.UnmetEvidence{Requirement: id, State: "unknown"})
 		}
 	}
 	if requiredFalse {
@@ -123,11 +128,11 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 		}
 		id, _ := exception["id"].(string)
 		effect, _ := exception["effect"].(string)
-		verdict := r.eval.evaluate(exception["when"], facts)
+		verdict, causes, mismatches := r.eval.evaluateStage(exception["when"], facts)
 		if r.eval.exceeded {
 			return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
 		}
-		entry := result.TraceEntry{Stage: "exception", ID: id, Condition: verdict.String()}
+		entry := result.TraceEntry{Stage: "exception", ID: id, Condition: verdict.String(), UnknownCauses: causes, TypeMismatches: mismatches}
 		switch verdict {
 		case triUnknown:
 			onUnknown, _ := exception["onUnknown"].(string)
@@ -194,11 +199,11 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 			r.trace = append(r.trace, result.TraceEntry{Stage: "rule", ID: id, Condition: "not-evaluated", Suppressed: true})
 			continue
 		}
-		verdict := r.eval.evaluate(rule["when"], facts)
+		verdict, causes, mismatches := r.eval.evaluateStage(rule["when"], facts)
 		if r.eval.exceeded {
 			return result.Disposition{}, nil, r.trace, workLimitFailure(r.eval)
 		}
-		entry := result.TraceEntry{Stage: "rule", ID: id, Condition: verdict.String()}
+		entry := result.TraceEntry{Stage: "rule", ID: id, Condition: verdict.String(), UnknownCauses: causes, TypeMismatches: mismatches}
 		switch verdict {
 		case triTrue:
 			if outcome, ok := rule["outcome"].(string); ok {
