@@ -693,7 +693,12 @@ func TestPromptsSurface(t *testing.T) {
 		"partial or empty",
 		"unordered, possibly",
 		"drop none",
-		"no fact missing at all",
+		// The unknown-cause discipline since ADR-0040: name the recorded causes
+		// and nothing beyond them, and say so when an entry records none.
+		"and nothing beyond it",
+		"names no cause, so say the record does not",
+		"could not have been equal",
+		"unmetEvidence",
 		"no Core-defined destination",
 		"wisdom of acting",
 	} {

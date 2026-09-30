@@ -123,7 +123,7 @@ authority, and following it confers no conformance status on anything.
 | [0024](0024-suggest-candidate-row-inputs.md)             | Derive candidate test-row inputs from a pack's own literals, and never their expectations | accepted |
 | [0025](0025-assert-the-handoff-target-in-the-matrix.md)  | Let a matrix row assert the handoff target, because no disposition can carry it | accepted; graph-surface-untouched determination partially superseded, and its deferral discharged, by [0032](0032-let-a-graph-row-assert-the-handoff-target.md) |
 | [0026](0026-run-the-declared-graph-matrix-over-mcp.md)  | Run the declared graph matrix over MCP, and stop a runaway matrix early | accepted |
-| [0027](0027-pin-the-evaluation-trace-contract.md)        | Pin the evaluation trace: deterministic, complete, ordered, and still informative | accepted; §0's matrix-results-carry-no-traces determination partially superseded for graph matrix node comparisons by [0031](0031-report-node-traces-in-the-graph-matrix-on-request.md) |
+| [0027](0027-pin-the-evaluation-trace-contract.md)        | Pin the evaluation trace: deterministic, complete, ordered, and still informative | accepted; §0's matrix-results-carry-no-traces determination partially superseded for graph matrix node comparisons by [0031](0031-report-node-traces-in-the-graph-matrix-on-request.md); entry shapes extended by two optional members in [0040](0040-say-what-left-a-result-unknown.md), clause 6 unchanged |
 | [0028](0028-declare-an-evaluation-a-rehearsal.md)        | Declare an evaluation a rehearsal, so exploration never writes a decision record | accepted |
 | [0029](0029-serve-graphs-and-their-inventory.md)         | Serve the configured graphs and their inventory over the wire, read-only        | accepted |
 | [0030](0030-bind-graph-matrix-runs-and-validations-to-the-loaded-document.md) | Bind graph matrix runs and validations to the loaded document                   | accepted |
@@ -137,3 +137,4 @@ authority, and following it confers no conformance status on anything.
 | [0037](0037-report-pack-independent-unreachable-expectations.md) | Report an expectation no pack can reach under its own code, in the admission tool alone | accepted |
 | [0038](0038-refuse-malformed-unicode-at-the-stdio-transport.md) | Refuse malformed Unicode at the stdio transport, for every string argument and everywhere else in the request line | accepted |
 | [0039](0039-draft-rfc-outcome-values-prototype.md) | Prototype spec RFC 0016 outcome values behind an opt-in experimental flag | accepted |
+| [0040](0040-say-what-left-a-result-unknown.md) | Say what left a result unknown: causes and cross-type comparisons in the trace, unmet evidence beside it | accepted |

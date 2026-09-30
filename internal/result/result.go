@@ -676,15 +676,76 @@ type EvaluationError struct {
 // not-evaluated shapes, no stage for the step-2 evidence inspection, and no
 // leaked in-progress record on a refused evaluation — and the byte-goldens
 // that pin it.
+//
+// ADR-0040 adds two members that say why an entry came out as it did. Each is
+// omitted when it has nothing to say, so an entry that carries neither is byte
+// for byte what ADR-0027 pinned. UnknownCauses is present only on an entry whose
+// condition is unknown, and names every leaf the unknown came from — and only
+// those: a leaf whose unknown a sibling's verdict overrode is not a cause.
+// TypeMismatches names every equality comparison the entry's condition
+// evaluated whose fact value and operand differ in JSON type, whatever the
+// verdict, because such a comparison is false for a reason a reader cannot see
+// in the verdict. Neither member changes a verdict or a disposition.
 type TraceEntry struct {
-	Stage      string `json:"stage"`
-	ID         string `json:"id,omitempty"`
-	Condition  string `json:"condition"`
-	Effect     string `json:"effect,omitempty"`
-	Outcome    string `json:"outcome,omitempty"`
-	Suppressed bool   `json:"suppressed,omitempty"`
-	OnUnknown  string `json:"onUnknown,omitempty"`
-	Skipped    bool   `json:"skipped,omitempty"`
+	Stage          string         `json:"stage"`
+	ID             string         `json:"id,omitempty"`
+	Condition      string         `json:"condition"`
+	Effect         string         `json:"effect,omitempty"`
+	Outcome        string         `json:"outcome,omitempty"`
+	Suppressed     bool           `json:"suppressed,omitempty"`
+	OnUnknown      string         `json:"onUnknown,omitempty"`
+	Skipped        bool           `json:"skipped,omitempty"`
+	UnknownCauses  []UnknownCause `json:"unknownCauses,omitempty"`
+	TypeMismatches []TypeMismatch `json:"typeMismatches,omitempty"`
+}
+
+// UnknownCause is one leaf of a condition that evaluated unknown and left its
+// entry unknown (ADR-0040). Path names a fact pointer, or EvidenceRequirement an
+// evidence-present condition's requirement; exactly one of the two is set.
+// Within is the collection pointer of the draft RFC 0008 quantifier whose
+// elements Path was resolved against, and is absent at the top level.
+//
+// Cause is one of:
+//   - "absent": the pointer selects nothing in the document it was resolved in;
+//   - "not-comparable": an ordered comparison selected a value that is not a
+//     §2.2 decimal string, and FactType names the JSON type it has;
+//   - "not-an-array": a quantifier's collection pointer selected something that
+//     is not an array, whose type FactType names;
+//   - "unknown": an evidence-present condition read a requirement whose
+//     presence is unknown, stated or omitted;
+//   - "unsupported": a condition shape this evaluator does not decide, which a
+//     conformant pack cannot state and is reported rather than hidden.
+type UnknownCause struct {
+	Path                string `json:"path,omitempty"`
+	EvidenceRequirement string `json:"evidenceRequirement,omitempty"`
+	Within              string `json:"within,omitempty"`
+	Cause               string `json:"cause"`
+	FactType            string `json:"factType,omitempty"`
+}
+
+// TypeMismatch is one equality comparison (equals, not-equals or in) whose fact
+// value has a different JSON type from its operand, or for in from every member
+// of its operand (ADR-0040). §7.4 makes equality type-preserving, so such a
+// comparison is simply false and not-equals simply true; this records that the
+// values could not have been equal, which the verdict alone does not say.
+// OperandTypes lists the operand's JSON types in first-appearance order: one for
+// equals and not-equals, the distinct member types for in.
+type TypeMismatch struct {
+	Path         string   `json:"path"`
+	Within       string   `json:"within,omitempty"`
+	Operator     string   `json:"operator"`
+	FactType     string   `json:"factType"`
+	OperandTypes []string `json:"operandTypes"`
+}
+
+// UnmetEvidence is one required evidence requirement whose presence stopped an
+// evaluation at §8 step 2 (ADR-0040): "absent" or "unknown", in the order the
+// pack declares its requirements. It is reported beside the trace and never
+// inside it, because step 2 evaluates no condition and ADR-0027 gives it no
+// trace stage; the disposition's reasons are unchanged by it.
+type UnmetEvidence struct {
+	Requirement string `json:"requirement"`
+	State       string `json:"state"`
 }
 
 // DraftPrototype marks an evaluation that ran under a draft-RFC grammar
@@ -755,6 +816,7 @@ type Evaluation struct {
 	DraftPrototype            *DraftPrototype `json:"draftPrototype,omitempty"`
 	Disposition               Disposition     `json:"disposition"`
 	HandoffTarget             *HandoffTarget  `json:"handoffTarget,omitempty"`
+	UnmetEvidence             []UnmetEvidence `json:"unmetEvidence,omitempty"`
 	Trace                     []TraceEntry    `json:"trace"`
 	Artifact                  *Artifact       `json:"artifact,omitempty"`
 }
