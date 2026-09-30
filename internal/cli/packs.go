@@ -100,8 +100,11 @@ func (a *App) packsSuggestCommand() *cobra.Command {
 			"value or membership candidate moves ONE pointer and holds the rest at a base assignment, an evidence " +
 			"candidate moves no pointer at all -- so a run's size is the sum over pointers and never their " +
 			"product. --base names an already-reviewed row of that pack's matrix " +
-			"to vary from, which is what makes a candidate read as \"this reviewed row, with one pointer moved\"; " +
-			"without it the facts carry only the varied pointer. It runs no evaluator, derives no expectation, " +
+			"to vary from, which is what makes a candidate read as \"this reviewed row, with one pointer moved\": " +
+			"every candidate holds that row's facts and its evidenceAvailability, and an evidence candidate moves " +
+			"one requirement within the row's document, or states only that requirement when the row states " +
+			"none; without it the facts carry only the varied pointer. It " +
+			"runs no evaluator, derives no expectation, " +
 			"decides nothing, and moves no exit code: a value the policy text does not decide is a candidate you " +
 			"delete, and deleting one is a first-class outcome of reviewing this file. --format renders the report " +
 			"about the run, on stdout, or on stderr when --write - takes stdout for the document; --write - and " +
@@ -185,7 +188,7 @@ func (a *App) packsSuggestCommand() *cobra.Command {
 	}
 	command.Flags().StringVar(&format, "format", format, "output format for the report about the run: human or json")
 	command.Flags().StringVar(&id, "id", id, "derive candidates for one declared pack by its decision id instead of all of them")
-	command.Flags().StringVar(&baseRow, "base", baseRow, "vary from this already-reviewed row of the selected pack's matrix; requires --id")
+	command.Flags().StringVar(&baseRow, "base", baseRow, "vary from this already-reviewed row of the selected pack's matrix, holding its facts and evidence; requires --id")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().StringVar(&writeTarget, "write", writeTarget, "write the candidate document to a new file or -; omit to report the derivation without emitting it")
 	command.Flags().IntVar(&maximum, "max", maximum, "refuse, rather than truncate, past this many candidates in one run; must be a positive count")

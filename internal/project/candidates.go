@@ -148,9 +148,10 @@ type Candidates struct {
 }
 
 // Candidate is one suggested test-row input: an id, the provenance marker, the
-// facts document, the evidence availability where the candidate varies that
-// axis, and one sentence saying what the input places and why the pack's own
-// declarations imply it.
+// facts document, the evidence availability — the one it varies, for an
+// evidence candidate, or the --base row's own, carried unchanged, for every
+// other candidate made from a row that states one — and one sentence saying
+// what the input places and why the pack's own declarations imply it.
 //
 // There is no expectation member and there must not be one, not even an empty
 // or sentinel one. The rationale is prose about the *pack*, never about what an
@@ -171,8 +172,8 @@ type SuggestOptions struct {
 	// empty.
 	ID string
 	// BaseRow names an already-reviewed row of the selected pack's matrix whose
-	// facts every candidate starts from. It requires ID, because a row id is a
-	// name inside one pack's matrix and nowhere else.
+	// facts and evidenceAvailability every candidate starts from. It requires
+	// ID, because a row id is a name inside one pack's matrix and nowhere else.
 	BaseRow string
 	// Max bounds the candidates one run emits; past it the run refuses rather
 	// than truncating, naming the flag. MaxCandidatesUnset means the caller
@@ -239,7 +240,7 @@ func (p *Project) Suggest(options SuggestOptions, command string) (result.PackSu
 	if failure != nil {
 		return result.PackSuggestion{}, Candidates{}, failure
 	}
-	base, hasBase, failure := p.resolveBase(options)
+	base, failure := p.resolveBase(options)
 	if failure != nil {
 		return result.PackSuggestion{}, Candidates{}, failure
 	}
@@ -259,7 +260,7 @@ func (p *Project) Suggest(options SuggestOptions, command string) (result.PackSu
 	}
 	document := Candidates{CandidatesVersion: CandidatesVersion, Candidates: []Candidate{}}
 	for _, packID := range selected {
-		entry, candidates := p.suggestPack(options, base, hasBase, budget, count, packID, p.Config.Packs[packID])
+		entry, candidates := p.suggestPack(options, base, budget, count, packID, p.Config.Packs[packID])
 		// Both run-level bounds are answered the moment they are crossed, before
 		// the candidates composed so far are carried any further: a run past
 		// either is refused whole, because a truncated candidate set looks like
@@ -421,17 +422,33 @@ func (budget *outputBudget) failure() *Failure {
 	}
 }
 
-// resolveBase reads the --base row's facts, which every candidate of the run
-// then starts from. Preferring an already-reviewed row is what keeps a
-// candidate minimally novel: it reads as "this reviewed row, with one pointer
+// baseRow is the --base row as every candidate of the run starts from it: its
+// facts, and its evidence-availability document when it states one. The two are
+// both the base: a candidate holds every member of the row it does not vary,
+// and a row's evidence is as much what it said as its facts are.
+type baseRow struct {
+	facts   any
+	present bool
+	// evidence is the row's evidenceAvailability as decoded, and hasEvidence
+	// says whether the row states one at all. A row that states none is a
+	// different input from one that states an empty document (§8.2), so the
+	// absence is carried rather than defaulted.
+	evidence        any
+	hasEvidence     bool
+	encodedEvidence json.RawMessage
+}
+
+// resolveBase reads the --base row's facts and evidence, which every candidate
+// of the run then starts from. Preferring an already-reviewed row is what keeps
+// a candidate minimally novel: it reads as "this reviewed row, with one pointer
 // moved to a value the pack's own literals imply", which is a reviewable claim
 // where a synthesized full record is a policy world the generator invented.
-func (p *Project) resolveBase(options SuggestOptions) (any, bool, *Failure) {
+func (p *Project) resolveBase(options SuggestOptions) (baseRow, *Failure) {
 	if options.BaseRow == "" {
-		return nil, false, nil
+		return baseRow{}, nil
 	}
 	if options.ID == "" {
-		return nil, false, &Failure{
+		return baseRow{}, &Failure{
 			Code:     "JPS-INVOCATION-SUGGEST-BASE",
 			Message:  "--base names a row inside one pack's matrix, so it requires --id to say which pack's matrix that is.",
 			ExitCode: result.ExitInvocation,
@@ -439,10 +456,10 @@ func (p *Project) resolveBase(options SuggestOptions) (any, bool, *Failure) {
 	}
 	entry, declared := p.Entry(options.ID)
 	if !declared {
-		return nil, false, p.UnknownPackFailure(options.ID)
+		return baseRow{}, p.UnknownPackFailure(options.ID)
 	}
 	if entry.Matrix == "" {
-		return nil, false, &Failure{
+		return baseRow{}, &Failure{
 			Code:     "JPS-INVOCATION-SUGGEST-BASE",
 			Message:  fmt.Sprintf("The pack %q declares no matrix, so it has no reviewed row to base candidates on. Omit --base to derive candidates whose facts carry only the varied pointer.", display.Sanitize(options.ID)),
 			ExitCode: result.ExitInvocation,
@@ -450,7 +467,7 @@ func (p *Project) resolveBase(options SuggestOptions) (any, bool, *Failure) {
 	}
 	matrix, err := p.LoadMatrix(entry)
 	if err != nil {
-		return nil, false, &Failure{
+		return baseRow{}, &Failure{
 			Code:     "JPS-SUGGEST-BASE-READ",
 			Message:  "The matrix holding the base row could not be read as rows: " + display.Sanitize(err.Error()),
 			ExitCode: result.ExitIO,
@@ -464,15 +481,35 @@ func (p *Project) resolveBase(options SuggestOptions) (any, bool, *Failure) {
 		}
 		facts, carrierFailure := carrier.Decode(row.Facts, carrier.DefaultLimits())
 		if carrierFailure != nil {
-			return nil, false, &Failure{
+			return baseRow{}, &Failure{
 				Code:     "JPS-SUGGEST-BASE-READ",
 				Message:  fmt.Sprintf("The base row %q carries a facts document this runtime cannot decode: %s", display.Sanitize(options.BaseRow), display.Sanitize(carrierFailure.Diagnostic.Message)),
 				ExitCode: result.ExitInvalid,
 			}
 		}
-		return facts, true, nil
+		base := baseRow{facts: facts, present: true}
+		if len(row.EvidenceAvailability) > 0 {
+			evidence, carrierFailure := carrier.Decode(row.EvidenceAvailability, carrier.DefaultLimits())
+			if carrierFailure != nil {
+				return baseRow{}, &Failure{
+					Code:     "JPS-SUGGEST-BASE-READ",
+					Message:  fmt.Sprintf("The base row %q carries an evidenceAvailability this runtime cannot decode: %s", display.Sanitize(options.BaseRow), display.Sanitize(carrierFailure.Diagnostic.Message)),
+					ExitCode: result.ExitInvalid,
+				}
+			}
+			encoded, err := encodeCandidateJSON(evidence)
+			if err != nil {
+				return baseRow{}, &Failure{
+					Code:     "JPS-SUGGEST-BASE-READ",
+					Message:  fmt.Sprintf("The base row %q carries an evidenceAvailability this runtime cannot render again as JSON.", display.Sanitize(options.BaseRow)),
+					ExitCode: result.ExitInvalid,
+				}
+			}
+			base.evidence, base.hasEvidence, base.encodedEvidence = evidence, true, encoded
+		}
+		return base, nil
 	}
-	return nil, false, &Failure{
+	return baseRow{}, &Failure{
 		Code: "JPS-INVOCATION-SUGGEST-BASE",
 		Message: fmt.Sprintf("The matrix of %q declares no row %q. Its rows are: %s.",
 			display.Sanitize(options.ID), display.Sanitize(options.BaseRow), joinCapped(ids, suggestSkipCap)),
@@ -487,7 +524,7 @@ func (p *Project) resolveBase(options SuggestOptions) (any, bool, *Failure) {
 // judges nothing: packs validate is the surface that fails on an unreadable
 // declared document, and duplicating that verdict here would give a generator a
 // gate's exit code.
-func (p *Project) suggestPack(options SuggestOptions, base any, hasBase bool, budget *outputBudget, count *candidateCap, id string, entry Pack) (result.PackSuggestionEntry, []Candidate) {
+func (p *Project) suggestPack(options SuggestOptions, base baseRow, budget *outputBudget, count *candidateCap, id string, entry Pack) (result.PackSuggestionEntry, []Candidate) {
 	report := result.PackSuggestionEntry{ID: id, Path: entry.Path, Status: "skipped"}
 	found, data, err := p.readIdentity(entry)
 	if err != nil {
@@ -502,7 +539,8 @@ func (p *Project) suggestPack(options SuggestOptions, base any, hasBase bool, bu
 		report.Detail = "No candidate could be derived, because the pack document does not decode as a JSON object under this runtime's carrier rules; packs validate diagnoses it."
 		return report, nil
 	}
-	set := newCandidateSet(id, base, hasBase, options, budget, count)
+	set := newCandidateSet(id, base.facts, base.present, options, budget, count)
+	set.baseEvidence, set.hasBaseEvidence, set.baseEvidenceJSON = base.evidence, base.hasEvidence, base.encodedEvidence
 	if usesQuantifiers(pack) {
 		set.skip("draft-rfc-quantifiers",
 			"The pack states a draft RFC 0008 collection quantifier. This derivation shares the coverage report's structure-keyed walk, which descends only through all, any, and not, so a comparison inside a where or an at derives no candidate — and an element-relative pointer has no place in a flat facts document to derive one at.",
@@ -532,9 +570,15 @@ type candidateSet struct {
 	decisionID string
 	base       any
 	hasBase    bool
-	options    SuggestOptions
-	candidates []Candidate
-	ids        map[string]bool
+	// baseEvidence is the base row's evidenceAvailability, when it states one.
+	// Every candidate that does not vary the evidence axis carries it as the
+	// row stated it, and an evidence candidate moves one requirement within it.
+	baseEvidence     any
+	hasBaseEvidence  bool
+	baseEvidenceJSON json.RawMessage
+	options          SuggestOptions
+	candidates       []Candidate
+	ids              map[string]bool
 	// pointers is every fact pointer some condition of this pack consults, in
 	// first-occurrence order — the axis the absence witnesses are derived over.
 	pointers []string
@@ -1123,7 +1167,24 @@ func (set *candidateSet) deriveAbsences() {
 // declared requirement, with the facts held at the base assignment. It is a
 // separate axis and is never crossed with the numeric lattice — crossing two
 // one-factor axes is the cross product this design refuses.
+//
+// With a base row that states an evidence document, a candidate is that
+// document with the one requirement moved, so every other requirement stays at
+// what the row said. A row that states none leaves the candidate a document
+// naming only the one requirement, as a run without --base does: the others
+// were unknown in the row and stay unknown. A row whose document is not an
+// object has no requirement to move within it, and the axis is reported as
+// declined rather than composed over an invented document.
 func (set *candidateSet) deriveEvidence(pack map[string]any) {
+	baseDocument, baseIsObject := set.baseEvidence.(map[string]any)
+	if set.hasBaseEvidence && !baseIsObject {
+		if len(asObjects(pack["evidenceRequirements"])) > 0 {
+			set.skip("unmovable-base-evidence",
+				"The base row's evidenceAvailability is not an object, so no requirement can be moved within it while the rest stays as the row stated it. The evidence axis is reported rather than composed over a document the row never stated; the other candidates carry the row's document unchanged.",
+				"")
+		}
+		return
+	}
 	for _, requirement := range asObjects(pack["evidenceRequirements"]) {
 		if set.stopped() {
 			return
@@ -1141,7 +1202,17 @@ func (set *candidateSet) deriveEvidence(pack map[string]any) {
 			noun = "a required"
 		}
 		for _, state := range []string{"present", "absent", "unknown"} {
-			availability, err := encodeCandidateJSON(map[string]string{id: state})
+			moved := map[string]any{id: state}
+			held := "with the facts left at the base assignment"
+			if baseIsObject {
+				moved = make(map[string]any, len(baseDocument)+1)
+				for key, value := range baseDocument {
+					moved[key] = value
+				}
+				moved[id] = state
+				held = "with the facts and every other requirement left as the base row states them"
+			}
+			availability, err := encodeCandidateJSON(moved)
 			if err != nil {
 				set.skip("unencodable-candidate", unencodableCandidateReason, capRendered(id))
 				continue
@@ -1150,7 +1221,7 @@ func (set *candidateSet) deriveEvidence(pack map[string]any) {
 				family:       "evidence",
 				subject:      id,
 				qualifier:    state,
-				rationale:    fmt.Sprintf("Declares %s evidence requirement %s as %q, with the facts left at the base assignment. Evidence presence is an axis of the input beside the facts, so it is varied on its own rather than crossed with them.", noun, capRendered(id), state),
+				rationale:    fmt.Sprintf("Declares %s evidence requirement %s as %q, %s. Evidence presence is an axis of the input beside the facts, so it is varied on its own rather than crossed with them.", noun, capRendered(id), state, held),
 				availability: availability,
 			})
 		}
@@ -1249,11 +1320,18 @@ func (set *candidateSet) emit(seed candidateSeed) {
 		set.skip("unencodable-candidate", unencodableCandidateReason, capRendered(seed.subject))
 		return
 	}
+	// A candidate that does not vary the evidence axis holds it at the base
+	// row's, as it holds every fact it does not vary; without a base, or with a
+	// base that states no evidence document, it states none.
+	availability := seed.availability
+	if availability == nil && set.hasBaseEvidence {
+		availability = set.baseEvidenceJSON
+	}
 	composed := Candidate{
 		ID:                   set.uniqueID(seed),
 		Origin:               CandidateOrigin,
 		Facts:                facts,
-		EvidenceAvailability: seed.availability,
+		EvidenceAvailability: availability,
 		Rationale:            seed.rationale + candidateRationaleClose,
 	}
 	// Measured as the writer will write it rather than as it was composed. The

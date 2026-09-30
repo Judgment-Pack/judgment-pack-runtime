@@ -4,6 +4,22 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`packs suggest --base` keeps the base row's evidence** (#177). A candidate made from a base row
+  carried the row's facts and dropped its `evidenceAvailability`. On the specification's
+  `minimal-expense-approval`, with a base row that marks both required requirements `present`, every
+  value candidate, evaluated as emitted, therefore stopped at the evidence step with reason
+  `unknown` and never reached the rule it was derived to probe. ADR-0024 describes such a candidate
+  as "this reviewed row, with one pointer moved", and the row's evidence is part of the row. A value,
+  membership or absence candidate now carries the row's `evidenceAvailability` unchanged, and an
+  evidence candidate is the row's document with the one requirement moved, every other member as the
+  row stated it; its rationale says so. When the row states no evidence document, value, membership
+  and absence candidates state none and an evidence candidate names only the requirement it moves,
+  both as before. A row whose evidence document is not an object has no requirement to move within
+  it: the evidence axis is declined and reported under the new dimension `unmovable-base-evidence`,
+  and the other candidates carry the row's document unchanged. A candidate keeps the evidence its
+  row stated; whether it reaches a rule is still up to the row, whose `absent` or `unknown`
+  requirements stop it where they stopped the row. Runs without `--base` are unchanged.
+
 - **`spec examples --spec-version`, and `spec_version` on `list_examples` and `get_example`: the
   examples the evaluator admits can now be reached** (#175). The runtime bundles a valid example set
   for each specification version it carries, and every surface served the `0.1.0-draft` set only,
