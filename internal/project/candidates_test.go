@@ -517,6 +517,182 @@ func TestEveryCandidateVariesExactlyOnePointerOfTheBase(t *testing.T) {
 	}
 }
 
+// evidencePack is thresholdPack's rule with two required evidence requirements,
+// the shape of the specification's minimal expense example: a candidate that
+// states no evidence stops at the evidence step and never reaches a rule. It is
+// fully conformant, because one test evaluates the candidates it derives.
+const evidencePack = `{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/expense-approval",
+  "version": "0.1.0",
+  "title": "Expense approval",
+  "decision": {"intent": "Decide whether an expense needs manager signoff.", "question": "Does this expense need manager signoff?"},
+  "outcomes": [{"id": "requires-signoff", "label": "Requires signoff"}, {"id": "auto-approve", "label": "Auto approve"}],
+  "evidenceRequirements": [{"id": "receipt", "description": "An itemized receipt.", "required": true}, {"id": "cost-center", "description": "The cost centre.", "required": true}],
+  "rules": [
+    {"id": "over-threshold", "description": "5000 or more spend requires review",
+     "when": {"op": "fact", "path": "/expense/amountUsd", "operator": "greater-than", "value": "5000"},
+     "outcome": "requires-signoff", "onUnknown": "escalate"}
+  ],
+  "fallbackOutcome": "auto-approve"
+}`
+
+// evidenceBaseProject lays out evidencePack with one reviewed row whose
+// evidenceAvailability member is the given JSON text, or absent when it is "".
+func evidenceBaseProject(t *testing.T, evidence string) *Project {
+	t.Helper()
+	member := ""
+	if evidence != "" {
+		member = `,"evidenceAvailability":` + evidence
+	}
+	matrix := `{"matrixVersion":"1","cases":[{"id":"reviewed","facts":{"expense":{"amountUsd":"10"}}` + member + `,"expectedDisposition":{"kind":"outcome","outcomeId":"auto-approve","reasons":[],"handoff":{"state":"none"}}}]}`
+	return suggestProject(t, evidencePack, map[string]string{"packs/pack.matrix.json": matrix},
+		`{"path":"packs/pack.json","matrix":"packs/pack.matrix.json"}`)
+}
+
+func decodeEvidence(t *testing.T, raw json.RawMessage) map[string]any {
+	t.Helper()
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatalf("evidenceAvailability %s: %v", raw, err)
+	}
+	return document
+}
+
+// A candidate made from a base holds the base row's evidence as it holds the
+// base row's facts (runtime #177, ADR-0024's "this reviewed row, with one
+// pointer moved"). A candidate that varies a fact carries the row's evidence
+// unchanged; an evidence candidate is the row's document with one requirement
+// moved, every other requirement as the row stated it.
+func TestACandidateFromABaseHoldsTheBaseRowsEvidence(t *testing.T) {
+	base := map[string]any{"receipt": "present", "cost-center": "present"}
+	loaded := evidenceBaseProject(t, `{"receipt":"present","cost-center":"present"}`)
+	document := suggestOne(t, loaded, SuggestOptions{ID: "expense", BaseRow: "reviewed", Max: MaxCandidatesUnset})
+
+	evidenceCandidates := 0
+	for _, candidate := range document.Candidates {
+		if len(candidate.EvidenceAvailability) == 0 {
+			t.Fatalf("candidate %q drops the base row's evidence: %s", candidate.ID, candidate.Facts)
+		}
+		got := decodeEvidence(t, candidate.EvidenceAvailability)
+		if !strings.Contains(candidate.ID, ":evidence:") {
+			if !maps.Equal(got, base) {
+				t.Fatalf("candidate %q varies a fact and must carry the base row's evidence unchanged: %v", candidate.ID, got)
+			}
+			continue
+		}
+		evidenceCandidates++
+		if len(got) != len(base) {
+			t.Fatalf("evidence candidate %q must keep every requirement the base row states: %v", candidate.ID, got)
+		}
+		moved := 0
+		for id, state := range base {
+			if got[id] != state {
+				moved++
+			}
+		}
+		if moved > 1 {
+			t.Fatalf("evidence candidate %q moves %d requirements; one factor at a time means one: %v", candidate.ID, moved, got)
+		}
+		parts := strings.Split(candidate.ID, ":")
+		requirement, state := parts[len(parts)-2], parts[len(parts)-1]
+		if got[requirement] != state {
+			t.Fatalf("evidence candidate %q states %s as %v, want %q", candidate.ID, requirement, got[requirement], state)
+		}
+		if !strings.Contains(candidate.Rationale, "every other requirement left as the base row states them") {
+			t.Fatalf("evidence candidate %q must say the other requirements are held: %s", candidate.ID, candidate.Rationale)
+		}
+	}
+	if evidenceCandidates != 6 {
+		t.Fatalf("two requirements times three states is six evidence candidates, got %d", evidenceCandidates)
+	}
+}
+
+// The point of holding the evidence: a candidate derived to probe a rule
+// reaches that rule when evaluated as emitted. Without the base row's evidence
+// every value candidate stopped at the evidence step with reason unknown.
+func TestAValueCandidateFromABaseReachesTheRuleItProbes(t *testing.T) {
+	loaded := evidenceBaseProject(t, `{"receipt":"present","cost-center":"present"}`)
+	document := suggestOne(t, loaded, SuggestOptions{ID: "expense", BaseRow: "reviewed", Max: MaxCandidatesUnset})
+	engine := evaluation.NewEngine(newValidator(t))
+	values, signoff := 0, 0
+	for _, candidate := range document.Candidates {
+		if !strings.Contains(candidate.ID, ":value:") {
+			continue
+		}
+		values++
+		evaluated, failure := engine.Evaluate([]byte(evidencePack), candidate.Facts, candidate.EvidenceAvailability, nil, "test")
+		if failure != nil {
+			t.Fatalf("candidate %q: %s", candidate.ID, failure.Message)
+		}
+		reached := false
+		for _, entry := range evaluated.Trace {
+			if entry.Stage == "rule" && entry.ID == "over-threshold" && entry.Condition != "unknown" {
+				reached = true
+			}
+		}
+		if !reached || evaluated.Disposition.Kind != "outcome" {
+			t.Fatalf("value candidate %q, evaluated as emitted, must reach over-threshold and decide: %+v", candidate.ID, evaluated.Disposition)
+		}
+		if evaluated.Disposition.OutcomeID == "requires-signoff" {
+			signoff++
+		}
+	}
+	if values == 0 || signoff == 0 {
+		t.Fatalf("the value candidates must include one past the line: %d values, %d requiring signoff", values, signoff)
+	}
+}
+
+// A base row that states no evidence document is a different input from one
+// that states an empty one (§8.2), and it is carried as it is: a candidate that
+// varies a fact states none, and an evidence candidate names only the one
+// requirement it moves, as a run without --base does.
+func TestABaseRowWithNoEvidenceDocumentGivesCandidatesNone(t *testing.T) {
+	loaded := evidenceBaseProject(t, "")
+	document := suggestOne(t, loaded, SuggestOptions{ID: "expense", BaseRow: "reviewed", Max: MaxCandidatesUnset})
+	for _, candidate := range document.Candidates {
+		evidence := strings.Contains(candidate.ID, ":evidence:")
+		if !evidence && len(candidate.EvidenceAvailability) != 0 {
+			t.Fatalf("candidate %q states evidence the base row never stated: %s", candidate.ID, candidate.EvidenceAvailability)
+		}
+		if evidence && len(decodeEvidence(t, candidate.EvidenceAvailability)) != 1 {
+			t.Fatalf("evidence candidate %q names only the requirement it moves: %s", candidate.ID, candidate.EvidenceAvailability)
+		}
+	}
+}
+
+// A base row whose evidence document is not an object has no requirement to
+// move within it. The evidence axis is reported as declined rather than
+// composed over a document the row never stated, and the other candidates carry
+// the row's document unchanged.
+func TestABaseRowWhoseEvidenceIsNotAnObjectDeclinesTheEvidenceAxis(t *testing.T) {
+	loaded := evidenceBaseProject(t, `["receipt"]`)
+	report, document, failure := loaded.Suggest(SuggestOptions{ID: "expense", BaseRow: "reviewed", Max: MaxCandidatesUnset}, "packs suggest")
+	if failure != nil {
+		t.Fatalf("suggest: %s: %s", failure.Code, failure.Message)
+	}
+	if len(document.Candidates) == 0 {
+		t.Fatal("the fact candidates are still derived")
+	}
+	for _, candidate := range document.Candidates {
+		if strings.Contains(candidate.ID, ":evidence:") {
+			t.Fatalf("no evidence candidate can be composed over a non-object document: %q", candidate.ID)
+		}
+		if string(candidate.EvidenceAvailability) != `["receipt"]` {
+			t.Fatalf("candidate %q must carry the row's document unchanged: %s", candidate.ID, candidate.EvidenceAvailability)
+		}
+	}
+	declined := false
+	for _, skip := range report.Packs[0].Skipped {
+		if skip.Name == "unmovable-base-evidence" {
+			declined = true
+		}
+	}
+	if !declined {
+		t.Fatalf("the declined evidence axis must be reported: %+v", report.Packs[0].Skipped)
+	}
+}
+
 // Nothing the generator emits is a row. The document's root is not a matrix's,
 // and a candidate lifted into a cases array carries no expectation — so the
 // matrix loader refuses it twice over, through refusals that already existed.

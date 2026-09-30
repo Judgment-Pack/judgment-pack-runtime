@@ -363,8 +363,12 @@ moves the availability axis instead; and with no `--base`, the single absence ca
 facts at all, because there is nothing to hold the other pointers at. So the count grows with the
 number of pointers and axes and never as their product. `--base <rowId>` makes that base an
 already-reviewed row of your matrix, which is what makes a candidate read as "this reviewed row,
-with one pointer moved to a value the pack's own literals imply"; without it, the facts carry only
-the varied pointer. The generator never synthesizes a plausible-looking full record: that would be
+with one pointer moved to a value the pack's own literals imply". Every candidate then holds that
+row's `evidenceAvailability` as well as its facts, and an evidence candidate is the row's document
+with one requirement moved, so a candidate evaluated as emitted reaches the step it was derived to
+probe instead of stopping at the evidence step. A row that states no evidence document gives
+candidates none, and a row whose document is not an object declines the evidence axis under
+`unmovable-base-evidence`. Without `--base`, the facts carry only the varied pointer. The generator never synthesizes a plausible-looking full record: that would be
 it inventing a policy world.
 
 Where your base row already *states* something at the pointer's path that the placement would have

@@ -4,6 +4,19 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`packs suggest --base` keeps the base row's evidence** (#177). A candidate made from a base row
+  carried the row's facts and dropped its `evidenceAvailability`, so on a pack with required
+  evidence every value candidate, evaluated as emitted, stopped at the evidence step with reason
+  `unknown` and never reached the rule it was derived to probe. ADR-0024 describes such a candidate
+  as "this reviewed row, with one pointer moved", and the row's evidence is part of the row. A value,
+  membership or absence candidate now carries the row's `evidenceAvailability` unchanged, and an
+  evidence candidate is the row's document with the one requirement moved, every other requirement
+  as the row stated it; its rationale says so. A row that states no evidence document gives
+  candidates none, as before. A row whose evidence document is not an object has no requirement to
+  move within it: the evidence axis is declined and reported under the new dimension
+  `unmovable-base-evidence`, and the other candidates carry the row's document unchanged. Runs
+  without `--base` are unchanged.
+
 - **`experimental evaluate --rfc0016-outcome-values`: a draft-RFC prototype of the specification's
   RFC 0016 (Draft), outcome values** (ADR-0039). An outcome declares named values under
   `org.judgmentpack.outcome-values`, each a constant or a copy of one fact, of type `string`,
