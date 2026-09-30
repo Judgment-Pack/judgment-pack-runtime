@@ -9,7 +9,8 @@ deciders: maintainer
 ## Context and problem statement
 
 `jpack packs test` reports a declared pack with no matrix as `skipped`, never `passed`, and a run in
-which no row ran at all as `skipped` with exit 1. A run in which some pack's rows ran and passed,
+which no row ran at all as `skipped` with exit 1, unless a mismatch was found, such as a pack or
+matrix that could not be read. A run in which some pack's rows ran and passed,
 beside a pack with no matrix, exits 0. A CI step that gates on `packs test` therefore stays green
 while a pack the deciding surfaces will evaluate has no test at all, and nothing in the command or
 in `jpack.json` changes that (issue #179).
@@ -50,6 +51,9 @@ Chosen option: **A**.
    VERSIONING.md's MINOR rule, and `outputVersion` stays `"2"`.
 4. **Scope.** The selection is the scope. `--id` selects one pack, and only that pack must have a
    matrix.
+5. **Recovery.** When the MCP report is over its response bound, the refusal names the CLI command
+   that streams the same report, with the same `--id` and `--require-matrix`, so a strict run is not
+   redirected to one judged under the default.
 
 ### Consequences
 

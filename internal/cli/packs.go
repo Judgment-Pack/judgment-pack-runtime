@@ -625,10 +625,11 @@ func (a *App) packsTestCommand() *cobra.Command {
 			"supplying those members and removing any target assertion. What this reports is what one project's own rows did: it is not the " +
 			"specification's corpus, it is evidence about the pack a project wrote rather than about this " +
 			"implementation, and no row is an authorization or a statement that acting on a disposition is correct " +
-			"(§3.5). A pack that declares no matrix is reported as skipped and never as passed, and a run in which " +
-			"no row ran at all is reported skipped rather than passed: a green gate over zero rows would say a " +
-			"project was tested when nothing was. With --require-matrix, a selected pack that declares no matrix " +
-			"fails the run instead of being skipped (ADR-0042), and the payload carries requireMatrix: true. Exit " +
+			"(§3.5). By default a pack that declares no matrix is reported as skipped and never as passed, and a " +
+			"run in which no row ran at all is reported skipped rather than passed unless a mismatch was found: a " +
+			"green gate over zero rows would say a project was tested when nothing was. With --require-matrix, a " +
+			"selected pack that declares no matrix is reported mismatch and fails the run (ADR-0042), and the " +
+			"payload carries requireMatrix: true. Exit " +
 			"0 when every row matched its expectation, 1 when any did not, 1 when no row ran, and 1 under " +
 			"--require-matrix when a selected pack declares no matrix.",
 		Args: cobra.NoArgs,
