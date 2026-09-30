@@ -172,6 +172,78 @@ Packages for Homebrew, Scoop, `apt`, and `go install` are not published yet. In 
 installation with `go install` does not receive the release linker metadata, so use a release
 archive when you need an accurately reported runtime version.
 
+## Evaluate one decision
+
+With `jpack` on your `PATH`, this is the whole loop: a pack, a facts document, and a disposition.
+Save a pack that approves an expense unless its amount is over 5000:
+
+```bash
+cat > pack.json <<'EOF'
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/expense-approval",
+  "version": "0.1.0",
+  "title": "Expense approval",
+  "decision": {
+    "intent": "Approve ordinary expenses without review.",
+    "question": "May this expense be approved?"
+  },
+  "outcomes": [
+    { "id": "approve", "label": "Approve" },
+    { "id": "decline", "label": "Decline" }
+  ],
+  "rules": [
+    {
+      "id": "over-limit",
+      "description": "An amount over 5000 is declined.",
+      "when": { "op": "fact", "path": "/expense/amount", "operator": "greater-than", "value": "5000" },
+      "outcome": "decline",
+      "onUnknown": "escalate"
+    }
+  ],
+  "fallbackOutcome": "approve",
+  "escalation": {
+    "triggers": ["unknown"],
+    "target": { "kind": "human-role", "name": "Finance reviewer" }
+  }
+}
+EOF
+jpack spec validate pack.json
+```
+
+Give it the facts of one expense and evaluate. The amount is a decimal string, as the
+specification requires for a number a rule compares:
+
+```console
+$ echo '{"expense": {"amount": "120"}}' > facts.json
+$ jpack experimental evaluate pack.json --facts facts.json
+EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)
+disposition: outcome approve
+trace: rule over-limit: false
+artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185
+```
+
+Now remove the amount. The rule cannot be decided, its `onUnknown` is `escalate`, and the pack
+names who takes the case, so the answer is a handoff rather than a guess:
+
+```console
+$ echo '{"expense": {}}' > facts.json
+$ jpack experimental evaluate pack.json --facts facts.json
+EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)
+disposition: unresolved (unknown)
+handoff: requested -> human-role "Finance reviewer" (triggered by unknown)
+trace: rule over-limit: unknown onUnknown=escalate
+artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185
+```
+
+Both runs exit 0: producing a disposition is success, whichever it is. `--format json` gives the
+same result as a payload, with the disposition in its canonical form. A disposition is data. It
+authorizes nothing, and acting on it is the caller's decision.
+
+From here, [docs/building-with-packs.md](docs/building-with-packs.md) covers a project of several
+packs, their test matrices, and the audit trail; `jpack spec examples --spec-version 0.2.0-draft`
+lists larger starting points the evaluator accepts, from the release after 0.23.1.
+
 ## Build and try it locally
 
 Go 1.24 or newer is required to build from source: `internal/fssecure` binds every project file
