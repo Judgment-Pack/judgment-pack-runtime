@@ -21,6 +21,11 @@ import (
 // record's stored inputs must reproduce. Fixture ids are deliberately in
 // non-lexical document order throughout, so a sort by id cannot masquerade as
 // document order.
+//
+// ADR-0040 added two optional members to an entry, unknownCauses and
+// typeMismatches, each placed after skipped and omitted when it has nothing to
+// say. The goldens below that hold an unknown entry therefore carry its causes;
+// every other golden is byte for byte what ADR-0027 pinned.
 
 // traceJSON serializes a trace exactly as the evaluation payload does.
 func traceJSON(t *testing.T, trace []result.TraceEntry) string {
@@ -68,11 +73,11 @@ func TestTraceIsADeterministicOrderedRecord(t *testing.T) {
 		},
 	}
 	want := `[{"stage":"applicability","condition":"true"},` +
-		`{"stage":"exception","id":"x2","condition":"unknown","onUnknown":"ignore"},` +
+		`{"stage":"exception","id":"x2","condition":"unknown","onUnknown":"ignore","unknownCauses":[{"path":"/missing","cause":"absent"}]},` +
 		`{"stage":"exception","id":"x1","condition":"false"},` +
 		`{"stage":"rule","id":"r3","condition":"false"},` +
 		`{"stage":"rule","id":"r1","condition":"true","outcome":"a"},` +
-		`{"stage":"rule","id":"r2","condition":"unknown","onUnknown":"ignore"}]`
+		`{"stage":"rule","id":"r2","condition":"unknown","onUnknown":"ignore","unknownCauses":[{"path":"/missing","cause":"absent"}]}]`
 
 	disposition, _, first, failure := resolve(pack, map[string]any{}, coreEvaluator())
 	if failure != nil {
@@ -206,7 +211,7 @@ func TestBlockedWalkStillRecordsEveryException(t *testing.T) {
 			map[string]any{"id": "r1", "when": literalCondition(true), "outcome": "a", "onUnknown": "ignore"},
 		},
 	}
-	want := `[{"stage":"exception","id":"x2","condition":"unknown","onUnknown":"escalate"},` +
+	want := `[{"stage":"exception","id":"x2","condition":"unknown","onUnknown":"escalate","unknownCauses":[{"path":"/missing","cause":"absent"}]},` +
 		`{"stage":"exception","id":"x1","condition":"false"}]`
 
 	disposition, _, trace, failure := resolve(pack, map[string]any{}, coreEvaluator())

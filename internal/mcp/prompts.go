@@ -315,8 +315,9 @@ func buildExplainDisposition(args map[string]string) string {
 	b.WriteString("Explain the disposition of ONE evaluation, strictly from the record it carries.\n")
 	b.WriteString("The disposition is authoritative; the trace beside it is informative and may be\n")
 	b.WriteString("partial or empty (a pack with no authored applicability that stops at the\n")
-	b.WriteString("evidence gate traces nothing, and a stop that precedes the rules returns before\n")
-	b.WriteString("later entries exist). Your narrative is a reading of that record. The\n")
+	b.WriteString("evidence gate traces nothing -- its findings are in unmetEvidence beside the\n")
+	b.WriteString("trace -- and a stop that precedes the rules returns before later entries\n")
+	b.WriteString("exist). Your narrative is a reading of that record. The\n")
 	b.WriteString("evaluator's surface is experimental; its conformance claim is stated, in full\n")
 	b.WriteString("and only, in CONFORMANCE.md.\n\n")
 	if evaluation := strings.TrimSpace(args["evaluation"]); evaluation != "" {
@@ -355,25 +356,37 @@ Work in this order:
 4. WALK THE TRACE, in order, for what it holds. Each entry names its stage -- applicability,
    exception, or rule -- what its condition evaluated to (true, false, or unknown), and, for
    an authored declaration, its id; members that do not apply are simply absent, and a pack's
-   applicability is one unnamed condition, so its entry carries no id. An applicability that
+   applicability is one unnamed condition, so its entry carries no id. A rule the walk did not
+   evaluate reads not-evaluated, with skipped (a forced outcome ended the walk) or suppressed
+   (a true exception removed it). Under the draft RFC 0016 prototype an outcome-value entry
+   names a declared value and reads resolved or unresolved; it is not a condition. An applicability that
    evaluated false or unknown is the entire trace: §8 stops there, and the disposition is
    not-applicable or unresolved on that account alone. Report it as the pack declining the
    question or failing to reach it -- never as a rule that did not fire, and never as an
    absence of record. For a fired rule, quote its condition from the pack and the facts it
-   addresses. For an unknown, say the condition evaluated unknown -- name a cause only when
-   the condition's own members establish it deterministically; a composite condition, or a
-   value shape an operator does not admit (a JSON number where a decimal string is
-   required), yields unknown with no fact missing at all. onUnknown:
+   addresses. For an unknown, say the condition evaluated unknown and name what its
+   unknownCauses member records, and nothing beyond it; an unknown entry without that member
+   names no cause, so say the record does not. Each cause names a fact pointer ("path", where
+   "" is the whole document) or an evidence requirement, and why: "absent" (the pointer
+   selects nothing), "not-comparable" (present, but not a decimal string an ordered comparison
+   takes; factType says what it is), "unknown" (the requirement's presence is unknown),
+   "not-an-array" (a draft aggregate's collection is something else), or "unsupported" (a
+   shape this evaluator does not decide). A "within" member names the draft aggregate
+   collection the pointer was read in, element by element: it is a scope, and says nothing
+   about how many elements lacked the value. onUnknown:
    escalate retains reason "unknown" and blocks resolution; ignore contributes nothing,
-   without converting unknown to false. Say which entries were suppressed or skipped, and
-   by what.
+   without converting unknown to false. Where an entry carries typeMismatches, say that the
+   named comparison crossed JSON types and so could not have been equal (§7.4 does not
+   coerce): a false or true verdict there may rest on how a value was encoded rather than
+   on what it was. Say which entries were suppressed or skipped, and by what.
 
 5. SHOW THE RESOLUTION. Connect record to disposition through the branch that applies:
    fired rules agreeing on one outcome; rules naming different outcomes ("conflict"); an
    escalating unknown ("unknown"); no rule fired and no fallbackOutcome ("no-match"); a
    fallbackOutcome no rule displaced; a force-outcome exception overriding the rules it
    suppresses; a direct escalate exception ("exception-escalation"); required evidence
-   absent ("missing-required-evidence"); an authored applicability that evaluated false
+   absent ("missing-required-evidence") or unknown, each such requirement named with its
+   state in unmetEvidence; an authored applicability that evaluated false
    (not-applicable) or unknown (unresolved), its own entry the whole trace.
 
 6. ECHO THE HANDOFF as recorded. State handoff.state and its triggeredBy. When the

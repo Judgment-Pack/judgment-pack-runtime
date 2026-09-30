@@ -393,6 +393,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			EvidenceFeeds: evidenceFeeds,
 			Disposition:   evaluated.Disposition,
 			HandoffTarget: evaluated.HandoffTarget,
+			UnmetEvidence: evaluated.UnmetEvidence,
 			Trace:         evaluated.Trace,
 		})
 	}
