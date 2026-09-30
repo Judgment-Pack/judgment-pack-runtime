@@ -183,8 +183,8 @@ type Tool struct {
 var toolDigest = sync.OnceValue(func() string { return digestOf(openRunningExecutable) })
 
 // executableReads counts the times openRunningExecutable has run in this
-// process, so a test can hold toolDigest to reading once, and not before a
-// record is composed.
+// process, so a test can hold toolDigest to opening the executable once, and
+// not before a record is composed.
 var executableReads atomic.Int64
 
 // procSelfExe is the Linux name of the running program's own file. A test
@@ -222,10 +222,13 @@ type executableFile interface {
 }
 
 // digestOf hashes what open yields, in the form Digest writes, or answers ""
-// when it cannot be opened, read to the end, or read whole: a file whose size
-// or modification time changed while it was read, or that yielded a different
-// number of bytes than its size, is not one file's bytes, and a digest of it
-// would name nothing that ran.
+// when it cannot be opened or read to the end, or when the read shows it was
+// not one file's bytes: a size or modification time that differs between the
+// observations before and after the read, or a number of bytes read that
+// differs from the size. That check is as good as those observations and no
+// better: a file rewritten during the read and restored to its size and time
+// is not seen. On Linux the file is the running image, which the kernel does
+// not let a writer open, so the case arises only elsewhere (ADR-0043).
 func digestOf(open func() (executableFile, error)) string {
 	file, err := open()
 	if err != nil {

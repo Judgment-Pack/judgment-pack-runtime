@@ -815,8 +815,9 @@ executable that wrote it (ADR-0043). A graph run's composite record names no pac
 do, so a graph replay reads both. The runtime reads the digest from its own executable, so it is the
 running program's account of itself: evidence of which build ran rather than proof. On Linux it
 names the running file even if its path was replaced; elsewhere it names what was at the
-executable's path when the first record was composed. It is absent where the executable could not
-be read whole. A project that needs the digest from a source the binary does not control keeps its
+executable's path when the first record was composed, and a file rewritten while it was read can
+go unnoticed there. It is absent where the executable could not be read, or was seen to change
+while it was read. A project that needs the digest from a source the binary does not control keeps its
 own, from wherever the binary is staged and verified, beside the record.
 
 The discipline at replay time:

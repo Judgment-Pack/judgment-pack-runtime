@@ -52,11 +52,14 @@ Chosen option: **A**.
    record never reads its own executable, and a long-lived server hashes itself once. A graph run
    composes node records as its nodes complete, so a graph run refused after its first node has
    read the executable though it writes nothing.
-4. **When it cannot.** Where the executable cannot be opened or read whole, `digest` is omitted and
-   the record is otherwise whole. A file whose size or modification time changed while it was read,
-   or that yielded a different number of bytes than its size, counts as not read whole. An absent
-   member says nothing was established; an empty string or a digest of part of a file would read as
-   a digest.
+4. **When it cannot.** Where the executable cannot be opened or read to the end, `digest` is
+   omitted and the record is otherwise whole. It is omitted too where the read shows it was not one
+   file's bytes: a size or modification time that differs before and after the read, or a byte count
+   that differs from the size. That check is best effort: a file rewritten during the read and
+   restored to its size and time is not seen. On Linux the file read is the running image, which the
+   kernel does not open for writing while it runs, so the case arises only on the other platforms. An
+   absent member says nothing was established; an empty string or a digest of part of a file would
+   read as a digest.
 5. **What it is.** The running program's account of itself: evidence of which build ran, not proof.
    A modified binary can report any digest it likes, as it can report any version. It is compared by
    nobody inside this runtime.

@@ -222,15 +222,19 @@ func TestEveryRecordNamesTheExecutableThatRan(t *testing.T) {
 	}
 }
 
-// digestHelperEnv names the copied executable a helper process runs as. It is
-// set only by TestTheDigestNamesTheRunningImage.
-const digestHelperEnv = "JPACK_AUDIT_DIGEST_HELPER"
+// digestHelperEnv names the copied executable a helper process runs as, and
+// digestHelperRun marks the process as that helper. Both are set only by
+// TestTheDigestNamesTheRunningImage.
+const (
+	digestHelperEnv = "JPACK_AUDIT_DIGEST_HELPER"
+	digestHelperRun = "JPACK_AUDIT_DIGEST_HELPER_RUN"
+)
 
 // On Linux the digest names the running image, not whatever its path names by
 // the time a record is composed: a copy of this test binary runs as a separate
 // process, replaces the file at its own path with other bytes, then composes
 // records from several goroutines at once. Every record must name the bytes the
-// process started from, the executable must have been read exactly once, and
+// process started from, the executable must have been opened exactly once, and
 // not before the first record was composed.
 func TestTheDigestNamesTheRunningImage(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -249,23 +253,29 @@ func TestTheDigestNamesTheRunningImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := exec.Command(copied, "-test.run=^TestDigestHelperProcess$", "-test.count=1")
-	command.Env = append(os.Environ(), digestHelperEnv+"="+copied)
+	command.Env = append(os.Environ(), digestHelperEnv+"="+copied, digestHelperRun+"=1")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("helper process: %v\n%s", err, output)
 	}
-	want := fmt.Sprintf("reads before=0 after=1 digests=%s\n", Digest(program))
+	want := fmt.Sprintf("opens before=0 after=1 digests=%s\n", Digest(program))
 	if !strings.Contains(string(output), want) {
 		t.Fatalf("helper reported\n%s\nwant a line %q", output, want)
 	}
 }
 
 // TestDigestHelperProcess is the process TestTheDigestNamesTheRunningImage
-// starts. Run any other way, it does nothing.
+// starts. It acts only when both markers are set and the file it is told to
+// replace is the executable it is running as; otherwise it skips, and it never
+// touches a file that is not its own running copy.
 func TestDigestHelperProcess(t *testing.T) {
 	path := os.Getenv(digestHelperEnv)
-	if path == "" {
+	if path == "" || os.Getenv(digestHelperRun) != "1" {
 		t.Skip("run by TestTheDigestNamesTheRunningImage")
+	}
+	self, err := os.Executable()
+	if err != nil || self != path {
+		t.Skipf("%s names %q, which is not this process's executable %q", digestHelperEnv, path, self)
 	}
 	before := executableReads.Load()
 	if err := os.Remove(path); err != nil {
@@ -286,7 +296,29 @@ func TestDigestHelperProcess(t *testing.T) {
 	group.Wait()
 	slices.Sort(digests)
 	digests = slices.Compact(digests)
-	fmt.Printf("reads before=%d after=%d digests=%s\n", before, executableReads.Load(), strings.Join(digests, ","))
+	fmt.Printf("opens before=%d after=%d digests=%s\n", before, executableReads.Load(), strings.Join(digests, ","))
+}
+
+// The helper replaces a file, so it must replace only its own running copy: run
+// with both markers set but pointed at another file, it leaves that file as it
+// was.
+func TestTheDigestHelperTouchesNothingElse(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(t.TempDir(), "sentinel")
+	if err := os.WriteFile(sentinel, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(self, "-test.run=^TestDigestHelperProcess$", "-test.count=1")
+	command.Env = append(os.Environ(), digestHelperEnv+"="+sentinel, digestHelperRun+"=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("helper process: %v\n%s", err, output)
+	}
+	if data, err := os.ReadFile(sentinel); err != nil || string(data) != "keep me" {
+		t.Fatalf("the helper touched a file that is not its executable: %q, %v", data, err)
+	}
 }
 
 // On Linux a /proc/self/exe that cannot be opened is no digest, and there is no
@@ -328,27 +360,35 @@ func TestAnUnreadableExecutableLeavesTheDigestOut(t *testing.T) {
 	}
 }
 
-// fakeExecutable is a file whose reads and stated sizes a test chooses.
+// fakeExecutable is a file whose reads, stated sizes and modification times a
+// test chooses.
 type fakeExecutable struct {
 	io.Reader
 	sizes []int64
+	times []time.Time
 	stats int
 }
 
 func (f *fakeExecutable) Close() error { return nil }
 
 func (f *fakeExecutable) Stat() (fs.FileInfo, error) {
-	size := f.sizes[min(f.stats, len(f.sizes)-1)]
+	info := fakeInfo{size: f.sizes[min(f.stats, len(f.sizes)-1)]}
+	if len(f.times) > 0 {
+		info.modified = f.times[min(f.stats, len(f.times)-1)]
+	}
 	f.stats++
-	return fakeInfo(size), nil
+	return info, nil
 }
 
-type fakeInfo int64
+type fakeInfo struct {
+	size     int64
+	modified time.Time
+}
 
 func (i fakeInfo) Name() string       { return "executable" }
-func (i fakeInfo) Size() int64        { return int64(i) }
+func (i fakeInfo) Size() int64        { return i.size }
 func (i fakeInfo) Mode() fs.FileMode  { return 0o755 }
-func (i fakeInfo) ModTime() time.Time { return time.Time{} }
+func (i fakeInfo) ModTime() time.Time { return i.modified }
 func (i fakeInfo) IsDir() bool        { return false }
 func (i fakeInfo) Sys() any           { return nil }
 
@@ -356,14 +396,18 @@ type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
 
-// A digest names one file's bytes, whole, or it is not given: a read that fails
-// partway, a file that yields fewer bytes than its size, and a file whose size
-// changed while it was read all give none.
+// A digest is not given where the read shows it is not one file's bytes: a
+// read that fails partway, a file that yields fewer bytes than its size, and a
+// file whose size or modification time is seen to change while it is read all
+// give none. The check is only as good as those observations: a change that
+// restores both is not seen, which ADR-0043 states.
 func TestAnExecutableNotReadWholeIsNoDigest(t *testing.T) {
+	then := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	cases := map[string]*fakeExecutable{
 		"a read that fails partway":       {Reader: io.MultiReader(strings.NewReader("ELF"), failingReader{}), sizes: []int64{3}},
 		"fewer bytes than its size":       {Reader: strings.NewReader("ELF"), sizes: []int64{10}},
 		"a size that changed during read": {Reader: strings.NewReader("ELF"), sizes: []int64{3, 4}},
+		"a time that changed during read": {Reader: strings.NewReader("ELF"), sizes: []int64{3}, times: []time.Time{then, then.Add(time.Second)}},
 	}
 	for name, file := range cases {
 		if got := digestOf(func() (executableFile, error) { return file, nil }); got != "" {
