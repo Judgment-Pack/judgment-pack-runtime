@@ -45,7 +45,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `test_conformance` | Run a version-pinned conformance corpus |
 | `get_schema` | The exact bundled JSON Schema, with digest |
 | `describe_runtime` | Versions and artifact provenance |
-| `list_examples` / `get_example` | The embedded valid fixtures, read-only |
+| `list_examples` / `get_example` | The embedded valid fixtures, read-only; `spec_version` chooses the bundled version, and the evaluator admits `0.2.0-draft` |
 | `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_get_test_matrix_contract` | EXPERIMENTAL: discover the project matrix version, closed members, types and authoring rules without reading a project |
