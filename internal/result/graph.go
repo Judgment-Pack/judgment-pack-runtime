@@ -60,6 +60,7 @@ type GraphNodeEvaluation struct {
 	EvidenceFeeds []GraphEvidenceFeed `json:"evidenceFeeds"`
 	Disposition   Disposition         `json:"disposition"`
 	HandoffTarget *HandoffTarget      `json:"handoffTarget,omitempty"`
+	UnmetEvidence []UnmetEvidence     `json:"unmetEvidence,omitempty"`
 	Trace         []TraceEntry        `json:"trace"`
 }
 

@@ -722,6 +722,9 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 			fmt.Fprintf(a.out, "handoff: requested (no declared destination; triggered by %s)\n", triggers)
 		}
 	}
+	if line := unmetEvidenceLine(output.UnmetEvidence); line != "" {
+		fmt.Fprintln(a.out, line)
+	}
 	for _, entry := range output.Trace {
 		fmt.Fprintln(a.out, traceLine(entry))
 	}
@@ -729,6 +732,19 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 		fmt.Fprintf(a.out, "artifacts: %s · sha256 %s\n", display.Sanitize(output.Artifact.Provenance), output.Artifact.BundleDigest)
 	}
 	return nil
+}
+
+// unmetEvidenceLine names the required evidence that stopped an evaluation at
+// §8 step 2 (ADR-0040), or is empty when nothing did.
+func unmetEvidenceLine(unmet []result.UnmetEvidence) string {
+	if len(unmet) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(unmet))
+	for _, requirement := range unmet {
+		parts = append(parts, display.Sanitize(requirement.Requirement)+" "+display.Sanitize(requirement.State))
+	}
+	return "unmet evidence: " + strings.Join(parts, ", ")
 }
 
 // renderGraphValidation reports one graph document's checks. Every diagnostic
@@ -786,6 +802,9 @@ func (a *App) renderGraphEvaluation(format string, output result.GraphEvaluation
 		}
 		for _, feed := range node.EvidenceFeeds {
 			fmt.Fprintf(a.out, "  evidence %s <- %s: %s\n", display.Sanitize(feed.Requirement), display.Sanitize(feed.From), display.Sanitize(feed.State))
+		}
+		if line := unmetEvidenceLine(node.UnmetEvidence); line != "" {
+			fmt.Fprintf(a.out, "  %s\n", line)
 		}
 		for _, entry := range node.Trace {
 			fmt.Fprintf(a.out, "  %s\n", traceLine(entry))
@@ -1012,7 +1031,63 @@ func traceLine(entry result.TraceEntry) string {
 	if entry.ID != "" {
 		stage += " " + display.Sanitize(entry.ID)
 	}
+	// ADR-0040's two members, each in brackets after the rest: what left the
+	// entry unknown, and which equality comparisons crossed JSON types.
+	for _, cause := range entry.UnknownCauses {
+		detail += " [" + causeText(cause) + "]"
+	}
+	for _, mismatch := range entry.TypeMismatches {
+		path := mismatch.Path
+		detail += fmt.Sprintf(" [%s %s: fact is %s, operand is %s]", mismatch.Operator,
+			pointerText(&path, mismatch.Within), mismatch.FactType, strings.Join(mismatch.OperandTypes, " or "))
+	}
 	return fmt.Sprintf("trace: %s: %s%s", stage, display.Sanitize(note), display.Sanitize(detail))
+}
+
+// causeText says what one unknown cause names, in words.
+func causeText(cause result.UnknownCause) string {
+	subject := pointerText(cause.Path, cause.Within)
+	if cause.EvidenceRequirement != "" {
+		subject = "evidence " + cause.EvidenceRequirement
+	}
+	switch cause.Cause {
+	case "absent":
+		return subject + " absent"
+	case "not-comparable":
+		return subject + " is " + cause.FactType + ", not a decimal string"
+	case "not-an-array":
+		return subject + " is " + cause.FactType + ", not an array"
+	case "unknown":
+		return subject + " unknown"
+	default:
+		if subject == "" {
+			return cause.Cause
+		}
+		return subject + " " + cause.Cause
+	}
+}
+
+// pointerText names a fact pointer, and the collection it was read in when a
+// draft aggregate resolved it against an element. It names the scope and not a
+// count: a cause recorded within a collection may concern one element of it.
+// The root pointer "" is named as such rather than printed as nothing.
+func pointerText(path, within *string) string {
+	if path == nil {
+		return ""
+	}
+	text := "fact " + pointerName(*path)
+	if within != nil {
+		text += " within collection " + pointerName(*within)
+	}
+	return text
+}
+
+// pointerName prints one JSON Pointer, the empty one as the root it selects.
+func pointerName(pointer string) string {
+	if pointer == "" {
+		return `"" (the root)`
+	}
+	return pointer
 }
 
 // operatorList names the draft operators a pack actually used. The empty case
