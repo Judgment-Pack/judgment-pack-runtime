@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
@@ -76,6 +77,9 @@ func TestGraphRehearsalChangesOnlyTheLabel(t *testing.T) {
 		return stdout
 	}
 	declared, undeclared := run("--rehearsal", "--format", "json"), run("--format", "json")
+	if !strings.Contains(declared, `"rehearsal":true,`) {
+		t.Fatalf("the declared run carries the label: %s", declared)
+	}
 	if stripped := strings.Replace(declared, `"rehearsal":true,`, "", 1); stripped != undeclared {
 		t.Fatalf("the rehearsal must change only its label:\n%s\n%s", declared, undeclared)
 	}
@@ -86,29 +90,127 @@ func TestGraphRehearsalChangesOnlyTheLabel(t *testing.T) {
 	}
 }
 
-// A graph rehearsal consults no reviewed set: under law the lock refuses, the
-// undeclared run is refused and the declared one evaluates.
+// A graph rehearsal consults no reviewed set, for any of what a graph run
+// holds to it: the configuration, the declared graph document, and each node's
+// pack; and a lock that cannot be read stops the ordinary run and not the
+// rehearsal. Each case asserts the refusal first, so it cannot pass while the
+// lock catches nothing, and each rehearsal leaves no trail.
 func TestGraphRehearsalEvaluatesLawTheLockWouldRefuse(t *testing.T) {
+	appendTo := func(name string) func(t *testing.T, dir string) {
+		return func(t *testing.T, dir string) {
+			path := filepath.Join(dir, name)
+			body, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, append(body, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		drift func(t *testing.T, dir string)
+	}{
+		{"configuration drift", appendTo("jpack.json")},
+		{"graph document drift", appendTo("onboarding.graph.json")},
+		{"upstream node pack drift", appendTo("sanctions-screening-0.1.0.pack.json")},
+		{"downstream node pack drift", appendTo("vendor-onboarding-0.1.0.pack.json")},
+		{"malformed lock", func(t *testing.T, dir string) {
+			if err := os.WriteFile(filepath.Join(dir, "jpack.lock.json"), []byte("{"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"unreadable lock", func(t *testing.T, dir string) {
+			lockPath := filepath.Join(dir, "jpack.lock.json")
+			if err := os.Remove(lockPath); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(lockPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath, graphPath := graphAuditProject(t)
+			mustLock(t, configPath)
+			tc.drift(t, filepath.Dir(configPath))
+			inputs := writeGraphInputs(t, graphHappyInputs)
+
+			code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+				"--config", configPath, "--inputs", inputs}, "")
+			if code == 0 {
+				t.Fatalf("the undeclared run must be refused: stdout=%q stderr=%q", stdout, stderr)
+			}
+			code, stdout, stderr = runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--rehearsal",
+				"--config", configPath, "--inputs", inputs, "--format", "json"}, "")
+			if code != 0 || stderr != "" || !strings.Contains(stdout, `"rehearsal":true`) {
+				t.Fatalf("the declared rehearsal evaluates: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+			}
+			noAuditTrail(t, configPath)
+		})
+	}
+}
+
+// Citations are held to their shape on a rehearsal as on any run, and a
+// rehearsal records them no more than anything else (ADR-0033).
+func TestGraphRehearsalHoldsCitationsToTheirShapeAndRecordsNone(t *testing.T) {
 	configPath, graphPath := graphAuditProject(t)
-	mustLock(t, configPath)
-	body, err := os.ReadFile(configPath)
+	inputs := writeGraphInputs(t, graphHappyInputs)
+	valid := writeDocument(t, "cites.json", `[{"sessionId":"s1","callIndex":0,"signature":"`+strings.Repeat("ab", 64)+`"}]`)
+	invalid := writeDocument(t, "bad-cites.json", `[{"sessionId":"s1"}]`)
+
+	code, _, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--rehearsal",
+		"--config", configPath, "--inputs", inputs, "--cites", valid}, "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("well-formed citations on a rehearsal: exit=%d stderr=%q", code, stderr)
+	}
+	noAuditTrail(t, configPath)
+	code, stdout, _ := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--rehearsal",
+		"--config", configPath, "--inputs", inputs, "--cites", invalid, "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout, "JPS-INVOCATION-CITES") {
+		t.Fatalf("malformed citations are refused on a rehearsal too: exit=%d stdout=%q", code, stdout)
+	}
+	noAuditTrail(t, configPath)
+}
+
+// A refused rehearsal is reported as any refused run is: the node and its
+// error, no disposition, and no rehearsal label, since nothing was produced to
+// label.
+func TestAGraphRehearsalThatIsRefusedCarriesNoLabel(t *testing.T) {
+	configPath, graphPath := graphAuditProject(t)
+	inputs := writeGraphInputs(t, `{"screening":{"facts":{"screening":{"matches":"0"}},"evidence":{"screening-record":"maybe"}}}`)
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--rehearsal",
+		"--config", configPath, "--inputs", inputs, "--format", "json"}, "")
+	if code == 0 || strings.Contains(stdout, `"rehearsal"`) || strings.Contains(stdout, `"disposition"`) {
+		t.Fatalf("a refused rehearsal reports the refusal alone: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	noAuditTrail(t, configPath)
+}
+
+// A rehearsal in a project whose trail already holds records leaves it byte for
+// byte as it found it.
+func TestGraphRehearsalLeavesAnExistingTrailUnchanged(t *testing.T) {
+	configPath, graphPath := graphAuditProject(t)
+	inputs := writeGraphInputs(t, graphHappyInputs)
+	if code, _, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", inputs}, ""); code != 0 || stderr != "" {
+		t.Fatalf("the recorded run: exit=%d stderr=%q", code, stderr)
+	}
+	trail := filepath.Join(filepath.Dir(configPath), "audit", audit.FileName)
+	before, err := os.ReadFile(trail)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(configPath, append(body, '\n'), 0o600); err != nil {
+	if code, _, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--rehearsal",
+		"--config", configPath, "--inputs", inputs}, ""); code != 0 || stderr != "" {
+		t.Fatalf("the rehearsal: exit=%d stderr=%q", code, stderr)
+	}
+	after, err := os.ReadFile(trail)
+	if err != nil {
 		t.Fatal(err)
 	}
-	inputs := writeGraphInputs(t, graphHappyInputs)
-
-	code, _, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
-		"--config", configPath, "--inputs", inputs}, "")
-	if code != result.ExitInvalid || !strings.Contains(stderr, "jpack packs lock") {
-		t.Fatalf("the undeclared run must be refused under drifted law: exit=%d stderr=%q", code, stderr)
+	if string(after) != string(before) {
+		t.Fatalf("a rehearsal appended to an existing trail:\n%s", after)
 	}
-	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--rehearsal",
-		"--config", configPath, "--inputs", inputs, "--format", "json"}, "")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, `"rehearsal":true`) {
-		t.Fatalf("the declared rehearsal evaluates under drifted law: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
-	}
-	noAuditTrail(t, configPath)
 }

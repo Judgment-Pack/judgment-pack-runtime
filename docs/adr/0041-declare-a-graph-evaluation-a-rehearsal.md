@@ -51,7 +51,14 @@ Chosen option: **A**, ADR-0028's shape applied to the composite.
    absent otherwise: additive output under VERSIONING.md's MINOR rule, and `outputVersion` stays
    `"2"`.
 4. **Citations.** `--cites` is still held to its shape; a rehearsal records nothing, citations
-   included, as ADR-0028 settled for the standalone surface.
+   included, as [ADR-0033](0033-a-record-cites-the-receipts-it-relied-on.md) settled for the
+   standalone surface.
+
+This is a **partial supersession**, named per the index convention and annotated there without
+editing either body: [ADR-0018](0018-opt-in-evaluation-audit-trail.md)'s determination that every
+completed evaluation appends a record, and [ADR-0019](0019-reviewed-set-lock.md)'s determination
+that the deciding surfaces consult the reviewed set, are narrowed for a declared graph rehearsal as
+ADR-0028 narrowed them for a standalone one.
 
 ### Consequences
 
@@ -64,4 +71,4 @@ Chosen option: **A**, ADR-0028's shape applied to the composite.
 ## More information
 
 Issue #182. ADR-0018 (the audit trail), ADR-0019 (the reviewed set), ADR-0021 (a matrix row's
-standing), ADR-0028 (the rehearsal).
+standing), ADR-0028 (the rehearsal), ADR-0033 (citations).

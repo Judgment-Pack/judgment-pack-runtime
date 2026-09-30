@@ -11,7 +11,9 @@ All notable changes to tagged releases are documented here.
   same `REHEARSAL:` line in the human output. The README already listed graph evaluation among the
   surfaces a declared rehearsal exempts; that is now true. The member is additive output under
   VERSIONING.md's MINOR rule; `outputVersion` stays `"2"`. There is no MCP graph evaluation tool, so
-  there is no MCP form.
+  there is no MCP form. The README, `docs/architecture.md` and the audit description in the
+  `jpack.json` schema now say that a graph evaluation records one line per node and one for the
+  composite, where they said one line per evaluation.
 
 - **`packs suggest --base` keeps the base row's evidence** (#177). A candidate made from a base row
   carried the row's facts and dropped its `evidenceAvailability`. On the specification's

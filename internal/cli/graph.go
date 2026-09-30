@@ -249,12 +249,13 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				}
 				inputs = data
 			}
-			// The law this run would apply is held to the reviewed set before
-			// any node evaluates (ADR-0019): the configuration, every node's
-			// declared pack, and the graph document itself when the argument
-			// names one the configuration declares. A graph document that is
-			// not declared is a draft — evaluated, never refused for being
-			// unlocked, and recorded as a draft run.
+			// On an ordinary run the law it would apply is held to the reviewed
+			// set before any node evaluates (ADR-0019): the configuration, every
+			// node's declared pack, and the graph document itself when the
+			// argument names one the configuration declares. A graph document
+			// that is not declared is a draft — evaluated, never refused for
+			// being unlocked, and recorded as a draft run. A declared rehearsal
+			// does neither, below.
 			options := graph.Options{
 				Command:             commandName,
 				SupportedExtensions: supported,

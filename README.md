@@ -434,8 +434,10 @@ pathname to open for itself.
 The one thing this file can ask the runtime to **write** is a record of what it evaluated
 ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)). Under `configVersion "3"`, an
 `audit` member names a directory relative to the configuration — `"audit": { "dir": "audit" }` —
-and each completed evaluation of `experimental evaluate`, `experimental graph evaluate`, and the
-MCP `experimental_evaluate` tool — unless it was declared a rehearsal (ADR-0028, ADR-0041) — then appends one JSON line to `evaluations.jsonl` in it: the
+and each completed evaluation of `experimental evaluate` and the MCP `experimental_evaluate`
+tool — unless it was declared a rehearsal (ADR-0028) — then appends one JSON line to
+`evaluations.jsonl` in it, and each completed `experimental graph evaluate` appends one per node
+and one for the composite, unless declared a rehearsal (ADR-0041). Each line holds the
 pack's id, version, `specVersion` and the digest of its exact bytes, the facts and evidence
 documents as evaluated, and the disposition in its canonical form. Test runs never record —
 `packs test`, `experimental graph test`, and `experimental evaluate-corpus` are checks on packs,
@@ -546,7 +548,7 @@ The current implementation:
 - accepts one explicitly selected regular file or standard input, not URLs or special files;
 - writes only where it was told to, in three ways and no others: a copy of a bundled schema or
   example at the target an operator names with `--write`, which refuses to overwrite an existing
-  file; one appended record per completed non-rehearsal evaluation (ADR-0028) when a project's `jpack.json` declares an
+  file; one appended record per completed non-rehearsal evaluation (ADR-0028), and for a non-rehearsal graph evaluation one per node and one for the composite (ADR-0041), when a project's `jpack.json` declares an
   `audit` directory ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)), into that
   directory, through the handle held open on the configuration's own directory — a record is not a
   diagnostic, and it carries the documents the project asked to have recorded; and the reviewed-set
