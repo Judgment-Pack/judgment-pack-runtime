@@ -86,6 +86,7 @@ type GraphEvaluation struct {
 	Command                   string                `json:"command"`
 	Status                    string                `json:"status"`
 	Experimental              bool                  `json:"experimental"`
+	Rehearsal                 bool                  `json:"rehearsal,omitempty"`
 	ConformanceClaimReference string                `json:"conformanceClaimReference"`
 	Label                     string                `json:"label"`
 	Kind                      string                `json:"kind"`

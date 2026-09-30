@@ -4,6 +4,17 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`experimental graph evaluate --rehearsal`** (ADR-0041; #182). A graph run can now be declared a
+  rehearsal on ADR-0028's terms: every node evaluates as it would otherwise, no audit record is
+  appended for any node or for the composite, no reviewed set is consulted for the configuration,
+  the graph or any node's pack, and the composite payload carries `"rehearsal": true`, with the
+  same `REHEARSAL:` line in the human output. The README already listed graph evaluation among the
+  surfaces a declared rehearsal exempts; that is now true. The member is additive output under
+  VERSIONING.md's MINOR rule; `outputVersion` stays `"2"`. There is no MCP graph evaluation tool, so
+  there is no MCP form. The README, `docs/architecture.md` and the audit description in the
+  `jpack.json` schema now say that a graph evaluation records one line per node and one for the
+  composite, where they said one line per evaluation.
+
 - **The evaluation payload says what left a result unknown** (ADR-0040; #178, #186). Three members
   are added, each omitted when it has nothing to say, so a payload where nothing was unknown,
   nothing crossed JSON types and no required evidence went wanting is byte for byte what it was.

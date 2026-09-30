@@ -779,6 +779,9 @@ func (a *App) renderGraphEvaluation(format string, output result.GraphEvaluation
 		return a.writeJSON(output)
 	}
 	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE graph evaluation: %s\n", output.Label)
+	if output.Rehearsal {
+		fmt.Fprintln(a.out, "REHEARSAL: declared not a decision; no audit record was appended and no reviewed set was consulted")
+	}
 	fmt.Fprintf(a.out, "graph: %s %s · result node: %s\n", display.Sanitize(output.GraphID), display.Sanitize(output.GraphVersion), display.Sanitize(output.ResultNode))
 	a.printDisposition("disposition", output.Disposition, output.HandoffTarget)
 	for _, handoff := range output.Handoffs {
