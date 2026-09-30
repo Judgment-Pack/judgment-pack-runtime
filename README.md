@@ -224,7 +224,8 @@ artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742
 ```
 
 Now remove the amount. The rule cannot be decided, its `onUnknown` is `escalate`, and the pack
-names who takes the case, so the answer is a handoff rather than a guess:
+names who takes the case, so the answer is a handoff rather than a guess. The trace line names the
+fact that was missing:
 
 ```console
 $ echo '{"expense": {}}' > facts.json
@@ -232,10 +233,11 @@ $ jpack experimental evaluate pack.json --facts facts.json
 EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)
 disposition: unresolved (unknown)
 handoff: requested -> human-role "Finance reviewer" (triggered by unknown)
-trace: rule over-limit: unknown onUnknown=escalate
+trace: rule over-limit: unknown onUnknown=escalate [fact /expense/amount absent]
 artifacts: immutable-git-ref · sha256 081cf18af9fe667a5da5acab465f4cf6118a00742bb6e5527d4d45fc09f25185
 ```
 
+Releases up to 0.23.1 print the last trace line without the bracket naming the missing fact.
 Both runs exit 0: producing a disposition is success, whichever it is. `--format json` gives the
 same result as a payload, with the disposition in its canonical form. A disposition is data. It
 authorizes nothing, and acting on it is the caller's decision.
