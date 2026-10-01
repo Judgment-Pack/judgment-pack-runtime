@@ -122,7 +122,7 @@ Runner does not do this today. It holds the retained audit record as `json.RawMe
 
 So Runner must:
 - retain the record's original bytes;
-- export them in a versioned member of its verification export, beside the parsed record existing readers use;
+- export them in a **new version of its verification export** (version 3), beside the parsed record. The existing version-2 export is kept unchanged. Today's readers decode the bundle strictly (unknown members are refused) and accept only version 2, so a new member on version 2 would break them. An upgraded verifier accepts both, and says of a version-2 bundle that exact-byte checks were not possible;
 - verify digests, chain links and signatures against those bytes only.
 
 The same holds for Desk and any other program that stores or offers a record for download: pass the bytes through, never `JSON.parse` and re-stringify them. A test of each component should round-trip a record containing `&`, `<`, `>`, a non-ASCII character and a fact number spelled `1.0`, and require identical bytes.
