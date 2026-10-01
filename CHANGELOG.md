@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.24.0 - 2026-10-01
 
 - **`jpack experimental compare`: the inputs two versions of a pack decide differently** (ADR-0045;
   #187). `jpack experimental compare <old-pack> <new-pack> --inputs <file>` evaluates every input

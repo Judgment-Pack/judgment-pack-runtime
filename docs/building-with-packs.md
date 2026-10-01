@@ -835,7 +835,7 @@ Side by side, in one place. A pack hash in one file and a binary version in anot
 fact-stated-twice problem from `expectedVersion` in a different costume: nothing checks that the
 pair you eventually replay is the pair that ran. The opt-in audit trail (ADR-0018) writes all three
 on every evaluation record: the pack's digest, the `tool` that produced the record with its version
-and `evaluatorSpecVersion`, and, from the release after 0.23.1, `tool.digest`, the SHA-256 of the
+and `evaluatorSpecVersion`, and, from 0.24.0, `tool.digest`, the SHA-256 of the
 executable that wrote it (ADR-0043). A graph run's composite record names no pack; its node records
 do, so a graph replay reads both. The runtime reads the digest from its own executable, so it is the
 running program's account of itself: evidence of which build ran rather than proof. On Linux it

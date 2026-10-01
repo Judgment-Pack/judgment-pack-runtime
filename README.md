@@ -246,7 +246,7 @@ authorizes nothing, and acting on it is the caller's decision.
 
 From here, [docs/building-with-packs.md](docs/building-with-packs.md) covers a project of several
 packs, their test matrices, and the audit trail; `jpack spec examples --spec-version 0.2.0-draft`
-lists larger starting points the evaluator accepts, from the release after 0.23.1.
+lists larger starting points the evaluator accepts, from 0.24.0.
 
 ## Build and try it locally
 
