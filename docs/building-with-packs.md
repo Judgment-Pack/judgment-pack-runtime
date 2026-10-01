@@ -804,14 +804,21 @@ decision — or the freeze, for a study — happens:
 | --- | --- | --- |
 | the pack | SHA-256 of the exact bytes evaluated | your repository, lock, or audit record |
 | the evaluator release | the version that ran | the JSON envelope's `tool.version`, or `jpack version` |
-| the executable | SHA-256 of the binary that ran | the release's `checksums.txt`, or hash the file you staged |
+| the executable | SHA-256 of the binary that ran | the audit record's `tool.digest`, or hash the file you staged |
 
 Side by side, in one place. A pack hash in one file and a binary version in another is the
 fact-stated-twice problem from `expectedVersion` in a different costume: nothing checks that the
-pair you eventually replay is the pair that ran. The opt-in audit trail (ADR-0018) already writes
-two of the three on every record — the pack's digest and the `tool` that produced the record, with
-`evaluatorSpecVersion` — so a project with auditing on needs to add only the executable digest,
-which lives wherever the binary is staged and verified.
+pair you eventually replay is the pair that ran. The opt-in audit trail (ADR-0018) writes all three
+on every evaluation record: the pack's digest, the `tool` that produced the record with its version
+and `evaluatorSpecVersion`, and, from the release after 0.23.1, `tool.digest`, the SHA-256 of the
+executable that wrote it (ADR-0043). A graph run's composite record names no pack; its node records
+do, so a graph replay reads both. The runtime reads the digest from its own executable, so it is the
+running program's account of itself: evidence of which build ran rather than proof. On Linux it
+names the running file even if its path was replaced; elsewhere it names what was at the
+executable's path when the first record was composed, and a file rewritten while it was read can
+go unnoticed there. It is absent where the executable could not be read, or was seen to change
+while it was read. A project that needs the digest from a source the binary does not control keeps its
+own, from wherever the binary is staged and verified, beside the record.
 
 The discipline at replay time:
 

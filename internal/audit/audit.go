@@ -27,8 +27,9 @@
 // one value spelled two ways leave two differently spelled records. Nothing
 // about replay is lost, because evaluation is a function of the value and not of
 // its spelling; but a reader who wants the exact bytes a caller sent must keep
-// those bytes itself, and the pack and graph digests are the only places this
-// trail speaks about bytes at all.
+// those bytes itself, and the pack and graph digests, with the executable's
+// digest on each record's tool, are the only places this trail speaks about
+// bytes at all.
 //
 // Three things a record is not. It is not on the deterministic payload path:
 // every record carries a wall-clock timestamp, which nothing in an evaluation
@@ -72,10 +73,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
 	"path"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -114,7 +120,8 @@ const (
 //
 // Tool and Artifact are the provenance an evaluation payload already carries and
 // a record would be unreconstructible without: which build produced the record,
-// and which bundled specification artifacts it evaluated against.
+// and which bundled specification artifacts it evaluated against. A record's
+// Tool also names the executable's bytes, which no payload does (ADR-0043).
 // DraftPrototype is carried exactly when the payload carries it, because a
 // disposition produced under draft-RFC operators is not a disposition any
 // published JPS version defines and a record that dropped the label would say
@@ -138,7 +145,7 @@ type Record struct {
 	At                   string                 `json:"at"`
 	Kind                 string                 `json:"kind"`
 	Surface              string                 `json:"surface"`
-	Tool                 result.Tool            `json:"tool"`
+	Tool                 Tool                   `json:"tool"`
 	EvaluatorSpecVersion string                 `json:"evaluatorSpecVersion"`
 	Pack                 *Pack                  `json:"pack,omitempty"`
 	Graph                *Graph                 `json:"graph,omitempty"`
@@ -149,6 +156,99 @@ type Record struct {
 	ReviewedSet          *ReviewedSet           `json:"reviewedSet,omitempty"`
 	Cites                []Citation             `json:"cites,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
+}
+
+// Tool is the build that wrote a record: the name and version every payload
+// carries, and the SHA-256 of the executable that ran (ADR-0043). The digest is
+// the third fact of the replay tuple docs/building-with-packs.md names, beside
+// the pack's digest and the version, and a version string cannot stand in for
+// it: a version names a release, and the digest names the bytes. It is the
+// running program's account of itself, so it is evidence of which build ran and
+// not proof of it: a modified binary can report any digest it likes. Where the
+// executable cannot be read whole, the member is omitted and the record is
+// otherwise whole. It is additive, so recordVersion stays "1".
+type Tool struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Digest  string `json:"digest,omitempty"`
+}
+
+// toolDigest answers the running executable's digest, or "" when it cannot be
+// read whole. It is computed once per process, the first time a record is
+// composed, so an invocation that composes no record never reads its own
+// executable, and a long-lived server hashes itself once however many records
+// it writes. A graph run composes its node records as the nodes complete, so a
+// graph run refused after its first node has read the executable though it
+// writes nothing. A test replaces it.
+var toolDigest = sync.OnceValue(func() string { return digestOf(openRunningExecutable) })
+
+// executableReads counts the times openRunningExecutable has run in this
+// process, so a test can hold toolDigest to opening the executable once, and
+// not before a record is composed.
+var executableReads atomic.Int64
+
+// procSelfExe is the Linux name of the running program's own file. A test
+// replaces it with a name that resolves to nothing.
+var procSelfExe = "/proc/self/exe"
+
+// openRunningExecutable opens the program that is running.
+//
+// On Linux that is /proc/self/exe, which names the running file itself: a binary
+// replaced on disk after this process started, as an upgrade under a running
+// server does, is still the one hashed. If it cannot be opened there is no
+// fallback, because the path os.Executable reports may by then name another
+// file, and a digest of that file would name bytes that did not run.
+//
+// Elsewhere it is the path os.Executable reports, read when the first record is
+// composed. That is the running program unless the path was replaced or
+// retargeted after the process started, in which case the digest names what is
+// at the path then. ADR-0043 states this limit.
+func openRunningExecutable() (executableFile, error) {
+	executableReads.Add(1)
+	if runtime.GOOS == "linux" {
+		return os.Open(procSelfExe)
+	}
+	name, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(name)
+}
+
+// executableFile is what digestOf reads: an open file that can say its size.
+type executableFile interface {
+	io.ReadCloser
+	Stat() (fs.FileInfo, error)
+}
+
+// digestOf hashes what open yields, in the form Digest writes, or answers ""
+// when it cannot be opened or read to the end, or when the read shows it was
+// not one file's bytes: a size or modification time that differs between the
+// observations before and after the read, or a number of bytes read that
+// differs from the size. That check is as good as those observations and no
+// better: a file rewritten during the read and restored to its size and time
+// is not seen. On Linux the file is the running image, which the kernel does
+// not let a writer open, so the case arises only elsewhere (ADR-0043).
+func digestOf(open func() (executableFile, error)) string {
+	file, err := open()
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	before, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	hash := sha256.New()
+	read, err := io.Copy(hash, file)
+	if err != nil {
+		return ""
+	}
+	after, err := file.Stat()
+	if err != nil || read != before.Size() || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) {
+		return ""
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil))
 }
 
 // Citation names one gateway receipt the caller said this decision relied
@@ -489,7 +589,8 @@ func CompositeRecord(evaluated result.GraphEvaluation, digest string, cites []Ci
 // to order them. The run id is not set here — it belongs to the writer.
 func stamp(record Record) Record {
 	record.RecordVersion = RecordVersion
-	record.Tool = result.CurrentTool()
+	current := result.CurrentTool()
+	record.Tool = Tool{Name: current.Name, Version: current.Version, Digest: toolDigest()}
 	record.At = time.Now().UTC().Format(time.RFC3339Nano)
 	return record
 }
