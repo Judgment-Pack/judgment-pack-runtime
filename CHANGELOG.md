@@ -23,6 +23,20 @@ All notable changes to tagged releases are documented here.
     `equals true` falls through to the fallback; and that a caller-supplied Boolean is safer tested as
     `not(equals false)`. A test holds each of those claims to the evaluator's answer.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+- **`experimental compare` warns when the packs are different decisions, and when no input
+  resolved** (#201). Two packs whose ids differ are still compared, since that may be deliberate,
+  but the human output's first line now says they are two decisions rather than two versions of
+  one, and the payload carries `"differentDecisions": true`, omitted when the ids are the same or
+  either was never read. The totals now count the inputs unresolved under both versions,
+  `inputs.unresolvedUnderBoth` in the payload, whether or not they differ: such an input reached no
+  outcome under either version, so it cannot show a change in which outcome it gets. When that is
+  every input, the human output says the comparison could not see a change in any outcome and
+  points to `packs suggest --base`, whose candidates carry a reviewed row's other facts and
+  evidence. Candidates from plain `packs suggest` state only the pointer each varies; over a pack
+  whose rules on its other facts escalate an unknown, every one was unresolved under both versions,
+  and a moved threshold reported `0 differ`. No evaluation changes, and `CONFORMANCE.md` is
+  unchanged. The members are additive output under VERSIONING.md's MINOR rule; `outputVersion`
+  stays `"2"`. The human totals line gains a clause, and the two warnings are new lines.
 
 ## 0.24.0 - 2026-10-01
 

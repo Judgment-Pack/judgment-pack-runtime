@@ -453,6 +453,20 @@ says the two versions disagree; the policy text says which is right, and a diffe
 expectation. The command opens no project, so it records nothing and consults no lock, and it exits
 0 whenever it ran.
 
+Beside those totals it counts the inputs that were `unresolved` under both versions
+(`inputs.unresolvedUnderBoth` in the JSON payload), whether they differ or not: an input that
+reaches no outcome under either version cannot show a change in which outcome it gets. When that is
+every input, the human output says the comparison could not see a change in any outcome. Candidates
+from plain `packs suggest` can do that to a pack that reads more than one fact: each states only the
+pointer it varies, so a rule that reads another pointer is unknown, and where that rule escalates an
+unknown every candidate is unresolved under both versions and a moved threshold reports `0 differ`.
+Candidates written with `--base <rowId>` carry a reviewed row's other facts and its evidence, and
+reach the rules the row reaches.
+
+Two packs with different ids are compared too, since comparing two decisions may be what you meant,
+but they are two decisions rather than two versions of one: the human output says so on its first
+line, and the JSON payload carries `"differentDecisions": true`.
+
 ### Review
 
 **Approval is the pull request.** There is no approval state in the file, no `approved: true`, and

@@ -71,7 +71,9 @@ func TestCompareListsTheInputsTwoVersionsDecideDifferently(t *testing.T) {
 		comparison.Old.PackVersion != "0.1.0" || comparison.New.PackID == "" || comparison.Old.Path != oldPack {
 		t.Fatalf("both packs are named by their bytes and identity: %+v %+v", comparison.Old, comparison.New)
 	}
-	if comparison.Inputs != (result.ComparedInputs{Kind: "matrix", Count: 4, Same: 2, Different: 2}) {
+	// no-amount is unresolved under both versions, and differs all the same:
+	// it is handed to someone else.
+	if comparison.Inputs != (result.ComparedInputs{Kind: "matrix", Count: 4, Same: 2, Different: 2, UnresolvedUnderBoth: 1}) {
 		t.Fatalf("inputs = %+v", comparison.Inputs)
 	}
 	if len(comparison.Differences) != 2 {
@@ -94,13 +96,17 @@ func TestCompareListsTheInputsTwoVersionsDecideDifferently(t *testing.T) {
 	}
 	for _, line := range []string{
 		"REHEARSAL: not a decision",
-		"inputs: 4 from a matrix (its expectations play no part); 2 differ, 2 the same",
+		"inputs: 4 from a matrix (its expectations play no part); 2 differ, 2 the same; 1 of the 4 unresolved under both versions\n",
 		"- between: outcome approve -> outcome decline [outcomeId]",
 		`- no-amount: unresolved (unknown), handoff to human-role "Finance reviewer" -> unresolved (unknown), handoff to human-role "Finance lead" [handoffTarget]`,
 	} {
 		if !strings.Contains(stdout, line) {
 			t.Fatalf("the human output lacks %q:\n%s", line, stdout)
 		}
+	}
+	// Two versions of one decision, with something resolved: neither warning.
+	if comparison.DifferentDecisions || strings.Contains(stdout, "DIFFERENT DECISIONS") || strings.Contains(stdout, "NOTHING RESOLVED") {
+		t.Fatalf("a warning with nothing to warn of: %v\n%s", comparison.DifferentDecisions, stdout)
 	}
 }
 
@@ -394,5 +400,256 @@ func TestCompareChargesTheWrittenBytes(t *testing.T) {
 	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[`+strings.Join(rows, ",")+`]}`)
 	if comparison := compareJSON(t, oldPack, newPack, "--inputs", matrix); comparison.Inputs.Different != 4 {
 		t.Fatalf("about 5.6 MiB written is within the limit: %+v", comparison.Inputs)
+	}
+}
+
+// differentDecisionsLine and nothingResolvedLine are the two warnings, word for
+// word, so a test can tell a warning from a line that merely mentions it.
+const (
+	differentDecisionsLine = "DIFFERENT DECISIONS: the two packs have different ids, so this compares two decisions, not two versions of one"
+	nothingResolvedLine    = "NOTHING RESOLVED: every input was unresolved under both versions, so this comparison could not see a change in any outcome; " +
+		"packs suggest --base <row-id> writes candidates that carry a reviewed row's other facts and evidence"
+)
+
+// compareHuman runs experimental compare in its human format, failing on
+// anything but exit 0.
+func compareHuman(t *testing.T, args ...string) string {
+	t.Helper()
+	code, stdout, stderr := runTest(t, append([]string{"experimental", "compare"}, args...), "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	return stdout
+}
+
+// compareMembers runs experimental compare with --format json and decodes the
+// payload as members, so a test can tell an omitted member from a false one.
+func compareMembers(t *testing.T, args ...string) map[string]any {
+	t.Helper()
+	code, stdout, stderr := runTest(t, append([]string{"experimental", "compare", "--format", "json"}, args...), "")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	var members map[string]any
+	if err := json.Unmarshal([]byte(stdout), &members); err != nil {
+		t.Fatal(err)
+	}
+	return members
+}
+
+// Two packs with different ids are two decisions. They are compared all the
+// same, the human output says so on its first line, and the payload carries
+// "differentDecisions": true.
+func TestCompareSaysWhenThePacksAreDifferentDecisions(t *testing.T) {
+	expense := writeDocument(t, "expense.json", expensePack("5000", "Finance reviewer"))
+	travel := writeDocument(t, "travel.json", strings.Replace(expensePack("4000", "Finance reviewer"), "/expense-approval", "/travel-approval", 1))
+	approve := `"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`
+	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[
+	  {"id":"small","facts":{"expense":{"amount":"100"}},`+approve+`},
+	  {"id":"between","facts":{"expense":{"amount":"4500"}},`+approve+`}
+	]}`)
+
+	comparison := compareJSON(t, expense, travel, "--inputs", matrix)
+	if !comparison.DifferentDecisions || comparison.Old.PackID == comparison.New.PackID {
+		t.Fatalf("two ids, two decisions: %+v %+v %v", comparison.Old, comparison.New, comparison.DifferentDecisions)
+	}
+	if comparison.Inputs.Different != 1 || comparison.Differences[0].ID != "between" {
+		t.Fatalf("the comparison still runs: %+v", comparison)
+	}
+	if members := compareMembers(t, expense, travel, "--inputs", matrix); members["differentDecisions"] != true {
+		t.Fatalf("the payload states it: %v", members["differentDecisions"])
+	}
+
+	human := compareHuman(t, expense, travel, "--inputs", matrix)
+	if first, _, _ := strings.Cut(human, "\n"); first != differentDecisionsLine {
+		t.Fatalf("the first line says so: %q", first)
+	}
+	if !strings.Contains(human, "- between: outcome approve -> outcome decline [outcomeId]") {
+		t.Fatalf("the report follows:\n%s", human)
+	}
+}
+
+// Two versions of one decision carry no such warning, whatever their versions,
+// and neither does a pair one of whose ids was never read: a pack every
+// evaluation refused names no id to differ.
+func TestCompareSaysNothingOfDecisionsItCannotTellApart(t *testing.T) {
+	older := writeDocument(t, "older.json", expensePack("5000", "Finance reviewer"))
+	newer := writeDocument(t, "newer.json", strings.Replace(expensePack("4000", "Finance reviewer"), `"version": "0.1.0"`, `"version": "0.2.0"`, 1))
+	unread := writeDocument(t, "unread.json", strings.Replace(strings.Replace(expensePack("5000", "Finance reviewer"),
+		`"0.2.0-draft"`, `"0.1.0-draft"`, 1), "/expense-approval", "/travel-approval", 1))
+	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[
+	  {"id":"small","facts":{"expense":{"amount":"100"}},"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}
+	]}`)
+	for name, pair := range map[string]struct {
+		old, new string
+		unread   bool
+	}{
+		"two versions of one decision": {older, newer, false},
+		"an id never read":             {older, unread, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			comparison := compareJSON(t, pair.old, pair.new, "--inputs", matrix)
+			if comparison.DifferentDecisions || comparison.Old.PackID == "" || (comparison.New.PackID == "") != pair.unread {
+				t.Fatalf("no warning, and the premise holds: %+v %+v %v", comparison.Old, comparison.New, comparison.DifferentDecisions)
+			}
+			if members := compareMembers(t, pair.old, pair.new, "--inputs", matrix); members["differentDecisions"] != nil {
+				t.Fatalf("the member is omitted: %v", members["differentDecisions"])
+			}
+			human := compareHuman(t, pair.old, pair.new, "--inputs", matrix)
+			if !strings.HasPrefix(human, "EXPERIMENTAL SURFACE ") || strings.Contains(human, "DIFFERENT DECISIONS") {
+				t.Fatalf("the label leads and no warning is given:\n%s", human)
+			}
+		})
+	}
+}
+
+// The inputs unresolved under both versions are counted beside the totals,
+// whether they differ or not; an input unresolved under one version only, or
+// refused, is not one of them. When every input was, the human output says the
+// comparison could not see a change and points to packs suggest --base.
+func TestCompareCountsTheInputsUnresolvedUnderBoth(t *testing.T) {
+	approve := `"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}`
+	rows := func(cases ...string) string {
+		return writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[`+strings.Join(cases, ",")+`]}`)
+	}
+	small := `{"id":"small","facts":{"expense":{"amount":"100"}},` + approve + `}`
+	between := `{"id":"between","facts":{"expense":{"amount":"4500"}},` + approve + `}`
+	noAmount := `{"id":"no-amount","facts":{"expense":{}},` + approve + `}`
+	noExpense := `{"id":"no-expense","facts":{},` + approve + `}`
+	limit5000 := writeDocument(t, "5000.json", expensePack("5000", "Finance reviewer"))
+	limit4000 := writeDocument(t, "4000.json", expensePack("4000", "Finance reviewer"))
+	lead := writeDocument(t, "lead.json", expensePack("4000", "Finance lead"))
+	ignoring := writeDocument(t, "ignoring.json", strings.Replace(expensePack("5000", "Finance reviewer"), `"onUnknown": "escalate"`, `"onUnknown": "ignore"`, 1))
+	refused := writeDocument(t, "refused.json", strings.Replace(expensePack("5000", "Finance reviewer"), `"0.2.0-draft"`, `"0.1.0-draft"`, 1))
+	empty := writeDocument(t, "empty.json", `{"candidatesVersion":"1","candidates":[]}`)
+	// A pack that applies to claims only, so a mileage input is not-applicable
+	// under both versions: no outcome, and not unresolved either.
+	claimsOnly := func(name, limit string) string {
+		return writeDocument(t, name, strings.Replace(expensePack(limit, "Finance reviewer"), `"rules":`,
+			`"applicability": {"op": "fact", "path": "/expense/kind", "operator": "equals", "value": "claim"},
+  "rules":`, 1))
+	}
+	claims5000, claims4000 := claimsOnly("claims-5000.json", "5000"), claimsOnly("claims-4000.json", "4000")
+	mileage := `{"id":"mileage","facts":{"expense":{"kind":"mileage","amount":"4500"}},` + approve + `}`
+
+	for name, run := range map[string]struct {
+		old, new, inputs string
+		want             result.ComparedInputs
+		line             string
+		warned           bool
+	}{
+		"some but not all": {limit5000, limit4000, rows(small, between, noAmount),
+			result.ComparedInputs{Kind: "matrix", Count: 3, Same: 2, Different: 1, UnresolvedUnderBoth: 1},
+			"inputs: 3 from a matrix (its expectations play no part); 1 differ, 2 the same; 1 of the 3 unresolved under both versions\n", false},
+		"every input, all the same": {limit5000, limit4000, rows(noAmount, noExpense),
+			result.ComparedInputs{Kind: "matrix", Count: 2, Same: 2, UnresolvedUnderBoth: 2},
+			"inputs: 2 from a matrix (its expectations play no part); 0 differ, 2 the same; 2 of the 2 unresolved under both versions\n", true},
+		"every input, each handed to someone else": {limit5000, lead, rows(noAmount, noExpense),
+			result.ComparedInputs{Kind: "matrix", Count: 2, Different: 2, UnresolvedUnderBoth: 2},
+			"inputs: 2 from a matrix (its expectations play no part); 2 differ, 0 the same; 2 of the 2 unresolved under both versions\n", true},
+		"unresolved under the new version only": {ignoring, limit5000, rows(noAmount),
+			result.ComparedInputs{Kind: "matrix", Count: 1, Different: 1},
+			"inputs: 1 from a matrix (its expectations play no part); 1 differ, 0 the same; 0 of the 1 unresolved under both versions\n", false},
+		"unresolved under the old version only": {limit5000, ignoring, rows(noAmount),
+			result.ComparedInputs{Kind: "matrix", Count: 1, Different: 1},
+			"inputs: 1 from a matrix (its expectations play no part); 1 differ, 0 the same; 0 of the 1 unresolved under both versions\n", false},
+		"unresolved under one, refused under the other": {limit5000, refused, rows(noAmount),
+			result.ComparedInputs{Kind: "matrix", Count: 1, Different: 1},
+			"inputs: 1 from a matrix (its expectations play no part); 1 differ, 0 the same; 0 of the 1 unresolved under both versions\n", false},
+		"refused under both": {refused, refused, rows(noAmount),
+			result.ComparedInputs{Kind: "matrix", Count: 1, Same: 1},
+			"inputs: 1 from a matrix (its expectations play no part); 0 differ, 1 the same; 0 of the 1 unresolved under both versions\n", false},
+		"not applicable under both": {claims5000, claims4000, rows(mileage),
+			result.ComparedInputs{Kind: "matrix", Count: 1, Same: 1},
+			"inputs: 1 from a matrix (its expectations play no part); 0 differ, 1 the same; 0 of the 1 unresolved under both versions\n", false},
+		"no inputs": {limit5000, limit4000, empty,
+			result.ComparedInputs{Kind: "candidates"},
+			"inputs: 0 from a candidates document; 0 differ, 0 the same; 0 of the 0 unresolved under both versions\n", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if comparison := compareJSON(t, run.old, run.new, "--inputs", run.inputs); comparison.Inputs != run.want {
+				t.Fatalf("inputs = %+v, want %+v", comparison.Inputs, run.want)
+			}
+			inputs, _ := compareMembers(t, run.old, run.new, "--inputs", run.inputs)["inputs"].(map[string]any)
+			if inputs["unresolvedUnderBoth"] != float64(run.want.UnresolvedUnderBoth) {
+				t.Fatalf("the payload states the count, zero included: %v", inputs)
+			}
+			human := compareHuman(t, run.old, run.new, "--inputs", run.inputs)
+			if !strings.Contains(human, run.line) {
+				t.Fatalf("the totals line lacks the count; want %q in:\n%s", run.line, human)
+			}
+			if warned := strings.Contains(human, nothingResolvedLine+"\n"); warned != run.warned || strings.Contains(human, "NOTHING RESOLVED") != run.warned {
+				t.Fatalf("warned=%v, want %v:\n%s", warned, run.warned, human)
+			}
+		})
+	}
+
+	// The premises of two cases above: the pack that ignores an unknown reaches
+	// an outcome where the other is unresolved, and the claims-only pack is not
+	// applicable to mileage rather than refused.
+	premises := compareJSON(t, ignoring, claims5000, "--inputs", rows(noAmount, mileage))
+	if len(premises.Differences) != 2 {
+		t.Fatalf("premises = %+v", premises)
+	}
+	if ignored := premises.Differences[0]; ignored.Old.Disposition == nil || ignored.Old.Disposition.Kind != "outcome" ||
+		ignored.New.Disposition == nil || ignored.New.Disposition.Kind != "unresolved" {
+		t.Fatalf("an ignored unknown reaches an outcome, an escalated one does not: %+v", ignored)
+	}
+	if mileaged := premises.Differences[1]; mileaged.New.Disposition == nil || mileaged.New.Disposition.Kind != "not-applicable" {
+		t.Fatalf("mileage is not applicable to the claims-only pack: %+v", mileaged)
+	}
+}
+
+// The case that asked for the warning, end to end: a threshold moved between
+// two versions of a pack that reads two facts. Candidates from plain packs
+// suggest state one fact each, so every one is unresolved under both versions
+// and none differs; the report says the comparison could not see the change.
+// Candidates from packs suggest --base carry the row's other fact, and the
+// change shows.
+func TestCompareSaysWhenPlainCandidatesCouldNotSeeAMovedLine(t *testing.T) {
+	twoFacts := func(limit string) string {
+		return strings.Replace(expensePack(limit, "Finance reviewer"), `"outcome": "decline", "onUnknown": "escalate"}]`,
+			`"outcome": "decline", "onUnknown": "escalate"},
+    {"id": "gifts", "description": "A gift is declined.",
+     "when": {"op": "fact", "path": "/expense/category", "operator": "in", "value": ["gifts"]},
+     "outcome": "decline", "onUnknown": "escalate"}]`, 1)
+	}
+	configPath := writeProjectFixture(t, `{"configVersion":"1","packs":{"expense":{
+	  "path":"packs/expense.pack.json",
+	  "matrix":"packs/expense.matrix.json"
+	}}}`, map[string]string{
+		"packs/expense.pack.json": twoFacts("5000"),
+		"packs/expense.matrix.json": `{"matrixVersion":"1","cases":[
+		  {"id":"ordinary","facts":{"expense":{"amount":"100","category":"travel"}},"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}
+		]}`,
+	})
+	before := filepath.Join(filepath.Dir(configPath), "packs", "expense.pack.json")
+	after := writeDocument(t, "after.json", twoFacts("4000"))
+
+	suggest := func(extra ...string) string {
+		written := filepath.Join(t.TempDir(), "candidates.json")
+		code, stdout, stderr := runTest(t, append([]string{"packs", "suggest", "--config", configPath, "--id", "expense", "--write", written}, extra...), "")
+		if code != 0 {
+			t.Fatalf("packs suggest: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+		return written
+	}
+
+	plain := suggest()
+	blind := compareJSON(t, before, after, "--inputs", plain)
+	if blind.Inputs.Count == 0 || blind.Inputs.Different != 0 || blind.Inputs.UnresolvedUnderBoth != blind.Inputs.Count {
+		t.Fatalf("plain candidates are unresolved under both versions: %+v", blind.Inputs)
+	}
+	if human := compareHuman(t, before, after, "--inputs", plain); !strings.Contains(human, nothingResolvedLine+"\n") {
+		t.Fatalf("the report says the comparison could not see the change:\n%s", human)
+	}
+
+	based := suggest("--base", "ordinary")
+	seen := compareJSON(t, before, after, "--inputs", based)
+	if seen.Inputs.Different == 0 || seen.Inputs.UnresolvedUnderBoth >= seen.Inputs.Count {
+		t.Fatalf("candidates from a base row show the moved line: %+v", seen.Inputs)
+	}
+	if human := compareHuman(t, before, after, "--inputs", based); strings.Contains(human, "NOTHING RESOLVED") {
+		t.Fatalf("no warning once something resolved:\n%s", human)
 	}
 }
