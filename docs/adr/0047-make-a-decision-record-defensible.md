@@ -116,6 +116,17 @@ A graph batch keeps ADR-0018's commit-marker semantics: the composite is the bat
 - `jpack audit checkpoint` prints the current checkpoint for handing to someone else.
 - Its exit code fails on any failure, unlike `gateway verify`, whose verdict is in its JSON (gateway SPEC §5a.2).
 
+**Exact bytes, wherever a record travels.** Every digest and signature in this design is over the bytes the runtime wrote: the gateway's `decision.recordDigest`, the chain's `previous`, a checkpoint, and a detached signature. So every component that keeps, exports or forwards a record must keep those bytes exactly, as opaque evidence. It may parse them for reading, but must never verify against a re-encoding.
+
+Runner does not do this today. It holds the retained audit record as `json.RawMessage` and encodes it with `json.Marshal`, which HTML-escapes `&`, `<` and `>` (`internal/runner/model.go`, `store.go`). The runtime writes them unescaped (`internal/audit/audit.go`, `SetEscapeHTML(false)`). A record holding `&` therefore reaches Runner's store and export with other bytes and another digest. That already breaks the match with a gateway receipt's `decision.recordDigest`, and it would break every chain link and signature proposed here.
+
+So Runner must:
+- retain the record's original bytes;
+- export them in a versioned member of its verification export, beside the parsed record existing readers use;
+- verify digests, chain links and signatures against those bytes only.
+
+The same holds for Desk and any other program that stores or offers a record for download: pass the bytes through, never `JSON.parse` and re-stringify them. A test of each component should round-trip a record containing `&`, `<`, `>`, a non-ASCII character and a fact number spelled `1.0`, and require identical bytes.
+
 **The existing action receipts.** A receipt's `decision.recordDigest` is a signed commitment to a chained record's exact bytes. Because that record's `previous` commits to the line before it, the receipt pins the trail prefix ending at that record. This holds only when:
 - the exact bytes are kept;
 - the verifier checks receipt to record, then record back along the chain;
@@ -173,6 +184,8 @@ It is the strongest answer to rollback, and the only one that needs a third part
 
 ### Runner (open: question 5)
 
+Whatever is decided here, Runner must first keep and export a record's exact bytes, as above. Without that, no digest, chain link or signature over the record can be checked against Runner's copy.
+
 Runner gives each attempt its own audit directory, never reused, and keeps one record per run (`internal/runner/runtime.go`). Each attempt's trail would be a one-record chain, which proves nothing about Runner's history. The proposal is a chain of Runner's own, over its retained runs: an installation-level log in which each entry binds a run id to its audit record's exact-bytes digest, chained the same way. `verify-run` would export the run's entry and a checkpoint. This is Runner's design to settle; the runtime's chain does not reach it.
 
 ## Consequences
@@ -180,13 +193,14 @@ Runner gives each attempt its own audit directory, never reused, and keeps one r
 - Good, because each way a record was found indefensible on 2026-10-01 meets a capability that detects it:
   - edits, deletions, splices and a presented older copy, by the chain given an external checkpoint;
   - hand-written records, by signatures;
-  - backdating beyond the gap between `at` and the stamp, by C2.
+  - a record's existence by a time, by C2. This does not detect a false `at`: the verifier reports the gap between `at` and the stamp, and leaves judging it to the reader.
 - Good, because no record is ever rewritten or canonicalized. Existing records, and the action receipts naming their bytes, stay valid. Facts keep their spelling.
 - Good, because the existing action receipts become anchors for the prefix before each acted-on record, once records are chained.
 - Bad, because chaining makes a lost or torn line a permanent, visible break. Repair starts a new segment and never restores the old one.
 - Bad, because writers contend for a lock, and a trail on a platform or file system without one cannot be chained.
 - Bad, because the defence is only as good as the checkpoints someone outside the operator actually keeps.
 - Bad, because a signing key is a secret, and its custody (path, permissions, rotation, revocation) becomes part of operating a project.
+- Bad, because every component that keeps or exports a record must keep its exact bytes. Runner does not today (it re-encodes with HTML escaping), and must change before any digest of a record it holds can be checked.
 - Bad, because the configuration (a new configVersion for chaining, signing and checkpoints), the gateway's policy (a new engine version) and the witness (a new receipt version) are separate compatibility steps. None of them changes the record's version.
 - Revisit when: a deployment must hide checkpoints' contents from the stamping authority; a decision must be defended without the trail; or the specification takes up record provenance.
 
@@ -207,9 +221,9 @@ Runner gives each attempt its own audit directory, never reused, and keeps one r
 6. Should these stay this runtime's convention until the specification defines a portable decision-record format, or go to the specification now?
 
 On acceptance, each capability becomes issues in the repositories it touches:
-- runtime: writer, lock, `audit verify` and `audit checkpoint`, repair, signing, stamping;
+- runtime: writer, lock, `audit verify` and `audit checkpoint`, repair, signing, stamping, and a byte round-trip test;
 - gateway: `requireSignedRecord`, and later the witness;
-- Runner: its chain and `verify-run`;
+- Runner: keeping and exporting the record's exact bytes (first, and needed even without this ADR, for gateway receipts), its chain, and `verify-run`;
 - Desk: key custody, checkpoint hand-over, stamping settings.
 
 ## More information
