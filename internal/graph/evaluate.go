@@ -83,6 +83,13 @@ type Options struct {
 	// because by then the memory has been spent.
 	ReportBudget int
 
+	// RequireComparableFacts is the project's requirement that no node evaluate
+	// a fact no comparison reading it can match (ADR-0046), checked against each
+	// node's assembled facts document. experimental graph evaluate sets it from
+	// the configuration, declared rehearsal or not; experimental graph test
+	// leaves it off, because a matrix row may probe such a fact on purpose.
+	RequireComparableFacts bool
+
 	// IncludeTraces attaches each compared node's evaluation trace — the
 	// ADR-0027 member the walk already holds — to that node's comparison in
 	// the matrix report (ADR-0031). Off is today's payload, byte for byte.
@@ -350,6 +357,9 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			SupportedExtensions: options.SupportedExtensions,
 			EvidenceSupplied:    evidenceSupplied,
 			OversizedInputs:     oversized,
+			// The assembled document, outcomes injected: what this node
+			// would be evaluated against.
+			RequireComparableFacts: options.RequireComparableFacts,
 		})
 		if engineFailure != nil {
 			return result.GraphEvaluation{}, &evaluation.Failure{

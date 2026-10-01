@@ -5,6 +5,13 @@ Judgment-Pack/judgment-pack-spec examples/ (commit 839488c). It is the pack
 that spec RFC 0006's appendix instances walk; the evaluation tests execute
 those instances against this engine.
 
+comparable-facts.json is a pack written for ADR-0046: detectors in the
+specification field guide's Shape 1 (`equals true`, `onUnknown: escalate`, a
+`permitted` fallback), one of them in an `any` a true sibling short-circuits,
+one comparison of each other kind, and an exception whose forced outcome
+leaves every rule unevaluated. It is a valid JPS 0.2.0-draft document. All
+content is invented for testing and authorizes nothing.
+
 rfc0008-condition-schema.json is the depth-indexed condition grammar of the
 specification's RFC 0008 (Draft), written out as the RFC describes it: three
 condition definitions by remaining aggregate depth, with `all`/`any`/`not`

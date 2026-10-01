@@ -136,9 +136,10 @@ authority, and following it confers no conformance status on anything.
 | [0037](0037-report-pack-independent-unreachable-expectations.md) | Report an expectation no pack can reach under its own code, in the admission tool alone | accepted |
 | [0038](0038-refuse-malformed-unicode-at-the-stdio-transport.md) | Refuse malformed Unicode at the stdio transport, for every string argument and everywhere else in the request line | accepted |
 | [0039](0039-draft-rfc-outcome-values-prototype.md) | Prototype spec RFC 0016 outcome values behind an opt-in experimental flag | accepted |
-| [0040](0040-say-what-left-a-result-unknown.md) | Say what left a result unknown: causes and cross-type comparisons in the trace, unmet evidence beside it | accepted |
+| [0040](0040-say-what-left-a-result-unknown.md) | Say what left a result unknown: causes and cross-type comparisons in the trace, unmet evidence beside it | accepted; option D (a check of a facts document against a pack) taken up for projects that set `requireComparableFacts` by [0046](0046-record-type-notes-and-let-a-project-refuse-incomparable-facts.md) |
 | [0041](0041-declare-a-graph-evaluation-a-rehearsal.md) | Declare a graph evaluation a rehearsal, on ADR-0028's terms | accepted |
 | [0042](0042-let-packs-test-require-a-matrix.md) | Let a packs test run require every selected pack to have a matrix | accepted |
 | [0043](0043-record-the-executable-digest.md) | Record the executable's digest on every audit record | accepted |
-| [0044](0044-say-and-require-the-reviewed-set.md) | Say in the payload whether the reviewed set was applied, and let a project require it | accepted |
+| [0044](0044-say-and-require-the-reviewed-set.md) | Say in the payload whether the reviewed set was applied, and let a project require it | accepted; configVersion value list and schema `$id` extended by [0046](0046-record-type-notes-and-let-a-project-refuse-incomparable-facts.md) |
 | [0045](0045-compare-two-versions-of-a-pack.md) | Compare what two versions of a pack decide for the same inputs | accepted |
+| [0046](0046-record-type-notes-and-let-a-project-refuse-incomparable-facts.md) | Keep the trace's type and unknown notes on the audit record, and let a project refuse a fact no comparison can match | accepted |

@@ -1,0 +1,67 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.com/judgment-packs/comparable-facts",
+  "version": "0.1.0",
+  "title": "Comparable facts",
+  "description": "Detectors in the specification field guide's Shape 1 -- equals true, onUnknown escalate, a permitted fallback -- beside one comparison of each other kind. Invented for testing; it authorizes nothing.",
+  "decision": {
+    "intent": "Decide whether a request is a violation.",
+    "question": "Is this request a violation?"
+  },
+  "outcomes": [
+    { "id": "violation", "label": "Violation" },
+    { "id": "permitted", "label": "Permitted" },
+    { "id": "exempt", "label": "Exempt" }
+  ],
+  "exceptions": [
+    {
+      "id": "exempt-request",
+      "description": "An exempt request is not checked, so no rule is evaluated for it.",
+      "when": { "op": "fact", "path": "/request/exempt", "operator": "equals", "value": true },
+      "effect": "force-outcome",
+      "outcome": "exempt",
+      "onUnknown": "ignore"
+    }
+  ],
+  "rules": [
+    {
+      "id": "exceeds-cap",
+      "description": "A request over its cap or outside its window is a violation.",
+      "when": {
+        "op": "any",
+        "conditions": [
+          { "op": "fact", "path": "/amount/exceedsCap", "operator": "equals", "value": true },
+          { "op": "fact", "path": "/request/outsideWindow", "operator": "equals", "value": true }
+        ]
+      },
+      "outcome": "violation",
+      "onUnknown": "escalate"
+    },
+    {
+      "id": "over-limit",
+      "description": "An amount over the limit is a violation.",
+      "when": { "op": "fact", "path": "/amount/value", "operator": "greater-than", "value": "1000" },
+      "outcome": "violation",
+      "onUnknown": "escalate"
+    },
+    {
+      "id": "restricted-region",
+      "description": "A request from a restricted region is a violation.",
+      "when": { "op": "fact", "path": "/request/region", "operator": "in", "value": ["embargoed", "sanctioned"] },
+      "outcome": "violation",
+      "onUnknown": "escalate"
+    },
+    {
+      "id": "unverified",
+      "description": "An unverified request is a violation.",
+      "when": { "op": "fact", "path": "/request/verified", "operator": "not-equals", "value": true },
+      "outcome": "violation",
+      "onUnknown": "escalate"
+    }
+  ],
+  "fallbackOutcome": "permitted",
+  "escalation": {
+    "triggers": ["unknown", "conflict", "no-match", "missing-required-evidence", "not-applicable"],
+    "target": { "kind": "human-role", "name": "Compliance reviewer" }
+  }
+}

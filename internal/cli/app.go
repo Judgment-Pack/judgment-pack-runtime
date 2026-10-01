@@ -334,6 +334,10 @@ func (a *App) evaluateCommand() *cobra.Command {
 				// malformed input the preflight reaches in its own place in the order.
 				EvidenceSupplied: evidencePath != "",
 				OversizedInputs:  oversized,
+				// A project that requires comparable facts refuses a fact no
+				// comparison reading it can match, rehearsal or not: a
+				// rehearsal's answer is read too (ADR-0046).
+				RequireComparableFacts: loaded.RequiresComparableFacts(),
 			})
 			if failure != nil {
 				return a.evaluationFailure("experimental evaluate", format, failure)

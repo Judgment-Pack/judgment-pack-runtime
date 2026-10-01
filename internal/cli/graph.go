@@ -261,6 +261,8 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				Command:             commandName,
 				SupportedExtensions: supported,
 				Cites:               cites,
+				// Every node, rehearsal or not (ADR-0046).
+				RequireComparableFacts: loaded.RequiresComparableFacts(),
 			}
 			// A declared rehearsal consults no reviewed set and appends no
 			// record, for any node or for the composite: the standing

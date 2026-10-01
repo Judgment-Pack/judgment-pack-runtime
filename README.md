@@ -479,7 +479,8 @@ and printable with `jpack packs schema`: every member it does not name is reject
 `configVersion` is a single integer as a string, on the `outputVersion` precedent rather than
 semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with them (ADR-0017), `"3"`
 the shape that may also ask for an audit trail (ADR-0018), `"4"` the shape that may also require the
-reviewed set (ADR-0044), and this runtime reads all four.
+reviewed set (ADR-0044), `"5"` the shape that may also require comparable facts (ADR-0046), and this
+runtime reads all five.
 
 There is **no templating, no target or environment blocks, and no selection**. A templated pack was
 never the pack anyone reviewed; environments are one file per environment by convention
@@ -522,6 +523,25 @@ not decisions anyone took — a refused evaluation records nothing, because it h
 record, and a record that cannot be written refuses the run (exit 4) rather than reporting a
 disposition nothing kept. The write goes through the same held handle every read does, into the
 project's own tree and nowhere else. Declare no `audit` member and nothing is written at all.
+Where the evaluation's trace noted a comparison across JSON types or a cause of an unknown, the
+record also carries `typeMismatches` and `unknownCauses`, gathered from the trace: pointers, types
+and causes, never values (ADR-0046). A graph run's node records carry their own node's notes, and
+the composite carries none. A record with nothing to note is byte for byte what it was.
+
+**Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
+as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never
+sees it and a detector falls through to its fallback. A project whose `jpack.json` sets
+`"requireComparableFacts": true` (configVersion `"5"`, ADR-0046) has `experimental evaluate`, the
+MCP `experimental_evaluate` tool, and `experimental graph evaluate` for each node refuse such an
+input before evaluating (`JPS-FACTS-COMPARABLE-REQUIRED`, exit 1, no record). A run is refused when
+a fact that some comparison anywhere in the pack reads is present and of a type that comparison can
+never match: a type no `equals`, `not-equals` or `in` operand has, or anything but a decimal string
+for an ordered comparison. The check covers every comparison, including ones evaluation would not
+reach. An absent fact is not refused, because it is unknown and `onUnknown` governs it. Declared
+rehearsals are refused too. `packs test`, `experimental graph test`, `experimental evaluate-corpus`,
+`experimental compare` and the MCP test tools are not, because their rows may probe such facts on
+purpose. The refusal names each pointer, the fact's type and what the comparison can match, never a
+value.
 
 ### The reviewed set
 

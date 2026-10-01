@@ -37,6 +37,30 @@ All notable changes to tagged releases are documented here.
   and a moved threshold reported `0 differ`. No evaluation changes, and `CONFORMANCE.md` is
   unchanged. The members are additive output under VERSIONING.md's MINOR rule; `outputVersion`
   stays `"2"`. The human totals line gains a clause, and the two warnings are new lines.
+- **The audit record says when its inputs could not have matched, and a project can refuse such
+  inputs** (ADR-0046; #199).
+  - An evaluation record carries `unknownCauses` and `typeMismatches`, gathered from the
+    evaluation's trace: each distinct note once, in the order the trace first names it, in the
+    trace's own shape (pointers, types and causes, never values). A graph run's node records carry
+    their own node's notes, and the composite carries none. Each member is omitted when empty, so
+    a record with nothing to note is byte for byte what it was. Additive; `recordVersion` stays
+    `"1"`. Runner's `verify-run` and Gateway's `readRuntimeRecord` read records by exact member
+    names and accept them.
+  - `jpack.json` may set `"requireComparableFacts": true` under the new configVersion `"5"`.
+    `experimental evaluate`, `experimental_evaluate`, and `experimental graph evaluate` for each
+    node then refuse, once the inputs are admitted and before anything is evaluated, an evaluation
+    in which a fact some comparison of the pack reads is present and of a JSON type that comparison
+    can never match: a type no `equals`, `not-equals` or `in` operand has (`null` included), or
+    anything but a decimal string for an ordered comparison (`JPS-FACTS-COMPARABLE-REQUIRED`, exit
+    1, no record). The check is static over every comparison the pack states, including those the
+    walk would short-circuit or skip. An absent fact is not refused. Declared rehearsals are
+    refused too. The test surfaces are not. The message names each pointer, the fact's type and
+    what the comparison can match, never a value. The refusal is not part of the evaluator
+    contract and carries no §8.4 class, so `CONFORMANCE.md` is unchanged: it already says the
+    project surfaces choose which inputs reach the evaluator.
+  - The schema's `$id` is now `urn:judgmentpack:runtime:jpack-config:5`. Configurations under `"1"`
+    to `"4"` read as before. The member under `"4"` or earlier is refused, and the refusal names
+    `"5"`.
 
 ## 0.24.0 - 2026-10-01
 
