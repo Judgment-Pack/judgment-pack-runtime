@@ -470,32 +470,37 @@ func TestCompareSaysWhenThePacksAreDifferentDecisions(t *testing.T) {
 }
 
 // Two versions of one decision carry no such warning, whatever their versions,
-// and neither does a pair one of whose ids was never read: a pack every
-// evaluation refused names no id to differ.
+// and neither does a pair one of whose ids was never read, on either side: a
+// pack every evaluation refused names no id to differ, and a run that evaluates
+// nothing reads no id at all.
 func TestCompareSaysNothingOfDecisionsItCannotTellApart(t *testing.T) {
 	older := writeDocument(t, "older.json", expensePack("5000", "Finance reviewer"))
 	newer := writeDocument(t, "newer.json", strings.Replace(expensePack("4000", "Finance reviewer"), `"version": "0.1.0"`, `"version": "0.2.0"`, 1))
+	travel := writeDocument(t, "travel.json", strings.Replace(expensePack("5000", "Finance reviewer"), "/expense-approval", "/travel-approval", 1))
 	unread := writeDocument(t, "unread.json", strings.Replace(strings.Replace(expensePack("5000", "Finance reviewer"),
 		`"0.2.0-draft"`, `"0.1.0-draft"`, 1), "/expense-approval", "/travel-approval", 1))
 	matrix := writeDocument(t, "matrix.json", `{"matrixVersion":"1","cases":[
 	  {"id":"small","facts":{"expense":{"amount":"100"}},"expectedDisposition":{"kind":"outcome","outcomeId":"approve","reasons":[],"handoff":{"state":"none"}}}
 	]}`)
+	empty := writeDocument(t, "empty.json", `{"candidatesVersion":"1","candidates":[]}`)
 	for name, pair := range map[string]struct {
-		old, new string
-		unread   bool
+		old, new, inputs     string
+		oldUnread, newUnread bool
 	}{
-		"two versions of one decision": {older, newer, false},
-		"an id never read":             {older, unread, true},
+		"two versions of one decision": {older, newer, matrix, false, false},
+		"a new id never read":          {older, unread, matrix, false, true},
+		"an old id never read":         {unread, older, matrix, true, false},
+		"no input evaluated":           {older, travel, empty, true, true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			comparison := compareJSON(t, pair.old, pair.new, "--inputs", matrix)
-			if comparison.DifferentDecisions || comparison.Old.PackID == "" || (comparison.New.PackID == "") != pair.unread {
+			comparison := compareJSON(t, pair.old, pair.new, "--inputs", pair.inputs)
+			if comparison.DifferentDecisions || (comparison.Old.PackID == "") != pair.oldUnread || (comparison.New.PackID == "") != pair.newUnread {
 				t.Fatalf("no warning, and the premise holds: %+v %+v %v", comparison.Old, comparison.New, comparison.DifferentDecisions)
 			}
-			if members := compareMembers(t, pair.old, pair.new, "--inputs", matrix); members["differentDecisions"] != nil {
+			if members := compareMembers(t, pair.old, pair.new, "--inputs", pair.inputs); members["differentDecisions"] != nil {
 				t.Fatalf("the member is omitted: %v", members["differentDecisions"])
 			}
-			human := compareHuman(t, pair.old, pair.new, "--inputs", matrix)
+			human := compareHuman(t, pair.old, pair.new, "--inputs", pair.inputs)
 			if !strings.HasPrefix(human, "EXPERIMENTAL SURFACE ") || strings.Contains(human, "DIFFERENT DECISIONS") {
 				t.Fatalf("the label leads and no warning is given:\n%s", human)
 			}

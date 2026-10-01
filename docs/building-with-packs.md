@@ -464,8 +464,11 @@ Candidates written with `--base <rowId>` carry a reviewed row's other facts and 
 reach the rules the row reaches.
 
 Two packs with different ids are compared too, since comparing two decisions may be what you meant,
-but they are two decisions rather than two versions of one: the human output says so on its first
-line, and the JSON payload carries `"differentDecisions": true`.
+but they are two decisions rather than two versions of one. When both ids were read and differ, the
+human output says so on its first line, and the JSON payload carries `"differentDecisions": true`.
+An id is read from an evaluation that succeeds, so when no input is evaluated (an empty candidates
+document) or every evaluation under one pack is refused, there is neither the warning nor the
+member, and their absence does not establish that the ids match.
 
 ### Review
 
