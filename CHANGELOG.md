@@ -2,6 +2,28 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Six statements that said more than the program does, corrected** (#200), and the `author_pack`
+  prompt now states the type trap (#199, item 3).
+  - The README and the guide named configVersions `"1"` to `"3"` and said "this runtime reads all
+    three"; they now name `"4"` (ADR-0044) and say all four.
+  - `packs lint`'s fact-producer failure, its help and the README said an unproduced pointer makes
+    every rule touching it escalate, "and the system looks conservative". A rule under
+    `onUnknown: ignore` is skipped instead, and the fallback may answer without the fact; they now say
+    so.
+  - `author_pack` said every diagnostic names "the fix"; most do, and it now says that.
+  - The guide said `onUnknown: escalate` "hands it to a human"; it requests a handoff, which nothing
+    delivers.
+  - ADR-0044 said a project "can keep the agent to reviewed law"; it keeps the agent's recorded
+    decisions there, and a rehearsal or a test surface still answers under a draft, as the ADR says
+    above.
+  - `author_pack`'s conditions step now says that equality is type-exact: a fact of another JSON type,
+    or `null`, makes `equals` false and `not-equals` true, never unknown, so a detector written as
+    `equals true` falls through to the fallback; and that a caller-supplied Boolean is safer tested as
+    `not(equals false)`. A test holds each of those claims to the evaluator's answer.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+
 ## 0.24.0 - 2026-10-01
 
 - **`jpack experimental compare`: the inputs two versions of a pack decide differently** (ADR-0045;

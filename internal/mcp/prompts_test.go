@@ -413,3 +413,66 @@ func checkEntry(t *testing.T, probe string, trace []result.TraceEntry, want entr
 	}
 	t.Fatalf("%s: the trace has no %s entry %q", probe, want.stage, want.id)
 }
+
+// The author_pack prompt tells an agent that equality is type-exact, so a
+// detector written as equals true falls through to the fallback on a fact of
+// another JSON type, and how to write one that does not (issue #199). Each
+// claim is pinned beside the evaluator's answer, as the test_pack claims are.
+func TestAuthorPackPromptStatesTheTypeTrap(t *testing.T) {
+	detector := func(when string) string {
+		return `{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/type-trap",
+  "version": "0.1.0",
+  "title": "Type trap",
+  "decision": {"intent": "Hold the author_pack prompt to the evaluator.", "question": "Is a provision violated?"},
+  "applicability": {"op": "fact", "path": "/kind", "operator": "equals", "value": "claim"},
+  "evidenceRequirements": [],
+  "outcomes": [{"id": "permitted", "label": "Permitted"}, {"id": "violation", "label": "Violation"}],
+  "rules": [{"id": "flag", "description": "The flag is set.", "when": ` + when + `, "outcome": "violation", "onUnknown": "escalate"}],
+  "fallbackOutcome": "permitted",
+  "escalation": {"triggers": ["unknown", "conflict", "missing-required-evidence", "not-applicable"], "target": {"kind": "human-role", "name": "Reviewer"}}
+}`
+	}
+	equalsTrue := detector(`{"op": "fact", "path": "/flag", "operator": "equals", "value": true}`)
+	notEqualsFalse := detector(`{"op": "fact", "path": "/flag", "operator": "not-equals", "value": false}`)
+	failSafe := detector(`{"op": "not", "condition": {"op": "fact", "path": "/flag", "operator": "equals", "value": false}}`)
+	trap := `Equality is type-exact: a fact of another JSON type than the value it is compared with ("true" or 1 against true, or null) makes equals FALSE and not-equals TRUE -- never unknown, so onUnknown does not catch it, and a detector written as equals true falls through to the fallback.`
+	remedy := `Where a caller supplies a Boolean, write the detector as not(equals false), so that anything but an exact false fires it.`
+	probes := []struct {
+		name, claim, pack, flag, outcome string
+	}{
+		{"equals true on the string", trap, equalsTrue, `"true"`, "permitted"},
+		{"equals true on the number", trap, equalsTrue, `1`, "permitted"},
+		{"equals true on null", trap, equalsTrue, `null`, "permitted"},
+		{"equals true on true", trap, equalsTrue, `true`, "violation"},
+		{"not-equals false on the string", trap, notEqualsFalse, `"false"`, "violation"},
+		{"the fail-safe detector on the string", remedy, failSafe, `"true"`, "violation"},
+		{"the fail-safe detector on the number", remedy, failSafe, `1`, "violation"},
+		{"the fail-safe detector on null", remedy, failSafe, `null`, "violation"},
+		{"the fail-safe detector on false", remedy, failSafe, `false`, "permitted"},
+	}
+	text := strings.Join(strings.Fields(renderPinnedPrompt(t, "author_pack")), " ")
+	var calls []string
+	for index, probe := range probes {
+		if !strings.Contains(text, probe.claim) {
+			t.Fatalf("%s: the prompt no longer states %q; check the probe against the evaluator and update both", probe.name, probe.claim)
+		}
+		calls = append(calls, toolCall(t, index+1, "experimental_evaluate", map[string]any{"pack": probe.pack, "facts": `{"kind":"claim","flag":` + probe.flag + `}`}))
+	}
+	responses := runServer(t, strings.Join(calls, ""))
+	if len(responses) != len(probes) {
+		t.Fatalf("responses = %d, want %d", len(responses), len(probes))
+	}
+	for index, probe := range probes {
+		outcome := responses[index]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("%s: the evaluation was refused: %s", probe.name, toolText(t, outcome))
+		}
+		var evaluation result.Evaluation
+		decodeStructured(t, outcome, &evaluation)
+		if got := evaluation.Disposition; got.Kind != "outcome" || got.OutcomeID != probe.outcome || got.Handoff.State != "none" {
+			t.Fatalf("%s: disposition = %+v, the prompt says outcome %q with no handoff", probe.name, got, probe.outcome)
+		}
+	}
+}

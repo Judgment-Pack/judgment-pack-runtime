@@ -56,8 +56,9 @@ different path in a CI job, and a blob of text a model was handed. With it, all 
 `jpack packs schema` prints the schema this is held to, and it is **closed**: every member
 it does not name is rejected, so a misspelled key is an error rather than an intention silently
 dropped. `configVersion` is a single integer as a string — `"1"` is the shape without graphs, `"2"`
-the shape with them (ADR-0017), and `"3"` the shape that may also ask for an audit trail
-(ADR-0018), and this runtime reads all three. There is no minor or patch
+the shape with them (ADR-0017), `"3"` the shape that may also ask for an audit trail
+(ADR-0018), and `"4"` the shape that may also require the reviewed set (ADR-0044); this runtime reads
+all four. There is no minor or patch
 component, because there is nothing to negotiate: a program either knows the shape or does not.
 
 Three things the file deliberately does **not** have:
@@ -105,7 +106,8 @@ The rule that makes the whole arrangement safe is one sentence:
 > **A fact the agent cannot source is reported unknown. It is never guessed, inferred, or defaulted.**
 
 That is not a nicety. The resolution model is built to handle `unknown` well — a rule with
-`onUnknown: escalate` stops the decision and hands it to a human, and a fallback outcome is blocked
+`onUnknown: escalate` stops the decision and requests a handoff to the pack's escalation target (nothing
+delivers it), and a fallback outcome is blocked
 by an escalating unknown. All of that machinery is worthless if the gathering step fills the hole
 with a plausible value first. An invented fact turns an escalation into an outcome, and the trace
 will show a clean decision that nobody made.
