@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-01
 deciders: maintainer
 ---
@@ -211,7 +211,19 @@ Runner gives each attempt its own audit directory, never reused, and keeps one r
 - **The evaluator.** The executable digest stays the program's account of itself (ADR-0043). `verify-run --runtime` shows that the release's pinned executable, given the verified inputs, reproduces the retained disposition. It does not show which bytes produced the historical decision. Comparing the record's `tool.digest` with the release's would be a separate consistency check.
 - **Privacy.** A checkpoint's digest covers a whole record, including a random `run` id, so it is not trivially guessable. But a digest gives no general confidentiality. C2 discloses digests to the authority; C3 publishes them. If hiding them is required, a secret salt kept with the verification evidence must be decided before deployment.
 
-## Questions for the maintainer
+## Decisions (2026-10-01)
+
+The maintainer accepted the design (question 1) and agreed to the recommended answers to the rest:
+
+1. **Accepted:** an exact-bytes chain added to new records, detached signatures, and checkpoints held outside the operator.
+2. **Chaining is on by default** in a project that keeps a trail. It is the defensible choice, at the cost of a lock and a read per write. A project can turn it off, and a trail written with it off stays readable but is reported as unchained.
+3. **C4 first, then C2.** Handing the checkpoint to a holder (the counterparty, an auditor, or a store the operator does not control) comes first, because it needs no new service. An RFC 3161 time-stamping authority follows as a configured option. A gateway witness run by another party stays later work.
+4. **Pending, not fail-closed.** A decision is recorded and appended first, and stamped after. A record not yet covered is reported as unwitnessed, and `audit verify --require-checkpoint-through` lets a reader insist on coverage.
+5. **Runner keeps an installation-level chain** of its runs. Keeping and exporting the record's exact bytes (runner #28) comes first.
+6. **This runtime's convention for now.** The specification takes up a portable decision-record format when a second implementation needs one.
+
+The questions as they were put:
+
 
 1. Accept the design: an exact-bytes chain added to new records, detached signatures, and checkpoints held outside the operator?
 2. Should chaining be on by default in a project that keeps a trail, or opt-in? On by default is the defensible choice, at the cost of a lock and a read per write; opt-in keeps today's behaviour byte for byte.
