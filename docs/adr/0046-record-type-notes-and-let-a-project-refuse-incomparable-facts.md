@@ -167,12 +167,16 @@ ask for it.
     `experimental evaluate-corpus`, `experimental compare` and the MCP test tools. `packs suggest`
     evaluates nothing.
 13. **Its work is bounded.** The walk is charged against a budget the size of the evaluation's own
-    work limit. It is charged separately, so it changes no evaluation's limit: one unit per
-    condition node visited, and per pointer resolution the steps and bytes the evaluator's model
-    charges. On the Core path that total is a small multiple of the pack's own size. Under the
-    draft RFC 0008 opt-in an aggregate multiplies it by the elements present. A walk that reaches
-    the budget refuses, with its own sentence, because the check cannot then say that every compared
-    fact is matchable.
+    work limit. It is charged separately, so it changes no evaluation's limit. It is charged one
+    unit per condition node visited, per pointer resolution the steps and bytes the evaluator's
+    model charges, per `in` the length of its operand, and for an ordered comparison the bytes of
+    the string the decimal grammar reads, before it reads them. On the Core path that total is the
+    pack's own size, plus the length of each string an ordered comparison reads. Under the draft
+    RFC 0008 opt-in an aggregate multiplies it by the elements present. A walk that reaches the
+    budget refuses under the same code, with its own sentence, because the check cannot then say
+    that every compared fact is matchable. That holds whatever the pack compares: under the draft
+    opt-in, a pack that states no fact comparison can still reach the budget by its aggregates
+    alone.
 14. **Whom it binds.** The same callers as `requireReviewed` (ADR-0044 point 5). Whoever chooses the
     configuration chooses whether the requirement applies. Whoever can edit `jpack.json` can turn it
     off, and in a locked project that edit is drift the lock records.

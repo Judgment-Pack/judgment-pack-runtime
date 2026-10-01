@@ -535,13 +535,16 @@ sees it and a detector falls through to its fallback. A project whose `jpack.jso
 MCP `experimental_evaluate` tool, and `experimental graph evaluate` for each node refuse such an
 input before evaluating (`JPS-FACTS-COMPARABLE-REQUIRED`, exit 1, no record). A run is refused when
 a fact that some comparison anywhere in the pack reads is present and of a type that comparison can
-never match: a type no `equals`, `not-equals` or `in` operand has, or anything but a decimal string
-for an ordered comparison. The check covers every comparison, including ones evaluation would not
-reach. An absent fact is not refused, because it is unknown and `onUnknown` governs it. Declared
-rehearsals are refused too. `packs test`, `experimental graph test`, `experimental evaluate-corpus`,
-`experimental compare` and the MCP test tools are not, because their rows may probe such facts on
-purpose. The refusal names each pointer, the fact's type and what the comparison can match, never a
-value.
+never match: a type no `equals`, `not-equals` or `in` operand has, or, for an ordered comparison,
+anything but a decimal string, so a string outside the decimal grammar is refused as well as a JSON
+number. The check covers every comparison, including ones evaluation would not reach. Its work is
+bounded by the evaluation's work limit, and a check that would pass that limit refuses under the same
+code, whatever the pack compares, because it cannot then say the facts are matchable. The refusal is
+the project's and not an evaluation error, so it carries no §8.4 class. An absent fact is not
+refused, because it is unknown and `onUnknown` governs it. Declared rehearsals are refused too. `packs
+test`, `experimental graph test`, `experimental evaluate-corpus`, `experimental compare` and the MCP
+test tools are not, because their rows may probe such facts on purpose. The refusal names each
+pointer, the fact's type and what the comparison can match, never a value.
 
 ### The reviewed set
 

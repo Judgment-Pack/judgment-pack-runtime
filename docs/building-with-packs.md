@@ -811,11 +811,15 @@ or `null`: the comparison is false, not unknown. With the member set, `experimen
 MCP `experimental_evaluate` tool, and `experimental graph evaluate` for each node refuse an
 evaluation, after its inputs are admitted and before anything is evaluated, when a fact that some
 comparison anywhere in the pack reads is present and of a type that comparison can never match: a
-type no `equals`, `not-equals` or `in` operand has, or anything but a decimal string for an ordered
-comparison. The refusal is `JPS-FACTS-COMPARABLE-REQUIRED`, exit `1`, with no disposition and no
-record. It names each pointer, the fact's type and what the comparison can match, never a value. The
-check is static: a comparison evaluation would not reach is checked all the same, so the same facts
-are refused whatever the other facts are. An absent fact is not refused, because it is unknown and
+type no `equals`, `not-equals` or `in` operand has, or, for an ordered comparison, anything but a
+decimal string, so a string outside the decimal grammar is refused as well as a JSON number. The
+refusal is `JPS-FACTS-COMPARABLE-REQUIRED`, exit `1`, with no disposition and no record. It is the
+project's refusal and not an evaluation error, so it carries no §8.4 class. It names each pointer,
+the fact's type and what the comparison can match, never a value. The check is static: a comparison
+evaluation would not reach is checked all the same, so the same facts are refused whatever the other
+facts are. Its work is bounded by the evaluation's work limit, and a check that would pass that limit
+refuses under the same code, whatever the pack compares, because it cannot then say the facts are
+matchable. An absent fact is not refused, because it is unknown and
 the pack's `onUnknown` governs it. A rehearsal is refused too, because its answer is read as well.
 `packs test`, `experimental graph test`, `experimental evaluate-corpus`, `experimental compare` and
 the MCP test tools are not, so a matrix row can still probe a wrong type on purpose. A pack that

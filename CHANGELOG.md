@@ -50,14 +50,17 @@ All notable changes to tagged releases are documented here.
     `experimental evaluate`, `experimental_evaluate`, and `experimental graph evaluate` for each
     node then refuse, once the inputs are admitted and before anything is evaluated, an evaluation
     in which a fact some comparison of the pack reads is present and of a JSON type that comparison
-    can never match: a type no `equals`, `not-equals` or `in` operand has (`null` included), or
-    anything but a decimal string for an ordered comparison (`JPS-FACTS-COMPARABLE-REQUIRED`, exit
-    1, no record). The check is static over every comparison the pack states, including those the
-    walk would short-circuit or skip. An absent fact is not refused. Declared rehearsals are
+    can never match: a type no `equals`, `not-equals` or `in` operand has (`null` included), or,
+    for an ordered comparison, anything but a decimal string, a string outside the decimal grammar
+    included (`JPS-FACTS-COMPARABLE-REQUIRED`, exit 1, no record). The check is static over every
+    comparison the pack states, including those the walk would short-circuit or skip. Its work is
+    bounded by the evaluation's work limit, and a check that would pass that limit refuses under the
+    same code, whatever the pack compares. An absent fact is not refused. Declared rehearsals are
     refused too. The test surfaces are not. The message names each pointer, the fact's type and
-    what the comparison can match, never a value. The refusal is not part of the evaluator
-    contract and carries no §8.4 class, so `CONFORMANCE.md` is unchanged: it already says the
-    project surfaces choose which inputs reach the evaluator.
+    what the comparison can match, never a value. The refusal is the project's, not an evaluation
+    error: it is not part of the evaluator contract and carries no §8.4 class, so `CONFORMANCE.md`
+    is unchanged, since it already says the project surfaces choose which inputs reach the
+    evaluator.
   - The schema's `$id` is now `urn:judgmentpack:runtime:jpack-config:5`. Configurations under `"1"`
     to `"4"` read as before. The member under `"4"` or earlier is refused, and the refusal names
     `"5"`.

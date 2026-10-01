@@ -216,3 +216,55 @@ func TestTheGraphSurfaceChecksEveryNode(t *testing.T) {
 		t.Fatalf("the composite carries no notes: %v", records[2])
 	}
 }
+
+// consumerPack holds the injected upstream outcome at /upstream/outcome to one
+// operand: an outcome id is a string, so a string operand can match it and a
+// boolean one never can.
+func consumerPack(operand string) string {
+	return `{"specVersion":"0.2.0-draft","id":"https://example.com/judgment-packs/consumer","version":"0.1.0","title":"Consumer",
+	  "decision":{"intent":"Decide whether to hold a request the detector judged.","question":"Hold this request?"},
+	  "outcomes":[{"id":"hold","label":"Hold"},{"id":"release","label":"Release"}],
+	  "rules":[{"id":"held","description":"A request the detector found a violation is held.",
+	    "when":{"op":"fact","path":"/upstream/outcome","operator":"equals","value":` + operand + `},"outcome":"hold","onUnknown":"escalate"}],
+	  "fallbackOutcome":"release"}`
+}
+
+// The check reads each node's facts after the upstream outcomes are injected,
+// which is what the node is evaluated against. The detector's outcome id is
+// injected at /upstream/outcome as a string: a consumer that compares it with a
+// string is evaluated, and one that compares it with a boolean is refused with
+// the node and the injected pointer named, though the caller supplied no fact
+// at all for that node.
+func TestTheGraphCheckReadsTheInjectedFacts(t *testing.T) {
+	graph := `{"formatVersion":"1","id":"consumer-flow","version":"0.1.0","result":"consumer",
+	  "nodes":{"detector":{"pack":"detector"},"consumer":{"pack":"consumer"}},
+	  "edges":[{"from":"detector","to":"consumer","fact":"/upstream/outcome"}]}`
+	inputs := writeGraphInputs(t, `{"detector":{"facts":`+comparableFactsGood+`}}`)
+	for _, tc := range []struct {
+		operand string
+		refused bool
+	}{
+		{`"violation"`, false},
+		{`true`, true},
+	} {
+		configPath := writeProjectFixture(t, `{"configVersion":"5","requireComparableFacts":true,"packs":{"detector":{"path":"packs/detector.json"},"consumer":{"path":"packs/consumer.json"}},"graphs":{"flow":{"path":"flow.graph.json"}}}`, map[string]string{
+			"packs/detector.json": comparableFixture(t),
+			"packs/consumer.json": consumerPack(tc.operand),
+			"flow.graph.json":     graph,
+		})
+		graphPath := filepath.Join(filepath.Dir(configPath), "flow.graph.json")
+		code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--config", configPath, "--inputs", inputs, "--format", "json"}, "")
+		if !tc.refused {
+			var composite result.GraphEvaluation
+			if code != 0 || stderr != "" || json.Unmarshal([]byte(stdout), &composite) != nil || composite.Disposition.OutcomeID != "release" ||
+				len(composite.Nodes) != 2 || len(composite.Nodes[1].FactFeeds) != 1 || !composite.Nodes[1].FactFeeds[0].Injected {
+				t.Fatalf("a string operand matches the injected outcome id: exit=%d stdout=%.600q stderr=%q", code, stdout, stderr)
+			}
+			continue
+		}
+		if code != result.ExitInvalid || !strings.Contains(stdout, evaluation.ComparableFactsCode) ||
+			!strings.Contains(stdout, `Node \"consumer\" (pack \"consumer\")`) || !strings.Contains(stdout, `\"/upstream/outcome\" is a string, and equals can match only a boolean`) {
+			t.Fatalf("a boolean operand never matches the injected outcome id: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+	}
+}

@@ -206,7 +206,9 @@ func TestWhatTheRequirementDoesNotRefuse(t *testing.T) {
 // inputs, so a pack that is not conformant, a facts document that is not JSON,
 // a malformed evidence document and a required extension the caller does not
 // support are each reported as what they are, even when the facts also hold a
-// type no comparison can match.
+// type no comparison can match. The control is the same incomparable fact on
+// inputs that are all admitted, which is refused by the requirement and
+// nothing else.
 func TestTheRequirementFollowsThePreflight(t *testing.T) {
 	pack := comparablePack(t)
 	incomparableFacts := comparableFacts(t, map[string]any{"/amount/exceedsCap": "true"})
@@ -218,6 +220,7 @@ func TestTheRequirementFollowsThePreflight(t *testing.T) {
 		evidence []byte
 		class    string
 	}{
+		{"the control: every input admitted", pack, incomparableFacts, []byte(`{}`), ""},
 		{"a pack that is not conformant", []byte(strings.Replace(string(pack), `"fallbackOutcome": "permitted"`, `"fallbackOutcome": "undeclared"`, 1)), incomparableFacts, nil, result.ClassPackNotConformant},
 		{"a facts document that is not JSON", pack, []byte(`{"amount":`), nil, result.ClassMalformedInput},
 		{"an evidence document naming no requirement", pack, incomparableFacts, []byte(`{"undeclared":"present"}`), result.ClassMalformedInput},
@@ -226,6 +229,10 @@ func TestTheRequirementFollowsThePreflight(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, failure := engine.EvaluateWith(tc.pack, tc.facts, tc.evidence, Options{Command: "test", RequireComparableFacts: true, EvidenceSupplied: tc.evidence != nil})
+			if tc.class == "" {
+				refusedAsIncomparable(t, failure, []string{`"/amount/exceedsCap" is a string`})
+				return
+			}
 			if failure == nil || failure.Class != tc.class || failure.Code == ComparableFactsCode {
 				t.Fatalf("want the %s refusal: %+v", tc.class, failure)
 			}
@@ -367,4 +374,79 @@ func TestTheSpecificationsOwnExampleIsRefusedRatherThanApproved(t *testing.T) {
 			refusedAsIncomparable(t, failure, []string{tc.want})
 		})
 	}
+}
+
+// The decimal grammar reads every byte of the string an ordered comparison
+// selects, so the check charges those bytes. Fifty rules read one decimal
+// string of sixty-four kilobytes while an exception's forced outcome leaves
+// every rule unevaluated: within a budget of a thousand units the structure
+// alone fits, and so does the evaluation, but reading the string once does not,
+// so the check refuses rather than scan three megabytes for free. A short
+// decimal under the same budget passes.
+func TestTheDecimalScanIsCharged(t *testing.T) {
+	var document map[string]any
+	if err := json.Unmarshal(comparablePack(t), &document); err != nil {
+		t.Fatal(err)
+	}
+	rules := []any{}
+	for index := range 50 {
+		rules = append(rules, map[string]any{
+			"id": fmt.Sprintf("over-limit-%02d", index), "description": "An amount over a limit.", "outcome": "violation", "onUnknown": "escalate",
+			"when": map[string]any{"op": "fact", "path": "/amount/value", "operator": "greater-than", "value": "1"},
+		})
+	}
+	document["rules"] = rules
+	pack, _ := json.Marshal(document)
+	engine := newTestEngine(t)
+	options := Options{Command: "test", RequireComparableFacts: true, WorkBudget: 1000}
+
+	short := comparableFacts(t, map[string]any{"/request/exempt": true, "/amount/value": "5"})
+	if output, failure := engine.EvaluateWith(pack, short, nil, options); failure != nil || output.Disposition.OutcomeID != "exempt" {
+		t.Fatalf("the structure fits the budget: %+v %+v", output.Disposition, failure)
+	}
+	long := comparableFacts(t, map[string]any{"/request/exempt": true, "/amount/value": "1" + strings.Repeat("0", 65535)})
+	options.RequireComparableFacts = false
+	if output, failure := engine.EvaluateWith(pack, long, nil, options); failure != nil || output.Disposition.OutcomeID != "exempt" {
+		t.Fatalf("without the requirement the evaluation fits the budget: %+v %+v", output.Disposition, failure)
+	}
+	options.RequireComparableFacts = true
+	_, failure := engine.EvaluateWith(pack, long, nil, options)
+	refusedAsIncomparable(t, failure, []string{"exceeds this evaluation's work limit of 1000 units"})
+}
+
+// Two findings are the same only when every field is. A pointer is authored
+// text and may hold any character, so a key joined with delimiters could make
+// two findings one: here a comparison of "/a\u0003\u0001/b" in the elements of
+// "/c" and one of "/a" in the elements of "/b\u0003\u0001/c". Both are found and
+// both are named.
+func TestFindingsThatShareTheirTextAreKeptApart(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "rfc0008", "item-availability-quantifier.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	rule := document["rules"].([]any)[0].(map[string]any)
+	rule["when"] = map[string]any{"op": "all", "conditions": []any{
+		map[string]any{"op": "exists", "path": "/c", "where": map[string]any{"op": "fact", "path": "/a\u0003\u0001/b", "operator": "equals", "value": "s"}},
+		map[string]any{"op": "exists", "path": "/b\u0003\u0001/c", "where": map[string]any{"op": "fact", "path": "/a", "operator": "equals", "value": "s"}},
+	}}
+	pack, _ := json.Marshal(document)
+	factsDocument := `{"c":[{"a\u0003\u0001":{"b":true}}],"b\u0003\u0001":{"c":[{"a":true}]}}`
+
+	var root map[string]any
+	if err := json.Unmarshal(pack, &root); err != nil {
+		t.Fatal(err)
+	}
+	found, exceeded := incomparableFacts(root, facts(t, factsDocument), Options{RFC0008Quantifiers: true})
+	if exceeded || len(found) != 2 {
+		t.Fatalf("two findings, not %d: %+v", len(found), found)
+	}
+	_, failure := newTestEngine(t).EvaluateWith(pack, []byte(factsDocument), nil, Options{Command: "test", RFC0008Quantifiers: true, RequireComparableFacts: true})
+	refusedAsIncomparable(t, failure, []string{
+		`"/a??/b" in an element of "/c" is a boolean`,
+		`"/a" in an element of "/b??/c" is a boolean`,
+	})
 }

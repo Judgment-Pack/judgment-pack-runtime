@@ -46,12 +46,29 @@ type incomparable struct {
 	matches []string
 }
 
-func (finding incomparable) key() string {
-	within := "\x00"
+// findingKey is what two findings are the same by. It is a struct of the
+// fields themselves, not a string built from them: a pointer is authored text
+// and may hold any character a delimiter could be, so a joined key would let
+// two different findings collide and one of them vanish uncounted. The
+// matched types are joined, which is unambiguous because they come from the
+// closed vocabulary jsonType answers, none of which holds a NUL.
+type findingKey struct {
+	path      string
+	withinSet bool
+	within    string
+	operator  string
+	factType  string
+	ordered   bool
+	matches   string
+}
+
+func (finding incomparable) key() findingKey {
+	key := findingKey{path: finding.path, operator: finding.operator, factType: finding.factType,
+		ordered: finding.ordered, matches: strings.Join(finding.matches, "\x00")}
 	if finding.within != nil {
-		within = "\x01" + *finding.within
+		key.withinSet, key.within = true, *finding.within
 	}
-	return strings.Join([]string{finding.path, within, finding.operator, finding.factType, strings.Join(finding.matches, "\x02")}, "\x03")
+	return key
 }
 
 // comparability is one static check of a pack's comparisons against one facts
@@ -80,7 +97,7 @@ type comparability struct {
 	exceeded    bool
 	pointers    map[string]compiledPointer
 	found       []incomparable
-	seen        map[string]bool
+	seen        map[findingKey]bool
 }
 
 func (c *comparability) charge(units int) bool {
@@ -120,7 +137,7 @@ func incomparableFacts(pack map[string]any, facts any, options Options) ([]incom
 		quantifiers: options.RFC0008Quantifiers,
 		budget:      options.workLimit(),
 		pointers:    map[string]compiledPointer{},
-		seen:        map[string]bool{},
+		seen:        map[findingKey]bool{},
 	}
 	if condition, present := pack["applicability"]; present {
 		c.walk(condition, facts, nil)
@@ -192,9 +209,18 @@ func (c *comparability) comparison(condition map[string]any, root any, within *s
 	switch {
 	case orderedOperators[operator]:
 		// The evaluator's own requirement: a §2.2 decimal string and nothing
-		// else, which its grammar decides. A JSON number is not one.
-		if text, isString := value.(string); isString && decimalPattern.MatchString(text) {
-			return
+		// else, which its grammar decides. A JSON number is not one. The
+		// grammar reads every byte of the string, so those bytes are charged
+		// before it runs, as the evaluator charges a value it compares: a long
+		// string read by many comparisons is work, and a check that did it for
+		// free would not be bounded by the budget it claims.
+		if text, isString := value.(string); isString {
+			if !c.charge(len(text)) {
+				return
+			}
+			if decimalPattern.MatchString(text) {
+				return
+			}
 		}
 		finding.ordered = true
 	case operator == "equals" || operator == "not-equals":
