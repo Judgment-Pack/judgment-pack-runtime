@@ -141,3 +141,4 @@ authority, and following it confers no conformance status on anything.
 | [0042](0042-let-packs-test-require-a-matrix.md) | Let a packs test run require every selected pack to have a matrix | accepted |
 | [0043](0043-record-the-executable-digest.md) | Record the executable's digest on every audit record | accepted |
 | [0044](0044-say-and-require-the-reviewed-set.md) | Say in the payload whether the reviewed set was applied, and let a project require it | accepted |
+| [0045](0045-compare-two-versions-of-a-pack.md) | Compare what two versions of a pack decide for the same inputs | accepted |

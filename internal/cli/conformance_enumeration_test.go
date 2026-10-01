@@ -27,6 +27,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"`packs test`",
 		"`experimental graph evaluate`",
 		"`experimental graph test`",
+		"`experimental compare`",
 		"`experimental_evaluate`",
 		"`experimental_test_packs`",
 		"`experimental_test_cases`",
@@ -42,6 +43,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"app.go":                               2, // experimental evaluate, experimental evaluate-corpus
 		"packs.go":                             1, // packs test
 		"graph.go":                             2, // experimental graph evaluate, experimental graph test
+		"compare.go":                           1, // experimental compare
 		filepath.Join("..", "mcp", "tools.go"): 4, // experimental_evaluate, experimental_test_packs, experimental_test_cases, experimental_test_graphs
 	}
 	total := 0
@@ -110,6 +112,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"jpack packs test":                  "`packs test`",
 		"jpack experimental graph evaluate": "`experimental graph evaluate`",
 		"graph test":                        "`experimental graph test`",
+		"jpack experimental compare":        "`experimental compare`",
 	} {
 		readme[spelling] = surface
 	}

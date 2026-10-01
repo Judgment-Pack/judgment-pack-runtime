@@ -108,7 +108,7 @@ func (a *App) experimentalCommand() *cobra.Command {
 			return command.Help()
 		},
 	}
-	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand())
+	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand(), a.compareCommand())
 	return experimental
 }
 
