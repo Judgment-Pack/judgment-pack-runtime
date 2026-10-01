@@ -510,9 +510,15 @@ the configuration's bytes and the named pack's are checked before anything is ev
 mismatch refuses the run (exit `1`, `JPS-LOCK-VERIFY`) with the two honest ways forward — declare
 the amendment, or restore the reviewed bytes. Naming a pack **by path** instead is a **draft**:
 evaluated, never refused for being unlocked, because writing a pack and trying it is the whole of
-authoring. `packs test`, `experimental graph test`, and `experimental evaluate-corpus` consult the
-lock never — the author's loop is free and only decisions are classified, which is the same split
-the audit trail draws.
+authoring. The payload's `reviewed` member says which of the two a run was (ADR-0044). A project
+that wants drafts refused on its deciding surfaces sets `"requireReviewed": true` under
+configVersion `"4"`: every run that applies a draft, and every run while no lock exists, is then
+refused (`JPS-LOCK-REVIEW-REQUIRED`), and the author's loop moves to `--rehearsal`, which records
+nothing and consults no lock. It binds a caller that neither chooses the configuration a run reads
+nor can edit it or its lock, not whoever chooses it; `SECURITY.md` states the boundary. `packs
+test`, `experimental graph test`, and `experimental evaluate-corpus` consult the lock never — the
+author's loop is free and only decisions are classified, which is the same split the audit trail
+draws.
 
 ### Ship
 

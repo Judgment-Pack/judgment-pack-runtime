@@ -44,13 +44,21 @@ run `packs lock` ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), which generat
 the configuration declaring the digests of the documents the project reviewed. Nothing else is
 created, named, overwritten, or deleted anywhere.
 
-The reviewed-set lock is evidence, not a control. With one in place the deciding surfaces refuse to
+By default the reviewed-set lock is evidence, not a control. With one in place the deciding surfaces refuse to
 evaluate declared law whose bytes differ from it — a declared rehearsal excepted (ADR-0028),
 which evaluates without consulting it and records nothing — which turns a silent edit into a refusal and an
 explicit re-lock; it does not and cannot stop an editor with write access to the tree, because
 `packs lock` is available to whatever can edit a pack and a runtime cannot tell an amendment from
 tampering. Treat it as a record that an amendment happened, and place the deciding party outside the
-law's write domain if you need more than that.
+law's write domain if you need more than that. A project can make it a control for some callers:
+with `requireReviewed` (configVersion `"4"`, [ADR-0044](docs/adr/0044-say-and-require-the-reviewed-set.md))
+the deciding surfaces also refuse every run that applies a draft and every run while no lock exists,
+declared rehearsals excepted. That binds a caller who neither chooses which configuration a run
+reads nor can edit it or its lock, such as an agent limited to the tools of an MCP server someone
+else launched. It does not bind whoever chooses the configuration (`--config`, `JPACK_CONFIG`, the
+working directory, the server's launch): naming another configuration applies that configuration's
+rules, and naming a file that is not there means no project and no requirement. Nor does it bind anything that can edit `jpack.json` or the lock: turning
+the member off is an edit like any other, which the lock records as drift for declared runs.
 
 The append is bounded by the directory handle held open on the configuration's own directory and
 refuses every escape a read refuses — an absolute or traversing path, a path leaving the root

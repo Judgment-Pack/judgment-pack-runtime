@@ -4,6 +4,27 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **The payload says whether the reviewed set was applied, and a project can require it**
+  (ADR-0044; #180).
+  - The evaluation payloads of `experimental evaluate` and `experimental_evaluate`, and the
+    composite of `experimental graph evaluate`, carry `reviewed` as the audit record does. It is
+    present in a project with a reviewed-set lock, `true` for declared law that matched, and
+    `false` for a draft (a pack named by path or passed as text, or an undeclared graph document).
+    When it is `true`, `reviewedSet` names the lock's revision. A rehearsal and a project with no
+    lock carry neither. The human output adds one line. Additive output; `outputVersion` stays
+    `"2"`.
+  - `jpack.json` may set `"requireReviewed": true` under the new configVersion `"4"`. The deciding
+    surfaces then refuse, before evaluating, every run that applies a draft and every run while the
+    project has no lock (`JPS-LOCK-REVIEW-REQUIRED`, exit 1, no record). Declared rehearsals are not
+    refused.
+  - The member binds only a caller who neither chooses the configuration a run reads nor can edit it
+    or the lock, such as an agent limited to the tools of an MCP server someone else launched. Naming
+    another configuration applies that configuration's rules, naming one that is not there means no
+    project and no requirement, and turning it off is an edit the lock records as drift for declared
+    runs. `SECURITY.md`, the README and the ADR say so.
+  - The schema's `$id` is now `urn:judgmentpack:runtime:jpack-config:4`. Configurations under `"1"`
+    to `"3"` read as before.
+
 - **The `test_pack` prompt's probes say what the evaluator answers, and when** (#176). The prompt
   told an agent to probe required evidence by evaluating with no evidence document and to expect
   `missing-required-evidence`; that run answers `unknown`, because an omitted requirement is unknown

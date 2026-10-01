@@ -22,7 +22,9 @@
 // ADR-0019 names that as the product-side work it does not build.
 //
 // Presence is the opt-in. A project with no lock file reaches nothing here: no
-// verification, no refusal, no member in an audit record. That is the same shape
+// verification, no refusal, no member in an audit record -- unless its
+// configuration sets requireReviewed (ADR-0044), which refuses every deciding
+// run until the project declares a reviewed set. That is the same shape
 // the audit trail takes (ADR-0018), and for the same reason — a convention this
 // runtime invented must cost nothing to a project that never adopted it.
 //
@@ -722,6 +724,56 @@ func (s *Set) Consult(loaded *project.Project, applied []Applied, draft bool) (*
 	}
 	reviewed := !draft
 	return &reviewed, nil
+}
+
+// ReviewRequiredCode is the refusal a project that requires reviewed law gives
+// a deciding run that does not apply it (ADR-0044).
+const ReviewRequiredCode = "JPS-LOCK-REVIEW-REQUIRED"
+
+// RequireReviewed is what a deciding surface does, after Consult, for a project
+// whose configuration sets requireReviewed (ADR-0044): nil when the run applies
+// the reviewed set, and otherwise the refusal, before any evaluation.
+//
+// reviewed is the bit Consult or DraftRun answered, and declared says the run
+// names declared law: a pack by decision id, or a graph the configuration
+// declares. True passes. A project with no lock has no reviewed set to apply,
+// so every deciding run is refused until one is declared. A run naming declared
+// law that is not reviewed was not consulted only because its bytes never
+// arrived -- a pack over the byte limit -- and the evaluator refuses it at that
+// limit, so it passes here. Anything else applies a draft, which such a project
+// refuses however it was named. A declared rehearsal is not a decision,
+// consults no reviewed set, and never reaches this: the surfaces skip it for a
+// rehearsal, as they skip Consult.
+//
+// It binds only as far as the configuration's selection and its files are
+// trusted. Whoever chooses which configuration a run reads -- the --config
+// argument, JPACK_CONFIG, the working directory, the MCP server's launch --
+// chooses whether this applies, and whoever can edit the configuration or the
+// lock can turn it off; the lock records the configuration's digest, so that
+// edit is itself an amendment a by-id run is refused for until the project
+// re-locks.
+func RequireReviewed(loaded *project.Project, reviewed *bool, declared bool) *Failure {
+	if loaded == nil || !loaded.Config.RequireReviewed || (reviewed != nil && *reviewed) {
+		return nil
+	}
+	if declared && loaded.HasLock() {
+		return nil
+	}
+	config := display.Sanitize(loaded.ConfigPath)
+	if reviewed == nil {
+		return &Failure{
+			Code: ReviewRequiredCode,
+			Message: fmt.Sprintf("This evaluation was refused because %s requires every decision to apply the project's reviewed set, and there is no reviewed-set lock at %s. Run jpack packs lock to declare the reviewed set, or declare the run a rehearsal.",
+				config, display.Sanitize(loaded.LockPath())),
+			ExitCode: result.ExitInvalid,
+		}
+	}
+	return &Failure{
+		Code: ReviewRequiredCode,
+		Message: fmt.Sprintf("This evaluation was refused because %s requires every decision to apply the project's reviewed set, and this run applies a draft: a pack named by path or passed as text, or a graph document the configuration does not declare. Name the pack by its decision id, or declare the run a rehearsal.",
+			config),
+		ExitCode: result.ExitInvalid,
+	}
 }
 
 // LawCheck is the deciding check a surface hands to a caller that reads

@@ -79,7 +79,9 @@ type GraphHandoff struct {
 // truth — and Handoffs aggregates every requested handoff so an escalation
 // upstream of the result is as visible as the result itself. Like every
 // payload the experimental evaluator produces, it asserts nothing about the
-// wisdom of acting on any disposition it carries.
+// wisdom of acting on any disposition it carries. Reviewed and ReviewedSet are
+// the run's, as Evaluation's are (ADR-0044): one invocation consults the lock
+// once, for the configuration, the graph document and every node's pack.
 type GraphEvaluation struct {
 	OutputVersion             string                `json:"outputVersion"`
 	Tool                      Tool                  `json:"tool"`
@@ -87,6 +89,8 @@ type GraphEvaluation struct {
 	Status                    string                `json:"status"`
 	Experimental              bool                  `json:"experimental"`
 	Rehearsal                 bool                  `json:"rehearsal,omitempty"`
+	Reviewed                  *bool                 `json:"reviewed,omitempty"`
+	ReviewedSet               *ReviewedSet          `json:"reviewedSet,omitempty"`
 	ConformanceClaimReference string                `json:"conformanceClaimReference"`
 	Label                     string                `json:"label"`
 	Kind                      string                `json:"kind"`

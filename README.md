@@ -542,7 +542,18 @@ evaluate-corpus` consult it never: the author's loop is free and decisions are c
 named by path, or passed as text over MCP, is a draft — evaluated, never refused for being unlocked,
 and recorded as a draft. Where an audit trail is configured, each record carries `reviewed`: `true`
 when every document applied was declared and matched, `false` for a draft, absent when the project
-declares no lock.
+declares no lock. The evaluation payload carries the same `reviewed`, with `reviewedSet` naming the
+lock's revision when it is `true`, so a caller learns it without reading the trail (ADR-0044). A
+rehearsal consulted no lock and carries neither.
+
+**Requiring it.** A project whose `jpack.json` sets `"requireReviewed": true` (configVersion `"4"`,
+ADR-0044) has the deciding surfaces refuse, before evaluating, every run that applies a draft and
+every run while the project has no lock (`JPS-LOCK-REVIEW-REQUIRED`, exit 1). A declared rehearsal
+is not a decision and is not refused. This binds a caller that neither chooses the configuration a
+run reads nor can edit it or its lock, such as an agent limited to the tools of an MCP server
+someone else launched. It cannot bind whoever chooses the configuration (`--config`, `JPACK_CONFIG`, the working
+directory) or can edit `jpack.json` or the lock, and turning it off is itself an edit the lock
+records, so a by-id run is refused until the project locks again.
 
 **What it is not.** It is not a wall. Anything that can edit a pack can run `packs lock` again, and
 this runtime cannot tell that from an author amending policy on purpose — they are the same act.

@@ -387,7 +387,7 @@ func TestPacksValidateResolvesASymlinkedAuditDirectory(t *testing.T) {
 // pack-id form is checked too: resolving a decision id is a filesystem
 // operation, and it must not outrank a missing required argument either.
 func TestArgumentRefusalsPrecedeTheConfiguration(t *testing.T) {
-	broken := writeProjectFixture(t, `{"configVersion":"4","packs":{}}`, map[string]string{
+	broken := writeProjectFixture(t, `{"configVersion":"5","packs":{}}`, map[string]string{
 		"pack.json": evaluatorPack(t),
 	})
 	packPath := filepath.Join(filepath.Dir(broken), "pack.json")

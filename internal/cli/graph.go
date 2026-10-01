@@ -206,7 +206,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			"and composition is the specification's RFC 0002, a draft proposal. The evaluator's conformance claim " +
 			"is stated, in full and only, in CONFORMANCE.md; this text states no part of it, and no result is an " +
 			"authorization, an executed action, or any statement about whether acting on any disposition is " +
-			"correct (§3.5). Producing a composite exits 0. Under configVersion \"3\" a project may declare an " +
+			"correct (§3.5). Producing a composite exits 0. From configVersion \"3\" a project may declare an " +
 			"audit directory (ADR-0018), and this verb then appends one record per node plus one for the " +
 			"composite headline; experimental graph test runs the same nodes over the same project and records " +
 			"nothing, because a matrix row is a check on the graph rather than a decision the project took. " +
@@ -254,7 +254,8 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			// node's declared pack, and the graph document itself when the
 			// argument names one the configuration declares. A graph document
 			// that is not declared is a draft — evaluated, never refused for
-			// being unlocked, and recorded as a draft run. A declared rehearsal
+			// being unlocked unless the project requires reviewed law
+			// (ADR-0044), and recorded as a draft run. A declared rehearsal
 			// does neither, below.
 			options := graph.Options{
 				Command:             commandName,
@@ -266,6 +267,8 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			// experimental graph test has, extended to one declared run
 			// (ADR-0028, ADR-0041). It leaves Audit and LawCheck nil, as that
 			// verb does, and its payload says what it is.
+			var reviewed *bool
+			var underLaw *result.ReviewedSet
 			if !rehearsal {
 				auditWriter := loaded.AuditWriter()
 				// One read of the reviewed set for the whole run. The configuration
@@ -279,9 +282,15 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 					return a.lockFailure(commandName, format, lockFailure)
 				}
 				applied, declared := appliedGraph(loaded, document, graphPath)
-				reviewed, lockFailure := set.Consult(loaded, applied, !declared)
+				reviewed, lockFailure = set.Consult(loaded, applied, !declared)
 				if lockFailure != nil {
 					return a.lockFailure(commandName, format, lockFailure)
+				}
+				if lockFailure := lock.RequireReviewed(loaded, reviewed, declared); lockFailure != nil {
+					return a.lockFailure(commandName, format, lockFailure)
+				}
+				if reviewed != nil && *reviewed {
+					underLaw = set.Provenance()
 				}
 				auditWriter.UnderLaw(reviewed, set.Provenance())
 				// This verb records and experimental graph test does not,
@@ -296,6 +305,8 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				return a.evaluationFailure(commandName, format, evaluateFailure)
 			}
 			output.Rehearsal = rehearsal
+			output.Reviewed = reviewed
+			output.ReviewedSet = underLaw
 			if err := a.renderGraphEvaluation(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}

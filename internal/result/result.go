@@ -799,6 +799,15 @@ type DraftPrototype struct {
 // for one. It is never inferred; absence means the caller made no such
 // declaration, not that one was recorded.
 //
+// Reviewed says which law the decision was judged under, as the audit record
+// says it (ADR-0019, ADR-0044). It is present exactly when the project declares
+// a reviewed-set lock and the run was not a declared rehearsal: true when every
+// document the run applied was named as declared law and matched the lock, with
+// ReviewedSet naming the lock's revision, and false when any was a draft -- a
+// pack named by path or passed as text, or a graph document the configuration
+// does not declare. It is absent, not false, for a project with no lock and for
+// a rehearsal, which consults none: neither was judged against a reviewed set.
+//
 // PackID and PackVersion echo the evaluated pack's own id and version members.
 // They are additive members and not a new fact: they are read off the document
 // that was evaluated, so a payload cannot name a pack the evaluation did not
@@ -818,6 +827,8 @@ type Evaluation struct {
 	Status                    string          `json:"status"`
 	Experimental              bool            `json:"experimental"`
 	Rehearsal                 bool            `json:"rehearsal,omitempty"`
+	Reviewed                  *bool           `json:"reviewed,omitempty"`
+	ReviewedSet               *ReviewedSet    `json:"reviewedSet,omitempty"`
 	ConformanceClaimReference string          `json:"conformanceClaimReference"`
 	SpecVersion               string          `json:"specVersion"`
 	EvaluatorSpecVersion      string          `json:"evaluatorSpecVersion"`
@@ -829,6 +840,23 @@ type Evaluation struct {
 	UnmetEvidence             []UnmetEvidence `json:"unmetEvidence,omitempty"`
 	Trace                     []TraceEntry    `json:"trace"`
 	Artifact                  *Artifact       `json:"artifact,omitempty"`
+}
+
+// ReviewedSet names the revision of a project's reviewed set (ADR-0019) that
+// made a run's Reviewed true: the digest of the exact lock bytes the checks
+// used, the shape those bytes declared, and the configuration digest that was
+// compared.
+//
+// It is named because the lock is replaced in place. Without it a reader
+// holding a record or a payload and a lock file cannot tell whether that lock
+// is the one the decision was judged under, and the Boolean would be a claim
+// nothing outside the run can re-derive. It is present exactly when Reviewed is
+// true: a draft was judged under no reviewed set, and a project with no lock
+// has none to name. The audit record carries the same shape (ADR-0044).
+type ReviewedSet struct {
+	LockDigest   string `json:"lockDigest"`
+	LockVersion  string `json:"lockVersion"`
+	ConfigDigest string `json:"configDigest"`
 }
 
 // EvaluationCorpusLabel labels every evaluation-corpus run this runtime reports.

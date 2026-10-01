@@ -138,7 +138,7 @@ func toolDefinitions() []map[string]any {
 		matrixValidationDefinition(),
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; a refused evaluation reports its §8.4 error class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. In a project with a reviewed-set lock (ADR-0019), a pack named by pack_id is held to it and a pack passed as text is a draft, and the payload's \"reviewed\" member says which (ADR-0044); a project whose jpack.json sets requireReviewed refuses, before evaluating, every call that is not a rehearsal and passes a draft or finds no lock (JPS-LOCK-REVIEW-REQUIRED). This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -1100,7 +1100,8 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	// evaluate, never on a second read of the path they came from (ADR-0019),
 	// exactly as on the CLI. A pack named by decision id is declared law and is
 	// held to what the project last declared reviewed; a pack passed as text is
-	// a draft, never refused for being unlocked, and the record says so.
+	// a draft, never refused for being unlocked unless the project requires
+	// reviewed law (ADR-0044), and the record and the payload say so.
 	// A pack the read could not present in full carries the oversized marker
 	// instead: there are no bytes to check, and the engine refuses it at the
 	// byte limit's own place in the preflight.
@@ -1129,6 +1130,11 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 			return lockToolError(lockFailure)
 		}
 	}
+	if !rehearsal {
+		if lockFailure := lock.RequireReviewed(loaded, reviewed, packIDPresent); lockFailure != nil {
+			return lockToolError(lockFailure)
+		}
+	}
 	auditWriter.UnderLaw(reviewed, set.Provenance())
 	evaluator := evaluation.NewEngine(s.engine)
 	output, failure := evaluator.EvaluateWith([]byte(pack), []byte(facts), []byte(evidence), evaluation.Options{
@@ -1149,6 +1155,15 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	// itself is untouched either way, having already happened. A declared
 	// rehearsal writes nothing even here, and its payload carries the label
 	// instead of a record (ADR-0028).
+	// The payload says what the record says about the reviewed set
+	// (ADR-0044), so a caller learns it without reading the trail. A rehearsal
+	// consulted none and says nothing about one.
+	if !rehearsal {
+		output.Reviewed = reviewed
+		if reviewed != nil && *reviewed {
+			output.ReviewedSet = set.Provenance()
+		}
+	}
 	if rehearsal {
 		output.Rehearsal = true
 	} else if err := auditWriter.Evaluation(output, audit.Inputs{

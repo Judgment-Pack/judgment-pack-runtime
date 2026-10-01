@@ -80,9 +80,9 @@ different rules, and conflating them has been a live source of error.
   (ADR-0012), `lockVersion` for a reviewed-set lock (ADR-0019), `formatVersion` for a graph document
   (ADR-0015). Their schemas are closed, so an older reader *rejects* a document carrying a member it
   does not know rather than ignoring it. Adding one therefore moves the version, whatever the
-  addition is: `graphs` moved `configVersion` to `"2"` and `audit` moved it to `"3"` for exactly
-  this reason, and the version gate is what turns an unreadable-config refusal into an actionable
-  "this runtime accepts" one.
+  addition is: `graphs` moved `configVersion` to `"2"`, `audit` moved it to `"3"`, and
+  `requireReviewed` moved it to `"4"` for exactly this reason, and the version gate is what turns an
+  unreadable-config refusal into an actionable "this runtime accepts" one.
 
 ## Release artifacts
 

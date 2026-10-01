@@ -163,7 +163,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
 		Short: "EXPERIMENTAL SURFACE: apply the JPS §§7-8 resolution model to one pack",
-		Long:  "Apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all, including a reached §10 evaluation-work limit (resource-exhaustion, evaluation phase). The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The §§8.2-8.4 contract is JPS Core 0.2.0-draft's, and only a pack declaring that exact specVersion is evaluated: §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string, and nothing else in the document -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The payload names the pack's specVersion and the contract's evaluatorSpecVersion. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim, and one run of this command is a result rather than the claim or evidence about anything beyond that run -- no result is an authorization, an executed action, or any statement about whether the pack, the facts, or acting on the disposition is correct (§3.5). Producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version, is not an input the claimed class defines, and every evaluation payload produced this way says so in band. With --rfc0016-outcome-values the value declarations of the specification's RFC 0016 (Draft) are admitted as a prototype under the same terms: the disposition of an outcome that declares values carries them in a value member that is the draft's and not §8.3's, and an outcome with a declared value that does not resolve is not produced -- the result is unresolved with reason unknown. One evaluation runs under one draft, so the two flags are mutually exclusive. The pack may also be named by --pack-id, which resolves one decision id through a project's jpack.json (ADR-0012, a convention of this runtime and not of the specification); it is mutually exclusive with the pack argument, because a command with two sources for one input has an order of precedence nobody asked for. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. The project's configuration is consulted on every run, however the pack was named, because whether an evaluation is recorded is that configuration's to say: under configVersion \"3\" an audit member declares a directory, and each completed evaluation then appends one record to it (ADR-0018) -- unless the run declares itself a rehearsal with --rehearsal, which appends nothing and consults no reviewed set (ADR-0028). A refused evaluation records nothing, a record that cannot be written refuses the run rather than reporting a disposition nothing kept, and a project that declares no audit member has nothing written for it.",
+		Long:  "Apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all, including a reached §10 evaluation-work limit (resource-exhaustion, evaluation phase). The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The §§8.2-8.4 contract is JPS Core 0.2.0-draft's, and only a pack declaring that exact specVersion is evaluated: §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string, and nothing else in the document -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The payload names the pack's specVersion and the contract's evaluatorSpecVersion. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim, and one run of this command is a result rather than the claim or evidence about anything beyond that run -- no result is an authorization, an executed action, or any statement about whether the pack, the facts, or acting on the disposition is correct (§3.5). Producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version, is not an input the claimed class defines, and every evaluation payload produced this way says so in band. With --rfc0016-outcome-values the value declarations of the specification's RFC 0016 (Draft) are admitted as a prototype under the same terms: the disposition of an outcome that declares values carries them in a value member that is the draft's and not §8.3's, and an outcome with a declared value that does not resolve is not produced -- the result is unresolved with reason unknown. One evaluation runs under one draft, so the two flags are mutually exclusive. The pack may also be named by --pack-id, which resolves one decision id through a project's jpack.json (ADR-0012, a convention of this runtime and not of the specification); it is mutually exclusive with the pack argument, because a command with two sources for one input has an order of precedence nobody asked for. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. The project's configuration is consulted on every run, however the pack was named, because whether an evaluation is recorded is that configuration's to say: from configVersion \"3\" an audit member declares a directory, and each completed evaluation then appends one record to it (ADR-0018) -- unless the run declares itself a rehearsal with --rehearsal, which appends nothing and consults no reviewed set (ADR-0028). A refused evaluation records nothing, a record that cannot be written refuses the run rather than reporting a disposition nothing kept, and a project that declares no audit member has nothing written for it.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
@@ -289,7 +289,8 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// (ADR-0019): a claim about a review has to be about the document
 			// that produced the disposition. A pack named by decision id is
 			// declared law; a pack named by path is a draft, never refused for
-			// being unlocked, and the record it leaves says so.
+			// being unlocked unless the project requires reviewed law
+			// (ADR-0044), and the record and the payload say so.
 			var applied []lock.Applied
 			if packID != "" && pack != nil {
 				applied = []lock.Applied{lock.AppliedPack(packID, pack)}
@@ -316,6 +317,11 @@ func (a *App) evaluateCommand() *cobra.Command {
 					return a.lockFailure("experimental evaluate", format, lockFailure)
 				}
 			}
+			if !rehearsal {
+				if lockFailure := lock.RequireReviewed(loaded, reviewed, packID != ""); lockFailure != nil {
+					return a.lockFailure("experimental evaluate", format, lockFailure)
+				}
+			}
 			auditWriter.UnderLaw(reviewed, set.Provenance())
 			evaluator := evaluation.NewEngine(a.engine)
 			output, failure := evaluator.EvaluateWith(pack, facts, evidence, evaluation.Options{
@@ -338,6 +344,15 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// the evaluation itself is untouched either way, having already
 			// happened. A declared rehearsal writes nothing even here, and its
 			// payload carries the label instead of a record (ADR-0028).
+			// The payload says what the record says about the reviewed set
+			// (ADR-0044), so a caller learns it without reading the trail. A
+			// rehearsal consulted none and says nothing about one.
+			if !rehearsal {
+				output.Reviewed = reviewed
+				if reviewed != nil && *reviewed {
+					output.ReviewedSet = set.Provenance()
+				}
+			}
 			if rehearsal {
 				output.Rehearsal = true
 			} else if err := auditWriter.Evaluation(output, audit.Inputs{
