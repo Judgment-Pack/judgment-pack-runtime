@@ -124,6 +124,9 @@ func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs [
 		}
 		before := evaluate(engine, oldAdmitted, oldPack, input, extensions, command, &comparison.Old)
 		after := evaluate(engine, newAdmitted, newPack, input, extensions, command, &comparison.New)
+		if unresolved(before) && unresolved(after) {
+			comparison.Inputs.UnresolvedUnderBoth++
+		}
 		changed := differences(before, after)
 		if len(changed) == 0 {
 			comparison.Inputs.Same++
@@ -142,7 +145,22 @@ func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs [
 		}
 		comparison.Differences = append(comparison.Differences, difference)
 	}
+	comparison.DifferentDecisions = differentDecisions(comparison.Old, comparison.New)
 	return comparison, nil
+}
+
+// unresolved says whether one pack's result for an input is a disposition of
+// kind unresolved. A refusal is not: it is no disposition at all.
+func unresolved(got outcome) bool {
+	return got.evaluated != nil && got.evaluated.Disposition.Kind == "unresolved"
+}
+
+// differentDecisions says whether the two packs are two decisions rather than
+// two versions of one: both ids were read and they are not equal. An id never
+// read, because every evaluation under that pack was refused first, says
+// nothing either way.
+func differentDecisions(oldPack, newPack result.ComparedPack) bool {
+	return oldPack.PackID != "" && newPack.PackID != "" && oldPack.PackID != newPack.PackID
 }
 
 // digest names one pack's exact bytes, or nothing when the bounded read

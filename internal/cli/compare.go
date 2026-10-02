@@ -28,6 +28,9 @@ func (a *App) compareCommand() *cobra.Command {
 			"Each input is evaluated as packs test evaluates a row that reaches evaluation -- its facts, its evidence availability, and its own supported extensions, joined by any --supported-extension names -- under the old pack and under the new one. " +
 			"An input differs when the two JPS §8.3 canonical dispositions are not byte for byte equal, when the handoff targets differ, or when one evaluation is refused and the other is not, or both are refused differently; each difference lists both results and names what changed. " +
 			"Inputs that are the same are counted, not listed. " +
+			"Inputs unresolved under both versions are counted too, whether or not they differ, because an input that reaches no outcome under either version cannot show a change in which outcome it gets; when that is every input, the human output says the comparison could not see a change in any outcome, and that packs suggest --base writes candidates carrying a reviewed row's other facts and evidence. " +
+			"Two packs whose ids differ are two decisions rather than two versions of one: they are compared all the same, and when both ids were read and differ, the human output's first line and the payload's \"differentDecisions\" member say so. " +
+			"An id is read from an evaluation that succeeds, so when no input is evaluated, or every evaluation under one pack is refused, neither appears, and their absence does not establish that the ids match. " +
 			"A difference says the two versions decide an input differently and nothing about which is right: it is not an expectation, and nothing here is a decision. " +
 			"The command opens no project, so it appends no audit record and consults no reviewed set, and its payload carries \"rehearsal\": true (ADR-0028). " +
 			"It exits 0 whenever the comparison ran, however many inputs differ; a run whose differences would pass 16 MiB of compact JSON is refused rather than truncated, and the rendered report is bounded by that and proportional to it. " +
@@ -91,12 +94,17 @@ func (a *App) compareCommand() *cobra.Command {
 	return command
 }
 
-// renderComparison reports one comparison. The label leads, the rehearsal line
-// says nothing was recorded, and each difference is one line naming the input,
-// both results, and what changed.
+// renderComparison reports one comparison. Two packs that are different
+// decisions are said to be so first; then the label leads, the rehearsal line
+// says nothing was recorded, the totals count the inputs unresolved under both
+// versions, a line says so when that is every input, and each difference is
+// one line naming the input, both results, and what changed.
 func (a *App) renderComparison(format string, output result.PackComparison) error {
 	if format == "json" {
 		return a.writeJSON(output)
+	}
+	if output.DifferentDecisions {
+		fmt.Fprintln(a.out, "DIFFERENT DECISIONS: the two packs have different ids, so this compares two decisions, not two versions of one")
 	}
 	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE %s\n", output.Label)
 	fmt.Fprintln(a.out, "REHEARSAL: not a decision; no audit record was appended and no reviewed set was consulted")
@@ -118,7 +126,12 @@ func (a *App) renderComparison(format string, output result.PackComparison) erro
 	if output.Inputs.Kind == "candidates" {
 		kind = "a candidates document"
 	}
-	fmt.Fprintf(a.out, "inputs: %d from %s; %d differ, %d the same\n", output.Inputs.Count, kind, output.Inputs.Different, output.Inputs.Same)
+	fmt.Fprintf(a.out, "inputs: %d from %s; %d differ, %d the same; %d of the %d unresolved under both versions\n",
+		output.Inputs.Count, kind, output.Inputs.Different, output.Inputs.Same, output.Inputs.UnresolvedUnderBoth, output.Inputs.Count)
+	if output.Inputs.Count > 0 && output.Inputs.UnresolvedUnderBoth == output.Inputs.Count {
+		fmt.Fprintln(a.out, "NOTHING RESOLVED: every input was unresolved under both versions, so this comparison could not see a change in any outcome; "+
+			"packs suggest --base <row-id> writes candidates that carry a reviewed row's other facts and evidence")
+	}
 	for _, difference := range output.Differences {
 		fmt.Fprintf(a.out, "- %s: %s -> %s [%s]\n", display.Sanitize(difference.ID), comparedText(difference.Old), comparedText(difference.New), strings.Join(difference.Changed, ", "))
 	}
