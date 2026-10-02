@@ -110,7 +110,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 		code   string
 	}{
 		"no configVersion":                     {`{"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
-		"a later configVersion":                {`{"configVersion":"5","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
+		"a later configVersion":                {`{"configVersion":"6","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a semver configVersion":               {`{"configVersion":"1.0.0","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a numeric configVersion":              {`{"configVersion":1,"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"no packs member":                      {`{"configVersion":"1"}`, "JPS-PROJECT-CONFIG-SCHEMA"},
@@ -139,7 +139,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 
 	// The version refusal names what would have been accepted; a message that only
 	// said "no" would leave a caller guessing.
-	_, failure := Load(writeProject(t, `{"configVersion":"5","packs":{}}`, nil))
+	_, failure := Load(writeProject(t, `{"configVersion":"6","packs":{}}`, nil))
 	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+strings.Join(SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must be unsupported and name this runtime's versions: exit=%d %q", failure.ExitCode, failure.Message)
 	}
@@ -1817,9 +1817,52 @@ func TestConfigVersionTwoDeclaresGraphs(t *testing.T) {
 	// The schema payload names the newest shape and every shape read, so it
 	// cannot imply an earlier one stopped being accepted.
 	description := SchemaDescription("packs schema")
-	if description.ConfigVersion != "4" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3", "4"}) ||
-		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:4" {
+	if description.ConfigVersion != "5" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3", "4", "5"}) ||
+		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:5" {
 		t.Fatalf("schema description = %+v", description)
+	}
+}
+
+// configVersion "5" is the shape that may require every fact a comparison
+// reads to be of a type that comparison can match (ADR-0046). The gate lives
+// in the schema's bytes like every other: the member under any earlier
+// version -- "4" included -- is refused and names the version to change, it is
+// a strict boolean, a "5" still reads every earlier member, and absent is
+// false.
+func TestConfigVersionFiveMayRequireComparableFacts(t *testing.T) {
+	for _, version := range []string{"1", "2", "3", "4"} {
+		_, failure := Load(writeProject(t, `{"configVersion":"`+version+`","requireComparableFacts":true,"packs":{}}`, nil))
+		if failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" || !strings.Contains(failure.Message, "'5'") {
+			t.Fatalf("requireComparableFacts under %s names the version to change: %+v", version, failure)
+		}
+	}
+	for _, value := range []string{`"true"`, `1`, `null`} {
+		if _, failure := Load(writeProject(t, `{"configVersion":"5","requireComparableFacts":`+value+`,"packs":{}}`, nil)); failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" {
+			t.Fatalf("requireComparableFacts %s is refused: %+v", value, failure)
+		}
+	}
+	loaded, failure := Load(writeProject(t, `{"configVersion":"5","requireComparableFacts":true,"requireReviewed":true,"audit":{"dir":"audit"},
+	  "packs":{"a":{"path":"a.json"}},"graphs":{"g":{"path":"g.json"}}}`, nil))
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer loaded.Close()
+	if !loaded.Config.RequireComparableFacts || !loaded.RequiresComparableFacts() || !loaded.Config.RequireReviewed || loaded.Config.Audit == nil || len(loaded.Config.Graphs) != 1 {
+		t.Fatalf("config = %+v", loaded.Config)
+	}
+	for _, config := range []string{`{"configVersion":"5","packs":{}}`, `{"configVersion":"5","requireComparableFacts":false,"packs":{}}`, `{"configVersion":"4","requireReviewed":true,"packs":{}}`} {
+		plain, failure := Load(writeProject(t, config, nil))
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		if plain.Config.RequireComparableFacts || plain.RequiresComparableFacts() {
+			t.Fatalf("%s requires nothing", config)
+		}
+		plain.Close()
+	}
+	var none *Project
+	if none.RequiresComparableFacts() {
+		t.Fatal("no project requires nothing")
 	}
 }
 

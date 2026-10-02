@@ -1,26 +1,31 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:judgmentpack:runtime:jpack-config:4",
+  "$id": "urn:judgmentpack:runtime:jpack-config:5",
   "title": "jpack.json project configuration",
-  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), and under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
+  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044), and under \"5\" whether its evaluations must refuse a fact no comparison that reads it can match (ADR-0046). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
   "type": "object",
   "additionalProperties": false,
   "required": ["configVersion", "packs"],
   "allOf": [
     {
-      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal. \"3\" and \"4\" read them too — a later shape adds a member, it does not drop one.",
+      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal. \"3\", \"4\" and \"5\" read them too — a later shape adds a member, it does not drop one.",
       "if": { "required": ["graphs"] },
-      "then": { "properties": { "configVersion": { "enum": ["2", "3", "4"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["2", "3", "4", "5"] } } }
     },
     {
-      "description": "The same gate for audit, the \"3\" shape's one addition: a configuration asking for an audit trail under an earlier version is told exactly which member to change. \"4\" reads it too.",
+      "description": "The same gate for audit, the \"3\" shape's one addition: a configuration asking for an audit trail under an earlier version is told exactly which member to change. \"4\" and \"5\" read it too.",
       "if": { "required": ["audit"] },
-      "then": { "properties": { "configVersion": { "enum": ["3", "4"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["3", "4", "5"] } } }
     },
     {
-      "description": "The same gate for requireReviewed, the \"4\" shape's one addition.",
+      "description": "The same gate for requireReviewed, the \"4\" shape's one addition. \"5\" reads it too.",
       "if": { "required": ["requireReviewed"] },
-      "then": { "properties": { "configVersion": { "const": "4" } } }
+      "then": { "properties": { "configVersion": { "enum": ["4", "5"] } } }
+    },
+    {
+      "description": "The same gate for requireComparableFacts, the \"5\" shape's one addition.",
+      "if": { "required": ["requireComparableFacts"] },
+      "then": { "properties": { "configVersion": { "const": "5" } } }
     }
   ],
   "properties": {
@@ -29,9 +34,9 @@
       "$ref": "#/$defs/audit"
     },
     "configVersion": {
-      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs, \"2\" the shape with them, \"3\" the shape that may also ask for an audit trail, and \"4\" the shape that may also require its deciding runs to apply its reviewed set; this runtime reads all four, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only the earlier shapes refuses a later configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under an earlier version would be an invalid-config refusal that takes every project surface down with it.",
+      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs, \"2\" the shape with them, \"3\" the shape that may also ask for an audit trail, \"4\" the shape that may also require its deciding runs to apply its reviewed set, and \"5\" the shape that may also require every fact a comparison reads to be of a type that comparison can match; this runtime reads all five, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only the earlier shapes refuses a later configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under an earlier version would be an invalid-config refusal that takes every project surface down with it.",
       "type": "string",
-      "enum": ["1", "2", "3", "4"]
+      "enum": ["1", "2", "3", "4", "5"]
     },
     "graphs": {
       "description": "EXPERIMENTAL graphs composing this project's packs (ADR-0015, ADR-0017), keyed by the project's own name for one graph — the graph document's id member is the graph's identity and is not this key, exactly as a pack entry's key is not the pack's id. Declaring any graph requires configVersion \"2\" or later. The graph surface may change or be removed without compatibility promise, and a project that declares no graph never needs this member or that version.",
@@ -46,8 +51,12 @@
       "propertyNames": { "$ref": "#/$defs/decisionId" },
       "additionalProperties": { "$ref": "#/$defs/pack" }
     },
+    "requireComparableFacts": {
+      "description": "Whether an evaluation must refuse a fact no comparison that reads it can match (ADR-0046). There is no coercion between JSON types, so a fact of another type than every operand of an equals, not-equals or in -- null included -- makes equals and in false and not-equals true, never unknown, and onUnknown does not reach it; an ordered comparison reads a decimal string and nothing else, so a string outside the decimal grammar matches it no more than a JSON number does. When true, the CLI's experimental evaluate and experimental graph evaluate, for every node, and the MCP experimental_evaluate tool refuse (JPS-FACTS-COMPARABLE-REQUIRED), after the inputs are admitted and before anything is evaluated, every evaluation in which a fact that some comparison anywhere in the pack reads is present and of a type that comparison can never match, whether or not evaluation would reach that comparison. The check's work is bounded by the evaluation's work limit, and a check that would pass it refuses under the same code, whatever the pack compares. The refusal is the project's, not an evaluation error, and carries no JPS §8.4 class. A fact that is absent is not refused: it is unknown, and the pack's onUnknown governs it. Declared rehearsals are refused too, since a rehearsal's answer is read as well. The test surfaces are not -- packs test, experimental graph test, experimental evaluate-corpus, experimental compare and the MCP test tools -- because their rows and inputs may probe such facts on purpose. Absent or false, such a fact is evaluated as Core says. Declaring it requires configVersion \"5\".",
+      "type": "boolean"
+    },
     "requireReviewed": {
-      "description": "Whether every deciding run must apply this project's reviewed set (ADR-0044). When true, the CLI's experimental evaluate and experimental graph evaluate and the MCP experimental_evaluate tool refuse, before any evaluation, a run that applies a draft (a pack named by path or passed as text, or a graph document this configuration does not declare) and every run when the project has declared no reviewed set (ADR-0019). A declared rehearsal is not a decision and is not refused. The member binds only a caller who neither chooses which configuration a run reads nor can edit this file or the project's reviewed set: whoever chooses the configuration chooses whether it applies, whoever can edit these files can turn it off, and an edit to this file is itself an amendment the reviewed set records. Absent or false, drafts are evaluated and recorded as drafts, as before. Declaring it requires configVersion \"4\".",
+      "description": "Whether every deciding run must apply this project's reviewed set (ADR-0044). When true, the CLI's experimental evaluate and experimental graph evaluate and the MCP experimental_evaluate tool refuse, before any evaluation, a run that applies a draft (a pack named by path or passed as text, or a graph document this configuration does not declare) and every run when the project has declared no reviewed set (ADR-0019). A declared rehearsal is not a decision and is not refused. The member binds only a caller who neither chooses which configuration a run reads nor can edit this file or the project's reviewed set: whoever chooses the configuration chooses whether it applies, whoever can edit these files can turn it off, and an edit to this file is itself an amendment the reviewed set records. Absent or false, drafts are evaluated and recorded as drafts, as before. Declaring it requires configVersion \"4\" or later.",
       "type": "boolean"
     }
   },

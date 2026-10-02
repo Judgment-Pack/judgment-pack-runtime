@@ -57,8 +57,8 @@ different path in a CI job, and a blob of text a model was handed. With it, all 
 it does not name is rejected, so a misspelled key is an error rather than an intention silently
 dropped. `configVersion` is a single integer as a string — `"1"` is the shape without graphs, `"2"`
 the shape with them (ADR-0017), `"3"` the shape that may also ask for an audit trail
-(ADR-0018), and `"4"` the shape that may also require the reviewed set (ADR-0044); this runtime reads
-all four. There is no minor or patch
+(ADR-0018), `"4"` the shape that may also require the reviewed set (ADR-0044), and `"5"` the shape
+that may also require comparable facts (ADR-0046); this runtime reads all five. There is no minor or patch
 component, because there is nothing to negotiate: a program either knows the shape or does not.
 
 Three things the file deliberately does **not** have:
@@ -793,6 +793,38 @@ whether that lock is the one the decision was judged under. It is absent — not
 convention" is not the same fact as "ran on unreviewed law". There is no "declared but drifted"
 value: a deciding surface refuses such a run before it evaluates, so `reviewed: true` is a claim
 about what actually ran rather than a label.
+
+Where the evaluation's trace noted something about the inputs, the line says so too (ADR-0046).
+`typeMismatches` lists each `equals`, `not-equals` or `in` comparison the walk evaluated whose fact
+had a JSON type no operand had. `unknownCauses` lists each cause of an unknown: an absent pointer, a
+value an ordered comparison could not compare, an evidence requirement of unknown presence. Each
+note appears once, in the order the trace first names it, in the trace's own shape (pointers, types
+and causes, never values). A graph run's node lines carry their own node's notes, and the composite
+carries none. A line with nothing to note is byte for byte what it was before. The notes cover what
+the walk compared, so a fact of the wrong type behind a branch the walk short-circuited is not among
+them.
+
+A project that would rather refuse such an input than record it sets `"requireComparableFacts":
+true` under configVersion `"5"`. There is no coercion between JSON types, so a detector written as
+`equals true` with `onUnknown: escalate` answers its fallback when the flag arrives as `"true"`, `1`
+or `null`: the comparison is false, not unknown. With the member set, `experimental evaluate`, the
+MCP `experimental_evaluate` tool, and `experimental graph evaluate` for each node refuse an
+evaluation, after its inputs are admitted and before anything is evaluated, when a fact that some
+comparison anywhere in the pack reads is present and of a type that comparison can never match: a
+type no `equals`, `not-equals` or `in` operand has, or, for an ordered comparison, anything but a
+decimal string, so a string outside the decimal grammar is refused as well as a JSON number. The
+refusal is `JPS-FACTS-COMPARABLE-REQUIRED`, exit `1`, with no disposition and no record. It is the
+project's refusal and not an evaluation error, so it carries no §8.4 class. It names each pointer,
+the fact's type and what the comparison can match, never a value. The check is static: a comparison
+evaluation would not reach is checked all the same, so the same facts are refused whatever the other
+facts are. Its work is bounded by the evaluation's work limit, and a check that would pass that limit
+refuses under the same code, whatever the pack compares, because it cannot then say the facts are
+matchable. An absent fact is not refused, because it is unknown and
+the pack's `onUnknown` governs it. A rehearsal is refused too, because its answer is read as well.
+`packs test`, `experimental graph test`, `experimental evaluate-corpus`, `experimental compare` and
+the MCP test tools are not, so a matrix row can still probe a wrong type on purpose. A pack that
+compares one pointer with operands of different types in different rules cannot satisfy the
+requirement for that pointer. Write one `in` whose operand carries both types instead.
 
 Each line carries a `run` id: one value per invocation, on every record that invocation writes. For
 a graph run that is what marks the run finished — the `graph-composite` line carries the same id as

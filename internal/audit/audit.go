@@ -139,6 +139,18 @@ const (
 // it. The member is additive, which is why recordVersion stays "1" — the same
 // rule VERSIONING.md applies to outputVersion, where an added member is
 // backward-compatible and a removed or renamed one is the break.
+//
+// UnknownCauses and TypeMismatches say, on an evaluation record, what the
+// evaluation's trace said about its inputs (ADR-0046), because a record keeps
+// no trace: every cause an unknown entry named and every equality comparison
+// the walk evaluated across JSON types, each distinct one once, in the order
+// the trace first names it (traceNotes). A recorded decision whose facts could
+// never have matched a comparison then says so where the decision is kept. Each
+// names a pointer or an evidence requirement, which are the pack's, and a type
+// or a cause, and never a value. Both are omitted when empty, so a record whose
+// evaluation crossed no type and left nothing unknown is byte for byte what it
+// was before they existed, and a graph composite, which carries no node's
+// inputs, carries neither. They are additive, so recordVersion stays "1".
 type Record struct {
 	RecordVersion        string                 `json:"recordVersion"`
 	Run                  string                 `json:"run"`
@@ -155,7 +167,41 @@ type Record struct {
 	Reviewed             *bool                  `json:"reviewed,omitempty"`
 	ReviewedSet          *ReviewedSet           `json:"reviewedSet,omitempty"`
 	Cites                []Citation             `json:"cites,omitempty"`
+	UnknownCauses        []result.UnknownCause  `json:"unknownCauses,omitempty"`
+	TypeMismatches       []result.TypeMismatch  `json:"typeMismatches,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
+}
+
+// traceNotes gathers what a trace's entries say about the inputs (ADR-0040):
+// every unknown cause and every type mismatch, each distinct one once, in the
+// order the trace first names it -- entry by entry in walk order, and within
+// an entry in the order the walk met them. Two notes are the same when they
+// encode to the same JSON, so the root pointer "" and an unset pointer stay
+// different notes, as they are in the trace. The trace is a pure function of
+// the evaluation's inputs, so this is too.
+func traceNotes(trace []result.TraceEntry) ([]result.UnknownCause, []result.TypeMismatch) {
+	var causes []result.UnknownCause
+	var mismatches []result.TypeMismatch
+	seenCauses, seenMismatches := map[string]bool{}, map[string]bool{}
+	for _, entry := range trace {
+		for _, cause := range entry.UnknownCauses {
+			// These types encode without error: strings, string pointers and a
+			// string slice.
+			key, _ := json.Marshal(cause)
+			if !seenCauses[string(key)] {
+				seenCauses[string(key)] = true
+				causes = append(causes, cause)
+			}
+		}
+		for _, mismatch := range entry.TypeMismatches {
+			key, _ := json.Marshal(mismatch)
+			if !seenMismatches[string(key)] {
+				seenMismatches[string(key)] = true
+				mismatches = append(mismatches, mismatch)
+			}
+		}
+	}
+	return causes, mismatches
 }
 
 // Tool is the build that wrote a record: the name and version every payload
@@ -525,6 +571,7 @@ func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, cites []Citati
 	if len(inputs.Evidence) == 0 {
 		inputs.Evidence = nil
 	}
+	causes, mismatches := traceNotes(evaluated.Trace)
 	return stamp(Record{
 		Kind:                 KindEvaluation,
 		Surface:              evaluated.Command,
@@ -540,6 +587,8 @@ func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, cites []Citati
 		DraftPrototype: evaluated.DraftPrototype,
 		Artifact:       evaluated.Artifact,
 		Cites:          cites,
+		UnknownCauses:  causes,
+		TypeMismatches: mismatches,
 		Disposition:    disposition,
 	}), nil
 }

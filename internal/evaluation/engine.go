@@ -113,6 +113,14 @@ type Options struct {
 	// in the §8.2 preflight and §8.4 assigns the class and the order: the pack's
 	// limit before the facts document's, and a non-conformant pack before either.
 	OversizedInputs []string
+	// RequireComparableFacts refuses, once the §8.2 preflight has admitted
+	// every input and before §8 begins, an evaluation in which a fact some
+	// comparison of the pack reads is present and of a JSON type that
+	// comparison can never match (ADR-0046). It is not part of the evaluator
+	// contract: the refusal carries no §8.4 class, and only a deciding surface
+	// whose project sets requireComparableFacts asks for it. Off, nothing
+	// changes.
+	RequireComparableFacts bool
 }
 
 // oversized reports whether the caller marked one named input as above this
@@ -229,6 +237,16 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 	// outranks an unsupported required extension on the same inputs.
 	if unsupportedExtensions != nil {
 		return result.Evaluation{}, unsupportedExtensions
+	}
+
+	// The project's requirement, when a deciding surface carries one
+	// (ADR-0046). It reads the documents the walk below would read, after every
+	// refusal §8.4 classes and before any condition is evaluated, so on an input
+	// it passes the evaluation is exactly what it would have been without it.
+	if options.RequireComparableFacts {
+		if failure := requireComparable(packRoot, factsDocument, options); failure != nil {
+			return result.Evaluation{}, failure
+		}
 	}
 
 	walk := &evaluator{
