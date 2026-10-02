@@ -16,10 +16,8 @@ import (
 // closes any of them. It is advisory, which is what "cooperative" means here:
 // it excludes every writer that asks for it and no one that does not.
 //
-// A file system that offers no such lock answers ENOLCK, EOPNOTSUPP or ENOSYS,
-// and that is reported as errNoLock rather than as a failure, so the caller can
-// do what it does where no lock exists at all. A wait a signal interrupts is
-// asked again.
+// A wait a signal interrupts is asked again, and what the call answered is
+// then read by lockOutcome.
 func platformLockExclusive(file *os.File) error {
 	conn, err := file.SyscallConn()
 	if err != nil {
@@ -36,10 +34,36 @@ func platformLockExclusive(file *os.File) error {
 	}); err != nil {
 		return err
 	}
-	if errors.Is(lockErr, syscall.ENOLCK) || errors.Is(lockErr, syscall.EOPNOTSUPP) || errors.Is(lockErr, syscall.ENOSYS) {
+	return lockOutcome(lockErr)
+}
+
+// lockOutcome reads what flock answered: nil when the lock is held, errNoLock
+// when this file can never be locked here, and the error itself for anything
+// else, which fails the append.
+//
+// Only an answer that says the lock is not supported, and will not be on a
+// later attempt, is errNoLock, because the caller then appends without it, and
+// an append without the lock while another writer holds it can break that
+// writer's chain:
+//
+//   - EOPNOTSUPP, and ENOTSUP where it is a different number (Darwin): the
+//     descriptor's file system does not support flock, as a BSD or Darwin
+//     mount without locking answers.
+//   - ENOSYS: the system call is not implemented at all, as some sandboxes and
+//     emulators answer.
+//
+// ENOLCK is not among them. Linux answers it when the kernel has run out of
+// lock records, and an NFS client when the lock service does not answer: both
+// can pass, and neither says the file cannot be locked, so the append is
+// refused rather than made without the lock.
+func lockOutcome(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.ENOSYS) {
 		return errNoLock
 	}
-	return lockErr
+	return err
 }
 
 // platformUnlock releases the lock platformLockExclusive took. Closing the file

@@ -29,7 +29,7 @@ const (
 )
 
 // ERROR_NOT_SUPPORTED and ERROR_INVALID_FUNCTION are what a file system that
-// offers no byte-range lock answers.
+// implements no byte-range lock answers, on every attempt.
 const (
 	errorInvalidFunction syscall.Errno = 1
 	errorNotSupported    syscall.Errno = 50
@@ -54,10 +54,23 @@ func platformLockExclusive(file *os.File) error {
 	}); err != nil {
 		return err
 	}
-	if errors.Is(lockErr, errorNotSupported) || errors.Is(lockErr, errorInvalidFunction) {
+	return lockOutcome(lockErr)
+}
+
+// lockOutcome reads what LockFileEx answered: nil when the lock is held,
+// errNoLock when the file system implements no byte-range lock (it answers
+// ERROR_NOT_SUPPORTED or ERROR_INVALID_FUNCTION, and will on every attempt),
+// and the error itself for anything else, which fails the append: an answer
+// that can pass, such as running out of memory or resources, must not let a
+// writer append without the lock while another holds it.
+func lockOutcome(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, errorNotSupported) || errors.Is(err, errorInvalidFunction) {
 		return errNoLock
 	}
-	return lockErr
+	return err
 }
 
 // platformUnlock releases the byte platformLockExclusive locked. Windows

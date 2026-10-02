@@ -461,32 +461,173 @@ func TestALongLastLineIsReadWhole(t *testing.T) {
 	checkChain(t, lines)
 }
 
-// A last line longer than any record this runtime writes is not read whole:
-// it is not a chained line, and what follows it commits to the whole file. A
-// line of exactly the bound is still read.
-func TestALineLongerThanAnyRecordIsNotReadWhole(t *testing.T) {
+// lowerLineBound sets maxLineBytes for one test, so a test can hold the bound
+// with lines of kilobytes rather than of a hundred megabytes.
+func lowerLineBound(t *testing.T, bound int64) {
+	t.Helper()
+	original := maxLineBytes
+	maxLineBytes = bound
+	t.Cleanup(func() { maxLineBytes = original })
+}
+
+// A last line longer than the bound is refused, not read whole and not taken
+// for unchained. A line of exactly the bound is still read, and looking for
+// the start of a much longer line stops once it is past the bound.
+func TestALineLongerThanTheBoundIsRefusedNotReadWhole(t *testing.T) {
+	lowerLineBound(t, 4*readChunk)
 	over := syntheticLine{size: maxLineBytes + 2, read: new(int64)}
-	line, err := lastLine(over, over.size)
-	if err != nil || line != nil {
-		t.Fatalf("a line over the bound is not read: %d bytes, %v", len(line), err)
+	if line, err := lastLine(over, over.size); !errors.Is(err, ErrOversizedLine) || line != nil {
+		t.Fatalf("a line over the bound is refused: %d bytes, %v", len(line), err)
 	}
 	at := syntheticLine{size: maxLineBytes + 1, read: new(int64)}
-	line, err = lastLine(at, at.size)
-	if err != nil || len(line) != maxLineBytes {
+	if line, err := lastLine(at, at.size); err != nil || int64(len(line)) != maxLineBytes {
 		t.Fatalf("a line at the bound is read: %d bytes, %v", len(line), err)
 	}
-	next, err := readHead(over, over.size)
-	if err != nil || next.sequence != 1 || next.previous != over.digest() {
-		t.Fatalf("what follows commits to the whole file: %+v, %v", next, err)
+	if next, err := readHead(over, over.size); !errors.Is(err, ErrOversizedLine) {
+		t.Fatalf("what follows such a line is refused, not committed to as a legacy block: %+v, %v", next, err)
 	}
-	// Looking for the start of a much longer line stops once it is past the
-	// bound, rather than reading the line to its start.
-	far := syntheticLine{size: 4 * maxLineBytes, read: new(int64)}
-	if line, err := lastLine(far, far.size); err != nil || line != nil {
-		t.Fatalf("a line over the bound is not read: %d bytes, %v", len(line), err)
+	far := syntheticLine{size: 64 * maxLineBytes, read: new(int64)}
+	if line, err := lastLine(far, far.size); !errors.Is(err, ErrOversizedLine) || line != nil {
+		t.Fatalf("a line over the bound is refused: %d bytes, %v", len(line), err)
 	}
 	if *far.read > maxLineBytes+2*readChunk {
 		t.Fatalf("the search read %d bytes of a line it was never going to read", *far.read)
+	}
+}
+
+// A valid chained record longer than the bound is never reinterpreted: as the
+// last line, or as a line the chain must read when it starts again, it refuses
+// the append, under the message every surface gives, and the trail is left as
+// it was. A chained line of exactly the bound is followed as one.
+func TestAValidChainedLineOverTheBoundIsRefusedNotReinterpreted(t *testing.T) {
+	big := `{"note":"` + strings.Repeat("x", 6000) + `"}`
+	write := func(writer *Writer, facts string) error {
+		return writer.Evaluation(evaluated(), Inputs{Facts: []byte(facts)}, nil, []byte(`{}`), nil)
+	}
+
+	// As the last line.
+	writer, root := writerAt(t, "audit")
+	if err := write(writer, big); err != nil {
+		t.Fatal(err)
+	}
+	before, lines := trailLines(t, root, "audit")
+	if !readChain(t, lines[0]).present {
+		t.Fatal("the fixture's line is chained")
+	}
+	func() {
+		lowerLineBound(t, int64(len(lines[0])-1))
+		err := write(writer, `{}`)
+		if !errors.Is(err, ErrOversizedLine) || FailureMessageFor(err) != oversizedMessage {
+			t.Fatalf("a chained last line over the bound refuses the append: %v", err)
+		}
+		if after, _ := trailLines(t, root, "audit"); !bytes.Equal(before, after) {
+			t.Fatal("a refused append leaves the trail as it was")
+		}
+		maxLineBytes = int64(len(lines[0]))
+		if err := write(writer, `{}`); err != nil {
+			t.Fatalf("a chained line of exactly the bound is followed: %v", err)
+		}
+		_, lines = trailLines(t, root, "audit")
+		checkChain(t, lines)
+	}()
+
+	// As a line the chain must read when it starts again.
+	writer, root = writerAt(t, "audit")
+	if err := write(writer, big); err != nil {
+		t.Fatal(err)
+	}
+	writer.chain = false
+	if err := write(writer, `{}`); err != nil {
+		t.Fatal(err)
+	}
+	writer.chain = true
+	before, lines = trailLines(t, root, "audit")
+	lowerLineBound(t, int64(len(lines[0])-1))
+	if err := write(writer, `{}`); !errors.Is(err, ErrOversizedLine) {
+		t.Fatalf("a chained line over the bound before an unchained one refuses the append: %v", err)
+	}
+	if after, _ := trailLines(t, root, "audit"); !bytes.Equal(before, after) {
+		t.Fatal("a refused append leaves the trail as it was")
+	}
+}
+
+// A chaining writer never writes a line over the bound, whether it holds the
+// lock or not, so no line it leaves is one a later writer must refuse.
+func TestARecordOverTheBoundIsNotWritten(t *testing.T) {
+	big := `{"note":"` + strings.Repeat("x", 6000) + `"}`
+	writer, root := writerAt(t, "audit")
+	if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := trailLines(t, root, "audit")
+	lowerLineBound(t, 4096)
+	err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(big)}, nil, []byte(`{}`), nil)
+	if !errors.Is(err, ErrRecordTooLarge) || FailureMessageFor(err) != tooLargeMessage {
+		t.Fatalf("a record over the bound is refused: %v", err)
+	}
+	if after, _ := trailLines(t, root, "audit"); !bytes.Equal(before, after) {
+		t.Fatal("nothing is appended")
+	}
+	record, err := EvaluationRecord(evaluated(), Inputs{Facts: []byte(big)}, nil, []byte(`{}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchained, err := encodeLines([]Record{record})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chainedLines([]Record{record}, unchained, fssecure.AppendState{Locked: false}); !errors.Is(err, ErrRecordTooLarge) {
+		t.Fatalf("without the lock too: %v", err)
+	}
+}
+
+// A chained line is read one way on both paths, whatever its spelling: as the
+// last line it is linked to, and as a line before an unchained one it gives
+// the chain started again its identity. Whitespace around the colon and an
+// escape in the member's name are JSON, and are read as JSON reads them.
+func TestEverySpellingOfAChainedLineIsReadOneWay(t *testing.T) {
+	trail := strings.Repeat("cd", 16)
+	previous := Digest([]byte("x"))
+	for name, line := range map[string]string{
+		"compact":          `{"recordVersion":"1","trail":"` + trail + `","sequence":1,"previous":"` + previous + `","run":"r"}`,
+		"space before ':'": `{"recordVersion":"1","trail" : "` + trail + `", "sequence" : 1, "previous" : "` + previous + `","run":"r"}`,
+		"escaped name":     `{"recordVersion":"1","tr\u0061il":"` + trail + `","sequence":1,"previous":"` + previous + `","run":"r"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if found, _, ok := chainedLine([]byte(line)); !ok || found != trail {
+				t.Fatalf("the line is chained: %s", line)
+			}
+			seed := func(t *testing.T, contents string) (*Writer, string) {
+				t.Helper()
+				writer, root := writerAt(t, "audit")
+				if err := os.MkdirAll(filepath.Join(root, "audit"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(root, "audit", FileName), []byte(contents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return writer, root
+			}
+			// As the last line.
+			writer, root := seed(t, line+"\n")
+			if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+				t.Fatal(err)
+			}
+			_, lines := trailLines(t, root, "audit")
+			if link := readChain(t, lines[1]); link.trail != trail || link.sequence != 2 || link.previous != Digest([]byte(line)) {
+				t.Fatalf("the record links to the line: %+v", link)
+			}
+			// Before an unchained line.
+			unchained := `{"recordVersion":"1","run":"s"}`
+			writer, root = seed(t, line+"\n"+unchained+"\n")
+			if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+				t.Fatal(err)
+			}
+			_, lines = trailLines(t, root, "audit")
+			if link := readChain(t, lines[2]); link.trail != trail || link.sequence != 3 || link.previous != Digest([]byte(line+"\n"+unchained+"\n")) {
+				t.Fatalf("the chain started again keeps the line's identity: %+v", link)
+			}
+		})
 	}
 }
 

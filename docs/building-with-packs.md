@@ -858,16 +858,28 @@ keeps the identity it had.
 
 The writer holds an exclusive, cooperative lock on the trail while it reads the last line, numbers
 every line it is writing (a graph run's node lines and its composite, the composite last), writes,
-and syncs, so two runtimes writing one trail at once never give two lines one predecessor. The lock
-binds only writers that take it. Two things follow:
+and syncs the file and then its directory, so two runtimes writing one trail at once never give two
+lines one predecessor, and a record reported written is on disk with the file's entry. The lock
+binds only writers that take it. A line is recognised as chained by its JSON members, however it is
+spelled, the same way whether the chain is being continued or started again. What follows:
 
 - **A torn last line stops the trail.** If the trail's last line has no newline, which is what a
   write cut short leaves, no line is chained after it: every recording run is refused with
   `JPS-AUDIT-WRITE`, exit 4, and a message that says so, and the trail is left as it was. Until
   `jpack audit repair` exists (#207), move the damaged file aside and keep it; the next record then
   starts a new trail.
-- **Where no lock can be taken, nothing is chained.** On a platform or file system that offers no
-  exclusive lock, records are written as before, without the three members.
+- **A line too long to read stops the trail too.** A line longer than 128 MiB that the writer must
+  read to continue the chain is refused rather than taken for unchained, with the same code and a
+  message that says so. The writer never writes a line that long: a record that would be one, which
+  only a pack built for it can produce, is refused instead.
+- **A lock that cannot be taken now refuses the run.** If the lock exists but cannot be taken, for
+  example because the system has run out of lock records, the run is refused rather than recorded
+  without it.
+- **Where no lock exists, nothing is chained.** On a platform or file system that offers no
+  exclusive lock at all, records are written as before, without the three members.
+- **A failed sync is a failed write.** If the file or its directory cannot be synced, the run is
+  refused. The record's bytes are in the file by then and stay, as for any write that fails after it
+  started.
 
 A project that does not want the chain says so under configVersion `"6"`:
 
@@ -884,10 +896,12 @@ nothing read. A trail written that way stays readable, and it is unchained.
 
 What the chain lets someone show, and what it does not:
 
-- A reader holding the trail can tell an edited, inserted, deleted or reordered chained line from an
-  intact one by recomputing each `previous`. It cannot tell a trail cut short at its end, or a whole
-  trail rewritten with a consistent chain, from the real one. That takes a checkpoint, the trail's
-  identity, a sequence and a line's digest, held by someone other than the operator, and this
+- Recomputing each `previous` shows whether the lines are consistent with one another: a line
+  edited, inserted, deleted or moved anywhere before the last breaks the link of the line after it.
+- That is consistency, not authenticated history. The last line can be edited without breaking any
+  link, and a trail cut short, or rewritten from any line on with its links recomputed, is as
+  consistent as the real one. Telling them apart takes a checkpoint covering those lines (the trail's
+  identity, a sequence and that line's digest) held by someone other than the operator, and this
   runtime does not make one yet (#208).
 - This runtime does not yet check a chain: `jpack audit verify` is #207. Until then the members are
   there to be checked, and nothing reports on them.

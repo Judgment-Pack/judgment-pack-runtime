@@ -238,9 +238,12 @@ func TestAFileAnAppendCreatesIsOpenedToAppend(t *testing.T) {
 		if access == os.O_RDWR {
 			name = "created-rw.jsonl"
 		}
-		created, isNew, err := root.openForAppend(name, access)
-		if err != nil || !isNew {
-			t.Fatalf("the absent file is created: %v %v", isNew, err)
+		if _, err := os.Lstat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the file is not there before the open: %v", err)
+		}
+		created, err := root.openForAppend(name, access)
+		if err != nil {
+			t.Fatal(err)
 		}
 		other, err := os.OpenFile(filepath.Join(dir, name), os.O_WRONLY|os.O_APPEND, 0)
 		if err != nil {
@@ -260,32 +263,76 @@ func TestAFileAnAppendCreatesIsOpenedToAppend(t *testing.T) {
 	}
 }
 
-// Whichever writer puts the first bytes in the file syncs its directory, so the
-// entry survives a crash with them; a later write does not.
-func TestTheFirstBytesSyncTheDirectory(t *testing.T) {
+// Every append syncs the directory holding the file, not only the one that
+// created it: no writer can tell whether an earlier writer's sync of the entry
+// failed, so a later success is what makes the entry durable.
+func TestEveryAppendSyncsTheDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a directory is not synced on Windows")
 	}
 	dir := t.TempDir()
 	root := mustOpenRoot(t, dir)
-	write := func(name string) int64 {
-		t.Helper()
+	for range 3 {
 		before := directorySyncs.Load()
-		if err := root.AppendLocked(name, func(AppendState) ([]byte, error) { return []byte("x\n"), nil }); err != nil {
+		if err := root.AppendLocked("log.jsonl", func(AppendState) ([]byte, error) { return []byte("x\n"), nil }); err != nil {
 			t.Fatal(err)
 		}
-		return directorySyncs.Load() - before
+		if synced := directorySyncs.Load() - before; synced != 1 {
+			t.Fatalf("each append syncs the directory once: %d", synced)
+		}
 	}
-	if synced := write("created.jsonl"); synced != 1 {
-		t.Fatalf("a created file's directory is synced: %d", synced)
+}
+
+// injected is the failure a test puts where a sync or an open would succeed.
+var injected = errors.New("injected failure")
+
+// A failure to sync the file, to open its directory, or to sync the directory
+// is the append's failure, reported to the caller. The bytes are written by
+// then and stay.
+func TestAnAppendReportsEveryFailureToMakeItDurable(t *testing.T) {
+	originalSync, originalOpen := syncFile, openDirectory
+	t.Cleanup(func() { syncFile, openDirectory = originalSync, originalOpen })
+	isDirectory := func(file *os.File) bool {
+		info, err := file.Stat()
+		return err == nil && info.IsDir()
 	}
-	if synced := write("created.jsonl"); synced != 0 {
-		t.Fatalf("a file with bytes in it needs no directory sync: %d", synced)
+	cases := map[string]func(){
+		"the file's sync fails": func() {
+			syncFile = func(file *os.File) error {
+				if isDirectory(file) {
+					return originalSync(file)
+				}
+				return injected
+			}
+		},
+		"the directory cannot be opened": func() {
+			openDirectory = func(*Root, string) (*os.File, error) { return nil, injected }
+		},
+		"the directory's sync fails": func() {
+			syncFile = func(file *os.File) error {
+				if isDirectory(file) {
+					return injected
+				}
+				return originalSync(file)
+			}
+		},
 	}
-	if err := os.WriteFile(filepath.Join(dir, "empty.jsonl"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if synced := write("empty.jsonl"); synced != 1 {
-		t.Fatalf("the first bytes in a file another writer created sync its directory: %d", synced)
+	for name, inject := range cases {
+		t.Run(name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && name != "the file's sync fails" {
+				t.Skip("a directory is not synced on Windows")
+			}
+			syncFile, openDirectory = originalSync, originalOpen
+			dir := t.TempDir()
+			root := mustOpenRoot(t, dir)
+			inject()
+			err := root.AppendLocked("log.jsonl", func(AppendState) ([]byte, error) { return []byte("x\n"), nil })
+			if !errors.Is(err, injected) {
+				t.Fatalf("the append must report the failure: %v", err)
+			}
+			if data, readErr := os.ReadFile(filepath.Join(dir, "log.jsonl")); readErr != nil || string(data) != "x\n" {
+				t.Fatalf("the bytes are written by then and stay: %q %v", data, readErr)
+			}
+		})
 	}
 }

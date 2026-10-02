@@ -92,26 +92,35 @@
 // chaining was off, or by a runtime that does not chain, is covered: as one
 // block, never rewritten. A chain started again keeps the identity of the last
 // chained line before it, where there is one. Whether a line is chained is read
-// from its own members: a line that is one JSON object holding a trail of that
-// form, a sequence from 1 to 2^53-2 and a previous of that form, each named
-// exactly once, is chained; any other line is not.
+// from its own members, as JSON reads them (chainedLine), the same way on every
+// path: a line that is one JSON object holding a trail of that form, a
+// sequence from 1 to 2^53-2 and a previous of that form, each named exactly
+// once, is chained; any other line is not. A line longer than maxLineBytes is
+// never read and never taken for unchained: a write that must read one is
+// refused, ErrOversizedLine, and the writer writes no line that long,
+// ErrRecordTooLarge.
 //
 // The writer holds an exclusive, cooperative lock on the trail
 // (fssecure.Root.AppendLocked) across reading the last line, assigning every
 // sequence of what it writes (one record, or a graph run's node records and
-// composite, the composite last), writing, and syncing. It refuses to append
-// after a last line with no newline, ErrIncompleteLastLine: a write that did
-// not complete is never chained over. Where no lock can be taken the records
-// are written as they were before chaining, without the three members, because
-// a chain written without the lock could link two records to one predecessor.
+// composite, the composite last), writing, and syncing the file and its
+// directory. It refuses to append after a last line with no newline,
+// ErrIncompleteLastLine: a write that did not complete is never chained over.
+// Where the platform or the file system offers no lock at all, the records are
+// written as they were before chaining, without the three members, because a
+// chain written without the lock could link two records to one predecessor; a
+// lock that exists but cannot be taken now refuses the append instead.
 //
-// What the chain establishes, and what it does not: a verifier walking it can
-// tell an edited, inserted, deleted or reordered chained line from an intact
-// one, and the legacy prefix as a block. It cannot tell a trail cut short, or a
-// whole trail rewritten with a consistent chain, from the real one: that needs
-// a checkpoint someone other than the operator holds (ADR-0047 §2a). This
-// runtime has no verifier yet; `jpack audit verify` is runtime #207, and
-// checkpoints are #208.
+// What the chain establishes, and what it does not. Recomputing each previous
+// shows whether the chained lines are consistent with one another: a line
+// edited, inserted, deleted or moved anywhere before the last breaks the link
+// of the line after it, and the legacy prefix is held as one block. That is
+// consistency, not authenticated history. The last line can be edited without
+// breaking any link, and a trail cut short, or rewritten from any line on with
+// its links recomputed, is as consistent as the real one: only a commitment
+// to the trail held by someone other than the operator, covering the lines in
+// question, tells them apart (ADR-0047 §2a; runtime #208). And this runtime
+// does not check the links yet: `jpack audit verify` is runtime #207.
 package audit
 
 import (
@@ -165,6 +174,10 @@ const (
 	// because nothing else would tell an operator why every later decision is
 	// refused too.
 	incompleteMessage = "Audit record could not be written: the audit trail's last line is incomplete, and no record is chained after an incomplete line."
+	// oversizedMessage and tooLargeMessage are its forms for a line too long
+	// to read whole (maxLineBytes), in the trail or in what would be written.
+	oversizedMessage = "Audit record could not be written: a line of the audit trail is longer than 128 MiB, longer than any record this runtime writes, so whether it is chained cannot be read."
+	tooLargeMessage  = "Audit record could not be written: the record would be longer than 128 MiB, the longest line a chained audit trail holds."
 )
 
 // ErrIncompleteLastLine is the refusal to chain a record after a last line
@@ -172,12 +185,29 @@ const (
 // another chained record can follow it.
 var ErrIncompleteLastLine = errors.New("the audit trail's last line is incomplete")
 
+// ErrOversizedLine is the refusal to chain a record when a line the writer
+// must read whole to know whether it is chained, the last line or, when the
+// chain starts again, any line before it, is longer than maxLineBytes. Such a
+// line is never taken for unchained: that would commit to it as part of a
+// legacy block, and could start a new identity, over what may be a chained
+// record.
+var ErrOversizedLine = errors.New("a line of the audit trail is too long to read whole")
+
+// ErrRecordTooLarge is the refusal to write a record whose line would be
+// longer than maxLineBytes, which a later writer could not read whole.
+var ErrRecordTooLarge = errors.New("the audit record is too long for a chained trail")
+
 // FailureMessageFor is the message a failed append is reported with:
-// FailureMessage, or what is wrong with the trail when the failure is one the
-// operator must act on. The code is FailureCode either way.
+// FailureMessage, or what is wrong with the trail or the record when the
+// failure is one the operator must act on. The code is FailureCode either way.
 func FailureMessageFor(err error) string {
-	if errors.Is(err, ErrIncompleteLastLine) {
+	switch {
+	case errors.Is(err, ErrIncompleteLastLine):
 		return incompleteMessage
+	case errors.Is(err, ErrOversizedLine):
+		return oversizedMessage
+	case errors.Is(err, ErrRecordTooLarge):
+		return tooLargeMessage
 	}
 	return FailureMessage
 }
@@ -811,9 +841,16 @@ func encodeLines(records []Record) ([]byte, error) {
 // chainedLines is what a chaining writer appends, decided under the trail's
 // lock: the records chained after what the trail holds, or, where no lock could
 // be taken, the unchained lines, since a chain read and written without the
-// lock could link two records to one predecessor.
+// lock could link two records to one predecessor. Either way no line longer
+// than maxLineBytes is written, so no line a chaining writer wrote is one a
+// later one cannot read whole.
 func chainedLines(records []Record, unchained []byte, state fssecure.AppendState) ([]byte, error) {
 	if !state.Locked {
+		for _, line := range bytes.SplitAfter(unchained, []byte("\n")) {
+			if int64(len(bytes.TrimSuffix(line, []byte("\n")))) > maxLineBytes {
+				return nil, ErrRecordTooLarge
+			}
+		}
 		return unchained, nil
 	}
 	next, err := readHead(state.Contents, state.Size)
@@ -829,6 +866,9 @@ func chainedLines(records []Record, unchained []byte, state fssecure.AppendState
 		line, err := encodeLines([]Record{record})
 		if err != nil {
 			return nil, err
+		}
+		if int64(len(line)-1) > maxLineBytes {
+			return nil, ErrRecordTooLarge
 		}
 		// The next record links to these bytes exactly as they will be in the
 		// file, without the newline that ends them.
@@ -853,13 +893,24 @@ var (
 	previousForm = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
-// maxLineBytes bounds the line the writer reads whole to see whether it is
-// chained. Every record this runtime writes is far below it: the documents a
-// record carries are each bounded at 16 MiB or less by the surface that
-// admitted them, and its citations at MaxCitesBytes. A longer line is not one
-// this runtime wrote, so it is not read whole: it is not chained, and what
-// follows it commits to the whole file instead.
-const maxLineBytes = 64 << 20
+// maxLineBytes bounds a line of a chained trail: the longest line the writer
+// reads whole to see whether it is chained, and the longest it writes.
+//
+// An ordinary record is far below it. The facts and evidence documents a
+// record carries were each admitted under the carrier's 10 MiB limit
+// (unchanged since the first release) and are recorded compacted, never
+// longer, and its citations are bounded at MaxCitesBytes. Its disposition comes
+// from a pack admitted under the same limit. What no input limit bounds is the
+// trace notes: the evaluation work limit bounds how many there are, and a pack
+// spells their pointers, so a pack built for it, quantifying under the RFC 0008
+// prototype over a collection with long pointers, can make a record longer
+// than the bound. The writer refuses such a record rather than write it
+// (ErrRecordTooLarge), so the longest line a chaining writer leaves is the
+// bound. A line over it in a trail, which a runtime before the chain or a
+// writer with chain off could have left, is refused rather than read
+// (ErrOversizedLine): moving that trail aside starts a new one. A test lowers
+// the bound.
+var maxLineBytes int64 = 128 << 20
 
 // readChunk is how much of the trail one read takes while looking for the last
 // line's start or hashing the file.
@@ -891,8 +942,8 @@ func readHead(contents io.ReaderAt, size int64) (head, error) {
 }
 
 // lastLine reads the trail's last line, without its newline, refusing a trail
-// whose last byte is not a newline. It answers nil for a line longer than
-// maxLineBytes, which is not read.
+// whose last byte is not a newline and a last line longer than maxLineBytes,
+// which is not read: looking for its start stops once it is past the bound.
 func lastLine(contents io.ReaderAt, size int64) ([]byte, error) {
 	var final [1]byte
 	if err := readAt(contents, final[:], size-1); err != nil {
@@ -906,7 +957,7 @@ func lastLine(contents io.ReaderAt, size int64) ([]byte, error) {
 	chunk := make([]byte, readChunk)
 	for cursor := end; cursor > 0; {
 		if end-cursor > maxLineBytes {
-			return nil, nil
+			return nil, ErrOversizedLine
 		}
 		n := min(int64(len(chunk)), cursor)
 		if err := readAt(contents, chunk[:n], cursor-n); err != nil {
@@ -919,7 +970,7 @@ func lastLine(contents io.ReaderAt, size int64) ([]byte, error) {
 		cursor -= n
 	}
 	if end-start > maxLineBytes {
-		return nil, nil
+		return nil, ErrOversizedLine
 	}
 	line := make([]byte, end-start)
 	if err := readAt(contents, line, start); err != nil {
@@ -934,31 +985,31 @@ func readAt(contents io.ReaderAt, into []byte, offset int64) error {
 	return err
 }
 
-// trailMember is the spelling of the trail member in a line this runtime
-// wrote; a line without it is not read for one.
-var trailMember = []byte(`"trail":`)
-
 // readPrefix reads the whole trail once: the SHA-256 of all of it, the number
 // of lines, and the identity of the last chained line in it, or "" when there
 // is none. The trail's last byte is a newline, which lastLine has already
 // checked, so every line is counted.
+//
+// Every line is read by chainedLine, the one rule readHead reads the last line
+// by, and nothing narrower filters what reaches it: a line one path takes for
+// chained, the other must too, or a chain started again would take a new
+// identity over a chained line written in a spelling the filter did not
+// expect. A line longer than maxLineBytes is refused, ErrOversizedLine, for
+// lastLine's reason. Reading every line costs one parse per line, and is paid
+// only when a chain starts or starts again.
 func readPrefix(contents io.ReaderAt, size int64) (string, int64, string, error) {
 	hash := sha256.New()
 	reader := bufio.NewReaderSize(io.NewSectionReader(contents, 0, size), readChunk)
 	var lines int64
 	trail := ""
 	line := []byte{}
-	long := false
 	for {
 		piece, err := reader.ReadSlice('\n')
 		hash.Write(piece)
-		if !long {
-			if len(line)+len(piece) > maxLineBytes+1 {
-				long, line = true, line[:0]
-			} else {
-				line = append(line, piece...)
-			}
+		if int64(len(line)+len(piece)) > maxLineBytes+1 {
+			return "", 0, "", ErrOversizedLine
 		}
+		line = append(line, piece...)
 		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
 		}
@@ -969,12 +1020,10 @@ func readPrefix(contents io.ReaderAt, size int64) (string, int64, string, error)
 			return "", 0, "", err
 		}
 		lines++
-		if !long && bytes.Contains(line, trailMember) {
-			if found, _, ok := chainedLine(line[:len(line)-1]); ok {
-				trail = found
-			}
+		if found, _, ok := chainedLine(line[:len(line)-1]); ok {
+			trail = found
 		}
-		line, long = line[:0], false
+		line = line[:0]
 	}
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), lines, trail, nil
 }
@@ -984,6 +1033,13 @@ func readPrefix(contents io.ReaderAt, size int64) (string, int64, string, error)
 // object naming each member exactly once, so a line two readers could read two
 // ways is not chained. The sequence stops short of 2^53-1 so the next one is
 // still an integer every JSON reader holds exactly.
+//
+// The rule is about the JSON value, never about the bytes' layout: whitespace
+// between tokens and an escape in a member's name are read as JSON reads them.
+// That is how a verifier reads a record, by its members, as Runner and the
+// gateway read records today; a writer that recognised fewer lines than the
+// verifier would start a chain again over a line the verifier holds to be
+// chained, and the verifier would report a break the writer made.
 func chainedLine(line []byte) (string, int64, bool) {
 	if len(line) == 0 || !json.Valid(line) {
 		return "", 0, false

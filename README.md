@@ -536,15 +536,20 @@ newline). A trail written before chaining is never rewritten: the first chained 
 the whole file before it at once, so its `previous` is the SHA-256 of the file as it stood. A record
 is otherwise byte for byte what it was, and `recordVersion` stays `"1"`. The writer holds an
 exclusive, cooperative lock on the trail while it reads the last line, numbers the lines it writes
-(a graph run's nodes, then its composite), writes and syncs. It refuses to append after a last line
-with no newline, a write that did not complete (`JPS-AUDIT-WRITE`, exit 4, with a message saying
-so), and where no lock can be taken it writes records unchained. A project that does not want the
-chain sets `"audit": { "dir": "audit", "chain": false }` under configVersion `"6"`. The chain lets a
-reader detect an edited, inserted, deleted or reordered line. It does not show that a trail is
-complete or was not rewritten whole: that needs a checkpoint someone other than the operator holds,
-which this runtime does not make yet (#208), and nothing in this runtime checks a chain yet
-(`jpack audit verify`, #207). Keep the trail, and anything copied from it, byte for byte: a decoded
-and re-encoded line is other bytes with another digest.
+(a graph run's nodes, then its composite), writes, and syncs the file and its directory. It refuses
+to append (`JPS-AUDIT-WRITE`, exit 4, with a message saying why) after a last line with no newline,
+a write that did not complete; when a line it must read is longer than 128 MiB, or the record would
+be; and when the lock cannot be taken for a reason that may pass. Only where the platform or file
+system offers no lock at all does it write records unchained. A project that does not want the chain
+sets `"audit": { "dir": "audit", "chain": false }` under configVersion `"6"`. Recomputing each
+`previous` shows whether the lines are consistent with one another: a line edited, inserted, deleted
+or moved anywhere before the last breaks a link. That is not authenticated history. The last line
+can be edited without breaking any link, and a trail cut short, or rewritten from any line on with
+its links recomputed, is as consistent as the real one; only a commitment held by someone other than
+the operator, covering those lines, tells them apart, and this runtime does not make one yet (#208).
+Nothing in this runtime checks the links yet either (`jpack audit verify`, #207). Keep the trail,
+and anything copied from it, byte for byte: a decoded and re-encoded line is other bytes with
+another digest.
 
 **Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
 as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never
