@@ -364,7 +364,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 				Evidence:         evidence,
 				EvidenceSupplied: evidencePath != "",
 			}, cites, pack, nil); err != nil {
-				return a.operational("experimental evaluate", format, result.ExitIO, audit.FailureCode, audit.FailureMessage)
+				return a.operational("experimental evaluate", format, result.ExitIO, audit.FailureCode, audit.FailureMessageFor(err))
 			}
 			if err := a.renderEvaluation(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}

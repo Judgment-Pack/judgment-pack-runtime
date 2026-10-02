@@ -3,9 +3,10 @@
 // none of them may leave it.
 //
 // Nearly everything here reads. The exceptions are the two writes a project can
-// ask this runtime to make, both into that project's own tree: Root.Append with
-// the Root.MakeDir that prepares its directory, for the audit trail of ADR-0018,
-// and Root.Replace, for the generated reviewed-set lock of ADR-0019. They are in
+// ask this runtime to make, both into that project's own tree: Root.Append, or
+// Root.AppendLocked when the trail is chained (ADR-0047), with the Root.MakeDir
+// that prepares its directory, for the audit trail of ADR-0018, and
+// Root.Replace, for the generated reviewed-set lock of ADR-0019. They are in
 // this package rather than at the surfaces that call them precisely because the
 // containment rule is not weaker for a write: the same handle, the same lexical
 // refusal, the same final-component checks, and no pathname handed to anything.

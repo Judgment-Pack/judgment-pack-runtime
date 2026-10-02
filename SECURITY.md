@@ -78,6 +78,20 @@ every record carries a run id and a graph run's composite is its commit marker: 
 complete run from an abandoned one by that rule, stated in `internal/audit`'s package
 documentation, and not by trusting the writer to have been atomic.
 
+The trail is chained unless the project's configuration says `"chain": false`
+([ADR-0047](docs/adr/0047-make-a-decision-record-defensible.md)): each record carries the trail's
+identity, its line number, and the SHA-256 of the exact bytes of the line before it, and the first
+chained record after earlier lines commits to all of them at once. The writer takes an exclusive
+advisory lock on the trail file for the read, the numbering, the write and the syncs, so cooperating
+writers never chain two records to one line; the lock does nothing against a process that writes
+without it. It refuses to chain after an incomplete last line, and it appends unchained only where
+the platform or file system offers no lock at all. What the links give is consistency between lines,
+not authenticated history: an edit to any line but the last breaks a link, but anyone who can write
+the trail can edit its last line, cut it short, or rewrite it from any line on with its links
+recomputed, and the result is as consistent as the original. Only a commitment to the trail held
+outside the operator's reach, covering the lines in question, shows that (ADR-0047 §2a; not yet
+built). This runtime also does not yet check the links.
+
 The records deliberately contain the facts and evidence documents that were evaluated: they are the
 project's own trail, written where the project asked, and they are not diagnostics. Human
 diagnostics remain sanitized and value-free, and a failed append is reported as an input/output

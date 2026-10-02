@@ -57,8 +57,9 @@ different path in a CI job, and a blob of text a model was handed. With it, all 
 it does not name is rejected, so a misspelled key is an error rather than an intention silently
 dropped. `configVersion` is a single integer as a string — `"1"` is the shape without graphs, `"2"`
 the shape with them (ADR-0017), `"3"` the shape that may also ask for an audit trail
-(ADR-0018), `"4"` the shape that may also require the reviewed set (ADR-0044), and `"5"` the shape
-that may also require comparable facts (ADR-0046); this runtime reads all five. There is no minor or patch
+(ADR-0018), `"4"` the shape that may also require the reviewed set (ADR-0044), `"5"` the shape
+that may also require comparable facts (ADR-0046), and `"6"` the shape whose audit member may also
+say whether its trail is chained (ADR-0047); this runtime reads all six. There is no minor or patch
 component, because there is nothing to negotiate: a program either knows the shape or does not.
 
 Three things the file deliberately does **not** have:
@@ -831,6 +832,81 @@ a graph run that is what marks the run finished — the `graph-composite` line c
 its nodes' lines, so node lines whose id has no composite belong to a run that did not complete, and
 a trailing line that is not whole JSON is a write that did not complete. Read a trail by that rule
 rather than by assuming every line is a decision.
+
+### The chain
+
+The trail is chained (ADR-0047 §1). Each line this runtime appends also carries three members, right
+after `recordVersion`:
+
+- `trail`: the trail's identity, 128 random bits in hex, minted when the trail is first chained and
+  carried by every chained line after it;
+- `sequence`: the line's number in the file, counted from 1;
+- `previous`: the SHA-256 of the exact bytes of the line before it, without its newline, as
+  `sha256:<hex>`.
+
+The digest is over the bytes in the file, never over a decoded and re-encoded copy: a copy can spell
+`&` as `\u0026` or `1.0` as `1` and is then other bytes with another digest. So keep a trail, and any
+line you copy out of it, byte for byte. A line is otherwise exactly what it was before the chain
+existed, and `recordVersion` stays `"1"`.
+
+A trail you already have is never rewritten. The first chained line after lines that are not chained
+(lines written before this release, while chaining was off, or by a runtime that does not chain)
+commits to all of them at once: its `previous` is the SHA-256 of the whole file before it, which is
+what `sha256sum` prints for the file as it stood, and its `sequence` continues the line count. A new
+trail's first line has the SHA-256 of the empty string. A chain started again after unchained lines
+keeps the identity it had.
+
+The writer holds an exclusive, cooperative lock on the trail while it reads the last line, numbers
+every line it is writing (a graph run's node lines and its composite, the composite last), writes,
+and syncs the file and then its directory, so two runtimes writing one trail at once never give two
+lines one predecessor, and a record reported written is on disk with the file's entry. The lock
+binds only writers that take it. A line is recognised as chained by its JSON members, however it is
+spelled, the same way whether the chain is being continued or started again. What follows:
+
+- **A torn last line stops the trail.** If the trail's last line has no newline, which is what a
+  write cut short leaves, no line is chained after it: every recording run is refused with
+  `JPS-AUDIT-WRITE`, exit 4, and a message that says so, and the trail is left as it was. Until
+  `jpack audit repair` exists (#207), move the damaged file aside and keep it; the next record then
+  starts a new trail.
+- **A line too long to read stops the trail too.** A line longer than 128 MiB that the writer must
+  read to continue the chain is refused rather than taken for unchained, with the same code and a
+  message that says so. The writer never writes a line that long: a record that would be one, which
+  only a pack built for it can produce, is refused instead.
+- **A lock that cannot be taken now refuses the run.** If the lock exists but cannot be taken, for
+  example because the system has run out of lock records, the run is refused rather than recorded
+  without it.
+- **Where no lock exists, nothing is chained.** On a platform or file system that offers no
+  exclusive lock at all, records are written as before, without the three members.
+- **A failed sync is a failed write.** If the file or its directory cannot be synced, the run is
+  refused. The record's bytes are in the file by then and stay, as for any write that fails after it
+  started.
+
+A project that does not want the chain says so under configVersion `"6"`:
+
+```json
+{
+  "configVersion": "6",
+  "audit": { "dir": "audit", "chain": false },
+  "packs": {}
+}
+```
+
+With `"chain": false` the trail is written exactly as before this release: no members, no lock, and
+nothing read. A trail written that way stays readable, and it is unchained.
+
+What the chain lets someone show, and what it does not:
+
+- Recomputing each `previous` shows whether the lines are consistent with one another: a line
+  edited, inserted, deleted or moved anywhere before the last breaks the link of the line after it.
+- That is consistency, not authenticated history. The last line can be edited without breaking any
+  link, and a trail cut short, or rewritten from any line on with its links recomputed, is as
+  consistent as the real one. Telling them apart takes a checkpoint covering those lines (the trail's
+  identity, a sequence and that line's digest) held by someone other than the operator, and this
+  runtime does not make one yet (#208).
+- This runtime does not yet check a chain: `jpack audit verify` is #207. Until then the members are
+  there to be checked, and nothing reports on them.
+- A record's `at` is still the operator's clock, and the chain says nothing about decisions that were
+  never written to the trail.
 
 The records hold your input documents. That is what they are for, and it is why the directory is
 one you name rather than one this runtime picks: the human-readable diagnostics stay sanitized and

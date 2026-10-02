@@ -115,10 +115,10 @@ type Options struct {
 // asked to be told what its packs decided is not served by a disposition it
 // was never told about, and the evaluation itself is untouched either way —
 // every node had already been evaluated when this is reached.
-func auditWriteFailure() *evaluation.Failure {
+func auditWriteFailure(err error) *evaluation.Failure {
 	return &evaluation.Failure{
 		Code:     audit.FailureCode,
-		Message:  audit.FailureMessage,
+		Message:  audit.FailureMessageFor(err),
 		ExitCode: result.ExitIO,
 	}
 }
@@ -389,7 +389,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 				Node:          nodeID,
 			})
 			if err != nil {
-				return result.GraphEvaluation{}, auditWriteFailure()
+				return result.GraphEvaluation{}, auditWriteFailure(err)
 			}
 			records = append(records, record)
 		}
@@ -455,10 +455,10 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 	if options.Audit != nil {
 		composite, err := audit.CompositeRecord(output, doc.Digest, options.Cites)
 		if err != nil {
-			return result.GraphEvaluation{}, auditWriteFailure()
+			return result.GraphEvaluation{}, auditWriteFailure(err)
 		}
 		if err := options.Audit.AppendAll(append(records, composite)); err != nil {
-			return result.GraphEvaluation{}, auditWriteFailure()
+			return result.GraphEvaluation{}, auditWriteFailure(err)
 		}
 	}
 	return output, nil

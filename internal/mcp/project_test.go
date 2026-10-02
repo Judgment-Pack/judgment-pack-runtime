@@ -450,7 +450,7 @@ func quoteJSON(t *testing.T, value string) string {
 func TestABrokenConfigurationIsAToolError(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, project.DefaultConfigName)
-	if err := os.WriteFile(configPath, []byte(`{"configVersion":"6","packs":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"7","packs":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(project.ConfigEnv, configPath)
@@ -537,6 +537,14 @@ func TestExperimentalEvaluateRecordsWhatTheProjectAskedFor(t *testing.T) {
 	if !strings.Contains(lines[0], `"disposition":`+string(canonical)) {
 		t.Fatalf("the record must embed the call's own canonical disposition %s: %q", canonical, lines[0])
 	}
+	// The tool's records are chained like every other surface's (ADR-0047).
+	var second struct {
+		Sequence int64  `json:"sequence"`
+		Previous string `json:"previous"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &second); err != nil || second.Sequence != 2 || second.Previous != audit.Digest([]byte(lines[0])) {
+		t.Fatalf("the second record links to the first line's bytes: %q (%v)", lines[1], err)
+	}
 
 	// A record that cannot be written refuses the call, and the disposition
 	// does not come back without it.
@@ -570,6 +578,32 @@ func TestExperimentalEvaluateRecordsWhatTheProjectAskedFor(t *testing.T) {
 	if envelope.Status != "error" || len(envelope.Diagnostics) != 1 ||
 		envelope.Diagnostics[0].Code != audit.FailureCode || envelope.Disposition != nil {
 		t.Fatalf("refusal envelope = %+v (%#v)", envelope, refused["structuredContent"])
+	}
+
+	// A trail whose last line is incomplete refuses the call under the same
+	// code, and the message says why.
+	torn := t.TempDir()
+	if err := os.WriteFile(filepath.Join(torn, "packs.json"), pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(torn, "audit"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(torn, "audit", audit.FileName), []byte(`{"recordVersion":"1","run":"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tornConfig := filepath.Join(torn, project.DefaultConfigName)
+	if err := os.WriteFile(tornConfig, []byte(`{"configVersion":"3","audit":{"dir":"audit"},"packs":{"intake":{"path":"packs.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(project.ConfigEnv, tornConfig)
+	refused = runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}))[0]["result"].(map[string]any)
+	if refused["isError"] != true || toolText(t, refused) != audit.FailureMessageFor(audit.ErrIncompleteLastLine) {
+		t.Fatalf("an incomplete last line refuses the call and says so: %#v", refused)
+	}
+	decodeStructured(t, refused, &envelope)
+	if len(envelope.Diagnostics) != 1 || envelope.Diagnostics[0].Code != audit.FailureCode || envelope.Disposition != nil {
+		t.Fatalf("refusal envelope = %+v", envelope)
 	}
 }
 

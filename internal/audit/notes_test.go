@@ -192,6 +192,9 @@ func TestARecordWithoutNotesIsByteForByteWhatItWas(t *testing.T) {
 	for name, record := range map[string]Record{"an evaluation": evaluation, "an empty trace": empty, "a composite": composite} {
 		t.Run(name, func(t *testing.T) {
 			writer, root := writerAt(t, "audit")
+			// The chain's three members are the chain tests' to hold to the
+			// former bytes (chain_test.go); this one holds the notes.
+			writer.chain = false
 			writer.UnderLaw(&reviewed, &ReviewedSet{LockDigest: "sha256:" + strings.Repeat("c", 64), LockVersion: "1", ConfigDigest: "sha256:" + strings.Repeat("d", 64)})
 			if err := writer.Append(record); err != nil {
 				t.Fatal(err)
