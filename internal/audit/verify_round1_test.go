@@ -196,6 +196,13 @@ func TestALineOverTheBoundIsRefusedEvenWhenNamedDamaged(t *testing.T) {
 	if err != nil || chain.Status != "invalid" || strings.Join(findingNames(chain), " ") != "line-too-long@1 discontinuity-malformed@2" || chain.DiscontinuitiesTotal != 0 {
 		t.Fatalf("named damaged: %v %v", findingNames(chain), err)
 	}
+	// Naming it with a short length is no way round: the line itself is over
+	// the bound, whatever the discontinuity claims.
+	short := repeated{fill: 'x', count: over, tail: append([]byte("\n"), discontinuityNaming(t, 5, Digest([]byte("short")))...)}
+	chain, err = Verify(short, short.size(), nil)
+	if err != nil || strings.Join(findingNames(chain), " ") != "line-too-long@1 discontinuity-malformed@2" {
+		t.Fatalf("named damaged with a short length: %v %v", findingNames(chain), err)
+	}
 	at := maxLineBytes
 	atBound := repeated{fill: 'x', count: at, tail: append([]byte("\n"), discontinuityNaming(t, at, digestOfFill('x', at))...)}
 	chain, err = Verify(atBound, atBound.size(), nil)
