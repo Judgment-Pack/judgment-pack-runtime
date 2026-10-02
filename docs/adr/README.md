@@ -143,3 +143,4 @@ authority, and following it confers no conformance status on anything.
 | [0044](0044-say-and-require-the-reviewed-set.md) | Say in the payload whether the reviewed set was applied, and let a project require it | accepted; configVersion value list and schema `$id` extended by [0046](0046-record-type-notes-and-let-a-project-refuse-incomparable-facts.md) |
 | [0045](0045-compare-two-versions-of-a-pack.md) | Compare what two versions of a pack decide for the same inputs | accepted |
 | [0046](0046-record-type-notes-and-let-a-project-refuse-incomparable-facts.md) | Keep the trace's type and unknown notes on the audit record, and let a project refuse a fact no comparison can match | accepted |
+| [0047](0047-make-a-decision-record-defensible.md) | Make a decision record defensible to someone who does not trust its operator | accepted |
