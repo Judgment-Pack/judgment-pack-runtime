@@ -159,7 +159,11 @@ func buildAuthorPack(args map[string]string) string {
    comparisons (greater-than family) are defined only over decimal STRINGS matching
    -?(0|[1-9][0-9]*)(\.[0-9]+)? -- a JSON number on either side yields unknown, silently. The
    format has no arithmetic, no date/time comparison, and no quantifier over arrays: any such value
-   must be prepared upstream and supplied as a fact. Keep a PREPARED-FACTS ledger as you go: every
+   must be prepared upstream and supplied as a fact. Equality is type-exact: a fact of another JSON
+   type than the value it is compared with ("true" or 1 against true, or null) makes equals FALSE
+   and not-equals TRUE -- never unknown, so onUnknown does not catch it, and a detector written as
+   equals true falls through to the fallback. Where a caller supplies a Boolean, write the detector
+   as not(equals false), so that anything but an exact false fires it. Keep a PREPARED-FACTS ledger as you go: every
    fact that is computed or concluded rather than stated by the requester, and for each, whether
    producing it requires applying the policy itself (flag those loudly -- they are decision logic
    living outside your pack).
@@ -178,7 +182,7 @@ func buildAuthorPack(args map[string]string) string {
    changes no evaluation, so never edit it expecting behavior to change -- evidence is enforced by
    required: true or by an evidence-present condition, nothing else.
 
-7. LOOP. validate the draft; every diagnostic names its location and the fix; repair and repeat to
+7. LOOP. validate the draft; every diagnostic names its location, and most name the fix; repair and repeat to
    exit 0. Then evaluate against 2-3 realistic facts documents and check the dispositions match
    your intent -- including one probe with a load-bearing fact REMOVED, which should escalate, not
    guess.

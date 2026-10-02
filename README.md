@@ -478,7 +478,8 @@ The file is selected by `--config`, then `JPACK_CONFIG`, then `./jpack.json`. It
 and printable with `jpack packs schema`: every member it does not name is rejected.
 `configVersion` is a single integer as a string, on the `outputVersion` precedent rather than
 semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with them (ADR-0017), `"3"`
-the shape that may also ask for an audit trail (ADR-0018), and this runtime reads all three.
+the shape that may also ask for an audit trail (ADR-0018), `"4"` the shape that may also require the
+reviewed set (ADR-0044), and this runtime reads all four.
 
 There is **no templating, no target or environment blocks, and no selection**. A templated pack was
 never the pack anyone reviewed; environments are one file per environment by convention
@@ -593,8 +594,8 @@ reported *mismatch* instead; ADR-0042), and a `packs test` run in which no row r
 *skipped* and exits `1` unless a mismatch was found: a green gate over zero rows would say a project
 was tested when nothing was. A new project may start with an empty `packs` object: inventory and structural
 validation accept it, while `packs test` remains skipped with exit `1`. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no
-source feeds raises no error anywhere — the condition is unknowable, every rule touching it
-escalates, and the system looks conservative rather than broken — so the lint holds every consulted
+source feeds raises no error anywhere — the condition is unknowable, so a rule touching it
+escalates, or under `onUnknown: ignore` is skipped and the fallback answers without it — so the lint holds every consulted
 pointer to a producer declaration (the configuration's own hints, or an explicit `--producers`
 manifest) and fails the build where that defect otherwise hides (ADR-0022).
 

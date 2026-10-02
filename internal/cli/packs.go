@@ -200,8 +200,8 @@ func (a *App) packsSuggestCommand() *cobra.Command {
 // the inverse of validate's hint-key check. validate holds the declared
 // hints to the document; lint holds the document's consulted pointers to a
 // producer declaration, because the defect it catches never errors on its
-// own: a pointer no source feeds is merely unknowable, every rule touching
-// it escalates, and the system looks conservative rather than broken.
+// own: a pointer no source feeds is merely unknowable, so a rule touching it
+// escalates, or under onUnknown ignore is skipped and the fallback answers.
 func (a *App) packsLintCommand() *cobra.Command {
 	format := "human"
 	id := ""
@@ -220,8 +220,8 @@ func (a *App) packsLintCommand() *cobra.Command {
 			"declares the pointer and the whole subtree beneath it — the lint checks declarations, never running " +
 			"systems — and a consulted entry may be a condition-shaped value the pack carries as data (ADR-0020), " +
 			"which fails here until it is declared or restructured. A consulted pointer no producer supplies " +
-			"never errors at run time: the condition is unknowable, every rule touching it escalates, and the " +
-			"system looks conservative rather than broken — this command is where that defect fails loudly " +
+			"never errors at run time: the condition is unknowable, so a rule touching it escalates, or under " +
+			"onUnknown ignore is skipped and the fallback answers without it — this command is where that defect fails loudly " +
 			"instead. A pack using draft-RFC collection quantifiers reports its fact half as skipped rather than " +
 			"checked, because element-relative pointers cannot be held to a flat producer set (ADR-0020, " +
 			"ADR-0022); a skipped check is reported, never silently passed. The project-wide evidence check " +

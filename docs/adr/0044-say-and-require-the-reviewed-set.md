@@ -89,7 +89,8 @@ extended by `"4"`, as ADR-0018 extended ADR-0017's.
 
 - Good, because a caller learns from the payload which law decided, without reading the trail and in
   a project with no trail.
-- Good, because a project that hands its tools to an agent can keep the agent to reviewed law, and
+- Good, because a project that hands its tools to an agent can keep the agent's recorded decisions to
+  reviewed law (a rehearsal or a test surface still answers under a draft, as stated above), and
   the author's loop moves to `--rehearsal`, which already exists and already records nothing.
 - Bad, because a project that sets the member and has no lock refuses every deciding run until it
   runs `packs lock`; the refusal says so.

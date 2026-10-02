@@ -13,9 +13,9 @@ import (
 // The producer-lint checks (ADR-0022). Lint is the inverse of packs
 // validate's hint-key check: validate holds every declared hint to the
 // document, and lint holds every consulted pointer to a producer — the
-// defect it catches otherwise presents as a system that looks conservative
-// rather than broken, because a pointer no source feeds makes every rule
-// touching it escalate without a single error.
+// defect it catches otherwise raises no error: a pointer no source feeds makes
+// every rule touching it unknown, which escalates under onUnknown escalate and
+// lets the fallback answer under onUnknown ignore.
 const (
 	CheckFactProducers     = "fact-producers"
 	CheckEvidenceProducers = "evidence-producers"
@@ -371,7 +371,7 @@ func (p *Project) lintPack(manifest *Producers, id string, entry Pack) (result.P
 		}
 		if len(missing) > 0 {
 			add(CheckFactProducers, result.PackCheckFailed,
-				"A consulted pointer no producer supplies never errors at run time — the condition is unknowable, every rule touching it escalates, and the system looks conservative rather than broken. Unproduced: "+
+				"A consulted pointer no producer supplies never errors at run time — the condition is unknowable: a rule touching it under onUnknown escalate stops the decision, and one under onUnknown ignore is skipped, so the pack may reach its fallback without the fact. Either way nothing looks broken. Unproduced: "+
 					strings.Join(missing, ", ")+". The consulted list over-approximates by design (ADR-0020), so an entry here may be a condition-shaped value the pack carries as data: declare it as a producer to acknowledge it, restructure the value, or fix the pack.")
 		} else if len(found.FactPaths) == 0 {
 			add(CheckFactProducers, result.PackCheckSkipped, "The pack consults no fact pointers.")
