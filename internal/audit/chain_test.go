@@ -493,6 +493,15 @@ func TestALineLongerThanTheBoundIsRefusedNotReadWhole(t *testing.T) {
 	if *far.read > maxLineBytes+2*readChunk {
 		t.Fatalf("the search read %d bytes of a line it was never going to read", *far.read)
 	}
+	// And the refusal is the head's own: the line is not read a second time,
+	// from the start of the file, on the way to the same answer.
+	again := syntheticLine{size: 64 * maxLineBytes, read: new(int64)}
+	if _, err := readHead(again, again.size); !errors.Is(err, ErrOversizedLine) {
+		t.Fatalf("an over-bound last line refuses the append: %v", err)
+	}
+	if *again.read > maxLineBytes+2*readChunk {
+		t.Fatalf("refusing the last line read %d bytes", *again.read)
+	}
 }
 
 // A valid chained record longer than the bound is never reinterpreted: as the
