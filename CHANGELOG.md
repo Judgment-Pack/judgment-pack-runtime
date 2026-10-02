@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.25.0 - 2026-10-02
 
 - **Six statements that said more than the program does, corrected** (#200), and the `author_pack`
   prompt now states the type trap (#199, item 3).
@@ -64,6 +64,11 @@ All notable changes to tagged releases are documented here.
   - The schema's `$id` is now `urn:judgmentpack:runtime:jpack-config:5`. Configurations under `"1"`
     to `"4"` read as before. The member under `"4"` or earlier is refused, and the refusal names
     `"5"`.
+- **ADR-0047 accepted: how a decision record becomes defensible to someone who does not trust its
+  operator** (#203). It is a design record only, and nothing in this release implements it: a
+  record written by this version is neither chained, signed nor witnessed. The chain writer,
+  `jpack audit verify`, independent checkpoints and detached signatures are tracked as #206 to
+  #209.
 
 ## 0.24.0 - 2026-10-01
 
