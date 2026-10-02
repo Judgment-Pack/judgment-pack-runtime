@@ -970,9 +970,21 @@ passes over it.
 A repair is refused when the last line is complete, so it never runs on a trail with nothing damaged
 at its end; a broken link elsewhere is for `audit verify` to report, not for a repair to paper over.
 It is refused too when the project's audit member says `"chain": false`, where no lock can be
-taken, and when the damaged bytes are longer than any line a chained trail holds. It works on the
-trail the project's `jpack.json` declares, never on a file named by path. Since anyone who can run
-it can run it at will, a discontinuity says a break was acknowledged, not why.
+taken, and when the damaged bytes are longer than any line a chained trail holds. And a repair does
+not repair a repair: when the incomplete last line is itself a discontinuity record whose write did
+not complete, it is refused (`JPS-AUDIT-REPAIR-DISCONTINUITY`). A discontinuity decides which line
+is not held to the chain, so one that could itself be named damaged would leave the line it excused,
+and everything that line binds, checked by nothing; `audit verify` reports a discontinuity naming
+another discontinuity, or naming a line over the bound, as malformed and excuses nothing. Move such a
+trail aside and keep it, and the next record starts a new one. A repair works on the trail the
+project's `jpack.json` declares, never on a file named by path. Since anyone who can run it can run
+it at will, a discontinuity says a break was acknowledged, not why.
+
+A report lists the first hundred discontinuities and segments, as it lists the first hundred
+findings, and counts them all (`discontinuitiesTotal`, `segmentsTotal`), so a trail of many repairs
+costs a verification no more memory than a trail of few. Line endings are bytes too: a trail whose
+newlines were converted to CRLF, as a checkout can convert them, is a different trail and does not
+verify; keep trails out of any line-ending conversion.
 
 None of the three commands is offered as an MCP tool: a verification an agent runs on the trail of
 the server it is using shows nothing to someone who does not trust that server's operator, which is

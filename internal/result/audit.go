@@ -91,20 +91,24 @@ type AuditExpectation struct {
 // every check passed and the trail has no discontinuity, "segmented" when every
 // check passed and it has at least one, and "invalid" when any check failed.
 type AuditChain struct {
-	Status           string               `json:"status"`
-	Scope            string               `json:"scope"`
-	Lines            int64                `json:"lines"`
-	Bytes            int64                `json:"bytes"`
-	Trail            string               `json:"trail,omitempty"`
-	Head             *AuditCheckpoint     `json:"head,omitempty"`
-	Coverage         AuditCoverage        `json:"coverage"`
-	Segments         []AuditSegment       `json:"segments"`
-	Discontinuities  []AuditDiscontinuity `json:"discontinuities"`
-	Expect           *AuditExpectation    `json:"expect,omitempty"`
-	Findings         []AuditFinding       `json:"findings"`
-	FindingsTotal    int                  `json:"findingsTotal"`
-	Establishes      []string             `json:"establishes"`
-	DoesNotEstablish []string             `json:"doesNotEstablish"`
+	Status          string               `json:"status"`
+	Scope           string               `json:"scope"`
+	Lines           int64                `json:"lines"`
+	Bytes           int64                `json:"bytes"`
+	Trail           string               `json:"trail,omitempty"`
+	Head            *AuditCheckpoint     `json:"head,omitempty"`
+	Coverage        AuditCoverage        `json:"coverage"`
+	Segments        []AuditSegment       `json:"segments"`
+	SegmentsTotal   int64                `json:"segmentsTotal"`
+	Discontinuities []AuditDiscontinuity `json:"discontinuities"`
+	// DiscontinuitiesTotal counts every discontinuity; Discontinuities and
+	// Segments list the first hundred of each, as Findings does.
+	DiscontinuitiesTotal int64             `json:"discontinuitiesTotal"`
+	Expect               *AuditExpectation `json:"expect,omitempty"`
+	Findings             []AuditFinding    `json:"findings"`
+	FindingsTotal        int               `json:"findingsTotal"`
+	Establishes          []string          `json:"establishes"`
+	DoesNotEstablish     []string          `json:"doesNotEstablish"`
 }
 
 // AuditVerification is jpack audit verify's payload: the chain as read, which

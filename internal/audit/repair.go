@@ -2,8 +2,6 @@ package audit
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -30,6 +28,15 @@ var (
 	ErrRepairNeedsLock = errors.New("no lock can be taken on the audit trail, so it cannot be repaired safely")
 	// ErrNoTrail is a project whose trail has not been written yet.
 	ErrNoTrail = errors.New("the audit trail does not exist")
+	// ErrRepairDiscontinuity is an incomplete last line that is itself a
+	// discontinuity record: a repair whose own write did not complete. A
+	// repair does not repair a repair. A discontinuity decides which line is
+	// not held to the chain, so one that could itself be named damaged would
+	// leave the line it excused, and everything that line binds, checked by
+	// nothing; Verify refuses a discontinuity naming one, and repair refuses
+	// to write it. The trail is moved aside and kept, and the next record
+	// starts a new one.
+	ErrRepairDiscontinuity = errors.New("the audit trail's incomplete last line is a discontinuity record, which a repair does not repair")
 )
 
 // discontinuityRecord is the line audit repair appends. Its chain members come
@@ -124,21 +131,27 @@ func (w *Writer) discontinuityAfter(contents io.ReaderAt, size int64) ([]byte, r
 	if err != nil {
 		return nil, result.AuditDiscontinuity{}, err
 	}
+	damage := make([]byte, size-start)
+	if err := readAt(contents, damage, start); err != nil {
+		return nil, result.AuditDiscontinuity{}, err
+	}
+	if _, members, _ := readLink(damage); members != nil {
+		var kind string
+		if decodeString(members["kind"], &kind) == nil && kind == KindDiscontinuity {
+			return nil, result.AuditDiscontinuity{}, ErrRepairDiscontinuity
+		}
+	}
 	// What a record in the damaged line's place would have followed: the
 	// writer's own reading of the trail before it.
 	before, err := readHead(io.NewSectionReader(contents, 0, start), start)
 	if err != nil {
 		return nil, result.AuditDiscontinuity{}, err
 	}
-	hash := sha256.New()
-	if _, err := io.Copy(hash, io.NewSectionReader(contents, start, size-start)); err != nil {
-		return nil, result.AuditDiscontinuity{}, err
-	}
 	damaged := discontinuity{
 		Reason: ReasonIncompleteLastLine,
 		Line:   before.sequence + 1,
-		Bytes:  size - start,
-		Digest: "sha256:" + hex.EncodeToString(hash.Sum(nil)),
+		Bytes:  int64(len(damage)),
+		Digest: Digest(damage),
 	}
 	current := result.CurrentTool()
 	record := discontinuityRecord{

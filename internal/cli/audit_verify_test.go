@@ -261,3 +261,59 @@ func TestAuditCommandsRefuseWhatTheyCannotActOn(t *testing.T) {
 		})
 	}
 }
+
+// A repair whose own write did not complete is not repaired: the command says
+// so under its own code and appends nothing.
+func TestAuditRepairDoesNotRepairARepair(t *testing.T) {
+	configPath, trail := recordedProject(t, 1)
+	strip := func() {
+		t.Helper()
+		data, err := os.ReadFile(trail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(trail, bytes.TrimSuffix(data, []byte("\n")), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	strip()
+	if code, stdout, _ := runTest(t, []string{"audit", "repair", "--config", configPath, "--format", "json"}, ""); code != 0 {
+		t.Fatalf("the first repair: exit=%d %q", code, stdout)
+	}
+	strip()
+	before, err := os.ReadFile(trail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, _ := runTest(t, []string{"audit", "repair", "--config", configPath, "--format", "json"}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, `"JPS-AUDIT-REPAIR-DISCONTINUITY"`) {
+		t.Fatalf("exit=%d %q", code, stdout)
+	}
+	if after, err := os.ReadFile(trail); err != nil || !bytes.Equal(after, before) {
+		t.Fatal("a refused repair appends nothing")
+	}
+}
+
+// Human output lists what the payload lists and says how many discontinuities
+// and segments it did not.
+func TestAuditVerifySaysWhatItDidNotList(t *testing.T) {
+	app := &App{}
+	var out bytes.Buffer
+	app.out = &out
+	output := result.AuditVerification{TrailPath: "trail.jsonl", SnapshotBetweenWrites: true}
+	output.Status = "segmented"
+	output.DiscontinuitiesTotal, output.SegmentsTotal = 150, 151
+	for index := range 100 {
+		line := int64(2*index + 2)
+		output.Discontinuities = append(output.Discontinuities, result.AuditDiscontinuity{Line: line, DamagedLine: line - 1, Reason: audit.ReasonIncompleteLastLine})
+		output.Segments = append(output.Segments, result.AuditSegment{FirstLine: line, LastLine: line})
+	}
+	if err := app.renderAuditVerification("human", output); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	if !strings.HasPrefix(text, "SEGMENTED: 150 discontinuity record(s)") || !strings.Contains(text, "segment: and 51 more, not listed") ||
+		!strings.Contains(text, "discontinuity: and 50 more, not listed") {
+		t.Fatalf("human output: %q", text)
+	}
+}

@@ -563,7 +563,8 @@ SHA-256 of its exact bytes, for handing to someone who will keep it. `jpack audi
 at that sequence, and reports the lines up to it as checkpointed. The coverage it reports names
 signatures as not available (#209); time-stamped checkpoints are #208. After a write that did not
 complete, `jpack audit repair` keeps the damaged bytes in place as a line of their own and appends
-a discontinuity record that names their digest and links over them, so the writer goes on;
+a discontinuity record that names their digest and links over them, so the writer goes on (it never
+repairs a torn discontinuity, since a repair does not repair a repair);
 `verify` then reports the trail as segments, never as intact across the break. A discontinuity line
 records no decision: it has `kind` `"discontinuity"` and no pack, inputs or disposition.
 

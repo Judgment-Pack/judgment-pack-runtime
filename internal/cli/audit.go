@@ -174,7 +174,7 @@ func (a *App) auditRepairCommand() *cobra.Command {
 			"Nothing is removed or rewritten: under the writer's lock, the damaged bytes are ended with a newline and kept in place as a line of their own, and a discontinuity record is appended after them, naming that line, its length and the SHA-256 of its bytes, and linking over it to what a record in its place would have followed. " +
 			"The writer then chains after the discontinuity, and jpack audit verify reports the trail as segments, never as intact across it. " +
 			"It is refused when the last line is complete, so it never runs on a trail with nothing damaged at its end; a broken link elsewhere is not repaired, since jpack audit verify reports it and nothing appended after it would make it less broken. " +
-			"It is refused too for a project whose audit member says chain false, where no lock can be taken, and when the damaged bytes are longer than any line a chained trail holds. " +
+			"It is refused too for a project whose audit member says chain false, where no lock can be taken, when the damaged bytes are longer than any line a chained trail holds, and when the incomplete last line is itself a discontinuity record whose write did not complete: a repair does not repair a repair, since a discontinuity that could be named damaged would leave the line it excused checked by nothing. Move such a trail aside and keep it. " +
 			"It works only on the trail the project's jpack.json declares.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -200,6 +200,8 @@ func (a *App) auditRepairCommand() *cobra.Command {
 				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-REPAIR-NO-LOCK", "No lock can be taken on the trail here, so it cannot be repaired without risking a writer appending in between.")
 			case errors.Is(err, audit.ErrOversizedLine):
 				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-REPAIR-TOO-LONG", "The damaged bytes are longer than any line a chained trail holds; move the trail aside and keep it, and the next record starts a new one.")
+			case errors.Is(err, audit.ErrRepairDiscontinuity):
+				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-REPAIR-DISCONTINUITY", "The incomplete last line is a discontinuity record whose own write did not complete, and a repair does not repair a repair; move the trail aside and keep it, and the next record starts a new one.")
 			case errors.Is(err, audit.ErrNoTrail):
 				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The project's audit trail could not be opened; no record may have been written yet.")
 			case err != nil:
@@ -322,7 +324,7 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 			fmt.Fprintf(a.out, "consistent: the integrity of one supplied chain, %d line(s)\n", output.Lines)
 		}
 	case "segmented":
-		fmt.Fprintf(a.out, "SEGMENTED: %d discontinuity record(s); the history is not intact across them, and each segment is consistent\n", len(output.Discontinuities))
+		fmt.Fprintf(a.out, "SEGMENTED: %d discontinuity record(s); the history is not intact across them, and each segment is consistent\n", output.DiscontinuitiesTotal)
 	default:
 		fmt.Fprintf(a.out, "INVALID: %d failed check(s)\n", output.FindingsTotal)
 	}
@@ -339,12 +341,18 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	if output.Head != nil {
 		fmt.Fprintf(a.out, "trail %s · last chained record: sequence %d, %s\n", output.Head.Trail, output.Head.Sequence, output.Head.RecordDigest)
 	}
-	if len(output.Discontinuities) > 0 {
+	if output.DiscontinuitiesTotal > 0 {
 		for _, segment := range output.Segments {
 			fmt.Fprintf(a.out, "segment: lines %d to %d\n", segment.FirstLine, segment.LastLine)
 		}
+		if omitted := output.SegmentsTotal - int64(len(output.Segments)); omitted > 0 {
+			fmt.Fprintf(a.out, "segment: and %d more, not listed\n", omitted)
+		}
 		for _, broken := range output.Discontinuities {
 			fmt.Fprintf(a.out, "discontinuity at line %d: line %d is damaged (%s), %d bytes, %s\n", broken.Line, broken.DamagedLine, broken.Reason, broken.Bytes, broken.Digest)
+		}
+		if omitted := output.DiscontinuitiesTotal - int64(len(output.Discontinuities)); omitted > 0 {
+			fmt.Fprintf(a.out, "discontinuity: and %d more, not listed\n", omitted)
 		}
 	}
 	for _, finding := range output.Findings {

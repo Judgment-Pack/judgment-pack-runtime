@@ -139,6 +139,10 @@ type seenLine struct {
 	// discontinuity there can name this line as damaged.
 	findings []result.AuditFinding
 	damaged  bool
+	// discontinuityKind says the line is a JSON object whose kind is
+	// discontinuity, whatever else it holds: no discontinuity may name such a
+	// line as damaged.
+	discontinuityKind bool
 }
 
 // The rules a chained line's previous is held to, named in a finding.
@@ -162,9 +166,16 @@ type verifier struct {
 	pendingUnchained int64
 	firstChained     bool
 	coverage         result.AuditCoverage
-	discontinuities  []result.AuditDiscontinuity
 	findings         []result.AuditFinding
 	findingsTotal    int
+	// The discontinuities and the segments they split the trail into are
+	// listed up to maxListed each and counted in full, so a trail of many
+	// repairs costs a verification the same memory as a trail of few.
+	discontinuities      []result.AuditDiscontinuity
+	discontinuitiesTotal int64
+	segments             []result.AuditSegment
+	segmentsTotal        int64
+	segmentStart         int64
 	// earliestFinding is the lowest line any finding is about, or 0: a
 	// checkpoint is matched through its sequence only when no line up to it
 	// failed a check.
@@ -172,8 +183,12 @@ type verifier struct {
 }
 
 func newVerifier(expect *result.AuditCheckpoint) *verifier {
-	return &verifier{expect: expect, whole: sha256.New()}
+	return &verifier{expect: expect, whole: sha256.New(), segmentStart: 1}
 }
+
+// maxListed bounds the discontinuities and the segments a report lists, as
+// maxFindings bounds its findings; their totals are counted in full.
+const maxListed = 100
 
 // readLine reads one line and checks it, reporting whether the trail ended.
 func (v *verifier) readLine(reader *bufio.Reader) (bool, error) {
@@ -266,6 +281,8 @@ func (v *verifier) check(seen *seenLine, line []byte) {
 		return
 	}
 	found, members, ok := readLink(line)
+	var kind string
+	seen.discontinuityKind = members != nil && decodeString(members["kind"], &kind) == nil && kind == KindDiscontinuity
 	if !ok {
 		return
 	}
@@ -343,14 +360,32 @@ func discontinuityOf(members map[string]json.RawMessage) (parsedDiscontinuity, b
 // line is marked so, and commit then reports none of its own findings, since
 // it is the damage the record names. It answers what the record's previous and
 // trail are held to.
+//
+// Two lines can never be named damaged, and a discontinuity naming either is
+// malformed and suppresses nothing, so its own link is held to the ordinary
+// rule:
+//
+//   - a line longer than maxLineBytes, which repair refuses and the bound says
+//     is refused rather than read, so its line-too-long finding stands;
+//   - a line that is itself a discontinuity, which repair refuses too. A
+//     discontinuity decides which line is not held to the chain; if a later
+//     one could name it damaged, the first one's decision would stand on a
+//     line nothing vouches for, and the line it excused, and everything that
+//     line binds, would be checked by nothing. Since no discontinuity can be
+//     named damaged, each one's decision is final the moment it is read.
 func (v *verifier) checkDiscontinuity(seen *seenLine, parsed parsedDiscontinuity) (head, bool, string) {
 	damaged := v.previous
-	if !parsed.valid || damaged == nil || parsed.value.Line != damaged.number {
-		seen.findings = append(seen.findings, result.AuditFinding{
-			Name:   FindingDiscontinuityMalformed,
-			Line:   seen.number,
-			Detail: "the discontinuity member is not of its shape, or does not name the line before it",
-		})
+	malformed := ""
+	switch {
+	case !parsed.valid || damaged == nil || parsed.value.Line != damaged.number:
+		malformed = "the discontinuity member is not of its shape, or does not name the line before it"
+	case damaged.oversized || parsed.value.Bytes > maxLineBytes:
+		malformed = "the discontinuity names damage longer than any line a chained trail holds, which is refused rather than repaired"
+	case damaged.discontinuityKind:
+		malformed = "the discontinuity names another discontinuity as damaged, which no repair writes: a discontinuity's own line is never excused"
+	}
+	if malformed != "" {
+		seen.findings = append(seen.findings, result.AuditFinding{Name: FindingDiscontinuityMalformed, Line: seen.number, Detail: malformed})
 		return seen.before, seen.beforeKnown, seen.beforeRule
 	}
 	damaged.damaged = true
@@ -361,14 +396,31 @@ func (v *verifier) checkDiscontinuity(seen *seenLine, parsed parsedDiscontinuity
 			Detail: fmt.Sprintf("line %d is not the %d bytes with the digest the discontinuity states", damaged.number, parsed.value.Bytes),
 		})
 	}
-	v.discontinuities = append(v.discontinuities, result.AuditDiscontinuity{
-		Line:        seen.number,
-		Reason:      parsed.value.Reason,
-		DamagedLine: damaged.number,
-		Bytes:       parsed.value.Bytes,
-		Digest:      parsed.value.Digest,
-	})
+	v.discontinuitiesTotal++
+	if len(v.discontinuities) < maxListed {
+		v.discontinuities = append(v.discontinuities, result.AuditDiscontinuity{
+			Line:        seen.number,
+			Reason:      parsed.value.Reason,
+			DamagedLine: damaged.number,
+			Bytes:       parsed.value.Bytes,
+			Digest:      parsed.value.Digest,
+		})
+	}
+	v.closeSegment(damaged.number - 1)
+	v.segmentStart = seen.number
 	return damaged.before, damaged.beforeKnown, ruleDiscontinuity
+}
+
+// closeSegment ends the segment that started at segmentStart at last, when
+// it holds any line, listing it when there is room.
+func (v *verifier) closeSegment(last int64) {
+	if last < v.segmentStart {
+		return
+	}
+	v.segmentsTotal++
+	if len(v.segments) < maxListed {
+		v.segments = append(v.segments, result.AuditSegment{FirstLine: v.segmentStart, LastLine: last})
+	}
 }
 
 // commit settles the line before the one just read: nothing after it can now
@@ -415,16 +467,11 @@ func (v *verifier) record(finding result.AuditFinding) {
 // report composes what the reading found.
 func (v *verifier) report(size int64) result.AuditChain {
 	chain := result.AuditChain{
-		Scope:           ScopeOneSuppliedChain,
-		Lines:           v.lines,
-		Bytes:           size,
-		Coverage:        v.coverage,
-		Segments:        []result.AuditSegment{},
-		Discontinuities: v.discontinuities,
-		Findings:        v.findings,
-	}
-	if chain.Discontinuities == nil {
-		chain.Discontinuities = []result.AuditDiscontinuity{}
+		Scope:    ScopeOneSuppliedChain,
+		Lines:    v.lines,
+		Bytes:    size,
+		Coverage: v.coverage,
+		Findings: v.findings,
 	}
 	chain.Coverage.Uncovered = v.pendingUnchained
 	chain.Coverage.Signed = result.AuditCoverageState{Status: "not-available", Detail: "detached signatures are runtime #209"}
@@ -438,15 +485,14 @@ func (v *verifier) report(size int64) result.AuditChain {
 			Trail:             v.head.link.trail,
 		}
 	}
-	start := int64(1)
-	for _, broken := range v.discontinuities {
-		if broken.DamagedLine-1 >= start {
-			chain.Segments = append(chain.Segments, result.AuditSegment{FirstLine: start, LastLine: broken.DamagedLine - 1})
-		}
-		start = broken.Line
+	v.closeSegment(v.lines)
+	chain.Segments, chain.SegmentsTotal = v.segments, v.segmentsTotal
+	if chain.Segments == nil {
+		chain.Segments = []result.AuditSegment{}
 	}
-	if v.lines >= start {
-		chain.Segments = append(chain.Segments, result.AuditSegment{FirstLine: start, LastLine: v.lines})
+	chain.Discontinuities, chain.DiscontinuitiesTotal = v.discontinuities, v.discontinuitiesTotal
+	if chain.Discontinuities == nil {
+		chain.Discontinuities = []result.AuditDiscontinuity{}
 	}
 	if v.expect != nil {
 		v.checkCheckpoint(&chain)
@@ -459,7 +505,7 @@ func (v *verifier) report(size int64) result.AuditChain {
 	switch {
 	case v.findingsTotal > 0:
 		chain.Status = "invalid"
-	case len(v.discontinuities) > 0:
+	case v.discontinuitiesTotal > 0:
 		chain.Status = "segmented"
 	default:
 		chain.Status = "valid"
@@ -528,7 +574,7 @@ func statements(chain result.AuditChain) ([]string, []string) {
 	} else {
 		notEstablished = append(notEstablished, notLastLine, notComplete)
 	}
-	if len(chain.Discontinuities) > 0 {
+	if chain.DiscontinuitiesTotal > 0 {
 		notEstablished = append(notEstablished, notSegmented)
 	}
 	notEstablished = append(notEstablished, notTime, notSigned)

@@ -133,7 +133,11 @@
 // previous links over the damaged line to what a record in its place would
 // have followed, so it is the one record whose previous does not follow the
 // line before it, and Verify holds it to that rule. It records no decision and
-// carries no pack, inputs or disposition.
+// carries no pack, inputs or disposition. No discontinuity may name a line that
+// is itself a discontinuity, or a line longer than maxLineBytes: Verify reports
+// one that does as malformed and excuses nothing, and Repair refuses to write
+// one (ErrRepairDiscontinuity, ErrOversizedLine), so a discontinuity's decision
+// is final the moment it is read.
 package audit
 
 import (

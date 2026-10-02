@@ -71,7 +71,13 @@ All notable changes to tagged releases are documented here.
     digest, which links over it to what a record in its place would have followed. The writer then
     chains after it, and `verify` reports the trail as segments (`"status": "segmented"`, exit 0),
     never as intact across the break. It refuses when the last line is complete, for a project whose
-    audit member says `"chain": false`, where no lock can be taken, and for damage over 128 MiB.
+    audit member says `"chain": false`, where no lock can be taken, for damage over 128 MiB, and when
+    the incomplete last line is itself a discontinuity record (`JPS-AUDIT-REPAIR-DISCONTINUITY`): a
+    repair does not repair a repair. `verify` reports a discontinuity naming another discontinuity,
+    or a line over 128 MiB, as malformed and excuses nothing, so no discontinuity's decision can be
+    undone and an over-bound line is never excused.
+  - A report lists the first 100 findings, discontinuities and segments, and counts them all
+    (`findingsTotal`, `discontinuitiesTotal`, `segmentsTotal`).
   - The discontinuity record is a third kind of line, `"kind": "discontinuity"`, with no pack, inputs
     or disposition; `recordVersion` stays `"1"`, as it did when the graph composite, which has no pack
     or inputs, was added. Gateway's `readRuntimeRecord` (v0.8.1) refuses any kind but `evaluation`,
