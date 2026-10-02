@@ -46,6 +46,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -1054,6 +1055,34 @@ func (p *Project) AuditWriter() *audit.Writer {
 		return nil
 	}
 	return audit.NewWriter(p.root, p.Config.Audit.Dir, p.Config.Audit.Chains())
+}
+
+// TrailName is the trail file this configuration's audit member names,
+// relative to the configuration's own directory, or false when it declares no
+// audit member.
+func (p *Project) TrailName() (string, bool) {
+	if p == nil || p.Config.Audit == nil {
+		return "", false
+	}
+	return path.Join(filepath.ToSlash(p.Config.Audit.Dir), audit.FileName), true
+}
+
+// OpenTrail opens the trail for reading through the project's own handle,
+// under the same containment every read has. It is os.ErrInvalid when the
+// configuration declares no audit member.
+func (p *Project) OpenTrail() (*os.File, error) {
+	name, ok := p.TrailName()
+	if !ok {
+		return nil, os.ErrInvalid
+	}
+	return p.root.Open(name)
+}
+
+// TrailPath is the trail's pathname, for display only: what is read is opened
+// through the handle, never by this string.
+func (p *Project) TrailPath() string {
+	name, _ := p.TrailName()
+	return filepath.Join(p.Root, filepath.FromSlash(name))
 }
 
 // RequiresComparableFacts says whether this project asks its evaluating

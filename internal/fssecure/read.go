@@ -50,6 +50,24 @@ func ReadRegular(filePath string, limit int64) ([]byte, error) {
 	return readBounded(file, limit)
 }
 
+// OpenRegular opens one regular file named by pathname, with ReadRegular's
+// checks and no byte limit, for a caller that reads it as a stream. Like
+// ReadRegular it says nothing about where the file is: it is for a file an
+// operator named on the command line, and never for a path a configuration
+// declares.
+func OpenRegular(filePath string) (*os.File, error) {
+	file, err := openRegular(filePath)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		file.Close()
+		return nil, errors.New("path is not a regular file")
+	}
+	return file, nil
+}
+
 // readBounded reads a file already opened and checked by its caller, refusing one
 // byte past the limit so "exactly at the limit" and "over it" stay distinguishable.
 func readBounded(file *os.File, limit int64) ([]byte, error) {

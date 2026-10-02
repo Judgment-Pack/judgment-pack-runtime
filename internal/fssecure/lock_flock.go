@@ -66,6 +66,28 @@ func lockOutcome(err error) error {
 	return err
 }
 
+// platformLockShared takes flock(2)'s shared lock, waiting for any writer that
+// holds the exclusive one, and reads the answer as platformLockExclusive does.
+// Shared holders exclude writers and not one another.
+func platformLockShared(file *os.File) error {
+	conn, err := file.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var lockErr error
+	if err := conn.Control(func(fd uintptr) {
+		for {
+			lockErr = syscall.Flock(int(fd), syscall.LOCK_SH)
+			if !errors.Is(lockErr, syscall.EINTR) {
+				return
+			}
+		}
+	}); err != nil {
+		return err
+	}
+	return lockOutcome(lockErr)
+}
+
 // platformUnlock releases the lock platformLockExclusive took. Closing the file
 // releases it too; this says so before the close rather than relying on it.
 func platformUnlock(file *os.File) error {

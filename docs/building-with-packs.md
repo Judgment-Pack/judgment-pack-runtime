@@ -830,8 +830,9 @@ requirement for that pointer. Write one `in` whose operand carries both types in
 Each line carries a `run` id: one value per invocation, on every record that invocation writes. For
 a graph run that is what marks the run finished — the `graph-composite` line carries the same id as
 its nodes' lines, so node lines whose id has no composite belong to a run that did not complete, and
-a trailing line that is not whole JSON is a write that did not complete. Read a trail by that rule
-rather than by assuming every line is a decision.
+a trailing line that is not whole JSON is a write that did not complete. A line whose `kind` is
+`discontinuity` records a repair, not a decision, and the line before it is the damage it names.
+Read a trail by that rule rather than by assuming every line is a decision.
 
 ### The chain
 
@@ -865,9 +866,8 @@ spelled, the same way whether the chain is being continued or started again. Wha
 
 - **A torn last line stops the trail.** If the trail's last line has no newline, which is what a
   write cut short leaves, no line is chained after it: every recording run is refused with
-  `JPS-AUDIT-WRITE`, exit 4, and a message that says so, and the trail is left as it was. Until
-  `jpack audit repair` exists (#207), move the damaged file aside and keep it; the next record then
-  starts a new trail.
+  `JPS-AUDIT-WRITE`, exit 4, and a message that says so, and the trail is left as it was.
+  `jpack audit repair` starts a new segment after it (below).
 - **A line too long to read stops the trail too.** A line longer than 128 MiB that the writer must
   read to continue the chain is refused rather than taken for unchained, with the same code and a
   message that says so. The writer never writes a line that long: a record that would be one, which
@@ -901,12 +901,82 @@ What the chain lets someone show, and what it does not:
 - That is consistency, not authenticated history. The last line can be edited without breaking any
   link, and a trail cut short, or rewritten from any line on with its links recomputed, is as
   consistent as the real one. Telling them apart takes a checkpoint covering those lines (the trail's
-  identity, a sequence and that line's digest) held by someone other than the operator, and this
-  runtime does not make one yet (#208).
-- This runtime does not yet check a chain: `jpack audit verify` is #207. Until then the members are
-  there to be checked, and nothing reports on them.
+  identity, a sequence and that line's digest) held by someone other than the operator.
 - A record's `at` is still the operator's clock, and the chain says nothing about decisions that were
   never written to the trail.
+
+### Checking a trail, and handing over a checkpoint
+
+```sh
+jpack audit verify                                   # this project's trail
+jpack audit verify --trail evaluations.jsonl         # a trail file, such as a copy you were given
+jpack audit checkpoint > checkpoint.json             # the last chained record, for someone to keep
+jpack audit verify --expect checkpoint.json          # later: is the trail still the one checkpointed?
+```
+
+`audit verify` checks every `trail`, `sequence` and `previous` from the first chained record on, over
+the bytes in the file, by the writer's own rules: the legacy prefix as one block, a chain started
+again after unchained lines keeping its identity, chained lines recognised by their JSON members,
+and a line over 128 MiB refused rather than guessed at. It exits 1 when any check fails, each a
+named finding (`previous-mismatch`, `sequence-mismatch`, `trail-mismatch`, `incomplete-last-line`,
+`line-too-long`, and the discontinuity and checkpoint findings below), and 0 otherwise, with the
+report in `--format json` under `outputVersion` `"2"`. The size is read under the writer's lock,
+shared, so it falls between two writes, and the bytes before it are read without the lock:
+writers only append, so a verification neither delays a decision nor sees half of one.
+
+The report gives the coverage: lines before the first chained line, committed as one block;
+chained lines; unchained lines a later chained line commits to; lines nothing commits to (after
+the last chained line); and lines a repair names as damaged. Signatures are reported as not
+available (#209). It also says, in fixed sentences, what the result establishes and what it does
+not:
+
+- **Without `--expect`, the integrity of one supplied chain.** The lines are consistent with one
+  another. It does not show that the trail is complete, or that its last line, or lines rewritten
+  from some point on with their links recomputed, are the ones first written: you were handed one
+  chain, and a different consistent chain would verify as well.
+- **With `--expect`, a checkpoint held independently.** `audit checkpoint` prints one: a single
+  line, `{"checkpointVersion":"1","recordDigest":"sha256:…","sequence":N,"trail":"…"}`, in its
+  RFC 8785 canonical form. Its `recordDigest` is the SHA-256 of the record's exact line bytes, the
+  digest the next record's `previous` holds and the one a gateway action receipt's
+  `decision.recordDigest` names for the same record. Given to someone you do not control, the
+  counterparty or an auditor, it later fails a trail that is shorter than its sequence, has another
+  identity, or has another record there, and the report counts lines 1 to N as checkpointed. Lines
+  after N are as unauthenticated as before. A checkpoint you keep yourself proves nothing to anyone
+  who does not trust you. `audit checkpoint` refuses a trail that fails a check, and a note says
+  how many lines after the checkpointed record are not chained.
+
+### Repairing a torn trail
+
+```sh
+jpack audit repair
+```
+
+After a write that did not complete, `audit repair` starts a new segment. It removes and rewrites
+nothing: under the writer's lock it ends the damaged bytes with a newline, so they are kept in
+place as a line of their own, and appends a discontinuity record:
+
+```json
+{"recordVersion":"1","trail":"…","sequence":5,"previous":"sha256:…","run":"…","at":"…","kind":"discontinuity","surface":"audit repair","tool":{…},"discontinuity":{"reason":"incomplete-last-line","line":4,"bytes":29,"digest":"sha256:…"}}
+```
+
+It names the damaged line, its length and the digest of its bytes, and its `previous` links over the
+damaged line to what a record in its place would have followed. The writer then chains after it as
+after any record. `audit verify` holds the damaged line to the record's length and digest, reports
+the trail as segments, `"status": "segmented"` and exit 0, and never as intact across the break; a
+checkpoint made before the damage still verifies the segment it covers. A discontinuity line is not
+a decision: it has no pack, inputs or disposition, and a reader that selects records by `kind`
+passes over it.
+
+A repair is refused when the last line is complete, so it never runs on a trail with nothing damaged
+at its end; a broken link elsewhere is for `audit verify` to report, not for a repair to paper over.
+It is refused too when the project's audit member says `"chain": false`, where no lock can be
+taken, and when the damaged bytes are longer than any line a chained trail holds. It works on the
+trail the project's `jpack.json` declares, never on a file named by path. Since anyone who can run
+it can run it at will, a discontinuity says a break was acknowledged, not why.
+
+None of the three commands is offered as an MCP tool: a verification an agent runs on the trail of
+the server it is using shows nothing to someone who does not trust that server's operator, which is
+who a verification is for, and repair writes.
 
 The records hold your input documents. That is what they are for, and it is why the directory is
 one you name rather than one this runtime picks: the human-readable diagnostics stay sanitized and

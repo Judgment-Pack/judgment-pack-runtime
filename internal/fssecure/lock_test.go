@@ -336,3 +336,110 @@ func TestAnAppendReportsEveryFailureToMakeItDurable(t *testing.T) {
 		})
 	}
 }
+
+// SizeBetweenWrites waits for a writer holding the lock and reads the size
+// after its write, so a reader's snapshot never ends inside one.
+func TestSizeBetweenWritesWaitsForAWriter(t *testing.T) {
+	if !lockedPlatform() {
+		t.Skip("this platform has no lock")
+	}
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+	if err := root.AppendLocked("log.jsonl", func(AppendState) ([]byte, error) { return []byte("a\n"), nil }); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := os.Open(filepath.Join(dir, "log.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	inside, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- root.AppendLocked("log.jsonl", func(AppendState) ([]byte, error) {
+			close(inside)
+			<-release
+			return []byte("b\n"), nil
+		})
+	}()
+	<-inside
+	type snapshot struct {
+		size   int64
+		locked bool
+		err    error
+	}
+	read := make(chan snapshot, 1)
+	go func() {
+		size, locked, err := SizeBetweenWrites(reader)
+		read <- snapshot{size, locked, err}
+	}()
+	select {
+	case early := <-read:
+		t.Fatalf("the size was read while a writer held the lock: %+v", early)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	got := <-read
+	if got.err != nil || !got.locked || got.size != int64(len("a\nb\n")) {
+		t.Fatalf("the size is read after the write: %+v", got)
+	}
+}
+
+// Where no lock exists the size is read without one, and says so; a lock that
+// fails for another reason is the read's failure.
+func TestSizeBetweenWritesWithoutALock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log.jsonl")
+	if err := os.WriteFile(path, []byte("a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	original := lockShared
+	t.Cleanup(func() { lockShared = original })
+	lockShared = func(*os.File) error { return errNoLock }
+	if size, locked, err := SizeBetweenWrites(reader); err != nil || locked || size != 2 {
+		t.Fatalf("without a lock: %d %v %v", size, locked, err)
+	}
+	lockShared = func(*os.File) error { return injected }
+	if _, _, err := SizeBetweenWrites(reader); !errors.Is(err, injected) {
+		t.Fatalf("a failed lock: %v", err)
+	}
+}
+
+// OpenRegular opens a regular file an operator named and refuses anything
+// else: a directory, a final symlink, a name that is not there.
+func TestOpenRegularOpensOnlyARegularFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trail.jsonl")
+	if err := os.WriteFile(path, []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := OpenRegular(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	for _, refused := range []string{dir, filepath.Join(dir, "absent.jsonl")} {
+		if file, err := OpenRegular(refused); err == nil {
+			file.Close()
+			t.Fatalf("%s must be refused", refused)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	link := filepath.Join(dir, "link.jsonl")
+	if err := os.Symlink(path, link); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	if file, err := OpenRegular(link); err == nil {
+		file.Close()
+		t.Fatal("a final symlink must be refused")
+	}
+}

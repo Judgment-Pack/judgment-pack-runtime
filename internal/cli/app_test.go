@@ -98,6 +98,13 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// for the phrase scans like its siblings.
 		{args: []string{"packs", "lint", "--help"}},
 		{args: []string{"packs", "schema", "--help"}},
+		// The audit trail's commands (ADR-0047). None evaluates; they are
+		// inventoried for the phrase scans, which is where a stray claim
+		// about what a chain or a checkpoint shows would otherwise hide.
+		{args: []string{"audit", "--help"}},
+		{args: []string{"audit", "verify", "--help"}},
+		{args: []string{"audit", "checkpoint", "--help"}},
+		{args: []string{"audit", "repair", "--help"}},
 	} {
 		code, stdout, stderr := runTest(t, surface.args, "")
 		if code != 0 || stderr != "" {

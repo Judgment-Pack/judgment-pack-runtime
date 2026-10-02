@@ -9,5 +9,8 @@ import "os"
 // lock exists.
 func platformLockExclusive(*os.File) error { return errNoLock }
 
+// platformLockShared has no lock to take either.
+func platformLockShared(*os.File) error { return errNoLock }
+
 // platformUnlock has nothing to release.
 func platformUnlock(*os.File) error { return nil }
