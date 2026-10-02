@@ -72,12 +72,12 @@ const (
 	// this file describes a shape a program reads, and a shape either is one this
 	// program knows or is not. "2" added the experimental graphs member
 	// (ADR-0017), "3" the audit member (ADR-0018), "4" the requireReviewed
-	// member (ADR-0044) and "5" the requireComparableFacts member (ADR-0046);
-	// the earlier shapes, without them, are still read — see
-	// SupportedConfigVersions.
-	ConfigVersion = "5"
+	// member (ADR-0044), "5" the requireComparableFacts member (ADR-0046) and
+	// "6" the audit member's chain (ADR-0047); the earlier shapes, without
+	// them, are still read — see SupportedConfigVersions.
+	ConfigVersion = "6"
 	// SchemaID is the embedded schema's own $id.
-	SchemaID = "urn:judgmentpack:runtime:jpack-config:5"
+	SchemaID = "urn:judgmentpack:runtime:jpack-config:6"
 	// MaxConfigBytes bounds one configuration document. It is an index of a
 	// project's packs, not a pack.
 	MaxConfigBytes = int64(1 << 20)
@@ -120,10 +120,13 @@ var schemaBytes []byte
 // SupportedConfigVersions names every configVersion this runtime accepts, so a
 // refusal can say what would have been accepted instead of only what was not.
 // A "1" configuration is exactly a "2" without graphs, a "2" exactly a "3"
-// without audit, a "3" exactly a "4" without requireReviewed, and a "4"
-// exactly a "5" without requireComparableFacts, so all five are read by one
-// schema and each version gate lives in that schema's own bytes.
-func SupportedConfigVersions() []string { return []string{"1", "2", "3", "4", ConfigVersion} }
+// without audit, a "3" exactly a "4" without requireReviewed, a "4" exactly a
+// "5" without requireComparableFacts, and a "5" exactly a "6" whose audit
+// member does not say chain, so all six are read by one schema and each version
+// gate lives in that schema's own bytes.
+func SupportedConfigVersions() []string {
+	return []string{"1", "2", "3", "4", "5", ConfigVersion}
+}
 
 // Schema returns the exact embedded configuration schema bytes.
 func Schema() []byte { return schemaBytes }
@@ -190,16 +193,29 @@ type Graph struct {
 // the configuration's own directory and contained by it like every other
 // declared path. The member is the whole of the opt-in — a configuration that
 // does not carry it is a configuration nothing writes for.
+//
+// Chain says whether the trail is chained (ADR-0047 §1). Absent is chained:
+// the defensible choice is the default, and only "chain": false, which needs
+// configVersion "6", turns it off. It is a pointer for the reason Audit is one,
+// so an explicit true and an absent member stay two spellings of one meaning
+// rather than one of them being lost.
 type Audit struct {
-	Dir string `json:"dir"`
+	Dir   string `json:"dir"`
+	Chain *bool  `json:"chain,omitempty"`
+}
+
+// Chains says whether this audit member asks for a chained trail: yes unless it
+// says chain false.
+func (a *Audit) Chains() bool {
+	return a != nil && (a.Chain == nil || *a.Chain)
 }
 
 // Config is one jpack.json document. It is a closed shape: the embedded schema
 // rejects every member not named here, so a misspelled key is an error rather
 // than a silently ignored intention. Graphs exists only from configVersion
-// "2", Audit only from "3", RequireReviewed only from "4" and
-// RequireComparableFacts only under "5" — the schema's own version gates hold
-// that, each stated once in its bytes. Audit is a pointer because a
+// "2", Audit only from "3", RequireReviewed only from "4",
+// RequireComparableFacts only from "5" and Audit's Chain only under "6" — the
+// schema's own version gates hold that, each stated once in its bytes. Audit is a pointer because a
 // single-object member has no other way to tell "declared, with defaults"
 // from "absent"; a map member gets that distinction for free.
 //
@@ -1031,12 +1047,13 @@ func (p *Project) WriteLock(contents []byte) error {
 // gets right by default, because the returned writer's nil value writes
 // nothing. It is bound to the same handle every read is bound to, so the
 // records go into the directory the configuration came out of and no pathname
-// is handed to anything.
+// is handed to anything. The trail is chained unless the audit member says
+// chain false (ADR-0047 §1).
 func (p *Project) AuditWriter() *audit.Writer {
 	if p == nil || p.Config.Audit == nil {
 		return nil
 	}
-	return audit.NewWriter(p.root, p.Config.Audit.Dir)
+	return audit.NewWriter(p.root, p.Config.Audit.Dir, p.Config.Audit.Chains())
 }
 
 // RequiresComparableFacts says whether this project asks its evaluating

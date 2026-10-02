@@ -2,6 +2,41 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The audit trail is chained over its exact bytes, on by default** (ADR-0047 §1; #206).
+  - Each record this runtime appends to `evaluations.jsonl` also carries `trail` (the trail's
+    identity, 128 random bits in hex, fixed when chaining starts), `sequence` (its line number in the
+    file, from 1) and `previous` (the SHA-256 of the exact bytes of the line before it, without its
+    newline, in the `sha256:` form). They follow `recordVersion`; the record is otherwise byte for
+    byte what it was, and `&`, `<` and `>` are still written as they are. Additive, so
+    `recordVersion` stays `"1"`. Runner's `verify-run` (v0.4.0) and Gateway's `readRuntimeRecord`
+    (v0.8.1) read records by exact member names and accept them.
+  - No existing line is rewritten. The first chained record after lines that are not chained commits
+    to all of them at once: its `previous` is the SHA-256 of the whole file before it (the SHA-256 of
+    the empty string for a new trail), and its `sequence` continues the line count. A chain started
+    again after unchained lines keeps the identity it had.
+  - The writer holds an exclusive, cooperative lock on the trail file while it reads the last line,
+    numbers every record it writes (a graph run's node records, then its composite, the composite
+    last as before), writes, and syncs the file, and the directory when it wrote the file's first
+    bytes. It refuses to append after a last line with no newline (`JPS-AUDIT-WRITE`, exit 4, with a
+    message saying the trail's last line is incomplete), and leaves the trail as it was. Where no lock
+    can be taken (a platform or file system without one) the record is written unchained. The digest
+    of the line before is taken over the bytes read from the file, never over a re-encoding.
+  - It is on in every project that keeps a trail, under the configVersion it already declares.
+    `jpack.json` may turn it off with `"audit": {"dir": "...", "chain": false}` under the new
+    configVersion `"6"`, and then records are written exactly as before, without the lock or a read.
+    The schema's `$id` is now `urn:judgmentpack:runtime:jpack-config:6`. Configurations under `"1"`
+    to `"5"` read as before; `chain` under `"5"` or earlier is refused, and the refusal names `"6"`.
+  - What it does not yet do: nothing in this runtime checks a chain (`jpack audit verify`, #207), and
+    no checkpoint is made or handed to anyone (#208). A chain lets a reader detect an edited,
+    inserted, deleted or reordered line, but not a trail cut short or rewritten whole; that takes a
+    checkpoint held outside the operator's reach.
+  - A file the trail writer creates is now opened to append, so a second writer that appends to it
+    first is not written over.
+  - No evaluation changes, and no payload changes. What this runtime conforms to is stated in
+    `CONFORMANCE.md`, unchanged.
+
 ## 0.25.0 - 2026-10-02
 
 - **Six statements that said more than the program does, corrected** (#200), and the `author_pack`

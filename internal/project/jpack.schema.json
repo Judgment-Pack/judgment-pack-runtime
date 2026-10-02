@@ -1,42 +1,47 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:judgmentpack:runtime:jpack-config:5",
+  "$id": "urn:judgmentpack:runtime:jpack-config:6",
   "title": "jpack.json project configuration",
-  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044), and under \"5\" whether its evaluations must refuse a fact no comparison that reads it can match (ADR-0046). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
+  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044), under \"5\" whether its evaluations must refuse a fact no comparison that reads it can match (ADR-0046), and under \"6\" whether that record is chained (ADR-0047). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
   "type": "object",
   "additionalProperties": false,
   "required": ["configVersion", "packs"],
   "allOf": [
     {
-      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal. \"3\", \"4\" and \"5\" read them too — a later shape adds a member, it does not drop one.",
+      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal. \"3\", \"4\", \"5\" and \"6\" read them too — a later shape adds a member, it does not drop one.",
       "if": { "required": ["graphs"] },
-      "then": { "properties": { "configVersion": { "enum": ["2", "3", "4", "5"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["2", "3", "4", "5", "6"] } } }
     },
     {
-      "description": "The same gate for audit, the \"3\" shape's one addition: a configuration asking for an audit trail under an earlier version is told exactly which member to change. \"4\" and \"5\" read it too.",
+      "description": "The same gate for audit, the \"3\" shape's one addition: a configuration asking for an audit trail under an earlier version is told exactly which member to change. \"4\", \"5\" and \"6\" read it too.",
       "if": { "required": ["audit"] },
-      "then": { "properties": { "configVersion": { "enum": ["3", "4", "5"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["3", "4", "5", "6"] } } }
     },
     {
-      "description": "The same gate for requireReviewed, the \"4\" shape's one addition. \"5\" reads it too.",
+      "description": "The same gate for requireReviewed, the \"4\" shape's one addition. \"5\" and \"6\" read it too.",
       "if": { "required": ["requireReviewed"] },
-      "then": { "properties": { "configVersion": { "enum": ["4", "5"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["4", "5", "6"] } } }
     },
     {
-      "description": "The same gate for requireComparableFacts, the \"5\" shape's one addition.",
+      "description": "The same gate for requireComparableFacts, the \"5\" shape's one addition. \"6\" reads it too.",
       "if": { "required": ["requireComparableFacts"] },
-      "then": { "properties": { "configVersion": { "const": "5" } } }
+      "then": { "properties": { "configVersion": { "enum": ["5", "6"] } } }
+    },
+    {
+      "description": "The same gate for the audit member's chain, the \"6\" shape's one addition: a configuration saying whether its trail is chained under an earlier version is told exactly which member to change.",
+      "if": { "required": ["audit"], "properties": { "audit": { "required": ["chain"] } } },
+      "then": { "properties": { "configVersion": { "const": "6" } } }
     }
   ],
   "properties": {
     "audit": {
-      "description": "The directory this project's evaluation records are appended to (ADR-0018), relative to this file's own directory. Declaring it is what turns recording on: with no audit member this runtime writes nothing at all, and with one, every evaluation the CLI's experimental evaluate and the MCP experimental_evaluate tool complete appends one record, and every experimental graph evaluate one per node and one for the composite. Test runs — packs test, experimental graph test, experimental evaluate-corpus — never record: a run of a matrix is not a decision anyone took. A run declared a rehearsal (the CLI's --rehearsal on either command, the tool's rehearsal argument) never records either (ADR-0028, ADR-0041). Declaring it requires configVersion \"3\".",
+      "description": "The directory this project's evaluation records are appended to (ADR-0018), relative to this file's own directory. Declaring it is what turns recording on: with no audit member this runtime writes nothing at all, and with one, every evaluation the CLI's experimental evaluate and the MCP experimental_evaluate tool complete appends one record, and every experimental graph evaluate one per node and one for the composite. Test runs — packs test, experimental graph test, experimental evaluate-corpus — never record: a run of a matrix is not a decision anyone took. A run declared a rehearsal (the CLI's --rehearsal on either command, the tool's rehearsal argument) never records either (ADR-0028, ADR-0041). The trail is chained unless chain is false (ADR-0047). Declaring it requires configVersion \"3\".",
       "$ref": "#/$defs/audit"
     },
     "configVersion": {
-      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs, \"2\" the shape with them, \"3\" the shape that may also ask for an audit trail, \"4\" the shape that may also require its deciding runs to apply its reviewed set, and \"5\" the shape that may also require every fact a comparison reads to be of a type that comparison can match; this runtime reads all five, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only the earlier shapes refuses a later configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under an earlier version would be an invalid-config refusal that takes every project surface down with it.",
+      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs, \"2\" the shape with them, \"3\" the shape that may also ask for an audit trail, \"4\" the shape that may also require its deciding runs to apply its reviewed set, \"5\" the shape that may also require every fact a comparison reads to be of a type that comparison can match, and \"6\" the shape whose audit member may also say whether its trail is chained; this runtime reads all six, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only the earlier shapes refuses a later configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under an earlier version would be an invalid-config refusal that takes every project surface down with it.",
       "type": "string",
-      "enum": ["1", "2", "3", "4", "5"]
+      "enum": ["1", "2", "3", "4", "5", "6"]
     },
     "graphs": {
       "description": "EXPERIMENTAL graphs composing this project's packs (ADR-0015, ADR-0017), keyed by the project's own name for one graph — the graph document's id member is the graph's identity and is not this key, exactly as a pack entry's key is not the pack's id. Declaring any graph requires configVersion \"2\" or later. The graph surface may change or be removed without compatibility promise, and a project that declares no graph never needs this member or that version.",
@@ -69,6 +74,10 @@
         "dir": {
           "description": "The directory the records are appended to. It is a directory rather than a file, and the constraints differ from a declared file's accordingly: it need not exist — the first record creates it — a symlink to a directory inside this file's own directory is followed like any other component, and a symlink pointing out of it is the escape packs validate reports as the audit-dir-inside-root check and the write refuses again. Nothing outside can be created, named, or written, whatever the pathname would suggest. One file is written in it, evaluations.jsonl, one JSON record per line. On unix that file is kept owner-readable only; on Windows a file mode sets only the read-only attribute and does not restrict the DACL, so what may read a record there is whatever the directory's ACL allows. The directory's own mode is set when this runtime creates it and never afterward: a directory the project made is the project's, and its access control stays the project's.",
           "$ref": "#/$defs/relativePath"
+        },
+        "chain": {
+          "description": "Whether the trail is chained (ADR-0047). Absent or true, each record this runtime appends also carries trail (the trail's identity, 128 random bits in hex), sequence (its line number in the file, from 1) and previous (the SHA-256 of the exact bytes of the line before it, without its newline; for a chained record that follows no chained line, of the whole file before it, which commits to every earlier line at once and rewrites none of them). The writer holds the file exclusively against every other writer that cooperates while it reads the last line, assigns the sequences, writes and syncs; it refuses to append after an incomplete last line, and where the platform or file system cannot exclude other writers it appends the record unchained. False appends records without those members, without excluding other writers and without reading the file, as runtimes before configVersion \"6\" did. The chain lets a verifier detect an edited, inserted, deleted or reordered line; it does not by itself show that a trail is complete or was not rewritten whole, which needs a checkpoint held by someone other than the operator. This runtime does not yet verify a chain. Declaring it requires configVersion \"6\".",
+          "type": "boolean"
         }
       }
     },

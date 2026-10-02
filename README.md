@@ -479,8 +479,9 @@ and printable with `jpack packs schema`: every member it does not name is reject
 `configVersion` is a single integer as a string, on the `outputVersion` precedent rather than
 semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with them (ADR-0017), `"3"`
 the shape that may also ask for an audit trail (ADR-0018), `"4"` the shape that may also require the
-reviewed set (ADR-0044), `"5"` the shape that may also require comparable facts (ADR-0046), and this
-runtime reads all five.
+reviewed set (ADR-0044), `"5"` the shape that may also require comparable facts (ADR-0046), `"6"`
+the shape whose audit member may also say whether its trail is chained (ADR-0047), and this runtime
+reads all six.
 
 There is **no templating, no target or environment blocks, and no selection**. A templated pack was
 never the pack anyone reviewed; environments are one file per environment by convention
@@ -527,6 +528,23 @@ Where the evaluation's trace noted a comparison across JSON types or a cause of 
 record also carries `typeMismatches` and `unknownCauses`, gathered from the trace: pointers, types
 and causes, never values (ADR-0046). A graph run's node records carry their own node's notes, and
 the composite carries none. A record with nothing to note is byte for byte what it was.
+
+**The trail is chained** ([ADR-0047](docs/adr/0047-make-a-decision-record-defensible.md) §1). Each
+record also carries `trail` (the trail's identity, 128 random bits in hex), `sequence` (its line
+number, from 1) and `previous` (the SHA-256 of the exact bytes of the line before it, without its
+newline). A trail written before chaining is never rewritten: the first chained record commits to
+the whole file before it at once, so its `previous` is the SHA-256 of the file as it stood. A record
+is otherwise byte for byte what it was, and `recordVersion` stays `"1"`. The writer holds an
+exclusive, cooperative lock on the trail while it reads the last line, numbers the lines it writes
+(a graph run's nodes, then its composite), writes and syncs. It refuses to append after a last line
+with no newline, a write that did not complete (`JPS-AUDIT-WRITE`, exit 4, with a message saying
+so), and where no lock can be taken it writes records unchained. A project that does not want the
+chain sets `"audit": { "dir": "audit", "chain": false }` under configVersion `"6"`. The chain lets a
+reader detect an edited, inserted, deleted or reordered line. It does not show that a trail is
+complete or was not rewritten whole: that needs a checkpoint someone other than the operator holds,
+which this runtime does not make yet (#208), and nothing in this runtime checks a chain yet
+(`jpack audit verify`, #207). Keep the trail, and anything copied from it, byte for byte: a decoded
+and re-encoded line is other bytes with another digest.
 
 **Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
 as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never
@@ -662,7 +680,8 @@ The current implementation:
   example at the target an operator names with `--write`, which refuses to overwrite an existing
   file; one appended record per completed non-rehearsal evaluation (ADR-0028), and for a non-rehearsal graph evaluation one per node and one for the composite (ADR-0041), when a project's `jpack.json` declares an
   `audit` directory ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)), into that
-  directory, through the handle held open on the configuration's own directory — a record is not a
+  directory, through the handle held open on the configuration's own directory, under an advisory
+  lock on the trail file itself when the trail is chained (ADR-0047) — a record is not a
   diagnostic, and it carries the documents the project asked to have recorded; and the reviewed-set
   lock `jpack packs lock` generates beside the configuration when an operator runs that command
   ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), replaced in place through the same handle and

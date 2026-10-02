@@ -3,11 +3,13 @@ package fssecure
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 )
 
 // ErrOutsideRoot reports that a relative path did not resolve inside the root it
@@ -366,7 +368,7 @@ func (r *Root) Append(relative string, record []byte) error {
 	if err != nil {
 		return err
 	}
-	file, err := r.openForAppend(cleaned)
+	file, _, err := r.openForAppend(cleaned, os.O_WRONLY)
 	if err != nil {
 		return err
 	}
@@ -399,45 +401,187 @@ func (r *Root) Append(relative string, record []byte) error {
 const appendOpenAttempts = 3
 
 // openForAppend opens the trail for appending without ever creating something
-// the caller did not name. See Append for why the flags differ by branch.
-func (r *Root) openForAppend(cleaned string) (*os.File, error) {
+// the caller did not name. See Append for why the flags differ by branch. access
+// is os.O_WRONLY or os.O_RDWR, and the second result says whether this open
+// created the file.
+//
+// Both branches append. A file this open creates is opened with O_APPEND too,
+// because the name is visible from the moment it exists: a second writer can
+// open it as an existing file and append its record before this one writes,
+// and a write at this handle's own offset, zero, would then land on top of that
+// record instead of after it.
+func (r *Root) openForAppend(cleaned string, access int) (*os.File, bool, error) {
 	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
 		info, err := r.root.Lstat(cleaned)
 		switch {
 		case err == nil:
 			if info.Mode()&os.ModeSymlink != 0 {
-				return nil, errors.New("path resolves through a final symlink")
+				return nil, false, errors.New("path resolves through a final symlink")
 			}
 			// It is there, so nothing needs creating: an open without O_CREATE
 			// cannot bring a swapped-in link's target into existence.
-			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|os.O_APPEND|nonBlockingOpen, 0)
+			file, openErr := r.root.OpenFile(cleaned, access|os.O_APPEND|nonBlockingOpen, 0)
 			if errors.Is(openErr, fs.ErrNotExist) {
 				// Removed between the Lstat and the open. Look again.
 				continue
 			}
 			if openErr != nil {
-				return nil, classify(openErr)
+				return nil, false, classify(openErr)
 			}
-			return file, nil
+			return file, false, nil
 		case errors.Is(err, fs.ErrNotExist):
 			// Nothing is there, so this open is the one that puts it there —
 			// exclusively, which is what makes anything that arrives first win
 			// the race instead of being followed.
-			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|os.O_CREATE|os.O_EXCL|nonBlockingOpen, 0o600)
+			file, openErr := r.root.OpenFile(cleaned, access|os.O_APPEND|os.O_CREATE|os.O_EXCL|nonBlockingOpen, 0o600)
 			if errors.Is(openErr, fs.ErrExist) {
 				// Something arrived between the Lstat and the open. Look again;
 				// if it is a symlink, the branch above refuses it.
 				continue
 			}
 			if openErr != nil {
-				return nil, classify(openErr)
+				return nil, false, classify(openErr)
 			}
-			return file, nil
+			return file, true, nil
 		default:
-			return nil, classify(err)
+			return nil, false, classify(err)
 		}
 	}
-	return nil, errors.New("path kept changing between the check and the open")
+	return nil, false, errors.New("path kept changing between the check and the open")
+}
+
+// errNoLock reports that no exclusive lock can be taken on a file here: the
+// platform has none this package uses, or the file system answered that it
+// offers none.
+var errNoLock = errors.New("no exclusive lock is available for this file")
+
+// lockExclusive and unlockFile are the platform's lock. They are variables so a
+// test can stand in for a file system that offers none, or for a name given to
+// another file while a writer waited for the lock.
+var (
+	lockExclusive = platformLockExclusive
+	unlockFile    = platformUnlock
+)
+
+// AppendState is what AppendLocked tells its compose function about the file it
+// is about to append to.
+type AppendState struct {
+	// Locked says the exclusive lock is held: no writer that asks for the lock
+	// can append until the bytes compose returns are written and synced. It is
+	// false where no lock could be taken, because the platform or the file
+	// system offers none, and then the contents may change under the caller.
+	Locked bool
+	// Size is the file's length when the lock was taken: zero for a file this
+	// call created or found empty.
+	Size int64
+	// Contents reads the file as it stands. It is valid only while compose runs.
+	Contents io.ReaderAt
+}
+
+// AppendLocked appends to a file beneath this root, as Append does, while
+// holding an exclusive, cooperative lock on it for the whole step, so a writer
+// can read what is already there and append what follows from it without
+// another cooperating writer appending in between.
+//
+// The step, in order: the file is opened as Append opens it (the same
+// containment, the same refusals, created exclusively when absent) but for
+// reading too; the lock is taken, waiting for any writer that holds it; the
+// name is checked again, because it may have been given to another file while
+// this one waited, and the open is retried if it was; compose is called with
+// the file's size and contents and returns the bytes to append; they are
+// written and synced, and the directory is synced too when the file was created
+// or found empty, so its entry survives a crash along with the bytes; and the
+// lock is released.
+//
+// The lock is advisory: it excludes every writer that takes it, and protects
+// against nothing that writes without it. Where none can be taken (the platform
+// offers no lock this package uses, or the file system refuses one), compose is
+// told so through Locked and the append goes ahead under Append's guarantees
+// alone; what to write in that case is the caller's decision. A failure from
+// compose writes nothing.
+//
+// The lock is held on the trail itself and on nothing else, so no second file
+// appears beside it.
+func (r *Root) AppendLocked(relative string, compose func(AppendState) ([]byte, error)) error {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return err
+	}
+	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
+		file, created, err := r.openForAppend(cleaned, os.O_RDWR)
+		if err != nil {
+			return err
+		}
+		openedInfo, err := r.sameRegularFile(file, cleaned)
+		if err != nil {
+			file.Close()
+			return err
+		}
+		if hardLinked(openedInfo) {
+			file.Close()
+			return errors.New("path has more than one link, so it names a file something else also names")
+		}
+		locked := true
+		if err := lockExclusive(file); errors.Is(err, errNoLock) {
+			locked = false
+		} else if err != nil {
+			file.Close()
+			return err
+		}
+		// While this writer waited, the name may have come to name another
+		// file. Appending to the one held open would then append to a file
+		// nothing names, so the name is checked again under the lock, and a
+		// changed one is opened afresh: a symlink found there is refused by the
+		// open, as it would be on a first attempt.
+		if locked {
+			if _, err := r.sameRegularFile(file, cleaned); err != nil {
+				unlockFile(file)
+				file.Close()
+				continue
+			}
+		}
+		err = r.appendHeld(file, cleaned, created, locked, compose)
+		if locked {
+			// Closing releases the lock as well, so a failed unlock loses
+			// nothing the close does not give back.
+			unlockFile(file)
+		}
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		return err
+	}
+	return errors.New("path kept changing between the check and the lock")
+}
+
+// appendHeld is AppendLocked's step once the file is open and, where it can
+// be, locked: compose, write, sync, and the directory when the entry is new.
+func (r *Root) appendHeld(file *os.File, cleaned string, created, locked bool, compose func(AppendState) ([]byte, error)) error {
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	size := info.Size()
+	data, err := compose(AppendState{Locked: locked, Size: size, Contents: file})
+	if err != nil {
+		return err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	// The writer that creates the file is not always the first to write to
+	// it: another may open it as an existing, empty file and take the lock
+	// first. Whichever writes the first bytes syncs the entry too.
+	if created || size == 0 {
+		return r.syncDir(cleaned)
+	}
+	return nil
 }
 
 // Replace writes one whole file beneath this root, creating it or replacing
@@ -540,8 +684,13 @@ func (r *Root) syncDir(cleaned string) error {
 	if err := handle.Sync(); err != nil {
 		return err
 	}
+	directorySyncs.Add(1)
 	return nil
 }
+
+// directorySyncs counts the directory syncs syncDir has made in this process,
+// so a test can hold a write to syncing the entry it created.
+var directorySyncs atomic.Int64
 
 // openForWrite is openForAppend's rule for a file that is rewritten rather than
 // extended: the same branch on what is already there, and the same bounded retry

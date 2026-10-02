@@ -81,9 +81,10 @@ different rules, and conflating them has been a live source of error.
   (ADR-0015). Their schemas are closed, so an older reader *rejects* a document carrying a member it
   does not know rather than ignoring it. Adding one therefore moves the version, whatever the
   addition is: `graphs` moved `configVersion` to `"2"`, `audit` moved it to `"3"`,
-  `requireReviewed` moved it to `"4"`, and `requireComparableFacts` moved it to `"5"` for exactly
-  this reason, and the version gate is what turns an unreadable-config refusal into an actionable
-  "this runtime accepts" one.
+  `requireReviewed` moved it to `"4"`, `requireComparableFacts` moved it to `"5"`, and the audit
+  member's `chain` moved it to `"6"` for exactly this reason, and the version gate is what turns an
+  unreadable-config refusal into an actionable "this runtime accepts" one. The audit record's chain
+  members (ADR-0047) are the other kind of change: additive output, so `recordVersion` stays `"1"`.
 
 ## Release artifacts
 

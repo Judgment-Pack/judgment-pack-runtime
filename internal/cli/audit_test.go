@@ -387,7 +387,7 @@ func TestPacksValidateResolvesASymlinkedAuditDirectory(t *testing.T) {
 // pack-id form is checked too: resolving a decision id is a filesystem
 // operation, and it must not outrank a missing required argument either.
 func TestArgumentRefusalsPrecedeTheConfiguration(t *testing.T) {
-	broken := writeProjectFixture(t, `{"configVersion":"6","packs":{}}`, map[string]string{
+	broken := writeProjectFixture(t, `{"configVersion":"7","packs":{}}`, map[string]string{
 		"pack.json": evaluatorPack(t),
 	})
 	packPath := filepath.Join(filepath.Dir(broken), "pack.json")
@@ -508,6 +508,8 @@ func TestGraphEvaluateRecordsEveryNodeAndTheComposite(t *testing.T) {
 	if last["run"] != run {
 		t.Fatalf("the composite commits the run its nodes belong to: %v", last["run"])
 	}
+	// The run's lines are one chained batch, the composite last (ADR-0047).
+	checkChained(t, trailBytes(t, configPath))
 
 	// The same graph, the same configuration, run as a matrix: nothing recorded.
 	rowsPath := filepath.Join(filepath.Dir(configPath), "onboarding.rows.json")

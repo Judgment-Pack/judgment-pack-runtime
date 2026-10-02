@@ -54,7 +54,7 @@ func writerAt(t *testing.T, dir string) (*Writer, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { opened.Close() })
-	return NewWriter(opened, dir), root
+	return NewWriter(opened, dir, true), root
 }
 
 // decodeLines reads the trail as the lines it is: one record per line, each one

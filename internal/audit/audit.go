@@ -27,9 +27,10 @@
 // one value spelled two ways leave two differently spelled records. Nothing
 // about replay is lost, because evaluation is a function of the value and not of
 // its spelling; but a reader who wants the exact bytes a caller sent must keep
-// those bytes itself, and the pack and graph digests, with the executable's
-// digest on each record's tool, are the only places this trail speaks about
-// bytes at all.
+// those bytes itself. The pack and graph digests, the executable's digest on
+// each record's tool, and on a chained trail each record's previous, which
+// names the bytes of the trail's own line before it, are the only places this
+// trail speaks about bytes at all.
 //
 // Three things a record is not. It is not on the deterministic payload path:
 // every record carries a wall-clock timestamp, which nothing in an evaluation
@@ -62,9 +63,59 @@
 // path, a symlinked trail, a directory that is not one. An I/O failure partway
 // through a write cannot be undone by an appender, so the reader rule above,
 // not the writer, is what tells a complete run from an abandoned one.
+//
+// # The chain
+//
+// A project that keeps a trail has it chained unless its configuration turns
+// that off (ADR-0047 §1). A chained record carries three more members, written
+// right after recordVersion:
+//
+//   - trail: the trail's identity, 128 random bits as 32 lowercase hex
+//     characters, minted when the trail is first chained and carried by every
+//     chained record after;
+//   - sequence: the record's line number in the file, counted from 1;
+//   - previous: the SHA-256, in the "sha256:" form Digest writes, of the exact
+//     bytes of the line before it, without its newline.
+//
+// The bytes hashed are the bytes in the file, as read. Nothing read from the
+// trail is decoded and encoded again, because a record's bytes are what every
+// digest of it names: a gateway receipt's decision.recordDigest, a chain link,
+// a checkpoint. A record is otherwise exactly what it was before chaining
+// existed, member for member and byte for byte, and recordVersion stays "1".
+//
+// A record follows a chained line by linking to it. A record that follows no
+// chained line starts the chain (or starts it again) and commits to everything
+// before it at once: its previous is the SHA-256 of the file's whole contents
+// up to its own first byte, newlines included, which is the SHA-256 of the file
+// as it stood (of the empty string for a new trail), and its sequence continues
+// the file's line count. That is how a trail written before chaining, or while
+// chaining was off, or by a runtime that does not chain, is covered: as one
+// block, never rewritten. A chain started again keeps the identity of the last
+// chained line before it, where there is one. Whether a line is chained is read
+// from its own members: a line that is one JSON object holding a trail of that
+// form, a sequence from 1 to 2^53-2 and a previous of that form, each named
+// exactly once, is chained; any other line is not.
+//
+// The writer holds an exclusive, cooperative lock on the trail
+// (fssecure.Root.AppendLocked) across reading the last line, assigning every
+// sequence of what it writes (one record, or a graph run's node records and
+// composite, the composite last), writing, and syncing. It refuses to append
+// after a last line with no newline, ErrIncompleteLastLine: a write that did
+// not complete is never chained over. Where no lock can be taken the records
+// are written as they were before chaining, without the three members, because
+// a chain written without the lock could link two records to one predecessor.
+//
+// What the chain establishes, and what it does not: a verifier walking it can
+// tell an edited, inserted, deleted or reordered chained line from an intact
+// one, and the legacy prefix as a block. It cannot tell a trail cut short, or a
+// whole trail rewritten with a consistent chain, from the real one: that needs
+// a checkpoint someone other than the operator holds (ADR-0047 §2a). This
+// runtime has no verifier yet; `jpack audit verify` is runtime #207, and
+// checkpoints are #208.
 package audit
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
@@ -109,7 +160,27 @@ const (
 	// who cannot write the record is not owed the record's contents.
 	FailureCode    = "JPS-AUDIT-WRITE"
 	FailureMessage = "Audit record could not be written."
+	// incompleteMessage is FailureMessage's form for a trail whose last line is
+	// incomplete. It names the trail's state and no value, and it is said
+	// because nothing else would tell an operator why every later decision is
+	// refused too.
+	incompleteMessage = "Audit record could not be written: the audit trail's last line is incomplete, and no record is chained after an incomplete line."
 )
+
+// ErrIncompleteLastLine is the refusal to chain a record after a last line
+// with no newline: a write that did not complete. The trail needs repair before
+// another chained record can follow it.
+var ErrIncompleteLastLine = errors.New("the audit trail's last line is incomplete")
+
+// FailureMessageFor is the message a failed append is reported with:
+// FailureMessage, or what is wrong with the trail when the failure is one the
+// operator must act on. The code is FailureCode either way.
+func FailureMessageFor(err error) string {
+	if errors.Is(err, ErrIncompleteLastLine) {
+		return incompleteMessage
+	}
+	return FailureMessage
+}
 
 // Record is one line of the trail.
 //
@@ -151,8 +222,17 @@ const (
 // evaluation crossed no type and left nothing unknown is byte for byte what it
 // was before they existed, and a graph composite, which carries no node's
 // inputs, carries neither. They are additive, so recordVersion stays "1".
+//
+// Trail, Sequence and Previous are the chain (ADR-0047 §1; see the package
+// doc). They are the writer's to assign, under the trail's lock, and a composer
+// leaves them empty: whatever a caller sets is replaced. They are omitted from a
+// record that is not chained, so such a record is byte for byte what it was
+// before they existed. They are additive, so recordVersion stays "1".
 type Record struct {
 	RecordVersion        string                 `json:"recordVersion"`
+	Trail                string                 `json:"trail,omitempty"`
+	Sequence             int64                  `json:"sequence,omitempty"`
+	Previous             string                 `json:"previous,omitempty"`
 	Run                  string                 `json:"run"`
 	At                   string                 `json:"at"`
 	Kind                 string                 `json:"kind"`
@@ -511,6 +591,7 @@ type Writer struct {
 	root     *fssecure.Root
 	dir      string
 	run      string
+	chain    bool
 	reviewed *bool
 	underLaw *ReviewedSet
 }
@@ -537,8 +618,13 @@ func (w *Writer) UnderLaw(reviewed *bool, set *ReviewedSet) {
 // every record it writes carries. That is why the id is the writer's and not a
 // composer's: what it identifies is the invocation, and an invocation has
 // exactly one writer.
-func NewWriter(root *fssecure.Root, dir string) *Writer {
-	return &Writer{root: root, dir: dir, run: newRun()}
+//
+// chain says whether the records are chained (ADR-0047 §1). A project's
+// configuration chains unless it says otherwise; a writer that does not chain
+// appends exactly as this package did before the chain existed, without the
+// lock and without reading the trail.
+func NewWriter(root *fssecure.Root, dir string, chain bool) *Writer {
+	return &Writer{root: root, dir: dir, run: newRun(), chain: chain}
 }
 
 // newRun mints one run id: eight random bytes, hex. It names an invocation and
@@ -660,11 +746,17 @@ func (w *Writer) Append(record Record) error {
 // against an I/O failure partway through the write — that is what the run id
 // and the composite marker are for, and the package doc states the rule a
 // reader applies.
+//
+// A chaining writer assigns the chain under the trail's lock, in the order the
+// records are given, so a graph run's composite, handed over last, is the last
+// line of its batch and the batch's sequences are consecutive. Every record is
+// encoded before the trail is opened, so a record that cannot be encoded
+// refuses the whole batch before anything is created or written.
 func (w *Writer) AppendAll(records []Record) error {
 	if w == nil || len(records) == 0 {
 		return nil
 	}
-	var lines bytes.Buffer
+	prepared := make([]Record, 0, len(records))
 	for _, record := range records {
 		if record.RecordVersion == "" || record.At == "" {
 			record = stamp(record)
@@ -678,18 +770,248 @@ func (w *Writer) AppendAll(records []Record) error {
 		if w.reviewed != nil && *w.reviewed {
 			record.ReviewedSet = w.underLaw
 		}
-		encoder := json.NewEncoder(&lines)
-		// HTML escaping is off so a recorded document reads as the project
-		// wrote it rather than as a wall of <. It is a spelling choice and
-		// not a semantic one: either form decodes to the same JSON value.
-		// Encode writes the newline that ends the line.
-		encoder.SetEscapeHTML(false)
-		if err := encoder.Encode(record); err != nil {
-			return err
-		}
+		// The chain is the writer's, assigned under the lock or not at all.
+		record.Trail, record.Sequence, record.Previous = "", 0, ""
+		prepared = append(prepared, record)
+	}
+	unchained, err := encodeLines(prepared)
+	if err != nil {
+		return err
 	}
 	if err := w.root.MakeDir(w.dir); err != nil {
 		return err
 	}
-	return w.root.Append(path.Join(w.dir, FileName), lines.Bytes())
+	name := path.Join(w.dir, FileName)
+	if !w.chain {
+		return w.root.Append(name, unchained)
+	}
+	return w.root.AppendLocked(name, func(state fssecure.AppendState) ([]byte, error) {
+		return chainedLines(prepared, unchained, state)
+	})
+}
+
+// encodeLines encodes records as the trail's lines: compact JSON, one record
+// per line, each ending its line.
+func encodeLines(records []Record) ([]byte, error) {
+	var lines bytes.Buffer
+	encoder := json.NewEncoder(&lines)
+	// HTML escaping is off so a recorded document reads as the project
+	// wrote it rather than as a wall of <. It is a spelling choice and
+	// not a semantic one: either form decodes to the same JSON value.
+	// Encode writes the newline that ends the line.
+	encoder.SetEscapeHTML(false)
+	for _, record := range records {
+		if err := encoder.Encode(record); err != nil {
+			return nil, err
+		}
+	}
+	return lines.Bytes(), nil
+}
+
+// chainedLines is what a chaining writer appends, decided under the trail's
+// lock: the records chained after what the trail holds, or, where no lock could
+// be taken, the unchained lines, since a chain read and written without the
+// lock could link two records to one predecessor.
+func chainedLines(records []Record, unchained []byte, state fssecure.AppendState) ([]byte, error) {
+	if !state.Locked {
+		return unchained, nil
+	}
+	next, err := readHead(state.Contents, state.Size)
+	if err != nil {
+		return nil, err
+	}
+	var lines bytes.Buffer
+	previous := next.previous
+	for index, record := range records {
+		record.Trail = next.trail
+		record.Sequence = next.sequence + int64(index) + 1
+		record.Previous = previous
+		line, err := encodeLines([]Record{record})
+		if err != nil {
+			return nil, err
+		}
+		// The next record links to these bytes exactly as they will be in the
+		// file, without the newline that ends them.
+		previous = Digest(line[:len(line)-1])
+		lines.Write(line)
+	}
+	return lines.Bytes(), nil
+}
+
+// head is what the next chained record follows: the trail's identity, the
+// sequence of the line before it, and the digest that record's previous holds.
+type head struct {
+	trail    string
+	sequence int64
+	previous string
+}
+
+// The forms a chained line's members take. A line whose members are not of
+// them is not chained.
+var (
+	trailForm    = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	previousForm = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+)
+
+// maxLineBytes bounds the line the writer reads whole to see whether it is
+// chained. Every record this runtime writes is far below it: the documents a
+// record carries are each bounded at 16 MiB or less by the surface that
+// admitted them, and its citations at MaxCitesBytes. A longer line is not one
+// this runtime wrote, so it is not read whole: it is not chained, and what
+// follows it commits to the whole file instead.
+const maxLineBytes = 64 << 20
+
+// readChunk is how much of the trail one read takes while looking for the last
+// line's start or hashing the file.
+const readChunk = 64 << 10
+
+// readHead reads what the next chained record follows, from the trail's
+// contents as the lock found them. Only the last line is read when it is
+// chained, which is the ordinary case and costs one short read however long the
+// trail is; otherwise the whole file is read once, to commit to it.
+func readHead(contents io.ReaderAt, size int64) (head, error) {
+	if size == 0 {
+		return head{trail: newTrail(), previous: Digest(nil)}, nil
+	}
+	line, err := lastLine(contents, size)
+	if err != nil {
+		return head{}, err
+	}
+	if trail, sequence, ok := chainedLine(line); ok {
+		return head{trail: trail, sequence: sequence, previous: Digest(line)}, nil
+	}
+	digest, lines, trail, err := readPrefix(contents, size)
+	if err != nil {
+		return head{}, err
+	}
+	if trail == "" {
+		trail = newTrail()
+	}
+	return head{trail: trail, sequence: lines, previous: digest}, nil
+}
+
+// lastLine reads the trail's last line, without its newline, refusing a trail
+// whose last byte is not a newline. It answers nil for a line longer than
+// maxLineBytes, which is not read.
+func lastLine(contents io.ReaderAt, size int64) ([]byte, error) {
+	var final [1]byte
+	if err := readAt(contents, final[:], size-1); err != nil {
+		return nil, err
+	}
+	if final[0] != '\n' {
+		return nil, ErrIncompleteLastLine
+	}
+	end := size - 1
+	start := int64(0)
+	chunk := make([]byte, readChunk)
+	for cursor := end; cursor > 0; {
+		if end-cursor > maxLineBytes {
+			return nil, nil
+		}
+		n := min(int64(len(chunk)), cursor)
+		if err := readAt(contents, chunk[:n], cursor-n); err != nil {
+			return nil, err
+		}
+		if index := bytes.LastIndexByte(chunk[:n], '\n'); index >= 0 {
+			start = cursor - n + int64(index) + 1
+			break
+		}
+		cursor -= n
+	}
+	if end-start > maxLineBytes {
+		return nil, nil
+	}
+	line := make([]byte, end-start)
+	if err := readAt(contents, line, start); err != nil {
+		return nil, err
+	}
+	return line, nil
+}
+
+// readAt reads exactly len(into) bytes at offset.
+func readAt(contents io.ReaderAt, into []byte, offset int64) error {
+	_, err := io.ReadFull(io.NewSectionReader(contents, offset, int64(len(into))), into)
+	return err
+}
+
+// trailMember is the spelling of the trail member in a line this runtime
+// wrote; a line without it is not read for one.
+var trailMember = []byte(`"trail":`)
+
+// readPrefix reads the whole trail once: the SHA-256 of all of it, the number
+// of lines, and the identity of the last chained line in it, or "" when there
+// is none. The trail's last byte is a newline, which lastLine has already
+// checked, so every line is counted.
+func readPrefix(contents io.ReaderAt, size int64) (string, int64, string, error) {
+	hash := sha256.New()
+	reader := bufio.NewReaderSize(io.NewSectionReader(contents, 0, size), readChunk)
+	var lines int64
+	trail := ""
+	line := []byte{}
+	long := false
+	for {
+		piece, err := reader.ReadSlice('\n')
+		hash.Write(piece)
+		if !long {
+			if len(line)+len(piece) > maxLineBytes+1 {
+				long, line = true, line[:0]
+			} else {
+				line = append(line, piece...)
+			}
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", 0, "", err
+		}
+		lines++
+		if !long && bytes.Contains(line, trailMember) {
+			if found, _, ok := chainedLine(line[:len(line)-1]); ok {
+				trail = found
+			}
+		}
+		line, long = line[:0], false
+	}
+	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), lines, trail, nil
+}
+
+// chainedLine reads a line's chain members: the trail and the sequence, and
+// whether it is a chained line at all. The line must be one JSON text, an
+// object naming each member exactly once, so a line two readers could read two
+// ways is not chained. The sequence stops short of 2^53-1 so the next one is
+// still an integer every JSON reader holds exactly.
+func chainedLine(line []byte) (string, int64, bool) {
+	if len(line) == 0 || !json.Valid(line) {
+		return "", 0, false
+	}
+	members, err := exactObject(line)
+	if err != nil {
+		return "", 0, false
+	}
+	var trail, previous string
+	var sequence int64
+	if decodeString(members["trail"], &trail) != nil || !trailForm.MatchString(trail) {
+		return "", 0, false
+	}
+	if decodeInteger(members["sequence"], &sequence) != nil || sequence < 1 || sequence >= maxSafeInteger {
+		return "", 0, false
+	}
+	if decodeString(members["previous"], &previous) != nil || !previousForm.MatchString(previous) {
+		return "", 0, false
+	}
+	return trail, sequence, true
+}
+
+// newTrail mints a trail's identity: sixteen random bytes, hex. Like a run id
+// it carries no time and says nothing about the project.
+func newTrail() string {
+	var raw [16]byte
+	// crypto/rand.Read cannot fail on a supported platform: it crashes the
+	// program rather than returning entropy it does not have.
+	_, _ = rand.Read(raw[:])
+	return hex.EncodeToString(raw[:])
 }

@@ -110,7 +110,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 		code   string
 	}{
 		"no configVersion":                     {`{"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
-		"a later configVersion":                {`{"configVersion":"6","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
+		"a later configVersion":                {`{"configVersion":"7","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a semver configVersion":               {`{"configVersion":"1.0.0","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a numeric configVersion":              {`{"configVersion":1,"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"no packs member":                      {`{"configVersion":"1"}`, "JPS-PROJECT-CONFIG-SCHEMA"},
@@ -139,7 +139,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 
 	// The version refusal names what would have been accepted; a message that only
 	// said "no" would leave a caller guessing.
-	_, failure := Load(writeProject(t, `{"configVersion":"6","packs":{}}`, nil))
+	_, failure := Load(writeProject(t, `{"configVersion":"7","packs":{}}`, nil))
 	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+strings.Join(SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must be unsupported and name this runtime's versions: exit=%d %q", failure.ExitCode, failure.Message)
 	}
@@ -1817,9 +1817,58 @@ func TestConfigVersionTwoDeclaresGraphs(t *testing.T) {
 	// The schema payload names the newest shape and every shape read, so it
 	// cannot imply an earlier one stopped being accepted.
 	description := SchemaDescription("packs schema")
-	if description.ConfigVersion != "5" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3", "4", "5"}) ||
-		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:5" {
+	if description.ConfigVersion != "6" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3", "4", "5", "6"}) ||
+		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:6" {
 		t.Fatalf("schema description = %+v", description)
+	}
+}
+
+// configVersion "6" is the shape whose audit member may say whether its trail
+// is chained (ADR-0047). The gate lives in the schema's bytes like every other:
+// the member under any earlier version is refused and names "6", it is a
+// strict boolean, a "6" still reads every earlier member, and absent is
+// chained -- a project that keeps a trail under "3", "4" or "5" is chained too.
+func TestConfigVersionSixMaySayWhetherTheTrailIsChained(t *testing.T) {
+	for _, version := range []string{"3", "4", "5"} {
+		for _, value := range []string{"true", "false"} {
+			_, failure := Load(writeProject(t, `{"configVersion":"`+version+`","audit":{"dir":"audit","chain":`+value+`},"packs":{}}`, nil))
+			if failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" || !strings.Contains(failure.Message, "'6'") {
+				t.Fatalf("chain %s under %s names the version to change: %+v", value, version, failure)
+			}
+		}
+	}
+	for _, value := range []string{`"false"`, `0`, `null`} {
+		if _, failure := Load(writeProject(t, `{"configVersion":"6","audit":{"dir":"audit","chain":`+value+`},"packs":{}}`, nil)); failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" {
+			t.Fatalf("chain %s is refused: %+v", value, failure)
+		}
+	}
+	loaded, failure := Load(writeProject(t, `{"configVersion":"6","audit":{"dir":"audit","chain":false},"requireComparableFacts":true,"requireReviewed":true,
+	  "packs":{"a":{"path":"a.json"}},"graphs":{"g":{"path":"g.json"}}}`, nil))
+	if failure != nil {
+		t.Fatal(failure.Message)
+	}
+	defer loaded.Close()
+	if loaded.Config.Audit.Chains() || !loaded.RequiresComparableFacts() || !loaded.Config.RequireReviewed || len(loaded.Config.Graphs) != 1 {
+		t.Fatalf("config = %+v", loaded.Config)
+	}
+	for _, config := range []string{
+		`{"configVersion":"6","audit":{"dir":"audit"},"packs":{}}`,
+		`{"configVersion":"6","audit":{"dir":"audit","chain":true},"packs":{}}`,
+		`{"configVersion":"3","audit":{"dir":"audit"},"packs":{}}`,
+		`{"configVersion":"5","audit":{"dir":"audit"},"packs":{}}`,
+	} {
+		chained, failure := Load(writeProject(t, config, nil))
+		if failure != nil {
+			t.Fatal(failure.Message)
+		}
+		if !chained.Config.Audit.Chains() {
+			t.Fatalf("%s chains its trail", config)
+		}
+		chained.Close()
+	}
+	var none *Audit
+	if none.Chains() {
+		t.Fatal("no audit member chains nothing")
 	}
 }
 
