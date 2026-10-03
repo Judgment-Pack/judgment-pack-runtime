@@ -1035,6 +1035,13 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   nothing. `packs validate` reports why, as the `audit-signing-key` check, naming the key by its
   `keyId` and never by anything read from its file; nothing this runtime prints or logs carries key
   material. `jpack audit key public <seed>` prints a key's public half for whoever will verify.
+- **A mount is not seen.** The location check refuses a key reached through any link, and a key
+  whose path passes through the project's directory. It cannot see a bind mount, or any other mount,
+  that shows a directory or file from inside the project at a path outside it: a bind of the
+  project's `keys` directory, or of the seed file itself, at an outside path is accepted, while a
+  bind of the whole project is refused, since the walk then passes through the project's directory.
+  Making such a mount takes control of the mounts the runtime sees, so the check guards against a
+  key put in the wrong place, not against whoever controls the machine's mounts.
 - **No key signs on Windows.** Who may read a file there is whatever its ACL allows, and this
   runtime does not read ACLs, so it cannot show that a key is its owner's alone. Every key is refused
   there, as on any platform without unix ownership and modes: records are unsigned, and `packs
@@ -1062,6 +1069,13 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   not the key in force and signs nothing, and `packs validate` says so. Only the key in force can
   rotate: a lost key cannot be rotated away from, and then the trail and its sidecar are moved aside
   together, so the next record starts a new trail with a new sidecar.
+- **The writer does not check a rotation's signature.** To choose the key in force, the writer
+  follows the sidecar's last readable rotation line as it stands; it does not verify that line's
+  signature. A well-formed rotation line someone forged therefore stops the configured key from
+  signing, and records are written unsigned, while `audit verify` reports the line as
+  `rotation-invalid` and keeps the old key. It cannot make any record count as signed. It means
+  whoever can write the sidecar can stop signing, as they could by deleting the sidecar;
+  `--require-signed-through` is what turns records left unsigned that way into a failure.
 - **Revocation is the verifier's.** A rotation stops the old key signing here; it cannot stop a copy
   of that key signing elsewhere. Whoever verifies says which keys they trust, from the outside:
   `--public-key` once per key, in the order the trail used them, and `--revoked <file>` for a key

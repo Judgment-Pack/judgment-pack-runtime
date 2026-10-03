@@ -135,6 +135,20 @@ validate` reports the first two, and `audit verify` counts unsigned records. No 
 or report carries key material: keys are named by `keyId`. `jpack audit verify --public-key` checks
 the signatures against keys the verifier supplies, never against the project's own configuration.
 
+Two limits of that are accepted rather than closed. **The location check does not see mounts.** It
+refuses a key reached through any link, and a key whose path passes through the project's
+directory, but a bind mount, or any other mount, that shows a directory or file from inside the
+project at a path outside it is not seen: a bind of the project's `keys` directory, or of the seed
+file, at an outside path is accepted, while a bind of the whole project is refused. Making such a
+mount takes control of the runtime's mount namespace, so the check guards against a key put in the
+wrong place, not against whoever controls the machine's mounts. **The writer does not authenticate
+rotation lines.** It chooses the key in force by the sidecar's last readable rotation line without
+verifying that line's signature, so a well-formed forged rotation stops the configured key from
+signing (records are written unsigned) while `audit verify` reports it as `rotation-invalid` and
+keeps the old key. It cannot make a record count as signed; it lets whoever can write the sidecar
+stop signing, as deleting the sidecar would, and `--require-signed-through` turns that into a
+failure.
+
 What a signature establishes is narrow. It shows that whoever held the key signed a record with
 those exact bytes at that trail and sequence, and so it protects a trail against someone who can
 edit the files but holds no key. **It establishes nothing against the operator**, who holds the key
