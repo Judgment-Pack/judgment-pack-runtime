@@ -10,6 +10,7 @@ import (
 	"hash"
 	"io"
 	"sort"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -91,7 +92,13 @@ const (
 	notAfterTheft          = "Anything after a signing key was copied or stolen: whoever holds it can sign altered records, or a rotation to a key of their own, and only the verifier's own trust configuration refuses what they sign, by revoking that key from the sequence it was taken at and by naming the keys the trail rotates through."
 	notSegmented           = "That the history is intact across a discontinuity: a repair keeps the damaged line in place and links over it, so what the damaged line held is not part of any segment."
 	notHeldAll             = "That the holder kept every checkpoint handed to it, or that none later than those supplied exists: the coverage reaches only the checkpoints supplied here."
-	notStamped             = "When any checkpoint was made: time stamps from an RFC 3161 authority are not available yet (runtime #208)."
+	notStampedUnchecked    = "When any checkpoint existed: no time-stamping roots were supplied, so no stamp was checked."
+	establishesStamped     = "Lines 1 to %d existed by %s, as a time-stamping authority under a root supplied attests: the time it states, plus the accuracy it states."
+	notStampedAfter        = "That lines after %d existed by any time: no trusted stamp covers them."
+	notStampedNone         = "That any line existed by any time: no trusted stamp covers one."
+	notBeforeStamp         = "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each record's at and the first stamp covering it is reported, and judging it is the reader's."
+	notAgainstAuthority    = "Anything against a time-stamping authority that is not independent of the operator: one that colludes can stamp what it is asked, when it is asked; a root supplied is trusted because the verifier chose it."
+	notRevocationChecked   = "That no time-stamping certificate was revoked as of its stamp's time, for %d trusted stamp(s): no revocation list supplied speaks for that time, so their status was not checked."
 )
 
 // Verify reads a trail of size bytes, line by line and over its exact bytes,
@@ -121,6 +128,18 @@ const (
 // fails is a finding in the report.
 func Verify(contents io.ReaderAt, size int64, options Options) (Report, error) {
 	v := newVerifier(options)
+	if options.Stamps != nil && options.Stamps.Verify.Roots != nil {
+		stamps, err := newStampChecker(options.Stamps)
+		if err != nil {
+			return Report{}, errors.Join(ErrStampsRead, err)
+		}
+		v.stamps = stamps
+		for _, sequence := range stamps.wanted() {
+			if _, kept := v.heldLines[sequence]; !kept {
+				v.heldLines[sequence] = nil
+			}
+		}
+	}
 	reader := bufio.NewReaderSize(io.NewSectionReader(contents, 0, size), readChunk)
 	for {
 		ended, err := v.readLine(reader)
@@ -145,6 +164,9 @@ func Verify(contents io.ReaderAt, size int64, options Options) (Report, error) {
 // ErrSidecarRead is a signature sidecar that could not be read to its end.
 var ErrSidecarRead = errors.New("the signature sidecar could not be read")
 
+// ErrStampsRead is a stamps file that could not be read to its end.
+var ErrStampsRead = errors.New("the stamps file could not be read")
+
 // Options says what Verify holds a trail to and what it lists.
 type Options struct {
 	// Held is the checkpoints a holder kept. Every one must match the trail.
@@ -160,6 +182,9 @@ type Options struct {
 	// Signatures, when it supplies at least one public key, checks the
 	// signature sidecar in step with the trail (ADR-0047 §2b).
 	Signatures *SignatureOptions
+	// Stamps, when it supplies roots, checks the stamps file's tokens and
+	// holds their checkpoints to the trail (ADR-0047 §2a, C2).
+	Stamps *StampOptions
 }
 
 // Report is what Verify found: the chain, and the checkpoints it listed, with
@@ -194,6 +219,9 @@ type seenLine struct {
 	// discontinuity, whatever else it holds: no discontinuity may name such a
 	// line as damaged.
 	discontinuityKind bool
+	// at is a chained line's at, the operator's word, when it could be read.
+	at     time.Time
+	atRead bool
 }
 
 // The rules a chained line's previous is held to, named in a finding.
@@ -245,6 +273,9 @@ type verifier struct {
 	// was supplied, and sidecarErr is the first failure to read it.
 	signatures *signatureChecker
 	sidecarErr error
+	// stamps holds the stamps a verification read, when roots were
+	// supplied, and gathers the lags of the records they cover.
+	stamps *stampChecker
 }
 
 func newVerifier(options Options) *verifier {
@@ -358,6 +389,11 @@ func (v *verifier) check(seen *seenLine, line []byte) {
 	seen.discontinuityKind = members != nil && decodeString(members["kind"], &kind) == nil && kind == KindDiscontinuity
 	if !ok {
 		return
+	}
+	var at string
+	if decodeString(members["at"], &at) == nil {
+		parsed, err := time.Parse(time.RFC3339Nano, at)
+		seen.at, seen.atRead = parsed, err == nil
 	}
 	seen.chained, seen.link = true, found
 	expected, known, rule := seen.before, seen.beforeKnown, seen.beforeRule
@@ -526,6 +562,9 @@ func (v *verifier) settle(settled *seenLine) {
 		return
 	}
 	v.coverage.Chained++
+	if v.stamps != nil {
+		v.stamps.settle(settled.number, settled.at, settled.atRead)
+	}
 	if v.firstChained {
 		v.coverage.Unchained += v.pendingUnchained
 	} else {
@@ -584,7 +623,7 @@ func (v *verifier) report(size int64) result.AuditChain {
 	chain.Coverage.Uncovered = v.pendingUnchained
 	chain.Coverage.Signed = result.AuditCoverageState{Status: "not-checked", Detail: "no public key was supplied"}
 	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "not-supplied"}
-	chain.Coverage.Stamped = result.AuditCoverageState{Status: "not-available", Detail: "RFC 3161 time stamps are runtime #208, part 2"}
+	chain.Coverage.Stamped = result.AuditCoverageState{Status: "not-checked", Detail: "no time-stamping roots were supplied"}
 	chain.Coverage.Unwitnessed = chain.Coverage.Chained
 	if v.head != nil {
 		chain.Trail = v.head.link.trail
@@ -600,6 +639,11 @@ func (v *verifier) report(size int64) result.AuditChain {
 	if chain.Discontinuities == nil {
 		chain.Discontinuities = []result.AuditDiscontinuity{}
 	}
+	// A trusted stamp of a checkpoint the trail no longer holds is a finding
+	// of the trail, recorded before any coverage is decided.
+	if v.stamps != nil {
+		v.stamps.match(v)
+	}
 	if len(v.options.Held) > 0 {
 		v.checkHeld(&chain)
 	}
@@ -608,6 +652,9 @@ func (v *verifier) report(size int64) result.AuditChain {
 	}
 	if v.signatures != nil {
 		v.signatures.coverage(v, &chain)
+	}
+	if v.stamps != nil {
+		v.stamps.coverage(v, &chain)
 	}
 	chain.Findings = v.findings
 	if chain.Findings == nil {
@@ -735,6 +782,21 @@ func statements(chain result.AuditChain) ([]string, []string) {
 	default:
 		notEstablished = append(notEstablished, notSignedUnchecked)
 	}
-	notEstablished = append(notEstablished, notStamped)
+	switch chain.Coverage.Stamped.Status {
+	case "through":
+		through := chain.Coverage.Stamped.Through
+		establishes = append(establishes, fmt.Sprintf(establishesStamped, through, chain.Stamps.CoveredBy))
+		notEstablished = append(notEstablished, fmt.Sprintf(notStampedAfter, through))
+	case "none":
+		notEstablished = append(notEstablished, notStampedNone)
+	default:
+		notEstablished = append(notEstablished, notStampedUnchecked)
+	}
+	if chain.Stamps != nil {
+		notEstablished = append(notEstablished, notBeforeStamp, notAgainstAuthority)
+		if chain.Stamps.RevocationNotChecked > 0 {
+			notEstablished = append(notEstablished, fmt.Sprintf(notRevocationChecked, chain.Stamps.RevocationNotChecked))
+		}
+	}
 	return establishes, notEstablished
 }

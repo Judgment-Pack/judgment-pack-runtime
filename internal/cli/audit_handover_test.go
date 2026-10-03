@@ -72,12 +72,12 @@ func TestADelivererHandsEachCheckpointToAHolder(t *testing.T) {
 	}
 	code, output = verification(t, "--config", configPath, "--expect", holder, "--require-checkpoint-through", "3")
 	if code != 0 || output.Status != "valid" || output.Held.Supplied != 3 || output.Held.Status != "matched" || output.Coverage.Witnessed != 3 ||
-		output.Coverage.Unwitnessed != 0 || output.Required.Status != "met" || output.Coverage.Stamped.Status != "not-available" {
+		output.Coverage.Unwitnessed != 0 || output.Required.Status != "met" || output.Coverage.Stamped.Status != "not-checked" {
 		t.Fatalf("exit=%d %+v %+v %+v", code, output.Held, output.Coverage, output.Required)
 	}
 	code, human, _ := runTest(t, []string{"audit", "verify", "--config", configPath, "--expect", holder}, "")
 	if code != 0 || !strings.HasPrefix(human, "consistent, and witnessed through the held checkpoint at sequence 3") ||
-		!strings.Contains(human, "records: 3 witnessed by a held checkpoint, 0 unwitnessed; stamped: not available (#208)") {
+		!strings.Contains(human, "records: 3 witnessed by a held checkpoint, 0 unwitnessed; stamped: not checked (no --tsa-roots)") {
 		t.Fatalf("human output: %q", human)
 	}
 }

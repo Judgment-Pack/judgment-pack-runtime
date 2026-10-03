@@ -97,7 +97,7 @@ establish. With `--expect`, a checkpoint `jpack audit checkpoint` printed earlie
 other than the operator kept, it also fails a trail cut short before the checkpoint's record, or one
 with another identity or another record there; the lines after that record stay unauthenticated. A
 checkpoint is only as independent as whoever holds it: one kept by the operator protects nothing
-against the operator. Time-stamped checkpoints are not built yet (#208). `jpack audit repair`
+against the operator. `jpack audit repair`
 removes and rewrites nothing: after a write that did not complete it keeps the damaged bytes in place as a line of their own and appends a discontinuity record naming
 their digest, and `verify` then reports the trail as segments, never as intact across the break. A
 repair is something an operator can run at will, so a discontinuity says a break was acknowledged,
@@ -115,6 +115,25 @@ held the old ones. What the operator cannot do is change a holder's copy, and `j
 --expect <held>` fails any rewrite of the records a held checkpoint covers. The protection is
 exactly as good as the holder's independence and retention, and it says nothing about records after
 the last checkpoint the holder kept.
+
+**Time stamps** (ADR-0047 §2a, C2) are a configured option. `jpack audit stamp` sends the SHA-256 of
+the current checkpoint's canonical form to the configured RFC 3161 authority and keeps the token in
+`stamps.jsonl`; nothing on the decision path contacts the authority, and a stamp that fails writes
+nothing and changes no decision. The authority learns the checkpoint's digest, which is not
+confidential (ADR-0047, "Privacy"). The authority's address may carry credentials, so no message
+names it. `jpack audit verify --tsa-roots` verifies tokens offline against roots the verifier
+supplies, never against the project's configuration. The token's DER is parsed with
+`encoding/asn1` and its chain with `crypto/x509`, and both are held to an exact subset of RFC 3161
+and RFC 5652: one signer; signed attributes binding the content type, the TSTInfo's digest and the
+signing certificate; RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512; a certificate for
+time-stamping alone, by a critical extension; the chain valid at the token's own time. A stamp
+establishes that the checkpoint existed by the time the authority states, **as far as that
+authority is independent of the operator**: one that colludes can stamp what it is asked, when it
+is asked. **Revocation is checked only against lists the verifier supplies** that were issued by the
+certificate's issuer at or after the stamp's time and while the certificate was valid; a stamp no
+such list speaks for is reported as not checked, never as good, and nothing is fetched. A stamp
+does not show when a record was made: `at` stays the operator's word, and the report gives the lag
+for the reader to judge.
 
 **Signatures** (ADR-0047 §2b) are opt-in. A project names an Ed25519 seed by the audit member's
 `signingKey` or by `JPACK_SIGNING_KEY`, and each chained record is then signed in

@@ -560,7 +560,7 @@ written, or that the trail is complete. `jpack audit checkpoint` prints the chec
 chained record, one canonical JSON line naming the trail's identity, the record's sequence and the
 SHA-256 of its exact bytes, for handing to someone who will keep it. `jpack audit verify --expect
 <checkpoint>` then also fails a trail that is shorter, has another identity, or has another record
-at that sequence, and reports the lines up to it as checkpointed. Time-stamped checkpoints are #208.
+at that sequence, and reports the lines up to it as checkpointed.
 After a write that did not
 complete, `jpack audit repair` keeps the damaged bytes in place as a line of their own and appends
 a discontinuity record that names their digest and links over them, so the writer goes on (it never
@@ -580,8 +580,26 @@ holds the trail to every one of them, and reports the records up to the highest 
 with no failed check at or before it, as witnessed and the rest as unwitnessed; `--require-checkpoint-through <sequence>` fails while any
 record up to that sequence is unwitnessed. A held checkpoint shows the records it covers are the
 ones that existed when it was handed over, to anyone who trusts the holder's copy. It shows nothing
-about later records, or about checkpoints the holder did not keep, and nothing about when; RFC 3161
-time stamps are #208's second part.
+about later records, or about checkpoints the holder did not keep, and nothing about when.
+
+**Stamping checkpoints.** A project may name an RFC 3161 time-stamping authority,
+`"audit": { "dir": "audit", "timestampAuthority": "https://…" }` under configVersion `"6"`, and
+`jpack audit stamp`, run by a scheduler, Desk or a person, asks it to stamp the SHA-256 of the
+current checkpoint and keeps the token in `stamps.jsonl` beside the trail (ADR-0047 §2a). Nothing on
+the decision path asks the authority: a decision is appended first, a record not stamped yet is
+pending, and an authority that cannot stamp leaves the trail and every decision as they were. A
+checkpoint already stamped is not asked for again. `jpack audit verify --tsa-roots <file>` checks
+every token against the roots the verifier trusts: its digest, its signature, its certificate's
+time-stamping usage and chain at the time the token states, its policy (`--tsa-policy`), and,
+against revocation lists supplied with `--tsa-crls` that can speak for the stamp's time, its
+status, reported as not checked where none can. A trusted stamp whose checkpoint the trail no
+longer holds shows the trail was rewritten since. The report gives the records stamped and the lag
+between each record's `at` and the first stamp covering it; `--require-stamped-through <sequence>`
+fails while the records up to it are not stamped. A stamp establishes that the checkpoint existed
+by the time the authority states, as that authority attests. It does not establish when a record
+was made: `at` stays the operator's word. It establishes nothing against an authority that is not
+independent of the operator, and nothing about revocation where it was not checked. The
+token is parsed and verified with the standard library alone; the guide states every rule.
 
 **Signing the trail.** A project may name an Ed25519 seed held outside the project, by
 `"audit": { "dir": "audit", "signingKey": "<absolute path>" }` under configVersion `"6"` or by the

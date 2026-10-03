@@ -36,6 +36,11 @@
       "description": "The same gate for the audit member's signingKey, which the \"6\" shape adds beside chain.",
       "if": { "required": ["audit"], "properties": { "audit": { "required": ["signingKey"] } } },
       "then": { "properties": { "configVersion": { "const": "6" } } }
+    },
+    {
+      "description": "The same gate for the audit member's timestampAuthority, which the \"6\" shape adds beside chain.",
+      "if": { "required": ["audit"], "properties": { "audit": { "required": ["timestampAuthority"] } } },
+      "then": { "properties": { "configVersion": { "const": "6" } } }
     }
   ],
   "properties": {
@@ -88,10 +93,16 @@
           "description": "The absolute path of an Ed25519 seed, 64 hexadecimal characters as the gateway's keygen and jpack audit key generate write it, that signs every chained record (ADR-0047). Its path must have no symbolic link anywhere in it, and it must be outside this file's own directory, compared by device and inode as the key is opened, one regular file with one name, owned by the user this runtime runs as and readable and writable by nobody else. On Windows, whose ACLs this runtime does not read, no key signs. The JPACK_SIGNING_KEY environment variable, when set and not empty, names the key instead, and it is process-wide: it signs every chained trail the process records for, under any configVersion. After each chained record is written, and under the same exclusion of other writers, one line is appended to signatures.jsonl beside the trail, binding the record's trail, sequence and the SHA-256 of its exact line bytes; the record line itself is not changed. Signing never fails a decision: a key that is refused or not the key in force signs nothing, a signature that cannot be written leaves its record unsigned, and packs validate reports why as the audit-signing-key check. jpack audit key rotate hands signing over to a next key with a line the current key signs. A signature shows only that whoever held the key signed the record: nothing against the operator, who holds it, and nothing after the key is copied. jpack audit verify --public-key checks the signatures. Declaring it requires configVersion \"6\" and a chained trail.",
           "type": "string",
           "pattern": "^(/|[A-Za-z]:[\\\\/]|\\\\\\\\)"
+        },
+        "timestampAuthority": {
+          "description": "The http or https address of an RFC 3161 time-stamping authority that jpack audit stamp asks to stamp the trail's current checkpoint (ADR-0047). Nothing on the decision path asks it: a decision is appended first, and stamped only when something runs jpack audit stamp, a scheduler, Desk or a person, at whatever interval or after whatever records that caller chooses. The request carries the SHA-256 of the checkpoint's canonical form and nothing else of the trail, and the token, which carries the authority's certificate, is kept in stamps.jsonl beside the trail; a checkpoint already stamped is not asked for again. Which authorities a verifier trusts is the verifier's: jpack audit verify --tsa-roots takes them, never this member. A stamp shows that the checkpoint existed by the time the authority states, as far as that authority is independent of the operator; it says nothing of how long before, and a record's at stays the operator's word. Declaring it requires configVersion \"6\" and a chained trail.",
+          "type": "string",
+          "pattern": "^https?://[^\\s]+$",
+          "maxLength": 2048
         }
       },
       "if": { "required": ["chain"], "properties": { "chain": { "const": false } } },
-      "then": { "not": { "required": ["signingKey"] } }
+      "then": { "allOf": [{ "not": { "required": ["signingKey"] } }, { "not": { "required": ["timestampAuthority"] } }] }
     },
     "decisionId": {
       "type": "string",

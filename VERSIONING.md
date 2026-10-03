@@ -82,7 +82,7 @@ different rules, and conflating them has been a live source of error.
   does not know rather than ignoring it. Adding one therefore moves the version, whatever the
   addition is: `graphs` moved `configVersion` to `"2"`, `audit` moved it to `"3"`,
   `requireReviewed` moved it to `"4"`, `requireComparableFacts` moved it to `"5"`, and the audit
-  member's `chain` and `signingKey` moved it to `"6"` for exactly this reason, and the version gate is what turns an
+  member's `chain`, `signingKey` and `timestampAuthority` moved it to `"6"` for exactly this reason, and the version gate is what turns an
   unreadable-config refusal into an actionable "this runtime accepts" one. The audit record's chain
   members (ADR-0047) are the other kind of change: additive output, so `recordVersion` stays `"1"`.
   So is the discontinuity line a repair appends, a third `kind` beside `evaluation` and
@@ -91,7 +91,8 @@ different rules, and conflating them has been a live source of error.
   `checkpointVersion`, `"1"`, and is a closed input to `jpack audit verify --expect`. A line of the
   signature sidecar carries its own `sidecarVersion`, `"1"`, and its shape is exact: a reader
   counts a line of another version or shape as unreadable, signing nothing, so a later version is
-  a new `sidecarVersion` beside the old one rather than a change to it.
+  a new `sidecarVersion` beside the old one rather than a change to it. A line of the stamps file
+  carries its own `stampVersion`, `"1"`, by the same rule.
 
 ## Release artifacts
 

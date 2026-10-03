@@ -103,9 +103,8 @@ All notable changes to tagged releases are documented here.
     (`checkpoint-coverage-missing`, exit 1) while any record up to that sequence is unwitnessed.
   - The verification payload's `expect` member is replaced by `held` (`supplied`, `matched`,
     `failed`, `latest`, `status`) and `required`, and the coverage gains `witnessed`,
-    `unwitnessed` and `stamped` (`not-available`: RFC 3161 time stamps, and the lag between a
-    record's `at` and the first stamp covering it, are #208's second part). The `audit` commands
-    have not been released, so nothing released changes.
+    `unwitnessed` and `stamped` (below). The `audit` commands have not been released, so nothing
+    released changes.
   - A held checkpoint shows the records it covers are the ones that existed when it was handed over,
     to anyone who trusts the holder's copy, and nothing about later records, checkpoints the holder
     did not keep, or when.
@@ -161,6 +160,49 @@ All notable changes to tagged releases are documented here.
   - A signature establishes nothing against the operator, who holds the key, and nothing after the
     key is copied or stolen; the report says both in fixed sentences, and the guide says what a
     holder of a rotated-away key can and cannot do.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+- **Checkpoints stamped by an RFC 3161 time-stamping authority, as a configured option** (ADR-0047
+  §2a, C2; #208, part 2).
+  - `"audit": {"dir": "...", "timestampAuthority": "https://..."}` under configVersion `"6"` names
+    the authority; `timestampAuthority` under `"5"` or earlier is refused naming `"6"`, and with
+    `"chain": false` it is refused. Only http and https addresses are accepted.
+  - `jpack audit stamp` (or `--tsa <address>`) reads and verifies the trail, refusing one that fails
+    a check, and asks the authority to stamp the SHA-256 of the current checkpoint's canonical form,
+    with a nonce and a request for its certificate. The reply must grant the request, stamp that
+    digest, return the nonce, and carry a token whose signature holds; the token is then kept in
+    `stamps.jsonl` beside the trail, one canonical line `{"checkpoint","stampVersion":"1","token"}`
+    per stamp, under that file's own lock. It is idempotent by the checkpoint's digest: a checkpoint
+    already stamped is not asked for again.
+  - Nothing on the decision path contacts the authority. A decision is appended first, and stamped
+    when a scheduler, Desk or a person runs `audit stamp`; the runtime keeps no schedule. A stamp
+    that fails, unreachable, refused or not for the request, writes nothing and leaves the trail and
+    every decision as they were (`JPS-AUDIT-STAMP-UNREACHABLE`, `-REJECTED`, `-INVALID`, exit 4).
+    No message names the authority's address, which may carry credentials.
+  - `jpack audit verify --tsa-roots <file>` checks every stamp against roots the verifier supplies.
+    New findings: `stamp-malformed`, `stamp-signature-invalid`, `stamp-imprint-mismatch`,
+    `stamp-untrusted` (no chain to a root at the token's own time, an expired certificate then
+    among them), `stamp-usage-invalid` (not for time-stamping alone, by a critical extension),
+    `stamp-policy-mismatch` (`--tsa-policy <oid>`), `stamp-revoked`, `stamp-checkpoint-mismatch` (a
+    trusted stamp of a checkpoint the trail no longer holds: the trail was rewritten since) and
+    `stamp-coverage-missing` (`--require-stamped-through <sequence>`). `--stamps <file>` names the
+    stamps file.
+  - Revocation is checked only against lists supplied with `--tsa-crls`, issued by a certificate's
+    issuer at or after the stamp's time and while the certificate was valid; a stamp no such list
+    speaks for is reported as not checked, never as good, and nothing is fetched.
+  - The coverage's `stamped` is now `not-checked` without roots, and otherwise `through` the highest
+    sequence a trusted stamp covers with no failed check of the trail at or before it, or `none`.
+    The payload gains `stamps` (lines, unreadable, trusted, revocation checked and not checked, the
+    time the stamped records existed by, and the lag between each covered record's `at` and the
+    first trusted stamp covering it) and `requiredStamped`.
+  - The token is parsed and verified by a new package written on `encoding/asn1` and `crypto/x509`,
+    with no new dependency. It reads an exact subset of RFC 3161 and RFC 5652, in DER: one signer,
+    signed attributes binding the content type, the TSTInfo's digest and the signing certificate,
+    and RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512. Tokens made by OpenSSL are
+    checked in as test fixtures.
+  - A stamp establishes that the checkpoint existed by the time the authority states, as that
+    authority attests. It does not establish when a record was made (`at` stays the operator's
+    word), anything against an authority that is not independent of the operator, or revocation
+    status where it was not checked; the report says each in fixed sentences.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02
