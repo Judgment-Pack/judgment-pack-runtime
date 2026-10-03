@@ -122,8 +122,8 @@ func TestHeldCheckpointsWitnessTheRecordsTheyCover(t *testing.T) {
 		chain.Required == nil || *chain.Required != (result.AuditRequirement{Through: 4, Status: "met"}) {
 		t.Fatalf("chain = %+v held = %+v required = %+v", chain.Coverage, chain.Held, chain.Required)
 	}
-	if !containsString(chain.DoesNotEstablish, notHeldAll) || !containsString(chain.DoesNotEstablish, notStamped) ||
-		chain.Coverage.Stamped.Status != "not-available" {
+	if !containsString(chain.DoesNotEstablish, notHeldAll) || !containsString(chain.DoesNotEstablish, notStampedUnchecked) ||
+		chain.Coverage.Stamped.Status != "not-checked" {
 		t.Fatalf("statements = %v", chain.DoesNotEstablish)
 	}
 	beyond := verifyWith(t, data, Options{Held: kept, RequireThrough: 5}).Chain

@@ -205,10 +205,15 @@ type Graph struct {
 // project, that signs every chained record (ADR-0047 §2b); the
 // JPACK_SIGNING_KEY environment variable, when set, names it instead. It needs
 // configVersion "6" and a chained trail.
+//
+// TimestampAuthority is the address of the RFC 3161 authority jpack audit
+// stamp asks (ADR-0047 §2a, C2); nothing on the decision path asks it. It
+// needs configVersion "6" and a chained trail.
 type Audit struct {
-	Dir        string `json:"dir"`
-	Chain      *bool  `json:"chain,omitempty"`
-	SigningKey string `json:"signingKey,omitempty"`
+	Dir                string `json:"dir"`
+	Chain              *bool  `json:"chain,omitempty"`
+	SigningKey         string `json:"signingKey,omitempty"`
+	TimestampAuthority string `json:"timestampAuthority,omitempty"`
 }
 
 // Chains says whether this audit member asks for a chained trail: yes unless it
@@ -1138,6 +1143,16 @@ func (p *Project) OpenTrail() (*os.File, error) {
 		return nil, os.ErrInvalid
 	}
 	return p.root.Open(name)
+}
+
+// OpenStamps opens the stamps file beside the trail for reading, through the
+// project's own handle (ADR-0047 §2a). It is os.ErrInvalid when the
+// configuration declares no audit member.
+func (p *Project) OpenStamps() (*os.File, error) {
+	if p == nil || p.Config.Audit == nil {
+		return nil, os.ErrInvalid
+	}
+	return p.root.Open(path.Join(filepath.ToSlash(p.Config.Audit.Dir), audit.StampsName))
 }
 
 // OpenSidecar opens the signature sidecar beside the trail for reading,

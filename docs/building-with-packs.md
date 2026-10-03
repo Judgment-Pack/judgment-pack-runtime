@@ -993,9 +993,124 @@ records up to it are the ones that existed when it was handed over. What it does
 - anything about the records after the last checkpoint the holder kept, which are unwitnessed;
 - that the holder kept every checkpoint it was handed: the coverage reaches only the checkpoints
   supplied to `verify`;
-- when any checkpoint was made. Time stamps from an RFC 3161 authority, and the lag between a
-  record's `at` and the first stamp covering it, are not built yet (#208, part 2); the report shows
-  `stamped` as not available.
+- when any checkpoint was made, or handed over. A time-stamping authority's stamp gives an upper
+  bound instead (below): the checkpoint existed by the stamp's time.
+
+### Stamping checkpoints with a time-stamping authority
+
+A held checkpoint shows that records existed when it was handed over, but not by what time. An
+RFC 3161 time-stamping authority (TSA) gives an upper bound: it signs a checkpoint's digest together
+with the time it states, so the checkpoint existed by then (ADR-0047 §2a, C2). That bounds
+existence only: it says nothing of when the checkpoint, or any record in it, was made, nor when it
+was handed to anyone. It is a configured option:
+
+```json
+{
+  "configVersion": "6",
+  "audit": { "dir": "audit", "timestampAuthority": "https://tsa.example/stamp" },
+  "packs": {}
+}
+```
+
+```sh
+jpack audit stamp                                    # stamp the current checkpoint, run by a scheduler, Desk or you
+jpack audit verify --tsa-roots tsa-roots.pem         # check every stamp against the authorities you trust
+```
+
+- **No network on the decision path.** A decision is appended first. Stamping is a separate act,
+  `jpack audit stamp`, run by whatever schedules it, at whatever interval or after whatever records
+  that caller chooses: the runtime keeps no schedule of its own, because it runs no resident process
+  and a decision must never wait on an authority. A record not stamped yet is pending, never failed.
+  An authority that cannot be reached, that refuses, or that answers with a token for anything but
+  the request leaves the trail and every decision in it as they were, and writes nothing.
+- **What is sent.** `audit stamp` reads and verifies the trail first, and refuses a trail that fails
+  a check. It then sends the authority the SHA-256 of the current checkpoint's canonical form
+  (the `audit checkpoint` line, without its newline), a random nonce, and a request for the
+  authority's certificate, and nothing else of the trail. The digest commits to the checkpoint's
+  trail, sequence and record, and through the chain to every line before it. `--tsa <address>`
+  replaces the configured authority; `--timeout` bounds the wait (30 seconds by default).
+- **What is kept.** The reply must grant the request, stamp exactly that digest, return the nonce,
+  and carry a token whose signature holds under the certificate it carries. The token is then kept
+  in `stamps.jsonl` beside the trail, one line per stamp:
+  `{"checkpoint":{…},"stampVersion":"1","token":"<base64 of the token's DER>"}`. The stamps file is
+  written under its own lock, never the trail's.
+- **Idempotent by the checkpoint's digest.** A checkpoint already stamped is not asked for again, and
+  a token for it from a concurrent stamp is not kept twice. A lost reply is recovered by running
+  `audit stamp` again: it stamps the same checkpoint, or the newer one if records were added.
+
+`audit verify --tsa-roots <file>`, the PEM roots of the authorities you trust, checks every line of
+the stamps file beside the trail, or of `--stamps <file>`. Which authorities are trusted is the
+verifier's choice, never the project's configuration. Each token must:
+
+- stamp, with SHA-256, the digest of the checkpoint kept with it (`stamp-imprint-mismatch`);
+- be within the subset read: a SignedData of version 3 whose digest algorithms name the signer's;
+  one SignerInfo, of version 1 naming its certificate by issuer and serial or version 3 by subject
+  key identifier; a TSTInfo of version 1 with no critical extension and an accuracy a time span
+  holds (`stamp-malformed`). What is read is held to DER: each structure decoded must be what its
+  own DER encoding gives back byte for byte, which refuses an element after the last field, a
+  non-minimal length, a default written out, and a SET out of order. What verification does not need
+  is refused rather than carried: unsigned attributes, revocation data embedded in the token, signed
+  attributes other than those read (the content type, the message digest, the ESS binding, a signing
+  time and an RFC 6211 algorithm protection, each decoded and held to what it states), algorithm
+  parameters other than absent or NULL (`05 00`) where NULL is allowed and absent on ECDSA, an ESS
+  binding of more than one certificate or with policies, and a reply envelope with anything beside
+  its status (with its text and failure bits) and its token. An algorithm named twice, in the
+  SignerInfo and in the algorithm protection, is the same identifier when its parameters are, absent
+  and NULL being one for the SHA-2 digests and RSA. Three things are carried and not held to DER
+  here, and nothing is concluded from their contents: the certificates, as `crypto/x509` parses
+  them, which accepts some forms DER does not (an explicit default such as critical FALSE, a name's
+  attributes out of order); the issuer names of the SignerInfo and of an ESS issuerSerial, compared
+  byte for byte with the signing certificate's own encoding of its issuer; and the TSTInfo's `tsa`
+  name and the values of its non-critical extensions, which are never read;
+- have a signature, signed attributes and signing-certificate binding that hold, every binding
+  present (ESS `signingCertificate`, `signingCertificateV2`) naming the certificate that signed
+  (`stamp-signature-invalid`);
+- come from a certificate whose extended key usage is time-stamping alone, marked critical, as RFC
+  3161 requires (`stamp-usage-invalid`);
+- chain to a root supplied, through the certificates the token carries, with every certificate
+  valid at the time the token states, not now (`stamp-untrusted`; a certificate expired or not yet
+  valid at the stamp's time among them);
+- be under one of the policies `--tsa-policy <oid>` names, when any is given
+  (`stamp-policy-mismatch`).
+
+**Revocation is checked only where it can be.** `--tsa-crls <file>` supplies certificate revocation
+lists, PEM or DER. A certificate of the chain is checked only against a list from its issuer,
+signed by it, issued at or after the stamp's time and while the certificate was still valid, so a
+revocation would still be listed, and complete: not a delta list, not one an issuing distribution
+point scopes, not an indirect one, with no critical extension of its own, and with no critical
+entry extension but the reason code, the one an entry extension is decoded and applied. Such a list that shows it revoked at or before the stamp's time,
+or for a compromised key at any time, is `stamp-revoked`. A stamp no such list speaks for is
+reported with its status **not checked**, never as good, and the report says how many there are. The
+runtime fetches nothing to find out.
+
+A trusted stamp's checkpoint must then match the trail. A mismatch is `stamp-checkpoint-mismatch`:
+the authority attests that checkpoint existed, so the trail was rewritten since. That includes a
+last line edited, which the chain alone cannot see, and a trail cut short. Such a mismatch is a
+failed check of the trail, and it voids the coverage after it.
+
+The coverage's `stamped` is `through` the highest sequence a trusted, matching stamp covers, with no
+failed check of the trail at or before it. A stamp lends its time only to the records the chain
+links to its checkpoint: a stamp after a failed check of the trail, though it still matches, lends
+its time to no record, and neither the time reported nor the lag reaches past the failure. The report then gives the time those records existed by
+(the time the authority states, plus the accuracy it states) and the **lag** between each covered
+record's `at` and the first trusted stamp covering it: how many records, the longest lag and the
+shortest, each with its record's sequence, and whether some record's `at` is later than the stamp
+that covers it. `--require-stamped-through <sequence>` fails (`stamp-coverage-missing`, exit 1)
+while the records up to that sequence are not all stamped, as the other requirements do.
+
+What a stamp establishes is that the checkpoint, and every line before it, existed by the time the
+authority states, as that authority attests. What it does not:
+
+- anything before that time: when the records were made, or how long before the stamp. A record's
+  `at` stays the operator's word, and the lag is reported for the reader to judge, not judged;
+- anything against an authority that is not independent of the operator: one that colludes can
+  stamp what it is asked, when it is asked, and a root is trusted because the verifier chose it;
+- a certificate's revocation status as of the stamp's time, where no supplied list speaks for it;
+- anything about records after the last checkpoint stamped.
+
+A stamp also discloses the checkpoint's digest to the authority. The digest covers a whole record,
+including a random `run` id, so it is not trivially guessable, but it is not confidential either
+(ADR-0047, "Privacy").
 
 ### Signing the trail
 
@@ -1278,7 +1393,7 @@ verify; keep trails out of any line-ending conversion.
 
 None of the `audit` commands is offered as an MCP tool: a verification an agent runs on the trail of
 the server it is using shows nothing to someone who does not trust that server's operator, which is
-who a verification is for, and repair and the key commands write.
+who a verification is for, and repair, stamp and the key commands write.
 
 The records hold your input documents. That is what they are for, and it is why the directory is
 one you name rather than one this runtime picks: the human-readable diagnostics stay sanitized and

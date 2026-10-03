@@ -97,7 +97,7 @@ establish. With `--expect`, a checkpoint `jpack audit checkpoint` printed earlie
 other than the operator kept, it also fails a trail cut short before the checkpoint's record, or one
 with another identity or another record there; the lines after that record stay unauthenticated. A
 checkpoint is only as independent as whoever holds it: one kept by the operator protects nothing
-against the operator. Time-stamped checkpoints are not built yet (#208). `jpack audit repair`
+against the operator. `jpack audit repair`
 removes and rewrites nothing: after a write that did not complete it keeps the damaged bytes in place as a line of their own and appends a discontinuity record naming
 their digest, and `verify` then reports the trail as segments, never as intact across the break. A
 repair is something an operator can run at will, so a discontinuity says a break was acknowledged,
@@ -115,6 +115,36 @@ held the old ones. What the operator cannot do is change a holder's copy, and `j
 --expect <held>` fails any rewrite of the records a held checkpoint covers. The protection is
 exactly as good as the holder's independence and retention, and it says nothing about records after
 the last checkpoint the holder kept.
+
+**Time stamps** (ADR-0047 §2a, C2) are a configured option. `jpack audit stamp` sends the SHA-256 of
+the current checkpoint's canonical form to the configured RFC 3161 authority and keeps the token in
+`stamps.jsonl`; nothing on the decision path contacts the authority, and a stamp that fails writes
+nothing and changes no decision. The authority learns the checkpoint's digest, which is not
+confidential (ADR-0047, "Privacy"). The authority's address may carry credentials, so no message
+names it. `jpack audit verify --tsa-roots` verifies tokens offline against roots the verifier
+supplies, never against the project's configuration. The token is parsed with `encoding/asn1` and
+its chain with `crypto/x509`, and held to an exact subset of RFC 3161 and RFC 5652: SignedData
+version 3 naming the signer's digest algorithm; one signer; signed attributes binding the content
+type, the TSTInfo's digest and the signing certificate in every ESS binding present; an accuracy a
+time span holds; RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512; a certificate for
+time-stamping alone, by a critical extension; the chain valid at the token's own time. **What is
+read is held to DER**, each structure decoded being what its own DER encoding gives back byte for
+byte, and what verification does not need is refused rather than carried (unsigned attributes,
+embedded revocation data, unread signed attributes, algorithm parameters other than absent or NULL,
+ESS policies or a second ESS entry, anything beside a reply's status and its token). **Three things
+are carried and not held to DER by this runtime**, and nothing is concluded from their contents: the
+certificates, as `crypto/x509` parses them, which accepts some non-DER forms; the issuer names
+compared byte for byte with the signing certificate's own; and the TSTInfo's `tsa` name and the
+values of its non-critical extensions. A stamp establishes that the checkpoint existed by the time
+the authority states, **as far as that authority is independent of the operator**: one that colludes
+can stamp what it is asked, when it is asked. **Revocation is checked only against complete lists
+the verifier supplies** (no delta, scoped or indirect list, no critical list extension, and no
+critical entry extension but the reason code, the one this runtime decodes and applies) that were
+issued by the certificate's issuer at or after the stamp's time and while the certificate was valid;
+a stamp no such list speaks for is reported as not checked, never as good, and nothing is fetched. A
+stamp gives an upper bound on when the checkpoint existed, not when a record was made or handed
+over: `at` stays the operator's word, and the report gives the lag for the reader to judge. A stamp
+lends its time only to the records the chain links to its checkpoint, never past a failed check.
 
 **Signatures** (ADR-0047 §2b) are opt-in. A project names an Ed25519 seed by the audit member's
 `signingKey` or by `JPACK_SIGNING_KEY`, and each chained record is then signed in

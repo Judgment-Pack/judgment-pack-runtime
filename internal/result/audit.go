@@ -58,9 +58,10 @@ type AuditCoverage struct {
 	// sequence Checkpointed is through, or every one when it is through none.
 	Witnessed   int64 `json:"witnessed"`
 	Unwitnessed int64 `json:"unwitnessed"`
-	// Stamped is "not-available": time stamps from an RFC 3161 authority are
-	// not built yet (runtime #208, part 2), nor the lag between a record's at
-	// and the first stamp covering it.
+	// Stamped is "not-checked" when no time-stamping roots were supplied, so
+	// no stamp was checked (ADR-0047 §2a, C2); otherwise "through" the
+	// highest sequence a trusted stamp's checkpoint names, with no failed
+	// check of the trail at or before it, or "none".
 	Stamped AuditCoverageState `json:"stamped"`
 }
 
@@ -132,6 +133,38 @@ type AuditSignatures struct {
 	KeyInForce   string `json:"keyInForce"`
 }
 
+// AuditStamps is the stamps file as a verification read it: its lines, those
+// of no shape it reads, the trusted stamps (their token holds under the roots
+// supplied and their checkpoint matches the trail), how many of those had
+// their certificates' revocation status checked against a supplied list and
+// how many did not, the time the stamped coverage's records existed by, and
+// the lag between records' at and the first trusted stamp covering them.
+type AuditStamps struct {
+	Lines                int64          `json:"lines"`
+	Unreadable           int64          `json:"unreadable"`
+	Trusted              int64          `json:"trusted"`
+	RevocationChecked    int64          `json:"revocationChecked"`
+	RevocationNotChecked int64          `json:"revocationNotChecked"`
+	CoveredBy            string         `json:"coveredBy,omitempty"`
+	Lag                  *AuditStampLag `json:"lag"`
+}
+
+// AuditStampLag is the lag between each covered record's at, the operator's
+// word, and the time the first trusted stamp covering it attests the record
+// existed by: over Records records, the longest (and its record's sequence)
+// and the shortest (and its). AtAfterStamp says some record's at is later
+// than that time, which the operator's word cannot be if the authority's is
+// right. AtUnreadable counts covered records whose at could not be read.
+type AuditStampLag struct {
+	Records      int64   `json:"records"`
+	MaxSeconds   float64 `json:"maxSeconds"`
+	MaxSequence  int64   `json:"maxSequence,omitempty"`
+	MinSeconds   float64 `json:"minSeconds"`
+	MinSequence  int64   `json:"minSequence,omitempty"`
+	AtAfterStamp bool    `json:"atAfterStamp"`
+	AtUnreadable int64   `json:"atUnreadable"`
+}
+
 // AuditChain is what reading a trail found: its status, the scope of what was
 // checked, its coverage and segments, and every finding, with the statements of
 // what the result establishes and what it does not. Status is "valid" when
@@ -157,8 +190,13 @@ type AuditChain struct {
 	// supplied, and RequiredSigned a signed coverage the verification was
 	// told to require: every record up to Through covered by a valid
 	// signature.
-	Signatures       *AuditSignatures  `json:"signatures,omitempty"`
-	RequiredSigned   *AuditRequirement `json:"requiredSigned,omitempty"`
+	Signatures     *AuditSignatures  `json:"signatures,omitempty"`
+	RequiredSigned *AuditRequirement `json:"requiredSigned,omitempty"`
+	// Stamps is the stamps file as read, present when time-stamping roots
+	// were supplied, and RequiredStamped a stamped coverage the verification
+	// was told to require.
+	Stamps           *AuditStamps      `json:"stamps,omitempty"`
+	RequiredStamped  *AuditRequirement `json:"requiredStamped,omitempty"`
 	Findings         []AuditFinding    `json:"findings"`
 	FindingsTotal    int               `json:"findingsTotal"`
 	Establishes      []string          `json:"establishes"`
@@ -241,4 +279,20 @@ type AuditRotation struct {
 	From          string `json:"from"`
 	Next          string `json:"next"`
 	NextPublicKey string `json:"nextPublicKey"`
+}
+
+// AuditStamp is jpack audit stamp's payload: the checkpoint stamped, whether
+// this run stamped it or found it stamped already, and, for a stamp this run
+// kept, the time the authority states, the time the checkpoint existed by
+// (that time plus its stated accuracy) and the policy it stamped under.
+type AuditStamp struct {
+	OutputVersion string          `json:"outputVersion"`
+	Tool          Tool            `json:"tool"`
+	Command       string          `json:"command"`
+	Status        string          `json:"status"`
+	TrailPath     string          `json:"trailPath"`
+	Checkpoint    AuditCheckpoint `json:"checkpoint"`
+	StampedAt     string          `json:"stampedAt,omitempty"`
+	ExistedBy     string          `json:"existedBy,omitempty"`
+	Policy        string          `json:"policy,omitempty"`
 }
