@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha512"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 // The rules a second implementation of record signatures needs (#216), held
@@ -272,11 +275,29 @@ func TestEveryPublicKeyReadIsChecked(t *testing.T) {
 
 // memoryTrail is a chained trail of n records held in memory, of the guide's
 // test vector's trail.
-func memoryTrail(n int) [][]byte {
+func memoryTrail(n int) [][]byte { return damagedTrail(n, nil) }
+
+// damagedTrail is memoryTrail with each line in damaged a complete record
+// that a discontinuity on the next line names as damaged, as a repair names a
+// record whose newline was lost: the discontinuity links over it to what it
+// followed, and the records after link on from the discontinuity.
+func damagedTrail(n int, damaged map[int64]bool) [][]byte {
 	lines := [][]byte{}
+	followed := []string{}
 	previous := Digest(nil)
-	for sequence := 1; sequence <= n; sequence++ {
-		line := []byte(fmt.Sprintf(`{"recordVersion":"1","trail":"%s","sequence":%d,"previous":"%s","kind":"evaluation"}`, vectorTrail, sequence, previous))
+	for sequence := int64(1); sequence <= int64(n); sequence++ {
+		line := fmt.Appendf(nil, `{"recordVersion":"1","trail":"%s","sequence":%d,"previous":"%s","kind":"evaluation"}`, vectorTrail, sequence, previous)
+		if damaged[sequence-1] {
+			named := lines[sequence-2]
+			encoded, _ := encodeJSONLine(discontinuityRecord{
+				RecordVersion: RecordVersion, Trail: vectorTrail, Sequence: sequence, Previous: followed[sequence-2],
+				Run: "repair0000000000", At: "2026-10-03T00:00:00Z", Kind: KindDiscontinuity, Surface: "audit repair",
+				Tool:          Tool{Name: "jpack", Version: "test"},
+				Discontinuity: discontinuity{Reason: ReasonIncompleteLastLine, Line: sequence - 1, Bytes: int64(len(named)), Digest: Digest(named)},
+			})
+			line = bytes.TrimSuffix(encoded, []byte("\n"))
+		}
+		followed = append(followed, previous)
 		lines = append(lines, line)
 		previous = Digest(line)
 	}
@@ -348,9 +369,18 @@ func TestARotationToARefusedKeyHandsNothingOver(t *testing.T) {
 // its trail, and when it holds its next key is in force; and the first record
 // signature for S, in order, decides by step 2.
 func oneRecordSigned(record, sidecar []byte, options SignatureOptions) bool {
+	signed, _ := oneRecordCheck(record, sidecar, options)
+	return signed
+}
+
+// oneRecordCheck is oneRecordSigned, with the at of every rotation step 1
+// admitted on the way: the lines whose trail context, with the record's own,
+// decides whether its answer is the one audit verify gives.
+func oneRecordCheck(record, sidecar []byte, options SignatureOptions) (bool, []int64) {
+	anchors := []int64{}
 	trail, sequence, chained := chainedLine(record)
 	if !chained {
-		return false
+		return false, anchors
 	}
 	digest := Digest(record)
 	inForce, nextPinned, lastPlace := options.Keys[0], 1, int64(0)
@@ -365,7 +395,7 @@ func oneRecordSigned(record, sidecar []byte, options SignatureOptions) bool {
 	for {
 		end := bytes.IndexByte(sidecar, '\n')
 		if end < 0 {
-			return false
+			return false, anchors
 		}
 		item := parseSidecarLine(sidecar[:end])
 		sidecar = sidecar[end+1:]
@@ -381,6 +411,7 @@ func oneRecordSigned(record, sidecar []byte, options SignatureOptions) bool {
 		}
 		lastPlace = place
 		if item.kind == KindKeyRotation {
+			anchors = append(anchors, item.at)
 			if item.trail == trail && item.keyID == KeyID(inForce) &&
 				ed25519.Verify(inForce, RotationMessage(item.trail, item.at, hex.EncodeToString(item.next)), item.signature) &&
 				!revoked(item.at) && CheckPublicKey(item.next) == nil &&
@@ -393,7 +424,7 @@ func oneRecordSigned(record, sidecar []byte, options SignatureOptions) bool {
 			continue
 		}
 		return item.trail == trail && item.record == digest && item.keyID == KeyID(inForce) &&
-			ed25519.Verify(inForce, RecordMessage(trail, sequence, digest), item.signature) && !revoked(sequence)
+			ed25519.Verify(inForce, RecordMessage(trail, sequence, digest), item.signature) && !revoked(sequence), anchors
 	}
 }
 
@@ -401,21 +432,25 @@ func oneRecordSigned(record, sidecar []byte, options SignatureOptions) bool {
 // touching the signature.
 var keyIDMember = regexp.MustCompile(`"keyId":"[0-9a-f]{32}"`)
 
-// The guide's check of one record gives, for every record of a trail that
-// holds it undamaged, the answer audit verify gives for that record, however
-// the sidecar is reordered, cut, repeated, edited or added to: rotations
-// moved, made with the wrong key, to a refused key or to an unpinned one;
-// records signed twice, by another key or for another record; lines naming
-// another key, torn, overlong or of no shape. The records it finds signed are
-// the ones the verifier counts, up to the same sequence.
+// The guide's check of one record gives the answer audit verify gives for
+// that record whenever the trail context the guide names holds: the record
+// undamaged at its line, and each rotation step 1 admits before its line
+// anchored on an undamaged chained line of its trail. That holds however the
+// sidecar is reordered, cut, repeated, edited or added to: rotations moved,
+// made with the wrong key, to a refused key or to an unpinned one; records
+// signed twice, by another key or for another record; lines naming another
+// key, torn, overlong or of no shape. The trails are whole, or hold records a
+// discontinuity names as damaged, the first line among them. Where the
+// context does not hold, the guide claims nothing, and the answers do differ
+// in some rounds, so the condition is not idle.
 func TestOneRecordIsCheckedAsTheVerifierChecksIt(t *testing.T) {
+	signedThere := map[int64]bool{}
+	noteSigned = func(sequence int64) { signedThere[sequence] = true }
+	t.Cleanup(func() { noteSigned = func(int64) {} })
 	first, second, third := signerOf(t, vectorSeed1), signerOf(t, vectorSeed2), thirdSigner(t)
 	fourth := signerOf(t, strings.Repeat("0f", 32))
 	identity := ed25519.PublicKey(mustHex(t, testSmallOrder[0]))
 	const n = 12
-	lines := memoryTrail(n)
-	trail := joinLines(lines)
-	honest := [][]byte{}
 	sign := func(signer *Signer, line []byte) []byte {
 		signed, err := signer.SignRecordLine(line)
 		if err != nil {
@@ -426,21 +461,28 @@ func TestOneRecordIsCheckedAsTheVerifierChecksIt(t *testing.T) {
 	rotate := func(signer *Signer, trail string, at int64, next ed25519.PublicKey) []byte {
 		return bytes.TrimSuffix(signer.RotationLine(trail, at, next), []byte("\n"))
 	}
-	for index, line := range lines {
-		switch {
-		case index < 4:
-			honest = append(honest, sign(first, line))
-		case index < 8:
-			honest = append(honest, sign(second, line))
-		default:
-			honest = append(honest, sign(third, line))
+	// honestFor is the sidecar a writer leaves: each line signed, the first
+	// key rotating to the second after line rotatedAt, and the second to the
+	// third after line 8.
+	honestFor := func(lines [][]byte, rotatedAt int) [][]byte {
+		honest := [][]byte{}
+		for index, line := range lines {
+			switch {
+			case index < rotatedAt:
+				honest = append(honest, sign(first, line))
+			case index < 8:
+				honest = append(honest, sign(second, line))
+			default:
+				honest = append(honest, sign(third, line))
+			}
+			if index == rotatedAt-1 {
+				honest = append(honest, rotate(first, vectorTrail, int64(rotatedAt), second.public))
+			}
+			if index == 7 {
+				honest = append(honest, rotate(second, vectorTrail, 8, third.public))
+			}
 		}
-		if index == 3 {
-			honest = append(honest, rotate(first, vectorTrail, 4, second.public))
-		}
-		if index == 7 {
-			honest = append(honest, rotate(second, vectorTrail, 8, third.public))
-		}
+		return honest
 	}
 	signers := []*Signer{first, second, third, fourth}
 	random := mathrand.New(mathrand.NewPCG(216, 8032))
@@ -451,9 +493,36 @@ func TestOneRecordIsCheckedAsTheVerifierChecksIt(t *testing.T) {
 		{Keys: keys(first), Revoked: []Revocation{{PublicKey: second.public, From: 6}}},
 		{Keys: keys(first, second, third), Revoked: []Revocation{{PublicKey: first.public, From: 3}}},
 	}
-	disagreements := 0
+	disagreements, held, unheld, unanchored, differed := 0, 0, 0, 0, 0
 	for round := range 600 {
-		sidecar := slices.Clone(honest)
+		// A quarter of the trails are whole; the rest hold one or two records
+		// a discontinuity names as damaged, line 1 among them in a quarter,
+		// and the first rotation is made after a damaged line in half of
+		// those: after line 1, where no undamaged chained line anchors it.
+		damaged := map[int64]bool{}
+		rotatedAt := 4
+		switch round % 4 {
+		case 1:
+			damaged[1] = true
+			if round%8 == 1 {
+				rotatedAt = 1
+			}
+		case 2:
+			damaged[int64(1+random.IntN(n-3))] = true
+		case 3:
+			earlier := int64(1 + random.IntN(n-3))
+			damaged[earlier] = true
+			damaged[earlier+2+int64(random.IntN(n-2-int(earlier)))] = true
+		}
+		if round%4 > 1 && round%8 >= 4 {
+			rotatedAt = 7
+			for line := range damaged {
+				rotatedAt = min(int(line), rotatedAt)
+			}
+		}
+		lines := damagedTrail(n, damaged)
+		trail := joinLines(lines)
+		sidecar := honestFor(lines, rotatedAt)
 		for range 1 + random.IntN(4) {
 			at := random.IntN(len(sidecar) + 1)
 			signer := signers[random.IntN(len(signers))]
@@ -503,22 +572,61 @@ func TestOneRecordIsCheckedAsTheVerifierChecksIt(t *testing.T) {
 			whole = whole[:len(whole)-1]
 		}
 		options := trustings[round%len(trustings)]
+		clear(signedThere)
 		chain := verifySigned(t, trail, whole, options)
+		// anchored says whether an undamaged chained line of the trail is at
+		// or before at: every line here is chained, of the one trail.
+		anchored := func(at int64) bool {
+			for line := at; line >= 1; line-- {
+				if !damaged[line] {
+					return true
+				}
+			}
+			return false
+		}
 		count, through := int64(0), int64(0)
-		for sequence, record := range lines {
-			if oneRecordSigned(record, whole, options) {
-				count, through = count+1, int64(sequence+1)
+		for index, record := range lines {
+			sequence := int64(index + 1)
+			signedHere, anchors := oneRecordCheck(record, whole, options)
+			if signedHere {
+				count, through = count+1, sequence
+			}
+			context := !damaged[sequence]
+			for _, at := range anchors {
+				if at < sequence && !anchored(at) {
+					if context {
+						unanchored++
+					}
+					context = false
+				}
+			}
+			if !context {
+				unheld++
+				if signedHere != signedThere[sequence] {
+					differed++
+				}
+				continue
+			}
+			held++
+			if signedHere != signedThere[sequence] {
+				disagreements++
+				t.Errorf("round %d, record %d: the verifier says signed %v, one record at a time %v; damaged %v; findings %v\n%s",
+					round, sequence, signedThere[sequence], signedHere, damaged, findingNames(chain), whole)
 			}
 		}
-		if chain.Coverage.SignedRecords != count || (count > 0 && chain.Coverage.Signed.Through != through) {
+		if len(damaged) == 0 && (chain.Coverage.SignedRecords != count || (count > 0 && chain.Coverage.Signed.Through != through)) {
 			disagreements++
 			t.Errorf("round %d: the verifier signed %d through %d, one record at a time %d through %d; findings %v\n%s",
 				round, chain.Coverage.SignedRecords, chain.Coverage.Signed.Through, count, through, findingNames(chain), whole)
-			if disagreements > 3 {
-				t.FailNow()
-			}
+		}
+		if disagreements > 3 {
+			t.FailNow()
 		}
 	}
+	if held == 0 || unheld == 0 || unanchored == 0 || differed == 0 {
+		t.Fatalf("records with the trail context %d, without it %d (%d undamaged, after a rotation nothing anchors), answered otherwise %d: the comparison does not reach every side", held, unheld, unanchored, differed)
+	}
+	t.Logf("records with the trail context %d, without it %d (%d undamaged, after a rotation nothing anchors), answered otherwise %d", held, unheld, unanchored, differed)
 }
 
 // One record without its trail takes its trail and sequence from its own
@@ -748,6 +856,229 @@ func TestEscapesAreReadAsTheCharactersTheySpell(t *testing.T) {
 	for name, edited := range map[string][]byte{"a name twice": twice, "an escape spelling upper case": upper} {
 		if bytes.Equal(edited, line) || parseSidecarLine(edited).readable {
 			t.Fatalf("%s is unreadable: %s", name, edited)
+		}
+	}
+}
+
+// signedRecords runs a verification and returns, beside its report, the
+// records it counted signed, by sequence.
+func signedRecords(t *testing.T, trail, sidecar []byte, options SignatureOptions) (result.AuditChain, []int64) {
+	t.Helper()
+	signed := []int64{}
+	noteSigned = func(sequence int64) { signed = append(signed, sequence) }
+	defer func() { noteSigned = func(int64) {} }()
+	return verifySigned(t, trail, sidecar, options), signed
+}
+
+// A rotation's trail is that of the last chained line at or before its line
+// that no discontinuity names as damaged; with none, it is refused, and the
+// key in force stays. Line 1 is a complete record whose newline was lost, and
+// a discontinuity at line 2 names it damaged: a rotation after line 1 has no
+// undamaged chained line to anchor it, so audit verify keeps the first key,
+// though the record at line 2 is undamaged. The check of one record without
+// the trail follows the rotation, as the guide says it may, and the two
+// answer otherwise, each way round. A rotation after a damaged line 2 is
+// anchored by line 1 and holds.
+func TestARotationIsAnchoredOnlyByAnUndamagedChainedLine(t *testing.T) {
+	first, second := signerOf(t, vectorSeed1), signerOf(t, vectorSeed2)
+	sign := func(signer *Signer, line []byte) []byte {
+		signed, err := signer.SignRecordLine(line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bytes.TrimSuffix(signed, []byte("\n"))
+	}
+	rotation := func(at int64) []byte {
+		return bytes.TrimSuffix(first.RotationLine(vectorTrail, at, second.public), []byte("\n"))
+	}
+	options := SignatureOptions{Keys: keys(first)}
+
+	lines := damagedTrail(3, map[int64]bool{1: true})
+	trail := joinLines(lines)
+	if chain := verifySigned(t, trail, nil, options); chain.Status != "segmented" || len(chain.Findings) != 0 || chain.Coverage.Damaged != 1 {
+		t.Fatalf("the trail itself: %s %v %+v", chain.Status, findingNames(chain), chain.Coverage)
+	}
+	sidecar := joinLines([][]byte{rotation(1), sign(second, lines[1]), sign(second, lines[2])})
+	chain, signed := signedRecords(t, trail, sidecar, options)
+	if !slices.Equal(findingNames(chain), []string{"rotation-invalid@1", "signature-invalid@2", "signature-invalid@3"}) ||
+		chain.Signatures.Rotations != 0 || chain.Signatures.KeyInForce != first.KeyID() || chain.Coverage.SignedRecords != 0 || len(signed) != 0 {
+		t.Fatalf("a rotation after a damaged first line: %v %+v %+v %v", findingNames(chain), chain.Signatures, chain.Coverage, signed)
+	}
+	for index := 1; index < 3; index++ {
+		if signedHere, anchors := oneRecordCheck(lines[index], sidecar, options); !signedHere || !slices.Equal(anchors, []int64{1}) {
+			t.Fatalf("record %d alone: %v %v", index+1, signedHere, anchors)
+		}
+	}
+	byFirst := joinLines([][]byte{rotation(1), sign(first, lines[1])})
+	chain, signed = signedRecords(t, trail, byFirst, options)
+	if !slices.Equal(findingNames(chain), []string{"rotation-invalid@1"}) || !slices.Equal(signed, []int64{2}) || oneRecordSigned(lines[1], byFirst, options) {
+		t.Fatalf("the first key's record after it: %v %v, alone %v", findingNames(chain), signed, oneRecordSigned(lines[1], byFirst, options))
+	}
+
+	lines = damagedTrail(4, map[int64]bool{2: true})
+	trail = joinLines(lines)
+	sidecar = joinLines([][]byte{sign(first, lines[0]), sign(first, lines[1]), rotation(2), sign(second, lines[2]), sign(second, lines[3])})
+	chain, signed = signedRecords(t, trail, sidecar, options)
+	if !slices.Equal(findingNames(chain), []string{"signature-no-record@2"}) || chain.Signatures.Rotations != 1 || chain.Signatures.KeyInForce != second.KeyID() ||
+		!slices.Equal(signed, []int64{1, 3, 4}) {
+		t.Fatalf("a rotation after a damaged second line: %v %+v %v", findingNames(chain), chain.Signatures, signed)
+	}
+	for index, want := range []bool{true, true, true, true} {
+		if oneRecordSigned(lines[index], sidecar, options) != want {
+			t.Fatalf("record %d alone", index+1)
+		}
+	}
+}
+
+// The scalar arithmetic of RFC 8032, for the tests below, apart from the code
+// under test: L is the order of the base point B.
+var testL = new(big.Int).Add(new(big.Int).Lsh(big.NewInt(1), 252), func() *big.Int {
+	n, _ := new(big.Int).SetString("27742317777372353535851937790883648493", 10)
+	return n
+}())
+
+func testBase() testPoint {
+	y := new(big.Int).Mul(big.NewInt(4), new(big.Int).ModInverse(big.NewInt(5), testPrime))
+	base, _ := decodeTestPoint(encodeY(y.Mod(y, testPrime), 0))
+	return base
+}
+
+func (a testPoint) times(k *big.Int) testPoint {
+	product := testPoint{big.NewInt(0), big.NewInt(1)}
+	for bit := k.BitLen() - 1; bit >= 0; bit-- {
+		product = product.plus(product)
+		if k.Bit(bit) == 1 {
+			product = product.plus(a)
+		}
+	}
+	return product
+}
+
+func (a testPoint) encode() []byte { return encodeY(a.y, byte(a.x.Bit(0))) }
+
+func (a testPoint) equal(b testPoint) bool { return a.x.Cmp(b.x) == 0 && a.y.Cmp(b.y) == 0 }
+
+func littleEndian(encoded []byte) *big.Int {
+	reversed := slices.Clone(encoded)
+	slices.Reverse(reversed)
+	return new(big.Int).SetBytes(reversed)
+}
+
+func toLittleEndian(n *big.Int) []byte {
+	encoded := n.FillBytes(make([]byte, 32))
+	slices.Reverse(encoded)
+	return encoded
+}
+
+// hashScalar is SHA-512 of the parts, little-endian, reduced modulo L.
+func hashScalar(parts ...[]byte) *big.Int {
+	sum := sha512.Sum512(slices.Concat(parts...))
+	return new(big.Int).Mod(littleEndian(sum[:]), testL)
+}
+
+// testSecret is a seed's secret scalar and nonce prefix (RFC 8032 §5.1.5).
+func testSecret(seed []byte) (*big.Int, []byte) {
+	sum := sha512.Sum512(seed)
+	scalar := slices.Clone(sum[:32])
+	scalar[0] &= 248
+	scalar[31] &= 127
+	scalar[31] |= 64
+	return littleEndian(scalar), sum[32:]
+}
+
+// testSign signs message with the secret scalar under the public encoding,
+// with nonce r and extra added to the point the signature names.
+func testSign(scalar *big.Int, public, message []byte, r *big.Int, extra testPoint) []byte {
+	point := testBase().times(r).plus(extra).encode()
+	h := hashScalar(point, public, message)
+	s := new(big.Int).Mul(h, scalar)
+	s.Add(s, r).Mod(s, testL)
+	return slices.Concat(point, toLittleEndian(s))
+}
+
+// cofactoredVerify is the check RFC 8032 §5.1.7 also allows:
+// [8][S]B = [8]R + [8][h]A, with S canonical.
+func cofactoredVerify(public, message, signature []byte) bool {
+	key, ok := decodeTestPoint(public)
+	point, pointOK := decodeTestPoint(signature[:32])
+	s := littleEndian(signature[32:])
+	if !ok || !pointOK || s.Cmp(testL) >= 0 {
+		return false
+	}
+	h := hashScalar(signature[:32], public, message)
+	eight := big.NewInt(8)
+	return testBase().times(s).times(eight).equal(point.plus(key.times(h)).times(eight))
+}
+
+// cofactoredOnly is the guide's interoperability vector: a signature of the
+// vector's first record, made with the first key's secret and a point of
+// order 2 added to the point it names, which the cofactored check accepts and
+// the check without the cofactor refuses.
+const cofactoredOnly = "2faf65a6e31c2e133985c42d3ca36eb1ffe2d8c859d0078a61a4188abb71a2aa310568784fb6c286895b994aba5032fd65558742dcdce63ea7f0c71fb8428904"
+
+// A signature verifies by RFC 8032's check without the cofactor and with a
+// canonical scalar, as crypto/ed25519 verifies, and never by the cofactored
+// check, which accepts more. The test's own arithmetic signs as
+// crypto/ed25519 does; a point of order 2 added to the signature's point, or
+// a key of mixed order and a signature that holds only up to its part of
+// small order, then gives a signature only the cofactored check accepts, and
+// audit verify finds it invalid. A key of mixed order is still accepted.
+func TestOnlyTheCheckWithoutTheCofactorVerifies(t *testing.T) {
+	seed := mustHex(t, vectorSeed1)
+	first := signerOf(t, vectorSeed1)
+	scalar, prefix := testSecret(seed)
+	base := testBase()
+	if !slices.Equal(base.times(scalar).encode(), first.public) || !base.times(testL).isIdentity() {
+		t.Fatal("the test's arithmetic does not give the first key")
+	}
+	lines := memoryTrail(2)
+	message := RecordMessage(vectorTrail, 1, Digest(lines[0]))
+	r := hashScalar(prefix, message)
+	identity, _ := decodeTestPoint(mustHex(t, testSmallOrder[0]))
+	if honest := testSign(scalar, first.public, message, r, identity); !slices.Equal(honest, ed25519.Sign(first.private, message)) {
+		t.Fatal("the test's arithmetic does not sign as crypto/ed25519 does")
+	}
+	two, _ := decodeTestPoint(mustHex(t, testSmallOrder[1]))
+	forged := testSign(scalar, first.public, message, r, two)
+	if !cofactoredVerify(first.public, message, forged) || ed25519.Verify(first.public, message, forged) {
+		t.Fatal("the vector is not one only the cofactored check accepts")
+	}
+	if hex.EncodeToString(forged) != cofactoredOnly {
+		t.Fatalf("the vector drifted: %x", forged)
+	}
+	vector := splitLines(vectorSidecar(t, lines))
+	vector[0] = bytes.Replace(vector[0], []byte(hex.EncodeToString(ed25519.Sign(first.private, message))), []byte(cofactoredOnly), 1)
+	chain := verifySigned(t, joinLines(lines), joinLines(vector), SignatureOptions{Keys: keys(first)})
+	if !slices.Equal(findingNames(chain), []string{"signature-invalid@1"}) || chain.Signatures.Rotations != 1 || chain.Coverage.SignedRecords != 1 {
+		t.Fatalf("the vector's line: %v %+v %+v", findingNames(chain), chain.Signatures, chain.Coverage)
+	}
+
+	// A key of mixed order, the first key plus the point of order 2: a
+	// signature whose h is odd holds only up to that point.
+	mixed := base.times(scalar).plus(two).encode()
+	if err := CheckPublicKey(mixed); err != nil {
+		t.Fatalf("a key of mixed order: %v", err)
+	}
+	cofactoredOnlyFound, bothFound := false, false
+	for counter := byte(0); !(cofactoredOnlyFound && bothFound); counter++ {
+		nonce := hashScalar(prefix, message, []byte{counter})
+		signature := testSign(scalar, mixed, message, nonce, identity)
+		odd := hashScalar(signature[:32], mixed, message).Bit(0) == 1
+		if !cofactoredVerify(mixed, message, signature) || ed25519.Verify(mixed, message, signature) == odd {
+			t.Fatalf("nonce %d: h odd %v, cofactored %v, without %v", counter, odd, cofactoredVerify(mixed, message, signature), ed25519.Verify(mixed, message, signature))
+		}
+		if !odd {
+			bothFound = true
+			continue
+		}
+		cofactoredOnlyFound = true
+		line := bytes.TrimSuffix(canonicalLine(recordSignatureLine{
+			KeyID: KeyID(mixed), Kind: KindRecordSignature, Record: Digest(lines[0]), Sequence: 1,
+			SidecarVersion: SidecarVersion, Signature: hex.EncodeToString(signature), Trail: vectorTrail,
+		}), []byte("\n"))
+		chain := verifySigned(t, joinLines(lines[:1]), joinLines([][]byte{line}), SignatureOptions{Keys: []ed25519.PublicKey{mixed}})
+		if !slices.Equal(findingNames(chain), []string{"signature-invalid@1"}) {
+			t.Fatalf("a signature under a key of mixed order: %v", findingNames(chain))
 		}
 	}
 }

@@ -308,6 +308,7 @@ func (c *signatureChecker) checkRecord(v *verifier, item sidecarItem, number int
 		return FindingSignatureKeyRevoked, fmt.Sprintf("sidecar line %d is signed with key %s, which is revoked at sequence %d", number, KeyID(c.current), item.sequence)
 	}
 	c.signed++
+	noteSigned(item.sequence)
 	if v.earliestFinding == 0 || v.earliestFinding > item.sequence {
 		c.through = item.sequence
 	}
@@ -380,3 +381,8 @@ func (c *signatureChecker) coverage(v *verifier, chain *result.AuditChain) {
 }
 
 func hexKey(public ed25519.PublicKey) string { return hex.EncodeToString(public) }
+
+// noteSigned is told each record a verification counts signed, as it counts
+// it. It does nothing; a test replaces it to hold the check of one record
+// without the trail to the verifier's answer for that record.
+var noteSigned = func(int64) {}

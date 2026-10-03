@@ -1257,9 +1257,9 @@ found.
 For another implementation, such as a gateway that requires a signed record or Runner's verifier,
 this is the whole rule; nothing in it depends on reading this runtime's code.
 
-**Keys.** Ed25519 (RFC 8032). A public key is its 32 bytes as 64 lowercase hexadecimal characters.
-Its `keyId` is the first 32 lowercase hexadecimal characters of the SHA-256 of those 32 bytes, the
-gateway's `keyId`.
+**Keys.** Ed25519 (RFC 8032), verified by the one equation **Signatures** states below. A public key
+is its 32 bytes as 64 lowercase hexadecimal characters. Its `keyId` is the first 32 lowercase
+hexadecimal characters of the SHA-256 of those 32 bytes, the gateway's `keyId`.
 
 A verifier refuses a public key unless its 32 bytes are the canonical encoding (RFC 8032 §5.1.2) of
 a point of the curve whose order does not divide 8, and refuses it before it reads anything signed
@@ -1323,6 +1323,18 @@ without its newline with `~` and a newline before it appends, so that line stays
 signs `judgment-pack-runtime/key-rotation/1:` followed by `{"at":<A in decimal>,"next":"<64
 hex>","trail":"<32 hex>"}`.
 
+**Signatures.** A signature is 64 bytes: `sigR`, the first 32, and `sigS`, the last 32 read as a
+little-endian integer. It verifies under a public key's 32 bytes `A` over the signed bytes `M`
+exactly when `sigS` is below L = 2^252 + 27742317777372353535851937790883648493, and the canonical
+encoding of [`sigS`]B − [h]A is `sigR` byte for byte, B being the base point and h the SHA-512 of
+`sigR` ‖ `A` ‖ `M` read as a little-endian integer and reduced modulo L. That is RFC 8032's check
+without the cofactor and with a canonical scalar, as Go's `crypto/ed25519` verifies. RFC 8032 §5.1.7
+also allows the cofactored check, [8][`sigS`]B = [8]`sigR` + [8][h]A, which accepts more: a `sigR`
+with a part of small order, or a key of mixed order with a signature that holds only up to that
+part. A verifier must not use it; the test vector below has a signature only the cofactored check
+accepts, and it is `signature-invalid` here. `sigR` is not otherwise decoded, so an encoding of it
+that is not canonical never verifies.
+
 **Verification.** The inputs are the trail, the sidecar, the public keys K₁…Kₙ (n ≥ 1) in the order
 the trail used them, and any revocations, each a public key and the sequence `from` which it is not
 trusted. Start with K₁ in force and the last place 0. A record signature's place is 2·S, and a
@@ -1339,11 +1351,12 @@ readable one:
    under that key over the signed bytes, or it is `signature-invalid`. If a revocation of the key in
    force has `from` ≤ S, it is `signature-key-revoked`. Otherwise record S is signed.
 3. A rotation at A: the trail's line A must exist, or it is `signature-no-record`. T must be the
-   trail of the last chained line at or before A, its `keyId` the key in force's, and its signature
-   valid under that key over the signed bytes, or it is `rotation-invalid`. If a revocation of the
-   key in force has `from` ≤ A, it is `signature-key-revoked`. `next` must be a key a verifier
-   accepts (Keys), and with n > 1 the next key not yet rotated to in K₁…Kₙ, or it is
-   `rotation-invalid`. Otherwise `next` is the key in force.
+   trail of the last chained line at or before A that no discontinuity names as damaged (with none,
+   the rotation fails), its `keyId` the key in force's, and its signature valid under that key over
+   the signed bytes, or it is `rotation-invalid`. If a revocation of the key in force has `from` ≤
+   A, it is `signature-key-revoked`. `next` must be a key a verifier accepts (Keys), and with n > 1
+   the next key not yet rotated to in K₁…Kₙ, or it is `rotation-invalid`. Otherwise `next` is the
+   key in force.
 
 The lines are taken in the sidecar's order, so a rotation is before a record signature when it is
 earlier in the file, and step 1 then holds it to an A below that signature's S: a record signature
@@ -1361,11 +1374,11 @@ acting on a decision, takes T and S from the record's own `trail` and `sequence`
 chain's rule (a record without a chained `trail`, `sequence` and `previous` has no signature), and R
 as the SHA-256 of the record's exact bytes without a newline; handed a digest, such as a gateway
 receipt's `decision.recordDigest`, it holds R to it. It reads the sidecar's lines in order as above,
-leaving out what needs the trail:
+leaving out every check of the trail's lines:
 
 - every readable line is held to step 1;
-- a rotation is held to step 3, with T as the trail it must name and its line A unchecked, and when
-  it holds, its `next` is the key in force;
+- a rotation is held to step 3 with T as the trail it must name and none of the trail's lines
+  checked; when it holds, its `next` is the key in force;
 - a record signature for another sequence is passed over once step 1 has placed it;
 - the first record signature for S that step 1 admits decides: its `trail` must be T, its `record` R
   and its `keyId` the key in force's, its signature must verify under that key over the signed
@@ -1373,16 +1386,26 @@ leaving out what needs the trail:
   out of order and signs nothing, however valid, and the lines after the deciding one change
   nothing.
 
-This establishes that the key in force at S, as the rotations before it hand it on, signed this
-record as record S of trail T; not that the trail holds the record there, nor anything about another
-record. Where the trail holds the record at S undamaged, and every rotation before it follows a
-chained line of T, as every rotation the writer makes does, it is the answer `audit verify` gives
-for record S.
+This establishes only that a key in force by the sidecar's own order, K₁ as handed on by the
+rotations before the record's line that hold without the trail, signed these exact bytes as record S
+of trail T. It establishes nothing the trail shows: not that line S holds this record, not that it
+or any other line is undamaged, not the trail's status, and not that each rotation it followed is
+anchored where `audit verify` holds a rotation, on an undamaged chained line of T at or before its
+A.
+
+Its answer and `audit verify`'s for record S can therefore differ, either way. A record a
+discontinuity names as damaged, or one after a rotation that no undamaged chained line of T anchors,
+which step 3 refuses, can be signed here and not there; and once the two have followed different
+rotations, a record can be signed there and not here. They agree when the trail holds the record at
+line S undamaged and, for each rotation that step 1 admits before the record's line, the last
+undamaged chained line at or before its A is of trail T. Only the trail shows that, so only `audit
+verify` gives the trail's answer.
 
 A reader that trusts a set of keys by its own configuration instead of following the trail's key
 history, as a gateway's policy can, follows no rotation and has no key in force to order lines by:
 any readable record signature for T, S and R under a key it trusts, not revoked at S, signs the
-record. That establishes only that a key it trusts signed it.
+record. That establishes only that a key it trusts signed these exact bytes as record S of trail T,
+and nothing the trail shows.
 
 **A copied record.** A signature is never in the record: it is a line of the sidecar of the trail
 the record was written to, and nothing is added to the record line. A record copied out of its trail
@@ -1431,6 +1454,18 @@ deterministic, so an implementation that signs these lines with these seeds writ
 Checked one record at a time with the first public key and these three lines, both records are
 signed, record 2 under the second key, which the rotation before it put in force; with record 2's
 own line alone it is not, since no rotation then puts the second key in force.
+
+A signature only the cofactored check accepts, which a verifier must refuse: the first sidecar line
+with its `signature` replaced by
+
+```text
+2faf65a6e31c2e133985c42d3ca36eb1ffe2d8c859d0078a61a4188abb71a2aa310568784fb6c286895b994aba5032fd65558742dcdce63ea7f0c71fb8428904
+```
+
+Made with the first key's secret and a point of order 2 added to its `sigR`, it holds under
+[8][`sigS`]B = [8]`sigR` + [8][h]A and not under the check above. Verified with the first public
+key, that line is `signature-invalid` at line 1, the rotation after it still holds, and record 2 is
+signed.
 
 ### Repairing a torn trail
 

@@ -228,16 +228,22 @@ All notable changes to tagged releases are documented here.
     (`JPS-AUDIT-REVOKED-INVALID`), and a rotation to one is `rotation-invalid` and hands nothing
     over, however it is signed. No key a seed derives is refused, so `audit key generate`, `public`
     and `rotate` are unchanged.
-  - The guide's "Record signatures, exactly" now lists the eight keys of small order and states the
-    reading rules: what a verifier holding one record and not its trail checks, taking T and S from
-    the record's own members; that the first line for a sequence in order decides and a later one
-    is out of order; that a rotation counts where it stands in the sidecar, and one that fails hands
-    nothing on; that the 4096-byte bound does not count the newline; that an integer is spelled only
-    as one (`3.0`, `3e0` and `03` are not); that names and strings are their decoded values; that a
-    record copied out of its trail is checked with its sidecar's lines up to its own signature line;
-    and that a reader trusting keys outright follows no rotation. Each is what `audit verify`
-    already did, and a test holds the one-record rule to `audit verify` over sidecars reordered,
-    cut, repeated, edited and forged.
+  - The guide's "Record signatures, exactly" now lists the eight keys of small order and fixes the
+    signature check: RFC 8032's check without the cofactor and with a canonical scalar, as Go's
+    `crypto/ed25519` verifies, never the cofactored check §5.1.7 also allows, with a vector only the
+    cofactored check accepts. It states the reading rules: what a verifier holding one record and
+    not its trail checks, taking T and S from the record's own members, and that this establishes
+    only that a key in force by the sidecar's own order signed those bytes, not `audit verify`'s
+    answer, which can differ either way where a line is damaged; that a rotation is anchored on the
+    last undamaged chained line at or before it; that the first line for a sequence in order decides
+    and a later one is out of order; that a rotation counts where it stands in the sidecar, and one
+    that fails hands nothing on; that the 4096-byte bound does not count the newline; that an
+    integer is spelled only as one (`3.0`, `3e0` and `03` are not); that names and strings are their
+    decoded values; that a record copied out of its trail is checked with its sidecar's lines up to
+    its own signature line; and that a reader trusting keys outright follows no rotation. Each is
+    what `audit verify` already did. A test holds the one-record rule to `audit verify`, record by
+    record, over sidecars reordered, cut, repeated, edited and forged and over trails with damaged
+    lines, wherever the trail context the guide names holds.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02
