@@ -51,7 +51,7 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			"The report gives the coverage: lines before the first chained line (committed as one block), chained lines, unchained lines a later chained line commits to, lines nothing commits to, and lines a repair names as damaged; signatures are not available yet (#209). " +
 			"Without --expect this is the integrity of one supplied chain: the lines are consistent with one another, which does not show the trail is complete, or that its last line, or lines rewritten from some point on with their links recomputed, are the ones first written. " +
 			"With --expect <file>, the checkpoints a holder kept independently of the operator (jpack audit checkpoint prints them; a file may hold many, one per line, and --expect may be given more than once), the line at each one's sequence must be a chained record of its trail with its record digest: a trail that is shorter, has another identity, or has another record there fails. " +
-			"The records the highest matching checkpoint covers are witnessed; the chained records after it are unwitnessed, and --require-checkpoint-through <sequence> fails the verification while the records up to that sequence are not all witnessed. " +
+			"The records up to the highest checkpoint that matched, with no failed check at or before it, are witnessed; the chained records after it are unwitnessed, and --require-checkpoint-through <sequence> fails the verification while the records up to that sequence are not all witnessed. " +
 			"Time stamps from an RFC 3161 authority are not available yet. " +
 			"A trail a repair has segmented is reported segment by segment, and never as intact across a discontinuity. " +
 			"Exit 0 when every check passed, segmented or not, and 1 when any failed; each failed check is a named finding.",
@@ -364,7 +364,9 @@ func (a *App) readCheckpoints(command, format, expectPath string) ([]result.Audi
 	}
 	checkpoints, err := audit.ParseCheckpoints(data)
 	if errors.Is(err, audit.ErrCheckpointVersion) {
-		return nil, a.operational(command, format, result.ExitUnsupported, "JPS-AUDIT-CHECKPOINT-VERSION", "A checkpoint's checkpointVersion is not one this runtime reads. It reads: "+result.CheckpointVersion+".")
+		// The parser's error names the line; it is kept, so a holder's file
+		// of many checkpoints says which one is of another version.
+		return nil, a.operational(command, format, result.ExitUnsupported, "JPS-AUDIT-CHECKPOINT-VERSION", "The checkpoints could not be read: "+err.Error()+". It reads: "+result.CheckpointVersion+".")
 	}
 	if err != nil {
 		return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-CHECKPOINT-INVALID", err.Error())

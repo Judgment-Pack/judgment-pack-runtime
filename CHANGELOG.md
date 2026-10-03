@@ -52,7 +52,7 @@ All notable changes to tagged releases are documented here.
     every `trail`, `sequence` and `previous` from the first chained record on, by the writer's own
     rules. It exits 1 on any failed check, each a named finding (`previous-mismatch`,
     `sequence-mismatch`, `trail-mismatch`, `incomplete-last-line`, `line-too-long`,
-    `discontinuity-malformed`, `discontinuity-mismatch`, and four `checkpoint-*` findings), and 0
+    `discontinuity-malformed`, `discontinuity-mismatch`, and the `checkpoint-*` findings), and 0
     otherwise. Its size is read under the writer's lock, shared, and the bytes before it without the
     lock, so it neither delays a writer nor sees half a write. The report gives the coverage (legacy
     prefix, chained, unchained, uncovered, damaged; signed: not available, #209; checkpointed) and,

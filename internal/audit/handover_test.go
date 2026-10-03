@@ -218,3 +218,32 @@ func TestHeldCheckpointsAreReadOnePerLine(t *testing.T) {
 		t.Fatalf("a file over the bound is refused for its size: %v", err)
 	}
 }
+
+// A held checkpoint that fails stops the coverage before it, whatever matches
+// after it: with matching checkpoints at 1 and 5 and one at 2 that does not
+// match, the records are witnessed through 1 only, and a requirement of 5 is
+// unmet. That holds whatever order the holder supplies them in, and when the
+// failing checkpoint is a conflicting duplicate of a matching one.
+func TestAFailedHeldCheckpointStopsTheCoverageBeforeIt(t *testing.T) {
+	_, _, data := chainedTrail(t, 5)
+	kept := keptCheckpoints(t, data, 1, 2, 5)
+	forged := kept[1]
+	forged.RecordDigest = Digest([]byte("not the second record"))
+	for name, held := range map[string][]result.AuditCheckpoint{
+		"in order":                {kept[0], forged, kept[2]},
+		"reversed":                {kept[2], forged, kept[0]},
+		"a conflicting duplicate": {kept[2], kept[1], forged, kept[0]},
+	} {
+		t.Run(name, func(t *testing.T) {
+			chain := verifyWith(t, data, Options{Held: held, RequireThrough: 5}).Chain
+			if chain.Status != "invalid" || chain.Held.Failed != 1 || chain.Held.Status != "failed" ||
+				chain.Held.Latest == nil || chain.Held.Latest.Sequence != 1 ||
+				chain.Coverage.Checkpointed != (result.AuditCoverageState{Status: "through", Through: 1}) ||
+				chain.Coverage.Witnessed != 1 || chain.Coverage.Unwitnessed != 4 ||
+				chain.Required == nil || chain.Required.Status != "unmet" ||
+				strings.Join(findingNames(chain), " ") != "checkpoint-record-mismatch@2 checkpoint-coverage-missing@5" {
+				t.Fatalf("held = %+v coverage = %+v required = %+v findings = %v", chain.Held, chain.Coverage, chain.Required, findingNames(chain))
+			}
+		})
+	}
+}

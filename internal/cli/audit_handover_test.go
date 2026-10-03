@@ -142,3 +142,24 @@ func TestAuditCheckpointSincePagesAndRefusesWhatItCannotList(t *testing.T) {
 		t.Fatalf("a held file with a line that is not a checkpoint: exit=%d %q", code, stdout)
 	}
 }
+
+// A holder's file whose third line is a checkpoint of a later version is
+// refused as unsupported, and the refusal names the line.
+func TestAHeldCheckpointOfALaterVersionIsNamedByItsLine(t *testing.T) {
+	configPath, _ := recordedProject(t, 2)
+	_, listing, _ := runTest(t, []string{"audit", "checkpoint", "--config", configPath, "--since", "0"}, "")
+	lines := strings.Split(strings.TrimSuffix(listing, "\n"), "\n")
+	later := strings.Replace(lines[1], `"checkpointVersion":"1"`, `"checkpointVersion":"2"`, 1)
+	held := filepath.Join(t.TempDir(), "held.jsonl")
+	if err := os.WriteFile(held, []byte(lines[0]+"\n\n"+later+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, _ := runTest(t, []string{"audit", "verify", "--config", configPath, "--expect", held, "--format", "json"}, "")
+	if code != result.ExitUnsupported || !strings.Contains(stdout, `"JPS-AUDIT-CHECKPOINT-VERSION"`) || !strings.Contains(stdout, "line 3") {
+		t.Fatalf("exit=%d %q", code, stdout)
+	}
+	code, human, _ := runTest(t, []string{"audit", "verify", "--config", configPath, "--expect", held}, "")
+	if code != result.ExitUnsupported || !strings.HasPrefix(human, "unsupported: ") || !strings.Contains(human, "line 3") {
+		t.Fatalf("exit=%d %q", code, human)
+	}
+}
