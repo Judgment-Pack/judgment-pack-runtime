@@ -685,3 +685,42 @@ func TestAnRSASignatureAlgorithmsParametersAreHeld(t *testing.T) {
 		t.Fatalf("other parameters on RSA: %v", err)
 	}
 }
+
+// An algorithm named in the SignerInfo and again in the RFC 6211 algorithm
+// protection is one identifier when its parameters are one for it: for
+// SHA-256, absent and NULL, in either direction. ECDSA's parameters are
+// absent only, so a NULL there names another identifier.
+func TestTheAlgorithmProtectionReadsAbsentAndNullAsOne(t *testing.T) {
+	digest := digestOf(checkpointBytes)
+	for name, options := range map[string]tsatest.Options{
+		"SHA-256 absent in the signer, NULL in the protection": {AlgorithmProtection: "match", ProtectionDigestParameters: []byte{0x05, 0x00}},
+		"SHA-256 NULL in the signer, absent in the protection": {AlgorithmProtection: "match", SignerDigestParameters: []byte{0x05, 0x00}, ProtectionDigestParameters: []byte{}},
+		"SHA-256 NULL in both":                                 {AlgorithmProtection: "match", SignerDigestParameters: []byte{0x05, 0x00}},
+	} {
+		der, err := authority(t, options).Token(digest, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		token, err := Parse(der)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := token.Verify(VerifyOptions{Roots: rootsOf(token.Certificates...)}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	der, err := authority(t, tsatest.Options{AlgorithmProtection: "match", ProtectionSignatureParameters: []byte{0x05, 0x00}}).Token(digest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(der); !errors.Is(err, ErrSignature) {
+		t.Fatalf("NULL on ECDSA in the protection: %v", err)
+	}
+	der, err = authority(t, tsatest.Options{AlgorithmProtection: "match", ProtectionDigestParameters: []byte{0x04, 0x00}}).Token(digest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(der); !errors.Is(err, ErrSignature) {
+		t.Fatalf("other parameters on SHA-256 in the protection: %v", err)
+	}
+}

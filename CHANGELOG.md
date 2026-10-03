@@ -207,10 +207,11 @@ All notable changes to tagged releases are documented here.
     SHA-384 or SHA-512. What is read is held to DER, each structure being what its own DER encoding
     gives back byte for byte; what verification does not need is refused (unsigned attributes,
     embedded revocation data, unread signed attributes, algorithm parameters other than absent or
-    NULL, ESS policies or a second ESS entry, anything beside a reply's status). Carried and not
-    held to DER here: the certificates, as `crypto/x509` parses them; the issuer names compared byte
-    for byte with the signing certificate's; and the TSTInfo's `tsa` name and non-critical extension
-    values, never read. Tokens made by OpenSSL are checked in as test fixtures.
+    NULL, ESS policies or a second ESS entry, anything beside a reply's status and token). Carried
+    and not held to DER here: the certificates, as `crypto/x509` parses them; the issuer names
+    compared byte for byte with the signing certificate's; and the TSTInfo's `tsa` name and
+    non-critical extension values, never read. Tokens made by OpenSSL are checked in as test
+    fixtures.
   - A stamp establishes that the checkpoint existed by the time the authority states, as that
     authority attests. It does not establish when a record was made (`at` stays the operator's
     word), anything against an authority that is not independent of the operator, or revocation

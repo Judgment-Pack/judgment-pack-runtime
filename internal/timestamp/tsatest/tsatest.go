@@ -139,6 +139,10 @@ type Options struct {
 	// signature named by id-ecPublicKey.
 	ESSHashAlgorithmParameters    []byte
 	SignatureAlgorithmECPublicKey bool
+	// The algorithm protection's own parameters, as written: nil keeps the
+	// signer's, empty leaves them out.
+	ProtectionDigestParameters    []byte
+	ProtectionSignatureParameters []byte
 }
 
 // withParameters is an algorithm identifier with the parameters given, as
@@ -583,8 +587,8 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	}
 	if options.AlgorithmProtection != "" {
 		value := protection{
-			DigestAlgorithm:    withParameters(algorithmIdentifier{Algorithm: digestAlgorithm}, options.SignerDigestParameters),
-			SignatureAlgorithm: withParameters(algorithmIdentifier{Algorithm: signatureAlgorithmOf(options)}, options.SignatureParameters),
+			DigestAlgorithm:    withParameters(withParameters(algorithmIdentifier{Algorithm: digestAlgorithm}, options.SignerDigestParameters), options.ProtectionDigestParameters),
+			SignatureAlgorithm: withParameters(withParameters(algorithmIdentifier{Algorithm: signatureAlgorithmOf(options)}, options.SignatureParameters), options.ProtectionSignatureParameters),
 		}
 		switch options.AlgorithmProtection {
 		case "mismatch":

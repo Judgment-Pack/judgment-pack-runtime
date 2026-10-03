@@ -13,9 +13,10 @@
 // attributes, revocation data embedded in the token, signed attributes other
 // than those read, algorithm parameters other than absent or NULL where the
 // algorithm allows NULL, an ESS binding of more than one certificate or with
-// policies, and a reply envelope with anything but its status, failure text,
-// failure bits and token. What is carried and not held to DER by this package
-// is named, and nothing is concluded from its contents:
+// policies, and a reply envelope with anything but its status (with its
+// failure text and failure bits) and its token. What is carried and not held
+// to DER by this package is named, and nothing is concluded from its
+// contents:
 //
 //   - the certificates, which crypto/x509 parses, accepting some forms DER
 //     does not (an explicit DEFAULT such as critical FALSE, attribute sets out
@@ -201,12 +202,14 @@ func ParseResponse(reply []byte) ([]byte, error) {
 }
 
 // strictly unmarshals der into value, which must be a pointer to a struct or
-// slice of fixed shape, and holds der to DER exactly: nothing after it, and
-// encoding/asn1's own encoding of what was read must be der byte for byte.
-// That one rule refuses what encoding/asn1 alone would read past: an element
-// after the last field of a SEQUENCE, a non-minimal or indefinite length, a
-// DEFAULT value encoded, and a SET OF out of DER order. Every field that must
-// be read whole and kept as given is a RawValue, which encodes as it was read.
+// slice of fixed shape, and holds what it decodes to DER: nothing after it,
+// and encoding/asn1's own encoding of what was read must be der byte for
+// byte. That one rule refuses what encoding/asn1 alone would read past: an
+// element after the last field of a SEQUENCE, a non-minimal or indefinite
+// length, a DEFAULT value encoded, and a SET OF out of DER order. A field kept
+// as given is a RawValue, which encodes as it was read: its own tag and length
+// are held to DER, its contents are not, so each such field is either decoded
+// again by its own reader or is one of the package's stated exceptions.
 func strictly(der []byte, value any, params string) error {
 	rest, err := asn1.UnmarshalWithParams(der, value, params)
 	if err != nil || len(rest) != 0 {
@@ -346,7 +349,10 @@ type Token struct {
 func (t *Token) ExistedBy() time.Time { return t.GenTime.Add(t.Accuracy) }
 
 // Parse reads a token, DER, and checks its signature against the signing
-// certificate it carries. Every structure is held to DER exactly (strictly),
+// certificate it carries. Every structure it decodes is held to DER
+// (strictly), with the exceptions the package states (the certificates as
+// crypto/x509 parses them, the issuer names compared byte for byte with the
+// signing certificate's, the tsa name and non-critical extension values),
 // and to the subset read here:
 //
 //   - a ContentInfo of SignedData, version 3, whose digest algorithms name the
@@ -582,10 +588,36 @@ func namesSigner(named issuerSerial, certificate *x509.Certificate) bool {
 		bytes.Equal(name.Bytes, certificate.RawIssuer) && named.Serial.Cmp(certificate.SerialNumber) == 0
 }
 
-// sameAlgorithm says two algorithm identifiers are one: the same algorithm
-// with the same parameters, byte for byte.
+// sameAlgorithm says two algorithm identifiers name one algorithm: the same
+// OID, and parameters that are the same for it. For the SHA-2 digests and the
+// RSA algorithms read here, absent and NULL parameters are one identifier, as
+// their specifications allow either; for any other algorithm, ECDSA among
+// them, the parameters must be the same bytes. Neither identifier is relieved
+// of its own parameter rule: the SignerInfo's are held to theirs where they
+// are read, and an identifier that names the same algorithm as one of them is
+// held to the same.
 func sameAlgorithm(left, right pkix.AlgorithmIdentifier) bool {
-	return left.Algorithm.Equal(right.Algorithm) && bytes.Equal(left.Parameters.FullBytes, right.Parameters.FullBytes)
+	return left.Algorithm.Equal(right.Algorithm) && bytes.Equal(canonicalParameters(left), canonicalParameters(right))
+}
+
+// canonicalParameters is an identifier's parameters with NULL read as absent
+// where the algorithm takes either.
+func canonicalParameters(algorithm pkix.AlgorithmIdentifier) []byte {
+	if nullOrAbsent(algorithm.Algorithm) && parametersAbsentOrNull(algorithm) {
+		return nil
+	}
+	return algorithm.Parameters.FullBytes
+}
+
+// nullOrAbsent says an algorithm's parameters may be absent or NULL, one
+// meaning: the SHA-2 digests and the RSA PKCS #1 v1.5 algorithms read here.
+func nullOrAbsent(algorithm asn1.ObjectIdentifier) bool {
+	for _, each := range []asn1.ObjectIdentifier{OIDSHA256, oidSHA384, oidSHA512, oidRSAEncryption, oidSHA256WithRSA, oidSHA384WithRSA, oidSHA512WithRSA} {
+		if algorithm.Equal(each) {
+			return true
+		}
+	}
+	return false
 }
 
 // singleValue is an attribute's one value, read strictly into value.

@@ -1048,18 +1048,20 @@ verifier's choice, never the project's configuration. Each token must:
   key identifier; a TSTInfo of version 1 with no critical extension and an accuracy a time span
   holds (`stamp-malformed`). What is read is held to DER: each structure decoded must be what its
   own DER encoding gives back byte for byte, which refuses an element after the last field, a
-  non-minimal length, a default written out, and a SET out of order. What verification does not
-  need is refused rather than carried: unsigned attributes, revocation data embedded in the token,
-  signed attributes other than those read (the content type, the message digest, the ESS binding,
-  a signing time and an RFC 6211 algorithm protection, each decoded and held to what it states),
-  algorithm parameters other than absent or NULL (`05 00`) where NULL is allowed and absent on
-  ECDSA, an ESS binding of more than one certificate or with policies, and a reply envelope with
-  anything beside its status, its text and its failure bits. Three things are carried and not held
-  to DER here, and nothing is concluded from their contents: the certificates, as `crypto/x509`
-  parses them, which accepts some forms DER does not (an explicit default such as critical FALSE,
-  a name's attributes out of order); the issuer names of the SignerInfo and of an ESS issuerSerial,
-  compared byte for byte with the signing certificate's own encoding of its issuer; and the
-  TSTInfo's `tsa` name and the values of its non-critical extensions, which are never read;
+  non-minimal length, a default written out, and a SET out of order. What verification does not need
+  is refused rather than carried: unsigned attributes, revocation data embedded in the token, signed
+  attributes other than those read (the content type, the message digest, the ESS binding, a signing
+  time and an RFC 6211 algorithm protection, each decoded and held to what it states), algorithm
+  parameters other than absent or NULL (`05 00`) where NULL is allowed and absent on ECDSA, an ESS
+  binding of more than one certificate or with policies, and a reply envelope with anything beside
+  its status (with its text and failure bits) and its token. An algorithm named twice, in the
+  SignerInfo and in the algorithm protection, is the same identifier when its parameters are, absent
+  and NULL being one for the SHA-2 digests and RSA. Three things are carried and not held to DER
+  here, and nothing is concluded from their contents: the certificates, as `crypto/x509` parses
+  them, which accepts some forms DER does not (an explicit default such as critical FALSE, a name's
+  attributes out of order); the issuer names of the SignerInfo and of an ESS issuerSerial, compared
+  byte for byte with the signing certificate's own encoding of its issuer; and the TSTInfo's `tsa`
+  name and the values of its non-critical extensions, which are never read;
 - have a signature, signed attributes and signing-certificate binding that hold, every binding
   present (ESS `signingCertificate`, `signingCertificateV2`) naming the certificate that signed
   (`stamp-signature-invalid`);
