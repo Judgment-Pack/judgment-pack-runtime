@@ -47,11 +47,15 @@ func chainedTrail(t *testing.T, n int) (*fssecure.Root, string, []byte) {
 // verifyBytes verifies a trail held in memory.
 func verifyBytes(t *testing.T, data []byte, expect *result.AuditCheckpoint) result.AuditChain {
 	t.Helper()
-	chain, err := Verify(bytes.NewReader(data), int64(len(data)), expect)
+	options := Options{}
+	if expect != nil {
+		options.Held = []result.AuditCheckpoint{*expect}
+	}
+	report, err := Verify(bytes.NewReader(data), int64(len(data)), options)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return chain
+	return report.Chain
 }
 
 // splitLines and joinLines move between a trail's bytes and its lines,
@@ -242,7 +246,7 @@ func TestTamperingIsFoundByTheChainOrByACheckpoint(t *testing.T) {
 				t.Fatalf("an invalid trail establishes nothing: %v", alone.Establishes)
 			}
 			against := verifyBytes(t, data, head)
-			if against.Status != "invalid" || against.Expect == nil || against.Expect.Status != "failed" ||
+			if against.Status != "invalid" || against.Held == nil || against.Held.Status != "failed" ||
 				against.Coverage.Checkpointed.Status != "failed" || (test.against != "" && !hasFinding(against, test.against)) {
 				t.Fatalf("the checkpoint of the original head finds it (%s): %v", test.against, findingNames(against))
 			}
@@ -250,7 +254,7 @@ func TestTamperingIsFoundByTheChainOrByACheckpoint(t *testing.T) {
 	}
 	// And the original, against its own head, is through it.
 	matched := verifyBytes(t, original, head)
-	if matched.Status != "valid" || matched.Scope != ScopeCheckpoint || matched.Expect.Status != "matched" ||
+	if matched.Status != "valid" || matched.Scope != ScopeCheckpoint || matched.Held.Status != "matched" ||
 		matched.Coverage.Checkpointed != (result.AuditCoverageState{Status: "through", Through: 4}) ||
 		!containsString(matched.Establishes, fmt.Sprintf(establishesCheckpoint, 4)) {
 		t.Fatalf("the original is through its own checkpoint: %+v", matched)
@@ -275,16 +279,16 @@ func TestACheckpointIsThroughOnlyAnUnbrokenPrefix(t *testing.T) {
 	third := &result.AuditCheckpoint{CheckpointVersion: "1", Trail: readChain(t, lines[2]).trail, Sequence: 3, RecordDigest: Digest(lines[2])}
 	early := append([][]byte{}, lines...)
 	early[0] = bytes.Replace(early[0], []byte(`"n":0`), []byte(`"n":9`), 1)
-	if chain := verifyBytes(t, joinLines(early), third); chain.Expect.Status != "failed" || chain.Coverage.Checkpointed.Status != "failed" {
-		t.Fatalf("a break before the checkpoint fails it: %+v", chain.Expect)
+	if chain := verifyBytes(t, joinLines(early), third); chain.Held.Status != "failed" || chain.Coverage.Checkpointed.Status != "failed" {
+		t.Fatalf("a break before the checkpoint fails it: %+v", chain.Held)
 	}
 	late := append([][]byte{}, lines...)
 	late[3] = bytes.Replace(late[3], []byte(`"previous":"sha256:`), []byte(`"previous":"sha256:0`), 1)
 	late[3] = bytes.Replace(late[3], []byte(`"previous":"sha256:0`), []byte(`"previous":"sha256:`), 1)
 	late = append(late, []byte(`{"recordVersion":"1","trail":"`+third.Trail+`","sequence":5,"previous":"`+Digest([]byte("x"))+`","run":"r"}`))
 	chain := verifyBytes(t, joinLines(late), third)
-	if chain.Status != "invalid" || chain.Expect.Status != "matched" || chain.Coverage.Checkpointed.Through != 3 {
-		t.Fatalf("a break after the checkpoint leaves it matched, the trail invalid: %+v %v", chain.Expect, findingNames(chain))
+	if chain.Status != "invalid" || chain.Held.Status != "matched" || chain.Coverage.Checkpointed.Through != 3 {
+		t.Fatalf("a break after the checkpoint leaves it matched, the trail invalid: %+v %v", chain.Held, findingNames(chain))
 	}
 }
 
@@ -342,7 +346,7 @@ func TestDamageIsAFinding(t *testing.T) {
 // A report lists at most maxFindings findings and counts them all, so the
 // first ones are not buried.
 func TestFindingsAreListedUpToABound(t *testing.T) {
-	v := newVerifier(nil)
+	v := newVerifier(Options{})
 	for line := range maxFindings + 50 {
 		v.record(result.AuditFinding{Name: FindingSequenceMismatch, Line: int64(line + 1)})
 	}
@@ -690,7 +694,8 @@ func TestVerifyingWhileWritersAppendSeesOnlyWholeWrites(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		chain, err := Verify(file, size, nil)
+		report, err := Verify(file, size, Options{})
+		chain := report.Chain
 		file.Close()
 		if err != nil {
 			t.Fatal(err)

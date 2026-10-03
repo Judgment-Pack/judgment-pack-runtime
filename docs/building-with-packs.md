@@ -934,7 +934,7 @@ not:
   another. It does not show that the trail is complete, or that its last line, or lines rewritten
   from some point on with their links recomputed, are the ones first written: you were handed one
   chain, and a different consistent chain would verify as well.
-- **With `--expect`, a checkpoint held independently.** `audit checkpoint` prints one: a single
+- **With `--expect`, checkpoints held independently.** `audit checkpoint` prints one: a single
   line, `{"checkpointVersion":"1","recordDigest":"sha256:…","sequence":N,"trail":"…"}`, in its
   RFC 8785 canonical form. Its `recordDigest` is the SHA-256 of the record's exact line bytes, the
   digest the next record's `previous` holds and the one a gateway action receipt's
@@ -944,6 +944,57 @@ not:
   after N are as unauthenticated as before. A checkpoint you keep yourself proves nothing to anyone
   who does not trust you. `audit checkpoint` refuses a trail that fails a check, and a note says
   how many lines after the checkpointed record are not chained.
+
+### Handing every new checkpoint to a holder
+
+A holder, the counterparty, an auditor, or a store you do not control, keeps the checkpoints it is
+handed. Something has to hand them over: Desk, a scheduled job, a hook after each decision. The
+runtime gives that deliverer every new checkpoint and keeps nothing itself:
+
+```sh
+jpack audit checkpoint --since 0                     # every chained record's checkpoint, one per line
+jpack audit checkpoint --since 41 --limit 1000       # the ones after the last sequence handed over
+```
+
+- **The deliverer polls; nothing waits for it.** `--since <sequence>` prints the checkpoint of every
+  chained record after that sequence, in order, at most `--limit` of them (1000 by default; a note on
+  standard error, or `"more": true` in `--format json`, says more follow). The deliverer remembers
+  the last sequence it handed over and asks again after it. Recording a decision never writes,
+  waits for, or depends on a hand-over, so a decision is recorded when nothing delivers: its record
+  is pending, reported as unwitnessed until a holder has a checkpoint covering it.
+- **Retries are idempotent.** A checkpoint is a function of its record's exact bytes, so the same
+  record always gives the same line, and the SHA-256 of that line is the key a deliverer or holder
+  dedupes by. Handing the same checkpoint twice hands over the same bytes.
+- **The holder's copy is what counts.** The runtime keeps no record of what was handed over: a
+  record the operator keeps is one the operator can rewrite. Nothing stops an operator from rewriting
+  the trail and handing out new checkpoints; what it cannot do is change the copies a holder already
+  has. Any rewrite of a record a held checkpoint covers fails `audit verify --expect` against the
+  holder's file, and a holder given two different checkpoints for one trail and one sequence holds
+  proof that the trail was rewritten.
+
+The holder keeps the lines in one file, appended as they arrive, and later holds the trail to all of
+them:
+
+```sh
+jpack audit verify --trail evaluations.jsonl --expect held.jsonl --require-checkpoint-through 120
+```
+
+`--expect` takes a file of checkpoints, one per line, and may be given more than once. Every held
+checkpoint must match: the line at its sequence must be a chained record of its trail with its
+digest. The records up to the highest one that matched, with no failed check at or before it, are
+**witnessed**; the chained records after it are **unwitnessed**, and the report counts both.
+`--require-checkpoint-through <sequence>` fails the verification (`checkpoint-coverage-missing`,
+exit 1) while any record up to that sequence is unwitnessed.
+
+What a held checkpoint establishes, against an operator who does not hold the holder's copy: the
+records up to it are the ones that existed when it was handed over. What it does not:
+
+- anything about the records after the last checkpoint the holder kept, which are unwitnessed;
+- that the holder kept every checkpoint it was handed: the coverage reaches only the checkpoints
+  supplied to `verify`;
+- when any checkpoint was made. Time stamps from an RFC 3161 authority, and the lag between a
+  record's `at` and the first stamp covering it, are not built yet (#208, part 2); the report shows
+  `stamped` as not available.
 
 ### Repairing a torn trail
 

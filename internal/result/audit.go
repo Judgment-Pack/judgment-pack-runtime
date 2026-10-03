@@ -41,9 +41,18 @@ type AuditCoverage struct {
 	Damaged int64 `json:"damaged"`
 	// Signed is "not-available": detached signatures are not built yet.
 	Signed AuditCoverageState `json:"signed"`
-	// Checkpointed is "not-supplied" without a checkpoint, "through" when the
-	// one supplied matched, and "failed" when it did not.
+	// Checkpointed is "not-supplied" without a held checkpoint, "through" the
+	// sequence the held checkpoints cover, and "failed" when they cover none.
 	Checkpointed AuditCoverageState `json:"checkpointed"`
+	// Witnessed is the chained records a held checkpoint covers, and
+	// Unwitnessed the chained records none does: every one after the
+	// sequence Checkpointed is through, or every one when it is through none.
+	Witnessed   int64 `json:"witnessed"`
+	Unwitnessed int64 `json:"unwitnessed"`
+	// Stamped is "not-available": time stamps from an RFC 3161 authority are
+	// not built yet (runtime #208, part 2), nor the lag between a record's at
+	// and the first stamp covering it.
+	Stamped AuditCoverageState `json:"stamped"`
 }
 
 // AuditCoverageState is one protection's reach.
@@ -78,11 +87,25 @@ type AuditFinding struct {
 	Detail string `json:"detail"`
 }
 
-// AuditExpectation is the checkpoint a verification was asked to hold the
-// trail to, and whether it held.
-type AuditExpectation struct {
-	Checkpoint AuditCheckpoint `json:"checkpoint"`
-	Status     string          `json:"status"`
+// AuditHeld is what the trail was held to: the checkpoints a holder kept and
+// supplied. Every one must match. Latest is the highest that matched with no
+// failed check up to it, which is how far the coverage reaches; Status is
+// "matched" when every one matched and the coverage reaches the highest
+// supplied, and "failed" otherwise.
+type AuditHeld struct {
+	Supplied int64            `json:"supplied"`
+	Matched  int64            `json:"matched"`
+	Failed   int64            `json:"failed"`
+	Latest   *AuditCheckpoint `json:"latest,omitempty"`
+	Status   string           `json:"status"`
+}
+
+// AuditRequirement is a coverage the verification was told to require: every
+// record up to Through covered by a held checkpoint. Status is "met" or
+// "unmet".
+type AuditRequirement struct {
+	Through int64  `json:"through"`
+	Status  string `json:"status"`
 }
 
 // AuditChain is what reading a trail found: its status, the scope of what was
@@ -104,7 +127,8 @@ type AuditChain struct {
 	// DiscontinuitiesTotal counts every discontinuity; Discontinuities and
 	// Segments list the first hundred of each, as Findings does.
 	DiscontinuitiesTotal int64             `json:"discontinuitiesTotal"`
-	Expect               *AuditExpectation `json:"expect,omitempty"`
+	Held                 *AuditHeld        `json:"held,omitempty"`
+	Required             *AuditRequirement `json:"required,omitempty"`
 	Findings             []AuditFinding    `json:"findings"`
 	FindingsTotal        int               `json:"findingsTotal"`
 	Establishes          []string          `json:"establishes"`
@@ -133,6 +157,21 @@ type AuditCheckpointReport struct {
 	TrailPath      string          `json:"trailPath"`
 	Checkpoint     AuditCheckpoint `json:"checkpoint"`
 	UncoveredLines int64           `json:"uncoveredLines"`
+}
+
+// AuditCheckpointList is jpack audit checkpoint --since's payload: the
+// checkpoints of the chained records after After, in sequence order, as many
+// as were asked for, and whether more follow. A deliverer that hands each to a
+// holder asks again after the last sequence it received.
+type AuditCheckpointList struct {
+	OutputVersion string            `json:"outputVersion"`
+	Tool          Tool              `json:"tool"`
+	Command       string            `json:"command"`
+	Status        string            `json:"status"`
+	TrailPath     string            `json:"trailPath"`
+	After         int64             `json:"after"`
+	Checkpoints   []AuditCheckpoint `json:"checkpoints"`
+	More          bool              `json:"more"`
 }
 
 // AuditRepair is jpack audit repair's payload: the discontinuity record it

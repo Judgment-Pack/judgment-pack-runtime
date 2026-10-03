@@ -110,8 +110,8 @@ func TestAuditCheckpointIsWhatVerifyExpects(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, output := verification(t, "--config", configPath, "--expect", held)
-	if code != 0 || output.Scope != audit.ScopeCheckpoint || output.Expect.Status != "matched" || output.Coverage.Checkpointed.Through != 2 {
-		t.Fatalf("exit=%d %+v", code, output.Expect)
+	if code != 0 || output.Scope != audit.ScopeCheckpoint || output.Held.Status != "matched" || output.Coverage.Checkpointed.Through != 2 {
+		t.Fatalf("exit=%d %+v", code, output.Held)
 	}
 
 	original, err := os.ReadFile(trail)

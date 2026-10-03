@@ -122,7 +122,11 @@
 // its links recomputed, is as consistent as the real one: only a commitment
 // to the trail held by someone other than the operator, covering the lines in
 // question, tells them apart (ADR-0047 §2a). Verify checks the links by the
-// rules above, and a Checkpoint names a record for someone else to hold.
+// rules above; it lists the checkpoint of every chained record after a
+// sequence, for a deliverer to hand to a holder (Options.List), and holds the
+// trail to the checkpoints a holder kept (Options.Held), reporting the records
+// none of them covers as unwitnessed. Nothing on the writing path waits for a
+// hand-over, and nothing records one: the holder's copy is what counts.
 //
 // # Repair
 //
