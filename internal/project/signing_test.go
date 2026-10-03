@@ -2,9 +2,9 @@ package project
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -19,7 +19,11 @@ const testSeed = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f
 // readable and writable by its owner alone, and returns its path.
 func keyOutside(t *testing.T, seed string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "seed")
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "seed")
 	if err := os.WriteFile(path, []byte(seed+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -27,6 +31,14 @@ func keyOutside(t *testing.T, seed string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// signsHere says whether a key can sign on this platform at all: where a
+// key's privacy cannot be checked, every key is refused.
+func signsHere(t *testing.T) bool {
+	t.Helper()
+	_, err := audit.LoadSigner(keyOutside(t, testSeed), nil)
+	return !errors.Is(err, audit.ErrKeyPrivacyUnchecked)
 }
 
 func quoted(t *testing.T, value string) string {
@@ -96,7 +108,7 @@ func TestTheEnvironmentNamesTheSigningKeyFirst(t *testing.T) {
 		t.Fatalf("the environment's key: %q %q", path, source)
 	}
 	plain := mustLoad(t, writeProject(t, `{"configVersion":"3","audit":{"dir":"audit"},"packs":{}}`, nil))
-	if path, _ := plain.SigningKeyPath(); path != fromEnv || !plain.AuditWriter().Signs() {
+	if path, _ := plain.SigningKeyPath(); path != fromEnv || plain.AuditWriter().Signs() != signsHere(t) {
 		t.Fatalf("the environment alone signs a chained trail: %q", path)
 	}
 	unchained := mustLoad(t, writeProject(t, `{"configVersion":"6","audit":{"dir":"audit","chain":false},"packs":{}}`, nil))
@@ -125,7 +137,13 @@ func TestPacksValidateReportsWhetherTheSigningKeySigns(t *testing.T) {
 	key := keyOutside(t, testSeed)
 	loaded := mustLoad(t, writeProject(t, `{"configVersion":"6","audit":{"dir":"audit","signingKey":`+quoted(t, key)+`},"packs":{}}`, nil))
 	check, status, reported := signingKeyCheck(t, loaded)
-	signer, err := audit.LoadSigner(key, "")
+	if !signsHere(t) {
+		if !reported || check.Status != result.PackCheckFailed || status != "invalid" || !strings.Contains(check.Detail, audit.ErrKeyPrivacyUnchecked.Error()) || loaded.AuditWriter().Signs() {
+			t.Fatalf("no key signs here, and the check says why: %+v %s", check, status)
+		}
+		return
+	}
+	signer, err := audit.ReadKey(key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +158,11 @@ func TestPacksValidateReportsWhetherTheSigningKeySigns(t *testing.T) {
 	}
 	// A key inside the project is refused, and the writer then signs nothing.
 	configPath := writeProject(t, `{"configVersion":"6","audit":{"dir":"audit"},"packs":{}}`, map[string]string{"keys/seed": testSeed + "\n"})
-	inside := filepath.Join(filepath.Dir(configPath), "keys", "seed")
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(configPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(realDir, "keys", "seed")
 	if err := os.WriteFile(configPath, []byte(`{"configVersion":"6","audit":{"dir":"audit","signingKey":`+quoted(t, inside)+`},"packs":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -163,9 +185,6 @@ func TestPacksValidateReportsWhetherTheSigningKeySigns(t *testing.T) {
 	check, status, _ = signingKeyCheck(t, loaded)
 	if check.Status != result.PackCheckFailed || status != "invalid" || !strings.Contains(check.Detail, "not the key in force") {
 		t.Fatalf("a key not in force: %+v %s", check, status)
-	}
-	if runtime.GOOS == "windows" {
-		return
 	}
 	t.Setenv(audit.SigningKeyEnv, "")
 	if err := os.Chmod(key, 0o644); err != nil {

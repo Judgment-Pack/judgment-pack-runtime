@@ -43,15 +43,17 @@ func (a *App) auditKeyGenerateCommand() *cobra.Command {
 		Short: "Write a new signing key and print its public key",
 		Long: "Write a new Ed25519 seed to <seed-file>, 64 lowercase hexadecimal characters and a newline, the form the gateway's keygen writes, created readable and writable by its owner alone; an existing file is never overwritten. " +
 			"Human output is the public key alone, one line, so it can be saved for whoever will verify (jpack audit verify --public-key reads it); the seed itself is never printed. " +
-			"Keep the seed outside every project, readable by the user the runtime runs as and nobody else: a key inside the project, or one others can read, is refused and signs nothing.",
+			"The directory part of <seed-file> is resolved to its real path first, and the note on standard error names the seed by that path, which is the one to configure: a signing key is named by its real path, with no symbolic link anywhere in it. " +
+			"Keep the seed outside every project, readable by the user the runtime runs as and nobody else: a key inside the project, or one others can read, is refused and signs nothing. " +
+			"On Windows a key's privacy cannot be checked, so no key signs there; generate and public still work.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
 			}
-			target, err := filepath.Abs(args[0])
+			target, err := realParent(args[0])
 			if err != nil {
-				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The seed file's path could not be made absolute.")
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The seed file's directory could not be resolved to its real path; it must exist.")
 			}
 			seed := make([]byte, 32)
 			// crypto/rand.Read cannot fail on a supported platform.
@@ -64,7 +66,7 @@ func (a *App) auditKeyGenerateCommand() *cobra.Command {
 			}
 			// The public key is derived from the bytes that were persisted, so
 			// a short write cannot print a key for a seed that is not there.
-			signer, err := audit.LoadSigner(target, "")
+			signer, err := audit.ReadKey(target)
 			if err != nil {
 				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-KEY-READ", fmt.Sprintf("The seed written to %s could not be read back: %s.", display.Sanitize(target), audit.KeyRefusal(err)))
 			}
@@ -87,18 +89,18 @@ func (a *App) auditKeyPublicCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "public <seed-file>",
 		Short: "Print a signing key's public key",
-		Long: "Print the public key of the Ed25519 seed in <seed-file>, held to the rules a signing key is held to: one regular file named by its own path, and on unix owned by the user the runtime runs as and readable by nobody else. " +
+		Long: "Print the public key of the Ed25519 seed in <seed-file>, held to the rules a signing key is held to, but for being outside a project: one regular file with one name, not a symbolic link, and on unix owned by the user the runtime runs as and readable by nobody else. The directory part of <seed-file> is resolved to its real path first. " +
 			"Human output is the public key alone, one line, for whoever will verify; JSON adds its keyId, the first 32 hexadecimal characters of the SHA-256 of its 32 bytes, which each signature names.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
 			}
-			target, err := filepath.Abs(args[0])
+			target, err := realParent(args[0])
 			if err != nil {
-				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The seed file's path could not be made absolute.")
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The seed file's directory could not be resolved to its real path; it must exist.")
 			}
-			signer, err := audit.LoadSigner(target, "")
+			signer, err := audit.ReadKey(target)
 			if err != nil {
 				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-KEY-REFUSED", fmt.Sprintf("The key at %s is refused: %s.", display.Sanitize(target), audit.KeyRefusal(err)))
 			}
@@ -153,7 +155,7 @@ func (a *App) auditKeyRotateCommand() *cobra.Command {
 			if err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The next key's path could not be made absolute.")
 			}
-			next, err := audit.LoadSigner(nextAbsolute, loaded.Root)
+			next, err := loaded.LoadKey(nextAbsolute)
 			if err != nil {
 				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-KEY-REFUSED", fmt.Sprintf("The next key at %s is refused: %s.", display.Sanitize(nextAbsolute), audit.KeyRefusal(err)))
 			}
@@ -198,6 +200,22 @@ func (a *App) auditKeyRotateCommand() *cobra.Command {
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().StringVar(&nextPath, "next", nextPath, "the seed file of the key to hand signing over to")
 	return command
+}
+
+// realParent makes a seed file's path absolute with its directory part
+// resolved to the real path, so the path printed and read back is one a
+// signing key can be named by: no symbolic link anywhere in it. The final
+// component is kept as given, so a symbolic link there is still refused.
+func realParent(argument string) (string, error) {
+	absolute, err := filepath.Abs(argument)
+	if err != nil {
+		return "", err
+	}
+	parent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(parent, filepath.Base(absolute)), nil
 }
 
 // renderKey prints a key's public half: the public key alone for human

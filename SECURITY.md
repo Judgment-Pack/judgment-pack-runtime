@@ -119,10 +119,17 @@ the last checkpoint the holder kept.
 **Signatures** (ADR-0047 §2b) are opt-in. A project names an Ed25519 seed by the audit member's
 `signingKey` or by `JPACK_SIGNING_KEY`, and each chained record is then signed in
 `signatures.jsonl` beside the trail, under the trail's lock and after the record is written; the
-record line is not changed. The key is refused, and signs nothing, when it is named by a relative
-path, is inside the project's directory (symlinks resolved), is not one regular file named by its
-own path, or, on unix, is owned by another user or readable or writable by its group or by others;
-on Windows its ACL is not checked. A refused key, a key that is not the key in force, and a signature
+record line is not changed. The key is checked as it is opened, so what is checked is what is read:
+its path is walked from the filesystem's root a directory at a time, each held open, and it is
+refused, and signs nothing, when it is named by a relative path or one with a symbolic link anywhere
+in it, when a component changes between its look and its open, when any directory on its path is
+the project's directory (by device and inode, not by name), when it is not one regular file with
+one name, or when it is owned by another user or readable or writable by its group or by others.
+**On Windows no key signs**: who may read a file there is whatever its ACL allows, this runtime does
+not read ACLs, and so it cannot show a key is its owner's alone; every key is refused there, as on
+any platform without unix ownership and modes. `JPACK_SIGNING_KEY` is process-wide: inherited by a
+process, it signs every chained trail that process records for, under any configVersion, including
+projects that never named a key. A refused key, a key that is not the key in force, and a signature
 that cannot be written all leave the record unsigned rather than the decision failed; `packs
 validate` reports the first two, and `audit verify` counts unsigned records. No output, diagnostic
 or report carries key material: keys are named by `keyId`. `jpack audit verify --public-key` checks

@@ -124,6 +124,11 @@ func OpenRoot(dir string) (*Root, error) {
 // resolves nothing: the handle, not this string, is what reads are bounded by.
 func (r *Root) Dir() string { return r.dir }
 
+// Self is the held directory's own identity, for comparing another file
+// against it with os.SameFile: the directory the handle holds, wherever it
+// has been moved, never whatever its pathname names now.
+func (r *Root) Self() (os.FileInfo, error) { return r.root.Stat(".") }
+
 // Close releases the directory handle.
 func (r *Root) Close() error {
 	if r == nil || r.root == nil {

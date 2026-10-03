@@ -83,6 +83,21 @@ var (
 	// ErrKeyInsideProject is a key file inside the project's directory, where
 	// whatever can edit the project can read it.
 	ErrKeyInsideProject = errors.New("the signing key is inside the project's directory")
+	// ErrKeyThroughLink is a key whose path goes through a symbolic link at
+	// any component: what a link names can change between a check and an
+	// open, so a key is named by its real path.
+	ErrKeyThroughLink = errors.New("the signing key's path goes through a symbolic link; name the key by its real path")
+	// ErrKeyPathChanged is a key whose path changed while it was opened.
+	ErrKeyPathChanged = errors.New("the signing key's path changed while it was opened")
+	// ErrKeyLinked is a key file with more than one name, another of which
+	// could be anywhere, the project included.
+	ErrKeyLinked = errors.New("the signing key has more than one name (a hard link)")
+	// ErrKeyNotRegular is a key that is not one regular file.
+	ErrKeyNotRegular = errors.New("the signing key is not one regular file")
+	// ErrKeyPrivacyUnchecked is any key on a platform where this runtime
+	// cannot establish that a key is its owner's alone: Windows, whose ACLs it
+	// does not read, and any platform without unix ownership and modes.
+	ErrKeyPrivacyUnchecked = errors.New("this platform cannot show that a signing key is readable by its owner alone (Windows ACLs are not read), so no key signs here")
 	// ErrKeyNotOwned is a key file another user owns.
 	ErrKeyNotOwned = errors.New("the signing key is not owned by the user this runtime runs as")
 	// ErrKeyTooOpen is a key file its group or other users can read or write.
@@ -106,7 +121,7 @@ var (
 // KeyRefusal says why a signing key was refused, in words that carry nothing
 // read from the key's file.
 func KeyRefusal(err error) string {
-	for _, known := range []error{ErrKeyNotAbsolute, ErrKeyInsideProject, ErrKeyNotOwned, ErrKeyTooOpen, ErrKeyMalformed} {
+	for _, known := range []error{ErrKeyNotAbsolute, ErrKeyPrivacyUnchecked, ErrKeyInsideProject, ErrKeyThroughLink, ErrKeyPathChanged, ErrKeyLinked, ErrKeyNotRegular, ErrKeyNotOwned, ErrKeyTooOpen, ErrKeyMalformed} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}
@@ -176,32 +191,35 @@ func ParsePublicKey(data []byte) (ed25519.PublicKey, error) {
 }
 
 // LoadSigner reads the signing key at keyPath for the project whose directory
-// is projectRoot ("" for none). The key must be named by an absolute path, must
-// not be in the project's directory or beneath it (with symlinks resolved on
-// both sides), and must be one regular file named by its own path rather than
-// through a final symlink; on unix it must be owned by the user this runtime
-// runs as and be neither readable nor writable by its group or by others. A
-// key that is not is refused before a byte of it is read. On Windows who may
-// read the key is whatever its ACL allows, and that is not checked.
-func LoadSigner(keyPath, projectRoot string) (*Signer, error) {
+// is project (nil for none), the key a writer signs with. The key must be named
+// by an absolute path, and it is read only where this platform can establish
+// that it is its owner's alone (keyPrivacyChecked): on unix, by readKey's
+// rules. Elsewhere, Windows among them, every key is refused
+// (ErrKeyPrivacyUnchecked), so records there are unsigned. No error carries any
+// of the key's contents.
+func LoadSigner(keyPath string, project os.FileInfo) (*Signer, error) {
 	if !filepath.IsAbs(keyPath) {
 		return nil, ErrKeyNotAbsolute
 	}
-	if projectRoot != "" && within(keyPath, projectRoot) {
-		return nil, ErrKeyInsideProject
+	if !keyPrivacyChecked {
+		return nil, ErrKeyPrivacyUnchecked
 	}
-	file, err := fssecure.OpenRegular(keyPath)
-	if err != nil {
-		return nil, err
+	return readKey(filepath.Clean(keyPath), project)
+}
+
+// ReadKey reads a seed file only to show its public half, as jpack audit key
+// generate and public do: held to every rule LoadSigner holds a key to that
+// this platform can check, except being outside a project, and not refused
+// where its privacy cannot be checked, since nothing is signed with it.
+func ReadKey(keyPath string) (*Signer, error) {
+	if !filepath.IsAbs(keyPath) {
+		return nil, ErrKeyNotAbsolute
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if err := keyAccessCheck(info); err != nil {
-		return nil, err
-	}
+	return readKey(filepath.Clean(keyPath), nil)
+}
+
+// readSeedFrom reads an opened key file: at most maxKeyFileBytes, one seed.
+func readSeedFrom(file io.Reader) (*Signer, error) {
 	data, err := io.ReadAll(io.LimitReader(file, maxKeyFileBytes+1))
 	if err != nil {
 		return nil, err
@@ -214,29 +232,6 @@ func LoadSigner(keyPath, projectRoot string) (*Signer, error) {
 		return nil, err
 	}
 	return NewSignerFromSeed(seed)
-}
-
-// within says whether target is root or beneath it, comparing them as given
-// and with their symlinks resolved, so neither a link from outside to the key
-// nor a link from outside to the project moves the key out of it.
-func within(target, root string) bool {
-	targets := []string{filepath.Clean(target)}
-	if resolved, err := filepath.EvalSymlinks(target); err == nil {
-		targets = append(targets, resolved)
-	}
-	roots := []string{filepath.Clean(root)}
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		roots = append(roots, resolved)
-	}
-	for _, each := range targets {
-		for _, base := range roots {
-			relative, err := filepath.Rel(base, each)
-			if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // RecordMessage is what a record signature signs: the domain prefix, then the
@@ -434,8 +429,8 @@ func (w *Writer) signLines(appended []byte) error {
 
 // appendSidecar appends lines to the sidecar when the writer's key is the key
 // in force there. A sidecar whose last line a failed write left without its
-// newline is ended first, so that line stays a line of its own, unreadable,
-// and the new ones stay whole.
+// newline is ended first, with tornLineEnd, so that line stays a line of its
+// own and stays unreadable, whatever it holds, and the new ones stay whole.
 func (w *Writer) appendSidecar(lines []byte) error {
 	file, err := w.root.Open(w.sidecarPath())
 	switch {
@@ -452,15 +447,25 @@ func (w *Writer) appendSidecar(lines []byte) error {
 			return ErrKeyNotInForce
 		}
 		if torn {
-			lines = append([]byte{'\n'}, lines...)
+			lines = append([]byte(tornLineEnd), lines...)
 		}
 	}
 	return w.root.AppendSynced(w.sidecarPath(), lines)
 }
 
+// tornLineEnd ends a sidecar line a failed write left without its newline. A
+// complete rotation or signature that lost only its newline was never
+// written, as far as a verifier reads it, and ending it with a bare newline
+// would make it readable: the byte before the newline is one no JSON text can
+// end with, so the line can never be read as a sidecar line, and it stays what
+// it was to a verifier, unreadable.
+const tornLineEnd = "~\n"
+
 // keyInForce says whether public is the key in force at the end of a sidecar,
 // as a writer reads it, and whether the sidecar's last line is incomplete. The
-// last readable line decides: when there is none, any key is in force and
+// last readable line decides, among the lines a newline ends, as a verifier
+// reads them, so a line a failed write left without its newline decides
+// nothing, however whole its JSON: when there is none, any key is in force and
 // becomes the first; when it is a rotation, only the key it names next; when
 // it is a record signature, only the key that made it. So a rotated-away key
 // stops signing the moment the rotation is written, and a key put in place
@@ -514,11 +519,15 @@ func (w *Writer) KeyInForce() (bool, error) {
 
 // lastReadableSidecarLine reads a sidecar back from its end, a chunk at a
 // time, to its last readable line, and answers the zero item when it has none.
-// A run of more than maxSidecarLineBytes without a newline is unreadable
-// whatever it holds and is passed over without being kept.
+// Only lines a newline ends are read, as a verifier reads them: what follows
+// the last newline is a write that did not complete, or nothing. A run of more
+// than maxSidecarLineBytes without a newline is unreadable whatever it holds
+// and is passed over without being kept.
 func lastReadableSidecarLine(contents io.ReaderAt, size int64) (sidecarItem, error) {
 	var pending []byte
 	overlong := false
+	// tail is true until the bytes after the last newline are passed over.
+	tail := true
 	chunk := make([]byte, readChunk)
 	for cursor := size; ; {
 		for {
@@ -526,15 +535,15 @@ func lastReadableSidecarLine(contents io.ReaderAt, size int64) (sidecarItem, err
 			if index < 0 {
 				break
 			}
-			if !overlong {
+			if !overlong && !tail {
 				if item := parseSidecarLine(pending[index+1:]); item.readable {
 					return item, nil
 				}
 			}
-			overlong, pending = false, pending[:index]
+			overlong, tail, pending = false, false, pending[:index]
 		}
 		if cursor == 0 {
-			if !overlong {
+			if !overlong && !tail {
 				if item := parseSidecarLine(pending); item.readable {
 					return item, nil
 				}

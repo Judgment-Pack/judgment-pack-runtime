@@ -588,8 +588,12 @@ time stamps are #208's second part.
 `JPACK_SIGNING_KEY` environment variable, and then every chained record is signed (ADR-0047 §2b):
 after the record is written, and under the same lock, one line is appended to `signatures.jsonl`
 beside the trail, binding the record's `trail`, `sequence` and the SHA-256 of its exact bytes. The
-record line is not changed. The key must be outside the project's directory and, on unix, owned by
-the user the runtime runs as and readable by nobody else; a key that is not signs nothing, and
+record line is not changed. The key must be named by its real path, with no symbolic link in it,
+outside the project's directory (compared by device and inode as it is opened), one file with one
+name, owned by the user the runtime runs as and readable by nobody else; a key that is not signs
+nothing, and on Windows, whose ACLs the runtime does not read, no key signs at all. The environment
+variable is process-wide: inherited, it signs every chained trail the process records for, under
+any configVersion, including projects that never named a key. In every case
 `packs validate` says why (`audit-signing-key`). Signing never fails a decision: a signature that
 cannot be written leaves the record unsigned. `jpack audit key generate` writes a key and prints its
 public key, `jpack audit key public` prints a key's public key, and `jpack audit key rotate --next

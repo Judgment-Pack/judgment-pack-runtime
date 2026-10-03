@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,7 +17,10 @@ import (
 // returns the seed's path and the public key file holding what it printed.
 func generatedKey(t *testing.T) (string, string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	seed := filepath.Join(dir, "seed")
 	code, stdout, stderr := runTest(t, []string{"audit", "key", "generate", seed}, "")
 	if code != 0 || len(stdout) != 65 || !strings.HasSuffix(stdout, "\n") || !strings.Contains(stderr, "keyId") {
@@ -27,6 +31,24 @@ func generatedKey(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	return seed, public
+}
+
+// keysSignHere says whether a key can sign on this platform: where its
+// privacy cannot be checked, every key is refused and records are unsigned.
+func keysSignHere(t *testing.T) bool {
+	t.Helper()
+	seed, _ := generatedKey(t)
+	_, err := audit.LoadSigner(seed, nil)
+	return !errors.Is(err, audit.ErrKeyPrivacyUnchecked)
+}
+
+// skipWhereKeysCannotSign skips a test of signed records on a platform where
+// no key signs; TestNoKeySignsWhereItsPrivacyCannotBeChecked covers it there.
+func skipWhereKeysCannotSign(t *testing.T) {
+	t.Helper()
+	if !keysSignHere(t) {
+		t.Skip("no key signs on this platform: its privacy cannot be checked")
+	}
 }
 
 // evaluateOnce records one decision in the project.
@@ -93,6 +115,7 @@ func TestAuditKeyGenerateAndPublic(t *testing.T) {
 // --public-key checks every signature and reports how far they reach. A key
 // inside the project signs nothing, and the decision is recorded all the same.
 func TestAuditVerifyChecksTheSignatures(t *testing.T) {
+	skipWhereKeysCannotSign(t)
 	seed, public := generatedKey(t)
 	t.Setenv(audit.SigningKeyEnv, seed)
 	configPath, trail := recordedProject(t, 3)
@@ -188,6 +211,7 @@ func TestAuditVerifySignatureFlagsAreChecked(t *testing.T) {
 // verifies under the first key, and under both pinned in order. A revocation
 // of the first key from the rotation on changes nothing for the genuine trail.
 func TestAuditKeyRotateHandsSigningOver(t *testing.T) {
+	skipWhereKeysCannotSign(t)
 	firstSeed, firstPublic := generatedKey(t)
 	nextSeed, nextPublic := generatedKey(t)
 	t.Setenv(audit.SigningKeyEnv, firstSeed)
@@ -225,7 +249,11 @@ func TestAuditKeyRotateHandsSigningOver(t *testing.T) {
 	if code != result.ExitInvocation || !strings.Contains(stdout, `"JPS-AUDIT-KEY-SAME"`) {
 		t.Fatalf("a rotation to the same key: exit=%d %q", code, stdout)
 	}
-	inside := filepath.Join(filepath.Dir(configPath), "next.seed")
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(configPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(realDir, "next.seed")
 	if err := os.WriteFile(inside, []byte(readFile(t, thirdSeed)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -248,8 +276,13 @@ func TestAuditKeyRotateHandsSigningOver(t *testing.T) {
 // decision is recorded, packs validate says why, and audit verify reports the
 // record unsigned.
 func TestASigningKeyInsideTheProjectSignsNothing(t *testing.T) {
+	skipWhereKeysCannotSign(t)
 	configPath := auditProject(t)
-	inside := filepath.Join(filepath.Dir(configPath), "keys", "seed")
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(configPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(realDir, "keys", "seed")
 	if err := os.MkdirAll(filepath.Dir(inside), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -280,4 +313,25 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+// Where a key's privacy cannot be checked, Windows among them, no key signs:
+// the decision is recorded unsigned, packs validate fails the
+// audit-signing-key check and says why, and audit key generate and public
+// still work, since they sign nothing.
+func TestNoKeySignsWhereItsPrivacyCannotBeChecked(t *testing.T) {
+	if keysSignHere(t) {
+		t.Skip("keys sign on this platform")
+	}
+	seed, public := generatedKey(t)
+	t.Setenv(audit.SigningKeyEnv, seed)
+	configPath, _ := recordedProject(t, 1)
+	code, stdout, _ := runTest(t, []string{"packs", "validate", "--config", configPath}, "")
+	if code == 0 || !strings.Contains(stdout, "audit-signing-key: failed") || !strings.Contains(stdout, audit.ErrKeyPrivacyUnchecked.Error()) {
+		t.Fatalf("validate: exit=%d %q", code, stdout)
+	}
+	code, output := verification(t, "--config", configPath, "--public-key", public)
+	if code != 0 || output.Coverage.UnsignedRecords != 1 || output.Coverage.Signed.Status != "none" {
+		t.Fatalf("verify: exit=%d %+v", code, output.Coverage)
+	}
 }

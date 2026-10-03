@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -564,6 +563,70 @@ func TestARotationNotSignedByTheKeyInForceFails(t *testing.T) {
 	}
 }
 
+// A rotation whose only flaw is its signature, under the right keyId, hands
+// nothing over: it fails, the key in force stays, and what the key it names
+// signs fails too.
+func TestARotationWithABadSignatureHandsNothingOver(t *testing.T) {
+	first, second := signerOf(t, vectorSeed1), signerOf(t, vectorSeed2)
+	root, dir := signedTrail(t, first, 2)
+	identity := readChain(t, splitLines(readTrailFile(t, dir))[0]).trail
+	rotation := bytes.TrimSuffix(first.RotationLine(identity, 2, second.public), []byte("\n"))
+	corrupted := editSignature(rotation)
+	if !parseSidecarLine(corrupted).readable || !bytes.Contains(corrupted, []byte(first.KeyID())) {
+		t.Fatal("the corrupted rotation keeps its shape and its keyId")
+	}
+	writeSidecar(t, dir, append(append(readSidecar(t, dir), corrupted...), '\n'))
+	appendForged(t, root, dir, second)
+	for _, pinned := range [][]ed25519.PublicKey{keys(first), keys(first, second)} {
+		chain := verifySigned(t, readTrailFile(t, dir), readSidecar(t, dir), SignatureOptions{Keys: pinned})
+		if !slices.Equal(findingNames(chain), []string{"rotation-invalid@2", "signature-invalid@3"}) ||
+			chain.Signatures.Rotations != 0 || chain.Signatures.KeyInForce != first.KeyID() || chain.Coverage.Signed.Through != 2 {
+			t.Fatalf("%d key(s): %v %+v %+v", len(pinned), findingNames(chain), chain.Signatures, chain.Coverage)
+		}
+	}
+}
+
+// A rotation a failed write left without its newline was never written, as a
+// verifier reads it, and the writer reads it so too: the old key stays in
+// force and signs, the key it names does not, and ending the torn line keeps
+// it unreadable rather than making it a rotation.
+func TestATornRotationHandsNothingOver(t *testing.T) {
+	first, second := signerOf(t, vectorSeed1), signerOf(t, vectorSeed2)
+	root, dir := signedTrail(t, first, 2)
+	identity := readChain(t, splitLines(readTrailFile(t, dir))[0]).trail
+	rotation := bytes.TrimSuffix(first.RotationLine(identity, 2, second.public), []byte("\n"))
+	if item, err := lastReadableSidecarLine(bytes.NewReader(rotation), int64(len(rotation))); err != nil || item.readable {
+		t.Fatalf("a sidecar of one line without its newline has no readable line: %+v %v", item, err)
+	}
+	writeSidecar(t, dir, append(readSidecar(t, dir), rotation...))
+	torn := readSidecar(t, dir)
+	if item, err := lastReadableSidecarLine(bytes.NewReader(torn), int64(len(torn))); err != nil || item.kind != KindRecordSignature || item.keyID != first.KeyID() {
+		t.Fatalf("the writer reads past the torn rotation: %+v %v", item, err)
+	}
+	chain := verifySigned(t, readTrailFile(t, dir), torn, SignatureOptions{Keys: keys(first)})
+	if chain.Status != "valid" || chain.Signatures.Rotations != 0 || chain.Signatures.Unreadable != 1 || chain.Signatures.KeyInForce != first.KeyID() {
+		t.Fatalf("the verifier reads the torn rotation as unreadable: %v %+v", findingNames(chain), chain.Signatures)
+	}
+	next := NewWriter(root, "audit", true)
+	next.SignWith(second)
+	if inForce, err := next.KeyInForce(); err != nil || inForce {
+		t.Fatalf("the key the torn rotation names is not in force: %v %v", inForce, err)
+	}
+	appendSigned(t, root, second, `{"n":"next"}`)
+	if !bytes.Equal(readSidecar(t, dir), torn) {
+		t.Fatal("the key the torn rotation names signed")
+	}
+	appendSigned(t, root, first, `{"n":"old"}`)
+	sidecar := readSidecar(t, dir)
+	if lines := splitLines(sidecar); len(lines) != 4 || !bytes.Equal(lines[2], append(slices.Clone(rotation), '~')) {
+		t.Fatalf("the torn rotation is ended and kept: %q", sidecar)
+	}
+	chain = verifySigned(t, readTrailFile(t, dir), sidecar, SignatureOptions{Keys: keys(first)})
+	if chain.Status != "valid" || chain.Signatures.Rotations != 0 || chain.Signatures.Unreadable != 1 || chain.Coverage.SignedRecords != 3 || chain.Coverage.UnsignedRecords != 1 {
+		t.Fatalf("after the old key signed again: %v %+v %+v", findingNames(chain), chain.Coverage, chain.Signatures)
+	}
+}
+
 // appendForged appends a record and signs it with signer whatever the
 // sidecar says is in force, as someone holding that key and the files could.
 func appendForged(t *testing.T, root *fssecure.Root, dir string, signer *Signer) {
@@ -699,8 +762,8 @@ func TestASidecarThatCannotBeWrittenLeavesRecordsUnsigned(t *testing.T) {
 	writeSidecar(t, dir, append(slices.Clone(torn), torn[:40]...))
 	appendSigned(t, writer.root, signer, `{"n":3}`)
 	sidecar := readSidecar(t, dir)
-	if lines := splitLines(sidecar); len(lines) != 3 || !bytes.Equal(lines[1], torn[:40]) {
-		t.Fatalf("the torn line is kept as a line of its own: %q", sidecar)
+	if lines := splitLines(sidecar); len(lines) != 3 || string(lines[1]) != string(torn[:40])+"~" {
+		t.Fatalf("the torn line is kept as a line of its own, ended so it stays unreadable: %q", sidecar)
 	}
 	chain := verifySigned(t, readTrailFile(t, dir), sidecar, SignatureOptions{Keys: keys(signer)})
 	if chain.Status != "valid" || chain.Coverage.SignedRecords != 2 || chain.Coverage.UnsignedRecords != 1 || chain.Signatures.Unreadable != 1 || chain.Coverage.Signed.Through != 3 {
@@ -730,7 +793,7 @@ func TestASidecarOfUnreadableLinesTakesAnyKey(t *testing.T) {
 	writeSidecar(t, dir, []byte("not a line\n{\"torn"))
 	appendSigned(t, writer.root, signer, `{"n":1}`)
 	sidecar := readSidecar(t, dir)
-	if lines := splitLines(sidecar); len(lines) != 3 || string(lines[1]) != `{"torn` {
+	if lines := splitLines(sidecar); len(lines) != 3 || string(lines[1]) != `{"torn~` {
 		t.Fatalf("sidecar: %q", sidecar)
 	}
 	chain := verifySigned(t, readTrailFile(t, dir), sidecar, SignatureOptions{Keys: keys(signer)})
@@ -949,47 +1012,49 @@ func TestSignHelperProcess(t *testing.T) {
 	fmt.Println("sign helper wrote 12 batches")
 }
 
-// A signing key is refused unless it is named by an absolute path, outside the
-// project, one regular file named by its own path, of the seed's form, and on
-// unix its owner's alone. No refusal carries the key's contents.
-func TestASigningKeyIsHeldOutsideTheProjectAndPrivate(t *testing.T) {
-	project := t.TempDir()
-	outside := t.TempDir()
-	seed := vectorSeed1 + "\n"
-	write := func(path, contents string, mode os.FileMode) string {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(contents), mode); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chmod(path, mode); err != nil {
-			t.Fatal(err)
-		}
-		return path
-	}
-	good := write(filepath.Join(outside, "seed"), seed, 0o600)
-	signer, err := LoadSigner(good, project)
-	if err != nil || signer.PublicKey() != signerOf(t, vectorSeed1).PublicKey() {
-		t.Fatalf("a good key: %v", err)
-	}
-	if _, err := LoadSigner(write(filepath.Join(outside, "spaced"), "  "+strings.ToUpper(vectorSeed1)+"\r\n", 0o600), project); err != nil {
-		t.Fatalf("surrounding whitespace and upper case are read: %v", err)
-	}
-	inside := write(filepath.Join(project, "seed"), seed, 0o600)
-	if _, err := LoadSigner(inside, project); !errors.Is(err, ErrKeyInsideProject) {
-		t.Fatalf("a key inside the project: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(project, "keys"), 0o700); err != nil {
+// realTempDir is a fresh directory named by its real path: a signing key is
+// named with no symbolic link anywhere in its path, and on some platforms the
+// temporary directory is reached through one.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	deeper := write(filepath.Join(project, "keys", "seed"), seed, 0o600)
-	if _, err := LoadSigner(deeper, project); !errors.Is(err, ErrKeyInsideProject) {
-		t.Fatalf("a key beneath the project: %v", err)
+	return dir
+}
+
+// writeKeyFile writes a key file with exactly the mode given.
+func writeKeyFile(t *testing.T, path, contents string, mode os.FileMode) string {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(contents), mode); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := LoadSigner("seed", project); !errors.Is(err, ErrKeyNotAbsolute) {
-		t.Fatalf("a relative path: %v", err)
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A seed file is read in one form only, everywhere: 64 hexadecimal characters
+// with nothing else but surrounding whitespace, from a file of at most the
+// bound, named by an absolute path. No refusal carries the key's contents.
+func TestASeedFileIsReadInItsOneForm(t *testing.T) {
+	outside := realTempDir(t)
+	good := writeKeyFile(t, filepath.Join(outside, "seed"), vectorSeed1+"\n", 0o600)
+	if signer, err := ReadKey(good); err != nil || signer.PublicKey() != signerOf(t, vectorSeed1).PublicKey() {
+		t.Fatalf("a good key: %v", err)
+	}
+	if _, err := ReadKey(writeKeyFile(t, filepath.Join(outside, "spaced"), "  "+strings.ToUpper(vectorSeed1)+"\r\n", 0o600)); err != nil {
+		t.Fatalf("surrounding whitespace and upper case are read: %v", err)
+	}
+	for _, read := range []func(string) (*Signer, error){ReadKey, func(path string) (*Signer, error) { return LoadSigner(path, nil) }} {
+		if _, err := read("seed"); !errors.Is(err, ErrKeyNotAbsolute) {
+			t.Fatalf("a relative path: %v", err)
+		}
 	}
 	for name, contents := range map[string]string{"short": vectorSeed1[:62], "long": vectorSeed1 + "00", "not hex": strings.Repeat("g", 64), "two": vectorSeed1 + "\n" + vectorSeed1, "empty": ""} {
-		_, err := LoadSigner(write(filepath.Join(outside, "bad-"+strings.ReplaceAll(name, " ", "-")), contents, 0o600), project)
+		_, err := ReadKey(writeKeyFile(t, filepath.Join(outside, "bad-"+strings.ReplaceAll(name, " ", "-")), contents, 0o600))
 		if !errors.Is(err, ErrKeyMalformed) {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -997,41 +1062,11 @@ func TestASigningKeyIsHeldOutsideTheProjectAndPrivate(t *testing.T) {
 			t.Fatalf("%s: the refusal carries the key's contents", name)
 		}
 	}
-	if _, err := LoadSigner(write(filepath.Join(outside, "large"), vectorSeed1+strings.Repeat(" ", maxKeyFileBytes), 0o600), project); !errors.Is(err, ErrKeyMalformed) {
+	if _, err := ReadKey(writeKeyFile(t, filepath.Join(outside, "large"), vectorSeed1+strings.Repeat(" ", maxKeyFileBytes), 0o600)); !errors.Is(err, ErrKeyMalformed) {
 		t.Fatalf("a file larger than a key file: %v", err)
 	}
-	if _, err := LoadSigner(filepath.Join(outside, "absent"), project); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := ReadKey(filepath.Join(outside, "absent")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("an absent key: %v", err)
-	}
-	if runtime.GOOS == "windows" {
-		return
-	}
-	for _, mode := range []os.FileMode{0o640, 0o604, 0o620, 0o602, 0o660} {
-		if _, err := LoadSigner(write(filepath.Join(outside, fmt.Sprintf("open-%o", mode)), seed, mode), project); !errors.Is(err, ErrKeyTooOpen) {
-			t.Fatalf("mode %o: %v", mode, err)
-		}
-	}
-	if _, err := LoadSigner(write(filepath.Join(outside, "owner-only"), seed, 0o400), project); err != nil {
-		t.Fatalf("an owner-read-only key: %v", err)
-	}
-	// A final symlink is refused, and a project reached through a symlink is
-	// still the project.
-	link := filepath.Join(outside, "link")
-	if err := os.Symlink(good, link); err != nil {
-		t.Skipf("no symlinks here: %v", err)
-	}
-	if _, err := LoadSigner(link, project); err == nil {
-		t.Fatal("a key named through a final symlink is refused")
-	}
-	projectLink := filepath.Join(outside, "project-link")
-	if err := os.Symlink(project, projectLink); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadSigner(filepath.Join(projectLink, "keys", "seed"), project); !errors.Is(err, ErrKeyInsideProject) {
-		t.Fatalf("a key inside the project through a linked directory: %v", err)
-	}
-	if _, err := LoadSigner(deeper, projectLink); !errors.Is(err, ErrKeyInsideProject) {
-		t.Fatalf("a key inside a project named through a link: %v", err)
 	}
 }
 

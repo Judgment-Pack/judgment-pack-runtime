@@ -1105,7 +1105,18 @@ func (p *Project) SigningKey() (*audit.Signer, error) {
 	if keyPath == "" || !p.Config.Audit.Chains() {
 		return nil, nil
 	}
-	return audit.LoadSigner(keyPath, p.Root)
+	return p.LoadKey(keyPath)
+}
+
+// LoadKey loads a signing key by audit.LoadSigner's rules, with the
+// directory this project's handle holds as the one it must be outside,
+// compared by identity rather than by pathname.
+func (p *Project) LoadKey(keyPath string) (*audit.Signer, error) {
+	self, err := p.root.Self()
+	if err != nil {
+		return nil, err
+	}
+	return audit.LoadSigner(keyPath, self)
 }
 
 // TrailName is the trail file this configuration's audit member names,

@@ -154,7 +154,7 @@ func (p *Project) checkSigningKey() result.PackCheck {
 		check.Detail = fmt.Sprintf("The trail is not chained, so the key %s names signs nothing: a signature binds a record's trail and sequence.", named)
 		return check
 	}
-	signer, err := audit.LoadSigner(keyPath, p.Root)
+	signer, err := p.LoadKey(keyPath)
 	if err != nil {
 		check.Status = result.PackCheckFailed
 		check.Detail = fmt.Sprintf("The signing key %s names, %s, is refused, so records are written unsigned: %s.", named, display.Sanitize(keyPath), display.Sanitize(audit.KeyRefusal(err)))

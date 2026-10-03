@@ -1018,14 +1018,29 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
 - **The key.** An Ed25519 seed, 64 hexadecimal characters, the form the gateway's `keygen` writes.
   `audit.signingKey` names it by absolute path, under configVersion `"6"` and only for a chained
   trail; the `JPACK_SIGNING_KEY` environment variable, when set, names it instead, so the path need
-  not be in the project's file at all, and it signs a chained trail under any configVersion. The key
-  must be outside the project's directory, with symlinks resolved on both sides, and one regular file
-  named by its own path rather than through a final symlink; on unix it must be owned by the user the
-  runtime runs as and be neither readable nor writable by its group or by others. On Windows who may
-  read it is whatever its ACL allows, and that is not checked. A key that is not is refused and signs
+  not be in the project's file at all.
+- **The environment variable is process-wide.** `JPACK_SIGNING_KEY` is read for every project this
+  runtime records for, whatever configVersion the project declares and whether or not it ever named
+  a key: set in a shell, a service unit or a CI job, and inherited by everything started from there,
+  it turns signing on for every project those processes record for that keeps a chained trail,
+  projects under `"3"` to `"5"` included. Set it only where that is what you want.
+- **What the key must be.** It is read only as it is opened, so what is checked is what is
+  read. Its path must be absolute and have no symbolic link anywhere in it, so name it by its real
+  path (on macOS, `/private/var/…` rather than `/var/…`): the runtime walks the path from the
+  filesystem's root a directory at a time, holding each one open, refuses a link at any component,
+  and refuses a component that changed between its look and its open. No directory it walks may be
+  the project's own directory, compared by device and inode rather than by name. The key must be one
+  regular file with one name (no hard link elsewhere), owned by the user the runtime runs as, and
+  neither readable nor writable by its group or by others. A key that is not is refused and signs
   nothing. `packs validate` reports why, as the `audit-signing-key` check, naming the key by its
   `keyId` and never by anything read from its file; nothing this runtime prints or logs carries key
   material. `jpack audit key public <seed>` prints a key's public half for whoever will verify.
+- **No key signs on Windows.** Who may read a file there is whatever its ACL allows, and this
+  runtime does not read ACLs, so it cannot show that a key is its owner's alone. Every key is refused
+  there, as on any platform without unix ownership and modes: records are unsigned, and `packs
+  validate` fails the `audit-signing-key` check and says why. `jpack audit key generate` and
+  `public` still work there, since they sign nothing, and `audit verify` checks signatures made
+  elsewhere.
 - **The sidecar.** After each chained record is written and synced, and still under the trail's
   lock, one line signing it is appended to `signatures.jsonl` beside the trail: the record's `trail`,
   its `sequence`, and the SHA-256 of its exact line bytes, signed. The record line itself is not
@@ -1034,8 +1049,10 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
 - **Pending, never failed.** A signature that cannot be written leaves its record unsigned and the
   decision recorded: signing never refuses a run. So does a key that is refused or is not the key in
   force. `audit verify` counts such a record unsigned, and a later signed record still covers it
-  through the chain. A sidecar whose last line a failed write left incomplete is ended before the
-  next line, which stays whole.
+  through the chain. A sidecar line a failed write left without its newline was never written, as
+  a verifier reads it, and the writer reads it the same way: it decides nothing about the key in
+  force, and before the next line the writer ends it with `~` and a newline, so it stays a line of
+  its own that can never be read as a sidecar line, and the next line stays whole.
 - **Rotation.** `jpack audit key rotate --next <seed>` appends a `key-rotation` line, made with the
   key the project names and naming the next key's public key and the trail's last line: the records
   up to that line are signed with the old key, and the records after it with the next. A writer signs
@@ -1129,7 +1146,8 @@ with a newline and is the RFC 8785 canonical form of one of two objects, seven m
 `sequence` and `at` are integers from 1 to 2^53−2. A reader reads a line as one JSON object with
 exactly those seven members, each once and of those forms, whatever its whitespace; any other line,
 a line with no newline after it, and a line longer than 4096 bytes are unreadable: they sign
-nothing and are not a failure.
+nothing and are not a failure. A writer ends a line it finds without its newline with `~` and a
+newline before it appends, so that line stays unreadable.
 
 **The signed bytes.** A record signature signs the ASCII bytes
 `judgment-pack-runtime/record-signature/1:` followed by the RFC 8785 canonical form of
