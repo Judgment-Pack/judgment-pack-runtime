@@ -244,6 +244,16 @@ All notable changes to tagged releases are documented here.
     what `audit verify` already did. A test holds the one-record rule to `audit verify`, record by
     record, over sidecars reordered, cut, repeated, edited and forged and over trails with damaged
     lines, wherever the trail context the guide names holds.
+  - e guide also states, for a second implementation (#218): which trail line is a chained record
+    (one JSON object, no member given twice, `trail` 32 lowercase hex, `sequence` an integer from 1
+    to 2^53−2, `previous` `sha256:` and 64 lowercase hex), and that a line with one of those members
+    missing or of another form is unchained, not a failed check; which findings are the chain's
+    checks that the signed coverage stops at (`sequence-mismatch`, `previous-mismatch`,
+    `trail-mismatch`, `discontinuity-malformed`, `discontinuity-mismatch`, `line-too-long`), and
+    that damage a valid discontinuity names, a held checkpoint, a stamp and an incomplete last line
+    are not; and that a finding about the sidecar is placed at the trail line it is about, with the
+    sidecar line in its detail. Each is what `audit verify` already did, and a test now holds each
+    to it.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02
