@@ -524,7 +524,12 @@ func TestAValidChainedLineOverTheBoundIsRefusedNotReinterpreted(t *testing.T) {
 		t.Fatal("the fixture's line is chained")
 	}
 	func() {
-		lowerLineBound(t, int64(len(lines[0])-1))
+		// The bound is restored when this block ends: the record written
+		// below can be a byte longer than the first, since a timestamp's
+		// length varies, and must not meet the bound set for this block.
+		original := maxLineBytes
+		defer func() { maxLineBytes = original }()
+		maxLineBytes = int64(len(lines[0]) - 1)
 		err := write(writer, `{}`)
 		if !errors.Is(err, ErrOversizedLine) || FailureMessageFor(err) != oversizedMessage {
 			t.Fatalf("a chained last line over the bound refuses the append: %v", err)

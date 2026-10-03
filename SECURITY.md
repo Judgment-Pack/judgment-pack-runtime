@@ -89,8 +89,20 @@ the platform or file system offers no lock at all. What the links give is consis
 not authenticated history: an edit to any line but the last breaks a link, but anyone who can write
 the trail can edit its last line, cut it short, or rewrite it from any line on with its links
 recomputed, and the result is as consistent as the original. Only a commitment to the trail held
-outside the operator's reach, covering the lines in question, shows that (ADR-0047 §2a; not yet
-built). This runtime also does not yet check the links.
+outside the operator's reach, covering the lines in question, shows that (ADR-0047 §2a).
+
+`jpack audit verify` checks the links over the trail's exact bytes and exits 1 on any failed check.
+Without `--expect` it reports the integrity of one supplied chain and says what that does not
+establish. With `--expect`, a checkpoint `jpack audit checkpoint` printed earlier and that someone
+other than the operator kept, it also fails a trail cut short before the checkpoint's record, or one
+with another identity or another record there; the lines after that record stay unauthenticated. A
+checkpoint is only as independent as whoever holds it: one kept by the operator protects nothing
+against the operator. Time-stamped checkpoints are not built yet (#208), and neither are signatures
+(#209). `jpack audit repair` removes and rewrites nothing: after a write that did not complete it
+keeps the damaged bytes in place as a line of their own and appends a discontinuity record naming
+their digest, and `verify` then reports the trail as segments, never as intact across the break. A
+repair is something an operator can run at will, so a discontinuity says a break was acknowledged,
+not why; a checkpoint covering the lines before it is what shows they were not changed.
 
 The records deliberately contain the facts and evidence documents that were evaluated: they are the
 project's own trail, written where the project asked, and they are not diagnostics. Human

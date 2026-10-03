@@ -73,6 +73,27 @@ func lockOutcome(err error) error {
 	return err
 }
 
+// platformLockShared takes LockFileEx's shared lock on the same byte, waiting
+// for any writer that holds it exclusively. Shared holders exclude writers and
+// not one another.
+func platformLockShared(file *os.File) error {
+	conn, err := file.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var lockErr error
+	if err := conn.Control(func(fd uintptr) {
+		overlapped := &syscall.Overlapped{Offset: lockOffsetLow, OffsetHigh: lockOffsetHigh}
+		r1, _, e1 := procLockFileEx.Call(fd, 0, 0, 1, 0, uintptr(unsafe.Pointer(overlapped)))
+		if r1 == 0 {
+			lockErr = e1
+		}
+	}); err != nil {
+		return err
+	}
+	return lockOutcome(lockErr)
+}
+
 // platformUnlock releases the byte platformLockExclusive locked. Windows
 // releases a closed handle's locks in its own time, so it is said explicitly.
 func platformUnlock(file *os.File) error {

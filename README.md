@@ -546,10 +546,27 @@ sets `"audit": { "dir": "audit", "chain": false }` under configVersion `"6"`. Re
 or moved anywhere before the last breaks a link. That is not authenticated history. The last line
 can be edited without breaking any link, and a trail cut short, or rewritten from any line on with
 its links recomputed, is as consistent as the real one; only a commitment held by someone other than
-the operator, covering those lines, tells them apart, and this runtime does not make one yet (#208).
-Nothing in this runtime checks the links yet either (`jpack audit verify`, #207). Keep the trail,
-and anything copied from it, byte for byte: a decoded and re-encoded line is other bytes with
-another digest.
+the operator, covering those lines, tells them apart. Keep the trail, and anything copied from it,
+byte for byte: a decoded and re-encoded line is other bytes with another digest.
+
+**Checking a trail.** `jpack audit verify` reads the project's trail, or `--trail <file>`, over its
+exact bytes and checks every `trail`, `sequence` and `previous` from the first chained record on;
+it exits 1 on any failed check, each named in the report, and 0 otherwise. Its size is read under
+the writer's lock, shared, so it falls between two writes, and the bytes before it are read without
+the lock: writers only append, so a verification neither delays nor races them. Without `--expect`
+the report is the integrity of one supplied chain, and says what it does not establish: that the
+last line, or lines rewritten from some point on with their links recomputed, are the ones first
+written, or that the trail is complete. `jpack audit checkpoint` prints the checkpoint of the last
+chained record, one canonical JSON line naming the trail's identity, the record's sequence and the
+SHA-256 of its exact bytes, for handing to someone who will keep it. `jpack audit verify --expect
+<checkpoint>` then also fails a trail that is shorter, has another identity, or has another record
+at that sequence, and reports the lines up to it as checkpointed. The coverage it reports names
+signatures as not available (#209); time-stamped checkpoints are #208. After a write that did not
+complete, `jpack audit repair` keeps the damaged bytes in place as a line of their own and appends
+a discontinuity record that names their digest and links over them, so the writer goes on (it never
+repairs a torn discontinuity, since a repair does not repair a repair);
+`verify` then reports the trail as segments, never as intact across the break. A discontinuity line
+records no decision: it has `kind` `"discontinuity"` and no pack, inputs or disposition.
 
 **Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
 as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never

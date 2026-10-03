@@ -85,6 +85,10 @@ different rules, and conflating them has been a live source of error.
   member's `chain` moved it to `"6"` for exactly this reason, and the version gate is what turns an
   unreadable-config refusal into an actionable "this runtime accepts" one. The audit record's chain
   members (ADR-0047) are the other kind of change: additive output, so `recordVersion` stays `"1"`.
+  So is the discontinuity line a repair appends, a third `kind` beside `evaluation` and
+  `graph-composite` with members of its own, as the composite has: a reader selects records by
+  `kind` and passes over one it does not know. An audit checkpoint carries its own
+  `checkpointVersion`, `"1"`, and is a closed input to `jpack audit verify --expect`.
 
 ## Release artifacts
 

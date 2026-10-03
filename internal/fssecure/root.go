@@ -459,8 +459,37 @@ var errNoLock = errors.New("no exclusive lock is available for this file")
 // another file while a writer waited for the lock.
 var (
 	lockExclusive = platformLockExclusive
+	lockShared    = platformLockShared
 	unlockFile    = platformUnlock
 )
+
+// SizeBetweenWrites reads an open file's size at a moment no cooperating writer
+// is writing to it: under the shared lock, which waits for any writer holding
+// the exclusive one, and releases it before returning. A writer holds that lock
+// across its whole write and sync, so the size falls between writes, never
+// inside one. The second result says whether the lock was held; where none can
+// be taken (errNoLock's cases) the size is read without it and may fall inside
+// a write in progress. Any other failure to take it is returned.
+//
+// It is how a reader takes a consistent snapshot of a file that is only ever
+// appended to: every byte before the size is final, so the reader can read them
+// without holding the lock and without delaying a writer.
+func SizeBetweenWrites(file *os.File) (int64, bool, error) {
+	locked := true
+	if err := lockShared(file); errors.Is(err, errNoLock) {
+		locked = false
+	} else if err != nil {
+		return 0, false, err
+	}
+	info, err := file.Stat()
+	if locked {
+		unlockFile(file)
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return info.Size(), locked, nil
+}
 
 // syncFile and openDirectory are what AppendLocked's durability rests on: the
 // sync of the file, and of the directory holding it, and the open that

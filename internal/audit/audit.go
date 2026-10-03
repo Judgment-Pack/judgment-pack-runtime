@@ -56,7 +56,9 @@
 //     finish, and nothing about them should be read as a decision the project
 //     took;
 //   - a trailing line that is not a complete JSON text is a write that did not
-//     complete, and it is the last line or it is not there at all.
+//     complete, and it is the last line or it is not there at all;
+//   - a "discontinuity" line records a repair and no decision, and the line
+//     before it is the damage it names.
 //
 // That is what a flat append can honestly promise. A refusal *before* the trail
 // is opened writes nothing at all, which is the ordinary case — an escaping
@@ -119,8 +121,23 @@
 // breaking any link, and a trail cut short, or rewritten from any line on with
 // its links recomputed, is as consistent as the real one: only a commitment
 // to the trail held by someone other than the operator, covering the lines in
-// question, tells them apart (ADR-0047 §2a; runtime #208). And this runtime
-// does not check the links yet: `jpack audit verify` is runtime #207.
+// question, tells them apart (ADR-0047 §2a). Verify checks the links by the
+// rules above, and a Checkpoint names a record for someone else to hold.
+//
+// # Repair
+//
+// Writer.Repair starts a new segment after a last line with no newline. It
+// appends and rewrites nothing else: the damaged bytes are ended with a newline
+// and kept in place as a line of their own, and a discontinuity record follows
+// them, kind "discontinuity", naming that line, its length and its digest. Its
+// previous links over the damaged line to what a record in its place would
+// have followed, so it is the one record whose previous does not follow the
+// line before it, and Verify holds it to that rule. It records no decision and
+// carries no pack, inputs or disposition. No discontinuity may name a line that
+// is itself a discontinuity, or a line longer than maxLineBytes: Verify reports
+// one that does as malformed and excuses nothing, and Repair refuses to write
+// one (ErrRepairDiscontinuity, ErrOversizedLine), so a discontinuity's decision
+// is final the moment it is read.
 package audit
 
 import (
@@ -163,6 +180,14 @@ const (
 	// carries no node's inputs: the node records are where those are, and it is
 	// the marker that says its run finished.
 	KindGraphComposite = "graph-composite"
+	// KindDiscontinuity is the record audit repair appends after a damaged
+	// line (ADR-0047 §1). It carries no pack, inputs or disposition: it is not
+	// a decision, and a reader that selects records by kind, as every reader of
+	// evaluation records does, passes it over.
+	KindDiscontinuity = "discontinuity"
+	// ReasonIncompleteLastLine is the one reason a discontinuity names today:
+	// the line it follows was the trail's last and had no newline.
+	ReasonIncompleteLastLine = "incomplete-last-line"
 	// FailureCode and FailureMessage are the one refusal a failed append
 	// produces, stated here so the three surfaces that write records cannot
 	// report the same failure three ways. The message names no value: a caller
@@ -1041,25 +1066,40 @@ func readPrefix(contents io.ReaderAt, size int64) (string, int64, string, error)
 // verifier would start a chain again over a line the verifier holds to be
 // chained, and the verifier would report a break the writer made.
 func chainedLine(line []byte) (string, int64, bool) {
+	found, _, ok := readLink(line)
+	return found.trail, found.sequence, ok
+}
+
+// link is a chained line's three members.
+type link struct {
+	trail    string
+	sequence int64
+	previous string
+}
+
+// readLink is chainedLine's rule, with the chain members it read and every
+// member of the line, so a reader that needs more of a chained line than its
+// trail and sequence parses it once. The members are nil when the line is not
+// one JSON object.
+func readLink(line []byte) (link, map[string]json.RawMessage, bool) {
 	if len(line) == 0 || !json.Valid(line) {
-		return "", 0, false
+		return link{}, nil, false
 	}
 	members, err := exactObject(line)
 	if err != nil {
-		return "", 0, false
+		return link{}, nil, false
 	}
-	var trail, previous string
-	var sequence int64
-	if decodeString(members["trail"], &trail) != nil || !trailForm.MatchString(trail) {
-		return "", 0, false
+	var found link
+	if decodeString(members["trail"], &found.trail) != nil || !trailForm.MatchString(found.trail) {
+		return link{}, members, false
 	}
-	if decodeInteger(members["sequence"], &sequence) != nil || sequence < 1 || sequence >= maxSafeInteger {
-		return "", 0, false
+	if decodeInteger(members["sequence"], &found.sequence) != nil || found.sequence < 1 || found.sequence >= maxSafeInteger {
+		return link{}, members, false
 	}
-	if decodeString(members["previous"], &previous) != nil || !previousForm.MatchString(previous) {
-		return "", 0, false
+	if decodeString(members["previous"], &found.previous) != nil || !previousForm.MatchString(found.previous) {
+		return link{}, members, false
 	}
-	return trail, sequence, true
+	return found, members, true
 }
 
 // newTrail mints a trail's identity: sixteen random bytes, hex. Like a run id

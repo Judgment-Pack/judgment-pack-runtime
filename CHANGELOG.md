@@ -38,16 +38,54 @@ All notable changes to tagged releases are documented here.
     configVersion `"6"`, and then records are written exactly as before, without the lock or a read.
     The schema's `$id` is now `urn:judgmentpack:runtime:jpack-config:6`. Configurations under `"1"`
     to `"5"` read as before; `chain` under `"5"` or earlier is refused, and the refusal names `"6"`.
-  - What it does not yet do: nothing in this runtime checks the links (`jpack audit verify`, #207),
-    and no checkpoint is made or handed to anyone (#208). The links show whether the lines are
-    consistent with one another, not that the history is authentic: an edit to any line but the
-    last breaks a link, but the last line can be edited, and a trail cut short or rewritten from any
-    line on with its links recomputed, without breaking one. Only a commitment held outside the
-    operator's reach, covering those lines, tells them apart.
+  - The links show whether the lines are consistent with one another, not that the history is
+    authentic: an edit to any line but the last breaks a link, but the last line can be edited, and
+    a trail cut short or rewritten from any line on with its links recomputed, without breaking
+    one. Only a commitment held outside the operator's reach, covering those lines, tells them
+    apart; `jpack audit` below checks the links and hands such a commitment over.
   - A file the trail writer creates is now opened to append, so a second writer that appends to it
     first is not written over.
   - No evaluation changes, and no payload changes. What this runtime conforms to is stated in
     `CONFORMANCE.md`, unchanged.
+- **`jpack audit verify`, `audit checkpoint` and `audit repair`** (ADR-0047 §1; #207).
+  - `audit verify` reads the project's trail, or `--trail <file>`, over its exact bytes, and checks
+    every `trail`, `sequence` and `previous` from the first chained record on, by the writer's own
+    rules. It exits 1 on any failed check, each a named finding (`previous-mismatch`,
+    `sequence-mismatch`, `trail-mismatch`, `incomplete-last-line`, `line-too-long`,
+    `discontinuity-malformed`, `discontinuity-mismatch`, and four `checkpoint-*` findings), and 0
+    otherwise. Its size is read under the writer's lock, shared, and the bytes before it without the
+    lock, so it neither delays a writer nor sees half a write. The report gives the coverage (legacy
+    prefix, chained, unchained, uncovered, damaged; signed: not available, #209; checkpointed) and,
+    in fixed sentences, what the result establishes and what it does not. Without `--expect` it is
+    the integrity of one supplied chain, and says that the last line, a suffix rewritten with its
+    links recomputed, and a trail cut short are not detected.
+  - `audit checkpoint` prints the checkpoint of the last chained record: one line,
+    `{"checkpointVersion":"1","recordDigest":…,"sequence":…,"trail":…}`, in its RFC 8785 canonical
+    form, whose `recordDigest` is the SHA-256 of the record's exact line bytes. It refuses a trail
+    that fails a check. `audit verify --expect <checkpoint>` then fails a trail that is shorter, has
+    another identity, or has another record at that sequence, and counts the lines up to it as
+    checkpointed. Time-stamped checkpoints are #208.
+  - `audit repair` starts a new segment after a write that did not complete. It removes and rewrites
+    nothing: under the writer's lock it ends the damaged bytes with a newline, keeping them in place
+    as a line of their own, and appends a discontinuity record naming that line, its length and its
+    digest, which links over it to what a record in its place would have followed. The writer then
+    chains after it, and `verify` reports the trail as segments (`"status": "segmented"`, exit 0),
+    never as intact across the break. It refuses when the last line is complete, for a project whose
+    audit member says `"chain": false`, where no lock can be taken, for damage over 128 MiB, and when
+    the incomplete last line is itself a discontinuity record (`JPS-AUDIT-REPAIR-DISCONTINUITY`): a
+    repair does not repair a repair. `verify` reports a discontinuity naming another discontinuity,
+    or a line over 128 MiB, as malformed and excuses nothing, so no discontinuity's decision can be
+    undone and an over-bound line is never excused.
+  - A report lists the first 100 findings, discontinuities and segments, and counts them all
+    (`findingsTotal`, `discontinuitiesTotal`, `segmentsTotal`).
+  - The discontinuity record is a third kind of line, `"kind": "discontinuity"`, with no pack, inputs
+    or disposition; `recordVersion` stays `"1"`, as it did when the graph composite, which has no pack
+    or inputs, was added. Gateway's `readRuntimeRecord` (v0.8.1) refuses any kind but `evaluation`,
+    and Runner's `verify-run` (v0.4.0) requires `evaluation` and never reads a repaired trail, so
+    neither mistakes one for a decision.
+  - No MCP tool: a verification an agent runs on its own server's trail shows nothing to someone who
+    does not trust that server's operator, and repair writes.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02
 
