@@ -1259,8 +1259,10 @@ For another implementation, such as a gateway that requires a signed record or R
 this is the whole rule; nothing in it depends on reading this runtime's code.
 
 **Keys.** Ed25519 (RFC 8032), verified by the one equation **Signatures** states below. A public key
-is its 32 bytes as 64 lowercase hexadecimal characters. Its `keyId` is the first 32 lowercase
-hexadecimal characters of the SHA-256 of those 32 bytes, the gateway's `keyId`.
+is its 32 bytes as 64 lowercase hexadecimal characters; a key file given to `--public-key` may also
+be in upper case, with whitespace around it, while a sidecar's `next` and a revocation's `publicKey`
+are in lower case alone. Its `keyId` is the first 32 lowercase hexadecimal characters of the SHA-256
+of those 32 bytes, the gateway's `keyId`.
 
 A verifier refuses a public key unless its 32 bytes are the canonical encoding (RFC 8032 §5.1.2) of
 a point of the curve whose order does not divide 8, and refuses it before it reads anything signed
@@ -1357,12 +1359,14 @@ bytes of the line before it when that line is chained, or of the whole file befo
 not: a legacy prefix, or a chain started again after unchained lines. A **discontinuity record**, a
 chained record whose `kind` is `discontinuity`, is **well formed** when its `discontinuity` member
 is one JSON object of exactly four members, none given twice: `reason`, the string
-`incomplete-last-line`; `line`, an integer that is L−1; `bytes`, an integer from 0 to 134,217,728;
-and `digest`, `sha256:` and 64 lowercase hexadecimal characters, its integers written as a
-`sequence` is; and when line L−1 is itself no longer than 128 MiB and is not a discontinuity record
-(a JSON object whose `kind` is `discontinuity`). A well-formed discontinuity record is held to what
-line L−1 would have followed, instead of to the line before it. These are **the chain's checks**,
-each a finding at line L:
+`incomplete-last-line`; `line`, an integer from 1 to 2^53−2 that is L−1; `bytes`, an integer from 0
+to 134,217,728; and `digest`, `sha256:` and 64 lowercase hexadecimal characters, its integers
+written as a `sequence` is; and when line L−1 is itself no longer than 128 MiB and is not itself a
+discontinuity: one JSON object, with no member given twice, whose `kind` is the string
+`discontinuity`, whether it is chained or not. A line of another shape, a JSON object with a member
+given twice among them, can be named whatever its `kind`. A well-formed discontinuity record is held
+to what line L−1 would have followed, instead of to the line before it. These are **the chain's
+checks**, each a finding at line L:
 
 - `sequence-mismatch`: its `sequence` is not L;
 - `previous-mismatch`: its `previous` is not that digest;
