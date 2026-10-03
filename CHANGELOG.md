@@ -187,7 +187,8 @@ All notable changes to tagged releases are documented here.
     `stamp-coverage-missing` (`--require-stamped-through <sequence>`). `--stamps <file>` names the
     stamps file.
   - Revocation is checked only against complete lists supplied with `--tsa-crls` (no delta, scoped
-    or indirect list, and no critical extension not read), issued by a certificate's issuer at or
+    or indirect list, no critical list extension, and no critical entry extension but the reason
+    code, the one decoded and applied), issued by a certificate's issuer at or
     after the stamp's time and while the certificate was valid; a stamp no such list speaks for is
     reported as not checked, never as good, and nothing is fetched.
   - The coverage's `stamped` is now `not-checked` without roots, and otherwise `through` the highest
@@ -198,12 +199,18 @@ All notable changes to tagged releases are documented here.
     time the stamped records existed by, and the lag between each covered record's `at` and the
     first trusted stamp covering it) and `requiredStamped`.
   - The token is parsed and verified by a new package written on `encoding/asn1` and `crypto/x509`,
-    with no new dependency. It reads an exact subset of RFC 3161 and RFC 5652, in DER, holding every
-    structure to its own DER encoding byte for byte: SignedData version 3 naming the signer's digest
-    algorithm, one signer of the version its identifier takes, signed attributes binding the content
-    type, the TSTInfo's digest and the signing certificate in every ESS binding present, an accuracy
-    a time span holds, and RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512. Tokens made
-    by OpenSSL are checked in as test fixtures.
+    with no new dependency. It reads an exact subset of RFC 3161 and RFC 5652: SignedData version 3
+    naming the signer's digest algorithm, one signer of the version its identifier takes, signed
+    attributes binding the content type, the TSTInfo's digest and the signing certificate in every
+    ESS binding present (with at most a signing time and an RFC 6211 algorithm protection beside
+    them, each decoded), an accuracy a time span holds, and RSA PKCS #1 v1.5 or ECDSA over SHA-256,
+    SHA-384 or SHA-512. What is read is held to DER, each structure being what its own DER encoding
+    gives back byte for byte; what verification does not need is refused (unsigned attributes,
+    embedded revocation data, unread signed attributes, algorithm parameters other than absent or
+    NULL, ESS policies or a second ESS entry, anything beside a reply's status). Carried and not
+    held to DER here: the certificates, as `crypto/x509` parses them; the issuer names compared byte
+    for byte with the signing certificate's; and the TSTInfo's `tsa` name and non-critical extension
+    values, never read. Tokens made by OpenSSL are checked in as test fixtures.
   - A stamp establishes that the checkpoint existed by the time the authority states, as that
     authority attests. It does not establish when a record was made (`at` stays the operator's
     word), anything against an authority that is not independent of the operator, or revocation

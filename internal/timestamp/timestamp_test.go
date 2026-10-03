@@ -57,10 +57,12 @@ func tokenFrom(t *testing.T, tsa *tsatest.Authority, digest []byte) *Token {
 }
 
 // Tokens from an independent implementation parse and verify: OpenSSL 3's
-// ts -reply, one signed with RSA and binding its certificate by SHA-1
-// (signingCertificate), one with ECDSA and SHA-256 (signingCertificateV2),
-// with accuracy 1.5 s and a nonce, over the checkpoint above, under a root
-// made for them. They were made offline once, with:
+// ts -reply, one signed with RSA (rsaEncryption, NULL parameters) and one
+// with ECDSA, both binding the certificate by SHA-256
+// (signingCertificateV2) and carrying a signing time, with NULL on their
+// digest algorithms and imprint, accuracy 1.5 s and a nonce, over the
+// checkpoint above, under a root made for them. They were made offline once,
+// with:
 //
 //	openssl ts -query -digest <sha256 of the checkpoint> -sha256 -cert -out query.tsq
 //	openssl ts -reply -config ts.cnf -queryfile query.tsq -inkey tsa.key -signer tsa.pem -out reply.tsr
@@ -511,19 +513,175 @@ func TestOnlyACompleteRevocationListIsEvidence(t *testing.T) {
 			t.Fatalf("%s: %q %v", name, got, err)
 		}
 	}
-	// A complete list whose entry carries only an extension read here,
-	// critical or not, is evidence.
-	invalidity, _ := asn1.MarshalWithParams(after.Add(-2*time.Hour).UTC().Truncate(time.Second), "generalized")
-	encoded, err := tsa.CRLExtended(after, nil, []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 24}, Critical: true, Value: invalidity}})
-	if err != nil {
-		t.Fatal(err)
+	// An extension is allowed critical only where it is decoded and
+	// applied: an entry's critical invalidity date is not applied, whatever
+	// its value, so the list is not evidence; the same date not marked
+	// critical may be passed over, and the list is.
+	entryList := func(entry pkix.Extension) *x509.RevocationList {
+		t.Helper()
+		encoded, err := tsa.CRLExtended(after, nil, []pkix.Extension{entry})
+		if err != nil {
+			t.Fatal(err)
+		}
+		block, _ := pem.Decode(encoded)
+		list, err := x509.ParseRevocationList(block.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list
 	}
-	block, _ := pem.Decode(encoded)
-	list, err := x509.ParseRevocationList(block.Bytes)
-	if err != nil {
-		t.Fatal(err)
+	invalidityDate := asn1.ObjectIdentifier{2, 5, 29, 24}
+	date, _ := asn1.MarshalWithParams(after.Add(-2*time.Hour).UTC().Truncate(time.Second), "generalized")
+	for name, value := range map[string][]byte{"a date": date, "NULL": {0x05, 0x00}, "text": []byte("not a date")} {
+		list := entryList(pkix.Extension{Id: invalidityDate, Critical: true, Value: value})
+		if got, err := token.Verify(VerifyOptions{Roots: rootsOf(tsa.Root), CRLs: []*x509.RevocationList{list}}); err != nil || got != RevocationNotChecked {
+			t.Fatalf("a critical invalidity date of %s: %q %v", name, got, err)
+		}
 	}
+	list := entryList(pkix.Extension{Id: invalidityDate, Value: date})
 	if got, err := token.Verify(VerifyOptions{Roots: rootsOf(tsa.Root), CRLs: []*x509.RevocationList{list}}); err != nil || got != RevocationChecked {
 		t.Fatalf("a complete list: %q %v", got, err)
+	}
+}
+
+// What verification does not need is refused, not carried unchecked: an
+// unsigned attribute or an unread signed attribute, whatever its value (the
+// reviewer's inputs: a non-minimal nested length, a non-minimal INTEGER, a
+// BOOLEAN TRUE written 01, a SET OF reversed, and a well-formed one);
+// revocation data embedded in the token; algorithm parameters other than
+// absent or 05 00 where NULL is allowed; ESS policies; and an ESS binding of
+// two certificates, the second writing out its DEFAULT hash.
+func TestWhatVerificationDoesNotNeedIsRefused(t *testing.T) {
+	digest := digestOf(checkpointBytes)
+	values := map[string][]byte{
+		"a non-minimal nested length": {0x30, 0x81, 0x03, 0x02, 0x01, 0x01},
+		"a non-minimal INTEGER":       {0x02, 0x02, 0x00, 0x01},
+		"BOOLEAN TRUE written 01":     {0x01, 0x01, 0x01},
+		"a SET OF reversed":           {0x31, 0x06, 0x02, 0x01, 0x02, 0x02, 0x01, 0x01},
+		"a well-formed INTEGER":       {0x02, 0x01, 0x01},
+	}
+	cases := map[string]tsatest.Options{
+		"embedded revocation data":                        {EmbedCRL: true},
+		"parameters on the signer's digest algorithm":     {SignerDigestParameters: []byte{0x04, 0x00}},
+		"a NULL with content on the digest algorithm":     {SignerDigestParameters: []byte{0x05, 0x01, 0x00}},
+		"NULL on an ECDSA signature algorithm":            {SignatureParameters: []byte{0x05, 0x00}},
+		"parameters on the imprint's hash":                {ImprintParameters: []byte{0x02, 0x01, 0x00}},
+		"parameters on the SignedData's digest algorithm": {DigestAlgorithmsParameters: []byte{0x30, 0x00}},
+		"ESS policies":              {ESSPolicies: true},
+		"two ESS v1 entries":        {SigningCertificateV1: true, TwoESSEntries: true},
+		"parameters on an ESS hash": {ESSHashAlgorithmParameters: []byte{0x04, 0x00}},
+		"two signing times":         {SigningTime: "two"},
+		"an ECDSA signature named by its key's algorithm": {SignatureAlgorithmECPublicKey: true},
+		"two ESS entries":                    {TwoESSEntries: true},
+		"a signing time not to the second":   {SigningTime: "bad"},
+		"an algorithm protection with a MAC": {AlgorithmProtection: "mac"},
+	}
+	for name, value := range values {
+		cases["an unsigned attribute of "+name] = tsatest.Options{UnsignedAttributeValue: value}
+		cases["an unread signed attribute of "+name] = tsatest.Options{ExtraSignedAttributeValue: value}
+	}
+	for name, options := range cases {
+		der, err := authority(t, options).Token(digest, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := Parse(der); !errors.Is(err, ErrMalformed) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	// What is read is held to what it states.
+	for name, options := range map[string]tsatest.Options{
+		"an ESS issuerSerial of another serial":        {ESSIssuerSerial: "wrong-serial"},
+		"an ESS v1 issuerSerial of another serial":     {SigningCertificateV1: true, ESSIssuerSerial: "wrong-serial"},
+		"an algorithm protection of another signature": {AlgorithmProtection: "mismatch-signature"},
+		"an ESS issuerSerial of another issuer":        {ESSIssuerSerial: "wrong-issuer"},
+		"an algorithm protection of another hash":      {AlgorithmProtection: "mismatch"},
+	} {
+		der, err := authority(t, options).Token(digest, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := Parse(der); !errors.Is(err, ErrSignature) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	// And the common shapes a real authority writes are read.
+	for name, options := range map[string]tsatest.Options{
+		"NULL on the signer's digest algorithm":         {SignerDigestParameters: []byte{0x05, 0x00}},
+		"the imprint's hash without parameters":         {ImprintParameters: []byte{}},
+		"NULL on the SignedData's digest algorithm":     {DigestAlgorithmsParameters: []byte{0x05, 0x00}},
+		"an ESS issuerSerial naming the signer":         {ESSIssuerSerial: "right"},
+		"an ESS v1 issuerSerial naming the signer":      {SigningCertificateV1: true, ESSIssuerSerial: "right"},
+		"SHA-384 as the ESS hash with NULL":             {ESSHashAlgorithmParameters: []byte{0x05, 0x00}},
+		"a signing time":                                {SigningTime: "utc"},
+		"an algorithm protection naming the algorithms": {AlgorithmProtection: "match"},
+	} {
+		der, err := authority(t, options).Token(digest, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := Parse(der); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}
+
+// A reply's envelope is decoded whole: its status's text is read, and an
+// element after its fields is refused.
+func TestAReplyEnvelopeIsDecodedWhole(t *testing.T) {
+	tsa := authority(t, tsatest.Options{})
+	request, err := Request(digestOf(checkpointBytes), big.NewInt(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tsa.StatusText = true
+	reply, err := tsa.Reply(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseResponse(reply); err != nil {
+		t.Fatalf("a status text: %v", err)
+	}
+	tsa.StatusText, tsa.StatusTextPrintable = false, true
+	reply, err = tsa.Reply(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseResponse(reply); !errors.Is(err, ErrMalformed) {
+		t.Fatalf("a status text not UTF-8 strings: %v", err)
+	}
+	tsa.StatusTextPrintable, tsa.StatusExtra = false, true
+	reply, err = tsa.Reply(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseResponse(reply); !errors.Is(err, ErrMalformed) {
+		t.Fatalf("an element after the status's fields: %v", err)
+	}
+}
+
+// The RSA signature algorithm's parameters are held as the ECDSA ones are:
+// absent or NULL. They are outside what is signed, so a token with others
+// still verifies, and is refused for them.
+func TestAnRSASignatureAlgorithmsParametersAreHeld(t *testing.T) {
+	reply, err := os.ReadFile(filepath.Join("testdata", "openssl-reply-rsa.tsr"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := ParseResponse(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsaWithNull := []byte{0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00}
+	// The SignerInfo comes last, after the certificates, whose keys name the
+	// algorithm too.
+	at := bytes.LastIndex(der, rsaWithNull)
+	if at < 0 {
+		t.Fatal("the fixture names rsaEncryption with NULL")
+	}
+	changed := bytes.Clone(der)
+	changed[at+11] = 0x04
+	if _, err := Parse(changed); !errors.Is(err, ErrMalformed) {
+		t.Fatalf("other parameters on RSA: %v", err)
 	}
 }

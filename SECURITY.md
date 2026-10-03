@@ -122,17 +122,25 @@ the current checkpoint's canonical form to the configured RFC 3161 authority and
 nothing and changes no decision. The authority learns the checkpoint's digest, which is not
 confidential (ADR-0047, "Privacy"). The authority's address may carry credentials, so no message
 names it. `jpack audit verify --tsa-roots` verifies tokens offline against roots the verifier
-supplies, never against the project's configuration. The token's DER is parsed with
-`encoding/asn1` and its chain with `crypto/x509`, and both are held to an exact subset of RFC 3161
-and RFC 5652, each structure held to its own DER encoding byte for byte: SignedData version 3 naming
-the signer's digest algorithm; one signer; signed attributes binding the content type, the
-TSTInfo's digest and the signing certificate in every ESS binding present; an accuracy a time span
-holds; RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512; a certificate for time-stamping
-alone, by a critical extension; the chain valid at the token's own time. A stamp
+supplies, never against the project's configuration. The token is parsed with
+`encoding/asn1` and its chain with `crypto/x509`, and held to an exact subset of RFC 3161 and RFC
+5652: SignedData version 3 naming the signer's digest algorithm; one signer; signed attributes
+binding the content type, the TSTInfo's digest and the signing certificate in every ESS binding
+present; an accuracy a time span holds; RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512;
+a certificate for time-stamping alone, by a critical extension; the chain valid at the token's own
+time. **What is read is held to DER**, each structure decoded being what its own DER encoding gives
+back byte for byte, and what verification does not need is refused rather than carried (unsigned
+attributes, embedded revocation data, unread signed attributes, algorithm parameters other than
+absent or NULL, ESS policies or a second ESS entry, anything beside a reply's status). **Three
+things are carried and not held to DER by this runtime**, and nothing is concluded from their
+contents: the certificates, as `crypto/x509` parses them, which accepts some non-DER forms; the
+issuer names compared byte for byte with the signing certificate's own; and the TSTInfo's `tsa`
+name and the values of its non-critical extensions. A stamp
 establishes that the checkpoint existed by the time the authority states, **as far as that
 authority is independent of the operator**: one that colludes can stamp what it is asked, when it
 is asked. **Revocation is checked only against complete lists the verifier supplies** (no delta, scoped or
-indirect list, and no critical extension not read) that were issued by the certificate's issuer at
+indirect list, no critical list extension, and no critical entry extension but the reason code,
+the one this runtime decodes and applies) that were issued by the certificate's issuer at
 or after the stamp's time and while the certificate was valid; a stamp no
 such list speaks for is reported as not checked, never as good, and nothing is fetched. A stamp
 gives an upper bound on when the checkpoint existed, not when a record was made or handed over: `at`

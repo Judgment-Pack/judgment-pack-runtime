@@ -16,6 +16,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -36,6 +37,8 @@ var (
 	oidMessageDigest        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	oidSigningCertificateV2 = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 2, 47}
 	oidSigningCertificate   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 2, 12}
+	oidSigningTime          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 5}
+	oidAlgorithmProtection  = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 52}
 	oidSHA256               = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
 	oidSHA384               = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
 	oidSHA1                 = asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}
@@ -110,6 +113,57 @@ type Options struct {
 	MultiValuedAttribute  bool
 	NoBinding             bool
 	ExplicitDefaultV2Hash bool
+	// What a token may carry beyond what is read, one each: an unsigned
+	// attribute (type 1.2.3.4) with the value given, DER as written; a signed
+	// attribute of that type and value; revocation data embedded; algorithm
+	// parameters written as given for the signer's digest algorithm, its
+	// signature algorithm, the imprint's hash (empty is absent) and the
+	// SignedData's digest algorithms; an ESS issuerSerial ("right",
+	// "wrong-serial", "wrong-issuer"); ESS policies; a second ESS entry with
+	// the DEFAULT hash written out; a signing time ("utc", or "bad", not to
+	// the second); and an RFC 6211 algorithm protection ("match",
+	// "mismatch", or "mac" with a MAC algorithm).
+	UnsignedAttributeValue     []byte
+	ExtraSignedAttributeValue  []byte
+	EmbedCRL                   bool
+	SignerDigestParameters     []byte
+	SignatureParameters        []byte
+	ImprintParameters          []byte
+	DigestAlgorithmsParameters []byte
+	ESSIssuerSerial            string
+	ESSPolicies                bool
+	TwoESSEntries              bool
+	SigningTime                string
+	AlgorithmProtection        string
+	// And: SHA-384 as the ESS v2 hash with the parameters given; an ECDSA
+	// signature named by id-ecPublicKey.
+	ESSHashAlgorithmParameters    []byte
+	SignatureAlgorithmECPublicKey bool
+}
+
+// withParameters is an algorithm identifier with the parameters given, as
+// written: nil keeps its own, empty leaves them out.
+func withParameters(identifier algorithmIdentifier, parameters []byte) algorithmIdentifier {
+	switch {
+	case parameters == nil:
+		return identifier
+	case len(parameters) == 0:
+		identifier.Parameters = asn1.RawValue{}
+	default:
+		identifier.Parameters = asn1.RawValue{FullBytes: parameters}
+	}
+	return identifier
+}
+
+// signatureAlgorithmOf is the signature algorithm the options name.
+func signatureAlgorithmOf(options Options) asn1.ObjectIdentifier {
+	switch {
+	case options.SHA1Digest, options.SignatureAlgorithmECPublicKey:
+		return oidECPublicKey
+	case options.SignatureAlgorithmMismatch:
+		return oidECDSAWithSHA384
+	}
+	return oidECDSAWithSHA256
 }
 
 // genTime is the authority's now as a GeneralizedTime in whole seconds, or
@@ -149,6 +203,10 @@ type Authority struct {
 	// WrongDigest and WrongNonce make a reply stamp another digest than the
 	// request's, or carry another nonce.
 	WrongDigest, WrongNonce bool
+	// StatusText puts a text in the reply's status, StatusTextPrintable puts
+	// one written as a PrintableString, and StatusExtra puts an element after
+	// its fields.
+	StatusText, StatusTextPrintable, StatusExtra bool
 }
 
 // New makes an authority.
@@ -315,17 +373,31 @@ type attribute struct {
 	Values []asn1.RawValue `asn1:"set"`
 }
 
+type generalNames struct {
+	Names  []asn1.RawValue
+	Serial *big.Int
+}
+
 type essCertIDv2 struct {
 	HashAlgorithm algorithmIdentifier `asn1:"optional"`
 	CertHash      []byte
+	IssuerSerial  generalNames `asn1:"optional"`
 }
 
 type signingCertificateV2 struct {
-	Certs []essCertIDv2
+	Certs    []essCertIDv2
+	Policies []asn1.RawValue `asn1:"optional"`
+}
+
+type protection struct {
+	DigestAlgorithm    algorithmIdentifier
+	SignatureAlgorithm algorithmIdentifier `asn1:"tag:1"`
+	MAC                asn1.RawValue       `asn1:"optional"`
 }
 
 type essCertID struct {
-	CertHash []byte
+	CertHash     []byte
+	IssuerSerial generalNames `asn1:"optional"`
 }
 
 type signingCertificateV1 struct {
@@ -344,6 +416,7 @@ type signerInfo struct {
 	SignedAttrs        asn1.RawValue
 	SignatureAlgorithm algorithmIdentifier
 	Signature          []byte
+	UnsignedAttrs      asn1.RawValue `asn1:"optional"`
 }
 
 type encapsulated struct {
@@ -356,7 +429,8 @@ type signedData struct {
 	DigestAlgorithms []algorithmIdentifier `asn1:"set"`
 	EncapContentInfo encapsulated
 	Certificates     asn1.RawValue
-	SignerInfos      []signerInfo `asn1:"set"`
+	CRLs             asn1.RawValue `asn1:"optional"`
+	SignerInfos      []signerInfo  `asn1:"set"`
 }
 
 type contentInfo struct {
@@ -397,7 +471,7 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	content, err := asn1.Marshal(tstInfo{
 		Version:        version,
 		Policy:         policy,
-		MessageImprint: imprint{HashAlgorithm: algorithmIdentifier{Algorithm: imprintAlgorithm, Parameters: asn1.NullRawValue}, HashedMessage: digest},
+		MessageImprint: imprint{HashAlgorithm: withParameters(algorithmIdentifier{Algorithm: imprintAlgorithm, Parameters: asn1.NullRawValue}, options.ImprintParameters), HashedMessage: digest},
 		SerialNumber:   big.NewInt(serial),
 		GenTime:        genTime(now, options.GenTimeText),
 		Accuracy:       accuracy{Seconds: options.AccuracySeconds, Millis: options.AccuracyMillis},
@@ -442,17 +516,47 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	}
 	var signingCertificate asn1.RawValue
 	certificateAttribute := oidSigningCertificateV2
+	named := generalNames{}
+	if options.ESSIssuerSerial != "" {
+		issuer, serial := a.Signer.RawIssuer, a.Signer.SerialNumber
+		if options.ESSIssuerSerial == "wrong-serial" {
+			serial = new(big.Int).Add(serial, big.NewInt(1))
+		}
+		if options.ESSIssuerSerial == "wrong-issuer" {
+			issuer = a.Signer.RawSubject
+		}
+		named = generalNames{Names: []asn1.RawValue{{Class: asn1.ClassContextSpecific, Tag: 4, IsCompound: true, Bytes: issuer}}, Serial: serial}
+	}
 	if options.SigningCertificateV1 {
 		certHash := sha1.Sum(bound)
 		certificateAttribute = oidSigningCertificate
-		signingCertificate, err = rawValue(signingCertificateV1{Certs: []essCertID{{CertHash: certHash[:]}}})
+		ids := []essCertID{{CertHash: certHash[:], IssuerSerial: named}}
+		if options.TwoESSEntries {
+			rootHash := sha1.Sum(a.Root.Raw)
+			ids = append(ids, essCertID{CertHash: rootHash[:]})
+		}
+		signingCertificate, err = rawValue(signingCertificateV1{Certs: ids})
 	} else {
 		certHash := sha256.Sum256(bound)
-		id := essCertIDv2{CertHash: certHash[:]}
+		id := essCertIDv2{CertHash: certHash[:], IssuerSerial: named}
 		if options.ExplicitDefaultV2Hash {
 			id.HashAlgorithm = algorithmIdentifier{Algorithm: oidSHA256}
 		}
-		signingCertificate, err = rawValue(signingCertificateV2{Certs: []essCertIDv2{id}})
+		if options.ESSHashAlgorithmParameters != nil {
+			long := sha512.Sum384(bound)
+			id.CertHash = long[:]
+			id.HashAlgorithm = algorithmIdentifier{Algorithm: oidSHA384, Parameters: asn1.RawValue{FullBytes: options.ESSHashAlgorithmParameters}}
+		}
+		value := signingCertificateV2{Certs: []essCertIDv2{id}}
+		if options.TwoESSEntries {
+			rootHash := sha256.Sum256(a.Root.Raw)
+			value.Certs = append(value.Certs, essCertIDv2{HashAlgorithm: algorithmIdentifier{Algorithm: oidSHA256}, CertHash: rootHash[:]})
+		}
+		if options.ESSPolicies {
+			policy, _ := asn1.Marshal(struct{ Policy asn1.ObjectIdentifier }{Policy})
+			value.Policies = []asn1.RawValue{{FullBytes: policy}}
+		}
+		signingCertificate, err = rawValue(value)
 	}
 	if err != nil {
 		return nil, err
@@ -463,6 +567,38 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	}
 	if !options.NoBinding {
 		attributeList = append(attributeList, attribute{Type: certificateAttribute, Values: []asn1.RawValue{signingCertificate}})
+	}
+	if options.ExtraSignedAttributeValue != nil {
+		attributeList = append(attributeList, attribute{Type: asn1.ObjectIdentifier{1, 2, 3, 4}, Values: []asn1.RawValue{{FullBytes: options.ExtraSignedAttributeValue}}})
+	}
+	switch options.SigningTime {
+	case "utc":
+		attributeList = append(attributeList, attribute{Type: oidSigningTime, Values: []asn1.RawValue{{Class: asn1.ClassUniversal, Tag: asn1.TagUTCTime, Bytes: []byte(now.UTC().Format("060102150405Z"))}}})
+	case "bad":
+		attributeList = append(attributeList, attribute{Type: oidSigningTime, Values: []asn1.RawValue{{Class: asn1.ClassUniversal, Tag: asn1.TagUTCTime, Bytes: []byte(now.UTC().Format("0601021504Z"))}}})
+	case "two":
+		one := asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagUTCTime, Bytes: []byte(now.UTC().Format("060102150405Z"))}
+		other := asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagUTCTime, Bytes: []byte(now.UTC().Add(time.Hour).Format("060102150405Z"))}
+		attributeList = append(attributeList, attribute{Type: oidSigningTime, Values: []asn1.RawValue{one, other}})
+	}
+	if options.AlgorithmProtection != "" {
+		value := protection{
+			DigestAlgorithm:    withParameters(algorithmIdentifier{Algorithm: digestAlgorithm}, options.SignerDigestParameters),
+			SignatureAlgorithm: withParameters(algorithmIdentifier{Algorithm: signatureAlgorithmOf(options)}, options.SignatureParameters),
+		}
+		switch options.AlgorithmProtection {
+		case "mismatch":
+			value.DigestAlgorithm = algorithmIdentifier{Algorithm: oidSHA384}
+		case "mismatch-signature":
+			value.SignatureAlgorithm = algorithmIdentifier{Algorithm: oidECDSAWithSHA384}
+		case "mac":
+			value.MAC = asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 2, IsCompound: true, Bytes: []byte{0x06, 0x01, 0x2a}}
+		}
+		encoded, err := rawValue(value)
+		if err != nil {
+			return nil, err
+		}
+		attributeList = append(attributeList, attribute{Type: oidAlgorithmProtection, Values: []asn1.RawValue{encoded}})
 	}
 	if options.MultiValuedAttribute {
 		other, err := rawValue(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1})
@@ -494,13 +630,7 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	signatureAlgorithm := oidECDSAWithSHA256
-	if options.SignatureAlgorithmMismatch {
-		signatureAlgorithm = oidECDSAWithSHA384
-	}
-	if options.SHA1Digest {
-		signatureAlgorithm = oidECPublicKey
-	}
+	signatureAlgorithm := signatureAlgorithmOf(options)
 	signerVersion := 1
 	if options.SignerInfoVersion != 0 {
 		signerVersion = options.SignerInfoVersion
@@ -508,10 +638,17 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	info := signerInfo{
 		Version:            signerVersion,
 		SID:                issuerAndSerial{Issuer: asn1.RawValue{FullBytes: a.Signer.RawIssuer}, Serial: a.Signer.SerialNumber},
-		DigestAlgorithm:    algorithmIdentifier{Algorithm: digestAlgorithm},
+		DigestAlgorithm:    withParameters(algorithmIdentifier{Algorithm: digestAlgorithm}, options.SignerDigestParameters),
 		SignedAttrs:        asn1.RawValue{FullBytes: append([]byte{0xa0}, attributes[1:]...)},
-		SignatureAlgorithm: algorithmIdentifier{Algorithm: signatureAlgorithm},
+		SignatureAlgorithm: withParameters(algorithmIdentifier{Algorithm: signatureAlgorithm}, options.SignatureParameters),
 		Signature:          signature,
+	}
+	if options.UnsignedAttributeValue != nil {
+		unsigned, err := asn1.MarshalWithParams([]attribute{{Type: asn1.ObjectIdentifier{1, 2, 3, 4}, Values: []asn1.RawValue{{FullBytes: options.UnsignedAttributeValue}}}}, "set")
+		if err != nil {
+			return nil, err
+		}
+		info.UnsignedAttrs = asn1.RawValue{FullBytes: append([]byte{0xa1}, unsigned[1:]...)}
 	}
 	if options.WrongSID {
 		info.SID.Serial = new(big.Int).Add(a.Signer.SerialNumber, big.NewInt(100))
@@ -521,7 +658,10 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 		infos = append(infos, info)
 	}
 	var signed []byte
-	certificates := append(bytes.Clone(a.Root.Raw), a.Signer.Raw...)
+	// The certificate set in DER order, as a SET OF is.
+	pair := [][]byte{a.Root.Raw, a.Signer.Raw}
+	sort.Slice(pair, func(i, j int) bool { return bytes.Compare(pair[i], pair[j]) < 0 })
+	certificates := bytes.Join(pair, nil)
 	if options.OmitCertificates {
 		certificates = []byte{}
 	}
@@ -531,7 +671,7 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	}
 	encapsulatedContent := encapsulated{EContentType: encapsulatedType, EContent: explicit(0, mustOctets(content))}
 	certificateSet := asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: certificates}
-	digestAlgorithms := []algorithmIdentifier{{Algorithm: digestAlgorithm}}
+	digestAlgorithms := []algorithmIdentifier{withParameters(algorithmIdentifier{Algorithm: digestAlgorithm}, options.DigestAlgorithmsParameters)}
 	switch options.DigestAlgorithms {
 	case "empty":
 		digestAlgorithms = []algorithmIdentifier{}
@@ -552,8 +692,12 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 			Version: signedVersion, DigestAlgorithms: digestAlgorithms, EncapContentInfo: encapsulatedContent, Certificates: certificateSet, SignerInfos: infos, Extra: 1,
 		})
 	} else {
+		var crls asn1.RawValue
+		if options.EmbedCRL {
+			crls = asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: true, Bytes: []byte{0x30, 0x00}}
+		}
 		signed, err = asn1.Marshal(signedData{
-			Version: signedVersion, DigestAlgorithms: digestAlgorithms, EncapContentInfo: encapsulatedContent, Certificates: certificateSet, SignerInfos: infos,
+			Version: signedVersion, DigestAlgorithms: digestAlgorithms, EncapContentInfo: encapsulatedContent, Certificates: certificateSet, CRLs: crls, SignerInfos: infos,
 		})
 	}
 	if err != nil {
@@ -650,6 +794,17 @@ type timeStampReq struct {
 
 type statusInfo struct {
 	Status int
+	Text   []asn1.RawValue `asn1:"optional"`
+}
+
+type statusInfoExtra struct {
+	Status int
+	Extra  int
+}
+
+type replyExtra struct {
+	Status statusInfoExtra
+	Token  asn1.RawValue `asn1:"optional"`
 }
 
 type reply struct {
@@ -679,7 +834,17 @@ func (a *Authority) Reply(request []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asn1.Marshal(reply{Status: statusInfo{Status: 0}, Token: asn1.RawValue{FullBytes: token}})
+	if a.StatusExtra {
+		return asn1.Marshal(replyExtra{Status: statusInfoExtra{Status: 0, Extra: 1}, Token: asn1.RawValue{FullBytes: token}})
+	}
+	status := statusInfo{Status: 0}
+	if a.StatusText {
+		status.Text = []asn1.RawValue{{Class: asn1.ClassUniversal, Tag: asn1.TagUTF8String, Bytes: []byte("granted")}}
+	}
+	if a.StatusTextPrintable {
+		status.Text = []asn1.RawValue{{Class: asn1.ClassUniversal, Tag: asn1.TagPrintableString, Bytes: []byte("granted")}}
+	}
+	return asn1.Marshal(reply{Status: status, Token: asn1.RawValue{FullBytes: token}})
 }
 
 // ServeHTTP answers RFC 3161 requests over HTTP, as a test server's handler.

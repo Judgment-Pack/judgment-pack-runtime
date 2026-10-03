@@ -5,22 +5,46 @@
 //
 // It is written on the standard library's encoding/asn1 and crypto/x509 rather
 // than on a CMS library, for a verifier whose answer is a claim: the subset is
-// small and fixed, and every rule it holds a token to is here to read. A token
-// is read in DER only, and is held to:
+// small and fixed, and every rule it holds a token to is here to read.
 //
-//   - a ContentInfo of SignedData, carrying exactly one SignerInfo and an
-//     encapsulated TSTInfo (version 1);
+// What is read is held to DER: every structure this package decodes must be
+// what encoding/asn1 encodes back from it, byte for byte (strictly). Fields
+// verification does not need are refused rather than carried: unsigned
+// attributes, revocation data embedded in the token, signed attributes other
+// than those read, algorithm parameters other than absent or NULL where the
+// algorithm allows NULL, an ESS binding of more than one certificate or with
+// policies, and a reply envelope with anything but its status, failure text,
+// failure bits and token. What is carried and not held to DER by this package
+// is named, and nothing is concluded from its contents:
+//
+//   - the certificates, which crypto/x509 parses, accepting some forms DER
+//     does not (an explicit DEFAULT such as critical FALSE, attribute sets out
+//     of order in a name);
+//   - the issuer names of the SignerInfo and of an ESS issuerSerial, which are
+//     compared byte for byte with the signing certificate's own encoding of
+//     its issuer, and so are exactly as DER as that certificate's;
+//   - the TSTInfo's tsa name and the values of its non-critical extensions,
+//     covered by the signature and never read.
+//
+// A token is held to:
+//
+//   - a ContentInfo of SignedData, version 3, whose digest algorithms name the
+//     signer's, carrying exactly one SignerInfo and an encapsulated TSTInfo,
+//     version 1;
 //   - signed attributes that name the TSTInfo content type, carry the digest of
 //     the encapsulated TSTInfo, and bind the signing certificate by its hash
-//     (ESS signingCertificate or signingCertificateV2);
+//     (ESS signingCertificate or signingCertificateV2), with at most a signing
+//     time and an RFC 6211 algorithm protection beside them, each decoded and
+//     held to what it states;
 //   - a signature over those attributes, by the certificate the SignerInfo
 //     names among the token's own certificates, in RSA PKCS #1 v1.5 or ECDSA
 //     with SHA-256, SHA-384 or SHA-512.
 //
 // Verify then holds the signing certificate to the RFC 3161 usage (only
 // id-kp-timeStamping, critical), its chain to a supplied root at the time the
-// token states, its policy to the ones supplied, and, where certificate
-// revocation lists are supplied that can speak for that time, its status.
+// token states, its policy to the ones supplied, and, where complete
+// certificate revocation lists are supplied that can speak for that time, its
+// status.
 package timestamp
 
 import (
@@ -42,6 +66,7 @@ import (
 	"reflect"
 	"regexp"
 	"time"
+	"unicode/utf8"
 
 	// The hashes a token may name, registered for crypto.Hash.New.
 	_ "crypto/sha256"
@@ -55,6 +80,8 @@ var (
 	oidMessageDigest        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	oidSigningCertificate   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 2, 12}
 	oidSigningCertificateV2 = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 2, 47}
+	oidSigningTime          = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 5}
+	oidAlgorithmProtection  = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 52}
 	// OIDSHA256 names SHA-256, the one hash a message imprint is taken with.
 	OIDSHA256          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
 	oidSHA384          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
@@ -63,7 +90,6 @@ var (
 	oidSHA256WithRSA   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}
 	oidSHA384WithRSA   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 12}
 	oidSHA512WithRSA   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 13}
-	oidECPublicKey     = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
 	oidECDSAWithSHA256 = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2}
 	oidECDSAWithSHA384 = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 3}
 	oidECDSAWithSHA512 = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 4}
@@ -127,30 +153,46 @@ func Request(digest []byte, nonce *big.Int) ([]byte, error) {
 	})
 }
 
+// pkiStatusInfo is a reply's status, decoded whole: its number, its text,
+// each element of which must be a UTF8String (statusText), and its failure
+// bits.
+type pkiStatusInfo struct {
+	Status       int
+	StatusString []asn1.RawValue `asn1:"optional"`
+	FailInfo     asn1.BitString  `asn1:"optional"`
+}
+
+// statusText says every element of a status's text is a UTF8String holding
+// UTF-8.
+func statusText(text []asn1.RawValue) bool {
+	for _, element := range text {
+		if element.Class != asn1.ClassUniversal || element.Tag != asn1.TagUTF8String || element.IsCompound || !utf8.Valid(element.Bytes) {
+			return false
+		}
+	}
+	return true
+}
+
+// timeStampResp is a reply. Its token is kept as given here and held to DER
+// by Parse.
 type timeStampResp struct {
-	Status         asn1.RawValue
+	Status         pkiStatusInfo
 	TimeStampToken asn1.RawValue `asn1:"optional"`
 }
 
 // ParseResponse reads a reply and answers the token in it: the reply must be
-// DER with nothing after it, its status granted (0) or granted with
-// modifications (1), and a token present.
+// DER, its status decoded whole, with nothing after it, its status granted (0)
+// or granted with modifications (1), and a token present.
 func ParseResponse(reply []byte) ([]byte, error) {
 	var response timeStampResp
-	rest, err := asn1.Unmarshal(reply, &response)
-	if err != nil || len(rest) != 0 {
-		return nil, ErrMalformed
+	if err := strictly(reply, &response, ""); err != nil {
+		return nil, err
 	}
-	// The status's text and failure bits follow its number; encoding/asn1
-	// passes over elements after the last field, and nothing here reads them.
-	var status struct {
-		Status int
+	if !statusText(response.Status.StatusString) {
+		return nil, fmt.Errorf("%w: the status text is not UTF-8 strings", ErrMalformed)
 	}
-	if _, err := asn1.Unmarshal(response.Status.FullBytes, &status); err != nil {
-		return nil, ErrMalformed
-	}
-	if status.Status != 0 && status.Status != 1 {
-		return nil, fmt.Errorf("%w (status %d)", ErrRejected, status.Status)
+	if status := response.Status.Status; status != 0 && status != 1 {
+		return nil, fmt.Errorf("%w (status %d)", ErrRejected, status)
 	}
 	if len(response.TimeStampToken.FullBytes) == 0 {
 		return nil, ErrMalformed
@@ -217,25 +259,42 @@ type attribute struct {
 	Values []asn1.RawValue `asn1:"set"`
 }
 
+// issuerSerial is an ESS issuerSerial: GeneralNames, whose one directory name
+// is kept as given and compared with the signing certificate's own issuer,
+// and a serial number.
+type issuerSerial struct {
+	Issuer []asn1.RawValue
+	Serial *big.Int
+}
+
+// essCertID and essCertIDv2 decode an issuerSerial when one is present.
+// signingCertificate and signingCertificateV2 have no policies field: one
+// present is an element after the last field, which strictly refuses.
 type essCertID struct {
 	CertHash     []byte
-	IssuerSerial asn1.RawValue `asn1:"optional"`
+	IssuerSerial issuerSerial `asn1:"optional"`
 }
 
 type signingCertificate struct {
-	Certs    []essCertID
-	Policies asn1.RawValue `asn1:"optional"`
+	Certs []essCertID
 }
 
 type essCertIDv2 struct {
 	HashAlgorithm pkix.AlgorithmIdentifier `asn1:"optional"`
 	CertHash      []byte
-	IssuerSerial  asn1.RawValue `asn1:"optional"`
+	IssuerSerial  issuerSerial `asn1:"optional"`
 }
 
 type signingCertificateV2 struct {
-	Certs    []essCertIDv2
-	Policies asn1.RawValue `asn1:"optional"`
+	Certs []essCertIDv2
+}
+
+// algorithmProtection is RFC 6211's CMSAlgorithmProtection: the digest and
+// signature algorithms the signer used, which must be the SignerInfo's. A
+// MAC algorithm, [2], is an element this decoding has no field for.
+type algorithmProtection struct {
+	DigestAlgorithm    pkix.AlgorithmIdentifier
+	SignatureAlgorithm pkix.AlgorithmIdentifier `asn1:"tag:1"`
 }
 
 // accuracy keeps each of its parts as given, a zero among them, so it
@@ -319,9 +378,18 @@ func Parse(der []byte) (*Token, error) {
 	if signed.Version != 3 || !signed.EncapContentInfo.EContentType.Equal(oidTSTInfo) || len(signed.EncapContentInfo.EContent) == 0 || len(signed.SignerInfos) != 1 {
 		return nil, ErrMalformed
 	}
+	if len(signed.CRLs.FullBytes) != 0 {
+		return nil, fmt.Errorf("%w: the token carries revocation data, which is not read", ErrMalformed)
+	}
 	signer := signed.SignerInfos[0]
+	if len(signer.UnsignedAttrs.FullBytes) != 0 {
+		return nil, fmt.Errorf("%w: the token has unsigned attributes, which are not read", ErrMalformed)
+	}
 	declared := false
 	for _, algorithm := range signed.DigestAlgorithms {
+		if _, ok := hashOf(algorithm.Algorithm); !ok || !parametersAbsentOrNull(algorithm) {
+			return nil, fmt.Errorf("%w: a digest algorithm is not one read here", ErrMalformed)
+		}
 		declared = declared || algorithm.Algorithm.Equal(signer.DigestAlgorithm.Algorithm)
 	}
 	if !declared {
@@ -331,7 +399,7 @@ func Parse(der []byte) (*Token, error) {
 	if err := strictly(signed.EncapContentInfo.EContent, &content, ""); err != nil {
 		return nil, err
 	}
-	if content.Version != 1 {
+	if content.Version != 1 || !parametersAbsentOrNull(content.MessageImprint.HashAlgorithm) {
 		return nil, ErrMalformed
 	}
 	for _, extension := range content.Extensions {
@@ -371,9 +439,34 @@ func Parse(der []byte) (*Token, error) {
 	}, nil
 }
 
+// parametersAbsentOrNull says an algorithm identifier's parameters are absent,
+// or are NULL encoded as DER encodes it, 05 00: the two forms the hash and
+// RSA algorithms read here are written with.
+func parametersAbsentOrNull(algorithm pkix.AlgorithmIdentifier) bool {
+	parameters := algorithm.Parameters.FullBytes
+	return len(parameters) == 0 || bytes.Equal(parameters, []byte{0x05, 0x00})
+}
+
 // generalizedTimeForm is DER's GeneralizedTime: to the second, in UTC, with a
 // fraction only when it is not zero and with no trailing zero.
 var generalizedTimeForm = regexp.MustCompile(`^[0-9]{14}(\.[0-9]*[1-9])?Z$`)
+
+// utcTimeForm is DER's UTCTime: to the second, in UTC.
+var utcTimeForm = regexp.MustCompile(`^[0-9]{12}Z$`)
+
+// parseSigningTime reads a signing-time attribute's value, a DER UTCTime or
+// GeneralizedTime. The time is not used; the value is held to its form.
+func parseSigningTime(raw asn1.RawValue) error {
+	if raw.Class == asn1.ClassUniversal && raw.Tag == asn1.TagUTCTime && !raw.IsCompound && utcTimeForm.Match(raw.Bytes) {
+		if _, err := time.Parse("060102150405Z", string(raw.Bytes)); err == nil {
+			return nil
+		}
+	}
+	if _, err := parseGenTime(raw); err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: the signing time is not a DER time", ErrMalformed)
+}
 
 // parseGenTime reads a TSTInfo's genTime, DER's GeneralizedTime.
 func parseGenTime(raw asn1.RawValue) (time.Time, error) {
@@ -474,6 +567,27 @@ func hashOf(algorithm asn1.ObjectIdentifier) (crypto.Hash, bool) {
 	return 0, false
 }
 
+// namesSigner says an ESS issuerSerial, when present, names the signing
+// certificate: one directory name, byte for byte the certificate's own
+// encoding of its issuer, and its serial number.
+func namesSigner(named issuerSerial, certificate *x509.Certificate) bool {
+	if len(named.Issuer) == 0 && named.Serial == nil {
+		return true
+	}
+	if len(named.Issuer) != 1 || named.Serial == nil {
+		return false
+	}
+	name := named.Issuer[0]
+	return name.Class == asn1.ClassContextSpecific && name.Tag == 4 && name.IsCompound &&
+		bytes.Equal(name.Bytes, certificate.RawIssuer) && named.Serial.Cmp(certificate.SerialNumber) == 0
+}
+
+// sameAlgorithm says two algorithm identifiers are one: the same algorithm
+// with the same parameters, byte for byte.
+func sameAlgorithm(left, right pkix.AlgorithmIdentifier) bool {
+	return left.Algorithm.Equal(right.Algorithm) && bytes.Equal(left.Parameters.FullBytes, right.Parameters.FullBytes)
+}
+
 // singleValue is an attribute's one value, read strictly into value.
 func singleValue(attr attribute, value any) error {
 	if len(attr.Values) != 1 {
@@ -488,16 +602,18 @@ func checkSignedAttributes(signer signerInfo, content []byte, certificate *x509.
 	if len(signer.SignedAttrs.FullBytes) == 0 || signer.SignedAttrs.Class != asn1.ClassContextSpecific || !signer.SignedAttrs.IsCompound {
 		return fmt.Errorf("%w: the token has no signed attributes", ErrMalformed)
 	}
+	// Parse has held the signer's digest algorithm to one of the SignedData's,
+	// each of which is a hash read here.
 	digestHash, ok := hashOf(signer.DigestAlgorithm.Algorithm)
-	if !ok {
-		return fmt.Errorf("%w: the token's digest algorithm is not one read here", ErrMalformed)
-	}
 	// The signature is over the attributes as a SET OF, not as the [0]
 	// IMPLICIT that carries them: the tag is the one byte that differs.
 	encoded := append([]byte{0x31}, signer.SignedAttrs.FullBytes[1:]...)
 	var attributes []attribute
 	if err := strictly(encoded, &attributes, "set"); err != nil {
 		return err
+	}
+	if !parametersAbsentOrNull(signer.DigestAlgorithm) {
+		return fmt.Errorf("%w: the signer's digest algorithm has parameters", ErrMalformed)
 	}
 	seen := map[string]bool{}
 	var contentTypeOK, digestOK bool
@@ -525,32 +641,50 @@ func checkSignedAttributes(signer signerInfo, content []byte, certificate *x509.
 			digestOK = bytes.Equal(value, sum.Sum(nil))
 		case attr.Type.Equal(oidSigningCertificate):
 			var value signingCertificate
-			if err := singleValue(attr, &value); err != nil || len(value.Certs) == 0 {
-				return ErrMalformed
+			if err := singleValue(attr, &value); err != nil || len(value.Certs) != 1 {
+				return fmt.Errorf("%w: an ESS binding is not of one certificate", ErrMalformed)
 			}
 			bindings++
 			sum := sha1.Sum(certificate.Raw)
-			if bytes.Equal(value.Certs[0].CertHash, sum[:]) {
+			if bytes.Equal(value.Certs[0].CertHash, sum[:]) && namesSigner(value.Certs[0].IssuerSerial, certificate) {
 				bound++
 			}
 		case attr.Type.Equal(oidSigningCertificateV2):
 			var value signingCertificateV2
-			if err := singleValue(attr, &value); err != nil || len(value.Certs) == 0 {
-				return ErrMalformed
+			if err := singleValue(attr, &value); err != nil || len(value.Certs) != 1 {
+				return fmt.Errorf("%w: an ESS binding is not of one certificate", ErrMalformed)
 			}
+			id := value.Certs[0]
 			certHash := crypto.SHA256
-			if algorithm := value.Certs[0].HashAlgorithm.Algorithm; len(algorithm) > 0 {
+			if algorithm := id.HashAlgorithm.Algorithm; len(algorithm) > 0 {
 				// SHA-256 is the DEFAULT, which DER leaves out.
-				if certHash, ok = hashOf(algorithm); !ok || certHash == crypto.SHA256 {
+				if certHash, ok = hashOf(algorithm); !ok || certHash == crypto.SHA256 || !parametersAbsentOrNull(id.HashAlgorithm) {
 					return fmt.Errorf("%w: the signing certificate's hash is not one read here, or is the default written out", ErrMalformed)
 				}
 			}
 			bindings++
 			sum := certHash.New()
 			sum.Write(certificate.Raw)
-			if bytes.Equal(value.Certs[0].CertHash, sum.Sum(nil)) {
+			if bytes.Equal(id.CertHash, sum.Sum(nil)) && namesSigner(id.IssuerSerial, certificate) {
 				bound++
 			}
+		case attr.Type.Equal(oidSigningTime):
+			if len(attr.Values) != 1 {
+				return fmt.Errorf("%w: a signed attribute read here has more than one value", ErrMalformed)
+			}
+			if err := parseSigningTime(attr.Values[0]); err != nil {
+				return err
+			}
+		case attr.Type.Equal(oidAlgorithmProtection):
+			var value algorithmProtection
+			if err := singleValue(attr, &value); err != nil {
+				return err
+			}
+			if !sameAlgorithm(value.DigestAlgorithm, signer.DigestAlgorithm) || !sameAlgorithm(value.SignatureAlgorithm, signer.SignatureAlgorithm) {
+				return fmt.Errorf("%w: the algorithm protection names other algorithms than the signer's", ErrSignature)
+			}
+		default:
+			return fmt.Errorf("%w: a signed attribute is not one read here", ErrMalformed)
 		}
 	}
 	switch {
@@ -563,7 +697,7 @@ func checkSignedAttributes(signer signerInfo, content []byte, certificate *x509.
 	}
 	sum := digestHash.New()
 	sum.Write(encoded)
-	if err := verifySignature(certificate, signer.SignatureAlgorithm.Algorithm, digestHash, sum.Sum(nil), signer.Signature); err != nil {
+	if err := verifySignature(certificate, signer.SignatureAlgorithm, digestHash, sum.Sum(nil), signer.Signature); err != nil {
 		return err
 	}
 	return nil
@@ -572,25 +706,31 @@ func checkSignedAttributes(signer signerInfo, content []byte, certificate *x509.
 // verifySignature verifies a signature over a digest with a certificate's key,
 // by the signature algorithm the SignerInfo names, which must agree with the
 // digest's hash.
-func verifySignature(certificate *x509.Certificate, algorithm asn1.ObjectIdentifier, digestHash crypto.Hash, digest, signature []byte) error {
+func verifySignature(certificate *x509.Certificate, algorithm pkix.AlgorithmIdentifier, digestHash crypto.Hash, digest, signature []byte) error {
 	named := map[string]crypto.Hash{
 		oidSHA256WithRSA.String(): crypto.SHA256, oidSHA384WithRSA.String(): crypto.SHA384, oidSHA512WithRSA.String(): crypto.SHA512,
 		oidECDSAWithSHA256.String(): crypto.SHA256, oidECDSAWithSHA384.String(): crypto.SHA384, oidECDSAWithSHA512.String(): crypto.SHA512,
 	}
-	if want, ok := named[algorithm.String()]; ok && want != digestHash {
+	if want, ok := named[algorithm.Algorithm.String()]; ok && want != digestHash {
 		return fmt.Errorf("%w: the signature algorithm's hash is not the digest's", ErrSignature)
 	}
 	switch key := certificate.PublicKey.(type) {
 	case *rsa.PublicKey:
-		if !algorithm.Equal(oidRSAEncryption) && !algorithm.Equal(oidSHA256WithRSA) && !algorithm.Equal(oidSHA384WithRSA) && !algorithm.Equal(oidSHA512WithRSA) {
+		if !algorithm.Algorithm.Equal(oidRSAEncryption) && !algorithm.Algorithm.Equal(oidSHA256WithRSA) && !algorithm.Algorithm.Equal(oidSHA384WithRSA) && !algorithm.Algorithm.Equal(oidSHA512WithRSA) {
 			return fmt.Errorf("%w: the signature algorithm is not RSA PKCS #1 v1.5", ErrMalformed)
+		}
+		if !parametersAbsentOrNull(algorithm) {
+			return fmt.Errorf("%w: the signature algorithm's parameters are neither absent nor NULL", ErrMalformed)
 		}
 		if rsa.VerifyPKCS1v15(key, digestHash, digest, signature) != nil {
 			return ErrSignature
 		}
 	case *ecdsa.PublicKey:
-		if !algorithm.Equal(oidECPublicKey) && !algorithm.Equal(oidECDSAWithSHA256) && !algorithm.Equal(oidECDSAWithSHA384) && !algorithm.Equal(oidECDSAWithSHA512) {
-			return fmt.Errorf("%w: the signature algorithm is not ECDSA", ErrMalformed)
+		if !algorithm.Algorithm.Equal(oidECDSAWithSHA256) && !algorithm.Algorithm.Equal(oidECDSAWithSHA384) && !algorithm.Algorithm.Equal(oidECDSAWithSHA512) {
+			return fmt.Errorf("%w: the signature algorithm is not ECDSA with SHA-2", ErrMalformed)
+		}
+		if len(algorithm.Parameters.FullBytes) != 0 {
+			return fmt.Errorf("%w: an ECDSA signature algorithm has parameters", ErrMalformed)
 		}
 		if !ecdsa.VerifyASN1(key, digest, signature) {
 			return ErrSignature
@@ -731,12 +871,7 @@ var (
 	oidDeltaCRLIndicator        = asn1.ObjectIdentifier{2, 5, 29, 27}
 	oidIssuingDistributionPoint = asn1.ObjectIdentifier{2, 5, 29, 28}
 	oidCertificateIssuer        = asn1.ObjectIdentifier{2, 5, 29, 29}
-	oidAuthorityKeyIdentifier   = asn1.ObjectIdentifier{2, 5, 29, 35}
-	oidCRLNumber                = asn1.ObjectIdentifier{2, 5, 29, 20}
 	oidReasonCode               = asn1.ObjectIdentifier{2, 5, 29, 21}
-	oidInvalidityDate           = asn1.ObjectIdentifier{2, 5, 29, 24}
-	recognisedListExtensions    = []asn1.ObjectIdentifier{oidAuthorityKeyIdentifier, oidCRLNumber}
-	recognisedEntryExtensions   = []asn1.ObjectIdentifier{oidReasonCode, oidInvalidityDate}
 )
 
 // completeList says whether a revocation list can speak for every
@@ -744,27 +879,19 @@ var (
 // changed since a base it does not carry; not a scoped one, which an issuing
 // distribution point limits to some certificates or some reasons; not an
 // indirect one, whose entries name another issuer; and with no critical
-// extension, of the list or of an entry, that is not read here.
+// extension this code does not decode and apply. Of the list's own
+// extensions none is applied, so a critical one makes it incomplete; of an
+// entry's, only the reason code is, which crypto/x509 decodes as an
+// ENUMERATED and revocationOf applies, so it alone may be critical.
 func completeList(list *x509.RevocationList) bool {
-	recognised := func(id asn1.ObjectIdentifier, known []asn1.ObjectIdentifier) bool {
-		for _, each := range known {
-			if id.Equal(each) {
-				return true
-			}
-		}
-		return false
-	}
 	for _, extension := range list.Extensions {
-		if extension.Id.Equal(oidDeltaCRLIndicator) || extension.Id.Equal(oidIssuingDistributionPoint) {
-			return false
-		}
-		if extension.Critical && !recognised(extension.Id, recognisedListExtensions) {
+		if extension.Critical || extension.Id.Equal(oidDeltaCRLIndicator) || extension.Id.Equal(oidIssuingDistributionPoint) {
 			return false
 		}
 	}
 	for _, entry := range list.RevokedCertificateEntries {
 		for _, extension := range entry.Extensions {
-			if extension.Id.Equal(oidCertificateIssuer) || (extension.Critical && !recognised(extension.Id, recognisedEntryExtensions)) {
+			if extension.Id.Equal(oidCertificateIssuer) || (extension.Critical && !extension.Id.Equal(oidReasonCode)) {
 				return false
 			}
 		}
