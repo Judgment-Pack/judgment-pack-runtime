@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -203,6 +206,57 @@ func TestAuditVerifySignatureFlagsAreChecked(t *testing.T) {
 	code, output := verification(t, "--config", configPath, "--public-key", public)
 	if code != 0 || output.Coverage.Signed.Status != "none" || output.Coverage.UnsignedRecords != 1 || output.Signatures.Lines != 0 {
 		t.Fatalf("an unsigned trail: exit=%d %+v", code, output.Coverage)
+	}
+}
+
+// A public key that permits forgery is refused before anything is read with
+// it (#216), as --public-key and in --revoked, and the refusal names why,
+// never the key. Under the identity, crypto/ed25519 accepts the forged
+// signature beside this trail, made with no private key; a verifier that
+// took the key would count the record signed.
+func TestAuditVerifyRefusesAKeyThatPermitsForgery(t *testing.T) {
+	dir := t.TempDir()
+	const trail = "00112233445566778899aabbccddeeff"
+	line := fmt.Sprintf(`{"recordVersion":"1","trail":"%s","sequence":1,"previous":"%s","kind":"evaluation"}`, trail, audit.Digest(nil))
+	identity := "01" + strings.Repeat("0", 62)
+	public, _ := hex.DecodeString(identity)
+	forged := append(append([]byte{}, public...), make([]byte, 32)...)
+	if !ed25519.Verify(public, audit.RecordMessage(trail, 1, audit.Digest([]byte(line))), forged) {
+		t.Fatal("the forgery does not verify under crypto/ed25519, so the test shows nothing")
+	}
+	sidecar := fmt.Sprintf(`{"keyId":"%s","kind":"record-signature","record":"%s","sequence":1,"sidecarVersion":"1","signature":"%s","trail":"%s"}`+"\n",
+		audit.KeyID(public), audit.Digest([]byte(line)), hex.EncodeToString(forged), trail)
+	trailPath := filepath.Join(dir, "evaluations.jsonl")
+	if err := os.WriteFile(trailPath, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, audit.SidecarName), []byte(sidecar), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, refused := range []struct{ key, why string }{
+		{identity, "small order"},
+		{strings.Repeat("0", 64), "small order"},
+		{"ed" + strings.Repeat("f", 60) + "7f", "not the canonical encoding"},
+		{"01" + strings.Repeat("0", 60) + "80", "not the canonical encoding"},
+		{"02" + strings.Repeat("0", 62), "not a point"},
+	} {
+		keyPath := writeDocument(t, "refused.pub", refused.key+"\n")
+		code, stdout, _ := runTest(t, []string{"audit", "verify", "--format", "json", "--trail", trailPath, "--public-key", keyPath}, "")
+		if code != result.ExitInvocation || !strings.Contains(stdout, `"JPS-AUDIT-PUBLIC-KEY-INVALID"`) || !strings.Contains(stdout, refused.why) || strings.Contains(stdout, refused.key) {
+			t.Fatalf("%s: exit=%d %q", refused.key, code, stdout)
+		}
+	}
+	_, good := generatedKey(t)
+	revoked := writeDocument(t, "revoked.jsonl", `{"from":1,"publicKey":"`+identity+`"}`)
+	code, stdout, _ := runTest(t, []string{"audit", "verify", "--format", "json", "--trail", trailPath, "--public-key", good, "--revoked", revoked}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout, `"JPS-AUDIT-REVOKED-INVALID"`) || !strings.Contains(stdout, "small order") {
+		t.Fatalf("a revocation of a key of small order: exit=%d %q", code, stdout)
+	}
+	// A key a verifier accepts reads the same trail: the forged line is
+	// another key's, and the record is unsigned.
+	code, output := verification(t, "--trail", trailPath, "--public-key", good)
+	if code != result.ExitInvalid || len(output.Findings) != 1 || output.Findings[0].Name != audit.FindingSignatureInvalid || output.Coverage.SignedRecords != 0 {
+		t.Fatalf("under a good key: exit=%d %+v %+v", code, output.Findings, output.Coverage)
 	}
 }
 

@@ -217,6 +217,28 @@ All notable changes to tagged releases are documented here.
     word), anything against an authority that is not independent of the operator, or revocation
     status where it was not checked; the report says each in fixed sentences.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+- **Record signatures: public keys that permit forgery are refused, and the reading rules a second
+  implementation needs are stated** (ADR-0047 §2b; #216).
+  - A public key is refused unless it is the canonical encoding of a point of the Ed25519 curve
+    whose order does not divide 8. Under a key of small order, the all-zero key among them, Go's
+    `crypto/ed25519` accepts a signature anyone can make without a private key, and it reads a y of
+    2^255−19 or more, or an x of 0 with its sign bit set, as another point. The encoding is checked
+    before anything reduces it. `audit verify --public-key` refuses such a key
+    (`JPS-AUDIT-PUBLIC-KEY-INVALID`), `--revoked` refuses a revocation naming one
+    (`JPS-AUDIT-REVOKED-INVALID`), and a rotation to one is `rotation-invalid` and hands nothing
+    over, however it is signed. No key a seed derives is refused, so `audit key generate`, `public`
+    and `rotate` are unchanged.
+  - The guide's "Record signatures, exactly" now lists the eight keys of small order and states the
+    reading rules: what a verifier holding one record and not its trail checks, taking T and S from
+    the record's own members; that the first line for a sequence in order decides and a later one
+    is out of order; that a rotation counts where it stands in the sidecar, and one that fails hands
+    nothing on; that the 4096-byte bound does not count the newline; that an integer is spelled only
+    as one (`3.0`, `3e0` and `03` are not); that names and strings are their decoded values; that a
+    record copied out of its trail is checked with its sidecar's lines up to its own signature line;
+    and that a reader trusting keys outright follows no rotation. Each is what `audit verify`
+    already did, and a test holds the one-record rule to `audit verify` over sidecars reordered,
+    cut, repeated, edited and forged.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02
 

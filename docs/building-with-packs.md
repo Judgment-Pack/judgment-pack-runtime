@@ -1186,15 +1186,16 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   together, so the next record starts a new trail with a new sidecar.
 - **The writer does not check a rotation's signature.** To choose the key in force, the writer
   follows the sidecar's last readable rotation line as it stands; it does not verify that line's
-  signature. A well-formed rotation line someone forged therefore stops the configured key from
-  signing, and records are written unsigned, while `audit verify` reports the line as
-  `rotation-invalid` and keeps the old key. It cannot make any record count as signed. It means
-  whoever can write the sidecar can stop signing, as they could by deleting the sidecar;
+  signature or its next key. A well-formed rotation line someone forged therefore stops the
+  configured key from signing, and records are written unsigned, while `audit verify` reports the
+  line as `rotation-invalid` and keeps the old key. It cannot make any record count as signed. It
+  means whoever can write the sidecar can stop signing, as they could by deleting the sidecar;
   `--require-signed-through` is what turns records left unsigned that way into a failure.
 - **Revocation is the verifier's.** A rotation stops the old key signing here; it cannot stop a copy
   of that key signing elsewhere. Whoever verifies says which keys they trust, from the outside:
   `--public-key` once per key, in the order the trail used them, and `--revoked <file>` for a key
-  not to trust from a sequence on.
+  not to trust from a sequence on. A key under which anyone could sign, one of small order or not
+  canonically encoded, is refused in either (below).
 
 ```sh
 jpack audit verify --public-key decisions.pub                            # every signature, under the first key
@@ -1209,10 +1210,11 @@ be signed by the key in force, and hands the records after its line to the key i
 check is a named finding: `signature-invalid` (a bad signature, or another key's),
 `signature-record-mismatch` (a signature for another record than the one at its sequence),
 `signature-no-record` (a line naming a sequence the trail does not have, or no chained record of its
-trail), `rotation-invalid` (a rotation not signed by the key in force, of another trail, or to a key
-other than the next one pinned), `signature-key-revoked` (a line made with a key revoked at its
-sequence), `sidecar-out-of-order`, and `signature-missing` (below). A sidecar line of no shape the
-rule reads, a torn last line among them, is counted unreadable and is not a failure.
+trail), `rotation-invalid` (a rotation not signed by the key in force, of another trail, to a key a
+verifier refuses, or to a key other than the next one pinned), `signature-key-revoked` (a line made
+with a key revoked at its sequence), `sidecar-out-of-order`, and `signature-missing` (below). A
+sidecar line of no shape the rule reads, a torn last line among them, is counted unreadable and is
+not a failure.
 
 The report gives `signed` as `through` the highest sequence whose own record carries a valid
 signature with no failed check of the chain at or before it, which then covers every line up to it,
@@ -1259,6 +1261,38 @@ this is the whole rule; nothing in it depends on reading this runtime's code.
 Its `keyId` is the first 32 lowercase hexadecimal characters of the SHA-256 of those 32 bytes, the
 gateway's `keyId`.
 
+A verifier refuses a public key unless its 32 bytes are the canonical encoding (RFC 8032 §5.1.2) of
+a point of the curve whose order does not divide 8, and refuses it before it reads anything signed
+with it. The encoding is read as written, before anything reduces it: y is its low 255 bits,
+little-endian, and its top bit is the sign of x. A key is refused when:
+
+- **it is not canonical:** y is p = 2^255 − 19 or more (`edff…ff7f` is y = p), or x is 0 (y is 1 or
+  p − 1) and the sign bit is set. A lenient reader, Go's `crypto/ed25519` among them, takes such an
+  encoding for another: y = p for y = 0, the all-zero key;
+- **it is of small order:** it is one of the eight points whose order divides 8, listed below. Under
+  such a key `crypto/ed25519` accepts, for most messages, a signature anyone can make without a
+  private key: R a point of small order and s zero. The all-zero key, a likely placeholder, is one;
+- **it is no point:** (y² − 1) / (d·y² + 1) has no square root modulo p, so nothing verifies under
+  it.
+
+The eight points of small order, by their canonical encodings; every other encoding of them is not
+canonical:
+
+```text
+0100000000000000000000000000000000000000000000000000000000000000
+ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f
+0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000080
+26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05
+26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85
+c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a
+c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa
+```
+
+This runtime refuses such a key wherever it reads one: as `--public-key`
+(`JPS-AUDIT-PUBLIC-KEY-INVALID`), in `--revoked` (`JPS-AUDIT-REVOKED-INVALID`), and as a rotation's
+`next` (step 3 below). No key a seed derives is refused.
+
 **The sidecar.** `signatures.jsonl`, in the trail's directory. Every line this runtime writes ends
 with a newline and is the RFC 8785 canonical form of one of two objects, seven members each:
 
@@ -1272,11 +1306,15 @@ with a newline and is the RFC 8785 canonical form of one of two objects, seven m
 | `record` / `next` | `record`: `sha256:` and the SHA-256 of the record's exact line bytes, without the newline, 64 lowercase hex | `next`: the next key's public key |
 | `signature` | 128 lowercase hex | 128 lowercase hex |
 
-`sequence` and `at` are integers from 1 to 2^53−2. A reader reads a line as one JSON object with
-exactly those seven members, each once and of those forms, whatever its whitespace; any other line,
-a line with no newline after it, and a line longer than 4096 bytes are unreadable: they sign
-nothing and are not a failure. A writer ends a line it finds without its newline with `~` and a
-newline before it appends, so that line stays unreadable.
+`sequence` and `at` are integers from 1 to 2^53−2, spelled as JSON integers: digits, with no
+fraction, exponent, sign or leading zero, so `3.0`, `3e0` and `03` are not integers. A reader reads
+a line as one JSON object with exactly those seven members, each once and of those forms, whatever
+its whitespace and its escapes. A member's name and a string are what JSON decodes them to: an
+escape is the character it spells, so `\u0061` is `a`; a name given twice, however spelled, makes
+the line unreadable; and the forms are held, and the signed bytes built, on the decoded values. Any
+other line, a line with no newline after it, and a line longer than 4096 bytes, its newline not
+counted, are unreadable: they sign nothing and are not a failure. A writer ends a line it finds
+without its newline with `~` and a newline before it appends, so that line stays unreadable.
 
 **The signed bytes.** A record signature signs the ASCII bytes
 `judgment-pack-runtime/record-signature/1:` followed by the RFC 8785 canonical form of
@@ -1303,14 +1341,55 @@ readable one:
 3. A rotation at A: the trail's line A must exist, or it is `signature-no-record`. T must be the
    trail of the last chained line at or before A, its `keyId` the key in force's, and its signature
    valid under that key over the signed bytes, or it is `rotation-invalid`. If a revocation of the
-   key in force has `from` ≤ A, it is `signature-key-revoked`. With n > 1, `next` must be the next
-   key not yet rotated to in K₁…Kₙ, or it is `rotation-invalid`. Otherwise `next` is the key in force.
+   key in force has `from` ≤ A, it is `signature-key-revoked`. `next` must be a key a verifier
+   accepts (Keys), and with n > 1 the next key not yet rotated to in K₁…Kₙ, or it is
+   `rotation-invalid`. Otherwise `next` is the key in force.
+
+The lines are taken in the sidecar's order, so a rotation is before a record signature when it is
+earlier in the file, and step 1 then holds it to an A below that signature's S: a record signature
+for S read after a rotation at A ≥ S is out of order. A line that fails a check changes nothing but
+the last place: a rotation that fails hands nothing on, and the key in force stays the one before
+it. The writer, which does not check a rotation, follows one that is the sidecar's last readable
+line all the same, and stops signing (above).
 
 The signed coverage is through the highest S whose record is signed with no failed check of the
 chain at or before line S; a requirement through R fails, `signature-missing`, unless that coverage
-reaches R. A reader that checks one record without the trail, knowing its trail T, its sequence S
-and its digest R (the `decision.recordDigest` a gateway receipt names), applies step 3 to each
-rotation before it, taking T as the trail, and step 2 to the record signature for S.
+reaches R.
+
+**One record, without the trail.** A reader that holds a record and not its trail, such as a gateway
+acting on a decision, takes T and S from the record's own `trail` and `sequence`, read by the
+chain's rule (a record without a chained `trail`, `sequence` and `previous` has no signature), and R
+as the SHA-256 of the record's exact bytes without a newline; handed a digest, such as a gateway
+receipt's `decision.recordDigest`, it holds R to it. It reads the sidecar's lines in order as above,
+leaving out what needs the trail:
+
+- every readable line is held to step 1;
+- a rotation is held to step 3, with T as the trail it must name and its line A unchecked, and when
+  it holds, its `next` is the key in force;
+- a record signature for another sequence is passed over once step 1 has placed it;
+- the first record signature for S that step 1 admits decides: its `trail` must be T, its `record` R
+  and its `keyId` the key in force's, its signature must verify under that key over the signed
+  bytes, and that key must not be revoked at S, or the record is not signed. A later line for S is
+  out of order and signs nothing, however valid, and the lines after the deciding one change
+  nothing.
+
+This establishes that the key in force at S, as the rotations before it hand it on, signed this
+record as record S of trail T; not that the trail holds the record there, nor anything about another
+record. Where the trail holds the record at S undamaged, and every rotation before it follows a
+chained line of T, as every rotation the writer makes does, it is the answer `audit verify` gives
+for record S.
+
+A reader that trusts a set of keys by its own configuration instead of following the trail's key
+history, as a gateway's policy can, follows no rotation and has no key in force to order lines by:
+any readable record signature for T, S and R under a key it trusts, not revoked at S, signs the
+record. That establishes only that a key it trusts signed it.
+
+**A copied record.** A signature is never in the record: it is a line of the sidecar of the trail
+the record was written to, and nothing is added to the record line. A record copied out of its trail
+is checked with its sidecar's lines up to and including its own signature line, copied as they are
+and in their order, and kept beside the copy under the same name, `signatures.jsonl`; with them, the
+check of one record gives the answer it gives with the whole sidecar. The record is copied as its
+exact bytes: re-encoded, however equal as JSON, it has another digest and is not the record signed.
 
 **A test vector.** The keys are the seeds of RFC 8032's first two test vectors:
 
@@ -1349,6 +1428,9 @@ followed, the second key is in force at the end, and the signed coverage is thro
 Verified with the second public key alone, the first line is `signature-invalid` and the rotation
 `rotation-invalid`, both at line 1, and the second record is signed. Ed25519 signatures are
 deterministic, so an implementation that signs these lines with these seeds writes these bytes.
+Checked one record at a time with the first public key and these three lines, both records are
+signed, record 2 under the second key, which the rotation before it put in force; with record 2's
+own line alone it is not, since no rotation then puts the second key in force.
 
 ### Repairing a torn trail
 
