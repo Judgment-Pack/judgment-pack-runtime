@@ -475,20 +475,46 @@ var (
 // appended to: every byte before the size is final, so the reader can read them
 // without holding the lock and without delaying a writer.
 func SizeBetweenWrites(file *os.File) (int64, bool, error) {
+	sizes, locked, err := SizesBetweenWrites(file)
+	if err != nil {
+		return 0, false, err
+	}
+	return sizes[0], locked, nil
+}
+
+// SizesBetweenWrites is SizeBetweenWrites for a file and the files a writer
+// keeps in step with it under its lock (AppendLockedThen): every size is read
+// under the one shared lock on the first file, so together they fall between
+// two writes. A nil file among the others reads as size zero. The others are
+// read before the first file: where no lock can be taken, a file a writer
+// appends to after the first is then never read further on than the first.
+func SizesBetweenWrites(file *os.File, others ...*os.File) ([]int64, bool, error) {
 	locked := true
 	if err := lockShared(file); errors.Is(err, errNoLock) {
 		locked = false
 	} else if err != nil {
-		return 0, false, err
+		return nil, false, err
 	}
-	info, err := file.Stat()
+	sizes := make([]int64, len(others)+1)
+	var statErr error
+	for index, each := range append(append([]*os.File{}, others...), file) {
+		if each == nil {
+			continue
+		}
+		info, err := each.Stat()
+		if err != nil {
+			statErr = err
+			break
+		}
+		sizes[(index+1)%len(sizes)] = info.Size()
+	}
 	if locked {
 		unlockFile(file)
 	}
-	if err != nil {
-		return 0, false, err
+	if statErr != nil {
+		return nil, false, statErr
 	}
-	return info.Size(), locked, nil
+	return sizes, locked, nil
 }
 
 // syncFile and openDirectory are what AppendLocked's durability rests on: the
@@ -547,30 +573,43 @@ type AppendState struct {
 // The lock is held on the trail itself and on nothing else, so no second file
 // appears beside it.
 func (r *Root) AppendLocked(relative string, compose func(AppendState) ([]byte, error)) error {
+	_, err := r.AppendLockedThen(relative, compose, nil)
+	return err
+}
+
+// AppendLockedThen is AppendLocked with one more step, then, run after the
+// bytes are written and synced and before the lock is released, so it is
+// ordered with the append against every cooperating writer: a writer that
+// keeps a second file in step with this one (a signature for each record,
+// say) appends to it there. It is told whether the lock is held. Its failure
+// does not undo the append and is not the append's: it is returned apart, as
+// the first result, and the second is the append's own error. then is not
+// called when the append failed.
+func (r *Root) AppendLockedThen(relative string, compose func(AppendState) ([]byte, error), then func(locked bool) error) (error, error) {
 	cleaned, err := Relative(relative)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
 		file, err := r.openForAppend(cleaned, os.O_RDWR)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		openedInfo, err := r.sameRegularFile(file, cleaned)
 		if err != nil {
 			file.Close()
-			return err
+			return nil, err
 		}
 		if hardLinked(openedInfo) {
 			file.Close()
-			return errors.New("path has more than one link, so it names a file something else also names")
+			return nil, errors.New("path has more than one link, so it names a file something else also names")
 		}
 		locked := true
 		if err := lockExclusive(file); errors.Is(err, errNoLock) {
 			locked = false
 		} else if err != nil {
 			file.Close()
-			return err
+			return nil, err
 		}
 		// While this writer waited, the name may have come to name another
 		// file. Appending to the one held open would then append to a file
@@ -585,6 +624,10 @@ func (r *Root) AppendLocked(relative string, compose func(AppendState) ([]byte, 
 			}
 		}
 		err = r.appendHeld(file, cleaned, locked, compose)
+		var thenErr error
+		if err == nil && then != nil {
+			thenErr = then(locked)
+		}
 		if locked {
 			// Closing releases the lock as well, so a failed unlock loses
 			// nothing the close does not give back.
@@ -593,9 +636,9 @@ func (r *Root) AppendLocked(relative string, compose func(AppendState) ([]byte, 
 		if closeErr := file.Close(); err == nil {
 			err = closeErr
 		}
-		return err
+		return thenErr, err
 	}
-	return errors.New("path kept changing between the check and the lock")
+	return nil, errors.New("path kept changing between the check and the lock")
 }
 
 // appendHeld is AppendLocked's step once the file is open and, where it can
@@ -640,6 +683,19 @@ func (r *Root) syncEntry(cleaned string) error {
 	}
 	directorySyncs.Add(1)
 	return nil
+}
+
+// AppendSynced is Append, and then a sync of the directory holding the file,
+// so a file the append created is as durable as the bytes in it.
+func (r *Root) AppendSynced(relative string, record []byte) error {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return err
+	}
+	if err := r.Append(cleaned, record); err != nil {
+		return err
+	}
+	return r.syncEntry(cleaned)
 }
 
 // Replace writes one whole file beneath this root, creating it or replacing

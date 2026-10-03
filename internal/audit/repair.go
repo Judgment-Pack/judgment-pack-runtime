@@ -89,11 +89,15 @@ func (w *Writer) Repair() (result.AuditDiscontinuity, error) {
 	}
 	existing.Close()
 	var repaired result.AuditDiscontinuity
-	err = w.root.AppendLocked(name, func(state fssecure.AppendState) ([]byte, error) {
-		appended, discontinuity, err := w.repairLines(state)
-		repaired = discontinuity
-		return appended, err
-	})
+	// A writer that signs signs the discontinuity record as it signs any
+	// chained record, and a signature that cannot be written leaves it
+	// unsigned rather than the repair failed.
+	var appended []byte
+	_, err = w.root.AppendLockedThen(name, func(state fssecure.AppendState) ([]byte, error) {
+		lines, discontinuity, err := w.repairLines(state)
+		repaired, appended = discontinuity, lines
+		return lines, err
+	}, w.signThen(&appended))
 	if err != nil {
 		return result.AuditDiscontinuity{}, err
 	}

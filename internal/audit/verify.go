@@ -83,7 +83,12 @@ const (
 	notComplete            = "That the trail is complete: a trail cut short is as consistent as the whole one, and nothing here says which decisions were never written to it."
 	notCompleteAfter       = "That the trail is complete after line %d: lines removed from its end since the checkpoint was made are not missed."
 	notTime                = "That any record's at is true: it is the operator's clock."
-	notSigned              = "Who wrote any record: signatures are not available yet (runtime #209)."
+	notSignedUnchecked     = "Who wrote any record: no public key was supplied, so no signature was checked."
+	establishesSigned      = "Lines 1 to %d are as they stood when the signature on record %[1]d was made: altering any of them since takes one of the signing keys from the first public key supplied to the one in force at that record."
+	notSignedAfter         = "Lines after %d are not covered by any signature that was checked: a record signed later, or never, is not authenticated by any key."
+	notSignedNone          = "That any line was signed by a key supplied: no signature that was checked covers one."
+	notAgainstOperator     = "Anything against the operator, who holds the signing key: a record the operator altered and signed again, or a trail the operator rewrote from some point on and signed, verifies like the one first written; only a checkpoint held by someone else shows the difference."
+	notAfterTheft          = "Anything after a signing key was copied or stolen: whoever holds it can sign altered records, or a rotation to a key of their own, and only the verifier's own trust configuration refuses what they sign, by revoking that key from the sequence it was taken at and by naming the keys the trail rotates through."
 	notSegmented           = "That the history is intact across a discontinuity: a repair keeps the damaged line in place and links over it, so what the damaged line held is not part of any segment."
 	notHeldAll             = "That the holder kept every checkpoint handed to it, or that none later than those supplied exists: the coverage reaches only the checkpoints supplied here."
 	notStamped             = "When any checkpoint was made: time stamps from an RFC 3161 authority are not available yet (runtime #208)."
@@ -126,8 +131,19 @@ func Verify(contents io.ReaderAt, size int64, options Options) (Report, error) {
 			break
 		}
 	}
+	if v.signatures != nil {
+		if v.sidecarErr == nil {
+			v.sidecarErr = v.signatures.finish(v)
+		}
+		if v.sidecarErr != nil {
+			return Report{}, errors.Join(ErrSidecarRead, v.sidecarErr)
+		}
+	}
 	return Report{Chain: v.report(size), Listed: v.listed, More: v.more}, nil
 }
+
+// ErrSidecarRead is a signature sidecar that could not be read to its end.
+var ErrSidecarRead = errors.New("the signature sidecar could not be read")
 
 // Options says what Verify holds a trail to and what it lists.
 type Options struct {
@@ -141,6 +157,9 @@ type Options struct {
 	List      bool
 	ListAfter int64
 	ListLimit int
+	// Signatures, when it supplies at least one public key, checks the
+	// signature sidecar in step with the trail (ADR-0047 §2b).
+	Signatures *SignatureOptions
 }
 
 // Report is what Verify found: the chain, and the checkpoints it listed, with
@@ -214,10 +233,18 @@ type verifier struct {
 	segments             []result.AuditSegment
 	segmentsTotal        int64
 	segmentStart         int64
-	// earliestFinding is the lowest line any finding is about, or 0: a
-	// checkpoint is matched through its sequence only when no line up to it
-	// failed a check.
+	// earliestFinding is the lowest line any check of the trail or of a held
+	// checkpoint failed at, or 0: a checkpoint is matched through its
+	// sequence, and a signature covers the lines up to its own, only when no
+	// line up to it failed such a check. A finding about the sidecar does
+	// not move it, since a sidecar line says nothing about whether the trail
+	// is consistent.
 	earliestFinding int64
+
+	// signatures reads the sidecar in step with the trail, when a public key
+	// was supplied, and sidecarErr is the first failure to read it.
+	signatures *signatureChecker
+	sidecarErr error
 }
 
 func newVerifier(options Options) *verifier {
@@ -225,6 +252,9 @@ func newVerifier(options Options) *verifier {
 		heldLines: map[int64]*seenLine{}, chainedAt: map[int64]int64{}}
 	for _, held := range options.Held {
 		v.heldLines[held.Sequence] = nil
+	}
+	if options.Signatures != nil && len(options.Signatures.Keys) > 0 {
+		v.signatures = newSignatureChecker(options.Signatures)
 	}
 	return v
 }
@@ -468,13 +498,22 @@ func (v *verifier) closeSegment(last int64) {
 
 // commit settles the line before the one just read: nothing after it can now
 // withdraw its findings or name it as damaged, so its findings are reported and
-// it is counted. It is called once for each line, after the line that follows
-// it is checked, or at the end of the trail.
+// it is counted, and then the sidecar lines that belong with it are read and
+// checked. It is called once for each line, after the line that follows it is
+// checked, or at the end of the trail.
 func (v *verifier) commit() {
 	settled := v.previous
 	if settled == nil {
 		return
 	}
+	v.settle(settled)
+	if v.signatures != nil && v.sidecarErr == nil {
+		v.sidecarErr = v.signatures.settle(v, settled)
+	}
+}
+
+// settle reports a settled line's findings and counts it.
+func (v *verifier) settle(settled *seenLine) {
 	if settled.damaged {
 		v.coverage.Damaged++
 		return
@@ -521,6 +560,12 @@ func (v *verifier) record(finding result.AuditFinding) {
 	if v.earliestFinding == 0 || finding.Line < v.earliestFinding {
 		v.earliestFinding = finding.Line
 	}
+	v.recordSidecar(finding)
+}
+
+// recordSidecar reports a finding about the signature sidecar, which does not
+// move earliestFinding.
+func (v *verifier) recordSidecar(finding result.AuditFinding) {
 	v.findingsTotal++
 	if len(v.findings) < maxFindings {
 		v.findings = append(v.findings, finding)
@@ -537,7 +582,7 @@ func (v *verifier) report(size int64) result.AuditChain {
 		Findings: v.findings,
 	}
 	chain.Coverage.Uncovered = v.pendingUnchained
-	chain.Coverage.Signed = result.AuditCoverageState{Status: "not-available", Detail: "detached signatures are runtime #209"}
+	chain.Coverage.Signed = result.AuditCoverageState{Status: "not-checked", Detail: "no public key was supplied"}
 	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "not-supplied"}
 	chain.Coverage.Stamped = result.AuditCoverageState{Status: "not-available", Detail: "RFC 3161 time stamps are runtime #208, part 2"}
 	chain.Coverage.Unwitnessed = chain.Coverage.Chained
@@ -560,6 +605,9 @@ func (v *verifier) report(size int64) result.AuditChain {
 	}
 	if v.options.RequireThrough > 0 {
 		v.checkRequirement(&chain)
+	}
+	if v.signatures != nil {
+		v.signatures.coverage(v, &chain)
 	}
 	chain.Findings = v.findings
 	if chain.Findings == nil {
@@ -676,6 +724,17 @@ func statements(chain result.AuditChain) ([]string, []string) {
 	if chain.Held != nil {
 		notEstablished = append(notEstablished, notHeldAll)
 	}
-	notEstablished = append(notEstablished, notTime, notSigned, notStamped)
+	notEstablished = append(notEstablished, notTime)
+	switch chain.Coverage.Signed.Status {
+	case "through":
+		through := chain.Coverage.Signed.Through
+		establishes = append(establishes, fmt.Sprintf(establishesSigned, through))
+		notEstablished = append(notEstablished, fmt.Sprintf(notSignedAfter, through), notAgainstOperator, notAfterTheft)
+	case "none":
+		notEstablished = append(notEstablished, notSignedNone, notAgainstOperator, notAfterTheft)
+	default:
+		notEstablished = append(notEstablished, notSignedUnchecked)
+	}
+	notEstablished = append(notEstablished, notStamped)
 	return establishes, notEstablished
 }

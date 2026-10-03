@@ -86,7 +86,7 @@ func TestAnIntactTrailVerifies(t *testing.T) {
 		t.Fatalf("chain = %+v", chain)
 	}
 	if chain.Coverage.Chained != 4 || chain.Coverage.LegacyPrefix != 0 || chain.Coverage.Uncovered != 0 ||
-		chain.Coverage.Signed.Status != "not-available" || chain.Coverage.Checkpointed.Status != "not-supplied" {
+		chain.Coverage.Signed.Status != "not-checked" || chain.Coverage.Checkpointed.Status != "not-supplied" {
 		t.Fatalf("coverage = %+v", chain.Coverage)
 	}
 	lines := splitLines(data)
@@ -98,7 +98,7 @@ func TestAnIntactTrailVerifies(t *testing.T) {
 		t.Fatalf("segments = %+v", chain.Segments)
 	}
 	if len(chain.Establishes) != 1 || chain.Establishes[0] != establishesConsistency ||
-		!containsString(chain.DoesNotEstablish, notLastLine) || !containsString(chain.DoesNotEstablish, notComplete) || !containsString(chain.DoesNotEstablish, notSigned) {
+		!containsString(chain.DoesNotEstablish, notLastLine) || !containsString(chain.DoesNotEstablish, notComplete) || !containsString(chain.DoesNotEstablish, notSignedUnchecked) {
 		t.Fatalf("statements = %v / %v", chain.Establishes, chain.DoesNotEstablish)
 	}
 }

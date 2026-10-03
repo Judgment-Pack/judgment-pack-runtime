@@ -443,3 +443,80 @@ func TestOpenRegularOpensOnlyARegularFile(t *testing.T) {
 		t.Fatal("a final symlink must be refused")
 	}
 }
+
+// AppendSynced syncs the directory holding the file after the append, so a
+// file it created is as durable as its bytes; the then-step of
+// AppendLockedThen runs after the append and only when it succeeded, and its
+// failure is reported apart from the append's.
+func TestAppendSyncedAndTheStepAfterAnAppend(t *testing.T) {
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+	before := directorySyncs.Load()
+	if err := root.AppendSynced("side.jsonl", []byte("x\n")); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		if synced := directorySyncs.Load() - before; synced != 1 {
+			t.Fatalf("an append to the side file syncs the directory once: %d", synced)
+		}
+	}
+	var sawLocked, ran bool
+	thenErr, err := root.AppendLockedThen("log.jsonl", func(AppendState) ([]byte, error) { return []byte("y\n"), nil }, func(locked bool) error {
+		ran, sawLocked = true, locked
+		data, readErr := os.ReadFile(filepath.Join(dir, "log.jsonl"))
+		if readErr != nil || string(data) != "y\n" {
+			t.Errorf("the step runs after the write: %q %v", data, readErr)
+		}
+		return injected
+	})
+	if err != nil || !errors.Is(thenErr, injected) || !ran || !sawLocked {
+		t.Fatalf("then: ran=%v locked=%v thenErr=%v err=%v", ran, sawLocked, thenErr, err)
+	}
+	ran = false
+	thenErr, err = root.AppendLockedThen("log.jsonl", func(AppendState) ([]byte, error) { return nil, injected }, func(bool) error {
+		ran = true
+		return nil
+	})
+	if !errors.Is(err, injected) || thenErr != nil || ran {
+		t.Fatalf("a failed append runs no step: ran=%v thenErr=%v err=%v", ran, thenErr, err)
+	}
+}
+
+// The step after an append runs while the lock is held, so whatever it
+// appends elsewhere is ordered by the same lock: another writer cannot take
+// the lock until the step has returned.
+func TestTheStepAfterAnAppendRunsUnderTheLock(t *testing.T) {
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+	acquired := make(chan struct{})
+	_, err := root.AppendLockedThen("log.jsonl", func(AppendState) ([]byte, error) { return []byte("x\n"), nil }, func(locked bool) error {
+		if !locked {
+			t.Skip("no lock on this platform")
+		}
+		go func() {
+			other, err := os.OpenFile(filepath.Join(dir, "log.jsonl"), os.O_RDWR, 0)
+			if err != nil {
+				return
+			}
+			defer other.Close()
+			if lockExclusive(other) == nil {
+				close(acquired)
+				unlockFile(other)
+			}
+		}()
+		select {
+		case <-acquired:
+			t.Error("another writer took the lock while the step ran")
+		case <-time.After(300 * time.Millisecond):
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-acquired:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the lock is released once the step returns")
+	}
+}

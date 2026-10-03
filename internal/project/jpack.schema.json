@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:judgmentpack:runtime:jpack-config:6",
   "title": "jpack.json project configuration",
-  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044), under \"5\" whether its evaluations must refuse a fact no comparison that reads it can match (ADR-0046), and under \"6\" whether that record is chained (ADR-0047). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
+  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044), under \"5\" whether its evaluations must refuse a fact no comparison that reads it can match (ADR-0046), and under \"6\" whether that record is chained and which key outside the project signs it (ADR-0047). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
   "type": "object",
   "additionalProperties": false,
   "required": ["configVersion", "packs"],
@@ -30,6 +30,11 @@
     {
       "description": "The same gate for the audit member's chain, the \"6\" shape's one addition: a configuration saying whether its trail is chained under an earlier version is told exactly which member to change.",
       "if": { "required": ["audit"], "properties": { "audit": { "required": ["chain"] } } },
+      "then": { "properties": { "configVersion": { "const": "6" } } }
+    },
+    {
+      "description": "The same gate for the audit member's signingKey, which the \"6\" shape adds beside chain.",
+      "if": { "required": ["audit"], "properties": { "audit": { "required": ["signingKey"] } } },
       "then": { "properties": { "configVersion": { "const": "6" } } }
     }
   ],
@@ -78,8 +83,15 @@
         "chain": {
           "description": "Whether the trail is chained (ADR-0047). Absent or true, each record this runtime appends also carries trail (the trail's identity, 128 random bits in hex), sequence (its line number in the file, from 1) and previous (the SHA-256 of the exact bytes of the line before it, without its newline; for a chained record that follows no chained line, of the whole file before it, which commits to every earlier line at once and rewrites none of them). The writer holds the file exclusively against every other writer that cooperates while it reads the last line, assigns the sequences, writes, and syncs the file and its directory; it refuses to append after an incomplete last line, when a line it must read or would write is longer than 128 MiB, and when other writers cannot be excluded for a reason that may pass, and only where the platform or file system cannot exclude other writers at all does it append the record unchained. False appends records without those members, without excluding other writers and without reading the file, as runtimes before configVersion \"6\" did. The links show whether the lines are consistent with one another, not that the history is authentic: an edit to any line but the last breaks a link, but the last line can be edited, and a trail cut short or rewritten from any line on with its links recomputed, without breaking one; only a commitment held by someone other than the operator, covering those lines, tells them apart. jpack audit verify checks the links, and jpack audit checkpoint prints such a commitment for handing over. Declaring it requires configVersion \"6\".",
           "type": "boolean"
+        },
+        "signingKey": {
+          "description": "The absolute path of an Ed25519 seed, 64 hexadecimal characters as the gateway's keygen and jpack audit key generate write it, that signs every chained record (ADR-0047). It must be outside this file's own directory, named by its own path rather than through a final symlink, and on unix owned by the user this runtime runs as and readable and writable by nobody else; on Windows who may read it is whatever its ACL allows. The JPACK_SIGNING_KEY environment variable, when set and not empty, names the key instead. After each chained record is written, and under the same exclusion of other writers, one line is appended to signatures.jsonl beside the trail, binding the record's trail, sequence and the SHA-256 of its exact line bytes; the record line itself is not changed. Signing never fails a decision: a key that is refused or not the key in force signs nothing, a signature that cannot be written leaves its record unsigned, and packs validate reports why as the audit-signing-key check. jpack audit key rotate hands signing over to a next key with a line the current key signs. A signature shows only that whoever held the key signed the record: nothing against the operator, who holds it, and nothing after the key is copied. jpack audit verify --public-key checks the signatures. Declaring it requires configVersion \"6\" and a chained trail.",
+          "type": "string",
+          "pattern": "^(/|[A-Za-z]:[\\\\/]|\\\\\\\\)"
         }
-      }
+      },
+      "if": { "required": ["chain"], "properties": { "chain": { "const": false } } },
+      "then": { "not": { "required": ["signingKey"] } }
     },
     "decisionId": {
       "type": "string",

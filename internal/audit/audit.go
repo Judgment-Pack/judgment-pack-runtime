@@ -653,6 +653,9 @@ type Writer struct {
 	chain    bool
 	reviewed *bool
 	underLaw *ReviewedSet
+	// signer signs the chained records the writer appends (ADR-0047 §2b);
+	// nil signs nothing.
+	signer *Signer
 }
 
 // UnderLaw records which law this invocation's records were judged under
@@ -844,9 +847,16 @@ func (w *Writer) AppendAll(records []Record) error {
 	if !w.chain {
 		return w.root.Append(name, unchained)
 	}
-	return w.root.AppendLocked(name, func(state fssecure.AppendState) ([]byte, error) {
-		return chainedLines(prepared, unchained, state)
-	})
+	// A record whose signature cannot be written stays unsigned: the decision
+	// was recorded, and a sidecar the write could not reach is not a reason to
+	// report it failed (ADR-0047 §2b). jpack audit verify counts it unsigned.
+	var appended []byte
+	_, err = w.root.AppendLockedThen(name, func(state fssecure.AppendState) ([]byte, error) {
+		lines, err := chainedLines(prepared, unchained, state)
+		appended = lines
+		return lines, err
+	}, w.signThen(&appended))
+	return err
 }
 
 // encodeLines encodes records as the trail's lines: compact JSON, one record
