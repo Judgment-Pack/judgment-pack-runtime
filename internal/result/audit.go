@@ -39,8 +39,17 @@ type AuditCoverage struct {
 	Uncovered int64 `json:"uncovered"`
 	// Damaged is the lines a discontinuity names as damaged.
 	Damaged int64 `json:"damaged"`
-	// Signed is "not-available": detached signatures are not built yet.
+	// Signed is "not-checked" when no public key was supplied, so no
+	// signature was checked (ADR-0047 §2b); otherwise "through" the highest
+	// sequence whose own record carries a valid signature with no failed
+	// check of the chain at or before it, which then covers every line up to
+	// it, or "none" when no valid signature covers any.
 	Signed AuditCoverageState `json:"signed"`
+	// SignedRecords is the chained records with a valid signature of their
+	// own, and UnsignedRecords the chained records without one; together
+	// they are Chained. Both are zero when no signature was checked.
+	SignedRecords   int64 `json:"signedRecords"`
+	UnsignedRecords int64 `json:"unsignedRecords"`
 	// Checkpointed is "not-supplied" without a held checkpoint, "through" the
 	// sequence the held checkpoints cover, and "failed" when they cover none.
 	Checkpointed AuditCoverageState `json:"checkpointed"`
@@ -108,6 +117,21 @@ type AuditRequirement struct {
 	Status  string `json:"status"`
 }
 
+// AuditSignatures is the signature sidecar as a verification read it
+// (ADR-0047 §2b): its lines, those of no shape it reads (a write that did not
+// complete among them), the rotations followed, how many public keys and
+// revocations were supplied, and the first key and the key in force at the
+// end, by keyId.
+type AuditSignatures struct {
+	Lines        int64  `json:"lines"`
+	Unreadable   int64  `json:"unreadable"`
+	Rotations    int64  `json:"rotations"`
+	KeysSupplied int64  `json:"keysSupplied"`
+	Revocations  int64  `json:"revocations"`
+	FirstKey     string `json:"firstKey"`
+	KeyInForce   string `json:"keyInForce"`
+}
+
 // AuditChain is what reading a trail found: its status, the scope of what was
 // checked, its coverage and segments, and every finding, with the statements of
 // what the result establishes and what it does not. Status is "valid" when
@@ -129,10 +153,16 @@ type AuditChain struct {
 	DiscontinuitiesTotal int64             `json:"discontinuitiesTotal"`
 	Held                 *AuditHeld        `json:"held,omitempty"`
 	Required             *AuditRequirement `json:"required,omitempty"`
-	Findings             []AuditFinding    `json:"findings"`
-	FindingsTotal        int               `json:"findingsTotal"`
-	Establishes          []string          `json:"establishes"`
-	DoesNotEstablish     []string          `json:"doesNotEstablish"`
+	// Signatures is the sidecar as read, present when a public key was
+	// supplied, and RequiredSigned a signed coverage the verification was
+	// told to require: every record up to Through covered by a valid
+	// signature.
+	Signatures       *AuditSignatures  `json:"signatures,omitempty"`
+	RequiredSigned   *AuditRequirement `json:"requiredSigned,omitempty"`
+	Findings         []AuditFinding    `json:"findings"`
+	FindingsTotal    int               `json:"findingsTotal"`
+	Establishes      []string          `json:"establishes"`
+	DoesNotEstablish []string          `json:"doesNotEstablish"`
 }
 
 // AuditVerification is jpack audit verify's payload: the chain as read, which
@@ -183,4 +213,32 @@ type AuditRepair struct {
 	Status        string             `json:"status"`
 	TrailPath     string             `json:"trailPath"`
 	Discontinuity AuditDiscontinuity `json:"discontinuity"`
+}
+
+// AuditKey is jpack audit key generate's and jpack audit key public's
+// payload: a signing key's public key and keyId (ADR-0047 §2b), never anything
+// of its private half.
+type AuditKey struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	PublicKey     string `json:"publicKey"`
+	KeyID         string `json:"keyId"`
+}
+
+// AuditRotation is jpack audit key rotate's payload: the key-rotation line it
+// appended to the signature sidecar, by the trail line it follows, the trail,
+// and the two keys by keyId, with the next key's public key.
+type AuditRotation struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	TrailPath     string `json:"trailPath"`
+	At            int64  `json:"at"`
+	Trail         string `json:"trail"`
+	From          string `json:"from"`
+	Next          string `json:"next"`
+	NextPublicKey string `json:"nextPublicKey"`
 }

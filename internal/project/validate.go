@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -28,6 +29,11 @@ const (
 	// itself rather than about a pack: the audit directory is the only declared
 	// path no pack entry owns (ADR-0018).
 	CheckAuditDirInsideRoot = "audit-dir-inside-root"
+	// CheckAuditSigningKey is whether a named signing key signs the trail's
+	// records (ADR-0047 §2b): it is outside the project, its owner's alone,
+	// one seed, and the key in force in the signature sidecar. It is reported
+	// only when a key is named.
+	CheckAuditSigningKey = "audit-signing-key"
 )
 
 // documentChecks are the checks that read the pack document, in order. They are
@@ -82,6 +88,13 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 		if check.Status == result.PackCheckFailed {
 			output.Status = "invalid"
 		}
+		if keyPath, _ := p.SigningKeyPath(); keyPath != "" {
+			check := p.checkSigningKey()
+			output.Checks = append(output.Checks, check)
+			if check.Status == result.PackCheckFailed {
+				output.Status = "invalid"
+			}
+		}
 	}
 	for _, packID := range selected {
 		entry := p.validatePack(engine, packID, p.Config.Packs[packID])
@@ -121,6 +134,44 @@ func (p *Project) checkAuditDir() result.PackCheck {
 	case err != nil:
 		check.Status = result.PackCheckFailed
 		check.Detail = fmt.Sprintf("The audit directory %q is inside the configuration's own directory but cannot be used as one: %s", display.Sanitize(p.Config.Audit.Dir), display.Sanitize(err.Error()))
+	}
+	return check
+}
+
+// checkSigningKey reports whether the named signing key signs the trail's
+// records. A key that does not leaves them unsigned rather than the decisions
+// failed, so this check is where that is said. The detail names the key by
+// keyId and never by anything read from its file.
+func (p *Project) checkSigningKey() result.PackCheck {
+	check := result.PackCheck{Name: CheckAuditSigningKey, Status: result.PackCheckPassed}
+	keyPath, source := p.SigningKeyPath()
+	named := "the audit member's signingKey"
+	if source == SigningKeyFromEnvironment {
+		named = audit.SigningKeyEnv
+	}
+	if !p.Config.Audit.Chains() {
+		check.Status = result.PackCheckSkipped
+		check.Detail = fmt.Sprintf("The trail is not chained, so the key %s names signs nothing: a signature binds a record's trail and sequence.", named)
+		return check
+	}
+	signer, err := p.LoadKey(keyPath)
+	if err != nil {
+		check.Status = result.PackCheckFailed
+		check.Detail = fmt.Sprintf("The signing key %s names, %s, is refused, so records are written unsigned: %s.", named, display.Sanitize(keyPath), display.Sanitize(audit.KeyRefusal(err)))
+		return check
+	}
+	writer := audit.NewWriter(p.root, p.Config.Audit.Dir, true)
+	writer.SignWith(signer)
+	inForce, err := writer.KeyInForce()
+	switch {
+	case err != nil:
+		check.Status = result.PackCheckFailed
+		check.Detail = fmt.Sprintf("The signature sidecar could not be read to see whether key %s is the key in force, so records may be written unsigned.", signer.KeyID())
+	case !inForce:
+		check.Status = result.PackCheckFailed
+		check.Detail = fmt.Sprintf("Key %s is not the key in force in the signature sidecar, so it signs nothing and records are written unsigned: rotate to it from the key in force with jpack audit key rotate, or name the key in force.", signer.KeyID())
+	default:
+		check.Detail = fmt.Sprintf("Chained records are signed with key %s, named by %s.", signer.KeyID(), named)
 	}
 	return check
 }

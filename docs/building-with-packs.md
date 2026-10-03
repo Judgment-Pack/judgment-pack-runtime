@@ -926,9 +926,10 @@ writers only append, so a verification neither delays a decision nor sees half o
 
 The report gives the coverage: lines before the first chained line, committed as one block;
 chained lines; unchained lines a later chained line commits to; lines nothing commits to (after
-the last chained line); and lines a repair names as damaged. Signatures are reported as not
-available (#209). It also says, in fixed sentences, what the result establishes and what it does
-not:
+the last chained line); and lines a repair names as damaged. With `--public-key` it checks the
+signatures too, and reports how far they reach (Signing the trail, below); without it, it says no
+signature was checked. It also says, in fixed sentences, what the result establishes and what it
+does not:
 
 - **Without `--expect`, the integrity of one supplied chain.** The lines are consistent with one
   another. It does not show that the trail is complete, or that its last line, or lines rewritten
@@ -996,6 +997,244 @@ records up to it are the ones that existed when it was handed over. What it does
   record's `at` and the first stamp covering it, are not built yet (#208, part 2); the report shows
   `stamped` as not available.
 
+### Signing the trail
+
+A checkpoint protects what it covers only as well as its holder keeps it. A signature answers a
+narrower question with nothing held anywhere else: was this record signed by whoever holds the
+project's key? It is opt-in (ADR-0047 §2b):
+
+```sh
+jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new key; prints its public key
+```
+
+```json
+{
+  "configVersion": "6",
+  "audit": { "dir": "audit", "signingKey": "/var/lib/jpack/decisions.seed" },
+  "packs": {}
+}
+```
+
+- **The key.** An Ed25519 seed, 64 hexadecimal characters, the form the gateway's `keygen` writes.
+  `audit.signingKey` names it by absolute path, under configVersion `"6"` and only for a chained
+  trail; the `JPACK_SIGNING_KEY` environment variable, when set, names it instead, so the path need
+  not be in the project's file at all.
+- **The environment variable is process-wide.** `JPACK_SIGNING_KEY` is read for every project this
+  runtime records for, whatever configVersion the project declares and whether or not it ever named
+  a key: set in a shell, a service unit or a CI job, and inherited by everything started from there,
+  it turns signing on for every project those processes record for that keeps a chained trail,
+  projects under `"3"` to `"5"` included. Set it only where that is what you want.
+- **What the key must be.** It is read only as it is opened, so what is checked is what is
+  read. Its path must be absolute and have no symbolic link anywhere in it, so name it by its real
+  path (on macOS, `/private/var/…` rather than `/var/…`): the runtime walks the path from the
+  filesystem's root a directory at a time, holding each one open, refuses a link at any component,
+  and refuses a component that changed between its look and its open. No directory it walks may be
+  the project's own directory, compared by device and inode rather than by name. The key must be one
+  regular file with one name (no hard link elsewhere), owned by the user the runtime runs as, and
+  neither readable nor writable by its group or by others. A key that is not is refused and signs
+  nothing. `packs validate` reports why, as the `audit-signing-key` check, naming the key by its
+  `keyId` and never by anything read from its file; nothing this runtime prints or logs carries key
+  material. `jpack audit key public <seed>` prints a key's public half for whoever will verify.
+- **A mount is not seen.** The location check refuses a key reached through any link, and a key
+  whose path passes through the project's directory. It cannot see a bind mount, or any other mount,
+  that shows a directory or file from inside the project at a path outside it: a bind of the
+  project's `keys` directory, or of the seed file itself, at an outside path is accepted, while a
+  bind of the whole project is refused, since the walk then passes through the project's directory.
+  Making such a mount takes control of the mounts the runtime sees, so the check guards against a
+  key put in the wrong place, not against whoever controls the machine's mounts.
+- **No key signs on Windows.** Who may read a file there is whatever its ACL allows, and this
+  runtime does not read ACLs, so it cannot show that a key is its owner's alone. Every key is refused
+  there, as on any platform without unix ownership and modes: records are unsigned, and `packs
+  validate` fails the `audit-signing-key` check and says why. `jpack audit key generate` and
+  `public` still work there, since they sign nothing, and `audit verify` checks signatures made
+  elsewhere.
+- **The sidecar.** After each chained record is written and synced, and still under the trail's
+  lock, one line signing it is appended to `signatures.jsonl` beside the trail: the record's `trail`,
+  its `sequence`, and the SHA-256 of its exact line bytes, signed. The record line itself is not
+  changed. A graph run's lines are signed in their order, and a repair's discontinuity record is
+  signed like any chained record.
+- **Pending, never failed.** A signature that cannot be written leaves its record unsigned and the
+  decision recorded: signing never refuses a run. So does a key that is refused or is not the key in
+  force. `audit verify` counts such a record unsigned, and a later signed record still covers it
+  through the chain. A sidecar line a failed write left without its newline was never written, as
+  a verifier reads it, and the writer reads it the same way: it decides nothing about the key in
+  force, and before the next line the writer ends it with `~` and a newline, so it stays a line of
+  its own that can never be read as a sidecar line, and the next line stays whole.
+- **Rotation.** `jpack audit key rotate --next <seed>` appends a `key-rotation` line, made with the
+  key the project names and naming the next key's public key and the trail's last line: the records
+  up to that line are signed with the old key, and the records after it with the next. A writer signs
+  only with the key in force, the one the sidecar's last readable line names or signed with, so the
+  old key signs nothing from the moment the rotation is written, and the next key signs once the
+  project names it; records written in between are unsigned. A key put in place without a rotation is
+  not the key in force and signs nothing, and `packs validate` says so. Only the key in force can
+  rotate: a lost key cannot be rotated away from, and then the trail and its sidecar are moved aside
+  together, so the next record starts a new trail with a new sidecar.
+- **The writer does not check a rotation's signature.** To choose the key in force, the writer
+  follows the sidecar's last readable rotation line as it stands; it does not verify that line's
+  signature. A well-formed rotation line someone forged therefore stops the configured key from
+  signing, and records are written unsigned, while `audit verify` reports the line as
+  `rotation-invalid` and keeps the old key. It cannot make any record count as signed. It means
+  whoever can write the sidecar can stop signing, as they could by deleting the sidecar;
+  `--require-signed-through` is what turns records left unsigned that way into a failure.
+- **Revocation is the verifier's.** A rotation stops the old key signing here; it cannot stop a copy
+  of that key signing elsewhere. Whoever verifies says which keys they trust, from the outside:
+  `--public-key` once per key, in the order the trail used them, and `--revoked <file>` for a key
+  not to trust from a sequence on.
+
+```sh
+jpack audit verify --public-key decisions.pub                            # every signature, under the first key
+jpack audit verify --public-key first.pub --public-key next.pub \
+  --revoked revoked.jsonl --require-signed-through 120                   # pinned keys, a revocation, a requirement
+```
+
+With `--public-key`, `audit verify` reads the sidecar beside the trail, or `--signatures <file>`, in
+step with the trail, and checks every line by the rule below. A record signature must be for the
+record at its sequence, by its exact bytes, and verify under the key in force there; a rotation must
+be signed by the key in force, and hands the records after its line to the key it names. Each failed
+check is a named finding: `signature-invalid` (a bad signature, or another key's),
+`signature-record-mismatch` (a signature for another record than the one at its sequence),
+`signature-no-record` (a line naming a sequence the trail does not have, or no chained record of its
+trail), `rotation-invalid` (a rotation not signed by the key in force, of another trail, or to a key
+other than the next one pinned), `signature-key-revoked` (a line made with a key revoked at its
+sequence), `sidecar-out-of-order`, and `signature-missing` (below). A sidecar line of no shape the
+rule reads, a torn last line among them, is counted unreadable and is not a failure.
+
+The report gives `signed` as `through` the highest sequence whose own record carries a valid
+signature with no failed check of the chain at or before it, which then covers every line up to it,
+and counts `signedRecords` (chained records with a valid signature of their own) and
+`unsignedRecords`. A record with no signature is unsigned, never a failure by itself, because a
+signature that could not be written leaves its decision recorded. `--require-signed-through
+<sequence>` turns that into a pass or a fail: `signature-missing`, exit 1, while the signed coverage
+does not reach that sequence. It mirrors `--require-checkpoint-through`, and it is what a reader that
+needs a record signed, a gateway acting on it or an auditor, asks for.
+
+What a signature establishes, against someone who can edit the trail and its sidecar but holds none
+of the keys: the lines up to the signed coverage are as they stood when the record there was signed.
+Such a person can edit, insert, delete or reorder lines, the last signed one included, only by
+failing a check or by pulling the signed coverage back before them, which
+`--require-signed-through` finds. What it does not:
+
+- **anything against the operator,** who holds the key. A record the operator altered and signed
+  again, or a trail the operator rewrote from some point on and signed, verifies like the one first
+  written; only a checkpoint held by someone else shows the difference.
+- **anything after a key is copied or stolen.** Whoever holds it can sign altered records, or a
+  rotation to a key of their own, and only the verifier's own trust configuration refuses what they
+  sign.
+- that the trail is complete: a trail and its sidecar cut short together verify, and only a held
+  checkpoint past the cut, or `--require-signed-through`, finds it; nor when any record was written.
+
+An attacker holding a key the trail has rotated away from can, until the verifier is told
+otherwise, fork the key history at any line where that key was in force: keep signing with it as if
+no rotation had happened, or forge a rotation from it to a key of their own, and with the trail
+rewritten from that line on, the forgery verifies against the first public key alone. Revoking the
+key from the line after its rotation (`--revoked`) refuses everything it signs from there on, record
+or rotation; pinning the keys in order (`--public-key` once per key) refuses a rotation it forges to
+a key of its own before that line. With both, it can re-sign records only up to its rotation, and
+only by also leaving every record after it unsigned or cutting it off, which
+`--require-signed-through` past the rotation, or a held checkpoint past it, finds. It can never
+forge a later key's signature, and never alter a record a held checkpoint covers without that being
+found.
+
+#### Record signatures, exactly
+
+For another implementation, such as a gateway that requires a signed record or Runner's verifier,
+this is the whole rule; nothing in it depends on reading this runtime's code.
+
+**Keys.** Ed25519 (RFC 8032). A public key is its 32 bytes as 64 lowercase hexadecimal characters.
+Its `keyId` is the first 32 lowercase hexadecimal characters of the SHA-256 of those 32 bytes, the
+gateway's `keyId`.
+
+**The sidecar.** `signatures.jsonl`, in the trail's directory. Every line this runtime writes ends
+with a newline and is the RFC 8785 canonical form of one of two objects, seven members each:
+
+| member | `record-signature` | `key-rotation` |
+|---|---|---|
+| `kind` | `"record-signature"` | `"key-rotation"` |
+| `sidecarVersion` | `"1"` | `"1"` |
+| `keyId` | the signing key's `keyId` | the key in force, which makes the rotation |
+| `trail` | the record's `trail`, 32 lowercase hex | the trail's identity |
+| `sequence` / `at` | `sequence`: the record's sequence, its line number | `at`: the trail's last line when the rotation was made |
+| `record` / `next` | `record`: `sha256:` and the SHA-256 of the record's exact line bytes, without the newline, 64 lowercase hex | `next`: the next key's public key |
+| `signature` | 128 lowercase hex | 128 lowercase hex |
+
+`sequence` and `at` are integers from 1 to 2^53−2. A reader reads a line as one JSON object with
+exactly those seven members, each once and of those forms, whatever its whitespace; any other line,
+a line with no newline after it, and a line longer than 4096 bytes are unreadable: they sign
+nothing and are not a failure. A writer ends a line it finds without its newline with `~` and a
+newline before it appends, so that line stays unreadable.
+
+**The signed bytes.** A record signature signs the ASCII bytes
+`judgment-pack-runtime/record-signature/1:` followed by the RFC 8785 canonical form of
+`{"record":R,"sequence":S,"trail":T}`, which, for these values, is
+`{"record":"sha256:<64 hex>","sequence":<S in decimal>,"trail":"<32 hex>"}` exactly. A rotation
+signs `judgment-pack-runtime/key-rotation/1:` followed by `{"at":<A in decimal>,"next":"<64
+hex>","trail":"<32 hex>"}`.
+
+**Verification.** The inputs are the trail, the sidecar, the public keys K₁…Kₙ (n ≥ 1) in the order
+the trail used them, and any revocations, each a public key and the sequence `from` which it is not
+trusted. Start with K₁ in force and the last place 0. A record signature's place is 2·S, and a
+rotation's 2·A+1. Read the sidecar's lines in order; pass over each unreadable one, and for each
+readable one:
+
+1. If its place is below the last place, or it is a record signature and its place equals the last
+   place, it is `sidecar-out-of-order`; go to the next line. Otherwise its place becomes the last
+   place.
+2. A record signature for sequence S: the trail's line S must exist, be a chained record (the
+   chain's own rule) that no discontinuity names as damaged, and carry trail T, or it is
+   `signature-no-record`. The SHA-256 of that line's exact bytes must be R, or it is
+   `signature-record-mismatch`. Its `keyId` must be the key in force's and its signature must verify
+   under that key over the signed bytes, or it is `signature-invalid`. If a revocation of the key in
+   force has `from` ≤ S, it is `signature-key-revoked`. Otherwise record S is signed.
+3. A rotation at A: the trail's line A must exist, or it is `signature-no-record`. T must be the
+   trail of the last chained line at or before A, its `keyId` the key in force's, and its signature
+   valid under that key over the signed bytes, or it is `rotation-invalid`. If a revocation of the
+   key in force has `from` ≤ A, it is `signature-key-revoked`. With n > 1, `next` must be the next
+   key not yet rotated to in K₁…Kₙ, or it is `rotation-invalid`. Otherwise `next` is the key in force.
+
+The signed coverage is through the highest S whose record is signed with no failed check of the
+chain at or before line S; a requirement through R fails, `signature-missing`, unless that coverage
+reaches R. A reader that checks one record without the trail, knowing its trail T, its sequence S
+and its digest R (the `decision.recordDigest` a gateway receipt names), applies step 3 to each
+rotation before it, taking T as the trail, and step 2 to the record signature for S.
+
+**A test vector.** The keys are the seeds of RFC 8032's first two test vectors:
+
+- first seed `9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60`, public key
+  `d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a`, `keyId`
+  `21fe31dfa154a261626bf854046fd227`;
+- second seed `4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb`, public key
+  `3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c`, `keyId`
+  `39f713d0a644253f04529421b9f51b9b`.
+
+The trail, two lines:
+
+```text
+{"recordVersion":"1","trail":"00112233445566778899aabbccddeeff","sequence":1,"previous":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","kind":"evaluation"}
+{"recordVersion":"1","trail":"00112233445566778899aabbccddeeff","sequence":2,"previous":"sha256:9305565078dd0531a50e67ee2d227d4fd0cd0d504541b92801660236a0f0eaed","kind":"evaluation"}
+```
+
+The first line's digest is `sha256:9305565078dd0531a50e67ee2d227d4fd0cd0d504541b92801660236a0f0eaed`,
+and the bytes its signature signs are:
+
+```text
+judgment-pack-runtime/record-signature/1:{"record":"sha256:9305565078dd0531a50e67ee2d227d4fd0cd0d504541b92801660236a0f0eaed","sequence":1,"trail":"00112233445566778899aabbccddeeff"}
+```
+
+The sidecar, three lines: the first record signed with the first key, a rotation to the second key
+after line 1, and the second record signed with the second key:
+
+```text
+{"keyId":"21fe31dfa154a261626bf854046fd227","kind":"record-signature","record":"sha256:9305565078dd0531a50e67ee2d227d4fd0cd0d504541b92801660236a0f0eaed","sequence":1,"sidecarVersion":"1","signature":"be509a591ce3d1ecc67a3bd2c35c914e001d2737a62ff8759e5be775448e5d5531370372971fdee8ac5b3c7c63fe16c9f83fed9243e114b8e6c02a2156ffbb0b","trail":"00112233445566778899aabbccddeeff"}
+{"at":1,"keyId":"21fe31dfa154a261626bf854046fd227","kind":"key-rotation","next":"3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c","sidecarVersion":"1","signature":"d6cf4da642a0f84dbaaf03a88b7afe0d7eded03897301ac80ab26f7248631502ebc482063a0dc37a2234fff2c62f8bff35ae825261e9d0b6d7908495a7f21201","trail":"00112233445566778899aabbccddeeff"}
+{"keyId":"39f713d0a644253f04529421b9f51b9b","kind":"record-signature","record":"sha256:d927c7b963914116f0f47219b0564b40741ae2b56de1c38ccaf27fd0f0630702","sequence":2,"sidecarVersion":"1","signature":"b28b5765844abecd9ca69b642ae1685597045babda87635b8760da9d747a6dc1c244cbbbb0b2c2d73766855665bad9487f61a373209244f7c41af0bb406d8400","trail":"00112233445566778899aabbccddeeff"}
+```
+
+Verified with the first public key alone, every line holds: both records are signed, one rotation is
+followed, the second key is in force at the end, and the signed coverage is through sequence 2.
+Verified with the second public key alone, the first line is `signature-invalid` and the rotation
+`rotation-invalid`, both at line 1, and the second record is signed. Ed25519 signatures are
+deterministic, so an implementation that signs these lines with these seeds writes these bytes.
+
 ### Repairing a torn trail
 
 ```sh
@@ -1037,9 +1276,9 @@ costs a verification no more memory than a trail of few. Line endings are bytes 
 newlines were converted to CRLF, as a checkout can convert them, is a different trail and does not
 verify; keep trails out of any line-ending conversion.
 
-None of the three commands is offered as an MCP tool: a verification an agent runs on the trail of
+None of the `audit` commands is offered as an MCP tool: a verification an agent runs on the trail of
 the server it is using shows nothing to someone who does not trust that server's operator, which is
-who a verification is for, and repair writes.
+who a verification is for, and repair and the key commands write.
 
 The records hold your input documents. That is what they are for, and it is why the directory is
 one you name rather than one this runtime picks: the human-readable diagnostics stay sanitized and

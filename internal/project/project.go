@@ -74,8 +74,8 @@ const (
 	// program knows or is not. "2" added the experimental graphs member
 	// (ADR-0017), "3" the audit member (ADR-0018), "4" the requireReviewed
 	// member (ADR-0044), "5" the requireComparableFacts member (ADR-0046) and
-	// "6" the audit member's chain (ADR-0047); the earlier shapes, without
-	// them, are still read — see SupportedConfigVersions.
+	// "6" the audit member's chain and signingKey (ADR-0047); the earlier
+	// shapes, without them, are still read — see SupportedConfigVersions.
 	ConfigVersion = "6"
 	// SchemaID is the embedded schema's own $id.
 	SchemaID = "urn:judgmentpack:runtime:jpack-config:6"
@@ -123,7 +123,7 @@ var schemaBytes []byte
 // A "1" configuration is exactly a "2" without graphs, a "2" exactly a "3"
 // without audit, a "3" exactly a "4" without requireReviewed, a "4" exactly a
 // "5" without requireComparableFacts, and a "5" exactly a "6" whose audit
-// member does not say chain, so all six are read by one schema and each version
+// member says neither chain nor signingKey, so all six are read by one schema and each version
 // gate lives in that schema's own bytes.
 func SupportedConfigVersions() []string {
 	return []string{"1", "2", "3", "4", "5", ConfigVersion}
@@ -200,9 +200,15 @@ type Graph struct {
 // configVersion "6", turns it off. It is a pointer for the reason Audit is one,
 // so an explicit true and an absent member stay two spellings of one meaning
 // rather than one of them being lost.
+//
+// SigningKey is the absolute path of an Ed25519 seed, held outside the
+// project, that signs every chained record (ADR-0047 §2b); the
+// JPACK_SIGNING_KEY environment variable, when set, names it instead. It needs
+// configVersion "6" and a chained trail.
 type Audit struct {
-	Dir   string `json:"dir"`
-	Chain *bool  `json:"chain,omitempty"`
+	Dir        string `json:"dir"`
+	Chain      *bool  `json:"chain,omitempty"`
+	SigningKey string `json:"signingKey,omitempty"`
 }
 
 // Chains says whether this audit member asks for a chained trail: yes unless it
@@ -215,7 +221,8 @@ func (a *Audit) Chains() bool {
 // rejects every member not named here, so a misspelled key is an error rather
 // than a silently ignored intention. Graphs exists only from configVersion
 // "2", Audit only from "3", RequireReviewed only from "4",
-// RequireComparableFacts only from "5" and Audit's Chain only under "6" — the
+// RequireComparableFacts only from "5" and Audit's Chain and SigningKey only
+// under "6" — the
 // schema's own version gates hold that, each stated once in its bytes. Audit is a pointer because a
 // single-object member has no other way to tell "declared, with defaults"
 // from "absent"; a map member gets that distinction for free.
@@ -1050,11 +1057,66 @@ func (p *Project) WriteLock(contents []byte) error {
 // records go into the directory the configuration came out of and no pathname
 // is handed to anything. The trail is chained unless the audit member says
 // chain false (ADR-0047 §1).
+//
+// A chained trail is signed when a signing key is named and can be used
+// (ADR-0047 §2b). A key that cannot be, refused or unreadable, leaves the
+// records unsigned rather than the decisions failed; packs validate reports
+// why, as the audit-signing-key check.
 func (p *Project) AuditWriter() *audit.Writer {
 	if p == nil || p.Config.Audit == nil {
 		return nil
 	}
-	return audit.NewWriter(p.root, p.Config.Audit.Dir, p.Config.Audit.Chains())
+	writer := audit.NewWriter(p.root, p.Config.Audit.Dir, p.Config.Audit.Chains())
+	if signer, err := p.SigningKey(); err == nil {
+		writer.SignWith(signer)
+	}
+	return writer
+}
+
+// The places a signing key can be named, for a report.
+const (
+	SigningKeyFromEnvironment   = "environment"
+	SigningKeyFromConfiguration = "configuration"
+)
+
+// SigningKeyPath is the signing key's path and where it was named: the
+// JPACK_SIGNING_KEY environment variable when it is set and not empty, else
+// the audit member's signingKey. Both are empty when neither names one, and
+// when the configuration declares no audit member.
+func (p *Project) SigningKeyPath() (string, string) {
+	if p == nil || p.Config.Audit == nil {
+		return "", ""
+	}
+	if fromEnv := strings.TrimSpace(os.Getenv(audit.SigningKeyEnv)); fromEnv != "" {
+		return fromEnv, SigningKeyFromEnvironment
+	}
+	if p.Config.Audit.SigningKey != "" {
+		return p.Config.Audit.SigningKey, SigningKeyFromConfiguration
+	}
+	return "", ""
+}
+
+// SigningKey loads the signing key SigningKeyPath names, held to
+// audit.LoadSigner's rules with this project's directory as the one it must be
+// outside. It is nil with no error when no key is named or the trail is not
+// chained, since an unchained record has no sequence to sign.
+func (p *Project) SigningKey() (*audit.Signer, error) {
+	keyPath, _ := p.SigningKeyPath()
+	if keyPath == "" || !p.Config.Audit.Chains() {
+		return nil, nil
+	}
+	return p.LoadKey(keyPath)
+}
+
+// LoadKey loads a signing key by audit.LoadSigner's rules, with the
+// directory this project's handle holds as the one it must be outside,
+// compared by identity rather than by pathname.
+func (p *Project) LoadKey(keyPath string) (*audit.Signer, error) {
+	self, err := p.root.Self()
+	if err != nil {
+		return nil, err
+	}
+	return audit.LoadSigner(keyPath, self)
 }
 
 // TrailName is the trail file this configuration's audit member names,
@@ -1076,6 +1138,16 @@ func (p *Project) OpenTrail() (*os.File, error) {
 		return nil, os.ErrInvalid
 	}
 	return p.root.Open(name)
+}
+
+// OpenSidecar opens the signature sidecar beside the trail for reading,
+// through the project's own handle (ADR-0047 §2b). It is os.ErrInvalid when the
+// configuration declares no audit member.
+func (p *Project) OpenSidecar() (*os.File, error) {
+	if p == nil || p.Config.Audit == nil {
+		return nil, os.ErrInvalid
+	}
+	return p.root.Open(path.Join(filepath.ToSlash(p.Config.Audit.Dir), audit.SidecarName))
 }
 
 // TrailPath is the trail's pathname, for display only: what is read is opened

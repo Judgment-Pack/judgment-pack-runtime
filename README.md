@@ -560,8 +560,8 @@ written, or that the trail is complete. `jpack audit checkpoint` prints the chec
 chained record, one canonical JSON line naming the trail's identity, the record's sequence and the
 SHA-256 of its exact bytes, for handing to someone who will keep it. `jpack audit verify --expect
 <checkpoint>` then also fails a trail that is shorter, has another identity, or has another record
-at that sequence, and reports the lines up to it as checkpointed. The coverage it reports names
-signatures as not available (#209); time-stamped checkpoints are #208. After a write that did not
+at that sequence, and reports the lines up to it as checkpointed. Time-stamped checkpoints are #208.
+After a write that did not
 complete, `jpack audit repair` keeps the damaged bytes in place as a line of their own and appends
 a discontinuity record that names their digest and links over them, so the writer goes on (it never
 repairs a torn discontinuity, since a repair does not repair a repair);
@@ -582,6 +582,31 @@ record up to that sequence is unwitnessed. A held checkpoint shows the records i
 ones that existed when it was handed over, to anyone who trusts the holder's copy. It shows nothing
 about later records, or about checkpoints the holder did not keep, and nothing about when; RFC 3161
 time stamps are #208's second part.
+
+**Signing the trail.** A project may name an Ed25519 seed held outside the project, by
+`"audit": { "dir": "audit", "signingKey": "<absolute path>" }` under configVersion `"6"` or by the
+`JPACK_SIGNING_KEY` environment variable, and then every chained record is signed (ADR-0047 §2b):
+after the record is written, and under the same lock, one line is appended to `signatures.jsonl`
+beside the trail, binding the record's `trail`, `sequence` and the SHA-256 of its exact bytes. The
+record line is not changed. The key must be named by its real path, with no symbolic link in it,
+outside the project's directory (compared by device and inode as it is opened), one file with one
+name, owned by the user the runtime runs as and readable by nobody else; a key that is not signs
+nothing, and on Windows, whose ACLs the runtime does not read, no key signs at all. The environment
+variable is process-wide: inherited, it signs every chained trail the process records for, under
+any configVersion, including projects that never named a key. In every case
+`packs validate` says why (`audit-signing-key`). Signing never fails a decision: a signature that
+cannot be written leaves the record unsigned. `jpack audit key generate` writes a key and prints its
+public key, `jpack audit key public` prints a key's public key, and `jpack audit key rotate --next
+<seed>` hands signing over to a next key with a line the current key signs. `jpack audit verify
+--public-key <file>` checks every signature and rotation, reports how far the signatures reach and
+how many records are unsigned, and fails on a bad signature, a signature for another record, a line
+naming no record, a rotation the key in force did not sign, a revoked key's line, or lines out of
+order; `--require-signed-through <sequence>` fails while the signatures do not reach that sequence.
+Revocation is the verifier's: `--revoked <file>` names keys not to trust from a sequence on, and
+`--public-key` given once per key pins the keys a trail may rotate through. A signature shows only
+that whoever held the key signed. It establishes nothing against the operator, who holds the key,
+and nothing after the key is copied or stolen; the sidecar's format and the verification rule, with
+a test vector, are in [docs/building-with-packs.md](docs/building-with-packs.md#record-signatures-exactly).
 
 **Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
 as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never

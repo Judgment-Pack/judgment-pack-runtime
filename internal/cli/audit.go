@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -20,17 +21,17 @@ import (
 func (a *App) auditCommand() *cobra.Command {
 	group := &cobra.Command{
 		Use:   "audit",
-		Short: "Check, checkpoint and repair a chained audit trail",
+		Short: "Check, checkpoint, repair and sign a chained audit trail",
 		Long: "Operations on the audit trail a project keeps (ADR-0018), chained over its exact bytes (ADR-0047). " +
-			"verify checks every trail, sequence and previous from the first chained record on; checkpoint prints the checkpoint of the last chained record, for handing to someone who will hold it; " +
-			"repair starts a new segment after a last line a write did not complete. " +
+			"verify checks every trail, sequence and previous from the first chained record on, and with --public-key the signatures beside it; checkpoint prints the checkpoint of the last chained record, for handing to someone who will hold it; " +
+			"repair starts a new segment after a last line a write did not complete; key makes, shows and rotates the key that signs the records. " +
 			"None of them evaluates anything.",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()
 		},
 	}
-	group.AddCommand(a.auditVerifyCommand(), a.auditCheckpointCommand(), a.auditRepairCommand())
+	group.AddCommand(a.auditVerifyCommand(), a.auditCheckpointCommand(), a.auditRepairCommand(), a.auditKeyCommand())
 	return group
 }
 
@@ -41,6 +42,10 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 	configPath := ""
 	expectPaths := []string{}
 	requireThrough := int64(0)
+	publicKeyPaths := []string{}
+	revokedPath := ""
+	signaturesPath := ""
+	requireSigned := int64(0)
 	command := &cobra.Command{
 		Use:   "verify",
 		Short: "Check a chained audit trail, alone or against a checkpoint",
@@ -48,10 +53,14 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			"a chained line's sequence is its line number, it carries the identity of the last chained line before it, and its previous is the SHA-256 of the line before it when that line is chained, and of the whole trail before it when it is not. " +
 			"The trail is --trail <file>, or else the one the project's jpack.json declares. " +
 			"The size is read under the writer's lock, shared, so it falls between two writes, and the bytes before it are read without the lock: writers only append, so they are not delayed and nothing read changes underneath. " +
-			"The report gives the coverage: lines before the first chained line (committed as one block), chained lines, unchained lines a later chained line commits to, lines nothing commits to, and lines a repair names as damaged; signatures are not available yet (#209). " +
+			"The report gives the coverage: lines before the first chained line (committed as one block), chained lines, unchained lines a later chained line commits to, lines nothing commits to, and lines a repair names as damaged. " +
 			"Without --expect this is the integrity of one supplied chain: the lines are consistent with one another, which does not show the trail is complete, or that its last line, or lines rewritten from some point on with their links recomputed, are the ones first written. " +
 			"With --expect <file>, the checkpoints a holder kept independently of the operator (jpack audit checkpoint prints them; a file may hold many, one per line, and --expect may be given more than once), the line at each one's sequence must be a chained record of its trail with its record digest: a trail that is shorter, has another identity, or has another record there fails. " +
 			"The records up to the highest checkpoint that matched, with no failed check at or before it, are witnessed; the chained records after it are unwitnessed, and --require-checkpoint-through <sequence> fails the verification while the records up to that sequence are not all witnessed. " +
+			"With --public-key <file>, the public key the trail was first signed with (64 hexadecimal characters; jpack audit key public prints it), every line of the signature sidecar beside the trail, or of --signatures <file>, is checked in step with the trail: a record signature must be for the record at its sequence, by its exact bytes, and verify under the key in force there, and a key rotation must be signed by the key in force and hands the records after its line to the key it names. " +
+			"--public-key given more than once names the keys in the order the trail used them, and a rotation to any other key fails; --revoked <file> names keys not to trust from a sequence on, one {\"from\":N,\"publicKey\":\"...\"} per line, which is how a verifier refuses what a copied key signs. " +
+			"The records up to the highest one whose own signature holds, with no failed check of the chain at or before it, are signed; --require-signed-through <sequence> fails the verification while the records up to that sequence are not all signed. A record with no signature is unsigned, never a failure by itself, since a signature that could not be written leaves its decision recorded. " +
+			"A signature shows only that whoever held the key signed: nothing against the operator, who holds it, and nothing after the key is copied. " +
 			"Time stamps from an RFC 3161 authority are not available yet. " +
 			"A trail a repair has segmented is reported segment by segment, and never as intact across a discontinuity. " +
 			"Exit 0 when every check passed, segmented or not, and 1 when any failed; each failed check is a named finding.",
@@ -63,6 +72,16 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			if requireThrough < 0 {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-REQUIRE", "--require-checkpoint-through must be a sequence from 1.")
 			}
+			if requireSigned < 0 {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-REQUIRE", "--require-signed-through must be a sequence from 1.")
+			}
+			if len(publicKeyPaths) == 0 && (requireSigned > 0 || revokedPath != "" || signaturesPath != "") {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-SIGNATURES", "--require-signed-through, --revoked and --signatures apply only with --public-key: no signature is checked without a key to check it by.")
+			}
+			signatures, failure := a.readSignatureOptions(commandName, format, publicKeyPaths, revokedPath, requireSigned)
+			if failure != nil {
+				return failure
+			}
 			held := []result.AuditCheckpoint{}
 			for _, expectPath := range expectPaths {
 				checkpoints, failure := a.readCheckpoints(commandName, format, expectPath)
@@ -71,16 +90,17 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 				}
 				held = append(held, checkpoints...)
 			}
-			file, shownPath, failure := a.openTrail(commandName, format, trailPath, configPath)
+			opened, failure := a.openTrailFiles(commandName, format, trailPath, configPath, signatures != nil, signaturesPath)
 			if failure != nil {
 				return failure
 			}
-			defer file.Close()
-			report, locked, failure := a.readTrail(commandName, format, file, audit.Options{Held: held, RequireThrough: requireThrough})
+			defer opened.close()
+			report, locked, failure := a.readTrailWith(commandName, format, opened, audit.Options{Held: held, RequireThrough: requireThrough, Signatures: signatures})
 			if failure != nil {
 				return failure
 			}
 			chain := report.Chain
+			shownPath := opened.path
 			output := result.AuditVerification{
 				OutputVersion:         result.OutputVersion,
 				Tool:                  result.CurrentTool(),
@@ -103,7 +123,49 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().StringArrayVar(&expectPaths, "expect", expectPaths, "a file of checkpoints a holder kept, one per line, to hold the trail to (repeatable)")
 	command.Flags().Int64Var(&requireThrough, "require-checkpoint-through", requireThrough, "fail unless the held checkpoints cover every record up to this sequence")
+	command.Flags().StringArrayVar(&publicKeyPaths, "public-key", publicKeyPaths, "a file holding the public key the trail was first signed with; again for each key it rotated to, in order (repeatable)")
+	command.Flags().StringVar(&revokedPath, "revoked", revokedPath, "a file of keys not to trust from a sequence on, one {\"from\":N,\"publicKey\":\"...\"} per line")
+	command.Flags().StringVar(&signaturesPath, "signatures", signaturesPath, "the signature sidecar to read; without it, the one beside the trail")
+	command.Flags().Int64Var(&requireSigned, "require-signed-through", requireSigned, "fail unless valid signatures cover every record up to this sequence")
 	return command
+}
+
+// readSignatureOptions reads the public keys and revocations a verification
+// checks the signature sidecar by, or nil when no public key was given.
+func (a *App) readSignatureOptions(command, format string, publicKeyPaths []string, revokedPath string, requireSigned int64) (*audit.SignatureOptions, error) {
+	if len(publicKeyPaths) == 0 {
+		return nil, nil
+	}
+	options := &audit.SignatureOptions{RequireThrough: requireSigned}
+	for _, keyPath := range publicKeyPaths {
+		if strings.Contains(keyPath, "://") || fssecure.IsRemotePath(keyPath) {
+			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
+		}
+		data, err := a.readPack(keyPath, 4096)
+		if err != nil {
+			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-PUBLIC-KEY-READ", fmt.Sprintf("The public key %s could not be read as one bounded regular file.", display.Sanitize(keyPath)))
+		}
+		public, err := audit.ParsePublicKey(data)
+		if err != nil {
+			return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-PUBLIC-KEY-INVALID", fmt.Sprintf("The public key %s is not one: %s.", display.Sanitize(keyPath), err.Error()))
+		}
+		options.Keys = append(options.Keys, public)
+	}
+	if revokedPath != "" {
+		if strings.Contains(revokedPath, "://") || fssecure.IsRemotePath(revokedPath) {
+			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
+		}
+		data, err := a.readPack(revokedPath, audit.MaxRevocationBytes)
+		if err != nil {
+			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-REVOKED-READ", "The revocations could not be read as one bounded regular file or standard input stream.")
+		}
+		revoked, err := audit.ParseRevocations(data)
+		if err != nil {
+			return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-REVOKED-INVALID", "The revocations could not be read: "+err.Error()+".")
+		}
+		options.Revoked = revoked
+	}
+	return options, nil
 }
 
 func (a *App) auditCheckpointCommand() *cobra.Command {
@@ -301,48 +363,116 @@ const notDeclaredMessage = "This project's jpack.json declares no audit director
 // an operator-named regular file, or else the one the project declares, opened
 // through the project's own handle. The second result is the path to show.
 func (a *App) openTrail(command, format, trailPath, configPath string) (*os.File, string, error) {
-	if trailPath != "" && configPath != "" {
-		return nil, "", a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-TRAIL", "Pass --trail or --config, not both: one trail is read.")
-	}
-	if trailPath != "" {
-		if trailPath == "-" {
-			return nil, "", a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The trail is read as a file, not from standard input; pass its path.")
-		}
-		if strings.Contains(trailPath, "://") || fssecure.IsRemotePath(trailPath) {
-			return nil, "", a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
-		}
-		file, err := fssecure.OpenRegular(trailPath)
-		if err != nil {
-			return nil, "", a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The trail %s could not be opened as one regular file.", display.Sanitize(trailPath)))
-		}
-		return file, trailPath, nil
-	}
-	loaded, failure := a.loadProject(configPath, command, format)
+	opened, failure := a.openTrailFiles(command, format, trailPath, configPath, false, "")
 	if failure != nil {
 		return nil, "", failure
 	}
-	defer loaded.Close()
-	if _, declared := loaded.TrailName(); !declared {
-		return nil, "", a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-NOT-DECLARED", notDeclaredMessage)
+	return opened.trail, opened.path, nil
+}
+
+// openedTrail is a trail opened for reading and, when signatures are checked,
+// its signature sidecar, which is nil when there is none.
+type openedTrail struct {
+	trail   *os.File
+	path    string
+	sidecar *os.File
+}
+
+func (o openedTrail) close() {
+	o.trail.Close()
+	if o.sidecar != nil {
+		o.sidecar.Close()
 	}
-	file, err := loaded.OpenTrail()
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, "", a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s does not exist yet: no record has been written.", display.Sanitize(loaded.TrailPath())))
+}
+
+// openTrailFiles is openTrail, and with sidecar the signature sidecar too: the
+// file --signatures names, which must be there, or else the one beside the
+// trail, opened the way the trail was, which may not be.
+func (a *App) openTrailFiles(command, format, trailPath, configPath string, sidecar bool, signaturesPath string) (openedTrail, error) {
+	if trailPath != "" && configPath != "" {
+		return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-TRAIL", "Pass --trail or --config, not both: one trail is read.")
 	}
-	if err != nil {
-		return nil, "", a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s could not be opened as one regular file inside the project.", display.Sanitize(loaded.TrailPath())))
+	if signaturesPath != "" && (signaturesPath == "-" || strings.Contains(signaturesPath, "://") || fssecure.IsRemotePath(signaturesPath)) {
+		return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The signature sidecar is read as one local file; pass its path.")
 	}
-	return file, loaded.TrailPath(), nil
+	var opened openedTrail
+	if trailPath != "" {
+		if trailPath == "-" {
+			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The trail is read as a file, not from standard input; pass its path.")
+		}
+		if strings.Contains(trailPath, "://") || fssecure.IsRemotePath(trailPath) {
+			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
+		}
+		file, err := fssecure.OpenRegular(trailPath)
+		if err != nil {
+			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The trail %s could not be opened as one regular file.", display.Sanitize(trailPath)))
+		}
+		opened = openedTrail{trail: file, path: trailPath}
+		if sidecar && signaturesPath == "" {
+			beside := filepath.Join(filepath.Dir(trailPath), audit.SidecarName)
+			opened.sidecar, err = fssecure.OpenRegular(beside)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				opened.close()
+				return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-SIGNATURES-READ", fmt.Sprintf("The signature sidecar %s could not be opened as one regular file.", display.Sanitize(beside)))
+			}
+		}
+	} else {
+		loaded, failure := a.loadProject(configPath, command, format)
+		if failure != nil {
+			return openedTrail{}, failure
+		}
+		defer loaded.Close()
+		if _, declared := loaded.TrailName(); !declared {
+			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-NOT-DECLARED", notDeclaredMessage)
+		}
+		file, err := loaded.OpenTrail()
+		if errors.Is(err, fs.ErrNotExist) {
+			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s does not exist yet: no record has been written.", display.Sanitize(loaded.TrailPath())))
+		}
+		if err != nil {
+			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s could not be opened as one regular file inside the project.", display.Sanitize(loaded.TrailPath())))
+		}
+		opened = openedTrail{trail: file, path: loaded.TrailPath()}
+		if sidecar && signaturesPath == "" {
+			opened.sidecar, err = loaded.OpenSidecar()
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				opened.close()
+				return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-SIGNATURES-READ", "The project's signature sidecar could not be opened as one regular file inside the project.")
+			}
+		}
+	}
+	if sidecar && signaturesPath != "" {
+		file, err := fssecure.OpenRegular(signaturesPath)
+		if err != nil {
+			opened.close()
+			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-SIGNATURES-READ", fmt.Sprintf("The signature sidecar %s could not be opened as one regular file.", display.Sanitize(signaturesPath)))
+		}
+		opened.sidecar = file
+	}
+	return opened, nil
 }
 
 // readTrail takes a snapshot of an open trail between writes and verifies it.
 // The second result says whether the snapshot was taken under the lock.
 func (a *App) readTrail(command, format string, file *os.File, options audit.Options) (audit.Report, bool, error) {
-	size, locked, err := fssecure.SizeBetweenWrites(file)
+	return a.readTrailWith(command, format, openedTrail{trail: file}, options)
+}
+
+// readTrailWith is readTrail for a trail and its signature sidecar, whose
+// sizes are read under the one shared lock, so together they fall between two
+// writes: a writer appends to the sidecar under the trail's lock.
+func (a *App) readTrailWith(command, format string, opened openedTrail, options audit.Options) (audit.Report, bool, error) {
+	sizes, locked, err := fssecure.SizesBetweenWrites(opened.trail, opened.sidecar)
 	if err != nil {
 		return audit.Report{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail's size could not be read between writes.")
 	}
-	report, err := audit.Verify(file, size, options)
+	if options.Signatures != nil && opened.sidecar != nil {
+		options.Signatures.Sidecar, options.Signatures.SidecarSize = opened.sidecar, sizes[1]
+	}
+	report, err := audit.Verify(opened.trail, sizes[0], options)
+	if errors.Is(err, audit.ErrSidecarRead) {
+		return audit.Report{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-SIGNATURES-READ", "The signature sidecar could not be read to its end.")
+	}
 	if err != nil {
 		return audit.Report{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail could not be read to its end.")
 	}
@@ -401,14 +531,29 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	case "failed":
 		checkpointed = "failed"
 	}
-	fmt.Fprintf(a.out, "lines: %d before the first chained line (one block), %d chained, %d unchained and committed by a later chained line, %d uncovered, %d damaged; signed: not available (#209); checkpointed: %s\n",
-		coverage.LegacyPrefix, coverage.Chained, coverage.Unchained, coverage.Uncovered, coverage.Damaged, checkpointed)
+	signed := "not checked (no --public-key)"
+	switch coverage.Signed.Status {
+	case "through":
+		signed = fmt.Sprintf("through sequence %d", coverage.Signed.Through)
+	case "none":
+		signed = "none"
+	}
+	fmt.Fprintf(a.out, "lines: %d before the first chained line (one block), %d chained, %d unchained and committed by a later chained line, %d uncovered, %d damaged; signed: %s; checkpointed: %s\n",
+		coverage.LegacyPrefix, coverage.Chained, coverage.Unchained, coverage.Uncovered, coverage.Damaged, signed, checkpointed)
 	fmt.Fprintf(a.out, "records: %d witnessed by a held checkpoint, %d unwitnessed; stamped: not available (#208)\n", coverage.Witnessed, coverage.Unwitnessed)
+	if output.Signatures != nil {
+		fmt.Fprintf(a.out, "records: %d with a valid signature of their own, %d without\n", coverage.SignedRecords, coverage.UnsignedRecords)
+		fmt.Fprintf(a.out, "signature sidecar: %d line(s), %d unreadable, %d rotation(s) followed; first key %s, key in force %s; %d public key(s) and %d revocation(s) supplied\n",
+			output.Signatures.Lines, output.Signatures.Unreadable, output.Signatures.Rotations, output.Signatures.FirstKey, output.Signatures.KeyInForce, output.Signatures.KeysSupplied, output.Signatures.Revocations)
+	}
 	if output.Held != nil {
 		fmt.Fprintf(a.out, "held checkpoints: %d supplied, %d matched, %d failed\n", output.Held.Supplied, output.Held.Matched, output.Held.Failed)
 	}
 	if output.Required != nil {
 		fmt.Fprintf(a.out, "required: every record through sequence %d witnessed: %s\n", output.Required.Through, output.Required.Status)
+	}
+	if output.RequiredSigned != nil {
+		fmt.Fprintf(a.out, "required: every record through sequence %d signed: %s\n", output.RequiredSigned.Through, output.RequiredSigned.Status)
 	}
 	if output.Head != nil {
 		fmt.Fprintf(a.out, "trail %s · last chained record: sequence %d, %s\n", output.Head.Trail, output.Head.Sequence, output.Head.RecordDigest)

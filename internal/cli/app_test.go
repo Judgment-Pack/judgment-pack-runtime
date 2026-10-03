@@ -105,6 +105,10 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"audit", "verify", "--help"}},
 		{args: []string{"audit", "checkpoint", "--help"}},
 		{args: []string{"audit", "repair", "--help"}},
+		{args: []string{"audit", "key", "--help"}},
+		{args: []string{"audit", "key", "generate", "--help"}},
+		{args: []string{"audit", "key", "public", "--help"}},
+		{args: []string{"audit", "key", "rotate", "--help"}},
 	} {
 		code, stdout, stderr := runTest(t, surface.args, "")
 		if code != 0 || stderr != "" {

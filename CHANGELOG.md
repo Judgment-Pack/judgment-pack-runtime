@@ -55,7 +55,7 @@ All notable changes to tagged releases are documented here.
     `discontinuity-malformed`, `discontinuity-mismatch`, and the `checkpoint-*` findings), and 0
     otherwise. Its size is read under the writer's lock, shared, and the bytes before it without the
     lock, so it neither delays a writer nor sees half a write. The report gives the coverage (legacy
-    prefix, chained, unchained, uncovered, damaged; signed: not available, #209; checkpointed) and,
+    prefix, chained, unchained, uncovered, damaged, signed, checkpointed) and,
     in fixed sentences, what the result establishes and what it does not. Without `--expect` it is
     the integrity of one supplied chain, and says that the last line, a suffix rewritten with its
     links recomputed, and a trail cut short are not detected.
@@ -109,6 +109,58 @@ All notable changes to tagged releases are documented here.
   - A held checkpoint shows the records it covers are the ones that existed when it was handed over,
     to anyone who trusts the holder's copy, and nothing about later records, checkpoints the holder
     did not keep, or when.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+- **Opt-in detached signatures, with key rotation** (ADR-0047 §2b; #209).
+  - A project names an Ed25519 seed held outside the project: `"audit": {"dir": "...",
+    "signingKey": "<absolute path>"}` under configVersion `"6"`, or the `JPACK_SIGNING_KEY`
+    environment variable, which names the key instead when set. The variable is process-wide: once
+    inherited, it signs every chained trail the process records for, under any configVersion,
+    including projects that never named a key. `signingKey` under `"5"` or earlier is refused
+    naming `"6"`, and with `"chain": false` it is refused. The seed is 64 hexadecimal characters, the
+    form the gateway's `keygen` writes.
+  - The key is checked as it is opened: its path is walked from the filesystem's root a directory
+    at a time, each held open. It is refused, and signs nothing, when its path is relative or has a
+    symbolic link anywhere in it, when a component changes between its look and its open, when any
+    directory on its path is the project's directory (by device and inode), when it is not one
+    regular file with one name, and when another user owns it or its group or others can read or
+    write it. On Windows, and on any platform without unix ownership and modes, a key's privacy
+    cannot be checked, so every key is refused there and records are unsigned. `packs validate`
+    reports why, as the new `audit-signing-key` check on the configuration, which also fails a key
+    that is not the key in force. No output carries key material: keys are named by `keyId`, the
+    gateway's form.
+  - After each chained record is written and synced, and still under the trail's lock, one line is
+    appended to `signatures.jsonl` beside the trail, in its RFC 8785 canonical form:
+    `{"keyId","kind":"record-signature","record","sequence","sidecarVersion":"1","signature","trail"}`,
+    `record` being the SHA-256 of the record's exact line bytes, signed over
+    `judgment-pack-runtime/record-signature/1:` and the canonical form of
+    `{"record","sequence","trail"}`. The record line is not changed. Discontinuity records are signed
+    like any chained record.
+  - Signing never fails a decision. A signature that cannot be written, a refused key, and a key that
+    is not the key in force all leave the record unsigned: pending, never failed. A sidecar line a
+    failed write left without its newline decides nothing, and the writer ends it with `~` so it
+    stays unreadable.
+  - `jpack audit key generate <seed-file>` writes a new seed its owner alone can read and prints only
+    its public key; `jpack audit key public <seed-file>` prints a key's public key; `jpack audit key
+    rotate --next <seed-file>` appends a `key-rotation` line made with the key in force, naming the
+    next key and the trail's last line. A writer signs only with the key in force, so the old key
+    signs nothing from then on, and a key put in place without a rotation never starts.
+  - `jpack audit verify --public-key <file>` reads the sidecar beside the trail, or `--signatures
+    <file>`, in step with the trail, and checks every line. New findings: `signature-invalid`,
+    `signature-record-mismatch`, `signature-no-record`, `rotation-invalid`, `signature-key-revoked`,
+    `sidecar-out-of-order` and `signature-missing`. The coverage's `signed` is now `not-checked`
+    without a key, and otherwise `through` the highest sequence whose own record carries a valid
+    signature with no failed check of the chain at or before it, or `none`; it gains `signedRecords`
+    and `unsignedRecords`, and the payload gains `signatures` (the sidecar as read) and
+    `requiredSigned`. A record with no signature is unsigned, not a failure;
+    `--require-signed-through <sequence>` fails, `signature-missing`, while the signatures do not
+    reach that sequence. `--public-key` given more than once pins the keys a trail may rotate
+    through, in order, and `--revoked <file>` names keys not to trust from a sequence on: revocation
+    is the verifier's, out of band.
+  - The guide states the sidecar's format and the verification rule in full, with a fixed test
+    vector, for Gateway's `requireSignedRecord` and Runner to verify without reading this code.
+  - A signature establishes nothing against the operator, who holds the key, and nothing after the
+    key is copied or stolen; the report says both in fixed sentences, and the guide says what a
+    holder of a rotated-away key can and cannot do.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02

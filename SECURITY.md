@@ -97,9 +97,8 @@ establish. With `--expect`, a checkpoint `jpack audit checkpoint` printed earlie
 other than the operator kept, it also fails a trail cut short before the checkpoint's record, or one
 with another identity or another record there; the lines after that record stay unauthenticated. A
 checkpoint is only as independent as whoever holds it: one kept by the operator protects nothing
-against the operator. Time-stamped checkpoints are not built yet (#208), and neither are signatures
-(#209). `jpack audit repair` removes and rewrites nothing: after a write that did not complete it
-keeps the damaged bytes in place as a line of their own and appends a discontinuity record naming
+against the operator. Time-stamped checkpoints are not built yet (#208). `jpack audit repair`
+removes and rewrites nothing: after a write that did not complete it keeps the damaged bytes in place as a line of their own and appends a discontinuity record naming
 their digest, and `verify` then reports the trail as segments, never as intact across the break. A
 repair is something an operator can run at will, so a discontinuity says a break was acknowledged,
 not why; a checkpoint covering the lines before it is what shows they were not changed.
@@ -116,6 +115,52 @@ held the old ones. What the operator cannot do is change a holder's copy, and `j
 --expect <held>` fails any rewrite of the records a held checkpoint covers. The protection is
 exactly as good as the holder's independence and retention, and it says nothing about records after
 the last checkpoint the holder kept.
+
+**Signatures** (ADR-0047 §2b) are opt-in. A project names an Ed25519 seed by the audit member's
+`signingKey` or by `JPACK_SIGNING_KEY`, and each chained record is then signed in
+`signatures.jsonl` beside the trail, under the trail's lock and after the record is written; the
+record line is not changed. The key is checked as it is opened, so what is checked is what is read:
+its path is walked from the filesystem's root a directory at a time, each held open, and it is
+refused, and signs nothing, when it is named by a relative path or one with a symbolic link anywhere
+in it, when a component changes between its look and its open, when any directory on its path is
+the project's directory (by device and inode, not by name), when it is not one regular file with
+one name, or when it is owned by another user or readable or writable by its group or by others.
+**On Windows no key signs**: who may read a file there is whatever its ACL allows, this runtime does
+not read ACLs, and so it cannot show a key is its owner's alone; every key is refused there, as on
+any platform without unix ownership and modes. `JPACK_SIGNING_KEY` is process-wide: inherited by a
+process, it signs every chained trail that process records for, under any configVersion, including
+projects that never named a key. A refused key, a key that is not the key in force, and a signature
+that cannot be written all leave the record unsigned rather than the decision failed; `packs
+validate` reports the first two, and `audit verify` counts unsigned records. No output, diagnostic
+or report carries key material: keys are named by `keyId`. `jpack audit verify --public-key` checks
+the signatures against keys the verifier supplies, never against the project's own configuration.
+
+Two limits of that are accepted rather than closed. **The location check does not see mounts.** It
+refuses a key reached through any link, and a key whose path passes through the project's
+directory, but a bind mount, or any other mount, that shows a directory or file from inside the
+project at a path outside it is not seen: a bind of the project's `keys` directory, or of the seed
+file, at an outside path is accepted, while a bind of the whole project is refused. Making such a
+mount takes control of the runtime's mount namespace, so the check guards against a key put in the
+wrong place, not against whoever controls the machine's mounts. **The writer does not authenticate
+rotation lines.** It chooses the key in force by the sidecar's last readable rotation line without
+verifying that line's signature, so a well-formed forged rotation stops the configured key from
+signing (records are written unsigned) while `audit verify` reports it as `rotation-invalid` and
+keeps the old key. It cannot make a record count as signed; it lets whoever can write the sidecar
+stop signing, as deleting the sidecar would, and `--require-signed-through` turns that into a
+failure.
+
+What a signature establishes is narrow. It shows that whoever held the key signed a record with
+those exact bytes at that trail and sequence, and so it protects a trail against someone who can
+edit the files but holds no key. **It establishes nothing against the operator**, who holds the key
+and can sign an altered record or a rewritten trail exactly as the original was signed; only a
+checkpoint held by someone else shows the difference. **It establishes nothing after the key is
+copied or stolen**: whoever holds a copy can sign altered records, or a rotation to a key of their
+own, from any point where that key was in force. A rotation (`jpack audit key rotate`) stops the
+old key signing on this trail, not a copy of it elsewhere; revocation is the verifier's, by
+`--revoked` (a key not trusted from a sequence on) and by giving `--public-key` once per key in the
+order the trail used them, which refuses a rotation to any other key. A trail and its sidecar cut
+short together still verify, so a signature does not show the trail is complete; a held checkpoint
+or `--require-signed-through` does.
 
 The records deliberately contain the facts and evidence documents that were evaluated: they are the
 project's own trail, written where the project asked, and they are not diagnostics. Human

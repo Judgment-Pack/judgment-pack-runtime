@@ -72,7 +72,7 @@ func TestAuditVerifyExitsByTheChain(t *testing.T) {
 	}
 	code, stdout, _ := runTest(t, []string{"audit", "verify", "--config", configPath}, "")
 	if code != 0 || !strings.Contains(stdout, "the integrity of one supplied chain") || !strings.Contains(stdout, "NOT ESTABLISHED: The last line") ||
-		!strings.Contains(stdout, "signed: not available (#209)") {
+		!strings.Contains(stdout, "signed: not checked (no --public-key)") {
 		t.Fatalf("human output: %q", stdout)
 	}
 
