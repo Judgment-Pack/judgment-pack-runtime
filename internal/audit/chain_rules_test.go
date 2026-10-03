@@ -2,12 +2,14 @@ package audit
 
 import (
 	"bytes"
+	"crypto/x509"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp/tsatest"
 )
 
 // What the guide's "Record signatures, exactly" states about the trail's own
@@ -102,6 +104,9 @@ func TestTheSignedCoverageStopsOnlyAtTheChainsChecks(t *testing.T) {
 	}
 	first := chainedAt(1, Digest(nil))
 	three := func(second []byte) [][]byte { return [][]byte{first, second, chainedAt(3, Digest(second))} }
+	// A first record a discontinuity names as damaged, with a sequence and
+	// a previous that would each fail: excused, neither failure is reported.
+	damagedFirst := chainedAt(7, Digest([]byte("x")))
 	other := strings.Repeat("ab", 16)
 	otherTrail := []byte(strings.Replace(string(chainedAt(2, Digest(first))), vectorTrail, other, 1))
 	cases := []struct {
@@ -118,8 +123,9 @@ func TestTheSignedCoverageStopsOnlyAtTheChainsChecks(t *testing.T) {
 		{"a discontinuity-malformed", three(discontinuity(2, Digest(first), 5, first)), []int{1, 2, 3}, []string{"discontinuity-malformed@2"}, 1, 0},
 		{"a discontinuity-mismatch", three(discontinuity(2, Digest(nil), 1, []byte("other"))), []int{2, 3}, []string{"discontinuity-mismatch@2"}, 0, 0},
 		{"a line-too-long", [][]byte{first, bytes.Repeat([]byte("x"), 400), chainedAt(3, Digest([]byte("ignored")))}, []int{1, 3}, []string{"line-too-long@2"}, 1, 300},
-		{"damage a discontinuity names", three(discontinuity(2, Digest(nil), 1, first)), []int{2, 3}, []string{}, 3, 0},
+		{"damage a discontinuity names", three(discontinuity(2, Digest(nil), 1, damagedFirst)), []int{2, 3}, []string{}, 3, 0},
 	}
+	cases[len(cases)-1].lines[0] = damagedFirst
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if c.bound > 0 {
@@ -141,6 +147,20 @@ func TestTheSignedCoverageStopsOnlyAtTheChainsChecks(t *testing.T) {
 	report := verifyWith(t, joinLines(lines), Options{Held: []result.AuditCheckpoint{wrong}, Signatures: &options})
 	if !slices.Equal(findingNames(report.Chain), []string{"checkpoint-record-mismatch@2"}) || report.Chain.Coverage.Signed.Through != 3 {
 		t.Fatalf("a held checkpoint that fails: %v through %d", findingNames(report.Chain), report.Chain.Coverage.Signed.Through)
+	}
+	// A trusted stamp naming a checkpoint at line 2 that the trail does not
+	// hold is a finding of the trail, recorded after the signed coverage is
+	// decided, and is no check of the chain either.
+	tsa := testAuthority(t, tsatest.Options{AccuracySeconds: 1})
+	stamps := stampOf(t, tsa, wrong)
+	pool := x509.NewCertPool()
+	pool.AddCert(tsa.Root)
+	stamped := StampOptions{Stamps: bytes.NewReader(stamps), StampsSize: int64(len(stamps))}
+	stamped.Verify.Roots = pool
+	signed := SignatureOptions{Keys: keys(signer), Sidecar: bytes.NewReader(sidecar), SidecarSize: int64(len(sidecar))}
+	report = verifyWith(t, joinLines(lines), Options{Signatures: &signed, Stamps: &stamped})
+	if !slices.Equal(findingNames(report.Chain), []string{"stamp-checkpoint-mismatch@2"}) || report.Chain.Coverage.Signed.Through != 3 {
+		t.Fatalf("a trusted stamp of a checkpoint the trail does not hold: %v through %d", findingNames(report.Chain), report.Chain.Coverage.Signed.Through)
 	}
 	torn := append(joinLines(lines), []byte(`{"recordVersion"`)...)
 	chain := verifySigned(t, torn, sidecar, SignatureOptions{Keys: keys(signer)})
@@ -174,7 +194,7 @@ func TestASidecarFindingIsPlacedAtItsTrailLine(t *testing.T) {
 		{"rotation-invalid@2", "sidecar line 3 "},
 		{"sidecar-out-of-order@1", "sidecar line 4 "},
 		{"signature-no-record@9", "sidecar line 5 "},
-		{"signature-missing@3", ""},
+		{"signature-missing@3", "no valid signature covers the records up to sequence 3"},
 	}
 	names := findingNames(chain)
 	if len(names) != len(want) {
@@ -183,6 +203,108 @@ func TestASidecarFindingIsPlacedAtItsTrailLine(t *testing.T) {
 	for index, expected := range want {
 		if names[index] != expected.finding || !strings.HasPrefix(chain.Findings[index].Detail, expected.line) {
 			t.Fatalf("finding %d: %s %q, want %s with %q", index, names[index], chain.Findings[index].Detail, expected.finding, expected.line)
+		}
+	}
+	// signature-missing is about a requirement, not a sidecar line: placed at
+	// the sequence required, its detail names that sequence and no sidecar
+	// line, with a sidecar or with none.
+	for _, sidecar := range [][]byte{sidecar, nil} {
+		chain := verifySigned(t, joinLines(lines), sidecar, SignatureOptions{Keys: keys(signer), RequireThrough: 3})
+		missing := chain.Findings[len(chain.Findings)-1]
+		if missing.Name != "signature-missing" || missing.Line != 3 || missing.Detail != "no valid signature covers the records up to sequence 3: they are unsigned" || strings.Contains(missing.Detail, "sidecar line") {
+			t.Fatalf("signature-missing: %+v", missing)
+		}
+	}
+}
+
+// A trail line is the bytes before a newline, and only such lines are read:
+// bytes after the last newline are an incomplete last line, whatever they
+// hold, never a chained record and never a line too long. The bound does not
+// count the newline: a line of exactly the bound and its newline is read, and
+// one byte more is line-too-long. The bound is lowered here, and held at its
+// real value for unterminated bytes one past it.
+func TestOnlyANewlineEndsALineAndTheBoundDoesNotCountIt(t *testing.T) {
+	first := chainedAt(1, Digest(nil))
+	second := chainedAt(2, Digest(first))
+	if chain := verifyBytes(t, append(append(slices.Clone(first), '\n'), second...), nil); !slices.Equal(findingNames(chain), []string{"incomplete-last-line@2"}) || chain.Coverage.Chained != 1 {
+		t.Fatalf("a chained record without its newline: %v %+v", findingNames(chain), chain.Coverage)
+	}
+	const bound = 300
+	padded := func(length int) []byte {
+		return slices.Concat([]byte("{"), bytes.Repeat([]byte(" "), length-len(first)), first[1:])
+	}
+	t.Run("lowered bound", func(t *testing.T) {
+		lowerLineBound(t, bound)
+		if chain := verifyBytes(t, joinLines([][]byte{padded(bound)}), nil); len(chain.Findings) != 0 || chain.Coverage.Chained != 1 {
+			t.Fatalf("a line of exactly the bound and its newline is read: %v %+v", findingNames(chain), chain.Coverage)
+		}
+		if chain := verifyBytes(t, joinLines([][]byte{padded(bound + 1)}), nil); !slices.Equal(findingNames(chain), []string{"line-too-long@1"}) {
+			t.Fatalf("one byte more: %v", findingNames(chain))
+		}
+		if chain := verifyBytes(t, padded(bound+1), nil); !slices.Equal(findingNames(chain), []string{"incomplete-last-line@1"}) {
+			t.Fatalf("one byte more and no newline: %v", findingNames(chain))
+		}
+	})
+	over := repeated{fill: 'x', count: maxLineBytes + 1}
+	report, err := Verify(over, over.size(), Options{})
+	if err != nil || !slices.Equal(findingNames(report.Chain), []string{"incomplete-last-line@1"}) {
+		t.Fatalf("unterminated bytes one past the real bound: %v %v", findingNames(report.Chain), err)
+	}
+}
+
+// A discontinuity record is well formed in one shape: its discontinuity
+// member exactly reason, line, bytes and digest, of their forms, naming the
+// line before it, a line no longer than the bound, with a stated length no
+// longer than the bound. A well-formed one excuses the line it names, even
+// when its length or digest then does not match, which is its own finding.
+// One that is not well formed excuses nothing.
+func TestADiscontinuityIsWellFormedInOneShape(t *testing.T) {
+	damaged := chainedAt(7, Digest([]byte("x")))
+	repair := func(names, length int64, digest string) []byte {
+		line, err := encodeJSONLine(discontinuityRecord{
+			RecordVersion: RecordVersion, Trail: vectorTrail, Sequence: 2, Previous: Digest(nil),
+			Run: "repair0000000000", At: "2026-10-03T00:00:00Z", Kind: KindDiscontinuity, Surface: "audit repair",
+			Tool:          Tool{Name: "jpack", Version: "test"},
+			Discontinuity: discontinuity{Reason: ReasonIncompleteLastLine, Line: names, Bytes: length, Digest: digest},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bytes.TrimSuffix(line, []byte("\n"))
+	}
+	verify := func(second []byte) result.AuditChain {
+		return verifyBytes(t, joinLines([][]byte{damaged, second, chainedAt(3, Digest(second))}), nil)
+	}
+	good := repair(1, int64(len(damaged)), Digest(damaged))
+	if chain := verify(good); len(chain.Findings) != 0 || chain.Status != "segmented" || chain.Coverage.Damaged != 1 {
+		t.Fatalf("a well-formed discontinuity excuses the line it names: %v %s %+v", findingNames(chain), chain.Status, chain.Coverage)
+	}
+	for name, second := range map[string][]byte{
+		"another digest": repair(1, int64(len(damaged)), Digest([]byte("other"))),
+		"another length": repair(1, int64(len(damaged))+1, Digest(damaged)),
+	} {
+		if chain := verify(second); !slices.Equal(findingNames(chain), []string{"discontinuity-mismatch@2"}) || chain.Coverage.Damaged != 1 {
+			t.Fatalf("%s: the line is excused and the mismatch is the discontinuity's own: %v", name, findingNames(chain))
+		}
+	}
+	text := string(good)
+	for name, second := range map[string]string{
+		"a fifth member":                strings.Replace(text, `"digest":`, `"extra":1,"digest":`, 1),
+		"a member given twice":          strings.Replace(text, `"digest":`, `"line":1,"digest":`, 1),
+		"bytes written as 1.0":          strings.Replace(text, fmt.Sprintf(`"bytes":%d`, len(damaged)), fmt.Sprintf(`"bytes":%d.0`, len(damaged)), 1),
+		"another reason":                strings.Replace(text, `"reason":"incomplete-last-line"`, `"reason":"other"`, 1),
+		"naming another line":           string(repair(5, int64(len(damaged)), Digest(damaged))),
+		"a digest in upper case":        strings.Replace(text, Digest(damaged), strings.ToUpper(Digest(damaged)), 1),
+		"a length over the bound":       string(repair(1, maxLineBytes+1, Digest(damaged))),
+		"a discontinuity not an object": text[:strings.Index(text, `"discontinuity":{`)] + `"discontinuity":"none"}`,
+	} {
+		if second == text {
+			t.Fatalf("%s: the edit did not apply", name)
+		}
+		chain := verify([]byte(second))
+		names := findingNames(chain)
+		if !slices.Contains(names, "discontinuity-malformed@2") || !slices.Contains(names, "sequence-mismatch@1") || chain.Coverage.Damaged != 0 {
+			t.Fatalf("%s: malformed, and the line it names is not excused: %v", name, names)
 		}
 	}
 }
