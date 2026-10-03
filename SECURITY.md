@@ -104,6 +104,19 @@ their digest, and `verify` then reports the trail as segments, never as intact a
 repair is something an operator can run at will, so a discontinuity says a break was acknowledged,
 not why; a checkpoint covering the lines before it is what shows they were not changed.
 
+`jpack audit checkpoint --since <sequence>` lists every new checkpoint for a deliverer to hand to a
+holder outside the operator's control. The runtime keeps no record of what was handed over, because
+any record it kept would be the operator's to rewrite, and recording a decision never waits for a
+hand-over: a record is appended first and reported as unwitnessed until a held checkpoint covers it.
+What the runtime guarantees is narrower than "a handed-over checkpoint cannot be undone": a
+checkpoint is a function of its record's bytes, so the same record always gives the same checkpoint,
+and a different checkpoint for one trail and sequence exists only if the trail was rewritten.
+Nothing stops an operator from rewriting the trail and issuing new checkpoints to someone who never
+held the old ones. What the operator cannot do is change a holder's copy, and `jpack audit verify
+--expect <held>` fails any rewrite of the records a held checkpoint covers. The protection is
+exactly as good as the holder's independence and retention, and it says nothing about records after
+the last checkpoint the holder kept.
+
 The records deliberately contain the facts and evidence documents that were evaluated: they are the
 project's own trail, written where the project asked, and they are not diagnostics. Human
 diagnostics remain sanitized and value-free, and a failed append is reported as an input/output

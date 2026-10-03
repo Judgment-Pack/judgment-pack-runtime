@@ -95,7 +95,7 @@ func TestARepairDoesNotRepairARepair(t *testing.T) {
 	edited := append([][]byte{}, lines...)
 	edited[0] = bytes.Replace(edited[0], []byte(`"a":1`), []byte(`"a":9`), 1)
 	chain := verifyBytes(t, joinLines(edited), checkpoint)
-	if chain.Status != "invalid" || chain.Expect.Status != "failed" || chain.Coverage.Checkpointed.Status != "failed" ||
+	if chain.Status != "invalid" || chain.Held.Status != "failed" || chain.Coverage.Checkpointed.Status != "failed" ||
 		strings.Join(findingNames(chain), " ") != "previous-mismatch@3 discontinuity-malformed@4 previous-mismatch@4" {
 		t.Fatalf("an edit to A behind a damaged discontinuity is found: %v %+v", findingNames(chain), chain.Coverage.Checkpointed)
 	}
@@ -109,7 +109,7 @@ func TestARepairDoesNotRepairARepair(t *testing.T) {
 	edited[0] = bytes.Replace(edited[0], []byte(`"a":1`), []byte(`"a":9`), 1)
 	deep := splitLines(thrice)
 	deepPoint := &result.AuditCheckpoint{CheckpointVersion: "1", Trail: checkpoint.Trail, Sequence: int64(len(deep)), RecordDigest: Digest(deep[len(deep)-1])}
-	if chain := verifyBytes(t, joinLines(edited), deepPoint); chain.Expect.Status != "failed" || !hasFinding(chain, FindingPreviousMismatch) {
+	if chain := verifyBytes(t, joinLines(edited), deepPoint); chain.Held.Status != "failed" || !hasFinding(chain, FindingPreviousMismatch) {
 		t.Fatalf("three levels, A edited: %v", findingNames(chain))
 	}
 
@@ -187,25 +187,29 @@ func TestALineOverTheBoundIsRefusedEvenWhenNamedDamaged(t *testing.T) {
 	over := maxLineBytes + 1
 	overDigest := digestOfFill('x', over)
 	alone := repeated{fill: 'x', count: over, tail: []byte("\n")}
-	chain, err := Verify(alone, alone.size(), nil)
+	report, err := Verify(alone, alone.size(), Options{})
+	chain := report.Chain
 	if err != nil || strings.Join(findingNames(chain), " ") != "line-too-long@1" {
 		t.Fatalf("alone: %v %v", findingNames(chain), err)
 	}
 	named := repeated{fill: 'x', count: over, tail: append([]byte("\n"), discontinuityNaming(t, over, overDigest)...)}
-	chain, err = Verify(named, named.size(), nil)
+	report, err = Verify(named, named.size(), Options{})
+	chain = report.Chain
 	if err != nil || chain.Status != "invalid" || strings.Join(findingNames(chain), " ") != "line-too-long@1 discontinuity-malformed@2" || chain.DiscontinuitiesTotal != 0 {
 		t.Fatalf("named damaged: %v %v", findingNames(chain), err)
 	}
 	// Naming it with a short length is no way round: the line itself is over
 	// the bound, whatever the discontinuity claims.
 	short := repeated{fill: 'x', count: over, tail: append([]byte("\n"), discontinuityNaming(t, 5, Digest([]byte("short")))...)}
-	chain, err = Verify(short, short.size(), nil)
+	report, err = Verify(short, short.size(), Options{})
+	chain = report.Chain
 	if err != nil || strings.Join(findingNames(chain), " ") != "line-too-long@1 discontinuity-malformed@2" {
 		t.Fatalf("named damaged with a short length: %v %v", findingNames(chain), err)
 	}
 	at := maxLineBytes
 	atBound := repeated{fill: 'x', count: at, tail: append([]byte("\n"), discontinuityNaming(t, at, digestOfFill('x', at))...)}
-	chain, err = Verify(atBound, atBound.size(), nil)
+	report, err = Verify(atBound, atBound.size(), Options{})
+	chain = report.Chain
 	if err != nil || chain.Status != "segmented" || chain.FindingsTotal != 0 {
 		t.Fatalf("at the bound: %v %v", findingNames(chain), err)
 	}

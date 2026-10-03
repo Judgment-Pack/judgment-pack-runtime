@@ -39,7 +39,8 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 	format := "human"
 	trailPath := ""
 	configPath := ""
-	expectPath := ""
+	expectPaths := []string{}
+	requireThrough := int64(0)
 	command := &cobra.Command{
 		Use:   "verify",
 		Short: "Check a chained audit trail, alone or against a checkpoint",
@@ -49,7 +50,9 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			"The size is read under the writer's lock, shared, so it falls between two writes, and the bytes before it are read without the lock: writers only append, so they are not delayed and nothing read changes underneath. " +
 			"The report gives the coverage: lines before the first chained line (committed as one block), chained lines, unchained lines a later chained line commits to, lines nothing commits to, and lines a repair names as damaged; signatures are not available yet (#209). " +
 			"Without --expect this is the integrity of one supplied chain: the lines are consistent with one another, which does not show the trail is complete, or that its last line, or lines rewritten from some point on with their links recomputed, are the ones first written. " +
-			"With --expect <checkpoint>, a checkpoint held independently of the operator (jpack audit checkpoint prints one), the line at its sequence must be a chained record of its trail with its record digest: a trail that is shorter, has another identity, or has another record there fails. " +
+			"With --expect <file>, the checkpoints a holder kept independently of the operator (jpack audit checkpoint prints them; a file may hold many, one per line, and --expect may be given more than once), the line at each one's sequence must be a chained record of its trail with its record digest: a trail that is shorter, has another identity, or has another record there fails. " +
+			"The records up to the highest checkpoint that matched, with no failed check at or before it, are witnessed; the chained records after it are unwitnessed, and --require-checkpoint-through <sequence> fails the verification while the records up to that sequence are not all witnessed. " +
+			"Time stamps from an RFC 3161 authority are not available yet. " +
 			"A trail a repair has segmented is reported segment by segment, and never as intact across a discontinuity. " +
 			"Exit 0 when every check passed, segmented or not, and 1 when any failed; each failed check is a named finding.",
 		Args: cobra.NoArgs,
@@ -57,23 +60,27 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			if err := validateFormat(format); err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
 			}
-			var expect *result.AuditCheckpoint
-			if expectPath != "" {
-				checkpoint, failure := a.readCheckpoint(commandName, format, expectPath)
+			if requireThrough < 0 {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-REQUIRE", "--require-checkpoint-through must be a sequence from 1.")
+			}
+			held := []result.AuditCheckpoint{}
+			for _, expectPath := range expectPaths {
+				checkpoints, failure := a.readCheckpoints(commandName, format, expectPath)
 				if failure != nil {
 					return failure
 				}
-				expect = &checkpoint
+				held = append(held, checkpoints...)
 			}
 			file, shownPath, failure := a.openTrail(commandName, format, trailPath, configPath)
 			if failure != nil {
 				return failure
 			}
 			defer file.Close()
-			chain, locked, failure := a.readTrail(commandName, format, file, expect)
+			report, locked, failure := a.readTrail(commandName, format, file, audit.Options{Held: held, RequireThrough: requireThrough})
 			if failure != nil {
 				return failure
 			}
+			chain := report.Chain
 			output := result.AuditVerification{
 				OutputVersion:         result.OutputVersion,
 				Tool:                  result.CurrentTool(),
@@ -94,7 +101,8 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&trailPath, "trail", trailPath, "the trail file to read; without it, the project's own")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
-	command.Flags().StringVar(&expectPath, "expect", expectPath, "a checkpoint document, held independently, to hold the trail to")
+	command.Flags().StringArrayVar(&expectPaths, "expect", expectPaths, "a file of checkpoints a holder kept, one per line, to hold the trail to (repeatable)")
+	command.Flags().Int64Var(&requireThrough, "require-checkpoint-through", requireThrough, "fail unless the held checkpoints cover every record up to this sequence")
 	return command
 }
 
@@ -103,6 +111,8 @@ func (a *App) auditCheckpointCommand() *cobra.Command {
 	format := "human"
 	trailPath := ""
 	configPath := ""
+	since := int64(0)
+	limit := 1000
 	command := &cobra.Command{
 		Use:   "checkpoint",
 		Short: "Print the checkpoint of an audit trail's last chained record",
@@ -110,21 +120,32 @@ func (a *App) auditCheckpointCommand() *cobra.Command {
 			"Human output is the checkpoint document alone, one line in its RFC 8785 canonical form, so it can be saved and handed to whoever will hold it; jpack audit verify --expect reads it back. " +
 			"A checkpoint protects only what it covers and only as well as its holder keeps it: given to someone the operator does not control, it later shows whether the trail up to that record is the one that existed when it was made. " +
 			"The trail is read and verified first, and a trail that fails a check is refused rather than given a checkpoint. " +
-			"Lines after the last chained record are not covered, and a note on standard error says how many.",
+			"Lines after the last chained record are not covered, and a note on standard error says how many. " +
+			"With --since <sequence> it prints instead the checkpoint of every chained record after that sequence, one line each, in sequence order and at most --limit of them, for a deliverer that hands each new checkpoint to a holder: it asks again after the last sequence it received, and nothing a decision does waits for it. " +
+			"The runtime keeps no record of what was handed over, since a record the operator keeps is one the operator can rewrite: the holder's copy is what counts. " +
+			"A checkpoint is a function of its record's bytes, so the same record always gives the same line and handing it over again is idempotent by that line's digest; a holder given two checkpoints for one trail and sequence that differ holds proof that the trail was rewritten.",
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(command *cobra.Command, _ []string) error {
 			if err := validateFormat(format); err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			listing := command.Flags().Changed("since")
+			if !listing && command.Flags().Changed("limit") {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-SINCE", "--limit applies only with --since.")
+			}
+			if since < 0 || limit < 1 || limit > maxCheckpointsListed {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-SINCE", fmt.Sprintf("--since must be a sequence from 0, and --limit a count from 1 to %d.", maxCheckpointsListed))
 			}
 			file, shownPath, failure := a.openTrail(commandName, format, trailPath, configPath)
 			if failure != nil {
 				return failure
 			}
 			defer file.Close()
-			chain, _, failure := a.readTrail(commandName, format, file, nil)
+			report, _, failure := a.readTrail(commandName, format, file, audit.Options{List: listing, ListAfter: since, ListLimit: limit})
 			if failure != nil {
 				return failure
 			}
+			chain := report.Chain
 			if chain.Status == "invalid" {
 				first := chain.Findings[0]
 				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-CHECKPOINT-REFUSED",
@@ -132,6 +153,18 @@ func (a *App) auditCheckpointCommand() *cobra.Command {
 			}
 			if chain.Head == nil {
 				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-CHECKPOINT-NONE", "The trail has no chained record to checkpoint.")
+			}
+			if listing {
+				return a.renderCheckpointList(format, result.AuditCheckpointList{
+					OutputVersion: result.OutputVersion,
+					Tool:          result.CurrentTool(),
+					Command:       commandName,
+					Status:        "listed",
+					TrailPath:     shownPath,
+					After:         since,
+					Checkpoints:   append([]result.AuditCheckpoint{}, report.Listed...),
+					More:          report.More,
+				})
 			}
 			output := result.AuditCheckpointReport{
 				OutputVersion:  result.OutputVersion,
@@ -157,10 +190,39 @@ func (a *App) auditCheckpointCommand() *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&format, "format", format, "output format: human (the checkpoint document) or json")
+	command.Flags().StringVar(&format, "format", format, "output format: human (the checkpoint documents) or json")
 	command.Flags().StringVar(&trailPath, "trail", trailPath, "the trail file to read; without it, the project's own")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().Int64Var(&since, "since", since, "print the checkpoint of every chained record after this sequence")
+	command.Flags().IntVar(&limit, "limit", limit, "with --since, print at most this many")
 	return command
+}
+
+// maxCheckpointsListed bounds one page of audit checkpoint --since.
+const maxCheckpointsListed = 100000
+
+// renderCheckpointList prints the checkpoints audit checkpoint --since
+// listed: the canonical documents, one line each, or the JSON payload.
+func (a *App) renderCheckpointList(format string, output result.AuditCheckpointList) error {
+	if format == "json" {
+		if err := a.writeJSON(output); err != nil {
+			return &handledExit{code: result.ExitIO}
+		}
+		return nil
+	}
+	for _, checkpoint := range output.Checkpoints {
+		if _, err := a.out.Write(audit.EncodeCheckpoint(checkpoint)); err != nil {
+			return &handledExit{code: result.ExitIO}
+		}
+	}
+	if output.More {
+		last := output.After
+		if count := len(output.Checkpoints); count > 0 {
+			last = output.Checkpoints[count-1].Sequence
+		}
+		fmt.Fprintf(a.errOut, "note: more chained records follow; ask again with --since %d\n", last)
+	}
+	return nil
 }
 
 func (a *App) auditRepairCommand() *cobra.Command {
@@ -275,38 +337,41 @@ func (a *App) openTrail(command, format, trailPath, configPath string) (*os.File
 
 // readTrail takes a snapshot of an open trail between writes and verifies it.
 // The second result says whether the snapshot was taken under the lock.
-func (a *App) readTrail(command, format string, file *os.File, expect *result.AuditCheckpoint) (result.AuditChain, bool, error) {
+func (a *App) readTrail(command, format string, file *os.File, options audit.Options) (audit.Report, bool, error) {
 	size, locked, err := fssecure.SizeBetweenWrites(file)
 	if err != nil {
-		return result.AuditChain{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail's size could not be read between writes.")
+		return audit.Report{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail's size could not be read between writes.")
 	}
-	chain, err := audit.Verify(file, size, expect)
+	report, err := audit.Verify(file, size, options)
 	if err != nil {
-		return result.AuditChain{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail could not be read to its end.")
+		return audit.Report{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail could not be read to its end.")
 	}
-	return chain, locked, nil
+	return report, locked, nil
 }
 
-// readCheckpoint reads and parses the checkpoint document --expect names.
-func (a *App) readCheckpoint(command, format, expectPath string) (result.AuditCheckpoint, error) {
+// readCheckpoints reads and parses one file of held checkpoints --expect
+// names: one or more checkpoint documents, one per line.
+func (a *App) readCheckpoints(command, format, expectPath string) ([]result.AuditCheckpoint, error) {
 	if strings.Contains(expectPath, "://") || fssecure.IsRemotePath(expectPath) {
-		return result.AuditCheckpoint{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
+		return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 	}
-	data, err := a.readPack(expectPath, audit.MaxCheckpointBytes)
+	data, err := a.readPack(expectPath, audit.MaxHeldBytes)
 	if errors.Is(err, fssecure.ErrTooLarge) {
-		return result.AuditCheckpoint{}, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-CHECKPOINT-INVALID", fmt.Sprintf("The checkpoint exceeds %d bytes.", audit.MaxCheckpointBytes))
+		return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-CHECKPOINT-INVALID", fmt.Sprintf("The checkpoints exceed %d bytes.", audit.MaxHeldBytes))
 	}
 	if err != nil {
-		return result.AuditCheckpoint{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-CHECKPOINT-READ", "The checkpoint could not be read as one bounded regular file or standard input stream.")
+		return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-CHECKPOINT-READ", "The checkpoints could not be read as one bounded regular file or standard input stream.")
 	}
-	checkpoint, err := audit.ParseCheckpoint(data)
+	checkpoints, err := audit.ParseCheckpoints(data)
 	if errors.Is(err, audit.ErrCheckpointVersion) {
-		return result.AuditCheckpoint{}, a.operational(command, format, result.ExitUnsupported, "JPS-AUDIT-CHECKPOINT-VERSION", "The checkpoint's checkpointVersion is not one this runtime reads. It reads: "+result.CheckpointVersion+".")
+		// The parser's error names the line; it is kept, so a holder's file
+		// of many checkpoints says which one is of another version.
+		return nil, a.operational(command, format, result.ExitUnsupported, "JPS-AUDIT-CHECKPOINT-VERSION", "The checkpoints could not be read: "+err.Error()+". It reads: "+result.CheckpointVersion+".")
 	}
 	if err != nil {
-		return result.AuditCheckpoint{}, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-CHECKPOINT-INVALID", err.Error())
+		return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-CHECKPOINT-INVALID", err.Error())
 	}
-	return checkpoint, nil
+	return checkpoints, nil
 }
 
 // renderAuditVerification reports one verification: a status line, the
@@ -318,8 +383,8 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	}
 	switch output.Status {
 	case "valid":
-		if output.Scope == audit.ScopeCheckpoint {
-			fmt.Fprintf(a.out, "consistent, and through the checkpoint at sequence %d: %d line(s)\n", output.Expect.Checkpoint.Sequence, output.Lines)
+		if output.Held != nil && output.Held.Latest != nil {
+			fmt.Fprintf(a.out, "consistent, and witnessed through the held checkpoint at sequence %d: %d line(s)\n", output.Held.Latest.Sequence, output.Lines)
 		} else {
 			fmt.Fprintf(a.out, "consistent: the integrity of one supplied chain, %d line(s)\n", output.Lines)
 		}
@@ -338,6 +403,13 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	}
 	fmt.Fprintf(a.out, "lines: %d before the first chained line (one block), %d chained, %d unchained and committed by a later chained line, %d uncovered, %d damaged; signed: not available (#209); checkpointed: %s\n",
 		coverage.LegacyPrefix, coverage.Chained, coverage.Unchained, coverage.Uncovered, coverage.Damaged, checkpointed)
+	fmt.Fprintf(a.out, "records: %d witnessed by a held checkpoint, %d unwitnessed; stamped: not available (#208)\n", coverage.Witnessed, coverage.Unwitnessed)
+	if output.Held != nil {
+		fmt.Fprintf(a.out, "held checkpoints: %d supplied, %d matched, %d failed\n", output.Held.Supplied, output.Held.Matched, output.Held.Failed)
+	}
+	if output.Required != nil {
+		fmt.Fprintf(a.out, "required: every record through sequence %d witnessed: %s\n", output.Required.Through, output.Required.Status)
+	}
 	if output.Head != nil {
 		fmt.Fprintf(a.out, "trail %s · last chained record: sequence %d, %s\n", output.Head.Trail, output.Head.Sequence, output.Head.RecordDigest)
 	}

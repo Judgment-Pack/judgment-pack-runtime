@@ -52,7 +52,7 @@ All notable changes to tagged releases are documented here.
     every `trail`, `sequence` and `previous` from the first chained record on, by the writer's own
     rules. It exits 1 on any failed check, each a named finding (`previous-mismatch`,
     `sequence-mismatch`, `trail-mismatch`, `incomplete-last-line`, `line-too-long`,
-    `discontinuity-malformed`, `discontinuity-mismatch`, and four `checkpoint-*` findings), and 0
+    `discontinuity-malformed`, `discontinuity-mismatch`, and the `checkpoint-*` findings), and 0
     otherwise. Its size is read under the writer's lock, shared, and the bytes before it without the
     lock, so it neither delays a writer nor sees half a write. The report gives the coverage (legacy
     prefix, chained, unchained, uncovered, damaged; signed: not available, #209; checkpointed) and,
@@ -85,6 +85,30 @@ All notable changes to tagged releases are documented here.
     neither mistakes one for a decision.
   - No MCP tool: a verification an agent runs on its own server's trail shows nothing to someone who
     does not trust that server's operator, and repair writes.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+- **Handing checkpoints to a holder, and requiring their coverage** (ADR-0047 §2a, C4; #208, part
+  1).
+  - `jpack audit checkpoint --since <sequence>` prints the checkpoint of every chained record after
+    that sequence, one canonical line each, in sequence order, at most `--limit` (default 1000) of
+    them; `--format json` lists them with `"more"`. A deliverer (Desk, a job, a hook) polls with the
+    last sequence it handed over and gives each checkpoint to a holder the operator does not control.
+    Nothing is written for it: recording a decision never waits for or depends on a hand-over, and
+    the audit directory still holds only the trail. A checkpoint is a function of its record's
+    bytes, so a retry hands over the same line. The runtime keeps no record of what was handed over,
+    since the operator could rewrite one: the holder's copy is what counts.
+  - `jpack audit verify --expect <file>` now takes a file of checkpoints, one per line, and may be
+    given more than once. Every held checkpoint must match. The records up to the highest one that
+    matched, with no failed check at or before it, are reported as witnessed, and the chained records
+    after it as unwitnessed. `--require-checkpoint-through <sequence>` fails
+    (`checkpoint-coverage-missing`, exit 1) while any record up to that sequence is unwitnessed.
+  - The verification payload's `expect` member is replaced by `held` (`supplied`, `matched`,
+    `failed`, `latest`, `status`) and `required`, and the coverage gains `witnessed`,
+    `unwitnessed` and `stamped` (`not-available`: RFC 3161 time stamps, and the lag between a
+    record's `at` and the first stamp covering it, are #208's second part). The `audit` commands
+    have not been released, so nothing released changes.
+  - A held checkpoint shows the records it covers are the ones that existed when it was handed over,
+    to anyone who trusts the holder's copy, and nothing about later records, checkpoints the holder
+    did not keep, or when.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02

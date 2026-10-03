@@ -69,3 +69,33 @@ func EncodeCheckpoint(checkpoint result.AuditCheckpoint) []byte {
 	encoded, _ := json.Marshal(checkpoint)
 	return append(encoded, '\n')
 }
+
+// MaxHeldBytes bounds a document of held checkpoints: at about two hundred
+// bytes a line, some eighty thousand of them.
+const MaxHeldBytes = 16 << 20
+
+// ParseCheckpoints reads a document of one or more checkpoints, one per line,
+// as a holder keeps the ones handed to it: the lines audit checkpoint prints,
+// appended to one file. Blank lines are passed over; every other line is held
+// to ParseCheckpoint's shape, and the first that is not refuses the document,
+// naming its line. A document with no checkpoint is refused.
+func ParseCheckpoints(document []byte) ([]result.AuditCheckpoint, error) {
+	if len(document) > MaxHeldBytes {
+		return nil, fmt.Errorf("the checkpoints exceed %d bytes", MaxHeldBytes)
+	}
+	checkpoints := []result.AuditCheckpoint{}
+	for number, line := range bytes.Split(document, []byte("\n")) {
+		if len(bytes.Trim(line, " \t\r")) == 0 {
+			continue
+		}
+		checkpoint, err := ParseCheckpoint(line)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %w", number+1, err)
+		}
+		checkpoints = append(checkpoints, checkpoint)
+	}
+	if len(checkpoints) == 0 {
+		return nil, errors.New("the document holds no checkpoint")
+	}
+	return checkpoints, nil
+}

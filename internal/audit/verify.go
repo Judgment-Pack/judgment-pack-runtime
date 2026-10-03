@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"sort"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -50,6 +51,10 @@ const (
 	// FindingCheckpointRecordMismatch is a checkpoint whose record digest is
 	// not the digest of the line at its sequence: another record is there.
 	FindingCheckpointRecordMismatch = "checkpoint-record-mismatch"
+	// FindingCheckpointCoverageMissing is a coverage the verification was told
+	// to require and the held checkpoints do not give: records up to the
+	// required sequence that no held checkpoint covers are unwitnessed.
+	FindingCheckpointCoverageMissing = "checkpoint-coverage-missing"
 )
 
 // The scopes a verification reports, which say what was checked.
@@ -58,7 +63,8 @@ const (
 	// integrity of one supplied chain, and nothing about whether it is the
 	// project's whole or authentic trail.
 	ScopeOneSuppliedChain = "one-supplied-chain"
-	// ScopeCheckpoint is a verification held to a checkpoint supplied with it.
+	// ScopeCheckpoint is a verification held to one or more checkpoints a
+	// holder kept and supplied with it.
 	ScopeCheckpoint = "checkpoint"
 )
 
@@ -79,6 +85,8 @@ const (
 	notTime                = "That any record's at is true: it is the operator's clock."
 	notSigned              = "Who wrote any record: signatures are not available yet (runtime #209)."
 	notSegmented           = "That the history is intact across a discontinuity: a repair keeps the damaged line in place and links over it, so what the damaged line held is not part of any segment."
+	notHeldAll             = "That the holder kept every checkpoint handed to it, or that none later than those supplied exists: the coverage reaches only the checkpoints supplied here."
+	notStamped             = "When any checkpoint was made: time stamps from an RFC 3161 authority are not available yet (runtime #208)."
 )
 
 // Verify reads a trail of size bytes, line by line and over its exact bytes,
@@ -97,26 +105,50 @@ const (
 // the record states and is otherwise not read, and the report's segments are
 // split there.
 //
-// With expect, the trail is also held to a checkpoint: the line at its
-// sequence must be a chained record of its trail whose exact bytes have its
-// digest. A trail shorter than that sequence fails, as does one with another
-// identity or another record there.
+// With held checkpoints the trail is also held to each of them: the line at
+// a checkpoint's sequence must be a chained record of its trail whose exact
+// bytes have its digest. A trail shorter than that sequence fails, as does one
+// with another identity or another record there. The records the highest
+// matching checkpoint covers, with no failed check up to it, are witnessed,
+// and the chained records after it are unwitnessed.
 //
 // The error is for a trail that could not be read; every check the trail
 // fails is a finding in the report.
-func Verify(contents io.ReaderAt, size int64, expect *result.AuditCheckpoint) (result.AuditChain, error) {
-	v := newVerifier(expect)
+func Verify(contents io.ReaderAt, size int64, options Options) (Report, error) {
+	v := newVerifier(options)
 	reader := bufio.NewReaderSize(io.NewSectionReader(contents, 0, size), readChunk)
 	for {
 		ended, err := v.readLine(reader)
 		if err != nil {
-			return result.AuditChain{}, err
+			return Report{}, err
 		}
 		if ended {
 			break
 		}
 	}
-	return v.report(size), nil
+	return Report{Chain: v.report(size), Listed: v.listed, More: v.more}, nil
+}
+
+// Options says what Verify holds a trail to and what it lists.
+type Options struct {
+	// Held is the checkpoints a holder kept. Every one must match the trail.
+	Held []result.AuditCheckpoint
+	// RequireThrough, when above zero, fails the verification unless a held
+	// checkpoint covers every record up to that sequence.
+	RequireThrough int64
+	// List asks for the checkpoints of the chained records after ListAfter,
+	// in sequence order, at most ListLimit of them.
+	List      bool
+	ListAfter int64
+	ListLimit int
+}
+
+// Report is what Verify found: the chain, and the checkpoints it listed, with
+// whether more chained records followed the last one listed.
+type Report struct {
+	Chain  result.AuditChain
+	Listed []result.AuditCheckpoint
+	More   bool
 }
 
 // seenLine is what the verifier keeps of one line: enough to link the next
@@ -153,15 +185,21 @@ const (
 )
 
 type verifier struct {
-	expect *result.AuditCheckpoint
-	whole  hash.Hash
+	options Options
+	whole   hash.Hash
 
 	lines     int64
 	previous  *seenLine // the line before the one being read
 	lastTrail string    // the identity of the last chained line read
 
-	checkpointed *seenLine
-	head         *seenLine
+	// heldLines is the line at each held checkpoint's sequence, as read, and
+	// chainedAt the chained records up to and including each such line.
+	heldLines map[int64]*seenLine
+	chainedAt map[int64]int64
+	head      *seenLine
+
+	listed []result.AuditCheckpoint
+	more   bool
 
 	pendingUnchained int64
 	firstChained     bool
@@ -182,8 +220,13 @@ type verifier struct {
 	earliestFinding int64
 }
 
-func newVerifier(expect *result.AuditCheckpoint) *verifier {
-	return &verifier{expect: expect, whole: sha256.New(), segmentStart: 1}
+func newVerifier(options Options) *verifier {
+	v := &verifier{options: options, whole: sha256.New(), segmentStart: 1,
+		heldLines: map[int64]*seenLine{}, chainedAt: map[int64]int64{}}
+	for _, held := range options.Held {
+		v.heldLines[held.Sequence] = nil
+	}
+	return v
 }
 
 // maxListed bounds the discontinuities and the segments a report lists, as
@@ -248,8 +291,8 @@ func (v *verifier) readLine(reader *bufio.Reader) (bool, error) {
 	v.check(seen, line)
 	v.commit()
 	v.previous = seen
-	if v.expect != nil && seen.number == v.expect.Sequence {
-		v.checkpointed = seen
+	if _, wanted := v.heldLines[seen.number]; wanted {
+		v.heldLines[seen.number] = seen
 	}
 	return false, nil
 }
@@ -452,6 +495,26 @@ func (v *verifier) commit() {
 	}
 	v.pendingUnchained = 0
 	v.head = settled
+	if _, wanted := v.heldLines[settled.number]; wanted {
+		v.chainedAt[settled.number] = v.coverage.Chained
+	}
+	if v.options.List && settled.number > v.options.ListAfter {
+		if len(v.listed) < v.options.ListLimit {
+			v.listed = append(v.listed, checkpointOf(settled))
+		} else {
+			v.more = true
+		}
+	}
+}
+
+// checkpointOf is the checkpoint of a chained line.
+func checkpointOf(line *seenLine) result.AuditCheckpoint {
+	return result.AuditCheckpoint{
+		CheckpointVersion: result.CheckpointVersion,
+		RecordDigest:      line.digest,
+		Sequence:          line.number,
+		Trail:             line.link.trail,
+	}
 }
 
 func (v *verifier) record(finding result.AuditFinding) {
@@ -476,14 +539,12 @@ func (v *verifier) report(size int64) result.AuditChain {
 	chain.Coverage.Uncovered = v.pendingUnchained
 	chain.Coverage.Signed = result.AuditCoverageState{Status: "not-available", Detail: "detached signatures are runtime #209"}
 	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "not-supplied"}
+	chain.Coverage.Stamped = result.AuditCoverageState{Status: "not-available", Detail: "RFC 3161 time stamps are runtime #208, part 2"}
+	chain.Coverage.Unwitnessed = chain.Coverage.Chained
 	if v.head != nil {
 		chain.Trail = v.head.link.trail
-		chain.Head = &result.AuditCheckpoint{
-			CheckpointVersion: result.CheckpointVersion,
-			RecordDigest:      v.head.digest,
-			Sequence:          v.head.number,
-			Trail:             v.head.link.trail,
-		}
+		head := checkpointOf(v.head)
+		chain.Head = &head
 	}
 	v.closeSegment(v.lines)
 	chain.Segments, chain.SegmentsTotal = v.segments, v.segmentsTotal
@@ -494,8 +555,11 @@ func (v *verifier) report(size int64) result.AuditChain {
 	if chain.Discontinuities == nil {
 		chain.Discontinuities = []result.AuditDiscontinuity{}
 	}
-	if v.expect != nil {
-		v.checkCheckpoint(&chain)
+	if len(v.options.Held) > 0 {
+		v.checkHeld(&chain)
+	}
+	if v.options.RequireThrough > 0 {
+		v.checkRequirement(&chain)
 	}
 	chain.Findings = v.findings
 	if chain.Findings == nil {
@@ -514,48 +578,80 @@ func (v *verifier) report(size int64) result.AuditChain {
 	return chain
 }
 
-// checkCheckpoint holds the trail to the checkpoint it was given: the line at
-// its sequence must be there, chained, of its trail, and have its digest. It
-// is through that sequence only when it matched and no check of any line up to
-// it failed.
-func (v *verifier) checkCheckpoint(chain *result.AuditChain) {
-	expect := *v.expect
+// checkHeld holds the trail to every checkpoint a holder kept: the line at
+// each one's sequence must be there, chained, of its trail, and have its
+// digest, and each that does not is a finding. The coverage then reaches the
+// highest checkpoint that matched with no failed check at or before its
+// sequence: those records are witnessed, and the chained records after it are
+// not. The checkpoints are checked in sequence order, so the findings come out
+// in one order whatever order the holder supplied them in.
+func (v *verifier) checkHeld(chain *result.AuditChain) {
+	held := append([]result.AuditCheckpoint{}, v.options.Held...)
+	sort.SliceStable(held, func(i, j int) bool { return held[i].Sequence < held[j].Sequence })
 	chain.Scope = ScopeCheckpoint
-	chain.Expect = &result.AuditExpectation{Checkpoint: expect, Status: "failed"}
-	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "failed"}
-	before := v.findingsTotal
-	named := v.checkpointed
-	switch {
-	case expect.Sequence > v.lines || named == nil:
-		v.record(result.AuditFinding{
-			Name:   FindingCheckpointBeyondTrail,
-			Line:   expect.Sequence,
-			Detail: fmt.Sprintf("the trail has %d complete lines, fewer than the checkpoint's sequence", v.lines),
-		})
-	case named.damaged || !named.chained:
-		v.record(result.AuditFinding{
-			Name:   FindingCheckpointNotChained,
-			Line:   expect.Sequence,
-			Detail: "the line at the checkpoint's sequence is not a chained record",
-		})
-	case named.link.trail != expect.Trail:
-		v.record(result.AuditFinding{
-			Name:   FindingCheckpointTrailMismatch,
-			Line:   expect.Sequence,
-			Detail: "the record at the checkpoint's sequence is of another trail",
-		})
-	case named.digest != expect.RecordDigest:
-		v.record(result.AuditFinding{
-			Name:   FindingCheckpointRecordMismatch,
-			Line:   expect.Sequence,
-			Detail: "the record at the checkpoint's sequence is not the one the checkpoint names",
-		})
+	summary := &result.AuditHeld{Supplied: int64(len(held)), Status: "failed"}
+	matched := []result.AuditCheckpoint{}
+	for _, expect := range held {
+		named := v.heldLines[expect.Sequence]
+		finding := result.AuditFinding{Line: expect.Sequence}
+		switch {
+		case expect.Sequence > v.lines || named == nil:
+			finding.Name = FindingCheckpointBeyondTrail
+			finding.Detail = fmt.Sprintf("the trail has %d complete lines, fewer than the checkpoint's sequence", v.lines)
+		case named.damaged || !named.chained:
+			finding.Name = FindingCheckpointNotChained
+			finding.Detail = "the line at the checkpoint's sequence is not a chained record"
+		case named.link.trail != expect.Trail:
+			finding.Name = FindingCheckpointTrailMismatch
+			finding.Detail = "the record at the checkpoint's sequence is of another trail"
+		case named.digest != expect.RecordDigest:
+			finding.Name = FindingCheckpointRecordMismatch
+			finding.Detail = "the record at the checkpoint's sequence is not the one the checkpoint names"
+		}
+		if finding.Name != "" {
+			summary.Failed++
+			v.record(finding)
+			continue
+		}
+		summary.Matched++
+		matched = append(matched, expect)
 	}
-	if v.findingsTotal != before || (v.earliestFinding > 0 && v.earliestFinding <= expect.Sequence) {
+	// Every finding is recorded before the coverage is decided: a checkpoint
+	// that failed voids the coverage of every checkpoint at or after it.
+	var through *result.AuditCheckpoint
+	for index := range matched {
+		if v.earliestFinding == 0 || v.earliestFinding > matched[index].Sequence {
+			through = &matched[index]
+		}
+	}
+	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "failed"}
+	if through != nil {
+		latest := *through
+		summary.Latest = &latest
+		chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "through", Through: through.Sequence}
+		chain.Coverage.Witnessed = v.chainedAt[through.Sequence]
+		chain.Coverage.Unwitnessed = chain.Coverage.Chained - chain.Coverage.Witnessed
+		if summary.Failed == 0 && through.Sequence == held[len(held)-1].Sequence {
+			summary.Status = "matched"
+		}
+	}
+	chain.Held = summary
+}
+
+// checkRequirement fails a verification whose held checkpoints do not cover
+// every record up to the sequence it was told to require.
+func (v *verifier) checkRequirement(chain *result.AuditChain) {
+	required := v.options.RequireThrough
+	chain.Required = &result.AuditRequirement{Through: required, Status: "met"}
+	if chain.Coverage.Checkpointed.Status == "through" && chain.Coverage.Checkpointed.Through >= required {
 		return
 	}
-	chain.Expect.Status = "matched"
-	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "through", Through: expect.Sequence}
+	chain.Required.Status = "unmet"
+	v.record(result.AuditFinding{
+		Name:   FindingCheckpointCoverageMissing,
+		Line:   required,
+		Detail: fmt.Sprintf("no held checkpoint covers the records up to sequence %d: they are unwitnessed", required),
+	})
 }
 
 // statements says what a report's result establishes and what it does not, in
@@ -577,6 +673,9 @@ func statements(chain result.AuditChain) ([]string, []string) {
 	if chain.DiscontinuitiesTotal > 0 {
 		notEstablished = append(notEstablished, notSegmented)
 	}
-	notEstablished = append(notEstablished, notTime, notSigned)
+	if chain.Held != nil {
+		notEstablished = append(notEstablished, notHeldAll)
+	}
+	notEstablished = append(notEstablished, notTime, notSigned, notStamped)
 	return establishes, notEstablished
 }

@@ -568,6 +568,21 @@ repairs a torn discontinuity, since a repair does not repair a repair);
 `verify` then reports the trail as segments, never as intact across the break. A discontinuity line
 records no decision: it has `kind` `"discontinuity"` and no pack, inputs or disposition.
 
+**Handing checkpoints to a holder.** `jpack audit checkpoint --since <sequence>` prints the
+checkpoint of every chained record after that sequence, one canonical line each, for a deliverer
+(Desk, a job, a hook) to hand to a holder the operator does not control: the counterparty, an
+auditor, a store. The deliverer polls and remembers where it is; recording a decision never waits
+for it, and a record not yet covered by a held checkpoint is reported as unwitnessed. A checkpoint
+is a function of its record's bytes, so a retry hands over the same line. The runtime keeps no
+record of what was handed over, since the operator could rewrite one: the holder's copy is what
+counts. `jpack audit verify --expect <file>` takes a holder's file of checkpoints, one per line,
+holds the trail to every one of them, and reports the records up to the highest one that matched,
+with no failed check at or before it, as witnessed and the rest as unwitnessed; `--require-checkpoint-through <sequence>` fails while any
+record up to that sequence is unwitnessed. A held checkpoint shows the records it covers are the
+ones that existed when it was handed over, to anyone who trusts the holder's copy. It shows nothing
+about later records, or about checkpoints the holder did not keep, and nothing about when; RFC 3161
+time stamps are #208's second part.
+
 **Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
 as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never
 sees it and a detector falls through to its fallback. A project whose `jpack.json` sets
