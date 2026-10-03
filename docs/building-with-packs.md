@@ -862,7 +862,8 @@ every line it is writing (a graph run's node lines and its composite, the compos
 and syncs the file and then its directory, so two runtimes writing one trail at once never give two
 lines one predecessor, and a record reported written is on disk with the file's entry. The lock
 binds only writers that take it. A line is recognised as chained by its JSON members, however it is
-spelled, the same way whether the chain is being continued or started again. What follows:
+spelled, the same way whether the chain is being continued or started again ("Record signatures,
+exactly" below gives their forms). What follows:
 
 - **A torn last line stops the trail.** If the trail's last line has no newline, which is what a
   write cut short leaves, no line is chained after it: every recording run is refused with
@@ -1258,8 +1259,10 @@ For another implementation, such as a gateway that requires a signed record or R
 this is the whole rule; nothing in it depends on reading this runtime's code.
 
 **Keys.** Ed25519 (RFC 8032), verified by the one equation **Signatures** states below. A public key
-is its 32 bytes as 64 lowercase hexadecimal characters. Its `keyId` is the first 32 lowercase
-hexadecimal characters of the SHA-256 of those 32 bytes, the gateway's `keyId`.
+is its 32 bytes as 64 lowercase hexadecimal characters; a key file given to `--public-key` may also
+be in upper case, with whitespace around it, while a sidecar's `next` and a revocation's `publicKey`
+are in lower case alone. Its `keyId` is the first 32 lowercase hexadecimal characters of the SHA-256
+of those 32 bytes, the gateway's `keyId`.
 
 A verifier refuses a public key unless its 32 bytes are the canonical encoding (RFC 8032 §5.1.2) of
 a point of the curve whose order does not divide 8, and refuses it before it reads anything signed
@@ -1335,6 +1338,52 @@ part. A verifier must not use it; the test vector below has a signature only the
 accepts, and it is `signature-invalid` here. `sigR` is not otherwise decoded, so an encoding of it
 that is not canonical never verifies.
 
+**The trail's lines.** A trail line is the bytes before a newline. Bytes after the last newline, if
+there are any, are not a line: they are an incomplete last line, `incomplete-last-line`, whatever
+they hold, and are classified neither as chained nor as too long. A line longer than 128 MiB, its
+newline not counted, is not read at all, and is the failed check `line-too-long`; a line of exactly
+134,217,728 bytes and its newline is read.
+
+Any other line is a **chained record** when it is one JSON object, with no member given twice, whose
+`trail` is 32 lowercase hexadecimal characters, whose `sequence` is an integer from 1 to 2^53−2
+written as one (digits, with no fraction, exponent, sign or leading zero), and whose `previous` is
+`sha256:` and 64 lowercase hexadecimal characters. Member names and strings are read by their
+decoded values, as a sidecar line's are, and the line's other members are not read for this.
+Otherwise it is **unchained**, a line with one of those members missing or of another form among
+them. An unchained line is no failed check: the next chained line links over it to the whole file
+before it, as below, and an unchained last line is one nothing commits to.
+
+Each chained line L is held to what a record in its place would follow. Its trail must be that of
+the last chained line before it, if there is one. Its `previous` must be the SHA-256 of the exact
+bytes of the line before it when that line is chained, or of the whole file before it when it is
+not: a legacy prefix, or a chain started again after unchained lines. A **discontinuity record**, a
+chained record whose `kind` is `discontinuity`, is **well formed** when its `discontinuity` member
+is one JSON object of exactly four members, none given twice: `reason`, the string
+`incomplete-last-line`; `line`, an integer from 1 to 2^53−2 that is L−1; `bytes`, an integer from 0
+to 134,217,728; and `digest`, `sha256:` and 64 lowercase hexadecimal characters, its integers
+written as a `sequence` is; and when line L−1 is itself no longer than 128 MiB and is not itself a
+discontinuity: one JSON object, with no member given twice, whose `kind` is the string
+`discontinuity`, whether it is chained or not. A line of another shape, a JSON object with a member
+given twice among them, can be named whatever its `kind`. A well-formed discontinuity record is held
+to what line L−1 would have followed, instead of to the line before it. These are **the chain's
+checks**, each a finding at line L:
+
+- `sequence-mismatch`: its `sequence` is not L;
+- `previous-mismatch`: its `previous` is not that digest;
+- `trail-mismatch`: its `trail` is not that trail;
+- `discontinuity-malformed`: a discontinuity record that is not well formed. It excuses nothing, and
+  is held to the line before it as any chained line is;
+- `discontinuity-mismatch`: a well-formed discontinuity record whose line L−1 is not of the `bytes`
+  and `digest` it states;
+- `line-too-long`: line L is longer than 128 MiB; the line after it is held to no `previous` and no
+  `trail`, since what it would follow cannot be read.
+
+The line a well-formed discontinuity record names is excused: its own findings are not reported,
+even when the discontinuity then fails its length or digest comparison, which is the discontinuity's
+own failed check, and the damage itself is no failed check. Nor is anything else a check of the
+chain: a finding about the sidecar, a held checkpoint (`checkpoint-…`), a stamp (`stamp-…`), or an
+incomplete last line, which comes after every complete line.
+
 **Verification.** The inputs are the trail, the sidecar, the public keys K₁…Kₙ (n ≥ 1) in the order
 the trail used them, and any revocations, each a public key and the sequence `from` which it is not
 trusted. Start with K₁ in force and the last place 0. A record signature's place is 2·S, and a
@@ -1344,12 +1393,12 @@ readable one:
 1. If its place is below the last place, or it is a record signature and its place equals the last
    place, it is `sidecar-out-of-order`; go to the next line. Otherwise its place becomes the last
    place.
-2. A record signature for sequence S: the trail's line S must exist, be a chained record (the
-   chain's own rule) that no discontinuity names as damaged, and carry trail T, or it is
-   `signature-no-record`. The SHA-256 of that line's exact bytes must be R, or it is
-   `signature-record-mismatch`. Its `keyId` must be the key in force's and its signature must verify
-   under that key over the signed bytes, or it is `signature-invalid`. If a revocation of the key in
-   force has `from` ≤ S, it is `signature-key-revoked`. Otherwise record S is signed.
+2. A record signature for sequence S: the trail's line S must exist, be a chained record (above)
+   that no discontinuity names as damaged, and carry trail T, or it is `signature-no-record`. The
+   SHA-256 of that line's exact bytes must be R, or it is `signature-record-mismatch`. Its `keyId`
+   must be the key in force's and its signature must verify under that key over the signed bytes, or
+   it is `signature-invalid`. If a revocation of the key in force has `from` ≤ S, it is
+   `signature-key-revoked`. Otherwise record S is signed.
 3. A rotation at A: the trail's line A must exist, or it is `signature-no-record`. T must be the
    trail of the last chained line at or before A that no discontinuity names as damaged (with none,
    the rotation fails), its `keyId` the key in force's, and its signature valid under that key over
@@ -1365,9 +1414,16 @@ the last place: a rotation that fails hands nothing on, and the key in force sta
 it. The writer, which does not check a rotation, follows one that is the sidecar's last readable
 line all the same, and stops signing (above).
 
-The signed coverage is through the highest S whose record is signed with no failed check of the
-chain at or before line S; a requirement through R fails, `signature-missing`, unless that coverage
-reaches R.
+Each finding about the sidecar but one is placed at the trail line it is about: a record signature's
+at its S, a rotation's at its A, and `sidecar-out-of-order` at the S or A of the line out of order;
+and its detail names the sidecar line, counted from 1 over all of the sidecar's lines, unreadable
+ones included. The one is `signature-missing`, which is about a requirement, not a line of the
+sidecar: it is placed at the sequence required, and its detail names that sequence and no sidecar
+line.
+
+The signed coverage is through the highest S whose record is signed with none of the chain's checks
+failed at a line at or before S; a requirement through R fails, `signature-missing`, unless that
+coverage reaches R.
 
 **One record, without the trail.** A reader that holds a record and not its trail, such as a gateway
 acting on a decision, takes T and S from the record's own `trail` and `sequence`, read by the

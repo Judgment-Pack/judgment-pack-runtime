@@ -160,7 +160,6 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -521,7 +520,7 @@ func ParseCites(document []byte) ([]Citation, error) {
 		if err := decodeString(members["sessionId"], &c.SessionID); err != nil || !flatToken.MatchString(c.SessionID) || c.SessionID == "." || c.SessionID == ".." {
 			return nil, fmt.Errorf("citation %d: sessionId must be a flat token of 1 to 128 characters from A-Z, a-z, 0-9, dot, underscore and hyphen, and not . or ..", i)
 		}
-		if err := decodeInteger(members["callIndex"], &c.CallIndex); err != nil || c.CallIndex < 0 || c.CallIndex > maxSafeInteger {
+		if err := decodeCallIndex(members["callIndex"], &c.CallIndex); err != nil || c.CallIndex < 0 || c.CallIndex > maxSafeInteger {
 			return nil, fmt.Errorf("citation %d: callIndex must be an integer from 0 to 9007199254740991", i)
 		}
 		if err := decodeString(members["signature"], &c.Signature); err != nil || !signatureHex.MatchString(c.Signature) {
@@ -574,16 +573,20 @@ func decodeString(raw json.RawMessage, into *string) error {
 	return json.Unmarshal(raw, into)
 }
 
-// decodeInteger reads a JSON number that is an integer literal -- no
-// fraction, no exponent, no leading zero -- and nothing else. -0 is 0, as
-// the gateway's grammar reads it (SPEC.md §1.1).
+// decodeInteger reads a JSON number written in digits alone -- no sign, no
+// fraction, no exponent, no leading zero -- and nothing else. Every integer
+// of the chain, the signature sidecar, a checkpoint, a revocation and a
+// discontinuity is read by it, and none of them is negative, so -0 is refused
+// with every other sign.
 func decodeInteger(raw json.RawMessage, into *int64) error {
 	text := string(bytes.TrimSpace(raw))
-	if text == "" || strings.ContainsAny(text, ".eE") {
+	if text == "" || (len(text) > 1 && text[0] == '0') {
 		return errors.New("not an integer")
 	}
-	if (len(text) > 1 && text[0] == '0') || (len(text) > 2 && text[0] == '-' && text[1] == '0') {
-		return errors.New("not an integer")
+	for _, c := range text {
+		if c < '0' || c > '9' {
+			return errors.New("not an integer")
+		}
 	}
 	n, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
@@ -591,6 +594,18 @@ func decodeInteger(raw json.RawMessage, into *int64) error {
 	}
 	*into = n
 	return nil
+}
+
+// decodeCallIndex reads a citation's callIndex: decodeInteger, but for -0,
+// which is 0 as the gateway's grammar reads it (SPEC.md §1.1). A citation is
+// held to that grammar, and has read -0 so since citations were first
+// recorded.
+func decodeCallIndex(raw json.RawMessage, into *int64) error {
+	if string(bytes.TrimSpace(raw)) == "-0" {
+		*into = 0
+		return nil
+	}
+	return decodeInteger(raw, into)
 }
 
 // ReviewedSet names the revision of the reviewed set that made Reviewed true.

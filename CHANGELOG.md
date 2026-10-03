@@ -244,6 +244,25 @@ All notable changes to tagged releases are documented here.
     what `audit verify` already did. A test holds the one-record rule to `audit verify`, record by
     record, over sidecars reordered, cut, repeated, edited and forged and over trails with damaged
     lines, wherever the trail context the guide names holds.
+  - The guide also states, for a second implementation (#218): that a trail line is the bytes before
+    a newline, bytes after the last one being an incomplete last line and never classified, and that
+    the 128 MiB bound does not count the newline; which line is a chained record (one JSON object,
+    no member given twice, `trail` 32 lowercase hex, `sequence` an integer from 1 to 2^53−2,
+    `previous` `sha256:` and 64 lowercase hex), and that a line with one of those members missing or
+    of another form is unchained, not a failed check; when a discontinuity record is well formed
+    (its four members, their forms and limits, and the line it names, which may not itself be a
+    discontinuity: one JSON object, no member given twice, whose `kind` is `discontinuity`), and
+    that a well-formed one excuses that line even when its length or digest then fails; which
+    findings are the chain's checks that the signed coverage stops at (`sequence-mismatch`,
+    `previous-mismatch`, `trail-mismatch`, `discontinuity-malformed`, `discontinuity-mismatch`,
+    `line-too-long`), and that damage a well-formed discontinuity names, a held checkpoint, a stamp
+    and an incomplete last line are not; and that a finding about the sidecar is placed at the trail
+    line it is about, with the sidecar line in its detail, except `signature-missing`, placed at the
+    sequence required. Each is what `audit verify` already did but one, now fixed in the code: every
+    integer of the chain, the sidecar, a checkpoint, a revocation and a discontinuity is digits
+    alone, so `-0`, which a discontinuity's `bytes` read as 0, is refused with every other sign (a
+    citation's `callIndex` still reads `-0` as 0, as the gateway's grammar does). A table test holds
+    every stated rule of the grammar to the parsers.
   - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.25.0 - 2026-10-02
