@@ -78,8 +78,9 @@ const MaxRevocationBytes = 1 << 20
 
 // ParseRevocations reads a document of revocations, one per line: a JSON
 // object of exactly from (an integer from 1 to 2^53-2) and publicKey (64
-// lowercase hexadecimal characters). Blank lines are passed over; the first
-// line of another shape refuses the document, naming its line.
+// lowercase hexadecimal characters that CheckPublicKey accepts). Blank lines
+// are passed over; the first line of another shape refuses the document,
+// naming its line.
 func ParseRevocations(document []byte) ([]Revocation, error) {
 	if len(document) > MaxRevocationBytes {
 		return nil, fmt.Errorf("the revocations exceed %d bytes", MaxRevocationBytes)
@@ -102,7 +103,9 @@ func ParseRevocations(document []byte) ([]Revocation, error) {
 		if decodeString(members["publicKey"], &public) != nil || !publicKeyForm.MatchString(public) {
 			return nil, fmt.Errorf("line %d: a revocation's publicKey must be 64 lowercase hexadecimal characters", number+1)
 		}
-		revocation.PublicKey, _ = ParsePublicKey([]byte(public))
+		if revocation.PublicKey, err = ParsePublicKey([]byte(public)); err != nil {
+			return nil, fmt.Errorf("line %d: a revocation's publicKey is not one: %v", number+1, err)
+		}
 		revoked = append(revoked, revocation)
 	}
 	return revoked, nil
@@ -305,6 +308,7 @@ func (c *signatureChecker) checkRecord(v *verifier, item sidecarItem, number int
 		return FindingSignatureKeyRevoked, fmt.Sprintf("sidecar line %d is signed with key %s, which is revoked at sequence %d", number, KeyID(c.current), item.sequence)
 	}
 	c.signed++
+	noteSigned(item.sequence)
 	if v.earliestFinding == 0 || v.earliestFinding > item.sequence {
 		c.through = item.sequence
 	}
@@ -313,8 +317,11 @@ func (c *signatureChecker) checkRecord(v *verifier, item sidecarItem, number int
 
 // checkRotation holds a rotation to the key in force and to the keys the
 // verifier was given, and hands the trail over to the next key when it holds.
+// A rotation to a key CheckPublicKey refuses hands nothing over, however it is
+// signed: a key of small order would let anyone sign every record after it.
 func (c *signatureChecker) checkRotation(item sidecarItem, number int64) (string, string) {
 	pinned := len(c.options.Keys) > 1
+	refused := CheckPublicKey(item.next)
 	switch {
 	case c.lastTrail == "" || item.trail != c.lastTrail:
 		return FindingRotationInvalid, fmt.Sprintf("sidecar line %d rotates the key of another trail than the one at line %d", number, item.at)
@@ -322,6 +329,8 @@ func (c *signatureChecker) checkRotation(item sidecarItem, number int64) (string
 		return FindingRotationInvalid, fmt.Sprintf("sidecar line %d is a rotation not signed by key %s, the key in force after line %d", number, KeyID(c.current), item.at)
 	case c.revoked(item.at):
 		return FindingSignatureKeyRevoked, fmt.Sprintf("sidecar line %d is a rotation made with key %s, which is revoked at line %d", number, KeyID(c.current), item.at)
+	case refused != nil:
+		return FindingRotationInvalid, fmt.Sprintf("sidecar line %d rotates to key %s, which is not one a verifier accepts: %v", number, KeyID(item.next), refused)
 	case pinned && (c.keyIndex+1 >= len(c.options.Keys) || !bytes.Equal(item.next, c.options.Keys[c.keyIndex+1])):
 		return FindingRotationInvalid, fmt.Sprintf("sidecar line %d rotates to key %s, which is not the next public key supplied", number, KeyID(item.next))
 	}
@@ -372,3 +381,8 @@ func (c *signatureChecker) coverage(v *verifier, chain *result.AuditChain) {
 }
 
 func hexKey(public ed25519.PublicKey) string { return hex.EncodeToString(public) }
+
+// noteSigned is told each record a verification counts signed, as it counts
+// it. It does nothing; a test replaces it to hold the check of one record
+// without the trail to the verifier's answer for that record.
+var noteSigned = func(int64) {}

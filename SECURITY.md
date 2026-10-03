@@ -163,7 +163,11 @@ projects that never named a key. A refused key, a key that is not the key in for
 that cannot be written all leave the record unsigned rather than the decision failed; `packs
 validate` reports the first two, and `audit verify` counts unsigned records. No output, diagnostic
 or report carries key material: keys are named by `keyId`. `jpack audit verify --public-key` checks
-the signatures against keys the verifier supplies, never against the project's own configuration.
+the signatures against keys the verifier supplies, never against the project's own configuration. It
+refuses a supplied key under which anyone could sign, in `--public-key` and in `--revoked`, and a
+rotation to one fails: a point of small order, under which Go's `crypto/ed25519` accepts a signature
+made without a private key, an encoding that is not canonical, which it reads as another point, or
+no point of the curve.
 
 Two limits of that are accepted rather than closed. **The location check does not see mounts.** It
 refuses a key reached through any link, and a key whose path passes through the project's

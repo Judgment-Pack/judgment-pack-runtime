@@ -177,15 +177,19 @@ func ParseSeed(data []byte) ([]byte, error) {
 }
 
 // ParsePublicKey reads a public key file's contents: 64 hexadecimal
-// characters, with nothing else but surrounding whitespace.
+// characters, with nothing else but surrounding whitespace, that
+// CheckPublicKey accepts.
 func ParsePublicKey(data []byte) (ed25519.PublicKey, error) {
 	text := strings.ToLower(strings.TrimSpace(string(data)))
 	if !publicKeyForm.MatchString(text) {
-		return nil, errors.New("a public key is 64 hexadecimal characters")
+		return nil, ErrPublicKeyForm
 	}
 	public, err := hex.DecodeString(text)
 	if err != nil {
-		return nil, errors.New("a public key is 64 hexadecimal characters")
+		return nil, ErrPublicKeyForm
+	}
+	if err := CheckPublicKey(public); err != nil {
+		return nil, err
 	}
 	return ed25519.PublicKey(public), nil
 }
