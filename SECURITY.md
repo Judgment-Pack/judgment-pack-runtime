@@ -124,16 +124,20 @@ confidential (ADR-0047, "Privacy"). The authority's address may carry credential
 names it. `jpack audit verify --tsa-roots` verifies tokens offline against roots the verifier
 supplies, never against the project's configuration. The token's DER is parsed with
 `encoding/asn1` and its chain with `crypto/x509`, and both are held to an exact subset of RFC 3161
-and RFC 5652: one signer; signed attributes binding the content type, the TSTInfo's digest and the
-signing certificate; RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512; a certificate for
-time-stamping alone, by a critical extension; the chain valid at the token's own time. A stamp
+and RFC 5652, each structure held to its own DER encoding byte for byte: SignedData version 3 naming
+the signer's digest algorithm; one signer; signed attributes binding the content type, the
+TSTInfo's digest and the signing certificate in every ESS binding present; an accuracy a time span
+holds; RSA PKCS #1 v1.5 or ECDSA over SHA-256, SHA-384 or SHA-512; a certificate for time-stamping
+alone, by a critical extension; the chain valid at the token's own time. A stamp
 establishes that the checkpoint existed by the time the authority states, **as far as that
 authority is independent of the operator**: one that colludes can stamp what it is asked, when it
-is asked. **Revocation is checked only against lists the verifier supplies** that were issued by the
-certificate's issuer at or after the stamp's time and while the certificate was valid; a stamp no
+is asked. **Revocation is checked only against complete lists the verifier supplies** (no delta, scoped or
+indirect list, and no critical extension not read) that were issued by the certificate's issuer at
+or after the stamp's time and while the certificate was valid; a stamp no
 such list speaks for is reported as not checked, never as good, and nothing is fetched. A stamp
-does not show when a record was made: `at` stays the operator's word, and the report gives the lag
-for the reader to judge.
+gives an upper bound on when the checkpoint existed, not when a record was made or handed over: `at`
+stays the operator's word, and the report gives the lag for the reader to judge. A stamp lends its
+time only to the records the chain links to its checkpoint, never past a failed check.
 
 **Signatures** (ADR-0047 §2b) are opt-in. A project names an Ed25519 seed by the audit member's
 `signingKey` or by `JPACK_SIGNING_KEY`, and each chained record is then signed in

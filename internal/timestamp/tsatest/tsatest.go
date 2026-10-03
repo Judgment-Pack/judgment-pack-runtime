@@ -24,6 +24,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 )
@@ -86,6 +87,46 @@ type Options struct {
 	ExtraSigner                bool
 	WrongEncapsulatedType      bool
 	WrongContentInfoType       bool
+	// Departures from DER and from the CMS subset, one each: an element after
+	// the last field of the ContentInfo or of the SignedData; another
+	// SignedData or SignerInfo version; digest algorithms that are empty or
+	// name SHA-384 while the signer uses SHA-256; attribute values as a
+	// SEQUENCE rather than a SET; signed attributes out of DER order; and an
+	// ESS signingCertificate binding another certificate beside a
+	// signingCertificateV2 binding the right one.
+	ExtraContentInfoField     bool
+	ExtraSignedDataField      bool
+	SignedDataVersion         int
+	SignerInfoVersion         int
+	DigestAlgorithms          string
+	AttributeValuesAsSequence bool
+	UnsortedAttributes        bool
+	AlsoWrongV1Binding        bool
+	// More: a critical TSTInfo extension; a genTime written as given; a
+	// content-type attribute with two values; no ESS binding at all; and
+	// signingCertificateV2's DEFAULT hash, SHA-256, written out.
+	CriticalExtension     bool
+	GenTimeText           string
+	MultiValuedAttribute  bool
+	NoBinding             bool
+	ExplicitDefaultV2Hash bool
+}
+
+// genTime is the authority's now as a GeneralizedTime in whole seconds, or
+// the text given, as written.
+func genTime(now time.Time, text string) asn1.RawValue {
+	if text == "" {
+		text = now.UTC().Truncate(time.Second).Format("20060102150405Z")
+	}
+	return asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagGeneralizedTime, Bytes: []byte(text)}
+}
+
+// extensions is the TSTInfo's extensions: one critical one when asked.
+func extensions(critical bool) []pkix.Extension {
+	if !critical {
+		return nil
+	}
+	return []pkix.Extension{{Id: asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 99999, 3}, Critical: true, Value: []byte{0x05, 0x00}}}
 }
 
 // Authority is a root and a time-stamping certificate under it.
@@ -206,6 +247,26 @@ func (a *Authority) CRL(thisUpdate, revokedAt time.Time, reason int) ([]byte, er
 	return a.CRLListing(thisUpdate, a.Signer.SerialNumber, revokedAt, reason)
 }
 
+// CRLExtended is a revocation list issued by the root at thisUpdate with the
+// extensions given, and, when entry extensions are given, an entry for
+// another certificate carrying them, PEM.
+func (a *Authority) CRLExtended(thisUpdate time.Time, list, entry []pkix.Extension) ([]byte, error) {
+	template := &x509.RevocationList{
+		Number:          big.NewInt(1),
+		ThisUpdate:      thisUpdate,
+		NextUpdate:      thisUpdate.Add(24 * time.Hour),
+		ExtraExtensions: list,
+	}
+	if len(entry) > 0 {
+		template.RevokedCertificateEntries = []x509.RevocationListEntry{{SerialNumber: big.NewInt(999), RevocationTime: thisUpdate.Add(-time.Hour), ExtraExtensions: entry}}
+	}
+	der, err := x509.CreateRevocationList(rand.Reader, template, a.Root, a.rootKey)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: der}), nil
+}
+
 // CRLListing is CRL listing the certificate of another serial number.
 func (a *Authority) CRLListing(thisUpdate time.Time, serial *big.Int, revokedAt time.Time, reason int) ([]byte, error) {
 	template := &x509.RevocationList{
@@ -243,9 +304,10 @@ type tstInfo struct {
 	Policy         asn1.ObjectIdentifier
 	MessageImprint imprint
 	SerialNumber   *big.Int
-	GenTime        time.Time `asn1:"generalized"`
-	Accuracy       accuracy  `asn1:"optional"`
-	Nonce          *big.Int  `asn1:"optional"`
+	GenTime        asn1.RawValue
+	Accuracy       accuracy         `asn1:"optional"`
+	Nonce          *big.Int         `asn1:"optional"`
+	Extensions     []pkix.Extension `asn1:"optional,tag:1"`
 }
 
 type attribute struct {
@@ -254,7 +316,8 @@ type attribute struct {
 }
 
 type essCertIDv2 struct {
-	CertHash []byte
+	HashAlgorithm algorithmIdentifier `asn1:"optional"`
+	CertHash      []byte
 }
 
 type signingCertificateV2 struct {
@@ -336,9 +399,10 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 		Policy:         policy,
 		MessageImprint: imprint{HashAlgorithm: algorithmIdentifier{Algorithm: imprintAlgorithm, Parameters: asn1.NullRawValue}, HashedMessage: digest},
 		SerialNumber:   big.NewInt(serial),
-		GenTime:        now.UTC().Truncate(time.Second),
+		GenTime:        genTime(now, options.GenTimeText),
 		Accuracy:       accuracy{Seconds: options.AccuracySeconds, Millis: options.AccuracyMillis},
 		Nonce:          nonce,
+		Extensions:     extensions(options.CriticalExtension),
 	})
 	if err != nil {
 		return nil, err
@@ -384,7 +448,11 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 		signingCertificate, err = rawValue(signingCertificateV1{Certs: []essCertID{{CertHash: certHash[:]}}})
 	} else {
 		certHash := sha256.Sum256(bound)
-		signingCertificate, err = rawValue(signingCertificateV2{Certs: []essCertIDv2{{CertHash: certHash[:]}}})
+		id := essCertIDv2{CertHash: certHash[:]}
+		if options.ExplicitDefaultV2Hash {
+			id.HashAlgorithm = algorithmIdentifier{Algorithm: oidSHA256}
+		}
+		signingCertificate, err = rawValue(signingCertificateV2{Certs: []essCertIDv2{id}})
 	}
 	if err != nil {
 		return nil, err
@@ -392,12 +460,29 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	attributeList := []attribute{
 		{Type: oidContentType, Values: []asn1.RawValue{contentType}},
 		{Type: oidMessageDigest, Values: []asn1.RawValue{messageDigest}},
-		{Type: certificateAttribute, Values: []asn1.RawValue{signingCertificate}},
+	}
+	if !options.NoBinding {
+		attributeList = append(attributeList, attribute{Type: certificateAttribute, Values: []asn1.RawValue{signingCertificate}})
+	}
+	if options.MultiValuedAttribute {
+		other, err := rawValue(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1})
+		if err != nil {
+			return nil, err
+		}
+		attributeList[0].Values = append(attributeList[0].Values, other)
 	}
 	if options.DuplicateAttribute {
 		attributeList = append(attributeList, attribute{Type: oidContentType, Values: []asn1.RawValue{contentType}})
 	}
-	attributes, err := asn1.MarshalWithParams(attributeList, "set")
+	if options.AlsoWrongV1Binding {
+		wrong := sha1.Sum(a.Root.Raw)
+		v1, err := rawValue(signingCertificateV1{Certs: []essCertID{{CertHash: wrong[:]}}})
+		if err != nil {
+			return nil, err
+		}
+		attributeList = append(attributeList, attribute{Type: oidSigningCertificate, Values: []asn1.RawValue{v1}})
+	}
+	attributes, err := encodeAttributes(attributeList, options)
 	if err != nil {
 		return nil, err
 	}
@@ -416,8 +501,12 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	if options.SHA1Digest {
 		signatureAlgorithm = oidECPublicKey
 	}
+	signerVersion := 1
+	if options.SignerInfoVersion != 0 {
+		signerVersion = options.SignerInfoVersion
+	}
 	info := signerInfo{
-		Version:            1,
+		Version:            signerVersion,
 		SID:                issuerAndSerial{Issuer: asn1.RawValue{FullBytes: a.Signer.RawIssuer}, Serial: a.Signer.SerialNumber},
 		DigestAlgorithm:    algorithmIdentifier{Algorithm: digestAlgorithm},
 		SignedAttrs:        asn1.RawValue{FullBytes: append([]byte{0xa0}, attributes[1:]...)},
@@ -443,14 +532,28 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	encapsulatedContent := encapsulated{EContentType: encapsulatedType, EContent: explicit(0, mustOctets(content))}
 	certificateSet := asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: certificates}
 	digestAlgorithms := []algorithmIdentifier{{Algorithm: digestAlgorithm}}
+	switch options.DigestAlgorithms {
+	case "empty":
+		digestAlgorithms = []algorithmIdentifier{}
+	case "sha384":
+		digestAlgorithms = []algorithmIdentifier{{Algorithm: oidSHA384}}
+	}
+	signedVersion := 3
+	if options.SignedDataVersion != 0 {
+		signedVersion = options.SignedDataVersion
+	}
 	if options.NoSignedAttributes {
 		signed, err = asn1.Marshal(signedDataBare{
 			Version: 3, DigestAlgorithms: digestAlgorithms, EncapContentInfo: encapsulatedContent, Certificates: certificateSet,
 			SignerInfos: []signerInfoBare{{Version: 1, SID: info.SID, DigestAlgorithm: info.DigestAlgorithm, SignatureAlgorithm: info.SignatureAlgorithm, Signature: signature}},
 		})
+	} else if options.ExtraSignedDataField {
+		signed, err = asn1.Marshal(signedDataExtra{
+			Version: signedVersion, DigestAlgorithms: digestAlgorithms, EncapContentInfo: encapsulatedContent, Certificates: certificateSet, SignerInfos: infos, Extra: 1,
+		})
 	} else {
 		signed, err = asn1.Marshal(signedData{
-			Version: 3, DigestAlgorithms: digestAlgorithms, EncapContentInfo: encapsulatedContent, Certificates: certificateSet, SignerInfos: infos,
+			Version: signedVersion, DigestAlgorithms: digestAlgorithms, EncapContentInfo: encapsulatedContent, Certificates: certificateSet, SignerInfos: infos,
 		})
 	}
 	if err != nil {
@@ -460,7 +563,57 @@ func (a *Authority) Token(digest []byte, nonce *big.Int) ([]byte, error) {
 	if options.WrongContentInfoType {
 		contentInfoType = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
 	}
+	if options.ExtraContentInfoField {
+		return asn1.Marshal(contentInfoExtra{ContentType: contentInfoType, Content: explicit(0, signed), Extra: 1})
+	}
 	return asn1.Marshal(contentInfo{ContentType: contentInfoType, Content: explicit(0, signed)})
+}
+
+type contentInfoExtra struct {
+	ContentType asn1.ObjectIdentifier
+	Content     asn1.RawValue
+	Extra       int
+}
+
+type signedDataExtra struct {
+	Version          int
+	DigestAlgorithms []algorithmIdentifier `asn1:"set"`
+	EncapContentInfo encapsulated
+	Certificates     asn1.RawValue
+	SignerInfos      []signerInfo `asn1:"set"`
+	Extra            int
+}
+
+type attributeSequence struct {
+	Type   asn1.ObjectIdentifier
+	Values []asn1.RawValue
+}
+
+// encodeAttributes is the SET OF the signed attributes: in DER order, as
+// encoding/asn1 sorts it, unless the options ask for its values as a
+// SEQUENCE or for the set out of order.
+func encodeAttributes(list []attribute, options Options) ([]byte, error) {
+	if !options.AttributeValuesAsSequence && !options.UnsortedAttributes {
+		return asn1.MarshalWithParams(list, "set")
+	}
+	elements := [][]byte{}
+	for _, each := range list {
+		var element []byte
+		var err error
+		if options.AttributeValuesAsSequence {
+			element, err = asn1.Marshal(attributeSequence{Type: each.Type, Values: each.Values})
+		} else {
+			element, err = asn1.Marshal(each)
+		}
+		if err != nil {
+			return nil, err
+		}
+		elements = append(elements, element)
+	}
+	if options.UnsortedAttributes {
+		sort.Slice(elements, func(i, j int) bool { return bytes.Compare(elements[i], elements[j]) > 0 })
+	}
+	return asn1.Marshal(asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagSet, IsCompound: true, Bytes: bytes.Join(elements, nil)})
 }
 
 // signerInfoBare and signedDataBare are a SignerInfo without signed

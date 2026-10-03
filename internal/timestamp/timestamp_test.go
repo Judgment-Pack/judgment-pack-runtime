@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
 	"errors"
@@ -411,5 +412,118 @@ func TestAnRSASignatureIsVerified(t *testing.T) {
 	tampered[len(tampered)-1] ^= 1
 	if _, err := Parse(tampered); !errors.Is(err, ErrSignature) {
 		t.Fatalf("a changed RSA signature: %v", err)
+	}
+}
+
+// The subset is held as a class: a token outside DER, or outside the CMS
+// versions and digest algorithms read here, is refused, whatever its
+// signature, which each of these carries correctly.
+func TestATokenOutsideDERAndTheCMSSubsetIsRefused(t *testing.T) {
+	digest := digestOf(checkpointBytes)
+	for name, options := range map[string]tsatest.Options{
+		"an element after the ContentInfo's fields":   {ExtraContentInfoField: true},
+		"an element after the SignedData's fields":    {ExtraSignedDataField: true},
+		"SignedData version 1":                        {SignedDataVersion: 1},
+		"SignerInfo version 99":                       {SignerInfoVersion: 99},
+		"SignerInfo version 3 naming by serial":       {SignerInfoVersion: 3},
+		"no digest algorithms":                        {DigestAlgorithms: "empty"},
+		"digest algorithms without the signer's":      {DigestAlgorithms: "sha384"},
+		"attribute values as a SEQUENCE":              {AttributeValuesAsSequence: true},
+		"signed attributes out of DER order":          {UnsortedAttributes: true},
+		"an accuracy no time span holds":              {AccuracySeconds: 9223372037},
+		"an ESS binding of another certificate first": {AlsoWrongV1Binding: true},
+		"no ESS binding":                              {NoBinding: true},
+		"a critical TSTInfo extension":                {CriticalExtension: true},
+		"a genTime with a trailing zero":              {GenTimeText: "20261003023902.50Z"},
+		"a genTime with a zone":                       {GenTimeText: "20261003023902+0000"},
+		"a genTime to the minute":                     {GenTimeText: "202610030239Z"},
+		"a content type with two values":              {MultiValuedAttribute: true},
+		"the default ESS hash written out":            {ExplicitDefaultV2Hash: true},
+	} {
+		der, err := authority(t, options).Token(digest, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		token, err := Parse(der)
+		if err == nil {
+			t.Fatalf("%s: read, existed by %v", name, token.ExistedBy())
+		}
+		want := ErrMalformed
+		if options.AlsoWrongV1Binding || options.NoBinding {
+			want = ErrSignature
+		}
+		if !errors.Is(err, want) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	// A fraction of a second, as DER writes it, is read.
+	der, err := authority(t, tsatest.Options{GenTimeText: "20261003023902.5Z"}).Token(digest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token, err := Parse(der); err != nil || token.GenTime.Nanosecond() != 500000000 {
+		t.Fatalf("a fraction: %v %v", err, token)
+	}
+	// The largest accuracy a time span holds is read, and adds to the time.
+	der, err = authority(t, tsatest.Options{AccuracySeconds: 9223372035}).Token(digest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := Parse(der)
+	if err != nil || !token.ExistedBy().After(token.GenTime) {
+		t.Fatalf("a long accuracy: %v %v", err, token)
+	}
+}
+
+// A revocation list that cannot speak for every certificate of its issuer is
+// no evidence of status: a delta list, a scoped one, an indirect one, and one
+// with a critical extension, of the list or of an entry, not read here. The
+// stamp's status is then not checked, never good.
+func TestOnlyACompleteRevocationListIsEvidence(t *testing.T) {
+	tsa := authority(t, tsatest.Options{})
+	token := tokenFrom(t, tsa, digestOf(checkpointBytes))
+	after := token.GenTime.Add(time.Hour)
+	baseNumber, _ := asn1.Marshal(big.NewInt(1))
+	scope, _ := asn1.Marshal(struct {
+		OnlyUser bool `asn1:"optional,tag:1"`
+	}{OnlyUser: true})
+	issuer, _ := asn1.Marshal([]asn1.RawValue{{Class: asn1.ClassContextSpecific, Tag: 4, IsCompound: true, Bytes: tsa.Root.RawSubject}})
+	unknown := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 99999, 9}
+	for name, extensions := range map[string][2][]pkix.Extension{
+		"a delta list":                      {{{Id: asn1.ObjectIdentifier{2, 5, 29, 27}, Critical: true, Value: baseNumber}}, nil},
+		"a delta list not marked critical":  {{{Id: asn1.ObjectIdentifier{2, 5, 29, 27}, Value: baseNumber}}, nil},
+		"a scoped list":                     {{{Id: asn1.ObjectIdentifier{2, 5, 29, 28}, Critical: true, Value: scope}}, nil},
+		"a scoped list not marked critical": {{{Id: asn1.ObjectIdentifier{2, 5, 29, 28}, Value: scope}}, nil},
+		"a critical list extension unread":  {{{Id: unknown, Critical: true, Value: []byte{0x05, 0x00}}}, nil},
+		"an indirect entry":                 {nil, {{Id: asn1.ObjectIdentifier{2, 5, 29, 29}, Critical: true, Value: issuer}}},
+		"a critical entry extension unread": {nil, {{Id: unknown, Critical: true, Value: []byte{0x05, 0x00}}}},
+	} {
+		encoded, err := tsa.CRLExtended(after, extensions[0], extensions[1])
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		block, _ := pem.Decode(encoded)
+		list, err := x509.ParseRevocationList(block.Bytes)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got, err := token.Verify(VerifyOptions{Roots: rootsOf(tsa.Root), CRLs: []*x509.RevocationList{list}}); err != nil || got != RevocationNotChecked {
+			t.Fatalf("%s: %q %v", name, got, err)
+		}
+	}
+	// A complete list whose entry carries only an extension read here,
+	// critical or not, is evidence.
+	invalidity, _ := asn1.MarshalWithParams(after.Add(-2*time.Hour).UTC().Truncate(time.Second), "generalized")
+	encoded, err := tsa.CRLExtended(after, nil, []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 24}, Critical: true, Value: invalidity}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(encoded)
+	list, err := x509.ParseRevocationList(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := token.Verify(VerifyOptions{Roots: rootsOf(tsa.Root), CRLs: []*x509.RevocationList{list}}); err != nil || got != RevocationChecked {
+		t.Fatalf("a complete list: %q %v", got, err)
 	}
 }

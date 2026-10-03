@@ -993,13 +993,16 @@ records up to it are the ones that existed when it was handed over. What it does
 - anything about the records after the last checkpoint the holder kept, which are unwitnessed;
 - that the holder kept every checkpoint it was handed: the coverage reaches only the checkpoints
   supplied to `verify`;
-- when any checkpoint was made. A time-stamping authority's stamp answers that (below).
+- when any checkpoint was made, or handed over. A time-stamping authority's stamp gives an upper
+  bound instead (below): the checkpoint existed by the stamp's time.
 
 ### Stamping checkpoints with a time-stamping authority
 
-A held checkpoint shows that records existed when it was handed over, but not when that was. An
-RFC 3161 time-stamping authority (TSA) answers the second question: it signs a checkpoint's digest
-together with the time it states (ADR-0047 §2a, C2). It is a configured option:
+A held checkpoint shows that records existed when it was handed over, but not by what time. An
+RFC 3161 time-stamping authority (TSA) gives an upper bound: it signs a checkpoint's digest together
+with the time it states, so the checkpoint existed by then (ADR-0047 §2a, C2). That bounds
+existence only: it says nothing of when the checkpoint, or any record in it, was made, nor when it
+was handed to anyone. It is a configured option:
 
 ```json
 {
@@ -1040,8 +1043,15 @@ the stamps file beside the trail, or of `--stamps <file>`. Which authorities are
 verifier's choice, never the project's configuration. Each token must:
 
 - stamp, with SHA-256, the digest of the checkpoint kept with it (`stamp-imprint-mismatch`);
-- have a signature, signed attributes and signing-certificate binding that hold
-  (`stamp-signature-invalid`; a token of no readable shape is `stamp-malformed`);
+- be DER exactly, and within the subset read: a SignedData of version 3 whose digest algorithms
+  name the signer's; one SignerInfo, of version 1 naming its certificate by issuer and serial or
+  version 3 by subject key identifier; a TSTInfo of version 1 with no critical extension and an
+  accuracy a time span holds. Each structure must be what its own DER encoding gives back byte for
+  byte, which refuses an element after the last field, a non-minimal length, a default written
+  out, and a SET out of order (`stamp-malformed`);
+- have a signature, signed attributes and signing-certificate binding that hold, every binding
+  present (ESS `signingCertificate`, `signingCertificateV2`) naming the certificate that signed
+  (`stamp-signature-invalid`);
 - come from a certificate whose extended key usage is time-stamping alone, marked critical, as RFC
   3161 requires (`stamp-usage-invalid`);
 - chain to a root supplied, through the certificates the token carries, with every certificate
@@ -1053,7 +1063,9 @@ verifier's choice, never the project's configuration. Each token must:
 **Revocation is checked only where it can be.** `--tsa-crls <file>` supplies certificate revocation
 lists, PEM or DER. A certificate of the chain is checked only against a list from its issuer,
 signed by it, issued at or after the stamp's time and while the certificate was still valid, so a
-revocation would still be listed. Such a list that shows it revoked at or before the stamp's time,
+revocation would still be listed, and complete: not a delta list, not one an issuing distribution
+point scopes, not an indirect one, and with no critical extension, of the list or of an entry, that
+is not read here. Such a list that shows it revoked at or before the stamp's time,
 or for a compromised key at any time, is `stamp-revoked`. A stamp no such list speaks for is
 reported with its status **not checked**, never as good, and the report says how many there are. The
 runtime fetches nothing to find out.
@@ -1064,7 +1076,9 @@ last line edited, which the chain alone cannot see, and a trail cut short. Such 
 failed check of the trail, and it voids the coverage after it.
 
 The coverage's `stamped` is `through` the highest sequence a trusted, matching stamp covers, with no
-failed check of the trail at or before it. The report then gives the time those records existed by
+failed check of the trail at or before it. A stamp lends its time only to the records the chain
+links to its checkpoint: a stamp after a failed check of the trail, though it still matches, lends
+its time to no record, and neither the time reported nor the lag reaches past the failure. The report then gives the time those records existed by
 (the time the authority states, plus the accuracy it states) and the **lag** between each covered
 record's `at` and the first trusted stamp covering it: how many records, the longest lag and the
 shortest, each with its record's sequence, and whether some record's `at` is later than the stamp

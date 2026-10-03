@@ -647,6 +647,11 @@ func (v *verifier) report(size int64) result.AuditChain {
 	if len(v.options.Held) > 0 {
 		v.checkHeld(&chain)
 	}
+	if v.stamps != nil {
+		// The limit is taken before any requirement is checked: an unmet
+		// requirement is not a break in the chain.
+		v.stamps.limit = v.earliestFinding
+	}
 	if v.options.RequireThrough > 0 {
 		v.checkRequirement(&chain)
 	}

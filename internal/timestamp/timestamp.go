@@ -39,6 +39,8 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"reflect"
+	"regexp"
 	"time"
 
 	// The hashes a token may name, registered for crypto.Hash.New.
@@ -156,9 +158,29 @@ func ParseResponse(reply []byte) ([]byte, error) {
 	return response.TimeStampToken.FullBytes, nil
 }
 
+// strictly unmarshals der into value, which must be a pointer to a struct or
+// slice of fixed shape, and holds der to DER exactly: nothing after it, and
+// encoding/asn1's own encoding of what was read must be der byte for byte.
+// That one rule refuses what encoding/asn1 alone would read past: an element
+// after the last field of a SEQUENCE, a non-minimal or indefinite length, a
+// DEFAULT value encoded, and a SET OF out of DER order. Every field that must
+// be read whole and kept as given is a RawValue, which encodes as it was read.
+func strictly(der []byte, value any, params string) error {
+	rest, err := asn1.UnmarshalWithParams(der, value, params)
+	if err != nil || len(rest) != 0 {
+		return ErrMalformed
+	}
+	again, err := asn1.MarshalWithParams(reflect.ValueOf(value).Elem().Interface(), params)
+	if err != nil || !bytes.Equal(again, der) {
+		return fmt.Errorf("%w: it is not in DER", ErrMalformed)
+	}
+	return nil
+}
+
+// contentInfo keeps its [0] EXPLICIT content as one RawValue, read as given.
 type contentInfo struct {
 	ContentType asn1.ObjectIdentifier
-	Content     asn1.RawValue `asn1:"explicit,tag:0"`
+	Content     asn1.RawValue `asn1:"tag:0"`
 }
 
 type encapsulatedContentInfo struct {
@@ -170,9 +192,9 @@ type signedData struct {
 	Version          int
 	DigestAlgorithms []pkix.AlgorithmIdentifier `asn1:"set"`
 	EncapContentInfo encapsulatedContentInfo
-	Certificates     asn1.RawValue `asn1:"optional,tag:0"`
-	CRLs             asn1.RawValue `asn1:"optional,tag:1"`
-	SignerInfos      []signerInfo  `asn1:"set"`
+	Certificates     []asn1.RawValue `asn1:"optional,set,tag:0"`
+	CRLs             asn1.RawValue   `asn1:"optional,tag:1"`
+	SignerInfos      []signerInfo    `asn1:"set"`
 }
 
 type signerInfo struct {
@@ -192,7 +214,7 @@ type issuerAndSerialNumber struct {
 
 type attribute struct {
 	Type   asn1.ObjectIdentifier
-	Values asn1.RawValue `asn1:"set"`
+	Values []asn1.RawValue `asn1:"set"`
 }
 
 type essCertID struct {
@@ -216,22 +238,27 @@ type signingCertificateV2 struct {
 	Policies asn1.RawValue `asn1:"optional"`
 }
 
+// accuracy keeps each of its parts as given, a zero among them, so it
+// encodes as it was read.
 type accuracy struct {
-	Seconds int `asn1:"optional"`
-	Millis  int `asn1:"optional,tag:0"`
-	Micros  int `asn1:"optional,tag:1"`
+	Seconds *big.Int `asn1:"optional"`
+	Millis  *big.Int `asn1:"optional,tag:0"`
+	Micros  *big.Int `asn1:"optional,tag:1"`
 }
 
+// tstInfo keeps its genTime as given and reads it apart (parseGenTime):
+// encoding/asn1 writes a GeneralizedTime without its fraction, so its own
+// encoding of a time with one would not be the bytes read.
 type tstInfo struct {
 	Version        int
 	Policy         asn1.ObjectIdentifier
 	MessageImprint messageImprint
 	SerialNumber   *big.Int
-	GenTime        time.Time        `asn1:"generalized"`
+	GenTime        asn1.RawValue
 	Accuracy       accuracy         `asn1:"optional"`
 	Ordering       bool             `asn1:"optional,default:false"`
 	Nonce          *big.Int         `asn1:"optional"`
-	TSA            asn1.RawValue    `asn1:"optional,explicit,tag:0"`
+	TSA            asn1.RawValue    `asn1:"optional,tag:0"`
 	Extensions     []pkix.Extension `asn1:"optional,tag:1"`
 }
 
@@ -260,49 +287,80 @@ type Token struct {
 func (t *Token) ExistedBy() time.Time { return t.GenTime.Add(t.Accuracy) }
 
 // Parse reads a token, DER, and checks its signature against the signing
-// certificate it carries: the signed attributes must name the TSTInfo content
-// type, carry the digest of the encapsulated TSTInfo, and bind that
-// certificate by its hash, and the signature over them must verify. Whether
-// the certificate is to be trusted is Verify's.
+// certificate it carries. Every structure is held to DER exactly (strictly),
+// and to the subset read here:
+//
+//   - a ContentInfo of SignedData, version 3, whose digest algorithms name the
+//     signer's, carrying an encapsulated TSTInfo, version 1, with no critical
+//     extension, a genTime in DER's GeneralizedTime form, and an accuracy
+//     that a time.Duration holds;
+//   - exactly one SignerInfo, version 1 naming its certificate by issuer and
+//     serial number or version 3 naming it by subject key identifier, the
+//     certificate among the token's own;
+//   - signed attributes, one value each for those read, naming the TSTInfo
+//     content type, carrying the digest of the encapsulated TSTInfo, and
+//     binding the signing certificate by its hash in every ESS binding
+//     present (signingCertificate, signingCertificateV2), at least one;
+//   - a signature over those attributes that verifies.
+//
+// Whether the certificate is to be trusted is Verify's.
 func Parse(der []byte) (*Token, error) {
 	var info contentInfo
-	if rest, err := asn1.Unmarshal(der, &info); err != nil || len(rest) != 0 || !info.ContentType.Equal(oidSignedData) {
-		return nil, ErrMalformed
+	if err := strictly(der, &info, ""); err != nil {
+		return nil, err
 	}
-	// encoding/asn1 keeps an [0] EXPLICIT element whole in a RawValue: the
-	// SignedData is its content.
-	if info.Content.Class != asn1.ClassContextSpecific || info.Content.Tag != 0 || !info.Content.IsCompound {
+	if !info.ContentType.Equal(oidSignedData) || info.Content.Class != asn1.ClassContextSpecific || !info.Content.IsCompound {
 		return nil, ErrMalformed
 	}
 	var signed signedData
-	if rest, err := asn1.Unmarshal(info.Content.Bytes, &signed); err != nil || len(rest) != 0 {
+	if err := strictly(info.Content.Bytes, &signed, ""); err != nil {
+		return nil, err
+	}
+	if signed.Version != 3 || !signed.EncapContentInfo.EContentType.Equal(oidTSTInfo) || len(signed.EncapContentInfo.EContent) == 0 || len(signed.SignerInfos) != 1 {
 		return nil, ErrMalformed
 	}
-	if !signed.EncapContentInfo.EContentType.Equal(oidTSTInfo) || len(signed.EncapContentInfo.EContent) == 0 || len(signed.SignerInfos) != 1 {
-		return nil, ErrMalformed
+	signer := signed.SignerInfos[0]
+	declared := false
+	for _, algorithm := range signed.DigestAlgorithms {
+		declared = declared || algorithm.Algorithm.Equal(signer.DigestAlgorithm.Algorithm)
+	}
+	if !declared {
+		return nil, fmt.Errorf("%w: the signer's digest algorithm is not among the SignedData's", ErrMalformed)
 	}
 	var content tstInfo
-	if rest, err := asn1.Unmarshal(signed.EncapContentInfo.EContent, &content); err != nil || len(rest) != 0 || content.Version != 1 {
+	if err := strictly(signed.EncapContentInfo.EContent, &content, ""); err != nil {
+		return nil, err
+	}
+	if content.Version != 1 {
 		return nil, ErrMalformed
 	}
-	if content.Accuracy.Seconds < 0 || content.Accuracy.Millis < 0 || content.Accuracy.Millis > 999 || content.Accuracy.Micros < 0 || content.Accuracy.Micros > 999 {
-		return nil, ErrMalformed
+	for _, extension := range content.Extensions {
+		if extension.Critical {
+			return nil, fmt.Errorf("%w: the TSTInfo has a critical extension", ErrMalformed)
+		}
+	}
+	genTime, err := parseGenTime(content.GenTime)
+	if err != nil {
+		return nil, err
+	}
+	accuracy, err := durationOf(content.Accuracy)
+	if err != nil {
+		return nil, err
 	}
 	certificates, err := parseCertificates(signed.Certificates)
 	if err != nil {
 		return nil, err
 	}
-	signer := signed.SignerInfos[0]
-	certificate := findSigner(signer.SID, certificates)
-	if certificate == nil {
-		return nil, fmt.Errorf("%w: the token does not carry the certificate that signed it", ErrMalformed)
+	certificate, err := findSigner(signer, certificates)
+	if err != nil {
+		return nil, err
 	}
 	if err := checkSignedAttributes(signer, signed.EncapContentInfo.EContent, certificate); err != nil {
 		return nil, err
 	}
 	return &Token{
-		GenTime:       content.GenTime,
-		Accuracy:      time.Duration(content.Accuracy.Seconds)*time.Second + time.Duration(content.Accuracy.Millis)*time.Millisecond + time.Duration(content.Accuracy.Micros)*time.Microsecond,
+		GenTime:       genTime,
+		Accuracy:      accuracy,
 		Policy:        content.Policy,
 		HashAlgorithm: content.MessageImprint.HashAlgorithm.Algorithm,
 		HashedMessage: content.MessageImprint.HashedMessage,
@@ -313,16 +371,57 @@ func Parse(der []byte) (*Token, error) {
 	}, nil
 }
 
+// generalizedTimeForm is DER's GeneralizedTime: to the second, in UTC, with a
+// fraction only when it is not zero and with no trailing zero.
+var generalizedTimeForm = regexp.MustCompile(`^[0-9]{14}(\.[0-9]*[1-9])?Z$`)
+
+// parseGenTime reads a TSTInfo's genTime, DER's GeneralizedTime.
+func parseGenTime(raw asn1.RawValue) (time.Time, error) {
+	if raw.Class != asn1.ClassUniversal || raw.Tag != asn1.TagGeneralizedTime || raw.IsCompound || !generalizedTimeForm.Match(raw.Bytes) {
+		return time.Time{}, fmt.Errorf("%w: the genTime is not a DER GeneralizedTime", ErrMalformed)
+	}
+	layout := "20060102150405Z"
+	if bytes.IndexByte(raw.Bytes, '.') >= 0 {
+		layout = "20060102150405.999999999Z"
+	}
+	parsed, err := time.Parse(layout, string(raw.Bytes))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: the genTime is not a time", ErrMalformed)
+	}
+	return parsed, nil
+}
+
+// durationOf is an accuracy as a time.Duration: each part not negative,
+// milliseconds and microseconds at most 999, and the whole within what a
+// time.Duration holds, or the token is refused rather than given a time that
+// overflowed.
+func durationOf(stated accuracy) (time.Duration, error) {
+	total := new(big.Int)
+	for _, part := range []struct {
+		value *big.Int
+		unit  int64
+		max   int64
+	}{{stated.Seconds, int64(time.Second), -1}, {stated.Millis, int64(time.Millisecond), 999}, {stated.Micros, int64(time.Microsecond), 999}} {
+		if part.value == nil {
+			continue
+		}
+		if part.value.Sign() < 0 || (part.max >= 0 && part.value.Cmp(big.NewInt(part.max)) > 0) {
+			return 0, fmt.Errorf("%w: the accuracy is out of range", ErrMalformed)
+		}
+		total.Add(total, new(big.Int).Mul(part.value, big.NewInt(part.unit)))
+	}
+	if !total.IsInt64() {
+		return 0, fmt.Errorf("%w: the accuracy is longer than a time span this runtime holds", ErrMalformed)
+	}
+	return time.Duration(total.Int64()), nil
+}
+
 // parseCertificates reads the token's certificates: each must be an X.509
 // certificate, the one choice of CertificateChoices read here.
-func parseCertificates(raw asn1.RawValue) ([]*x509.Certificate, error) {
+func parseCertificates(raw []asn1.RawValue) ([]*x509.Certificate, error) {
 	certificates := []*x509.Certificate{}
-	rest := raw.Bytes
-	for len(rest) > 0 {
-		var element asn1.RawValue
-		var err error
-		rest, err = asn1.Unmarshal(rest, &element)
-		if err != nil || element.Class != asn1.ClassUniversal || element.Tag != asn1.TagSequence {
+	for _, element := range raw {
+		if element.Class != asn1.ClassUniversal || element.Tag != asn1.TagSequence {
 			return nil, ErrMalformed
 		}
 		certificate, err := x509.ParseCertificate(element.FullBytes)
@@ -334,28 +433,32 @@ func parseCertificates(raw asn1.RawValue) ([]*x509.Certificate, error) {
 	return certificates, nil
 }
 
-// findSigner is the certificate a SignerInfo's identifier names: by issuer
-// and serial number, or by subject key identifier.
-func findSigner(sid asn1.RawValue, certificates []*x509.Certificate) *x509.Certificate {
+// findSigner is the certificate a SignerInfo names, held to the version its
+// way of naming takes: version 1 by issuer and serial number, version 3 by
+// subject key identifier.
+func findSigner(signer signerInfo, certificates []*x509.Certificate) (*x509.Certificate, error) {
+	sid := signer.SID
 	switch {
-	case sid.Class == asn1.ClassUniversal && sid.Tag == asn1.TagSequence:
+	case sid.Class == asn1.ClassUniversal && sid.Tag == asn1.TagSequence && signer.Version == 1:
 		var named issuerAndSerialNumber
-		if rest, err := asn1.Unmarshal(sid.FullBytes, &named); err != nil || len(rest) != 0 || named.Serial == nil {
-			return nil
+		if err := strictly(sid.FullBytes, &named, ""); err != nil || named.Serial == nil {
+			return nil, ErrMalformed
 		}
 		for _, certificate := range certificates {
 			if bytes.Equal(certificate.RawIssuer, named.Issuer.FullBytes) && certificate.SerialNumber.Cmp(named.Serial) == 0 {
-				return certificate
+				return certificate, nil
 			}
 		}
-	case sid.Class == asn1.ClassContextSpecific && sid.Tag == 0 && !sid.IsCompound:
+	case sid.Class == asn1.ClassContextSpecific && sid.Tag == 0 && !sid.IsCompound && signer.Version == 3:
 		for _, certificate := range certificates {
 			if len(certificate.SubjectKeyId) > 0 && bytes.Equal(certificate.SubjectKeyId, sid.Bytes) {
-				return certificate
+				return certificate, nil
 			}
 		}
+	default:
+		return nil, fmt.Errorf("%w: the SignerInfo's version is not the one its identifier takes", ErrMalformed)
 	}
-	return nil
+	return nil, fmt.Errorf("%w: the token does not carry the certificate that signed it", ErrMalformed)
 }
 
 // hashOf is the hash an algorithm identifier names, among those read here.
@@ -369,6 +472,14 @@ func hashOf(algorithm asn1.ObjectIdentifier) (crypto.Hash, bool) {
 		return crypto.SHA512, true
 	}
 	return 0, false
+}
+
+// singleValue is an attribute's one value, read strictly into value.
+func singleValue(attr attribute, value any) error {
+	if len(attr.Values) != 1 {
+		return fmt.Errorf("%w: a signed attribute read here has more than one value", ErrMalformed)
+	}
+	return strictly(attr.Values[0].FullBytes, value, "")
 }
 
 // checkSignedAttributes holds a SignerInfo's signed attributes to RFC 3161 and
@@ -385,11 +496,12 @@ func checkSignedAttributes(signer signerInfo, content []byte, certificate *x509.
 	// IMPLICIT that carries them: the tag is the one byte that differs.
 	encoded := append([]byte{0x31}, signer.SignedAttrs.FullBytes[1:]...)
 	var attributes []attribute
-	if rest, err := asn1.UnmarshalWithParams(encoded, &attributes, "set"); err != nil || len(rest) != 0 {
-		return ErrMalformed
+	if err := strictly(encoded, &attributes, "set"); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
-	var contentTypeOK, digestOK, certificateOK bool
+	var contentTypeOK, digestOK bool
+	bindings, bound := 0, 0
 	for _, attr := range attributes {
 		key := attr.Type.String()
 		if seen[key] {
@@ -399,39 +511,46 @@ func checkSignedAttributes(signer signerInfo, content []byte, certificate *x509.
 		switch {
 		case attr.Type.Equal(oidContentType):
 			var value asn1.ObjectIdentifier
-			if rest, err := asn1.Unmarshal(attr.Values.Bytes, &value); err != nil || len(rest) != 0 {
-				return ErrMalformed
+			if err := singleValue(attr, &value); err != nil {
+				return err
 			}
 			contentTypeOK = value.Equal(oidTSTInfo)
 		case attr.Type.Equal(oidMessageDigest):
 			var value []byte
-			if rest, err := asn1.Unmarshal(attr.Values.Bytes, &value); err != nil || len(rest) != 0 {
-				return ErrMalformed
+			if err := singleValue(attr, &value); err != nil {
+				return err
 			}
 			sum := digestHash.New()
 			sum.Write(content)
 			digestOK = bytes.Equal(value, sum.Sum(nil))
 		case attr.Type.Equal(oidSigningCertificate):
 			var value signingCertificate
-			if rest, err := asn1.Unmarshal(attr.Values.Bytes, &value); err != nil || len(rest) != 0 || len(value.Certs) == 0 {
+			if err := singleValue(attr, &value); err != nil || len(value.Certs) == 0 {
 				return ErrMalformed
 			}
+			bindings++
 			sum := sha1.Sum(certificate.Raw)
-			certificateOK = bytes.Equal(value.Certs[0].CertHash, sum[:])
+			if bytes.Equal(value.Certs[0].CertHash, sum[:]) {
+				bound++
+			}
 		case attr.Type.Equal(oidSigningCertificateV2):
 			var value signingCertificateV2
-			if rest, err := asn1.Unmarshal(attr.Values.Bytes, &value); err != nil || len(rest) != 0 || len(value.Certs) == 0 {
+			if err := singleValue(attr, &value); err != nil || len(value.Certs) == 0 {
 				return ErrMalformed
 			}
 			certHash := crypto.SHA256
-			if len(value.Certs[0].HashAlgorithm.Algorithm) > 0 {
-				if certHash, ok = hashOf(value.Certs[0].HashAlgorithm.Algorithm); !ok {
-					return fmt.Errorf("%w: the signing certificate's hash is not one read here", ErrMalformed)
+			if algorithm := value.Certs[0].HashAlgorithm.Algorithm; len(algorithm) > 0 {
+				// SHA-256 is the DEFAULT, which DER leaves out.
+				if certHash, ok = hashOf(algorithm); !ok || certHash == crypto.SHA256 {
+					return fmt.Errorf("%w: the signing certificate's hash is not one read here, or is the default written out", ErrMalformed)
 				}
 			}
+			bindings++
 			sum := certHash.New()
 			sum.Write(certificate.Raw)
-			certificateOK = bytes.Equal(value.Certs[0].CertHash, sum.Sum(nil))
+			if bytes.Equal(value.Certs[0].CertHash, sum.Sum(nil)) {
+				bound++
+			}
 		}
 	}
 	switch {
@@ -439,8 +558,8 @@ func checkSignedAttributes(signer signerInfo, content []byte, certificate *x509.
 		return fmt.Errorf("%w: the signed content type is not a TSTInfo", ErrSignature)
 	case !digestOK:
 		return fmt.Errorf("%w: the signed digest is not the digest of the TSTInfo", ErrSignature)
-	case !certificateOK:
-		return fmt.Errorf("%w: the signed attributes do not bind the certificate that signed", ErrSignature)
+	case bindings == 0 || bound != bindings:
+		return fmt.Errorf("%w: the signed attributes do not bind the certificate that signed, in every binding they carry", ErrSignature)
 	}
 	sum := digestHash.New()
 	sum.Write(encoded)
@@ -516,8 +635,9 @@ type VerifyOptions struct {
 //   - and, for every certificate of the chain but its root, a supplied
 //     revocation list issued by that certificate's issuer, signed by it,
 //     issued at or after GenTime and while the certificate was still valid
-//     (so a revocation would still be on it), does not list the certificate
-//     as revoked at or before GenTime, nor for a compromised key at any time.
+//     (so a revocation would still be on it), and complete (completeList),
+//     does not list the certificate as revoked at or before GenTime, nor for
+//     a compromised key at any time.
 //
 // It answers RevocationChecked when every such certificate was covered by such
 // a list, and RevocationNotChecked otherwise; a revocation shown is ErrRevoked.
@@ -585,7 +705,7 @@ func revocationOf(chain []*x509.Certificate, at time.Time, lists []*x509.Revocat
 			if !bytes.Equal(list.RawIssuer, certificate.RawIssuer) || list.ThisUpdate.Before(at) || list.ThisUpdate.After(certificate.NotAfter) {
 				continue
 			}
-			if list.CheckSignatureFrom(issuer) != nil {
+			if list.CheckSignatureFrom(issuer) != nil || !completeList(list) {
 				continue
 			}
 			covered = true
@@ -605,6 +725,51 @@ func revocationOf(chain []*x509.Certificate, at time.Time, lists []*x509.Revocat
 		}
 	}
 	return status, nil
+}
+
+var (
+	oidDeltaCRLIndicator        = asn1.ObjectIdentifier{2, 5, 29, 27}
+	oidIssuingDistributionPoint = asn1.ObjectIdentifier{2, 5, 29, 28}
+	oidCertificateIssuer        = asn1.ObjectIdentifier{2, 5, 29, 29}
+	oidAuthorityKeyIdentifier   = asn1.ObjectIdentifier{2, 5, 29, 35}
+	oidCRLNumber                = asn1.ObjectIdentifier{2, 5, 29, 20}
+	oidReasonCode               = asn1.ObjectIdentifier{2, 5, 29, 21}
+	oidInvalidityDate           = asn1.ObjectIdentifier{2, 5, 29, 24}
+	recognisedListExtensions    = []asn1.ObjectIdentifier{oidAuthorityKeyIdentifier, oidCRLNumber}
+	recognisedEntryExtensions   = []asn1.ObjectIdentifier{oidReasonCode, oidInvalidityDate}
+)
+
+// completeList says whether a revocation list can speak for every
+// certificate its issuer issued: not a delta list, which lists only what
+// changed since a base it does not carry; not a scoped one, which an issuing
+// distribution point limits to some certificates or some reasons; not an
+// indirect one, whose entries name another issuer; and with no critical
+// extension, of the list or of an entry, that is not read here.
+func completeList(list *x509.RevocationList) bool {
+	recognised := func(id asn1.ObjectIdentifier, known []asn1.ObjectIdentifier) bool {
+		for _, each := range known {
+			if id.Equal(each) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, extension := range list.Extensions {
+		if extension.Id.Equal(oidDeltaCRLIndicator) || extension.Id.Equal(oidIssuingDistributionPoint) {
+			return false
+		}
+		if extension.Critical && !recognised(extension.Id, recognisedListExtensions) {
+			return false
+		}
+	}
+	for _, entry := range list.RevokedCertificateEntries {
+		for _, extension := range entry.Extensions {
+			if extension.Id.Equal(oidCertificateIssuer) || (extension.Critical && !recognised(extension.Id, recognisedEntryExtensions)) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // MaxReplyBytes bounds an authority's reply: a token with its certificates is

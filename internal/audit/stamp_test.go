@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -443,5 +444,78 @@ func TestAStampsCheckpointIsHeldWholeAndOnlyWithRoots(t *testing.T) {
 	report := verifyWith(t, trail, Options{Stamps: &options})
 	if report.Chain.Status != "valid" || report.Chain.Coverage.Stamped.Status != "not-checked" || report.Chain.Stamps != nil {
 		t.Fatalf("no roots: %v %+v", findingNames(report.Chain), report.Chain.Coverage)
+	}
+}
+
+// A stamp lends its time only to the records the chain links to its
+// checkpoint. A trail whose first record was changed after its third was
+// stamped, with the changed record stamped later: the chain breaks at line 2,
+// so the third record's stamp, though it still matches, lends its earlier
+// time to nothing, and neither the time the stamped records existed by, nor
+// the lag, nor the count of unreadable at, reaches past the break.
+func TestAStampBeyondABreakLendsNoTime(t *testing.T) {
+	_, _, trail := chainedTrail(t, 3)
+	tsa := testAuthority(t, tsatest.Options{})
+	lines := splitLines(trail)
+	members, err := exactObject(lines[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var at string
+	if decodeString(members["at"], &at) != nil {
+		t.Fatal("a record has an at")
+	}
+	lines[2] = bytes.Replace(lines[2], []byte(`"at":"`+at+`"`), []byte(`"at":"later"`), 1)
+	early := time.Now().Add(-time.Hour).Truncate(time.Second)
+	tsa.Now = func() time.Time { return early }
+	third := stampOf(t, tsa, checkpointAt(t, joinLines(lines), 3))
+	lines[0] = bytes.Replace(lines[0], []byte(`"n":0`), []byte(`"n":7`), 1)
+	edited := joinLines(lines)
+	late := early.Add(time.Hour)
+	tsa.Now = func() time.Time { return late }
+	first := stampOf(t, tsa, checkpointAt(t, edited, 1))
+	chain := verifyStamped(t, edited, slices.Concat(third, first), StampOptions{}, tsa)
+	if !slices.Equal(findingNames(chain), []string{"previous-mismatch@2"}) || chain.Coverage.Stamped != (result.AuditCoverageState{Status: "through", Through: 1}) {
+		t.Fatalf("coverage: %v %+v", findingNames(chain), chain.Coverage)
+	}
+	if chain.Stamps.CoveredBy != late.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("the changed record existed by %s, not by the earlier stamp's time: %s", late.UTC(), chain.Stamps.CoveredBy)
+	}
+	if lag := chain.Stamps.Lag; lag.Records != 1 || lag.AtUnreadable != 0 || lag.MaxSequence != 1 {
+		t.Fatalf("the lag reaches past the break: %+v", lag)
+	}
+	if !containsString(chain.Establishes, fmt.Sprintf(establishesStamped, 1, late.UTC().Format(time.RFC3339Nano))) {
+		t.Fatalf("statements: %q", chain.Establishes)
+	}
+	// An unmet requirement is not a break: it does not pull the stamps'
+	// coverage back.
+	_, _, intact := chainedTrail(t, 2)
+	options := StampOptions{}
+	pool := x509.NewCertPool()
+	pool.AddCert(tsa.Root)
+	options.Verify.Roots = pool
+	stamps := stampOf(t, tsa, checkpointAt(t, intact, 2))
+	options.Stamps, options.StampsSize = bytes.NewReader(stamps), int64(len(stamps))
+	report := verifyWith(t, intact, Options{Held: keptCheckpoints(t, intact, 1), RequireThrough: 2, Stamps: &options})
+	if report.Chain.Coverage.Stamped.Through != 2 || report.Chain.Stamps.Lag.Records != 2 {
+		t.Fatalf("an unmet checkpoint requirement: %v %+v", findingNames(report.Chain), report.Chain.Coverage)
+	}
+}
+
+// Every token audit stamp can receive fits one stamps line a reader reads
+// back, and a token that would not is refused before the stamps file is
+// opened, so nothing is kept that a retry would not see.
+func TestAStampTooLargeToReadBackIsRefusedBeforeWriting(t *testing.T) {
+	root, dir, trail := chainedTrail(t, 1)
+	checkpoint := checkpointAt(t, trail, 1)
+	if size := len(encodeStampLine(checkpoint, make([]byte, timestamp.MaxReplyBytes))); size > MaxStampLineBytes {
+		t.Fatalf("the largest reply makes a line of %d bytes, past %d", size, MaxStampLineBytes)
+	}
+	writer := NewWriter(root, "audit", true)
+	if appended, err := writer.RecordStamp(checkpoint, make([]byte, MaxStampLineBytes)); !errors.Is(err, ErrStampTooLarge) || appended {
+		t.Fatalf("a token past the bound: %v %v", appended, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "audit", StampsName)); !os.IsNotExist(err) {
+		t.Fatalf("no stamps file is created: %v", err)
 	}
 }

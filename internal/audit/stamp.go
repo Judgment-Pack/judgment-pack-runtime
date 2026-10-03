@@ -35,9 +35,11 @@ const (
 	StampsName = "stamps.jsonl"
 	// StampVersion is the shape of a stamps line.
 	StampVersion = "1"
-	// MaxStampLineBytes bounds a stamps line read whole: a token carrying a
-	// certificate chain is a few kilobytes.
-	MaxStampLineBytes = 1 << 18
+	// MaxStampLineBytes bounds a stamps line, written or read whole. A token
+	// carrying a certificate chain is a few kilobytes; the bound holds the
+	// largest reply timestamp.Ask reads, MaxReplyBytes, in base64 with its
+	// checkpoint, so every token Ask returns can be kept and read back.
+	MaxStampLineBytes = 2 << 20
 	// MaxStampsBytes bounds the stamps file a verification reads.
 	MaxStampsBytes = 64 << 20
 )
@@ -221,6 +223,11 @@ func (w *Writer) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
 	return holdsStamp(io.LimitReader(file, MaxStampsBytes), checkpoint)
 }
 
+// ErrStampTooLarge is a token whose stamps line would be longer than
+// MaxStampLineBytes, which a reader passes over as unreadable; it is refused
+// before the stamps file is opened.
+var ErrStampTooLarge = errors.New("the time-stamp token is too large to keep as one stamps line")
+
 // RecordStamp keeps a token for checkpoint in the stamps file, under the
 // stamps file's own lock, never the trail's: a decision never waits on a
 // stamp. It is idempotent by the checkpoint's digest: when the file already
@@ -229,6 +236,9 @@ func (w *Writer) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
 func (w *Writer) RecordStamp(checkpoint result.AuditCheckpoint, token []byte) (bool, error) {
 	if w == nil {
 		return false, ErrNoTrail
+	}
+	if len(encodeStampLine(checkpoint, token)) > MaxStampLineBytes {
+		return false, ErrStampTooLarge
 	}
 	appended := false
 	err := w.root.AppendLocked(w.stampsPath(), func(state fssecure.AppendState) ([]byte, error) {
@@ -288,6 +298,8 @@ type lagInterval struct {
 	count                  int64
 	earliest, latest       time.Time
 	earliestSeq, latestSeq int64
+	// unreadable counts the interval's records whose at could not be read.
+	unreadable int64
 }
 
 // stampChecker holds the stamps a verification read, and the lags it gathers
@@ -299,10 +311,14 @@ type stampChecker struct {
 	candidates []candidateStamp
 	// sequences is the candidates' sequences, sorted and distinct; the
 	// records up to each one and after the one before share a lagInterval.
-	sequences    []int64
-	intervals    []lagInterval
-	atUnreadable int64
-	findings     []result.AuditFinding
+	sequences []int64
+	intervals []lagInterval
+	findings  []result.AuditFinding
+	// limit is the earliest line any check of the trail failed at, or 0, as
+	// it stood once the trail and the held checkpoints were checked: a stamp
+	// lends its time only to records the chain links to it, so only a stamp
+	// before the limit counts, and only for the records up to it.
+	limit int64
 }
 
 // newStampChecker reads every stamps line and checks each token, before the
@@ -392,11 +408,11 @@ func (c *stampChecker) settle(sequence int64, at time.Time, atRead bool) {
 	if index == len(c.sequences) {
 		return
 	}
+	interval := &c.intervals[index]
 	if !atRead {
-		c.atUnreadable++
+		interval.unreadable++
 		return
 	}
-	interval := &c.intervals[index]
 	if interval.count == 0 || at.Before(interval.earliest) {
 		interval.earliest, interval.earliestSeq = at, sequence
 	}
@@ -433,6 +449,14 @@ func (c *stampChecker) match(v *verifier) {
 	}
 }
 
+// lends says whether a stamp lends its time to the records up to its
+// checkpoint: it is trusted, its checkpoint matches the trail, and no check of
+// the trail failed at or before its sequence, so the chain links every one of
+// those records to the checkpoint it stamps.
+func (c *stampChecker) lends(candidate candidateStamp) bool {
+	return candidate.matches && (c.limit == 0 || candidate.checkpoint.Sequence < c.limit)
+}
+
 // coverage reports how far the trusted stamps reach, their lags, and the
 // requirement.
 func (c *stampChecker) coverage(v *verifier, chain *result.AuditChain) {
@@ -449,7 +473,7 @@ func (c *stampChecker) coverage(v *verifier, chain *result.AuditChain) {
 			cover[index] = cover[index+1]
 		}
 		for _, candidate := range c.candidates {
-			if candidate.matches && candidate.checkpoint.Sequence == c.sequences[index] && (cover[index].IsZero() || candidate.existedBy.Before(cover[index])) {
+			if c.lends(candidate) && candidate.checkpoint.Sequence == c.sequences[index] && (cover[index].IsZero() || candidate.existedBy.Before(cover[index])) {
 				cover[index] = candidate.existedBy
 			}
 		}
@@ -465,15 +489,18 @@ func (c *stampChecker) coverage(v *verifier, chain *result.AuditChain) {
 		} else {
 			summary.RevocationNotChecked++
 		}
-		sequence := candidate.checkpoint.Sequence
-		if sequence > through && (v.earliestFinding == 0 || v.earliestFinding > sequence) {
+		if sequence := candidate.checkpoint.Sequence; sequence > through && c.lends(candidate) {
 			through = sequence
 		}
 	}
-	lag := &result.AuditStampLag{AtUnreadable: c.atUnreadable}
+	lag := &result.AuditStampLag{}
 	var longest, shortest time.Duration
 	for index, interval := range c.intervals {
-		if interval.count == 0 || cover[index].IsZero() {
+		if cover[index].IsZero() {
+			continue
+		}
+		lag.AtUnreadable += interval.unreadable
+		if interval.count == 0 {
 			continue
 		}
 		most, least := cover[index].Sub(interval.earliest), cover[index].Sub(interval.latest)
