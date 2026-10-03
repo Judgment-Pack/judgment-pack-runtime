@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.26.0 - 2026-10-03
 
 - **The audit trail is chained over its exact bytes, on by default** (ADR-0047 §1; #206).
   - Each record this runtime appends to `evaluations.jsonl` also carries `trail` (the trail's
