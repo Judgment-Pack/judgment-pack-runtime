@@ -26,7 +26,6 @@ func recordedProject(t *testing.T, n int) (string, string) {
 	return configPath, filepath.Join(filepath.Dir(configPath), "audit", audit.FileName)
 }
 
-// verification runs audit verify with JSON output and decodes it.
 // attemptsSentence is the fixed sentence every audit verify report ends its
 // doesNotEstablish list with (ADR-0048), spelled out here rather than read
 // from the audit package, so a change to the text a reader mirrors verbatim
@@ -45,6 +44,20 @@ func endsWithAttempts(statements []string) bool {
 	return count == 1 && statements[len(statements)-1] == attemptsSentence
 }
 
+// humanEndsWithAttempts is endsWithAttempts for the human report: the
+// sentence is on one "NOT ESTABLISHED: " line, and that line is the last of
+// them. The trail's path and the snapshot note may follow it.
+func humanEndsWithAttempts(stdout string) bool {
+	statements := []string{}
+	for _, line := range strings.Split(stdout, "\n") {
+		if statement, found := strings.CutPrefix(line, "NOT ESTABLISHED: "); found {
+			statements = append(statements, statement)
+		}
+	}
+	return len(statements) > 0 && endsWithAttempts(statements)
+}
+
+// verification runs audit verify with JSON output and decodes it.
 func verification(t *testing.T, args ...string) (int, result.AuditVerification) {
 	t.Helper()
 	code, stdout, stderr := runTest(t, append([]string{"audit", "verify", "--format", "json"}, args...), "")
@@ -93,7 +106,7 @@ func TestAuditVerifyExitsByTheChain(t *testing.T) {
 	}
 	code, stdout, _ := runTest(t, []string{"audit", "verify", "--config", configPath}, "")
 	if code != 0 || !strings.Contains(stdout, "the integrity of one supplied chain") || !strings.Contains(stdout, "NOT ESTABLISHED: The last line") ||
-		!strings.Contains(stdout, "signed: not checked (no --public-key)") || strings.Count(stdout, "NOT ESTABLISHED: "+attemptsSentence+"\n") != 1 {
+		!strings.Contains(stdout, "signed: not checked (no --public-key)") || !humanEndsWithAttempts(stdout) {
 		t.Fatalf("human output: %q", stdout)
 	}
 
@@ -140,7 +153,7 @@ func TestAuditCheckpointIsWhatVerifyExpects(t *testing.T) {
 		t.Fatalf("doesNotEstablish with --expect: %q", output.DoesNotEstablish)
 	}
 	if code, stdout, _ := runTest(t, []string{"audit", "verify", "--config", configPath, "--expect", held}, ""); code != 0 ||
-		strings.Count(stdout, "NOT ESTABLISHED: "+attemptsSentence+"\n") != 1 {
+		!humanEndsWithAttempts(stdout) {
 		t.Fatalf("human output with --expect: %q", stdout)
 	}
 
@@ -236,11 +249,13 @@ func TestAuditRepairStartsANewSegment(t *testing.T) {
 		t.Fatalf("the writer chains after the discontinuity: exit=%d", code)
 	}
 	code, output := verification(t, "--config", configPath)
-	if code != 0 || output.Status != "segmented" || len(output.Segments) != 2 || output.Coverage.Damaged != 1 || len(output.Discontinuities) != 1 {
+	if code != 0 || output.Status != "segmented" || len(output.Segments) != 2 || output.Coverage.Damaged != 1 || len(output.Discontinuities) != 1 ||
+		!endsWithAttempts(output.DoesNotEstablish) {
 		t.Fatalf("exit=%d %+v", code, output)
 	}
 	code, human, _ := runTest(t, []string{"audit", "verify", "--config", configPath}, "")
-	if code != 0 || !strings.HasPrefix(human, "SEGMENTED: 1 discontinuity record(s); the history is not intact across them") {
+	if code != 0 || !strings.HasPrefix(human, "SEGMENTED: 1 discontinuity record(s); the history is not intact across them") ||
+		!humanEndsWithAttempts(human) {
 		t.Fatalf("human output: %q", human)
 	}
 	code, stdout, _ = runTest(t, []string{"audit", "repair", "--config", configPath, "--format", "json"}, "")

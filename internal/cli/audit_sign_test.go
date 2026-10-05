@@ -174,8 +174,9 @@ func TestAuditVerifyChecksTheSignatures(t *testing.T) {
 	}
 	code, output = verification(t, "--config", configPath, "--public-key", public, "--require-signed-through", "3")
 	if code != result.ExitInvalid || output.Status != "invalid" || len(output.Findings) != 2 ||
-		output.Findings[0].Name != audit.FindingSignatureRecordMismatch || output.Findings[1].Name != audit.FindingSignatureMissing {
-		t.Fatalf("an edited last record: exit=%d %+v", code, output.Findings)
+		output.Findings[0].Name != audit.FindingSignatureRecordMismatch || output.Findings[1].Name != audit.FindingSignatureMissing ||
+		output.RequiredSigned == nil || output.RequiredSigned.Status != "unmet" || !endsWithAttempts(output.DoesNotEstablish) {
+		t.Fatalf("an edited last record: exit=%d %+v %q", code, output.Findings, output.DoesNotEstablish)
 	}
 	// Another key does not verify the trail.
 	_, otherPublic := generatedKey(t)

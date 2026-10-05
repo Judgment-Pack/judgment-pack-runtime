@@ -75,8 +75,9 @@ func TestAuditStampStampsTheCurrentCheckpointOnce(t *testing.T) {
 	// A new record is not covered until stamped again.
 	evaluateOnce(t, configPath)
 	code, verified = verification(t, "--config", configPath, "--tsa-roots", roots, "--require-stamped-through", "3")
-	if code != result.ExitInvalid || verified.Coverage.Stamped.Through != 2 || verified.Findings[0].Name != audit.FindingStampCoverageMissing {
-		t.Fatalf("an unstamped record: exit=%d %+v %+v", code, verified.Coverage, verified.Findings)
+	if code != result.ExitInvalid || verified.Coverage.Stamped.Through != 2 || verified.Findings[0].Name != audit.FindingStampCoverageMissing ||
+		verified.RequiredStamped == nil || verified.RequiredStamped.Status != "unmet" || !endsWithAttempts(verified.DoesNotEstablish) {
+		t.Fatalf("an unstamped record: exit=%d %+v %+v %q", code, verified.Coverage, verified.Findings, verified.DoesNotEstablish)
 	}
 	if code, output, _ = stamping(t, "--config", configPath, "--tsa", server.URL); code != 0 || output.Status != "stamped" || output.Checkpoint.Sequence != 3 {
 		t.Fatalf("stamping the new checkpoint: exit=%d %+v", code, output)

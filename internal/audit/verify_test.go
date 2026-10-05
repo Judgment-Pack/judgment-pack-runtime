@@ -719,7 +719,8 @@ func TestVerifyingWhileWritersAppendSeesOnlyWholeWrites(t *testing.T) {
 // disposition (ADR-0048), whatever was supplied and whatever was found: no
 // checkpoint, key or stamp covers a line that was never written, so the
 // checkpointed report, the one a counterparty reads, says it as the bare one
-// does.
+// does, and so do a repaired trail's report and a report failing a required
+// coverage.
 func TestEveryReportSaysTheTrailIsSilentAboutAttempts(t *testing.T) {
 	_, _, chained := chainedTrail(t, 3)
 	signer := signerOf(t, vectorSeed1)
@@ -738,18 +739,32 @@ func TestEveryReportSaysTheTrailIsSilentAboutAttempts(t *testing.T) {
 	if err := NewWriter(unchained.root, "audit", false).Evaluation(evaluated(), Inputs{Facts: []byte(`{"n":0}`)}, nil, []byte(`{}`), nil); err != nil {
 		t.Fatal(err)
 	}
-
-	signatures := func() *SignatureOptions {
-		return &SignatureOptions{Keys: keys(signer), Sidecar: bytes.NewReader(sidecar), SidecarSize: int64(len(sidecar)), RequireThrough: 3}
+	// A torn trail, repaired, with a record chained after the discontinuity.
+	torn, tornDir := tornTrail(t, 3)
+	if _, err := torn.Repair(); err != nil {
+		t.Fatal(err)
 	}
-	stamps := func(trail []byte, crls ...*x509.RevocationList) *StampOptions {
-		stamped := stampOf(t, tsa, checkpointAt(t, trail, 3))
+	if err := torn.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	// The sidecar without its last line: record 3 is unsigned.
+	unsignedLast := joinLines(splitLines(sidecar)[:2])
+
+	signaturesOf := func(lines []byte) *SignatureOptions {
+		return &SignatureOptions{Keys: keys(signer), Sidecar: bytes.NewReader(lines), SidecarSize: int64(len(lines)), RequireThrough: 3}
+	}
+	signatures := func() *SignatureOptions { return signaturesOf(sidecar) }
+	stampsThrough := func(trail []byte, through int64, crls ...*x509.RevocationList) *StampOptions {
+		stamped := stampOf(t, tsa, checkpointAt(t, trail, through))
 		return &StampOptions{
 			Verify:         timestamp.VerifyOptions{Roots: roots, CRLs: crls},
 			Stamps:         bytes.NewReader(stamped),
 			StampsSize:     int64(len(stamped)),
 			RequireThrough: 3,
 		}
+	}
+	stamps := func(trail []byte, crls ...*x509.RevocationList) *StampOptions {
+		return stampsThrough(trail, 3, crls...)
 	}
 	cases := []struct {
 		name  string
@@ -788,6 +803,21 @@ func TestEveryReportSaysTheTrailIsSilentAboutAttempts(t *testing.T) {
 		}},
 		{"no chained line", readTrailFile(t, unchainedDir), Options{}, func(c result.AuditChain) bool {
 			return c.Status == "valid" && c.Coverage.Chained == 0 && c.Coverage.Uncovered == 1
+		}},
+		{"a repaired trail", readTrailFile(t, tornDir), Options{}, func(c result.AuditChain) bool {
+			return c.Status == "segmented" && c.DiscontinuitiesTotal == 1 && c.Coverage.Damaged == 1 && c.FindingsTotal == 0
+		}},
+		{"an unmet checkpoint requirement", chained, Options{Held: keptCheckpoints(t, chained, 2), RequireThrough: 3}, func(c result.AuditChain) bool {
+			return c.Status == "invalid" && c.Required != nil && c.Required.Status == "unmet" &&
+				strings.Join(findingNames(c), " ") == "checkpoint-coverage-missing@3"
+		}},
+		{"an unmet signature requirement", signed, Options{Signatures: signaturesOf(unsignedLast)}, func(c result.AuditChain) bool {
+			return c.Status == "invalid" && c.RequiredSigned != nil && c.RequiredSigned.Status == "unmet" &&
+				strings.Join(findingNames(c), " ") == "signature-missing@3"
+		}},
+		{"an unmet stamp requirement", chained, Options{Stamps: stampsThrough(chained, 2)}, func(c result.AuditChain) bool {
+			return c.Status == "invalid" && c.RequiredStamped != nil && c.RequiredStamped.Status == "unmet" &&
+				strings.Join(findingNames(c), " ") == "stamp-coverage-missing@3"
 		}},
 	}
 	for _, c := range cases {
