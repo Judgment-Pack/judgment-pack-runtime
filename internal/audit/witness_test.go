@@ -564,6 +564,14 @@ func TestAWitnessReportSaysHowFarTheWitnessReaches(t *testing.T) {
 			t.Fatalf("%+v %q", section, report.Chain.DoesNotEstablish)
 		}
 	})
+	t.Run("a current reading whose chain runs past its head", func(t *testing.T) {
+		report := witnessVerify(t, trail, withHead(w.supplied(w.all()), w.file(1, 2)), 0)
+		section := report.Chain.Witness
+		if section.Reading != "current" || *section.HeadIndex != 1 || *section.HighestIndex != 2 ||
+			!containsString(report.Chain.DoesNotEstablish, "That the witness's head for this trail is still index 1: the head supplied is as current as the reader's fetch of it, and a signature does not say when it was fetched.") {
+			t.Fatalf("%+v %q", section, report.Chain.DoesNotEstablish)
+		}
+	})
 	t.Run("a continued reading", func(t *testing.T) {
 		report := witnessVerify(t, trail, w.continued(1, 1, w.file(2, 3)), 0)
 		if !containsString(report.Chain.DoesNotEstablish, "Anything about statements up to index 1, which this reading did not read: it continued from a continuation supplied as the reader's own earlier successful reading, which the runtime cannot tell from one someone else wrote, and is as complete as that reading was.") {
