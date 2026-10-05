@@ -26,7 +26,8 @@ All notable changes to tagged releases are documented here.
     `witness-head-unreached`. A reading with a head is current, without one historical. A witness
     finding is about no line of the trail, and its `line` is 0.
   - The checkpoint of every checkpoint statement that verifies is held to the trail as `--expect`'s
-    are, with the same four findings. A chain with any witness finding is credited nothing;
+    are, with the same four findings; conflict and retirement statements are never held or
+    credited. A chain with any witness finding is credited nothing;
     otherwise its checkpoints join the held ones for `checkpointed`, `witnessed` and
     `--require-checkpoint-through`, and the payload's `held` stays the holder's own. The coverage
     gains `countersigned`: `not-checked` without `--witness-key`, `failed` on a witness finding,
@@ -42,7 +43,11 @@ All notable changes to tagged releases are documented here.
     continues at the index after its last, and its checkpoint is held against the trail again. A
     statement at or below its last index supplied is refused, a head below it is
     `witness-head-behind`, and a continuation out of shape is `witness-malformed`. A step that fails
-    saves nothing.
+    saves nothing. `--witness-save` never replaces a file the verification reads, other than the
+    continuation `--witness-resume` read, by the identity of the file itself, so another spelling, a
+    symbolic link or a hard link is refused too; nor anything already there that is not a regular
+    file holding a continuation (`JPS-INVOCATION-AUDIT-WITNESS-SAVE`, exit 3). The directory is
+    opened once and the continuation renamed into place through it.
   - Over 16 keys, 64 MiB of witness files, or 110,000 statements, a continuation's two counted and
     lines counted as the files are split, the reading is refused before any statement is checked
     (`JPS-AUDIT-WITNESS-REFUSED`, exit 3, with `keys-over-bound`, `bytes-over-bound`,

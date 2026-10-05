@@ -1196,6 +1196,17 @@ jpack audit verify --trail evaluations.jsonl --witness-key witness.pub \
   nothing, so the next starts again from the continuation you had. Only your own successful reading
   should become a continuation; the runtime cannot tell one from a file someone else wrote, so the
   report says the reading continued, from which index, and a fixed sentence says whose word that is.
+- **What a save may replace.** Before anything is verified, the file `--witness-save` names is held
+  to every file the verification reads, the trail, the files beside it, the configuration, every key
+  and every statements, head, checkpoint, roots and revocation file, by the identity of the file
+  itself: another spelling of its path, a symbolic link or a hard link to one of them is refused.
+  The continuation `--witness-resume` read is the one it may name, so `--witness-resume
+  continuation.json --witness-save continuation.json` advances it. A file already there is replaced
+  only when it holds a continuation; anything else, and anything that is not a regular file, a
+  symbolic link included, is refused and left as it is (`JPS-INVOCATION-AUDIT-WITNESS-SAVE`, exit
+  3). The directory is opened once, before anything is read: a symbolic link among the directories
+  of the path is followed, and the continuation is written to the directory opened, whatever its
+  path names later, through a temporary file beside it that is renamed into place.
 - **Bounds.** At most 16 keys, 64 MiB of `--witness`, `--witness-head` and `--witness-resume` files
   together, and 110,000 statements, the continuation's two counted, a statement being every line
   that is not blank. Over any of them the reading is refused before any statement is checked, never
@@ -1207,9 +1218,10 @@ The report's `witness` section gives the statement lines read and the statements
 supplied, where the reading began (`index-0`, or `continued` after an index) and how it ended
 (`current` at the head's index, or `historical` at the highest), the latest checkpoint statement's
 index, sequence and `witnessedAt`, the conflict statements' sequences, and whether the chain is
-retired. What a credited statement establishes, in the report's words: "Lines 1 to N are the lines
-that existed when a witness under a key supplied signed its statement for checkpoint N, which it
-states it did at T, if that witness is independent of the trail's operator." What it does not:
+retired. What a credited checkpoint statement establishes, in the report's words: "Lines 1 to N are
+the lines that existed when a witness under a key supplied signed its statement for checkpoint N,
+which it states it did at T, if that witness is independent of the trail's operator." What it does
+not:
 
 - anything about lines after N, which no statement of a witness under a key supplied covers;
 - for a current reading, that the witness's head is still the one you fetched: a signature does not

@@ -610,11 +610,14 @@ ADR-0013; no gateway release serves them yet). `jpack audit verify --witness-key
 statements you fetched from it, `--witness <file>` and the head you fetched, `--witness-head
 <file>`, under a key you trust: every statement checked under its key, the chain read from index 0,
 never late, and to the head, which makes the reading current as of your fetch; without a head it is
-historical. The checkpoint of every statement that verifies is held to the trail as a held
-checkpoint is, and a chain with no witness finding is credited: the coverage's `countersigned` says
-how far it reaches, and `--require-countersigned-through <sequence>` fails while the records up to
-it are not countersigned. A longer chain is read in steps, `--witness-save` and `--witness-resume`.
-A statement shows the lines up to its checkpoint are the ones that existed when the witness signed
+historical. The checkpoint of every checkpoint statement that verifies is held to the trail as a
+held checkpoint is, and a chain with no witness finding is credited: the coverage's `countersigned`
+says how far it reaches, and `--require-countersigned-through <sequence>` fails while the records
+up to it are not countersigned. A conflict statement carries a checkpoint that was offered and
+refused, and is credited nothing. A longer chain is read in steps, `--witness-save` and
+`--witness-resume`; `--witness-save` never replaces a file the verification reads, other than the
+continuation it resumes from, or anything that is not a continuation. A credited checkpoint
+statement shows the lines up to its checkpoint are the ones that existed when the witness signed
 it, if the witness is independent of the operator; not who submitted it, and its time is the
 witness's own clock's.
 
