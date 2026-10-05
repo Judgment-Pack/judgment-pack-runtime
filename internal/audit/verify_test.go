@@ -2,6 +2,7 @@ package audit
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,10 +11,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp/tsatest"
 )
 
 // writeRecords appends one evaluation record per facts document through a
@@ -708,4 +712,100 @@ func TestVerifyingWhileWritersAppendSeesOnlyWholeWrites(t *testing.T) {
 	close(stop)
 	group.Wait()
 	close(failures)
+}
+
+// Every report says, once and last among what it does not establish, that the
+// trail is silent about evaluations refused, rehearsed or failed before a
+// disposition (ADR-0048), whatever was supplied and whatever was found: no
+// checkpoint, key or stamp covers a line that was never written, so the
+// checkpointed report, the one a counterparty reads, says it as the bare one
+// does.
+func TestEveryReportSaysTheTrailIsSilentAboutAttempts(t *testing.T) {
+	_, _, chained := chainedTrail(t, 3)
+	signer := signerOf(t, vectorSeed1)
+	_, signedDir := signedTrail(t, signer, 3)
+	signed, sidecar := readTrailFile(t, signedDir), readSidecar(t, signedDir)
+	tsa := testAuthority(t, tsatest.Options{})
+	cleanList, err := tsa.CRL(time.Now().Add(time.Hour), time.Time{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(tsa.Root)
+	edited := splitLines(chained)
+	edited[0] = bytes.Replace(edited[0], []byte(`"n":0`), []byte(`"n":9`), 1)
+	unchained, unchainedDir := writerAt(t, "audit")
+	if err := NewWriter(unchained.root, "audit", false).Evaluation(evaluated(), Inputs{Facts: []byte(`{"n":0}`)}, nil, []byte(`{}`), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	signatures := func() *SignatureOptions {
+		return &SignatureOptions{Keys: keys(signer), Sidecar: bytes.NewReader(sidecar), SidecarSize: int64(len(sidecar)), RequireThrough: 3}
+	}
+	stamps := func(trail []byte, crls ...*x509.RevocationList) *StampOptions {
+		stamped := stampOf(t, tsa, checkpointAt(t, trail, 3))
+		return &StampOptions{
+			Verify:         timestamp.VerifyOptions{Roots: roots, CRLs: crls},
+			Stamps:         bytes.NewReader(stamped),
+			StampsSize:     int64(len(stamped)),
+			RequireThrough: 3,
+		}
+	}
+	cases := []struct {
+		name  string
+		trail []byte
+		opts  Options
+		check func(result.AuditChain) bool
+	}{
+		{"no inputs", chained, Options{}, func(c result.AuditChain) bool {
+			return c.Status == "valid" && c.Coverage.Checkpointed.Status == "not-supplied"
+		}},
+		{"a held checkpoint", chained, Options{Held: keptCheckpoints(t, chained, 3)}, func(c result.AuditChain) bool {
+			return c.Status == "valid" && c.Coverage.Checkpointed == (result.AuditCoverageState{Status: "through", Through: 3})
+		}},
+		{"a public key", signed, Options{Signatures: signatures()}, func(c result.AuditChain) bool {
+			return c.Status == "valid" && c.Coverage.Signed == (result.AuditCoverageState{Status: "through", Through: 3})
+		}},
+		{"time-stamping roots", chained, Options{Stamps: stamps(chained)}, func(c result.AuditChain) bool {
+			return c.Status == "valid" && c.Coverage.Stamped == (result.AuditCoverageState{Status: "through", Through: 3})
+		}},
+		{"every coverage full", signed, Options{
+			Held:           keptCheckpoints(t, signed, 3),
+			RequireThrough: 3,
+			Signatures:     signatures(),
+			Stamps:         stamps(signed, parseList(t, cleanList)),
+		}, func(c result.AuditChain) bool {
+			return c.Status == "valid" && c.Scope == ScopeCheckpoint &&
+				c.Coverage.Checkpointed == (result.AuditCoverageState{Status: "through", Through: 3}) &&
+				c.Coverage.Signed == (result.AuditCoverageState{Status: "through", Through: 3}) &&
+				c.Coverage.Stamped == (result.AuditCoverageState{Status: "through", Through: 3}) &&
+				c.Coverage.Witnessed == 3 && c.Coverage.Unwitnessed == 0 && c.Coverage.UnsignedRecords == 0 &&
+				c.Stamps.RevocationChecked == 1 && c.Stamps.RevocationNotChecked == 0 &&
+				c.Required.Status == "met" && c.RequiredSigned.Status == "met" && c.RequiredStamped.Status == "met"
+		}},
+		{"a failed check", joinLines(edited), Options{}, func(c result.AuditChain) bool {
+			return c.Status == "invalid" && len(c.Establishes) == 0
+		}},
+		{"no chained line", readTrailFile(t, unchainedDir), Options{}, func(c result.AuditChain) bool {
+			return c.Status == "valid" && c.Coverage.Chained == 0 && c.Coverage.Uncovered == 1
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			chain := verifyWith(t, c.trail, c.opts).Chain
+			if !c.check(chain) {
+				t.Fatalf("not the report this case is about: %s %v %+v", chain.Status, findingNames(chain), chain.Coverage)
+			}
+			count := 0
+			for _, statement := range chain.DoesNotEstablish {
+				if statement == notAttempts {
+					count++
+				}
+			}
+			if count != 1 || chain.DoesNotEstablish[len(chain.DoesNotEstablish)-1] != notAttempts {
+				t.Fatalf("the sentence on refused and rehearsed evaluations appears %d time(s), and last: %v; statements: %q",
+					count, len(chain.DoesNotEstablish) > 0 && chain.DoesNotEstablish[len(chain.DoesNotEstablish)-1] == notAttempts, chain.DoesNotEstablish)
+			}
+		})
+	}
 }

@@ -99,6 +99,11 @@ const (
 	notBeforeStamp         = "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each record's at and the first stamp covering it is reported, and judging it is the reader's."
 	notAgainstAuthority    = "Anything against a time-stamping authority that is not independent of the operator: one that colludes can stamp what it is asked, when it is asked; a root supplied is trusted because the verifier chose it."
 	notRevocationChecked   = "That no time-stamping certificate was revoked as of its stamp's time, for %d trusted stamp(s): no revocation list supplied speaks for that time, so their status was not checked."
+	// notAttempts is in every report, whatever was supplied and whatever was
+	// found, and last: a checkpoint, a key or a stamp covers the lines a
+	// trail holds, and no line is written for a refusal, a rehearsal or an
+	// evaluation that failed (ADR-0048).
+	notAttempts = "Whether any evaluation was refused at the gate, rehearsed, or failed before a disposition: the trail records decisions, not attempts, so its silence is not evidence that none were (ADR-0048)."
 )
 
 // Verify reads a trail of size bytes, line by line and over its exact bytes,
@@ -803,5 +808,6 @@ func statements(chain result.AuditChain) ([]string, []string) {
 			notEstablished = append(notEstablished, fmt.Sprintf(notRevocationChecked, chain.Stamps.RevocationNotChecked))
 		}
 	}
+	notEstablished = append(notEstablished, notAttempts)
 	return establishes, notEstablished
 }

@@ -2,6 +2,19 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Every `audit verify` report says the trail is silent about refused and rehearsed evaluations**
+  (ADR-0048; #224). A change to the report's text, and to no check or exit code.
+  - The `doesNotEstablish` list now ends, whatever was supplied (`--expect`, `--public-key`,
+    `--tsa-roots`) and whatever was found, with one more fixed sentence: "Whether any evaluation was
+    refused at the gate, rehearsed, or failed before a disposition: the trail records decisions, not
+    attempts, so its silence is not evidence that none were (ADR-0048)."
+  - Before, a report with a held checkpoint, the one a counterparty reads, said nothing about
+    evaluations never written to the trail. No other sentence changes, and `outputVersion` stays
+    `"2"`; a reader that shows the sentences verbatim, as Desk does, shows one more.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+
 ## 0.27.0 - 2026-10-05
 
 - **A signing key kept where another user could remove or replace it is refused** (ADR-0047 §2b;
