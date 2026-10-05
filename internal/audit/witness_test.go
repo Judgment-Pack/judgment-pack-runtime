@@ -363,6 +363,7 @@ func TestAContinuationIsHeldToItsOwnRules(t *testing.T) {
 			{strings.Replace(string(good), `"witnessVersion":"1"`, `"witnessVersion":"2"`, 1), FindingWitnessMalformed},
 			{strings.Replace(string(good), `"continuationVersion":"1"`, `"continuationVersion":"2"`, 1), FindingWitnessMalformed},
 			{strings.Replace(string(good), `,"latestCheckpoint":`, `,"latest":`, 1), FindingWitnessMalformed},
+			{strings.TrimSuffix(string(good), "\n") + " {}\n", FindingWitnessMalformed},
 		} {
 			if broken.continuation == string(good) {
 				t.Fatal("the continuation was not changed")
@@ -727,6 +728,9 @@ func TestEachFormAndRuleHoldsAtItsEdge(t *testing.T) {
 		{"a member given twice", `"kind":"checkpoint"`, `"kind":"checkpoint","kind":"checkpoint"`, false},
 		{"a member's name escaped", `"kind":"checkpoint"`, `"\u006bind":"checkpoint"`, true},
 		{"spaces around it", `{"checkpoint"`, ` { "checkpoint"`, true},
+		{"another value after it", `"witnessedAt":"2026-10-05T00:00:00Z"}`, `"witnessedAt":"2026-10-05T00:00:00Z"} {}`, false},
+		{"a byte after it", `"witnessedAt":"2026-10-05T00:00:00Z"}`, `"witnessedAt":"2026-10-05T00:00:00Z"}x`, false},
+		{"whitespace after it", `"witnessedAt":"2026-10-05T00:00:00Z"}`, `"witnessedAt":"2026-10-05T00:00:00Z"}` + " \t\r", true},
 	} {
 		changed := strings.Replace(line, each.from, each.to, 1)
 		if changed == line {

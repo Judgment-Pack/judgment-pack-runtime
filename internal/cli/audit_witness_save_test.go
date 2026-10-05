@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp/tsatest"
 )
@@ -186,26 +187,58 @@ func TestAuditVerifyNeverSavesOverAnInput(t *testing.T) {
 			t.Fatalf("--%s is not classified as an input or as no file", name)
 		}
 	}
-	// Every input a flag names is recorded by the App as it is opened: that
-	// record, and nothing named here, is what the destination is held to.
-	for name, each := range inputs {
+	// Every input a flag names is recorded by the App as it is opened, and so
+	// is every file read without a flag naming it: that record, and nothing
+	// named here, is what the destination is held to.
+	recordedBy := func(stdin *os.File, args []string, input string) bool {
+		t.Helper()
 		app := &App{in: strings.NewReader(""), out: &bytes.Buffer{}, errOut: &bytes.Buffer{}}
+		if stdin != nil {
+			app.in = stdin
+		}
 		command := app.auditVerifyCommand()
-		command.SetArgs(append([]string{"--format", "json"}, each.args...))
+		command.SetArgs(append([]string{"--format", "json"}, args...))
 		command.SetOut(&bytes.Buffer{})
 		command.SetErr(&bytes.Buffer{})
 		_ = command.Execute()
-		input, err := os.Stat(each.input)
+		info, err := os.Stat(input)
 		if err != nil {
 			t.Fatal(err)
 		}
-		recorded := false
 		for _, read := range app.inputs {
-			recorded = recorded || os.SameFile(read.info, input)
+			if os.SameFile(read.info, info) {
+				return true
+			}
 		}
-		if !recorded {
+		return false
+	}
+	for name, each := range inputs {
+		if !recordedBy(nil, each.args, each.input) {
 			t.Errorf("--%s: the App did not record the file it read", name)
 		}
+	}
+	for _, each := range []struct {
+		name  string
+		args  []string
+		input string
+	}{
+		{"the project's trail", base, f.trail},
+		{"the project's sidecar", append(append([]string{}, base...), "--public-key", f.publicKey), f.sidecar},
+		{"the project's stamps file", append(append([]string{}, base...), "--tsa-roots", f.roots), f.stamps},
+		{"the sidecar beside a named trail", []string{"--trail", f.trail, "--witness-key", f.key, "--public-key", f.publicKey}, f.sidecar},
+		{"the stamps file beside a named trail", []string{"--trail", f.trail, "--witness-key", f.key, "--tsa-roots", f.roots}, f.stamps},
+	} {
+		if !recordedBy(nil, each.args, each.input) {
+			t.Errorf("%s: the App did not record the file it read", each.name)
+		}
+	}
+	held, err := os.Open(f.expect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	if !recordedBy(held, append(append([]string{}, base...), "--expect", "-"), f.expect) {
+		t.Error("an --expect read from standard input that is a file: the App did not record it")
 	}
 	for name, each := range inputs {
 		for spelling, destination := range spellings(t, each.input) {
@@ -214,12 +247,14 @@ func TestAuditVerifyNeverSavesOverAnInput(t *testing.T) {
 			}
 		}
 	}
-	// The files read beside the trail, the project's and a named trail's.
+	// The files read without a flag naming them: the project's trail, and the
+	// files beside the project's trail and a named trail.
 	for _, each := range []struct {
 		name  string
 		args  []string
 		input string
 	}{
+		{"the project's trail", base, f.trail},
 		{"the project's sidecar", append(append([]string{}, base...), "--public-key", f.publicKey), f.sidecar},
 		{"the project's stamps file", append(append([]string{}, base...), "--tsa-roots", f.roots), f.stamps},
 		{"the sidecar beside a named trail", []string{"--trail", f.trail, "--witness-key", f.key, "--public-key", f.publicKey}, f.sidecar},
@@ -385,5 +420,36 @@ func TestAuditVerifySavesOnlyOverAContinuation(t *testing.T) {
 		if entries, err := os.ReadDir(empty); err != nil || len(entries) != 0 {
 			t.Fatalf("%v: a save after a finding wrote %d file(s)", failing, len(entries))
 		}
+	}
+}
+
+// The file a save would replace is looked up through the directory held as
+// well as by its path, so a path that names another file by the time it is
+// checked, as when a directory on it was re-pointed after it was opened, does
+// not hide an input in the directory the continuation would be written to.
+func TestTheDestinationIsLookedUpInTheDirectoryHeld(t *testing.T) {
+	held := t.TempDir()
+	input := filepath.Join(held, "statements.jsonl")
+	if err := os.WriteFile(input, []byte("a statement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{in: strings.NewReader(""), out: &bytes.Buffer{}, errOut: &bytes.Buffer{}}
+	file, err := app.openInput(input, "a --witness file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	root, err := fssecure.OpenRoot(held)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	elsewhere := filepath.Join(t.TempDir(), "statements.jsonl")
+	target := &continuationTarget{dir: root, name: "statements.jsonl", path: elsewhere}
+	var out bytes.Buffer
+	app.out = &out
+	if failure := app.checkContinuationTarget("audit verify", "json", target); failure == nil ||
+		!strings.Contains(out.String(), "is a --witness file, which this verification reads") {
+		t.Fatalf("an input in the directory held, its path naming nothing: %v %s", failure, first(out.String(), 300))
 	}
 }
