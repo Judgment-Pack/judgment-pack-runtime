@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.27.0 - 2026-10-05
 
 - **A signing key kept where another user could remove or replace it is refused** (ADR-0047 §2b;
   #221). A security posture change: a key placement that signed before may now be refused.
