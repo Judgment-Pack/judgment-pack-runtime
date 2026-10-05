@@ -738,6 +738,11 @@ func TestEachFormAndRuleHoldsAtItsEdge(t *testing.T) {
 	}, -1); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
 		t.Errorf("a checkpoint sequence below the latest: %s", got)
 	}
+	if got := at(func(w *testWitness) {
+		w.next(WitnessKindRetirement, lineCheckpoint(trail, 6))
+	}, -1); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
+		t.Errorf("a retirement with no checkpoint statement before it: %s", got)
+	}
 	twoPast := func(w *testWitness) {
 		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 2))
 		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 4))
