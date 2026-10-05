@@ -29,7 +29,7 @@ func (a *App) auditCommand() *cobra.Command {
 		Use:   "audit",
 		Short: "Check, checkpoint, repair, sign and stamp a chained audit trail",
 		Long: "Operations on the audit trail a project keeps (ADR-0018), chained over its exact bytes (ADR-0047). " +
-			"verify checks every trail, sequence and previous from the first chained record on, and with --public-key the signatures beside it; checkpoint prints the checkpoint of the last chained record, for handing to someone who will hold it; " +
+			"verify checks every trail, sequence and previous from the first chained record on, with --public-key the signatures beside it, and with --witness-key a checkpoint witness's statements; checkpoint prints the checkpoint of the last chained record, for handing to someone who will hold it; " +
 			"repair starts a new segment after a last line a write did not complete; key makes, shows and rotates the key that signs the records; stamp has a time-stamping authority stamp the current checkpoint. " +
 			"None of them evaluates anything.",
 		Args: cobra.NoArgs,

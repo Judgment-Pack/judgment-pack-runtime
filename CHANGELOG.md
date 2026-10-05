@@ -2,6 +2,67 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`audit verify` reads a checkpoint witness's statements** (gateway ADR-0013, PR 4 of 6;
+  Judgment-Pack/judgment-pack-gateway#199). A witness is a gateway run by a party other than the
+  trail's operator that signs the checkpoints handed to it, chains its statements per trail and
+  serves them by trail identity (the gateway's SPEC.md §8). No gateway release serves them yet, and
+  the runtime fetches nothing: the reader brings the statements, the head and the keys.
+  - New flags: `--witness-key <file>`, a witness's public key obtained out of band, repeatable, at
+    most 16, each held to the public-key rule before anything is read; `--witness <file>`,
+    statements one per line as the witness serves them, repeatable; `--witness-head <file>`, the
+    head the reader fetched; `--witness-resume <file>` and `--witness-save <file>`, below; and
+    `--require-countersigned-through <sequence>`. Every other witness flag needs `--witness-key`
+    (`JPS-INVOCATION-AUDIT-WITNESS`, exit 3).
+  - The statements are one set. Each is checked once, by its form (`witness-malformed`), its
+    Ed25519 signature over `judgment-pack-gateway/witness/1:` and its canonical form without the
+    signature, under the key its `keyId` names and by the record signatures' equation
+    (`witness-signature-invalid`), and its trail, the identity the trail's chained records carry
+    (`witness-trail-mismatch`). Two that verify at one index and differ are
+    `witness-equivocation`. The chain is read from index 0, never late, contiguous and linked, with
+    checkpoint sequences increasing, conflicts at or below the latest checkpoint and a retirement
+    last (`witness-chain-broken`); a head more than one index past the statements is
+    `witness-head-unreached`. A reading with a head is current, without one historical. A witness
+    finding is about no line of the trail, and its `line` is 0.
+  - The checkpoint of every checkpoint statement that verifies is held to the trail as `--expect`'s
+    are, with the same four findings. A chain with any witness finding is credited nothing;
+    otherwise its checkpoints join the held ones for `checkpointed`, `witnessed` and
+    `--require-checkpoint-through`, and the payload's `held` stays the holder's own. The coverage
+    gains `countersigned`: `not-checked` without `--witness-key`, `failed` on a witness finding,
+    otherwise `through` the highest credited checkpoint that matched with no failed check at or
+    before it, or `none`. `--require-countersigned-through` fails, `countersigned-coverage-missing`,
+    exit 1. The payload gains `witness` (statement lines read, statements checked, keys supplied,
+    where the reading began and ended, the latest checkpoint statement, the conflicts' sequences,
+    whether the chain is retired, and whether a continuation was saved) and
+    `requiredCountersigned`. Additive output; `outputVersion` stays `"2"`.
+  - A verification with no finding at all, given `--witness-save`, saves a continuation,
+    `{"continuationVersion":"1","last":…,"latestCheckpoint":…}`, through a file renamed into
+    place. `--witness-resume` reads on from one: its two statements are checked again, the chain
+    continues at the index after its last, and its checkpoint is held against the trail again. A
+    statement at or below its last index supplied is refused, a head below it is
+    `witness-head-behind`, and a continuation out of shape is `witness-malformed`. A step that fails
+    saves nothing.
+  - Over 16 keys, 64 MiB of witness files, or 110,000 statements, a continuation's two counted and
+    lines counted as the files are split, the reading is refused before any statement is checked
+    (`JPS-AUDIT-WITNESS-REFUSED`, exit 3, with `keys-over-bound`, `bytes-over-bound`,
+    `statements-over-bound` or `statement-before-continuation`); a key the rule refuses is
+    `JPS-AUDIT-WITNESS-KEY-INVALID`, exit 3, with `key-not-canonical`, `key-small-order` or
+    `key-not-on-curve`. A file that cannot be read is `JPS-AUDIT-WITNESS-READ` or
+    `JPS-AUDIT-WITNESS-KEY-READ`, and a continuation that cannot be saved `JPS-AUDIT-WITNESS-SAVE`,
+    exit 4.
+  - The report states the record's fixed sentences, among them "Lines 1 to N are the lines that
+    existed when a witness under a key supplied signed its statement for checkpoint N, which it
+    states it did at T, if that witness is independent of the trail's operator.", and two of this
+    runtime's: "That any line is covered by a statement of a witness under a key supplied: no
+    statement that was read is credited with one." and, for conflict statements, "Which of two
+    records is the trail's at the sequence of each of the N conflict statement(s) read, the first
+    at sequence S: …". A report without `--witness-key` keeps every sentence it had.
+  - The gateway's 54 witness vectors (`corpus/witness/` at `c916ee9`) are copied into the tests
+    with a lock of their digests, and every one reads as it states. The guide's "Reading a
+    witness's statements" states the rules.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+
 ## 0.27.1 - 2026-10-05
 
 - **Every `audit verify` report says the trail is silent about refused and rehearsed evaluations**

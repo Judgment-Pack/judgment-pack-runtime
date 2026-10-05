@@ -604,6 +604,20 @@ was made: `at` stays the operator's word. It establishes nothing against an auth
 independent of the operator, and nothing about revocation where it was not checked. The
 token is parsed and verified with the standard library alone; the guide states every rule.
 
+**Reading a witness's statements.** A witness is a gateway run by a party other than the trail's
+operator that signs the checkpoints handed to it and chains its statements per trail (gateway
+ADR-0013; no gateway release serves them yet). `jpack audit verify --witness-key <file>` reads the
+statements you fetched from it, `--witness <file>` and the head you fetched, `--witness-head
+<file>`, under a key you trust: every statement checked under its key, the chain read from index 0,
+never late, and to the head, which makes the reading current as of your fetch; without a head it is
+historical. The checkpoint of every statement that verifies is held to the trail as a held
+checkpoint is, and a chain with no witness finding is credited: the coverage's `countersigned` says
+how far it reaches, and `--require-countersigned-through <sequence>` fails while the records up to
+it are not countersigned. A longer chain is read in steps, `--witness-save` and `--witness-resume`.
+A statement shows the lines up to its checkpoint are the ones that existed when the witness signed
+it, if the witness is independent of the operator; not who submitted it, and its time is the
+witness's own clock's.
+
 **Signing the trail.** A project may name an Ed25519 seed held outside the project, by
 `"audit": { "dir": "audit", "signingKey": "<absolute path>" }` under configVersion `"6"` or by the
 `JPACK_SIGNING_KEY` environment variable, and then every chained record is signed (ADR-0047 §2b):
