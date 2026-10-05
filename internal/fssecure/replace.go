@@ -40,6 +40,31 @@ func (r *Root) Lstat(relative string) (os.FileInfo, error) {
 	return info, classify(err)
 }
 
+// ReadIdentified is Read, answering also the identity of the file read, from
+// the descriptor it was read through: what a caller compares another file with
+// by os.SameFile, which a later lookup of the name could not give once the
+// name was given to another file.
+func (r *Root) ReadIdentified(relative string, limit int64) ([]byte, os.FileInfo, error) {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return nil, nil, err
+	}
+	file, err := r.root.OpenFile(cleaned, os.O_RDONLY|nonBlockingOpen, 0)
+	if err != nil {
+		return nil, nil, classify(err)
+	}
+	defer file.Close()
+	info, err := r.sameRegularFile(file, cleaned)
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := readBounded(file, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, info, nil
+}
+
 // ReplaceByRename puts contents at name, one file directly in the directory
 // this root holds, so that a reader of name finds either the file that was
 // there or the whole of the new one, never part of either. Everything goes

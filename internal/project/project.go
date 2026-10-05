@@ -279,8 +279,9 @@ type Project struct {
 	GraphIDs []string
 
 	root *fssecure.Root
-	// configName is the configuration's name in the directory root holds.
-	configName string
+	// configInfo is the configuration file's identity, taken from the
+	// descriptor it was read through.
+	configInfo os.FileInfo
 	// handoffTargetReportBudget is MaxHandoffTargetReportBytes unless a test
 	// injects a smaller one. It is unexported and has no configuration surface:
 	// a limit a project could raise is a limit an oversized report can ask to be
@@ -416,25 +417,25 @@ func Load(configPath string) (*Project, *Failure) {
 		root.Close()
 		return nil, failure
 	}
-	loaded.configName = configName
 	return loaded, nil
 }
 
-// ConfigFile describes the configuration file this project was read from,
-// through the project's own handle, so another file can be compared with it by
-// os.SameFile.
+// ConfigFile describes the configuration file this project was read from, as
+// the descriptor it was read through described it when it was read, so another
+// file can be compared with it by os.SameFile: the file read, whatever its
+// name has been given to since.
 func (p *Project) ConfigFile() (os.FileInfo, error) {
-	if p == nil || p.root == nil || p.configName == "" {
+	if p == nil || p.configInfo == nil {
 		return nil, os.ErrInvalid
 	}
-	return p.root.Stat(p.configName)
+	return p.configInfo, nil
 }
 
 // loadThrough reads and checks the configuration named by configName through an
 // already-open root. Every refusal here abandons the load, which is why its one
 // caller owns closing the handle.
 func loadThrough(root *fssecure.Root, configPath, configName string) (*Project, *Failure) {
-	data, err := root.Read(configName, MaxConfigBytes)
+	data, configInfo, err := root.ReadIdentified(configName, MaxConfigBytes)
 	if err != nil {
 		if errors.Is(err, fssecure.ErrTooLarge) {
 			return nil, &Failure{
@@ -508,6 +509,7 @@ func loadThrough(root *fssecure.Root, configPath, configName string) (*Project, 
 		Root:         root.Dir(),
 		Config:       config,
 		ConfigDigest: audit.Digest(data),
+		configInfo:   configInfo,
 		IDs:          ids,
 		GraphIDs:     graphIDs,
 		root:         root,

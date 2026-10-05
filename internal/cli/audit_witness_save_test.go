@@ -558,3 +558,70 @@ func readFileBytes(t *testing.T, path string) []byte {
 	}
 	return data
 }
+
+// Every input is recorded by the identity of the file opened and read, taken
+// from the descriptor it was read through, not by looking its name up again:
+// the configuration given another file's place after it was read is still the
+// file recorded, under the name it was moved to, and the file now at its name
+// is not.
+func TestAnInputIsRecordedAsTheFileRead(t *testing.T) {
+	f := newSaveFixture(t)
+	app := &App{in: strings.NewReader(""), out: &bytes.Buffer{}, errOut: &bytes.Buffer{}}
+	loaded, failure := app.loadProject(f.config, "audit verify", "json")
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	defer loaded.Close()
+	read, err := os.Stat(f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := f.config + ".original"
+	if err := os.Rename(f.config, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.config, []byte("a replacement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := os.Stat(f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded, err := loaded.ConfigFile()
+	if err != nil || !os.SameFile(recorded, read) || os.SameFile(recorded, replacement) {
+		t.Fatalf("the configuration recorded is not the file read: %v", err)
+	}
+	// A file an operator named, opened by openInput, the same way.
+	file, err := app.openInput(f.statements, "a --witness file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	movedStatements := f.statements + ".original"
+	if err := os.Rename(f.statements, movedStatements); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.statements, []byte("a replacement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, each := range []struct {
+		path, what string
+		input      bool
+		disagree   string
+	}{
+		{moved, "the project's configuration", true, "the configuration read, moved"},
+		{f.config, "the project's configuration", false, "the file put in the configuration's place"},
+		{movedStatements, "a --witness file", true, "the statements read, moved"},
+		{f.statements, "a --witness file", false, "the file put in the statements' place"},
+	} {
+		target, refused := openContinuationTarget(each.path)
+		if refused != nil {
+			t.Fatal(refused.why)
+		}
+		refused = app.checkContinuationTarget(target)
+		target.dir.Close()
+		if refused == nil || strings.Contains(refused.why, each.what+", which this verification reads") != each.input {
+			t.Fatalf("%s: %+v", each.disagree, refused)
+		}
+	}
+}
