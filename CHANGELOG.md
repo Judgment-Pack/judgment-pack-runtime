@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.27.1 - 2026-10-05
 
 - **Every `audit verify` report says the trail is silent about refused and rehearsed evaluations**
   (ADR-0048; #224). A change to the report's text, and to no check or exit code.
