@@ -561,6 +561,9 @@ chained record, one canonical JSON line naming the trail's identity, the record'
 SHA-256 of its exact bytes, for handing to someone who will keep it. `jpack audit verify --expect
 <checkpoint>` then also fails a trail that is shorter, has another identity, or has another record
 at that sequence, and reports the lines up to it as checkpointed.
+Every report, with or without `--expect`, also says that the trail records decisions, not attempts,
+so its silence is not evidence that no evaluation was refused at the gate, rehearsed, or failed
+before a disposition (ADR-0048).
 After a write that did not
 complete, `jpack audit repair` keeps the damaged bytes in place as a line of their own and appends
 a discontinuity record that names their digest and links over them, so the writer goes on (it never

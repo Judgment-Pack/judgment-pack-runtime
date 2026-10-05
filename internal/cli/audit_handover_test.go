@@ -61,8 +61,12 @@ func TestADelivererHandsEachCheckpointToAHolder(t *testing.T) {
 	}
 	code, output := verification(t, "--config", configPath, "--expect", holder, "--require-checkpoint-through", "3")
 	if code != result.ExitInvalid || output.Required.Status != "unmet" || output.Coverage.Witnessed != 2 || output.Coverage.Unwitnessed != 1 ||
-		output.Findings[0].Name != audit.FindingCheckpointCoverageMissing {
-		t.Fatalf("the third record is unwitnessed until it is handed over: exit=%d %+v %+v", code, output.Coverage, output.Findings)
+		output.Findings[0].Name != audit.FindingCheckpointCoverageMissing || !endsWithAttempts(output.DoesNotEstablish) {
+		t.Fatalf("the third record is unwitnessed until it is handed over: exit=%d %+v %+v %q", code, output.Coverage, output.Findings, output.DoesNotEstablish)
+	}
+	if code, human, _ := runTest(t, []string{"audit", "verify", "--config", configPath, "--expect", holder, "--require-checkpoint-through", "3"}, ""); code != result.ExitInvalid ||
+		!humanEndsWithAttempts(human) {
+		t.Fatalf("human output, an unmet requirement: exit=%d %q", code, human)
 	}
 	if since = deliver(since); since != 3 {
 		t.Fatalf("the next poll hands over the new record: %d", since)

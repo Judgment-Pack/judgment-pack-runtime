@@ -946,6 +946,12 @@ does not:
   after N are as unauthenticated as before. A checkpoint you keep yourself proves nothing to anyone
   who does not trust you. `audit checkpoint` refuses a trail that fails a check, and a note says
   how many lines after the checkpointed record are not chained.
+- **In every report, what the trail is silent about.** Whatever was supplied, `--expect`,
+  `--public-key` or `--tsa-roots`, and whatever was found, the last thing the report says it does
+  not establish is the same sentence: "Whether any evaluation was refused at the gate, rehearsed, or
+  failed before a disposition: the trail records decisions, not attempts, so its silence is not
+  evidence that none were (ADR-0048)." A checkpoint, a key or a stamp covers the lines a trail
+  holds, and no line is written for an attempt.
 
 A trail records decisions, not attempts: a rehearsal, a test run and an evaluation refused before it
 had a disposition write no line, so a chained, signed and checkpointed trail establishes nothing

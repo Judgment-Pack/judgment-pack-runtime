@@ -26,6 +26,37 @@ func recordedProject(t *testing.T, n int) (string, string) {
 	return configPath, filepath.Join(filepath.Dir(configPath), "audit", audit.FileName)
 }
 
+// attemptsSentence is the fixed sentence every audit verify report ends its
+// doesNotEstablish list with (ADR-0048), spelled out here rather than read
+// from the audit package, so a change to the text a reader mirrors verbatim
+// fails a test that names it.
+const attemptsSentence = "Whether any evaluation was refused at the gate, rehearsed, or failed before a disposition: the trail records decisions, not attempts, so its silence is not evidence that none were (ADR-0048)."
+
+// endsWithAttempts reports whether a report's doesNotEstablish list holds the
+// sentence on refused and rehearsed evaluations once, as its last item.
+func endsWithAttempts(statements []string) bool {
+	count := 0
+	for _, statement := range statements {
+		if statement == attemptsSentence {
+			count++
+		}
+	}
+	return count == 1 && statements[len(statements)-1] == attemptsSentence
+}
+
+// humanEndsWithAttempts is endsWithAttempts for the human report: the
+// sentence is on one "NOT ESTABLISHED: " line, and that line is the last of
+// them. The trail's path and the snapshot note may follow it.
+func humanEndsWithAttempts(stdout string) bool {
+	statements := []string{}
+	for _, line := range strings.Split(stdout, "\n") {
+		if statement, found := strings.CutPrefix(line, "NOT ESTABLISHED: "); found {
+			statements = append(statements, statement)
+		}
+	}
+	return len(statements) > 0 && endsWithAttempts(statements)
+}
+
 // verification runs audit verify with JSON output and decodes it.
 func verification(t *testing.T, args ...string) (int, result.AuditVerification) {
 	t.Helper()
@@ -70,9 +101,12 @@ func TestAuditVerifyExitsByTheChain(t *testing.T) {
 	if code, named := verification(t, "--trail", trail); code != 0 || named.Head == nil || *named.Head != *output.Head {
 		t.Fatalf("--trail reads the same trail: exit=%d %+v", code, named.Head)
 	}
+	if !endsWithAttempts(output.DoesNotEstablish) {
+		t.Fatalf("doesNotEstablish: %q", output.DoesNotEstablish)
+	}
 	code, stdout, _ := runTest(t, []string{"audit", "verify", "--config", configPath}, "")
 	if code != 0 || !strings.Contains(stdout, "the integrity of one supplied chain") || !strings.Contains(stdout, "NOT ESTABLISHED: The last line") ||
-		!strings.Contains(stdout, "signed: not checked (no --public-key)") {
+		!strings.Contains(stdout, "signed: not checked (no --public-key)") || !humanEndsWithAttempts(stdout) {
 		t.Fatalf("human output: %q", stdout)
 	}
 
@@ -112,6 +146,15 @@ func TestAuditCheckpointIsWhatVerifyExpects(t *testing.T) {
 	code, output := verification(t, "--config", configPath, "--expect", held)
 	if code != 0 || output.Scope != audit.ScopeCheckpoint || output.Held.Status != "matched" || output.Coverage.Checkpointed.Through != 2 {
 		t.Fatalf("exit=%d %+v", code, output.Held)
+	}
+	// The checkpointed report, the one a counterparty reads, says too that the
+	// trail is silent about refused and rehearsed evaluations.
+	if !endsWithAttempts(output.DoesNotEstablish) {
+		t.Fatalf("doesNotEstablish with --expect: %q", output.DoesNotEstablish)
+	}
+	if code, stdout, _ := runTest(t, []string{"audit", "verify", "--config", configPath, "--expect", held}, ""); code != 0 ||
+		!humanEndsWithAttempts(stdout) {
+		t.Fatalf("human output with --expect: %q", stdout)
 	}
 
 	original, err := os.ReadFile(trail)
@@ -206,11 +249,13 @@ func TestAuditRepairStartsANewSegment(t *testing.T) {
 		t.Fatalf("the writer chains after the discontinuity: exit=%d", code)
 	}
 	code, output := verification(t, "--config", configPath)
-	if code != 0 || output.Status != "segmented" || len(output.Segments) != 2 || output.Coverage.Damaged != 1 || len(output.Discontinuities) != 1 {
+	if code != 0 || output.Status != "segmented" || len(output.Segments) != 2 || output.Coverage.Damaged != 1 || len(output.Discontinuities) != 1 ||
+		!endsWithAttempts(output.DoesNotEstablish) {
 		t.Fatalf("exit=%d %+v", code, output)
 	}
 	code, human, _ := runTest(t, []string{"audit", "verify", "--config", configPath}, "")
-	if code != 0 || !strings.HasPrefix(human, "SEGMENTED: 1 discontinuity record(s); the history is not intact across them") {
+	if code != 0 || !strings.HasPrefix(human, "SEGMENTED: 1 discontinuity record(s); the history is not intact across them") ||
+		!humanEndsWithAttempts(human) {
 		t.Fatalf("human output: %q", human)
 	}
 	code, stdout, _ = runTest(t, []string{"audit", "repair", "--config", configPath, "--format", "json"}, "")
