@@ -35,6 +35,13 @@ func ParseCheckpoint(document []byte) (result.AuditCheckpoint, error) {
 	if err != nil {
 		return result.AuditCheckpoint{}, fmt.Errorf("the checkpoint is not a JSON object of distinct members: %v", err)
 	}
+	return checkpointOfMembers(members)
+}
+
+// checkpointOfMembers holds the members of one JSON object to a checkpoint's
+// shape, as ParseCheckpoint does: a witness statement carries a checkpoint as
+// one of its members, held to the same rule with no bound of its own.
+func checkpointOfMembers(members map[string]json.RawMessage) (result.AuditCheckpoint, error) {
 	for name := range members {
 		switch name {
 		case "checkpointVersion", "trail", "sequence", "recordDigest":
