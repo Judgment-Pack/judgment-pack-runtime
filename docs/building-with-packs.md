@@ -947,11 +947,11 @@ does not:
   who does not trust you. `audit checkpoint` refuses a trail that fails a check, and a note says
   how many lines after the checkpointed record are not chained.
 - **In every report, what the trail is silent about.** Whatever was supplied, `--expect`,
-  `--public-key` or `--tsa-roots`, and whatever was found, the last thing the report says it does
-  not establish is the same sentence: "Whether any evaluation was refused at the gate, rehearsed, or
-  failed before a disposition: the trail records decisions, not attempts, so its silence is not
-  evidence that none were (ADR-0048)." A checkpoint, a key or a stamp covers the lines a trail
-  holds, and no line is written for an attempt.
+  `--public-key`, `--tsa-roots` or `--witness-key`, and whatever was found, the last thing the
+  report says it does not establish is the same sentence: "Whether any evaluation was refused at
+  the gate, rehearsed, or failed before a disposition: the trail records decisions, not attempts,
+  so its silence is not evidence that none were (ADR-0048)." A checkpoint, a key, a stamp or a
+  witness's statement covers the lines a trail holds, and no line is written for an attempt.
 
 A trail records decisions, not attempts: a rehearsal, a test run and an evaluation refused before it
 had a disposition write no line, so a chained, signed and checkpointed trail establishes nothing
@@ -1123,6 +1123,132 @@ authority states, as that authority attests. What it does not:
 A stamp also discloses the checkpoint's digest to the authority. The digest covers a whole record,
 including a random `run` id, so it is not trivially guessable, but it is not confidential either
 (ADR-0047, "Privacy").
+
+### Reading a witness's statements
+
+A holder's file is evidence only as far as the channel it came by, and a stamp shows that a
+checkpoint existed by a time but serves nothing back: an operator who rewrites a trail can present
+an older copy with the stamps that still match it. A **witness** is the party a verifier can ask,
+without the operator, how far a trail was witnessed. It is a gateway run by someone other than the
+trail's operator that signs each checkpoint handed to it, chains its statements per trail, and
+serves them to anyone who names the trail. Its statement and how a chain of them is read are
+specified in the gateway's
+[SPEC.md §8](https://github.com/Judgment-Pack/judgment-pack-gateway/blob/c916ee933dff0b72ebf7741c1ce8022487bfb807/SPEC.md#8-the-checkpoint-witness),
+and why in its
+[ADR-0013](https://github.com/Judgment-Pack/judgment-pack-gateway/blob/c916ee933dff0b72ebf7741c1ce8022487bfb807/docs/adr/0013-checkpoint-witness.md).
+No gateway release serves statements yet: they come from a witness a third party runs, once one
+does. The runtime fetches nothing. You fetch the trail's statements and its head from the witness
+(Desk, a script, `curl`), bring the witness's public key, obtained out of band, and hand them over:
+
+```sh
+jpack audit verify --trail evaluations.jsonl --witness-key witness.pub \
+  --witness statements.jsonl --witness-head head.jsonl \
+  --witness-save continuation.json --require-countersigned-through 120
+```
+
+- **The key.** `--witness-key <file>`, 64 hexadecimal characters, may be given up to 16 times. Each
+  is held to the rule "Record signatures, exactly" states, before anything is read, and a key it
+  refuses is `JPS-AUDIT-WITNESS-KEY-INVALID` with its reason (`key-not-canonical`,
+  `key-small-order`, `key-not-on-curve`). Which witnesses you trust is your choice, as roots are for
+  stamps: nothing in a statement shows that the witness is independent of the operator.
+- **The statement.** One JSON object per line, of exactly eight members, `witnessVersion` (`"1"`),
+  `kind`, `checkpoint`, `index`, `prevSignature`, `witnessedAt`, `keyId` and `signature`:
+  `checkpoint` is the checkpoint as `audit checkpoint` prints it; `kind` is `checkpoint`,
+  `conflict` (another record offered for a sequence the witness held) or `retirement` (the chain's
+  end); `index` is its place in the witness's chain for the trail, and `prevSignature` the signature
+  of the statement before it, `null` at index 0. The signature is Ed25519 over
+  `judgment-pack-gateway/witness/1:` and the statement's canonical form without its `signature`,
+  checked by the equation the record signatures are, under the key its `keyId` names among those
+  supplied. A statement is read by its JSON value, held to its forms on the values decoded, and
+  `witnessedAt` to its form alone: it is compared with no clock.
+- **The chain.** The statements of every `--witness` file and the head are one set, whatever files
+  they came in. Each is checked once: its form (`witness-malformed`), its signature
+  (`witness-signature-invalid`), and its trail, which must be the identity the trail's chained
+  records carry (`witness-trail-mismatch`). Two that verify at one index and differ are
+  `witness-equivocation`, proof that the witness signed two chains. Read from index 0, every index
+  must be there, each statement naming the signature before it; checkpoint sequences must
+  increase; a conflict must be at or below the latest checkpoint; and a retirement must repeat it
+  and be last (`witness-chain-broken`). A chain that begins late is never read from where it begins:
+  whoever presents it could have left out the early statement a rewrite fails against.
+- **The head.** `--witness-head <file>` holds the head you fetched, one statement. A head more than
+  one index past the statements supplied is `witness-head-unreached`; one index past joins the
+  chain; and the chain may run past it, with statements the witness signed after your fetch. With
+  a head the reading is **current**, as of your fetch; without one it is **historical**, ending at
+  the highest statement supplied, and says nothing of any after it.
+- **What is credited.** The checkpoint of every checkpoint statement that verifies is held to the
+  trail as `--expect`'s are, with the same four findings, so a rewrite always shows. A chain with
+  any `witness-*` finding is credited nothing. A credited checkpoint joins the held ones, so
+  `witnessed` and `--require-checkpoint-through` keep their meaning, and the coverage's
+  **`countersigned`** says how far a witness's signature reaches: `not-checked` without
+  `--witness-key`, `failed` on a witness finding, otherwise `through` the highest credited
+  checkpoint that matched with no failed check at or before it, or `none`.
+  `--require-countersigned-through <sequence>` fails (`countersigned-coverage-missing`, exit 1)
+  while the records up to that sequence are not all countersigned. Conflict and retirement
+  statements are never credited; a conflict fails nothing, and is reported.
+- **Reading in steps.** `--witness-save <file>` saves a **continuation** when the verification has
+  no finding at all: `{"continuationVersion":"1","last":…,"latestCheckpoint":…}`, the last
+  statement read and the latest checkpoint statement at or before it, as signed, written beside
+  the file and renamed into place. `--witness-resume <file>` goes on from one: its two statements
+  are checked again with the others, the chain must continue at the index after its last, and its
+  checkpoint is held against the trail again, so a copy rewritten since still fails. Give it only
+  what the witness signed after that index: a statement at or below it is refused, and a head below
+  it is `witness-head-behind`, an older head than one you already read. A step that fails saves
+  nothing, so the next starts again from the continuation you had. Only your own successful reading
+  should become a continuation; the runtime cannot tell one from a file someone else wrote, so the
+  report says the reading continued, from which index, and a fixed sentence says whose word that is.
+- **What a save may replace.** Before anything is written, the file `--witness-save` names is held
+  to every file the verification reads, the trail, the files beside it, the configuration, every key
+  and every statements, head, checkpoint, roots and revocation file, by the identity of the file
+  read: another spelling of its path, a symbolic link or a hard link to one of them is refused. The
+  continuation `--witness-resume` read is the one it may name, so `--witness-resume
+  continuation.json --witness-save continuation.json` advances it. A file already there is replaced
+  only when it holds a continuation; anything else, and anything that is not a regular file, a
+  symbolic link included, is refused and left as it is. The verification runs either way: when it
+  has a finding, the report is what it would be without `--witness-save`, exit 1, with a note that
+  the destination was refused and why; when it has none, the refusal is the answer
+  (`JPS-INVOCATION-AUDIT-WITNESS-SAVE`, exit 3), saying the verification found nothing. The
+  directory is opened once, before anything is read, a symbolic link among the directories of its
+  path followed, and the continuation is written into it through a temporary file renamed into
+  place. Two things are not guarded. The destination's last check and the rename are two steps, so
+  another process changing that one name in the instant between them is not detected: a file put
+  there then is replaced, and a symbolic link put there is replaced itself, the file it names
+  untouched. And a build with Go 1.25 or later renames through the directory opened, whatever its
+  path names by then, while a build with Go 1.24 renames by the directory's path after checking
+  that it still names the directory opened. Release binaries are built with a later Go.
+- **Bounds.** At most 16 keys, 64 MiB of `--witness`, `--witness-head` and `--witness-resume` files
+  together, and 110,000 statements, the continuation's two counted, a statement being every line
+  that is not blank. Over any of them the reading is refused before any statement is checked, never
+  truncated (`JPS-AUDIT-WITNESS-REFUSED`, with `keys-over-bound`, `bytes-over-bound` or
+  `statements-over-bound`; `statement-before-continuation` for the refusal above). A longer chain
+  is read in steps.
+
+The report's `witness` section gives the statement lines read and the statements checked, the keys
+supplied, where the reading began (`index-0`, or `continued` after an index) and how it ended
+(`current` at the head's index, or `historical` at the highest), the latest checkpoint statement's
+index, sequence and `witnessedAt`, the conflict statements' sequences, and whether the chain is
+retired. What a credited checkpoint statement establishes, in the report's words: "Lines 1 to N are
+the lines that existed when a witness under a key supplied signed its statement for checkpoint N,
+which it states it did at T, if that witness is independent of the trail's operator." What it does
+not:
+
+- anything about lines after N, which no statement of a witness under a key supplied covers;
+- for a current reading, that the witness's head is still the one you fetched: a signature does not
+  say when it was fetched; for a historical one, that the witness held no statement after the last
+  one supplied;
+- for a continued reading, anything about the statements before the continuation, which it did not
+  read: it is as complete as the reading that saved the continuation was;
+- anything against a witness that is not independent of the operator: one that colludes can sign
+  what it is asked, at any time it states, and a second history for another audience;
+- who submitted any checkpoint: a statement does not name its submitter, and the witness cannot
+  tell the operator from a holder of the operator's credential;
+- when any record was made: `witnessedAt` is the witness's clock, for when it held the checkpoint;
+- which record is the trail's at a sequence a conflict statement names: it records that another
+  record was offered there, by a submitter the witness allowed.
+
+A witness learns of a trail its identity, the sequences submitted, the record digests at them and
+when, never a record's contents. Its reads are open to anyone who names the trail, so anyone who
+holds one of the trail's checkpoints can follow its activity there for as long as the witness serves
+it (ADR-0047, "Privacy").
 
 ### Signing the trail
 

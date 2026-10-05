@@ -99,6 +99,22 @@ const (
 	notBeforeStamp         = "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each record's at and the first stamp covering it is reported, and judging it is the reader's."
 	notAgainstAuthority    = "Anything against a time-stamping authority that is not independent of the operator: one that colludes can stamp what it is asked, when it is asked; a root supplied is trusted because the verifier chose it."
 	notRevocationChecked   = "That no time-stamping certificate was revoked as of its stamp's time, for %d trusted stamp(s): no revocation list supplied speaks for that time, so their status was not checked."
+	// The sentences of a witness's statements (gateway ADR-0013 §6), the first
+	// eight as the record states them. notCountersignedNone and
+	// notWitnessConflict are this runtime's, for what the record decides
+	// without giving its words: a reading that credits no line, and a
+	// conflict statement, which fails nothing and is reported with a fixed
+	// sentence, from what the record's table says one does not establish.
+	establishesCountersigned = "Lines 1 to %d are the lines that existed when a witness under a key supplied signed its statement for checkpoint %[1]d, which it states it did at %s, if that witness is independent of the trail's operator."
+	notCountersignedAfter    = "Lines after %d are covered by no statement of a witness under a key supplied."
+	notWitnessCurrent        = "That the witness's head for this trail is still index %d: the head supplied is as current as the reader's fetch of it, and a signature does not say when it was fetched."
+	notWitnessHistorical     = "That the witness held no statement for this trail after index %d: no head fetched from the witness was supplied, so the chain was read only as far as it was supplied."
+	notWitnessContinued      = "Anything about statements up to index %d, which this reading did not read: it continued from a continuation supplied as the reader's own earlier successful reading, which the runtime cannot tell from one someone else wrote, and is as complete as that reading was."
+	notAgainstWitness        = "Anything against a witness that is not independent of the operator: one that colludes can sign what it is asked, at any time it states, and a second history for another audience; a key supplied is trusted because the verifier chose it."
+	notWitnessSubmitter      = "Who submitted any checkpoint: a statement does not name its submitter, and the witness cannot tell the trail's operator from a holder of the operator's credential."
+	notWitnessTime           = "When any record was made: the time a witness states is its own clock's, for when it held the checkpoint."
+	notCountersignedNone     = "That any line is covered by a statement of a witness under a key supplied: no statement that was read is credited with one."
+	notWitnessConflict       = "Which of two records is the trail's at the sequence of each of the %d conflict statement(s) read, the first at sequence %d: a submitter the witness allowed for the trail offered there another record than the one the witness held, and a conflict statement says neither which of the two is the trail's nor who that submitter was, beyond the witness's own registration."
 	// notAttempts is in every report, whatever was supplied and whatever was
 	// found, and last: a checkpoint, a key or a stamp covers the lines a
 	// trail holds, and no line is written for a refusal, a rehearsal or an
@@ -163,7 +179,11 @@ func Verify(contents io.ReaderAt, size int64, options Options) (Report, error) {
 			return Report{}, errors.Join(ErrSidecarRead, v.sidecarErr)
 		}
 	}
-	return Report{Chain: v.report(size), Listed: v.listed, More: v.more}, nil
+	report := Report{Chain: v.report(size), Listed: v.listed, More: v.more}
+	if read := v.witnessRead; read != nil && read.clean && read.last != nil && read.latest != nil && report.Chain.FindingsTotal == 0 {
+		report.Continuation = encodeContinuation(read.last, read.latest)
+	}
+	return report, nil
 }
 
 // ErrSidecarRead is a signature sidecar that could not be read to its end.
@@ -190,14 +210,28 @@ type Options struct {
 	// Stamps, when it supplies roots, checks the stamps file's tokens and
 	// holds their checkpoints to the trail (ADR-0047 §2a, C2).
 	Stamps *StampOptions
+	// Witness, when it is given, reads a witness's statements and holds the
+	// trail to the checkpoint of every one that verifies (gateway ADR-0013).
+	Witness *WitnessOptions
+}
+
+// WitnessOptions is a witness's statements, prepared within the bounds of
+// one reading by PrepareWitness, and the countersigned coverage the
+// verification is told to require, when above zero.
+type WitnessOptions struct {
+	Input          *WitnessInput
+	RequireThrough int64
 }
 
 // Report is what Verify found: the chain, and the checkpoints it listed, with
-// whether more chained records followed the last one listed.
+// whether more chained records followed the last one listed. Continuation is
+// what a later reading of the witness's statements may resume from: present
+// only when statements were read and the verification has no finding at all.
 type Report struct {
-	Chain  result.AuditChain
-	Listed []result.AuditCheckpoint
-	More   bool
+	Chain        result.AuditChain
+	Listed       []result.AuditCheckpoint
+	More         bool
+	Continuation []byte
 }
 
 // seenLine is what the verifier keeps of one line: enough to link the next
@@ -281,6 +315,11 @@ type verifier struct {
 	// stamps holds the stamps a verification read, when roots were
 	// supplied, and gathers the lags of the records they cover.
 	stamps *stampChecker
+	// witnessRead is what a reading of a witness's statements found, once
+	// the trail's identity is known, and countersigned the credited
+	// checkpoint statement the countersigned coverage reaches, or nil.
+	witnessRead   *witnessReading
+	countersigned *witnessStatement
 }
 
 func newVerifier(options Options) *verifier {
@@ -288,6 +327,11 @@ func newVerifier(options Options) *verifier {
 		heldLines: map[int64]*seenLine{}, chainedAt: map[int64]int64{}}
 	for _, held := range options.Held {
 		v.heldLines[held.Sequence] = nil
+	}
+	if options.Witness != nil && options.Witness.Input != nil {
+		for _, sequence := range options.Witness.Input.checkpointSequences() {
+			v.heldLines[sequence] = nil
+		}
 	}
 	if options.Signatures != nil && len(options.Signatures.Keys) > 0 {
 		v.signatures = newSignatureChecker(options.Signatures)
@@ -629,6 +673,7 @@ func (v *verifier) report(size int64) result.AuditChain {
 	chain.Coverage.Signed = result.AuditCoverageState{Status: "not-checked", Detail: "no public key was supplied"}
 	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "not-supplied"}
 	chain.Coverage.Stamped = result.AuditCoverageState{Status: "not-checked", Detail: "no time-stamping roots were supplied"}
+	chain.Coverage.Countersigned = result.AuditCoverageState{Status: "not-checked", Detail: "no witness key was supplied"}
 	chain.Coverage.Unwitnessed = chain.Coverage.Chained
 	if v.head != nil {
 		chain.Trail = v.head.link.trail
@@ -649,7 +694,17 @@ func (v *verifier) report(size int64) result.AuditChain {
 	if v.stamps != nil {
 		v.stamps.match(v)
 	}
-	if len(v.options.Held) > 0 {
+	// A witness's statements are read against the identity the trail's
+	// chained records carry. Their findings are about the statements, not
+	// the trail's lines, so they move no line's coverage: they void the
+	// witness's credit alone.
+	if v.options.Witness != nil && v.options.Witness.Input != nil {
+		v.witnessRead = v.options.Witness.Input.read(chain.Trail)
+		for _, finding := range v.witnessRead.findings {
+			v.recordSidecar(finding)
+		}
+	}
+	if len(v.options.Held) > 0 || v.witnessRead != nil {
 		v.checkHeld(&chain)
 	}
 	if v.stamps != nil {
@@ -659,6 +714,9 @@ func (v *verifier) report(size int64) result.AuditChain {
 	}
 	if v.options.RequireThrough > 0 {
 		v.checkRequirement(&chain)
+	}
+	if v.witnessRead != nil {
+		v.witnessSection(&chain)
 	}
 	if v.signatures != nil {
 		v.signatures.coverage(v, &chain)
@@ -683,13 +741,17 @@ func (v *verifier) report(size int64) result.AuditChain {
 	return chain
 }
 
-// checkHeld holds the trail to every checkpoint a holder kept: the line at
-// each one's sequence must be there, chained, of its trail, and have its
-// digest, and each that does not is a finding. The coverage then reaches the
-// highest checkpoint that matched with no failed check at or before its
-// sequence: those records are witnessed, and the chained records after it are
-// not. The checkpoints are checked in sequence order, so the findings come out
-// in one order whatever order the holder supplied them in.
+// checkHeld holds the trail to every checkpoint a holder kept, and to the
+// checkpoint of every checkpoint statement of a witness that verified: the
+// line at each one's sequence must be there, chained, of its trail, and have
+// its digest, and each that does not is a finding, whether or not the
+// witness's statements are credited. The coverage then reaches the highest
+// checkpoint that matched with no failed check at or before its sequence,
+// among the holder's and, when the witness's statements had no finding, the
+// witness's: those records are witnessed, and the chained records after it
+// are not. The countersigned coverage is the same, among the witness's alone.
+// The checkpoints are checked in sequence order, so the findings come out in
+// one order whatever order the holder supplied them in.
 func (v *verifier) checkHeld(chain *result.AuditChain) {
 	held := append([]result.AuditCheckpoint{}, v.options.Held...)
 	sort.SliceStable(held, func(i, j int) bool { return held[i].Sequence < held[j].Sequence })
@@ -697,50 +759,144 @@ func (v *verifier) checkHeld(chain *result.AuditChain) {
 	summary := &result.AuditHeld{Supplied: int64(len(held)), Status: "failed"}
 	matched := []result.AuditCheckpoint{}
 	for _, expect := range held {
-		named := v.heldLines[expect.Sequence]
-		finding := result.AuditFinding{Line: expect.Sequence}
-		switch {
-		case expect.Sequence > v.lines || named == nil:
-			finding.Name = FindingCheckpointBeyondTrail
-			finding.Detail = fmt.Sprintf("the trail has %d complete lines, fewer than the checkpoint's sequence", v.lines)
-		case named.damaged || !named.chained:
-			finding.Name = FindingCheckpointNotChained
-			finding.Detail = "the line at the checkpoint's sequence is not a chained record"
-		case named.link.trail != expect.Trail:
-			finding.Name = FindingCheckpointTrailMismatch
-			finding.Detail = "the record at the checkpoint's sequence is of another trail"
-		case named.digest != expect.RecordDigest:
-			finding.Name = FindingCheckpointRecordMismatch
-			finding.Detail = "the record at the checkpoint's sequence is not the one the checkpoint names"
-		}
-		if finding.Name != "" {
+		if name, detail := v.holdCheckpoint(expect); name != "" {
 			summary.Failed++
-			v.record(finding)
+			v.record(result.AuditFinding{Name: name, Line: expect.Sequence, Detail: detail})
 			continue
 		}
 		summary.Matched++
 		matched = append(matched, expect)
 	}
+	credited := []*witnessStatement{}
+	if read := v.witnessRead; read != nil {
+		statements := append([]*witnessStatement{}, read.verified...)
+		sort.SliceStable(statements, func(i, j int) bool {
+			return statements[i].checkpoint.Sequence < statements[j].checkpoint.Sequence
+		})
+		for _, statement := range statements {
+			if name, detail := v.holdCheckpoint(statement.checkpoint); name != "" {
+				v.record(result.AuditFinding{Name: name, Line: statement.checkpoint.Sequence, Detail: fmt.Sprintf("the checkpoint of the witness statement at index %d: %s", statement.index, detail)})
+				continue
+			}
+			if read.clean {
+				credited = append(credited, statement)
+			}
+		}
+	}
 	// Every finding is recorded before the coverage is decided: a checkpoint
 	// that failed voids the coverage of every checkpoint at or after it.
+	covers := func(sequence int64) bool { return v.earliestFinding == 0 || v.earliestFinding > sequence }
 	var through *result.AuditCheckpoint
 	for index := range matched {
-		if v.earliestFinding == 0 || v.earliestFinding > matched[index].Sequence {
+		if covers(matched[index].Sequence) {
 			through = &matched[index]
 		}
 	}
-	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "failed"}
-	if through != nil {
-		latest := *through
-		summary.Latest = &latest
-		chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "through", Through: through.Sequence}
-		chain.Coverage.Witnessed = v.chainedAt[through.Sequence]
-		chain.Coverage.Unwitnessed = chain.Coverage.Chained - chain.Coverage.Witnessed
-		if summary.Failed == 0 && through.Sequence == held[len(held)-1].Sequence {
-			summary.Status = "matched"
+	if len(held) > 0 {
+		if through != nil {
+			latest := *through
+			summary.Latest = &latest
+			if summary.Failed == 0 && through.Sequence == held[len(held)-1].Sequence {
+				summary.Status = "matched"
+			}
+		}
+		chain.Held = summary
+	}
+	for _, statement := range credited {
+		if covers(statement.checkpoint.Sequence) {
+			v.countersigned = statement
 		}
 	}
-	chain.Held = summary
+	reach := int64(0)
+	if through != nil {
+		reach = through.Sequence
+	}
+	if v.countersigned != nil && v.countersigned.checkpoint.Sequence > reach {
+		reach = v.countersigned.checkpoint.Sequence
+	}
+	chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "failed"}
+	if reach > 0 {
+		chain.Coverage.Checkpointed = result.AuditCoverageState{Status: "through", Through: reach}
+		chain.Coverage.Witnessed = v.chainedAt[reach]
+		chain.Coverage.Unwitnessed = chain.Coverage.Chained - chain.Coverage.Witnessed
+	}
+}
+
+// holdCheckpoint holds the trail to one checkpoint: the line at its sequence
+// must be there, a chained record of its trail with its digest. It answers
+// the finding's name and detail, or "" when the checkpoint matches.
+func (v *verifier) holdCheckpoint(expect result.AuditCheckpoint) (string, string) {
+	named := v.heldLines[expect.Sequence]
+	switch {
+	case expect.Sequence > v.lines || named == nil:
+		return FindingCheckpointBeyondTrail, fmt.Sprintf("the trail has %d complete lines, fewer than the checkpoint's sequence", v.lines)
+	case named.damaged || !named.chained:
+		return FindingCheckpointNotChained, "the line at the checkpoint's sequence is not a chained record"
+	case named.link.trail != expect.Trail:
+		return FindingCheckpointTrailMismatch, "the record at the checkpoint's sequence is of another trail"
+	case named.digest != expect.RecordDigest:
+		return FindingCheckpointRecordMismatch, "the record at the checkpoint's sequence is not the one the checkpoint names"
+	}
+	return "", ""
+}
+
+// witnessSection reports a witness's statements as read: the countersigned
+// coverage checkHeld found, the section, and the countersigned coverage the
+// verification was told to require.
+func (v *verifier) witnessSection(chain *result.AuditChain) {
+	read, input := v.witnessRead, v.options.Witness.Input
+	section := &result.AuditWitness{
+		KeysSupplied:      int64(input.keyCount),
+		StatementsRead:    int64(read.read),
+		StatementsChecked: int64(read.checked),
+		Began:             "index-0",
+		Status:            "failed",
+		Conflicts:         []int64{},
+	}
+	if input.resumed {
+		section.Began = "continued"
+		if input.last != nil {
+			after := input.last.index
+			section.ContinuedAfter = &after
+		}
+	}
+	chain.Coverage.Countersigned = result.AuditCoverageState{Status: "failed"}
+	if read.clean {
+		section.Status = "read"
+		section.Reading = "historical"
+		if read.head != nil {
+			section.Reading = "current"
+			index := read.head.index
+			section.HeadIndex = &index
+		}
+		if read.last != nil {
+			highest := read.last.index
+			section.HighestIndex = &highest
+		}
+		if read.latest != nil {
+			section.LatestCheckpoint = &result.AuditWitnessCheckpoint{Index: read.latest.index, Sequence: read.latest.checkpoint.Sequence, WitnessedAt: read.latest.witnessedAt}
+		}
+		section.Conflicts = append(section.Conflicts, read.conflicts[:min(len(read.conflicts), maxListed)]...)
+		section.ConflictsTotal = int64(len(read.conflicts))
+		section.Retired = read.retired
+		chain.Coverage.Countersigned = result.AuditCoverageState{Status: "none"}
+		if v.countersigned != nil {
+			chain.Coverage.Countersigned = result.AuditCoverageState{Status: "through", Through: v.countersigned.checkpoint.Sequence}
+			section.CountersignedAt = v.countersigned.witnessedAt
+		}
+	}
+	chain.Witness = section
+	if required := v.options.Witness.RequireThrough; required > 0 {
+		chain.RequiredCountersigned = &result.AuditRequirement{Through: required, Status: "met"}
+		if chain.Coverage.Countersigned.Status != "through" || chain.Coverage.Countersigned.Through < required {
+			chain.RequiredCountersigned.Status = "unmet"
+			v.recordSidecar(result.AuditFinding{
+				Name:   FindingCountersignedCoverageMissing,
+				Line:   required,
+				Detail: fmt.Sprintf("no credited witness statement covers the records up to sequence %d: they are not countersigned", required),
+			})
+		}
+	}
 }
 
 // checkRequirement fails a verification whose held checkpoints do not cover
@@ -807,6 +963,30 @@ func statements(chain result.AuditChain) ([]string, []string) {
 		if chain.Stamps.RevocationNotChecked > 0 {
 			notEstablished = append(notEstablished, fmt.Sprintf(notRevocationChecked, chain.Stamps.RevocationNotChecked))
 		}
+	}
+	if witness := chain.Witness; witness != nil {
+		if chain.Coverage.Countersigned.Status == "through" {
+			through := chain.Coverage.Countersigned.Through
+			establishes = append(establishes, fmt.Sprintf(establishesCountersigned, through, witness.CountersignedAt))
+			notEstablished = append(notEstablished, fmt.Sprintf(notCountersignedAfter, through))
+		} else {
+			notEstablished = append(notEstablished, notCountersignedNone)
+		}
+		if witness.Status == "read" {
+			switch {
+			case witness.Reading == "current" && witness.HeadIndex != nil:
+				notEstablished = append(notEstablished, fmt.Sprintf(notWitnessCurrent, *witness.HeadIndex))
+			case witness.HighestIndex != nil:
+				notEstablished = append(notEstablished, fmt.Sprintf(notWitnessHistorical, *witness.HighestIndex))
+			}
+			if witness.ContinuedAfter != nil {
+				notEstablished = append(notEstablished, fmt.Sprintf(notWitnessContinued, *witness.ContinuedAfter))
+			}
+			if witness.ConflictsTotal > 0 && len(witness.Conflicts) > 0 {
+				notEstablished = append(notEstablished, fmt.Sprintf(notWitnessConflict, witness.ConflictsTotal, witness.Conflicts[0]))
+			}
+		}
+		notEstablished = append(notEstablished, notAgainstWitness, notWitnessSubmitter, notWitnessTime)
 	}
 	notEstablished = append(notEstablished, notAttempts)
 	return establishes, notEstablished

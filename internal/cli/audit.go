@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ func (a *App) auditCommand() *cobra.Command {
 		Use:   "audit",
 		Short: "Check, checkpoint, repair, sign and stamp a chained audit trail",
 		Long: "Operations on the audit trail a project keeps (ADR-0018), chained over its exact bytes (ADR-0047). " +
-			"verify checks every trail, sequence and previous from the first chained record on, and with --public-key the signatures beside it; checkpoint prints the checkpoint of the last chained record, for handing to someone who will hold it; " +
+			"verify checks every trail, sequence and previous from the first chained record on, with --public-key the signatures beside it, and with --witness-key a checkpoint witness's statements; checkpoint prints the checkpoint of the last chained record, for handing to someone who will hold it; " +
 			"repair starts a new segment after a last line a write did not complete; key makes, shows and rotates the key that signs the records; stamp has a time-stamping authority stamp the current checkpoint. " +
 			"None of them evaluates anything.",
 		Args: cobra.NoArgs,
@@ -56,6 +57,12 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 	tsaCRLPaths := []string{}
 	stampsPath := ""
 	requireStamped := int64(0)
+	witnessPaths := []string{}
+	witnessHead := ""
+	witnessResume := ""
+	witnessSave := ""
+	witnessKeyPaths := []string{}
+	requireCountersigned := int64(0)
 	command := &cobra.Command{
 		Use:   "verify",
 		Short: "Check a chained audit trail, alone or against a checkpoint",
@@ -76,6 +83,15 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			"--tsa-crls <file> supplies certificate revocation lists (PEM or DER; repeatable): a certificate is checked only against a list from its issuer issued at or after the stamp's time and while it was valid, and a stamp no such list speaks for is reported with its status not checked, never as good. " +
 			"The records up to the highest checkpoint a trusted stamp covers, with no failed check of the trail at or before it, are stamped, and the report gives the lag between each covered record's at and the first trusted stamp covering it; --require-stamped-through <sequence> fails the verification while the records up to that sequence are not all stamped. " +
 			"A stamp shows that its checkpoint existed by the time the authority states, as far as that authority is independent of the operator: not how long before, and a record's at stays the operator's word. " +
+			"With --witness-key <file>, the public key of a checkpoint witness the verifier trusts, obtained out of band (64 hexadecimal characters; repeatable, at most 16), held to the same rule as --public-key before anything is read, the statements a witness serves for the trail are read: --witness <file>, one statement per line as the witness serves them (repeatable), and --witness-head <file>, the head the reader fetched from the witness, one statement. " +
+			"A witness is a gateway another party runs, which signs the trail's checkpoints and chains its statements per trail (gateway ADR-0013); the runtime fetches nothing. " +
+			"The statements are one set, whatever files they came in: each must be of the trail's identity, in the form of statement version 1, with a signature that verifies under the key its keyId names, and two at one index that differ are an equivocation; read from index 0, every index must be present and each statement name the signature before it, checkpoint sequences must increase, a conflict must be at or below the latest checkpoint and a retirement last; and a head must be reached by the statements supplied. " +
+			"Each failure is a named finding, witness-malformed, witness-signature-invalid, witness-trail-mismatch, witness-equivocation, witness-chain-broken or witness-head-unreached, and a chain with any of them is credited nothing. " +
+			"The checkpoint of every checkpoint statement that verifies is held to the trail as --expect's are, with the same findings; a credited one counts as a held checkpoint, and the coverage's countersigned says how far a credited witness statement reaches; --require-countersigned-through <sequence> fails the verification while the records up to that sequence are not all countersigned. " +
+			"A reading with a head is current as of the reader's fetch of it; without one it is historical, ending at the highest statement supplied. " +
+			"A verification with no finding at all, given --witness-save <file>, saves a continuation there: the last statement read and the latest checkpoint statement, as signed. --witness-save refuses a destination that is a file the verification reads, by any path or link to it, other than the --witness-resume continuation it advances, and anything already there that is not a regular file holding a continuation, leaving it as it is; the verification is reported either way, a refused destination noted beside a finding. --witness-resume <file> continues from one, checking its two statements again, reading only the statements after its last and holding its checkpoint to the trail again; a statement at or below its last index supplied is refused, and a head below it is witness-head-behind. " +
+			"Over 16 keys, 64 MiB of statements files, or 110,000 statements, a continuation's two counted, the reading is refused before any statement is checked, never truncated: a longer chain is read in steps. " +
+			"A witness's credited checkpoint statement shows the lines up to its checkpoint are the ones that existed when the witness signed it, as far as that witness is independent of the operator: not who submitted it, and its time is the witness's own clock's. " +
 			"A trail a repair has segmented is reported segment by segment, and never as intact across a discontinuity. " +
 			"Exit 0 when every check passed, segmented or not, and 1 when any failed; each failed check is a named finding.",
 		Args: cobra.NoArgs,
@@ -106,6 +122,30 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			if failure != nil {
 				return failure
 			}
+			if requireCountersigned < 0 {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-REQUIRE", "--require-countersigned-through must be a sequence from 1.")
+			}
+			if len(witnessKeyPaths) == 0 && (len(witnessPaths) > 0 || witnessHead != "" || witnessResume != "" || witnessSave != "" || requireCountersigned > 0) {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-WITNESS", "--witness, --witness-head, --witness-resume, --witness-save and --require-countersigned-through apply only with --witness-key: no statement is checked without a key to check it by.")
+			}
+			if witnessSave != "" && (witnessSave == "-" || strings.Contains(witnessSave, "://") || fssecure.IsRemotePath(witnessSave)) {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The continuation is saved to one local file; pass its path.")
+			}
+			// Whether the file --witness-save names may be written is decided
+			// before anything is written, and reported after the verification,
+			// so a refused destination never hides what the verification found.
+			var target *continuationTarget
+			var refused *saveRefusal
+			if witnessSave != "" {
+				target, refused = openContinuationTarget(witnessSave)
+				if target != nil {
+					defer target.dir.Close()
+				}
+			}
+			witness, failure := a.readWitnessOptions(commandName, format, witnessKeyPaths, witnessPaths, witnessHead, witnessResume, requireCountersigned)
+			if failure != nil {
+				return failure
+			}
 			held := []result.AuditCheckpoint{}
 			for _, expectPath := range expectPaths {
 				checkpoints, failure := a.readCheckpoints(commandName, format, expectPath)
@@ -119,11 +159,36 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 				return failure
 			}
 			defer opened.close()
-			report, locked, failure := a.readTrailWith(commandName, format, opened, audit.Options{Held: held, RequireThrough: requireThrough, Signatures: signatures, Stamps: stamps})
+			// Every input is open now, and recorded: the file --witness-save
+			// names is held to them before anything is verified.
+			if target != nil && refused == nil {
+				refused = a.checkContinuationTarget(target)
+			}
+			report, locked, failure := a.readTrailWith(commandName, format, opened, audit.Options{Held: held, RequireThrough: requireThrough, Signatures: signatures, Stamps: stamps, Witness: witness})
 			if failure != nil {
 				return failure
 			}
 			chain := report.Chain
+			if refused != nil {
+				if chain.FindingsTotal == 0 {
+					return a.operational(commandName, format, refused.exit, refused.code, fmt.Sprintf("--witness-save %s %s. The verification itself found nothing, and nothing was saved.", display.Sanitize(witnessSave), refused.why))
+				}
+				// The verification found something: it is reported as it would
+				// be without --witness-save, which saves nothing then anyway,
+				// and the refusal is noted beside it.
+				if chain.Witness != nil {
+					chain.Witness.SaveRefused = fmt.Sprintf("--witness-save %s %s; nothing was saved", display.Sanitize(witnessSave), refused.why)
+				}
+			} else if target != nil && report.Continuation != nil {
+				if err := target.dir.ReplaceByRename(target.name, report.Continuation, target.existing); err != nil {
+					why := "it could not be written"
+					if errors.Is(err, fssecure.ErrReplacedChanged) {
+						why = "the file there changed after it was checked"
+					}
+					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-WITNESS-SAVE", fmt.Sprintf("The continuation could not be saved to %s: %s. The verification had no finding, and %s is as it was.", display.Sanitize(witnessSave), why, display.Sanitize(witnessSave)))
+				}
+				chain.Witness.ContinuationSaved = true
+			}
 			shownPath := opened.path
 			output := result.AuditVerification{
 				OutputVersion:         result.OutputVersion,
@@ -156,7 +221,127 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 	command.Flags().StringArrayVar(&tsaCRLPaths, "tsa-crls", tsaCRLPaths, "a file of certificate revocation lists, PEM or DER, to check the time-stamping certificates against (repeatable)")
 	command.Flags().StringVar(&stampsPath, "stamps", stampsPath, "the stamps file to read; without it, the one beside the trail")
 	command.Flags().Int64Var(&requireStamped, "require-stamped-through", requireStamped, "fail unless trusted stamps cover every record up to this sequence")
+	command.Flags().StringArrayVar(&witnessKeyPaths, "witness-key", witnessKeyPaths, "a file holding the public key of a checkpoint witness to trust, obtained out of band (repeatable, at most 16)")
+	command.Flags().StringArrayVar(&witnessPaths, "witness", witnessPaths, "a file of a witness's statements for the trail, one per line, as the witness serves them (repeatable)")
+	command.Flags().StringVar(&witnessHead, "witness-head", witnessHead, "a file holding the head you fetched from the witness for the trail: one statement")
+	command.Flags().StringVar(&witnessResume, "witness-resume", witnessResume, "a continuation your own earlier successful reading saved with --witness-save, to read on from")
+	command.Flags().StringVar(&witnessSave, "witness-save", witnessSave, "where to save a continuation, written only when the verification has no finding at all")
+	command.Flags().Int64Var(&requireCountersigned, "require-countersigned-through", requireCountersigned, "fail unless credited witness statements cover every record up to this sequence")
 	return command
+}
+
+// readWitnessOptions reads the witness keys, statements, head and continuation
+// a verification reads, or nil when no witness key was given. The keys are
+// counted before any is read and each is held to the public-key rule in
+// order, and the files' sizes are bounded together before any of them is
+// read; a reading over a bound is refused, never truncated.
+func (a *App) readWitnessOptions(command, format string, keyPaths, statementPaths []string, headPath, resumePath string, requireCountersigned int64) (*audit.WitnessOptions, error) {
+	if len(keyPaths) == 0 {
+		return nil, nil
+	}
+	refused := func(err error) error {
+		var refusal *audit.WitnessRefusal
+		if errors.As(err, &refusal) {
+			return a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-WITNESS-REFUSED", fmt.Sprintf("The witness's statements are refused before any is checked (%s): %s.", refusal.Reason, refusal.Detail))
+		}
+		return a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-READ", "The witness's statements could not be read.")
+	}
+	if len(keyPaths) > audit.MaxWitnessKeys {
+		return nil, refused(&audit.WitnessRefusal{Reason: audit.RefusalKeysOverBound, Detail: fmt.Sprintf("%d witness keys were supplied, and one verification takes at most %d", len(keyPaths), audit.MaxWitnessKeys)})
+	}
+	supplied := audit.WitnessSupplied{}
+	for _, keyPath := range keyPaths {
+		if strings.Contains(keyPath, "://") || fssecure.IsRemotePath(keyPath) {
+			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
+		}
+		data, err := a.readInput(keyPath, 4096, "a --witness-key file")
+		if err != nil {
+			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-KEY-READ", fmt.Sprintf("The witness key %s could not be read as one bounded regular file.", display.Sanitize(keyPath)))
+		}
+		public, err := audit.ParsePublicKey(data)
+		if err != nil {
+			message := fmt.Sprintf("The witness key %s is not one: %s.", display.Sanitize(keyPath), err.Error())
+			if reason := audit.WitnessKeyRefusal(err); reason != "" {
+				message = fmt.Sprintf("The witness key %s is refused (%s): %s.", display.Sanitize(keyPath), reason, err.Error())
+			}
+			return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-WITNESS-KEY-INVALID", message)
+		}
+		supplied.Keys = append(supplied.Keys, public)
+	}
+	type witnessFile struct {
+		path string
+		file *os.File
+		size int64
+	}
+	what := func(index int) string {
+		switch {
+		case index < len(statementPaths):
+			return "a --witness file"
+		case headPath != "" && index == len(statementPaths):
+			return "the --witness-head file"
+		}
+		return resumeInput
+	}
+	files := []witnessFile{}
+	defer func() {
+		for _, each := range files {
+			each.file.Close()
+		}
+	}()
+	paths := append([]string{}, statementPaths...)
+	for _, extra := range []string{headPath, resumePath} {
+		if extra != "" {
+			paths = append(paths, extra)
+		}
+	}
+	total := int64(0)
+	for index, filePath := range paths {
+		if filePath == "-" || strings.Contains(filePath, "://") || fssecure.IsRemotePath(filePath) {
+			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "A witness's statements, its head and a continuation are each read as one local file; pass its path.")
+		}
+		file, err := a.openInput(filePath, what(index))
+		if err != nil {
+			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-READ", fmt.Sprintf("The witness file %s could not be opened as one regular file.", display.Sanitize(filePath)))
+		}
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-READ", fmt.Sprintf("The witness file %s could not be opened as one regular file.", display.Sanitize(filePath)))
+		}
+		files = append(files, witnessFile{path: filePath, file: file, size: info.Size()})
+		total += info.Size()
+	}
+	if total > audit.MaxWitnessBytes {
+		return nil, refused(&audit.WitnessRefusal{Reason: audit.RefusalBytesOverBound, Detail: fmt.Sprintf("the witness files hold %d bytes together, more than %d", total, audit.MaxWitnessBytes)})
+	}
+	read := int64(0)
+	contents := make([][]byte, len(files))
+	for index, each := range files {
+		data, err := io.ReadAll(io.LimitReader(each.file, audit.MaxWitnessBytes-read+1))
+		if err != nil {
+			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-READ", fmt.Sprintf("The witness file %s could not be read.", display.Sanitize(each.path)))
+		}
+		read += int64(len(data))
+		if read > audit.MaxWitnessBytes {
+			// A file grew after it was measured: still over the bound.
+			return nil, refused(&audit.WitnessRefusal{Reason: audit.RefusalBytesOverBound, Detail: fmt.Sprintf("the witness files grew past %d bytes together while they were read", audit.MaxWitnessBytes)})
+		}
+		contents[index] = data
+	}
+	supplied.Statements = contents[:len(statementPaths)]
+	next := len(statementPaths)
+	if headPath != "" {
+		supplied.Head, supplied.HasHead = contents[next], true
+		next++
+	}
+	if resumePath != "" {
+		supplied.Resume, supplied.HasResume = contents[next], true
+	}
+	input, err := audit.PrepareWitness(supplied)
+	if err != nil {
+		return nil, refused(err)
+	}
+	return &audit.WitnessOptions{Input: input, RequireThrough: requireCountersigned}, nil
 }
 
 // readStampOptions reads the roots, policies and revocation lists a
@@ -168,7 +353,7 @@ func (a *App) readStampOptions(command, format string, rootPaths, policies, crlP
 	options := &audit.StampOptions{RequireThrough: requireStamped}
 	roots := x509.NewCertPool()
 	for _, rootPath := range rootPaths {
-		data, failure := a.readTrustFile(command, format, rootPath, "JPS-AUDIT-TSA-ROOTS-READ", "time-stamping roots")
+		data, failure := a.readTrustFile(command, format, rootPath, "JPS-AUDIT-TSA-ROOTS-READ", "time-stamping roots", "tsa-roots")
 		if failure != nil {
 			return nil, failure
 		}
@@ -197,7 +382,7 @@ func (a *App) readStampOptions(command, format string, rootPaths, policies, crlP
 		options.Verify.Policies = append(options.Verify.Policies, oid)
 	}
 	for _, crlPath := range crlPaths {
-		data, failure := a.readTrustFile(command, format, crlPath, "JPS-AUDIT-TSA-CRLS-READ", "revocation lists")
+		data, failure := a.readTrustFile(command, format, crlPath, "JPS-AUDIT-TSA-CRLS-READ", "revocation lists", "tsa-crls")
 		if failure != nil {
 			return nil, failure
 		}
@@ -211,11 +396,11 @@ func (a *App) readStampOptions(command, format string, rootPaths, policies, crlP
 }
 
 // readTrustFile reads one bounded local file a verifier supplies its trust in.
-func (a *App) readTrustFile(command, format, filePath, code, what string) ([]byte, error) {
+func (a *App) readTrustFile(command, format, filePath, code, what, flag string) ([]byte, error) {
 	if strings.Contains(filePath, "://") || fssecure.IsRemotePath(filePath) {
 		return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 	}
-	data, err := a.readPack(filePath, 16<<20)
+	data, err := a.readInput(filePath, 16<<20, "a --"+flag+" file")
 	if err != nil {
 		return nil, a.operational(command, format, result.ExitIO, code, fmt.Sprintf("The %s could not be read as one bounded regular file or standard input stream.", what))
 	}
@@ -275,7 +460,7 @@ func (a *App) readSignatureOptions(command, format string, publicKeyPaths []stri
 		if strings.Contains(keyPath, "://") || fssecure.IsRemotePath(keyPath) {
 			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		data, err := a.readPack(keyPath, 4096)
+		data, err := a.readInput(keyPath, 4096, "a --public-key file")
 		if err != nil {
 			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-PUBLIC-KEY-READ", fmt.Sprintf("The public key %s could not be read as one bounded regular file.", display.Sanitize(keyPath)))
 		}
@@ -289,7 +474,7 @@ func (a *App) readSignatureOptions(command, format string, publicKeyPaths []stri
 		if strings.Contains(revokedPath, "://") || fssecure.IsRemotePath(revokedPath) {
 			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		data, err := a.readPack(revokedPath, audit.MaxRevocationBytes)
+		data, err := a.readInput(revokedPath, audit.MaxRevocationBytes, "the --revoked file")
 		if err != nil {
 			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-REVOKED-READ", "The revocations could not be read as one bounded regular file or standard input stream.")
 		}
@@ -566,7 +751,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 		if strings.Contains(trailPath, "://") || fssecure.IsRemotePath(trailPath) {
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		file, err := fssecure.OpenRegular(trailPath)
+		file, err := a.openInput(trailPath, "the trail")
 		if err != nil {
 			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The trail %s could not be opened as one regular file.", display.Sanitize(trailPath)))
 		}
@@ -576,7 +761,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 				continue
 			}
 			beside := filepath.Join(filepath.Dir(trailPath), each.name)
-			*each.into, err = fssecure.OpenRegular(beside)
+			*each.into, err = a.openInput(beside, "the "+each.label)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				opened.close()
 				return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", each.label, display.Sanitize(beside)))
@@ -592,6 +777,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-NOT-DECLARED", notDeclaredMessage)
 		}
 		file, err := loaded.OpenTrail()
+		a.noteInput(file, "the trail")
 		if errors.Is(err, fs.ErrNotExist) {
 			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s does not exist yet: no record has been written.", display.Sanitize(loaded.TrailPath())))
 		}
@@ -604,6 +790,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 				continue
 			}
 			*each.into, err = each.fromProject(loaded)
+			a.noteInput(*each.into, "the "+each.label)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				opened.close()
 				return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The project's %s could not be opened as one regular file inside the project.", each.label))
@@ -614,7 +801,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 		if !each.wanted || each.explicit == "" {
 			continue
 		}
-		file, err := fssecure.OpenRegular(each.explicit)
+		file, err := a.openInput(each.explicit, "the "+each.label)
 		if err != nil {
 			opened.close()
 			return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", each.label, display.Sanitize(each.explicit)))
@@ -664,7 +851,7 @@ func (a *App) readCheckpoints(command, format, expectPath string) ([]result.Audi
 	if strings.Contains(expectPath, "://") || fssecure.IsRemotePath(expectPath) {
 		return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 	}
-	data, err := a.readPack(expectPath, audit.MaxHeldBytes)
+	data, err := a.readInput(expectPath, audit.MaxHeldBytes, "an --expect file")
 	if errors.Is(err, fssecure.ErrTooLarge) {
 		return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-CHECKPOINT-INVALID", fmt.Sprintf("The checkpoints exceed %d bytes.", audit.MaxHeldBytes))
 	}
@@ -692,9 +879,13 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	}
 	switch output.Status {
 	case "valid":
-		if output.Held != nil && output.Held.Latest != nil {
+		checkpointed := output.Coverage.Checkpointed
+		switch {
+		case output.Held != nil && output.Held.Latest != nil && (checkpointed.Status != "through" || checkpointed.Through == output.Held.Latest.Sequence):
 			fmt.Fprintf(a.out, "consistent, and witnessed through the held checkpoint at sequence %d: %d line(s)\n", output.Held.Latest.Sequence, output.Lines)
-		} else {
+		case checkpointed.Status == "through":
+			fmt.Fprintf(a.out, "consistent, and witnessed through the checkpoint a witness statement countersigns at sequence %d: %d line(s)\n", checkpointed.Through, output.Lines)
+		default:
 			fmt.Fprintf(a.out, "consistent: the integrity of one supplied chain, %d line(s)\n", output.Lines)
 		}
 	case "segmented":
@@ -750,6 +941,9 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	if output.Held != nil {
 		fmt.Fprintf(a.out, "held checkpoints: %d supplied, %d matched, %d failed\n", output.Held.Supplied, output.Held.Matched, output.Held.Failed)
 	}
+	if witness := output.Witness; witness != nil {
+		a.renderWitness(witness, coverage.Countersigned)
+	}
 	if output.Required != nil {
 		fmt.Fprintf(a.out, "required: every record through sequence %d witnessed: %s\n", output.Required.Through, output.Required.Status)
 	}
@@ -758,6 +952,9 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	}
 	if output.RequiredStamped != nil {
 		fmt.Fprintf(a.out, "required: every record through sequence %d stamped: %s\n", output.RequiredStamped.Through, output.RequiredStamped.Status)
+	}
+	if output.RequiredCountersigned != nil {
+		fmt.Fprintf(a.out, "required: every record through sequence %d countersigned: %s\n", output.RequiredCountersigned.Through, output.RequiredCountersigned.Status)
 	}
 	if output.Head != nil {
 		fmt.Fprintf(a.out, "trail %s · last chained record: sequence %d, %s\n", output.Head.Trail, output.Head.Sequence, output.Head.RecordDigest)
@@ -793,5 +990,167 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 		snapshot = "no lock: the snapshot may end inside a write in progress"
 	}
 	fmt.Fprintf(a.out, "%s · %s\n", display.Sanitize(output.TrailPath), snapshot)
+	return nil
+}
+
+// renderWitness reports a witness's statements as read: how many, where the
+// reading began and ended, the latest checkpoint statement, the conflicts,
+// and how far the countersigned coverage reaches.
+func (a *App) renderWitness(witness *result.AuditWitness, countersigned result.AuditCoverageState) {
+	began := "read from index 0"
+	switch {
+	case witness.ContinuedAfter != nil:
+		began = fmt.Sprintf("continued after index %d", *witness.ContinuedAfter)
+	case witness.Began == "continued":
+		began = "continued from a continuation that could not be read"
+	}
+	fmt.Fprintf(a.out, "witness: %d statement line(s) read, %d statement(s) checked, %d key(s) supplied; %s\n",
+		witness.StatementsRead, witness.StatementsChecked, witness.KeysSupplied, began)
+	if witness.Status == "read" {
+		ended := "historical, ending at the highest index supplied"
+		index := int64(0)
+		if witness.HighestIndex != nil {
+			index = *witness.HighestIndex
+		}
+		if witness.Reading == "current" && witness.HeadIndex != nil {
+			ended, index = "current as of the fetch of the head", *witness.HeadIndex
+		}
+		fmt.Fprintf(a.out, "witness reading: %s, index %d\n", ended, index)
+		if latest := witness.LatestCheckpoint; latest != nil {
+			fmt.Fprintf(a.out, "latest checkpoint statement: index %d, sequence %d, witnessed at %s by the witness's clock\n", latest.Index, latest.Sequence, latest.WitnessedAt)
+		}
+		if witness.ConflictsTotal > 0 {
+			fmt.Fprintf(a.out, "conflict statements: %d, at sequence(s) %s\n", witness.ConflictsTotal, joinSequences(witness.Conflicts, witness.ConflictsTotal))
+		}
+		if witness.Retired {
+			fmt.Fprintln(a.out, "the witness's chain for this trail is retired: it ends with a retirement statement")
+		}
+	} else {
+		fmt.Fprintln(a.out, "witness reading: failed, so no statement is credited")
+	}
+	switch countersigned.Status {
+	case "through":
+		fmt.Fprintf(a.out, "countersigned: through sequence %d\n", countersigned.Through)
+	default:
+		fmt.Fprintf(a.out, "countersigned: %s\n", countersigned.Status)
+	}
+	if witness.ContinuationSaved {
+		fmt.Fprintln(a.out, "witness continuation saved")
+	}
+	if witness.SaveRefused != "" {
+		fmt.Fprintln(a.out, "note: "+display.Sanitize(witness.SaveRefused))
+	}
+}
+
+// joinSequences lists sequences for a line of the human report, saying how
+// many more were not listed.
+func joinSequences(sequences []int64, total int64) string {
+	parts := make([]string, 0, len(sequences))
+	for _, sequence := range sequences {
+		parts = append(parts, strconv.FormatInt(sequence, 10))
+	}
+	text := strings.Join(parts, ", ")
+	if omitted := total - int64(len(sequences)); omitted > 0 {
+		text += fmt.Sprintf(", and %d more, not listed", omitted)
+	}
+	return text
+}
+
+// resumeInput is what the continuation --witness-resume names is recorded as:
+// the one input --witness-save may replace, since a reading advances it.
+const resumeInput = "the --witness-resume continuation"
+
+// continuationTarget is where --witness-save writes: the directory that is to
+// hold the continuation, opened once and held from the check to the rename;
+// the continuation's name in it and its path as given; and what was there when
+// it was checked, nil when nothing was.
+type continuationTarget struct {
+	dir      *fssecure.Root
+	name     string
+	path     string
+	existing os.FileInfo
+}
+
+// saveRefusal is why the file --witness-save names may not be written: the
+// reason, which reads after the destination's path, and the code and exit code
+// a refusal answers with when the verification itself found nothing.
+type saveRefusal struct {
+	code string
+	exit int
+	why  string
+}
+
+// refusedSave is a destination refused as an invocation's mistake.
+func refusedSave(why string) *saveRefusal {
+	return &saveRefusal{code: "JPS-INVOCATION-AUDIT-WITNESS-SAVE", exit: result.ExitInvocation, why: why}
+}
+
+// openContinuationTarget opens the directory the file --witness-save names is
+// in. A symbolic link among the directories of its path is followed, since a
+// reader may name any directory; once it is opened, the continuation is
+// written to that directory, by the rename ReplaceByRename makes.
+func openContinuationTarget(target string) (*continuationTarget, *saveRefusal) {
+	dir, name := filepath.Split(target)
+	if name == "" || name == "." || name == ".." {
+		return nil, refusedSave("names no file")
+	}
+	if dir == "" {
+		dir = "."
+	}
+	opened, err := fssecure.OpenRoot(dir)
+	if err != nil {
+		return nil, &saveRefusal{code: "JPS-AUDIT-WITNESS-SAVE", exit: result.ExitIO, why: "is in a directory that could not be opened"}
+	}
+	return &continuationTarget{dir: opened, name: name, path: target}, nil
+}
+
+// checkContinuationTarget holds the file --witness-save names to what a
+// verification may replace, once every input is open and before anything is
+// verified, and answers why it may not be written, or nil:
+//
+//   - it is none of the files this invocation read, by the identity of the file
+//     itself, so another spelling of its path, a symbolic link or a hard link
+//     to it is the same file; the continuation --witness-resume read is the one
+//     exception, since a reading advances it;
+//   - when something is there, it is a regular file, not a symbolic link, that
+//     holds a continuation; anything else is left as it is.
+//
+// The inputs are what the App recorded as it opened them (App.inputs), so an
+// input read through the App's readers is held to this without naming it here.
+func (a *App) checkContinuationTarget(target *continuationTarget) *saveRefusal {
+	refuse := refusedSave
+	// The file is looked up by its path, following every link, and through the
+	// held directory, following a link that stays in it: either is the file a
+	// rename onto the name would replace.
+	named := []os.FileInfo{}
+	if info, err := os.Stat(target.path); err == nil {
+		named = append(named, info)
+	}
+	if info, err := target.dir.Stat(target.name); err == nil {
+		named = append(named, info)
+	}
+	for _, info := range named {
+		for _, input := range a.inputs {
+			if input.what != resumeInput && os.SameFile(info, input.info) {
+				return refuse(fmt.Sprintf("is %s, which this verification reads, and saving would replace it", input.what))
+			}
+		}
+	}
+	info, err := target.dir.Lstat(target.name)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return refuse("could not be examined")
+	case info.Mode()&os.ModeSymlink != 0:
+		return refuse("is a symbolic link; a continuation is saved to a file named by its own path")
+	case !info.Mode().IsRegular():
+		return refuse("is not a regular file")
+	}
+	data, err := target.dir.Read(target.name, audit.MaxWitnessBytes)
+	if err != nil || !audit.IsContinuation(data) {
+		return refuse("holds something other than a continuation, and is left as it is; name a new file, or the continuation a reading saved")
+	}
+	target.existing = info
 	return nil
 }
