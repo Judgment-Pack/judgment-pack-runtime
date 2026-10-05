@@ -576,6 +576,11 @@ func TestAnInputIsRecordedAsTheFileRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// On Windows a FileInfo from os.Stat finds its file's identity by its
+	// path when it is first compared: compare it now, while the path still
+	// names the file read, so the test's own reference is not looked up again
+	// after the move.
+	os.SameFile(read, read)
 	moved := f.config + ".original"
 	if err := os.Rename(f.config, moved); err != nil {
 		t.Fatal(err)
