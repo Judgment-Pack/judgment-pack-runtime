@@ -1140,17 +1140,27 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   a key: set in a shell, a service unit or a CI job, and inherited by everything started from there,
   it turns signing on for every project those processes record for that keeps a chained trail,
   projects under `"3"` to `"5"` included. Set it only where that is what you want.
-- **What the key must be.** It is read only as it is opened, so what is checked is what is
-  read. Its path must be absolute and have no symbolic link anywhere in it, so name it by its real
-  path (on macOS, `/private/var/…` rather than `/var/…`): the runtime walks the path from the
-  filesystem's root a directory at a time, holding each one open, refuses a link at any component,
-  and refuses a component that changed between its look and its open. No directory it walks may be
-  the project's own directory, compared by device and inode rather than by name. The key must be one
-  regular file with one name (no hard link elsewhere), owned by the user the runtime runs as, and
-  neither readable nor writable by its group or by others. A key that is not is refused and signs
-  nothing. `packs validate` reports why, as the `audit-signing-key` check, naming the key by its
-  `keyId` and never by anything read from its file; nothing this runtime prints or logs carries key
-  material. `jpack audit key public <seed>` prints a key's public half for whoever will verify.
+- **What the key must be.** It is read only as it is opened, so what is checked is what is read. Its
+  path must be absolute and have no symbolic link anywhere in it, so name it by its real path (on
+  macOS, `/private/var/…` rather than `/var/…`): the runtime walks the path from the filesystem's
+  root a directory at a time, holding each one open, refuses a link at any component, and refuses a
+  component that changed between its look and its open. No directory it walks may be the project's
+  own directory, compared by device and inode rather than by name. Every directory on its path, from
+  the root to the key's own, must be owned by root or by the user the runtime runs as and writable
+  by nobody else unless its sticky bit is set, so nobody else can remove or replace the key; a key
+  in a directory its group or others can write, or under one, is refused, and the refusal names the
+  directory and the `chmod go-w` on it that fixes it. The sticky bit excuses a directory, the key's
+  own included: nobody else can then remove or rename a key they do not own, and a file someone else
+  puts at the key's name is refused as not owned. So a key in a private directory under `/tmp` is
+  accepted. Group membership is not read: a directory its group can write is refused whoever is in
+  the group. The owners and modes are read each time the key is opened; an access-control list the
+  permission bits do not show (POSIX ACLs show in the group bits, macOS ACLs do not) is not seen.
+  `jpack audit key generate` writes no seed where it would be refused. The key must be one regular
+  file with one name (no hard link elsewhere), owned by the user the runtime runs as, and neither
+  readable nor writable by its group or by others. A key that is not is refused and signs nothing.
+  `packs validate` reports why, as the `audit-signing-key` check, naming the key by its `keyId` and
+  never by anything read from its file; nothing this runtime prints or logs carries key material.
+  `jpack audit key public <seed>` prints a key's public half for whoever will verify.
 - **A mount is not seen.** The location check refuses a key reached through any link, and a key
   whose path passes through the project's directory. It cannot see a bind mount, or any other mount,
   that shows a directory or file from inside the project at a path outside it: a bind of the

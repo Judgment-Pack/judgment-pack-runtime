@@ -16,11 +16,16 @@ import (
 const testSeed = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
 
 // keyOutside writes a seed into a directory of its own, outside any project,
-// readable and writable by its owner alone, and returns its path.
+// readable and writable by its owner alone, and returns its path. The
+// directory is its owner's alone too, as a signing key's must be: t.TempDir
+// leaves it 0775 under umask 0002.
 func keyOutside(t *testing.T, seed string) string {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "seed")
@@ -155,6 +160,25 @@ func TestPacksValidateReportsWhetherTheSigningKeySigns(t *testing.T) {
 	}
 	if !loaded.AuditWriter().Signs() {
 		t.Fatal("a good key signs")
+	}
+	// A key in a directory its group or others can write is refused, the
+	// check naming the directory and the fix, and signs nothing (#221).
+	keyDir := filepath.Dir(key)
+	for _, mode := range []os.FileMode{0o777, 0o775} {
+		if err := os.Chmod(keyDir, mode); err != nil {
+			t.Fatal(err)
+		}
+		check, status, _ = signingKeyCheck(t, loaded)
+		if check.Status != result.PackCheckFailed || status != "invalid" || !strings.Contains(check.Detail, "The signing key the audit member's signingKey names") ||
+			!strings.Contains(check.Detail, "the directory "+keyDir+" on the signing key's path") || !strings.Contains(check.Detail, "chmod go-w "+keyDir+" fixes it") {
+			t.Fatalf("a key in a directory of mode %o: %+v %s", mode, check, status)
+		}
+		if loaded.AuditWriter().Signs() {
+			t.Fatalf("a key in a directory of mode %o signs", mode)
+		}
+	}
+	if err := os.Chmod(keyDir, 0o700); err != nil {
+		t.Fatal(err)
 	}
 	// A key inside the project is refused, and the writer then signs nothing.
 	configPath := writeProject(t, `{"configVersion":"6","audit":{"dir":"audit"},"packs":{}}`, map[string]string{"keys/seed": testSeed + "\n"})

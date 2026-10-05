@@ -2,6 +2,39 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A signing key kept where another user could remove or replace it is refused** (ADR-0047 §2b;
+  #221). A security posture change: a key placement that signed before may now be refused.
+  - Every directory on a signing key's path, from the root to the key's own, must be owned by root
+    or by the user the runtime runs as, and writable by neither its group nor others unless its
+    sticky bit is set. Before, only the key file's owner and mode were read, so a key in a 0777
+    directory, or under one, signed: whoever else could write that directory could remove or rename
+    the key, and signing stopped while `packs validate` had reported `passed`. Root's ownership
+    excuses no writable mode, and group membership is not read. The sticky bit excuses a directory,
+    the key's own included: nobody else can then remove or rename a key they do not own, so a key
+    in a private directory under `/tmp` still signs. The key file's own rules are unchanged.
+  - A refused key signs nothing and fails no decision, as any refused key: records are written
+    unsigned, and `packs validate` fails the `audit-signing-key` check with one of two new reasons,
+    which name the directory: "the directory `<dir>` on the signing key's path can be written by its
+    group or by other users (mode `0777`) and has no sticky bit, so another user could remove or
+    replace the key; chmod go-w `<dir>` fixes it", or "the directory `<dir>` on the signing key's
+    path is owned by uid `N`, neither root nor the user this runtime runs as (uid `M`), so that user
+    could remove or replace the key". The check's name and the frame of its detail are unchanged.
+  - `jpack audit key public` and `jpack audit key rotate --next` refuse such a key with
+    `JPS-AUDIT-KEY-REFUSED` and the same reasons. `jpack audit key generate` holds the directories
+    it would write into first, and refuses with `JPS-AUDIT-KEY-REFUSED`, exit 1, writing nothing; it
+    had no such refusal before. The Go package gains `audit.ErrKeyDirectoryWritable`,
+    `audit.ErrKeyDirectoryNotOwned` and `audit.CheckKeyPlace`.
+  - Migration: `packs validate` names the directory. `chmod go-w <dir>` on it, or moving the key
+    into a directory you or root own that nobody else can write, restores signing. The records
+    written in between are unsigned, and the next signed record covers them through the chain.
+  - Unchanged: Windows, where no key signs; the sidecar; `audit verify` and its findings. The rule
+    holds the owners and modes as each key is opened. It does not see an access-control list the
+    permission bits do not show, a mount, a change after the open, or root; and a hard link another
+    user makes to the key, where the system allows it, still stops signing as a key with two names.
+  - No evaluation changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+
 ## 0.26.0 - 2026-10-03
 
 - **The audit trail is chained over its exact bytes, on by default** (ADR-0047 §1; #206).

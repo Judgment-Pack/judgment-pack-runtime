@@ -153,8 +153,12 @@ record line is not changed. The key is checked as it is opened, so what is check
 its path is walked from the filesystem's root a directory at a time, each held open, and it is
 refused, and signs nothing, when it is named by a relative path or one with a symbolic link anywhere
 in it, when a component changes between its look and its open, when any directory on its path is
-the project's directory (by device and inode, not by name), when it is not one regular file with
-one name, or when it is owned by another user or readable or writable by its group or by others.
+the project's directory (by device and inode, not by name), when any directory on its path, from
+the root to its own, is owned by neither root nor the user the runtime runs as or can be written by
+its group or by others without the sticky bit (so another user could remove or replace the key),
+when it is not one regular file with one name, or when it is owned by another user or readable or
+writable by its group or by others. A refused directory is named, with the `chmod go-w` that fixes
+it, and `jpack audit key generate` writes no seed where it would be refused.
 **On Windows no key signs**: who may read a file there is whatever its ACL allows, this runtime does
 not read ACLs, and so it cannot show a key is its owner's alone; every key is refused there, as on
 any platform without unix ownership and modes. `JPACK_SIGNING_KEY` is process-wide: inherited by a

@@ -24,3 +24,7 @@ func readKey(keyPath string, _ os.FileInfo) (*Signer, error) {
 	defer file.Close()
 	return readSeedFrom(file)
 }
+
+// holdKeyPlace holds nothing here: without unix owners and modes no
+// directory's can be read, and no key signs (keyPrivacyChecked).
+func holdKeyPlace(string) error { return nil }

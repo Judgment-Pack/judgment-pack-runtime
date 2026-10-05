@@ -45,6 +45,7 @@ func (a *App) auditKeyGenerateCommand() *cobra.Command {
 			"Human output is the public key alone, one line, so it can be saved for whoever will verify (jpack audit verify --public-key reads it); the seed itself is never printed. " +
 			"The directory part of <seed-file> is resolved to its real path first, and the note on standard error names the seed by that path, which is the one to configure: a signing key is named by its real path, with no symbolic link anywhere in it. " +
 			"Keep the seed outside every project, readable by the user the runtime runs as and nobody else: a key inside the project, or one others can read, is refused and signs nothing. " +
+			"Every directory on its path, from the root to its own, must be owned by root or by that user and writable by nobody else unless its sticky bit is set, so nobody else can remove or replace the key: a seed is not written into a directory where it would be refused, and the refusal names the directory and the chmod go-w that fixes it. " +
 			"On Windows a key's privacy cannot be checked, so no key signs there; generate and public still work.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -54,6 +55,14 @@ func (a *App) auditKeyGenerateCommand() *cobra.Command {
 			target, err := realParent(args[0])
 			if err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The seed file's directory could not be resolved to its real path; it must exist.")
+			}
+			// The directories are held before anything is written, so a
+			// seed is never left where a signing key is refused.
+			if err := audit.CheckKeyPlace(target); err != nil {
+				if keyPlaceRefused(err) {
+					return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-KEY-REFUSED", fmt.Sprintf("No seed was written to %s, where a signing key is refused: %s.", display.Sanitize(target), audit.KeyRefusal(err)))
+				}
+				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-KEY-WRITE", fmt.Sprintf("The seed could not be written to %s.", display.Sanitize(target)))
 			}
 			seed := make([]byte, 32)
 			// crypto/rand.Read cannot fail on a supported platform.
@@ -89,7 +98,7 @@ func (a *App) auditKeyPublicCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "public <seed-file>",
 		Short: "Print a signing key's public key",
-		Long: "Print the public key of the Ed25519 seed in <seed-file>, held to the rules a signing key is held to, but for being outside a project: one regular file with one name, not a symbolic link, and on unix owned by the user the runtime runs as and readable by nobody else. The directory part of <seed-file> is resolved to its real path first. " +
+		Long: "Print the public key of the Ed25519 seed in <seed-file>, held to the rules a signing key is held to, but for being outside a project: one regular file with one name, not a symbolic link, and on unix owned by the user the runtime runs as and readable by nobody else, in directories owned by root or by that user that nobody else can write unless their sticky bit is set. The directory part of <seed-file> is resolved to its real path first. " +
 			"Human output is the public key alone, one line, for whoever will verify; JSON adds its keyId, the first 32 hexadecimal characters of the SHA-256 of its 32 bytes, which each signature names.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -200,6 +209,17 @@ func (a *App) auditKeyRotateCommand() *cobra.Command {
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().StringVar(&nextPath, "next", nextPath, "the seed file of the key to hand signing over to")
 	return command
+}
+
+// keyPlaceRefused says whether audit.CheckKeyPlace refused the place by a
+// signing key's rules, rather than failing to look at it.
+func keyPlaceRefused(err error) bool {
+	for _, refusal := range []error{audit.ErrKeyDirectoryWritable, audit.ErrKeyDirectoryNotOwned, audit.ErrKeyThroughLink, audit.ErrKeyPathChanged} {
+		if errors.Is(err, refusal) {
+			return true
+		}
+	}
+	return false
 }
 
 // realParent makes a seed file's path absolute with its directory part

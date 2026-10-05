@@ -18,12 +18,11 @@ import (
 
 // generatedKey runs audit key generate into a directory of its own and
 // returns the seed's path and the public key file holding what it printed.
+// The directory is made its owner's alone, as a signing key's must be:
+// t.TempDir leaves it 0775 under umask 0002.
 func generatedKey(t *testing.T) (string, string) {
 	t.Helper()
-	dir, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := privateTempDir(t)
 	seed := filepath.Join(dir, "seed")
 	code, stdout, stderr := runTest(t, []string{"audit", "key", "generate", seed}, "")
 	if code != 0 || len(stdout) != 65 || !strings.HasSuffix(stdout, "\n") || !strings.Contains(stderr, "keyId") {
@@ -34,6 +33,20 @@ func generatedKey(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	return seed, public
+}
+
+// privateTempDir is a fresh directory named by its real path and writable by
+// its owner alone, which a signing key's directory must be.
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 // keysSignHere says whether a key can sign on this platform: where its
@@ -340,6 +353,11 @@ func TestASigningKeyInsideTheProjectSignsNothing(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(inside), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// generate holds the directories it writes into, and the project's
+	// own is made with what the umask leaves.
+	if err := os.Chmod(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	code, stdout, _ := runTest(t, []string{"audit", "key", "generate", inside}, "")
 	if code != 0 {
 		t.Fatalf("generate: exit=%d", code)
@@ -357,6 +375,111 @@ func TestASigningKeyInsideTheProjectSignsNothing(t *testing.T) {
 	code, output := verification(t, "--config", configPath, "--public-key", public)
 	if code != 0 || output.Coverage.UnsignedRecords != 1 || output.Coverage.Signed.Status != "none" {
 		t.Fatalf("verify: exit=%d %+v", code, output.Coverage)
+	}
+}
+
+// A key in a directory its group or other users can write, or under one,
+// signs nothing (#221). audit key generate writes no seed there; public and
+// rotate --next refuse such a key; a decision is recorded unsigned, packs
+// validate names the directory and the chmod go-w that fixes it, and audit
+// verify reports the record unsigned. A directory its owner's alone, or a
+// sticky one, is where a key signs, and once fixed the next signed record
+// covers the unsigned one through the chain.
+func TestAKeyInADirectoryOthersCanWriteSignsNothing(t *testing.T) {
+	skipWhereKeysCannotSign(t)
+	base := privateTempDir(t)
+	directory := func(mode os.FileMode, names ...string) string {
+		t.Helper()
+		path := filepath.Join(append([]string{base}, names...)...)
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	// generate: (b) 0777, (c) 0775 and (d) a 0777 ancestor are refused, and
+	// nothing is written there.
+	open := directory(0o777, "open")
+	group := directory(0o775, "group")
+	under := directory(0o700, "shared", "k")
+	directory(0o777, "shared")
+	for _, row := range []struct{ name, dir, named string }{
+		{"(b) 0777", open, open},
+		{"(c) 0775", group, group},
+		{"(d) under a 0777 ancestor", under, filepath.Join(base, "shared")},
+	} {
+		code, stdout, _ := runTest(t, []string{"audit", "key", "generate", "--format", "json", filepath.Join(row.dir, "seed")}, "")
+		if code != result.ExitInvalid || !strings.Contains(stdout, `"JPS-AUDIT-KEY-REFUSED"`) || !strings.Contains(stdout, "chmod go-w "+row.named+" fixes it") {
+			t.Fatalf("generate into %s: exit=%d %q", row.name, code, stdout)
+		}
+		entries, err := os.ReadDir(row.dir)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("generate into %s wrote %d entries: %v", row.name, len(entries), err)
+		}
+	}
+	// (a) and (e): generate writes there as before.
+	private := directory(0o700, "private")
+	sticky := directory(os.ModeSticky|0o777, "sticky")
+	keys := map[string]string{}
+	for _, dir := range []string{private, sticky} {
+		seed := filepath.Join(dir, "seed")
+		code, stdout, stderr := runTest(t, []string{"audit", "key", "generate", seed}, "")
+		if code != 0 || len(stdout) != 65 {
+			t.Fatalf("generate into %s: exit=%d %q %q", dir, code, stdout, stderr)
+		}
+		keys[dir] = writeDocument(t, filepath.Base(dir)+".pub", stdout)
+	}
+	seed, public := filepath.Join(private, "seed"), keys[private]
+	// The directory is loosened after the key was made.
+	if err := os.Chmod(private, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	fix := "chmod go-w " + private + " fixes it"
+	code, stdout, _ := runTest(t, []string{"audit", "key", "public", "--format", "json", seed}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, `"JPS-AUDIT-KEY-REFUSED"`) || !strings.Contains(stdout, fix) {
+		t.Fatalf("public: exit=%d %q", code, stdout)
+	}
+	// Named by JPACK_SIGNING_KEY, it signs nothing, and the decision is
+	// recorded all the same.
+	t.Setenv(audit.SigningKeyEnv, seed)
+	configPath, _ := recordedProject(t, 1)
+	code, stdout, _ = runTest(t, []string{"packs", "validate", "--config", configPath}, "")
+	if code == 0 || !strings.Contains(stdout, "audit-signing-key: failed") || !strings.Contains(stdout, audit.SigningKeyEnv+" names") || !strings.Contains(stdout, fix) {
+		t.Fatalf("validate: exit=%d %q", code, stdout)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), "audit", audit.SidecarName)); !os.IsNotExist(err) {
+		t.Fatalf("no sidecar is written: %v", err)
+	}
+	code, output := verification(t, "--config", configPath, "--public-key", public)
+	if code != 0 || output.Coverage.UnsignedRecords != 1 || output.Coverage.SignedRecords != 0 || output.Coverage.Signed.Status != "none" {
+		t.Fatalf("verify: exit=%d %+v", code, output.Coverage)
+	}
+	code, output = verification(t, "--config", configPath, "--public-key", public, "--require-signed-through", "1")
+	if code != 1 || len(output.Findings) == 0 || output.Findings[0].Name != "signature-missing" {
+		t.Fatalf("verify --require-signed-through 1: exit=%d %+v", code, output.Findings)
+	}
+	// rotate --next refuses such a key as the next one.
+	t.Setenv(audit.SigningKeyEnv, filepath.Join(sticky, "seed"))
+	signed, _ := recordedProject(t, 1)
+	code, stdout, _ = runTest(t, []string{"audit", "key", "rotate", "--format", "json", "--config", signed, "--next", seed}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, `"JPS-AUDIT-KEY-REFUSED"`) || !strings.Contains(stdout, fix) {
+		t.Fatalf("rotate --next: exit=%d %q", code, stdout)
+	}
+	// chmod go-w restores signing, and the next signed record covers the
+	// unsigned one through the chain.
+	if err := os.Chmod(private, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(audit.SigningKeyEnv, seed)
+	if code, stdout, _ := runTest(t, []string{"packs", "validate", "--config", configPath}, ""); code != 0 || !strings.Contains(stdout, "audit-signing-key: passed") {
+		t.Fatalf("validate after chmod go-w: exit=%d %q", code, stdout)
+	}
+	evaluateOnce(t, configPath)
+	code, output = verification(t, "--config", configPath, "--public-key", public, "--require-signed-through", "2")
+	if code != 0 || output.Coverage.SignedRecords != 1 || output.Coverage.UnsignedRecords != 1 || output.Coverage.Signed.Through != 2 {
+		t.Fatalf("verify after chmod go-w: exit=%d %+v %+v", code, output.Coverage, output.Findings)
 	}
 }
 
