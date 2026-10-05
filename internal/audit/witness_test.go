@@ -680,3 +680,79 @@ func TestAReadingIsRefusedInItsOrder(t *testing.T) {
 		}
 	}
 }
+
+// A statement is held to each form, on the value read, and a chain to each
+// rule at its edge: what passes the form just inside it, and what fails just
+// outside.
+func TestEachFormAndRuleHoldsAtItsEdge(t *testing.T) {
+	trail := witnessTrail(witnessedTrail, 10, plainRecords)
+	w := newTestWitness("edges")
+	w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 3))
+	line := w.statements[0].canonical(true)
+	for _, each := range []struct {
+		name, from, to string
+		form           bool
+	}{
+		{"the largest index", `"index":0`, `"index":9007199254740990`, true},
+		{"an index past it", `"index":0`, `"index":9007199254740991`, false},
+		{"an index spelled with a fraction", `"index":0`, `"index":0.0`, false},
+		{"a previous signature of no form", `"prevSignature":null`, `"prevSignature":"abc"`, false},
+		{"a previous signature that is a number", `"prevSignature":null`, `"prevSignature":5`, false},
+		{"a previous signature of its form", `"prevSignature":null`, `"prevSignature":"` + strings.Repeat("ab", 64) + `"`, true},
+		{"a time of another form", `"witnessedAt":"2026-10-05T00:00:00Z"`, `"witnessedAt":"2026-10-05 00:00:00Z"`, false},
+		{"a time no calendar holds, in its form", `"witnessedAt":"2026-10-05T00:00:00Z"`, `"witnessedAt":"2026-13-45T99:99:99Z"`, true},
+		{"a keyId in upper case", `"keyId":"` + w.statements[0].keyID, `"keyId":"` + strings.ToUpper(w.statements[0].keyID), false},
+		{"another kind", `"kind":"checkpoint"`, `"kind":"other"`, false},
+		{"a checkpoint at sequence 0", `"sequence":3`, `"sequence":0`, false},
+		{"a member given twice", `"kind":"checkpoint"`, `"kind":"checkpoint","kind":"checkpoint"`, false},
+		{"a member's name escaped", `"kind":"checkpoint"`, `"\u006bind":"checkpoint"`, true},
+		{"spaces around it", `{"checkpoint"`, ` { "checkpoint"`, true},
+	} {
+		changed := strings.Replace(line, each.from, each.to, 1)
+		if changed == line {
+			t.Fatalf("%s: the statement was not changed", each.name)
+		}
+		if _, ok := parseWitnessStatement([]byte(changed), "edge"); ok != each.form {
+			t.Errorf("%s: of its form %v, want %v", each.name, ok, each.form)
+		}
+	}
+
+	at := func(build func(w *testWitness), head int) string {
+		w := newTestWitness("rules")
+		build(w)
+		supplied := w.supplied(w.file(0, len(w.statements)))
+		if head >= 0 {
+			supplied = withHead(w.supplied(w.file(0, len(w.statements)-1)), w.file(head, head+1))
+		}
+		return outcome(witnessVerify(t, trail, supplied, 0))
+	}
+	if got := at(func(w *testWitness) {
+		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 6))
+		w.next(WitnessKindConflict, otherRecord(witnessedTrail, 6))
+	}, -1); got != "valid findings=0[] checkpointed=through/6 witnessed=6 countersigned=through/6" {
+		t.Errorf("a conflict at the latest checkpoint's own sequence: %s", got)
+	}
+	if got := at(func(w *testWitness) {
+		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 6))
+		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 5))
+	}, -1); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
+		t.Errorf("a checkpoint sequence below the latest: %s", got)
+	}
+	twoPast := func(w *testWitness) {
+		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 2))
+		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 4))
+		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 6))
+		w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 8))
+	}
+	// Statements 0 to 2 supplied with the head at 3 joins the chain; with
+	// statement 2 left out, the head at 3 is two past the others, unreached.
+	if got := at(twoPast, 3); got != "valid findings=0[] checkpointed=through/8 witnessed=8 countersigned=through/8" {
+		t.Errorf("a head one past: %s", got)
+	}
+	w2 := newTestWitness("rules")
+	twoPast(w2)
+	supplied := withHead(w2.supplied(w2.file(0, 2)), w2.file(3, 4))
+	if got := outcome(witnessVerify(t, trail, supplied, 0)); got != "invalid findings=1[witness-head-unreached@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
+		t.Errorf("a head two past: %s", got)
+	}
+}

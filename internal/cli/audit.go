@@ -272,11 +272,8 @@ func (a *App) readWitnessOptions(command, format string, keyPaths, statementPath
 		files = append(files, witnessFile{path: filePath, file: file, size: info.Size()})
 		total += info.Size()
 	}
-	overBytes := func(total int64) error {
-		return refused(&audit.WitnessRefusal{Reason: audit.RefusalBytesOverBound, Detail: fmt.Sprintf("the witness files hold %d bytes together, more than %d", total, audit.MaxWitnessBytes)})
-	}
 	if total > audit.MaxWitnessBytes {
-		return nil, overBytes(total)
+		return nil, refused(&audit.WitnessRefusal{Reason: audit.RefusalBytesOverBound, Detail: fmt.Sprintf("the witness files hold %d bytes together, more than %d", total, audit.MaxWitnessBytes)})
 	}
 	read := int64(0)
 	contents := make([][]byte, len(files))
@@ -287,8 +284,8 @@ func (a *App) readWitnessOptions(command, format string, keyPaths, statementPath
 		}
 		read += int64(len(data))
 		if read > audit.MaxWitnessBytes {
-			// The file grew after it was measured: still over the bound.
-			return nil, overBytes(read)
+			// A file grew after it was measured: still over the bound.
+			return nil, refused(&audit.WitnessRefusal{Reason: audit.RefusalBytesOverBound, Detail: fmt.Sprintf("the witness files grew past %d bytes together while they were read", audit.MaxWitnessBytes)})
 		}
 		contents[index] = data
 	}

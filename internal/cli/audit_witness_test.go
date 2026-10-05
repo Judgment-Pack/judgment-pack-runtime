@@ -269,8 +269,8 @@ func TestAuditVerifyWitnessFlagsAreChecked(t *testing.T) {
 	}
 	saved := filepath.Join(t.TempDir(), "saved.json")
 	if code, stdout := run("--witness-key", key, "--witness", sparse, "--witness-head", writeDocument(t, "byte.jsonl", "x"), "--witness-save", saved); code != result.ExitInvocation ||
-		!strings.Contains(stdout, `"JPS-AUDIT-WITNESS-REFUSED"`) || !strings.Contains(stdout, "bytes-over-bound") {
-		t.Fatalf("over the byte bound: exit=%d %q", code, stdout)
+		!strings.Contains(stdout, `"JPS-AUDIT-WITNESS-REFUSED"`) || !strings.Contains(stdout, "(bytes-over-bound): the witness files hold 67108865 bytes together, more than 67108864.") {
+		t.Fatalf("over the byte bound, by the files' sizes: exit=%d %q", code, stdout)
 	}
 	if _, err := os.Stat(saved); !os.IsNotExist(err) {
 		t.Fatalf("a refused reading saved a continuation: %v", err)
