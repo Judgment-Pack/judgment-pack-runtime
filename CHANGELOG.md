@@ -24,11 +24,18 @@ All notable changes to tagged releases are documented here.
   - `jpack audit key public` and `jpack audit key rotate --next` refuse such a key with
     `JPS-AUDIT-KEY-REFUSED` and the same reasons. `jpack audit key generate` holds the directories
     it would write into first, and refuses with `JPS-AUDIT-KEY-REFUSED`, exit 1, writing nothing; it
-    had no such refusal before. The Go package gains `audit.ErrKeyDirectoryWritable`,
-    `audit.ErrKeyDirectoryNotOwned` and `audit.CheckKeyPlace`.
-  - Migration: `packs validate` names the directory. `chmod go-w <dir>` on it, or moving the key
-    into a directory you or root own that nobody else can write, restores signing. The records
-    written in between are unsigned, and the next signed record covers them through the chain.
+    had no such refusal before. It now writes the seed relative to the key's directory as that walk
+    holds it, rather than by its path, and removes the seed again if it is then not read back as a
+    key by its path (`JPS-AUDIT-KEY-READ`, as before). The Go package gains
+    `audit.ErrKeyDirectoryWritable`, `audit.ErrKeyDirectoryNotOwned`, `audit.WriteSeed` and
+    `audit.ErrSeedNotReadBack`.
+  - Migration: `packs validate` names the directory, and each refusal has its own fix. A directory
+    its group or others can write: `chmod go-w <dir>`, which the reason names. A directory another
+    user owns: give it to root or to the user the runtime runs as, which `chmod` does not do, or
+    move the key. Every directory from the root is held, so moving the key into a private directory
+    beneath a refused one does not restore signing; move it where every directory on its path is
+    owned by root or that user and writable by nobody else unless sticky. The records written in
+    between are unsigned, and the next signed record covers them through the chain.
   - Unchanged: Windows, where no key signs; the sidecar; `audit verify` and its findings. The rule
     holds the owners and modes as each key is opened. It does not see an access-control list the
     permission bits do not show, a mount, a change after the open, or root; and a hard link another

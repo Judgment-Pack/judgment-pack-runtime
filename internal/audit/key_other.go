@@ -3,6 +3,7 @@
 package audit
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -25,6 +26,25 @@ func readKey(keyPath string, _ os.FileInfo) (*Signer, error) {
 	return readSeedFrom(file)
 }
 
-// holdKeyPlace holds nothing here: without unix owners and modes no
-// directory's can be read, and no key signs (keyPrivacyChecked).
-func holdKeyPlace(string) error { return nil }
+// writeSeed is WriteSeed here, where no directory's owner or mode can be read
+// and no key signs (keyPrivacyChecked): the seed is created by its path, as
+// before, and removed when the write or the read back fails.
+func writeSeed(keyPath string, data []byte) (*Signer, error) {
+	file, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := fillSeed(file, data); err != nil {
+		_ = os.Remove(keyPath)
+		return nil, err
+	}
+	signer, err := ReadKey(keyPath)
+	if err != nil {
+		_ = os.Remove(keyPath)
+		return nil, fmt.Errorf("%w: %w", ErrSeedNotReadBack, err)
+	}
+	return signer, nil
+}
+
+// StandInKeyAncestorsForTests does nothing here: no directory is held.
+func StandInKeyAncestorsForTests(string) (restore func()) { return func() {} }

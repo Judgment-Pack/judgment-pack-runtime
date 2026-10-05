@@ -267,17 +267,40 @@ func ReadKey(keyPath string) (*Signer, error) {
 	return readKey(filepath.Clean(keyPath), nil)
 }
 
-// CheckKeyPlace holds the directories a key at keyPath would be in, from the
-// root to its own, to the rules LoadSigner holds a key's directories to,
-// before anything is written there, so jpack audit key generate writes no
-// seed where it would be refused. It reads nothing at keyPath itself. Where
-// this platform cannot read unix owners and modes, it holds nothing, as
-// nothing signs there.
-func CheckKeyPlace(keyPath string) error {
+// ErrSeedNotReadBack is a seed WriteSeed wrote that could not then be read
+// back as a key by its path; the error it wraps says why, and the seed was
+// removed.
+var ErrSeedNotReadBack = errors.New("the seed written could not be read back")
+
+// WriteSeed writes data, a new seed, to a file at keyPath created readable and
+// writable by its owner alone, never over anything already there (fs.ErrExist),
+// and returns the key read back from it by ReadKey's rules. On unix the
+// directories on its way are held to the rules a signing key's are, and one
+// refused is returned before anything is written; the file is then created
+// relative to the key's own directory as that walk holds it, so it is written
+// where the check was made. A seed whose write does not complete, or that is
+// then not read back (ErrSeedNotReadBack), is removed.
+func WriteSeed(keyPath string, data []byte) (*Signer, error) {
 	if !filepath.IsAbs(keyPath) {
-		return ErrKeyNotAbsolute
+		return nil, ErrKeyNotAbsolute
 	}
-	return holdKeyPlace(filepath.Clean(keyPath))
+	return writeSeed(filepath.Clean(keyPath), data)
+}
+
+// fillSeed writes data to a seed file just created, sets its mode again so no
+// umask leaves it other than its owner's alone, syncs it and closes it.
+func fillSeed(file *os.File, data []byte) error {
+	err := file.Chmod(0o600)
+	if err == nil {
+		_, err = file.Write(data)
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if closed := file.Close(); err == nil {
+		err = closed
+	}
+	return err
 }
 
 // readSeedFrom reads an opened key file: at most maxKeyFileBytes, one seed.

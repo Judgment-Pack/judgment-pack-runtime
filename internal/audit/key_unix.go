@@ -3,7 +3,9 @@
 package audit
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -14,15 +16,50 @@ import (
 var keyPrivacyChecked = true
 
 // afterLook runs between the look at a component of a key's path and its
-// open. It does nothing; a test swaps the component there, in the window an
-// attacker would race for, to hold the walk to refusing what it then opens.
+// open, and between the walk to a seed's directory and the seed's create. It
+// does nothing; a test swaps the component there, in the window an attacker
+// would race for, to hold the walk to refusing what it then opens and the
+// write to the directory it held.
 var afterLook = func(dir *os.Root, name string) {}
 
 // keyDirectoryStandIn is what the walk holds a directory to: the information
 // of the directory it holds open. It is a variable only so a test can stand in
 // another owner or mode for a directory, which a test cannot make another
-// user own.
+// user own, and the machine's own directories above a test's fixtures
+// (StandInKeyAncestorsForTests).
 var keyDirectoryStandIn = func(path string, info os.FileInfo) os.FileInfo { return info }
+
+// StandInKeyAncestorsForTests has the walk to a signing key hold every
+// directory strictly above root as root's, mode 0755, and leaves root and
+// everything beneath it to its own owner and mode. It returns what undoes it.
+// Nothing in this runtime calls it, and a test holds it to that: it exists
+// because a test's fixtures live under the machine's temporary directory,
+// whose ancestors the test cannot choose and the walk holds every one of.
+func StandInKeyAncestorsForTests(root string) (restore func()) {
+	root = filepath.Clean(root)
+	previous := keyDirectoryStandIn
+	keyDirectoryStandIn = func(path string, info os.FileInfo) os.FileInfo {
+		if path != root && (path == "/" || strings.HasPrefix(root, path+"/")) {
+			return rootOwnedDirectory{info}
+		}
+		return previous(path, info)
+	}
+	return func() { keyDirectoryStandIn = previous }
+}
+
+// rootOwnedDirectory is a directory's information as root's, mode 0755.
+type rootOwnedDirectory struct{ os.FileInfo }
+
+func (rootOwnedDirectory) Mode() os.FileMode { return os.ModeDir | 0o755 }
+
+func (d rootOwnedDirectory) Sys() any {
+	stat := syscall.Stat_t{}
+	if real, ok := d.FileInfo.Sys().(*syscall.Stat_t); ok {
+		stat = *real
+	}
+	stat.Uid = 0
+	return &stat
+}
 
 // readKey opens and reads the key at an absolute, cleaned path so that what is
 // checked is what is opened (ADR-0047 §2b). It walks the path from the
@@ -92,17 +129,36 @@ func readKey(keyPath string, project os.FileInfo) (*Signer, error) {
 	return readSeedFrom(file)
 }
 
-// holdKeyPlace is CheckKeyPlace on unix: the walk readKey makes to the
-// directory of an absolute, cleaned key path, and that directory's rule for
-// every directory it holds.
-func holdKeyPlace(keyPath string) error {
+// writeSeed is WriteSeed on unix. The seed is created relative to the key's
+// own directory as the walk holds it, never by its pathname, so the
+// directories that were checked are the ones it is written in, and it is
+// removed through the same handle when the write or the read back fails.
+func writeSeed(keyPath string, data []byte) (*Signer, error) {
 	components := strings.Split(strings.TrimPrefix(keyPath, "/"), "/")
 	walked, err := holdKeyDirectories(components[:len(components)-1])
 	if err != nil {
-		return err
+		return nil, err
 	}
-	walked.dir.Close()
-	return walked.placement
+	defer walked.dir.Close()
+	if walked.placement != nil {
+		return nil, walked.placement
+	}
+	name := components[len(components)-1]
+	afterLook(walked.dir, name)
+	file, err := walked.dir.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := fillSeed(file, data); err != nil {
+		_ = walked.dir.Remove(name)
+		return nil, err
+	}
+	signer, err := ReadKey(keyPath)
+	if err != nil {
+		_ = walked.dir.Remove(name)
+		return nil, fmt.Errorf("%w: %w", ErrSeedNotReadBack, err)
+	}
+	return signer, nil
 }
 
 // keyDirectories is what the walk to a key's directory holds.

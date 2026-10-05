@@ -5,6 +5,7 @@ package audit
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -299,16 +300,18 @@ type owner struct {
 }
 
 // standInOwners has the walk to a key hold the directories named, by path, to
-// the owners and modes given instead of their own, until the test ends.
-func standInOwners(t *testing.T, owners map[string]owner) {
+// the owners and modes given instead of what it held them to before, until
+// the function it returns is called.
+func standInOwners(t *testing.T, owners map[string]owner) (restore func()) {
 	t.Helper()
+	previous := keyDirectoryStandIn
 	keyDirectoryStandIn = func(path string, info os.FileInfo) os.FileInfo {
 		if stood, ok := owners[path]; ok {
 			return ownedBy(t, info, stood.uid, stood.mode)
 		}
-		return info
+		return previous(path, info)
 	}
-	t.Cleanup(func() { keyDirectoryStandIn = func(_ string, info os.FileInfo) os.FileInfo { return info } })
+	return func() { keyDirectoryStandIn = previous }
 }
 
 // A directory on a key's path is held to its owner and its mode alone: owned
@@ -391,15 +394,18 @@ func keyUnder(t *testing.T, base string, dirs ...dirMode) string {
 	return key
 }
 
-// expectKeyPlace holds a key to what LoadSigner, ReadKey and CheckKeyPlace
-// say of it: all three accept it, or all three refuse it as want, naming
-// the directory named.
+// expectKeyPlace holds a key to what LoadSigner and ReadKey say of it, and
+// what WriteSeed says of a new seed beside it: all three accept, or all three
+// refuse as want, naming the directory named, and then WriteSeed refuses
+// before writing anything.
 func expectKeyPlace(t *testing.T, name, key string, want error, named string) {
 	t.Helper()
 	_, loaded := LoadSigner(key, nil)
 	_, read := ReadKey(key)
-	placed := CheckKeyPlace(key)
-	for which, err := range map[string]error{"LoadSigner": loaded, "ReadKey": read, "CheckKeyPlace": placed} {
+	fresh := filepath.Join(filepath.Dir(key), "fresh.seed")
+	_, written := WriteSeed(fresh, []byte(vectorSeed2+"\n"))
+	defer os.Remove(fresh)
+	for which, err := range map[string]error{"LoadSigner": loaded, "ReadKey": read, "WriteSeed": written} {
 		if want == nil {
 			if err != nil {
 				t.Fatalf("%s: %s refused it: %v", name, which, err)
@@ -408,6 +414,11 @@ func expectKeyPlace(t *testing.T, name, key string, want error, named string) {
 		}
 		if !errors.Is(err, want) || !strings.Contains(KeyRefusal(err), "the directory "+named+" on the signing key's path") {
 			t.Fatalf("%s: %s: want %v naming %s, got %v", name, which, want, named, err)
+		}
+	}
+	if want != nil {
+		if _, err := os.Lstat(fresh); !errors.Is(written, want) || errors.Is(written, ErrSeedNotReadBack) || !os.IsNotExist(err) {
+			t.Fatalf("%s: WriteSeed wrote before it refused: %v, %v", name, written, err)
 		}
 	}
 }
@@ -451,22 +462,120 @@ func TestTheDirectoriesOnAKeysPathAreItsOwnersAlone(t *testing.T) {
 			break
 		}
 	}
-	standInOwners(t, ancestors)
+	restore := standInOwners(t, ancestors)
 	expectKeyPlace(t, "Desk's placement under root's 0755 ancestors", desk, nil, "")
+	restore()
 	// A /tmp-like ancestor: root's, sticky, anyone may write it.
 	tmp := keyUnder(t, base, dirMode{"tmp", os.ModeSticky | 0o777}, dirMode{"k", 0o700})
-	standInOwners(t, map[string]owner{filepath.Join(base, "tmp"): {0, os.ModeSticky | 0o777}})
+	restore = standInOwners(t, map[string]owner{filepath.Join(base, "tmp"): {0, os.ModeSticky | 0o777}})
 	expectKeyPlace(t, "a private directory under a /tmp-like one", tmp, nil, "")
+	restore()
 	// Root's ownership excuses no writable mode.
 	shared := keyUnder(t, base, dirMode{"shared", 0o775}, dirMode{"k", 0o700})
-	standInOwners(t, map[string]owner{filepath.Join(base, "shared"): {0, 0o775}})
+	restore = standInOwners(t, map[string]owner{filepath.Join(base, "shared"): {0, 0o775}})
 	expectKeyPlace(t, "an ancestor root owns that its group can write", shared, ErrKeyDirectoryWritable, filepath.Join(base, "shared"))
+	restore()
 	// A directory another user owns is that user's to change.
 	theirs := keyUnder(t, base, dirMode{"theirs", 0o755}, dirMode{"k", 0o700})
-	standInOwners(t, map[string]owner{filepath.Join(base, "theirs"): {self + 1, 0o755}})
+	restore = standInOwners(t, map[string]owner{filepath.Join(base, "theirs"): {self + 1, 0o755}})
 	expectKeyPlace(t, "an ancestor another user owns", theirs, ErrKeyDirectoryNotOwned, filepath.Join(base, "theirs"))
+	restore()
 	// The root is held like any other directory, and before every other.
 	private := keyUnder(t, base, dirMode{"root-test", 0o700})
-	standInOwners(t, map[string]owner{"/": {0, 0o777}})
+	restore = standInOwners(t, map[string]owner{"/": {0, 0o777}})
 	expectKeyPlace(t, "a root directory anyone can write", private, ErrKeyDirectoryWritable, "/")
+	restore()
+}
+
+// The machine's directories above a test's fixtures are stood in as root's
+// 0755, and nothing beneath the fixture is: a fixture directory anyone can
+// write is still refused. Outside the tests nothing stands them in, and no
+// file of this module but a test calls StandInKeyAncestorsForTests.
+func TestOnlyTestsStandInTheAncestorsOfAKey(t *testing.T) {
+	base := realTempDir(t)
+	expectKeyPlace(t, "a fixture under ancestors stood in", keyUnder(t, base, dirMode{"a", 0o700}), nil, "")
+	expectKeyPlace(t, "a fixture directory anyone can write", keyUnder(t, base, dirMode{"b", 0o777}), ErrKeyDirectoryWritable, filepath.Join(base, "b"))
+	restore := standInOwners(t, map[string]owner{filepath.Dir(base): {0, 0o777}})
+	expectKeyPlace(t, "an ancestor stood in again as anyone's to write", keyUnder(t, base, dirMode{"c", 0o700}), ErrKeyDirectoryWritable, filepath.Dir(base))
+	restore()
+	root := filepath.Join("..", "..")
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() && entry.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		text := strings.ReplaceAll(string(data), "func StandInKeyAncestorsForTests(", "")
+		if strings.Contains(text, "StandInKeyAncestorsForTests(") {
+			t.Errorf("%s calls StandInKeyAncestorsForTests outside a test", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A seed is written in the directory the walk held, not wherever its path
+// leads by the time it is created, and a seed then not read back by its path
+// is removed: a key directory swapped, between the walk and the create, for
+// one anyone can write gets nothing, and the directory held keeps nothing.
+// A seed that is not one is removed the same way.
+func TestASeedIsWrittenWhereItsDirectoriesWereHeld(t *testing.T) {
+	base := realTempDir(t)
+	keys := filepath.Join(base, "keys")
+	if err := os.Mkdir(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	seed := filepath.Join(keys, "seed")
+	swaps := 0
+	afterLook = func(_ *os.Root, name string) {
+		if name != "seed" {
+			return
+		}
+		swaps++
+		if err := os.Rename(keys, keys+".held"); err != nil {
+			t.Error(err)
+		}
+		if err := os.Mkdir(keys, 0o700); err != nil {
+			t.Error(err)
+		}
+		if err := os.Chmod(keys, 0o777); err != nil {
+			t.Error(err)
+		}
+	}
+	signer, err := WriteSeed(seed, []byte(vectorSeed1+"\n"))
+	afterLook = func(*os.Root, string) {}
+	if swaps != 1 || signer != nil || !errors.Is(err, ErrSeedNotReadBack) {
+		t.Fatalf("swaps=%d signer=%v err=%v", swaps, signer != nil, err)
+	}
+	for _, dir := range []string{keys, keys + ".held"} {
+		if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+			t.Fatalf("%s holds %d entries: %v", dir, len(entries), err)
+		}
+	}
+	other := filepath.Join(base, "other")
+	if err := os.Mkdir(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteSeed(filepath.Join(other, "seed"), []byte("not a seed\n")); !errors.Is(err, ErrSeedNotReadBack) || !errors.Is(err, ErrKeyMalformed) {
+		t.Fatalf("a seed that is not one: %v", err)
+	}
+	if entries, err := os.ReadDir(other); err != nil || len(entries) != 0 {
+		t.Fatalf("a seed not read back is left: %d entries, %v", len(entries), err)
+	}
+	if _, err := WriteSeed(filepath.Join(other, "seed"), []byte(vectorSeed1+"\n")); err != nil {
+		t.Fatalf("a good seed: %v", err)
+	}
+	if _, err := WriteSeed(filepath.Join(other, "seed"), []byte(vectorSeed2+"\n")); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("a seed over another: %v", err)
+	}
 }

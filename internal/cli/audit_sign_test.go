@@ -36,7 +36,9 @@ func generatedKey(t *testing.T) (string, string) {
 }
 
 // privateTempDir is a fresh directory named by its real path and writable by
-// its owner alone, which a signing key's directory must be.
+// its owner alone, which a signing key's directory must be. The machine's
+// directories above it, which the test does not choose, are held as root's
+// 0755 for the rest of the test, so nothing here depends on where TMPDIR is.
 func privateTempDir(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
@@ -46,6 +48,7 @@ func privateTempDir(t *testing.T) string {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(audit.StandInKeyAncestorsForTests(dir))
 	return dir
 }
 
@@ -353,11 +356,12 @@ func TestASigningKeyInsideTheProjectSignsNothing(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(inside), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// generate holds the directories it writes into, and the project's
-	// own is made with what the umask leaves.
+	// generate holds the directories it writes into: the project's own is
+	// made with what the umask leaves, and those above it are the machine's.
 	if err := os.Chmod(realDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(audit.StandInKeyAncestorsForTests(realDir))
 	code, stdout, _ := runTest(t, []string{"audit", "key", "generate", inside}, "")
 	if code != 0 {
 		t.Fatalf("generate: exit=%d", code)

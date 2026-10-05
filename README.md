@@ -610,10 +610,11 @@ record line is not changed. The key must be named by its real path, with no symb
 outside the project's directory (compared by device and inode as it is opened), one file with one
 name, owned by the user the runtime runs as and readable by nobody else, in directories owned by
 root or that user that nobody else can write unless their sticky bit is set; a key that is not signs
-nothing (a refused directory is named, with the `chmod go-w` that fixes it), and on Windows, whose
-ACLs the runtime does not read, no key signs at all. The environment variable is process-wide:
-inherited, it signs every chained trail the process records for, under any configVersion, including
-projects that never named a key. In every case
+nothing (a refused directory is named: `chmod go-w` fixes one others can write, and one another user
+owns must be given to root or that user, or the key moved where every directory on its path passes),
+and on Windows, whose ACLs the runtime does not read, no key signs at all. The environment variable
+is process-wide: inherited, it signs every chained trail the process records for, under any
+configVersion, including projects that never named a key. In every case
 `packs validate` says why (`audit-signing-key`). Signing never fails a decision: a signature that
 cannot be written leaves the record unsigned. `jpack audit key generate` writes a key and prints its
 public key, `jpack audit key public` prints a key's public key, and `jpack audit key rotate --next

@@ -18,7 +18,8 @@ const testSeed = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f
 // keyOutside writes a seed into a directory of its own, outside any project,
 // readable and writable by its owner alone, and returns its path. The
 // directory is its owner's alone too, as a signing key's must be: t.TempDir
-// leaves it 0775 under umask 0002.
+// leaves it 0775 under umask 0002. The machine's directories above it, which
+// the test does not choose, are held as root's 0755 for the rest of the test.
 func keyOutside(t *testing.T, seed string) string {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
@@ -28,6 +29,7 @@ func keyOutside(t *testing.T, seed string) string {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(audit.StandInKeyAncestorsForTests(dir))
 	path := filepath.Join(dir, "seed")
 	if err := os.WriteFile(path, []byte(seed+"\n"), 0o600); err != nil {
 		t.Fatal(err)
