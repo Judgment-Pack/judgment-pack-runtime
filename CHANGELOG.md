@@ -43,11 +43,16 @@ All notable changes to tagged releases are documented here.
     continues at the index after its last, and its checkpoint is held against the trail again. A
     statement at or below its last index supplied is refused, a head below it is
     `witness-head-behind`, and a continuation out of shape is `witness-malformed`. A step that fails
-    saves nothing. `--witness-save` never replaces a file the verification reads, other than the
-    continuation `--witness-resume` read, by the identity of the file itself, so another spelling, a
-    symbolic link or a hard link is refused too; nor anything already there that is not a regular
-    file holding a continuation (`JPS-INVOCATION-AUDIT-WITNESS-SAVE`, exit 3). The directory is
-    opened once and the continuation renamed into place through it.
+    saves nothing. `--witness-save` refuses a destination that is a file the verification reads,
+    other than the continuation `--witness-resume` read, by the identity of the file read, so
+    another spelling, a symbolic link or a hard link is refused too; and anything already there that
+    is not a regular file holding a continuation. With a finding the report is what it would be
+    without `--witness-save`, exit 1, the refusal noted in the witness section's `saveRefused`;
+    with none the refusal is the answer (`JPS-INVOCATION-AUDIT-WITNESS-SAVE`, exit 3). The directory
+    is opened once and the continuation renamed into place in it, through the directory opened from
+    Go 1.25 on and by its path, after checking it still names that directory, with Go 1.24; a change
+    of the destination's name by another process between its last check and the rename is not
+    detected.
   - Over 16 keys, 64 MiB of witness files, or 110,000 statements, a continuation's two counted and
     lines counted as the files are split, the reading is refused before any statement is checked
     (`JPS-AUDIT-WITNESS-REFUSED`, exit 3, with `keys-over-bound`, `bytes-over-bound`,

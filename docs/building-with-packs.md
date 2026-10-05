@@ -1196,17 +1196,25 @@ jpack audit verify --trail evaluations.jsonl --witness-key witness.pub \
   nothing, so the next starts again from the continuation you had. Only your own successful reading
   should become a continuation; the runtime cannot tell one from a file someone else wrote, so the
   report says the reading continued, from which index, and a fixed sentence says whose word that is.
-- **What a save may replace.** Before anything is verified, the file `--witness-save` names is held
+- **What a save may replace.** Before anything is written, the file `--witness-save` names is held
   to every file the verification reads, the trail, the files beside it, the configuration, every key
   and every statements, head, checkpoint, roots and revocation file, by the identity of the file
-  itself: another spelling of its path, a symbolic link or a hard link to one of them is refused.
-  The continuation `--witness-resume` read is the one it may name, so `--witness-resume
+  read: another spelling of its path, a symbolic link or a hard link to one of them is refused. The
+  continuation `--witness-resume` read is the one it may name, so `--witness-resume
   continuation.json --witness-save continuation.json` advances it. A file already there is replaced
   only when it holds a continuation; anything else, and anything that is not a regular file, a
-  symbolic link included, is refused and left as it is (`JPS-INVOCATION-AUDIT-WITNESS-SAVE`, exit
-  3). The directory is opened once, before anything is read: a symbolic link among the directories
-  of the path is followed, and the continuation is written to the directory opened, whatever its
-  path names later, through a temporary file beside it that is renamed into place.
+  symbolic link included, is refused and left as it is. The verification runs either way: when it
+  has a finding, the report is what it would be without `--witness-save`, exit 1, with a note that
+  the destination was refused and why; when it has none, the refusal is the answer
+  (`JPS-INVOCATION-AUDIT-WITNESS-SAVE`, exit 3), saying the verification found nothing. The
+  directory is opened once, before anything is read, a symbolic link among the directories of its
+  path followed, and the continuation is written into it through a temporary file renamed into
+  place. Two things are not guarded. The destination's last check and the rename are two steps, so
+  another process changing that one name in the instant between them is not detected: a file put
+  there then is replaced, and a symbolic link put there is replaced itself, the file it names
+  untouched. And a build with Go 1.25 or later renames through the directory opened, whatever its
+  path names by then, while a build with Go 1.24 renames by the directory's path after checking
+  that it still names the directory opened. Release binaries are built with a later Go.
 - **Bounds.** At most 16 keys, 64 MiB of `--witness`, `--witness-head` and `--witness-resume` files
   together, and 110,000 statements, the continuation's two counted, a statement being every line
   that is not blank. Over any of them the reading is refused before any statement is checked, never

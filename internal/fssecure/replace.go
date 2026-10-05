@@ -67,21 +67,31 @@ func (r *Root) ReadIdentified(relative string, limit int64) ([]byte, os.FileInfo
 
 // ReplaceByRename puts contents at name, one file directly in the directory
 // this root holds, so that a reader of name finds either the file that was
-// there or the whole of the new one, never part of either. Everything goes
-// through the handle, so the write lands in the directory the handle holds,
-// whatever its pathname names by then:
+// there or the whole of the new one, never part of either:
 //
-//  1. a temporary file is created beside name, exclusively, under a name of its
-//     own with random bytes in it, and written, synced and closed;
-//  2. what is at name is checked to be still what the caller checked: nothing,
-//     when expect is nil, or else the regular file expect describes, by its
-//     identity, and not a symbolic link (ErrReplacedChanged otherwise);
+//  1. a temporary file is created beside name, through the handle,
+//     exclusively, under a name of its own with random bytes in it, and
+//     written, synced and closed;
+//  2. what is at name is checked, through the handle, to be still what the
+//     caller checked: nothing, when expect is nil, or else the regular file
+//     expect describes, by its identity, and not a symbolic link
+//     (ErrReplacedChanged otherwise);
 //  3. the temporary file is renamed onto name, and the directory is synced.
 //
 // On every failure the temporary file is removed and name is left as it was.
-// Between the check of step 2 and the rename something else can still be put at
-// name; the check narrows that to the instant between two calls, and what
-// would be replaced then is whatever was put there, in this directory.
+//
+// Two things are not guarded, and are stated here rather than hidden:
+//
+//   - Steps 2 and 3 are two calls. A change of that one name by another
+//     process in the instant between them is not detected: a file put there
+//     then is replaced, and a symbolic link put there is replaced itself, the
+//     file it names left untouched.
+//   - Step 3 renames through the handle in a build with Go 1.25 or later, so
+//     the rename is in the directory the handle holds whatever its pathname
+//     names by then. A build with Go 1.24, this module's floor, renames by the
+//     held directory's pathname, after checking that the pathname still names
+//     the directory held, and refuses when it does not; a re-pointing of that
+//     pathname between the check and the rename is not detected.
 func (r *Root) ReplaceByRename(name string, contents []byte, expect os.FileInfo) error {
 	cleaned, err := Relative(name)
 	if err != nil {

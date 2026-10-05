@@ -615,8 +615,10 @@ held checkpoint is, and a chain with no witness finding is credited: the coverag
 says how far it reaches, and `--require-countersigned-through <sequence>` fails while the records
 up to it are not countersigned. A conflict statement carries a checkpoint that was offered and
 refused, and is credited nothing. A longer chain is read in steps, `--witness-save` and
-`--witness-resume`; `--witness-save` never replaces a file the verification reads, other than the
-continuation it resumes from, or anything that is not a continuation. A credited checkpoint
+`--witness-resume`; `--witness-save` refuses a destination that is a file the verification reads,
+other than the continuation it resumes from, or anything already there that is not a continuation,
+and never hides a finding by refusing (the guide says what the check does not guard). A credited
+checkpoint
 statement shows the lines up to its checkpoint are the ones that existed when the witness signed
 it, if the witness is independent of the operator; not who submitted it, and its time is the
 witness's own clock's.
