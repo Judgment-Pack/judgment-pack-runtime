@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strconv"
@@ -121,7 +122,9 @@ var (
 		"checkpoint": true, "index": true, "keyId": true, "kind": true,
 		"prevSignature": true, "signature": true, "witnessVersion": true, "witnessedAt": true,
 	}
-	witnessKinds = map[string]bool{WitnessKindCheckpoint: true, WitnessKindConflict: true, WitnessKindRetirement: true}
+	witnessKinds          = map[string]bool{WitnessKindCheckpoint: true, WitnessKindConflict: true, WitnessKindRetirement: true}
+	checkpointMemberNames = map[string]bool{"checkpointVersion": true, "trail": true, "sequence": true, "recordDigest": true}
+	continuationMembers   = map[string]bool{"continuationVersion": true, "last": true, "latestCheckpoint": true}
 )
 
 // WitnessRefusal is a reading refused before any statement is checked, with
@@ -189,20 +192,33 @@ func (s *witnessStatement) signed() []byte {
 // its form, or reports that it is malformed. Whitespace, the order of members
 // and the escapes in a string are its spelling: a name given twice is refused,
 // every form is held on the value decoded, and an integer is digits alone, so
-// -0, 1.0 and 1e0 are not one.
+// -0, 1.0 and 1e0 are not one. It is read a member at a time, and the first
+// member the form does not allow ends the reading (streamedObject).
 func parseWitnessStatement(raw []byte, from string) (*witnessStatement, bool) {
-	trimmed := bytes.Trim(raw, " \t\r\n")
-	if len(trimmed) == 0 || !json.Valid(trimmed) {
+	decoder := streamDecoder(raw)
+	statement, ok := readWitnessStatement(decoder, from)
+	if !ok || !streamEnded(decoder) {
 		return nil, false
 	}
-	members, err := exactObject(trimmed)
-	if err != nil || len(members) != len(statementMembers) {
-		return nil, false
-	}
-	for name := range members {
-		if !statementMembers[name] {
-			return nil, false
+	return statement, true
+}
+
+// readWitnessStatement reads one statement object from a stream, as
+// parseWitnessStatement does.
+func readWitnessStatement(decoder *json.Decoder, from string) (*witnessStatement, bool) {
+	var checkpoint map[string]json.RawMessage
+	members, ok := streamedObject(decoder, statementMembers, func(name string) (json.RawMessage, bool) {
+		if name != "checkpoint" {
+			return streamedScalar(decoder)
 		}
+		var ok bool
+		checkpoint, ok = streamedObject(decoder, checkpointMemberNames, func(string) (json.RawMessage, bool) {
+			return streamedScalar(decoder)
+		})
+		return nil, ok
+	})
+	if !ok {
+		return nil, false
 	}
 	statement := &witnessStatement{from: from}
 	var version string
@@ -214,16 +230,13 @@ func parseWitnessStatement(raw []byte, from string) (*witnessStatement, bool) {
 		decodeString(members["signature"], &statement.signature) != nil || !signatureForm.MatchString(statement.signature) {
 		return nil, false
 	}
-	if string(bytes.TrimSpace(members["prevSignature"])) != "null" {
+	if string(members["prevSignature"]) != "null" {
 		if decodeString(members["prevSignature"], &statement.prev) != nil || !signatureForm.MatchString(statement.prev) {
 			return nil, false
 		}
 	}
-	inner, err := exactObject(members["checkpoint"])
-	if err != nil {
-		return nil, false
-	}
-	if statement.checkpoint, err = checkpointOfMembers(inner); err != nil {
+	var err error
+	if statement.checkpoint, err = checkpointOfMembers(checkpoint); err != nil {
 		return nil, false
 	}
 	statement.whole = sha256.Sum256([]byte(statement.canonical(true)))
@@ -232,26 +245,106 @@ func parseWitnessStatement(raw []byte, from string) (*witnessStatement, bool) {
 
 // parseContinuation reads a continuation: one JSON object of exactly
 // continuationVersion ("1"), last and latestCheckpoint, each a statement of
-// its form.
+// its form, read a member at a time as a statement is.
 func parseContinuation(raw []byte) (last, latest *witnessStatement, ok bool) {
-	trimmed := bytes.Trim(raw, " \t\r\n")
-	if len(trimmed) == 0 || !json.Valid(trimmed) {
-		return nil, nil, false
-	}
-	members, err := exactObject(trimmed)
-	if err != nil || len(members) != 3 {
-		return nil, nil, false
-	}
+	decoder := streamDecoder(raw)
+	members, ok := streamedObject(decoder, continuationMembers, func(name string) (json.RawMessage, bool) {
+		var ok bool
+		switch name {
+		case "last":
+			last, ok = readWitnessStatement(decoder, "the continuation's last statement")
+		case "latestCheckpoint":
+			latest, ok = readWitnessStatement(decoder, "the continuation's latest checkpoint statement")
+		default:
+			return streamedScalar(decoder)
+		}
+		return nil, ok
+	})
 	var version string
-	if decodeString(members["continuationVersion"], &version) != nil || version != ContinuationVersion {
-		return nil, nil, false
-	}
-	last, lastOK := parseWitnessStatement(members["last"], "the continuation's last statement")
-	latest, latestOK := parseWitnessStatement(members["latestCheckpoint"], "the continuation's latest checkpoint statement")
-	if !lastOK || !latestOK {
+	if !ok || !streamEnded(decoder) || decodeString(members["continuationVersion"], &version) != nil || version != ContinuationVersion {
 		return nil, nil, false
 	}
 	return last, latest, true
+}
+
+// IsContinuation says whether a document is a continuation in its form, by
+// the rules a reading that resumes from it holds it to before anything is
+// checked: what --witness-save may replace.
+func IsContinuation(document []byte) bool {
+	_, _, ok := parseContinuation(document)
+	return ok
+}
+
+// streamDecoder reads one JSON text a token at a time, numbers kept as they
+// are spelled.
+func streamDecoder(raw []byte) *json.Decoder {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	return decoder
+}
+
+// streamEnded says whether nothing but JSON whitespace follows what was read.
+func streamEnded(decoder *json.Decoder) bool {
+	_, err := decoder.Token()
+	return errors.Is(err, io.EOF)
+}
+
+// streamedObject reads one JSON object from a stream a member at a time, each
+// value read by value, which answers it as JSON text (or nil, for a value it
+// read in place) and whether it may stand. The reading ends at the first
+// member whose name is not among names, whose name was given before, or whose
+// value may not stand, before anything after it is read: an object of many
+// members costs no more than the members its form allows. Every name must be
+// given.
+func streamedObject(decoder *json.Decoder, names map[string]bool, value func(name string) (json.RawMessage, bool)) (map[string]json.RawMessage, bool) {
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return nil, false
+	}
+	members := make(map[string]json.RawMessage, len(names))
+	for decoder.More() {
+		token, err := decoder.Token()
+		name, isName := token.(string)
+		if err != nil || !isName || !names[name] {
+			return nil, false
+		}
+		if _, given := members[name]; given {
+			return nil, false
+		}
+		raw, ok := value(name)
+		if !ok {
+			return nil, false
+		}
+		members[name] = raw
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || len(members) != len(names) {
+		return nil, false
+	}
+	return members, true
+}
+
+// streamedScalar reads one value that is a string, a number, true, false or
+// null, as its JSON text, and refuses an object or an array without reading
+// into it: no member of a statement holds one but its checkpoint.
+func streamedScalar(decoder *json.Decoder) (json.RawMessage, bool) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, false
+	}
+	switch value := token.(type) {
+	case string:
+		encoded, err := json.Marshal(value)
+		return encoded, err == nil
+	case json.Number:
+		return json.RawMessage(value), true
+	case bool:
+		if value {
+			return json.RawMessage("true"), true
+		}
+		return json.RawMessage("false"), true
+	case nil:
+		return json.RawMessage("null"), true
+	}
+	return nil, false
 }
 
 // encodeContinuation is a continuation's canonical line, newline included:

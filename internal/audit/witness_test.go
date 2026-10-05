@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -778,5 +779,125 @@ func TestEachFormAndRuleHoldsAtItsEdge(t *testing.T) {
 	supplied := withHead(w2.supplied(w2.file(0, 2)), w2.file(3, 4))
 	if got := outcome(witnessVerify(t, trail, supplied, 0)); got != "invalid findings=1[witness-head-unreached@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
 		t.Errorf("a head two past: %s", got)
+	}
+}
+
+// allocatedBy is the bytes allocated while f runs, as a number.
+func allocatedBy(f func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	f()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// A statement or a continuation holding members its form does not allow is
+// refused at the first of them, before the rest is read: a line of 400,000
+// unknown members, or of one member given 400,000 times, allocates a few
+// kilobytes, not a member's worth each. The bound is generous, and compared as
+// a number.
+func TestAMemberTheFormDoesNotAllowEndsTheReading(t *testing.T) {
+	trail := witnessTrail(witnessedTrail, 8, plainRecords)
+	w := newTestWitness("members")
+	w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 5))
+	w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 8))
+	statement := w.statements[1].canonical(true)
+	continuation := string(encodeContinuation(w.statements[1], w.statements[1]))
+	if _, ok := parseWitnessStatement([]byte(statement), "test"); !ok {
+		t.Fatal("the statement itself does not read")
+	}
+	if !IsContinuation([]byte(continuation)) {
+		t.Fatal("the continuation itself does not read")
+	}
+	var unknown strings.Builder
+	for index := range 400000 {
+		fmt.Fprintf(&unknown, `"u%d":0,`, index)
+	}
+	many := unknown.String()
+	repeated := strings.Repeat(`"kind":"checkpoint",`, 400000)
+	const bound = 1 << 20
+	for _, each := range []struct {
+		name         string
+		line         string
+		continuation bool
+	}{
+		{"unknown members before the eight", "{" + many + statement[1:], false},
+		{"unknown members after the eight", statement[:len(statement)-1] + "," + strings.TrimSuffix(many, ",") + "}", false},
+		{"one member given 400,000 times", "{" + repeated + statement[1:], false},
+		{"unknown members in the checkpoint", strings.Replace(statement, `{"checkpointVersion"`, "{"+many+`"checkpointVersion"`, 1), false},
+		{"an array where a string stands", strings.Replace(statement, `"kind":"checkpoint"`, `"kind":[`+strings.Repeat("0,", 2100000)+`0]`, 1), false},
+		{"a continuation of unknown members", "{" + many + continuation[1:], true},
+		{"a continuation whose last statement holds them", strings.Replace(continuation, `"last":{`, `"last":{`+many, 1), true},
+		{"a continuation's member given 400,000 times", "{" + strings.Repeat(`"continuationVersion":"1",`, 400000) + continuation[1:], true},
+	} {
+		if len(each.line) < 4<<20 {
+			t.Fatalf("%s: the line is %d bytes, not the size the test is about", each.name, len(each.line))
+		}
+		line := []byte(each.line)
+		read := true
+		allocated := allocatedBy(func() {
+			if each.continuation {
+				read = IsContinuation(line)
+			} else {
+				_, read = parseWitnessStatement(line, "test")
+			}
+		})
+		t.Logf("%s: %d bytes allocated for a line of %d", each.name, allocated, len(line))
+		if read || allocated > bound {
+			t.Errorf("%s: read %v, %d bytes allocated for a line of %d, bound %d", each.name, read, allocated, len(line), bound)
+		}
+	}
+}
+
+// A continuation's two statements are checked as every other statement is,
+// whichever of them is corrupted and in whatever way: a signature zeroed, a
+// member altered after signing, a statement signed under another key, and one
+// of another trail. Each is a finding, and nothing is credited, so a reading
+// that checked only the last of the two could not credit the latest.
+func TestBothOfAContinuationsStatementsAreChecked(t *testing.T) {
+	trail := witnessTrail(witnessedTrail, 9, plainRecords)
+	w := newTestWitness("both statements")
+	w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 5))     // 0
+	w.next(WitnessKindCheckpoint, lineCheckpoint(trail, 8))     // 1, the continuation's latest
+	w.next(WitnessKindConflict, otherRecord(witnessedTrail, 5)) // 2, its last
+	another := newTestWitness("another key")
+	corruptions := []struct {
+		name    string
+		corrupt func(statement *witnessStatement)
+		finding string
+	}{
+		{"a signature zeroed", func(s *witnessStatement) { s.signature = strings.Repeat("0", 128) }, FindingWitnessSignatureInvalid},
+		{"altered after signing", func(s *witnessStatement) { s.witnessedAt = "2026-10-06T00:00:00Z" }, FindingWitnessSignatureInvalid},
+		{"signed under another key", func(s *witnessStatement) { another.sign(s) }, FindingWitnessSignatureInvalid},
+		{"of another trail", func(s *witnessStatement) { s.checkpoint.Trail = anotherTrail; w.sign(s) }, FindingWitnessTrailMismatch},
+	}
+	sound := witnessVerify(t, trail, w.continued(2, 1), 0)
+	if got := outcome(sound); got != "valid findings=0[] checkpointed=through/8 witnessed=8 countersigned=through/8" {
+		t.Fatalf("the continuation itself: %s", got)
+	}
+	for _, which := range []struct {
+		name  string
+		index int
+	}{{"its latest checkpoint statement", 1}, {"its last statement", 2}} {
+		for _, each := range corruptions {
+			t.Run(which.name+", "+each.name, func(t *testing.T) {
+				// statements[0] is the last, statements[1] the latest checkpoint
+				// statement, each a copy of the one the witness signed.
+				statements := [2]witnessStatement{*w.statements[2], *w.statements[1]}
+				if which.index == 1 {
+					each.corrupt(&statements[1])
+				} else {
+					each.corrupt(&statements[0])
+				}
+				supplied := w.supplied()
+				supplied.Resume, supplied.HasResume = encodeContinuation(&statements[0], &statements[1]), true
+				report := witnessVerify(t, trail, supplied, 0)
+				want := "invalid findings=1[" + each.finding + "@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0"
+				if got := outcome(report); got != want || report.Continuation != nil || len(report.Chain.Establishes) != 0 {
+					t.Fatalf("%s, want %s", got, want)
+				}
+			})
+		}
 	}
 }
