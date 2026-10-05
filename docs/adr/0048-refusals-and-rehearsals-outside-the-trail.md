@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-05
 deciders: maintainer
 ---
@@ -165,7 +165,7 @@ In one sentence: **a chained, signed and checkpointed trail establishes nothing 
 evaluations were refused or rehearsed, in this project or anywhere else, and its silence is not
 evidence that none were.**
 
-### The two sentences (proposed text, not applied)
+### The two sentences
 
 **The guide.** A paragraph of its own in "Checking a trail, and handing over a checkpoint", after
 the `--expect` bullet (`docs/building-with-packs.md:948`):
@@ -189,7 +189,7 @@ sentence is proposed alongside an index-row annotation for 0047, "Selection (T3)
 question 4 asks how it lands.
 
 Both sentences, and the annotation, are applied in the pull request that accepts this record. They
-are documentation only.
+are documentation only. Question 4's answer, below, settles how the second lands: both.
 
 ### What the rejected options would have touched
 
@@ -285,6 +285,25 @@ are documentation only.
    trail is silent about refused and rehearsed evaluations. Today the closest sentence appears only
    without a held checkpoint (`verify.go:84`, `:770-771`). Yet the checkpointed report is the one a
    counterparty reads.
+
+## The maintainer's answers (2026-10-05)
+
+These were recorded from the maintainer's "accept the recommendation" on 2026-10-05. Each answer is
+the recommendation above, as written. A later record may overrule any of them.
+
+1. **A count on the CLI or MCP paths now:** no, the recommendation as written. B is revisited on the
+   condition under Consequences.
+2. **A rehearsal under `requireReviewed` distinguished from a refusal in any counter:** yes, the
+   recommendation as written. A counter, if one is ever kept, counts each refusal by its code and
+   counts rehearsals separately, never as one number.
+3. **The Desk Tests workspace:** needs nothing, the recommendation as written.
+4. **How the ADR-0047 sentence lands:** both, the recommendation as written. 0047's index row is
+   annotated "Selection (T3) settled by 0048", and the one sentence is added at the end of its
+   "Selection (T3)" bullet, on the #202 precedent for correcting an accepted record in place. The
+   sentence changes no determination of 0047.
+5. **`audit verify`:** yes, the recommendation as written: one fixed `doesNotEstablish` sentence,
+   present in every report, saying the trail is silent about refused and rehearsed evaluations. It
+   is made in a separate pull request (`documented-claim`), not in this record's.
 
 ## More information
 

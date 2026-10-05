@@ -207,6 +207,10 @@ Runner gives each attempt its own audit directory, never reused, and keeps one r
 ## What stays open
 
 - **Selection (T3).** An operator can run many rehearsals and record one deciding run. Rehearsals append nothing by design (ADR-0028). A count of rehearsals and refusals on the trail, without their inputs, would make that visible for activity through a cooperating runtime. It is operational visibility, not protection against an operator evaluating elsewhere or suppressing the count, and it needs its own ADR.
+  Settled by [ADR-0048](0048-refusals-and-rehearsals-outside-the-trail.md): refusals and rehearsals
+  stay outside the trail, so a chained, signed, checkpointed trail establishes nothing about how
+  many evaluations were refused or rehearsed, and a caller that needs that count keeps it itself, as
+  Runner does for Jobs.
 - **The facts.** A defended record still holds the facts its caller supplied. Runner's mapping v2 verifies how acquired facts are bound to signed receipts and derived from them, not that the sources are true. Asserted inputs remain assertions (runner #24).
 - **The evaluator.** The executable digest stays the program's account of itself (ADR-0043). `verify-run --runtime` shows that the release's pinned executable, given the verified inputs, reproduces the retained disposition. It does not show which bytes produced the historical decision. Comparing the record's `tool.digest` with the release's would be a separate consistency check.
 - **Privacy.** A checkpoint's digest covers a whole record, including a random `run` id, so it is not trivially guessable. But a digest gives no general confidentiality. C2 discloses digests to the authority; C3 publishes them. If hiding them is required, a secret salt kept with the verification evidence must be decided before deployment.

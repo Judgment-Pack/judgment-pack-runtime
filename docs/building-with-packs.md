@@ -947,6 +947,11 @@ does not:
   who does not trust you. `audit checkpoint` refuses a trail that fails a check, and a note says
   how many lines after the checkpointed record are not chained.
 
+A trail records decisions, not attempts: a rehearsal, a test run and an evaluation refused before it
+had a disposition write no line, so a chained, signed and checkpointed trail establishes nothing
+about how many evaluations were refused or rehearsed, and a caller that needs that count keeps it
+itself, as Runner keeps each Job's failed runs in its own store (ADR-0048).
+
 ### Handing every new checkpoint to a holder
 
 A holder, the counterparty, an auditor, or a store you do not control, keeps the checkpoints it is
