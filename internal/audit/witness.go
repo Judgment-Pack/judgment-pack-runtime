@@ -55,6 +55,10 @@ const (
 	witnessPrefix = "judgment-pack-gateway/witness/1:"
 )
 
+// witnessStatementBound is MaxWitnessStatements, which a test lowers to read
+// a chain in steps without writing one of its length.
+var witnessStatementBound = MaxWitnessStatements
+
 // The kinds of statement.
 const (
 	WitnessKindCheckpoint = "checkpoint"
@@ -368,19 +372,19 @@ func PrepareWitness(supplied WitnessSupplied) (*WitnessInput, error) {
 	if total > MaxWitnessBytes {
 		return nil, &WitnessRefusal{Reason: RefusalBytesOverBound, Detail: fmt.Sprintf("the witness files hold %d bytes together, more than %d", total, MaxWitnessBytes)}
 	}
-	overStatements := &WitnessRefusal{Reason: RefusalStatementsOverBound, Detail: fmt.Sprintf("the witness files hold more than %d statements, the continuation's two counted; read a longer chain in steps, each continuing from what the step before saved", MaxWitnessStatements)}
+	overStatements := &WitnessRefusal{Reason: RefusalStatementsOverBound, Detail: fmt.Sprintf("the witness files hold more than %d statements, the continuation's two counted; read a longer chain in steps, each continuing from what the step before saved", witnessStatementBound)}
 	if supplied.HasResume {
 		input.resumed = true
 		input.counted = 2
 	}
 	for index, file := range supplied.Statements {
-		if !splitStatementLines(file, index+1, &input.counted, MaxWitnessStatements, &input.lines) {
+		if !splitStatementLines(file, index+1, &input.counted, witnessStatementBound, &input.lines) {
 			return nil, overStatements
 		}
 	}
 	if supplied.HasHead {
 		input.hasHead = true
-		if !splitStatementLines(supplied.Head, 0, &input.counted, MaxWitnessStatements, &input.headLines) {
+		if !splitStatementLines(supplied.Head, 0, &input.counted, witnessStatementBound, &input.headLines) {
 			return nil, overStatements
 		}
 	}

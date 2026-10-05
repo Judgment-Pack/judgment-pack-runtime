@@ -63,6 +63,14 @@ type AuditCoverage struct {
 	// highest sequence a trusted stamp's checkpoint names, with no failed
 	// check of the trail at or before it, or "none".
 	Stamped AuditCoverageState `json:"stamped"`
+	// Countersigned says how far a witness's signature reaches (gateway
+	// ADR-0013): "not-checked" when no witness key was supplied; "failed"
+	// when the witness's statements had a finding, so none is credited;
+	// otherwise "through" the highest sequence a credited checkpoint
+	// statement names whose checkpoint matched the trail with no failed check
+	// at or before it, or "none". A credited statement's checkpoint also
+	// counts toward Checkpointed and Witnessed, as a held one does.
+	Countersigned AuditCoverageState `json:"countersigned"`
 }
 
 // AuditCoverageState is one protection's reach.
@@ -90,7 +98,8 @@ type AuditDiscontinuity struct {
 }
 
 // AuditFinding is one check a trail failed: a stable name, the line it is
-// about, and what was found, never a record's contents.
+// about, and what was found, never a record's contents. A finding about a
+// witness's statements is about no line of the trail, and its line is 0.
 type AuditFinding struct {
 	Name   string `json:"name"`
 	Line   int64  `json:"line"`
@@ -165,6 +174,49 @@ type AuditStampLag struct {
 	AtUnreadable int64   `json:"atUnreadable"`
 }
 
+// AuditWitness is a witness's statements as a verification read them (gateway
+// ADR-0013): how many keys were supplied, how many statement lines were read
+// (the head's and a continuation's two included) and how many distinct
+// statements were checked, each once; where the reading began, "index-0" or
+// "continued" after ContinuedAfter, a continuation's last index; and Status,
+// "read" when the statements had no finding and "failed" when they had one,
+// in which case none is credited and nothing below is reported. A reading is
+// "current" when a head fetched from the witness was supplied, as of that
+// fetch, and "historical" when none was, ending at the highest statement
+// supplied. HeadIndex is the head's index, or null; HighestIndex the last
+// statement read; LatestCheckpoint the latest checkpoint statement at or
+// before it; Conflicts the sequences of the conflict statements read, in
+// index order, the first hundred of ConflictsTotal; Retired whether the
+// chain's last statement is a retirement. CountersignedAt is the time the
+// witness states for the statement the countersigned coverage reaches, and
+// ContinuationSaved whether this verification saved a continuation.
+type AuditWitness struct {
+	KeysSupplied      int64                   `json:"keysSupplied"`
+	StatementsRead    int64                   `json:"statementsRead"`
+	StatementsChecked int64                   `json:"statementsChecked"`
+	Began             string                  `json:"began"`
+	ContinuedAfter    *int64                  `json:"continuedAfter,omitempty"`
+	Status            string                  `json:"status"`
+	Reading           string                  `json:"reading,omitempty"`
+	HeadIndex         *int64                  `json:"headIndex"`
+	HighestIndex      *int64                  `json:"highestIndex,omitempty"`
+	LatestCheckpoint  *AuditWitnessCheckpoint `json:"latestCheckpoint,omitempty"`
+	Conflicts         []int64                 `json:"conflicts"`
+	ConflictsTotal    int64                   `json:"conflictsTotal"`
+	Retired           bool                    `json:"retired"`
+	CountersignedAt   string                  `json:"countersignedAt,omitempty"`
+	ContinuationSaved bool                    `json:"continuationSaved"`
+}
+
+// AuditWitnessCheckpoint is a checkpoint statement by its place in the
+// witness's chain, the sequence its checkpoint names, and the time the
+// witness states it signed it at, its own clock's.
+type AuditWitnessCheckpoint struct {
+	Index       int64  `json:"index"`
+	Sequence    int64  `json:"sequence"`
+	WitnessedAt string `json:"witnessedAt"`
+}
+
 // AuditChain is what reading a trail found: its status, the scope of what was
 // checked, its coverage and segments, and every finding, with the statements of
 // what the result establishes and what it does not. Status is "valid" when
@@ -195,12 +247,17 @@ type AuditChain struct {
 	// Stamps is the stamps file as read, present when time-stamping roots
 	// were supplied, and RequiredStamped a stamped coverage the verification
 	// was told to require.
-	Stamps           *AuditStamps      `json:"stamps,omitempty"`
-	RequiredStamped  *AuditRequirement `json:"requiredStamped,omitempty"`
-	Findings         []AuditFinding    `json:"findings"`
-	FindingsTotal    int               `json:"findingsTotal"`
-	Establishes      []string          `json:"establishes"`
-	DoesNotEstablish []string          `json:"doesNotEstablish"`
+	Stamps          *AuditStamps      `json:"stamps,omitempty"`
+	RequiredStamped *AuditRequirement `json:"requiredStamped,omitempty"`
+	// Witness is a witness's statements as read, present when a witness key
+	// was supplied, and RequiredCountersigned a countersigned coverage the
+	// verification was told to require.
+	Witness               *AuditWitness     `json:"witness,omitempty"`
+	RequiredCountersigned *AuditRequirement `json:"requiredCountersigned,omitempty"`
+	Findings              []AuditFinding    `json:"findings"`
+	FindingsTotal         int               `json:"findingsTotal"`
+	Establishes           []string          `json:"establishes"`
+	DoesNotEstablish      []string          `json:"doesNotEstablish"`
 }
 
 // AuditVerification is jpack audit verify's payload: the chain as read, which
