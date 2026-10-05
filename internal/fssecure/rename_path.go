@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 )
 
+// renamesThroughHandle says this build renames by the directory's pathname.
+const renamesThroughHandle = false
+
 // renameWithin renames oldname to newname, both beneath this root. os.Root
 // renames through its handle from Go 1.25 on; a build with an earlier
 // toolchain, which this module's floor allows, renames by the held
