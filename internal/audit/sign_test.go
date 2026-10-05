@@ -1014,13 +1014,21 @@ func TestSignHelperProcess(t *testing.T) {
 
 // realTempDir is a fresh directory named by its real path: a signing key is
 // named with no symbolic link anywhere in its path, and on some platforms the
-// temporary directory is reached through one.
+// temporary directory is reached through one. It is its owner's alone, as a
+// signing key's directory must be: t.TempDir makes it with whatever group and
+// other bits the umask leaves, 0775 under umask 0002. The machine's
+// directories above it, which the test does not choose, are held as root's
+// 0755 for the rest of the test, so nothing here depends on where TMPDIR is.
 func realTempDir(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(StandInKeyAncestorsForTests(dir))
 	return dir
 }
 

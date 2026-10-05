@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -45,6 +44,7 @@ func (a *App) auditKeyGenerateCommand() *cobra.Command {
 			"Human output is the public key alone, one line, so it can be saved for whoever will verify (jpack audit verify --public-key reads it); the seed itself is never printed. " +
 			"The directory part of <seed-file> is resolved to its real path first, and the note on standard error names the seed by that path, which is the one to configure: a signing key is named by its real path, with no symbolic link anywhere in it. " +
 			"Keep the seed outside every project, readable by the user the runtime runs as and nobody else: a key inside the project, or one others can read, is refused and signs nothing. " +
+			"Every directory on its path, from the root to its own, must be owned by root or by that user and writable by nobody else unless its sticky bit is set, so nobody else can remove or replace the key. Those directories are held before anything is written, the seed is written in the directory held, and a seed that is then not read back as a key by its path is removed; a refused directory is named, with its mode or its owner. " +
 			"On Windows a key's privacy cannot be checked, so no key signs there; generate and public still work.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -58,17 +58,21 @@ func (a *App) auditKeyGenerateCommand() *cobra.Command {
 			seed := make([]byte, 32)
 			// crypto/rand.Read cannot fail on a supported platform.
 			_, _ = rand.Read(seed)
-			if err := writeNewSeed(target, []byte(hex.EncodeToString(seed)+"\n")); err != nil {
-				if errors.Is(err, fs.ErrExist) {
-					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-KEY-EXISTS", fmt.Sprintf("Something is already at %s, and a key is never written over anything.", display.Sanitize(target)))
-				}
-				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-KEY-WRITE", fmt.Sprintf("The seed could not be written to %s.", display.Sanitize(target)))
-			}
-			// The public key is derived from the bytes that were persisted, so
-			// a short write cannot print a key for a seed that is not there.
-			signer, err := audit.ReadKey(target)
-			if err != nil {
+			// The directories are held before anything is written, and the
+			// seed is written in the directory that was held. The public key
+			// is derived from the bytes that were persisted, read back by
+			// their path, so a short write cannot print a key for a seed that
+			// is not there; a seed not read back is removed.
+			signer, err := audit.WriteSeed(target, []byte(hex.EncodeToString(seed)+"\n"))
+			switch {
+			case errors.Is(err, audit.ErrSeedNotReadBack):
 				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-KEY-READ", fmt.Sprintf("The seed written to %s could not be read back: %s.", display.Sanitize(target), audit.KeyRefusal(err)))
+			case errors.Is(err, fs.ErrExist):
+				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-KEY-EXISTS", fmt.Sprintf("Something is already at %s, and a key is never written over anything.", display.Sanitize(target)))
+			case keyPlaceRefused(err):
+				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-KEY-REFUSED", fmt.Sprintf("No seed was written to %s, where a signing key is refused: %s.", display.Sanitize(target), audit.KeyRefusal(err)))
+			case err != nil:
+				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-KEY-WRITE", fmt.Sprintf("The seed could not be written to %s.", display.Sanitize(target)))
 			}
 			if err := a.renderKey(format, commandName, "generated", signer); err != nil {
 				return err
@@ -89,7 +93,7 @@ func (a *App) auditKeyPublicCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "public <seed-file>",
 		Short: "Print a signing key's public key",
-		Long: "Print the public key of the Ed25519 seed in <seed-file>, held to the rules a signing key is held to, but for being outside a project: one regular file with one name, not a symbolic link, and on unix owned by the user the runtime runs as and readable by nobody else. The directory part of <seed-file> is resolved to its real path first. " +
+		Long: "Print the public key of the Ed25519 seed in <seed-file>, held to the rules a signing key is held to, but for being outside a project: one regular file with one name, not a symbolic link, and on unix owned by the user the runtime runs as and readable by nobody else, in directories owned by root or by that user that nobody else can write unless their sticky bit is set. The directory part of <seed-file> is resolved to its real path first. " +
 			"Human output is the public key alone, one line, for whoever will verify; JSON adds its keyId, the first 32 hexadecimal characters of the SHA-256 of its 32 bytes, which each signature names.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -202,6 +206,17 @@ func (a *App) auditKeyRotateCommand() *cobra.Command {
 	return command
 }
 
+// keyPlaceRefused says whether audit.WriteSeed refused the place by a signing
+// key's rules before writing anything, rather than failing to look at it.
+func keyPlaceRefused(err error) bool {
+	for _, refusal := range []error{audit.ErrKeyDirectoryWritable, audit.ErrKeyDirectoryNotOwned, audit.ErrKeyThroughLink, audit.ErrKeyPathChanged} {
+		if errors.Is(err, refusal) {
+			return true
+		}
+	}
+	return false
+}
+
 // realParent makes a seed file's path absolute with its directory part
 // resolved to the real path, so the path printed and read back is one a
 // signing key can be named by: no symbolic link anywhere in it. The final
@@ -237,38 +252,5 @@ func (a *App) renderKey(format, commandName, status string, signer *audit.Signer
 	if _, err := fmt.Fprintln(a.out, signer.PublicKey()); err != nil {
 		return &handledExit{code: result.ExitIO}
 	}
-	return nil
-}
-
-// writeNewSeed creates a seed file readable and writable by its owner alone,
-// never over anything already there, and removes what it created when the
-// write does not complete.
-func writeNewSeed(target string, data []byte) error {
-	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	written := false
-	defer func() {
-		if !written {
-			_ = file.Close()
-			_ = os.Remove(target)
-		}
-	}()
-	// The mode is set again after the create, so no umask leaves the seed
-	// other than readable and writable by its owner.
-	if err := file.Chmod(0o600); err != nil {
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	written = true
 	return nil
 }

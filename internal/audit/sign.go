@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 )
 
@@ -102,6 +104,17 @@ var (
 	ErrKeyNotOwned = errors.New("the signing key is not owned by the user this runtime runs as")
 	// ErrKeyTooOpen is a key file its group or other users can read or write.
 	ErrKeyTooOpen = errors.New("the signing key can be read or written by its group or by other users")
+	// ErrKeyDirectoryWritable is a key with a directory on its path, the root
+	// and its own directory included, that its group or other users can write
+	// and that has no sticky bit: whoever else can write it can remove or
+	// rename the key, or the directory beneath it, and put something else in
+	// its place. A refusal names the directory and its mode.
+	ErrKeyDirectoryWritable = errors.New("a directory on the signing key's path can be written by its group or by other users and has no sticky bit, so another user could remove or replace the key")
+	// ErrKeyDirectoryNotOwned is a key with a directory on its path owned by
+	// neither root nor the user this runtime runs as, who can then remove or
+	// replace the key whatever the directory's mode says. A refusal names the
+	// directory and its owner.
+	ErrKeyDirectoryNotOwned = errors.New("a directory on the signing key's path is owned by neither root nor the user this runtime runs as, so its owner could remove or replace the key")
 	// ErrKeyMalformed is a key file that is not one Ed25519 seed: 64
 	// hexadecimal characters, with nothing else but surrounding whitespace.
 	ErrKeyMalformed = errors.New("the signing key is not 64 hexadecimal characters")
@@ -119,9 +132,15 @@ var (
 )
 
 // KeyRefusal says why a signing key was refused, in words that carry nothing
-// read from the key's file.
+// read from the key's file. A refused directory on the key's path is named,
+// with its mode or its owner and, for a mode, the command that fixes it:
+// neither is read from the key's file.
 func KeyRefusal(err error) string {
-	for _, known := range []error{ErrKeyNotAbsolute, ErrKeyPrivacyUnchecked, ErrKeyInsideProject, ErrKeyThroughLink, ErrKeyPathChanged, ErrKeyLinked, ErrKeyNotRegular, ErrKeyNotOwned, ErrKeyTooOpen, ErrKeyMalformed} {
+	var place *keyDirectoryError
+	if errors.As(err, &place) {
+		return place.Error()
+	}
+	for _, known := range []error{ErrKeyNotAbsolute, ErrKeyPrivacyUnchecked, ErrKeyInsideProject, ErrKeyThroughLink, ErrKeyPathChanged, ErrKeyDirectoryWritable, ErrKeyDirectoryNotOwned, ErrKeyLinked, ErrKeyNotRegular, ErrKeyNotOwned, ErrKeyTooOpen, ErrKeyMalformed} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}
@@ -130,6 +149,32 @@ func KeyRefusal(err error) string {
 		return "no file is there"
 	}
 	return "it could not be opened as one regular file named by its own path"
+}
+
+// keyDirectoryError is the refusal of one directory on a signing key's path:
+// which directory, and its mode or its owner. By errors.Is it is kind,
+// ErrKeyDirectoryWritable or ErrKeyDirectoryNotOwned.
+type keyDirectoryError struct {
+	kind error
+	dir  string
+	mode os.FileMode
+	// uid is the directory's owner, and -1 when it cannot be read; euid is
+	// the user this runtime runs as.
+	uid, euid int
+}
+
+func (e *keyDirectoryError) Unwrap() error { return e.kind }
+
+func (e *keyDirectoryError) Error() string {
+	dir := display.Sanitize(e.dir)
+	switch {
+	case e.kind == ErrKeyDirectoryWritable:
+		return fmt.Sprintf("the directory %s on the signing key's path can be written by its group or by other users (mode %04o) and has no sticky bit, so another user could remove or replace the key; chmod go-w %s fixes it", dir, uint32(e.mode.Perm()), dir)
+	case e.uid < 0:
+		return fmt.Sprintf("the directory %s on the signing key's path has no owner this runtime can read, so it cannot show that nobody but root and the user this runtime runs as (uid %d) could remove or replace the key", dir, e.euid)
+	default:
+		return fmt.Sprintf("the directory %s on the signing key's path is owned by uid %d, neither root nor the user this runtime runs as (uid %d), so that user could remove or replace the key", dir, e.uid, e.euid)
+	}
 }
 
 // Signer signs with one Ed25519 key. It gives out only the key's public half
@@ -220,6 +265,42 @@ func ReadKey(keyPath string) (*Signer, error) {
 		return nil, ErrKeyNotAbsolute
 	}
 	return readKey(filepath.Clean(keyPath), nil)
+}
+
+// ErrSeedNotReadBack is a seed WriteSeed wrote that could not then be read
+// back as a key by its path; the error it wraps says why, and the seed was
+// removed.
+var ErrSeedNotReadBack = errors.New("the seed written could not be read back")
+
+// WriteSeed writes data, a new seed, to a file at keyPath created readable and
+// writable by its owner alone, never over anything already there (fs.ErrExist),
+// and returns the key read back from it by ReadKey's rules. On unix the
+// directories on its way are held to the rules a signing key's are, and one
+// refused is returned before anything is written; the file is then created
+// relative to the key's own directory as that walk holds it, so it is written
+// where the check was made. A seed whose write does not complete, or that is
+// then not read back (ErrSeedNotReadBack), is removed.
+func WriteSeed(keyPath string, data []byte) (*Signer, error) {
+	if !filepath.IsAbs(keyPath) {
+		return nil, ErrKeyNotAbsolute
+	}
+	return writeSeed(filepath.Clean(keyPath), data)
+}
+
+// fillSeed writes data to a seed file just created, sets its mode again so no
+// umask leaves it other than its owner's alone, syncs it and closes it.
+func fillSeed(file *os.File, data []byte) error {
+	err := file.Chmod(0o600)
+	if err == nil {
+		_, err = file.Write(data)
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if closed := file.Close(); err == nil {
+		err = closed
+	}
+	return err
 }
 
 // readSeedFrom reads an opened key file: at most maxKeyFileBytes, one seed.

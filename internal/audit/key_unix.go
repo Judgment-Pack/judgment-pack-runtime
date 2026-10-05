@@ -3,7 +3,9 @@
 package audit
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -14,9 +16,50 @@ import (
 var keyPrivacyChecked = true
 
 // afterLook runs between the look at a component of a key's path and its
-// open. It does nothing; a test swaps the component there, in the window an
-// attacker would race for, to hold the walk to refusing what it then opens.
+// open, and between the walk to a seed's directory and the seed's create. It
+// does nothing; a test swaps the component there, in the window an attacker
+// would race for, to hold the walk to refusing what it then opens and the
+// write to the directory it held.
 var afterLook = func(dir *os.Root, name string) {}
+
+// keyDirectoryStandIn is what the walk holds a directory to: the information
+// of the directory it holds open. It is a variable only so a test can stand in
+// another owner or mode for a directory, which a test cannot make another
+// user own, and the machine's own directories above a test's fixtures
+// (StandInKeyAncestorsForTests).
+var keyDirectoryStandIn = func(path string, info os.FileInfo) os.FileInfo { return info }
+
+// StandInKeyAncestorsForTests has the walk to a signing key hold every
+// directory strictly above root as root's, mode 0755, and leaves root and
+// everything beneath it to its own owner and mode. It returns what undoes it.
+// Nothing in this runtime calls it, and a test holds it to that: it exists
+// because a test's fixtures live under the machine's temporary directory,
+// whose ancestors the test cannot choose and the walk holds every one of.
+func StandInKeyAncestorsForTests(root string) (restore func()) {
+	root = filepath.Clean(root)
+	previous := keyDirectoryStandIn
+	keyDirectoryStandIn = func(path string, info os.FileInfo) os.FileInfo {
+		if path != root && (path == "/" || strings.HasPrefix(root, path+"/")) {
+			return rootOwnedDirectory{info}
+		}
+		return previous(path, info)
+	}
+	return func() { keyDirectoryStandIn = previous }
+}
+
+// rootOwnedDirectory is a directory's information as root's, mode 0755.
+type rootOwnedDirectory struct{ os.FileInfo }
+
+func (rootOwnedDirectory) Mode() os.FileMode { return os.ModeDir | 0o755 }
+
+func (d rootOwnedDirectory) Sys() any {
+	stat := syscall.Stat_t{}
+	if real, ok := d.FileInfo.Sys().(*syscall.Stat_t); ok {
+		stat = *real
+	}
+	stat.Uid = 0
+	return &stat
+}
 
 // readKey opens and reads the key at an absolute, cleaned path so that what is
 // checked is what is opened (ADR-0047 §2b). It walks the path from the
@@ -28,54 +71,27 @@ var afterLook = func(dir *os.Root, name string) {}
 // and inode, so one swapped in between the look and the open is refused rather
 // than followed. A key is inside the project when any directory the walk holds
 // is the project's directory, by the same identity, which a pathname
-// comparison cannot be fooled about. The key file itself must be one regular
-// file with one name, owned by the user this runtime runs as and neither
-// readable nor writable by its group or by others; anything else is refused
-// before a byte of it is read.
+// comparison cannot be fooled about. Every directory the walk holds, the root
+// and the key's own included, must then be one nobody else can remove or
+// replace the key from (keyDirectoryCheck). The key file itself must be one
+// regular file with one name, owned by the user this runtime runs as and
+// neither readable nor writable by its group or by others; anything else is
+// refused before a byte of it is read.
 func readKey(keyPath string, project os.FileInfo) (*Signer, error) {
-	dir, err := os.OpenRoot("/")
-	if err != nil {
-		return nil, err
-	}
-	defer func() { dir.Close() }()
-	self, err := dir.Stat(".")
-	if err != nil {
-		return nil, err
-	}
-	held := []os.FileInfo{self}
 	components := strings.Split(strings.TrimPrefix(keyPath, "/"), "/")
-	for _, name := range components[:len(components)-1] {
-		seen, err := dir.Lstat(name)
-		if err != nil {
-			return nil, err
-		}
-		if seen.Mode()&os.ModeSymlink != 0 {
-			return nil, ErrKeyThroughLink
-		}
-		afterLook(dir, name)
-		// OpenRoot follows a symbolic link that stays inside the directory
-		// held, so the identity check below is what refuses one swapped in.
-		next, err := dir.OpenRoot(name)
-		if err != nil {
-			return nil, err
-		}
-		opened, err := next.Stat(".")
-		if err != nil {
-			next.Close()
-			return nil, err
-		}
-		if !os.SameFile(seen, opened) {
-			next.Close()
-			return nil, ErrKeyPathChanged
-		}
-		dir.Close()
-		dir = next
-		held = append(held, opened)
+	walked, err := holdKeyDirectories(components[:len(components)-1])
+	if err != nil {
+		return nil, err
 	}
-	for _, each := range held {
+	dir := walked.dir
+	defer dir.Close()
+	for _, each := range walked.held {
 		if project != nil && os.SameFile(each, project) {
 			return nil, ErrKeyInsideProject
 		}
+	}
+	if walked.placement != nil {
+		return nil, walked.placement
 	}
 	name := components[len(components)-1]
 	seen, err := dir.Lstat(name)
@@ -111,6 +127,135 @@ func readKey(keyPath string, project os.FileInfo) (*Signer, error) {
 		return nil, err
 	}
 	return readSeedFrom(file)
+}
+
+// writeSeed is WriteSeed on unix. The seed is created relative to the key's
+// own directory as the walk holds it, never by its pathname, so the
+// directories that were checked are the ones it is written in, and it is
+// removed through the same handle when the write or the read back fails.
+func writeSeed(keyPath string, data []byte) (*Signer, error) {
+	components := strings.Split(strings.TrimPrefix(keyPath, "/"), "/")
+	walked, err := holdKeyDirectories(components[:len(components)-1])
+	if err != nil {
+		return nil, err
+	}
+	defer walked.dir.Close()
+	if walked.placement != nil {
+		return nil, walked.placement
+	}
+	name := components[len(components)-1]
+	afterLook(walked.dir, name)
+	file, err := walked.dir.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := fillSeed(file, data); err != nil {
+		_ = walked.dir.Remove(name)
+		return nil, err
+	}
+	signer, err := ReadKey(keyPath)
+	if err != nil {
+		_ = walked.dir.Remove(name)
+		return nil, fmt.Errorf("%w: %w", ErrSeedNotReadBack, err)
+	}
+	return signer, nil
+}
+
+// keyDirectories is what the walk to a key's directory holds.
+type keyDirectories struct {
+	// dir is the last directory held, open: the key's own.
+	dir *os.Root
+	// held is every directory held, the root first, by identity.
+	held []os.FileInfo
+	// placement is the first directory, from the root, that
+	// keyDirectoryCheck refuses, or nil. It is reported after the walk, so
+	// that the identity checks keep their order before it.
+	placement error
+}
+
+// holdKeyDirectories walks the directories names lists from the filesystem
+// root, holding each open and opening the next relative to it. It refuses a
+// symbolic link at any of them and one swapped between its look and its open,
+// and holds each directory it opens, by the information of the handle it
+// holds, to keyDirectoryCheck.
+func holdKeyDirectories(names []string) (keyDirectories, error) {
+	dir, err := os.OpenRoot("/")
+	if err != nil {
+		return keyDirectories{}, err
+	}
+	self, err := dir.Stat(".")
+	if err != nil {
+		dir.Close()
+		return keyDirectories{}, err
+	}
+	euid := os.Geteuid()
+	walked := keyDirectories{held: []os.FileInfo{self}}
+	walked.placement = keyDirectoryCheck("/", keyDirectoryStandIn("/", self), euid)
+	for index, name := range names {
+		seen, err := dir.Lstat(name)
+		if err != nil {
+			dir.Close()
+			return keyDirectories{}, err
+		}
+		if seen.Mode()&os.ModeSymlink != 0 {
+			dir.Close()
+			return keyDirectories{}, ErrKeyThroughLink
+		}
+		afterLook(dir, name)
+		// OpenRoot follows a symbolic link that stays inside the directory
+		// held, so the identity check below is what refuses one swapped in.
+		next, err := dir.OpenRoot(name)
+		if err != nil {
+			dir.Close()
+			return keyDirectories{}, err
+		}
+		opened, err := next.Stat(".")
+		if err != nil {
+			next.Close()
+			dir.Close()
+			return keyDirectories{}, err
+		}
+		if !os.SameFile(seen, opened) {
+			next.Close()
+			dir.Close()
+			return keyDirectories{}, ErrKeyPathChanged
+		}
+		dir.Close()
+		dir = next
+		walked.held = append(walked.held, opened)
+		if walked.placement == nil {
+			path := "/" + strings.Join(names[:index+1], "/")
+			walked.placement = keyDirectoryCheck(path, keyDirectoryStandIn(path, opened), euid)
+		}
+	}
+	walked.dir = dir
+	return walked, nil
+}
+
+// keyDirectoryCheck holds one directory on a signing key's path, at path, to
+// what keeps the key its owner's: owned by root or by the user this runtime
+// runs as (euid), and writable by nobody else unless its sticky bit keeps
+// others from removing or renaming what they do not own. Whoever else may
+// write a directory on the path can remove or rename the key, or a directory
+// between it and the root, and put something else in its place; a directory
+// another user owns is that user's to change whatever its mode says. Root's
+// ownership excuses no writable mode, and group membership is not read: a
+// directory its group may write is refused whoever is in the group. The
+// sticky bit excuses the key's own directory too: nothing in it but the key is
+// read, and a file another user makes under the key's name before it is there
+// is refused as the key, as not owned.
+func keyDirectoryCheck(path string, info os.FileInfo, euid int) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return &keyDirectoryError{kind: ErrKeyDirectoryNotOwned, dir: path, uid: -1, euid: euid}
+	}
+	if uid := int(stat.Uid); uid != 0 && uid != euid {
+		return &keyDirectoryError{kind: ErrKeyDirectoryNotOwned, dir: path, uid: uid, euid: euid}
+	}
+	if info.Mode().Perm()&0o022 != 0 && info.Mode()&os.ModeSticky == 0 {
+		return &keyDirectoryError{kind: ErrKeyDirectoryWritable, dir: path, mode: info.Mode(), euid: euid}
+	}
+	return nil
 }
 
 // keyAccessCheck holds an opened signing key to its owner alone: one name,
