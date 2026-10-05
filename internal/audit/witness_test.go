@@ -326,26 +326,26 @@ func TestAContinuationIsHeldToItsOwnRules(t *testing.T) {
 			t.Fatal(got)
 		}
 	})
-	t.Run("its latest checkpoint statement of another kind", func(t *testing.T) {
-		if got := outcome(witnessVerify(t, trail, w.continued(2, 2), 0)); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
-			t.Fatal(got)
-		}
-	})
-	t.Run("its latest checkpoint statement above its last", func(t *testing.T) {
-		if got := outcome(witnessVerify(t, trail, w.continued(2, 3), 0)); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
-			t.Fatal(got)
-		}
-	})
-	t.Run("its last a checkpoint statement, and its latest another", func(t *testing.T) {
-		if got := outcome(witnessVerify(t, trail, w.continued(1, 0), 0)); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
-			t.Fatal(got)
-		}
-	})
-	t.Run("its last a conflict above its latest", func(t *testing.T) {
-		if got := outcome(witnessVerify(t, trail, w.continued(2, 0), 0)); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
-			t.Fatal(got)
-		}
-	})
+	// Each rule of the continuation's own is a witness-chain-broken that says
+	// which: the walk after it would find some of them otherwise, by another
+	// rule.
+	for _, each := range []struct {
+		name         string
+		last, latest int
+		why          string
+	}{
+		{"its latest checkpoint statement of another kind", 2, 2, "the continuation's latest checkpoint statement is not a checkpoint statement at or before its last"},
+		{"its latest checkpoint statement above its last", 2, 3, "the continuation's latest checkpoint statement is not a checkpoint statement at or before its last"},
+		{"its last a checkpoint statement, and its latest another", 1, 0, "the continuation's last statement is a checkpoint statement, and its latest checkpoint statement is another"},
+		{"its last a conflict above its latest", 2, 0, "the continuation's last statement is a conflict above its latest checkpoint statement's sequence"},
+	} {
+		t.Run(each.name, func(t *testing.T) {
+			report := witnessVerify(t, trail, w.continued(each.last, each.latest), 0)
+			if got := outcome(report); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" || report.Chain.Findings[0].Detail != each.why {
+				t.Fatalf("%s: %q", got, report.Chain.Findings[0].Detail)
+			}
+		})
+	}
 	t.Run("a saved statement whose signature fails, or out of shape", func(t *testing.T) {
 		good := encodeContinuation(w.statements[3], w.statements[3])
 		for _, broken := range []struct{ continuation, want string }{
@@ -422,8 +422,10 @@ func TestAContinuationSavedAtARetirementEndsTheChain(t *testing.T) {
 	// than its latest checkpoint statement's names the wrong latest.
 	forged := w.supplied()
 	forged.Resume, forged.HasResume = encodeContinuation(w.statements[2], w.statements[0]), true
-	if got := outcome(witnessVerify(t, trail, forged, 0)); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" {
-		t.Fatalf("a retirement last that does not repeat the latest: %s", got)
+	report := witnessVerify(t, trail, forged, 0)
+	if got := outcome(report); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" ||
+		report.Chain.Findings[0].Detail != "the continuation's last statement is a retirement that does not repeat its latest checkpoint statement's checkpoint" {
+		t.Fatalf("a retirement last that does not repeat the latest: %s %q", got, report.Chain.Findings[0].Detail)
 	}
 	after := w.sign(&witnessStatement{kind: WitnessKindCheckpoint, checkpoint: lineCheckpoint(trail, 10), index: 3, prev: w.statements[2].signature, witnessedAt: "2026-10-05T01:00:00Z"})
 	supplied.Statements = [][]byte{[]byte(after.canonical(true) + "\n")}
