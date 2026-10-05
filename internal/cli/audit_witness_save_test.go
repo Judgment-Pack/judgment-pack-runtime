@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,13 +125,19 @@ func spellings(t *testing.T, path string) map[string]string {
 // saveRefused runs audit verify with args and --witness-save destination, and
 // says how the run disagrees with a refusal of the destination, for why when
 // it is not "", that leaves input as it was and leaves no temporary file, or
-// "".
+// "". A verification that found nothing answers with the refusal, exit 3; one
+// that found something reports it, exit 1, with the refusal noted beside it.
 func saveRefused(t *testing.T, args []string, destination, input, why string) string {
 	t.Helper()
 	before := digestOf(t, input)
 	code, stdout, _ := runTest(t, append(append([]string{"audit", "verify", "--format", "json"}, args...), "--witness-save", destination), "")
+	var output result.AuditVerification
+	noted := code == result.ExitInvalid && json.Unmarshal([]byte(stdout), &output) == nil && output.FindingsTotal > 0 &&
+		output.Witness != nil && strings.Contains(output.Witness.SaveRefused, why) && strings.HasSuffix(output.Witness.SaveRefused, "; nothing was saved")
+	refused := code == result.ExitInvocation && strings.Contains(stdout, `"JPS-INVOCATION-AUDIT-WITNESS-SAVE"`) && strings.Contains(stdout, why) &&
+		strings.Contains(stdout, "The verification itself found nothing, and nothing was saved.")
 	switch {
-	case code != result.ExitInvocation || !strings.Contains(stdout, `"JPS-INVOCATION-AUDIT-WITNESS-SAVE"`) || !strings.Contains(stdout, why):
+	case !noted && !refused:
 		return fmt.Sprintf("exit=%d %s", code, first(stdout, 300))
 	case digestOf(t, input) != before:
 		return "the input changed"
@@ -319,7 +326,7 @@ func TestAuditVerifyNeverSavesOverAnInput(t *testing.T) {
 	defer stdin.Close()
 	before := digestOf(t, f.expect)
 	var stdout, stderr bytes.Buffer
-	code := Run(append(append([]string{"audit", "verify", "--format", "json"}, base...), "--expect", "-", "--witness-save", f.expect), stdin, &stdout, &stderr)
+	code := Run(append(append([]string{"audit", "verify", "--format", "json"}, base...), "--witness", f.statements, "--expect", "-", "--witness-save", f.expect), stdin, &stdout, &stderr)
 	if code != result.ExitInvocation || !strings.Contains(stdout.String(), `"JPS-INVOCATION-AUDIT-WITNESS-SAVE"`) || digestOf(t, f.expect) != before {
 		t.Fatalf("standard input from the destination: exit=%d %s", code, first(stdout.String(), 300))
 	}
@@ -446,10 +453,108 @@ func TestTheDestinationIsLookedUpInTheDirectoryHeld(t *testing.T) {
 	defer root.Close()
 	elsewhere := filepath.Join(t.TempDir(), "statements.jsonl")
 	target := &continuationTarget{dir: root, name: "statements.jsonl", path: elsewhere}
-	var out bytes.Buffer
-	app.out = &out
-	if failure := app.checkContinuationTarget("audit verify", "json", target); failure == nil ||
-		!strings.Contains(out.String(), "is a --witness file, which this verification reads") {
-		t.Fatalf("an input in the directory held, its path naming nothing: %v %s", failure, first(out.String(), 300))
+	if refused := app.checkContinuationTarget(target); refused == nil || !strings.Contains(refused.why, "is a --witness file, which this verification reads") {
+		t.Fatalf("an input in the directory held, its path naming nothing: %+v", refused)
 	}
+}
+
+// A refused destination never hides what the verification found. With a
+// finding, the report is what it is without --witness-save, exit 1, and the
+// refusal is noted beside it; with none, the refusal is the answer, exit 3,
+// and says the verification found nothing. Nothing is saved in either, and an
+// acceptable destination is written only when nothing was found.
+func TestARefusedSaveNeverHidesAFinding(t *testing.T) {
+	f := newSaveFixture(t)
+	notJSON := writeDocument(t, "bad.jsonl", "not JSON\n")
+	finding := []string{"--trail", notJSON, "--witness-key", f.key, "--witness", f.statements}
+	clean := []string{"--config", f.config, "--witness-key", f.key, "--witness", f.statements}
+	code, without := verification(t, finding...)
+	if code != result.ExitInvalid || len(without.Findings) == 0 || without.Findings[0].Name != audit.FindingWitnessTrailMismatch {
+		t.Fatalf("the finding without --witness-save: exit=%d %+v", code, without.Findings)
+	}
+	// A continuation spelled with a space, so the one a save writes differs
+	// from it byte for byte.
+	acceptable := func() string {
+		return writeDocument(t, "continuation.json", strings.Replace(string(readFileBytes(t, f.resume)), `{"continuationVersion"`, `{ "continuationVersion"`, 1))
+	}
+	refused := func() string { return writeDocument(t, "keep.txt", "keep me\n") }
+	const why = "holds something other than a continuation"
+	for _, each := range []struct {
+		name        string
+		args        []string
+		destination func() string
+		exit        int
+		saved       bool
+	}{
+		{"a finding, the destination acceptable", finding, acceptable, result.ExitInvalid, false},
+		{"a finding, the destination refused", finding, refused, result.ExitInvalid, false},
+		{"no finding, the destination acceptable", clean, acceptable, 0, true},
+		{"no finding, the destination refused", clean, refused, result.ExitInvocation, false},
+	} {
+		t.Run(each.name, func(t *testing.T) {
+			destination := each.destination()
+			before := digestOf(t, destination)
+			args := append(append([]string{"audit", "verify", "--format", "json"}, each.args...), "--witness-save", destination)
+			code, stdout, _ := runTest(t, args, "")
+			if code != each.exit || (digestOf(t, destination) != before) != each.saved || len(leftovers(t, filepath.Dir(destination))) != 0 {
+				t.Fatalf("exit=%d, saved=%v: %s", code, digestOf(t, destination) != before, first(stdout, 400))
+			}
+			var output result.AuditVerification
+			switch each.exit {
+			case result.ExitInvalid:
+				if err := json.Unmarshal([]byte(stdout), &output); err != nil || output.FindingsTotal != without.FindingsTotal ||
+					output.Findings[0] != without.Findings[0] || output.Witness.ContinuationSaved {
+					t.Fatalf("the finding is not reported as it is without --witness-save: %v %+v", err, output.Findings)
+				}
+				noted := output.Witness.SaveRefused
+				if strings.HasSuffix(each.name, "refused") != (noted != "") || (noted != "" && !strings.Contains(noted, why)) {
+					t.Fatalf("the refusal noted: %q", noted)
+				}
+				if strings.Join(output.DoesNotEstablish, "|") != strings.Join(without.DoesNotEstablish, "|") {
+					t.Fatal("the sentences differ from the report without --witness-save")
+				}
+			case result.ExitInvocation:
+				if !strings.Contains(stdout, `"JPS-INVOCATION-AUDIT-WITNESS-SAVE"`) || !strings.Contains(stdout, why) ||
+					!strings.Contains(stdout, "The verification itself found nothing, and nothing was saved.") {
+					t.Fatalf("the refusal: %s", first(stdout, 400))
+				}
+			default:
+				if err := json.Unmarshal([]byte(stdout), &output); err != nil || !output.Witness.ContinuationSaved || output.Witness.SaveRefused != "" {
+					t.Fatalf("the save: %v %+v", err, output.Witness)
+				}
+			}
+		})
+	}
+	// The human report of a finding with a refused destination: the finding,
+	// and the refusal noted.
+	destination := refused()
+	before := digestOf(t, destination)
+	code, human, _ := runTest(t, append(append([]string{"audit", "verify"}, finding...), "--witness-save", destination), "")
+	if code != result.ExitInvalid || !strings.Contains(human, "- witness-trail-mismatch (line 0): ") ||
+		!strings.Contains(human, "note: --witness-save "+destination+" "+why) || digestOf(t, destination) != before {
+		t.Fatalf("human: exit=%d %s", code, first(human, 800))
+	}
+	// A destination refused before the inputs are read, by its directory or
+	// its name, waits for the verification too.
+	for _, each := range []struct {
+		destination, code string
+	}{
+		{filepath.Join(t.TempDir(), "absent", "continuation.json"), "is in a directory that could not be opened"},
+		{t.TempDir() + string(filepath.Separator), "names no file"},
+	} {
+		code, output := verification(t, append(append([]string{}, finding...), "--witness-save", each.destination)...)
+		if code != result.ExitInvalid || output.FindingsTotal == 0 || !strings.Contains(output.Witness.SaveRefused, each.code) {
+			t.Fatalf("%s: exit=%d %+v", each.destination, code, output.Witness)
+		}
+	}
+}
+
+// readFileBytes is a file's bytes.
+func readFileBytes(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

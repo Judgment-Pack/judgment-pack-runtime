@@ -190,6 +190,9 @@ type AuditStampLag struct {
 // chain's last statement is a retirement. CountersignedAt is the time the
 // witness states for the statement the countersigned coverage reaches, and
 // ContinuationSaved whether this verification saved a continuation.
+// SaveRefused says why the file --witness-save named was refused, when it was
+// and the verification had a finding, which is reported as it would be without
+// --witness-save: nothing is saved then.
 type AuditWitness struct {
 	KeysSupplied      int64                   `json:"keysSupplied"`
 	StatementsRead    int64                   `json:"statementsRead"`
@@ -206,6 +209,7 @@ type AuditWitness struct {
 	Retired           bool                    `json:"retired"`
 	CountersignedAt   string                  `json:"countersignedAt,omitempty"`
 	ContinuationSaved bool                    `json:"continuationSaved"`
+	SaveRefused       string                  `json:"saveRefused,omitempty"`
 }
 
 // AuditWitnessCheckpoint is a checkpoint statement by its place in the

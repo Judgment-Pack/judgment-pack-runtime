@@ -131,13 +131,16 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			if witnessSave != "" && (witnessSave == "-" || strings.Contains(witnessSave, "://") || fssecure.IsRemotePath(witnessSave)) {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The continuation is saved to one local file; pass its path.")
 			}
+			// Whether the file --witness-save names may be written is decided
+			// before anything is written, and reported after the verification,
+			// so a refused destination never hides what the verification found.
 			var target *continuationTarget
+			var refused *saveRefusal
 			if witnessSave != "" {
-				target, failure = a.openContinuationTarget(commandName, format, witnessSave)
-				if failure != nil {
-					return failure
+				target, refused = openContinuationTarget(witnessSave)
+				if target != nil {
+					defer target.dir.Close()
 				}
-				defer target.dir.Close()
 			}
 			witness, failure := a.readWitnessOptions(commandName, format, witnessKeyPaths, witnessPaths, witnessHead, witnessResume, requireCountersigned)
 			if failure != nil {
@@ -158,17 +161,25 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			defer opened.close()
 			// Every input is open now, and recorded: the file --witness-save
 			// names is held to them before anything is verified.
-			if target != nil {
-				if failure := a.checkContinuationTarget(commandName, format, target); failure != nil {
-					return failure
-				}
+			if target != nil && refused == nil {
+				refused = a.checkContinuationTarget(target)
 			}
 			report, locked, failure := a.readTrailWith(commandName, format, opened, audit.Options{Held: held, RequireThrough: requireThrough, Signatures: signatures, Stamps: stamps, Witness: witness})
 			if failure != nil {
 				return failure
 			}
 			chain := report.Chain
-			if target != nil && report.Continuation != nil {
+			if refused != nil {
+				if chain.FindingsTotal == 0 {
+					return a.operational(commandName, format, refused.exit, refused.code, fmt.Sprintf("--witness-save %s %s. The verification itself found nothing, and nothing was saved.", display.Sanitize(witnessSave), refused.why))
+				}
+				// The verification found something: it is reported as it would
+				// be without --witness-save, which saves nothing then anyway,
+				// and the refusal is noted beside it.
+				if chain.Witness != nil {
+					chain.Witness.SaveRefused = fmt.Sprintf("--witness-save %s %s; nothing was saved", display.Sanitize(witnessSave), refused.why)
+				}
+			} else if target != nil && report.Continuation != nil {
 				if err := target.dir.ReplaceByRename(target.name, report.Continuation, target.existing); err != nil {
 					why := "it could not be written"
 					if errors.Is(err, fssecure.ErrReplacedChanged) {
@@ -1026,6 +1037,9 @@ func (a *App) renderWitness(witness *result.AuditWitness, countersigned result.A
 	if witness.ContinuationSaved {
 		fmt.Fprintln(a.out, "witness continuation saved")
 	}
+	if witness.SaveRefused != "" {
+		fmt.Fprintln(a.out, "note: "+display.Sanitize(witness.SaveRefused))
+	}
 }
 
 // joinSequences lists sequences for a line of the human report, saying how
@@ -1057,28 +1071,42 @@ type continuationTarget struct {
 	existing os.FileInfo
 }
 
+// saveRefusal is why the file --witness-save names may not be written: the
+// reason, which reads after the destination's path, and the code and exit code
+// a refusal answers with when the verification itself found nothing.
+type saveRefusal struct {
+	code string
+	exit int
+	why  string
+}
+
+// refusedSave is a destination refused as an invocation's mistake.
+func refusedSave(why string) *saveRefusal {
+	return &saveRefusal{code: "JPS-INVOCATION-AUDIT-WITNESS-SAVE", exit: result.ExitInvocation, why: why}
+}
+
 // openContinuationTarget opens the directory the file --witness-save names is
 // in. A symbolic link among the directories of its path is followed, since a
 // reader may name any directory; once it is opened, the continuation is
-// written to that directory and no other, whatever its path names later.
-func (a *App) openContinuationTarget(command, format, target string) (*continuationTarget, error) {
+// written to that directory, by the rename ReplaceByRename makes.
+func openContinuationTarget(target string) (*continuationTarget, *saveRefusal) {
 	dir, name := filepath.Split(target)
 	if name == "" || name == "." || name == ".." {
-		return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-WITNESS-SAVE", fmt.Sprintf("--witness-save %s names no file; nothing was read or saved.", display.Sanitize(target)))
+		return nil, refusedSave("names no file")
 	}
 	if dir == "" {
 		dir = "."
 	}
 	opened, err := fssecure.OpenRoot(dir)
 	if err != nil {
-		return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-SAVE", fmt.Sprintf("The directory of --witness-save %s could not be opened; nothing was read or saved.", display.Sanitize(target)))
+		return nil, &saveRefusal{code: "JPS-AUDIT-WITNESS-SAVE", exit: result.ExitIO, why: "is in a directory that could not be opened"}
 	}
 	return &continuationTarget{dir: opened, name: name, path: target}, nil
 }
 
 // checkContinuationTarget holds the file --witness-save names to what a
 // verification may replace, once every input is open and before anything is
-// verified:
+// verified, and answers why it may not be written, or nil:
 //
 //   - it is none of the files this invocation read, by the identity of the file
 //     itself, so another spelling of its path, a symbolic link or a hard link
@@ -1089,10 +1117,8 @@ func (a *App) openContinuationTarget(command, format, target string) (*continuat
 //
 // The inputs are what the App recorded as it opened them (App.inputs), so an
 // input read through the App's readers is held to this without naming it here.
-func (a *App) checkContinuationTarget(command, format string, target *continuationTarget) error {
-	refuse := func(why string) error {
-		return a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-WITNESS-SAVE", fmt.Sprintf("--witness-save %s %s; nothing was verified or saved.", display.Sanitize(target.path), why))
-	}
+func (a *App) checkContinuationTarget(target *continuationTarget) *saveRefusal {
+	refuse := refusedSave
 	// The file is looked up by its path, following every link, and through the
 	// held directory, following a link that stays in it: either is the file a
 	// rename onto the name would replace.
