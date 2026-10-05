@@ -141,6 +141,15 @@ func outcome(report Report) string {
 		chain.Coverage.Countersigned.Status, chain.Coverage.Countersigned.Through)
 }
 
+// firstDetail is the detail of a report's first finding, or "" when it has
+// none, so a test that reads it never fails by a panic.
+func firstDetail(report Report) string {
+	if len(report.Chain.Findings) == 0 {
+		return ""
+	}
+	return report.Chain.Findings[0].Detail
+}
+
 // lowerStatementBound lowers the statement bound for one test.
 func lowerStatementBound(t *testing.T, bound int) {
 	t.Helper()
@@ -341,8 +350,8 @@ func TestAContinuationIsHeldToItsOwnRules(t *testing.T) {
 	} {
 		t.Run(each.name, func(t *testing.T) {
 			report := witnessVerify(t, trail, w.continued(each.last, each.latest), 0)
-			if got := outcome(report); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" || report.Chain.Findings[0].Detail != each.why {
-				t.Fatalf("%s: %q", got, report.Chain.Findings[0].Detail)
+			if got := outcome(report); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" || firstDetail(report) != each.why {
+				t.Fatalf("%s: %q", got, firstDetail(report))
 			}
 		})
 	}
@@ -424,8 +433,8 @@ func TestAContinuationSavedAtARetirementEndsTheChain(t *testing.T) {
 	forged.Resume, forged.HasResume = encodeContinuation(w.statements[2], w.statements[0]), true
 	report := witnessVerify(t, trail, forged, 0)
 	if got := outcome(report); got != "invalid findings=1[witness-chain-broken@0] checkpointed=failed/0 witnessed=0 countersigned=failed/0" ||
-		report.Chain.Findings[0].Detail != "the continuation's last statement is a retirement that does not repeat its latest checkpoint statement's checkpoint" {
-		t.Fatalf("a retirement last that does not repeat the latest: %s %q", got, report.Chain.Findings[0].Detail)
+		firstDetail(report) != "the continuation's last statement is a retirement that does not repeat its latest checkpoint statement's checkpoint" {
+		t.Fatalf("a retirement last that does not repeat the latest: %s %q", got, firstDetail(report))
 	}
 	after := w.sign(&witnessStatement{kind: WitnessKindCheckpoint, checkpoint: lineCheckpoint(trail, 10), index: 3, prev: w.statements[2].signature, witnessedAt: "2026-10-05T01:00:00Z"})
 	supplied.Statements = [][]byte{[]byte(after.canonical(true) + "\n")}
@@ -458,7 +467,7 @@ func TestAWitnessedCheckpointIsHeldAgainstTheTrailCopy(t *testing.T) {
 		if got := outcome(report); got != "invalid findings=1[checkpoint-record-mismatch@5] checkpointed=failed/0 witnessed=0 countersigned=none/0" {
 			t.Fatal(got)
 		}
-		if detail := report.Chain.Findings[0].Detail; detail != "the checkpoint of the witness statement at index 0: the record at the checkpoint's sequence is not the one the checkpoint names" {
+		if detail := firstDetail(report); detail != "the checkpoint of the witness statement at index 0: the record at the checkpoint's sequence is not the one the checkpoint names" {
 			t.Fatal(detail)
 		}
 		// Whoever presents the chain cannot leave the earlier statement

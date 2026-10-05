@@ -195,7 +195,7 @@ func TestAuditVerifyReadsAWitnessesChainAndContinuesIt(t *testing.T) {
 		}
 	}
 	code, output = verification(t, "--config", configPath, "--witness-key", key, "--witness-resume", saved, "--witness-head", w.file(t, "stale.jsonl", 1, 2))
-	if code != result.ExitInvalid || output.Findings[0].Name != audit.FindingWitnessHeadBehind || output.Coverage.Countersigned.Status != "failed" ||
+	if code != result.ExitInvalid || len(output.Findings) == 0 || output.Findings[0].Name != audit.FindingWitnessHeadBehind || output.Coverage.Countersigned.Status != "failed" ||
 		!endsWith(output.DoesNotEstablish, "That any line is covered by a statement of a witness under a key supplied: no statement that was read is credited with one.",
 			notAgainstWitnessSentence, notSubmitterSentence, notWitnessTimeSentence, attemptsSentence) {
 		t.Fatalf("a stale head: exit=%d %+v %q", code, output.Findings, output.DoesNotEstablish)
@@ -306,7 +306,7 @@ func TestAuditVerifyWitnessFlagsAreChecked(t *testing.T) {
 	}
 	other.sign("checkpoint", fmt.Sprintf(`{"checkpointVersion":"1","recordDigest":"%s","sequence":1,"trail":"%s"}`, first.RecordDigest, another))
 	code, output = verification(t, "--config", configPath, "--witness-key", other.keyFile(t), "--witness", other.file(t, "other.jsonl", 0, 1))
-	if code != result.ExitInvalid || output.Findings[0].Name != audit.FindingWitnessTrailMismatch || output.Coverage.Countersigned.Status != "failed" {
+	if code != result.ExitInvalid || len(output.Findings) == 0 || output.Findings[0].Name != audit.FindingWitnessTrailMismatch || output.Coverage.Countersigned.Status != "failed" {
 		t.Fatalf("another trail: exit=%d %+v", code, output.Findings)
 	}
 }
