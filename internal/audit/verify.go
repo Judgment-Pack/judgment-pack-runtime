@@ -114,7 +114,7 @@ const (
 	notWitnessSubmitter      = "Who submitted any checkpoint: a statement does not name its submitter, and the witness cannot tell the trail's operator from a holder of the operator's credential."
 	notWitnessTime           = "When any record was made: the time a witness states is its own clock's, for when it held the checkpoint."
 	notCountersignedNone     = "That any line is covered by a statement of a witness under a key supplied: no statement that was read is credited with one."
-	notWitnessConflict       = "Which record is the trail's at a sequence a conflict statement names, of which %d were read, the first at sequence %d: a submitter the witness allowed for the trail offered another record than the one the witness held there, and the statement says neither which of the two is the trail's nor who that submitter was, beyond the witness's own registration."
+	notWitnessConflict       = "Which of two records is the trail's at the sequence of each of the %d conflict statement(s) read, the first at sequence %d: a submitter the witness allowed for the trail offered there another record than the one the witness held, and a conflict statement says neither which of the two is the trail's nor who that submitter was, beyond the witness's own registration."
 	// notAttempts is in every report, whatever was supplied and whatever was
 	// found, and last: a checkpoint, a key or a stamp covers the lines a
 	// trail holds, and no line is written for a refusal, a rehearsal or an

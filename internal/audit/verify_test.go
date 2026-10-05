@@ -766,12 +766,35 @@ func TestEveryReportSaysTheTrailIsSilentAboutAttempts(t *testing.T) {
 	stamps := func(trail []byte, crls ...*x509.RevocationList) *StampOptions {
 		return stampsThrough(trail, 3, crls...)
 	}
+	// A witness that countersigned records 2 and 3 of the chained trail.
+	witness := newTestWitness("every report")
+	witness.next(WitnessKindCheckpoint, lineCheckpoint(chained, 2))
+	witness.next(WitnessKindCheckpoint, lineCheckpoint(chained, 3))
+	witnessed := func(require int64, files ...[]byte) *WitnessOptions {
+		input, err := PrepareWitness(witness.supplied(files...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &WitnessOptions{Input: input, RequireThrough: require}
+	}
 	cases := []struct {
 		name  string
 		trail []byte
 		opts  Options
 		check func(result.AuditChain) bool
 	}{
+		{"a witness's statements", chained, Options{Witness: witnessed(3, witness.all())}, func(c result.AuditChain) bool {
+			return c.Status == "valid" && c.Coverage.Countersigned == (result.AuditCoverageState{Status: "through", Through: 3}) &&
+				c.RequiredCountersigned.Status == "met"
+		}},
+		{"an unmet countersigned requirement", chained, Options{Witness: witnessed(3, witness.file(0, 1))}, func(c result.AuditChain) bool {
+			return c.Status == "invalid" && c.RequiredCountersigned != nil && c.RequiredCountersigned.Status == "unmet" &&
+				strings.Join(findingNames(c), " ") == "countersigned-coverage-missing@3"
+		}},
+		{"a witness's statements with a finding", chained, Options{Witness: witnessed(0, witness.file(1, 2))}, func(c result.AuditChain) bool {
+			return c.Status == "invalid" && c.Coverage.Countersigned.Status == "failed" &&
+				strings.Join(findingNames(c), " ") == "witness-chain-broken@0"
+		}},
 		{"no inputs", chained, Options{}, func(c result.AuditChain) bool {
 			return c.Status == "valid" && c.Coverage.Checkpointed.Status == "not-supplied"
 		}},
