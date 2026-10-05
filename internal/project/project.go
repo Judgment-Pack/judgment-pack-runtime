@@ -279,6 +279,8 @@ type Project struct {
 	GraphIDs []string
 
 	root *fssecure.Root
+	// configName is the configuration's name in the directory root holds.
+	configName string
 	// handoffTargetReportBudget is MaxHandoffTargetReportBytes unless a test
 	// injects a smaller one. It is unexported and has no configuration surface:
 	// a limit a project could raise is a limit an oversized report can ask to be
@@ -414,7 +416,18 @@ func Load(configPath string) (*Project, *Failure) {
 		root.Close()
 		return nil, failure
 	}
+	loaded.configName = configName
 	return loaded, nil
+}
+
+// ConfigFile describes the configuration file this project was read from,
+// through the project's own handle, so another file can be compared with it by
+// os.SameFile.
+func (p *Project) ConfigFile() (os.FileInfo, error) {
+	if p == nil || p.root == nil || p.configName == "" {
+		return nil, os.ErrInvalid
+	}
+	return p.root.Stat(p.configName)
 }
 
 // loadThrough reads and checks the configuration named by configName through an

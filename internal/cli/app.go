@@ -32,6 +32,60 @@ type App struct {
 	engine *validation.Engine
 	runner *conformance.Runner
 	pretty bool
+	// inputs is every file this invocation read, by the identity of the file
+	// itself, recorded where it was opened: readInput, openInput, loadProject
+	// and noteInput. A command that writes a file holds the file it is to
+	// replace to these, so it never replaces one it read (audit verify
+	// --witness-save).
+	inputs []inputFile
+}
+
+// inputFile is one file an invocation read: its identity, and what it was, for
+// a message.
+type inputFile struct {
+	info os.FileInfo
+	what string
+}
+
+// noteInput records an opened file as one this invocation read.
+func (a *App) noteInput(file *os.File, what string) {
+	if file == nil {
+		return
+	}
+	if info, err := file.Stat(); err == nil {
+		a.inputs = append(a.inputs, inputFile{info: info, what: what})
+	}
+}
+
+// openInput opens one regular file an operator named, as fssecure.OpenRegular
+// does, and records it as read.
+func (a *App) openInput(filePath, what string) (*os.File, error) {
+	file, err := fssecure.OpenRegular(filePath)
+	if err != nil {
+		return nil, err
+	}
+	a.noteInput(file, what)
+	return file, nil
+}
+
+// readInput reads one bounded input, a file an operator named or standard
+// input for "-", and records the file read, standard input included when it is
+// a file.
+func (a *App) readInput(argument string, limit int64, what string) ([]byte, error) {
+	if argument == "-" {
+		if file, ok := a.in.(*os.File); ok {
+			if info, err := file.Stat(); err == nil && info.Mode().IsRegular() {
+				a.inputs = append(a.inputs, inputFile{info: info, what: what + ", read from standard input"})
+			}
+		}
+		return readBounded(a.in, limit)
+	}
+	file, err := a.openInput(argument, what)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return readBounded(file, limit)
 }
 
 type handledExit struct {
@@ -763,10 +817,7 @@ func (a *App) examplesCommand() *cobra.Command {
 }
 
 func (a *App) readPack(argument string, limit int64) ([]byte, error) {
-	if argument == "-" {
-		return readBounded(a.in, limit)
-	}
-	return fssecure.ReadRegular(argument, limit)
+	return a.readInput(argument, limit, "an input file")
 }
 
 func readBounded(reader io.Reader, limit int64) ([]byte, error) {

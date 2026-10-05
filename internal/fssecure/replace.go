@@ -1,0 +1,132 @@
+package fssecure
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"io/fs"
+	"os"
+	"strings"
+)
+
+// ErrNotOneName is a name that is not one component directly beneath the
+// root: a file ReplaceByRename puts in place is named by its own name alone.
+var ErrNotOneName = errors.New("the name is not one file name directly in the directory")
+
+// ErrReplacedChanged is a file ReplaceByRename was to replace that is no
+// longer, at the rename, the file its caller checked: something was put in
+// its place, or removed, after the check. Nothing is replaced then.
+var ErrReplacedChanged = errors.New("the file to be replaced changed after it was checked")
+
+// Stat describes a file beneath this root, through the handle, following a
+// final symbolic link that stays beneath it.
+func (r *Root) Stat(relative string) (os.FileInfo, error) {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return nil, err
+	}
+	info, err := r.root.Stat(cleaned)
+	return info, classify(err)
+}
+
+// Lstat describes a file beneath this root, through the handle, without
+// following a final symbolic link.
+func (r *Root) Lstat(relative string) (os.FileInfo, error) {
+	cleaned, err := Relative(relative)
+	if err != nil {
+		return nil, err
+	}
+	info, err := r.root.Lstat(cleaned)
+	return info, classify(err)
+}
+
+// ReplaceByRename puts contents at name, one file directly in the directory
+// this root holds, so that a reader of name finds either the file that was
+// there or the whole of the new one, never part of either. Everything goes
+// through the handle, so the write lands in the directory the handle holds,
+// whatever its pathname names by then:
+//
+//  1. a temporary file is created beside name, exclusively, under a name of its
+//     own with random bytes in it, and written, synced and closed;
+//  2. what is at name is checked to be still what the caller checked: nothing,
+//     when expect is nil, or else the regular file expect describes, by its
+//     identity, and not a symbolic link (ErrReplacedChanged otherwise);
+//  3. the temporary file is renamed onto name, and the directory is synced.
+//
+// On every failure the temporary file is removed and name is left as it was.
+// Between the check of step 2 and the rename something else can still be put at
+// name; the check narrows that to the instant between two calls, and what
+// would be replaced then is whatever was put there, in this directory.
+func (r *Root) ReplaceByRename(name string, contents []byte, expect os.FileInfo) error {
+	cleaned, err := Relative(name)
+	if err != nil {
+		return err
+	}
+	if cleaned != name || cleaned == "." || strings.ContainsAny(cleaned, `/\`) {
+		return ErrNotOneName
+	}
+	temporary, file, err := r.createTemporary(cleaned)
+	if err != nil {
+		return err
+	}
+	kept := false
+	defer func() {
+		if !kept {
+			r.root.Remove(temporary)
+		}
+	}()
+	_, err = file.Write(contents)
+	if err == nil {
+		err = file.Sync()
+	}
+	if closed := file.Close(); err == nil {
+		err = closed
+	}
+	if err != nil {
+		return err
+	}
+	if err := r.stillAsChecked(cleaned, expect); err != nil {
+		return err
+	}
+	if err := r.renameWithin(temporary, cleaned); err != nil {
+		return err
+	}
+	kept = true
+	return r.syncDir(cleaned)
+}
+
+// createTemporary creates a file beside name, exclusively, under a name no
+// other writer chose: name with random bytes after it, hidden.
+func (r *Root) createTemporary(name string) (string, *os.File, error) {
+	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
+		var random [8]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			return "", nil, err
+		}
+		temporary := "." + name + "." + hex.EncodeToString(random[:]) + ".tmp"
+		file, err := r.root.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", nil, classify(err)
+		}
+		return temporary, file, nil
+	}
+	return "", nil, errors.New("no temporary name beside the file was free")
+}
+
+// stillAsChecked says whether name is still what its caller checked: nothing,
+// when expect is nil, or the regular file expect describes.
+func (r *Root) stillAsChecked(name string, expect os.FileInfo) error {
+	info, err := r.root.Lstat(name)
+	switch {
+	case expect == nil && errors.Is(err, fs.ErrNotExist):
+		return nil
+	case expect == nil || err != nil:
+		return ErrReplacedChanged
+	case info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || !os.SameFile(info, expect):
+		return ErrReplacedChanged
+	}
+	return nil
+}

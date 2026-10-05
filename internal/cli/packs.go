@@ -721,6 +721,9 @@ func (a *App) loadProject(configPath, command, format string) (*project.Project,
 	if failure != nil {
 		return nil, a.projectFailure(command, format, failure)
 	}
+	if info, err := loaded.ConfigFile(); err == nil {
+		a.inputs = append(a.inputs, inputFile{info: info, what: "the project's configuration"})
+	}
 	return loaded, nil
 }
 

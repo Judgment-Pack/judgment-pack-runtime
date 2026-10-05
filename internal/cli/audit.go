@@ -131,6 +131,14 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			if witnessSave != "" && (witnessSave == "-" || strings.Contains(witnessSave, "://") || fssecure.IsRemotePath(witnessSave)) {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "The continuation is saved to one local file; pass its path.")
 			}
+			var target *continuationTarget
+			if witnessSave != "" {
+				target, failure = a.openContinuationTarget(commandName, format, witnessSave)
+				if failure != nil {
+					return failure
+				}
+				defer target.dir.Close()
+			}
 			witness, failure := a.readWitnessOptions(commandName, format, witnessKeyPaths, witnessPaths, witnessHead, witnessResume, requireCountersigned)
 			if failure != nil {
 				return failure
@@ -148,14 +156,25 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 				return failure
 			}
 			defer opened.close()
+			// Every input is open now, and recorded: the file --witness-save
+			// names is held to them before anything is verified.
+			if target != nil {
+				if failure := a.checkContinuationTarget(commandName, format, target); failure != nil {
+					return failure
+				}
+			}
 			report, locked, failure := a.readTrailWith(commandName, format, opened, audit.Options{Held: held, RequireThrough: requireThrough, Signatures: signatures, Stamps: stamps, Witness: witness})
 			if failure != nil {
 				return failure
 			}
 			chain := report.Chain
-			if witnessSave != "" && report.Continuation != nil {
-				if err := saveContinuation(witnessSave, report.Continuation); err != nil {
-					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-WITNESS-SAVE", fmt.Sprintf("The continuation could not be saved to %s; the verification had no finding, and nothing was saved.", display.Sanitize(witnessSave)))
+			if target != nil && report.Continuation != nil {
+				if err := target.dir.ReplaceByRename(target.name, report.Continuation, target.existing); err != nil {
+					why := "it could not be written"
+					if errors.Is(err, fssecure.ErrReplacedChanged) {
+						why = "the file there changed after it was checked"
+					}
+					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-WITNESS-SAVE", fmt.Sprintf("The continuation could not be saved to %s: %s. The verification had no finding, and %s is as it was.", display.Sanitize(witnessSave), why, display.Sanitize(witnessSave)))
 				}
 				chain.Witness.ContinuationSaved = true
 			}
@@ -224,7 +243,7 @@ func (a *App) readWitnessOptions(command, format string, keyPaths, statementPath
 		if strings.Contains(keyPath, "://") || fssecure.IsRemotePath(keyPath) {
 			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		data, err := a.readPack(keyPath, 4096)
+		data, err := a.readInput(keyPath, 4096, "a --witness-key file")
 		if err != nil {
 			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-KEY-READ", fmt.Sprintf("The witness key %s could not be read as one bounded regular file.", display.Sanitize(keyPath)))
 		}
@@ -243,6 +262,15 @@ func (a *App) readWitnessOptions(command, format string, keyPaths, statementPath
 		file *os.File
 		size int64
 	}
+	what := func(index int) string {
+		switch {
+		case index < len(statementPaths):
+			return "a --witness file"
+		case headPath != "" && index == len(statementPaths):
+			return "the --witness-head file"
+		}
+		return resumeInput
+	}
 	files := []witnessFile{}
 	defer func() {
 		for _, each := range files {
@@ -256,11 +284,11 @@ func (a *App) readWitnessOptions(command, format string, keyPaths, statementPath
 		}
 	}
 	total := int64(0)
-	for _, filePath := range paths {
+	for index, filePath := range paths {
 		if filePath == "-" || strings.Contains(filePath, "://") || fssecure.IsRemotePath(filePath) {
 			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "A witness's statements, its head and a continuation are each read as one local file; pass its path.")
 		}
-		file, err := fssecure.OpenRegular(filePath)
+		file, err := a.openInput(filePath, what(index))
 		if err != nil {
 			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-READ", fmt.Sprintf("The witness file %s could not be opened as one regular file.", display.Sanitize(filePath)))
 		}
@@ -305,31 +333,6 @@ func (a *App) readWitnessOptions(command, format string, keyPaths, statementPath
 	return &audit.WitnessOptions{Input: input, RequireThrough: requireCountersigned}, nil
 }
 
-// saveContinuation writes a continuation to target through a file beside it,
-// synced and then renamed into place, so a reading that resumes from target
-// reads the continuation before it or this one, never part of one.
-func saveContinuation(target string, data []byte) error {
-	file, err := os.CreateTemp(filepath.Dir(target), ".jpack-continuation-*")
-	if err != nil {
-		return err
-	}
-	temporary := file.Name()
-	_, err = file.Write(data)
-	if err == nil {
-		err = file.Sync()
-	}
-	if closed := file.Close(); err == nil {
-		err = closed
-	}
-	if err == nil {
-		err = os.Rename(temporary, target)
-	}
-	if err != nil {
-		os.Remove(temporary)
-	}
-	return err
-}
-
 // readStampOptions reads the roots, policies and revocation lists a
 // verification checks the stamps by, or nil when no root was given.
 func (a *App) readStampOptions(command, format string, rootPaths, policies, crlPaths []string, requireStamped int64) (*audit.StampOptions, error) {
@@ -339,7 +342,7 @@ func (a *App) readStampOptions(command, format string, rootPaths, policies, crlP
 	options := &audit.StampOptions{RequireThrough: requireStamped}
 	roots := x509.NewCertPool()
 	for _, rootPath := range rootPaths {
-		data, failure := a.readTrustFile(command, format, rootPath, "JPS-AUDIT-TSA-ROOTS-READ", "time-stamping roots")
+		data, failure := a.readTrustFile(command, format, rootPath, "JPS-AUDIT-TSA-ROOTS-READ", "time-stamping roots", "tsa-roots")
 		if failure != nil {
 			return nil, failure
 		}
@@ -368,7 +371,7 @@ func (a *App) readStampOptions(command, format string, rootPaths, policies, crlP
 		options.Verify.Policies = append(options.Verify.Policies, oid)
 	}
 	for _, crlPath := range crlPaths {
-		data, failure := a.readTrustFile(command, format, crlPath, "JPS-AUDIT-TSA-CRLS-READ", "revocation lists")
+		data, failure := a.readTrustFile(command, format, crlPath, "JPS-AUDIT-TSA-CRLS-READ", "revocation lists", "tsa-crls")
 		if failure != nil {
 			return nil, failure
 		}
@@ -382,11 +385,11 @@ func (a *App) readStampOptions(command, format string, rootPaths, policies, crlP
 }
 
 // readTrustFile reads one bounded local file a verifier supplies its trust in.
-func (a *App) readTrustFile(command, format, filePath, code, what string) ([]byte, error) {
+func (a *App) readTrustFile(command, format, filePath, code, what, flag string) ([]byte, error) {
 	if strings.Contains(filePath, "://") || fssecure.IsRemotePath(filePath) {
 		return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 	}
-	data, err := a.readPack(filePath, 16<<20)
+	data, err := a.readInput(filePath, 16<<20, "a --"+flag+" file")
 	if err != nil {
 		return nil, a.operational(command, format, result.ExitIO, code, fmt.Sprintf("The %s could not be read as one bounded regular file or standard input stream.", what))
 	}
@@ -446,7 +449,7 @@ func (a *App) readSignatureOptions(command, format string, publicKeyPaths []stri
 		if strings.Contains(keyPath, "://") || fssecure.IsRemotePath(keyPath) {
 			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		data, err := a.readPack(keyPath, 4096)
+		data, err := a.readInput(keyPath, 4096, "a --public-key file")
 		if err != nil {
 			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-PUBLIC-KEY-READ", fmt.Sprintf("The public key %s could not be read as one bounded regular file.", display.Sanitize(keyPath)))
 		}
@@ -460,7 +463,7 @@ func (a *App) readSignatureOptions(command, format string, publicKeyPaths []stri
 		if strings.Contains(revokedPath, "://") || fssecure.IsRemotePath(revokedPath) {
 			return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		data, err := a.readPack(revokedPath, audit.MaxRevocationBytes)
+		data, err := a.readInput(revokedPath, audit.MaxRevocationBytes, "the --revoked file")
 		if err != nil {
 			return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-REVOKED-READ", "The revocations could not be read as one bounded regular file or standard input stream.")
 		}
@@ -737,7 +740,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 		if strings.Contains(trailPath, "://") || fssecure.IsRemotePath(trailPath) {
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		file, err := fssecure.OpenRegular(trailPath)
+		file, err := a.openInput(trailPath, "the trail")
 		if err != nil {
 			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The trail %s could not be opened as one regular file.", display.Sanitize(trailPath)))
 		}
@@ -747,7 +750,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 				continue
 			}
 			beside := filepath.Join(filepath.Dir(trailPath), each.name)
-			*each.into, err = fssecure.OpenRegular(beside)
+			*each.into, err = a.openInput(beside, "the "+each.label)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				opened.close()
 				return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", each.label, display.Sanitize(beside)))
@@ -763,6 +766,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-NOT-DECLARED", notDeclaredMessage)
 		}
 		file, err := loaded.OpenTrail()
+		a.noteInput(file, "the trail")
 		if errors.Is(err, fs.ErrNotExist) {
 			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s does not exist yet: no record has been written.", display.Sanitize(loaded.TrailPath())))
 		}
@@ -775,6 +779,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 				continue
 			}
 			*each.into, err = each.fromProject(loaded)
+			a.noteInput(*each.into, "the "+each.label)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				opened.close()
 				return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The project's %s could not be opened as one regular file inside the project.", each.label))
@@ -785,7 +790,7 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 		if !each.wanted || each.explicit == "" {
 			continue
 		}
-		file, err := fssecure.OpenRegular(each.explicit)
+		file, err := a.openInput(each.explicit, "the "+each.label)
 		if err != nil {
 			opened.close()
 			return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", each.label, display.Sanitize(each.explicit)))
@@ -835,7 +840,7 @@ func (a *App) readCheckpoints(command, format, expectPath string) ([]result.Audi
 	if strings.Contains(expectPath, "://") || fssecure.IsRemotePath(expectPath) {
 		return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 	}
-	data, err := a.readPack(expectPath, audit.MaxHeldBytes)
+	data, err := a.readInput(expectPath, audit.MaxHeldBytes, "an --expect file")
 	if errors.Is(err, fssecure.ErrTooLarge) {
 		return nil, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-CHECKPOINT-INVALID", fmt.Sprintf("The checkpoints exceed %d bytes.", audit.MaxHeldBytes))
 	}
@@ -1035,4 +1040,91 @@ func joinSequences(sequences []int64, total int64) string {
 		text += fmt.Sprintf(", and %d more, not listed", omitted)
 	}
 	return text
+}
+
+// resumeInput is what the continuation --witness-resume names is recorded as:
+// the one input --witness-save may replace, since a reading advances it.
+const resumeInput = "the --witness-resume continuation"
+
+// continuationTarget is where --witness-save writes: the directory that is to
+// hold the continuation, opened once and held from the check to the rename;
+// the continuation's name in it and its path as given; and what was there when
+// it was checked, nil when nothing was.
+type continuationTarget struct {
+	dir      *fssecure.Root
+	name     string
+	path     string
+	existing os.FileInfo
+}
+
+// openContinuationTarget opens the directory the file --witness-save names is
+// in. A symbolic link among the directories of its path is followed, since a
+// reader may name any directory; once it is opened, the continuation is
+// written to that directory and no other, whatever its path names later.
+func (a *App) openContinuationTarget(command, format, target string) (*continuationTarget, error) {
+	dir, name := filepath.Split(target)
+	if name == "" || name == "." || name == ".." {
+		return nil, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-WITNESS-SAVE", fmt.Sprintf("--witness-save %s names no file; nothing was read or saved.", display.Sanitize(target)))
+	}
+	if dir == "" {
+		dir = "."
+	}
+	opened, err := fssecure.OpenRoot(dir)
+	if err != nil {
+		return nil, a.operational(command, format, result.ExitIO, "JPS-AUDIT-WITNESS-SAVE", fmt.Sprintf("The directory of --witness-save %s could not be opened; nothing was read or saved.", display.Sanitize(target)))
+	}
+	return &continuationTarget{dir: opened, name: name, path: target}, nil
+}
+
+// checkContinuationTarget holds the file --witness-save names to what a
+// verification may replace, once every input is open and before anything is
+// verified:
+//
+//   - it is none of the files this invocation read, by the identity of the file
+//     itself, so another spelling of its path, a symbolic link or a hard link
+//     to it is the same file; the continuation --witness-resume read is the one
+//     exception, since a reading advances it;
+//   - when something is there, it is a regular file, not a symbolic link, that
+//     holds a continuation; anything else is left as it is.
+//
+// The inputs are what the App recorded as it opened them (App.inputs), so an
+// input read through the App's readers is held to this without naming it here.
+func (a *App) checkContinuationTarget(command, format string, target *continuationTarget) error {
+	refuse := func(why string) error {
+		return a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-WITNESS-SAVE", fmt.Sprintf("--witness-save %s %s; nothing was verified or saved.", display.Sanitize(target.path), why))
+	}
+	// The file is looked up by its path, following every link, and through the
+	// held directory, following a link that stays in it: either is the file a
+	// rename onto the name would replace.
+	named := []os.FileInfo{}
+	if info, err := os.Stat(target.path); err == nil {
+		named = append(named, info)
+	}
+	if info, err := target.dir.Stat(target.name); err == nil {
+		named = append(named, info)
+	}
+	for _, info := range named {
+		for _, input := range a.inputs {
+			if input.what != resumeInput && os.SameFile(info, input.info) {
+				return refuse(fmt.Sprintf("is %s, which this verification reads, and saving would replace it", input.what))
+			}
+		}
+	}
+	info, err := target.dir.Lstat(target.name)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return refuse("could not be examined")
+	case info.Mode()&os.ModeSymlink != 0:
+		return refuse("is a symbolic link; a continuation is saved to a file named by its own path")
+	case !info.Mode().IsRegular():
+		return refuse("is not a regular file")
+	}
+	data, err := target.dir.Read(target.name, audit.MaxWitnessBytes)
+	if err != nil || !audit.IsContinuation(data) {
+		return refuse("holds something other than a continuation, and is left as it is; name a new file, or the continuation a reading saved")
+	}
+	target.existing = info
+	return nil
 }
