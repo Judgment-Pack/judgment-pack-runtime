@@ -232,9 +232,66 @@ func (w *Writer) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
 	return holdsStamp(io.NewSectionReader(file, 0, info.Size()), checkpoint)
 }
 
+// StampFile holds the stamps file across an authority request. No lock is
+// held until RecordStamp appends, so decisions never wait for the authority.
+type StampFile struct{ file *fssecure.AppendFile }
+
+// OpenStamps retains the stamps file, creating an empty file if absent.
+func (w *Writer) OpenStamps() (*StampFile, error) {
+	if w == nil {
+		return nil, ErrNoTrail
+	}
+	file, err := w.root.OpenAppend(w.stampsPath())
+	if err != nil {
+		return nil, err
+	}
+	return &StampFile{file: file}, nil
+}
+
+func (s *StampFile) Close() error { return s.file.Close() }
+
+// Stamped checks the held file within the whole-file verification bound.
+func (s *StampFile) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
+	info, err := s.file.Stat()
+	if err != nil {
+		return false, err
+	}
+	if info.Size() > MaxStampsBytes {
+		return false, ErrStampsTooLarge
+	}
+	return holdsStamp(io.NewSectionReader(s.file, 0, info.Size()), checkpoint)
+}
+
+// CheckStampRoom reserves no space, but refuses before the authority is asked
+// if the held file cannot fit the largest accepted stamp line.
+func (s *StampFile) CheckStampRoom() error {
+	info, err := s.file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() > MaxStampsBytes-MaxStampLineBytes {
+		return ErrStampsTooLarge
+	}
+	return nil
+}
+
+// RecordStamp checks the transaction under the stamps lock before appending
+// through the held handle. A failed check writes nothing.
+func (s *StampFile) RecordStamp(checkpoint result.AuditCheckpoint, token []byte, check func() error) (bool, error) {
+	return recordStamp(checkpoint, token, func(compose func(fssecure.AppendState) ([]byte, error)) error {
+		return s.file.AppendLocked(func(state fssecure.AppendState) ([]byte, error) {
+			if err := check(); err != nil {
+				return nil, err
+			}
+			return compose(state)
+		})
+	})
+}
+
 // ErrStampTooLarge is a token whose stamps line would be longer than
 // MaxStampLineBytes, which a reader passes over as unreadable; it is refused
-// before the stamps file is opened.
+// before any bytes are written. Writer.RecordStamp refuses it before opening
+// the stamps file too.
 var ErrStampTooLarge = errors.New("the time-stamp token is too large to keep as one stamps line")
 
 // ErrStampsTooLarge refuses a stamps file that exceeds the verification bound
@@ -276,11 +333,17 @@ func (w *Writer) RecordStamp(checkpoint result.AuditCheckpoint, token []byte) (b
 	if w == nil {
 		return false, ErrNoTrail
 	}
+	return recordStamp(checkpoint, token, func(compose func(fssecure.AppendState) ([]byte, error)) error {
+		return w.root.AppendLocked(w.stampsPath(), compose)
+	})
+}
+
+func recordStamp(checkpoint result.AuditCheckpoint, token []byte, appendLocked func(func(fssecure.AppendState) ([]byte, error)) error) (bool, error) {
 	if len(encodeStampLine(checkpoint, token)) > MaxStampLineBytes {
 		return false, ErrStampTooLarge
 	}
 	appended := false
-	err := w.root.AppendLocked(w.stampsPath(), func(state fssecure.AppendState) ([]byte, error) {
+	err := appendLocked(func(state fssecure.AppendState) ([]byte, error) {
 		if state.Size > MaxStampsBytes {
 			return nil, ErrStampsTooLarge
 		}
