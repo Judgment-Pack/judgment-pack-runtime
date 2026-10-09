@@ -186,35 +186,85 @@ func TestAStampThatFailsLeavesTheTrailAndTheDecisionsUntouched(t *testing.T) {
 // A token that cannot be kept leaves the trail and its decisions untouched,
 // but a retry stamps whichever checkpoint is at the trail's head then.
 func TestAuditStampReportsTheCheckpointAWriteFailureRetryWillStamp(t *testing.T) {
+	for _, format := range []string{"json", "human"} {
+		t.Run(format, func(t *testing.T) {
+			tsa, err := tsatest.New(tsatest.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			originalTransport := http.DefaultClient.Transport
+			http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				response := httptest.NewRecorder()
+				tsa.ServeHTTP(response, request)
+				return response.Result(), nil
+			})
+			t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
+			configPath, trail := recordedProject(t, 1)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			if err := os.WriteFile(stamps, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(stamps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeStampAppend = func() error { return errors.New("forced stamp append failure") }
+			t.Cleanup(func() { beforeStampAppend = nil })
+
+			code, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", "https://tsa.invalid/stamp"}, "")
+			const want = "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the checkpoint at the trail's head at that time."
+			if code != result.ExitIO || tsa.Requests != 1 {
+				t.Fatalf("append failure: exit=%d requests=%d stdout=%q stderr=%q", code, tsa.Requests, stdout, stderr)
+			}
+			if format == "json" {
+				var output result.OperationalError
+				if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+					t.Fatal(err)
+				}
+				if len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-AUDIT-STAMPS-WRITE" || output.Diagnostics[0].Message != want {
+					t.Fatalf("diagnostic: %+v", output)
+				}
+			} else if stdout != "" || stderr != "error: "+want+"\n" {
+				t.Fatalf("human: stdout=%q stderr=%q", stdout, stderr)
+			}
+			after, err := os.ReadFile(stamps)
+			if err != nil || !bytes.Equal(after, before) {
+				t.Fatalf("stamps changed: before=%q after=%q err=%v", before, after, err)
+			}
+			beforeStampAppend = nil
+			if retryCode, _, all := stamping(t, "--config", configPath, "--tsa", "https://tsa.invalid/stamp"); retryCode != 0 || tsa.Requests != 2 {
+				t.Fatalf("discarded token was not requested again: exit=%d requests=%d output=%q", retryCode, tsa.Requests, all)
+			}
+		})
+	}
+}
+
+func TestAuditStampRefusesAnUnwritableStampsFileBeforeAuthority(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits are not what a Windows file mode means")
 	}
-	tsa, err := tsatest.New(tsatest.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	originalTransport := http.DefaultClient.Transport
-	http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		response := httptest.NewRecorder()
-		tsa.ServeHTTP(response, request)
-		return response.Result(), nil
-	})
-	t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
 	configPath, trail := recordedProject(t, 1)
 	stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
 	if err := os.WriteFile(stamps, nil, 0o400); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(stamps, 0o600) })
+	originalTransport := http.DefaultClient.Transport
+	requests := 0
+	http.DefaultClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return nil, errors.New("request must not be made")
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
 
 	code, _, all := stamping(t, "--config", configPath, "--tsa", "https://tsa.invalid/stamp")
 	var output result.OperationalError
 	if err := json.Unmarshal([]byte(all), &output); err != nil {
 		t.Fatal(err)
 	}
-	want := "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the checkpoint at the trail's head at that time."
-	if code != result.ExitIO || len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-AUDIT-STAMPS-WRITE" || output.Diagnostics[0].Message != want {
-		t.Fatalf("unwritable stamps file: exit=%d output=%+v", code, output)
+	const want = "The stamps file could not be held open; no authority was asked."
+	if code != result.ExitIO || requests != 0 || len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-AUDIT-STAMPS-WRITE" || output.Diagnostics[0].Message != want {
+		t.Fatalf("unwritable stamps file: exit=%d requests=%d output=%+v", code, requests, output)
 	}
 }
 
@@ -373,7 +423,7 @@ func TestAuditStampRefusesAMovedTrail(t *testing.T) {
 			retired := t.TempDir()
 			oldTrail := filepath.Join(retired, filepath.Base(trail))
 			oldStamps := filepath.Join(retired, audit.StampsName)
-			beforeStampAppend = func() {
+			beforeStampAppend = func() error {
 				if err := os.Rename(trail, oldTrail); err != nil {
 					t.Fatal(err)
 				}
@@ -381,6 +431,7 @@ func TestAuditStampRefusesAMovedTrail(t *testing.T) {
 					t.Fatal(err)
 				}
 				evaluateOnce(t, configPath)
+				return nil
 			}
 			t.Cleanup(func() { beforeStampAppend = nil })
 			code, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", address}, "")
@@ -420,7 +471,10 @@ func TestAuditStampRefusesAMovedTrail(t *testing.T) {
 func TestAuditStampAllowsAnAppendToTheSameTrail(t *testing.T) {
 	address, roots := stampAuthorityTransport(t)
 	configPath, _ := recordedProject(t, 1)
-	beforeStampAppend = func() { evaluateOnce(t, configPath) }
+	beforeStampAppend = func() error {
+		evaluateOnce(t, configPath)
+		return nil
+	}
 	t.Cleanup(func() { beforeStampAppend = nil })
 	if code, got, all := stamping(t, "--config", configPath, "--tsa", address); code != 0 || got.Checkpoint.Sequence != 1 {
 		t.Fatalf("stamp: %d %s", code, all)

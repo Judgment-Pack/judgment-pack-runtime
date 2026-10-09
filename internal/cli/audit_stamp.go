@@ -20,9 +20,9 @@ import (
 // maxStampTimeout bounds how long audit stamp waits for an authority.
 const maxStampTimeout = 10 * time.Minute
 
-// beforeStampAppend lets tests move files after the authority replies.
+// beforeStampAppend lets tests fail or move files after the authority replies.
 // It is nil outside tests.
-var beforeStampAppend func()
+var beforeStampAppend func() error
 
 var errStampTrailMoved = errors.New("the stamped trail moved")
 
@@ -128,21 +128,24 @@ func (a *App) auditStampCommand() *cobra.Command {
 				if err != nil {
 					return a.stampFailure(commandName, format, err)
 				}
+				var appended bool
 				if beforeStampAppend != nil {
-					beforeStampAppend()
+					err = beforeStampAppend()
 				}
-				appended, err := stamps.RecordStamp(checkpoint, der, func() error {
-					current, err := loaded.OpenTrail()
-					if err != nil {
-						return errStampTrailMoved
-					}
-					defer current.Close()
-					named, err := current.Stat()
-					if err != nil || !os.SameFile(trailInfo, named) {
-						return errStampTrailMoved
-					}
-					return nil
-				})
+				if err == nil {
+					appended, err = stamps.RecordStamp(checkpoint, der, func() error {
+						current, err := loaded.OpenTrail()
+						if err != nil {
+							return errStampTrailMoved
+						}
+						defer current.Close()
+						named, err := current.Stat()
+						if err != nil || !os.SameFile(trailInfo, named) {
+							return errStampTrailMoved
+						}
+						return nil
+					})
+				}
 				if errors.Is(err, errStampTrailMoved) {
 					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMP-TRAIL-MOVED", "The trail at the path is not the one whose checkpoint was stamped; nothing was written, and the token was discarded.")
 				}
