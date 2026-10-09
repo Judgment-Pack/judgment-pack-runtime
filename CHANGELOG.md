@@ -6,7 +6,8 @@ All notable changes to tagged releases are documented here.
 
 - **An audit stamp write failure describes its retry accurately** (#237). The trail and its
   decisions remain unchanged, and asking again stamps the checkpoint at the trail's head at that
-  time, which may be newer if another evaluation appended a record after the failed write.
+  time, which may be newer if another evaluation appended a record after the failed write. The
+  conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.28.0 - 2026-10-09
 
