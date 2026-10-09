@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -137,7 +138,7 @@ func quote(text string) string {
 
 // An authority that cannot stamp leaves the trail and every decision in it as
 // they were: nothing is written, the decisions go on recording, and asking
-// again stamps the same checkpoint.
+// again stamps the checkpoint at the trail's head then.
 func TestAStampThatFailsLeavesTheTrailAndTheDecisionsUntouched(t *testing.T) {
 	tsa, server, _ := testAuthorityServer(t)
 	configPath, trail := recordedProject(t, 1)
@@ -179,6 +180,41 @@ func TestAStampThatFailsLeavesTheTrailAndTheDecisionsUntouched(t *testing.T) {
 	tsa.Fail, tsa.Status, tsa.WrongDigest = 0, 0, false
 	if code, output, all := stamping(t, "--config", configPath, "--tsa", server.URL); code != 0 || output.Status != "stamped" || output.Checkpoint.Sequence != 2 {
 		t.Fatalf("asking again: exit=%d %s", code, all)
+	}
+}
+
+// A token that cannot be kept leaves the trail and its decisions untouched,
+// but a retry stamps whichever checkpoint is at the trail's head then.
+func TestAuditStampReportsTheCheckpointAWriteFailureRetryWillStamp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not what a Windows file mode means")
+	}
+	tsa, err := tsatest.New(tsatest.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalTransport := http.DefaultClient.Transport
+	http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		response := httptest.NewRecorder()
+		tsa.ServeHTTP(response, request)
+		return response.Result(), nil
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
+	configPath, trail := recordedProject(t, 1)
+	stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+	if err := os.WriteFile(stamps, nil, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stamps, 0o600) })
+
+	code, _, all := stamping(t, "--config", configPath, "--tsa", "https://tsa.invalid/stamp")
+	var output result.OperationalError
+	if err := json.Unmarshal([]byte(all), &output); err != nil {
+		t.Fatal(err)
+	}
+	want := "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the checkpoint at the trail's head at that time."
+	if code != result.ExitIO || len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-AUDIT-STAMPS-WRITE" || output.Diagnostics[0].Message != want {
+		t.Fatalf("unwritable stamps file: exit=%d output=%+v", code, output)
 	}
 }
 

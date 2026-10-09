@@ -4,9 +4,9 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- **Scope the runtime's no-fetch limit to evaluation and input acquisition** (#238). CONFORMANCE.md
-  and the README name requested time-stamping, when the runtime requests and receives a
-  time-stamping authority's token, as the sole exception. No runtime behavior changes.
+- **An audit stamp write failure describes its retry accurately** (#237). The trail and its
+  decisions remain unchanged, and asking again stamps the checkpoint at the trail's head at that
+  time, which may be newer if another evaluation appended a record after the failed write.
 
 ## 0.28.0 - 2026-10-09
 
