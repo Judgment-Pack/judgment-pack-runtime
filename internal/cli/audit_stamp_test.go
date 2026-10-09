@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -165,7 +166,7 @@ func TestAStampThatFailsLeavesTheTrailAndTheDecisionsUntouched(t *testing.T) {
 		if after, err := os.ReadFile(trail); err != nil || !bytes.Equal(before, after) {
 			t.Fatalf("%s: the trail changed", c.name)
 		}
-		if _, err := os.Stat(stamps); !os.IsNotExist(err) {
+		if data, err := os.ReadFile(stamps); !os.IsNotExist(err) && (err != nil || len(data) != 0) {
 			t.Fatalf("%s: a stamps file was written: %v", c.name, err)
 		}
 	}
@@ -313,4 +314,100 @@ func TestAuditStampRefusesAFullStampsFileBeforeAsking(t *testing.T) {
 	if code != result.ExitIO || requests != 0 || !strings.Contains(all, `"JPS-AUDIT-STAMPS-TOO-LARGE"`) || !strings.Contains(all, "larger than its 67108864-byte limit") || strings.Contains(all, "could not be read to see") {
 		t.Fatalf("oversized file: exit=%d requests=%d output=%q", code, requests, all)
 	}
+}
+
+// A token obtained for a moved trail belongs to neither a fresh trail nor the
+// retired stamps file. Both output formats report the same refusal.
+func TestAuditStampRefusesAMovedTrail(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot rename these open files")
+	}
+	for _, format := range []string{"json", "human"} {
+		t.Run(format, func(t *testing.T) {
+			address, roots := stampAuthorityTransport(t)
+			configPath, trail := recordedProject(t, 1)
+			if code, _, all := stamping(t, "--config", configPath, "--tsa", address); code != 0 {
+				t.Fatal(all)
+			}
+			evaluateOnce(t, configPath)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			before, err := os.ReadFile(stamps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			retired := t.TempDir()
+			oldTrail := filepath.Join(retired, filepath.Base(trail))
+			oldStamps := filepath.Join(retired, audit.StampsName)
+			beforeStampAppend = func() {
+				if err := os.Rename(trail, oldTrail); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(stamps, oldStamps); err != nil {
+					t.Fatal(err)
+				}
+				evaluateOnce(t, configPath)
+			}
+			t.Cleanup(func() { beforeStampAppend = nil })
+			code, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", address}, "")
+			const message = "The trail at the path is not the one whose checkpoint was stamped; nothing was written, and the token was discarded."
+			if code != result.ExitIO {
+				t.Errorf("exit=%d stdout=%s stderr=%s", code, stdout, stderr)
+			}
+			if format == "json" {
+				var got result.OperationalError
+				if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+					t.Fatal(err)
+				}
+				if len(got.Diagnostics) != 1 || got.Diagnostics[0].Code != "JPS-AUDIT-STAMP-TRAIL-MOVED" || got.Diagnostics[0].Message != message {
+					t.Errorf("diagnostic: %s", stdout)
+				}
+			} else if stdout != "" || stderr != "error: "+message+"\n" {
+				t.Errorf("human: stdout=%q stderr=%q", stdout, stderr)
+			}
+			if data, err := os.ReadFile(stamps); !os.IsNotExist(err) && (err != nil || len(data) != 0) {
+				t.Errorf("new stamps: %q %v", data, err)
+			}
+			if data, err := os.ReadFile(oldStamps); err != nil || !bytes.Equal(data, before) {
+				t.Errorf("old stamps changed: %v", err)
+			}
+			if code, got := verification(t, "--trail", trail, "--tsa-roots", roots); code != 0 || got.Status != "valid" || len(got.Findings) != 0 || got.Coverage.Stamped.Status != "none" {
+				t.Errorf("fresh trail: exit=%d %+v", code, got)
+			}
+			if code, got := verification(t, "--trail", oldTrail, "--tsa-roots", roots); code != 0 || got.Status != "valid" || len(got.Findings) != 0 || got.Coverage.Stamped.Through != 1 || got.Stamps.Trusted != 1 {
+				t.Errorf("retired trail: exit=%d %+v", code, got)
+			}
+		})
+	}
+}
+
+// Ordinary decisions may append while the authority is asked: the snapshot's
+// checkpoint remains part of that same trail, with no trail lock retained.
+func TestAuditStampAllowsAnAppendToTheSameTrail(t *testing.T) {
+	address, roots := stampAuthorityTransport(t)
+	configPath, _ := recordedProject(t, 1)
+	beforeStampAppend = func() { evaluateOnce(t, configPath) }
+	t.Cleanup(func() { beforeStampAppend = nil })
+	if code, got, all := stamping(t, "--config", configPath, "--tsa", address); code != 0 || got.Checkpoint.Sequence != 1 {
+		t.Fatalf("stamp: %d %s", code, all)
+	}
+	if code, got := verification(t, "--config", configPath, "--tsa-roots", roots); code != 0 || got.Coverage.Stamped.Through != 1 {
+		t.Fatalf("verify: %d %+v", code, got)
+	}
+}
+
+// stampAuthorityTransport exercises the RFC 3161 exchange without a socket.
+func stampAuthorityTransport(t *testing.T) (string, string) {
+	t.Helper()
+	tsa, err := tsatest.New(tsatest.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := http.DefaultClient.Transport
+	http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		reply := httptest.NewRecorder()
+		tsa.ServeHTTP(reply, request)
+		return reply.Result(), nil
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = original })
+	return "https://tsa.invalid/stamp", writeDocument(t, "roots.pem", string(tsa.RootPEM()))
 }

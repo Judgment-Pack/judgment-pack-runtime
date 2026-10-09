@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -726,4 +727,81 @@ func TestCheckStampRoomReservesAMaximumSizeLine(t *testing.T) {
 	if err := writer.CheckStampRoom(); !errors.Is(err, ErrStampsTooLarge) {
 		t.Fatalf("one byte short: %v", err)
 	}
+}
+
+// Preflight and append use the retained file even when its name is replaced.
+// Growth after preflight is checked again under that file's own lock.
+func TestHeldStampsKeepTheirHandleAndBounds(t *testing.T) {
+	root, dir, trail := chainedTrail(t, 1)
+	writer := NewWriter(root, "audit", true)
+	checkpoint := checkpointAt(t, trail, 1)
+	tsa := testAuthority(t, tsatest.Options{})
+	line := stampOf(t, tsa, checkpoint)
+	parsed := parseStampLine(bytes.TrimSuffix(line, []byte("\n")))
+	name := filepath.Join(dir, "audit", StampsName)
+	stamps, err := writer.OpenStamps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stamps.Close()
+	if err := stamps.CheckStampRoom(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(name, MaxStampsBytes-MaxStampLineBytes); err != nil {
+		t.Fatal(err)
+	}
+	if err := stamps.CheckStampRoom(); err != nil {
+		t.Fatalf("exact room: %v", err)
+	}
+	if err := os.Truncate(name, MaxStampsBytes-MaxStampLineBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := stamps.CheckStampRoom(); !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("one byte short: %v", err)
+	}
+	if err := os.Truncate(name, MaxStampsBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	if held, err := stamps.Stamped(checkpoint); held || !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("oversized read: %v %v", held, err)
+	}
+	if appended, err := stamps.RecordStamp(checkpoint, parsed.token, func() error { return nil }); appended || !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("oversized append: %v %v", appended, err)
+	}
+	if err := os.Truncate(name, MaxStampsBytes-1); err != nil {
+		t.Fatal(err)
+	}
+	if appended, err := stamps.RecordStamp(checkpoint, parsed.token, func() error { return nil }); appended || !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("no room at append: %v %v", appended, err)
+	}
+	if info, err := os.Stat(name); err != nil || info.Size() != MaxStampsBytes-1 {
+		t.Fatalf("refusal changed file: %v %v", info, err)
+	}
+	if err := os.Truncate(name, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("moved stamps", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows cannot rename these open files")
+		}
+		old := name + ".old"
+		if err := os.Rename(name, old); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if appended, err := stamps.RecordStamp(checkpoint, parsed.token, func() error { return nil }); !appended || err != nil {
+			t.Fatalf("held append: %v %v", appended, err)
+		}
+		if data, err := os.ReadFile(old); err != nil || !bytes.Equal(data, line) {
+			t.Fatalf("held file: %q %v", data, err)
+		}
+		if data, err := os.ReadFile(name); err != nil || len(data) != 0 {
+			t.Fatalf("replacement: %q %v", data, err)
+		}
+		if held, err := stamps.Stamped(checkpoint); !held || err != nil {
+			t.Fatalf("held retry: %v %v", held, err)
+		}
+	})
 }

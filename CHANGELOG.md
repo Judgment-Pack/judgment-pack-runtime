@@ -2,6 +2,14 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`audit stamp` refuses a trail moved while its checkpoint is being stamped** (#242).
+  It retains the stamps handle across the authority request and checks the snapshot trail's file
+  identity before appending. `JPS-AUDIT-STAMP-TRAIL-MOVED` discards the token without writing when
+  the path names another trail. The stamps lock and 64 MiB bound are unchanged; opening an absent
+  stamps file now creates an empty file even if the authority fails.
+
 ## 0.28.0 - 2026-10-09
 
 - **The audit report says what it establishes after an uncovered suffix or a chain break** (#240,
