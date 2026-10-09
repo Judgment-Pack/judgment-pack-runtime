@@ -704,3 +704,26 @@ func TestStampsWholeFileBoundary(t *testing.T) {
 		t.Fatalf("oversized file changed: %v %v", info, err)
 	}
 }
+
+func TestCheckStampRoomReservesAMaximumSizeLine(t *testing.T) {
+	root, dir, _ := chainedTrail(t, 1)
+	writer := NewWriter(root, "audit", true)
+	name := filepath.Join(dir, "audit", StampsName)
+	file, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(MaxStampsBytes - MaxStampLineBytes); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	if err := writer.CheckStampRoom(); err != nil {
+		t.Fatalf("exact room for one line: %v", err)
+	}
+	if err := os.Truncate(name, MaxStampsBytes-MaxStampLineBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.CheckStampRoom(); !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("one byte short: %v", err)
+	}
+}

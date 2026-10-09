@@ -517,12 +517,12 @@ func (a *App) auditCheckpointCommand() *cobra.Command {
 			if since < 0 || limit < 1 || limit > maxCheckpointsListed {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-SINCE", fmt.Sprintf("--since must be a sequence from 0, and --limit a count from 1 to %d.", maxCheckpointsListed))
 			}
-			file, shownPath, failure := a.openTrail(commandName, format, trailPath, configPath)
+			opened, failure := a.openTrail(commandName, format, trailPath, configPath)
 			if failure != nil {
 				return failure
 			}
-			defer file.Close()
-			report, _, failure := a.readTrail(commandName, format, file, audit.Options{List: listing, ListAfter: since, ListLimit: limit})
+			defer opened.close()
+			report, _, failure := a.readTrailWith(commandName, format, opened, audit.Options{List: listing, ListAfter: since, ListLimit: limit})
 			if failure != nil {
 				return failure
 			}
@@ -541,7 +541,7 @@ func (a *App) auditCheckpointCommand() *cobra.Command {
 					Tool:          result.CurrentTool(),
 					Command:       commandName,
 					Status:        "listed",
-					TrailPath:     shownPath,
+					TrailPath:     opened.path,
 					After:         since,
 					Checkpoints:   append([]result.AuditCheckpoint{}, report.Listed...),
 					More:          report.More,
@@ -552,7 +552,7 @@ func (a *App) auditCheckpointCommand() *cobra.Command {
 				Tool:           result.CurrentTool(),
 				Command:        commandName,
 				Status:         "checkpointed",
-				TrailPath:      shownPath,
+				TrailPath:      opened.path,
 				Checkpoint:     *chain.Head,
 				UncoveredLines: chain.Coverage.Uncovered,
 			}
@@ -680,13 +680,14 @@ const notDeclaredMessage = "This project's jpack.json declares no audit director
 
 // openTrail opens the trail a command reads: the file --trail names, opened as
 // an operator-named regular file, or else the one the project declares, opened
-// through the project's own handle. The second result is the path to show.
-func (a *App) openTrail(command, format, trailPath, configPath string) (*os.File, string, error) {
+// through the project's own handle. It retains the sizes captured while that
+// trail's name and identity were checked under its shared lock.
+func (a *App) openTrail(command, format, trailPath, configPath string) (openedTrail, error) {
 	opened, failure := a.openTrailFiles(command, format, trailPath, configPath, companions{})
 	if failure != nil {
-		return nil, "", failure
+		return openedTrail{}, failure
 	}
-	return opened.trail, opened.path, nil
+	return opened, nil
 }
 
 // openedTrail is a trail opened for reading and, when signatures or stamps
@@ -728,6 +729,43 @@ type companion struct {
 	fromProject func(*project.Project) (*os.File, error)
 }
 
+// absentAuditFile and nonRegularAuditFile carry an opener's diagnostic out of
+// OpenSnapshot. The diagnostic is rendered only after OpenSnapshot has
+// returned, and therefore after its shared trail lock has been released.
+type auditFileOpenError struct {
+	path, label, code string
+	projectTrail      bool
+}
+
+type absentAuditFile struct{ auditFileOpenError }
+type nonRegularAuditFile struct{ auditFileOpenError }
+
+func (e *absentAuditFile) Error() string     { return e.path + ": file does not exist" }
+func (e *nonRegularAuditFile) Error() string { return e.path + ": not a regular file" }
+
+func typedAuditOpenError(err error, path, label, code string, projectTrail bool) error {
+	detail := auditFileOpenError{path: path, label: label, code: code, projectTrail: projectTrail}
+	if errors.Is(err, fs.ErrNotExist) {
+		return &absentAuditFile{detail}
+	}
+	return &nonRegularAuditFile{detail}
+}
+
+func (a *App) renderAuditOpenError(command, format string, err error) error {
+	var absent *absentAuditFile
+	if errors.As(err, &absent) {
+		if absent.projectTrail {
+			return a.operational(command, format, result.ExitIO, absent.code, fmt.Sprintf("The project's trail %s does not exist yet: no record has been written.", display.Sanitize(absent.path)))
+		}
+		return a.operational(command, format, result.ExitIO, absent.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", absent.label, display.Sanitize(absent.path)))
+	}
+	var nonRegular *nonRegularAuditFile
+	if errors.As(err, &nonRegular) {
+		return a.operational(command, format, result.ExitIO, nonRegular.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", nonRegular.label, display.Sanitize(nonRegular.path)))
+	}
+	return nil
+}
+
 // openAuditSnapshot lets tests place a writer between the trail open and lock.
 var openAuditSnapshot = fssecure.OpenSnapshot
 
@@ -759,7 +797,13 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
 		opened.path = trailPath
-		openTrail = func() (*os.File, error) { return a.openInput(trailPath, "the trail") }
+		openTrail = func() (*os.File, error) {
+			file, err := a.openInput(trailPath, "the trail")
+			if err != nil {
+				return nil, typedAuditOpenError(err, trailPath, "trail", "JPS-AUDIT-TRAIL-READ", false)
+			}
+			return file, nil
+		}
 	} else {
 		var failure error
 		loaded, failure = a.loadProject(configPath, command, format)
@@ -774,7 +818,10 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 		openTrail = func() (*os.File, error) {
 			file, err := loaded.OpenTrail()
 			a.noteInput(file, "the trail")
-			return file, err
+			if err != nil {
+				return nil, typedAuditOpenError(err, opened.path, "trail", "JPS-AUDIT-TRAIL-READ", true)
+			}
+			return file, nil
 		}
 	}
 	openers := make([]func() (*os.File, error), len(files))
@@ -798,28 +845,25 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 				return nil, nil
 			}
 			if err != nil {
-				return nil, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s could not be opened as one regular file.", each.label))
+				shownPath := each.explicit
+				if shownPath == "" {
+					shownPath = filepath.Join(filepath.Dir(opened.path), each.name)
+				}
+				return nil, typedAuditOpenError(err, shownPath, each.label, each.code, false)
 			}
 			return file, nil
 		}
 	}
 	snapshot, sizes, locked, err := openAuditSnapshot(openTrail, openers...)
 	if err != nil {
-		var handled *handledExit
-		if errors.As(err, &handled) {
-			return openedTrail{}, err
+		if failure := a.renderAuditOpenError(command, format, err); failure != nil {
+			return openedTrail{}, failure
 		}
 		return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail could not be opened and read between writes.")
 	}
 	opened.trail, opened.sidecar, opened.stamps = snapshot[0], snapshot[1], snapshot[2]
 	opened.sizes, opened.locked = sizes, locked
 	return opened, nil
-}
-
-// readTrail takes a snapshot of an open trail between writes and verifies it.
-// The second result says whether the snapshot was taken under the lock.
-func (a *App) readTrail(command, format string, file *os.File, options audit.Options) (audit.Report, bool, error) {
-	return a.readTrailWith(command, format, openedTrail{trail: file}, options)
 }
 
 // readTrailWith is readTrail for a trail and its companion files, whose
@@ -829,13 +873,6 @@ func (a *App) readTrail(command, format string, file *os.File, options audit.Opt
 // write left incomplete when its size was read is read as unreadable.
 func (a *App) readTrailWith(command, format string, opened openedTrail, options audit.Options) (audit.Report, bool, error) {
 	sizes, locked := opened.sizes, opened.locked
-	var err error
-	if sizes == nil {
-		sizes, locked, err = fssecure.SizesBetweenWrites(opened.trail, opened.sidecar, opened.stamps)
-	}
-	if err != nil {
-		return audit.Report{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail's size could not be read between writes.")
-	}
 	if options.Signatures != nil && opened.sidecar != nil {
 		options.Signatures.Sidecar, options.Signatures.SidecarSize = opened.sidecar, sizes[1]
 	}
@@ -935,8 +972,16 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 	fmt.Fprintf(a.out, "records: %d witnessed by a held checkpoint, %d unwitnessed; stamped: %s\n", coverage.Witnessed, coverage.Unwitnessed, stamped)
 	if output.Stamps != nil {
 		stamps := output.Stamps
-		fmt.Fprintf(a.out, "stamps file: %d line(s), %d unreadable, %d trusted; revocation checked for %d, not checked for %d\n",
-			stamps.Lines, stamps.Unreadable, stamps.Trusted, stamps.RevocationChecked, stamps.RevocationNotChecked)
+		oversized := false
+		for _, finding := range output.Findings {
+			oversized = oversized || finding.Name == audit.FindingStampFileTooLarge
+		}
+		if oversized {
+			fmt.Fprintf(a.out, "stamps file: not read because it exceeds %d bytes\n", audit.MaxStampsBytes)
+		} else {
+			fmt.Fprintf(a.out, "stamps file: %d line(s), %d unreadable, %d trusted; revocation checked for %d, not checked for %d\n",
+				stamps.Lines, stamps.Unreadable, stamps.Trusted, stamps.RevocationChecked, stamps.RevocationNotChecked)
+		}
 		if stamps.CoveredBy != "" {
 			fmt.Fprintf(a.out, "stamped records existed by %s, as the authority attests\n", stamps.CoveredBy)
 		}

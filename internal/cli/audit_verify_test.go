@@ -12,7 +12,19 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp/tsatest"
 )
+
+type lockAwareBuffer struct {
+	bytes.Buffer
+	locked         *bool
+	wroteWhileHeld bool
+}
+
+func (b *lockAwareBuffer) Write(p []byte) (int, error) {
+	b.wroteWhileHeld = b.wroteWhileHeld || *b.locked
+	return b.Buffer.Write(p)
+}
 
 // recordedProject is a project that keeps a chained trail with n records.
 func recordedProject(t *testing.T, n int) (string, string) {
@@ -374,6 +386,66 @@ func TestAuditCommandsRefuseWhatTheyCannotActOn(t *testing.T) {
 	}
 }
 
+// Snapshot open failures keep the path-specific diagnostics from before
+// snapshot acquisition moved into fssecure. In particular, a new project's
+// absent trail is not described as a concurrency failure.
+func TestAuditOpenFailuresNameTheirPaths(t *testing.T) {
+	notYet := writeProjectFixture(t, `{"configVersion":"3","audit":{"dir":"audit"},"packs":{}}`, nil)
+	projectTrail := filepath.Join(filepath.Dir(notYet), "audit", audit.FileName)
+	code, _, stderr := runTest(t, []string{"audit", "checkpoint", "--config", notYet}, "")
+	want := "error: The project's trail " + projectTrail + " does not exist yet: no record has been written.\n"
+	if code != result.ExitIO || stderr != want {
+		t.Fatalf("fresh project: exit=%d stderr=%q, want %q", code, stderr, want)
+	}
+
+	_, trail := recordedProject(t, 1)
+	missingTrail := filepath.Join(t.TempDir(), "missing-trail.jsonl")
+	if code, _, stderr := runTest(t, []string{"audit", "checkpoint", "--trail", missingTrail}, ""); code != result.ExitIO || !strings.Contains(stderr, "The trail "+missingTrail+" could not be opened as one regular file.") {
+		t.Fatalf("missing trail: exit=%d stderr=%q", code, stderr)
+	}
+	nonRegularTrail := t.TempDir()
+	if code, _, stderr := runTest(t, []string{"audit", "checkpoint", "--trail", nonRegularTrail}, ""); code != result.ExitIO || !strings.Contains(stderr, "The trail "+nonRegularTrail+" could not be opened as one regular file.") {
+		t.Fatalf("non-regular trail: exit=%d stderr=%q", code, stderr)
+	}
+	_, public := generatedKey(t)
+	missingSignatures := filepath.Join(t.TempDir(), "missing-signatures.jsonl")
+	if code, _, stderr := runTest(t, []string{"audit", "verify", "--trail", trail, "--public-key", public, "--signatures", missingSignatures}, ""); code != result.ExitIO || !strings.Contains(stderr, "The signature sidecar "+missingSignatures+" could not be opened as one regular file.") {
+		t.Fatalf("missing signatures: exit=%d stderr=%q", code, stderr)
+	}
+	tsa, err := tsatest.New(tsatest.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := writeDocument(t, "roots.pem", string(tsa.RootPEM()))
+	missingStamps := filepath.Join(t.TempDir(), "missing-stamps.jsonl")
+	if code, _, stderr := runTest(t, []string{"audit", "verify", "--trail", trail, "--tsa-roots", roots, "--stamps", missingStamps}, ""); code != result.ExitIO || !strings.Contains(stderr, "The stamps file "+missingStamps+" could not be opened as one regular file.") {
+		t.Fatalf("missing stamps: exit=%d stderr=%q", code, stderr)
+	}
+}
+
+// A companion opener returns its typed failure through OpenSnapshot. Rendering
+// the diagnostic must wait until OpenSnapshot has released the trail lock.
+func TestAuditCompanionOpenFailureIsRenderedAfterTheLock(t *testing.T) {
+	_, trail := recordedProject(t, 1)
+	_, public := generatedKey(t)
+	missing := filepath.Join(t.TempDir(), "missing-signatures.jsonl")
+	original := openAuditSnapshot
+	t.Cleanup(func() { openAuditSnapshot = original })
+	locked := false
+	openAuditSnapshot = func(_ func() (*os.File, error), companions ...func() (*os.File, error)) ([]*os.File, []int64, bool, error) {
+		locked = true
+		_, err := companions[0]()
+		locked = false
+		return nil, nil, false, err
+	}
+	var stdout bytes.Buffer
+	stderr := &lockAwareBuffer{locked: &locked}
+	code := Run([]string{"audit", "verify", "--trail", trail, "--public-key", public, "--signatures", missing}, strings.NewReader(""), &stdout, stderr)
+	if code != result.ExitIO || stderr.wroteWhileHeld || !strings.Contains(stderr.String(), missing) {
+		t.Fatalf("exit=%d wrote while held=%v stderr=%q", code, stderr.wroteWhileHeld, stderr.String())
+	}
+}
+
 // A repair whose own write did not complete is not repaired: the command says
 // so under its own code and appends nothing.
 func TestAuditRepairDoesNotRepairARepair(t *testing.T) {
@@ -471,5 +543,50 @@ func TestAuditSnapshotIncludesFirstSidecarCreation(t *testing.T) {
 				t.Fatalf("fresh snapshot differs: %+v %+v", got, fresh)
 			}
 		})
+	}
+}
+
+// openTrail returns the sizes captured with the identity-checked snapshot.
+// Moving the trail aside before it is read must not cause a second, unchecked
+// size acquisition from the old inode.
+func TestAuditCheckpointUsesTheOpenedSnapshotSizes(t *testing.T) {
+	_, trail := recordedProject(t, 2)
+	longer, err := os.ReadFile(trail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.SplitAfter(longer, []byte("\n"))
+	secondLine := lines[1]
+	if err := os.WriteFile(trail, lines[0], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aside := trail + ".aside"
+	original := openAuditSnapshot
+	t.Cleanup(func() { openAuditSnapshot = original })
+	moved := false
+	openAuditSnapshot = func(open func() (*os.File, error), companions ...func() (*os.File, error)) ([]*os.File, []int64, bool, error) {
+		files, sizes, locked, err := original(open, companions...)
+		if err == nil && !moved {
+			moved = true
+			if err := os.Rename(trail, aside); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.OpenFile(aside, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := file.Write(secondLine); err != nil {
+				file.Close()
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return files, sizes, locked, err
+	}
+	code, stdout, stderr := runTest(t, []string{"audit", "checkpoint", "--trail", trail}, "")
+	if !moved || code != 0 || !strings.Contains(stdout, `"sequence":1`) {
+		t.Fatalf("moved snapshot: moved=%v exit=%d stdout=%q stderr=%q", moved, code, stdout, stderr)
 	}
 }

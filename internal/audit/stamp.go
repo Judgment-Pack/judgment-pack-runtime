@@ -237,8 +237,35 @@ func (w *Writer) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
 // before the stamps file is opened.
 var ErrStampTooLarge = errors.New("the time-stamp token is too large to keep as one stamps line")
 
-// ErrStampsTooLarge refuses a stamps file that exceeds the verification bound.
-var ErrStampsTooLarge = errors.New("the stamps file exceeds the whole-file verification limit")
+// ErrStampsTooLarge refuses a stamps file that exceeds the verification bound
+// or has too little room left for the largest stamp line the writer accepts.
+var ErrStampsTooLarge = errors.New("the stamps file exceeds or has no room within the whole-file verification limit")
+
+// CheckStampRoom refuses before an authority is asked when the current stamps
+// file cannot hold the largest line audit stamp may need to append. RecordStamp
+// repeats the exact check under its lock because another writer may grow the
+// file after this preflight.
+func (w *Writer) CheckStampRoom() error {
+	if w == nil {
+		return ErrNoTrail
+	}
+	file, err := w.root.Open(w.stampsPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() > MaxStampsBytes-MaxStampLineBytes {
+		return ErrStampsTooLarge
+	}
+	return nil
+}
 
 // RecordStamp keeps a token for checkpoint in the stamps file, under the
 // stamps file's own lock, never the trail's: a decision never waits on a
