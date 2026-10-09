@@ -13,6 +13,11 @@ All notable changes to tagged releases are documented here.
   and the README name requested time-stamping, when the runtime requests and receives a
   time-stamping authority's token, as the sole exception. No runtime behavior changes.
 
+- Add regression coverage for audit snapshot acquisition, stamp-file truncation, direct evidence
+  beyond a chain break, byte-preserving rotation and repair hand-overs, refusal and rehearsal
+  immutability, and caller-owned custody recovery after a trail is moved (#236). No evaluation
+  changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
+
 ## 0.28.0 - 2026-10-09
 
 - **The audit report says what it establishes after an uncovered suffix or a chain break** (#240,

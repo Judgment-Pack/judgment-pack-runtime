@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
@@ -47,6 +50,56 @@ func TestRehearsalWritesNoRecordAndLabelsThePayload(t *testing.T) {
 	records := auditRecords(t, configPath)
 	if len(records) != 1 {
 		t.Fatalf("one undeclared evaluation is one record, the rehearsal none: %v", records)
+	}
+}
+
+// A refusal and a rehearsal after signing has been handed to a new key leave
+// both files of the signed trail byte for byte as the rotation left them.
+func TestRefusalAndRehearsalAfterRotationLeaveTrailAndSidecarUnchanged(t *testing.T) {
+	skipWhereKeysCannotSign(t)
+	firstSeed, _ := generatedKey(t)
+	nextSeed, _ := generatedKey(t)
+	t.Setenv(audit.SigningKeyEnv, firstSeed)
+	configPath, trail := recordedProject(t, 1)
+	if code, stdout, stderr := runTest(t, []string{"audit", "key", "rotate", "--format", "json", "--config", configPath, "--next", nextSeed}, ""); code != 0 {
+		t.Fatalf("rotation: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	sidecar := filepath.Join(filepath.Dir(trail), audit.SidecarName)
+	beforeTrail, beforeSidecar := readFileBytes(t, trail), readFileBytes(t, sidecar)
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+
+	body, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	required := strings.Replace(string(body), `"configVersion":"3",`, `"configVersion":"4","requireReviewed":true,`, 1)
+	if required == string(body) {
+		t.Fatal("the fixture's configuration changed shape")
+	}
+	if err := os.WriteFile(configPath, []byte(required), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--facts", facts, "--format", "json"}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, `"JPS-LOCK-REVIEW-REQUIRED"`) || !strings.Contains(stdout, "there is no reviewed-set lock") || stderr != "" {
+		t.Fatalf("refusal: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertAuditFilesEqual(t, trail, sidecar, beforeTrail, beforeSidecar)
+
+	t.Setenv(audit.SigningKeyEnv, nextSeed)
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--rehearsal", "--config", configPath, "--facts", facts, "--format", "json"}, "")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"rehearsal":true`) {
+		t.Fatalf("rehearsal: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertAuditFilesEqual(t, trail, sidecar, beforeTrail, beforeSidecar)
+}
+
+func assertAuditFilesEqual(t *testing.T, trail, sidecar string, wantTrail, wantSidecar []byte) {
+	t.Helper()
+	if got := readFileBytes(t, trail); !bytes.Equal(got, wantTrail) {
+		t.Fatalf("trail changed byte for byte:\ngot  %q\nwant %q", got, wantTrail)
+	}
+	if got := readFileBytes(t, sidecar); !bytes.Equal(got, wantSidecar) {
+		t.Fatalf("sidecar changed byte for byte:\ngot  %q\nwant %q", got, wantSidecar)
 	}
 }
 

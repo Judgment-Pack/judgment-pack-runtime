@@ -429,6 +429,48 @@ func TestKeepingAStampIsIdempotentByTheCheckpoint(t *testing.T) {
 	}
 }
 
+// A stamps file truncated all the way to zero holds nothing. Keeping the same
+// stamp again restores exactly the line that was there, with no torn-line
+// marker or other trace of the vanished bytes.
+func TestATotallyTruncatedStampsFileTakesTheStampAgain(t *testing.T) {
+	root, dir, trail := chainedTrail(t, 1)
+	writer := NewWriter(root, "audit", true)
+	tsa := testAuthority(t, tsatest.Options{})
+	checkpoint := checkpointAt(t, trail, 1)
+	token, err := tsa.Token(CheckpointDigest(checkpoint), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appended, err := writer.RecordStamp(checkpoint, token); err != nil || !appended {
+		t.Fatalf("first stamp: appended=%v err=%v", appended, err)
+	}
+	name := filepath.Join(dir, "audit", StampsName)
+	want, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(name, 0); err != nil {
+		t.Fatal(err)
+	}
+	if held, err := writer.Stamped(checkpoint); err != nil || held {
+		t.Fatalf("the empty file holds no stamp: held=%v err=%v", held, err)
+	}
+	if appended, err := writer.RecordStamp(checkpoint, token); err != nil || !appended {
+		t.Fatalf("stamp after total truncation: appended=%v err=%v", appended, err)
+	}
+	got, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("restored stamps file differs byte for byte:\ngot  %q\nwant %q", got, want)
+	}
+	chain := verifyStamped(t, trail, got, StampOptions{}, tsa)
+	if names := findingNames(chain); len(names) != 0 || chain.Status != "valid" || chain.Coverage.Stamped != (result.AuditCoverageState{Status: "through", Through: 1}) {
+		t.Fatalf("findings=%v status=%s stamped=%+v", names, chain.Status, chain.Coverage.Stamped)
+	}
+}
+
 // A stamps line is read by its exact shape.
 func TestAStampsLineOfAnotherShapeIsUnreadable(t *testing.T) {
 	_, _, trail := chainedTrail(t, 1)

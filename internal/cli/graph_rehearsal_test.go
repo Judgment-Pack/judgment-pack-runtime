@@ -214,3 +214,40 @@ func TestGraphRehearsalLeavesAnExistingTrailUnchanged(t *testing.T) {
 		t.Fatalf("a rehearsal appended to an existing trail:\n%s", after)
 	}
 }
+
+// A refused graph run and a graph rehearsal after a key rotation leave both
+// the signed trail and its sidecar exactly as the hand-over left them.
+func TestGraphRefusalAndRehearsalAfterRotationLeaveTrailAndSidecarUnchanged(t *testing.T) {
+	skipWhereKeysCannotSign(t)
+	firstSeed, _ := generatedKey(t)
+	nextSeed, _ := generatedKey(t)
+	t.Setenv(audit.SigningKeyEnv, firstSeed)
+	configPath, graphPath := graphAuditProject(t)
+	inputs := writeGraphInputs(t, graphHappyInputs)
+	if code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", inputs, "--format", "json"}, ""); code != 0 {
+		t.Fatalf("recorded graph: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if code, stdout, stderr := runTest(t, []string{"audit", "key", "rotate", "--format", "json", "--config", configPath, "--next", nextSeed}, ""); code != 0 {
+		t.Fatalf("rotation: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	trail := filepath.Join(filepath.Dir(configPath), "audit", audit.FileName)
+	sidecar := filepath.Join(filepath.Dir(configPath), "audit", audit.SidecarName)
+	beforeTrail, beforeSidecar := readFileBytes(t, trail), readFileBytes(t, sidecar)
+
+	refused := writeGraphInputs(t, `{"screening":{"facts":{"screening":{"matches":"0"}},"evidence":{"screening-record":"maybe"}}}`)
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath,
+		"--config", configPath, "--inputs", refused, "--format", "json"}, "")
+	if code != result.ExitInvocation || !strings.Contains(stdout, `"JPS-EVALUATION-EVIDENCE-VALUE"`) || strings.Contains(stdout, `"disposition"`) || stderr != "" {
+		t.Fatalf("refusal: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertAuditFilesEqual(t, trail, sidecar, beforeTrail, beforeSidecar)
+
+	t.Setenv(audit.SigningKeyEnv, nextSeed)
+	code, stdout, stderr = runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--rehearsal",
+		"--config", configPath, "--inputs", inputs, "--format", "json"}, "")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"rehearsal":true`) {
+		t.Fatalf("rehearsal: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertAuditFilesEqual(t, trail, sidecar, beforeTrail, beforeSidecar)
+}

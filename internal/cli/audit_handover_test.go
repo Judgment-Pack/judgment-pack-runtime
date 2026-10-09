@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,6 +84,69 @@ func TestADelivererHandsEachCheckpointToAHolder(t *testing.T) {
 	if code != 0 || !strings.HasPrefix(human, "consistent, and witnessed through the held checkpoint at sequence 3") ||
 		!strings.Contains(human, "records: 3 witnessed by a held checkpoint, 0 unwitnessed; stamped: not checked (no --tsa-roots)") {
 		t.Fatalf("human output: %q", human)
+	}
+}
+
+// Rotation writes a hand-over but promotes neither a caller's seed nor its
+// trusted-key list. If the caller archives the old trail before promotion, it
+// can recover custody with the retained next seed, verify the archive under
+// the old list, and start the new trail under a list beginning at that key.
+func TestACallerRecoversCustodyAfterMovingARotatedTrail(t *testing.T) {
+	skipWhereKeysCannotSign(t)
+	firstSeed, firstPublic := generatedKey(t)
+	nextSeed, nextPublic := generatedKey(t)
+	firstSeedBytes, nextSeedBytes := readFileBytes(t, firstSeed), readFileBytes(t, nextSeed)
+	trusted := []string{firstPublic, nextPublic}
+
+	t.Setenv(audit.SigningKeyEnv, firstSeed)
+	configPath, trail := recordedProject(t, 1)
+	_, held, stderr := runTest(t, []string{"audit", "checkpoint", "--config", configPath}, "")
+	if stderr != "" {
+		t.Fatalf("checkpoint: %q", stderr)
+	}
+	heldPath := writeDocument(t, "held.json", held)
+	code, stdout, stderr := runTest(t, []string{"audit", "key", "rotate", "--format", "json", "--config", configPath, "--next", nextSeed}, "")
+	var rotation result.AuditRotation
+	if err := json.Unmarshal([]byte(stdout), &rotation); err != nil || code != 0 || stderr != "" || rotation.At != 1 || rotation.NextPublicKey+"\n" != readFile(t, nextPublic) {
+		t.Fatalf("rotation: exit=%d stdout=%q stderr=%q rotation=%+v err=%v", code, stdout, stderr, rotation, err)
+	}
+	if !bytes.Equal(readFileBytes(t, firstSeed), firstSeedBytes) || !bytes.Equal(readFileBytes(t, nextSeed), nextSeedBytes) ||
+		!slices.Equal(trusted, []string{firstPublic, nextPublic}) {
+		t.Fatal("rotation promoted or changed the caller's retained seeds or trusted-key list")
+	}
+
+	auditDir := filepath.Dir(trail)
+	archive := filepath.Join(filepath.Dir(auditDir), "audit-before-custody-promotion")
+	if err := os.Rename(auditDir, archive); err != nil {
+		t.Fatal(err)
+	}
+	archivedTrail := filepath.Join(archive, audit.FileName)
+	archivedSidecar := filepath.Join(archive, audit.SidecarName)
+	code, old := verification(t, "--trail", archivedTrail, "--signatures", archivedSidecar,
+		"--expect", heldPath, "--public-key", trusted[0], "--public-key", trusted[1])
+	if code != 0 || len(old.Findings) != 0 || old.Held.Status != "matched" || old.Signatures.Rotations != 1 || old.Signatures.KeyInForce != rotation.Next {
+		t.Fatalf("archive: exit=%d findings=%+v held=%+v signatures=%+v", code, old.Findings, old.Held, old.Signatures)
+	}
+
+	// Promotion is the caller's act after the move: retain the next seed and
+	// begin the new trail's trust list with its public half.
+	t.Setenv(audit.SigningKeyEnv, nextSeed)
+	trusted = []string{nextPublic}
+	evaluateOnce(t, configPath)
+	code, current := verification(t, "--config", configPath, "--public-key", trusted[0])
+	if code != 0 || len(current.Findings) != 0 || current.Coverage.SignedRecords != 1 || current.Signatures.FirstKey != rotation.Next ||
+		current.Head == nil || old.Head == nil || current.Head.Trail == old.Head.Trail {
+		t.Fatalf("recovered custody: exit=%d findings=%+v coverage=%+v signatures=%+v heads=%+v/%+v", code, current.Findings, current.Coverage, current.Signatures, old.Head, current.Head)
+	}
+	code, stale := verification(t, "--config", configPath, "--public-key", firstPublic, "--public-key", nextPublic)
+	firstKey, err := audit.ParsePublicKey(readFileBytes(t, firstPublic))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := result.AuditFinding{Name: audit.FindingSignatureInvalid, Line: 1,
+		Detail: "sidecar line 1 does not verify under key " + audit.KeyID(firstKey) + ", the key in force at sequence 1"}
+	if code != result.ExitInvalid || !slices.Equal(stale.Findings, []result.AuditFinding{want}) {
+		t.Fatalf("the old list is not the new trail's list: exit=%d findings=%+v", code, stale.Findings)
 	}
 }
 
