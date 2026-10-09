@@ -786,7 +786,9 @@ input/output, resource, and internal failures use standard error.
 
 The current implementation:
 
-- performs no runtime network requests and never dereferences document locators;
+- fetches nothing for evaluation or input acquisition and never dereferences document locators; the
+  sole exception is requested time-stamping, when it requests and receives a time-stamping
+  authority's token;
 - accepts one explicitly selected regular file or standard input, not URLs or special files;
 - writes only where it was told to, in three ways and no others: a copy of a bundled schema or
   example at the target an operator names with `--write`, which refuses to overwrite an existing
