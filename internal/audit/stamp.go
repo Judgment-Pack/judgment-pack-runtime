@@ -40,13 +40,15 @@ const (
 	// largest reply timestamp.Ask reads, MaxReplyBytes, in base64 with its
 	// checkpoint, so every token Ask returns can be kept and read back.
 	MaxStampLineBytes = 2 << 20
-	// MaxStampsBytes bounds the stamps file a verification reads.
+	// MaxStampsBytes bounds the whole stamps file, both written and verified.
 	MaxStampsBytes = 64 << 20
 )
 
 // The names of the checks a stamp can fail. They are stable: a reader may
 // branch on them.
 const (
+	// FindingStampFileTooLarge means the whole stamps file cannot be verified.
+	FindingStampFileTooLarge = "stamp-file-too-large"
 	// FindingStampMalformed is a stamps line whose token is not a time-stamp
 	// token of the shape RFC 3161 gives it.
 	FindingStampMalformed = "stamp-malformed"
@@ -220,13 +222,23 @@ func (w *Writer) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
 		return false, err
 	}
 	defer file.Close()
-	return holdsStamp(io.LimitReader(file, MaxStampsBytes), checkpoint)
+	info, err := file.Stat()
+	if err != nil {
+		return false, err
+	}
+	if info.Size() > MaxStampsBytes {
+		return false, ErrStampsTooLarge
+	}
+	return holdsStamp(io.NewSectionReader(file, 0, info.Size()), checkpoint)
 }
 
 // ErrStampTooLarge is a token whose stamps line would be longer than
 // MaxStampLineBytes, which a reader passes over as unreadable; it is refused
 // before the stamps file is opened.
 var ErrStampTooLarge = errors.New("the time-stamp token is too large to keep as one stamps line")
+
+// ErrStampsTooLarge refuses a stamps file that exceeds the verification bound.
+var ErrStampsTooLarge = errors.New("the stamps file exceeds the whole-file verification limit")
 
 // RecordStamp keeps a token for checkpoint in the stamps file, under the
 // stamps file's own lock, never the trail's: a decision never waits on a
@@ -242,7 +254,10 @@ func (w *Writer) RecordStamp(checkpoint result.AuditCheckpoint, token []byte) (b
 	}
 	appended := false
 	err := w.root.AppendLocked(w.stampsPath(), func(state fssecure.AppendState) ([]byte, error) {
-		held, err := holdsStamp(io.NewSectionReader(state.Contents, 0, min(state.Size, MaxStampsBytes)), checkpoint)
+		if state.Size > MaxStampsBytes {
+			return nil, ErrStampsTooLarge
+		}
+		held, err := holdsStamp(io.NewSectionReader(state.Contents, 0, state.Size), checkpoint)
 		if err != nil {
 			return nil, err
 		}
@@ -258,6 +273,9 @@ func (w *Writer) RecordStamp(checkpoint result.AuditCheckpoint, token []byte) (b
 			if final[0] != '\n' {
 				line = append([]byte(tornStampLine), line...)
 			}
+		}
+		if int64(len(line)) > MaxStampsBytes-state.Size {
+			return nil, ErrStampsTooLarge
 		}
 		appended = true
 		return line, nil
@@ -328,7 +346,11 @@ func newStampChecker(options *StampOptions) (*stampChecker, error) {
 	if options.Stamps == nil || options.StampsSize <= 0 {
 		return c, nil
 	}
-	reader := bufio.NewReaderSize(io.NewSectionReader(options.Stamps, 0, min(options.StampsSize, MaxStampsBytes)), readChunk)
+	if options.StampsSize > MaxStampsBytes {
+		c.findings = append(c.findings, result.AuditFinding{Name: FindingStampFileTooLarge, Detail: fmt.Sprintf("the stamps file exceeds %d bytes; no stamps were checked", MaxStampsBytes)})
+		return c, nil
+	}
+	reader := bufio.NewReaderSize(io.NewSectionReader(options.Stamps, 0, options.StampsSize), readChunk)
 	for number := int64(1); ; number++ {
 		line, terminated, err := readBoundedLine(reader, MaxStampLineBytes)
 		if err != nil {

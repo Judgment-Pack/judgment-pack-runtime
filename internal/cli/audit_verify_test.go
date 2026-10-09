@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -426,5 +427,49 @@ func TestAuditVerifySaysWhatItDidNotList(t *testing.T) {
 	if !strings.HasPrefix(text, "SEGMENTED: 150 discontinuity record(s)") || !strings.Contains(text, "segment: and 51 more, not listed") ||
 		!strings.Contains(text, "discontinuity: and 50 more, not listed") {
 		t.Fatalf("human output: %q", text)
+	}
+}
+
+// The first signed write creates the sidecar after the reader opens the trail
+// but before it takes the lock. Both project and explicit paths must capture
+// that completed transaction, including its newly created companion.
+func TestAuditSnapshotIncludesFirstSidecarCreation(t *testing.T) {
+	skipWhereKeysCannotSign(t)
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprint(explicit), func(t *testing.T) {
+			t.Setenv(audit.SigningKeyEnv, "")
+			config, trail := recordedProject(t, 1)
+			seed, public := generatedKey(t)
+			t.Setenv(audit.SigningKeyEnv, seed)
+			original := openAuditSnapshot
+			t.Cleanup(func() { openAuditSnapshot = original })
+			wrote := false
+			openAuditSnapshot = func(open func() (*os.File, error), companions ...func() (*os.File, error)) ([]*os.File, []int64, bool, error) {
+				return original(func() (*os.File, error) {
+					file, err := open()
+					if err == nil && !wrote {
+						wrote = true
+						evaluateOnce(t, config)
+					}
+					return file, err
+				}, companions...)
+			}
+			args := []string{"--config", config, "--public-key", public, "--require-signed-through", "2"}
+			if explicit {
+				args[0], args[1] = "--trail", trail
+			}
+			code, got := verification(t, args...)
+			if !wrote || code != 0 || got.Lines != 2 || got.Signatures == nil || got.Signatures.Lines != 1 || got.Coverage.SignedRecords != 1 || got.RequiredSigned.Status != "met" {
+				t.Fatalf("first creation snapshot: exit=%d %+v", code, got)
+			}
+			if runtime.GOOS != "windows" && !got.SnapshotBetweenWrites {
+				t.Fatal("snapshot should hold the shared lock")
+			}
+			openAuditSnapshot = original
+			_, fresh := verification(t, args...)
+			if fresh.Lines != got.Lines || fresh.Coverage != got.Coverage {
+				t.Fatalf("fresh snapshot differs: %+v %+v", got, fresh)
+			}
+		})
 	}
 }

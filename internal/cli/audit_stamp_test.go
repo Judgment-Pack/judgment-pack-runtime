@@ -244,3 +244,30 @@ func TestAuditStampRefusesAnUnchainedTrail(t *testing.T) {
 		t.Fatalf("an unchained trail: exit=%d %s", code, all)
 	}
 }
+
+// An oversized stamps file is an invalid verification in both output formats,
+// even when no stamping requirement was supplied. This test needs no server.
+func TestAuditVerifyReportsOversizedStamps(t *testing.T) {
+	_, trail := recordedProject(t, 1)
+	tsa, err := tsatest.New(tsatest.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := writeDocument(t, "roots.pem", string(tsa.RootPEM()))
+	file, err := os.Create(filepath.Join(filepath.Dir(trail), audit.StampsName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(audit.MaxStampsBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	code, got := verification(t, "--trail", trail, "--tsa-roots", roots)
+	if code != result.ExitInvalid || got.Status != "invalid" || len(got.Findings) != 1 || got.Findings[0].Name != "stamp-file-too-large" || got.Coverage.Stamped.Through != 0 {
+		t.Fatalf("oversized stamps JSON: exit=%d %+v", code, got)
+	}
+	code, stdout, stderr := runTest(t, []string{"audit", "verify", "--trail", trail, "--tsa-roots", roots}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, "INVALID") || !strings.Contains(stdout, "stamp-file-too-large") || !strings.Contains(stdout, "no stamps were checked") {
+		t.Fatalf("oversized stamps human: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}

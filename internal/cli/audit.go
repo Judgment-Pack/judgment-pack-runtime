@@ -79,7 +79,7 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			"A public key under which anyone could sign is refused, as --public-key and in --revoked, and a rotation to one fails: a point of small order, an encoding that is not canonical, or no point of the curve. " +
 			"The records up to the highest one whose own signature holds, with no failed check of the chain at or before it, are signed as one uninterrupted prefix; --require-signed-through <sequence> fails the verification while the records up to that sequence are not all signed. Separately, signedRecords counts individual records whose own signatures hold even after an earlier chain break. A record with no signature is unsigned, never a failure by itself, since a signature that could not be written leaves its decision recorded. " +
 			"A signature shows only that whoever held the key signed: nothing against the operator, who holds it, and nothing after the key is copied. " +
-			"With --tsa-roots <file>, the roots of the time-stamping authorities the verifier trusts (PEM; repeatable), every line of the stamps file beside the trail, or of --stamps <file>, is checked: the token must stamp the SHA-256 of the canonical form of the checkpoint kept with it, its signature and signed attributes must hold, its certificate must be for time-stamping alone and chain to a root supplied at the time the token states, and its policy must be one --tsa-policy <oid> names, when any does; the checkpoint must then match the trail, or the trail was rewritten since. " +
+			"With --tsa-roots <file>, the roots of the time-stamping authorities the verifier trusts (PEM; repeatable), every line of the stamps file beside the trail, or of --stamps <file>, is checked: the token must stamp the SHA-256 of the canonical form of the checkpoint kept with it, its signature and signed attributes must hold, its certificate must be for time-stamping alone and chain to a root supplied at the time the token states, and its policy must be one --tsa-policy <oid> names, when any does; the checkpoint must then match the trail, or the trail was rewritten since. A stamps file larger than 64 MiB fails with stamp-file-too-large; no stamps in it are checked, and the writer refuses appends beyond that bound. " +
 			"--tsa-crls <file> supplies certificate revocation lists (PEM or DER; repeatable): a certificate is checked only against a list from its issuer issued at or after the stamp's time and while it was valid, and a stamp no such list speaks for is reported with its status not checked, never as good. " +
 			"The records up to the highest checkpoint a trusted stamp covers, with no failed check of the trail at or before it, are stamped as one uninterrupted prefix. Separately, stamps.trusted counts trusted stamps whose individual record checkpoints match even after an earlier chain break. The report gives the lag between each prefix-covered record's at and the first trusted stamp covering it; --require-stamped-through <sequence> fails the verification while the records up to that sequence are not all stamped. " +
 			"A stamp shows that its checkpoint existed by the time the authority states, as far as that authority is independent of the operator: not how long before, and a record's at stays the operator's word. " +
@@ -697,6 +697,8 @@ type openedTrail struct {
 	path    string
 	sidecar *os.File
 	stamps  *os.File
+	sizes   []int64
+	locked  bool
 }
 
 func (o openedTrail) close() {
@@ -724,26 +726,31 @@ type companion struct {
 	label       string
 	code        string
 	fromProject func(*project.Project) (*os.File, error)
-	into        **os.File
 }
+
+// openAuditSnapshot lets tests place a writer between the trail open and lock.
+var openAuditSnapshot = fssecure.OpenSnapshot
 
 // openTrailFiles is openTrail, and the companion files asked for too: each at
 // the path given, which must be there, or else the one beside the trail,
-// opened the way the trail was, which may not be.
+// opened the way the trail was, which may not be. Existence, identity and sizes
+// are captured together under the shared trail lock.
 func (a *App) openTrailFiles(command, format, trailPath, configPath string, wanted companions) (openedTrail, error) {
 	if trailPath != "" && configPath != "" {
 		return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-TRAIL", "Pass --trail or --config, not both: one trail is read.")
 	}
 	var opened openedTrail
 	files := []companion{
-		{wanted.sidecar, wanted.sidecarPath, audit.SidecarName, "signature sidecar", "JPS-AUDIT-SIGNATURES-READ", (*project.Project).OpenSidecar, &opened.sidecar},
-		{wanted.stamps, wanted.stampsPath, audit.StampsName, "stamps file", "JPS-AUDIT-STAMPS-READ", (*project.Project).OpenStamps, &opened.stamps},
+		{wanted.sidecar, wanted.sidecarPath, audit.SidecarName, "signature sidecar", "JPS-AUDIT-SIGNATURES-READ", (*project.Project).OpenSidecar},
+		{wanted.stamps, wanted.stampsPath, audit.StampsName, "stamps file", "JPS-AUDIT-STAMPS-READ", (*project.Project).OpenStamps},
 	}
 	for _, each := range files {
 		if each.explicit != "" && (each.explicit == "-" || strings.Contains(each.explicit, "://") || fssecure.IsRemotePath(each.explicit)) {
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", fmt.Sprintf("The %s is read as one local file; pass its path.", each.label))
 		}
 	}
+	var openTrail func() (*os.File, error)
+	var loaded *project.Project
 	if trailPath != "" {
 		if trailPath == "-" {
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The trail is read as a file, not from standard input; pass its path.")
@@ -751,24 +758,11 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 		if strings.Contains(trailPath, "://") || fssecure.IsRemotePath(trailPath) {
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use a local file.")
 		}
-		file, err := a.openInput(trailPath, "the trail")
-		if err != nil {
-			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The trail %s could not be opened as one regular file.", display.Sanitize(trailPath)))
-		}
-		opened.trail, opened.path = file, trailPath
-		for _, each := range files {
-			if !each.wanted || each.explicit != "" {
-				continue
-			}
-			beside := filepath.Join(filepath.Dir(trailPath), each.name)
-			*each.into, err = a.openInput(beside, "the "+each.label)
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				opened.close()
-				return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", each.label, display.Sanitize(beside)))
-			}
-		}
+		opened.path = trailPath
+		openTrail = func() (*os.File, error) { return a.openInput(trailPath, "the trail") }
 	} else {
-		loaded, failure := a.loadProject(configPath, command, format)
+		var failure error
+		loaded, failure = a.loadProject(configPath, command, format)
 		if failure != nil {
 			return openedTrail{}, failure
 		}
@@ -776,38 +770,49 @@ func (a *App) openTrailFiles(command, format, trailPath, configPath string, want
 		if _, declared := loaded.TrailName(); !declared {
 			return openedTrail{}, a.operational(command, format, result.ExitInvocation, "JPS-AUDIT-NOT-DECLARED", notDeclaredMessage)
 		}
-		file, err := loaded.OpenTrail()
-		a.noteInput(file, "the trail")
-		if errors.Is(err, fs.ErrNotExist) {
-			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s does not exist yet: no record has been written.", display.Sanitize(loaded.TrailPath())))
-		}
-		if err != nil {
-			return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", fmt.Sprintf("The project's trail %s could not be opened as one regular file inside the project.", display.Sanitize(loaded.TrailPath())))
-		}
-		opened.trail, opened.path = file, loaded.TrailPath()
-		for _, each := range files {
-			if !each.wanted || each.explicit != "" {
-				continue
-			}
-			*each.into, err = each.fromProject(loaded)
-			a.noteInput(*each.into, "the "+each.label)
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				opened.close()
-				return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The project's %s could not be opened as one regular file inside the project.", each.label))
-			}
+		opened.path = loaded.TrailPath()
+		openTrail = func() (*os.File, error) {
+			file, err := loaded.OpenTrail()
+			a.noteInput(file, "the trail")
+			return file, err
 		}
 	}
-	for _, each := range files {
-		if !each.wanted || each.explicit == "" {
-			continue
+	openers := make([]func() (*os.File, error), len(files))
+	for index, each := range files {
+		openers[index] = func() (*os.File, error) {
+			if !each.wanted {
+				return nil, nil
+			}
+			var file *os.File
+			var err error
+			switch {
+			case each.explicit != "":
+				file, err = a.openInput(each.explicit, "the "+each.label)
+			case loaded != nil:
+				file, err = each.fromProject(loaded)
+				a.noteInput(file, "the "+each.label)
+			default:
+				file, err = a.openInput(filepath.Join(filepath.Dir(trailPath), each.name), "the "+each.label)
+			}
+			if errors.Is(err, fs.ErrNotExist) && each.explicit == "" {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s could not be opened as one regular file.", each.label))
+			}
+			return file, nil
 		}
-		file, err := a.openInput(each.explicit, "the "+each.label)
-		if err != nil {
-			opened.close()
-			return openedTrail{}, a.operational(command, format, result.ExitIO, each.code, fmt.Sprintf("The %s %s could not be opened as one regular file.", each.label, display.Sanitize(each.explicit)))
-		}
-		*each.into = file
 	}
+	snapshot, sizes, locked, err := openAuditSnapshot(openTrail, openers...)
+	if err != nil {
+		var handled *handledExit
+		if errors.As(err, &handled) {
+			return openedTrail{}, err
+		}
+		return openedTrail{}, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail could not be opened and read between writes.")
+	}
+	opened.trail, opened.sidecar, opened.stamps = snapshot[0], snapshot[1], snapshot[2]
+	opened.sizes, opened.locked = sizes, locked
 	return opened, nil
 }
 
@@ -823,7 +828,11 @@ func (a *App) readTrail(command, format string, file *os.File, options audit.Opt
 // trail's lock. The stamps file is appended under its own lock, and a line a
 // write left incomplete when its size was read is read as unreadable.
 func (a *App) readTrailWith(command, format string, opened openedTrail, options audit.Options) (audit.Report, bool, error) {
-	sizes, locked, err := fssecure.SizesBetweenWrites(opened.trail, opened.sidecar, opened.stamps)
+	sizes, locked := opened.sizes, opened.locked
+	var err error
+	if sizes == nil {
+		sizes, locked, err = fssecure.SizesBetweenWrites(opened.trail, opened.sidecar, opened.stamps)
+	}
 	if err != nil {
 		return audit.Report{}, false, a.operational(command, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The trail's size could not be read between writes.")
 	}
