@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.28.0 - 2026-10-09
 
 - **Audit snapshots and stamp bounds fail closed with actionable diagnostics.** `audit verify`,
   `audit checkpoint` and `audit stamp` open the trail and requested signature and stamp companions
