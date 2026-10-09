@@ -883,6 +883,83 @@ func TestARepairSignsItsDiscontinuityRecord(t *testing.T) {
 	}
 }
 
+// Each hand-over changes only the sidecar. Across a torn trail write and its
+// repair, the earlier trail and sidecar bytes remain prefixes, the damaged
+// bytes remain verbatim, and the two rotations and three record signatures
+// are exactly the lines their keys produce.
+func TestRotationsAndRepairPreserveEveryHandedOverByte(t *testing.T) {
+	first, second, third := signerOf(t, vectorSeed1), signerOf(t, vectorSeed2), thirdSigner(t)
+	root, dir := signedTrail(t, first, 1)
+	trail1, sidecar1 := readTrailFile(t, dir), readSidecar(t, dir)
+	line1 := splitLines(trail1)[0]
+	identity := readChain(t, line1).trail
+
+	firstWriter := NewWriter(root, "audit", true)
+	firstWriter.SignWith(first)
+	if _, err := firstWriter.Rotate(second); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTrailFile(t, dir); !bytes.Equal(got, trail1) {
+		t.Fatalf("the first hand-over changed the trail:\n%s", got)
+	}
+	rotation1 := first.RotationLine(identity, 1, second.public)
+	if got, want := readSidecar(t, dir), slices.Concat(sidecar1, rotation1); !bytes.Equal(got, want) {
+		t.Fatalf("first hand-over bytes:\ngot  %q\nwant %q", got, want)
+	}
+
+	const damage = `{"incomplete":`
+	appendRaw(t, dir, damage)
+	repairer := NewWriter(root, "audit", true)
+	repairer.SignWith(second)
+	repaired, err := repairer.Repair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRepair := readTrailFile(t, dir)
+	if !bytes.HasPrefix(afterRepair, append(slices.Clone(trail1), damage...)) {
+		t.Fatalf("repair did not preserve the trail and damaged bytes: %q", afterRepair)
+	}
+	lines := splitLines(afterRepair)
+	if repaired.Line != 3 || repaired.DamagedLine != 2 || len(lines) != 3 || string(lines[1]) != damage {
+		t.Fatalf("repair=%+v lines=%q", repaired, lines)
+	}
+	signedRepair, err := second.SignRecordLine(lines[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantThroughRepair := slices.Concat(sidecar1, rotation1, signedRepair)
+	if got := readSidecar(t, dir); !bytes.Equal(got, wantThroughRepair) {
+		t.Fatalf("repair sidecar bytes:\ngot  %q\nwant %q", got, wantThroughRepair)
+	}
+
+	if _, err := repairer.Rotate(third); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTrailFile(t, dir); !bytes.Equal(got, afterRepair) {
+		t.Fatalf("the second hand-over changed repaired trail bytes:\n%s", got)
+	}
+	rotation2 := second.RotationLine(identity, 3, third.public)
+	if got, want := readSidecar(t, dir), slices.Concat(wantThroughRepair, rotation2); !bytes.Equal(got, want) {
+		t.Fatalf("second hand-over bytes:\ngot  %q\nwant %q", got, want)
+	}
+	appendSigned(t, root, third, `{"n":"after"}`)
+	trail := readTrailFile(t, dir)
+	allLines := splitLines(trail)
+	signedLast, err := third.SignRecordLine(allLines[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSidecar := slices.Concat(wantThroughRepair, rotation2, signedLast)
+	if got := readSidecar(t, dir); !bytes.Equal(got, wantSidecar) {
+		t.Fatalf("final sidecar bytes:\ngot  %q\nwant %q", got, wantSidecar)
+	}
+	chain := verifySigned(t, trail, wantSidecar, SignatureOptions{Keys: keys(first, second, third)})
+	if names := findingNames(chain); len(names) != 0 || chain.Status != "segmented" || chain.Coverage.Chained != 3 || chain.Coverage.Damaged != 1 ||
+		chain.Coverage.SignedRecords != 3 || chain.Coverage.Signed.Through != 4 || chain.Signatures.Rotations != 2 {
+		t.Fatalf("findings=%v status=%s coverage=%+v signatures=%+v", names, chain.Status, chain.Coverage, chain.Signatures)
+	}
+}
+
 // Writers racing on one trail, each signing with the one key, leave a sidecar
 // whose lines follow the trail's exactly: one lock covers both files.
 func TestSigningWritersRacingKeepTheSidecarInStep(t *testing.T) {
