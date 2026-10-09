@@ -101,9 +101,40 @@ func TestAnIntactTrailVerifies(t *testing.T) {
 	if len(chain.Segments) != 1 || chain.Segments[0] != (result.AuditSegment{FirstLine: 1, LastLine: 4}) {
 		t.Fatalf("segments = %+v", chain.Segments)
 	}
-	if len(chain.Establishes) != 1 || chain.Establishes[0] != establishesConsistency ||
+	wantStatement := "The chain-link checks passed through sequence 4, the last chained record and end of the committed prefix."
+	if len(chain.Establishes) != 1 || chain.Establishes[0] != wantStatement ||
 		!containsString(chain.DoesNotEstablish, notLastLine) || !containsString(chain.DoesNotEstablish, notComplete) || !containsString(chain.DoesNotEstablish, notSignedUnchecked) {
 		t.Fatalf("statements = %v / %v", chain.Establishes, chain.DoesNotEstablish)
+	}
+}
+
+// A chained record commits no unchained suffix after it. Editing such a
+// suffix changes neither the checks that passed nor the prefix they describe.
+func TestConsistencyStatementExcludesAnUnchainedSuffix(t *testing.T) {
+	_, _, prefix := chainedTrail(t, 1)
+	tailA := append(append([]byte{}, prefix...), []byte("{\"tail\":1}\n{\"tail\":2}\n")...)
+	tailB := bytes.Replace(tailA, []byte(`{"tail":1}`), []byte(`{"tail":9}`), 1)
+	want := "The chain-link checks passed through sequence 1, the last chained record and end of the committed prefix; the 2 uncovered line(s) after it are outside that prefix."
+	for name, trail := range map[string][]byte{"original": tailA, "edited penultimate line": tailB} {
+		t.Run(name, func(t *testing.T) {
+			chain := verifyBytes(t, trail, nil)
+			if chain.Status != "valid" || chain.Coverage.Chained != 1 || chain.Coverage.Uncovered != 2 ||
+				len(chain.Establishes) != 1 || chain.Establishes[0] != want {
+				t.Fatalf("coverage=%+v establishes=%q", chain.Coverage, chain.Establishes)
+			}
+		})
+	}
+}
+
+// With no chained record there was no chain-link check and no committed
+// prefix for the report to imply.
+func TestWhollyUnchainedTrailHasNoConsistencyStatement(t *testing.T) {
+	trail := []byte("{\"line\":1}\n{\"line\":2}\n")
+	chain := verifyBytes(t, trail, nil)
+	want := "That the lines form a chained history: no chained record was found, so all 2 line(s) are uncovered."
+	if chain.Status != "valid" || chain.Coverage.Chained != 0 || chain.Coverage.Uncovered != 2 ||
+		len(chain.Establishes) != 0 || !containsString(chain.DoesNotEstablish, want) {
+		t.Fatalf("coverage=%+v establishes=%q doesNotEstablish=%q", chain.Coverage, chain.Establishes, chain.DoesNotEstablish)
 	}
 }
 

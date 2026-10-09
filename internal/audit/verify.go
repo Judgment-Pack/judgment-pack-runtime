@@ -77,28 +77,30 @@ const maxFindings = 100
 // The statements a report makes about what its result does and does not
 // establish. They are fixed sentences, so a reader can compare them.
 const (
-	establishesConsistency = "The chained lines are consistent with one another: no line before the last was edited, inserted, deleted or moved without breaking a link, and the lines before the first chained line are the block its previous commits to."
-	establishesCheckpoint  = "Lines 1 to %d are the lines that existed when the checkpoint was made, if the checkpoint was held independently of the trail's operator."
-	notLastLine            = "The last line, and any lines rewritten from some point on with their links recomputed, are not authenticated by the chain: only a checkpoint covering them, held independently of the operator, shows they are the ones first written."
-	notLastLineAfter       = "Lines after %d, the checkpoint's sequence, are not authenticated by the chain: only a later checkpoint covering them, held independently of the operator, shows they are the ones first written."
-	notComplete            = "That the trail is complete: a trail cut short is as consistent as the whole one, and nothing here says which decisions were never written to it."
-	notCompleteAfter       = "That the trail is complete after line %d: lines removed from its end since the checkpoint was made are not missed."
-	notTime                = "That any record's at is true: it is the operator's clock."
-	notSignedUnchecked     = "Who wrote any record: no public key was supplied, so no signature was checked."
-	establishesSigned      = "Lines 1 to %d are as they stood when the signature on record %[1]d was made: altering any of them since takes one of the signing keys from the first public key supplied to the one in force at that record."
-	notSignedAfter         = "Lines after %d are not covered by any signature that was checked: a record signed later, or never, is not authenticated by any key."
-	notSignedNone          = "That any line was signed by a key supplied: no signature that was checked covers one."
-	notAgainstOperator     = "Anything against the operator, who holds the signing key: a record the operator altered and signed again, or a trail the operator rewrote from some point on and signed, verifies like the one first written; only a checkpoint held by someone else shows the difference."
-	notAfterTheft          = "Anything after a signing key was copied or stolen: whoever holds it can sign altered records, or a rotation to a key of their own, and only the verifier's own trust configuration refuses what they sign, by revoking that key from the sequence it was taken at and by naming the keys the trail rotates through."
-	notSegmented           = "That the history is intact across a discontinuity: a repair keeps the damaged line in place and links over it, so what the damaged line held is not part of any segment."
-	notHeldAll             = "That the holder kept every checkpoint handed to it, or that none later than those supplied exists: the coverage reaches only the checkpoints supplied here."
-	notStampedUnchecked    = "When any checkpoint existed: no time-stamping roots were supplied, so no stamp was checked."
-	establishesStamped     = "Lines 1 to %d existed by %s, as a time-stamping authority under a root supplied attests: the time it states, plus the accuracy it states."
-	notStampedAfter        = "That lines after %d existed by any time: no trusted stamp covers them."
-	notStampedNone         = "That any line existed by any time: no trusted stamp covers one."
-	notBeforeStamp         = "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each record's at and the first stamp covering it is reported, and judging it is the reader's."
-	notAgainstAuthority    = "Anything against a time-stamping authority that is not independent of the operator: one that colludes can stamp what it is asked, when it is asked; a root supplied is trusted because the verifier chose it."
-	notRevocationChecked   = "That no time-stamping certificate was revoked as of its stamp's time, for %d trusted stamp(s): no revocation list supplied speaks for that time, so their status was not checked."
+	establishesConsistency           = "The chain-link checks passed through sequence %d, the last chained record and end of the committed prefix."
+	establishesConsistencyBeforeTail = "The chain-link checks passed through sequence %d, the last chained record and end of the committed prefix; the %d uncovered line(s) after it are outside that prefix."
+	notChained                       = "That the lines form a chained history: no chained record was found, so all %d line(s) are uncovered."
+	establishesCheckpoint            = "Lines 1 to %d are the lines that existed when the checkpoint was made, if the checkpoint was held independently of the trail's operator."
+	notLastLine                      = "The last line, and any lines rewritten from some point on with their links recomputed, are not authenticated by the chain: only a checkpoint covering them, held independently of the operator, shows they are the ones first written."
+	notLastLineAfter                 = "Lines after %d, the checkpoint's sequence, are not authenticated by the chain: only a later checkpoint covering them, held independently of the operator, shows they are the ones first written."
+	notComplete                      = "That the trail is complete: a trail cut short is as consistent as the whole one, and nothing here says which decisions were never written to it."
+	notCompleteAfter                 = "That the trail is complete after line %d: lines removed from its end since the checkpoint was made are not missed."
+	notTime                          = "That any record's at is true: it is the operator's clock."
+	notSignedUnchecked               = "Who wrote any record: no public key was supplied, so no signature was checked."
+	establishesSigned                = "Lines 1 to %d are as they stood when the signature on record %[1]d was made: altering any of them since takes one of the signing keys from the first public key supplied to the one in force at that record."
+	notSignedAfter                   = "Lines after %d are not authenticated as one uninterrupted prefix by any signature that was checked; a later record can still have a valid signature of its own, as the signed-record count reports."
+	notSignedNone                    = "No uninterrupted prefix from line 1 is authenticated by a signature that was checked; individual records can still have valid signatures of their own, as the signed-record count reports."
+	notAgainstOperator               = "Anything against the operator, who holds the signing key: a record the operator altered and signed again, or a trail the operator rewrote from some point on and signed, verifies like the one first written; only a checkpoint held by someone else shows the difference."
+	notAfterTheft                    = "Anything after a signing key was copied or stolen: whoever holds it can sign altered records, or a rotation to a key of their own, and only the verifier's own trust configuration refuses what they sign, by revoking that key from the sequence it was taken at and by naming the keys the trail rotates through."
+	notSegmented                     = "That the history is intact across a discontinuity: a repair keeps the damaged line in place and links over it, so what the damaged line held is not part of any segment."
+	notHeldAll                       = "That the holder kept every checkpoint handed to it, or that none later than those supplied exists: the coverage reaches only the checkpoints supplied here."
+	notStampedUnchecked              = "When any checkpoint existed: no time-stamping roots were supplied, so no stamp was checked."
+	establishesStamped               = "Lines 1 to %d existed by %s, as a time-stamping authority under a root supplied attests: the time it states, plus the accuracy it states."
+	notStampedAfter                  = "Lines after %d are not shown as one uninterrupted prefix to have existed by any time; a trusted stamp can still authenticate an individual record's checkpoint after that point, as the trusted-stamp count reports."
+	notStampedNone                   = "No uninterrupted prefix from line 1 is shown to have existed by any time; trusted stamps can still authenticate individual record checkpoints, as the trusted-stamp count reports."
+	notBeforeStamp                   = "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each record's at and the first stamp covering it is reported, and judging it is the reader's."
+	notAgainstAuthority              = "Anything against a time-stamping authority that is not independent of the operator: one that colludes can stamp what it is asked, when it is asked; a root supplied is trusted because the verifier chose it."
+	notRevocationChecked             = "That no time-stamping certificate was revoked as of its stamp's time, for %d trusted stamp(s): no revocation list supplied speaks for that time, so their status was not checked."
 	// The sentences of a witness's statements (gateway ADR-0013 §6), the first
 	// eight as the record states them. notCountersignedNone and
 	// notWitnessConflict are this runtime's, for what the record decides
@@ -920,10 +922,17 @@ func (v *verifier) checkRequirement(chain *result.AuditChain) {
 // check beyond the findings themselves.
 func statements(chain result.AuditChain) ([]string, []string) {
 	establishes := []string{}
-	if chain.Status != "invalid" {
-		establishes = append(establishes, establishesConsistency)
+	if chain.Status != "invalid" && chain.Coverage.Chained > 0 {
+		if chain.Coverage.Uncovered > 0 {
+			establishes = append(establishes, fmt.Sprintf(establishesConsistencyBeforeTail, chain.Head.Sequence, chain.Coverage.Uncovered))
+		} else {
+			establishes = append(establishes, fmt.Sprintf(establishesConsistency, chain.Head.Sequence))
+		}
 	}
 	notEstablished := []string{}
+	if chain.Coverage.Chained == 0 {
+		notEstablished = append(notEstablished, fmt.Sprintf(notChained, chain.Coverage.Uncovered))
+	}
 	if chain.Coverage.Checkpointed.Status == "through" {
 		through := chain.Coverage.Checkpointed.Through
 		establishes = append(establishes, fmt.Sprintf(establishesCheckpoint, through))

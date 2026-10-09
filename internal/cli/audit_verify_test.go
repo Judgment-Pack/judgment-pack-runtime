@@ -120,6 +120,19 @@ func TestAuditVerifyExitsByTheChain(t *testing.T) {
 	}
 }
 
+func TestAuditVerifyHelpDistinguishesPrefixAndDirectEvidence(t *testing.T) {
+	help := (&App{}).auditVerifyCommand().Long
+	for _, want := range []string{
+		"unchained lines after it are uncovered and outside that prefix, and a file with no chained record has no chained history",
+		"signedRecords counts individual records whose own signatures hold even after an earlier chain break",
+		"stamps.trusted counts trusted stamps whose individual record checkpoints match even after an earlier chain break",
+	} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("audit verify help does not contain %q", want)
+		}
+	}
+}
+
 // audit checkpoint prints the canonical checkpoint document of the last
 // chained record, which verify --expect reads back: the trail matches it until
 // its last record is edited or it is cut short, which the chain alone does not
