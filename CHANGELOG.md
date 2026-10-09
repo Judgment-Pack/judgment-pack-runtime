@@ -4,6 +4,20 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Audit snapshots and stamp bounds fail closed with actionable diagnostics.** `audit verify`,
+  `audit checkpoint` and `audit stamp` open the trail and requested signature and stamp companions
+  under one shared trail lock, identity-check their names there, and read the sizes captured by that
+  acquisition. Missing and non-regular inputs again name their paths, and a new project's absent
+  trail again says that no record has been written.
+  - A stamps file over 64 MiB makes verification fail with `stamp-file-too-large`; it is not read.
+    `audit stamp` uses `JPS-AUDIT-STAMPS-TOO-LARGE` for an oversized file and refuses before asking
+    the authority whenever fewer than 2 MiB remain, because a maximum-size stamp line would not fit.
+    Move a full file aside and keep it, then run `audit stamp` again to start a new one.
+  - An earlier release could write a stamps file past 64 MiB. On upgrade that makes the trail
+    invalid until the oversized stamps file is moved aside; keep it as evidence rather than
+    truncating or rewriting it. A lost authority reply is recovered by running `audit stamp` again
+    only while the stamps file still has room.
+
 - **`audit verify` reads a checkpoint witness's statements** (gateway ADR-0013, PR 4 of 6;
   Judgment-Pack/judgment-pack-gateway#199). A witness is a gateway run by a party other than the
   trail's operator that signs the checkpoints handed to it, chains its statements per trail and

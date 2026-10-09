@@ -596,3 +596,134 @@ func TestAStampTooLargeToReadBackIsRefusedBeforeWriting(t *testing.T) {
 		t.Fatalf("no stamps file is created: %v", err)
 	}
 }
+
+// A trusted mismatch beyond the whole-file bound must never be hidden by a
+// successful prefix verification. No coverage is claimed for an oversized file.
+func TestOversizedStampsDoNotVerifyAPrefix(t *testing.T) {
+	_, _, trail := chainedTrail(t, 3)
+	tsa := testAuthority(t, tsatest.Options{})
+	good := stampOf(t, tsa, checkpointAt(t, trail, 3))
+	wrong := checkpointAt(t, trail, 2)
+	wrong.RecordDigest = "sha256:" + strings.Repeat("ab", 32)
+	bad := stampOf(t, tsa, wrong)
+	short := verifyStamped(t, trail, slices.Concat(good, bad), StampOptions{RequireThrough: 3}, tsa)
+	if short.Status != "invalid" || !slices.Contains(findingNames(short), "stamp-checkpoint-mismatch@2") {
+		t.Fatalf("the mismatch must fail: %+v", short)
+	}
+	stamps := make([]byte, MaxStampsBytes+1, MaxStampsBytes+1+len(bad))
+	copy(stamps, good)
+	stamps[len(stamps)-1] = '\n'
+	stamps = append(stamps, bad...)
+	chain := verifyStamped(t, trail, stamps, StampOptions{RequireThrough: 3}, tsa)
+	if chain.Status != "invalid" || !slices.Contains(findingNames(chain), "stamp-file-too-large@0") || chain.Coverage.Stamped.Through != 0 || chain.RequiredStamped.Status != "unmet" || chain.Stamps.Lines != 0 {
+		t.Fatalf("an oversized file cannot verify a prefix: %v %+v", findingNames(chain), chain)
+	}
+}
+
+// The writer and reader agree at the inclusive boundary, including bytes used
+// to end a torn line. An oversized file cannot hide a later duplicate from a
+// retry: both writer entry points refuse it without appending.
+func TestStampsWholeFileBoundary(t *testing.T) {
+	root, dir, trail := chainedTrail(t, 1)
+	writer := NewWriter(root, "audit", true)
+	checkpoint := checkpointAt(t, trail, 1)
+	tsa := testAuthority(t, tsatest.Options{})
+	line := stampOf(t, tsa, checkpoint)
+	parsed := parseStampLine(bytes.TrimSuffix(line, []byte("\n")))
+	name := filepath.Join(dir, "audit", StampsName)
+	for _, torn := range []bool{false, true} {
+		for _, extra := range []int64{0, 1} {
+			t.Run(fmt.Sprintf("torn=%v/extra=%d", torn, extra), func(t *testing.T) {
+				padding := int64(MaxStampsBytes-len(line)) + extra
+				if torn {
+					padding -= int64(len(tornStampLine))
+				}
+				file, err := os.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := file.Truncate(padding); err != nil {
+					t.Fatal(err)
+				}
+				if !torn {
+					if _, err := file.WriteAt([]byte("\n"), padding-1); err != nil {
+						t.Fatal(err)
+					}
+				}
+				file.Close()
+				appended, err := writer.RecordStamp(checkpoint, parsed.token)
+				if extra != 0 {
+					if appended || !errors.Is(err, ErrStampsTooLarge) {
+						t.Fatalf("crossing the bound: %v %v", appended, err)
+					}
+					info, err := os.Stat(name)
+					if err != nil || info.Size() != padding {
+						t.Fatalf("refused append changed size: %v %v", info, err)
+					}
+					return
+				}
+				if err != nil || !appended {
+					t.Fatalf("at the bound: %v %v", appended, err)
+				}
+				if held, err := writer.Stamped(checkpoint); err != nil || !held {
+					t.Fatalf("at the bound: %v %v", held, err)
+				}
+				if appended, err := writer.RecordStamp(checkpoint, parsed.token); err != nil || appended {
+					t.Fatalf("retry at the bound: %v %v", appended, err)
+				}
+				data, err := os.ReadFile(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				chain := verifyStamped(t, trail, data, StampOptions{}, tsa)
+				if chain.Status != "valid" || chain.Coverage.Stamped.Through != 1 {
+					t.Fatalf("reader at bound: %+v", chain)
+				}
+			})
+		}
+	}
+	file, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(MaxStampsBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteAt(append([]byte("\n"), line...), MaxStampsBytes); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	if held, err := writer.Stamped(checkpoint); held || !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("duplicate past cutoff: %v %v", held, err)
+	}
+	if appended, err := writer.RecordStamp(checkpoint, parsed.token); appended || !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("retry past cutoff: %v %v", appended, err)
+	}
+	info, err := os.Stat(name)
+	if err != nil || info.Size() != int64(MaxStampsBytes+1+len(line)) {
+		t.Fatalf("oversized file changed: %v %v", info, err)
+	}
+}
+
+func TestCheckStampRoomReservesAMaximumSizeLine(t *testing.T) {
+	root, dir, _ := chainedTrail(t, 1)
+	writer := NewWriter(root, "audit", true)
+	name := filepath.Join(dir, "audit", StampsName)
+	file, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(MaxStampsBytes - MaxStampLineBytes); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	if err := writer.CheckStampRoom(); err != nil {
+		t.Fatalf("exact room for one line: %v", err)
+	}
+	if err := os.Truncate(name, MaxStampsBytes-MaxStampLineBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.CheckStampRoom(); !errors.Is(err, ErrStampsTooLarge) {
+		t.Fatalf("one byte short: %v", err)
+	}
+}

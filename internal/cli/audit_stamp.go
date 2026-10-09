@@ -65,12 +65,12 @@ func (a *App) auditStampCommand() *cobra.Command {
 			if parsed, err := url.Parse(address); err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-STAMP", "The time-stamping authority's address must be an http or https URL.")
 			}
-			file, shownPath, failure := a.openTrail(commandName, format, "", configPath)
+			opened, failure := a.openTrail(commandName, format, "", configPath)
 			if failure != nil {
 				return failure
 			}
-			defer file.Close()
-			report, _, failure := a.readTrail(commandName, format, file, audit.Options{})
+			defer opened.close()
+			report, _, failure := a.readTrailWith(commandName, format, opened, audit.Options{})
 			if failure != nil {
 				return failure
 			}
@@ -89,14 +89,22 @@ func (a *App) auditStampCommand() *cobra.Command {
 				Tool:          result.CurrentTool(),
 				Command:       commandName,
 				Status:        "already-stamped",
-				TrailPath:     shownPath,
+				TrailPath:     opened.path,
 				Checkpoint:    checkpoint,
 			}
 			stamped, err := writer.Stamped(checkpoint)
+			if errors.Is(err, audit.ErrStampsTooLarge) {
+				return a.stampsTooLarge(commandName, format, "The stamps file is larger than its 67108864-byte limit, so it could not be checked and no authority was asked.")
+			}
 			if err != nil {
 				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-READ", "The stamps file could not be read to see whether the checkpoint is stamped already.")
 			}
 			if !stamped {
+				if err := writer.CheckStampRoom(); errors.Is(err, audit.ErrStampsTooLarge) {
+					return a.stampsTooLarge(commandName, format, "The stamps file has no room for another maximum-size stamp line within its 67108864-byte limit, so no authority was asked.")
+				} else if err != nil {
+					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-READ", "The stamps file's size could not be read before asking the authority.")
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)
 				defer cancel()
 				der, token, err := timestamp.Ask(ctx, http.DefaultClient, address, audit.CheckpointDigest(checkpoint))
@@ -104,6 +112,9 @@ func (a *App) auditStampCommand() *cobra.Command {
 					return a.stampFailure(commandName, format, err)
 				}
 				appended, err := writer.RecordStamp(checkpoint, der)
+				if errors.Is(err, audit.ErrStampsTooLarge) {
+					return a.stampsTooLarge(commandName, format, "The stamps file filled before the token could be kept; the trail and the decisions in it are as they were.")
+				}
 				if err != nil {
 					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-WRITE", "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the same checkpoint.")
 				}
@@ -135,6 +146,10 @@ func (a *App) auditStampCommand() *cobra.Command {
 	command.Flags().StringVar(&authority, "tsa", authority, "the time-stamping authority's http or https address; without it, the audit member's timestampAuthority")
 	command.Flags().DurationVar(&timeout, "timeout", timeout, "how long to wait for the authority")
 	return command
+}
+
+func (a *App) stampsTooLarge(commandName, format, message string) error {
+	return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-TOO-LARGE", message+" Move stamps.jsonl aside and keep it, then run audit stamp again to start a new stamps file.")
 }
 
 // stampFailure reports an authority that could not stamp, never with its

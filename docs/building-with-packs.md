@@ -923,9 +923,11 @@ again after unchained lines keeping its identity, chained lines recognised by th
 and a line over 128 MiB refused rather than guessed at. It exits 1 when any check fails, each a
 named finding (`previous-mismatch`, `sequence-mismatch`, `trail-mismatch`, `incomplete-last-line`,
 `line-too-long`, and the discontinuity and checkpoint findings below), and 0 otherwise, with the
-report in `--format json` under `outputVersion` `"2"`. The size is read under the writer's lock,
-shared, so it falls between two writes, and the bytes before it are read without the lock:
-writers only append, so a verification neither delays a decision nor sees half of one.
+report in `--format json` under `outputVersion` `"2"`. The trail and each requested companion
+(the signature sidecar and stamps file) are opened and identity-checked under the writer's shared
+trail lock, and their sizes are captured there, so the snapshot falls between two writes. The bytes
+before those sizes are read without the lock: writers only append, so a verification neither delays
+a decision nor sees half of one.
 
 The report gives the coverage: lines before the first chained line, committed as one block;
 chained lines; unchained lines a later chained line commits to; lines nothing commits to (after
@@ -1051,7 +1053,19 @@ jpack audit verify --tsa-roots tsa-roots.pem         # check every stamp against
   written under its own lock, never the trail's.
 - **Idempotent by the checkpoint's digest.** A checkpoint already stamped is not asked for again, and
   a token for it from a concurrent stamp is not kept twice. A lost reply is recovered by running
-  `audit stamp` again: it stamps the same checkpoint, or the newer one if records were added.
+  `audit stamp` again, while the stamps file has room: it stamps the same checkpoint, or the newer
+  one if records were added.
+
+The whole stamps file is bounded at 64 MiB (67,108,864 bytes), and one line at 2 MiB. Verification
+does not read a file over the whole-file bound: the trail is `invalid` with
+`stamp-file-too-large`, with no stamp coverage credited. `audit stamp` refuses before contacting
+the authority when a maximum-size line would no longer fit, under
+`JPS-AUDIT-STAMPS-TOO-LARGE`. Move a full `stamps.jsonl` aside and keep it unchanged, then run
+`audit stamp` again to create a new file; the archived file remains evidence and can be kept with
+the corresponding trail copy. Releases before this bound could already have written a file larger
+than 64 MiB. On upgrade such a file makes the trail invalid even though the earlier release accepted
+it; the remedy is likewise to move it aside and retain it, not truncate or rewrite its evidence,
+then stamp the current checkpoint into a new file.
 
 `audit verify --tsa-roots <file>`, the PEM roots of the authorities you trust, checks every line of
 the stamps file beside the trail, or of `--stamps <file>`. Which authorities are trusted is the

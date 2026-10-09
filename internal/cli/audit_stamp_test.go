@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,10 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp/tsatest"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
 
 // testAuthorityServer is a time-stamping authority on a local test server,
 // and its root in a PEM file; no test asks a real authority.
@@ -242,5 +247,70 @@ func TestAuditStampRefusesAnUnchainedTrail(t *testing.T) {
 	}
 	if code, _, all := stamping(t, "--config", configPath, "--tsa", server.URL); code != result.ExitInvocation || !strings.Contains(all, `"JPS-AUDIT-STAMP-UNCHAINED"`) {
 		t.Fatalf("an unchained trail: exit=%d %s", code, all)
+	}
+}
+
+// An oversized stamps file is an invalid verification in both output formats,
+// even when no stamping requirement was supplied. This test needs no server.
+func TestAuditVerifyReportsOversizedStamps(t *testing.T) {
+	_, trail := recordedProject(t, 1)
+	tsa, err := tsatest.New(tsatest.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := writeDocument(t, "roots.pem", string(tsa.RootPEM()))
+	file, err := os.Create(filepath.Join(filepath.Dir(trail), audit.StampsName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(audit.MaxStampsBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	code, got := verification(t, "--trail", trail, "--tsa-roots", roots)
+	if code != result.ExitInvalid || got.Status != "invalid" || len(got.Findings) != 1 || got.Findings[0].Name != "stamp-file-too-large" || got.Coverage.Stamped.Through != 0 {
+		t.Fatalf("oversized stamps JSON: exit=%d %+v", code, got)
+	}
+	code, stdout, stderr := runTest(t, []string{"audit", "verify", "--trail", trail, "--tsa-roots", roots}, "")
+	if code != result.ExitInvalid || !strings.Contains(stdout, "INVALID") || !strings.Contains(stdout, "stamp-file-too-large") || !strings.Contains(stdout, "no stamps were checked") ||
+		!strings.Contains(stdout, "stamps file: not read because it exceeds 67108864 bytes") || strings.Contains(stdout, "stamps file: 0 line(s), 0 unreadable") {
+		t.Fatalf("oversized stamps human: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+// A stamps file with no room for the largest accepted line is refused before
+// any HTTP request. A file already beyond the verification bound gets the same
+// dedicated operational code and is described as too large, not unreadable.
+func TestAuditStampRefusesAFullStampsFileBeforeAsking(t *testing.T) {
+	configPath, trail := recordedProject(t, 1)
+	name := filepath.Join(filepath.Dir(trail), audit.StampsName)
+	file, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(audit.MaxStampsBytes - audit.MaxStampLineBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	originalTransport := http.DefaultClient.Transport
+	requests := 0
+	http.DefaultClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return nil, errors.New("request must not be made")
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
+
+	code, _, all := stamping(t, "--config", configPath, "--tsa", "https://tsa.invalid/stamp")
+	if code != result.ExitIO || requests != 0 || !strings.Contains(all, `"JPS-AUDIT-STAMPS-TOO-LARGE"`) || !strings.Contains(all, "no authority was asked") {
+		t.Fatalf("full file: exit=%d requests=%d output=%q", code, requests, all)
+	}
+	if err := os.Truncate(name, audit.MaxStampsBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	code, _, all = stamping(t, "--config", configPath, "--tsa", "https://tsa.invalid/stamp")
+	if code != result.ExitIO || requests != 0 || !strings.Contains(all, `"JPS-AUDIT-STAMPS-TOO-LARGE"`) || !strings.Contains(all, "larger than its 67108864-byte limit") || strings.Contains(all, "could not be read to see") {
+		t.Fatalf("oversized file: exit=%d requests=%d output=%q", code, requests, all)
 	}
 }
