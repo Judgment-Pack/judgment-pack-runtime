@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,6 +19,12 @@ import (
 
 // maxStampTimeout bounds how long audit stamp waits for an authority.
 const maxStampTimeout = 10 * time.Minute
+
+// beforeStampAppend lets tests fail or move files after the authority replies.
+// It is nil outside tests.
+var beforeStampAppend func() error
+
+var errStampTrailMoved = errors.New("the stamped trail moved")
 
 func (a *App) auditStampCommand() *cobra.Command {
 	const commandName = "audit stamp"
@@ -33,6 +40,7 @@ func (a *App) auditStampCommand() *cobra.Command {
 			"Nothing on the decision path stamps: a decision is appended first, and stamped when something runs this, a scheduler, Desk or a person, at whatever interval or after whatever records that caller chooses; a decision never waits for an authority, and an authority that cannot be reached leaves the trail and every decision in it as they were. " +
 			"The request carries the SHA-256 of the checkpoint's canonical form, a nonce, and a request for the authority's certificate, and nothing else of the trail. The reply is held to the request, its digest and its nonce, and its token to its own signature, before it is kept; whether the authority is to be trusted is for a verifier with roots to decide (jpack audit verify --tsa-roots). " +
 			"It is idempotent by the checkpoint's digest: a checkpoint already stamped is not asked for again, and the stamps file is written under its own lock, never the trail's. " +
+			"If the trail at its path changes identity while stamping, JPS-AUDIT-STAMP-TRAIL-MOVED refuses the append and discards the token. " +
 			"The trail is read and verified first, and a trail that fails a check is refused rather than stamped. " +
 			"A stamp shows that the checkpoint, and every line before it, existed by the time the authority states, as far as that authority is independent of the operator: not how long before, and a record's at stays the operator's word.",
 		Args: cobra.NoArgs,
@@ -92,7 +100,16 @@ func (a *App) auditStampCommand() *cobra.Command {
 				TrailPath:     opened.path,
 				Checkpoint:    checkpoint,
 			}
-			stamped, err := writer.Stamped(checkpoint)
+			trailInfo, err := opened.trail.Stat()
+			if err != nil {
+				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-TRAIL-READ", "The snapshot trail's identity could not be read; no authority was asked.")
+			}
+			stamps, err := writer.OpenStamps()
+			if err != nil {
+				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-WRITE", "The stamps file could not be held open; no authority was asked.")
+			}
+			defer stamps.Close()
+			stamped, err := stamps.Stamped(checkpoint)
 			if errors.Is(err, audit.ErrStampsTooLarge) {
 				return a.stampsTooLarge(commandName, format, "The stamps file is larger than its 67108864-byte limit, so it could not be checked and no authority was asked.")
 			}
@@ -100,7 +117,7 @@ func (a *App) auditStampCommand() *cobra.Command {
 				return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-READ", "The stamps file could not be read to see whether the checkpoint is stamped already.")
 			}
 			if !stamped {
-				if err := writer.CheckStampRoom(); errors.Is(err, audit.ErrStampsTooLarge) {
+				if err := stamps.CheckStampRoom(); errors.Is(err, audit.ErrStampsTooLarge) {
 					return a.stampsTooLarge(commandName, format, "The stamps file has no room for another maximum-size stamp line within its 67108864-byte limit, so no authority was asked.")
 				} else if err != nil {
 					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-READ", "The stamps file's size could not be read before asking the authority.")
@@ -111,7 +128,27 @@ func (a *App) auditStampCommand() *cobra.Command {
 				if err != nil {
 					return a.stampFailure(commandName, format, err)
 				}
-				appended, err := writer.RecordStamp(checkpoint, der)
+				var appended bool
+				if beforeStampAppend != nil {
+					err = beforeStampAppend()
+				}
+				if err == nil {
+					appended, err = stamps.RecordStamp(checkpoint, der, func() error {
+						current, err := loaded.OpenTrail()
+						if err != nil {
+							return errStampTrailMoved
+						}
+						defer current.Close()
+						named, err := current.Stat()
+						if err != nil || !os.SameFile(trailInfo, named) {
+							return errStampTrailMoved
+						}
+						return nil
+					})
+				}
+				if errors.Is(err, errStampTrailMoved) {
+					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMP-TRAIL-MOVED", "The trail at the path is not the one whose checkpoint was stamped; nothing was written, and the token was discarded.")
+				}
 				if errors.Is(err, audit.ErrStampsTooLarge) {
 					return a.stampsTooLarge(commandName, format, "The stamps file filled before the token could be kept; the trail and the decisions in it are as they were.")
 				}

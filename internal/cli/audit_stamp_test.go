@@ -166,7 +166,7 @@ func TestAStampThatFailsLeavesTheTrailAndTheDecisionsUntouched(t *testing.T) {
 		if after, err := os.ReadFile(trail); err != nil || !bytes.Equal(before, after) {
 			t.Fatalf("%s: the trail changed", c.name)
 		}
-		if _, err := os.Stat(stamps); !os.IsNotExist(err) {
+		if data, err := os.ReadFile(stamps); !os.IsNotExist(err) && (err != nil || len(data) != 0) {
 			t.Fatalf("%s: a stamps file was written: %v", c.name, err)
 		}
 	}
@@ -186,35 +186,85 @@ func TestAStampThatFailsLeavesTheTrailAndTheDecisionsUntouched(t *testing.T) {
 // A token that cannot be kept leaves the trail and its decisions untouched,
 // but a retry stamps whichever checkpoint is at the trail's head then.
 func TestAuditStampReportsTheCheckpointAWriteFailureRetryWillStamp(t *testing.T) {
+	for _, format := range []string{"json", "human"} {
+		t.Run(format, func(t *testing.T) {
+			tsa, err := tsatest.New(tsatest.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			originalTransport := http.DefaultClient.Transport
+			http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				response := httptest.NewRecorder()
+				tsa.ServeHTTP(response, request)
+				return response.Result(), nil
+			})
+			t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
+			configPath, trail := recordedProject(t, 1)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			if err := os.WriteFile(stamps, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(stamps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			beforeStampAppend = func() error { return errors.New("forced stamp append failure") }
+			t.Cleanup(func() { beforeStampAppend = nil })
+
+			code, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", "https://tsa.invalid/stamp"}, "")
+			const want = "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the checkpoint at the trail's head at that time."
+			if code != result.ExitIO || tsa.Requests != 1 {
+				t.Fatalf("append failure: exit=%d requests=%d stdout=%q stderr=%q", code, tsa.Requests, stdout, stderr)
+			}
+			if format == "json" {
+				var output result.OperationalError
+				if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+					t.Fatal(err)
+				}
+				if len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-AUDIT-STAMPS-WRITE" || output.Diagnostics[0].Message != want {
+					t.Fatalf("diagnostic: %+v", output)
+				}
+			} else if stdout != "" || stderr != "error: "+want+"\n" {
+				t.Fatalf("human: stdout=%q stderr=%q", stdout, stderr)
+			}
+			after, err := os.ReadFile(stamps)
+			if err != nil || !bytes.Equal(after, before) {
+				t.Fatalf("stamps changed: before=%q after=%q err=%v", before, after, err)
+			}
+			beforeStampAppend = nil
+			if retryCode, _, all := stamping(t, "--config", configPath, "--tsa", "https://tsa.invalid/stamp"); retryCode != 0 || tsa.Requests != 2 {
+				t.Fatalf("discarded token was not requested again: exit=%d requests=%d output=%q", retryCode, tsa.Requests, all)
+			}
+		})
+	}
+}
+
+func TestAuditStampRefusesAnUnwritableStampsFileBeforeAuthority(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits are not what a Windows file mode means")
 	}
-	tsa, err := tsatest.New(tsatest.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	originalTransport := http.DefaultClient.Transport
-	http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		response := httptest.NewRecorder()
-		tsa.ServeHTTP(response, request)
-		return response.Result(), nil
-	})
-	t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
 	configPath, trail := recordedProject(t, 1)
 	stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
 	if err := os.WriteFile(stamps, nil, 0o400); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(stamps, 0o600) })
+	originalTransport := http.DefaultClient.Transport
+	requests := 0
+	http.DefaultClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests++
+		return nil, errors.New("request must not be made")
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = originalTransport })
 
 	code, _, all := stamping(t, "--config", configPath, "--tsa", "https://tsa.invalid/stamp")
 	var output result.OperationalError
 	if err := json.Unmarshal([]byte(all), &output); err != nil {
 		t.Fatal(err)
 	}
-	want := "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the checkpoint at the trail's head at that time."
-	if code != result.ExitIO || len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-AUDIT-STAMPS-WRITE" || output.Diagnostics[0].Message != want {
-		t.Fatalf("unwritable stamps file: exit=%d output=%+v", code, output)
+	const want = "The stamps file could not be held open; no authority was asked."
+	if code != result.ExitIO || requests != 0 || len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-AUDIT-STAMPS-WRITE" || output.Diagnostics[0].Message != want {
+		t.Fatalf("unwritable stamps file: exit=%d requests=%d output=%+v", code, requests, output)
 	}
 }
 
@@ -349,4 +399,104 @@ func TestAuditStampRefusesAFullStampsFileBeforeAsking(t *testing.T) {
 	if code != result.ExitIO || requests != 0 || !strings.Contains(all, `"JPS-AUDIT-STAMPS-TOO-LARGE"`) || !strings.Contains(all, "larger than its 67108864-byte limit") || strings.Contains(all, "could not be read to see") {
 		t.Fatalf("oversized file: exit=%d requests=%d output=%q", code, requests, all)
 	}
+}
+
+// A token obtained for a moved trail belongs to neither a fresh trail nor the
+// retired stamps file. Both output formats report the same refusal.
+func TestAuditStampRefusesAMovedTrail(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot rename these open files")
+	}
+	for _, format := range []string{"json", "human"} {
+		t.Run(format, func(t *testing.T) {
+			address, roots := stampAuthorityTransport(t)
+			configPath, trail := recordedProject(t, 1)
+			if code, _, all := stamping(t, "--config", configPath, "--tsa", address); code != 0 {
+				t.Fatal(all)
+			}
+			evaluateOnce(t, configPath)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			before, err := os.ReadFile(stamps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			retired := t.TempDir()
+			oldTrail := filepath.Join(retired, filepath.Base(trail))
+			oldStamps := filepath.Join(retired, audit.StampsName)
+			beforeStampAppend = func() error {
+				if err := os.Rename(trail, oldTrail); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(stamps, oldStamps); err != nil {
+					t.Fatal(err)
+				}
+				evaluateOnce(t, configPath)
+				return nil
+			}
+			t.Cleanup(func() { beforeStampAppend = nil })
+			code, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", address}, "")
+			const message = "The trail at the path is not the one whose checkpoint was stamped; nothing was written, and the token was discarded."
+			if code != result.ExitIO {
+				t.Errorf("exit=%d stdout=%s stderr=%s", code, stdout, stderr)
+			}
+			if format == "json" {
+				var got result.OperationalError
+				if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+					t.Fatal(err)
+				}
+				if len(got.Diagnostics) != 1 || got.Diagnostics[0].Code != "JPS-AUDIT-STAMP-TRAIL-MOVED" || got.Diagnostics[0].Message != message {
+					t.Errorf("diagnostic: %s", stdout)
+				}
+			} else if stdout != "" || stderr != "error: "+message+"\n" {
+				t.Errorf("human: stdout=%q stderr=%q", stdout, stderr)
+			}
+			if data, err := os.ReadFile(stamps); !os.IsNotExist(err) && (err != nil || len(data) != 0) {
+				t.Errorf("new stamps: %q %v", data, err)
+			}
+			if data, err := os.ReadFile(oldStamps); err != nil || !bytes.Equal(data, before) {
+				t.Errorf("old stamps changed: %v", err)
+			}
+			if code, got := verification(t, "--trail", trail, "--tsa-roots", roots); code != 0 || got.Status != "valid" || len(got.Findings) != 0 || got.Coverage.Stamped.Status != "none" {
+				t.Errorf("fresh trail: exit=%d %+v", code, got)
+			}
+			if code, got := verification(t, "--trail", oldTrail, "--tsa-roots", roots); code != 0 || got.Status != "valid" || len(got.Findings) != 0 || got.Coverage.Stamped.Through != 1 || got.Stamps.Trusted != 1 {
+				t.Errorf("retired trail: exit=%d %+v", code, got)
+			}
+		})
+	}
+}
+
+// Ordinary decisions may append while the authority is asked: the snapshot's
+// checkpoint remains part of that same trail, with no trail lock retained.
+func TestAuditStampAllowsAnAppendToTheSameTrail(t *testing.T) {
+	address, roots := stampAuthorityTransport(t)
+	configPath, _ := recordedProject(t, 1)
+	beforeStampAppend = func() error {
+		evaluateOnce(t, configPath)
+		return nil
+	}
+	t.Cleanup(func() { beforeStampAppend = nil })
+	if code, got, all := stamping(t, "--config", configPath, "--tsa", address); code != 0 || got.Checkpoint.Sequence != 1 {
+		t.Fatalf("stamp: %d %s", code, all)
+	}
+	if code, got := verification(t, "--config", configPath, "--tsa-roots", roots); code != 0 || got.Coverage.Stamped.Through != 1 {
+		t.Fatalf("verify: %d %+v", code, got)
+	}
+}
+
+// stampAuthorityTransport exercises the RFC 3161 exchange without a socket.
+func stampAuthorityTransport(t *testing.T) (string, string) {
+	t.Helper()
+	tsa, err := tsatest.New(tsatest.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := http.DefaultClient.Transport
+	http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		reply := httptest.NewRecorder()
+		tsa.ServeHTTP(reply, request)
+		return reply.Result(), nil
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = original })
+	return "https://tsa.invalid/stamp", writeDocument(t, "roots.pem", string(tsa.RootPEM()))
 }
