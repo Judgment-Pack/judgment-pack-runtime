@@ -60,10 +60,12 @@ const (
 
 // The scopes a verification reports, which say what was checked.
 const (
-	// ScopeOneSuppliedChain is a verification with no checkpoint: the
-	// integrity of one supplied chain, and nothing about whether it is the
-	// project's whole or authentic trail.
-	ScopeOneSuppliedChain = "one-supplied-chain"
+	// ScopeCommittedPrefix is a verification with no checkpoint and at least
+	// one chained record: the committed prefix of one supplied chain.
+	ScopeCommittedPrefix = "committed-prefix"
+	// ScopeNoChainedRecord is a verification with no checkpoint and no chained
+	// record, so every complete line is uncovered.
+	ScopeNoChainedRecord = "no-chained-record"
 	// ScopeCheckpoint is a verification held to one or more checkpoints a
 	// holder kept and supplied with it.
 	ScopeCheckpoint = "checkpoint"
@@ -80,25 +82,26 @@ const (
 	establishesConsistency           = "The chain-link checks passed through sequence %d, the last chained record and end of the committed prefix."
 	establishesConsistencyBeforeTail = "The chain-link checks passed through sequence %d, the last chained record and end of the committed prefix; the %d uncovered line(s) after it are outside that prefix."
 	notChained                       = "That the lines form a chained history: no chained record was found, so all %d line(s) are uncovered."
+	notChainedEmpty                  = "That the file contains a chained history: the file is empty."
 	establishesCheckpoint            = "Lines 1 to %d are the lines that existed when the checkpoint was made, if the checkpoint was held independently of the trail's operator."
-	notLastLine                      = "The last line, and any lines rewritten from some point on with their links recomputed, are not authenticated by the chain: only a checkpoint covering them, held independently of the operator, shows they are the ones first written."
+	notLastLine                      = "The last chained line (sequence %d), and any lines rewritten from some point on with their links recomputed, are not authenticated by the chain: only a checkpoint covering them, held independently of the operator, shows they are the ones first written."
 	notLastLineAfter                 = "Lines after %d, the checkpoint's sequence, are not authenticated by the chain: only a later checkpoint covering them, held independently of the operator, shows they are the ones first written."
 	notComplete                      = "That the trail is complete: a trail cut short is as consistent as the whole one, and nothing here says which decisions were never written to it."
 	notCompleteAfter                 = "That the trail is complete after line %d: lines removed from its end since the checkpoint was made are not missed."
 	notTime                          = "That any record's at is true: it is the operator's clock."
 	notSignedUnchecked               = "Who wrote any record: no public key was supplied, so no signature was checked."
 	establishesSigned                = "Lines 1 to %d are as they stood when the signature on record %[1]d was made: altering any of them since takes one of the signing keys from the first public key supplied to the one in force at that record."
-	notSignedAfter                   = "Lines after %d are not authenticated as one uninterrupted prefix by any signature that was checked; a later record can still have a valid signature of its own, as the signed-record count reports."
-	notSignedNone                    = "No uninterrupted prefix from line 1 is authenticated by a signature that was checked; individual records can still have valid signatures of their own, as the signed-record count reports."
+	notSignedAfter                   = "Lines after %d are not covered by any signature that was checked: a record signed later, or never, is not authenticated by any key."
+	notSignedNone                    = "That any line was signed by a key supplied: no signature that was checked covers one."
 	notAgainstOperator               = "Anything against the operator, who holds the signing key: a record the operator altered and signed again, or a trail the operator rewrote from some point on and signed, verifies like the one first written; only a checkpoint held by someone else shows the difference."
 	notAfterTheft                    = "Anything after a signing key was copied or stolen: whoever holds it can sign altered records, or a rotation to a key of their own, and only the verifier's own trust configuration refuses what they sign, by revoking that key from the sequence it was taken at and by naming the keys the trail rotates through."
 	notSegmented                     = "That the history is intact across a discontinuity: a repair keeps the damaged line in place and links over it, so what the damaged line held is not part of any segment."
 	notHeldAll                       = "That the holder kept every checkpoint handed to it, or that none later than those supplied exists: the coverage reaches only the checkpoints supplied here."
 	notStampedUnchecked              = "When any checkpoint existed: no time-stamping roots were supplied, so no stamp was checked."
 	establishesStamped               = "Lines 1 to %d existed by %s, as a time-stamping authority under a root supplied attests: the time it states, plus the accuracy it states."
-	notStampedAfter                  = "Lines after %d are not shown as one uninterrupted prefix to have existed by any time; a trusted stamp can still authenticate an individual record's checkpoint after that point, as the trusted-stamp count reports."
-	notStampedNone                   = "No uninterrupted prefix from line 1 is shown to have existed by any time; trusted stamps can still authenticate individual record checkpoints, as the trusted-stamp count reports."
-	notBeforeStamp                   = "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each record's at and the first stamp covering it is reported, and judging it is the reader's."
+	notStampedAfter                  = "That lines after %d existed by any time: no trusted stamp covers them."
+	notStampedNone                   = "That any line existed by any time: no trusted stamp covers one."
+	notBeforeStamp                   = "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each prefix-covered record's at and the first stamp covering it is reported, and judging it is the reader's."
 	notAgainstAuthority              = "Anything against a time-stamping authority that is not independent of the operator: one that colludes can stamp what it is asked, when it is asked; a root supplied is trusted because the verifier chose it."
 	notRevocationChecked             = "That no time-stamping certificate was revoked as of its stamp's time, for %d trusted stamp(s): no revocation list supplied speaks for that time, so their status was not checked."
 	// The sentences of a witness's statements (gateway ADR-0013 §6), the first
@@ -123,6 +126,34 @@ const (
 	// evaluation that failed (ADR-0048).
 	notAttempts = "Whether any evaluation was refused at the gate, rehearsed, or failed before a disposition: the trail records decisions, not attempts, so its silence is not evidence that none were (ADR-0048)."
 )
+
+func signedAfterStatement(through, count int64) string {
+	if count == 1 {
+		return fmt.Sprintf("Lines after %d are not authenticated as one uninterrupted prefix by any signature that was checked; 1 record after sequence %d carries a signature that was checked.", through, through)
+	}
+	return fmt.Sprintf("Lines after %d are not authenticated as one uninterrupted prefix by any signature that was checked; %d records after sequence %d carry a signature that was checked.", through, count, through)
+}
+
+func signedNoneStatement(count int64) string {
+	if count == 1 {
+		return "That any uninterrupted prefix from line 1 is authenticated by a signature that was checked; 1 record carries a signature that was checked."
+	}
+	return fmt.Sprintf("That any uninterrupted prefix from line 1 is authenticated by a signature that was checked; %d records carry a signature that was checked.", count)
+}
+
+func stampedAfterStatement(through, count int64) string {
+	if count == 1 {
+		return fmt.Sprintf("Lines after %d are not shown as one uninterrupted prefix to have existed by any time; 1 trusted stamp after sequence %d shows its record existed by its time.", through, through)
+	}
+	return fmt.Sprintf("Lines after %d are not shown as one uninterrupted prefix to have existed by any time; %d trusted stamps after sequence %d show their records existed by their times.", through, count, through)
+}
+
+func stampedNoneStatement(count int64) string {
+	if count == 1 {
+		return "That any uninterrupted prefix from line 1 is shown to have existed by any time; 1 trusted stamp shows its record existed by its time."
+	}
+	return fmt.Sprintf("That any uninterrupted prefix from line 1 is shown to have existed by any time; %d trusted stamps show their records existed by their times.", count)
+}
 
 // Verify reads a trail of size bytes, line by line and over its exact bytes,
 // and checks every trail, sequence and previous from the first chained record
@@ -665,7 +696,7 @@ func (v *verifier) recordSidecar(finding result.AuditFinding) {
 // report composes what the reading found.
 func (v *verifier) report(size int64) result.AuditChain {
 	chain := result.AuditChain{
-		Scope:    ScopeOneSuppliedChain,
+		Scope:    ScopeNoChainedRecord,
 		Lines:    v.lines,
 		Bytes:    size,
 		Coverage: v.coverage,
@@ -678,6 +709,7 @@ func (v *verifier) report(size int64) result.AuditChain {
 	chain.Coverage.Countersigned = result.AuditCoverageState{Status: "not-checked", Detail: "no witness key was supplied"}
 	chain.Coverage.Unwitnessed = chain.Coverage.Chained
 	if v.head != nil {
+		chain.Scope = ScopeCommittedPrefix
 		chain.Trail = v.head.link.trail
 		head := checkpointOf(v.head)
 		chain.Head = &head
@@ -739,7 +771,14 @@ func (v *verifier) report(size int64) result.AuditChain {
 	default:
 		chain.Status = "valid"
 	}
-	chain.Establishes, chain.DoesNotEstablish = statements(chain)
+	var signedAfter, stampedAfter int64
+	if v.signatures != nil {
+		signedAfter = v.signatures.afterThrough()
+	}
+	if v.stamps != nil {
+		stampedAfter = v.stamps.afterThrough(chain.Coverage.Stamped.Through)
+	}
+	chain.Establishes, chain.DoesNotEstablish = statements(chain, signedAfter, stampedAfter)
 	return chain
 }
 
@@ -920,7 +959,7 @@ func (v *verifier) checkRequirement(chain *result.AuditChain) {
 // statements says what a report's result establishes and what it does not, in
 // the fixed sentences above. Nothing is established about a trail that failed a
 // check beyond the findings themselves.
-func statements(chain result.AuditChain) ([]string, []string) {
+func statements(chain result.AuditChain, signedAfter, stampedAfter int64) ([]string, []string) {
 	establishes := []string{}
 	if chain.Status != "invalid" && chain.Coverage.Chained > 0 {
 		if chain.Coverage.Uncovered > 0 {
@@ -931,14 +970,21 @@ func statements(chain result.AuditChain) ([]string, []string) {
 	}
 	notEstablished := []string{}
 	if chain.Coverage.Chained == 0 {
-		notEstablished = append(notEstablished, fmt.Sprintf(notChained, chain.Coverage.Uncovered))
+		if chain.Lines == 0 {
+			notEstablished = append(notEstablished, notChainedEmpty)
+		} else {
+			notEstablished = append(notEstablished, fmt.Sprintf(notChained, chain.Coverage.Uncovered))
+		}
 	}
 	if chain.Coverage.Checkpointed.Status == "through" {
 		through := chain.Coverage.Checkpointed.Through
 		establishes = append(establishes, fmt.Sprintf(establishesCheckpoint, through))
 		notEstablished = append(notEstablished, fmt.Sprintf(notLastLineAfter, through), fmt.Sprintf(notCompleteAfter, through))
 	} else {
-		notEstablished = append(notEstablished, notLastLine, notComplete)
+		if chain.Head != nil {
+			notEstablished = append(notEstablished, fmt.Sprintf(notLastLine, chain.Head.Sequence))
+		}
+		notEstablished = append(notEstablished, notComplete)
 	}
 	if chain.DiscontinuitiesTotal > 0 {
 		notEstablished = append(notEstablished, notSegmented)
@@ -951,9 +997,19 @@ func statements(chain result.AuditChain) ([]string, []string) {
 	case "through":
 		through := chain.Coverage.Signed.Through
 		establishes = append(establishes, fmt.Sprintf(establishesSigned, through))
-		notEstablished = append(notEstablished, fmt.Sprintf(notSignedAfter, through), notAgainstOperator, notAfterTheft)
+		if signedAfter > 0 {
+			notEstablished = append(notEstablished, signedAfterStatement(through, signedAfter))
+		} else {
+			notEstablished = append(notEstablished, fmt.Sprintf(notSignedAfter, through))
+		}
+		notEstablished = append(notEstablished, notAgainstOperator, notAfterTheft)
 	case "none":
-		notEstablished = append(notEstablished, notSignedNone, notAgainstOperator, notAfterTheft)
+		if signedAfter > 0 {
+			notEstablished = append(notEstablished, signedNoneStatement(signedAfter))
+		} else {
+			notEstablished = append(notEstablished, notSignedNone)
+		}
+		notEstablished = append(notEstablished, notAgainstOperator, notAfterTheft)
 	default:
 		notEstablished = append(notEstablished, notSignedUnchecked)
 	}
@@ -961,9 +1017,17 @@ func statements(chain result.AuditChain) ([]string, []string) {
 	case "through":
 		through := chain.Coverage.Stamped.Through
 		establishes = append(establishes, fmt.Sprintf(establishesStamped, through, chain.Stamps.CoveredBy))
-		notEstablished = append(notEstablished, fmt.Sprintf(notStampedAfter, through))
+		if stampedAfter > 0 {
+			notEstablished = append(notEstablished, stampedAfterStatement(through, stampedAfter))
+		} else {
+			notEstablished = append(notEstablished, fmt.Sprintf(notStampedAfter, through))
+		}
 	case "none":
-		notEstablished = append(notEstablished, notStampedNone)
+		if stampedAfter > 0 {
+			notEstablished = append(notEstablished, stampedNoneStatement(stampedAfter))
+		} else {
+			notEstablished = append(notEstablished, notStampedNone)
+		}
 	default:
 		notEstablished = append(notEstablished, notStampedUnchecked)
 	}

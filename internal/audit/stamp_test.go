@@ -121,8 +121,8 @@ func TestDirectSignatureAndStampAfterAChainBreakAreReported(t *testing.T) {
 	changed = bytes.Replace(changed, []byte("{"), []byte("{ "), 1)
 	lines[0] = changed
 	chain := verifySignedAndStamped(t, joinLines(lines), signature, stamp, signer, tsa)
-	wantSigned := "No uninterrupted prefix from line 1 is authenticated by a signature that was checked; individual records can still have valid signatures of their own, as the signed-record count reports."
-	wantStamped := "No uninterrupted prefix from line 1 is shown to have existed by any time; trusted stamps can still authenticate individual record checkpoints, as the trusted-stamp count reports."
+	wantSigned := "That any uninterrupted prefix from line 1 is authenticated by a signature that was checked; 1 record carries a signature that was checked."
+	wantStamped := "That any uninterrupted prefix from line 1 is shown to have existed by any time; 1 trusted stamp shows its record existed by its time."
 	if chain.Status != "invalid" || chain.Coverage.Signed.Status != "none" || chain.Coverage.SignedRecords != 1 ||
 		chain.Coverage.Stamped.Status != "none" || chain.Stamps.Trusted != 1 ||
 		!containsString(chain.DoesNotEstablish, wantSigned) || !containsString(chain.DoesNotEstablish, wantStamped) {
@@ -151,8 +151,8 @@ func TestDirectSignatureAndStampAfterAPartialPrefixAreReported(t *testing.T) {
 	changed = bytes.Replace(changed, []byte("{"), []byte("{ "), 1)
 	lines[1] = changed
 	chain := verifySignedAndStamped(t, joinLines(lines), append(signature1, signature3...), stamps, signer, tsa)
-	wantSigned := "Lines after 1 are not authenticated as one uninterrupted prefix by any signature that was checked; a later record can still have a valid signature of its own, as the signed-record count reports."
-	wantStamped := "Lines after 1 are not shown as one uninterrupted prefix to have existed by any time; a trusted stamp can still authenticate an individual record's checkpoint after that point, as the trusted-stamp count reports."
+	wantSigned := "Lines after 1 are not authenticated as one uninterrupted prefix by any signature that was checked; 1 record after sequence 1 carries a signature that was checked."
+	wantStamped := "Lines after 1 are not shown as one uninterrupted prefix to have existed by any time; 1 trusted stamp after sequence 1 shows its record existed by its time."
 	if chain.Status != "invalid" || chain.Coverage.Signed.Through != 1 || chain.Coverage.SignedRecords != 2 ||
 		chain.Coverage.Stamped.Through != 1 || chain.Stamps.Trusted != 2 ||
 		!containsString(chain.DoesNotEstablish, wantSigned) || !containsString(chain.DoesNotEstablish, wantStamped) {

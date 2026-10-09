@@ -536,3 +536,15 @@ func (c *stampChecker) coverage(v *verifier, chain *result.AuditChain) {
 		}
 	}
 }
+
+// afterThrough is the number of trusted, matching stamps beyond the
+// uninterrupted prefix the stamps establish.
+func (c *stampChecker) afterThrough(through int64) int64 {
+	var count int64
+	for _, candidate := range c.candidates {
+		if candidate.matches && candidate.checkpoint.Sequence > through {
+			count++
+		}
+	}
+	return count
+}

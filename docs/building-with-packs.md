@@ -897,8 +897,10 @@ nothing read. A trail written that way stays readable, and it is unchained.
 
 What the chain lets someone show, and what it does not:
 
-- Recomputing each `previous` shows whether the lines are consistent with one another: a line
-  edited, inserted, deleted or moved anywhere before the last breaks the link of the line after it.
+- Recomputing each `previous` checks the committed prefix through the last chained record.
+  Unchained lines after it are uncovered and outside that prefix; a file with no chained record
+  has no chained history. Within the prefix, editing, inserting, deleting or moving a line before
+  a later chained record breaks a link.
 - That is consistency, not authenticated history. The last line can be edited without breaking any
   link, and a trail cut short, or rewritten from any line on with its links recomputed, is as
   consistent as the real one. Telling them apart takes a checkpoint covering those lines (the trail's
@@ -932,8 +934,9 @@ signatures too, and reports how far they reach (Signing the trail, below); witho
 signature was checked. It also says, in fixed sentences, what the result establishes and what it
 does not:
 
-- **Without `--expect`, the integrity of one supplied chain.** The lines are consistent with one
-  another. It does not show that the trail is complete, or that its last line, or lines rewritten
+- **Without `--expect`, the committed prefix of one supplied chain.** The chain-link checks cover
+  the committed prefix through the last chained record; unchained lines after it are uncovered.
+  It does not show that the trail is complete, or that its last chained line, or lines rewritten
   from some point on with their links recomputed, are the ones first written: you were handed one
   chain, and a different consistent chain would verify as well.
 - **With `--expect`, checkpoints held independently.** `audit checkpoint` prints one: a single

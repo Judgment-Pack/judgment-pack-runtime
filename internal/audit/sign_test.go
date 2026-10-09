@@ -253,7 +253,8 @@ func TestAnEditedRecordFailsItsSignature(t *testing.T) {
 	if !slices.Equal(findingNames(chain), []string{"signature-record-mismatch@1", "previous-mismatch@2"}) || chain.Coverage.Signed.Status != "none" {
 		t.Fatalf("an edited first record: %v %+v", findingNames(chain), chain.Coverage)
 	}
-	if !containsString(chain.DoesNotEstablish, notSignedNone) {
+	want := "That any uninterrupted prefix from line 1 is authenticated by a signature that was checked; 2 records carry a signature that was checked."
+	if !containsString(chain.DoesNotEstablish, want) {
 		t.Fatalf("statements: %q", chain.DoesNotEstablish)
 	}
 }

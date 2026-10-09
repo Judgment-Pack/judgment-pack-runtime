@@ -885,11 +885,17 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 			fmt.Fprintf(a.out, "consistent, and witnessed through the held checkpoint at sequence %d: %d line(s)\n", output.Held.Latest.Sequence, output.Lines)
 		case checkpointed.Status == "through":
 			fmt.Fprintf(a.out, "consistent, and witnessed through the checkpoint a witness statement countersigns at sequence %d: %d line(s)\n", checkpointed.Through, output.Lines)
+		case output.Coverage.Chained == 0:
+			fmt.Fprintf(a.out, "no chained record: %d line(s), all uncovered\n", output.Lines)
 		default:
-			fmt.Fprintf(a.out, "consistent: the integrity of one supplied chain, %d line(s)\n", output.Lines)
+			fmt.Fprintf(a.out, "consistent through sequence %d; %d uncovered line(s) after it\n", output.Head.Sequence, output.Coverage.Uncovered)
 		}
 	case "segmented":
-		fmt.Fprintf(a.out, "SEGMENTED: %d discontinuity record(s); the history is not intact across them, and each segment is consistent\n", output.DiscontinuitiesTotal)
+		if output.Coverage.Uncovered > 0 {
+			fmt.Fprintf(a.out, "SEGMENTED: %d discontinuity record(s); the history is not intact across them; chain-link checks passed through sequence %d, with %d uncovered line(s) after it\n", output.DiscontinuitiesTotal, output.Head.Sequence, output.Coverage.Uncovered)
+		} else {
+			fmt.Fprintf(a.out, "SEGMENTED: %d discontinuity record(s); the history is not intact across them, and each segment is consistent\n", output.DiscontinuitiesTotal)
+		}
 	default:
 		fmt.Fprintf(a.out, "INVALID: %d failed check(s)\n", output.FindingsTotal)
 	}
