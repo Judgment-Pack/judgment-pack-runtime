@@ -2,6 +2,12 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **An audit stamp write failure describes its retry accurately** (#237). The trail and its
+  decisions remain unchanged, and asking again stamps the checkpoint at the trail's head at that
+  time, which may be newer if another evaluation appended a record after the failed write.
+
 ## 0.28.0 - 2026-10-09
 
 - **The audit report says what it establishes after an uncovered suffix or a chain break** (#240,

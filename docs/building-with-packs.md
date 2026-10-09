@@ -1053,8 +1053,8 @@ jpack audit verify --tsa-roots tsa-roots.pem         # check every stamp against
   written under its own lock, never the trail's.
 - **Idempotent by the checkpoint's digest.** A checkpoint already stamped is not asked for again, and
   a token for it from a concurrent stamp is not kept twice. A lost reply is recovered by running
-  `audit stamp` again, while the stamps file has room: it stamps the same checkpoint, or the newer
-  one if records were added.
+  `audit stamp` again, while the stamps file has room: it stamps the checkpoint at the trail's head
+  then, which is the same checkpoint if no records were added and a newer one otherwise.
 
 The whole stamps file is bounded at 64 MiB (67,108,864 bytes), and one line at 2 MiB. Verification
 does not read a file over the whole-file bound: the trail is `invalid` with
