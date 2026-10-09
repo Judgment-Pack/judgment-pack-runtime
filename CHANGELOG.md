@@ -2,7 +2,16 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.28.0 - 2026-10-09
+
+- **The audit report says what it establishes after an uncovered suffix or a chain break** (#240,
+  closes #234 and #235, from the cross-vendor audit #239). The consistency sentence stops at the last
+  chained record and names an uncovered suffix as outside it; a file with no chained line says so
+  instead of implying a chain; after a chain break the signature and stamp sentences distinguish a
+  record whose own signature or stamp was checked from an uninterrupted prefix, and the caveat names
+  the last chained line. The human headline and the JSON `scope` follow the same rule. No
+  verification result, count or exit code changes; `audit verify --help`, the README, the user guide,
+  the configuration schema's `audit.chain` description and CONFORMANCE.md use the same words.
 
 - **Audit snapshots and stamp bounds fail closed with actionable diagnostics.** `audit verify`,
   `audit checkpoint` and `audit stamp` open the trail and requested signature and stamp companions
