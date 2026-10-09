@@ -542,22 +542,26 @@ a write that did not complete; when a line it must read is longer than 128 MiB, 
 be; and when the lock cannot be taken for a reason that may pass. Only where the platform or file
 system offers no lock at all does it write records unchained. A project that does not want the chain
 sets `"audit": { "dir": "audit", "chain": false }` under configVersion `"6"`. Recomputing each
-`previous` shows whether the lines are consistent with one another: a line edited, inserted, deleted
-or moved anywhere before the last breaks a link. That is not authenticated history. The last line
-can be edited without breaking any link, and a trail cut short, or rewritten from any line on with
-its links recomputed, is as consistent as the real one; only a commitment held by someone other than
-the operator, covering those lines, tells them apart. Keep the trail, and anything copied from it,
-byte for byte: a decoded and re-encoded line is other bytes with another digest.
+`previous` checks the committed prefix through the last chained record. Unchained lines after it are
+uncovered and outside that prefix; a file with no chained record has no chained history. Within the
+prefix, editing, inserting, deleting or moving a line before a later chained record breaks a link.
+That is not authenticated history. The last chained line can be edited without breaking any link,
+and a trail cut short, or rewritten from any line on with its links recomputed, is as consistent as
+the real one; only a commitment held by someone other than the operator, covering those lines, tells
+them apart. Keep the trail, and anything copied from it, byte for byte: a decoded and re-encoded line
+is other bytes with another digest.
 
 **Checking a trail.** `jpack audit verify` reads the project's trail, or `--trail <file>`, over its
 exact bytes and checks every `trail`, `sequence` and `previous` from the first chained record on;
 it exits 1 on any failed check, each named in the report, and 0 otherwise. Its size is read under
 the writer's lock, shared, so it falls between two writes, and the bytes before it are read without
 the lock: writers only append, so a verification neither delays nor races them. Without `--expect`
-the report is the integrity of one supplied chain, and says what it does not establish: that the
-last line, or lines rewritten from some point on with their links recomputed, are the ones first
-written, or that the trail is complete. `jpack audit checkpoint` prints the checkpoint of the last
-chained record, one canonical JSON line naming the trail's identity, the record's sequence and the
+the report is the integrity of one supplied chain, limited to the committed prefix through its last
+chained record, and says what it does not establish: that the last chained line, or lines rewritten
+from some point on with their links recomputed, are the ones first written, or that the trail is
+complete. It reports an unchained suffix as uncovered and outside that prefix. `jpack audit
+checkpoint` prints the checkpoint of the last chained record, one canonical JSON line naming the
+trail's identity, the record's sequence and the
 SHA-256 of its exact bytes, for handing to someone who will keep it. `jpack audit verify --expect
 <checkpoint>` then also fails a trail that is shorter, has another identity, or has another record
 at that sequence, and reports the lines up to it as checkpointed.
@@ -597,8 +601,10 @@ time-stamping usage and chain at the time the token states, its policy (`--tsa-p
 against revocation lists supplied with `--tsa-crls` that can speak for the stamp's time, its
 status, reported as not checked where none can. A trusted stamp whose checkpoint the trail no
 longer holds shows the trail was rewritten since. The report gives the records stamped and the lag
-between each record's `at` and the first stamp covering it; `--require-stamped-through <sequence>`
-fails while the records up to it are not stamped. A stamp establishes that the checkpoint existed
+between each record's `at` and the first stamp covering it. Stamped `through` is the uninterrupted
+prefix from line 1; the trusted-stamp count separately includes a matching individual record
+checkpoint beyond an earlier chain break. `--require-stamped-through <sequence>` fails while the
+records up to it are not stamped. A stamp establishes that the checkpoint existed
 by the time the authority states, as that authority attests. It does not establish when a record
 was made: `at` stays the operator's word. It establishes nothing against an authority that is not
 independent of the operator, and nothing about revocation where it was not checked. The
@@ -641,8 +647,9 @@ configVersion, including projects that never named a key. In every case
 cannot be written leaves the record unsigned. `jpack audit key generate` writes a key and prints its
 public key, `jpack audit key public` prints a key's public key, and `jpack audit key rotate --next
 <seed>` hands signing over to a next key with a line the current key signs. `jpack audit verify
---public-key <file>` checks every signature and rotation, reports how far the signatures reach and
-how many records are unsigned, and fails on a bad signature, a signature for another record, a line
+--public-key <file>` checks every signature and rotation, reports how far they authenticate one
+uninterrupted prefix and how many individual records have a valid signature of their own, including
+beyond an earlier chain break, and fails on a bad signature, a signature for another record, a line
 naming no record, a rotation the key in force did not sign, a revoked key's line, or lines out of
 order; `--require-signed-through <sequence>` fails while the signatures do not reach that sequence.
 Revocation is the verifier's: `--revoked <file>` names keys not to trust from a sequence on, and

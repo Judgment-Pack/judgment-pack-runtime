@@ -134,6 +134,11 @@ above — for every input it admits, not merely for the inputs it happened to ru
   fitness of any policy a pack encodes.
 - **No authorization.** Conformance is not authority (§10). This runtime authorizes nothing, executes
   nothing, and fetches nothing.
+- **Nothing about audit authentication.** This evaluator-conformance claim adds nothing to an audit
+  report. An audit report's chain-link statement is limited to the committed prefix through the
+  last chained record, excluding an uncovered suffix; its signed and stamped `through` values
+  describe an uninterrupted prefix, separately from valid signatures and trusted stamps on
+  individual records.
 - **Nothing about a deployment or a particular run** in production, and nothing about the facts and
   evidence a caller supplied for it (§3.5).
 - **Nothing under any other `specVersion`.** A claim attaches to one exact version and is not

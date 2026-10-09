@@ -90,7 +90,7 @@ func TestAuditVerifyExitsByTheChain(t *testing.T) {
 	configPath, trail := recordedProject(t, 3)
 	code, output := verification(t, "--config", configPath)
 	if code != 0 || output.OutputVersion != result.OutputVersion || output.Command != "audit verify" || output.Status != "valid" ||
-		output.Scope != audit.ScopeOneSuppliedChain || output.Lines != 3 || output.Coverage.Chained != 3 || output.TrailPath == "" {
+		output.Scope != audit.ScopeCommittedPrefix || output.Lines != 3 || output.Coverage.Chained != 3 || output.TrailPath == "" {
 		t.Fatalf("exit=%d output=%+v", code, output)
 	}
 	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
@@ -105,7 +105,7 @@ func TestAuditVerifyExitsByTheChain(t *testing.T) {
 		t.Fatalf("doesNotEstablish: %q", output.DoesNotEstablish)
 	}
 	code, stdout, _ := runTest(t, []string{"audit", "verify", "--config", configPath}, "")
-	if code != 0 || !strings.Contains(stdout, "the integrity of one supplied chain") || !strings.Contains(stdout, "NOT ESTABLISHED: The last line") ||
+	if code != 0 || !strings.HasPrefix(stdout, "consistent through sequence 3; 0 uncovered line(s) after it\n") || !strings.Contains(stdout, "NOT ESTABLISHED: The last chained line (sequence 3), and any lines rewritten") ||
 		!strings.Contains(stdout, "signed: not checked (no --public-key)") || !humanEndsWithAttempts(stdout) {
 		t.Fatalf("human output: %q", stdout)
 	}
@@ -117,6 +117,60 @@ func TestAuditVerifyExitsByTheChain(t *testing.T) {
 	if code != result.ExitInvalid || output.Status != "invalid" || len(output.Findings) != 1 ||
 		output.Findings[0] != (result.AuditFinding{Name: audit.FindingPreviousMismatch, Line: 2, Detail: "previous is not the digest of the line before it"}) {
 		t.Fatalf("an edited first line: exit=%d %+v", code, output.Findings)
+	}
+}
+
+func TestAuditVerifyHelpDistinguishesPrefixAndDirectEvidence(t *testing.T) {
+	help := (&App{}).auditVerifyCommand().Long
+	for _, want := range []string{
+		"unchained lines after it are uncovered and outside that prefix, and a file with no chained record has no chained history",
+		"signedRecords counts individual records whose own signatures hold even after an earlier chain break",
+		"stamps.trusted counts trusted stamps whose individual record checkpoints match even after an earlier chain break",
+	} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("audit verify help does not contain %q", want)
+		}
+	}
+}
+
+func TestAuditVerifyHeadlinesNameCommittedAndUncoveredLines(t *testing.T) {
+	unchained := filepath.Join(t.TempDir(), "unchained.jsonl")
+	if err := os.WriteFile(unchained, []byte("{\"line\":1}\n{\"line\":2}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runTest(t, []string{"audit", "verify", "--trail", unchained}, "")
+	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "no chained record: 2 line(s), all uncovered\n") {
+		t.Fatalf("unchained: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if code, output := verification(t, "--trail", unchained); code != 0 || output.Scope != audit.ScopeNoChainedRecord {
+		t.Fatalf("unchained JSON: exit=%d scope=%q", code, output.Scope)
+	}
+
+	empty := filepath.Join(t.TempDir(), "empty.jsonl")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"audit", "verify", "--trail", empty}, "")
+	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "no chained record: 0 line(s), all uncovered\n") ||
+		!strings.Contains(stdout, "NOT ESTABLISHED: That the file contains a chained history: the file is empty.\n") {
+		t.Fatalf("empty: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+
+	_, trail := recordedProject(t, 1)
+	file, err := os.OpenFile(trail, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("{\"tail\":1}\n{\"tail\":2}\n"); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runTest(t, []string{"audit", "verify", "--trail", trail}, "")
+	if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "consistent through sequence 1; 2 uncovered line(s) after it\n") {
+		t.Fatalf("tail: exit=%d stderr=%q stdout=%q", code, stderr, stdout)
 	}
 }
 
@@ -248,13 +302,25 @@ func TestAuditRepairStartsANewSegment(t *testing.T) {
 	if code := evaluate(); code != 0 {
 		t.Fatalf("the writer chains after the discontinuity: exit=%d", code)
 	}
+	file, err = os.OpenFile(trail, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString("{\"tail\":true}\n"); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
 	code, output := verification(t, "--config", configPath)
 	if code != 0 || output.Status != "segmented" || len(output.Segments) != 2 || output.Coverage.Damaged != 1 || len(output.Discontinuities) != 1 ||
 		!endsWithAttempts(output.DoesNotEstablish) {
 		t.Fatalf("exit=%d %+v", code, output)
 	}
 	code, human, _ := runTest(t, []string{"audit", "verify", "--config", configPath}, "")
-	if code != 0 || !strings.HasPrefix(human, "SEGMENTED: 1 discontinuity record(s); the history is not intact across them") ||
+	wantHeadline := "SEGMENTED: 1 discontinuity record(s); the history is not intact across them; chain-link checks passed through sequence 5, with 1 uncovered line(s) after it\n"
+	if code != 0 || !strings.HasPrefix(human, wantHeadline) ||
 		!humanEndsWithAttempts(human) {
 		t.Fatalf("human output: %q", human)
 	}

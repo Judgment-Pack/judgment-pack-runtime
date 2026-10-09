@@ -104,6 +104,83 @@ func TestATrustedStampCoversTheLinesUpToItsCheckpoint(t *testing.T) {
 	}
 }
 
+// Direct evidence for a later record still holds when an earlier chain link
+// breaks, although it cannot authenticate one uninterrupted prefix from line 1.
+func TestDirectSignatureAndStampAfterAChainBreakAreReported(t *testing.T) {
+	_, _, trail := chainedTrail(t, 3)
+	lines := splitLines(trail)
+	signer := signerOf(t, vectorSeed1)
+	signature, err := signer.SignRecordLine(lines[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	tsa := testAuthority(t, tsatest.Options{})
+	stamp := stampOf(t, tsa, checkpointAt(t, trail, 3))
+
+	changed := bytes.Clone(lines[0])
+	changed = bytes.Replace(changed, []byte("{"), []byte("{ "), 1)
+	lines[0] = changed
+	chain := verifySignedAndStamped(t, joinLines(lines), signature, stamp, signer, tsa)
+	wantSigned := "That any uninterrupted prefix from line 1 is authenticated by a signature that was checked; 1 record carries a signature that was checked."
+	wantStamped := "That any uninterrupted prefix from line 1 is shown to have existed by any time; 1 trusted stamp shows its record existed by its time."
+	if chain.Status != "invalid" || chain.Coverage.Signed.Status != "none" || chain.Coverage.SignedRecords != 1 ||
+		chain.Coverage.Stamped.Status != "none" || chain.Stamps.Trusted != 1 ||
+		!containsString(chain.DoesNotEstablish, wantSigned) || !containsString(chain.DoesNotEstablish, wantStamped) {
+		t.Fatalf("findings=%v coverage=%+v stamps=%+v statements=%q", findingNames(chain), chain.Coverage, chain.Stamps, chain.DoesNotEstablish)
+	}
+}
+
+// The corresponding "after N" sentences also describe lost prefix coverage,
+// without denying valid direct evidence after the break.
+func TestDirectSignatureAndStampAfterAPartialPrefixAreReported(t *testing.T) {
+	_, _, trail := chainedTrail(t, 3)
+	lines := splitLines(trail)
+	signer := signerOf(t, vectorSeed1)
+	signature1, err := signer.SignRecordLine(lines[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature3, err := signer.SignRecordLine(lines[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	tsa := testAuthority(t, tsatest.Options{})
+	stamps := append(stampOf(t, tsa, checkpointAt(t, trail, 1)), stampOf(t, tsa, checkpointAt(t, trail, 3))...)
+
+	changed := bytes.Clone(lines[1])
+	changed = bytes.Replace(changed, []byte("{"), []byte("{ "), 1)
+	lines[1] = changed
+	chain := verifySignedAndStamped(t, joinLines(lines), append(signature1, signature3...), stamps, signer, tsa)
+	wantSigned := "Lines after 1 are not authenticated as one uninterrupted prefix by any signature that was checked; 1 record after sequence 1 carries a signature that was checked."
+	wantStamped := "Lines after 1 are not shown as one uninterrupted prefix to have existed by any time; 1 trusted stamp after sequence 1 shows its record existed by its time."
+	if chain.Status != "invalid" || chain.Coverage.Signed.Through != 1 || chain.Coverage.SignedRecords != 2 ||
+		chain.Coverage.Stamped.Through != 1 || chain.Stamps.Trusted != 2 ||
+		!containsString(chain.DoesNotEstablish, wantSigned) || !containsString(chain.DoesNotEstablish, wantStamped) {
+		t.Fatalf("findings=%v coverage=%+v stamps=%+v statements=%q", findingNames(chain), chain.Coverage, chain.Stamps, chain.DoesNotEstablish)
+	}
+}
+
+func verifySignedAndStamped(t *testing.T, trail, sidecar, stamps []byte, signer *Signer, tsa *tsatest.Authority) result.AuditChain {
+	t.Helper()
+	pool := x509.NewCertPool()
+	pool.AddCert(tsa.Root)
+	signatures := SignatureOptions{
+		Keys:        keys(signer),
+		Sidecar:     bytes.NewReader(sidecar),
+		SidecarSize: int64(len(sidecar)),
+	}
+	stampOptions := StampOptions{
+		Stamps:     bytes.NewReader(stamps),
+		StampsSize: int64(len(stamps)),
+		Verify:     timestamp.VerifyOptions{Roots: pool},
+	}
+	report, err := Verify(bytes.NewReader(trail), int64(len(trail)), Options{Signatures: &signatures, Stamps: &stampOptions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report.Chain
+}
+
 // Every check of a token is a named finding, and a stamp that fails one
 // covers nothing: a token over another digest, with its signature changed,
 // under another root, from a certificate not for time-stamping alone, under

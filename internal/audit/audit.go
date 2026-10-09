@@ -114,12 +114,14 @@
 // lock that exists but cannot be taken now refuses the append instead.
 //
 // What the chain establishes, and what it does not. Recomputing each previous
-// shows whether the chained lines are consistent with one another: a line
-// edited, inserted, deleted or moved anywhere before the last breaks the link
-// of the line after it, and the legacy prefix is held as one block. That is
-// consistency, not authenticated history. The last line can be edited without
-// breaking any link, and a trail cut short, or rewritten from any line on with
-// its links recomputed, is as consistent as the real one: only a commitment
+// checks the committed prefix through the last chained record; unchained lines
+// after it are uncovered and outside that prefix, and a file with no chained
+// record has no chained history. Within the prefix, editing, inserting,
+// deleting or moving a line before a later chained record breaks a link, and
+// the legacy prefix is held as one block. That is consistency, not authenticated
+// history. The last chained line can be edited without breaking any link, and
+// a trail cut short, or rewritten from any line on with its links recomputed,
+// is as consistent as the real one: only a commitment
 // to the trail held by someone other than the operator, covering the lines in
 // question, tells them apart (ADR-0047 §2a). Verify checks the links by the
 // rules above; it lists the checkpoint of every chained record after a

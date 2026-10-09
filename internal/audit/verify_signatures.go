@@ -136,6 +136,7 @@ type signatureChecker struct {
 	unreadable int64
 	rotations  int64
 	signed     int64
+	signedAt   []int64
 	through    int64
 }
 
@@ -308,11 +309,24 @@ func (c *signatureChecker) checkRecord(v *verifier, item sidecarItem, number int
 		return FindingSignatureKeyRevoked, fmt.Sprintf("sidecar line %d is signed with key %s, which is revoked at sequence %d", number, KeyID(c.current), item.sequence)
 	}
 	c.signed++
+	c.signedAt = append(c.signedAt, item.sequence)
 	noteSigned(item.sequence)
 	if v.earliestFinding == 0 || v.earliestFinding > item.sequence {
 		c.through = item.sequence
 	}
 	return "", ""
+}
+
+// afterThrough is the number of records with valid own signatures beyond the
+// uninterrupted prefix those signatures establish.
+func (c *signatureChecker) afterThrough() int64 {
+	var count int64
+	for _, sequence := range c.signedAt {
+		if sequence > c.through {
+			count++
+		}
+	}
+	return count
 }
 
 // checkRotation holds a rotation to the key in force and to the keys the

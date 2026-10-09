@@ -86,7 +86,7 @@ func findingNames(chain result.AuditChain) []string {
 func TestAnIntactTrailVerifies(t *testing.T) {
 	_, _, data := chainedTrail(t, 4)
 	chain := verifyBytes(t, data, nil)
-	if chain.Status != "valid" || chain.Scope != ScopeOneSuppliedChain || chain.Lines != 4 || chain.Bytes != int64(len(data)) || chain.FindingsTotal != 0 {
+	if chain.Status != "valid" || chain.Scope != ScopeCommittedPrefix || chain.Lines != 4 || chain.Bytes != int64(len(data)) || chain.FindingsTotal != 0 {
 		t.Fatalf("chain = %+v", chain)
 	}
 	if chain.Coverage.Chained != 4 || chain.Coverage.LegacyPrefix != 0 || chain.Coverage.Uncovered != 0 ||
@@ -101,9 +101,49 @@ func TestAnIntactTrailVerifies(t *testing.T) {
 	if len(chain.Segments) != 1 || chain.Segments[0] != (result.AuditSegment{FirstLine: 1, LastLine: 4}) {
 		t.Fatalf("segments = %+v", chain.Segments)
 	}
-	if len(chain.Establishes) != 1 || chain.Establishes[0] != establishesConsistency ||
-		!containsString(chain.DoesNotEstablish, notLastLine) || !containsString(chain.DoesNotEstablish, notComplete) || !containsString(chain.DoesNotEstablish, notSignedUnchecked) {
+	wantStatement := "The chain-link checks passed through sequence 4, the last chained record and end of the committed prefix."
+	if len(chain.Establishes) != 1 || chain.Establishes[0] != wantStatement ||
+		!containsString(chain.DoesNotEstablish, fmt.Sprintf(notLastLine, 4)) || !containsString(chain.DoesNotEstablish, notComplete) || !containsString(chain.DoesNotEstablish, notSignedUnchecked) {
 		t.Fatalf("statements = %v / %v", chain.Establishes, chain.DoesNotEstablish)
+	}
+}
+
+// A chained record commits no unchained suffix after it. Editing such a
+// suffix changes neither the checks that passed nor the prefix they describe.
+func TestConsistencyStatementExcludesAnUnchainedSuffix(t *testing.T) {
+	_, _, prefix := chainedTrail(t, 1)
+	tailA := append(append([]byte{}, prefix...), []byte("{\"tail\":1}\n{\"tail\":2}\n")...)
+	tailB := bytes.Replace(tailA, []byte(`{"tail":1}`), []byte(`{"tail":9}`), 1)
+	want := "The chain-link checks passed through sequence 1, the last chained record and end of the committed prefix; the 2 uncovered line(s) after it are outside that prefix."
+	for name, trail := range map[string][]byte{"original": tailA, "edited penultimate line": tailB} {
+		t.Run(name, func(t *testing.T) {
+			chain := verifyBytes(t, trail, nil)
+			if chain.Status != "valid" || chain.Coverage.Chained != 1 || chain.Coverage.Uncovered != 2 ||
+				len(chain.Establishes) != 1 || chain.Establishes[0] != want {
+				t.Fatalf("coverage=%+v establishes=%q", chain.Coverage, chain.Establishes)
+			}
+		})
+	}
+}
+
+// With no chained record there was no chain-link check and no committed
+// prefix for the report to imply.
+func TestWhollyUnchainedTrailHasNoConsistencyStatement(t *testing.T) {
+	trail := []byte("{\"line\":1}\n{\"line\":2}\n")
+	chain := verifyBytes(t, trail, nil)
+	want := "That the lines form a chained history: no chained record was found, so all 2 line(s) are uncovered."
+	if chain.Status != "valid" || chain.Scope != ScopeNoChainedRecord || chain.Coverage.Chained != 0 || chain.Coverage.Uncovered != 2 ||
+		len(chain.Establishes) != 0 || !containsString(chain.DoesNotEstablish, want) {
+		t.Fatalf("coverage=%+v establishes=%q doesNotEstablish=%q", chain.Coverage, chain.Establishes, chain.DoesNotEstablish)
+	}
+}
+
+func TestEmptyTrailHasItsOwnNoChainStatement(t *testing.T) {
+	chain := verifyBytes(t, nil, nil)
+	want := "That the file contains a chained history: the file is empty."
+	if chain.Status != "valid" || chain.Scope != ScopeNoChainedRecord || chain.Lines != 0 ||
+		len(chain.Establishes) != 0 || !containsString(chain.DoesNotEstablish, want) {
+		t.Fatalf("chain=%+v establishes=%q doesNotEstablish=%q", chain, chain.Establishes, chain.DoesNotEstablish)
 	}
 }
 
@@ -114,6 +154,46 @@ func containsString(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestReviewFixedSentencesAreExact(t *testing.T) {
+	wants := map[string]string{
+		"last chained":         "The last chained line (sequence 6), and any lines rewritten from some point on with their links recomputed, are not authenticated by the chain: only a checkpoint covering them, held independently of the operator, shows they are the ones first written.",
+		"no signature after":   "Lines after 2 are not covered by any signature that was checked: a record signed later, or never, is not authenticated by any key.",
+		"no signature at all":  "That any line was signed by a key supplied: no signature that was checked covers one.",
+		"signature after":      "Lines after 2 are not authenticated as one uninterrupted prefix by any signature that was checked; 1 record after sequence 2 carries a signature that was checked.",
+		"signatures after":     "Lines after 2 are not authenticated as one uninterrupted prefix by any signature that was checked; 3 records after sequence 2 carry a signature that was checked.",
+		"signature no prefix":  "That any uninterrupted prefix from line 1 is authenticated by a signature that was checked; 1 record carries a signature that was checked.",
+		"signatures no prefix": "That any uninterrupted prefix from line 1 is authenticated by a signature that was checked; 3 records carry a signature that was checked.",
+		"no stamp after":       "That lines after 2 existed by any time: no trusted stamp covers them.",
+		"no stamp at all":      "That any line existed by any time: no trusted stamp covers one.",
+		"stamp after":          "Lines after 2 are not shown as one uninterrupted prefix to have existed by any time; 1 trusted stamp after sequence 2 shows its record existed by its time.",
+		"stamps after":         "Lines after 2 are not shown as one uninterrupted prefix to have existed by any time; 3 trusted stamps after sequence 2 show their records existed by their times.",
+		"stamp no prefix":      "That any uninterrupted prefix from line 1 is shown to have existed by any time; 1 trusted stamp shows its record existed by its time.",
+		"stamps no prefix":     "That any uninterrupted prefix from line 1 is shown to have existed by any time; 3 trusted stamps show their records existed by their times.",
+		"stamp lag":            "When any record was made: a stamp shows its checkpoint existed by the stamp's time, not how long before, so a record's at stays the operator's word; the lag between each prefix-covered record's at and the first stamp covering it is reported, and judging it is the reader's.",
+	}
+	got := map[string]string{
+		"last chained":         fmt.Sprintf(notLastLine, 6),
+		"no signature after":   fmt.Sprintf(notSignedAfter, 2),
+		"no signature at all":  notSignedNone,
+		"signature after":      signedAfterStatement(2, 1),
+		"signatures after":     signedAfterStatement(2, 3),
+		"signature no prefix":  signedNoneStatement(1),
+		"signatures no prefix": signedNoneStatement(3),
+		"no stamp after":       fmt.Sprintf(notStampedAfter, 2),
+		"no stamp at all":      notStampedNone,
+		"stamp after":          stampedAfterStatement(2, 1),
+		"stamps after":         stampedAfterStatement(2, 3),
+		"stamp no prefix":      stampedNoneStatement(1),
+		"stamps no prefix":     stampedNoneStatement(3),
+		"stamp lag":            notBeforeStamp,
+	}
+	for name, want := range wants {
+		if got[name] != want {
+			t.Errorf("%s: got %q, want %q", name, got[name], want)
+		}
+	}
 }
 
 // Every kind of tampering is either found by the chain alone or, where the
