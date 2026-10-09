@@ -132,8 +132,9 @@ above — for every input it admits, not merely for the inputs it happened to ru
   sufficient, that an author or reviewer had authority, that an outcome is legally or ethically
   permissible, or that use of a pack is safe. It asserts nothing about the accuracy, quality, or
   fitness of any policy a pack encodes.
-- **No authorization.** Conformance is not authority (§10). This runtime authorizes nothing, executes
-  nothing, and fetches nothing.
+- **No authorization.** Conformance is not authority (§10). This runtime authorizes nothing and
+  executes nothing, and fetches nothing for evaluation or input acquisition; the sole exception is
+  requested time-stamping, when it requests and receives a time-stamping authority's token.
 - **Nothing about audit authentication.** This evaluator-conformance claim adds nothing to an audit
   report. An audit report's chain-link statement is limited to the committed prefix through the
   last chained record, excluding an uncovered suffix; its signed and stamped `through` values

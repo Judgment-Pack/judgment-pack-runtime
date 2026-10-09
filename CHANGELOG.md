@@ -2,6 +2,12 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Scope the runtime's no-fetch limit to evaluation and input acquisition** (#238). CONFORMANCE.md
+  and the README name requested time-stamping, when the runtime requests and receives a
+  time-stamping authority's token, as the sole exception. No runtime behavior changes.
+
 ## 0.28.0 - 2026-10-09
 
 - **The audit report says what it establishes after an uncovered suffix or a chain break** (#240,
