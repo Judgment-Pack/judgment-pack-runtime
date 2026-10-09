@@ -116,7 +116,7 @@ func (a *App) auditStampCommand() *cobra.Command {
 					return a.stampsTooLarge(commandName, format, "The stamps file filled before the token could be kept; the trail and the decisions in it are as they were.")
 				}
 				if err != nil {
-					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-WRITE", "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the same checkpoint.")
+					return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-WRITE", "The token could not be kept in the stamps file; the trail and the decisions in it are as they were, and asking again stamps the checkpoint at the trail's head at that time.")
 				}
 				if appended {
 					output.Status = "stamped"
@@ -155,7 +155,7 @@ func (a *App) stampsTooLarge(commandName, format, message string) error {
 // stampFailure reports an authority that could not stamp, never with its
 // address, which may hold credentials. Nothing was written.
 func (a *App) stampFailure(commandName, format string, err error) error {
-	const untouched = " Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the same checkpoint."
+	const untouched = " Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the checkpoint at the trail's head at that time."
 	code := "JPS-AUDIT-STAMP-INVALID"
 	switch {
 	case errors.Is(err, timestamp.ErrUnreachable):
