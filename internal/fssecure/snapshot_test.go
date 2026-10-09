@@ -4,12 +4,16 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestOpenSnapshotRetriesChangedIdentities(t *testing.T) {
 	for _, changed := range []string{"trail", "companion", "absent"} {
 		t.Run(changed, func(t *testing.T) {
+			if runtime.GOOS == "windows" && changed != "absent" {
+				t.Skip("replacement identity retries are not exercised because a held file cannot be renamed over on Windows")
+			}
 			dir := t.TempDir()
 			trail, side := filepath.Join(dir, "trail"), filepath.Join(dir, "side")
 			write := func(name, data string) {
@@ -25,10 +29,13 @@ func TestOpenSnapshotRetriesChangedIdentities(t *testing.T) {
 			trailOpens, sideOpens := 0, 0
 			openTrail := func() (*os.File, error) {
 				trailOpens++
-				file, err := os.Open(trail)
 				if trailOpens == 1 && changed == "trail" {
 					write(trail+".new", "new trail\n")
+				}
+				file, err := os.Open(trail)
+				if err == nil && trailOpens == 1 && changed == "trail" {
 					if err := os.Rename(trail+".new", trail); err != nil {
+						file.Close()
 						t.Fatal(err)
 					}
 				}
@@ -36,10 +43,15 @@ func TestOpenSnapshotRetriesChangedIdentities(t *testing.T) {
 			}
 			openSide := func() (*os.File, error) {
 				sideOpens++
-				file, err := os.Open(side)
 				if sideOpens == 1 && changed != "trail" {
 					write(side+".new", "new side\n")
+				}
+				file, err := os.Open(side)
+				if sideOpens == 1 && changed != "trail" {
 					if err := os.Rename(side+".new", side); err != nil {
+						if file != nil {
+							file.Close()
+						}
 						t.Fatal(err)
 					}
 				}
@@ -112,6 +124,9 @@ func TestOpenSnapshotOpensCompanionsUnderTheLock(t *testing.T) {
 }
 
 func TestOpenSnapshotRefusesContinuallyChangingPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("continually replaced paths are not exercised because a held file cannot be renamed over on Windows")
+	}
 	name := filepath.Join(t.TempDir(), "trail")
 	var opened []*os.File
 	open := func() (*os.File, error) {

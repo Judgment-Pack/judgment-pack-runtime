@@ -550,6 +550,9 @@ func TestAuditSnapshotIncludesFirstSidecarCreation(t *testing.T) {
 // Moving the trail aside before it is read must not cause a second, unchecked
 // size acquisition from the old inode.
 func TestAuditCheckpointUsesTheOpenedSnapshotSizes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("moving a trail aside while its snapshot is held is not exercised because a held file cannot be renamed over on Windows")
+	}
 	_, trail := recordedProject(t, 2)
 	longer, err := os.ReadFile(trail)
 	if err != nil {
@@ -567,20 +570,31 @@ func TestAuditCheckpointUsesTheOpenedSnapshotSizes(t *testing.T) {
 	openAuditSnapshot = func(open func() (*os.File, error), companions ...func() (*os.File, error)) ([]*os.File, []int64, bool, error) {
 		files, sizes, locked, err := original(open, companions...)
 		if err == nil && !moved {
+			closeFiles := func() {
+				for _, file := range files {
+					if file != nil {
+						file.Close()
+					}
+				}
+			}
 			moved = true
 			if err := os.Rename(trail, aside); err != nil {
-				t.Fatal(err)
+				closeFiles()
+				return nil, nil, false, err
 			}
 			file, err := os.OpenFile(aside, os.O_APPEND|os.O_WRONLY, 0)
 			if err != nil {
-				t.Fatal(err)
+				closeFiles()
+				return nil, nil, false, err
 			}
 			if _, err := file.Write(secondLine); err != nil {
 				file.Close()
-				t.Fatal(err)
+				closeFiles()
+				return nil, nil, false, err
 			}
 			if err := file.Close(); err != nil {
-				t.Fatal(err)
+				closeFiles()
+				return nil, nil, false, err
 			}
 		}
 		return files, sizes, locked, err
