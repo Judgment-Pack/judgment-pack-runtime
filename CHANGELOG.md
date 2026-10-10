@@ -4,6 +4,18 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+What this runtime conforms to is stated in `CONFORMANCE.md`.
+
+## 0.29.0 - 2026-10-10
+
+- **Graph evaluations identify the exact loaded revisions** (#251). Experimental graph
+  answers include `graphSha256`, `configSha256`, and `nodes[].packSha256`, computed
+  from the bytes already loaded for evaluation. Repeated uses of one pack identify
+  each read separately. Clients can distinguish a retained result from changed
+  project files. These digests establish neither an atomic snapshot nor reviewed
+  status, correct policy or facts, authorization, or graph conformance. Rehearsals
+  remain outside the decision audit trail.
+
 - **An audit stamp write failure describes its retry accurately** (#237). The trail and its
   decisions remain unchanged, and asking again stamps the checkpoint at the trail's head at that
   time, which may be newer if another evaluation appended a record after the failed write. The
