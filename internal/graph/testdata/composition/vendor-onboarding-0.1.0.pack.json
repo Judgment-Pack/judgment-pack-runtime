@@ -1,0 +1,72 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/vendor-onboarding",
+  "version": "0.1.0",
+  "title": "Synthetic vendor onboarding fixture",
+  "description": "Constructed graph-surface fixture: approve or decline a vendor from the screening decision's outcome, which an upstream graph node feeds as a fact and as evidence availability. Synthetic content for runtime testing; it authorizes nothing.",
+  "decision": {
+    "intent": "Decide whether the vendor proceeds to onboarding once the screening decision is known.",
+    "question": "Should this vendor be onboarded, given the screening decision's outcome?"
+  },
+  "evidenceRequirements": [
+    {
+      "id": "screening-outcome",
+      "description": "The upstream screening decision's produced outcome.",
+      "required": true,
+      "kind": "attestation"
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "approve",
+      "label": "Approve",
+      "description": "The screening decision cleared the vendor."
+    },
+    {
+      "id": "decline",
+      "label": "Decline",
+      "description": "The screening decision matched the vendor."
+    }
+  ],
+  "rules": [
+    {
+      "id": "approve-when-clear",
+      "description": "Approve the vendor when the screening decision produced the clear outcome.",
+      "when": {
+        "op": "fact",
+        "path": "/screening/status",
+        "operator": "equals",
+        "value": "clear"
+      },
+      "outcome": "approve",
+      "onUnknown": "escalate",
+      "rationale": "A screening that resolved nothing is not a clearance, and this pack never infers one."
+    },
+    {
+      "id": "decline-when-hit",
+      "description": "Decline the vendor when the screening decision produced the hit outcome.",
+      "when": {
+        "op": "fact",
+        "path": "/screening/status",
+        "operator": "equals",
+        "value": "hit"
+      },
+      "outcome": "decline",
+      "onUnknown": "escalate",
+      "rationale": "The same missing status blocks a decline for the same reason it blocks an approval."
+    }
+  ],
+  "escalation": {
+    "triggers": ["unknown", "missing-required-evidence"],
+    "target": {
+      "kind": "human-role",
+      "name": "Compliance"
+    },
+    "message": "Escalate a vendor whose screening decision cannot be established."
+  },
+  "metadata": {
+    "authors": ["judgment-pack-runtime tests"],
+    "createdAt": "2026-07-29T00:00:00Z",
+    "license": "Apache-2.0"
+  }
+}

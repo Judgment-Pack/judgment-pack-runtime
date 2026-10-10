@@ -1,0 +1,46 @@
+{
+  "graphMatrixVersion": "1",
+  "cases": [
+    {
+      "id": "both-consumers-run",
+      "inputs": {
+        "screening": {
+          "facts": {
+            "screening": {
+              "matches": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        }
+      },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "approve",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      },
+      "expectedNodes": {
+        "first": {
+          "kind": "outcome",
+          "outcomeId": "approve",
+          "reasons": [],
+          "handoff": {
+            "state": "none"
+          }
+        },
+        "second": {
+          "kind": "outcome",
+          "outcomeId": "approve",
+          "reasons": [],
+          "handoff": {
+            "state": "none"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -891,3 +891,12 @@ module mode for older WSL configurations.
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+### Graph evaluation revisions
+
+Experimental graph evaluations include `graphSha256`, `configSha256`, and a
+`packSha256` for each node. These identify the exact bytes loaded for that
+run; they do not establish reviewed status or an atomic project snapshot.
+See [ADR-0049](docs/adr/0049-bind-graph-evaluations-to-loaded-bytes.md) and the
+[composition fixtures](internal/graph/testdata/composition/README.md) for
+fan-in, fan-out, repeated packs and unresolved results.

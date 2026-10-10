@@ -1,0 +1,137 @@
+{
+  "graphMatrixVersion": "1",
+  "cases": [
+    {
+      "id": "both-clear",
+      "inputs": {
+        "left": {
+          "facts": {
+            "screening": {
+              "matches": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        },
+        "right": {
+          "facts": {
+            "screening": {
+              "matches": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        }
+      },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "approve",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      }
+    },
+    {
+      "id": "left-hit",
+      "inputs": {
+        "left": {
+          "facts": {
+            "screening": {
+              "matches": "1"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        },
+        "right": {
+          "facts": {
+            "screening": {
+              "matches": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        }
+      },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "decline",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      }
+    },
+    {
+      "id": "right-hit",
+      "inputs": {
+        "left": {
+          "facts": {
+            "screening": {
+              "matches": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        },
+        "right": {
+          "facts": {
+            "screening": {
+              "matches": "1"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        }
+      },
+      "expectedDisposition": {
+        "kind": "outcome",
+        "outcomeId": "decline",
+        "reasons": [],
+        "handoff": {
+          "state": "none"
+        }
+      }
+    },
+    {
+      "id": "missing-right",
+      "inputs": {
+        "left": {
+          "facts": {
+            "screening": {
+              "matches": "0"
+            }
+          },
+          "evidence": {
+            "screening-record": "present"
+          }
+        },
+        "right": {
+          "facts": {},
+          "evidence": {
+            "screening-record": "present"
+          }
+        }
+      },
+      "expectedDisposition": {
+        "kind": "unresolved",
+        "reasons": [
+          "unknown"
+        ],
+        "handoff": {
+          "state": "requested",
+          "triggeredBy": [
+            "unknown"
+          ]
+        }
+      }
+    }
+  ]
+}

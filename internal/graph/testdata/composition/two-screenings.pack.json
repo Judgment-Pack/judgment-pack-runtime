@@ -1,0 +1,92 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/two-screenings",
+  "version": "0.1.0",
+  "title": "Two independent screenings",
+  "description": "Synthetic fan-in fixture. Both screening outcomes must be clear to approve; either hit declines. Missing outcomes escalate.",
+  "decision": {
+    "intent": "Decide whether the vendor proceeds to onboarding once the screening decision is known.",
+    "question": "Should this vendor be onboarded, given the screening decision's outcome?"
+  },
+  "evidenceRequirements": [],
+  "outcomes": [
+    {
+      "id": "approve",
+      "label": "Approve",
+      "description": "The screening decision cleared the vendor."
+    },
+    {
+      "id": "decline",
+      "label": "Decline",
+      "description": "The screening decision matched the vendor."
+    }
+  ],
+  "rules": [
+    {
+      "id": "both-clear",
+      "description": "Combine both declared screening outcomes.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "fact",
+            "path": "/left",
+            "operator": "equals",
+            "value": "clear"
+          },
+          {
+            "op": "fact",
+            "path": "/right",
+            "operator": "equals",
+            "value": "clear"
+          }
+        ]
+      },
+      "outcome": "approve",
+      "onUnknown": "escalate",
+      "rationale": "A screening that resolved nothing is not a clearance, and this pack never infers one."
+    },
+    {
+      "id": "either-hit",
+      "description": "Combine both declared screening outcomes.",
+      "when": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "fact",
+            "path": "/left",
+            "operator": "equals",
+            "value": "hit"
+          },
+          {
+            "op": "fact",
+            "path": "/right",
+            "operator": "equals",
+            "value": "hit"
+          }
+        ]
+      },
+      "outcome": "decline",
+      "onUnknown": "escalate",
+      "rationale": "The same missing status blocks a decline for the same reason it blocks an approval."
+    }
+  ],
+  "escalation": {
+    "triggers": [
+      "unknown",
+      "missing-required-evidence"
+    ],
+    "target": {
+      "kind": "human-role",
+      "name": "Compliance"
+    },
+    "message": "Escalate a vendor whose screening decision cannot be established."
+  },
+  "metadata": {
+    "authors": [
+      "judgment-pack-runtime tests"
+    ],
+    "createdAt": "2026-07-29T00:00:00Z",
+    "license": "Apache-2.0"
+  }
+}

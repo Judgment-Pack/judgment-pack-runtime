@@ -1,0 +1,29 @@
+{
+  "formatVersion": "1",
+  "version": "0.1.0",
+  "id": "fan-in",
+  "nodes": {
+    "left": {
+      "pack": "sanctions-screening"
+    },
+    "right": {
+      "pack": "sanctions-screening"
+    },
+    "final": {
+      "pack": "two-screenings"
+    }
+  },
+  "edges": [
+    {
+      "from": "left",
+      "to": "final",
+      "fact": "/left"
+    },
+    {
+      "from": "right",
+      "to": "final",
+      "fact": "/right"
+    }
+  ],
+  "result": "final"
+}
