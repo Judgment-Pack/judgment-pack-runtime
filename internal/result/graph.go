@@ -51,10 +51,12 @@ type GraphEvidenceFeed struct {
 // summarized away: the composite is these results side by side, not a
 // replacement for them.
 type GraphNodeEvaluation struct {
-	Node          string              `json:"node"`
-	Pack          string              `json:"pack"`
-	PackID        string              `json:"packId"`
-	PackVersion   string              `json:"packVersion"`
+	Node        string `json:"node"`
+	Pack        string `json:"pack"`
+	PackID      string `json:"packId"`
+	PackVersion string `json:"packVersion"`
+	// PackSHA256 binds this node to the exact bytes presented to the evaluator.
+	PackSHA256    string              `json:"packSha256"`
 	SpecVersion   string              `json:"specVersion"`
 	FactFeeds     []GraphFactFeed     `json:"factFeeds"`
 	EvidenceFeeds []GraphEvidenceFeed `json:"evidenceFeeds"`
@@ -83,6 +85,10 @@ type GraphHandoff struct {
 // the run's, as Evaluation's are (ADR-0044): one invocation consults the lock
 // once, for the configuration, the graph document and every node's pack.
 type GraphEvaluation struct {
+	// Exact-byte provenance, independent of a reviewed set or audit record.
+	// These bare-hex SHA-256 values identify loaded bytes, not their truth.
+	GraphSHA256               string                `json:"graphSha256"`
+	ConfigSHA256              string                `json:"configSha256"`
 	OutputVersion             string                `json:"outputVersion"`
 	Tool                      Tool                  `json:"tool"`
 	Command                   string                `json:"command"`

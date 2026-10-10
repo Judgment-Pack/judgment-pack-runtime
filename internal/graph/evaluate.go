@@ -399,6 +399,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			Pack:          packID,
 			PackID:        evaluated.PackID,
 			PackVersion:   evaluated.PackVersion,
+			PackSHA256:    strings.TrimPrefix(audit.Digest(packBytes), "sha256:"),
 			SpecVersion:   evaluated.SpecVersion,
 			FactFeeds:     factFeeds,
 			EvidenceFeeds: evidenceFeeds,
@@ -410,6 +411,8 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 	}
 
 	output := result.GraphEvaluation{
+		GraphSHA256:               strings.TrimPrefix(doc.Digest, "sha256:"),
+		ConfigSHA256:              strings.TrimPrefix(loaded.ConfigDigest, "sha256:"),
 		OutputVersion:             result.OutputVersion,
 		Tool:                      result.CurrentTool(),
 		Command:                   options.Command,

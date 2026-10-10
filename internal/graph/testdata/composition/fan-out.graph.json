@@ -1,0 +1,35 @@
+{
+  "formatVersion": "1",
+  "version": "0.1.0",
+  "id": "fan-out",
+  "nodes": {
+    "screening": {
+      "pack": "sanctions-screening"
+    },
+    "first": {
+      "pack": "vendor-onboarding"
+    },
+    "second": {
+      "pack": "vendor-onboarding"
+    }
+  },
+  "edges": [
+    {
+      "from": "screening",
+      "to": "first",
+      "fact": "/screening/status",
+      "evidence": {
+        "id": "screening-outcome"
+      }
+    },
+    {
+      "from": "screening",
+      "to": "second",
+      "fact": "/screening/status",
+      "evidence": {
+        "id": "screening-outcome"
+      }
+    }
+  ],
+  "result": "second"
+}
