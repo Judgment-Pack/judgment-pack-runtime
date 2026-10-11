@@ -832,8 +832,8 @@ requirement for that pointer. Write one `in` whose operand carries both types in
 A caller can commit material of its own on the record. `experimental evaluate --binding <file>`,
 and the MCP tool's `binding` argument, take exactly `{"kind": "<scheme>", "digest":
 "sha256:<64 lowercase hex>"}`, `kind` being 1 to 128 characters of `a-z`, `0-9`, `.`, `_`, `/` and
-`-` (ADR-0050). Runner, for one, passes the digest of the preparation it made before a mapping-v2
-run, which the runtime never sees. The line carries it as given, as `binding` beside `cites`,
+`-` (ADR-0050). Runner's planned use (Judgment-Pack/judgment-pack-runner#55) is the digest of the
+preparation it makes before a mapping-v2 run, which the runtime never sees. The line carries it as given, as `binding` beside `cites`,
 compact and `kind` first, so the chain and the record signature cover it like any other member; a
 line written without one is byte for byte what it was. The runtime records the binding and never
 interprets it: it does not verify or recompute the digest, and the evaluation and the disposition
