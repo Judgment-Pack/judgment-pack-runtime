@@ -82,6 +82,8 @@ func TestAuditVerifyCompleteTrailReportIsUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A Windows checkout may turn the fixture's newlines into CRLF.
+		want = []byte(strings.ReplaceAll(string(want), "\r\n", "\n"))
 		code, stdout, stderr := runTest(t, []string{"audit", "verify", "--trail", trail, "--format", format}, "")
 		shown := trail
 		if format == "json" {
