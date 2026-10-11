@@ -480,8 +480,9 @@ and printable with `jpack packs schema`: every member it does not name is reject
 semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with them (ADR-0017), `"3"`
 the shape that may also ask for an audit trail (ADR-0018), `"4"` the shape that may also require the
 reviewed set (ADR-0044), `"5"` the shape that may also require comparable facts (ADR-0046), `"6"`
-the shape whose audit member may also say whether its trail is chained (ADR-0047), and this runtime
-reads all six.
+the shape whose audit member may also say whether its trail is chained (ADR-0047), `"7"` the shape
+whose audit member may also name the public key its signing key is expected to have, and this
+runtime reads all seven.
 
 There is **no templating, no target or environment blocks, and no selection**. A templated pack was
 never the pack anyone reviewed; environments are one file per environment by convention
@@ -642,11 +643,17 @@ nothing (a refused directory is named: `chmod go-w` fixes one others can write, 
 owns must be given to root or that user, or the key moved where every directory on its path passes),
 and on Windows, whose ACLs the runtime does not read, no key signs at all. The environment variable
 is process-wide: inherited, it signs every chained trail the process records for, under any
-configVersion, including projects that never named a key. In every case
-`packs validate` says why (`audit-signing-key`). Signing never fails a decision: a signature that
-cannot be written leaves the record unsigned. `jpack audit key generate` writes a key and prints its
-public key, `jpack audit key public` prints a key's public key, and `jpack audit key rotate --next
-<seed>` hands signing over to a next key with a line the current key signs. `jpack audit verify
+configVersion, including projects that never named a key. The public key the seed is expected to
+have may be named beside its path, by `"signingPublicKey": "<64 lowercase hexadecimal characters>"`
+under configVersion `"7"` or by the `JPACK_SIGNING_PUBLIC_KEY` environment variable, which takes
+precedence in the same way; then a seed whose public key is another is refused each time records
+are about to be signed, so a seed put at the path in the key's place signs nothing, and an expected
+key not of that form is refused before any seed is read. In every case `packs validate` says why
+(`audit-signing-key`), and for the expected key it names neither the path nor either key. Signing
+never fails a decision: a signature that cannot be written leaves the record unsigned. `jpack audit
+key generate` writes a key and prints its public key, `jpack audit key public` prints a key's public
+key, and `jpack audit key rotate --next <seed>` hands signing over to a next key with a line the
+current key signs. `jpack audit verify
 --public-key <file>` checks every signature and rotation, reports how far they authenticate one
 uninterrupted prefix and how many individual records have a valid signature of their own, including
 beyond an earlier chain break, and fails on a bad signature, a signature for another record, a line

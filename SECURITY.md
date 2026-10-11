@@ -167,9 +167,13 @@ and removes the seed again if it is then not read back as a key by its path.
 not read ACLs, and so it cannot show a key is its owner's alone; every key is refused there, as on
 any platform without unix ownership and modes. `JPACK_SIGNING_KEY` is process-wide: inherited by a
 process, it signs every chained trail that process records for, under any configVersion, including
-projects that never named a key. A refused key, a key that is not the key in force, and a signature
-that cannot be written all leave the record unsigned rather than the decision failed; `packs
-validate` reports the first two, and `audit verify` counts unsigned records. No output, diagnostic
+projects that never named a key. Where the public key the seed is expected to have is named, by the
+audit member's `signingPublicKey` or by `JPACK_SIGNING_PUBLIC_KEY`, a seed whose public key is
+another is refused each time records are about to be signed, so a seed put at the path in the key's
+place signs nothing; the refusal names neither the path nor either key. A refused key, a key that is
+not the key in force, and a signature that cannot be written all leave the record unsigned rather
+than the decision failed; `packs validate` reports the first two, and `audit verify` counts
+unsigned records. No output, diagnostic
 or report carries key material: keys are named by `keyId`. `jpack audit verify --public-key` checks
 the signatures against keys the verifier supplies, never against the project's own configuration. It
 refuses a supplied key under which anyone could sign, in `--public-key` and in `--revoked`, and a

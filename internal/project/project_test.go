@@ -110,7 +110,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 		code   string
 	}{
 		"no configVersion":                     {`{"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
-		"a later configVersion":                {`{"configVersion":"7","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
+		"a later configVersion":                {`{"configVersion":"8","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a semver configVersion":               {`{"configVersion":"1.0.0","packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"a numeric configVersion":              {`{"configVersion":1,"packs":{}}`, "JPS-PROJECT-CONFIG-VERSION"},
 		"no packs member":                      {`{"configVersion":"1"}`, "JPS-PROJECT-CONFIG-SCHEMA"},
@@ -139,7 +139,7 @@ func TestConfigSchemaAcceptsTheDocumentedShapeAndRejectsEverythingElse(t *testin
 
 	// The version refusal names what would have been accepted; a message that only
 	// said "no" would leave a caller guessing.
-	_, failure := Load(writeProject(t, `{"configVersion":"7","packs":{}}`, nil))
+	_, failure := Load(writeProject(t, `{"configVersion":"8","packs":{}}`, nil))
 	if failure.ExitCode != result.ExitUnsupported || !strings.Contains(failure.Message, "It accepts: "+strings.Join(SupportedConfigVersions(), ", ")+".") {
 		t.Fatalf("the refusal must be unsupported and name this runtime's versions: exit=%d %q", failure.ExitCode, failure.Message)
 	}
@@ -1817,8 +1817,8 @@ func TestConfigVersionTwoDeclaresGraphs(t *testing.T) {
 	// The schema payload names the newest shape and every shape read, so it
 	// cannot imply an earlier one stopped being accepted.
 	description := SchemaDescription("packs schema")
-	if description.ConfigVersion != "6" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3", "4", "5", "6"}) ||
-		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:6" {
+	if description.ConfigVersion != "7" || !slices.Equal(description.SupportedConfigVersions, []string{"1", "2", "3", "4", "5", "6", "7"}) ||
+		description.SchemaID != "urn:judgmentpack:runtime:jpack-config:7" {
 		t.Fatalf("schema description = %+v", description)
 	}
 }

@@ -58,9 +58,11 @@ it does not name is rejected, so a misspelled key is an error rather than an int
 dropped. `configVersion` is a single integer as a string — `"1"` is the shape without graphs, `"2"`
 the shape with them (ADR-0017), `"3"` the shape that may also ask for an audit trail
 (ADR-0018), `"4"` the shape that may also require the reviewed set (ADR-0044), `"5"` the shape
-that may also require comparable facts (ADR-0046), and `"6"` the shape whose audit member may also
-say whether its trail is chained (ADR-0047); this runtime reads all six. There is no minor or patch
-component, because there is nothing to negotiate: a program either knows the shape or does not.
+that may also require comparable facts (ADR-0046), `"6"` the shape whose audit member may also
+say whether its trail is chained (ADR-0047), and `"7"` the shape whose audit member may also name
+the public key its signing key is expected to have; this runtime reads all seven. There is no minor
+or patch component, because there is nothing to negotiate: a program either knows the shape or does
+not.
 
 Three things the file deliberately does **not** have:
 
@@ -1294,6 +1296,19 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   a key: set in a shell, a service unit or a CI job, and inherited by everything started from there,
   it turns signing on for every project those processes record for that keeps a chained trail,
   projects under `"3"` to `"5"` included. Set it only where that is what you want.
+- **The expected key.** `audit.signingPublicKey` names the public key the seed is expected to have,
+  64 lowercase hexadecimal characters as `jpack audit key generate` and `public` print it, under
+  configVersion `"7"` and only for a chained trail; the `JPACK_SIGNING_PUBLIC_KEY` environment
+  variable, when set and not empty, names it instead, and is process-wide in the same way. Each time
+  records are about to be signed, once for every evaluation or graph run that records, the seed at
+  the path is read and its public key compared with the expected one: a seed whose public key is
+  another is refused and signs nothing, so a seed put at the path in the key's place, between two
+  evaluations or before a fresh trail's first record, signs no record. An expected key that is not
+  of that form, or is not a public key a verifier may trust, is refused before any seed is read. A
+  seed that cannot be read keeps its own refusal. Either way the record is unsigned and the decision
+  recorded, and `packs validate` says why, naming which input named the expected key but neither the
+  path nor either key. After `jpack audit key rotate`, name the next key's public key as the expected
+  key too, or the next key signs nothing.
 - **What the key must be.** It is read only as it is opened, so what is checked is what is read. Its
   path must be absolute and have no symbolic link anywhere in it, so name it by its real path (on
   macOS, `/private/var/…` rather than `/var/…`): the runtime walks the path from the filesystem's

@@ -24,6 +24,7 @@ func (a *App) auditKeyCommand() *cobra.Command {
 		Short: "Make, show and rotate the key that signs a chained audit trail",
 		Long: "The key that signs a project's chained audit trail (ADR-0047): an Ed25519 seed held outside the project, named by the audit member's signingKey or by the JPACK_SIGNING_KEY environment variable. " +
 			"generate writes a new one, public prints a key's public half for whoever will verify, and rotate hands the trail's signing over to a next key with a line the current key signs. " +
+			"When the JPACK_SIGNING_PUBLIC_KEY environment variable or the audit member's signingPublicKey names the public key the seed is expected to have, a seed whose public key is another is refused each time records are about to be signed, so whatever is put at the seed's path signs nothing: the record is written unsigned, packs validate says why, and after a rotation the expected key must name the next key too. " +
 			"None of them prints anything of a key's private half.",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
