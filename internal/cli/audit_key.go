@@ -126,7 +126,7 @@ func (a *App) auditKeyRotateCommand() *cobra.Command {
 		Short: "Hand a trail's signing over to a next key",
 		Long: "Hand the project's chained audit trail over from the signing key it names to the key in --next <seed-file> (ADR-0047). " +
 			"Under the writer's lock, a key-rotation line is appended to the signature sidecar, made with the current key and naming the next key's public key and the trail's last line: the records up to that line are signed with the current key, and the records after it with the next. " +
-			"The current key, no longer in force, signs nothing more, and the next one signs nothing until the project names it, by its audit member's signingKey or JPACK_SIGNING_KEY: records written in between are unsigned, never failed. " +
+			"The current key, no longer in force, signs nothing more, and the next one signs nothing until the project names it, by its audit member's signingKey or JPACK_SIGNING_KEY, and, where an expected public key is named, names its public key too, by the audit member's signingPublicKey or JPACK_SIGNING_PUBLIC_KEY: records written in between are unsigned, never failed. " +
 			"The next key is held to the rules the current one is: outside the project and its owner's alone. " +
 			"It is refused when the project names no usable key, when that key is not the key in force in the sidecar, when the next key is the same key, before the trail has a chained record, while its last line is incomplete, and where no lock can be taken. " +
 			"A rotation does not revoke anything: whoever still holds the old key can sign as it until a verifier is told otherwise, which is the verifier's own trust configuration (jpack audit verify --revoked, and --public-key given once per key in the order the trail used them).",
@@ -197,7 +197,7 @@ func (a *App) auditKeyRotateCommand() *cobra.Command {
 			}
 			fmt.Fprintf(a.out, "rotated: records after line %d are signed with key %s, and key %s signs nothing more\n", output.At, output.Next, output.From)
 			fmt.Fprintf(a.out, "next public key: %s\n", output.NextPublicKey)
-			fmt.Fprintln(a.out, "name the next key now, by the audit member's signingKey or JPACK_SIGNING_KEY: until then records are written unsigned.")
+			fmt.Fprintln(a.out, "name the next key now, by the audit member's signingKey or JPACK_SIGNING_KEY, and, where an expected public key is named, its public key by signingPublicKey or JPACK_SIGNING_PUBLIC_KEY: until then records are written unsigned.")
 			return nil
 		},
 	}

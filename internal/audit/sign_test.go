@@ -1134,7 +1134,7 @@ func TestASeedFileIsReadInItsOneForm(t *testing.T) {
 	if _, err := ReadKey(writeKeyFile(t, filepath.Join(outside, "spaced"), "  "+strings.ToUpper(vectorSeed1)+"\r\n", 0o600)); err != nil {
 		t.Fatalf("surrounding whitespace and upper case are read: %v", err)
 	}
-	for _, read := range []func(string) (*Signer, error){ReadKey, func(path string) (*Signer, error) { return LoadSigner(path, nil, "") }} {
+	for _, read := range []func(string) (*Signer, error){ReadKey, func(path string) (*Signer, error) { return LoadSigner(path, nil, nil) }} {
 		if _, err := read("seed"); !errors.Is(err, ErrKeyNotAbsolute) {
 			t.Fatalf("a relative path: %v", err)
 		}
@@ -1156,11 +1156,15 @@ func TestASeedFileIsReadInItsOneForm(t *testing.T) {
 	}
 }
 
+// expecting is an expected public key, as LoadSigner takes one.
+func expecting(key string) *string { return &key }
+
 // An expected public key is read as written, on every platform, and one that
 // is not 64 lowercase hexadecimal characters encoding a public key a verifier
 // may trust is refused before anything at the seed's path is read (#255): a
 // seed that is not there, or a path that is not absolute, is never the reason
-// given. The refusal carries nothing of what was named.
+// given. An empty or blank value named is such a value, never no expected key.
+// The refusal carries nothing of what was named.
 func TestAMalformedExpectedKeyIsRefusedBeforeAnySeedIsRead(t *testing.T) {
 	good := signerOf(t, vectorSeed1).PublicKey()
 	absent := filepath.Join(t.TempDir(), "absent")
@@ -1172,17 +1176,21 @@ func TestAMalformedExpectedKeyIsRefusedBeforeAnySeedIsRead(t *testing.T) {
 		{"not hexadecimal", "g" + good[1:]},
 		{"surrounding whitespace", " " + good},
 		{"a trailing newline", good + "\n"},
+		{"empty", ""},
+		{"blank", "  "},
+		{"a tab", "\t"},
 		{"the identity, of small order", "01" + strings.Repeat("0", 62)},
 		{"all zeros, of small order", strings.Repeat("0", 64)},
 		{"not canonical", "ed" + strings.Repeat("f", 60) + "7f"},
 		{"not a point", "02" + strings.Repeat("0", 62)},
 	} {
 		for _, keyPath := range []string{absent, "relative-seed"} {
-			_, err := LoadSigner(keyPath, nil, row.expected)
+			_, err := LoadSigner(keyPath, nil, expecting(row.expected))
 			if !errors.Is(err, ErrExpectedKeyMalformed) || errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrKeyNotAbsolute) || errors.Is(err, ErrKeyPrivacyUnchecked) {
 				t.Fatalf("%s, seed %s: %v", row.name, keyPath, err)
 			}
-			if refusal := KeyRefusal(err); refusal != ErrExpectedKeyMalformed.Error() || strings.Contains(refusal, strings.TrimSpace(row.expected)) || strings.Contains(refusal, keyPath) {
+			named := strings.TrimSpace(row.expected)
+			if refusal := KeyRefusal(err); refusal != ErrExpectedKeyMalformed.Error() || (named != "" && strings.Contains(refusal, named)) || strings.Contains(refusal, keyPath) {
 				t.Fatalf("%s: the refusal %q", row.name, refusal)
 			}
 		}

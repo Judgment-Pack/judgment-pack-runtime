@@ -211,19 +211,23 @@ type Graph struct {
 // SigningPublicKey is the public key the signing key is expected to have, 64
 // lowercase hexadecimal characters: a seed whose public key is another is
 // refused each time records are about to be signed, so a seed put in the
-// signing key's place signs nothing. The JPACK_SIGNING_PUBLIC_KEY environment
-// variable, when set, names it instead. It needs configVersion "7" and a
-// chained trail.
+// signing key's place signs nothing. The schema holds it to being a string
+// and nothing more: a value of another form, the empty string included, is
+// refused as a key is, when signing, so the record is written unsigned, the
+// decision is recorded, and no diagnostic echoes the value. It is a pointer so
+// a member declared empty is told from one not declared. The
+// JPACK_SIGNING_PUBLIC_KEY environment variable, when set, names it instead.
+// It needs configVersion "7" and a chained trail.
 //
 // TimestampAuthority is the address of the RFC 3161 authority jpack audit
 // stamp asks (ADR-0047 §2a, C2); nothing on the decision path asks it. It
 // needs configVersion "6" and a chained trail.
 type Audit struct {
-	Dir                string `json:"dir"`
-	Chain              *bool  `json:"chain,omitempty"`
-	SigningKey         string `json:"signingKey,omitempty"`
-	SigningPublicKey   string `json:"signingPublicKey,omitempty"`
-	TimestampAuthority string `json:"timestampAuthority,omitempty"`
+	Dir                string  `json:"dir"`
+	Chain              *bool   `json:"chain,omitempty"`
+	SigningKey         string  `json:"signingKey,omitempty"`
+	SigningPublicKey   *string `json:"signingPublicKey,omitempty"`
+	TimestampAuthority string  `json:"timestampAuthority,omitempty"`
 }
 
 // Chains says whether this audit member asks for a chained trail: yes unless it
@@ -1127,22 +1131,25 @@ func (p *Project) SigningKeyPath() (string, string) {
 }
 
 // ExpectedSigningKey is the public key the signing key is expected to have,
-// as written (an environment variable's surrounding whitespace aside, as for
-// the seed's path), and where it was named: the JPACK_SIGNING_PUBLIC_KEY environment
-// variable when it is set and not empty, else the audit member's
-// signingPublicKey. Both are empty when neither names one, and when the
-// configuration declares no audit member.
-func (p *Project) ExpectedSigningKey() (string, string) {
+// exactly as written, and where it was named: the JPACK_SIGNING_PUBLIC_KEY
+// environment variable when it is set and not the empty string, else the
+// audit member's signingPublicKey when it is declared, whatever its value.
+// Nothing is trimmed: whitespace in either is part of the value, which is
+// then not a public key and is refused, never read as no key at all. It is
+// nil, with no source, when neither names one, and when the configuration
+// declares no audit member.
+func (p *Project) ExpectedSigningKey() (*string, string) {
 	if p == nil || p.Config.Audit == nil {
-		return "", ""
+		return nil, ""
 	}
-	if fromEnv := strings.TrimSpace(os.Getenv(audit.SigningPublicKeyEnv)); fromEnv != "" {
-		return fromEnv, SigningKeyFromEnvironment
+	if fromEnv := os.Getenv(audit.SigningPublicKeyEnv); fromEnv != "" {
+		return &fromEnv, SigningKeyFromEnvironment
 	}
-	if p.Config.Audit.SigningPublicKey != "" {
-		return p.Config.Audit.SigningPublicKey, SigningKeyFromConfiguration
+	if p.Config.Audit.SigningPublicKey != nil {
+		named := *p.Config.Audit.SigningPublicKey
+		return &named, SigningKeyFromConfiguration
 	}
-	return "", ""
+	return nil, ""
 }
 
 // SigningKey loads the signing key SigningKeyPath names, held to
@@ -1167,11 +1174,11 @@ func (p *Project) SigningKey() (*audit.Signer, error) {
 // expected public key: it loads the next key of a rotation, which is by
 // definition not the key named now.
 func (p *Project) LoadKey(keyPath string) (*audit.Signer, error) {
-	return p.loadKey(keyPath, "")
+	return p.loadKey(keyPath, nil)
 }
 
-// loadKey is LoadKey with the public key the key must have, or none.
-func (p *Project) loadKey(keyPath, expected string) (*audit.Signer, error) {
+// loadKey is LoadKey with the public key the key must have, or none (nil).
+func (p *Project) loadKey(keyPath string, expected *string) (*audit.Signer, error) {
 	self, err := p.root.Self()
 	if err != nil {
 		return nil, err

@@ -1299,12 +1299,16 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
 - **The expected key.** `audit.signingPublicKey` names the public key the seed is expected to have,
   64 lowercase hexadecimal characters as `jpack audit key generate` and `public` print it, under
   configVersion `"7"` and only for a chained trail; the `JPACK_SIGNING_PUBLIC_KEY` environment
-  variable, when set and not empty, names it instead, and is process-wide in the same way. Each time
+  variable, when set and not empty, names it instead, exactly as set (nothing is trimmed, so
+  whitespace, alone or around a key, is a malformed key rather than none), and is process-wide in
+  the same way. Each time
   records are about to be signed, once for every evaluation or graph run that records, the seed at
   the path is read and its public key compared with the expected one: a seed whose public key is
   another is refused and signs nothing, so a seed put at the path in the key's place, between two
   evaluations or before a fresh trail's first record, signs no record. An expected key that is not
-  of that form, or is not a public key a verifier may trust, is refused before any seed is read. A
+  of that form, or is not a public key a verifier may trust, is refused before any seed is read. The
+  configuration's schema holds the member to being a string and nothing more, so a malformed value
+  is refused here, as a key, never as a configuration, and no diagnostic repeats it. A
   seed that cannot be read keeps its own refusal. Either way the record is unsigned and the decision
   recorded, and `packs validate` says why, naming which input named the expected key but neither the
   path nor either key. After `jpack audit key rotate`, name the next key's public key as the expected

@@ -4,15 +4,16 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- **A signing seed replaced at its path signs nothing when the expected public key is named**
-  (#255, from Judgment-Pack/judgment-pack-runner#54). `JPACK_SIGNING_PUBLIC_KEY`, or the audit
-  member's new `signingPublicKey` under configVersion `"7"` (the environment variable taking
-  precedence, as `JPACK_SIGNING_KEY` does over `signingKey`), names the public key the seed must
-  have, as 64 lowercase hexadecimal characters. Each time records are about to be signed, a seed
-  whose public key is another is refused, and an expected key of any other form is refused before
-  any seed is read. The decision is still recorded, unsigned, and `audit verify` counts it unsigned;
-  `packs validate` gives the reason without naming the path or either key. Configurations under
-  `"1"` to `"6"` read as before, and the sidecar's format and `audit verify`'s report are unchanged.
+- **A signing seed replaced at its path signs nothing when the expected public key is named** (#255,
+  from Judgment-Pack/judgment-pack-runner#54). `JPACK_SIGNING_PUBLIC_KEY`, or the audit member's new
+  `signingPublicKey` under configVersion `"7"` (the environment variable, read exactly as set,
+  taking precedence as `JPACK_SIGNING_KEY` does over `signingKey`), names the public key the seed
+  must have, as 64 lowercase hexadecimal characters. Each time records are about to be signed, a
+  seed whose public key is another is refused, and an expected key of any other form, in either
+  place, is refused as a key before any seed is read, its value never printed. The decision is still
+  recorded, unsigned, and `audit verify` counts it unsigned; `packs validate` gives the reason
+  without naming the path or either key. Configurations under `"1"` to `"6"` read as before, and the
+  sidecar's format and `audit verify`'s report are unchanged.
 
 What this runtime conforms to is stated in `CONFORMANCE.md`.
 

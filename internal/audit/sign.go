@@ -61,7 +61,7 @@ const (
 	SigningKeyEnv = "JPACK_SIGNING_KEY"
 	// SigningPublicKeyEnv names the environment variable that gives the
 	// public key the signing key is expected to have. Set and not empty, it
-	// is the expected key, whatever the configuration names.
+	// is the expected key, exactly as set, whatever the configuration names.
 	SigningPublicKeyEnv = "JPACK_SIGNING_PUBLIC_KEY"
 
 	recordSignaturePrefix = "judgment-pack-runtime/record-signature/1:"
@@ -260,17 +260,18 @@ func ParsePublicKey(data []byte) (ed25519.PublicKey, error) {
 // rules. Elsewhere, Windows among them, every key is refused
 // (ErrKeyPrivacyUnchecked), so records there are unsigned.
 //
-// expected, when not empty, is the public key the key must have, as written
-// (parseExpectedKey). One of any other form is refused before anything at
-// keyPath is read (ErrExpectedKeyMalformed), and a key read whole whose public
-// key is another is refused after it (ErrKeyNotExpected), so whatever was put
-// at the path signs nothing. The comparison is made each time a key is loaded,
-// which is each time a writer is given one, and nothing of it is kept. No
-// error carries any of the key's contents or of the expected key.
-func LoadSigner(keyPath string, project os.FileInfo, expected string) (*Signer, error) {
+// expected, when not nil, is the public key the key must have, as written
+// (parseExpectedKey). Any other value, the empty string and whitespace
+// included, is refused before anything at keyPath is read
+// (ErrExpectedKeyMalformed), and a key read whole whose public key is another
+// is refused after it (ErrKeyNotExpected), so whatever was put at the path
+// signs nothing. The comparison is made each time a key is loaded, which is
+// each time a writer is given one, and nothing of it is kept. No error carries
+// any of the key's contents or of the expected key's value.
+func LoadSigner(keyPath string, project os.FileInfo, expected *string) (*Signer, error) {
 	var want ed25519.PublicKey
-	if expected != "" {
-		parsed, err := parseExpectedKey(expected)
+	if expected != nil {
+		parsed, err := parseExpectedKey(*expected)
 		if err != nil {
 			return nil, err
 		}

@@ -182,7 +182,7 @@ func (p *Project) checkSigningKey() result.PackCheck {
 	case !inForce:
 		check.Status = result.PackCheckFailed
 		check.Detail = fmt.Sprintf("Key %s is not the key in force in the signature sidecar, so it signs nothing and records are written unsigned: rotate to it from the key in force with jpack audit key rotate, or name the key in force.", signer.KeyID())
-	case expected != "":
+	case expected != nil:
 		check.Detail = fmt.Sprintf("Chained records are signed with key %s, named by %s; it is the expected key %s names.", signer.KeyID(), named, expectedNamed)
 	default:
 		check.Detail = fmt.Sprintf("Chained records are signed with key %s, named by %s.", signer.KeyID(), named)

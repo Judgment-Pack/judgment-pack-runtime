@@ -630,8 +630,8 @@ statement shows the lines up to its checkpoint are the ones that existed when th
 it, if the witness is independent of the operator; not who submitted it, and its time is the
 witness's own clock's.
 
-**Signing the trail.** A project may name an Ed25519 seed held outside the project, by
-`"audit": { "dir": "audit", "signingKey": "<absolute path>" }` under configVersion `"6"` or by the
+**Signing the trail.** A project may name an Ed25519 seed held outside the project, by `"audit": {
+"dir": "audit", "signingKey": "<absolute path>" }` under configVersion `"6"` or by the
 `JPACK_SIGNING_KEY` environment variable, and then every chained record is signed (ADR-0047 §2b):
 after the record is written, and under the same lock, one line is appended to `signatures.jsonl`
 beside the trail, binding the record's `trail`, `sequence` and the SHA-256 of its exact bytes. The
@@ -646,24 +646,25 @@ is process-wide: inherited, it signs every chained trail the process records for
 configVersion, including projects that never named a key. The public key the seed is expected to
 have may be named beside its path, by `"signingPublicKey": "<64 lowercase hexadecimal characters>"`
 under configVersion `"7"` or by the `JPACK_SIGNING_PUBLIC_KEY` environment variable, which takes
-precedence in the same way; then a seed whose public key is another is refused each time records
-are about to be signed, so a seed put at the path in the key's place signs nothing, and an expected
-key not of that form is refused before any seed is read. In every case `packs validate` says why
+precedence in the same way but is read exactly as set, with nothing trimmed; then a seed whose
+public key is another is refused each time records are about to be signed, so a seed put at the path
+in the key's place signs nothing, and an expected key not of that form, in either place, is refused
+as a key before any seed is read, its value never printed. In every case `packs validate` says why
 (`audit-signing-key`), and for the expected key it names neither the path nor either key. Signing
 never fails a decision: a signature that cannot be written leaves the record unsigned. `jpack audit
 key generate` writes a key and prints its public key, `jpack audit key public` prints a key's public
 key, and `jpack audit key rotate --next <seed>` hands signing over to a next key with a line the
-current key signs. `jpack audit verify
---public-key <file>` checks every signature and rotation, reports how far they authenticate one
-uninterrupted prefix and how many individual records have a valid signature of their own, including
-beyond an earlier chain break, and fails on a bad signature, a signature for another record, a line
-naming no record, a rotation the key in force did not sign, a revoked key's line, or lines out of
-order; `--require-signed-through <sequence>` fails while the signatures do not reach that sequence.
-Revocation is the verifier's: `--revoked <file>` names keys not to trust from a sequence on, and
-`--public-key` given once per key pins the keys a trail may rotate through. A signature shows only
-that whoever held the key signed. It establishes nothing against the operator, who holds the key,
-and nothing after the key is copied or stolen; the sidecar's format and the verification rule, with
-a test vector, are in [docs/building-with-packs.md](docs/building-with-packs.md#record-signatures-exactly).
+current key signs. `jpack audit verify --public-key <file>` checks every signature and rotation,
+reports how far they authenticate one uninterrupted prefix and how many individual records have a
+valid signature of their own, including beyond an earlier chain break, and fails on a bad signature,
+a signature for another record, a line naming no record, a rotation the key in force did not sign, a
+revoked key's line, or lines out of order; `--require-signed-through <sequence>` fails while the
+signatures do not reach that sequence. Revocation is the verifier's: `--revoked <file>` names keys
+not to trust from a sequence on, and `--public-key` given once per key pins the keys a trail may
+rotate through. A signature shows only that whoever held the key signed. It establishes nothing
+against the operator, who holds the key, and nothing after the key is copied or stolen; the
+sidecar's format and the verification rule, with a test vector, are in
+[docs/building-with-packs.md](docs/building-with-packs.md#record-signatures-exactly).
 
 **Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
 as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never
