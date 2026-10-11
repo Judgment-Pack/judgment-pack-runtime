@@ -55,7 +55,7 @@ Chosen option: **A**, because the record then carries, under the signature it al
 fact a companion needs committed, and says nothing about it.
 
 **The shape.** `binding` is one JSON object of exactly two members, none given twice: `kind`, 1 to
-128 characters of `a-z`, `0-9`, `.`, `_`, `/` and `-`, naming the caller's scheme (Runner's is
+128 characters of `a-z`, `0-9`, `.`, `_`, `/` and `-`, naming the caller's scheme (Runner proposes
 `judgment-pack-runner/preparation/1`); and `digest`, `sha256:` and 64 lowercase hexadecimal
 characters. Member names are matched exactly, a string is its value (a JSON escape is read as the
 character it spells, and the grammar admits only ASCII), and a document is at most 1024 bytes.
