@@ -83,7 +83,16 @@ func TestAuditVerifyCompleteTrailReportIsUnchanged(t *testing.T) {
 			t.Fatal(err)
 		}
 		code, stdout, stderr := runTest(t, []string{"audit", "verify", "--trail", trail, "--format", format}, "")
-		got := strings.ReplaceAll(stdout, trail, "trail.jsonl")
+		shown := trail
+		if format == "json" {
+			// The path appears JSON-escaped (backslashes doubled on Windows).
+			encoded, err := json.Marshal(trail)
+			if err != nil {
+				t.Fatal(err)
+			}
+			shown = string(encoded[1 : len(encoded)-1])
+		}
+		got := strings.ReplaceAll(stdout, shown, "trail.jsonl")
 		if code != 0 || got != string(want) {
 			t.Fatalf("%s: exit=%d stderr=%q\ngot:  %q\nwant: %q", format, code, stderr, got, want)
 		}
