@@ -700,9 +700,9 @@ func TestAuditStampAnswersAlreadyStampedFromAReadOnlyFile(t *testing.T) {
 // would stamp anything sent to the host the redirect names.
 func TestAuditStampRefusesARedirectWithoutFollowingIt(t *testing.T) {
 	const target = "http://elsewhere.invalid/collect"
-	for _, status := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+	for _, status := range []int{301, 302, 303, 304, 307, 308} {
 		for _, format := range []string{"json", "human"} {
-			t.Run(http.StatusText(status)+"/"+format, func(t *testing.T) {
+			t.Run(strconv.Itoa(status)+"/"+format, func(t *testing.T) {
 				address, roots := stampAuthorityTransport(t)
 				stamper := http.DefaultClient.Transport
 				perHost := map[string]int{}
@@ -715,7 +715,7 @@ func TestAuditStampRefusesARedirectWithoutFollowingIt(t *testing.T) {
 					return stamper.RoundTrip(request)
 				})
 				configPath, trail := recordedProject(t, 1)
-				message := "the time-stamping authority answered with a redirect, status " + strconv.Itoa(status) + "; the request was not followed and nothing was stamped. The trail and the decisions in it are as they were."
+				message := "the time-stamping authority answered with a redirect, status " + strconv.Itoa(status) + "; the request was not followed and nothing was stamped. Configure the address the authority answers at. The trail and the decisions in it are as they were."
 				exit, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", address}, "")
 				if exit != result.ExitIO {
 					t.Errorf("exit=%d stdout=%s stderr=%s", exit, stdout, stderr)
@@ -748,5 +748,32 @@ func TestAuditStampRefusesARedirectWithoutFollowingIt(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A redirect without a Location is still a refusal, and a 2xx other than 200
+// is still an unreachable authority, as before.
+func TestAuditStampRedirectWithoutLocationAndOtherStatuses(t *testing.T) {
+	cases := []struct {
+		status  int
+		code    string
+		message string
+	}{
+		{302, "JPS-AUDIT-STAMP-REDIRECT", "the time-stamping authority answered with a redirect, status 302; the request was not followed and nothing was stamped. Configure the address the authority answers at. The trail and the decisions in it are as they were."},
+		{204, "JPS-AUDIT-STAMP-UNREACHABLE", "the time-stamping authority could not be asked, or did not answer: it answered HTTP 204. Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the checkpoint at the trail's head at that time."},
+	}
+	for _, c := range cases {
+		t.Run(strconv.Itoa(c.status), func(t *testing.T) {
+			address, _ := stampAuthorityTransport(t)
+			http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: c.status, Header: http.Header{}, Body: http.NoBody, Request: request}, nil
+			})
+			configPath, trail := recordedProject(t, 1)
+			stampRefusal(t, "json", configPath, address, c.code, c.message)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			if data, err := os.ReadFile(stamps); err != nil && !os.IsNotExist(err) || len(data) != 0 {
+				t.Errorf("stamps written: %q %v", data, err)
+			}
+		})
 	}
 }
