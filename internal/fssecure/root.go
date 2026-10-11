@@ -415,6 +415,13 @@ const appendOpenAttempts = 3
 // and a write at this handle's own offset, zero, would then land on top of that
 // record instead of after it.
 func (r *Root) openForAppend(cleaned string, access int) (*os.File, error) {
+	return r.openForAppending(cleaned, access, true)
+}
+
+// openForAppending is openForAppend, and with create false it never creates
+// the file: where nothing is at the name it refuses with the Lstat's error,
+// which is fs.ErrNotExist.
+func (r *Root) openForAppending(cleaned string, access int, create bool) (*os.File, error) {
 	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
 		info, err := r.root.Lstat(cleaned)
 		switch {
@@ -433,6 +440,8 @@ func (r *Root) openForAppend(cleaned string, access int) (*os.File, error) {
 				return nil, classify(openErr)
 			}
 			return file, nil
+		case errors.Is(err, fs.ErrNotExist) && !create:
+			return nil, classify(err)
 		case errors.Is(err, fs.ErrNotExist):
 			// Nothing is there, so this open is the one that puts it there —
 			// exclusively, which is what makes anything that arrives first win
@@ -591,12 +600,27 @@ func (r *Root) AppendLocked(relative string, compose func(AppendState) ([]byte, 
 // the first result, and the second is the append's own error. then is not
 // called when the append failed.
 func (r *Root) AppendLockedThen(relative string, compose func(AppendState) ([]byte, error), then func(locked bool) error) (error, error) {
+	return r.appendLockedThen(relative, true, compose, then)
+}
+
+// AppendExistingLockedThen is AppendLockedThen for a file that must already be
+// there: it never creates one. Where nothing is at the name, when it is opened
+// or opened again because the name came to name another file while this writer
+// waited for the lock, it refuses with an error that is fs.ErrNotExist, before
+// compose is called: nothing is created, composed or written. A writer that
+// appends after what it found, and must not leave an empty file where it found
+// none, appends through this.
+func (r *Root) AppendExistingLockedThen(relative string, compose func(AppendState) ([]byte, error), then func(locked bool) error) (error, error) {
+	return r.appendLockedThen(relative, false, compose, then)
+}
+
+func (r *Root) appendLockedThen(relative string, create bool, compose func(AppendState) ([]byte, error), then func(locked bool) error) (error, error) {
 	cleaned, err := Relative(relative)
 	if err != nil {
 		return nil, err
 	}
 	for attempt := 0; attempt < appendOpenAttempts; attempt++ {
-		file, err := r.openForAppend(cleaned, os.O_RDWR)
+		file, err := r.openForAppending(cleaned, os.O_RDWR, create)
 		if err != nil {
 			return nil, err
 		}

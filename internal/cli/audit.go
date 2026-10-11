@@ -610,6 +610,8 @@ func (a *App) auditRepairCommand() *cobra.Command {
 	const commandName = "audit repair"
 	format := "human"
 	configPath := ""
+	damagedBytes := ""
+	damagedDigest := ""
 	command := &cobra.Command{
 		Use:   "repair",
 		Short: "Start a new segment after an audit trail's incomplete last line",
@@ -618,11 +620,17 @@ func (a *App) auditRepairCommand() *cobra.Command {
 			"The writer then chains after the discontinuity, and jpack audit verify reports the trail as segments, never as intact across it. " +
 			"It is refused when the last line is complete, so it never runs on a trail with nothing damaged at its end; a broken link elsewhere is not repaired, since jpack audit verify reports it and nothing appended after it would make it less broken. " +
 			"It is refused too for a project whose audit member says chain false, where no lock can be taken, when the damaged bytes are longer than any line a chained trail holds, and when the incomplete last line is itself a discontinuity record whose write did not complete: a repair does not repair a repair, since a discontinuity that could be named damaged would leave the line it excused checked by nothing. Move such a trail aside and keep it. " +
+			"With --damaged-bytes <n> and --damaged-digest sha256:<hex>, given together, the repair is bound to the damaged bytes a caller checked and showed: the length and SHA-256 of the bytes after the trail's last newline, the length jpack audit verify reports for an incomplete-last-line and the digest the discontinuity record would name. " +
+			"Under the writer's lock, immediately before the write, damaged bytes that are not exactly those, none among them, are refused (JPS-AUDIT-REPAIR-TAIL-CHANGED), nothing is changed or created, and the refusal names the length and digest found, so a repair confirmed on eight bytes never ends nine. " +
 			"It works only on the trail the project's jpack.json declares.",
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(command *cobra.Command, _ []string) error {
 			if err := validateFormat(format); err != nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			expected, bound, failure := a.damagedTailOptions(commandName, format, command, damagedBytes, damagedDigest)
+			if failure != nil {
+				return failure
 			}
 			loaded, failure := a.loadProject(configPath, commandName, format)
 			if failure != nil {
@@ -633,8 +641,19 @@ func (a *App) auditRepairCommand() *cobra.Command {
 			if writer == nil {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-AUDIT-NOT-DECLARED", notDeclaredMessage)
 			}
-			repaired, err := writer.Repair()
+			var repaired result.AuditDiscontinuity
+			var err error
+			if bound {
+				repaired, err = writer.RepairExpecting(expected)
+			} else {
+				repaired, err = writer.Repair()
+			}
+			var changed *audit.TailChangedError
 			switch {
+			case errors.As(err, &changed):
+				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-REPAIR-TAIL-CHANGED", fmt.Sprintf(
+					"The damaged bytes at the trail's end are now %d bytes with digest %s, not the %d bytes with digest %s that --damaged-bytes and --damaged-digest name, so nothing was repaired and the trail is as it was; check it again with jpack audit verify and repair what it shows.",
+					changed.Found.Bytes, changed.Found.Digest, changed.Expected.Bytes, changed.Expected.Digest))
 			case errors.Is(err, audit.ErrNothingToRepair):
 				return a.operational(commandName, format, result.ExitInvalid, "JPS-AUDIT-REPAIR-NOTHING", "The trail's last line is complete, so there is nothing at its end to repair; jpack audit verify reports any other damage.")
 			case errors.Is(err, audit.ErrRepairUnchained):
@@ -673,7 +692,31 @@ func (a *App) auditRepairCommand() *cobra.Command {
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().StringVar(&damagedBytes, "damaged-bytes", damagedBytes, "with --damaged-digest, repair only if the bytes after the trail's last newline are this many")
+	command.Flags().StringVar(&damagedDigest, "damaged-digest", damagedDigest, "with --damaged-bytes, repair only if the bytes after the trail's last newline have this SHA-256, as sha256:<hex>")
 	return command
+}
+
+// damagedTailOptions reads --damaged-bytes and --damaged-digest, the damaged
+// bytes a repair is bound to, before anything is opened: bound is false when
+// neither was given, and a refusal is returned when only one was, or either is
+// not of its form.
+func (a *App) damagedTailOptions(commandName, format string, command *cobra.Command, countText, digest string) (audit.DamagedTail, bool, error) {
+	withCount, withDigest := command.Flags().Changed("damaged-bytes"), command.Flags().Changed("damaged-digest")
+	if !withCount && !withDigest {
+		return audit.DamagedTail{}, false, nil
+	}
+	if withCount != withDigest {
+		return audit.DamagedTail{}, false, a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-DAMAGED", "--damaged-bytes and --damaged-digest are given together or not at all: the repair is bound to the damaged bytes by their length and their digest both.")
+	}
+	count, err := strconv.ParseInt(countText, 10, 64)
+	if err != nil || count < 1 {
+		return audit.DamagedTail{}, false, a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-DAMAGED", "--damaged-bytes must be a whole number from 1: how many bytes follow the trail's last newline, as jpack audit verify reports them.")
+	}
+	if !audit.IsDigest(digest) {
+		return audit.DamagedTail{}, false, a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-AUDIT-DAMAGED", "--damaged-digest must be sha256: and 64 lowercase hexadecimal characters: the SHA-256 of exactly the bytes after the trail's last newline.")
+	}
+	return audit.DamagedTail{Bytes: count, Digest: digest}, true, nil
 }
 
 const notDeclaredMessage = "This project's jpack.json declares no audit directory, so it keeps no trail; pass --trail <file> to read a trail file."

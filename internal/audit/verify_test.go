@@ -610,7 +610,7 @@ func TestRepairRefusesWhatItCannotDoSafely(t *testing.T) {
 		t.Fatalf("a writer that does not chain: %v", err)
 	}
 	before := readTrailFile(t, dir)
-	if _, _, err := writer.repairLines(fssecure.AppendState{Locked: false, Size: int64(len(before)), Contents: bytes.NewReader(before)}); !errors.Is(err, ErrRepairNeedsLock) {
+	if _, _, err := writer.repairLines(fssecure.AppendState{Locked: false, Size: int64(len(before)), Contents: bytes.NewReader(before)}, nil); !errors.Is(err, ErrRepairNeedsLock) {
 		t.Fatalf("without the lock: %v", err)
 	}
 	// Damage over the bound, after a short line and with nothing before it,
