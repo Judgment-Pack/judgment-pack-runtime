@@ -956,6 +956,15 @@ type Doer interface {
 // the nonce returned must be the ones asked for. Whether the authority is to
 // be trusted is for a verifier with roots to decide. No error carries the
 // url, which may hold credentials.
+// RedirectError is an authority that answered with a 3xx status. The client
+// the caller passes must not follow redirects; the answer is a refusal, and
+// nothing of where it pointed is kept.
+type RedirectError struct{ Status int }
+
+func (e *RedirectError) Error() string {
+	return fmt.Sprintf("the time-stamping authority answered with a redirect, status %d; the request was not followed and nothing was stamped", e.Status)
+}
+
 func Ask(ctx context.Context, client Doer, url string, digest []byte) ([]byte, *Token, error) {
 	nonce, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 63))
 	if err != nil {
@@ -977,6 +986,11 @@ func Ask(ctx context.Context, client Doer, url string, digest []byte) ([]byte, *
 		return nil, nil, fmt.Errorf("%w: the request was not answered", ErrUnreachable)
 	}
 	defer response.Body.Close()
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		// Only the status is kept: the Location value is the authority's
+		// word about another host and is never reported.
+		return nil, nil, &RedirectError{Status: response.StatusCode}
+	}
 	if response.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("%w: it answered HTTP %d", ErrUnreachable, response.StatusCode)
 	}
