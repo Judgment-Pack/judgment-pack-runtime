@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/timestamp/tsatest"
@@ -771,8 +772,9 @@ func TestCheckStampRoomReservesAMaximumSizeLine(t *testing.T) {
 	}
 }
 
-// Preflight and append use the retained file even when its name is replaced.
-// Growth after preflight is checked again under that file's own lock.
+// Preflight and append use the retained file, and an append refuses once its
+// name no longer names it. Growth after preflight is checked again under that
+// file's own lock.
 func TestHeldStampsKeepTheirHandleAndBounds(t *testing.T) {
 	root, dir, trail := chainedTrail(t, 1)
 	writer := NewWriter(root, "audit", true)
@@ -833,17 +835,45 @@ func TestHeldStampsKeepTheirHandleAndBounds(t *testing.T) {
 		if err := os.WriteFile(name, nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if appended, err := stamps.RecordStamp(checkpoint, parsed.token, func() error { return nil }); !appended || err != nil {
-			t.Fatalf("held append: %v %v", appended, err)
+		if appended, err := stamps.RecordStamp(checkpoint, parsed.token, func() error { return nil }); appended || !errors.Is(err, ErrStampsChanged) || !errors.Is(err, fssecure.ErrHeldFileChanged) {
+			t.Fatalf("held append after the name moved: %v %v", appended, err)
 		}
-		if data, err := os.ReadFile(old); err != nil || !bytes.Equal(data, line) {
-			t.Fatalf("held file: %q %v", data, err)
-		}
-		if data, err := os.ReadFile(name); err != nil || len(data) != 0 {
-			t.Fatalf("replacement: %q %v", data, err)
-		}
-		if held, err := stamps.Stamped(checkpoint); !held || err != nil {
-			t.Fatalf("held retry: %v %v", held, err)
+		for _, each := range []string{old, name} {
+			if data, err := os.ReadFile(each); err != nil || len(data) != 0 {
+				t.Fatalf("%s: %q %v", each, data, err)
+			}
 		}
 	})
+}
+
+// A held stamps file found shorter at the append than at the room check was
+// truncated while the authority was asked; nothing is appended to it.
+func TestHeldStampsRefuseATruncatedFile(t *testing.T) {
+	root, dir, trail := chainedTrail(t, 1)
+	writer := NewWriter(root, "audit", true)
+	checkpoint := checkpointAt(t, trail, 1)
+	tsa := testAuthority(t, tsatest.Options{})
+	line := stampOf(t, tsa, checkpoint)
+	parsed := parseStampLine(bytes.TrimSuffix(line, []byte("\n")))
+	name := filepath.Join(dir, "audit", StampsName)
+	stamps, err := writer.OpenStamps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stamps.Close()
+	if err := os.WriteFile(name, []byte("{}\n{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := stamps.CheckStampRoom(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(name, 3); err != nil {
+		t.Fatal(err)
+	}
+	if appended, err := stamps.RecordStamp(checkpoint, parsed.token, func() error { return nil }); appended || !errors.Is(err, ErrStampsChanged) || errors.Is(err, fssecure.ErrHeldFileChanged) {
+		t.Fatalf("append to a truncated file: %v %v", appended, err)
+	}
+	if data, err := os.ReadFile(name); err != nil || string(data) != "{}\n" {
+		t.Fatalf("truncated file changed: %q %v", data, err)
+	}
 }

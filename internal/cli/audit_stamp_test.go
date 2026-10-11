@@ -500,3 +500,196 @@ func stampAuthorityTransport(t *testing.T) (string, string) {
 	t.Cleanup(func() { http.DefaultClient.Transport = original })
 	return "https://tsa.invalid/stamp", writeDocument(t, "roots.pem", string(tsa.RootPEM()))
 }
+
+// stampRefusal runs audit stamp in one format and holds it to one refusal.
+func stampRefusal(t *testing.T, format, configPath, address, code, message string) {
+	t.Helper()
+	exit, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", address}, "")
+	if exit != result.ExitIO {
+		t.Errorf("exit=%d stdout=%s stderr=%s", exit, stdout, stderr)
+	}
+	if format == "json" {
+		var got result.OperationalError
+		if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+			t.Fatalf("%v: %s", err, stdout)
+		}
+		if got.Status != "error" || len(got.Diagnostics) != 1 || got.Diagnostics[0].Code != code || got.Diagnostics[0].Message != message {
+			t.Errorf("diagnostic: %s", stdout)
+		}
+	} else if stdout != "" || stderr != "error: "+message+"\n" {
+		t.Errorf("human: stdout=%q stderr=%q", stdout, stderr)
+	}
+}
+
+const stampsMovedMessage = "The stamps file was moved, removed, linked elsewhere or truncated during the request; nothing was written, and the token was discarded."
+
+// A stamps file removed, or linked elsewhere, while the authority is asked is
+// refused: the token is not appended to a file the name no longer names alone.
+func TestAuditStampRefusesAStampsFileChangedDuringTheRequest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot remove these open files, and the link count is not read there")
+	}
+	for _, format := range []string{"json", "human"} {
+		t.Run("removed/"+format, func(t *testing.T) {
+			address, roots := stampAuthorityTransport(t)
+			configPath, trail := recordedProject(t, 1)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			beforeStampAppend = func() error { return os.Remove(stamps) }
+			t.Cleanup(func() { beforeStampAppend = nil })
+			stampRefusal(t, format, configPath, address, "JPS-AUDIT-STAMPS-MOVED", stampsMovedMessage)
+			if _, err := os.Stat(stamps); !os.IsNotExist(err) {
+				t.Errorf("a stamps file appeared: %v", err)
+			}
+			if code, got := verification(t, "--config", configPath, "--tsa-roots", roots); code != 0 || got.Status != "valid" || got.Coverage.Stamped.Status != "none" {
+				t.Errorf("verify: exit=%d %+v", code, got)
+			}
+		})
+		t.Run("linked/"+format, func(t *testing.T) {
+			address, _ := stampAuthorityTransport(t)
+			configPath, trail := recordedProject(t, 1)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			other := filepath.Join(t.TempDir(), "elsewhere")
+			beforeStampAppend = func() error { return os.Link(stamps, other) }
+			t.Cleanup(func() { beforeStampAppend = nil })
+			stampRefusal(t, format, configPath, address, "JPS-AUDIT-STAMPS-MOVED", stampsMovedMessage)
+			if data, err := os.ReadFile(other); err != nil || len(data) != 0 {
+				t.Errorf("linked file: %q %v", data, err)
+			}
+		})
+	}
+}
+
+// A trail truncated in place and written again keeps its file identity. One
+// written back shorter than the snapshot is refused by its size; one written
+// back as long or longer, by the record at the checkpoint's sequence read
+// again. The stamps file is truncated beside it, as a copying rotation does.
+func TestAuditStampRefusesATrailTruncatedInPlace(t *testing.T) {
+	for _, rewrite := range []struct {
+		name      string
+		decisions int
+	}{{"shorter", 1}, {"as-long", 3}} {
+		for _, format := range []string{"json", "human"} {
+			t.Run(rewrite.name+"/"+format, func(t *testing.T) {
+				address, roots := stampAuthorityTransport(t)
+				configPath, trail := recordedProject(t, 1)
+				if code, _, all := stamping(t, "--config", configPath, "--tsa", address); code != 0 {
+					t.Fatal(all)
+				}
+				evaluateOnce(t, configPath)
+				before, err := os.Stat(trail)
+				if err != nil {
+					t.Fatal(err)
+				}
+				stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+				beforeStampAppend = func() error {
+					for _, each := range []string{trail, stamps} {
+						if err := os.Truncate(each, 0); err != nil {
+							return err
+						}
+					}
+					for range rewrite.decisions {
+						evaluateOnce(t, configPath)
+					}
+					return nil
+				}
+				t.Cleanup(func() { beforeStampAppend = nil })
+				stampRefusal(t, format, configPath, address, "JPS-AUDIT-STAMP-TRAIL-MOVED", "The trail at the path is not the one whose checkpoint was stamped; nothing was written, and the token was discarded.")
+				after, err := os.Stat(trail)
+				if err != nil || !os.SameFile(before, after) || (rewrite.decisions > 1) != (after.Size() >= before.Size()) {
+					t.Fatalf("the rewrite is not the case under test: %v %v", after, err)
+				}
+				if data, err := os.ReadFile(stamps); err != nil || len(data) != 0 {
+					t.Errorf("stamps written: %q %v", data, err)
+				}
+				if code, got := verification(t, "--config", configPath, "--tsa-roots", roots); code != 0 || got.Status != "valid" || len(got.Findings) != 0 || got.Coverage.Stamped.Status != "none" {
+					t.Errorf("verify: exit=%d %+v", code, got)
+				}
+			})
+		}
+	}
+}
+
+// A trail found shorter than the snapshot is refused even when what was cut
+// lies after the checkpoint's record, which then still reads as before: a
+// trail is only ever appended to.
+func TestAuditStampRefusesATrailThatShrankAfterItsCheckpoint(t *testing.T) {
+	address, _ := stampAuthorityTransport(t)
+	configPath, trail := recordedProject(t, 1)
+	const unchained = "{\"note\":\"an unchained line after the checkpoint\"}\n"
+	file, err := os.OpenFile(trail, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(unchained); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(trail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+	beforeStampAppend = func() error { return os.Truncate(trail, info.Size()-int64(len(unchained))) }
+	t.Cleanup(func() { beforeStampAppend = nil })
+	stampRefusal(t, "json", configPath, address, "JPS-AUDIT-STAMP-TRAIL-MOVED", "The trail at the path is not the one whose checkpoint was stamped; nothing was written, and the token was discarded.")
+	if data, err := os.ReadFile(stamps); err != nil || len(data) != 0 {
+		t.Errorf("stamps written: %q %v", data, err)
+	}
+}
+
+// A trail that cannot be opened again under the stamps lock is not called
+// another trail: it could not be checked, and nothing is written.
+func TestAuditStampSaysAnUncheckableTrailCouldNotBeChecked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not what a Windows file mode means")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits do not bind the superuser")
+	}
+	address, _ := stampAuthorityTransport(t)
+	configPath, trail := recordedProject(t, 1)
+	stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+	beforeStampAppend = func() error { return os.Chmod(trail, 0) }
+	t.Cleanup(func() {
+		beforeStampAppend = nil
+		_ = os.Chmod(trail, 0o600)
+	})
+	stampRefusal(t, "json", configPath, address, "JPS-AUDIT-STAMP-TRAIL-UNCHECKED", "The trail at the path could not be checked; nothing was written, and the token was discarded.")
+	if data, err := os.ReadFile(stamps); err != nil || len(data) != 0 {
+		t.Errorf("stamps written: %q %v", data, err)
+	}
+}
+
+// Whether a checkpoint is stamped already is answered without opening the
+// stamps file for writing, so a re-run on a read-only stamps file still
+// answers it and asks nothing.
+func TestAuditStampAnswersAlreadyStampedFromAReadOnlyFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not what a Windows file mode means")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits do not bind the superuser")
+	}
+	address, _ := stampAuthorityTransport(t)
+	configPath, trail := recordedProject(t, 1)
+	if code, _, all := stamping(t, "--config", configPath, "--tsa", address); code != 0 {
+		t.Fatal(all)
+	}
+	stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+	if err := os.Chmod(stamps, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stamps, 0o600) })
+	requests := 0
+	inner := http.DefaultClient.Transport
+	http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return inner.RoundTrip(request)
+	})
+	code, got, all := stamping(t, "--config", configPath, "--tsa", address)
+	if code != 0 || got.Status != "already-stamped" || requests != 0 {
+		t.Fatalf("re-run: exit=%d requests=%d output=%s", code, requests, all)
+	}
+}

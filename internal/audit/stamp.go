@@ -234,7 +234,18 @@ func (w *Writer) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
 
 // StampFile holds the stamps file across an authority request. No lock is
 // held until RecordStamp appends, so decisions never wait for the authority.
-type StampFile struct{ file *fssecure.AppendFile }
+type StampFile struct {
+	file *fssecure.AppendFile
+	// floor is the held file's size at CheckStampRoom: a stamps file is only
+	// ever appended to, so one found shorter at the append was truncated
+	// while the authority was asked.
+	floor int64
+}
+
+// ErrStampsChanged refuses an append to a held stamps file that was moved,
+// removed, replaced, linked elsewhere or truncated while the authority was
+// asked. Nothing is written.
+var ErrStampsChanged = errors.New("the stamps file was moved, removed, replaced, linked elsewhere or truncated while it was held")
 
 // OpenStamps retains the stamps file, creating an empty file if absent.
 func (w *Writer) OpenStamps() (*StampFile, error) {
@@ -263,7 +274,8 @@ func (s *StampFile) Stamped(checkpoint result.AuditCheckpoint) (bool, error) {
 }
 
 // CheckStampRoom reserves no space, but refuses before the authority is asked
-// if the held file cannot fit the largest accepted stamp line.
+// if the held file cannot fit the largest accepted stamp line. The size it
+// reads is the floor RecordStamp holds the file to.
 func (s *StampFile) CheckStampRoom() error {
 	info, err := s.file.Stat()
 	if err != nil {
@@ -272,20 +284,27 @@ func (s *StampFile) CheckStampRoom() error {
 	if info.Size() > MaxStampsBytes-MaxStampLineBytes {
 		return ErrStampsTooLarge
 	}
+	s.floor = info.Size()
 	return nil
 }
 
 // RecordStamp checks the transaction under the stamps lock before appending
-// through the held handle. A failed check writes nothing.
+// through the held handle. check runs first; then a held file whose name no
+// longer names it alone, or that is shorter than CheckStampRoom found it, is
+// ErrStampsChanged. A refusal writes nothing.
 func (s *StampFile) RecordStamp(checkpoint result.AuditCheckpoint, token []byte, check func() error) (bool, error) {
-	return recordStamp(checkpoint, token, func(compose func(fssecure.AppendState) ([]byte, error)) error {
-		return s.file.AppendLocked(func(state fssecure.AppendState) ([]byte, error) {
-			if err := check(); err != nil {
-				return nil, err
+	appended, err := recordStamp(checkpoint, token, func(compose func(fssecure.AppendState) ([]byte, error)) error {
+		return s.file.AppendLocked(check, func(state fssecure.AppendState) ([]byte, error) {
+			if state.Size < s.floor {
+				return nil, ErrStampsChanged
 			}
 			return compose(state)
 		})
 	})
+	if errors.Is(err, fssecure.ErrHeldFileChanged) {
+		return false, fmt.Errorf("%w: %w", ErrStampsChanged, err)
+	}
+	return appended, err
 }
 
 // ErrStampTooLarge is a token whose stamps line would be longer than
