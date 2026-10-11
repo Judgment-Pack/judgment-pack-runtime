@@ -829,6 +829,22 @@ the MCP test tools are not, so a matrix row can still probe a wrong type on purp
 compares one pointer with operands of different types in different rules cannot satisfy the
 requirement for that pointer. Write one `in` whose operand carries both types instead.
 
+A caller can commit material of its own on the record. `experimental evaluate --binding <file>`,
+and the MCP tool's `binding` argument, take exactly `{"kind": "<scheme>", "digest":
+"sha256:<64 lowercase hex>"}`, `kind` being 1 to 128 characters of `a-z`, `0-9`, `.`, `_`, `/` and
+`-` (ADR-0050). Runner's planned use (Judgment-Pack/judgment-pack-runner#55) is the digest of the
+preparation it makes before a mapping-v2 run, which the runtime never sees. The line carries it as given, as `binding` beside `cites`,
+compact and `kind` first, so the chain and the record signature cover it like any other member; a
+line written without one is byte for byte what it was. The runtime records the binding and never
+interprets it: it does not verify or recompute the digest, and the evaluation and the disposition
+do not depend on it. Whether the digest is the digest of the caller's material is for the caller's
+own verifier to check, against that material. A document of any other shape, one over 1 KiB, or a
+binding given with `--rehearsal` or in a project whose configuration declares no audit directory,
+either of which would record nothing, is refused before anything is evaluated,
+`JPS-INVOCATION-BINDING` (exit 3), with a sentence that repeats nothing of the document, and nothing
+is written. `audit verify` holds a recorded binding to its shape and no further: a malformed one is
+`binding-malformed` (below), and a well-formed one is not mentioned.
+
 Each line carries a `run` id: one value per invocation, on every record that invocation writes. For
 a graph run that is what marks the run finished — the `graph-composite` line carries the same id as
 its nodes' lines, so node lines whose id has no composite belong to a run that did not complete, and
@@ -924,7 +940,8 @@ the bytes in the file, by the writer's own rules: the legacy prefix as one block
 again after unchained lines keeping its identity, chained lines recognised by their JSON members,
 and a line over 128 MiB refused rather than guessed at. It exits 1 when any check fails, each a
 named finding (`previous-mismatch`, `sequence-mismatch`, `trail-mismatch`, `incomplete-last-line`,
-`line-too-long`, and the discontinuity and checkpoint findings below), and 0 otherwise, with the
+`line-too-long`, `binding-malformed`, and the discontinuity and checkpoint findings below), and 0
+otherwise, with the
 report in `--format json` under `outputVersion` `"2"`. The trail and each requested companion
 (the signature sidecar and stamps file) are opened and identity-checked under the writer's shared
 trail lock, and their sizes are captured there, so the snapshot falls between two writes. The bytes
@@ -1570,8 +1587,12 @@ checks**, each a finding at line L:
 The line a well-formed discontinuity record names is excused: its own findings are not reported,
 even when the discontinuity then fails its length or digest comparison, which is the discontinuity's
 own failed check, and the damage itself is no failed check. Nor is anything else a check of the
-chain: a finding about the sidecar, a held checkpoint (`checkpoint-…`), a stamp (`stamp-…`), or an
-incomplete last line, which comes after every complete line.
+chain: a finding about the sidecar, a held checkpoint (`checkpoint-…`), a stamp (`stamp-…`), an
+incomplete last line, which comes after every complete line, or `binding-malformed` (ADR-0050): a
+line L, chained or not and not excused, that is one JSON object with no member given twice whose
+`binding` member is there and is not one JSON object of exactly two members, none given twice,
+`kind`, a string of 1 to 128 characters of `a-z`, `0-9`, `.`, `_`, `/` and `-`, and `digest`,
+`sha256:` and 64 lowercase hexadecimal characters. It fails the verification and moves no coverage.
 
 **Verification.** The inputs are the trail, the sidecar, the public keys K₁…Kₙ (n ≥ 1) in the order
 the trail used them, and any revocations, each a public key and the sequence `from` which it is not

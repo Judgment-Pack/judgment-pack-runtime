@@ -669,6 +669,23 @@ against the operator, who holds the key, and nothing after the key is copied or 
 sidecar's format and the verification rule, with a test vector, are in
 [docs/building-with-packs.md](docs/building-with-packs.md#record-signatures-exactly).
 
+**Binding a caller's own material.** `experimental evaluate --binding <file>`, and the MCP
+`experimental_evaluate` tool's `binding` argument, take exactly `{"kind": "<scheme>", "digest":
+"sha256:<64 lowercase hex>"}`: a companion's commitment to material of its own that the runtime
+never sees, such as the preparation Runner makes before a run
+([ADR-0050](docs/adr/0050-record-a-callers-binding-digest.md)). `kind` is 1 to 128 characters of
+`a-z`, `0-9`, `.`, `_`, `/` and `-`. The record carries it as given, as `binding` beside `cites`,
+compact with `kind` first, so the chain and the record signature cover it as they cover every other
+member; a record written without one is byte for byte what it was, and `recordVersion` stays `"1"`.
+The runtime records the binding and does not interpret it: it never verifies or recomputes the
+digest, and the evaluation does not depend on it. The companion's own verifier checks its value
+against the material. A document not of that shape, one over 1 KiB, or one given with
+`--rehearsal` or in a project that keeps no trail, either of which would record nothing, is refused
+before anything is evaluated (`JPS-INVOCATION-BINDING`, exit 3), and nothing is written. `audit verify` checks only the shape: a
+recorded binding that is malformed is the finding `binding-malformed`, which fails the verification
+and moves no coverage, and a well-formed one is not mentioned. Against the operator, who holds the
+signing key, a binding establishes no more than the signature does.
+
 **Refusing a fact no comparison can match.** There is no coercion between JSON types: a flag sent
 as `"true"`, `1` or `null` makes `equals true` false, not unknown, so `onUnknown: escalate` never
 sees it and a detector falls through to its fallback. A project whose `jpack.json` sets

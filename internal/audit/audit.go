@@ -288,6 +288,14 @@ func FailureMessageFor(err error) string {
 // leaves them empty: whatever a caller sets is replaced. They are omitted from a
 // record that is not chained, so such a record is byte for byte what it was
 // before they existed. They are additive, so recordVersion stays "1".
+//
+// Binding is the caller's own commitment, a scheme and a digest, recorded as
+// given beside Cites (ADR-0050). Like Reviewed it is the writer's to assign
+// (Writer.Bind), on every record the invocation writes; it is omitted when
+// none was given, so such a record is byte for byte what it was before the
+// member existed, and it is additive, so recordVersion stays "1". It is a
+// member of the line like any other, so the chain and the record signature
+// cover it as they cover the rest of the line.
 type Record struct {
 	RecordVersion        string                 `json:"recordVersion"`
 	Trail                string                 `json:"trail,omitempty"`
@@ -307,6 +315,7 @@ type Record struct {
 	Reviewed             *bool                  `json:"reviewed,omitempty"`
 	ReviewedSet          *ReviewedSet           `json:"reviewedSet,omitempty"`
 	Cites                []Citation             `json:"cites,omitempty"`
+	Binding              *Binding               `json:"binding,omitempty"`
 	UnknownCauses        []result.UnknownCause  `json:"unknownCauses,omitempty"`
 	TypeMismatches       []result.TypeMismatch  `json:"typeMismatches,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
@@ -610,6 +619,84 @@ func decodeCallIndex(raw json.RawMessage, into *int64) error {
 	return decodeInteger(raw, into)
 }
 
+// Binding is a caller's commitment to material of its own (ADR-0050): kind
+// names the caller's scheme, and digest is a SHA-256 the caller computed under
+// it. Runner plans to bind (Judgment-Pack/judgment-pack-runner#55) the
+// preparation of a mapping-v2 run, so that the preparation it committed to for
+// a record is under that record's signature. This runtime holds a binding to
+// the shape below and to nothing else: it never reads meaning into the digest,
+// never verifies it and never recomputes it, and neither the evaluation nor
+// the disposition depends on it. Whether the digest is the digest of anything
+// is the caller's verifier's finding.
+//
+// The record writes it as every member is written, compact and in this
+// order, kind then digest, whatever order the caller gave them in. Both values
+// are ASCII the encoder writes without an escape, so the bytes on the line
+// are a function of the two values alone.
+type Binding struct {
+	Kind   string `json:"kind"`
+	Digest string `json:"digest"`
+}
+
+// MaxBindingBytes bounds a binding document: the longest well-formed one is
+// under two hundred bytes.
+const MaxBindingBytes = 1024
+
+// The grammar of a binding's members: a kind is 1 to 128 characters of a-z,
+// 0-9, dot, underscore, slash and hyphen, and a digest is the "sha256:" form
+// Digest writes.
+var bindingKind = regexp.MustCompile(`^[a-z0-9._/-]{1,128}$`)
+
+// The reasons ParseBinding refuses a binding document, each a fixed sentence
+// that names no value from the document, so a refusal says what is wrong with
+// the document without repeating any of it. ErrBindingTooLarge is exported for
+// a reader that stops at MaxBindingBytes itself and refuses with the same
+// sentence.
+var (
+	ErrBindingTooLarge  = errors.New("it is longer than 1024 bytes")
+	errBindingNotObject = errors.New("it is not one JSON object with each member named once")
+	errBindingMembers   = errors.New("it does not have exactly the two members kind and digest")
+	errBindingKind      = errors.New("kind must be a string of 1 to 128 characters from a-z, 0-9, dot, underscore, slash and hyphen")
+	errBindingDigest    = errors.New("digest must be a string of sha256: and 64 lowercase hexadecimal characters")
+)
+
+// ParseBinding holds a binding document to its shape: one JSON object, with
+// no member given twice, of exactly the two members kind and digest, each a
+// string of its grammar. Member names are matched exactly, as a citation's
+// are. A string is its value: a JSON escape is read as the character it
+// spells, and the grammar admits only ASCII, so a lone surrogate or invalid
+// UTF-8 passes as nothing. Only JSON's own whitespace is passed over around
+// the object. Nothing is resolved, verified or recomputed.
+//
+// audit verify holds a recorded binding to the same function, so what the
+// writer accepts and what the verifier calls well formed cannot differ.
+func ParseBinding(document []byte) (*Binding, error) {
+	if len(document) > MaxBindingBytes {
+		return nil, ErrBindingTooLarge
+	}
+	trimmed := bytes.Trim(document, " \t\r\n")
+	if len(trimmed) == 0 || trimmed[0] != '{' || !json.Valid(trimmed) {
+		return nil, errBindingNotObject
+	}
+	members, err := exactObject(trimmed)
+	if err != nil {
+		return nil, errBindingNotObject
+	}
+	_, hasKind := members["kind"]
+	_, hasDigest := members["digest"]
+	if len(members) != 2 || !hasKind || !hasDigest {
+		return nil, errBindingMembers
+	}
+	var binding Binding
+	if decodeString(members["kind"], &binding.Kind) != nil || !bindingKind.MatchString(binding.Kind) {
+		return nil, errBindingKind
+	}
+	if decodeString(members["digest"], &binding.Digest) != nil || !previousForm.MatchString(binding.Digest) {
+		return nil, errBindingDigest
+	}
+	return &binding, nil
+}
+
 // ReviewedSet names the revision of the reviewed set that made Reviewed true.
 // It is the payload's type (ADR-0044), so a record and the payload beside it
 // name a revision in one shape; its members are documented there.
@@ -673,6 +760,9 @@ type Writer struct {
 	// signer signs the chained records the writer appends (ADR-0047 §2b);
 	// nil signs nothing.
 	signer *Signer
+	// binding is the caller's binding (ADR-0050), recorded on every record
+	// the writer appends; nil records none.
+	binding *Binding
 }
 
 // UnderLaw records which law this invocation's records were judged under
@@ -687,6 +777,18 @@ func (w *Writer) UnderLaw(reviewed *bool, set *ReviewedSet) {
 	}
 	w.reviewed = reviewed
 	w.underLaw = set
+}
+
+// Bind records a caller's binding (ADR-0050) on every record this writer
+// appends. It is set on the writer, as UnderLaw is, because it is the
+// invocation's: the caller gave one binding for the run. nil, the zero value,
+// records none, so a surface that never binds writes records with no such
+// member. The binding is held to its shape by ParseBinding before it gets here.
+func (w *Writer) Bind(binding *Binding) {
+	if w == nil {
+		return
+	}
+	w.binding = binding
 }
 
 // NewWriter binds a writer to one project's directory handle. The handle stays
@@ -849,6 +951,7 @@ func (w *Writer) AppendAll(records []Record) error {
 		if w.reviewed != nil && *w.reviewed {
 			record.ReviewedSet = w.underLaw
 		}
+		record.Binding = w.binding
 		// The chain is the writer's, assigned under the lock or not at all.
 		record.Trail, record.Sequence, record.Previous = "", 0, ""
 		prepared = append(prepared, record)
