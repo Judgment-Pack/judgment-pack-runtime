@@ -2,6 +2,13 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Release process: the tag workflow now enforces GitHub Release Immutability** (#254). It reads the
+  repository setting before drafting and fails closed when it is off, unreadable, or lacks the
+  field, and the publish job fails if the published release does not report `immutable: true`. No
+  runtime behaviour change and no change to the claim stated in CONFORMANCE.md.
+
 ## 0.30.0 - 2026-10-11
 
 - **`spec test-conformance --strict` fails a case that reports a diagnostic its manifest entry does not
