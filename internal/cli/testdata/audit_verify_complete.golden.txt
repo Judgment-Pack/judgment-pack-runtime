@@ -1,0 +1,10 @@
+no chained record: 2 line(s), all uncovered
+lines: 0 before the first chained line (one block), 0 chained, 0 unchained and committed by a later chained line, 2 uncovered, 0 damaged; signed: not checked (no --public-key); checkpointed: none supplied
+records: 0 witnessed by a held checkpoint, 0 unwitnessed; stamped: not checked (no --tsa-roots)
+NOT ESTABLISHED: That the lines form a chained history: no chained record was found, so all 2 line(s) are uncovered.
+NOT ESTABLISHED: That the trail is complete: a trail cut short is as consistent as the whole one, and nothing here says which decisions were never written to it.
+NOT ESTABLISHED: That any record's at is true: it is the operator's clock.
+NOT ESTABLISHED: Who wrote any record: no public key was supplied, so no signature was checked.
+NOT ESTABLISHED: When any checkpoint existed: no time-stamping roots were supplied, so no stamp was checked.
+NOT ESTABLISHED: Whether any evaluation was refused at the gate, rehearsed, or failed before a disposition: the trail records decisions, not attempts, so its silence is not evidence that none were (ADR-0048).
+trail.jsonl · read between writes

@@ -321,9 +321,10 @@ type verifier struct {
 	options Options
 	whole   hash.Hash
 
-	lines     int64
-	previous  *seenLine // the line before the one being read
-	lastTrail string    // the identity of the last chained line read
+	lines      int64
+	incomplete *result.AuditIncompleteLastLine // the bytes after the last newline, when there are any
+	previous   *seenLine                       // the line before the one being read
+	lastTrail  string                          // the identity of the last chained line read
 
 	// heldLines is the line at each held checkpoint's sequence, as read, and
 	// chainedAt the chained records up to and including each such line.
@@ -429,6 +430,11 @@ func (v *verifier) readLine(reader *bufio.Reader) (bool, error) {
 		// last complete line is settled: nothing after it can name it.
 		v.commit()
 		if length > 0 {
+			v.incomplete = &result.AuditIncompleteLastLine{
+				Line:   v.lines + 1,
+				Bytes:  length,
+				Digest: "sha256:" + hex.EncodeToString(lineHash.Sum(nil)),
+			}
 			v.record(result.AuditFinding{
 				Name:   FindingIncompleteLastLine,
 				Line:   v.lines + 1,
@@ -727,6 +733,8 @@ func (v *verifier) report(size int64) result.AuditChain {
 		Bytes:    size,
 		Coverage: v.coverage,
 		Findings: v.findings,
+
+		IncompleteLastLine: v.incomplete,
 	}
 	chain.Coverage.Uncovered = v.pendingUnchained
 	chain.Coverage.Signed = result.AuditCoverageState{Status: "not-checked", Detail: "no public key was supplied"}
