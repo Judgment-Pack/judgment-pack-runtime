@@ -621,12 +621,13 @@ func decodeCallIndex(raw json.RawMessage, into *int64) error {
 
 // Binding is a caller's commitment to material of its own (ADR-0050): kind
 // names the caller's scheme, and digest is a SHA-256 the caller computed under
-// it. Runner, for one, binds the preparation of a mapping-v2 run, so that the
-// preparation it hands the runtime is under the record's signature. This
-// runtime holds a binding to the shape below and to nothing else: it never
-// reads meaning into the digest, never verifies it and never recomputes it, and
-// neither the evaluation nor the disposition depends on it. Whether the digest
-// is the digest of anything is the caller's verifier's finding.
+// it. Runner plans to bind (Judgment-Pack/judgment-pack-runner#55) the
+// preparation of a mapping-v2 run, so that the preparation it committed to for
+// a record is under that record's signature. This runtime holds a binding to
+// the shape below and to nothing else: it never reads meaning into the digest,
+// never verifies it and never recomputes it, and neither the evaluation nor
+// the disposition depends on it. Whether the digest is the digest of anything
+// is the caller's verifier's finding.
 //
 // The record writes it as every member is written, compact and in this
 // order, kind then digest, whatever order the caller gave them in. Both values

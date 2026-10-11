@@ -839,7 +839,8 @@ line written without one is byte for byte what it was. The runtime records the b
 interprets it: it does not verify or recompute the digest, and the evaluation and the disposition
 do not depend on it. Whether the digest is the digest of the caller's material is for the caller's
 own verifier to check, against that material. A document of any other shape, one over 1 KiB, or a
-binding given with `--rehearsal`, which records nothing, is refused before anything is evaluated,
+binding given with `--rehearsal` or in a project whose configuration declares no audit directory,
+either of which would record nothing, is refused before anything is evaluated,
 `JPS-INVOCATION-BINDING` (exit 3), with a sentence that repeats nothing of the document, and nothing
 is written. `audit verify` holds a recorded binding to its shape and no further: a malformed one is
 `binding-malformed` (below), and a well-formed one is not mentioned.

@@ -316,6 +316,12 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// draft, never refused for being unlocked, and the record it leaves
 			// says so.
 			auditWriter := loaded.AuditWriter()
+			// A project that keeps no trail would accept the binding and record
+			// nothing, which is the rehearsal's case (ADR-0050): it is refused
+			// for the same reason, before anything is evaluated.
+			if binding != nil && auditWriter == nil {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-BINDING", bindingNoTrailMessage)
+			}
 			auditWriter.Bind(binding)
 			// An oversized input is reported to the engine rather than refused
 			// here: the byte limit is a §8.2 preflight condition whose §8.4 class
@@ -448,14 +454,18 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command.Flags().BoolVar(&quantifiers, "rfc0008-quantifiers", quantifiers, "DRAFT-RFC PROTOTYPE: admit the spec's RFC 0008 (Draft) collection quantifiers -- exists, every, uniform -- in conditions. A pack using them is NOT valid under any published JPS version; spec validate rejects it, and every successful evaluation payload produced this way is labeled a draft-RFC prototype (a refusal is reported as an operational error and carries no such label)")
 	command.Flags().BoolVar(&rehearsal, "rehearsal", rehearsal, "declare this run a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision")
 	command.Flags().StringVar(&citesPath, "cites", citesPath, "optional citations document, a file path: a JSON array of the gateway receipts this decision relied on, each {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} as the gateway's action receipt cites them (ADR-0033). Held to that shape and recorded as given on the audit record; nothing is verified and no store is read. A rehearsal records nothing, citations included")
-	command.Flags().StringVar(&bindingPath, "binding", bindingPath, "optional binding document, a file path: exactly {\"kind\": string, \"digest\": \"sha256:<64 lowercase hex>\"}, the caller's commitment to material of its own, kind naming its scheme in 1 to 128 characters of a-z, 0-9, dot, underscore, slash and hyphen (ADR-0050). Held to that shape and recorded as given on the audit record, under the chain and the record signature; the runtime never interprets, verifies or recomputes the digest, and the evaluation does not depend on it -- the caller's own verifier checks its value. Not taken with --rehearsal, which records nothing")
+	command.Flags().StringVar(&bindingPath, "binding", bindingPath, "optional binding document, a file path: exactly {\"kind\": string, \"digest\": \"sha256:<64 lowercase hex>\"}, the caller's commitment to material of its own, kind naming its scheme in 1 to 128 characters of a-z, 0-9, dot, underscore, slash and hyphen (ADR-0050). Held to that shape and recorded as given on the audit record, under the chain and the record signature; the runtime never interprets, verifies or recomputes the digest, and the evaluation does not depend on it -- the caller's own verifier checks its value. Not taken with --rehearsal, or in a project whose configuration declares no audit directory, since either records nothing")
 	command.Flags().StringVar(&packID, "pack-id", packID, "decision id of a pack declared in the project's jpack.json; mutually exclusive with the pack argument")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	return command
 }
 
-// bindingRehearsalMessage refuses a binding on a rehearsal (ADR-0050).
-const bindingRehearsalMessage = "--binding is not taken with --rehearsal: a rehearsal records nothing, so there is no record for the binding to be on."
+// bindingRehearsalMessage refuses a binding on a rehearsal, and
+// bindingNoTrailMessage one in a project that keeps no trail (ADR-0050).
+const (
+	bindingRehearsalMessage = "--binding is not taken with --rehearsal: a rehearsal records nothing, so there is no record for the binding to be on."
+	bindingNoTrailMessage   = "--binding is not taken here: the project keeps no trail, so a binding would be accepted and not recorded."
+)
 
 // readBinding reads and holds a binding document (ADR-0050), returning the
 // binding or the sentence that refuses the invocation. It is read as a

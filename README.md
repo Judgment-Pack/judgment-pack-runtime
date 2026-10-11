@@ -680,8 +680,8 @@ member; a record written without one is byte for byte what it was, and `recordVe
 The runtime records the binding and does not interpret it: it never verifies or recomputes the
 digest, and the evaluation does not depend on it. The companion's own verifier checks its value
 against the material. A document not of that shape, one over 1 KiB, or one given with
-`--rehearsal`, which records nothing, is refused before anything is evaluated
-(`JPS-INVOCATION-BINDING`, exit 3), and nothing is written. `audit verify` checks only the shape: a
+`--rehearsal` or in a project that keeps no trail, either of which would record nothing, is refused
+before anything is evaluated (`JPS-INVOCATION-BINDING`, exit 3), and nothing is written. `audit verify` checks only the shape: a
 recorded binding that is malformed is the finding `binding-malformed`, which fails the verification
 and moves no coverage, and a well-formed one is not mentioned. Against the operator, who holds the
 signing key, a binding establishes no more than the signature does.

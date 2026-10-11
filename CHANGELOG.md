@@ -13,8 +13,9 @@ All notable changes to tagged releases are documented here.
   and the record signature cover it like any other member. The runtime records it and does not
   interpret it: it never verifies or recomputes the digest, and the evaluation and the disposition
   do not depend on it; the companion's own verifier checks its value. A document of another shape,
-  one over 1 KiB, or a binding given with `--rehearsal` (or `"rehearsal": true`), which records
-  nothing, is refused before anything is evaluated, `JPS-INVOCATION-BINDING` (exit 3, or a tool
+  one over 1 KiB, or a binding given with `--rehearsal` (or `"rehearsal": true`) or in a project
+  whose configuration declares no audit directory, either of which would record nothing, is
+  refused before anything is evaluated, `JPS-INVOCATION-BINDING` (exit 3, or a tool
   error), with a sentence that repeats nothing of the document, and nothing is written. A record
   written without a binding is byte for byte what it was, and `recordVersion` stays `"1"`, since an
   added member does not move it (VERSIONING.md). `audit verify` reports a recorded binding not of
