@@ -68,17 +68,23 @@ the arguments and before the project is consulted or an input read. A document n
 refused as a bad invocation, `JPS-INVOCATION-BINDING`, exit 3 on the CLI and a tool error on MCP,
 with a fixed sentence that says what is wrong and repeats no value of the document. A rehearsal
 with a binding is refused too, before the document is read: a rehearsal leaves no record, and a
-binding accepted and then not recorded would let the caller believe it was committed. `experimental
-graph evaluate` takes none; no caller has asked for one there.
+binding accepted and then not recorded would let the caller believe it was committed. For that
+reason, word for word, a binding is refused in a project whose loaded configuration declares no
+audit directory, after the configuration is read and before anything is evaluated, with a sentence
+of its own: "the project keeps no trail, so a binding would be accepted and not recorded".
+Citations are still accepted and recorded nowhere in such a project; #266 asks for the same
+refusal there. `experimental graph evaluate` takes none; no caller has asked for one there.
 
 **Where it lands.** On the evaluation's record, beside `cites`: the member `binding`, written as
-every member is, compact, `kind` then `digest`, whatever order and spacing the caller used. It is
+every member is, compact, `kind` then `digest`, whatever order and spacing the caller used. That
+order is the record's struct order, not RFC 8785's, which would put `digest` first: a companion
+that rebuilds the member with JCS gets other bytes, so it compares the record's own bytes, or the
+two values, and never a re-canonicalised member. It is
 assigned by the writer for the invocation (`Writer.Bind`), as the reviewed set is. It is omitted
 when none was given, so a record written without one is byte for byte what it was, which a test
 holds against a trail the v0.30.0 writer wrote. It is a member of the chained line, so the chain
 and the record signature cover it as they cover the rest of the line: a changed byte breaks the
-next record's link and the record's signature, as for any member. As for every record, a project
-that keeps no trail records nothing, binding included.
+next record's link and the record's signature, as for any member.
 
 **What the runtime does not do with it.** It never reads meaning into the digest, never verifies
 it and never recomputes it. The evaluation and the disposition do not depend on it. Whether the
@@ -97,7 +103,7 @@ have written; it does not say the line's bytes are other than those signed and c
 
 **What a reader may conclude.** That the record whose signature verifies carried this binding when
 it was signed: the material whose digest it is, once the caller's verifier recomputes it, is the
-material the caller handed the runtime for that record. Not, against the operator, who holds the
+material the caller committed to for that record. Not, against the operator, who holds the
 key: the operator can recompute the material, write a record with the new binding and sign it,
 and that record verifies like the first; only a checkpoint held independently from before the
 change shows the difference (ADR-0047 §2a). And not when the material was prepared: the binding

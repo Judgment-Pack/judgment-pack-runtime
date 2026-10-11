@@ -153,6 +153,50 @@ func TestEvaluateRefusesABindingItWillNotRecord(t *testing.T) {
 	}
 }
 
+// A binding in a project whose configuration declares no trail would be
+// accepted and recorded nowhere, which is the rehearsal's case (ADR-0050):
+// it is refused the same way, after the configuration is read and before
+// anything is evaluated, however the pack is named, in both formats. The
+// same evaluation without the binding runs.
+func TestEvaluateRefusesABindingWhereNoTrailIsKept(t *testing.T) {
+	configPath := oneGoodProject(t)
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+	binding := writeDocument(t, "binding.json", `{"kind":"k","digest":"`+bindingDigest+`"}`)
+	pack := writeDocument(t, "pack.json", evaluatorPack(t))
+	for _, named := range [][]string{{"--pack-id", "intake"}, {pack}} {
+		for _, format := range []string{"json", "human"} {
+			args := append([]string{"experimental", "evaluate"}, named...)
+			args = append(args, "--config", configPath, "--facts", facts, "--binding", binding, "--format", format)
+			code, stdout, stderr := runTest(t, args, "")
+			if code != result.ExitInvocation || strings.Contains(stdout, `"disposition"`) {
+				t.Fatalf("%v %s: exit=%d stdout=%q stderr=%q", named, format, code, stdout, stderr)
+			}
+			if format == "json" {
+				var output result.OperationalError
+				if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+					t.Fatalf("undecodable %q: %v", stdout, err)
+				}
+				if len(output.Diagnostics) != 1 || output.Diagnostics[0].Code != "JPS-INVOCATION-BINDING" || output.Diagnostics[0].Message != bindingNoTrailMessage {
+					t.Fatalf("%v: output = %+v", named, output)
+				}
+			} else if stdout != "" || stderr != "error: "+bindingNoTrailMessage+"\n" {
+				t.Fatalf("%v: stdout=%q stderr=%q", named, stdout, stderr)
+			}
+		}
+	}
+	if bindingNoTrailMessage != "--binding is not taken here: the project keeps no trail, so a binding would be accepted and not recorded." {
+		t.Fatalf("the sentence: %q", bindingNoTrailMessage)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), "audit")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("nothing is created: %v", err)
+	}
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake",
+		"--config", configPath, "--facts", facts, "--format", "json"}, "")
+	if code != 0 || !strings.Contains(stdout, `"disposition"`) {
+		t.Fatalf("without the binding the evaluation runs: exit=%d stderr=%q", code, stderr)
+	}
+}
+
 // audit verify reports a recorded binding that is not of its shape as
 // binding-malformed at its line, in both formats, and fails the verification.
 func TestAuditVerifyReportsAMalformedBinding(t *testing.T) {

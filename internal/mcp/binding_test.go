@@ -110,9 +110,39 @@ func TestExperimentalEvaluateRecordsTheBindingAsGiven(t *testing.T) {
 	}
 }
 
-// The binding argument's advertised schema states what the handler enforces:
-// a client that generates arguments from the schema cannot produce a binding
-// the handler refuses for its shape, and the reverse.
+// A binding in a project whose configuration declares no trail would be
+// accepted and recorded nowhere, which is the rehearsal's case (ADR-0050): the
+// call is refused before anything is evaluated, and the same call without the
+// binding runs.
+func TestExperimentalEvaluateRefusesABindingWhereNoTrailIsKept(t *testing.T) {
+	root := bindingProject(t)
+	configPath := filepath.Join(root, project.DefaultConfigName)
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"1","packs":{"intake":{"path":"packs/intake-0.1.0.pack.json"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	responses := runServer(t, strings.Join([]string{
+		toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "binding": map[string]any{"kind": "k", "digest": bindingDigest}}),
+		toolCall(t, 2, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts}),
+	}, ""))
+	refused := responses[0]["result"].(map[string]any)
+	want := `The "binding" argument is not taken here: the project keeps no trail, so a binding would be accepted and not recorded.`
+	if refused["isError"] != true || toolText(t, refused) != want {
+		t.Fatalf("a binding where no trail is kept: %#v", refused)
+	}
+	if ran := responses[1]["result"].(map[string]any); ran["isError"] != false {
+		t.Fatalf("without the binding the call runs: %#v", ran)
+	}
+	if _, err := os.Stat(filepath.Join(root, "audit")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("nothing is created: %v", err)
+	}
+}
+
+// The binding argument's advertised schema states what the handler enforces
+// for the value: a client that generates arguments from the schema cannot
+// produce a binding the handler refuses for its shape, and the reverse. The
+// handler also bounds the argument at 1024 bytes as sent, which the schema
+// description states and no keyword can: a schema-valid binding spelled with
+// enough JSON escapes or whitespace is refused for its size.
 func TestTheBindingSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 	responses := runServer(t, message(t, 1, "tools/list", nil))
 	var schema map[string]any
