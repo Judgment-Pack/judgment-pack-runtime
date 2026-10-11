@@ -8,7 +8,8 @@ independent: a CLI release may consume a JPS release, but it never creates or ch
 - The intended JPS artifacts have already been committed to `Judgment-Pack/judgment-pack-spec` and
   are reachable by an immutable reference: either a published tag or a full-length commit digest.
   Prefer a tag when one carries the intended artifacts.
-- GitHub Release Immutability is enabled for this repository.
+- GitHub Release Immutability is enabled for this repository. The tag workflow enforces this
+  (see "Release immutability" below); it does not change the setting.
 - `main` is clean, pushed, and passing CI.
 - The GitHub CLI is authenticated with permission to push and manage releases.
 - The release version is an exact SemVer tag such as `v0.1.0` or `v0.2.0-rc.1`.
@@ -119,6 +120,32 @@ binary. A release build must report the tag version without the leading `v`.
    rc is the registry's newest version until its final follows. Cut the final promptly, and pin
    a version in registry-aware clients when this matters. The GitHub release and the image
    `latest` tag are unaffected: neither ever moves for a prerelease.
+
+## Release immutability
+
+The workflow checks the prerequisite twice, read-only and fail-closed
+(`tools/check-immutability`; each failure is one sentence in the job log):
+
+- **Before anything is drafted**, the `package` job reads the latest published release (not a draft
+  or prerelease) through the REST API with the workflow token and requires its `immutable` field to
+  be `true`. It reads the release's flag because the repository setting itself is not readable to
+  the workflow's token (it needs the Administration permission). It fails when that release is not
+  immutable, when the API errors or refuses the token (named as such), or when the field is
+  missing; with no published release at all it passes and says so, and the check after
+  publication is the only enforcement for a first release. A manual validation dispatch performs
+  the same check.
+- **After the publish job flips the draft**, it reads the new release and fails unless it reports
+  `immutable: true`. This is the enforcement. The workflow never edits or deletes the release. The
+  failed `publish` job blocks every follow-on job (`publish-image`, `image-smoke`,
+  `promote-image`, `publish-mcp-registry`), so no image or registry entry is made for it. The
+  release that already exists stays as it is; the fix is a new version once the setting is on, as
+  for any released tag.
+
+A failure of the first check means: turn on Release Immutability in the repository settings and
+re-run; the workflow never changes a repository setting. A release published before the setting was
+enabled cannot be locked retroactively (v0.29.0, recorded in issue #252), and because the first
+check reads the latest release, the first release after enabling the setting is the one that
+shows the setting works.
 
 Do not move or reuse a released tag. Fixes require a new version — including for the image tags
 and the registry entry: the version-tag guard in `publish-image` enforces this for the image, so a
