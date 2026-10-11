@@ -30,6 +30,19 @@ What this runtime conforms to is stated in `CONFORMANCE.md`.
   immutability, and caller-owned custody recovery after a trail is moved (#236). No evaluation
   changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
 
+- **`audit stamp` refuses a trail moved while its checkpoint is being stamped** (#242).
+  Whether a checkpoint is stamped already is read without opening the stamps file for writing, so a
+  re-run on a read-only stamps file still answers `already-stamped`. When the authority is to be
+  asked, the stamps handle is retained across the request, and just before the append, under the
+  stamps lock, the trail at the path must be the file that was read, no shorter than it was, and
+  still hold the checkpoint's record at its sequence; otherwise `JPS-AUDIT-STAMP-TRAIL-MOVED`
+  discards the token without writing, a trail truncated in place and written again among them. A
+  trail that could not be checked is `JPS-AUDIT-STAMP-TRAIL-UNCHECKED`. A stamps file moved,
+  removed, linked elsewhere or truncated during the request is `JPS-AUDIT-STAMPS-MOVED`, and the
+  token is discarded without writing. The stamps lock and 64 MiB bound are unchanged; opening an
+  absent stamps file to ask the authority now creates an empty file even if the authority fails.
+  The conformance claim in CONFORMANCE.md is unchanged.
+
 ## 0.28.0 - 2026-10-09
 
 - **The audit report says what it establishes after an uncovered suffix or a chain break** (#240,
