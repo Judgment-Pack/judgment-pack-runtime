@@ -63,7 +63,16 @@ func NewRunner(engine *validation.Engine) *Runner {
 	return &Runner{engine: engine}
 }
 
+// Run compares each case's expected diagnostic with those reported: the expected
+// one must be among them, and extra detail is allowed.
 func (r *Runner) Run(suiteArgument, requestedVersion string) (result.Suite, *validation.OperationalFailure) {
+	return r.RunWithOptions(suiteArgument, requestedVersion, false)
+}
+
+// RunWithOptions is Run with strict mode available: under strict a case also
+// fails when a diagnostic is reported that its manifest entry does not expect,
+// which is what the corpus's single-defect rule needs.
+func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict bool) (result.Suite, *validation.OperationalFailure) {
 	var source suiteSource
 	var failure *validation.OperationalFailure
 	if suiteArgument == "" {
@@ -129,6 +138,13 @@ func (r *Runner) Run(suiteArgument, requestedVersion string) (result.Suite, *val
 			}
 		}
 		matches := actual.Status == manifestCase.ExpectedResult && expectedDiagnosticPresent(caseResult.ExpectedDiagnostic, actual.Diagnostics)
+		if strict {
+			// Computed before truncation, so a stray diagnostic is never cut away.
+			caseResult.StrayDiagnostics = strayDiagnostics(caseResult.ExpectedDiagnostic, actual.Diagnostics)
+			if len(caseResult.StrayDiagnostics) > 0 {
+				matches = false
+			}
+		}
 		if !matches {
 			caseResult.Status = "mismatch"
 			output.Status = "mismatch"
@@ -338,6 +354,18 @@ func validateManifest(manifestBytes, schemaBytes []byte) (Manifest, *validation.
 		}
 	}
 	return manifest, nil
+}
+
+// strayDiagnostics returns the reported diagnostics other than the expected one.
+func strayDiagnostics(expected *result.ExpectedDiagnostic, actual []result.Diagnostic) []result.Diagnostic {
+	var stray []result.Diagnostic
+	for _, diagnostic := range actual {
+		if expected != nil && diagnostic.Code == expected.Code && diagnostic.InstancePath == expected.Path {
+			continue
+		}
+		stray = append(stray, diagnostic)
+	}
+	return stray
 }
 
 func expectedDiagnosticPresent(expected *result.ExpectedDiagnostic, actual []result.Diagnostic) bool {

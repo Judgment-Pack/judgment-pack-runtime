@@ -109,7 +109,14 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 		fmt.Fprintf(a.out, "mismatch: %d/%d conformance cases did not match expectations\n", output.Summary.Mismatched, output.Summary.Total)
 		for _, item := range output.Cases {
 			if item.Status == "mismatch" {
-				fmt.Fprintf(a.out, "- %s: expected %s, got %s\n", display.Sanitize(item.ID), display.Sanitize(item.ExpectedStatus), display.Sanitize(item.ActualStatus))
+				if len(item.StrayDiagnostics) > 0 && item.ExpectedStatus == item.ActualStatus {
+					fmt.Fprintf(a.out, "- %s: reported %d diagnostic(s) the manifest does not expect\n", display.Sanitize(item.ID), len(item.StrayDiagnostics))
+				} else {
+					fmt.Fprintf(a.out, "- %s: expected %s, got %s\n", display.Sanitize(item.ID), display.Sanitize(item.ExpectedStatus), display.Sanitize(item.ActualStatus))
+				}
+				for _, stray := range item.StrayDiagnostics {
+					fmt.Fprintf(a.out, "    stray diagnostic %s at %q\n", display.Sanitize(stray.Code), display.Sanitize(stray.InstancePath))
+				}
 			}
 		}
 	}

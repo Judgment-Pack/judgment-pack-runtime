@@ -217,3 +217,84 @@ func writeLocalSuite(t *testing.T) string {
 	}
 	return root
 }
+
+// strayCase is structural/missing-decision.json with a second defect (an
+// unknown top-level member), so it yields a diagnostic its manifest entry does
+// not expect.
+const strayCase = "structural/missing-decision.json"
+
+func writeStraySuite(t *testing.T) string {
+	t.Helper()
+	root := writeLocalSuite(t)
+	target := filepath.Join(root, filepath.FromSlash(strayCase))
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pack map[string]any
+	if err := json.Unmarshal(data, &pack); err != nil {
+		t.Fatal(err)
+	}
+	pack["unexpectedMember"] = true
+	altered, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, altered, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestStrictModeNamesStrayDiagnostic(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewRunner(engine)
+	root := writeStraySuite(t)
+
+	lenient, failure := runner.RunWithOptions(root, artifacts.DraftVersion, false)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	if lenient.Status != "valid" || lenient.Summary.Passed != lenient.Summary.Total {
+		t.Fatalf("default mode must still pass the altered case: %#v", lenient.Summary)
+	}
+
+	strict, failure := runner.RunWithOptions(root, artifacts.DraftVersion, true)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	if strict.Status != "mismatch" || strict.Summary.Mismatched != 1 || strict.Summary.Passed != strict.Summary.Total-1 {
+		t.Fatalf("strict mode must fail exactly the altered case: %#v", strict.Summary)
+	}
+	found := false
+	for _, item := range strict.Cases {
+		if item.Status == "mismatch" {
+			found = true
+			if len(item.StrayDiagnostics) == 0 {
+				t.Fatalf("failed case names no stray diagnostic: %#v", item)
+			}
+		} else if len(item.StrayDiagnostics) != 0 {
+			t.Fatalf("passing case lists a stray diagnostic: %#v", item)
+		}
+	}
+	if !found {
+		t.Fatal("no mismatching case")
+	}
+}
+
+func TestStrictModePassesBundledSuite(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, failure := NewRunner(engine).RunWithOptions("", artifacts.DraftVersion, true)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	if actual.Status != "valid" || actual.Summary.Total != 47 || actual.Summary.Passed != 47 || actual.Summary.Mismatched != 0 {
+		t.Fatalf("unexpected strict suite result: %#v", actual.Summary)
+	}
+}

@@ -943,6 +943,116 @@ func TestConformanceHelpNamesExactDefaultVersion(t *testing.T) {
 	}
 }
 
+// A copy of the bundled corpus whose structural/missing-decision.json carries a
+// second defect passes by default and fails under --strict, naming the stray
+// diagnostic, in both output formats.
+func TestConformanceStrictFailsCaseWithStrayDiagnostic(t *testing.T) {
+	set, err := artifacts.Load(artifacts.DraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	manifestBytes, err := set.Manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaBytes, err := set.ManifestSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.schema.json"), schemaBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Cases []struct {
+			Path string `json:"path"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range manifest.Cases {
+		data, err := set.Case(item.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if item.Path == "structural/missing-decision.json" {
+			var pack map[string]any
+			if err := json.Unmarshal(data, &pack); err != nil {
+				t.Fatal(err)
+			}
+			pack["unexpectedMember"] = true
+			if data, err = json.Marshal(pack); err != nil {
+				t.Fatal(err)
+			}
+		}
+		target := filepath.Join(root, filepath.FromSlash(item.Path))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if code, stdout, stderr := runTest(t, []string{"spec", "test-conformance", root}, ""); code != 0 || stderr != "" || !strings.Contains(stdout, "passed:") {
+		t.Fatalf("default mode: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr := runTest(t, []string{"spec", "test-conformance", "--strict", root}, "")
+	if code != 1 || stderr != "" || !strings.Contains(stdout, "mismatch: 1/") || !strings.Contains(stdout, "- structural-missing-decision: reported 1 diagnostic(s)") || !strings.Contains(stdout, "stray diagnostic ") {
+		t.Fatalf("strict human: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runTest(t, []string{"spec", "test-conformance", "--strict", "--format", "json", root}, "")
+	if code != 1 || stderr != "" {
+		t.Fatalf("strict json: exit=%d stderr=%q", code, stderr)
+	}
+	var suite struct {
+		Status  string
+		Summary struct{ Mismatched int }
+		Cases   []struct {
+			ID               string
+			Status           string
+			StrayDiagnostics []struct{ Code, InstancePath string }
+		}
+	}
+	if err := json.Unmarshal([]byte(stdout), &suite); err != nil {
+		t.Fatal(err)
+	}
+	strayCases := 0
+	for _, item := range suite.Cases {
+		if len(item.StrayDiagnostics) > 0 {
+			strayCases++
+			if item.Status != "mismatch" || item.StrayDiagnostics[0].Code == "" {
+				t.Fatalf("unexpected stray case: %#v", item)
+			}
+		}
+	}
+	if suite.Status != "mismatch" || suite.Summary.Mismatched != 1 || strayCases != 1 {
+		t.Fatalf("unexpected strict json result: %#v", suite)
+	}
+}
+
+func TestConformanceStrictPassesBundledCorpus(t *testing.T) {
+	for _, format := range []string{"human", "json"} {
+		code, stdout, stderr := runTest(t, []string{"spec", "test-conformance", "--strict", "--format", format}, "")
+		if code != 0 || stderr != "" || strings.Contains(stdout, "strayDiagnostics") || strings.Contains(stdout, "stray diagnostic") {
+			t.Fatalf("%s: exit=%d stdout=%q stderr=%q", format, code, first(stdout, 200), stderr)
+		}
+	}
+}
+
+func TestConformanceHelpDescribesStrictMode(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"spec", "test-conformance", "--help"}, "")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "--strict") || !strings.Contains(stdout, "single-defect") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
 func TestJPSNamespaceDoesNotExist(t *testing.T) {
 	code, _, stderr := runTest(t, []string{"jps", "validate", "-"}, `{}`)
 	if code != 3 || !strings.Contains(stderr, "unknown command") {

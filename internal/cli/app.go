@@ -647,12 +647,18 @@ func (a *App) validateCommand() *cobra.Command {
 func (a *App) testConformanceCommand() *cobra.Command {
 	format := "human"
 	specVersion := ""
+	strict := false
 	quiet := false
 	noColor := false
 	command := &cobra.Command{
 		Use:   "test-conformance [suite]",
 		Short: "Run a version-pinned JPS conformance corpus",
-		Args:  cobra.MaximumNArgs(1),
+		Long: "Run a version-pinned JPS conformance corpus.\n\n" +
+			"By default a case passes when its expected diagnostic is among those reported; extra detail is allowed.\n" +
+			"With --strict a case also fails when a diagnostic is reported that its manifest entry does not expect,\n" +
+			"and the failure names each stray diagnostic. The corpus's single-defect rule (one defect per fixture)\n" +
+			"is only checked under --strict.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateCommonOptions(format, quiet); err != nil {
 				return a.operational("spec test-conformance", format, result.ExitInvocation, "JPS-INVOCATION-OPTIONS", err.Error())
@@ -661,7 +667,7 @@ func (a *App) testConformanceCommand() *cobra.Command {
 			if len(args) == 1 {
 				suite = args[0]
 			}
-			output, operational := a.runner.Run(suite, specVersion)
+			output, operational := a.runner.RunWithOptions(suite, specVersion, strict)
 			if operational != nil {
 				return a.operational("spec test-conformance", format, operational.ExitCode, operational.Code, operational.Message)
 			}
@@ -678,6 +684,7 @@ func (a *App) testConformanceCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&specVersion, "spec-version", specVersion, "exact JPS version; defaults to "+artifacts.DraftVersion)
+	command.Flags().BoolVar(&strict, "strict", strict, "also fail a case that reports a diagnostic its manifest entry does not expect (the single-defect rule)")
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().BoolVar(&quiet, "quiet", quiet, "suppress successful human output")
 	command.Flags().BoolVar(&noColor, "no-color", noColor, "disable terminal color")

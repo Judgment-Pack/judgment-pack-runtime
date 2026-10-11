@@ -76,7 +76,7 @@ The command binary is `jpack`. The project, repository, and release archives kee
 ```text
 jpack version
 jpack spec validate <pack-or->
-jpack spec test-conformance [suite]
+jpack spec test-conformance [suite] [--strict]
 jpack spec schema <spec-version>
 jpack spec examples [name] [--spec-version V]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
@@ -282,7 +282,10 @@ Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an ex
 ./bin/jpack spec test-conformance
 ./bin/jpack spec test-conformance --format json
 ./bin/jpack spec test-conformance --spec-version 0.2.0-draft
+./bin/jpack spec test-conformance --strict
 ```
+
+By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs.
 
 Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimental evaluator. Every
 row is compared by disposition equality as §8.3 defines it — both the row's expectation and the

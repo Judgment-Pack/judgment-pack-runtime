@@ -4,6 +4,11 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`spec test-conformance --strict` fails a case that reports a diagnostic its manifest entry does not
+  expect** (#229). The failure names each stray diagnostic by code and instance path, in human and JSON
+  output (`strayDiagnostics`, present only under `--strict`), and counts as a mismatch like any other.
+  The default mode is unchanged; the corpus's single-defect rule is only checked under `--strict`.
+
 - **A signing seed replaced at its path signs nothing when the expected public key is named** (#255,
   from Judgment-Pack/judgment-pack-runner#54). `JPACK_SIGNING_PUBLIC_KEY`, or the audit member's new
   `signingPublicKey` under configVersion `"7"` (the environment variable, read exactly as set,

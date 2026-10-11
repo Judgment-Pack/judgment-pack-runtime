@@ -134,6 +134,9 @@ type Case struct {
 	ExpectedDiagnostic   *ExpectedDiagnostic `json:"expectedDiagnostic"`
 	ActualDiagnostics    []Diagnostic        `json:"actualDiagnostics"`
 	DiagnosticsTruncated bool                `json:"diagnosticsTruncated"`
+	// StrayDiagnostics lists, under --strict only, the reported diagnostics the
+	// case's manifest entry does not expect.
+	StrayDiagnostics []Diagnostic `json:"strayDiagnostics,omitempty"`
 }
 
 type SuiteSummary struct {
