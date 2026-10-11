@@ -231,7 +231,7 @@ func TestManyDiscontinuitiesAreListedUpToABound(t *testing.T) {
 	const repairs = 300
 	for index := range repairs {
 		data = append(data, []byte("torn "+strings.Repeat("x", index%7))...)
-		line, _, err := writer.discontinuityAfter(bytes.NewReader(data), int64(len(data)))
+		line, _, err := writer.discontinuityAfter(bytes.NewReader(data), int64(len(data)), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

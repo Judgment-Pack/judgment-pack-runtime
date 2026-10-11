@@ -3,9 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -475,6 +478,166 @@ func TestAuditRepairDoesNotRepairARepair(t *testing.T) {
 	}
 	if after, err := os.ReadFile(trail); err != nil || !bytes.Equal(after, before) {
 		t.Fatal("a refused repair appends nothing")
+	}
+}
+
+// shownDamage is the damaged end a caller checked and showed before asking for
+// a repair (#230): eight bytes after the trail's last newline.
+const shownDamage = `{"torn":`
+
+// tornProject is a project with one record whose trail then ends in damage.
+func tornProject(t *testing.T, damage string) (string, string) {
+	t.Helper()
+	configPath, trail := recordedProject(t, 1)
+	file, err := os.OpenFile(trail, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(damage); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return configPath, trail
+}
+
+// projectTree is every directory and file under a project's directory, files
+// with their bytes, so a test can say a refusal changed and created nothing.
+func projectTree(t *testing.T, configPath string) map[string]string {
+	t.Helper()
+	tree := map[string]string{}
+	err := filepath.WalkDir(filepath.Dir(configPath), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			tree[path+string(filepath.Separator)] = ""
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		tree[path] = string(data)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree
+}
+
+// A repair bound to the damaged bytes the caller showed (#230) repairs as one
+// without the binding does: the same report, and one newline and one record
+// appended after the same bytes.
+func TestAuditRepairBoundToTheShownBytesRepairsAsWithout(t *testing.T) {
+	digest := audit.Digest([]byte(shownDamage))
+	repair := func(binding ...string) result.AuditRepair {
+		t.Helper()
+		configPath, trail := tornProject(t, shownDamage)
+		before, err := os.ReadFile(trail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		code, stdout, stderr := runTest(t, append([]string{"audit", "repair", "--config", configPath, "--format", "json"}, binding...), "")
+		var repaired result.AuditRepair
+		if err := json.Unmarshal([]byte(stdout), &repaired); err != nil || code != 0 || repaired.Status != "repaired" {
+			t.Fatalf("exit=%d stdout=%q stderr=%q %v", code, stdout, stderr, err)
+		}
+		after, err := os.ReadFile(trail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		appended, found := bytes.CutPrefix(after, append(before, '\n'))
+		if !found || bytes.Count(appended, []byte("\n")) != 1 || !bytes.HasSuffix(appended, []byte("\n")) || !bytes.Contains(appended, []byte(`"kind":"discontinuity"`)) {
+			t.Fatalf("a repair keeps the damaged bytes and appends one record: %q", after)
+		}
+		return repaired
+	}
+	unbound := repair()
+	bound := repair("--damaged-bytes", fmt.Sprint(len(shownDamage)), "--damaged-digest", digest)
+	if bound.Discontinuity != unbound.Discontinuity || bound.Discontinuity.Bytes != int64(len(shownDamage)) || bound.Discontinuity.Digest != digest {
+		t.Fatalf("bound %+v, unbound %+v", bound.Discontinuity, unbound.Discontinuity)
+	}
+}
+
+// Where the trail's damaged end is not the bytes the flags name, one more byte
+// appended after the caller's check, or one fewer, the repair is refused in
+// both formats under its own code, names the length and digest it found, and
+// leaves the project as it was. Bound to what it found, it then repairs.
+func TestAuditRepairRefusesDamageOtherThanShown(t *testing.T) {
+	shownDigest := audit.Digest([]byte(shownDamage))
+	for name, damage := range map[string]string{
+		"a byte appended after the check": shownDamage + "x",
+		"a damaged end that shrank":       shownDamage[:len(shownDamage)-1],
+	} {
+		t.Run(name, func(t *testing.T) {
+			configPath, _ := tornProject(t, damage)
+			found := audit.Digest([]byte(damage))
+			want := fmt.Sprintf("The damaged bytes at the trail's end are now %d bytes with digest %s, not the %d bytes with digest %s that --damaged-bytes and --damaged-digest name, so nothing was repaired and the trail is as it was; check it again with jpack audit verify and repair what it shows.",
+				len(damage), found, len(shownDamage), shownDigest)
+			before := projectTree(t, configPath)
+			args := []string{"audit", "repair", "--config", configPath, "--damaged-bytes", fmt.Sprint(len(shownDamage)), "--damaged-digest", shownDigest}
+			code, stdout, _ := runTest(t, append(args, "--format", "json"), "")
+			var refused result.OperationalError
+			if err := json.Unmarshal([]byte(stdout), &refused); err != nil || code != result.ExitInvalid || refused.Status != "error" || len(refused.Diagnostics) != 1 ||
+				refused.Diagnostics[0].Code != "JPS-AUDIT-REPAIR-TAIL-CHANGED" || refused.Diagnostics[0].Message != want {
+				t.Fatalf("json: exit=%d stdout=%q %v", code, stdout, err)
+			}
+			code, stdout, stderr := runTest(t, args, "")
+			if code != result.ExitInvalid || stdout != "" || stderr != "error: "+want+"\n" {
+				t.Fatalf("human: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			if after := projectTree(t, configPath); !reflect.DeepEqual(after, before) {
+				t.Fatalf("a refused repair changed the project:\nbefore %q\nafter  %q", before, after)
+			}
+			code, stdout, _ = runTest(t, []string{"audit", "repair", "--config", configPath, "--format", "json", "--damaged-bytes", fmt.Sprint(len(damage)), "--damaged-digest", found}, "")
+			var repaired result.AuditRepair
+			if err := json.Unmarshal([]byte(stdout), &repaired); err != nil || code != 0 || repaired.Discontinuity.Bytes != int64(len(damage)) || repaired.Discontinuity.Digest != found {
+				t.Fatalf("bound to what was found: exit=%d stdout=%q %v", code, stdout, err)
+			}
+		})
+	}
+}
+
+// The binding's flags are refused, each with its own sentence, before anything
+// is opened: a configuration that does not exist and a project with no trail
+// yet are never the reason given.
+func TestAuditRepairRefusesAMalformedBindingFirst(t *testing.T) {
+	digest := audit.Digest([]byte(shownDamage))
+	const (
+		pair  = "--damaged-bytes and --damaged-digest are given together or not at all: the repair is bound to the damaged bytes by their length and their digest both."
+		count = "--damaged-bytes must be a whole number from 1: how many bytes follow the trail's last newline, as jpack audit verify reports them."
+		form  = "--damaged-digest must be sha256: and 64 lowercase hexadecimal characters: the SHA-256 of exactly the bytes after the trail's last newline."
+	)
+	missing := filepath.Join(t.TempDir(), "absent", "jpack.json")
+	notYet := writeProjectFixture(t, `{"configVersion":"3","audit":{"dir":"audit"},"packs":{}}`, nil)
+	for name, test := range map[string]struct {
+		flags []string
+		want  string
+	}{
+		"bytes alone":                 {[]string{"--damaged-bytes=8"}, pair},
+		"a digest alone":              {[]string{"--damaged-digest=" + digest}, pair},
+		"a negative count":            {[]string{"--damaged-bytes=-8", "--damaged-digest=" + digest}, count},
+		"a count of none":             {[]string{"--damaged-bytes=0", "--damaged-digest=" + digest}, count},
+		"not a whole number":          {[]string{"--damaged-bytes=8.0", "--damaged-digest=" + digest}, count},
+		"not a number":                {[]string{"--damaged-bytes=eight", "--damaged-digest=" + digest}, count},
+		"a digest of no form":         {[]string{"--damaged-bytes=8", "--damaged-digest=sha256:xyz"}, form},
+		"an uppercase digest":         {[]string{"--damaged-bytes=8", "--damaged-digest=sha256:" + strings.ToUpper(strings.TrimPrefix(digest, "sha256:"))}, form},
+		"a digest without its prefix": {[]string{"--damaged-bytes=8", "--damaged-digest=" + strings.TrimPrefix(digest, "sha256:")}, form},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, configPath := range []string{missing, notYet} {
+				code, stdout, _ := runTest(t, append([]string{"audit", "repair", "--config", configPath, "--format", "json"}, test.flags...), "")
+				var refused result.OperationalError
+				if err := json.Unmarshal([]byte(stdout), &refused); err != nil || code != result.ExitInvocation || len(refused.Diagnostics) != 1 ||
+					refused.Diagnostics[0].Code != "JPS-INVOCATION-AUDIT-DAMAGED" || refused.Diagnostics[0].Message != test.want {
+					t.Fatalf("exit=%d stdout=%q %v", code, stdout, err)
+				}
+			}
+		})
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(notYet), "audit")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("a refused binding created the audit directory: %v", err)
 	}
 }
 

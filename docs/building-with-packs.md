@@ -1747,6 +1747,25 @@ trail aside and keep it, and the next record starts a new one. A repair works on
 project's `jpack.json` declares, never on a file named by path. Since anyone who can run it can run
 it at will, a discontinuity says a break was acknowledged, not why.
 
+A program that offers the repair behind someone's confirmation binds it to the damaged bytes it
+showed them:
+
+```sh
+jpack audit repair --damaged-bytes 29 --damaged-digest sha256:…
+```
+
+`--damaged-bytes` is how many bytes follow the trail's last newline, the count `audit verify`
+reports for an `incomplete-last-line`, and `--damaged-digest` the SHA-256 of exactly those bytes, in
+the `sha256:` form the discontinuity record names them by; the two are given together. Under the
+writer's lock, immediately before the write, the repair holds the bytes it is about to set aside to
+both. Where they are not exactly those bytes (another writer appended to them after the caller's
+check, or they are fewer, or others), it is refused (`JPS-AUDIT-REPAIR-TAIL-CHANGED`), nothing is
+written, and the refusal names the length and digest it found, so the caller can show a fresh
+report. A repair confirmed on eight bytes never ends nine. The caller takes no lock on the trail,
+and needs none for this: the binding is checked under the writer's. One flag without the other, a
+count that is not a whole number from 1, or a digest of another form is refused before anything is
+read (`JPS-INVOCATION-AUDIT-DAMAGED`). Without the flags the repair is as above.
+
 A report lists the first hundred discontinuities and segments, as it lists the first hundred
 findings, and counts them all (`discontinuitiesTotal`, `segmentsTotal`), so a trail of many repairs
 costs a verification no more memory than a trail of few. Line endings are bytes too: a trail whose

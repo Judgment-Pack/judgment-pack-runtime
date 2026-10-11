@@ -37,7 +37,43 @@ var (
 	// to write it. The trail is moved aside and kept, and the next record
 	// starts a new one.
 	ErrRepairDiscontinuity = errors.New("the audit trail's incomplete last line is a discontinuity record, which a repair does not repair")
+	// ErrRepairTailChanged is a repair bound to the damaged bytes a caller
+	// showed (RepairExpecting) that found other bytes at the trail's end
+	// under the lock: more, fewer, or others of the same length. Nothing is
+	// written. A *TailChangedError says what was found.
+	ErrRepairTailChanged = errors.New("the audit trail's damaged bytes are not the ones the repair was bound to")
 )
+
+// DamagedTail names the bytes after a trail's last newline, the damage a
+// repair sets aside: how many there are, and the SHA-256 of exactly those
+// bytes in the form a discontinuity record names them by, sha256: and 64
+// lowercase hexadecimal characters.
+type DamagedTail struct {
+	Bytes  int64
+	Digest string
+}
+
+// TailChangedError is ErrRepairTailChanged with the damaged bytes the repair
+// was bound to and those it found under the lock, so a caller can say what
+// changed and show a fresh report.
+type TailChangedError struct {
+	Expected DamagedTail
+	Found    DamagedTail
+}
+
+func (e *TailChangedError) Error() string { return ErrRepairTailChanged.Error() }
+
+func (e *TailChangedError) Unwrap() error { return ErrRepairTailChanged }
+
+// IsDigest reports whether text is a digest in the form this package writes
+// one: sha256: and 64 lowercase hexadecimal characters.
+func IsDigest(text string) bool { return previousForm.MatchString(text) }
+
+// beforeRepairLock runs where a repair holds nothing on the trail: after it
+// found the trail there and before it takes the lock it reads and appends
+// under. A test appends to the damaged end here, as another writer could
+// between a caller's check and the repair.
+var beforeRepairLock = func() {}
 
 // discontinuityRecord is the line audit repair appends. Its chain members come
 // first and in the order every record's do; it has no evaluatorSpecVersion,
@@ -74,6 +110,23 @@ type discontinuityRecord struct {
 // refuses (ErrRepairNeedsLock), and it refuses for a writer that does not chain
 // (ErrRepairUnchained).
 func (w *Writer) Repair() (result.AuditDiscontinuity, error) {
+	return w.repair(nil)
+}
+
+// RepairExpecting is Repair bound to the damaged bytes a caller showed before
+// it asked for the repair (#230). Under the lock, immediately before the
+// write, the bytes the repair would set aside must be exactly expected, their
+// length and their digest; where they are not, it refuses with a
+// *TailChangedError (ErrRepairTailChanged) naming what it found, and writes
+// nothing. A caller cannot lock the trail across its own check and the repair,
+// so this is how it keeps another writer's bytes, appended in between, out of
+// a repair someone confirmed: a repair confirmed on eight bytes never ends
+// nine. Every other refusal is Repair's, decided as Repair decides it.
+func (w *Writer) RepairExpecting(expected DamagedTail) (result.AuditDiscontinuity, error) {
+	return w.repair(&expected)
+}
+
+func (w *Writer) repair(expected *DamagedTail) (result.AuditDiscontinuity, error) {
 	if w == nil {
 		return result.AuditDiscontinuity{}, ErrNoTrail
 	}
@@ -88,13 +141,14 @@ func (w *Writer) Repair() (result.AuditDiscontinuity, error) {
 		return result.AuditDiscontinuity{}, errors.Join(ErrNoTrail, err)
 	}
 	existing.Close()
+	beforeRepairLock()
 	var repaired result.AuditDiscontinuity
 	// A writer that signs signs the discontinuity record as it signs any
 	// chained record, and a signature that cannot be written leaves it
 	// unsigned rather than the repair failed.
 	var appended []byte
 	_, err = w.root.AppendLockedThen(name, func(state fssecure.AppendState) ([]byte, error) {
-		lines, discontinuity, err := w.repairLines(state)
+		lines, discontinuity, err := w.repairLines(state, expected)
 		repaired, appended = discontinuity, lines
 		return lines, err
 	}, w.signThen(&appended))
@@ -106,12 +160,13 @@ func (w *Writer) Repair() (result.AuditDiscontinuity, error) {
 
 // repairLines is what a repair appends, decided under the trail's lock: the
 // newline that ends the damaged line, then the discontinuity record. Without
-// the lock it appends nothing.
-func (w *Writer) repairLines(state fssecure.AppendState) ([]byte, result.AuditDiscontinuity, error) {
+// the lock it appends nothing, and with expected it appends nothing unless the
+// damaged bytes are those.
+func (w *Writer) repairLines(state fssecure.AppendState, expected *DamagedTail) ([]byte, result.AuditDiscontinuity, error) {
 	if !state.Locked {
 		return nil, result.AuditDiscontinuity{}, ErrRepairNeedsLock
 	}
-	line, discontinuity, err := w.discontinuityAfter(state.Contents, state.Size)
+	line, discontinuity, err := w.discontinuityAfter(state.Contents, state.Size, expected)
 	if err != nil {
 		return nil, result.AuditDiscontinuity{}, err
 	}
@@ -119,8 +174,10 @@ func (w *Writer) repairLines(state fssecure.AppendState) ([]byte, result.AuditDi
 }
 
 // discontinuityAfter composes the discontinuity record for a trail of size
-// bytes whose last line is incomplete, and the report of it.
-func (w *Writer) discontinuityAfter(contents io.ReaderAt, size int64) ([]byte, result.AuditDiscontinuity, error) {
+// bytes whose last line is incomplete, and the report of it. With expected,
+// the damaged bytes it reads, the ones the record names, must be exactly those
+// bytes: a read that fails is that read's failure, never a mismatch.
+func (w *Writer) discontinuityAfter(contents io.ReaderAt, size int64, expected *DamagedTail) ([]byte, result.AuditDiscontinuity, error) {
 	if size == 0 {
 		return nil, result.AuditDiscontinuity{}, ErrNothingToRepair
 	}
@@ -138,6 +195,12 @@ func (w *Writer) discontinuityAfter(contents io.ReaderAt, size int64) ([]byte, r
 	damage := make([]byte, size-start)
 	if err := readAt(contents, damage, start); err != nil {
 		return nil, result.AuditDiscontinuity{}, err
+	}
+	if expected != nil {
+		found := DamagedTail{Bytes: int64(len(damage)), Digest: Digest(damage)}
+		if found.Bytes != expected.Bytes || found.Digest != expected.Digest {
+			return nil, result.AuditDiscontinuity{}, &TailChangedError{Expected: *expected, Found: found}
+		}
 	}
 	if _, members, _ := readLink(damage); members != nil {
 		var kind string

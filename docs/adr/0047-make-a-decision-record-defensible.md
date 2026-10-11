@@ -106,7 +106,8 @@ A graph batch keeps ADR-0018's commit-marker semantics: the composite is the bat
 
 **Repair.** A torn or corrupt line is never repaired in place. `jpack audit repair` starts a new segment:
 - a `discontinuity` record (chained to the last intact line, and signed if signing is configured) names the digest of the bytes after that line, and why;
-- the damaged bytes are kept beside the trail.
+- the damaged bytes are kept beside the trail;
+- a caller that showed someone the damaged bytes before asking binds the repair to them, `--damaged-bytes <n>` and `--damaged-digest sha256:<hex>` (#230): under the lock, immediately before the write, damaged bytes that are not exactly those are refused (`JPS-AUDIT-REPAIR-TAIL-CHANGED`) and nothing is written, so a repair confirmed on eight bytes never ends nine.
 
 `audit verify` then reports each intact segment and the discontinuity. It never reports the whole history as intact. A checkpoint made before the break still verifies the segment it covers.
 
