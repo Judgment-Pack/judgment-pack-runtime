@@ -16,3 +16,10 @@ the commit a new copy must come from.
 
 The statements are signed under the gateway corpus's published test seed, which
 signs nothing real; only public keys are carried in the vectors.
+
+trail-v0.30.0.jsonl is a trail the v0.30.0 writer wrote: the four records
+goldenRecords in golden_test.go composes, chained, before a record could carry
+a binding (ADR-0050). TestARecordWithoutABindingIsTheBytesTheWriterWroteBefore
+holds what the writer composes today, given the members the writer and the
+clock assigned then, to those bytes exactly. It is not regenerated: a change
+that makes the test fail has changed a record written without a binding.

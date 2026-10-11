@@ -2,6 +2,27 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A caller's binding digest on the evaluation record** (#263, ADR-0050, for
+  Judgment-Pack/judgment-pack-runner#55). `experimental evaluate --binding <file>`, and the MCP
+  `experimental_evaluate` tool's optional `binding` argument, take exactly `{"kind": "<scheme>",
+  "digest": "sha256:<64 lowercase hex>"}`, `kind` being 1 to 128 characters of `a-z`, `0-9`, `.`,
+  `_`, `/` and `-`: a companion's commitment to material of its own that the runtime never sees. The
+  record carries it as given, as `binding` beside `cites`, compact with `kind` first, so the chain
+  and the record signature cover it like any other member. The runtime records it and does not
+  interpret it: it never verifies or recomputes the digest, and the evaluation and the disposition
+  do not depend on it; the companion's own verifier checks its value. A document of another shape,
+  one over 1 KiB, or a binding given with `--rehearsal` (or `"rehearsal": true`), which records
+  nothing, is refused before anything is evaluated, `JPS-INVOCATION-BINDING` (exit 3, or a tool
+  error), with a sentence that repeats nothing of the document, and nothing is written. A record
+  written without a binding is byte for byte what it was, and `recordVersion` stays `"1"`, since an
+  added member does not move it (VERSIONING.md). `audit verify` reports a recorded binding not of
+  that shape as `binding-malformed` at its line, in both formats: it fails the verification (exit 1)
+  and, not being a check of the chain, moves no coverage. A well-formed binding is not mentioned.
+  `experimental graph evaluate` takes no binding. What this runtime conforms to is stated in
+  `CONFORMANCE.md`, unchanged.
+
 ## 0.30.0 - 2026-10-11
 
 - **`spec test-conformance --strict` fails a case that reports a diagnostic its manifest entry does not
