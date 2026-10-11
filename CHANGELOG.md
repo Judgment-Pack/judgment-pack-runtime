@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.30.0 - 2026-10-11
 
 - **`spec test-conformance --strict` fails a case that reports a diagnostic its manifest entry does not
   expect** (#229). The failure names each stray diagnostic by code and instance path, in human and JSON
@@ -18,9 +18,8 @@ All notable changes to tagged releases are documented here.
   place, is refused as a key before any seed is read, its value never printed. The decision is still
   recorded, unsigned, and `audit verify` counts it unsigned; `packs validate` gives the reason
   without naming the path or either key. Configurations under `"1"` to `"6"` read as before, and the
-  sidecar's format and `audit verify`'s report are unchanged.
-
-What this runtime conforms to is stated in `CONFORMANCE.md`.
+  sidecar's format and `audit verify`'s report are unchanged. What this runtime conforms to is stated in
+  `CONFORMANCE.md`, unchanged.
 
 - **`audit stamp` refuses redirects** (#231). A 3xx answer from the time-stamping authority is
   refused under JPS-AUDIT-STAMP-REDIRECT, naming the status and never the `Location`; nothing is
@@ -41,6 +40,19 @@ What this runtime conforms to is stated in `CONFORMANCE.md`.
   moved aside or removed while it waits for the lock: it refuses, `JPS-AUDIT-TRAIL-READ` when
   unbound. Otherwise, without the flags the repair is unchanged. The conformance claim in
   CONFORMANCE.md is unchanged.
+
+- **`audit stamp` refuses a trail moved while its checkpoint is being stamped** (#242).
+  Whether a checkpoint is stamped already is read without opening the stamps file for writing, so a
+  re-run on a read-only stamps file still answers `already-stamped`. When the authority is to be
+  asked, the stamps handle is retained across the request, and just before the append, under the
+  stamps lock, the trail at the path must be the file that was read, no shorter than it was, and
+  still hold the checkpoint's record at its sequence; otherwise `JPS-AUDIT-STAMP-TRAIL-MOVED`
+  discards the token without writing, a trail truncated in place and written again among them. A
+  trail that could not be checked is `JPS-AUDIT-STAMP-TRAIL-UNCHECKED`. A stamps file moved,
+  removed, linked elsewhere or truncated during the request is `JPS-AUDIT-STAMPS-MOVED`, and the
+  token is discarded without writing. The stamps lock and 64 MiB bound are unchanged; opening an
+  absent stamps file to ask the authority now creates an empty file even if the authority fails.
+  The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.29.0 - 2026-10-10
 
@@ -65,19 +77,6 @@ What this runtime conforms to is stated in `CONFORMANCE.md`.
   beyond a chain break, byte-preserving rotation and repair hand-overs, refusal and rehearsal
   immutability, and caller-owned custody recovery after a trail is moved (#236). No evaluation
   changes. What this runtime conforms to is stated in `CONFORMANCE.md`, unchanged.
-
-- **`audit stamp` refuses a trail moved while its checkpoint is being stamped** (#242).
-  Whether a checkpoint is stamped already is read without opening the stamps file for writing, so a
-  re-run on a read-only stamps file still answers `already-stamped`. When the authority is to be
-  asked, the stamps handle is retained across the request, and just before the append, under the
-  stamps lock, the trail at the path must be the file that was read, no shorter than it was, and
-  still hold the checkpoint's record at its sequence; otherwise `JPS-AUDIT-STAMP-TRAIL-MOVED`
-  discards the token without writing, a trail truncated in place and written again among them. A
-  trail that could not be checked is `JPS-AUDIT-STAMP-TRAIL-UNCHECKED`. A stamps file moved,
-  removed, linked elsewhere or truncated during the request is `JPS-AUDIT-STAMPS-MOVED`, and the
-  token is discarded without writing. The stamps lock and 64 MiB bound are unchanged; opening an
-  absent stamps file to ask the authority now creates an empty file even if the authority fails.
-  The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.28.0 - 2026-10-09
 
@@ -907,7 +906,6 @@ What this runtime conforms to is stated in `CONFORMANCE.md`.
   `~0` and `~1`, multi-byte names pass through as written, and a test now pins that case beside the
   reserved ones. No finding code, message, schema, exit code or CLI surface changes, and no client
   needs to change anything.
-
 
 ## 0.22.0 - 2026-09-16
 
