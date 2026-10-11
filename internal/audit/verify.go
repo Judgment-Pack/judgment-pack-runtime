@@ -56,7 +56,18 @@ const (
 	// to require and the held checkpoints do not give: records up to the
 	// required sequence that no held checkpoint covers are unwitnessed.
 	FindingCheckpointCoverageMissing = "checkpoint-coverage-missing"
+	// FindingBindingMalformed is a record whose binding member (ADR-0050) is
+	// there and not of its shape (ParseBinding). Only the shape is checked:
+	// the digest's value is the caller's to check, against material this
+	// verification does not read, so a well-formed binding is not mentioned.
+	// It is a finding about one member of a record and not a check of the
+	// chain: like a finding about the sidecar it moves no coverage.
+	FindingBindingMalformed = "binding-malformed"
 )
+
+// bindingMalformedDetail is binding-malformed's detail, a fixed sentence: it
+// names no value of the member.
+const bindingMalformedDetail = "the record's binding is not one JSON object of exactly kind, 1 to 128 characters from a-z, 0-9, dot, underscore, slash and hyphen, and digest, sha256: and 64 lowercase hexadecimal characters"
 
 // The scopes a verification reports, which say what was checked.
 const (
@@ -284,9 +295,12 @@ type seenLine struct {
 	beforeKnown bool
 	beforeRule  string
 	// findings are this line's own, held until the next line is read, since a
-	// discontinuity there can name this line as damaged.
-	findings []result.AuditFinding
-	damaged  bool
+	// discontinuity there can name this line as damaged. memberFindings are
+	// its findings about a member of the record that are not checks of the
+	// chain (binding-malformed), held and excused alike.
+	findings       []result.AuditFinding
+	memberFindings []result.AuditFinding
+	damaged        bool
 	// discontinuityKind says the line is a JSON object whose kind is
 	// discontinuity, whatever else it holds: no discontinuity may name such a
 	// line as damaged.
@@ -469,6 +483,13 @@ func (v *verifier) check(seen *seenLine, line []byte) {
 	found, members, ok := readLink(line)
 	var kind string
 	seen.discontinuityKind = members != nil && decodeString(members["kind"], &kind) == nil && kind == KindDiscontinuity
+	// A record's binding is held to its shape whether or not the line is
+	// chained: a trail with chain off records bindings too.
+	if raw, bound := members["binding"]; bound {
+		if _, err := ParseBinding(raw); err != nil {
+			seen.memberFindings = append(seen.memberFindings, result.AuditFinding{Name: FindingBindingMalformed, Line: seen.number, Detail: bindingMalformedDetail})
+		}
+	}
 	if !ok {
 		return
 	}
@@ -639,6 +660,9 @@ func (v *verifier) settle(settled *seenLine) {
 	for _, finding := range settled.findings {
 		v.record(finding)
 	}
+	for _, finding := range settled.memberFindings {
+		v.recordSidecar(finding)
+	}
 	if !settled.chained {
 		v.pendingUnchained++
 		return
@@ -684,8 +708,10 @@ func (v *verifier) record(finding result.AuditFinding) {
 	v.recordSidecar(finding)
 }
 
-// recordSidecar reports a finding about the signature sidecar, which does not
-// move earliestFinding.
+// recordSidecar reports a finding that does not move earliestFinding: one
+// about the signature sidecar, a stamp or a witness's statements, which is how
+// it began, and one about a record's binding member, which is not a check of
+// the chain either.
 func (v *verifier) recordSidecar(finding result.AuditFinding) {
 	v.findingsTotal++
 	if len(v.findings) < maxFindings {

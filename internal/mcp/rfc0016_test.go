@@ -40,7 +40,7 @@ func TestExperimentalEvaluateHasNoOutcomeValuesOptIn(t *testing.T) {
 	}
 	for index, spelling := range spellings {
 		refused := responses[2+index]["result"].(map[string]any)
-		want := `The "experimental_evaluate" arguments carry an unknown member "` + spelling + `"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites, spelled exactly.`
+		want := `The "experimental_evaluate" arguments carry an unknown member "` + spelling + `"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites and binding, spelled exactly.`
 		if refused["isError"] != true || toolText(t, refused) != want {
 			t.Fatalf("%s: %#v", spelling, refused)
 		}

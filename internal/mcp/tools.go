@@ -138,7 +138,7 @@ func toolDefinitions() []map[string]any {
 		matrixValidationDefinition(),
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; an evaluation error reports its §8.4 error class and no disposition, and a refusal the project's configuration asks for (the reviewed-set and comparable-facts refusals below) reports its own code, no §8.4 class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. In a project with a reviewed-set lock (ADR-0019), a pack named by pack_id is held to it and a pack passed as text is a draft, and the payload's \"reviewed\" member says which (ADR-0044); a project whose jpack.json sets requireReviewed refuses, before evaluating, every call that is not a rehearsal and passes a draft or finds no lock (JPS-LOCK-REVIEW-REQUIRED). A project whose jpack.json sets requireComparableFacts refuses, before evaluating and rehearsal or not, a call in which a fact that some comparison of the pack reads is present and of a JSON type that comparison can never match -- for equals, not-equals and in a type no operand has, null included; for an ordered comparison anything but a decimal string, so a string outside the decimal grammar is refused as well as a JSON number -- naming each pointer and type and never a value; it refuses under the same code when checking the pack's comparisons would pass this evaluation's work limit, whatever the pack compares (JPS-FACTS-COMPARABLE-REQUIRED, ADR-0046). That refusal is the project's, not an evaluation error, and carries no §8.4 class. An absent fact is not refused. In a project with an audit directory, a record also names the trace's typeMismatches and unknownCauses, when there are any, and is chained to the line before it by the SHA-256 of that line's exact bytes unless the project's jpack.json says \"chain\": false (ADR-0047); a trail whose last line is incomplete refuses the call (JPS-AUDIT-WRITE) rather than chain a record after it. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; an evaluation error reports its §8.4 error class and no disposition, and a refusal the project's configuration asks for (the reviewed-set and comparable-facts refusals below) reports its own code, no §8.4 class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. A call may pass \"binding\", the caller's {kind, digest} commitment to material of its own, which the record carries as given beside cites, under the chain and the record signature: the runtime never interprets, verifies or recomputes the digest, the caller's own verifier checks its value, and a call that declares a rehearsal and passes a binding is refused (ADR-0050). In a project with a reviewed-set lock (ADR-0019), a pack named by pack_id is held to it and a pack passed as text is a draft, and the payload's \"reviewed\" member says which (ADR-0044); a project whose jpack.json sets requireReviewed refuses, before evaluating, every call that is not a rehearsal and passes a draft or finds no lock (JPS-LOCK-REVIEW-REQUIRED). A project whose jpack.json sets requireComparableFacts refuses, before evaluating and rehearsal or not, a call in which a fact that some comparison of the pack reads is present and of a JSON type that comparison can never match -- for equals, not-equals and in a type no operand has, null included; for an ordered comparison anything but a decimal string, so a string outside the decimal grammar is refused as well as a JSON number -- naming each pointer and type and never a value; it refuses under the same code when checking the pack's comparisons would pass this evaluation's work limit, whatever the pack compares (JPS-FACTS-COMPARABLE-REQUIRED, ADR-0046). That refusal is the project's, not an evaluation error, and carries no §8.4 class. An absent fact is not refused. In a project with an audit directory, a record also names the trace's typeMismatches and unknownCauses, when there are any, and is chained to the line before it by the SHA-256 of that line's exact bytes unless the project's jpack.json says \"chain\": false (ADR-0047); a trail whose last line is incomplete refuses the call (JPS-AUDIT-WRITE) rather than chain a record after it. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -163,6 +163,10 @@ func toolDefinitions() []map[string]any {
 						"callIndex": map[string]any{"type": "integer", "minimum": 0, "maximum": 9007199254740991, "description": "The receipt's index in that session."},
 						"signature": map[string]any{"type": "string", "pattern": "^[0-9a-f]{128}$", "description": "The cited receipt's own signature: exactly 128 lowercase hexadecimal characters."},
 					}}, "description": "Optional: the gateway receipts this decision relied on, each named as the gateway's action receipt cites one (ADR-0033). Held to this shape and recorded as given on the audit record; nothing is verified and no store is read, so a citation is the caller's assertion and the gateway verifier's finding. A rehearsal records nothing, citations included. Omit the key, or pass an empty array, to cite nothing."},
+					"binding": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"kind", "digest"}, "properties": map[string]any{
+						"kind":   map[string]any{"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9._/-]+$", "description": "The caller's scheme: 1 to 128 characters of a-z, 0-9, dot, underscore, slash and hyphen."},
+						"digest": map[string]any{"type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "The caller's SHA-256, as sha256: and 64 lowercase hexadecimal characters."},
+					}, "description": "Optional: the caller's commitment to material of its own, a scheme and a SHA-256 the caller computed under it (ADR-0050). Held to this shape and recorded as given on the audit record, beside cites, under the chain and the record signature. The runtime never interprets, verifies or recomputes the digest, and the evaluation does not depend on it: the caller's own verifier checks its value against the material. Refused with \"rehearsal\": true, which records nothing."},
 				},
 			},
 		},
@@ -939,6 +943,7 @@ type evaluateArguments struct {
 	SupportedExtensions []string        `json:"supported_extensions"`
 	Rehearsal           json.RawMessage `json:"rehearsal"`
 	Cites               json.RawMessage `json:"cites"`
+	Binding             json.RawMessage `json:"binding"`
 }
 
 // boolArgument decodes one boolean argument, returning its value and an
@@ -1006,13 +1011,13 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		// field and reach the guards that turn recording and the lock consult
 		// off — exactMembers holds every spelling to the schema's exact one
 		// first.
-		if message := exactMembers("experimental_evaluate", rawArgs, "pack", "pack_id", "facts", "evidence", "supported_extensions", "rehearsal", "cites"); message != "" {
+		if message := exactMembers("experimental_evaluate", rawArgs, "pack", "pack_id", "facts", "evidence", "supported_extensions", "rehearsal", "cites", "binding"); message != "" {
 			return toolError(message)
 		}
 		decoder := json.NewDecoder(bytes.NewReader(rawArgs))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&args); err != nil {
-			return toolError(`The "experimental_evaluate" arguments must be an object with a string "facts", exactly one of string "pack" and string "pack_id", optional string "evidence", optional "supported_extensions" (an array of strings), optional boolean "rehearsal", and optional "cites" (an array of {"sessionId": string, "callIndex": integer, "signature": string} objects); unknown keys are rejected.`)
+			return toolError(`The "experimental_evaluate" arguments must be an object with a string "facts", exactly one of string "pack" and string "pack_id", optional string "evidence", optional "supported_extensions" (an array of strings), optional boolean "rehearsal", optional "cites" (an array of {"sessionId": string, "callIndex": integer, "signature": string} objects), and optional "binding" (a {"kind": string, "digest": string} object); unknown keys are rejected.`)
 		}
 	}
 	// The citations are held to their shape as an argument is, and recorded
@@ -1045,6 +1050,21 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	rehearsal, argumentError := boolArgument("rehearsal", args.Rehearsal)
 	if argumentError != "" {
 		return toolError(argumentError)
+	}
+	// The binding is held to its shape as the citations are, and recorded as
+	// given (ADR-0050). A rehearsal leaves no record for it to be on, so the
+	// pair is refused rather than the binding silently not recorded; an
+	// explicit null is not an object, and is refused like any other null.
+	var binding *audit.Binding
+	if len(args.Binding) > 0 {
+		if rehearsal {
+			return toolError(`The "binding" argument is not taken with "rehearsal": true: a rehearsal records nothing, so there is no record for the binding to be on.`)
+		}
+		parsed, err := audit.ParseBinding(args.Binding)
+		if err != nil {
+			return toolError(`The "binding" argument must be one JSON object of exactly {"kind": string, "digest": string}: ` + err.Error() + ".")
+		}
+		binding = parsed
 	}
 	// One pack, one source. Presence is what decides, exactly as it does for the
 	// evidence document: a key present with an empty string is a supplied value
@@ -1110,6 +1130,7 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		applied = []lock.Applied{lock.AppliedPack(packID, []byte(pack))}
 	}
 	auditWriter := loaded.AuditWriter()
+	auditWriter.Bind(binding)
 	// A call applying no declared document never reads the lock at all, so an
 	// unreadable one does not stop a draft; a call that does applies it once,
 	// and the record names the revision it was judged under.

@@ -213,6 +213,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 	rehearsal := false
 	packID := ""
 	citesPath := ""
+	bindingPath := ""
 	configPath := ""
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
@@ -260,6 +261,12 @@ func (a *App) evaluateCommand() *cobra.Command {
 					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
 				}
 			}
+			// A binding is a commitment on the record, and a rehearsal leaves
+			// no record (ADR-0050): the pair is refused before anything is
+			// read, rather than accepted and silently not recorded.
+			if rehearsal && bindingPath != "" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-BINDING", bindingRehearsalMessage)
+			}
 			// The citations are not an input the engine sees: they are held
 			// to their shape here, as an invocation is, before the project
 			// is consulted or an input read, and recorded as given
@@ -267,6 +274,12 @@ func (a *App) evaluateCommand() *cobra.Command {
 			cites, invocation := a.readCites(citesPath)
 			if invocation != "" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-CITES", invocation)
+			}
+			// Nor is the binding: it is held to its shape at the same point,
+			// and recorded as given (ADR-0050).
+			binding, invocation := a.readBinding(bindingPath)
+			if invocation != "" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-BINDING", invocation)
 			}
 			// The project is consulted on every evaluation this command runs, not
 			// only on the ones that name a pack by id: whether an evaluation is
@@ -303,6 +316,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// draft, never refused for being unlocked, and the record it leaves
 			// says so.
 			auditWriter := loaded.AuditWriter()
+			auditWriter.Bind(binding)
 			// An oversized input is reported to the engine rather than refused
 			// here: the byte limit is a §8.2 preflight condition whose §8.4 class
 			// and place in the fixed order the engine assigns. Refusing it at the
@@ -434,9 +448,49 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command.Flags().BoolVar(&quantifiers, "rfc0008-quantifiers", quantifiers, "DRAFT-RFC PROTOTYPE: admit the spec's RFC 0008 (Draft) collection quantifiers -- exists, every, uniform -- in conditions. A pack using them is NOT valid under any published JPS version; spec validate rejects it, and every successful evaluation payload produced this way is labeled a draft-RFC prototype (a refusal is reported as an operational error and carries no such label)")
 	command.Flags().BoolVar(&rehearsal, "rehearsal", rehearsal, "declare this run a rehearsal, not a decision: the evaluation runs identically, but no audit record is appended (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing a matrix row already has (ADR-0021) -- and the payload carries \"rehearsal\": true, stating in band that this was not a decision")
 	command.Flags().StringVar(&citesPath, "cites", citesPath, "optional citations document, a file path: a JSON array of the gateway receipts this decision relied on, each {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} as the gateway's action receipt cites them (ADR-0033). Held to that shape and recorded as given on the audit record; nothing is verified and no store is read. A rehearsal records nothing, citations included")
+	command.Flags().StringVar(&bindingPath, "binding", bindingPath, "optional binding document, a file path: exactly {\"kind\": string, \"digest\": \"sha256:<64 lowercase hex>\"}, the caller's commitment to material of its own, kind naming its scheme in 1 to 128 characters of a-z, 0-9, dot, underscore, slash and hyphen (ADR-0050). Held to that shape and recorded as given on the audit record, under the chain and the record signature; the runtime never interprets, verifies or recomputes the digest, and the evaluation does not depend on it -- the caller's own verifier checks its value. Not taken with --rehearsal, which records nothing")
 	command.Flags().StringVar(&packID, "pack-id", packID, "decision id of a pack declared in the project's jpack.json; mutually exclusive with the pack argument")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	return command
+}
+
+// bindingRehearsalMessage refuses a binding on a rehearsal (ADR-0050).
+const bindingRehearsalMessage = "--binding is not taken with --rehearsal: a rehearsal records nothing, so there is no record for the binding to be on."
+
+// readBinding reads and holds a binding document (ADR-0050), returning the
+// binding or the sentence that refuses the invocation. It is read as a
+// citations document is: a file path, never standard input, and an absent
+// flag is no binding at all. The sentence names no value from the document.
+func (a *App) readBinding(path string) (*audit.Binding, string) {
+	if path == "" {
+		return nil, ""
+	}
+	if path == "-" {
+		return nil, "--binding takes a file path, not -: the binding document is not read from standard input."
+	}
+	if strings.Contains(path, "://") || fssecure.IsRemotePath(path) {
+		return nil, "URL and remote filesystem inputs are not supported for --binding; use a local file."
+	}
+	data, err := a.readPack(path, audit.MaxBindingBytes)
+	if errors.Is(err, fssecure.ErrTooLarge) {
+		// The read stopped at the bound ParseBinding holds a document to,
+		// and the refusal is the one ParseBinding gives.
+		return nil, bindingShapeMessage(audit.ErrBindingTooLarge)
+	}
+	if err != nil {
+		return nil, "The --binding document could not be read as one bounded regular file."
+	}
+	binding, err := audit.ParseBinding(data)
+	if err != nil {
+		return nil, bindingShapeMessage(err)
+	}
+	return binding, ""
+}
+
+// bindingShapeMessage is the sentence a binding document not of its shape is
+// refused with.
+func bindingShapeMessage(err error) string {
+	return "The --binding document must be one JSON object of exactly {\"kind\": string, \"digest\": string}: " + err.Error() + "."
 }
 
 // resolvePackID reads the pack a decision id names, through the project

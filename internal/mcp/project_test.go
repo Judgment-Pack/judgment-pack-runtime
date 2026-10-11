@@ -1690,7 +1690,7 @@ func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
 		4: booleanError,
 		5: booleanError,
 		6: booleanError,
-		7: `The "experimental_evaluate" arguments carry an unknown member "aaa"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites, spelled exactly.`,
+		7: `The "experimental_evaluate" arguments carry an unknown member "aaa"; the accepted members are pack and pack_id and facts and evidence and supported_extensions and rehearsal and cites and binding, spelled exactly.`,
 	} {
 		response := responses[index]["result"].(map[string]any)
 		if response["isError"] != true {
