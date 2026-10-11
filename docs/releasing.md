@@ -126,21 +126,26 @@ binary. A release build must report the tag version without the leading `v`.
 The workflow checks the prerequisite twice, read-only and fail-closed
 (`tools/check-immutability`; each failure is one sentence in the job log):
 
-- **Before anything is drafted**, the `package` job reads the repository's release-immutability
-  setting through the REST API with the workflow token. It fails when the setting is off, when the
-  API answers with an error or refuses the token (named as such, distinct from "off"), or when the
-  answer has no `enabled` field. A manual validation dispatch performs the same check, so a
-  disabled setting is found without a tag push.
-- **After the publish job flips the draft**, it reads the published release and fails unless it
-  reports `immutable: true`. The workflow never edits or deletes the release. The failed `publish`
-  job blocks every follow-on job (`publish-image`, `image-smoke`, `promote-image`,
-  `publish-mcp-registry`), so no image or registry entry is made for it. The release that already
-  exists stays as it is; the fix is a new version once the setting is on, as for any released tag.
+- **Before anything is drafted**, the `package` job reads the latest published release (not a draft
+  or prerelease) through the REST API with the workflow token and requires its `immutable` field to
+  be `true`. It reads the release's flag because the repository setting itself is not readable to
+  the workflow's token (it needs the Administration permission). It fails when that release is not
+  immutable, when the API errors or refuses the token (named as such), or when the field is
+  missing; with no published release at all it passes and says so, and the check after
+  publication is the only enforcement for a first release. A manual validation dispatch performs
+  the same check.
+- **After the publish job flips the draft**, it reads the new release and fails unless it reports
+  `immutable: true`. This is the enforcement. The workflow never edits or deletes the release. The
+  failed `publish` job blocks every follow-on job (`publish-image`, `image-smoke`,
+  `promote-image`, `publish-mcp-registry`), so no image or registry entry is made for it. The
+  release that already exists stays as it is; the fix is a new version once the setting is on, as
+  for any released tag.
 
-A failure of the first check means: enable Release Immutability in the repository settings (or, for
-a permission refusal, give the check a way to read the setting) and re-run. The workflow never
-changes a repository setting. A release published before the setting was enabled cannot be locked
-retroactively (v0.29.0, recorded in issue #252).
+A failure of the first check means: turn on Release Immutability in the repository settings and
+re-run; the workflow never changes a repository setting. A release published before the setting was
+enabled cannot be locked retroactively (v0.29.0, recorded in issue #252), and because the first
+check reads the latest release, the first release after enabling the setting is the one that
+shows the setting works.
 
 Do not move or reuse a released tag. Fixes require a new version — including for the image tags
 and the registry entry: the version-tag guard in `publish-image` enforces this for the image, so a

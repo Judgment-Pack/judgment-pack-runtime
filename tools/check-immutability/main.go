@@ -5,12 +5,17 @@
 // The caller fetches the API answer and passes its HTTP status and body, so
 // this program needs no network:
 //
-//	check-immutability --mode repository --status 200 < repository-setting.json
-//	check-immutability --mode release    --status 200 < published-release.json
+//	check-immutability --mode previous-release --status 200 < releases.json
+//	check-immutability --mode release           --status 200 < published-release.json
 //
-// Mode "repository" reads GET /repos/{owner}/{repo}/immutable-releases (field
-// "enabled"); mode "release" reads GET /repos/{owner}/{repo}/releases/tags/{tag}
-// (field "immutable").
+// The repository setting itself (GET /repos/{owner}/{repo}/immutable-releases)
+// needs the Administration permission, which a workflow token cannot hold. Mode
+// "previous-release" therefore reads GET /repos/{owner}/{repo}/releases?per_page=10
+// (a list), takes the first release that is neither a draft nor a prerelease,
+// and requires its "immutable" field to be true; with no such release it passes,
+// because a first release has only the post-publish check. Mode "release" reads
+// GET /repos/{owner}/{repo}/releases/tags/{tag} (field "immutable") and is the
+// enforcement.
 package main
 
 import (
@@ -32,7 +37,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	mode := fs.String("mode", "", "repository or release")
 	status := fs.Int("status", 0, "HTTP status of the API answer")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "Release immutability check failed: usage is --mode repository|release --status HTTP_STATUS with the API body on stdin.")
+		fmt.Fprintln(stderr, "Release immutability check failed: usage is --mode previous-release|release --status HTTP_STATUS with the API body on stdin.")
 		return 2
 	}
 	body, err := io.ReadAll(stdin)
@@ -52,16 +57,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // check returns the success sentence, or an error whose text is the one
 // failure sentence.
 func check(mode string, status int, body []byte) (string, error) {
-	var field, subject, remedy string
+	var subject string
 	switch mode {
-	case "repository":
-		field, subject = "enabled", "GitHub Release Immutability setting"
-		remedy = "enable it in the repository settings before releasing"
+	case "previous-release":
+		subject = "list of published releases"
 	case "release":
-		field, subject = "immutable", "published release"
-		remedy = "the release was published without immutability and must be replaced by a new version, not edited"
+		subject = "published release"
 	default:
-		return "", errors.New("Release immutability check failed: --mode must be repository or release.")
+		return "", errors.New("Release immutability check failed: --mode must be previous-release or release.")
 	}
 	fail := func(format string, a ...any) (string, error) {
 		return "", fmt.Errorf("Release immutability check failed: "+format, a...)
@@ -74,23 +77,51 @@ func check(mode string, status int, body []byte) (string, error) {
 		return fail("the API answered HTTP %d when reading the %s, so it cannot be confirmed and the release stops.", status, subject)
 	}
 
-	var answer map[string]json.RawMessage
-	if err := json.Unmarshal(body, &answer); err != nil {
+	var object map[string]json.RawMessage
+	if mode == "previous-release" {
+		var list []map[string]json.RawMessage
+		if err := json.Unmarshal(body, &list); err != nil {
+			return fail("the API answer for the %s is not a JSON list, so it cannot be confirmed and the release stops.", subject)
+		}
+		for _, entry := range list {
+			if isTrue(entry["draft"]) || isTrue(entry["prerelease"]) {
+				continue
+			}
+			object = entry
+			break
+		}
+		if object == nil {
+			return "No published release exists yet; the check after publication is the only enforcement of release immutability for this first release.", nil
+		}
+	} else if err := json.Unmarshal(body, &object); err != nil {
 		return fail("the API answer for the %s is not a JSON object, so it cannot be confirmed and the release stops.", subject)
 	}
-	raw, ok := answer[field]
+
+	what := "the " + subject
+	if mode == "previous-release" {
+		what = "the latest published release"
+	}
+	raw, ok := object["immutable"]
 	if !ok {
-		return fail("the API answer for the %s has no %q field, so it cannot be confirmed and the release stops.", subject, field)
+		return fail("%s has no \"immutable\" field in the API answer, so it cannot be confirmed and the release stops.", what)
 	}
 	var value bool
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return fail("the %q field of the %s is not true or false, so it cannot be confirmed and the release stops.", field, subject)
+		return fail("the \"immutable\" field of %s is not true or false, so it cannot be confirmed and the release stops.", what)
 	}
 	if !value {
-		return fail("the %s reports %s false; %s.", subject, field, remedy)
+		if mode == "previous-release" {
+			return fail("the latest published release is not immutable: turn on release immutability in the repository settings before cutting this one.")
+		}
+		return fail("the published release reports immutable false; it was published without immutability and must be replaced by a new version, not edited.")
 	}
-	if mode == "repository" {
-		return "GitHub Release Immutability is enabled for this repository.", nil
+	if mode == "previous-release" {
+		return "The latest published release is immutable.", nil
 	}
 	return "The published release reports immutable true.", nil
+}
+
+func isTrue(raw json.RawMessage) bool {
+	var v bool
+	return json.Unmarshal(raw, &v) == nil && v
 }
