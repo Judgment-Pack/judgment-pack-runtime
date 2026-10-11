@@ -34,50 +34,50 @@ func TestASigningKeyIsHeldOutsideTheProjectAndPrivate(t *testing.T) {
 	self := identity(t, project)
 	seed := vectorSeed1 + "\n"
 	good := writeKeyFile(t, filepath.Join(outside, "seed"), seed, 0o600)
-	signer, err := LoadSigner(good, self)
+	signer, err := LoadSigner(good, self, nil)
 	if err != nil || signer.PublicKey() != signerOf(t, vectorSeed1).PublicKey() {
 		t.Fatalf("a good key: %v", err)
 	}
-	if _, err := LoadSigner("seed", self); !errors.Is(err, ErrKeyNotAbsolute) {
+	if _, err := LoadSigner("seed", self, nil); !errors.Is(err, ErrKeyNotAbsolute) {
 		t.Fatalf("a relative path: %v", err)
 	}
 	inside := writeKeyFile(t, filepath.Join(project, "seed"), seed, 0o600)
-	if _, err := LoadSigner(inside, self); !errors.Is(err, ErrKeyInsideProject) {
+	if _, err := LoadSigner(inside, self, nil); !errors.Is(err, ErrKeyInsideProject) {
 		t.Fatalf("a key inside the project: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(project, "keys", "deeper"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	deeper := writeKeyFile(t, filepath.Join(project, "keys", "deeper", "seed"), seed, 0o600)
-	if _, err := LoadSigner(deeper, self); !errors.Is(err, ErrKeyInsideProject) {
+	if _, err := LoadSigner(deeper, self, nil); !errors.Is(err, ErrKeyInsideProject) {
 		t.Fatalf("a key beneath the project: %v", err)
 	}
 	// Without a project, the same key reads: the refusal is the project's.
-	if _, err := LoadSigner(deeper, nil); err != nil {
+	if _, err := LoadSigner(deeper, nil, nil); err != nil {
 		t.Fatalf("no project: %v", err)
 	}
 	for _, mode := range []os.FileMode{0o640, 0o604, 0o620, 0o602, 0o660} {
-		if _, err := LoadSigner(writeKeyFile(t, filepath.Join(outside, fmt.Sprintf("open-%o", mode)), seed, mode), self); !errors.Is(err, ErrKeyTooOpen) {
+		if _, err := LoadSigner(writeKeyFile(t, filepath.Join(outside, fmt.Sprintf("open-%o", mode)), seed, mode), self, nil); !errors.Is(err, ErrKeyTooOpen) {
 			t.Fatalf("mode %o: %v", mode, err)
 		}
 	}
-	if _, err := LoadSigner(writeKeyFile(t, filepath.Join(outside, "owner-only"), seed, 0o400), self); err != nil {
+	if _, err := LoadSigner(writeKeyFile(t, filepath.Join(outside, "owner-only"), seed, 0o400), self, nil); err != nil {
 		t.Fatalf("an owner-read-only key: %v", err)
 	}
 	// A second name is refused, wherever it is.
 	linked := writeKeyFile(t, filepath.Join(outside, "linked"), seed, 0o600)
 	if err := os.Link(linked, filepath.Join(project, "linked")); err != nil {
 		t.Logf("no hard links here: %v", err)
-	} else if _, err := LoadSigner(linked, self); !errors.Is(err, ErrKeyLinked) {
+	} else if _, err := LoadSigner(linked, self, nil); !errors.Is(err, ErrKeyLinked) {
 		t.Fatalf("a key with a second name: %v", err)
 	}
 	// What is not a regular file is refused without waiting on it.
-	if _, err := LoadSigner(outside, self); !errors.Is(err, ErrKeyNotRegular) {
+	if _, err := LoadSigner(outside, self, nil); !errors.Is(err, ErrKeyNotRegular) {
 		t.Fatalf("a directory: %v", err)
 	}
 	fifo := filepath.Join(outside, "fifo")
 	if err := syscall.Mkfifo(fifo, 0o600); err == nil {
-		if _, err := LoadSigner(fifo, self); !errors.Is(err, ErrKeyNotRegular) {
+		if _, err := LoadSigner(fifo, self, nil); !errors.Is(err, ErrKeyNotRegular) {
 			t.Fatalf("a FIFO: %v", err)
 		}
 	}
@@ -87,7 +87,7 @@ func TestASigningKeyIsHeldOutsideTheProjectAndPrivate(t *testing.T) {
 	if err := os.Symlink(good, link); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
-	if _, err := LoadSigner(link, self); !errors.Is(err, ErrKeyThroughLink) {
+	if _, err := LoadSigner(link, self, nil); !errors.Is(err, ErrKeyThroughLink) {
 		t.Fatalf("a final symlink: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(outside, "real"), 0o700); err != nil {
@@ -97,18 +97,18 @@ func TestASigningKeyIsHeldOutsideTheProjectAndPrivate(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "real"), filepath.Join(outside, "dir-link")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadSigner(filepath.Join(outside, "dir-link", "seed"), self); !errors.Is(err, ErrKeyThroughLink) {
+	if _, err := LoadSigner(filepath.Join(outside, "dir-link", "seed"), self, nil); !errors.Is(err, ErrKeyThroughLink) {
 		t.Fatalf("a linked directory outside: %v", err)
 	}
 	if err := os.Symlink(project, filepath.Join(outside, "project-link")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadSigner(filepath.Join(outside, "project-link", "keys", "deeper", "seed"), self); !errors.Is(err, ErrKeyThroughLink) {
+	if _, err := LoadSigner(filepath.Join(outside, "project-link", "keys", "deeper", "seed"), self, nil); !errors.Is(err, ErrKeyThroughLink) {
 		t.Fatalf("a linked directory into the project: %v", err)
 	}
 	// The project is compared by identity, so a project named through a
 	// link is still the project.
-	if _, err := LoadSigner(deeper, identity(t, filepath.Join(outside, "project-link"))); !errors.Is(err, ErrKeyInsideProject) {
+	if _, err := LoadSigner(deeper, identity(t, filepath.Join(outside, "project-link")), nil); !errors.Is(err, ErrKeyInsideProject) {
 		t.Fatalf("a project named through a link: %v", err)
 	}
 }
@@ -149,7 +149,7 @@ func TestAKeyIsCheckedAsItIsOpened(t *testing.T) {
 	read, refused := 0, 0
 	deadline := time.Now().Add(5 * time.Second)
 	for attempt := 0; attempt < 20000 && time.Now().Before(deadline); attempt++ {
-		signer, err := LoadSigner(filepath.Join(swap, "seed"), self)
+		signer, err := LoadSigner(filepath.Join(swap, "seed"), self, nil)
 		if err != nil {
 			refused++
 			continue
@@ -198,7 +198,7 @@ func TestAComponentSwappedBetweenItsLookAndItsOpenIsRefused(t *testing.T) {
 				t.Error(err)
 			}
 		}
-		signer, err := LoadSigner(keyPath, identity(t, project))
+		signer, err := LoadSigner(keyPath, identity(t, project), nil)
 		afterLook = func(*os.Root, string) {}
 		if swaps != 1 || !errors.Is(err, ErrKeyPathChanged) || signer != nil {
 			t.Fatalf("final=%v: swaps=%d err=%v read=%v", final, swaps, err, signer != nil)
@@ -256,7 +256,7 @@ func TestLoadSignerRefusesWhereKeyPrivacyIsUnchecked(t *testing.T) {
 	good := writeKeyFile(t, filepath.Join(realTempDir(t), "seed"), vectorSeed1+"\n", 0o600)
 	keyPrivacyChecked = false
 	defer func() { keyPrivacyChecked = true }()
-	if _, err := LoadSigner(good, nil); !errors.Is(err, ErrKeyPrivacyUnchecked) {
+	if _, err := LoadSigner(good, nil, nil); !errors.Is(err, ErrKeyPrivacyUnchecked) {
 		t.Fatalf("LoadSigner: %v", err)
 	}
 	if _, err := ReadKey(good); err != nil {
@@ -400,7 +400,7 @@ func keyUnder(t *testing.T, base string, dirs ...dirMode) string {
 // before writing anything.
 func expectKeyPlace(t *testing.T, name, key string, want error, named string) {
 	t.Helper()
-	_, loaded := LoadSigner(key, nil)
+	_, loaded := LoadSigner(key, nil, nil)
 	_, read := ReadKey(key)
 	fresh := filepath.Join(filepath.Dir(key), "fresh.seed")
 	_, written := WriteSeed(fresh, []byte(vectorSeed2+"\n"))
@@ -439,7 +439,7 @@ func TestTheDirectoriesOnAKeysPathAreItsOwnersAlone(t *testing.T) {
 	expectKeyPlace(t, "(e) a sticky key directory anyone can write", keyUnder(t, base, dirMode{"e", os.ModeSticky | 0o777}), nil, "")
 	// The refusal says how to fix it, and the fix works.
 	open := keyUnder(t, base, dirMode{"fixed", 0o777})
-	if _, err := LoadSigner(open, nil); !strings.Contains(KeyRefusal(err), "chmod go-w "+filepath.Join(base, "fixed")+" fixes it") {
+	if _, err := LoadSigner(open, nil, nil); !strings.Contains(KeyRefusal(err), "chmod go-w "+filepath.Join(base, "fixed")+" fixes it") {
 		t.Fatalf("the refusal names the fix: %v", err)
 	}
 	if err := os.Chmod(filepath.Join(base, "fixed"), 0o755); err != nil {
@@ -449,7 +449,7 @@ func TestTheDirectoriesOnAKeysPathAreItsOwnersAlone(t *testing.T) {
 	// The identity checks come first: a key inside the project, in a
 	// directory anyone can write, is refused as inside the project.
 	inside := keyUnder(t, base, dirMode{"project", 0o777})
-	if _, err := LoadSigner(inside, identity(t, filepath.Join(base, "project"))); !errors.Is(err, ErrKeyInsideProject) {
+	if _, err := LoadSigner(inside, identity(t, filepath.Join(base, "project")), nil); !errors.Is(err, ErrKeyInsideProject) {
 		t.Fatalf("a key inside a project anyone can write: %v", err)
 	}
 	// Desk's placement: <config>/secrets/signing/<key>, each directory the
@@ -577,5 +577,61 @@ func TestASeedIsWrittenWhereItsDirectoriesWereHeld(t *testing.T) {
 	}
 	if _, err := WriteSeed(filepath.Join(other, "seed"), []byte(vectorSeed2+"\n")); !errors.Is(err, fs.ErrExist) {
 		t.Fatalf("a seed over another: %v", err)
+	}
+}
+
+// A seed whose public key is not the expected one is refused each time it is
+// loaded, after it is read whole (#255): a seed put at the path in the
+// expected key's place signs nothing, one named as expected signs, and nothing
+// of an earlier comparison is kept. A seed that cannot be read keeps its own
+// refusal, so "could not be read now" is never reported as another key. No
+// refusal names the path or either key.
+func TestASeedThatIsNotTheExpectedKeyIsRefused(t *testing.T) {
+	outside := realTempDir(t)
+	keyPath := writeKeyFile(t, filepath.Join(outside, "seed"), vectorSeed1+"\n", 0o600)
+	first, second := signerOf(t, vectorSeed1), signerOf(t, vectorSeed2)
+	signer, err := LoadSigner(keyPath, nil, expecting(first.PublicKey()))
+	if err != nil || signer.PublicKey() != first.PublicKey() {
+		t.Fatalf("the expected key: %v", err)
+	}
+	// Another valid seed put at the path.
+	writeKeyFile(t, keyPath, vectorSeed2+"\n", 0o600)
+	_, err = LoadSigner(keyPath, nil, expecting(first.PublicKey()))
+	if !errors.Is(err, ErrKeyNotExpected) {
+		t.Fatalf("a replaced seed: %v", err)
+	}
+	refusal := KeyRefusal(err)
+	if refusal != ErrKeyNotExpected.Error() {
+		t.Fatalf("the refusal: %q", refusal)
+	}
+	for _, named := range []string{keyPath, outside, first.PublicKey(), second.PublicKey(), first.KeyID(), second.KeyID(), vectorSeed1, vectorSeed2} {
+		if strings.Contains(refusal, named) || strings.Contains(err.Error(), named) {
+			t.Fatalf("the refusal names %q: %q", named, refusal)
+		}
+	}
+	if signer, err := LoadSigner(keyPath, nil, expecting(second.PublicKey())); err != nil || signer.PublicKey() != second.PublicKey() {
+		t.Fatalf("the replacement, when it is the expected key: %v", err)
+	}
+	if signer, err := LoadSigner(keyPath, nil, nil); err != nil || signer.PublicKey() != second.PublicKey() {
+		t.Fatalf("no expected key: %v", err)
+	}
+	// Put back, the expected key loads again: nothing was remembered.
+	writeKeyFile(t, keyPath, vectorSeed1+"\n", 0o600)
+	if _, err := LoadSigner(keyPath, nil, expecting(first.PublicKey())); err != nil {
+		t.Fatalf("the expected key put back: %v", err)
+	}
+	for _, row := range []struct {
+		name string
+		path string
+		want error
+	}{
+		{"no seed there", filepath.Join(outside, "absent"), fs.ErrNotExist},
+		{"a seed others can read", writeKeyFile(t, filepath.Join(outside, "open"), vectorSeed2+"\n", 0o644), ErrKeyTooOpen},
+		{"a seed of no seed's form", writeKeyFile(t, filepath.Join(outside, "short"), vectorSeed2[:62]+"\n", 0o600), ErrKeyMalformed},
+	} {
+		_, err := LoadSigner(row.path, nil, expecting(first.PublicKey()))
+		if !errors.Is(err, row.want) || errors.Is(err, ErrKeyNotExpected) {
+			t.Fatalf("%s: %v", row.name, err)
+		}
 	}
 }

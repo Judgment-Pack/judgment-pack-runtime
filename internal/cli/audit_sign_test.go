@@ -57,7 +57,7 @@ func privateTempDir(t *testing.T) string {
 func keysSignHere(t *testing.T) bool {
 	t.Helper()
 	seed, _ := generatedKey(t)
-	_, err := audit.LoadSigner(seed, nil)
+	_, err := audit.LoadSigner(seed, nil, nil)
 	return !errors.Is(err, audit.ErrKeyPrivacyUnchecked)
 }
 
@@ -515,5 +515,216 @@ func TestNoKeySignsWhereItsPrivacyCannotBeChecked(t *testing.T) {
 	code, output := verification(t, "--config", configPath, "--public-key", public)
 	if code != 0 || output.Coverage.UnsignedRecords != 1 || output.Coverage.Signed.Status != "none" {
 		t.Fatalf("verify: exit=%d %+v", code, output.Coverage)
+	}
+}
+
+// signingKeyDetail runs packs validate in format and returns its exit code,
+// its whole output and the audit-signing-key check's status and detail, read
+// from the JSON payload or from the human report's line.
+func signingKeyDetail(t *testing.T, configPath, format string) (int, string, string, string) {
+	t.Helper()
+	code, stdout, stderr := runTest(t, []string{"packs", "validate", "--format", format, "--config", configPath}, "")
+	if format == "json" {
+		var output result.PackValidation
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			t.Fatalf("undecodable output %q (stderr %q): %v", stdout, stderr, err)
+		}
+		for _, check := range output.Checks {
+			if check.Name == "audit-signing-key" {
+				return code, stdout + stderr, check.Status, check.Detail
+			}
+		}
+		return code, stdout + stderr, "", ""
+	}
+	for _, line := range strings.Split(stdout, "\n") {
+		if status, ok := strings.CutPrefix(strings.TrimSpace(line), "audit-signing-key: "); ok {
+			status, detail, _ := strings.Cut(status, " ")
+			return code, stdout + stderr, status, detail
+		}
+	}
+	return code, stdout + stderr, "", ""
+}
+
+// A seed replaced at its path by another valid seed, with the expected public
+// key named, signs nothing (#255), in either output format: the decision is
+// made and recorded, the record is unsigned, audit verify counts it unsigned,
+// packs validate gives the reason, and nothing printed names the path or
+// either key. A fresh trail, where no earlier signature makes the replacement
+// a key not in force, is refused the same way: only the comparison keeps the
+// replacement from signing there.
+func TestASeedReplacedAtItsPathSignsNothing(t *testing.T) {
+	skipWhereKeysCannotSign(t)
+	for _, format := range []string{"human", "json"} {
+		t.Run(format, func(t *testing.T) {
+			seed, public := generatedKey(t)
+			replacement, replacementPublic := generatedKey(t)
+			expected := strings.TrimSpace(readFile(t, public))
+			replaced := strings.TrimSpace(readFile(t, replacementPublic))
+			t.Setenv(audit.SigningKeyEnv, seed)
+			t.Setenv(audit.SigningPublicKeyEnv, expected)
+			configPath, _ := recordedProject(t, 1)
+			sidecar := filepath.Join(filepath.Dir(configPath), "audit", audit.SidecarName)
+			before := readFile(t, sidecar)
+			if code, output := verification(t, "--config", configPath, "--public-key", public); code != 0 || output.Coverage.SignedRecords != 1 || output.Coverage.UnsignedRecords != 0 {
+				t.Fatalf("the expected key signs: exit=%d %+v", code, output.Coverage)
+			}
+			if code, _, status, detail := signingKeyDetail(t, configPath, format); code != 0 || status != "passed" || !strings.Contains(detail, "it is the expected key "+audit.SigningPublicKeyEnv+" names") {
+				t.Fatalf("validate with the expected key: exit=%d %q %q", code, status, detail)
+			}
+			// Another valid seed is put at the path.
+			original, substitute := strings.TrimSpace(readFile(t, seed)), strings.TrimSpace(readFile(t, replacement))
+			if err := os.WriteFile(seed, []byte(substitute+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			secrets := []string{seed, filepath.Dir(seed), replacement, expected, replaced, original, substitute}
+			names := func(what, text string) {
+				t.Helper()
+				for _, secret := range secrets {
+					if strings.Contains(text, secret) {
+						t.Errorf("%s names %q: %q", what, secret, text)
+					}
+				}
+			}
+			facts := writeDocument(t, "facts.json", hardFailFacts)
+			evaluate := func(configPath string) {
+				t.Helper()
+				code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--format", format, "--pack-id", "intake", "--config", configPath, "--facts", facts}, "")
+				if code != 0 {
+					t.Fatalf("the decision is made: exit=%d %q %q", code, stdout, stderr)
+				}
+				names("evaluate", stdout+stderr)
+			}
+			evaluate(configPath)
+			code, printed, status, detail := signingKeyDetail(t, configPath, format)
+			if code == 0 || status != "failed" || !strings.Contains(detail, audit.ErrKeyNotExpected.Error()) || !strings.Contains(detail, audit.SigningPublicKeyEnv+" names the expected key") {
+				t.Errorf("validate after the replacement: exit=%d %q %q", code, status, detail)
+			}
+			names("packs validate", printed)
+			code, output := verification(t, "--config", configPath, "--public-key", public)
+			if code != 0 || output.Coverage.SignedRecords != 1 || output.Coverage.UnsignedRecords != 1 || output.Coverage.Signed.Through != 1 {
+				t.Errorf("the record after the replacement is unsigned: exit=%d %+v", code, output.Coverage)
+			}
+			if after := readFile(t, sidecar); after != before {
+				t.Errorf("the sidecar changed: %q, was %q", after, before)
+			}
+			// A fresh trail: the replacement would be its first key.
+			fresh := auditProject(t)
+			evaluate(fresh)
+			if _, err := os.Stat(filepath.Join(filepath.Dir(fresh), "audit", audit.SidecarName)); !os.IsNotExist(err) {
+				t.Errorf("a fresh trail gets no sidecar from the replacement: %v", err)
+			}
+			code, output = verification(t, "--config", fresh, "--public-key", replacementPublic)
+			if code != 0 || output.Coverage.SignedRecords != 0 || output.Coverage.UnsignedRecords != 1 {
+				t.Errorf("a fresh trail's record is unsigned: exit=%d %+v", code, output.Coverage)
+			}
+			// The key cannot be rotated away from either.
+			next, _ := generatedKey(t)
+			code, stdout, stderr := runTest(t, []string{"audit", "key", "rotate", "--format", format, "--config", configPath, "--next", next}, "")
+			if code != result.ExitInvalid || !strings.Contains(stdout+stderr, audit.ErrKeyNotExpected.Error()) {
+				t.Errorf("rotate from a replaced seed: exit=%d %q %q", code, stdout, stderr)
+			}
+			names("audit key rotate", stdout+stderr)
+		})
+	}
+}
+
+// An expected public key that is not 64 lowercase hexadecimal characters is
+// refused before any seed is read (#255): packs validate gives that reason,
+// not the seed's, though no seed is there, and names neither; the decision is
+// recorded unsigned. JPACK_SIGNING_PUBLIC_KEY is read exactly as set, so
+// whitespace, alone or around a key, is such a key too.
+func TestAMalformedExpectedKeySignsNothing(t *testing.T) {
+	absent := filepath.Join(privateTempDir(t), "absent.seed")
+	_, public := generatedKey(t)
+	good := strings.TrimSpace(readFile(t, public))
+	t.Setenv(audit.SigningKeyEnv, absent)
+	for _, malformed := range []string{strings.ToUpper(good), good[:62], "x" + good[1:], "  ", " " + good, good + "\n"} {
+		t.Setenv(audit.SigningPublicKeyEnv, malformed)
+		configPath, _ := recordedProject(t, 1)
+		for _, format := range []string{"human", "json"} {
+			code, printed, status, detail := signingKeyDetail(t, configPath, format)
+			if code == 0 || status != "failed" || !strings.Contains(detail, audit.ErrExpectedKeyMalformed.Error()) || strings.Contains(detail, "no file is there") {
+				t.Fatalf("%s, %s: exit=%d %q %q", malformed, format, code, status, detail)
+			}
+			if strings.Contains(printed, absent) || (strings.TrimSpace(malformed) != "" && strings.Contains(printed, malformed)) || strings.Contains(printed, good) {
+				t.Fatalf("%s, %s: the output names the path or the key: %q", malformed, format, printed)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), "audit", audit.SidecarName)); !os.IsNotExist(err) {
+			t.Fatalf("nothing signs: %v", err)
+		}
+	}
+}
+
+// A configured signingPublicKey of another form than a public key is refused
+// as a key, not as a configuration (#255 review): the decision is made and
+// recorded, unsigned, in either output format, packs validate says the
+// member's value is not a public key, and nothing printed repeats the value. A
+// seed pasted into the member is refused the same way, and not echoed.
+func TestAMalformedConfiguredExpectedKeyIsRefusedAsAKey(t *testing.T) {
+	skipWhereKeysCannotSign(t)
+	seed, public := generatedKey(t)
+	t.Setenv(audit.SigningKeyEnv, seed)
+	t.Setenv(audit.SigningPublicKeyEnv, "")
+	good := strings.TrimSpace(readFile(t, public))
+	seedText := strings.TrimSpace(readFile(t, seed))
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+	for _, row := range []struct{ name, value, reason string }{
+		{"the right key in upper case", strings.ToUpper(good), audit.ErrExpectedKeyMalformed.Error()},
+		{"65 characters", good + "0", audit.ErrExpectedKeyMalformed.Error()},
+		{"the seed itself", seedText, ""},
+	} {
+		member, err := json.Marshal(row.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		configPath := writeProjectFixture(t, `{"configVersion":"7","audit":{"dir":"audit","signingPublicKey":`+string(member)+`},"packs":{"intake":{"path":"packs/intake-0.1.0.pack.json","expectedVersion":"0.1.0"}}}`,
+			map[string]string{"packs/intake-0.1.0.pack.json": evaluatorPack(t)})
+		echoes := func(text string) bool {
+			lower := strings.ToLower(text)
+			return strings.Contains(lower, strings.ToLower(row.value)) || strings.Contains(lower, good) || strings.Contains(lower, seedText) || strings.Contains(text, seed)
+		}
+		for _, format := range []string{"human", "json"} {
+			code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--format", format, "--pack-id", "intake", "--config", configPath, "--facts", facts}, "")
+			if code != 0 || echoes(stdout+stderr) {
+				t.Errorf("%s, %s: the decision is made, and the value not repeated: exit=%d %q %q", row.name, format, code, stdout, stderr)
+			}
+			code, printed, status, detail := signingKeyDetail(t, configPath, format)
+			reasonGiven := strings.Contains(detail, audit.ErrExpectedKeyMalformed.Error()) || strings.Contains(detail, audit.ErrKeyNotExpected.Error())
+			if row.reason != "" {
+				reasonGiven = strings.Contains(detail, row.reason)
+			}
+			if code == 0 || status != "failed" || !reasonGiven || !strings.Contains(detail, "the audit member's signingPublicKey names the expected key") || echoes(printed) {
+				t.Errorf("%s, %s: validate: exit=%d %q %q", row.name, format, code, status, detail)
+			}
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(configPath), "audit", audit.SidecarName)); !os.IsNotExist(err) {
+			t.Errorf("%s: nothing is signed: %v", row.name, err)
+		}
+		code, output := verification(t, "--config", configPath, "--public-key", public)
+		if code != 0 || output.Coverage.SignedRecords != 0 || output.Coverage.UnsignedRecords != 2 {
+			t.Errorf("%s: both decisions are recorded, unsigned: exit=%d %+v", row.name, code, output.Coverage)
+		}
+	}
+}
+
+// audit key rotate says, in its own help and in what it prints when done,
+// that where an expected public key is named it must name the next key too
+// (#255 review): naming only the next seed leaves the records unsigned.
+func TestAuditKeyRotateSaysToNameTheExpectedKeyToo(t *testing.T) {
+	code, stdout, _ := runTest(t, []string{"audit", "key", "rotate", "--help"}, "")
+	if code != 0 || !strings.Contains(stdout, "names its public key too, by the audit member's signingPublicKey or JPACK_SIGNING_PUBLIC_KEY") {
+		t.Fatalf("rotate --help: exit=%d %q", code, stdout)
+	}
+	if !keysSignHere(t) {
+		return
+	}
+	seed, _ := generatedKey(t)
+	next, _ := generatedKey(t)
+	t.Setenv(audit.SigningKeyEnv, seed)
+	configPath, _ := recordedProject(t, 1)
+	code, stdout, stderr := runTest(t, []string{"audit", "key", "rotate", "--config", configPath, "--next", next}, "")
+	if code != 0 || !strings.Contains(stdout, "its public key by signingPublicKey or JPACK_SIGNING_PUBLIC_KEY: until then records are written unsigned.") {
+		t.Fatalf("rotate: exit=%d %q %q", code, stdout, stderr)
 	}
 }

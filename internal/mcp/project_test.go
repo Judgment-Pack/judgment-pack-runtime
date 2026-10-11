@@ -450,7 +450,7 @@ func quoteJSON(t *testing.T, value string) string {
 func TestABrokenConfigurationIsAToolError(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, project.DefaultConfigName)
-	if err := os.WriteFile(configPath, []byte(`{"configVersion":"7","packs":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(`{"configVersion":"8","packs":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(project.ConfigEnv, configPath)

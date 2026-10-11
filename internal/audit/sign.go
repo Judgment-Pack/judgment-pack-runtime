@@ -59,6 +59,10 @@ const (
 	// key's path. Set and not empty, it is the key, whatever the
 	// configuration names.
 	SigningKeyEnv = "JPACK_SIGNING_KEY"
+	// SigningPublicKeyEnv names the environment variable that gives the
+	// public key the signing key is expected to have. Set and not empty, it
+	// is the expected key, exactly as set, whatever the configuration names.
+	SigningPublicKeyEnv = "JPACK_SIGNING_PUBLIC_KEY"
 
 	recordSignaturePrefix = "judgment-pack-runtime/record-signature/1:"
 	keyRotationPrefix     = "judgment-pack-runtime/key-rotation/1:"
@@ -118,6 +122,16 @@ var (
 	// ErrKeyMalformed is a key file that is not one Ed25519 seed: 64
 	// hexadecimal characters, with nothing else but surrounding whitespace.
 	ErrKeyMalformed = errors.New("the signing key is not 64 hexadecimal characters")
+	// ErrExpectedKeyMalformed is an expected public key that is not, as
+	// written, 64 lowercase hexadecimal characters encoding a public key a
+	// verifier may trust (CheckPublicKey). It is refused before any seed is
+	// read, so nothing signs under it.
+	ErrExpectedKeyMalformed = errors.New("the expected public key is not 64 lowercase hexadecimal characters encoding a public key a verifier may trust")
+	// ErrKeyNotExpected is a seed, read whole, whose public key is not the
+	// expected public key: whatever is at the signing key's path is not the
+	// key it was expected to be, so it signs nothing. It says only that, not
+	// which key is there or how it came to be there.
+	ErrKeyNotExpected = errors.New("the key at the signing key's path is not the expected key")
 	// ErrKeyNotInForce is a key that is not the key in force at the end of
 	// the sidecar: another key signed last, or a rotation named another. Such
 	// a key signs nothing, so the record stays unsigned.
@@ -140,7 +154,7 @@ func KeyRefusal(err error) string {
 	if errors.As(err, &place) {
 		return place.Error()
 	}
-	for _, known := range []error{ErrKeyNotAbsolute, ErrKeyPrivacyUnchecked, ErrKeyInsideProject, ErrKeyThroughLink, ErrKeyPathChanged, ErrKeyDirectoryWritable, ErrKeyDirectoryNotOwned, ErrKeyLinked, ErrKeyNotRegular, ErrKeyNotOwned, ErrKeyTooOpen, ErrKeyMalformed} {
+	for _, known := range []error{ErrExpectedKeyMalformed, ErrKeyNotAbsolute, ErrKeyPrivacyUnchecked, ErrKeyInsideProject, ErrKeyThroughLink, ErrKeyPathChanged, ErrKeyDirectoryWritable, ErrKeyDirectoryNotOwned, ErrKeyLinked, ErrKeyNotRegular, ErrKeyNotOwned, ErrKeyTooOpen, ErrKeyMalformed, ErrKeyNotExpected} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}
@@ -244,22 +258,62 @@ func ParsePublicKey(data []byte) (ed25519.PublicKey, error) {
 // by an absolute path, and it is read only where this platform can establish
 // that it is its owner's alone (keyPrivacyChecked): on unix, by readKey's
 // rules. Elsewhere, Windows among them, every key is refused
-// (ErrKeyPrivacyUnchecked), so records there are unsigned. No error carries any
-// of the key's contents.
-func LoadSigner(keyPath string, project os.FileInfo) (*Signer, error) {
+// (ErrKeyPrivacyUnchecked), so records there are unsigned.
+//
+// expected, when not nil, is the public key the key must have, as written
+// (parseExpectedKey). Any other value, the empty string and whitespace
+// included, is refused before anything at keyPath is read
+// (ErrExpectedKeyMalformed), and a key read whole whose public key is another
+// is refused after it (ErrKeyNotExpected), so whatever was put at the path
+// signs nothing. The comparison is made each time a key is loaded, which is
+// each time a writer is given one, and nothing of it is kept. No error carries
+// any of the key's contents or of the expected key's value.
+func LoadSigner(keyPath string, project os.FileInfo, expected *string) (*Signer, error) {
+	var want ed25519.PublicKey
+	if expected != nil {
+		parsed, err := parseExpectedKey(*expected)
+		if err != nil {
+			return nil, err
+		}
+		want = parsed
+	}
 	if !filepath.IsAbs(keyPath) {
 		return nil, ErrKeyNotAbsolute
 	}
 	if !keyPrivacyChecked {
 		return nil, ErrKeyPrivacyUnchecked
 	}
-	return readKey(filepath.Clean(keyPath), project)
+	signer, err := readKey(filepath.Clean(keyPath), project)
+	if err != nil {
+		return nil, err
+	}
+	if want != nil && !bytes.Equal(signer.public, want) {
+		return nil, ErrKeyNotExpected
+	}
+	return signer, nil
+}
+
+// parseExpectedKey reads an expected public key exactly as written: 64
+// lowercase hexadecimal characters with nothing around them, which
+// CheckPublicKey accepts. Unlike a public key file's contents, it is neither
+// trimmed nor lowercased here: what is compared is what was named. Anything
+// else is ErrExpectedKeyMalformed, which carries none of it.
+func parseExpectedKey(text string) (ed25519.PublicKey, error) {
+	if !publicKeyForm.MatchString(text) {
+		return nil, ErrExpectedKeyMalformed
+	}
+	public, err := hex.DecodeString(text)
+	if err != nil || CheckPublicKey(public) != nil {
+		return nil, ErrExpectedKeyMalformed
+	}
+	return ed25519.PublicKey(public), nil
 }
 
 // ReadKey reads a seed file only to show its public half, as jpack audit key
 // generate and public do: held to every rule LoadSigner holds a key to that
-// this platform can check, except being outside a project, and not refused
-// where its privacy cannot be checked, since nothing is signed with it.
+// this platform can check, except being outside a project and being an
+// expected key, and not refused where its privacy cannot be checked, since
+// nothing is signed with it.
 func ReadKey(keyPath string) (*Signer, error) {
 	if !filepath.IsAbs(keyPath) {
 		return nil, ErrKeyNotAbsolute

@@ -1,46 +1,51 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:judgmentpack:runtime:jpack-config:6",
+  "$id": "urn:judgmentpack:runtime:jpack-config:7",
   "title": "jpack.json project configuration",
-  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044), under \"5\" whether its evaluations must refuse a fact no comparison that reads it can match (ADR-0046), and under \"6\" whether that record is chained and which key outside the project signs it (ADR-0047). It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
+  "description": "A NON-NORMATIVE convention of the judgment-pack runtime (ADR-0012), not part of the Judgment Pack Specification. It names the packs a project owns and where they live, relative to this file's own directory — under configVersion \"2\" the experimental graphs composing them (ADR-0017), under \"3\" the directory this project asks its evaluations to be recorded in (ADR-0018), under \"4\" whether its deciding runs must apply its reviewed set (ADR-0044), under \"5\" whether its evaluations must refuse a fact no comparison that reads it can match (ADR-0046), under \"6\" whether that record is chained and which key outside the project signs it (ADR-0047), and under \"7\" which public key that key is expected to have. It selects nothing at decision time, templates nothing, and holds no pack's version as a truth of its own: a pack's identity is the pack document's, and every reference to it here is validated against that document rather than believed.",
   "type": "object",
   "additionalProperties": false,
   "required": ["configVersion", "packs"],
   "allOf": [
     {
-      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal. \"3\", \"4\", \"5\" and \"6\" read them too — a later shape adds a member, it does not drop one.",
+      "description": "The version gate: graphs are the \"2\" shape's one addition, so a configuration declaring them under \"1\" is told exactly which member to change rather than handed an unknown-member refusal. \"3\", \"4\", \"5\", \"6\" and \"7\" read them too — a later shape adds a member, it does not drop one.",
       "if": { "required": ["graphs"] },
-      "then": { "properties": { "configVersion": { "enum": ["2", "3", "4", "5", "6"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["2", "3", "4", "5", "6", "7"] } } }
     },
     {
-      "description": "The same gate for audit, the \"3\" shape's one addition: a configuration asking for an audit trail under an earlier version is told exactly which member to change. \"4\", \"5\" and \"6\" read it too.",
+      "description": "The same gate for audit, the \"3\" shape's one addition: a configuration asking for an audit trail under an earlier version is told exactly which member to change. \"4\", \"5\", \"6\" and \"7\" read it too.",
       "if": { "required": ["audit"] },
-      "then": { "properties": { "configVersion": { "enum": ["3", "4", "5", "6"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["3", "4", "5", "6", "7"] } } }
     },
     {
-      "description": "The same gate for requireReviewed, the \"4\" shape's one addition. \"5\" and \"6\" read it too.",
+      "description": "The same gate for requireReviewed, the \"4\" shape's one addition. \"5\", \"6\" and \"7\" read it too.",
       "if": { "required": ["requireReviewed"] },
-      "then": { "properties": { "configVersion": { "enum": ["4", "5", "6"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["4", "5", "6", "7"] } } }
     },
     {
-      "description": "The same gate for requireComparableFacts, the \"5\" shape's one addition. \"6\" reads it too.",
+      "description": "The same gate for requireComparableFacts, the \"5\" shape's one addition. \"6\" and \"7\" read it too.",
       "if": { "required": ["requireComparableFacts"] },
-      "then": { "properties": { "configVersion": { "enum": ["5", "6"] } } }
+      "then": { "properties": { "configVersion": { "enum": ["5", "6", "7"] } } }
     },
     {
-      "description": "The same gate for the audit member's chain, the \"6\" shape's one addition: a configuration saying whether its trail is chained under an earlier version is told exactly which member to change.",
+      "description": "The same gate for the audit member's chain, the \"6\" shape's one addition: a configuration saying whether its trail is chained under an earlier version is told exactly which member to change. \"7\" reads it too.",
       "if": { "required": ["audit"], "properties": { "audit": { "required": ["chain"] } } },
-      "then": { "properties": { "configVersion": { "const": "6" } } }
+      "then": { "properties": { "configVersion": { "enum": ["6", "7"] } } }
     },
     {
-      "description": "The same gate for the audit member's signingKey, which the \"6\" shape adds beside chain.",
+      "description": "The same gate for the audit member's signingKey, which the \"6\" shape adds beside chain. \"7\" reads it too.",
       "if": { "required": ["audit"], "properties": { "audit": { "required": ["signingKey"] } } },
-      "then": { "properties": { "configVersion": { "const": "6" } } }
+      "then": { "properties": { "configVersion": { "enum": ["6", "7"] } } }
     },
     {
-      "description": "The same gate for the audit member's timestampAuthority, which the \"6\" shape adds beside chain.",
+      "description": "The same gate for the audit member's timestampAuthority, which the \"6\" shape adds beside chain. \"7\" reads it too.",
       "if": { "required": ["audit"], "properties": { "audit": { "required": ["timestampAuthority"] } } },
-      "then": { "properties": { "configVersion": { "const": "6" } } }
+      "then": { "properties": { "configVersion": { "enum": ["6", "7"] } } }
+    },
+    {
+      "description": "The same gate for the audit member's signingPublicKey, the \"7\" shape's one addition.",
+      "if": { "required": ["audit"], "properties": { "audit": { "required": ["signingPublicKey"] } } },
+      "then": { "properties": { "configVersion": { "const": "7" } } }
     }
   ],
   "properties": {
@@ -49,9 +54,9 @@
       "$ref": "#/$defs/audit"
     },
     "configVersion": {
-      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs, \"2\" the shape with them, \"3\" the shape that may also ask for an audit trail, \"4\" the shape that may also require its deciding runs to apply its reviewed set, \"5\" the shape that may also require every fact a comparison reads to be of a type that comparison can match, and \"6\" the shape whose audit member may also say whether its trail is chained; this runtime reads all six, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only the earlier shapes refuses a later configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under an earlier version would be an invalid-config refusal that takes every project surface down with it.",
+      "description": "The version of this configuration format. A single integer as a string, on the outputVersion precedent rather than semantic versioning. \"1\" is the shape without graphs, \"2\" the shape with them, \"3\" the shape that may also ask for an audit trail, \"4\" the shape that may also require its deciding runs to apply its reviewed set, \"5\" the shape that may also require every fact a comparison reads to be of a type that comparison can match, \"6\" the shape whose audit member may also say whether its trail is chained, and \"7\" the shape whose audit member may also name the public key its signing key is expected to have; this runtime reads all seven, and this schema accepts no other, so a configuration held to these exact bytes is held to what the runtime will actually read. A runtime that knows only the earlier shapes refuses a later configuration as unsupported while naming what it accepts, which is the actionable path the version gate exists to give — an unknown member under an earlier version would be an invalid-config refusal that takes every project surface down with it.",
       "type": "string",
-      "enum": ["1", "2", "3", "4", "5", "6"]
+      "enum": ["1", "2", "3", "4", "5", "6", "7"]
     },
     "graphs": {
       "description": "EXPERIMENTAL graphs composing this project's packs (ADR-0015, ADR-0017), keyed by the project's own name for one graph — the graph document's id member is the graph's identity and is not this key, exactly as a pack entry's key is not the pack's id. Declaring any graph requires configVersion \"2\" or later. The graph surface may change or be removed without compatibility promise, and a project that declares no graph never needs this member or that version.",
@@ -94,6 +99,10 @@
           "type": "string",
           "pattern": "^(/|[A-Za-z]:[\\\\/]|\\\\\\\\)"
         },
+        "signingPublicKey": {
+          "description": "The public key the signing key is expected to have: 64 lowercase hexadecimal characters, as jpack audit key generate and public print it. Each time records are about to be signed, once for every evaluation or graph run that records, the seed at the signing key's path is read and its public key compared with this one, and a seed whose public key is another is refused and signs nothing, so a seed put in the key's place, whenever and by whomever, signs no record. This schema holds the member to being a string and nothing more, so that no configuration diagnostic ever repeats its value: a value of any other form, the empty string, whitespace and upper case included, or one that is not a public key a verifier may trust, is refused when signing, before any seed is read, and nothing signs. A refused seed or expected key leaves the record unsigned, never the decision failed, and packs validate reports it as the audit-signing-key check, naming which input named the expected key but neither the path, nor either key, nor the value. The JPACK_SIGNING_PUBLIC_KEY environment variable, when set and not empty, names the expected key instead, exactly as set and with nothing trimmed, and it is process-wide, as JPACK_SIGNING_KEY is. After jpack audit key rotate, the expected key must name the next key too, or the next key signs nothing. Declaring it requires configVersion \"7\" and a chained trail.",
+          "type": "string"
+        },
         "timestampAuthority": {
           "description": "The http or https address of an RFC 3161 time-stamping authority that jpack audit stamp asks to stamp the trail's current checkpoint (ADR-0047). Nothing on the decision path asks it: a decision is appended first, and stamped only when something runs jpack audit stamp, a scheduler, Desk or a person, at whatever interval or after whatever records that caller chooses. The request carries the SHA-256 of the checkpoint's canonical form and nothing else of the trail, and the token, which carries the authority's certificate, is kept in stamps.jsonl beside the trail; a checkpoint already stamped is not asked for again. Which authorities a verifier trusts is the verifier's: jpack audit verify --tsa-roots takes them, never this member. A stamp shows that the checkpoint existed by the time the authority states, as far as that authority is independent of the operator; it says nothing of how long before, and a record's at stays the operator's word. Declaring it requires configVersion \"6\" and a chained trail.",
           "type": "string",
@@ -102,7 +111,7 @@
         }
       },
       "if": { "required": ["chain"], "properties": { "chain": { "const": false } } },
-      "then": { "allOf": [{ "not": { "required": ["signingKey"] } }, { "not": { "required": ["timestampAuthority"] } }] }
+      "then": { "allOf": [{ "not": { "required": ["signingKey"] } }, { "not": { "required": ["signingPublicKey"] } }, { "not": { "required": ["timestampAuthority"] } }] }
     },
     "decisionId": {
       "type": "string",

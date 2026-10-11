@@ -1,6 +1,7 @@
 package project
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -44,7 +45,7 @@ func keyOutside(t *testing.T, seed string) string {
 // key's privacy cannot be checked, every key is refused.
 func signsHere(t *testing.T) bool {
 	t.Helper()
-	_, err := audit.LoadSigner(keyOutside(t, testSeed), nil)
+	_, err := audit.LoadSigner(keyOutside(t, testSeed), nil, nil)
 	return !errors.Is(err, audit.ErrKeyPrivacyUnchecked)
 }
 
@@ -224,5 +225,151 @@ func TestPacksValidateReportsWhetherTheSigningKeySigns(t *testing.T) {
 	plain := mustLoad(t, writeProject(t, `{"configVersion":"6","audit":{"dir":"audit"},"packs":{}}`, nil))
 	if _, _, reported := signingKeyCheck(t, plain); reported {
 		t.Fatal("no key named, no check")
+	}
+}
+
+// mustDecode decodes hexadecimal.
+func mustDecode(t *testing.T, text string) []byte {
+	t.Helper()
+	raw, err := hex.DecodeString(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// publicOf is the public key of a seed given in hexadecimal.
+func publicOf(t *testing.T, seed string) string {
+	t.Helper()
+	signer, err := audit.NewSignerFromSeed(mustDecode(t, seed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signer.PublicKey()
+}
+
+// The audit member's signingPublicKey is the "7" shape's one addition (#255):
+// refused under any earlier version naming "7", refused with chain false or
+// when it is not a string, and a "7" still reads every earlier member. The
+// schema holds it to nothing more, so no configuration diagnostic repeats its
+// value: a value of another form loads, and is refused as a key when signing.
+func TestConfigVersionSevenMayNameTheExpectedSigningKey(t *testing.T) {
+	t.Setenv(audit.SigningPublicKeyEnv, "")
+	expected := publicOf(t, testSeed)
+	for _, version := range []string{"3", "4", "5", "6"} {
+		_, failure := Load(writeProject(t, `{"configVersion":"`+version+`","audit":{"dir":"audit","signingPublicKey":"`+testSeed+`"},"packs":{}}`, nil))
+		if failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" || !strings.Contains(failure.Message, "'7'") || strings.Contains(failure.Message, testSeed) {
+			t.Fatalf("signingPublicKey under %s names the version to change, and not the value: %+v", version, failure)
+		}
+	}
+	for _, config := range []string{
+		`{"configVersion":"7","audit":{"dir":"audit","chain":false,"signingPublicKey":"` + testSeed + `"},"packs":{}}`,
+		`{"configVersion":"7","audit":{"dir":"audit","signingPublicKey":["` + testSeed + `"]},"packs":{}}`,
+		`{"configVersion":"7","audit":{"dir":"audit","signingPublicKey":7},"packs":{}}`,
+	} {
+		if _, failure := Load(writeProject(t, config, nil)); failure == nil || failure.Code != "JPS-PROJECT-CONFIG-SCHEMA" || strings.Contains(failure.Message, testSeed) {
+			t.Fatalf("%s is refused, without its value: %+v", config, failure)
+		}
+	}
+	key := quoted(t, keyOutside(t, testSeed))
+	loaded := mustLoad(t, writeProject(t, `{"configVersion":"7","requireReviewed":false,"requireComparableFacts":false,"audit":{"dir":"audit","chain":true,"signingKey":`+key+`,"signingPublicKey":"`+expected+`"},"packs":{}}`, nil))
+	if named, source := loaded.ExpectedSigningKey(); named == nil || *named != expected || source != SigningKeyFromConfiguration {
+		t.Fatalf("the member names the expected key: %v %q", named, source)
+	}
+	plain := mustLoad(t, writeProject(t, `{"configVersion":"6","audit":{"dir":"audit","signingKey":`+key+`},"packs":{}}`, nil))
+	if named, source := plain.ExpectedSigningKey(); named != nil || source != "" {
+		t.Fatalf("a \"6\" names no expected key: %v %q", named, source)
+	}
+	// Any other string loads, the empty string included, and is refused as a
+	// key: before any seed is read, the record unsigned, and the check naming
+	// the member but not the value.
+	for _, value := range []string{strings.ToUpper(expected), expected + "0", expected[:62], expected + "\n", " " + expected, "", "  "} {
+		member, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		malformed := mustLoad(t, writeProject(t, `{"configVersion":"7","audit":{"dir":"audit","signingKey":`+key+`,"signingPublicKey":`+string(member)+`},"packs":{}}`, nil))
+		if named, source := malformed.ExpectedSigningKey(); named == nil || *named != value || source != SigningKeyFromConfiguration {
+			t.Fatalf("%q is named as written: %v %q", value, named, source)
+		}
+		if _, err := malformed.SigningKey(); !errors.Is(err, audit.ErrExpectedKeyMalformed) || malformed.AuditWriter().Signs() {
+			t.Fatalf("%q is refused as a key: %v", value, err)
+		}
+		check, status, _ := signingKeyCheck(t, malformed)
+		if check.Status != result.PackCheckFailed || status != "invalid" || !strings.Contains(check.Detail, audit.ErrExpectedKeyMalformed.Error()) ||
+			!strings.Contains(check.Detail, "the audit member's signingPublicKey names the expected key") {
+			t.Fatalf("%q: the check %+v %s", value, check, status)
+		}
+		if trimmed := strings.TrimSpace(value); trimmed != "" && strings.Contains(strings.ToLower(check.Detail), strings.ToLower(trimmed)) {
+			t.Fatalf("%q: the check repeats the value: %q", value, check.Detail)
+		}
+	}
+}
+
+// The environment variable names the expected key instead of the member, as
+// JPACK_SIGNING_KEY names the seed, exactly as set: only the empty string
+// falls back to the member, and whitespace, alone or around a key, is a
+// malformed key, refused, never no key at all. Whichever names it, a seed that
+// is not that key signs nothing, packs validate says so and which input named
+// the expected key, and the detail names neither the seed's path nor either
+// key.
+func TestTheEnvironmentNamesTheExpectedSigningKeyFirst(t *testing.T) {
+	t.Setenv(audit.SigningKeyEnv, "")
+	seedPath := keyOutside(t, testSeed)
+	expected, other := publicOf(t, testSeed), publicOf(t, strings.Repeat("ab", 32))
+	loaded := mustLoad(t, writeProject(t, `{"configVersion":"7","audit":{"dir":"audit","signingKey":`+quoted(t, seedPath)+`,"signingPublicKey":"`+expected+`"},"packs":{}}`, nil))
+	t.Setenv(audit.SigningPublicKeyEnv, other)
+	if named, source := loaded.ExpectedSigningKey(); named == nil || *named != other || source != SigningKeyFromEnvironment {
+		t.Fatalf("the environment's expected key: %v %q", named, source)
+	}
+	check, status, _ := signingKeyCheck(t, loaded)
+	if signsHere(t) {
+		if _, err := loaded.SigningKey(); !errors.Is(err, audit.ErrKeyNotExpected) || loaded.AuditWriter().Signs() {
+			t.Fatalf("the environment's expected key is not the seed's: %v", err)
+		}
+		if check.Status != result.PackCheckFailed || status != "invalid" || !strings.Contains(check.Detail, audit.ErrKeyNotExpected.Error()) || !strings.Contains(check.Detail, audit.SigningPublicKeyEnv+" names the expected key") {
+			t.Fatalf("the check: %+v %s", check, status)
+		}
+		for _, named := range []string{seedPath, filepath.Dir(seedPath), expected, other, testSeed, audit.KeyID(mustDecode(t, expected)), audit.KeyID(mustDecode(t, other))} {
+			if strings.Contains(check.Detail, named) {
+				t.Fatalf("the detail names %q: %q", named, check.Detail)
+			}
+		}
+	}
+	// Only the empty string names nothing, and the member is then the
+	// expected key.
+	t.Setenv(audit.SigningPublicKeyEnv, "")
+	if named, source := loaded.ExpectedSigningKey(); named == nil || *named != expected || source != SigningKeyFromConfiguration {
+		t.Fatalf("an empty environment variable names nothing: %v %q", named, source)
+	}
+	if check, status, _ := signingKeyCheck(t, loaded); signsHere(t) && (!loaded.AuditWriter().Signs() || check.Status != result.PackCheckPassed || status != "valid" ||
+		!strings.Contains(check.Detail, "it is the expected key the audit member's signingPublicKey names")) {
+		t.Fatalf("the member's expected key is the seed's: %+v %s", check, status)
+	}
+	// Whitespace is part of the value, never trimmed: alone it does not fall
+	// back to the member, and around the seed's own key it is not that key.
+	for _, value := range []string{"  ", "\t", "\n", " " + expected, expected + "\n", "\t" + expected + " "} {
+		t.Setenv(audit.SigningPublicKeyEnv, value)
+		if named, source := loaded.ExpectedSigningKey(); named == nil || *named != value || source != SigningKeyFromEnvironment {
+			t.Fatalf("%q is named as set: %v %q", value, named, source)
+		}
+		if _, err := loaded.SigningKey(); !errors.Is(err, audit.ErrExpectedKeyMalformed) || loaded.AuditWriter().Signs() {
+			t.Fatalf("%q is a malformed expected key: %v", value, err)
+		}
+		check, _, _ := signingKeyCheck(t, loaded)
+		if check.Status != result.PackCheckFailed || !strings.Contains(check.Detail, audit.ErrExpectedKeyMalformed.Error()) || !strings.Contains(check.Detail, audit.SigningPublicKeyEnv+" names the expected key") || strings.Contains(check.Detail, seedPath) {
+			t.Fatalf("%q: the check %+v", value, check)
+		}
+	}
+	// The member names another key: refused, and the detail says the member
+	// named it.
+	t.Setenv(audit.SigningPublicKeyEnv, "")
+	mismatched := mustLoad(t, writeProject(t, `{"configVersion":"7","audit":{"dir":"audit","signingKey":`+quoted(t, seedPath)+`,"signingPublicKey":"`+other+`"},"packs":{}}`, nil))
+	if check, _, _ := signingKeyCheck(t, mismatched); signsHere(t) && (check.Status != result.PackCheckFailed || !strings.Contains(check.Detail, "the audit member's signingPublicKey names the expected key")) {
+		t.Fatalf("the member's expected key is another: %+v", check)
+	}
+	// The next key of a rotation is not held to the expected key.
+	if next, err := loaded.LoadKey(keyOutside(t, strings.Repeat("cd", 32))); signsHere(t) && (err != nil || next == nil) {
+		t.Fatalf("a next key is loaded without the expected key: %v", err)
 	}
 }

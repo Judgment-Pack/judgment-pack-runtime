@@ -73,12 +73,13 @@ const (
 	// this file describes a shape a program reads, and a shape either is one this
 	// program knows or is not. "2" added the experimental graphs member
 	// (ADR-0017), "3" the audit member (ADR-0018), "4" the requireReviewed
-	// member (ADR-0044), "5" the requireComparableFacts member (ADR-0046) and
-	// "6" the audit member's chain and signingKey (ADR-0047); the earlier
-	// shapes, without them, are still read — see SupportedConfigVersions.
-	ConfigVersion = "6"
+	// member (ADR-0044), "5" the requireComparableFacts member (ADR-0046), "6"
+	// the audit member's chain and signingKey (ADR-0047) and "7" the audit
+	// member's signingPublicKey; the earlier shapes, without them, are still
+	// read — see SupportedConfigVersions.
+	ConfigVersion = "7"
 	// SchemaID is the embedded schema's own $id.
-	SchemaID = "urn:judgmentpack:runtime:jpack-config:6"
+	SchemaID = "urn:judgmentpack:runtime:jpack-config:7"
 	// MaxConfigBytes bounds one configuration document. It is an index of a
 	// project's packs, not a pack.
 	MaxConfigBytes = int64(1 << 20)
@@ -122,11 +123,12 @@ var schemaBytes []byte
 // refusal can say what would have been accepted instead of only what was not.
 // A "1" configuration is exactly a "2" without graphs, a "2" exactly a "3"
 // without audit, a "3" exactly a "4" without requireReviewed, a "4" exactly a
-// "5" without requireComparableFacts, and a "5" exactly a "6" whose audit
-// member says neither chain nor signingKey, so all six are read by one schema and each version
-// gate lives in that schema's own bytes.
+// "5" without requireComparableFacts, a "5" exactly a "6" whose audit
+// member says neither chain nor signingKey, and a "6" exactly a "7" whose
+// audit member names no signingPublicKey, so all seven are read by one schema
+// and each version gate lives in that schema's own bytes.
 func SupportedConfigVersions() []string {
-	return []string{"1", "2", "3", "4", "5", ConfigVersion}
+	return []string{"1", "2", "3", "4", "5", "6", ConfigVersion}
 }
 
 // Schema returns the exact embedded configuration schema bytes.
@@ -206,14 +208,26 @@ type Graph struct {
 // JPACK_SIGNING_KEY environment variable, when set, names it instead. It needs
 // configVersion "6" and a chained trail.
 //
+// SigningPublicKey is the public key the signing key is expected to have, 64
+// lowercase hexadecimal characters: a seed whose public key is another is
+// refused each time records are about to be signed, so a seed put in the
+// signing key's place signs nothing. The schema holds it to being a string
+// and nothing more: a value of another form, the empty string included, is
+// refused as a key is, when signing, so the record is written unsigned, the
+// decision is recorded, and no diagnostic echoes the value. It is a pointer so
+// a member declared empty is told from one not declared. The
+// JPACK_SIGNING_PUBLIC_KEY environment variable, when set, names it instead.
+// It needs configVersion "7" and a chained trail.
+//
 // TimestampAuthority is the address of the RFC 3161 authority jpack audit
 // stamp asks (ADR-0047 §2a, C2); nothing on the decision path asks it. It
 // needs configVersion "6" and a chained trail.
 type Audit struct {
-	Dir                string `json:"dir"`
-	Chain              *bool  `json:"chain,omitempty"`
-	SigningKey         string `json:"signingKey,omitempty"`
-	TimestampAuthority string `json:"timestampAuthority,omitempty"`
+	Dir                string  `json:"dir"`
+	Chain              *bool   `json:"chain,omitempty"`
+	SigningKey         string  `json:"signingKey,omitempty"`
+	SigningPublicKey   *string `json:"signingPublicKey,omitempty"`
+	TimestampAuthority string  `json:"timestampAuthority,omitempty"`
 }
 
 // Chains says whether this audit member asks for a chained trail: yes unless it
@@ -226,8 +240,8 @@ func (a *Audit) Chains() bool {
 // rejects every member not named here, so a misspelled key is an error rather
 // than a silently ignored intention. Graphs exists only from configVersion
 // "2", Audit only from "3", RequireReviewed only from "4",
-// RequireComparableFacts only from "5" and Audit's Chain and SigningKey only
-// under "6" — the
+// RequireComparableFacts only from "5", Audit's Chain and SigningKey only
+// from "6" and Audit's SigningPublicKey only under "7" — the
 // schema's own version gates hold that, each stated once in its bytes. Audit is a pointer because a
 // single-object member has no other way to tell "declared, with defaults"
 // from "absent"; a map member gets that distinction for free.
@@ -1079,9 +1093,9 @@ func (p *Project) WriteLock(contents []byte) error {
 // chain false (ADR-0047 §1).
 //
 // A chained trail is signed when a signing key is named and can be used
-// (ADR-0047 §2b). A key that cannot be, refused or unreadable, leaves the
-// records unsigned rather than the decisions failed; packs validate reports
-// why, as the audit-signing-key check.
+// (ADR-0047 §2b). A key that cannot be, refused, unreadable or not the
+// expected key, leaves the records unsigned rather than the decisions failed;
+// packs validate reports why, as the audit-signing-key check.
 func (p *Project) AuditWriter() *audit.Writer {
 	if p == nil || p.Config.Audit == nil {
 		return nil
@@ -1116,27 +1130,60 @@ func (p *Project) SigningKeyPath() (string, string) {
 	return "", ""
 }
 
+// ExpectedSigningKey is the public key the signing key is expected to have,
+// exactly as written, and where it was named: the JPACK_SIGNING_PUBLIC_KEY
+// environment variable when it is set and not the empty string, else the
+// audit member's signingPublicKey when it is declared, whatever its value.
+// Nothing is trimmed: whitespace in either is part of the value, which is
+// then not a public key and is refused, never read as no key at all. It is
+// nil, with no source, when neither names one, and when the configuration
+// declares no audit member.
+func (p *Project) ExpectedSigningKey() (*string, string) {
+	if p == nil || p.Config.Audit == nil {
+		return nil, ""
+	}
+	if fromEnv := os.Getenv(audit.SigningPublicKeyEnv); fromEnv != "" {
+		return &fromEnv, SigningKeyFromEnvironment
+	}
+	if p.Config.Audit.SigningPublicKey != nil {
+		named := *p.Config.Audit.SigningPublicKey
+		return &named, SigningKeyFromConfiguration
+	}
+	return nil, ""
+}
+
 // SigningKey loads the signing key SigningKeyPath names, held to
 // audit.LoadSigner's rules with this project's directory as the one it must be
-// outside. It is nil with no error when no key is named or the trail is not
-// chained, since an unchained record has no sequence to sign.
+// outside and, when ExpectedSigningKey names one, that public key as the one
+// it must have. It is read and compared again on every call, so a writer is
+// given the key that is at the path when it is made. It is nil with no error
+// when no key is named or the trail is not chained, since an unchained record
+// has no sequence to sign.
 func (p *Project) SigningKey() (*audit.Signer, error) {
 	keyPath, _ := p.SigningKeyPath()
 	if keyPath == "" || !p.Config.Audit.Chains() {
 		return nil, nil
 	}
-	return p.LoadKey(keyPath)
+	expected, _ := p.ExpectedSigningKey()
+	return p.loadKey(keyPath, expected)
 }
 
 // LoadKey loads a signing key by audit.LoadSigner's rules, with the
 // directory this project's handle holds as the one it must be outside,
-// compared by identity rather than by pathname.
+// compared by identity rather than by pathname. It holds the key to no
+// expected public key: it loads the next key of a rotation, which is by
+// definition not the key named now.
 func (p *Project) LoadKey(keyPath string) (*audit.Signer, error) {
+	return p.loadKey(keyPath, nil)
+}
+
+// loadKey is LoadKey with the public key the key must have, or none (nil).
+func (p *Project) loadKey(keyPath string, expected *string) (*audit.Signer, error) {
 	self, err := p.root.Self()
 	if err != nil {
 		return nil, err
 	}
-	return audit.LoadSigner(keyPath, self)
+	return audit.LoadSigner(keyPath, self, expected)
 }
 
 // TrailName is the trail file this configuration's audit member names,
