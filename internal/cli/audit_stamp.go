@@ -73,6 +73,7 @@ func (a *App) auditStampCommand() *cobra.Command {
 		Long: "Ask an RFC 3161 time-stamping authority to stamp the checkpoint of the project's trail's last chained record (ADR-0047), and keep the token in stamps.jsonl beside the trail. " +
 			"The authority is the audit member's timestampAuthority, or --tsa <address>, http or https. " +
 			"Nothing on the decision path stamps: a decision is appended first, and stamped when something runs this, a scheduler, Desk or a person, at whatever interval or after whatever records that caller chooses; a decision never waits for an authority, and an authority that cannot be reached leaves the trail and every decision in it as they were. " +
+			"The authority is not followed to another address: a redirect answer is refused as JPS-AUDIT-STAMP-REDIRECT, so the digest goes to the authority named and nothing else (a proxy from the environment still carries the request). " +
 			"The request carries the SHA-256 of the checkpoint's canonical form, a nonce, and a request for the authority's certificate, and nothing else of the trail. The reply is held to the request, its digest and its nonce, and its token to its own signature, before it is kept; whether the authority is to be trusted is for a verifier with roots to decide (jpack audit verify --tsa-roots). " +
 			"It is idempotent by the checkpoint's digest: a checkpoint already stamped is not asked for again, and the stamps file is written under its own lock, never the trail's. " +
 			"Whether a checkpoint is stamped already is read without opening the stamps file for writing. While the authority is asked the stamps file is held open, and just before the token is appended, under the stamps lock, two things are checked again, each refusing the append and discarding the token: JPS-AUDIT-STAMP-TRAIL-MOVED when the trail at its path is another file, is shorter than when it was read, or no longer holds the checkpoint's record at its sequence (a trail truncated in place and written again among them), and JPS-AUDIT-STAMPS-MOVED when the stamps file was moved, removed, linked elsewhere or truncated; a trail that could not be checked is JPS-AUDIT-STAMP-TRAIL-UNCHECKED. " +
@@ -164,7 +165,7 @@ func (a *App) auditStampCommand() *cobra.Command {
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)
 				defer cancel()
-				der, token, err := timestamp.Ask(ctx, http.DefaultClient, address, audit.CheckpointDigest(checkpoint))
+				der, token, err := timestamp.Ask(ctx, stampClient(), address, audit.CheckpointDigest(checkpoint))
 				if err != nil {
 					return a.stampFailure(commandName, format, err)
 				}
@@ -226,11 +227,28 @@ func (a *App) stampsTooLarge(commandName, format, message string) error {
 	return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMPS-TOO-LARGE", message+" Move stamps.jsonl aside and keep it, then run audit stamp again to start a new stamps file.")
 }
 
+// stampClient is the client the authority is asked through. It keeps the
+// default client's transport (a proxy from the environment still carries the
+// request, which is the operator's choice) and never follows a redirect, so
+// the checkpoint's digest goes to the authority named and to nothing else.
+func stampClient() *http.Client {
+	return &http.Client{
+		Transport: http.DefaultClient.Transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
 // stampFailure reports an authority that could not stamp, never with its
 // address, which may hold credentials. Nothing was written.
 func (a *App) stampFailure(commandName, format string, err error) error {
 	const untouched = " Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the checkpoint at the trail's head at that time."
 	code := "JPS-AUDIT-STAMP-INVALID"
+	var redirect *timestamp.RedirectError
+	if errors.As(err, &redirect) {
+		return a.operational(commandName, format, result.ExitIO, "JPS-AUDIT-STAMP-REDIRECT", display.Sanitize(redirect.Error())+". The trail and the decisions in it are as they were.")
+	}
 	switch {
 	case errors.Is(err, timestamp.ErrUnreachable):
 		code = "JPS-AUDIT-STAMP-UNREACHABLE"

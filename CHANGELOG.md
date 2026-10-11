@@ -6,6 +6,11 @@ All notable changes to tagged releases are documented here.
 
 What this runtime conforms to is stated in `CONFORMANCE.md`.
 
+- **`audit stamp` refuses redirects** (#231). A 3xx answer from the time-stamping authority is
+  refused under JPS-AUDIT-STAMP-REDIRECT, naming the status and never the `Location`; nothing is
+  stamped or written, so the checkpoint's digest goes only to the authority the configuration
+  names. A proxy from the environment still carries the request, which is the operator's choice.
+
 ## 0.29.0 - 2026-10-10
 
 - **Graph evaluations identify the exact loaded revisions** (#251). Experimental graph

@@ -950,6 +950,15 @@ type Doer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+// RedirectError is an authority that answered with a 3xx status. The client
+// the caller passes must not follow redirects; the answer is a refusal, and
+// nothing of where it pointed is kept.
+type RedirectError struct{ Status int }
+
+func (e *RedirectError) Error() string {
+	return fmt.Sprintf("the time-stamping authority answered with a redirect, status %d; the request was not followed and nothing was stamped. Configure the address the authority answers at", e.Status)
+}
+
 // Ask asks the authority at url to stamp a SHA-256 digest, over RFC 3161's
 // HTTP transport, and answers the token's DER and the token, checked against
 // its own signing certificate and held to the request: the digest stamped and
@@ -977,6 +986,11 @@ func Ask(ctx context.Context, client Doer, url string, digest []byte) ([]byte, *
 		return nil, nil, fmt.Errorf("%w: the request was not answered", ErrUnreachable)
 	}
 	defer response.Body.Close()
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		// Only the status is kept: the Location value is the authority's
+		// word about another host and is never reported.
+		return nil, nil, &RedirectError{Status: response.StatusCode}
+	}
 	if response.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("%w: it answered HTTP %d", ErrUnreachable, response.StatusCode)
 	}

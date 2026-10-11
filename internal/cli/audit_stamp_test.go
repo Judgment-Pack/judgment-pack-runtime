@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -691,5 +692,88 @@ func TestAuditStampAnswersAlreadyStampedFromAReadOnlyFile(t *testing.T) {
 	code, got, all := stamping(t, "--config", configPath, "--tsa", address)
 	if code != 0 || got.Status != "already-stamped" || requests != 0 {
 		t.Fatalf("re-run: exit=%d requests=%d output=%s", code, requests, all)
+	}
+}
+
+// A redirect answer is refused, never followed: the digest goes to the
+// authority named and nothing else. The transport counts requests per host and
+// would stamp anything sent to the host the redirect names.
+func TestAuditStampRefusesARedirectWithoutFollowingIt(t *testing.T) {
+	const target = "http://elsewhere.invalid/collect"
+	for _, status := range []int{301, 302, 303, 304, 307, 308} {
+		for _, format := range []string{"json", "human"} {
+			t.Run(strconv.Itoa(status)+"/"+format, func(t *testing.T) {
+				address, roots := stampAuthorityTransport(t)
+				stamper := http.DefaultClient.Transport
+				perHost := map[string]int{}
+				http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+					perHost[request.URL.Host]++
+					if request.URL.Host == "tsa.invalid" {
+						header := http.Header{"Location": []string{target}}
+						return &http.Response{StatusCode: status, Header: header, Body: http.NoBody, Request: request}, nil
+					}
+					return stamper.RoundTrip(request)
+				})
+				configPath, trail := recordedProject(t, 1)
+				message := "the time-stamping authority answered with a redirect, status " + strconv.Itoa(status) + "; the request was not followed and nothing was stamped. Configure the address the authority answers at. The trail and the decisions in it are as they were."
+				exit, stdout, stderr := runTest(t, []string{"audit", "stamp", "--format", format, "--config", configPath, "--tsa", address}, "")
+				if exit != result.ExitIO {
+					t.Errorf("exit=%d stdout=%s stderr=%s", exit, stdout, stderr)
+				}
+				if format == "json" {
+					var got result.OperationalError
+					if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+						t.Fatalf("%v: %s", err, stdout)
+					}
+					if len(got.Diagnostics) != 1 || got.Diagnostics[0].Code != "JPS-AUDIT-STAMP-REDIRECT" || got.Diagnostics[0].Message != message {
+						t.Errorf("diagnostic: %s", stdout)
+					}
+				} else if stdout != "" || stderr != "error: "+message+"\n" {
+					t.Errorf("human: stdout=%q stderr=%q", stdout, stderr)
+				}
+				for _, text := range []string{stdout, stderr} {
+					if strings.Contains(text, "elsewhere") || strings.Contains(text, "collect") || strings.Contains(text, target) {
+						t.Errorf("the redirect target is in the output: %q", text)
+					}
+				}
+				if perHost["tsa.invalid"] != 1 || len(perHost) != 1 {
+					t.Errorf("requests per host: %v", perHost)
+				}
+				stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+				if data, err := os.ReadFile(stamps); err != nil && !os.IsNotExist(err) || len(data) != 0 {
+					t.Errorf("stamps written: %q %v", data, err)
+				}
+				if code, got := verification(t, "--config", configPath, "--tsa-roots", roots); code != 0 || got.Coverage.Stamped.Status != "none" {
+					t.Errorf("verify: exit=%d %+v", code, got)
+				}
+			})
+		}
+	}
+}
+
+// A redirect without a Location is still a refusal, and a 2xx other than 200
+// is still an unreachable authority, as before.
+func TestAuditStampRedirectWithoutLocationAndOtherStatuses(t *testing.T) {
+	cases := []struct {
+		status  int
+		code    string
+		message string
+	}{
+		{302, "JPS-AUDIT-STAMP-REDIRECT", "the time-stamping authority answered with a redirect, status 302; the request was not followed and nothing was stamped. Configure the address the authority answers at. The trail and the decisions in it are as they were."},
+		{204, "JPS-AUDIT-STAMP-UNREACHABLE", "the time-stamping authority could not be asked, or did not answer: it answered HTTP 204. Nothing was written, and the trail and the decisions in it are as they were; asking again stamps the checkpoint at the trail's head at that time."},
+	}
+	for _, c := range cases {
+		t.Run(strconv.Itoa(c.status), func(t *testing.T) {
+			address, _ := stampAuthorityTransport(t)
+			http.DefaultClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: c.status, Header: http.Header{}, Body: http.NoBody, Request: request}, nil
+			})
+			configPath, trail := recordedProject(t, 1)
+			stampRefusal(t, "json", configPath, address, c.code, c.message)
+			stamps := filepath.Join(filepath.Dir(trail), audit.StampsName)
+			if data, err := os.ReadFile(stamps); err != nil && !os.IsNotExist(err) || len(data) != 0 {
+				t.Errorf("stamps written: %q %v", data, err)
+			}
+		})
 	}
 }

@@ -213,7 +213,7 @@ Runner gives each attempt its own audit directory, never reused, and keeps one r
   Runner does for Jobs.
 - **The facts.** A defended record still holds the facts its caller supplied. Runner's mapping v2 verifies how acquired facts are bound to signed receipts and derived from them, not that the sources are true. Asserted inputs remain assertions (runner #24).
 - **The evaluator.** The executable digest stays the program's account of itself (ADR-0043). `verify-run --runtime` shows that the release's pinned executable, given the verified inputs, reproduces the retained disposition. It does not show which bytes produced the historical decision. Comparing the record's `tool.digest` with the release's would be a separate consistency check.
-- **Privacy.** A checkpoint's digest covers a whole record, including a random `run` id, so it is not trivially guessable. But a digest gives no general confidentiality. C2 discloses digests to the authority; C3 publishes them. If hiding them is required, a secret salt kept with the verification evidence must be decided before deployment.
+- **Privacy.** A checkpoint's digest covers a whole record, including a random `run` id, so it is not trivially guessable. But a digest gives no general confidentiality. C2 discloses digests to an authority: because `audit stamp` does not follow redirects (a redirect answer is refused as JPS-AUDIT-STAMP-REDIRECT), the runtime sends them to the authority named and to no other address, whatever that authority does with them; a proxy from the environment still carries the request, which is the operator's choice. C3 publishes them. If hiding them is required, a secret salt kept with the verification evidence must be decided before deployment.
 
 ## Decisions (2026-10-01)
 
