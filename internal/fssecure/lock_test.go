@@ -3,6 +3,7 @@ package fssecure
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -225,6 +226,77 @@ func TestAppendLockedFollowsANameGivenToAnotherFileWhileItWaited(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(dir, "log.jsonl.kept")); err != nil || string(data) != "old\n" {
 		t.Fatalf("the file the name no longer names is untouched: data=%q err=%v", data, err)
+	}
+}
+
+// An append that must find its file there never creates it: where nothing is
+// at the name it refuses, as not there, before compose is called, and nothing
+// appears at the name. Where the file is there it appends as AppendLocked
+// does.
+func TestAppendExistingNeverCreatesTheFile(t *testing.T) {
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+	called := 0
+	compose := func(AppendState) ([]byte, error) {
+		called++
+		return []byte("b\n"), nil
+	}
+	thenErr, err := root.AppendExistingLockedThen("log.jsonl", compose, nil)
+	if thenErr != nil || !errors.Is(err, fs.ErrNotExist) || called != 0 {
+		t.Fatalf("then=%v err=%v called=%d", thenErr, err, called)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "log.jsonl")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("nothing is created at the name: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "log.jsonl"), []byte("a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if thenErr, err := root.AppendExistingLockedThen("log.jsonl", compose, nil); thenErr != nil || err != nil {
+		t.Fatalf("then=%v err=%v", thenErr, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "log.jsonl")); err != nil || string(data) != "a\nb\n" || called != 1 {
+		t.Fatalf("data=%q err=%v called=%d", data, err, called)
+	}
+}
+
+// A name that names nothing any more by the time the lock is taken is not
+// opened afresh as a new file: the append refuses, as not there, compose is
+// not called, and the file moved aside is untouched.
+func TestAppendExistingRefusesANameEmptiedWhileItWaited(t *testing.T) {
+	if !lockedPlatform() {
+		t.Skip("this platform has no lock")
+	}
+	dir := t.TempDir()
+	root := mustOpenRoot(t, dir)
+	trail := filepath.Join(dir, "log.jsonl")
+	if err := os.WriteFile(trail, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original := lockExclusive
+	moved := false
+	lockExclusive = func(file *os.File) error {
+		if !moved {
+			moved = true
+			if err := os.Rename(trail, filepath.Join(dir, "log.jsonl.kept")); err != nil {
+				return err
+			}
+		}
+		return original(file)
+	}
+	t.Cleanup(func() { lockExclusive = original })
+	called := false
+	thenErr, err := root.AppendExistingLockedThen("log.jsonl", func(AppendState) ([]byte, error) {
+		called = true
+		return []byte("appended\n"), nil
+	}, nil)
+	if thenErr != nil || !errors.Is(err, fs.ErrNotExist) || called || !moved {
+		t.Fatalf("then=%v err=%v called=%v moved=%v", thenErr, err, called, moved)
+	}
+	if _, err := os.Lstat(trail); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("nothing is created at the name: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "log.jsonl.kept")); err != nil || string(data) != "old\n" {
+		t.Fatalf("the file moved aside is untouched: data=%q err=%v", data, err)
 	}
 }
 

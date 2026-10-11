@@ -561,14 +561,16 @@ func TestAuditRepairBoundToTheShownBytesRepairsAsWithout(t *testing.T) {
 }
 
 // Where the trail's damaged end is not the bytes the flags name, one more byte
-// appended after the caller's check, or one fewer, the repair is refused in
-// both formats under its own code, names the length and digest it found, and
-// leaves the project as it was. Bound to what it found, it then repairs.
+// appended after the caller's check, one fewer, or none because the line was
+// finished, the repair is refused in both formats under its own code, names
+// the length and digest it found, and leaves the project as it was. Bound to
+// what it found, where it found damaged bytes, it then repairs.
 func TestAuditRepairRefusesDamageOtherThanShown(t *testing.T) {
 	shownDigest := audit.Digest([]byte(shownDamage))
 	for name, damage := range map[string]string{
 		"a byte appended after the check": shownDamage + "x",
 		"a damaged end that shrank":       shownDamage[:len(shownDamage)-1],
+		"the line finished":               "",
 	} {
 		t.Run(name, func(t *testing.T) {
 			configPath, _ := tornProject(t, damage)
@@ -590,12 +592,37 @@ func TestAuditRepairRefusesDamageOtherThanShown(t *testing.T) {
 			if after := projectTree(t, configPath); !reflect.DeepEqual(after, before) {
 				t.Fatalf("a refused repair changed the project:\nbefore %q\nafter  %q", before, after)
 			}
+			if damage == "" {
+				return
+			}
 			code, stdout, _ = runTest(t, []string{"audit", "repair", "--config", configPath, "--format", "json", "--damaged-bytes", fmt.Sprint(len(damage)), "--damaged-digest", found}, "")
 			var repaired result.AuditRepair
 			if err := json.Unmarshal([]byte(stdout), &repaired); err != nil || code != 0 || repaired.Discontinuity.Bytes != int64(len(damage)) || repaired.Discontinuity.Digest != found {
 				t.Fatalf("bound to what was found: exit=%d stdout=%q %v", code, stdout, err)
 			}
 		})
+	}
+}
+
+// A read of the damaged bytes that fails under the lock is the repair's write
+// failure, JPS-AUDIT-WRITE, exit 4, never TAIL-CHANGED. The binding here is
+// deliberately not the trail's bytes, so a check run on bytes that were never
+// read would refuse as TAIL-CHANGED instead.
+func TestAuditRepairThatCannotReadTheDamageSaysSo(t *testing.T) {
+	configPath, _ := tornProject(t, shownDamage)
+	restore := audit.StandInDamageReadForTests(errors.New("unreadable"))
+	t.Cleanup(restore)
+	before := projectTree(t, configPath)
+	other := `{"evil":`
+	code, stdout, _ := runTest(t, []string{"audit", "repair", "--config", configPath, "--format", "json",
+		"--damaged-bytes", fmt.Sprint(len(other)), "--damaged-digest", audit.Digest([]byte(other))}, "")
+	var refused result.OperationalError
+	if err := json.Unmarshal([]byte(stdout), &refused); err != nil || code != result.ExitIO || len(refused.Diagnostics) != 1 ||
+		refused.Diagnostics[0].Code != "JPS-AUDIT-WRITE" || strings.Contains(stdout, "TAIL-CHANGED") {
+		t.Fatalf("exit=%d stdout=%q %v", code, stdout, err)
+	}
+	if after := projectTree(t, configPath); !reflect.DeepEqual(after, before) {
+		t.Fatalf("a refused repair changed the project:\nbefore %q\nafter  %q", before, after)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"path"
 	"time"
 
@@ -39,8 +40,8 @@ var (
 	ErrRepairDiscontinuity = errors.New("the audit trail's incomplete last line is a discontinuity record, which a repair does not repair")
 	// ErrRepairTailChanged is a repair bound to the damaged bytes a caller
 	// showed (RepairExpecting) that found other bytes at the trail's end
-	// under the lock: more, fewer, or others of the same length. Nothing is
-	// written. A *TailChangedError says what was found.
+	// under the lock: more, fewer, none, or others of the same length.
+	// Nothing is written or created. A *TailChangedError says what was found.
 	ErrRepairTailChanged = errors.New("the audit trail's damaged bytes are not the ones the repair was bound to")
 )
 
@@ -71,9 +72,34 @@ func IsDigest(text string) bool { return previousForm.MatchString(text) }
 
 // beforeRepairLock runs where a repair holds nothing on the trail: after it
 // found the trail there and before it takes the lock it reads and appends
-// under. A test appends to the damaged end here, as another writer could
-// between a caller's check and the repair.
+// under. A test appends to the damaged end here, or moves the trail aside, as
+// another writer could between a caller's check and the repair.
 var beforeRepairLock = func() {}
+
+// readDamage reads the damaged bytes under the lock. It is a variable so a test
+// can stand in a read that fails (StandInDamageReadForTests).
+var readDamage = readAt
+
+// StandInDamageReadForTests has every repair's read of the damaged bytes fail
+// with err, for a test of how a read that fails under the lock is reported;
+// restore puts the read back.
+func StandInDamageReadForTests(err error) (restore func()) {
+	original := readDamage
+	readDamage = func(io.ReaderAt, []byte, int64) error { return err }
+	return func() { readDamage = original }
+}
+
+// noDamage is the refusal where nothing is damaged at the trail's end, because
+// its last line is complete, it is empty, or nothing is at its name: otherwise
+// for a repair bound to no damaged bytes, and for a bound one a
+// *TailChangedError that found none, since the bytes it was bound to are not
+// there.
+func noDamage(expected *DamagedTail, otherwise error) error {
+	if expected != nil {
+		return &TailChangedError{Expected: *expected, Found: DamagedTail{Bytes: 0, Digest: Digest(nil)}}
+	}
+	return otherwise
+}
 
 // discontinuityRecord is the line audit repair appends. Its chain members come
 // first and in the order every record's do; it has no evaluatorSpecVersion,
@@ -108,7 +134,8 @@ type discontinuityRecord struct {
 // it refuses when nothing is damaged, and when the damage is longer than any
 // line a chained trail holds (ErrOversizedLine). Where no lock can be taken it
 // refuses (ErrRepairNeedsLock), and it refuses for a writer that does not chain
-// (ErrRepairUnchained).
+// (ErrRepairUnchained). It never creates the trail: one that is not at its
+// name, or is no longer there when the lock is taken, is ErrNoTrail.
 func (w *Writer) Repair() (result.AuditDiscontinuity, error) {
 	return w.repair(nil)
 }
@@ -116,9 +143,10 @@ func (w *Writer) Repair() (result.AuditDiscontinuity, error) {
 // RepairExpecting is Repair bound to the damaged bytes a caller showed before
 // it asked for the repair (#230). Under the lock, immediately before the
 // write, the bytes the repair would set aside must be exactly expected, their
-// length and their digest; where they are not, it refuses with a
-// *TailChangedError (ErrRepairTailChanged) naming what it found, and writes
-// nothing. A caller cannot lock the trail across its own check and the repair,
+// length and their digest; where they are not, or nothing is damaged any more
+// (the last line was finished, the trail emptied, or nothing is at its name),
+// it refuses with a *TailChangedError (ErrRepairTailChanged) naming what it
+// found, and writes and creates nothing. A caller cannot lock the trail across its own check and the repair,
 // so this is how it keeps another writer's bytes, appended in between, out of
 // a repair someone confirmed: a repair confirmed on eight bytes never ends
 // nine. Every other refusal is Repair's, decided as Repair decides it.
@@ -134,10 +162,15 @@ func (w *Writer) repair(expected *DamagedTail) (result.AuditDiscontinuity, error
 		return result.AuditDiscontinuity{}, ErrRepairUnchained
 	}
 	name := path.Join(w.dir, FileName)
-	// The trail must already be there: the locked append below would create
-	// it, and a repair that creates the trail it repairs has nothing to repair.
+	// The trail must already be there, and the locked append below never
+	// creates it: a repair that created the trail it repairs would have
+	// nothing to repair, and would leave an empty trail where there was none.
+	// A trail that is not there is told apart from one that cannot be opened.
 	existing, err := w.root.Open(name)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return result.AuditDiscontinuity{}, noDamage(expected, errors.Join(ErrNoTrail, err))
+		}
 		return result.AuditDiscontinuity{}, errors.Join(ErrNoTrail, err)
 	}
 	existing.Close()
@@ -147,12 +180,19 @@ func (w *Writer) repair(expected *DamagedTail) (result.AuditDiscontinuity, error
 	// chained record, and a signature that cannot be written leaves it
 	// unsigned rather than the repair failed.
 	var appended []byte
-	_, err = w.root.AppendLockedThen(name, func(state fssecure.AppendState) ([]byte, error) {
+	composed := false
+	_, err = w.root.AppendExistingLockedThen(name, func(state fssecure.AppendState) ([]byte, error) {
+		composed = true
 		lines, discontinuity, err := w.repairLines(state, expected)
 		repaired, appended = discontinuity, lines
 		return lines, err
 	}, w.signThen(&appended))
 	if err != nil {
+		// Moved aside or removed after it was found: nothing was composed,
+		// and nothing was created in its place.
+		if !composed && errors.Is(err, fs.ErrNotExist) {
+			return result.AuditDiscontinuity{}, noDamage(expected, errors.Join(ErrNoTrail, err))
+		}
 		return result.AuditDiscontinuity{}, err
 	}
 	return repaired, nil
@@ -179,21 +219,21 @@ func (w *Writer) repairLines(state fssecure.AppendState, expected *DamagedTail) 
 // bytes: a read that fails is that read's failure, never a mismatch.
 func (w *Writer) discontinuityAfter(contents io.ReaderAt, size int64, expected *DamagedTail) ([]byte, result.AuditDiscontinuity, error) {
 	if size == 0 {
-		return nil, result.AuditDiscontinuity{}, ErrNothingToRepair
+		return nil, result.AuditDiscontinuity{}, noDamage(expected, ErrNothingToRepair)
 	}
 	var final [1]byte
 	if err := readAt(contents, final[:], size-1); err != nil {
 		return nil, result.AuditDiscontinuity{}, err
 	}
 	if final[0] == '\n' {
-		return nil, result.AuditDiscontinuity{}, ErrNothingToRepair
+		return nil, result.AuditDiscontinuity{}, noDamage(expected, ErrNothingToRepair)
 	}
 	start, err := damageStart(contents, size)
 	if err != nil {
 		return nil, result.AuditDiscontinuity{}, err
 	}
 	damage := make([]byte, size-start)
-	if err := readAt(contents, damage, start); err != nil {
+	if err := readDamage(contents, damage, start); err != nil {
 		return nil, result.AuditDiscontinuity{}, err
 	}
 	if expected != nil {

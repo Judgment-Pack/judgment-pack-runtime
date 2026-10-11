@@ -31,11 +31,16 @@ What this runtime conforms to is stated in `CONFORMANCE.md`.
   `--damaged-bytes <n>` and `--damaged-digest sha256:<hex>`, given together, name the bytes after the
   trail's last newline by their length and SHA-256. Under the writer's lock, immediately before the
   write, damaged bytes that are not exactly those (another writer appended to them after the
-  caller's check, or they are fewer or others) are refused with `JPS-AUDIT-REPAIR-TAIL-CHANGED`,
-  exit 1: nothing is written, and the message names the length and digest found. One flag without
-  the other, a count that is not a whole number from 1, or a digest not of the `sha256:` and 64
-  lowercase hexadecimal form is `JPS-INVOCATION-AUDIT-DAMAGED`, exit 3, before anything is opened.
-  Without the flags the repair is unchanged. The conformance claim in CONFORMANCE.md is unchanged.
+  caller's check or finished the line, or they are fewer or others, or the trail was emptied or
+  moved aside) are refused with `JPS-AUDIT-REPAIR-TAIL-CHANGED`, exit 1: nothing is written or
+  created, and the message names the length and digest found. Damage grown past the line bound is
+  still refused as too long first, which after a bound request also means the end changed. One
+  flag without the other, a count that is not a whole number from 1, or a digest not of the
+  `sha256:` and 64 lowercase hexadecimal form is `JPS-INVOCATION-AUDIT-DAMAGED`, exit 3, before
+  anything is opened. A repair, bound or not, no longer creates an empty trail when the trail is
+  moved aside or removed while it waits for the lock: it refuses, `JPS-AUDIT-TRAIL-READ` when
+  unbound. Otherwise, without the flags the repair is unchanged. The conformance claim in
+  CONFORMANCE.md is unchanged.
 
 ## 0.29.0 - 2026-10-10
 

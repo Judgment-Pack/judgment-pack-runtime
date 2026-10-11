@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -140,6 +142,85 @@ func TestARepairBoundToItsDamageChecksItUnderTheLock(t *testing.T) {
 	if lines := splitLines(readTrailFile(t, dir)); len(lines) != 2 || string(lines[1]) != shownDamage+"x" {
 		t.Fatalf("a refused repair appends nothing: %q", lines)
 	}
+}
+
+// Where nothing is damaged at the trail's end any more when the lock is taken,
+// because another writer finished the line, the trail was emptied, or it was
+// moved aside, a bound repair refuses as one that found no damaged bytes:
+// TailChangedError, never ErrNothingToRepair, and nothing is written or
+// created; no trail appears at the name of one moved aside. A repair bound to
+// nothing refuses as before, and creates nothing either.
+func TestARepairBoundToDamageThatIsGoneChangesNothing(t *testing.T) {
+	none := DamagedTail{Bytes: 0, Digest: Digest(nil)}
+	for name, test := range map[string]struct {
+		change  func(t *testing.T, trail string)
+		unbound error
+		gone    bool
+	}{
+		"the line finished": {func(t *testing.T, trail string) {
+			file, err := os.OpenFile(trail, os.O_WRONLY|os.O_APPEND, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			if _, err := file.WriteString("\n"); err != nil {
+				t.Fatal(err)
+			}
+		}, ErrNothingToRepair, false},
+		"the trail emptied": {func(t *testing.T, trail string) {
+			if err := os.Truncate(trail, 0); err != nil {
+				t.Fatal(err)
+			}
+		}, ErrNothingToRepair, false},
+		"the trail moved aside": {func(t *testing.T, trail string) {
+			if err := os.Rename(trail, trail+".kept"); err != nil {
+				t.Fatal(err)
+			}
+		}, ErrNoTrail, true},
+	} {
+		for _, bound := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s, bound %v", name, bound), func(t *testing.T) {
+				writer, dir := writerAt(t, "audit")
+				writeRecords(t, writer.root, `{"n":1}`)
+				appendRaw(t, dir, shownDamage)
+				trail := filepath.Join(dir, "audit", FileName)
+				var changed map[string]string
+				original := beforeRepairLock
+				t.Cleanup(func() { beforeRepairLock = original })
+				beforeRepairLock = func() {
+					test.change(t, trail)
+					changed = auditFiles(t, dir)
+				}
+				var err error
+				if bound {
+					_, err = writer.RepairExpecting(shownTail())
+					var refused *TailChangedError
+					if !errors.As(err, &refused) || refused.Found != none || refused.Expected != shownTail() {
+						t.Fatalf("err = %v (%+v), want no damaged bytes found", err, refused)
+					}
+				} else if _, err = writer.Repair(); !errors.Is(err, test.unbound) || errors.Is(err, ErrRepairTailChanged) {
+					t.Fatalf("err = %v, want %v", err, test.unbound)
+				}
+				if after := auditFiles(t, dir); !reflect.DeepEqual(after, changed) {
+					t.Fatalf("a refused repair changed or created something:\nbefore %q\nafter  %q", changed, after)
+				}
+				if _, err := os.Lstat(trail); test.gone && !errors.Is(err, fs.ErrNotExist) {
+					t.Fatalf("a refused repair created a trail at the name of one moved aside: %v", err)
+				}
+			})
+		}
+	}
+	t.Run("no trail from the start", func(t *testing.T) {
+		writer, dir := writerAt(t, "audit")
+		_, err := writer.RepairExpecting(shownTail())
+		var refused *TailChangedError
+		if !errors.As(err, &refused) || refused.Found != none {
+			t.Fatalf("err = %v (%+v)", err, refused)
+		}
+		if _, err := os.Lstat(filepath.Join(dir, "audit")); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("a refused repair created the audit directory: %v", err)
+		}
+	})
 }
 
 // unreadableDamage is a trail whose damaged end cannot be read: every other
