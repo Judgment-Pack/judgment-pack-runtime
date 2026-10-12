@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.31.0 - 2026-10-12
 
 - **`audit verify` reports the incomplete last line's bytes and digest as a member** (#260). When
   the trail ends in bytes after its last newline, the JSON report carries `incompleteLastLine:
