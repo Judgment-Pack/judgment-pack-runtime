@@ -2,6 +2,21 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Citations are refused where no trail is kept, as a binding is** (#266, ADR-0051).
+  `experimental evaluate --cites`, `experimental graph evaluate --cites` and the MCP
+  `experimental_evaluate` tool's `cites` argument, given in a project whose configuration declares
+  no audit directory or with no configuration at all, were held to their shape, accepted and
+  recorded nowhere, with exit 0 and nothing in the payload to say so. They are now refused once the
+  configuration is read and before anything is evaluated, where a binding is refused in that case:
+  `JPS-INVOCATION-CITES` (exit 3, or a tool error), with a sentence that repeats nothing of the
+  citations, and nothing is written. An empty array cites nothing and is not refused, and a
+  rehearsal with citations still runs and records nothing. A project that keeps a trail is
+  unchanged, and its records are byte for byte what they were. ADR-0051 supersedes ADR-0033's
+  "where it lands" determination in that one respect. What this runtime conforms to is stated in
+  `CONFORMANCE.md`, unchanged.
+
 ## 0.31.0 - 2026-10-12
 
 - **`audit verify` reports the incomplete last line's bytes and digest as a member** (#260). When

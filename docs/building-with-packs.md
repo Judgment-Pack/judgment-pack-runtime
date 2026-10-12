@@ -843,7 +843,10 @@ binding given with `--rehearsal` or in a project whose configuration declares no
 either of which would record nothing, is refused before anything is evaluated,
 `JPS-INVOCATION-BINDING` (exit 3), with a sentence that repeats nothing of the document, and nothing
 is written. `audit verify` holds a recorded binding to its shape and no further: a malformed one is
-`binding-malformed` (below), and a well-formed one is not mentioned.
+`binding-malformed` (below), and a well-formed one is not mentioned. Citations (`--cites` on either
+evaluate verb, or the tool's `cites`) given in a project whose configuration declares no audit
+directory are refused for the binding's reason, `JPS-INVOCATION-CITES` (exit 3, ADR-0051), unless
+the run is a rehearsal.
 
 Each line carries a `run` id: one value per invocation, on every record that invocation writes. For
 a graph run that is what marks the run finished — the `graph-composite` line carries the same id as

@@ -162,7 +162,7 @@ func toolDefinitions() []map[string]any {
 						"sessionId": map[string]any{"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._-]+$", "not": map[string]any{"enum": []string{".", ".."}}, "description": "The gateway session the cited receipt is in: a flat token, never . or .. (the gateway's SPEC.md 3a)."},
 						"callIndex": map[string]any{"type": "integer", "minimum": 0, "maximum": 9007199254740991, "description": "The receipt's index in that session."},
 						"signature": map[string]any{"type": "string", "pattern": "^[0-9a-f]{128}$", "description": "The cited receipt's own signature: exactly 128 lowercase hexadecimal characters."},
-					}}, "description": "Optional: the gateway receipts this decision relied on, each named as the gateway's action receipt cites one (ADR-0033). Held to this shape and recorded as given on the audit record; nothing is verified and no store is read, so a citation is the caller's assertion and the gateway verifier's finding. A rehearsal records nothing, citations included. Omit the key, or pass an empty array, to cite nothing."},
+					}}, "description": "Optional: the gateway receipts this decision relied on, each named as the gateway's action receipt cites one (ADR-0033). Held to this shape and recorded as given on the audit record; nothing is verified and no store is read, so a citation is the caller's assertion and the gateway verifier's finding. A rehearsal records nothing, citations included. Refused in a project whose jpack.json declares no audit directory, unless the call is a rehearsal, since nothing would record them (ADR-0051). Omit the key, or pass an empty array, to cite nothing."},
 					"binding": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"kind", "digest"}, "properties": map[string]any{
 						"kind":   map[string]any{"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9._/-]+$", "description": "The caller's scheme: 1 to 128 characters of a-z, 0-9, dot, underscore, slash and hyphen."},
 						"digest": map[string]any{"type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "The caller's SHA-256, as sha256: and 64 lowercase hexadecimal characters."},
@@ -1130,6 +1130,15 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		applied = []lock.Applied{lock.AppliedPack(packID, []byte(pack))}
 	}
 	auditWriter := loaded.AuditWriter()
+	// A project that keeps no trail would accept the citations and record
+	// them nowhere, and the caller could believe the record cites the
+	// receipts (ADR-0051): they are refused here, for the binding's reason and
+	// at its place, before anything is evaluated. A rehearsal records nothing
+	// anywhere, citations included, and its payload says so, so it keeps its
+	// rule.
+	if len(cites) > 0 && auditWriter == nil && !rehearsal {
+		return toolError(`The "cites" argument is not taken here: the project keeps no trail, so citations would be accepted and not recorded.`)
+	}
 	// A project that keeps no trail would accept the binding and record
 	// nothing, which is the rehearsal's case (ADR-0050): it is refused for the
 	// same reason, before anything is evaluated.

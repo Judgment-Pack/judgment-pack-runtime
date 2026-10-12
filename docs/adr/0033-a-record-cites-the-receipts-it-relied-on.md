@@ -82,6 +82,10 @@ inputs and every record of a run shares its `run` id. The member is omitted when
 were supplied, so today's records are byte for byte what they were. Nothing about the
 disposition, the trace or the payload changes: a citation is recorded, never evaluated.
 
+> **Superseded in this one determination by [ADR-0051](0051-refuse-citations-where-no-trail-is-kept.md):**
+> outside a rehearsal, citations given in a project that keeps no trail are refused, not accepted
+> and recorded nowhere.
+
 **What a reader may conclude.** That the caller asserted these receipts. Whether they exist and
 verify is the gateway verifier's finding, made against its own store with the decision-record
 directory beside it; whether they were the right receipts is nobody's finding here. The record
