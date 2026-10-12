@@ -9,3 +9,4 @@ internal/audit/testdata/witness/** -text
 # A trail the v0.30.0 writer wrote, compared byte for byte with what the
 # writer composes today.
 internal/audit/testdata/trail-v0.30.0.jsonl -text
+internal/cli/testdata/*.golden.* -text

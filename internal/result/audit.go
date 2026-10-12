@@ -260,8 +260,21 @@ type AuditChain struct {
 	RequiredCountersigned *AuditRequirement `json:"requiredCountersigned,omitempty"`
 	Findings              []AuditFinding    `json:"findings"`
 	FindingsTotal         int               `json:"findingsTotal"`
-	Establishes           []string          `json:"establishes"`
-	DoesNotEstablish      []string          `json:"doesNotEstablish"`
+	// IncompleteLastLine is present when the trail ends in bytes after its
+	// last newline: the bytes a repair can be bound to (--damaged-bytes,
+	// --damaged-digest). It is absent when the last line is complete.
+	IncompleteLastLine *AuditIncompleteLastLine `json:"incompleteLastLine,omitempty"`
+	Establishes        []string                 `json:"establishes"`
+	DoesNotEstablish   []string                 `json:"doesNotEstablish"`
+}
+
+// AuditIncompleteLastLine is the incomplete last line of a trail: its line
+// number, and the length and SHA-256 of exactly the bytes after the trail's
+// last newline, with no newline added.
+type AuditIncompleteLastLine struct {
+	Line   int64  `json:"line"`
+	Bytes  int64  `json:"bytes"`
+	Digest string `json:"digest"`
 }
 
 // AuditVerification is jpack audit verify's payload: the chain as read, which

@@ -1779,9 +1779,12 @@ jpack audit repair --damaged-bytes 29 --damaged-digest sha256:…
 SHA-256 of exactly those bytes, written `sha256:` and 64 lowercase hexadecimal characters, the form
 the discontinuity record names them by; the two are given together. Hash the raw bytes from just
 after the trail file's last newline byte (0x0A) to the end of the file, as they are, any `\r` or
-invalid UTF-8 among them, with no newline added. `audit verify` gives the count only in the prose of
-its `incomplete-last-line` finding's `detail` ("the trail ends in 29 bytes with no newline"), and no
-digest, so a caller reads and hashes those bytes itself.
+invalid UTF-8 among them, with no newline added. `audit verify` gives both, for an incomplete last line, in
+its JSON report's `incompleteLastLine` member, `{"line": 3, "bytes": 29, "digest": "sha256:…"}`
+(computed over exactly those bytes, and absent when the last line is complete; the human report names
+the same count and digest), read under the same shared lock, so a caller takes the count and digest
+from that report and does not hash the bytes itself. The `incomplete-last-line` finding's `detail`
+prose is unchanged.
 
 Under the writer's lock, immediately before the write, the repair holds the bytes it is about to set
 aside to both. Where they are not exactly those bytes (another writer appended to them after the

@@ -4,6 +4,14 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`audit verify` reports the incomplete last line's bytes and digest as a member** (#260). When
+  the trail ends in bytes after its last newline, the JSON report carries `incompleteLastLine:
+  {line, bytes, digest}`, computed over exactly the bytes verify already hashed, and the human
+  report names the same count and digest, so a caller passes them straight to `audit repair
+  --damaged-bytes` and `--damaged-digest` instead of parsing the finding's prose and hashing the
+  bytes itself. The member is absent when the last line is complete, the finding's `detail` is
+  unchanged, and an added output member does not move `outputVersion` (VERSIONING.md).
+
 - **Release process: the tag workflow now enforces GitHub Release Immutability** (#254). Before
   drafting it requires the latest published release to report `immutable: true` (the setting itself
   is not readable to the workflow token), failing closed on an error or a missing field, and the

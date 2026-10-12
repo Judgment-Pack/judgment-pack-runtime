@@ -93,6 +93,7 @@ func (a *App) auditVerifyCommand() *cobra.Command {
 			"Over 16 keys, 64 MiB of statements files, or 110,000 statements, a continuation's two counted, the reading is refused before any statement is checked, never truncated: a longer chain is read in steps. " +
 			"A witness's credited checkpoint statement shows the lines up to its checkpoint are the ones that existed when the witness signed it, as far as that witness is independent of the operator: not who submitted it, and its time is the witness's own clock's. " +
 			"A trail a repair has segmented is reported segment by segment, and never as intact across a discontinuity. " +
+			"When the trail ends in bytes after its last newline, the JSON report also carries incompleteLastLine, {line, bytes, digest}: the line number, the count and the SHA-256 (sha256: and 64 lowercase hexadecimal characters) of exactly those bytes, with no newline added, which jpack audit repair --damaged-bytes and --damaged-digest take as they stand; the human report names the same count and digest. It is absent when the last line is complete. " +
 			"Exit 0 when every check passed, segmented or not, and 1 when any failed; each failed check is a named finding.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -1075,6 +1076,9 @@ func (a *App) renderAuditVerification(format string, output result.AuditVerifica
 		if omitted := output.DiscontinuitiesTotal - int64(len(output.Discontinuities)); omitted > 0 {
 			fmt.Fprintf(a.out, "discontinuity: and %d more, not listed\n", omitted)
 		}
+	}
+	if tail := output.IncompleteLastLine; tail != nil {
+		fmt.Fprintf(a.out, "incomplete last line: line %d, %d bytes after the trail's last newline, %s; jpack audit repair --damaged-bytes %d --damaged-digest %s binds a repair to them\n", tail.Line, tail.Bytes, tail.Digest, tail.Bytes, tail.Digest)
 	}
 	for _, finding := range output.Findings {
 		fmt.Fprintf(a.out, "- %s (line %d): %s\n", finding.Name, finding.Line, display.Sanitize(finding.Detail))
