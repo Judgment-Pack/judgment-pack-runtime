@@ -141,3 +141,31 @@ func TestExperimentalEvaluateRefusesCitationsWhereNoTrailIsKeptInTheBindingsPlac
 		}
 	}
 }
+
+// The review's probes, kept as regressions (cross-vendor round 1, at 7ce4891).
+// The pack named by id is resolved before the citations are judged: a
+// configured pack that cannot be read is what is reported, as for a binding.
+func TestExperimentalEvaluateResolvesThePackBeforeRefusingCitations(t *testing.T) {
+	root := noTrailProject(t)
+	if err := os.Remove(filepath.Join(root, "packs", "intake-0.1.0.pack.json")); err != nil {
+		t.Fatal(err)
+	}
+	responses := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": markedCites()}))
+	outcome := responses[0]["result"].(map[string]any)
+	message := toolText(t, outcome)
+	if outcome["isError"] != true || message == citesNoTrail || !strings.Contains(message, "read") {
+		t.Fatalf("the unreadable pack is reported first: %q", message)
+	}
+}
+
+// A rehearsal with citations runs, says it is a rehearsal, and claims nothing
+// about the citations: no "cites" member and no word of recording.
+func TestExperimentalEvaluateRehearsalWithCitationsClaimsNothingRecorded(t *testing.T) {
+	noTrailProject(t)
+	responses := runServer(t, toolCall(t, 1, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": markedCites(), "rehearsal": true}))
+	outcome := responses[0]["result"].(map[string]any)
+	message := toolText(t, outcome)
+	if outcome["isError"] != false || !strings.Contains(message, `"rehearsal":true`) || strings.Contains(message, `"cites"`) || strings.Contains(message, `"recorded":true`) {
+		t.Fatalf("a rehearsal's payload: %q", message)
+	}
+}

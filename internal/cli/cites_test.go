@@ -130,10 +130,11 @@ func TestEvaluateRefusesCitationsWhereNoTrailIsKept(t *testing.T) {
 	}
 }
 
-// The refusal sits where the binding's does: after the configuration is read,
-// so a configuration that does not load is what is reported; before any input
-// is read, so an unreadable facts document is not; and, given a binding too,
-// the citations are what is refused, as their shape is checked first.
+// The refusal sits where the binding's does: after the configuration is read
+// and the pack named by id is resolved, so a configuration that does not load,
+// or a configured pack that cannot be read, is what is reported; before the
+// facts are read, so an unreadable facts document is not; and, given a binding
+// too, the citations are what is refused, as their shape is checked first.
 func TestEvaluateRefusesCitationsWhereNoTrailIsKeptInTheBindingsPlace(t *testing.T) {
 	configPath := oneGoodProject(t)
 	facts := writeDocument(t, "facts.json", hardFailFacts)
@@ -259,5 +260,30 @@ func TestGraphEvaluateRefusesCitationsWhereNoTrailIsKeptInItsPlace(t *testing.T)
 	}
 	if code, diagnostic, _ := run(absent, "--config", configPath, "--inputs", inputs, "--cites", cites); code != result.ExitIO || diagnostic != "JPS-INPUT-READ" {
 		t.Fatalf("the graph document, read before the configuration: exit=%d %s", code, diagnostic)
+	}
+}
+
+// The review's probes, kept as regressions (cross-vendor round 1, at 7ce4891).
+// The pack named by id is resolved before the citations are judged: a
+// configured pack that cannot be read is what is reported, as for a binding.
+func TestEvaluateResolvesThePackBeforeRefusingCitations(t *testing.T) {
+	configPath := oneGoodProject(t)
+	if err := os.Remove(filepath.Join(filepath.Dir(configPath), "packs", "intake-0.1.0.pack.json")); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--facts", "absent.json", "--cites", markedCites(t), "--format", "json"}, "")
+	if code != 4 || !strings.Contains(stdout, "JPS-INPUT-READ") || strings.Contains(stdout, "JPS-INVOCATION-CITES") {
+		t.Fatalf("the unreadable pack is reported first: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+// A graph evaluation needs a configuration whatever its citations: without
+// one it is refused for the missing configuration, as before, not for the
+// citations.
+func TestGraphEvaluateNeedsAConfigurationBeforeItsCitationsAreJudged(t *testing.T) {
+	_, graphPath := graphProject(t, graphFixture(t, "onboarding.graph.json"), nil)
+	code, stdout, stderr := runTest(t, []string{"experimental", "graph", "evaluate", graphPath, "--config", filepath.Join(t.TempDir(), "jpack.json"), "--cites", markedCites(t), "--format", "json"}, "")
+	if code != 4 || !strings.Contains(stdout, "JPS-PROJECT-CONFIG-READ") || strings.Contains(stdout, "JPS-INVOCATION-CITES") {
+		t.Fatalf("the missing configuration is reported first: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }

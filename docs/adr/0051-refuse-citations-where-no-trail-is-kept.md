@@ -41,11 +41,15 @@ was committed. It noted that citations were still accepted and recorded nowhere.
 
 ## Decision outcome
 
-Chosen option: **A**, because a commitment the runtime cannot record is then never accepted.
+Chosen option: **A**, because, outside a rehearsal, a commitment the runtime cannot record is then
+never accepted.
 
 **The refusal.** Citations given in a project whose loaded configuration declares no audit
-directory, or where no configuration is present, are refused under `JPS-INVOCATION-CITES`, the code
-a citations document not of its shape is refused with. On the CLI, on both evaluate verbs, the exit
+directory are refused under `JPS-INVOCATION-CITES`, the code a citations document not of its shape
+is refused with. Where no configuration is present, `experimental evaluate` with a pack given by
+path or as inline text is refused the same way; a pack named by id, and `experimental graph
+evaluate` on any graph, need a configuration and are refused for its absence first
+(`JPS-PROJECT-CONFIG-READ`, exit 4), as before. On the CLI, on both evaluate verbs, the exit
 is 3 and the sentence is "--cites is not taken here: the project keeps no trail, so citations would
 be accepted and not recorded." On MCP it is a tool error: "The "cites" argument is not taken here:
 the project keeps no trail, so citations would be accepted and not recorded." Neither names a value
@@ -83,11 +87,13 @@ which records nothing. Nor does the trail now hold attempts: a refused run recor
 
 - Good, because a caller can no longer read a completed run as having recorded citations that no
   record holds.
-- Good, because the binding and the citations, a caller's two commitments, follow one rule.
+- Good, because outside a rehearsal the binding and the citations, a caller's two commitments,
+  follow one rule; a rehearsal refuses a binding and keeps citations unrecorded, as before.
 - Bad, because a caller that passed citations to a project without a trail, and was answered
   before, is now refused, and must drop the citations or declare an audit directory.
 - Revisit when a caller needs citations on a run that keeps no trail, for something other than the
-  record.
+  record; and when the refusal should come before a pack named by id is resolved and before the
+  graph document is read, which would move the binding's place too.
 
 ## More information
 

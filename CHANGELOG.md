@@ -7,9 +7,13 @@ All notable changes to tagged releases are documented here.
 - **Citations are refused where no trail is kept, as a binding is** (#266, ADR-0051).
   `experimental evaluate --cites`, `experimental graph evaluate --cites` and the MCP
   `experimental_evaluate` tool's `cites` argument, given in a project whose configuration declares
-  no audit directory or with no configuration at all, were held to their shape, accepted and
-  recorded nowhere, with exit 0 and nothing in the payload to say so. They are now refused once the
-  configuration is read and before anything is evaluated, where a binding is refused in that case:
+  no audit directory, were held to their shape, accepted and recorded nowhere, with exit 0 and
+  nothing in the payload to say so. They are now refused once the configuration is read and before
+  the facts, the evidence, a graph's inputs or a node's pack are read or anything is evaluated,
+  where a binding is refused in that case (a pack named by id is resolved first, and the graph verb
+  reads its graph document first, as before; without a configuration, a pack given by path or
+  inline is refused the same way, and a pack named by id or a graph is refused for the missing
+  configuration, as before):
   `JPS-INVOCATION-CITES` (exit 3, or a tool error), with a sentence that repeats nothing of the
   citations, and nothing is written. An empty array cites nothing and is not refused, and a
   rehearsal with citations still runs and records nothing. A project that keeps a trail is
