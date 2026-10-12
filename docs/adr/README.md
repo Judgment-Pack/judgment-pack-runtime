@@ -129,7 +129,7 @@ authority, and following it confers no conformance status on anything.
 | [0030](0030-bind-graph-matrix-runs-and-validations-to-the-loaded-document.md) | Bind graph matrix runs and validations to the loaded document                   | accepted |
 | [0031](0031-report-node-traces-in-the-graph-matrix-on-request.md) | Report node traces in the graph matrix on request                               | accepted |
 | [0032](0032-let-a-graph-row-assert-the-handoff-target.md) | Let a graph row assert the handoff target                                       | accepted |
-| [0033](0033-a-record-cites-the-receipts-it-relied-on.md) | A decision record cites the receipts it relied on, as given                     | accepted |
+| [0033](0033-a-record-cites-the-receipts-it-relied-on.md) | A decision record cites the receipts it relied on, as given                     | accepted; where-it-lands determination superseded for a project that keeps no trail by [0051](0051-refuse-citations-where-no-trail-is-kept.md) |
 | [0034](0034-profile-a-matrix-against-its-history.md) | Profile a matrix against its history: agreement by origin, values at each threshold, rows that cite receipts; never gated | accepted |
 | [0035](0035-validate-proposed-expectations-before-admission.md) | Validate proposed exact expectations before authoring admission | accepted; reachability-finding deferral discharged by [0037](0037-report-pack-independent-unreachable-expectations.md) |
 | [0036](0036-admit-test-matrices-and-rehearse-snapshots.md) | Admit test matrices and rehearse exact pack snapshots through MCP | accepted |
@@ -147,3 +147,4 @@ authority, and following it confers no conformance status on anything.
 | [0048](0048-refusals-and-rehearsals-outside-the-trail.md) | Refusals and rehearsals stay outside the trail, and the trail says so | accepted |
 | [0049](0049-bind-graph-evaluations-to-loaded-bytes.md) | Bind graph evaluations to the bytes actually loaded | accepted |
 | [0050](0050-record-a-callers-binding-digest.md) | Record a caller's binding digest on the evaluation record, as given and never interpreted | accepted |
+| [0051](0051-refuse-citations-where-no-trail-is-kept.md) | Refuse citations where no trail is kept, as a binding is refused | proposed |

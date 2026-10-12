@@ -528,6 +528,9 @@ not decisions anyone took — a refused evaluation records nothing, because it h
 record, and a record that cannot be written refuses the run (exit 4) rather than reporting a
 disposition nothing kept. The write goes through the same held handle every read does, into the
 project's own tree and nowhere else. Declare no `audit` member and nothing is written at all.
+Citations given in such a project, by `--cites` or the MCP tool's `cites`, are refused before
+anything is evaluated (`JPS-INVOCATION-CITES`, exit 3) rather than accepted and recorded nowhere,
+unless the run is a rehearsal ([ADR-0051](docs/adr/0051-refuse-citations-where-no-trail-is-kept.md)).
 Where the evaluation's trace noted a comparison across JSON types or a cause of an unknown, the
 record also carries `typeMismatches` and `unknownCauses`, gathered from the trace: pointers, types
 and causes, never values (ADR-0046). A graph run's node records carry their own node's notes, and

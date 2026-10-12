@@ -238,6 +238,14 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				return failure
 			}
 			defer loaded.Close()
+			// A project that keeps no trail would accept the citations and
+			// record them on none of the run's records (ADR-0051): they are
+			// refused once the configuration is read, before the inputs are
+			// read or any node evaluates, as experimental evaluate refuses
+			// them. A rehearsal records nothing anywhere and keeps its rule.
+			if _, keepsTrail := loaded.TrailName(); len(cites) > 0 && !keepsTrail && !rehearsal {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-CITES", citesNoTrailMessage)
+			}
 			var inputs []byte
 			if inputsPath != "" {
 				data, err := a.readPack(inputsPath, graph.MaxInputsBytes)
@@ -317,7 +325,7 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&inputsPath, "inputs", inputsPath, "JSON inputs document keyed by node id, each entry {\"facts\": <document>, \"evidence\": {\"<requirement-id>\": \"present\"|\"absent\"|\"unknown\"}}: a file path, or - for standard input")
-	command.Flags().StringVar(&citesPath, "cites", citesPath, "optional citations document, a file path: a JSON array of the gateway receipts this run relied on, each {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} as the gateway's action receipt cites them (ADR-0033); held to that shape and recorded as given on every record of the run, node and composite alike; nothing is verified and no store is read")
+	command.Flags().StringVar(&citesPath, "cites", citesPath, "optional citations document, a file path: a JSON array of the gateway receipts this run relied on, each {\"sessionId\": string, \"callIndex\": integer, \"signature\": string} as the gateway's action receipt cites them (ADR-0033); held to that shape and recorded as given on every record of the run, node and composite alike; nothing is verified and no store is read. Not taken in a project whose configuration declares no audit directory, unless the run is a rehearsal, since nothing would record them (ADR-0051)")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, applied to every node (repeatable)")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().BoolVar(&rehearsal, "rehearsal", rehearsal, "declare this run a rehearsal, not a decision: every node evaluates identically, but no audit record is appended for any node or the composite (ADR-0018) and no reviewed set is consulted (ADR-0019) -- the standing experimental graph test already has -- and the payload carries \"rehearsal\": true (ADR-0041)")
