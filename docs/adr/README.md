@@ -147,4 +147,4 @@ authority, and following it confers no conformance status on anything.
 | [0048](0048-refusals-and-rehearsals-outside-the-trail.md) | Refusals and rehearsals stay outside the trail, and the trail says so | accepted |
 | [0049](0049-bind-graph-evaluations-to-loaded-bytes.md) | Bind graph evaluations to the bytes actually loaded | accepted |
 | [0050](0050-record-a-callers-binding-digest.md) | Record a caller's binding digest on the evaluation record, as given and never interpreted | accepted |
-| [0051](0051-refuse-citations-where-no-trail-is-kept.md) | Refuse citations where no trail is kept, as a binding is refused | proposed |
+| [0051](0051-refuse-citations-where-no-trail-is-kept.md) | Refuse citations where no trail is kept, as a binding is refused | accepted |
