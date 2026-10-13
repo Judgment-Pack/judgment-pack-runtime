@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.32.0 - 2026-10-12
 
 - **Citations are refused where no trail is kept, as a binding is** (#266, ADR-0051).
   `experimental evaluate --cites`, `experimental graph evaluate --cites` and the MCP
@@ -18,8 +18,10 @@ All notable changes to tagged releases are documented here.
   citations, and nothing is written. An empty array cites nothing and is not refused, and a
   rehearsal with citations still runs and records nothing. A project that keeps a trail is
   unchanged, and its records are byte for byte what they were. ADR-0051 supersedes ADR-0033's
-  "where it lands" determination in that one respect. What this runtime conforms to is stated in
-  `CONFORMANCE.md`, unchanged.
+  "where it lands" determination in that one respect. A Runner that passes citations for a
+  prepared run of a release whose configuration keeps no trail is refused from this version on
+  (runner #68 decides the Runner's rule before its pin moves). What this runtime conforms to is
+  stated in `CONFORMANCE.md`, unchanged.
 
 ## 0.31.0 - 2026-10-12
 
