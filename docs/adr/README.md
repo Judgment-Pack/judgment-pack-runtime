@@ -148,7 +148,7 @@ authority, and following it confers no conformance status on anything.
 | [0049](0049-bind-graph-evaluations-to-loaded-bytes.md) | Bind graph evaluations to the bytes actually loaded | accepted |
 | [0050](0050-record-a-callers-binding-digest.md) | Record a caller's binding digest on the evaluation record, as given and never interpreted | accepted |
 | [0051](0051-refuse-citations-where-no-trail-is-kept.md) | Refuse citations where no trail is kept, as a binding is refused | accepted |
-| [0052](0052-offline-dialect-document-tools.md) | Offline dialect document tooling with explicit encoding-only scope | proposed |
-| [0053](0053-validate-versioned-dialect-documents.md) | Validate version-2 dialect document forms and references offline | proposed |
-| [0054](0054-dialect-authoring-resources-and-pack-coverage.md) | Serve pinned authoring resources and compare dialect targets with pack inventory | proposed |
-| [0055](0055-artifact-version-arithmetic.md) | Share exact artifact version options through CLI and MCP | proposed |
+| [0052](0052-offline-dialect-document-tools.md) | Offline dialect document tooling with explicit encoding-only scope | accepted |
+| [0053](0053-validate-versioned-dialect-documents.md) | Validate version-2 dialect document forms and references offline | accepted |
+| [0054](0054-dialect-authoring-resources-and-pack-coverage.md) | Serve pinned authoring resources and compare dialect targets with pack inventory | accepted |
+| [0055](0055-artifact-version-arithmetic.md) | Share exact artifact version options through CLI and MCP | accepted |
