@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/dialect"
 )
 
@@ -31,11 +32,11 @@ func dialectDefinition(operation string) map[string]any {
 		properties["version"] = map[string]any{"type": "integer", "enum": versions, "description": "Dialect version; defaults to 2."}
 	}
 	if operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
-		properties["document"] = map[string]any{"type": "string", "description": "Exact dialect JSON text, never a path. Maximum 131072 UTF-8 bytes; the byte bound is enforced after transport decoding.", "maxLength": dialect.MaxDocumentBytes}
+		properties["document"] = map[string]any{"type": "string", "description": fmt.Sprintf("Exact dialect JSON text, never a path. Maximum %d UTF-8 bytes; the byte bound is enforced after transport decoding.", dialect.MaxDocumentBytes), "maxLength": dialect.MaxDocumentBytes}
 		schema["required"] = []string{"document"}
 	}
 	if operation == "check" {
-		properties["pack"] = map[string]any{"type": "string", "description": "Exact pack JSON text, never a path.", "maxLength": dialect.MaxPackBytes}
+		properties["pack"] = map[string]any{"type": "string", "description": fmt.Sprintf("Exact pack JSON text, never a path. Maximum %d UTF-8 bytes; the byte bound is enforced after transport decoding.", dialect.MaxPackBytes), "maxLength": dialect.MaxPackBytes}
 		schema["required"] = []string{"document", "pack"}
 	}
 	return map[string]any{"name": name, "description": descriptions[operation], "inputSchema": schema, "annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}
