@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +16,7 @@ import (
 )
 
 const (
-	SpecRevision     = "065aade751fb3a510872842ddb88e09b55574165"
+	SpecRevision     = "9fb1142546e79ab4d03f744415afc098a81efe3e"
 	SpecURL          = "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + SpecRevision + "/spec/dialect.md"
 	MaxDocumentBytes = 131072
 	MaxDepth         = 64
@@ -40,6 +39,7 @@ type Report struct {
 	DialectVersion          int                 `json:"dialectVersion,omitempty"`
 	Document                string              `json:"document,omitempty"`
 	Digest                  string              `json:"digest,omitempty"`
+	StarterTemplate         bool                `json:"starterTemplate,omitempty"`
 	Diagnostics             []result.Diagnostic `json:"diagnostics"`
 	Capabilities            *Capabilities       `json:"capabilities,omitempty"`
 }
@@ -82,10 +82,19 @@ func Init(command string, version int) (Report, int) {
 	if version != 2 && version != 3 {
 		return refused(report(command), "JPS-DIALECT-VERSION", "/version", "Supported dialect encoding versions are 2 and 3.", result.ExitUnsupported)
 	}
-	return Encode(command, []byte(fmt.Sprintf(`{"case":{"evidence":[],"facts":[]},"sources":[],"version":%d}`, version)))
+	document := `{"case":{"evidence":[],"facts":[]},"version":3}`
+	if version == 2 {
+		document = `{"case":{"evidence":[],"facts":[]},"evidence":null,"facts":null,"provider":"","version":2}`
+	}
+	r, code := Encode(command, []byte(document))
+	if code == result.ExitSuccess {
+		r.StarterTemplate = true
+	}
+	return r, code
 }
 
-// Encode checks the carrier, canonical domain and declared encoding version.
+// Encode checks the carrier, canonical domain, declared encoding version and
+// version-3 identity spelling. It refuses forbidden spelling without rewriting it.
 // It deliberately does not invent a partial structural validator. Unknown
 // members and source kinds are retained verbatim as values, not admitted as
 // executable. Full schema/semantic checking is a separate future operation.
@@ -119,6 +128,11 @@ func Encode(command string, data []byte) (Report, int) {
 		r.DialectVersion = 3
 	default:
 		return refused(r, "JPS-DIALECT-VERSION", "/version", "Supported dialect encoding versions are 2 and 3.", result.ExitUnsupported)
+	}
+	if r.DialectVersion == 3 {
+		if path := version3Spelling(object); path != "" {
+			return refused(r, "JPS-DIALECT-V3-SPELLING", path, "Version 3 forbids version-2-only members and requires this optional empty member to be omitted.", result.ExitInvalid)
+		}
 	}
 	r.Document = out.String()
 	digest := sha256.Sum256([]byte(r.Document))
@@ -216,4 +230,46 @@ func writeString(out *strings.Builder, value string) {
 		}
 	}
 	out.WriteByte('"')
+}
+
+// version3Spelling checks the identity rules of §2, not structural conformance.
+// Optional members that affect identity are refused; no bytes are normalized.
+func version3Spelling(top map[string]any) string {
+	for _, key := range []string{"provider", "facts", "evidence"} {
+		if _, present := top[key]; present {
+			return "/" + key
+		}
+	}
+	emptyMember := func(value any, prefix string, keys ...string) string {
+		object, _ := value.(map[string]any)
+		for _, key := range keys {
+			empty := false
+			switch member := object[key].(type) {
+			case []any:
+				empty = len(member) == 0
+			case map[string]any:
+				empty = len(member) == 0
+			}
+			if empty {
+				return prefix + "/" + key
+			}
+		}
+		return ""
+	}
+	if path := emptyMember(top, "", "sources", "unmapped", "unmappedEvidence"); path != "" {
+		return path
+	}
+	if path := emptyMember(top["case"], "/case", "parameters"); path != "" {
+		return path
+	}
+	if path := emptyMember(top["admits"], "/admits", "facts", "evidence"); path != "" {
+		return path
+	}
+	sources, _ := top["sources"].([]any)
+	for i, source := range sources {
+		if path := emptyMember(source, "/sources/"+strconv.Itoa(i), "parameters"); path != "" {
+			return path
+		}
+	}
+	return ""
 }

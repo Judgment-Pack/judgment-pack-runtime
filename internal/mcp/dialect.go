@@ -14,7 +14,7 @@ func dialectDefinition(operation string) map[string]any {
 	descriptions := map[string]string{
 		"contract":     "Describe the pinned dialect contract and implemented operations. Reports which checks are unavailable. Offline; reads no project and writes nothing.",
 		"init":         "Return a generic dialect starter as JSON text. The client saves it. No project, acquisition, model, preparation or evaluation is accessed.",
-		"canonicalize": "Return canonical dialect bytes and their digest. Checks JSON, integer encoding and declared version only; full structural/semantic validation and execution readiness are not checked. No files are read or written.",
+		"canonicalize": "Return canonical dialect bytes and their digest. Checks JSON, integer encoding, declared version and version-3 identity spelling; full structural/semantic validation and execution readiness are not checked. No files are read or written.",
 		"digest":       "Return canonical dialect bytes and their digest. Encoding success is not document conformance or preparation verification. No files are read or written.",
 	}
 	properties := map[string]any{}
@@ -23,7 +23,7 @@ func dialectDefinition(operation string) map[string]any {
 		properties["version"] = map[string]any{"type": "integer", "enum": []int{2, 3}, "description": "Dialect encoding version; defaults to 2."}
 	}
 	if operation == "canonicalize" || operation == "digest" {
-		properties["document"] = map[string]any{"type": "string", "description": "Exact dialect JSON text, never a path.", "maxLength": dialect.MaxDocumentBytes}
+		properties["document"] = map[string]any{"type": "string", "description": "Exact dialect JSON text, never a path. Maximum 131072 UTF-8 bytes; the byte bound is enforced after transport decoding.", "maxLength": dialect.MaxDocumentBytes}
 		schema["required"] = []string{"document"}
 	}
 	return map[string]any{"name": name, "description": descriptions[operation], "inputSchema": schema, "annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}

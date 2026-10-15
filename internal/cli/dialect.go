@@ -11,7 +11,7 @@ import (
 )
 
 func (a *App) dialectCommand() *cobra.Command {
-	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain and the declared version; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
+	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
 	for _, operation := range []string{"contract", "init", "canonicalize", "digest"} {
 		group.AddCommand(a.dialectOperation(operation))
 	}
@@ -19,7 +19,7 @@ func (a *App) dialectCommand() *cobra.Command {
 }
 func (a *App) dialectOperation(operation string) *cobra.Command {
 	format := "human"
-	version := 2
+	versionText := "2"
 	use := operation
 	args := cobra.NoArgs
 	if operation == "canonicalize" || operation == "digest" {
@@ -38,6 +38,13 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 		case "contract":
 			report = dialect.Contract(command)
 		case "init":
+			if versionText != "2" && versionText != "3" {
+				return a.operational(command, format, result.ExitUnsupported, "JPS-DIALECT-VERSION", "Dialect version must be exactly 2 or 3.")
+			}
+			version := 2
+			if versionText == "3" {
+				version = 3
+			}
 			report, code = dialect.Init(command, version)
 		default:
 			data, err := a.readInput(args[0], dialect.MaxDocumentBytes, "dialect")
@@ -79,7 +86,7 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 	}}
 	c.Flags().StringVar(&format, "format", format, "output format: human or json; JSON includes scope and provenance")
 	if operation == "init" {
-		c.Flags().IntVar(&version, "dialect-version", version, "dialect encoding version: 2 or 3")
+		c.Flags().StringVar(&versionText, "dialect-version", versionText, "dialect encoding version: exactly 2 or 3")
 	}
 	return c
 }

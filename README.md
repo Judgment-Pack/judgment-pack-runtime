@@ -939,7 +939,7 @@ fan-in, fan-out, repeated packs and unresolved results.
 ## Dialect document tools
 
 `jpack dialect` provides offline document encoding tools for the draft dialect
-companion pinned at Spec commit `065aade751fb3a510872842ddb88e09b55574165`.
+companion pinned at Spec commit `9fb1142546e79ab4d03f744415afc098a81efe3e`.
 Use `jpack dialect contract --format json` to discover the implemented operations,
 encoding versions and limits. This is separate from the Core versions reported
 by `jpack version`.
@@ -951,9 +951,10 @@ jpack dialect digest canonical.dialect.json
 jpack dialect canonicalize draft.dialect.json --format json
 ```
 
-The starter has no sources or field copies. Saving and editing are client
-operations. Encoding checks strict JSON, safe integer literals and the declared
-version; it does **not** validate the complete dialect schema, map it against a
+The starter has no sources or field copies and follows the reference Runner
+spelling for its version. JSON reports identify it with `starterTemplate: true`.
+Saving and editing are client operations. Encoding checks strict JSON, safe
+integer literals, the declared version and version-3 identity spelling; it does **not** validate the complete dialect schema, map it against a
 pack, establish executable source support or verify a preparation. Reports say
 `encoded` and `fullDocumentConformance: false`. Contract discovery explicitly
 reports those unavailable checks. Runner still owns binding and preparation.
