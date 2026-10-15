@@ -1,6 +1,6 @@
 // Package dialect implements offline document tools for the pinned dialect
-// companion. It does not prepare inputs, validate a dialect's full schema,
-// consult a project, or evaluate decisions.
+// companion. Document checks are version-scoped; profile and preparation
+// verification, project access and decision evaluation stay outside these tools.
 package dialect
 
 import (
@@ -36,6 +36,7 @@ type Report struct {
 	SpecRevision            string              `json:"specRevision"`
 	Maturity                string              `json:"maturity"`
 	Status                  string              `json:"status"`
+	ValidationScope         string              `json:"validationScope,omitempty"`
 	FullDocumentConformance bool                `json:"fullDocumentConformance"`
 	DialectVersion          int                 `json:"dialectVersion,omitempty"`
 	Document                string              `json:"document,omitempty"`
@@ -47,6 +48,8 @@ type Report struct {
 type Capabilities struct {
 	Operations              []string `json:"operations"`
 	EncodingVersions        []int    `json:"encodingVersions"`
+	ValidationVersions      []int    `json:"validationVersions"`
+	ProfileCompatibility    bool     `json:"profileCompatibility"`
 	MaxDocumentBytes        int      `json:"maxDocumentBytes"`
 	MaxDepth                int      `json:"maxDepth"`
 	StructuralValidation    bool     `json:"structuralValidation"`
@@ -64,7 +67,7 @@ func report(command string) Report {
 func Contract(command string) Report {
 	r := report(command)
 	r.Status = "available"
-	r.Capabilities = &Capabilities{Operations: []string{"contract", "init", "canonicalize", "digest"}, EncodingVersions: []int{2, 3}, MaxDocumentBytes: MaxDocumentBytes, MaxDepth: MaxDepth}
+	r.Capabilities = &Capabilities{Operations: []string{"contract", "init", "canonicalize", "digest", "validate"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2}, StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxDepth: MaxDepth}
 	return r
 }
 
@@ -88,7 +91,7 @@ func Init(command string, version int) (Report, int) {
 // Encode checks the carrier, canonical domain and declared encoding version.
 // It deliberately does not invent a partial structural validator. Unknown
 // members and source kinds are retained verbatim as values, not admitted as
-// executable. Full schema/semantic checking is a separate future operation.
+// executable. Document checking is a separate, version-scoped operation.
 func Encode(command string, data []byte) (Report, int) {
 	r := report(command)
 	if len(data) > MaxDocumentBytes {

@@ -379,14 +379,22 @@ human review; a valid report never means tests passed or cases were saved.
 ## Dialect document tools
 
 Discover `get_dialect_contract` before using the additive `dialect_init`,
-`dialect_canonicalize` and `dialect_digest` tools. The first accepts an optional
-integer `version` (2 by default; 3 is also available). Encoding tools require
+`dialect_canonicalize`, `dialect_digest` and `dialect_validate` tools. The first accepts an optional
+integer `version` (2 by default; 3 is also available). Encoding and validation tools require
 `document` as exact JSON text, not a parsed object or file path. They share the
 CLI's report and require no project, credentials, network or model.
 
-The current contract is encoding-only. It advertises structural validation,
-semantic validation, pack compatibility and preparation verification as false.
-An `encoded` response and its digest do not authorize saving/execution and do not
-mean the document is a complete valid dialect. Preserve the client's own approval
-and persistence rules. Unknown operations must remain unavailable rather than
-falling back to an encoding result as a validation pass. See ADR-0052.
+`dialect_validate` checks the version-2 document's closed forms, internal
+references and limits. A pass reports `document-valid` and
+`validationScope: "version-2-document"`, with canonical bytes and their digest.
+It does not check profile/request compatibility, installed capabilities, pack
+coverage, source truth or preparation verification. Those capabilities remain
+false. Version 3 is explicitly unsupported by validation; the ability to encode
+it is separate. Inspect `validationVersions`, not `encodingVersions`, before
+calling the validator. Schema/reference retrieval and pack checks remain future
+operations.
+
+An `encoded` response is never a validation pass. Neither response authorizes
+saving or execution. Preserve the client's own approval and persistence rules.
+Unknown operations must remain unavailable rather than falling back to an
+encoding result as a validation pass. See ADR-0052 and ADR-0053.

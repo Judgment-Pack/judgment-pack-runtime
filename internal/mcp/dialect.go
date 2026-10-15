@@ -12,6 +12,7 @@ func dialectDefinition(operation string) map[string]any {
 		name = "get_dialect_contract"
 	}
 	descriptions := map[string]string{
+		"validate":     "Validate version-2 dialect document forms, limits and internal references. Profile compatibility, source capabilities, pack compatibility and preparation verification are not checked. Returns document-valid only for this explicit scope. No files are read or written.",
 		"contract":     "Describe the pinned dialect contract and implemented operations. Reports which checks are unavailable. Offline; reads no project and writes nothing.",
 		"init":         "Return a generic dialect starter as JSON text. The client saves it. No project, acquisition, model, preparation or evaluation is accessed.",
 		"canonicalize": "Return canonical dialect bytes and their digest. Checks JSON, integer encoding and declared version only; full structural/semantic validation and execution readiness are not checked. No files are read or written.",
@@ -22,7 +23,7 @@ func dialectDefinition(operation string) map[string]any {
 	if operation == "init" {
 		properties["version"] = map[string]any{"type": "integer", "enum": []int{2, 3}, "description": "Dialect encoding version; defaults to 2."}
 	}
-	if operation == "canonicalize" || operation == "digest" {
+	if operation == "canonicalize" || operation == "digest" || operation == "validate" {
 		properties["document"] = map[string]any{"type": "string", "description": "Exact dialect JSON text, never a path.", "maxLength": dialect.MaxDocumentBytes}
 		schema["required"] = []string{"document"}
 	}
@@ -70,7 +71,11 @@ func (s *Server) toolDialect(name string, args json.RawMessage) any {
 		if json.Unmarshal(args, &input) != nil || input.Document == nil {
 			return toolError("Expected document as exact JSON text in a string.")
 		}
-		report, code = dialect.Encode(command, []byte(*input.Document))
+		if name == "dialect_validate" {
+			report, code = dialect.Validate(command, []byte(*input.Document))
+		} else {
+			report, code = dialect.Encode(command, []byte(*input.Document))
+		}
 	}
 	reply := toolResult(report)
 	if code != 0 {

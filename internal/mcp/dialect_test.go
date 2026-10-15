@@ -18,7 +18,7 @@ func TestDialectToolDiscoveryAndStrictArguments(t *testing.T) {
 			}
 		}
 	}
-	if found != 4 {
+	if found != 5 {
 		t.Fatal(found)
 	}
 	for _, tc := range []struct{ name, args string }{
@@ -26,6 +26,7 @@ func TestDialectToolDiscoveryAndStrictArguments(t *testing.T) {
 		{"dialect_digest", `{}`}, {"dialect_digest", `{"document":null}`}, {"dialect_digest", `{"document":{}}`}, {"dialect_digest", `{"document":"{}","path":"secret"}`},
 		{"dialect_digest", `{"Document":"{}"}`}, {"dialect_digest", `{"document":"{}","document":"{}"}`},
 		{"get_dialect_contract", `{"version":2}`},
+		{"dialect_validate", `{}`}, {"dialect_validate", `{"Document":"{}"}`}, {"dialect_validate", `{"document":"{}","document":"{}"}`}, {"dialect_validate", `{"document":null}`},
 	} {
 		r := runServer(t, rawToolCall(t, 1, tc.name, tc.args))[0]["result"].(map[string]any)
 		if r["isError"] != true {

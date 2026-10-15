@@ -16,12 +16,13 @@ or credentials.
 
 ## Dialect document tooling
 
-`internal/dialect` implements the offline tools of ADR-0052. The CLI `dialect`
-namespace and four MCP tools share strict JSON handling, canonical bytes and
-digests for a pinned draft companion. The capability report distinguishes
-encoding from the structural/semantic validation and pack compatibility that
-are not yet implemented. It does not prepare facts, acquire sources, verify a
-preparation or interpret an audit binding; those boundaries remain unchanged.
+`internal/dialect` implements the offline tools of ADR-0052 and the document
+validation of ADR-0053. The CLI `dialect` namespace and five MCP tools share
+strict JSON handling, canonical bytes, digests and document checks for a pinned
+draft companion. Encoding supports versions 2 and 3; document validation supports
+version 2. Capability discovery states those sets separately. Profile and pack
+compatibility, preparation verification and schema access remain unimplemented.
+It does not prepare facts, acquire sources or interpret an audit binding.
 
 ## Runtime flow
 
