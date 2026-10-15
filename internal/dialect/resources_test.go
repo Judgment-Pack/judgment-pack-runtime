@@ -64,7 +64,20 @@ func TestAuthoringSchemaCoversValidDocumentsWithoutClaimingSemantics(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		accept(data)
+		var document struct {
+			Version int `json:"version"`
+		}
+		if err := json.Unmarshal(data, &document); err != nil {
+			t.Fatal(err)
+		}
+		if document.Version == 3 {
+			value, failure := carrier.Decode(data, carrier.DefaultLimits())
+			if failure != nil || schema.Validate(value) == nil {
+				t.Fatalf("version-2 schema admitted version-3 fixture %s", file)
+			}
+		} else {
+			accept(data)
+		}
 	}
 	data, _ := json.Marshal(sampleDocument(t))
 	accept(data)
@@ -134,5 +147,34 @@ func TestAuthoringSchemaRejectsMalformedRequestTemplates(t *testing.T) {
 				t.Fatal("malformed request template admitted by validator", r)
 			}
 		})
+	}
+}
+
+func TestAuthoringSchemaRequiresBothCopyArrays(t *testing.T) {
+	schema, err := validation.CompileSchema([]byte(version2Schema), "urn:judgmentpack:runtime:dialect:2:authoring-schema:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, present := range []int{0, 1, 2, 3} {
+		doc := sampleDocument(t)
+		copy := map[string]any{}
+		if present&1 != 0 {
+			copy["facts"] = []any{}
+		}
+		if present&2 != 0 {
+			copy["evidence"] = []any{}
+		}
+		sourceAt(doc, 0)["read"].(map[string]any)["copy"] = copy
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, failure := carrier.Decode(raw, carrier.DefaultLimits())
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		if (schema.Validate(value) == nil) != (present == 3) {
+			t.Fatalf("copy member mask %d", present)
+		}
 	}
 }
