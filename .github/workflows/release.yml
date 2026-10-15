@@ -114,7 +114,9 @@ jobs:
             dist/*.zip
             dist/checksums.txt
           if-no-files-found: error
-          retention-days: 7
+          # As long as an approval may be waited for: the publish job reads
+          # the artifact again after the gate.
+          retention-days: 30
 
   smoke-unix:
     name: ${{ matrix.os }} release archive
@@ -222,6 +224,10 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+    outputs:
+      # The draft this run made, by its id: the publish job reads and
+      # publishes that release, never whatever the tag names by then.
+      release-id: ${{ steps.draft.outputs.release-id }}
     steps:
       - name: Download smoke-tested archives
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -235,6 +241,7 @@ jobs:
           subject-checksums: dist/checksums.txt
 
       - name: Create draft release
+        id: draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -264,6 +271,18 @@ jobs:
 
           gh release create "${release_args[@]}"
 
+          # The draft this job has just made. The listing can lag the creation
+          # by a few seconds: read it again until exactly one draft under the
+          # tag appears, at most twelve times.
+          release_id=""
+          for attempt in $(seq 1 12); do
+            release_id="$(gh api "repos/${GH_REPO}/releases" --paginate --jq '.[] | select(.tag_name == env.RELEASE_TAG and .draft) | .id')"
+            [[ "${release_id}" =~ ^[0-9]+$ ]] && break
+            sleep 5
+          done
+          [[ "${release_id}" =~ ^[0-9]+$ ]] || { echo "Expected one draft release under ${RELEASE_TAG}; found: ${release_id:-none}" >&2; exit 1; }
+          echo "release-id=${release_id}" >> "${GITHUB_OUTPUT}"
+
   publish:
     name: Publish release
     if: github.event_name == 'push'
@@ -273,6 +292,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+    env:
+      RELEASE_ID: ${{ needs.attest-and-draft.outputs.release-id }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -286,19 +307,72 @@ jobs:
           go-version: 1.26.5
           cache-dependency-path: go.sum
 
-      - name: Publish the reviewed draft release
+      - name: Download the files this run wrote
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: run
+
+      # The run's own files, the bytes the draft must hold.
+      - name: Hold the run's files to their checksums
+        shell: bash
+        working-directory: run
+        run: sha256sum --check checksums.txt
+
+      # A draft can be changed while it waits at the gate, by anyone who can
+      # write to the repository. The release this run drafted is read through
+      # the API by its id, never downloaded: its state, tag and title, then the
+      # digest GitHub reports for each asset, compared with the run's files.
+      # The publish call follows that last read at once, by the same id. The
+      # moment between the two is the residual window docs/releasing.md
+      # states; the next step closes it after the fact.
+      - name: Require the draft to hold what this run wrote, and publish it
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # No checkout in this job; tell gh which repository to target.
+          # The checkout has no remote the API call needs; name the repository.
           GH_REPO: ${{ github.repository }}
         run: |
-          publish_args=("${RELEASE_TAG}" --draft=false)
+          [[ "${RELEASE_ID}" =~ ^[0-9]+$ ]] || { echo "No release id from the draft job: ${RELEASE_ID:-none}" >&2; exit 1; }
+          written="$(cd run && for name in *.tar.gz *.zip checksums.txt; do printf '%s sha256:%s\n' "${name}" "$(sha256sum "${name}" | cut -d ' ' -f 1)"; done | LC_ALL=C sort)"
+          [ "$(printf '%s\n' "${written}" | wc -l)" = "7" ] || { echo "Expected six archives and checksums.txt in the run's files" >&2; exit 1; }
+
+          state="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}" --jq '[.draft, .tag_name, .name] | @tsv')"
+          [ "${state}" = "$(printf 'true\t%s\tjudgment-pack %s' "${RELEASE_TAG}" "${RELEASE_TAG}")" ] || { echo "Release ${RELEASE_ID} is not this run's draft of ${RELEASE_TAG}: ${state}" >&2; exit 1; }
+
+          drafted="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" --paginate --jq '.[] | "\(.name) \(.digest)"' | LC_ALL=C sort)"
+          if [ "${drafted}" != "${written}" ]; then
+            printf 'The draft does not hold what this run wrote.\nThis run wrote:\n%s\nThe draft holds:\n%s\n' "${written}" "${drafted}" >&2
+            exit 1
+          fi
+
+          publish_args=(-F draft=false)
           # A prerelease (tag contains a hyphen) must not be marked latest.
           if [[ "${RELEASE_TAG}" != *-* ]]; then
-            publish_args+=(--latest)
+            publish_args+=(-f make_latest=true)
           fi
-          gh release edit "${publish_args[@]}"
+          gh api -X PATCH "repos/${GH_REPO}/releases/${RELEASE_ID}" "${publish_args[@]}" --silent
+
+      # Published, the release is immutable once the repository's release
+      # immutability is on. Its assets are read once more: a file replaced in
+      # the window is published only as a release this job fails, by name,
+      # with both digest sets.
+      - name: Require the published release to hold what this run wrote
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          written="$(cd run && for name in *.tar.gz *.zip checksums.txt; do printf '%s sha256:%s\n' "${name}" "$(sha256sum "${name}" | cut -d ' ' -f 1)"; done | LC_ALL=C sort)"
+          draft="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}" --jq .draft)"
+          published="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" --paginate --jq '.[] | "\(.name) \(.digest)"' | LC_ALL=C sort)"
+          if [ "${draft}" != "false" ] || [ "${published}" != "${written}" ]; then
+            printf 'The published release %s (release %s, draft: %s) does not hold what this run wrote.\nThis run wrote:\n%s\nThe release holds:\n%s\n' \
+              "${RELEASE_TAG}" "${RELEASE_ID}" "${draft}" "${written}" "${published}" >&2
+            exit 1
+          fi
+          echo "Published ${RELEASE_TAG} (release ${RELEASE_ID}):"
+          echo "${published}"
 
       # Read-only: the release is never edited or deleted here. A release that
       # does not report immutable true fails this job, and with it every
@@ -336,9 +410,9 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_TAG }}
 
-      # The published release, not the run artifact, is the source: release-dist
-      # expires after 7 days while a pending production approval can wait 30, and
-      # the just-published release is the immutable statement of what shipped.
+      # The published release, not the run artifact, is the source: the
+      # just-published release is the immutable statement of what shipped, and
+      # the run artifact is kept only as long as an approval may be waited for.
       - name: Download the published release archives
         shell: bash
         env:
