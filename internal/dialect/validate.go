@@ -427,7 +427,7 @@ func (v *documentCheck) read(value any, path string, scope map[string]string) re
 	return v.rule(r["rule"], at(path, "rule"), scope)
 }
 func (v *documentCheck) copy(value any, path string) readTargets {
-	c := v.object(value, path, nil, []string{"facts", "evidence"})
+	c := v.object(value, path, []string{"facts", "evidence"}, nil)
 	r := readTargets{}
 	if raw, ok := c["facts"]; ok {
 		p := at(path, "facts")

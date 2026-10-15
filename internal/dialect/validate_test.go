@@ -68,7 +68,7 @@ func TestVersion2DocumentValidation(t *testing.T) {
 		}
 	}
 	files, err := filepath.Glob("testdata/*/mapping.json")
-	if err != nil || len(files) != 10 {
+	if err != nil || len(files) != 12 {
 		t.Fatal(files, err)
 	}
 	for _, file := range files {
@@ -76,8 +76,18 @@ func TestVersion2DocumentValidation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		var input struct {
+			Version int `json:"version"`
+		}
+		if err := json.Unmarshal(data, &input); err != nil {
+			t.Fatal(err)
+		}
 		r, code := Validate("test", data)
-		if code != 0 {
+		if input.Version == 3 {
+			if code != result.ExitUnsupported || r.Document != "" || r.Digest != "" {
+				t.Fatalf("unsupported version-3 validation: %s %+v", file, r)
+			}
+		} else if input.Version != 2 || code != 0 {
 			t.Fatalf("%s: %v", file, r.Diagnostics)
 		}
 	}
@@ -88,6 +98,13 @@ func TestVersion2DocumentRefusals(t *testing.T) {
 		name, path string
 		change     func(map[string]any)
 	}{
+		{"copy requires facts", "/sources/0/read/copy/facts", func(d map[string]any) {
+			delete(sourceAt(d, 0)["read"].(map[string]any)["copy"].(map[string]any), "facts")
+		}},
+		{"copy requires evidence", "/sources/0/read/copy/evidence", func(d map[string]any) {
+			delete(sourceAt(d, 0)["read"].(map[string]any)["copy"].(map[string]any), "evidence")
+		}},
+		{"copy requires both arrays", "/sources/0/read/copy/facts", func(d map[string]any) { sourceAt(d, 0)["read"].(map[string]any)["copy"] = map[string]any{} }},
 		{"unknown root", "/extra", func(d map[string]any) { d["extra"] = true }},
 		{"missing case", "/case", func(d map[string]any) { delete(d, "case") }},
 		{"null facts", "/case/facts", func(d map[string]any) { d["case"].(map[string]any)["facts"] = nil }},
@@ -233,7 +250,7 @@ func TestVersion2CountBoundaries(t *testing.T) {
 		{"sources", 16, func(d map[string]any, n int) {
 			a := []any{}
 			for i := 0; i < n; i++ {
-				a = append(a, map[string]any{"name": fmt.Sprint(i), "kind": "selected-file", "provider": "local-file", "read": map[string]any{"copy": map[string]any{}}})
+				a = append(a, map[string]any{"name": fmt.Sprint(i), "kind": "selected-file", "provider": "local-file", "read": map[string]any{"copy": map[string]any{"facts": []any{}, "evidence": []any{}}}})
 			}
 			d["sources"] = a
 		}},
@@ -349,7 +366,7 @@ func TestVersion2TargetOwnershipAndTokenPrefixes(t *testing.T) {
 			for i := 0; i < n; i++ {
 				facts = append(facts, map[string]any{"target": fmt.Sprintf("/source%d/%d", j, i), "source": ""})
 			}
-			sources = append(sources, map[string]any{"name": fmt.Sprint(j), "kind": "selected-file", "provider": "local-file", "read": map[string]any{"copy": map[string]any{"facts": facts}}})
+			sources = append(sources, map[string]any{"name": fmt.Sprint(j), "kind": "selected-file", "provider": "local-file", "read": map[string]any{"copy": map[string]any{"facts": facts, "evidence": []any{}}}})
 		}
 		d["sources"] = sources
 		if r, code := validateValue(t, d); (code == 0) != (n == 128) {
