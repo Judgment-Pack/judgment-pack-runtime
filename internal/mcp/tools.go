@@ -42,6 +42,7 @@ import (
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
+		dialectDefinition("contract"), dialectDefinition("init"), dialectDefinition("canonicalize"), dialectDefinition("digest"),
 		{"name": "experimental_test_cases", "description": "Rehearse a matrix against exact supplied pack bytes. Uses the same canonical comparison and coverage as experimental_test_packs. Reads no project files, writes nothing, and appends no audit record. This experimental surface may change.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "matrix"}, "properties": map[string]any{"pack": map[string]any{"type": "string", "description": "Exact pack JSON text."}, "matrix": map[string]any{"type": "string", "description": "Matrix JSON text in the project's supported matrix format. At least one case with an independently established expectation is required."}}}},
 		{
 			"name":        "validate",
@@ -250,6 +251,8 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return toolError(fmt.Sprintf("The %q arguments %s", params.Name, message)), nil
 	}
 	switch params.Name {
+	case "get_dialect_contract", "dialect_init", "dialect_canonicalize", "dialect_digest":
+		return s.toolDialect(params.Name, params.Arguments), nil
 	case "validate":
 		return s.toolValidate(params.Arguments), nil
 	case "test_conformance":

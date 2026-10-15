@@ -2,6 +2,14 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- Add offline `dialect contract`, `init`, `canonicalize` and `digest` commands,
+  with matching MCP tools, pinned draft provenance and explicit encoding-only
+  scope (#275, ADR-0052). No preparation or full document validation is performed.
+  Existing commands, documents and evaluation behavior remain unchanged.
+  The runtime’s conformance claim is stated only in `CONFORMANCE.md`.
+
 ## 0.32.0 - 2026-10-12
 
 - **Citations are refused where no trail is kept, as a binding is** (#266, ADR-0051).

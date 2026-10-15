@@ -375,3 +375,18 @@ evaluate the pack, infer expected answers, verify source authority, or establish
 reachability. Desk source mappings and other application metadata stay outside the
 matrix. Clients retain rejected proposals and control bounded correction and
 human review; a valid report never means tests passed or cases were saved.
+
+## Dialect document tools
+
+Discover `get_dialect_contract` before using the additive `dialect_init`,
+`dialect_canonicalize` and `dialect_digest` tools. The first accepts an optional
+integer `version` (2 by default; 3 is also available). Encoding tools require
+`document` as exact JSON text, not a parsed object or file path. They share the
+CLI's report and require no project, credentials, network or model.
+
+The current contract is encoding-only. It advertises structural validation,
+semantic validation, pack compatibility and preparation verification as false.
+An `encoded` response and its digest do not authorize saving/execution and do not
+mean the document is a complete valid dialect. Preserve the client's own approval
+and persistence rules. Unknown operations must remain unavailable rather than
+falling back to an encoding result as a validation pass. See ADR-0052.

@@ -1,0 +1,98 @@
+{
+  "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
+  "revision": "065aade751fb3a510872842ddb88e09b55574165",
+  "files": {
+    "spec-dialect.md": {
+      "upstream": "spec/dialect.md",
+      "sha256": "7c6de5c4a7163381aa3686aaa5a2ba623637a83a04ccf5d5bf19a5ee3a752fe1"
+    },
+    "LICENSE": {
+      "upstream": "LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "upstream-manifest.json": {
+      "upstream": "conformance/dialect/vectors/manifest.json",
+      "sha256": "db6487fadcb9f6161c243f1aae18dc4627614c5c6093d988e2f07aace12dfbeb"
+    },
+    "changed-table-lineage/mapping.json": {
+      "upstream": "conformance/dialect/vectors/changed-table-lineage/mapping.json",
+      "sha256": "d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe"
+    },
+    "changed-table-lineage/preparation.json": {
+      "upstream": "conformance/dialect/vectors/changed-table-lineage/preparation.json",
+      "sha256": "2a058ca1490ee316a87ad5999a7460906699a6f8987c93369a344ae4614b7a6d"
+    },
+    "disposition-differs-from-audit/mapping.json": {
+      "upstream": "conformance/dialect/vectors/disposition-differs-from-audit/mapping.json",
+      "sha256": "d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe"
+    },
+    "disposition-differs-from-audit/preparation.json": {
+      "upstream": "conformance/dialect/vectors/disposition-differs-from-audit/preparation.json",
+      "sha256": "2a058ca1490ee316a87ad5999a7460906699a6f8987c93369a344ae4614b7a6d"
+    },
+    "escaped-strings/mapping.json": {
+      "upstream": "conformance/dialect/vectors/escaped-strings/mapping.json",
+      "sha256": "d8d9595c46111202401d3216906596c30b792970ec849c14a06500718920d635"
+    },
+    "escaped-strings/preparation.json": {
+      "upstream": "conformance/dialect/vectors/escaped-strings/preparation.json",
+      "sha256": "75c1dfdc014770aabc28930a63e2293cca5226f98b02213c8c3c20a3a93e70ca"
+    },
+    "foreign-binding-kind/mapping.json": {
+      "upstream": "conformance/dialect/vectors/foreign-binding-kind/mapping.json",
+      "sha256": "d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe"
+    },
+    "foreign-binding-kind/preparation.json": {
+      "upstream": "conformance/dialect/vectors/foreign-binding-kind/preparation.json",
+      "sha256": "2a058ca1490ee316a87ad5999a7460906699a6f8987c93369a344ae4614b7a6d"
+    },
+    "http-shaped-source/mapping.json": {
+      "upstream": "conformance/dialect/vectors/http-shaped-source/mapping.json",
+      "sha256": "5a7704446bfbc7f0c3d1e170276bf559932b2ac8f801d85324288ab5e40931ef"
+    },
+    "http-shaped-source/preparation.json": {
+      "upstream": "conformance/dialect/vectors/http-shaped-source/preparation.json",
+      "sha256": "41a8f827a735bfd85fedc4298bf979a1f0ff07d287a8fd3130c4b5ed4e6d0306"
+    },
+    "numeric-spellings/mapping.json": {
+      "upstream": "conformance/dialect/vectors/numeric-spellings/mapping.json",
+      "sha256": "4c397caeee5f20de91fdc3da385fedfbbfc922240c78b446b4aa3d5a3011195c"
+    },
+    "numeric-spellings/preparation.json": {
+      "upstream": "conformance/dialect/vectors/numeric-spellings/preparation.json",
+      "sha256": "b7e3279bfdb0878bfbec0ee27acd4198e7a0c6c986226b5131d4902cfa688f65"
+    },
+    "recomputed-one-second-later/mapping.json": {
+      "upstream": "conformance/dialect/vectors/recomputed-one-second-later/mapping.json",
+      "sha256": "d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe"
+    },
+    "recomputed-one-second-later/preparation.json": {
+      "upstream": "conformance/dialect/vectors/recomputed-one-second-later/preparation.json",
+      "sha256": "073ce95bf0d4391516a5b8dca8317a9b28e1472f054fd0191770a9ba04e65fcc"
+    },
+    "unbound-record/mapping.json": {
+      "upstream": "conformance/dialect/vectors/unbound-record/mapping.json",
+      "sha256": "d92dbfc8d68781a4b1e2fefdf18ee08230103bc283fa913814577e410e1aafd3"
+    },
+    "unbound-record/preparation.json": {
+      "upstream": "conformance/dialect/vectors/unbound-record/preparation.json",
+      "sha256": "33e3dee53a4ecdd1b51527eabe3266fb3debc12e0c2ecf8814546aef86e73cf4"
+    },
+    "unsigned-parameters/mapping.json": {
+      "upstream": "conformance/dialect/vectors/unsigned-parameters/mapping.json",
+      "sha256": "34df9504b6f5468fb85d5b3e13bceff2d30ec5302c090c109e1ee036b111b125"
+    },
+    "unsigned-parameters/preparation.json": {
+      "upstream": "conformance/dialect/vectors/unsigned-parameters/preparation.json",
+      "sha256": "4488e0faf36a3839ecc108cd528832d1022f0693eba420a68d3e953e2ad24f02"
+    },
+    "valid/mapping.json": {
+      "upstream": "conformance/dialect/vectors/valid/mapping.json",
+      "sha256": "d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe"
+    },
+    "valid/preparation.json": {
+      "upstream": "conformance/dialect/vectors/valid/preparation.json",
+      "sha256": "2a058ca1490ee316a87ad5999a7460906699a6f8987c93369a344ae4614b7a6d"
+    }
+  }
+}
