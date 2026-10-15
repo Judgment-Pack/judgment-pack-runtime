@@ -26,6 +26,14 @@ compatibility, actual value-type checks and preparation verification remain
 unimplemented by this boundary. The schema is a Runtime-derived editing aid.
 It does not prepare facts, acquire sources or interpret an audit binding.
 
+## Artifact version arithmetic
+
+`internal/artifactversion` owns exact three-component parsing, comparison and
+patch/minor/major calculation. CLI `artifact version` and MCP
+`get_artifact_version_options` share it (ADR-0055). This stateless authoring aid
+never reads a workspace or chooses a release policy. Durable job usage belongs
+to Runner; application publication policy and approvals belong to Desk.
+
 ## Runtime flow
 
 ```text

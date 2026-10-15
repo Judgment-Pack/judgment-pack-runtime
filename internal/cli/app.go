@@ -148,7 +148,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root.SetVersionTemplate("jpack {{.Version}}\n")
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.PersistentFlags().BoolVar(&a.pretty, "pretty", false, "indent JSON output")
-	root.AddCommand(a.versionCommand(), a.dialectCommand(), a.specCommand(), a.packsCommand(), a.auditCommand(), a.mcpCommand(), a.experimentalCommand())
+	root.AddCommand(a.versionCommand(), a.artifactCommand(), a.dialectCommand(), a.specCommand(), a.packsCommand(), a.auditCommand(), a.mcpCommand(), a.experimentalCommand())
 	return root
 }
 
@@ -990,6 +990,11 @@ func requestedCommand(args []string) string {
 	// group name (for example a file called "spec") cannot relabel the command.
 	for index, argument := range args {
 		switch argument {
+		case "artifact":
+			if index+1 < len(args) && args[index+1] == "version" {
+				return "artifact version"
+			}
+			return "artifact"
 		case "dialect":
 			if index+1 < len(args) {
 				switch args[index+1] {

@@ -151,3 +151,4 @@ authority, and following it confers no conformance status on anything.
 | [0052](0052-offline-dialect-document-tools.md) | Offline dialect document tooling with explicit encoding-only scope | proposed |
 | [0053](0053-validate-versioned-dialect-documents.md) | Validate version-2 dialect document forms and references offline | proposed |
 | [0054](0054-dialect-authoring-resources-and-pack-coverage.md) | Serve pinned authoring resources and compare dialect targets with pack inventory | proposed |
+| [0055](0055-artifact-version-arithmetic.md) | Share exact artifact version options through CLI and MCP | proposed |
