@@ -97,9 +97,14 @@ binary. A release build must report the tag version without the leading `v`.
 
 5. Review the drafted release on the Releases page — generated notes, checksums, attestations, and
    the six archives.
-6. Approve the pending `production` deployment on the release run. The publish job then flips the
-   draft to public (a prerelease tag is never marked latest). With Release Immutability enabled,
-   publishing locks the tag and assets.
+6. Approve the pending `production` deployment on the release run. The publish job reads the
+   draft this run made through the API by its release id (no download): draft state, tag, title,
+   then each asset's digest as GitHub reports it, compared with the run's own files. On any
+   difference it refuses and publishes nothing. Otherwise it flips that draft to public by id,
+   never by tag (a prerelease tag is never marked latest), then reads the published assets' digests
+   again and fails the named step `Require the published release to hold what this run wrote`,
+   printing both digest sets, if they differ. With Release Immutability enabled, publishing locks
+   the tag and assets. The run's files are kept for thirty days, as long as an approval may wait.
 7. After the release publishes, follow-on jobs run without further approval
    ([ADR-0013](adr/0013-oci-image-and-mcp-registry-distribution.md)), ordered so nothing
    user-facing exists before the pushed image has actually run: `publish-image` downloads the
@@ -140,6 +145,35 @@ The workflow checks the prerequisite twice, read-only and fail-closed
   `promote-image`, `publish-mcp-registry`), so no image or registry entry is made for it. The
   release that already exists stays as it is; the fix is a new version once the setting is on, as
   for any released tag.
+
+### The window that remains
+
+The API cannot publish a release on condition that its assets are the ones just read, so one
+window remains: between the last read of the draft's asset digests and the publish call, a few
+moments of the same step. Whoever can write to the repository's releases can act in it: a
+repository writer, which in this organisation is a maintainer, the same people the `production` gate
+asks to approve. Nothing in the workflow closes that window. A file replaced in it is published,
+and the read after publication then fails the run by name; with release immutability on, the
+published release can no longer be changed, so the replacement stays visible as a failed release
+and is not quietly corrected. That step fails in two ways, told apart by its message:
+
+- `does not hold what this run wrote`: the read completed and the digests differ (both sets are
+  printed). Treat it as an incident: tell the maintainers, point no one at the release, and
+  release a new version from a new tag.
+- `could not be verified`: a read failed or returned nothing usable (the API error is printed). No
+  diagnosis is made and the release is unverified, not bad. A maintainer re-reads the same release
+  id and compares its asset digests with the run's recorded ones (the run's `checksums.txt` and the
+  archives' SHA-256 values, from the run artifact) before declaring it good or diagnosing a
+  replacement:
+
+  ```bash
+  gh api repos/Judgment-Pack/judgment-pack-runtime/releases/<id>/assets --paginate \
+    --jq '.[] | "\(.name) \(.digest)"'
+  ```
+
+  Only a confirmed mismatch takes the incident and new-tag path above.
+
+In both cases, do not re-run the publish step.
 
 A failure of the first check means: turn on Release Immutability in the repository settings and
 re-run; the workflow never changes a repository setting. A release published before the setting was
