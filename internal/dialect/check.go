@@ -3,7 +3,6 @@ package dialect
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"slices"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -97,13 +96,25 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 	}
 	sum := sha256.Sum256(pack)
 	coverage := &Compatibility{Scope: "declared-inventory-coverage", Status: "complete", Pack: PackIdentity{inventory.ID, inventory.Version, inventory.SpecVersion, hex.EncodeToString(sum[:])}, InventoryOverApproximates: true, Facts: []CoverageEntry{}, Evidence: []CoverageEntry{}, Notes: []CoverageNote{}}
-	add := func(code, kind, target, severity string) {
-		coverage.Notes = append(coverage.Notes, CoverageNote{code, kind, target, severity})
+	outputLimit := func() (Report, int) {
+		return refused(r, "JPS-DIALECT-COVERAGE-OUTPUT-LIMIT", "", "The declared coverage report exceeds this tool's output limit; no partial coverage is reported.", result.ExitUnsupported)
+	}
+	budget := newCoverageBudget(coverage, MaxCoverageReportBytes)
+	if budget.exceeded() {
+		return outputLimit()
+	}
+	add := func(code, kind, target, severity string) bool {
+		note := CoverageNote{code, kind, target, severity}
+		if !budget.note(note) {
+			return false
+		}
+		coverage.Notes = append(coverage.Notes, note)
 		if severity == "error" {
 			coverage.Status = "incomplete"
 		} else if coverage.Status != "incomplete" {
 			coverage.Status = "review-required"
 		}
+		return true
 	}
 	usedOmissions := map[string]bool{}
 	for _, p := range inventory.FactPaths {
@@ -127,17 +138,28 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 		case len(entry.Producers) > 0:
 			entry.Status = "mapped"
 			if len(entry.AcknowledgedBy) > 0 {
-				add("redundant-omission", "fact", p, "warning")
+				if !add("redundant-omission", "fact", p, "warning") {
+					return outputLimit()
+				}
 			}
 		case p == "" || len(descendants) > 0:
 			entry.Status = "partial"
 			entry.Producers = descendants
-			add("aggregate-coverage", "fact", p, "warning")
+			if !add("aggregate-coverage", "fact", p, "warning") {
+				return outputLimit()
+			}
 		case len(entry.AcknowledgedBy) > 0:
 			entry.Status = "acknowledged"
-			add("acknowledged-omission", "fact", p, "warning")
+			if !add("acknowledged-omission", "fact", p, "warning") {
+				return outputLimit()
+			}
 		default:
-			add("missing-producer", "fact", p, "error")
+			if !add("missing-producer", "fact", p, "error") {
+				return outputLimit()
+			}
+		}
+		if !budget.entry(entry) {
+			return outputLimit()
 		}
 		coverage.Facts = append(coverage.Facts, entry)
 	}
@@ -150,14 +172,18 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 			}
 		}
 		if !used {
-			add("unconsulted-target", "fact", target, "warning")
+			if !add("unconsulted-target", "fact", target, "warning") {
+				return outputLimit()
+			}
 		}
 	}
 	omissions := slices.Clone(document.unmapped)
 	slices.Sort(omissions)
 	for _, p := range omissions {
 		if !usedOmissions[p] {
-			add("unused-omission", "fact", p, "warning")
+			if !add("unused-omission", "fact", p, "warning") {
+				return outputLimit()
+			}
 		}
 	}
 	requirements := slices.Clone(inventory.EvidenceRequirements)
@@ -175,35 +201,45 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 		case len(entry.Producers) > 0:
 			entry.Status = "mapped"
 			if len(entry.AcknowledgedBy) > 0 {
-				add("redundant-omission", "evidence", requirement, "warning")
+				if !add("redundant-omission", "evidence", requirement, "warning") {
+					return outputLimit()
+				}
 			}
 		case len(entry.AcknowledgedBy) > 0:
 			entry.Status = "acknowledged"
-			add("acknowledged-omission", "evidence", requirement, "warning")
+			if !add("acknowledged-omission", "evidence", requirement, "warning") {
+				return outputLimit()
+			}
 		default:
-			add("missing-producer", "evidence", requirement, "error")
+			if !add("missing-producer", "evidence", requirement, "error") {
+				return outputLimit()
+			}
+		}
+		if !budget.entry(entry) {
+			return outputLimit()
 		}
 		coverage.Evidence = append(coverage.Evidence, entry)
 	}
 	for _, e := range document.evidenceTargets {
 		if !slices.Contains(requirements, e) {
-			add("undeclared-evidence-target", "evidence", e, "error")
+			if !add("undeclared-evidence-target", "evidence", e, "error") {
+				return outputLimit()
+			}
 		}
 	}
 	omittedEvidence := slices.Clone(document.unmappedEvidence)
 	slices.Sort(omittedEvidence)
 	for _, e := range omittedEvidence {
 		if !slices.Contains(requirements, e) {
-			add("undeclared-evidence-omission", "evidence", e, "error")
+			if !add("undeclared-evidence-omission", "evidence", e, "error") {
+				return outputLimit()
+			}
 		}
 	}
 	if len(coverage.Facts) == 0 && len(coverage.Evidence) == 0 && coverage.Status == "complete" {
 		coverage.Status = "not-applicable"
 	}
-	encoded, _ := json.Marshal(coverage)
-	if len(encoded) > MaxCoverageReportBytes {
-		return refused(r, "JPS-DIALECT-COVERAGE-OUTPUT-LIMIT", "", "The declared coverage report exceeds this tool's output limit; no partial coverage is reported.", result.ExitUnsupported)
-	}
+
 	r.Compatibility = coverage
 	r.Status = coverage.Status
 	if coverage.Status == "incomplete" || coverage.Status == "not-applicable" {

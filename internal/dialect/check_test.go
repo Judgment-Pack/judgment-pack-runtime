@@ -214,3 +214,24 @@ func TestCoverageOutputLimitRefusesWholeReport(t *testing.T) {
 		t.Fatal(code, r)
 	}
 }
+
+func TestCoverageOutputLimitStopsRepeatedAncestorOmissions(t *testing.T) {
+	engine, _ := validation.NewEngine()
+	base := "/" + strings.Repeat("a", 500)
+	omitted := make([]string, 100)
+	for i := range omitted {
+		omitted[i] = base + strings.Repeat("/x", i)
+	}
+	var pack map[string]any
+	json.Unmarshal(checkPack(t, "/x", false), &pack)
+	conditions := make([]any, 2000)
+	for i := range conditions {
+		conditions[i] = map[string]any{"op": "fact", "path": fmt.Sprintf("%s/p%d", omitted[99], i), "operator": "equals", "value": true}
+	}
+	pack["rules"].([]any)[0].(map[string]any)["when"] = map[string]any{"op": "all", "conditions": conditions}
+	raw, _ := json.Marshal(pack)
+	r, code := Check("test", mapping(nil, nil, omitted, nil), raw, engine)
+	if code != 2 || r.Diagnostics[0].Code != "JPS-DIALECT-COVERAGE-OUTPUT-LIMIT" || r.Compatibility != nil || r.Document != "" || r.Digest != "" {
+		t.Fatal(code, r)
+	}
+}

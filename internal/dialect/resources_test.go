@@ -105,3 +105,34 @@ func TestAuthoringSchemaCoversValidDocumentsWithoutClaimingSemantics(t *testing.
 		t.Fatal("unresolved source reference accepted")
 	}
 }
+
+func TestAuthoringSchemaRejectsMalformedRequestTemplates(t *testing.T) {
+	schema, err := validation.CompileSchema([]byte(version2Schema), "urn:judgmentpack:runtime:dialect:2:authoring-schema:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arguments := range []string{
+		`{"$param":"id"}`,
+		`{"tool":"read","arguments":{"$param":null}}`,
+		`{"tool":"read","arguments":{"$text":1}}`,
+		`{"tool":"read","arguments":{"$bogus":"x"}}`,
+		`{"tool":"read","arguments":{"$param":"id","other":true}}`,
+		`{"tool":"read","arguments":{"$param":"runAt"}}`,
+		`{"tool":"read","arguments":{"$":"x"}}`,
+	} {
+		t.Run(arguments, func(t *testing.T) {
+			doc := sampleDocument(t)
+			var request any
+			if err := json.Unmarshal([]byte(arguments), &request); err != nil {
+				t.Fatal(err)
+			}
+			sourceAt(doc, 0)["arguments"] = request
+			if err := schema.Validate(doc); err == nil {
+				t.Fatal("malformed request template admitted by schema")
+			}
+			if r, code := validateValue(t, doc); code == 0 {
+				t.Fatal("malformed request template admitted by validator", r)
+			}
+		})
+	}
+}

@@ -76,8 +76,11 @@ verification and decision correctness are not checked. The report says so in-ban
 no inferred numeric coercions, policy decisions or expected outcomes are added.
 The pack is bounded to the existing 10 MiB carrier-file limit, the dialect to
 131072 bytes. A conservative work estimate refuses more than 1,000,000 pointer
-and evidence comparisons before any coverage is emitted. A coverage report over 2 MiB is also refused
-whole, keeping transport replies bounded. Capability discovery
+and evidence comparisons before any coverage is emitted. Coverage is charged
+incrementally against a 2 MiB encoded-size budget, before each component is
+retained. String escaping is counted without allocating the encoded report;
+framing is conservatively charged. Exceeding the budget refuses the whole
+report, keeping construction and transport replies bounded. Capability discovery
 states the supported schema/check versions, scope and limits. Version 3 remains
 unsupported by these checks, independently of its encoding support.
 

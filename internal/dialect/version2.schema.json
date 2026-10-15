@@ -584,7 +584,7 @@
       },
       "propertyNames": {
         "not": {
-          "pattern": "^\\$(?![\\s\\S])"
+          "pattern": "^\\$"
         }
       }
     },
