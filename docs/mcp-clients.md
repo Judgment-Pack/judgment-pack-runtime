@@ -41,6 +41,8 @@ gitignored in this repository. Copy a snippet, don't commit one.
 
 | Tool | Purpose |
 | --- | --- |
+| `get_dialect_contract` / `dialect_init` | Pinned encoding capabilities and a starter template following the reference Runner spelling; no project or save |
+| `dialect_canonicalize` / `dialect_digest` | Canonical bytes and digest, with version-3 identity spelling checks; not full document validation |
 | `validate` | Carrier, structural, and semantic conformance for one document |
 | `test_conformance` | Run a version-pinned conformance corpus |
 | `get_schema` | The exact bundled JSON Schema, with digest |
@@ -375,3 +377,18 @@ evaluate the pack, infer expected answers, verify source authority, or establish
 reachability. Desk source mappings and other application metadata stay outside the
 matrix. Clients retain rejected proposals and control bounded correction and
 human review; a valid report never means tests passed or cases were saved.
+
+## Dialect document tools
+
+Discover `get_dialect_contract` before using the additive `dialect_init`,
+`dialect_canonicalize` and `dialect_digest` tools. `dialect_init` accepts an optional
+integer `version` (2 by default; 3 is also available). Encoding tools require
+`document` as exact JSON text, not a parsed object or file path. They share the
+CLI's report and require no project, credentials, network or model.
+
+The current contract is encoding-only. It advertises structural validation,
+semantic validation, pack compatibility and preparation verification as false.
+An `encoded` response and its digest do not authorize saving/execution and do not
+mean the document is a complete valid dialect. Preserve the client's own approval
+and persistence rules. Unknown operations must remain unavailable rather than
+falling back to an encoding result as a validation pass. See ADR-0052.

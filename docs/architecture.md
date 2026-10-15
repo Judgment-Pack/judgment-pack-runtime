@@ -14,6 +14,15 @@ current Go packages are internal implementation details; a versioned in-process 
 plugin API remains future work. The public CLI never depends on private source, packages, services,
 or credentials.
 
+## Dialect document tooling
+
+`internal/dialect` implements the offline tools of ADR-0052. The CLI `dialect`
+namespace and four MCP tools share strict JSON handling, canonical bytes and
+digests for a pinned draft companion. The capability report distinguishes
+encoding from the structural/semantic validation and pack compatibility that
+are not yet implemented. It does not prepare facts, acquire sources, verify a
+preparation or interpret an audit binding; those boundaries remain unchanged.
+
 ## Runtime flow
 
 ```text
