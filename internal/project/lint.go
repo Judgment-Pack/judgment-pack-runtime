@@ -138,12 +138,7 @@ func stringList(root map[string]any, member string, check func(string) error) ([
 // and as a consulted pointer it is covered by any producer at all.
 func producesPointer(producers []string, consulted string) bool {
 	for _, producer := range producers {
-		if producer == consulted ||
-			strings.HasPrefix(consulted, producer+"/") ||
-			strings.HasPrefix(producer, consulted+"/") {
-			return true
-		}
-		if producer == "" || (consulted == "" && strings.HasPrefix(producer, "/")) {
+		if CoversFactPath(producer, consulted) || CoversFactPath(consulted, producer) {
 			return true
 		}
 	}
@@ -335,7 +330,7 @@ func (p *Project) lintPack(manifest *Producers, id string, entry Pack) (result.P
 		}
 	}
 
-	found, data, err := p.readIdentity(entry)
+	found, _, err := p.readIdentity(entry)
 	if err != nil {
 		// The packs test discipline: an unreadable declared document fails
 		// rather than skips — skipping it would let a broken pack lint clean.
@@ -358,8 +353,7 @@ func (p *Project) lintPack(manifest *Producers, id string, entry Pack) (result.P
 
 	// The fact half. A pack using draft-RFC quantifiers is not checkable
 	// against a flat producer set, and saying so beats either verdict.
-	document, decodeFailure := carrier.Decode(data, carrier.DefaultLimits())
-	if decodeFailure == nil && usesQuantifiers(document) {
+	if found.UsesQuantifiers {
 		add(CheckQuantifierScope, result.PackCheckSkipped,
 			"The pack uses draft-RFC collection quantifiers, whose element-relative pointers a flat producer set cannot name (ADR-0020, ADR-0022); the fact half was not checked.")
 	} else {

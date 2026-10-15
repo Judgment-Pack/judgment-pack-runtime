@@ -15,30 +15,45 @@ import (
 // Profile-dependent checks, preparation, source truth and pack compatibility
 // require other inputs and are never implied by document-valid.
 func Validate(command string, data []byte) (Report, int) {
+	r, _, code := validateDocument(command, data)
+	return r, code
+}
+func invalidDocument(r Report, code, path, message string, exit int) (Report, *documentCheck, int) {
+	r, exit = refused(r, code, path, message, exit)
+	return r, nil, exit
+}
+
+func validateDocument(command string, data []byte) (Report, *documentCheck, int) {
 	r, code := Encode(command, data)
 	r.ValidationScope = "version-2-document"
 	if code != result.ExitSuccess {
-		return r, code
+		return r, nil, code
 	}
 	if r.DialectVersion != 2 {
-		return refused(r, "JPS-DIALECT-VALIDATION-VERSION", "/version", "Document validation supports version 2. Version 3 encoding does not imply validation support.", result.ExitUnsupported)
+		return invalidDocument(r, "JPS-DIALECT-VALIDATION-VERSION", "/version", "Document validation supports version 2. Version 3 encoding does not imply validation support.", result.ExitUnsupported)
 	}
 	// Encode has already bounded and checked the carrier. Keep json.Number here
 	// too; validation must never round a retained integer through float64.
 	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: MaxDocumentBytes, MaxStringBytes: MaxDocumentBytes})
 	if failure != nil {
-		return refused(r, "JPS-DIALECT-DOCUMENT", "", "The dialect could not be read.", result.ExitInvalid)
+		return invalidDocument(r, "JPS-DIALECT-DOCUMENT", "", "The dialect could not be read.", result.ExitInvalid)
 	}
 	v := documentCheck{}
 	v.document(value)
 	if v.issue != nil {
-		return refused(r, v.issue.Code, v.issue.InstancePath, v.issue.Message, result.ExitInvalid)
+		return invalidDocument(r, v.issue.Code, v.issue.InstancePath, v.issue.Message, result.ExitInvalid)
 	}
 	r.Status = "document-valid"
-	return r, result.ExitSuccess
+	return r, &v, result.ExitSuccess
 }
 
-type documentCheck struct{ issue *result.Diagnostic }
+type documentCheck struct {
+	issue            *result.Diagnostic
+	factTargets      []string
+	evidenceTargets  []string
+	unmapped         []string
+	unmappedEvidence []string
+}
 type target struct{ name, path string }
 type readTargets struct{ facts, evidence []target }
 
@@ -181,6 +196,11 @@ func (v *documentCheck) document(value any) {
 					v.fail(p, "Entry is repeated.")
 				}
 				seen[s] = true
+				if key == "unmapped" {
+					v.unmapped = append(v.unmapped, s)
+				} else {
+					v.unmappedEvidence = append(v.unmappedEvidence, s)
+				}
 			}
 		}
 	}
@@ -263,6 +283,8 @@ func (v *documentCheck) document(value any) {
 			}
 		}
 	}
+	v.factTargets = keys(written)
+	v.evidenceTargets = keys(evidence)
 }
 
 func (v *documentCheck) parameters(value any, path string, scope map[string]string, previous map[string]readTargets) {

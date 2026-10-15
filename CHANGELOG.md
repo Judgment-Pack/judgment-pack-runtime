@@ -4,6 +4,13 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Add offline dialect `schema`, `reference` and `check --pack` operations with
+  equivalent MCP tools (#275, ADR-0054). Serve a pinned reference and a labelled
+  Runtime-derived version-2 editing schema; compare declared mapping targets with
+  the existing pack inventory, reporting partial and acknowledged coverage.
+  This does not check actual types, source execution or preparations. The
+  runtime’s conformance claim remains stated only in `CONFORMANCE.md`.
+
 - Add `dialect validate` and `dialect_validate` for version-2 document forms,
   internal references and limits (#275, ADR-0053). Reports distinguish a document
   check from profile/pack compatibility and preparation verification; version 3

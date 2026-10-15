@@ -627,7 +627,7 @@ func (a *App) mcpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve the offline validator and the experimental tools to an MCP client over stdio",
-		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus offline dialect encoding tools (get_dialect_contract, dialect_init, dialect_canonicalize, dialect_digest, dialect_validate; ADR-0052, ADR-0053), plus nine tools on this runtime's experimental surface (experimental_evaluate, experimental_test_packs, experimental_test_cases and experimental_test_graphs, which reach the evaluator, experimental_list_graphs and experimental_get_graph, which serve the graph convention's inventory and documents read-only, and experimental_validate_expectations, which checks proposed exact dispositions against §8.3, experimental_get_test_matrix_contract, which describes the test matrix this runtime admits, and experimental_validate_test_matrix, which checks a proposed matrix against it, three that reach nothing at all; ADR-0007, ADR-0011, ADR-0021, ADR-0026, ADR-0029, ADR-0035, ADR-0036), whose surfaces may still change without notice. That evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim. It holds no credential, opens no network connection, and authorizes nothing.",
+		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus offline dialect encoding tools (get_dialect_contract, dialect_init, dialect_canonicalize, dialect_digest, dialect_validate, get_dialect_schema, get_dialect_reference, dialect_check; ADR-0052, ADR-0053, ADR-0054), plus nine tools on this runtime's experimental surface (experimental_evaluate, experimental_test_packs, experimental_test_cases and experimental_test_graphs, which reach the evaluator, experimental_list_graphs and experimental_get_graph, which serve the graph convention's inventory and documents read-only, and experimental_validate_expectations, which checks proposed exact dispositions against §8.3, experimental_get_test_matrix_contract, which describes the test matrix this runtime admits, and experimental_validate_test_matrix, which checks a proposed matrix against it, three that reach nothing at all; ADR-0007, ADR-0011, ADR-0021, ADR-0026, ADR-0029, ADR-0035, ADR-0036), whose surfaces may still change without notice. That evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim. It holds no credential, opens no network connection, and authorizes nothing.",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			server := mcp.NewServer(a.engine, a.runner)
@@ -993,7 +993,7 @@ func requestedCommand(args []string) string {
 		case "dialect":
 			if index+1 < len(args) {
 				switch args[index+1] {
-				case "contract", "init", "canonicalize", "digest", "validate":
+				case "contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check":
 					return "dialect " + args[index+1]
 				}
 			}

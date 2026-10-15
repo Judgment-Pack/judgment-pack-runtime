@@ -44,6 +44,8 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `get_dialect_contract` / `dialect_init` | Pinned encoding capabilities and a starter template following the reference Runner spelling; no project or save |
 | `dialect_canonicalize` / `dialect_digest` | Canonical bytes and digest, with version-3 identity spelling checks; not full document validation |
 | `dialect_validate` | Version-2 document forms, limits and references; no profiles or preparations |
+| `get_dialect_schema` / `get_dialect_reference` | Version-2 editing schema and pinned dialect reference text |
+| `dialect_check` | Declared version-2 mapping coverage against pack inventory; no execution or value-type checking |
 | `validate` | Carrier, structural, and semantic conformance for one document |
 | `test_conformance` | Run a version-pinned conformance corpus |
 | `get_schema` | The exact bundled JSON Schema, with digest |
@@ -382,7 +384,8 @@ human review; a valid report never means tests passed or cases were saved.
 ## Dialect document tools
 
 Discover `get_dialect_contract` before using the additive `dialect_init`,
-`dialect_canonicalize`, `dialect_digest` and `dialect_validate` tools. `dialect_init` accepts an optional
+`dialect_canonicalize`, `dialect_digest`, `dialect_validate`, `get_dialect_schema`,
+`get_dialect_reference` and `dialect_check` tools. `dialect_init` accepts an optional
 integer `version` (2 by default; 3 is also available). Encoding and validation tools require
 `document` as exact JSON text, not a parsed object or file path. They share the
 CLI's report and require no project, credentials, network or model.
@@ -391,13 +394,29 @@ CLI's report and require no project, credentials, network or model.
 references and limits. A pass reports `document-valid` and
 `validationScope: "version-2-document"`, with canonical bytes and their digest.
 It does not check profile/request compatibility, installed capabilities, pack
-coverage, source truth or preparation verification. Those capabilities remain
-false. Version 3 is explicitly unsupported by validation; the ability to encode
+coverage, source truth or preparation verification. This validation pass makes no claim about those checks; inspect the separate
+operation capabilities. Version 3 is explicitly unsupported by validation; the ability to encode
 it is separate. Inspect `validationVersions`, not `encodingVersions`, before
-calling the validator. Schema/reference retrieval and pack checks remain future
-operations.
+calling the validator. Schema/reference retrieval and declared pack-inventory checks are available
+through their separate tools (ADR-0054).
 
 An `encoded` response is never a validation pass. Neither response authorizes
 saving or execution. Preserve the client's own approval and persistence rules.
 Unknown operations must remain unavailable rather than falling back to an
 encoding result as a validation pass. See ADR-0052 and ADR-0053.
+
+`get_dialect_schema` accepts an optional integer `version` (2 only). Its resource
+is a Runtime-derived editing aid; semantic checks still require validation.
+`get_dialect_reference` takes no arguments and serves exact pinned text offline,
+including proposed forms that Runtime may not implement. Both return resource
+text, origin, media type, byte length and SHA-256.
+
+`dialect_check` requires exact JSON strings `document` and `pack`. It validates
+both and reports declared inventory coverage without project lookup. Inspect
+`compatibility.status`: `complete`, `review-required`, `incomplete` or
+`not-applicable`. An acknowledged omission or partial aggregate is not full
+coverage. Check failure uses `isError`; a completed incomplete report still
+contains findings and both checked identities. Refusals contain no coverage or
+dialect artifact. Actual types, source execution and preparation verification
+remain unchecked. Discover `packCheckVersions` and `packCheckScope` first; never
+substitute encoding success for a missing check capability.

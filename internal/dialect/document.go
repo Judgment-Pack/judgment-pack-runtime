@@ -42,6 +42,9 @@ type Report struct {
 	Digest                  string              `json:"digest,omitempty"`
 	StarterTemplate         bool                `json:"starterTemplate,omitempty"`
 	Diagnostics             []result.Diagnostic `json:"diagnostics"`
+	Resource                *Resource           `json:"resource,omitempty"`
+	Compatibility           *Compatibility      `json:"compatibility,omitempty"`
+	PackValidation          *result.Validation  `json:"packValidation,omitempty"`
 	Capabilities            *Capabilities       `json:"capabilities,omitempty"`
 }
 
@@ -49,8 +52,14 @@ type Capabilities struct {
 	Operations              []string `json:"operations"`
 	EncodingVersions        []int    `json:"encodingVersions"`
 	ValidationVersions      []int    `json:"validationVersions"`
+	SchemaVersions          []int    `json:"schemaVersions"`
+	PackCheckVersions       []int    `json:"packCheckVersions"`
+	PackCheckScope          string   `json:"packCheckScope"`
 	ProfileCompatibility    bool     `json:"profileCompatibility"`
 	MaxDocumentBytes        int      `json:"maxDocumentBytes"`
+	MaxPackBytes            int64    `json:"maxPackBytes"`
+	MaxCoverageComparisons  int64    `json:"maxCoverageComparisons"`
+	MaxCoverageReportBytes  int      `json:"maxCoverageReportBytes"`
 	MaxDepth                int      `json:"maxDepth"`
 	StructuralValidation    bool     `json:"structuralValidation"`
 	SemanticValidation      bool     `json:"semanticValidation"`
@@ -67,7 +76,7 @@ func report(command string) Report {
 func Contract(command string) Report {
 	r := report(command)
 	r.Status = "available"
-	r.Capabilities = &Capabilities{Operations: []string{"contract", "init", "canonicalize", "digest", "validate"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2}, StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxDepth: MaxDepth}
+	r.Capabilities = &Capabilities{Operations: []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2}, SchemaVersions: []int{2}, PackCheckVersions: []int{2}, PackCompatibility: true, PackCheckScope: "declared-inventory-coverage", StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxPackBytes: MaxPackBytes, MaxCoverageComparisons: MaxCoverageComparisons, MaxCoverageReportBytes: MaxCoverageReportBytes, MaxDepth: MaxDepth}
 	return r
 }
 
