@@ -364,8 +364,17 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           written="$(cd run && for name in *.tar.gz *.zip checksums.txt; do printf '%s sha256:%s\n' "${name}" "$(sha256sum "${name}" | cut -d ' ' -f 1)"; done | LC_ALL=C sort)"
-          draft="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}" --jq .draft)"
-          published="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" --paginate --jq '.[] | "\(.name) \(.digest)"' | LC_ALL=C sort)"
+          # A read that could not be completed is not a mismatch: it makes no
+          # diagnosis, prints the API error, and says the release is unverified.
+          unverified() {
+            printf 'The published release %s (release %s) could not be verified: %s\n' "${RELEASE_TAG}" "${RELEASE_ID}" "$1" >&2
+            exit 1
+          }
+          err="${RUNNER_TEMP}/read-error.txt"
+          draft="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}" --jq .draft 2>"${err}")" || unverified "$(cat "${err}")"
+          published="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" --paginate --jq '.[] | "\(.name) \(.digest)"' 2>"${err}")" || unverified "$(cat "${err}")"
+          [[ "${draft}" == "true" || "${draft}" == "false" ]] && [ -n "${published}" ] || unverified "the read returned nothing usable (draft: '${draft}')"
+          published="$(printf '%s\n' "${published}" | LC_ALL=C sort)"
           if [ "${draft}" != "false" ] || [ "${published}" != "${written}" ]; then
             printf 'The published release %s (release %s, draft: %s) does not hold what this run wrote.\nThis run wrote:\n%s\nThe release holds:\n%s\n' \
               "${RELEASE_TAG}" "${RELEASE_ID}" "${draft}" "${written}" "${published}" >&2

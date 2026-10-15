@@ -155,8 +155,25 @@ repository writer, which in this organisation is a maintainer, the same people t
 asks to approve. Nothing in the workflow closes that window. A file replaced in it is published,
 and the read after publication then fails the run by name; with release immutability on, the
 published release can no longer be changed, so the replacement stays visible as a failed release
-and is not quietly corrected. If that step fails, treat it as an incident: tell the maintainers,
-point no one at the release, and release a new version from a new tag. Do not re-run.
+and is not quietly corrected. That step fails in two ways, told apart by its message:
+
+- `does not hold what this run wrote`: the read completed and the digests differ (both sets are
+  printed). Treat it as an incident: tell the maintainers, point no one at the release, and
+  release a new version from a new tag.
+- `could not be verified`: a read failed or returned nothing usable (the API error is printed). No
+  diagnosis is made and the release is unverified, not bad. A maintainer re-reads the same release
+  id and compares its asset digests with the run's recorded ones (the run's `checksums.txt` and the
+  archives' SHA-256 values, from the run artifact) before declaring it good or diagnosing a
+  replacement:
+
+  ```bash
+  gh api repos/Judgment-Pack/judgment-pack-runtime/releases/<id>/assets --paginate \
+    --jq '.[] | "\(.name) \(.digest)"'
+  ```
+
+  Only a confirmed mismatch takes the incident and new-tag path above.
+
+In both cases, do not re-run the publish step.
 
 A failure of the first check means: turn on Release Immutability in the repository settings and
 re-run; the workflow never changes a repository setting. A release published before the setting was
