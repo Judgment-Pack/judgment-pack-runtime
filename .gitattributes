@@ -10,3 +10,6 @@ internal/audit/testdata/witness/** -text
 # writer composes today.
 internal/audit/testdata/trail-v0.30.0.jsonl -text
 internal/cli/testdata/*.golden.* -text
+
+# Pinned dialect contract and independent vectors have exact upstream checksums.
+internal/dialect/testdata/** -text
