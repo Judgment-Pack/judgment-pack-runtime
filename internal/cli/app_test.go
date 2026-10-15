@@ -74,6 +74,9 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"dialect", "canonicalize", "--help"}},
 		{args: []string{"dialect", "digest", "--help"}},
 		{args: []string{"dialect", "validate", "--help"}},
+		{args: []string{"dialect", "schema", "--help"}},
+		{args: []string{"dialect", "reference", "--help"}},
+		{args: []string{"dialect", "check", "--help"}},
 
 		{args: []string{"experimental", "--help"}, mustReference: true},
 		{args: []string{"experimental", "evaluate", "--help"}, mustReference: true},

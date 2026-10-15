@@ -80,6 +80,9 @@ jpack dialect init [--dialect-version 2|3]
 jpack dialect canonicalize <dialect-or->
 jpack dialect digest <dialect-or->
 jpack dialect validate <dialect-or->
+jpack dialect schema [--dialect-version 2]
+jpack dialect reference
+jpack dialect check <dialect-or-> --pack <pack-or->
 jpack spec validate <pack-or->
 jpack spec test-conformance [suite] [--strict]
 jpack spec schema <spec-version>
@@ -962,8 +965,8 @@ references: closed members, parameters and dependency order, templates, reads,
 conditions, target collisions, admissions and document limits. A pass says
 `document-valid` with `validationScope: "version-2-document"`; it is not a
 preparation-verifier conformance claim. Profile-dependent compatibility (including
-request/adapter fit), pack compatibility, acquisition and preparation verification
-are **not checked**. Version 3 returns unsupported from validation even though its
+request/adapter fit), acquisition and preparation verification are **not checked**.
+Declared pack inventory coverage is available through the separate `check` operation. Version 3 returns unsupported from validation even though its
 bytes can be encoded. Contract discovery advertises `validationVersions: [2]`
 separately from `encodingVersions: [2, 3]`. Runner still owns binding and preparation.
 
@@ -978,8 +981,44 @@ refused. Preparation canonicalization and decision-disposition JCS are different
 forms and are not exposed by these commands.
 
 The MCP equivalents are `get_dialect_contract`, `dialect_init`,
-`dialect_canonicalize`, `dialect_digest` and `dialect_validate`. They take text, never file paths,
+`dialect_canonicalize`, `dialect_digest`, `dialect_validate`, `get_dialect_schema`,
+`get_dialect_reference` and `dialect_check`. They take text, never file paths,
 and perform no network calls, project reads, saving or evaluation. Unsupported
 encoding or validation versions return CLI exit 2; malformed or over-limit documents return 1;
 bad invocation and read failures use the existing exits 3 and 4. A refused MCP
 operation carries the same structured report and `isError: true`.
+
+### Dialect authoring resources and pack coverage
+
+`jpack dialect reference` prints the exact pinned companion offline. The text
+includes proposed forms; inspect `dialect contract` for implemented capabilities.
+`jpack dialect schema` prints a **Runtime-derived** version-2 JSON Schema editing
+aid, not a normative Spec artifact. It cannot enforce strict JSON spelling or
+cross-references; run `dialect validate` before treating a document as checked.
+JSON/MCP resource reports identify the text's exact bytes and SHA-256 separately
+from dialect identity. No resource is fetched at runtime.
+
+```sh
+jpack dialect schema > dialect-v2.schema.json
+jpack dialect reference
+jpack dialect check draft.dialect.json --pack decision.json --format json
+```
+
+`check` validates both supplied documents and compares targets with Runtime's
+existing pack inventory. It reports `mapped`, `partial`, `acknowledged` or
+`missing` for each consulted pointer or evidence requirement. An ancestor target
+declares a subtree; a child target only partially covers an aggregate read.
+Explicit `unmapped` declarations stay visible. Undeclared evidence targets or
+omissions fail the check; unused fact targets and stale omissions produce notes.
+The inventory over-approximates reads and can include condition-shaped data.
+
+Overall `complete` or `review-required` exits 0; inspect the status and notes
+before treating a mapping as complete. `incomplete` or `not-applicable` exits 1;
+unsupported capabilities exit 2. A refusal emits no partial coverage. The pack
+SHA-256 binds the report to the exact supplied bytes. `valueTypesChecked` and
+`executionChecked` remain false: this does not establish runtime fact presence,
+type compatibility, correct decisions or runnable sources. Profiles and
+preparation verification remain Runner responsibilities. CLI permits `-` for
+one operand only; MCP takes exact `document` and `pack` strings. Neither uses the
+ambient project or changes files. Capabilities declare supported versions and
+input/work limits. See ADR-0054 for scope and status details.

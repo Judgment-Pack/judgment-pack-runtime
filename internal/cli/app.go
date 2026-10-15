@@ -993,7 +993,7 @@ func requestedCommand(args []string) string {
 		case "dialect":
 			if index+1 < len(args) {
 				switch args[index+1] {
-				case "contract", "init", "canonicalize", "digest", "validate":
+				case "contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check":
 					return "dialect " + args[index+1]
 				}
 			}

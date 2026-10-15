@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -31,6 +32,7 @@ type identity struct {
 	SpecVersion          string
 	EvidenceRequirements []string
 	FactPaths            []string
+	UsesQuantifiers      bool
 }
 
 // readIdentity reads one configured pack and pulls its own statement of identity
@@ -69,6 +71,7 @@ func identityFrom(data []byte) (identity, error) {
 		SpecVersion:          stringMember(root, "specVersion"),
 		EvidenceRequirements: []string{},
 		FactPaths:            factPaths(root),
+		UsesQuantifiers:      usesQuantifiers(root),
 	}
 	if requirements, ok := root["evidenceRequirements"].([]any); ok {
 		for _, item := range requirements {
@@ -288,4 +291,30 @@ func (p *Project) Document(id, command string) (result.PackDocument, []byte, *Fa
 		SHA256:        hex.EncodeToString(sum[:]),
 		Detail:        detail,
 	}, data, nil
+}
+
+// DocumentInventory is the same declared interface the configured inventory
+// derives, without a project or file lookup. FactPaths deliberately overreports
+// condition-shaped data; collection-relative reads cannot be checked flat.
+type DocumentInventory struct {
+	ID                   string   `json:"id"`
+	Version              string   `json:"version"`
+	SpecVersion          string   `json:"specVersion"`
+	EvidenceRequirements []string `json:"evidenceRequirements"`
+	FactPaths            []string `json:"consultedFactPaths"`
+	UsesQuantifiers      bool     `json:"usesCollectionQuantifiers"`
+}
+
+func InspectDocument(data []byte) (DocumentInventory, error) {
+	found, err := identityFrom(data)
+	if err != nil {
+		return DocumentInventory{}, err
+	}
+	return DocumentInventory{found.ID, found.Version, found.SpecVersion, found.EvidenceRequirements, found.FactPaths, found.UsesQuantifiers}, nil
+}
+
+// CoversFactPath checks a declared subtree, by whole JSON-pointer tokens.
+// Inputs must be valid pointers. It does not claim a runtime value is present.
+func CoversFactPath(parent, child string) bool {
+	return parent == child || parent == "" || strings.HasPrefix(child, parent+"/")
 }

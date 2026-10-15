@@ -1,0 +1,886 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:judgmentpack:runtime:dialect:2:authoring-schema:1",
+  "title": "Dialect version 2 — Runtime authoring schema",
+  "$comment": "Runtime-derived editing aid from Spec commit 065aade751fb3a510872842ddb88e09b55574165, not an upstream normative schema. Use dialect validate for strict JSON, integer literal spelling, byte/depth limits, parameter scope, template references, final always clause, target uniqueness/overlap, admission references and aggregate limits. No profile, pack or preparation checks are implied.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "case": {
+      "$ref": "#/$defs/case"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      },
+      "maxItems": 16
+    },
+    "admits": {
+      "$ref": "#/$defs/admits"
+    },
+    "unmapped": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+      },
+      "uniqueItems": true
+    },
+    "unmappedEvidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "provider": {
+      "const": ""
+    },
+    "facts": {
+      "type": "null"
+    },
+    "evidence": {
+      "type": "null"
+    }
+  },
+  "required": [
+    "version",
+    "case"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "canonicalValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/canonicalValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/canonicalValue"
+          }
+        }
+      ]
+    },
+    "factCopy": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/(?:[^~]|~[01])*$(?![\\s\\S])"
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "target",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "evidenceCopy": {
+      "type": "object",
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "requirement",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "caseParameter": {
+      "type": "object",
+      "properties": {
+        "pointer": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "timestamp"
+          ]
+        }
+      },
+      "required": [
+        "pointer",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "sourceParameter": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pointer": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "timestamp"
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "pointer",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "case": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/factCopy"
+          },
+          "maxItems": 256
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceCopy"
+          },
+          "maxItems": 128
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/caseParameter"
+          },
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "const": "runAt"
+            }
+          },
+          "maxProperties": 63
+        }
+      },
+      "required": [
+        "facts",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "copy": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/factCopy"
+          },
+          "maxItems": 256
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceCopy"
+          },
+          "maxItems": 128
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "claimFact": {
+      "type": "object",
+      "properties": {
+        "pointer": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/(?:[^~]|~[01])*$(?![\\s\\S])"
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "pointer",
+        "from"
+      ],
+      "additionalProperties": false
+    },
+    "claim": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/claimFact"
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "present",
+              "absent",
+              "unknown"
+            ]
+          },
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "acquisitionStatus": {
+          "enum": [
+            "resolved",
+            "absent",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "facts",
+        "evidence",
+        "acquisitionStatus"
+      ],
+      "additionalProperties": false
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "always"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "exists"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "op",
+            "field"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "equals"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+            },
+            "to": {
+              "$ref": "#/$defs/canonicalValue"
+            }
+          },
+          "required": [
+            "op",
+            "field",
+            "to"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "equalsParam"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+            },
+            "param": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "op",
+            "field",
+            "param"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "isTrue"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "op",
+            "field"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "isDecimalString"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "op",
+            "field"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "freshWithin"
+            },
+            "field": {
+              "type": "string",
+              "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+            },
+            "asOf": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxAge": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "op",
+            "field",
+            "asOf",
+            "maxAge"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "all"
+            },
+            "of": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              },
+              "maxItems": 64
+            }
+          },
+          "required": [
+            "op",
+            "of"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "any"
+            },
+            "of": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/condition"
+              },
+              "maxItems": 64
+            }
+          },
+          "required": [
+            "op",
+            "of"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "const": "not"
+            },
+            "of": {
+              "$ref": "#/$defs/condition"
+            }
+          },
+          "required": [
+            "op",
+            "of"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "clause": {
+      "type": "object",
+      "properties": {
+        "when": {
+          "$ref": "#/$defs/condition"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "when",
+        "claim",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "rule": {
+      "type": "object",
+      "properties": {
+        "ruleVersion": {
+          "const": "1"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "string",
+              "integer",
+              "timestamp"
+            ]
+          },
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxProperties": 64
+        },
+        "clauses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/clause"
+          },
+          "maxItems": 64,
+          "minItems": 1
+        }
+      },
+      "required": [
+        "ruleVersion",
+        "parameters",
+        "clauses"
+      ],
+      "additionalProperties": false
+    },
+    "read": {
+      "type": "object",
+      "properties": {
+        "unwrap": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?:/(?:[^~]|~[01])*)?$(?![\\s\\S])"
+          },
+          "maxItems": 4,
+          "minItems": 1
+        },
+        "copy": {
+          "$ref": "#/$defs/copy"
+        },
+        "rule": {
+          "$ref": "#/$defs/rule"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "copy"
+          ],
+          "not": {
+            "required": [
+              "rule"
+            ]
+          }
+        },
+        {
+          "required": [
+            "rule"
+          ],
+          "not": {
+            "required": [
+              "copy"
+            ]
+          }
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/template"
+      },
+      "propertyNames": {
+        "not": {
+          "pattern": "^\\$(?![\\s\\S])"
+        }
+      }
+    },
+    "template": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/template"
+          }
+        },
+        {
+          "$ref": "#/$defs/request"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "$param": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "const": "runAt"
+              }
+            }
+          },
+          "required": [
+            "$param"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "$text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "$text"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "calculation": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "const": "runAt"
+            }
+          }
+        },
+        "tables": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 315360000
+          }
+        }
+      },
+      "required": [
+        "inputs",
+        "tables"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "const": "case"
+              }
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/sourceParameter"
+              },
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                  "const": "runAt"
+                }
+              },
+              "maxProperties": 63
+            },
+            "read": {
+              "$ref": "#/$defs/read"
+            },
+            "kind": {
+              "const": "operation"
+            },
+            "profile": {
+              "type": "string",
+              "minLength": 1
+            },
+            "profileDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$(?![\\s\\S])"
+            },
+            "maxAge": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            },
+            "arguments": {
+              "$ref": "#/$defs/request"
+            },
+            "calculation": {
+              "$ref": "#/$defs/calculation"
+            }
+          },
+          "required": [
+            "name",
+            "kind",
+            "read",
+            "profile",
+            "profileDigest",
+            "maxAge",
+            "arguments"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "const": "case"
+              }
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/sourceParameter"
+              },
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                  "const": "runAt"
+                }
+              },
+              "maxProperties": 63
+            },
+            "read": {
+              "$ref": "#/$defs/read"
+            },
+            "kind": {
+              "const": "selected-file"
+            },
+            "provider": {
+              "const": "local-file"
+            }
+          },
+          "required": [
+            "name",
+            "kind",
+            "read",
+            "provider"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "const": "case"
+              }
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/sourceParameter"
+              },
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                  "const": "runAt"
+                }
+              },
+              "maxProperties": 63
+            },
+            "read": {
+              "$ref": "#/$defs/read"
+            },
+            "kind": {
+              "const": "selected-file"
+            },
+            "provider": {
+              "const": "google-drive"
+            },
+            "profile": {
+              "type": "string",
+              "minLength": 1
+            },
+            "profileDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$(?![\\s\\S])"
+            },
+            "maxAge": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 86400
+            },
+            "arguments": {
+              "$ref": "#/$defs/request"
+            }
+          },
+          "required": [
+            "name",
+            "kind",
+            "read",
+            "provider",
+            "profile",
+            "profileDigest",
+            "maxAge",
+            "arguments"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "admits": {
+      "type": "object",
+      "properties": {
+        "facts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "asserted",
+                "record",
+                "generated"
+              ]
+            }
+          },
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^/(?:[^~]|~[01])*$(?![\\s\\S])"
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "asserted",
+                "record",
+                "generated"
+              ]
+            }
+          },
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

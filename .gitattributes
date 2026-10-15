@@ -13,3 +13,6 @@ internal/cli/testdata/*.golden.* -text
 
 # Pinned dialect contract and independent vectors have exact upstream checksums.
 internal/dialect/testdata/** -text
+
+# The served authoring schema has a byte digest on every platform.
+internal/dialect/version2.schema.json -text

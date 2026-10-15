@@ -17,11 +17,13 @@ or credentials.
 ## Dialect document tooling
 
 `internal/dialect` implements the offline tools of ADR-0052 and the document
-validation of ADR-0053. The CLI `dialect` namespace and five MCP tools share
+validation of ADR-0053. The CLI `dialect` namespace and eight MCP tools share
 strict JSON handling, canonical bytes, digests and document checks for a pinned
 draft companion. Encoding supports versions 2 and 3; document validation supports
-version 2. Capability discovery states those sets separately. Profile and pack
-compatibility, preparation verification and schema access remain unimplemented.
+version 2. Capability discovery states those sets separately. ADR-0054 adds pinned reference/schema resources and declared pack-inventory
+coverage through the same pure snapshot inventory used by project tools. Profile
+compatibility, actual value-type checks and preparation verification remain
+unimplemented by this boundary. The schema is a Runtime-derived editing aid.
 It does not prepare facts, acquire sources or interpret an audit binding.
 
 ## Runtime flow
