@@ -18,7 +18,7 @@ func dialectDefinition(operation string) map[string]any {
 		"validate":     "Validate version-2 dialect document forms, limits and internal references. Profile compatibility, source capabilities, pack compatibility and preparation verification are not checked. Returns document-valid only for this explicit scope. No files are read or written.",
 		"contract":     "Describe the pinned dialect contract and implemented operations. Reports which checks are unavailable. Offline; reads no project and writes nothing.",
 		"init":         "Return a generic dialect starter as JSON text. The client saves it. No project, acquisition, model, preparation or evaluation is accessed.",
-		"canonicalize": "Return canonical dialect bytes and their digest. Checks JSON, integer encoding and declared version only; full structural/semantic validation and execution readiness are not checked. No files are read or written.",
+		"canonicalize": "Return canonical dialect bytes and their digest. Checks JSON, integer encoding, declared version and version-3 identity spelling; full structural/semantic validation and execution readiness are not checked. No files are read or written.",
 		"digest":       "Return canonical dialect bytes and their digest. Encoding success is not document conformance or preparation verification. No files are read or written.",
 	}
 	properties := map[string]any{}
@@ -31,7 +31,7 @@ func dialectDefinition(operation string) map[string]any {
 		properties["version"] = map[string]any{"type": "integer", "enum": versions, "description": "Dialect version; defaults to 2."}
 	}
 	if operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
-		properties["document"] = map[string]any{"type": "string", "description": "Exact dialect JSON text, never a path.", "maxLength": dialect.MaxDocumentBytes}
+		properties["document"] = map[string]any{"type": "string", "description": "Exact dialect JSON text, never a path. Maximum 131072 UTF-8 bytes; the byte bound is enforced after transport decoding.", "maxLength": dialect.MaxDocumentBytes}
 		schema["required"] = []string{"document"}
 	}
 	if operation == "check" {

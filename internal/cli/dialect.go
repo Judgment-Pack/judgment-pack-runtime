@@ -12,7 +12,7 @@ import (
 )
 
 func (a *App) dialectCommand() *cobra.Command {
-	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain and the declared version; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Validate checks version-2 document forms and internal references only; it does not check profiles or preparations. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
+	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Validate checks version-2 document forms and internal references only; it does not check profiles or preparations. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
 	for _, operation := range []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"} {
 		group.AddCommand(a.dialectOperation(operation))
 	}
@@ -20,7 +20,7 @@ func (a *App) dialectCommand() *cobra.Command {
 }
 func (a *App) dialectOperation(operation string) *cobra.Command {
 	format := "human"
-	version := 2
+	versionText := "2"
 	packPath := ""
 	use := operation
 	args := cobra.NoArgs
@@ -36,6 +36,15 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 		}
 		if operation == "check" && (packPath == "" || (packPath == "-" && args[0] == "-")) {
 			return a.operational(command, format, result.ExitInvocation, "JPS-DIALECT-PACK-ARGUMENT", "Check requires --pack; only one operand can read standard input.")
+		}
+		version := 2
+		if operation == "init" || operation == "schema" {
+			if versionText != "2" && versionText != "3" {
+				return a.operational(command, format, result.ExitUnsupported, "JPS-DIALECT-VERSION", "Dialect version must be exactly 2 or 3.")
+			}
+			if versionText == "3" {
+				version = 3
+			}
 		}
 		var report dialect.Report
 		code := result.ExitSuccess
@@ -108,7 +117,7 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 	}}
 	c.Flags().StringVar(&format, "format", format, "output format: human or json; JSON includes scope and provenance")
 	if operation == "init" || operation == "schema" {
-		c.Flags().IntVar(&version, "dialect-version", version, "dialect version: encoding supports 2/3; schema supports 2")
+		c.Flags().StringVar(&versionText, "dialect-version", versionText, "dialect version: exactly 2 or 3 for encoding; 2 for schema")
 	}
 	if operation == "check" {
 		c.Flags().StringVar(&packPath, "pack", "", "pack file or - for standard input; required")

@@ -20,7 +20,7 @@ func TestDialectCLIAndMCPParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, raw := range []string{`{"version":2,"case":{"facts":[],"evidence":[]}}`, `{"version":3,"x":-0}`, `{"version":2,"n":1.5}`, `{"version":2,"version":3}`, `{"version":4}`, strings.Repeat(" ", dialect.MaxDocumentBytes+1)} {
+	for _, raw := range []string{`{"version":2,"case":{"facts":[],"evidence":[]}}`, `{"version":3,"x":-0}`, `{"version":3,"sources":[]}`, `{"version":3,"provider":""}`, `{"version":3,"case":{"parameters":{}}}`, `{"version":3,"admits":{"facts":{}}}`, `{"version":2,"n":1.5}`, `{"version":2,"version":3}`, `{"version":4}`, strings.Repeat(" ", dialect.MaxDocumentBytes+1)} {
 		for _, operation := range []string{"canonicalize", "digest", "validate"} {
 			code, stdout, stderr := runTest(t, []string{"dialect", operation, "-", "--format", "json"}, raw)
 			if stderr != "" {
@@ -119,5 +119,14 @@ func TestDialectValidationHumanAndUnsupported(t *testing.T) {
 	code, stdout, stderr = runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, `{"version":3,"case":{"facts":[],"evidence":[]}}`)
 	if code != 2 || stderr != "" || !strings.Contains(stdout, "JPS-DIALECT-VALIDATION-VERSION") || strings.Contains(stdout, `"digest":`) {
 		t.Fatal(code, stdout, stderr)
+	}
+}
+
+func TestDialectVersionFlagUsesExactSpelling(t *testing.T) {
+	for _, value := range []string{"0x3", "03", "0b11", "+3", "3e0", "3.0", " 3", "3 ", ""} {
+		code, raw, _ := runTest(t, []string{"dialect", "init", "--dialect-version", value, "--format", "json"}, "")
+		if code == 0 || strings.Contains(raw, `"document":`) || strings.Contains(raw, `"digest":`) {
+			t.Fatalf("accepted %q: %d %s", value, code, raw)
+		}
 	}
 }

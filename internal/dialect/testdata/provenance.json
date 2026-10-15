@@ -1,10 +1,10 @@
 {
   "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
-  "revision": "065aade751fb3a510872842ddb88e09b55574165",
+  "revision": "9fb1142546e79ab4d03f744415afc098a81efe3e",
   "files": {
     "spec-dialect.md": {
       "upstream": "spec/dialect.md",
-      "sha256": "7c6de5c4a7163381aa3686aaa5a2ba623637a83a04ccf5d5bf19a5ee3a752fe1"
+      "sha256": "df98f2b61bd6d7745a2e7aba9fa4b121c34ea891ee6c4d6abcf56f78deecad50"
     },
     "LICENSE": {
       "upstream": "LICENSE",
@@ -12,7 +12,7 @@
     },
     "upstream-manifest.json": {
       "upstream": "conformance/dialect/vectors/manifest.json",
-      "sha256": "db6487fadcb9f6161c243f1aae18dc4627614c5c6093d988e2f07aace12dfbeb"
+      "sha256": "5d33c2865ef77e3cd6c32b7b92c0be587ffac570b8496d80c78411c4dd5ac026"
     },
     "changed-table-lineage/mapping.json": {
       "upstream": "conformance/dialect/vectors/changed-table-lineage/mapping.json",
@@ -93,6 +93,30 @@
     "valid/preparation.json": {
       "upstream": "conformance/dialect/vectors/valid/preparation.json",
       "sha256": "2a058ca1490ee316a87ad5999a7460906699a6f8987c93369a344ae4614b7a6d"
+    },
+    "version-3-bound/mapping.json": {
+      "upstream": "conformance/dialect/vectors/version-3-bound/mapping.json",
+      "sha256": "4e35d541fd747e504bd6ddb9fa9a4908b7240e6fb6f16923ac6f665e268f8d7f"
+    },
+    "version-3-bound/preparation.json": {
+      "upstream": "conformance/dialect/vectors/version-3-bound/preparation.json",
+      "sha256": "b6b12f55994a8960d331b1a88b9f414ea1099b9ef99d8abeb8088d79a16bda4c"
+    },
+    "unbound-bound-at-import/mapping.json": {
+      "upstream": "conformance/dialect/vectors/unbound-bound-at-import/mapping.json",
+      "sha256": "393417d4eb5cebe299097c05f89669a44d36f7093c9f150dc4569ccaa6e04241"
+    },
+    "unbound-bound-at-import/preparation.json": {
+      "upstream": "conformance/dialect/vectors/unbound-bound-at-import/preparation.json",
+      "sha256": "396b22972ff7a0dcffc912519cfe9f27ff298232516e67577630fa9f1fa9f915"
+    },
+    "unbound-bound-at-import/unbound.json": {
+      "upstream": "conformance/dialect/vectors/unbound-bound-at-import/unbound.json",
+      "sha256": "8766f0c7f02f031e5af8d362e0e96d2965cb647c23bd6bf02186595278517950"
+    },
+    "unbound-bound-at-import/binding.json": {
+      "upstream": "conformance/dialect/vectors/unbound-bound-at-import/binding.json",
+      "sha256": "29e89b730e2eb8d825cf538a271ac63440ff2e236970f57fcf9c730c821ec01e"
     }
   }
 }
