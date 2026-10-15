@@ -26,7 +26,8 @@ identity. This does not add a new dialect format or change a released schema.
 Use the Core pack grammar without suffixes or leading zeroes, exact arithmetic
 for components, and numeric comparison by component. Bound each input to 256
 ASCII bytes. Refuse a base if any proposed next version would exceed that bound;
-never return an option that this tool would refuse as an input. This is an
+every returned choice fits the version grammar and input byte bound. A subsequent
+bump may be refused if its own choices would exceed the bound. This is an
 operation resource bound, not a change to Core's schema grammar. Reports for
 invalid inputs contain no successful base, choices or comparison. CLI and MCP
 have the same structured report apart from command name. Invalid values exit 1;

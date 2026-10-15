@@ -59,7 +59,8 @@ func Options(command, base string, candidate *string) (Report, int) {
 		Minor: parts[0] + "." + increment(parts[1]) + ".0",
 		Major: increment(parts[0]) + ".0.0",
 	}
-	// Never suggest an option this tool cannot accept on the next invocation.
+	// Every suggested version must fit the grammar and byte bound. A later bump
+	// from a boundary value can still be refused when its choices exceed the bound.
 	if len(choices.Patch) > MaxVersionBytes || len(choices.Minor) > MaxVersionBytes || len(choices.Major) > MaxVersionBytes {
 		return refuse("/base", "The next version exceeds the reported byte limit.")
 	}

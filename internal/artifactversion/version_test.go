@@ -59,3 +59,16 @@ func TestVersionRefusalsAreWholeReports(t *testing.T) {
 		t.Fatal(r)
 	}
 }
+
+// The finite byte bound applies to each choice, not an unlimited chain of bumps.
+func TestReturnedBoundaryVersionMayHaveNoFurtherBump(t *testing.T) {
+	base := "0.0." + strings.Repeat("9", MaxVersionBytes-5) + "8"
+	r, code := Options("test", base, nil)
+	if code != 0 || r.Choices == nil || !valid(r.Choices.Patch) {
+		t.Fatalf("%d %+v", code, r)
+	}
+	next, code := Options("test", r.Choices.Patch, nil)
+	if code == 0 || next.Choices != nil {
+		t.Fatalf("boundary should refuse another bump: %d %+v", code, next)
+	}
+}

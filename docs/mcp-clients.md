@@ -41,6 +41,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 
 | Tool | Purpose |
 | --- | --- |
+| `get_artifact_version_options` | Exact x.y.z patch/minor/major choices and optional candidate comparison; no compatibility or save authorization |
 | `validate` | Carrier, structural, and semantic conformance for one document |
 | `test_conformance` | Run a version-pinned conformance corpus |
 | `get_schema` | The exact bundled JSON Schema, with digest |
@@ -415,3 +416,19 @@ contains findings and both checked identities. Refusals contain no coverage or
 dialect artifact. Actual types, source execution and preparation verification
 remain unchecked. Discover `packCheckVersions` and `packCheckScope` first; never
 substitute encoding success for a missing check capability.
+
+## Artifact version arithmetic
+
+`get_artifact_version_options` takes a required `base` string and optional
+`candidate` string. Both use the Core pack's exact x.y.z grammar without leading
+zeroes or suffixes. It returns `choices.patch`, `choices.minor`, `choices.major`
+and, when a candidate is provided, its numeric `comparison` (`lower`, `equal`,
+`greater`). Components are exact integers, including beyond JavaScript precision.
+Each version is bounded to 256 ASCII bytes. A base is refused if any next choice
+exceeds that bound; a returned choice at the boundary may have no further bump.
+
+The report scope is `version-arithmetic` and `compatibilityChecked` is false.
+This read-only tool accesses no project, job history or registry. Version choice,
+compatibility review, immutable publication and permission to save stay with the
+caller. Clients discover the capability through `tools/list`. CLI equivalent:
+`jpack artifact version --base 0.1.0 --candidate 1.0.0 --format json`.
