@@ -182,8 +182,8 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	if _, present := graphsSchema["required"]; present {
 		t.Fatalf("every test_graphs member is optional: %v", graphsSchema["required"])
 	}
-	if len(advertised) != 25 {
-		t.Fatalf("expected 25 distinct tools, got %d", len(advertised))
+	if len(advertised) != 26 {
+		t.Fatalf("expected 26 distinct tools, got %d", len(advertised))
 	}
 	required := advertised["get_example"]["inputSchema"].(map[string]any)["required"].([]any)
 	if len(required) != 1 || required[0] != "name" {

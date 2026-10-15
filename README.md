@@ -75,6 +75,7 @@ The command binary is `jpack`. The project, repository, and release archives kee
 
 ```text
 jpack version
+jpack artifact version --base <x.y.z> [--candidate <x.y.z>]
 jpack dialect contract
 jpack dialect init [--dialect-version 2|3]
 jpack dialect canonicalize <dialect-or->
@@ -1023,3 +1024,23 @@ preparation verification remain Runner responsibilities. CLI permits `-` for
 one operand only; MCP takes exact `document` and `pack` strings. Neither uses the
 ambient project or changes files. Capabilities declare supported versions and
 input/work limits. See ADR-0054 for scope and status details.
+
+## Artifact version options
+
+`jpack artifact version --base 0.1.0 --format json` returns the patch, minor
+and major choices `0.1.1`, `0.2.0` and `1.0.0`. Optional `--candidate` reports
+numeric ordering (`lower`, `equal` or `greater`). The equivalent read-only MCP
+tool is `get_artifact_version_options` with `base` and optional `candidate`.
+Both transports use the pack's exact three-component grammar: no leading zeroes,
+prerelease suffixes or build metadata. Components use exact integer arithmetic.
+
+This is version arithmetic, not compatibility analysis or publication admission.
+It reads no project, artifact, job history or registry, reserves no version and
+saves nothing. Application policy chooses an appropriate bump, verifies usage
+and enforces immutable publication. In particular, using a version in a job
+does not become an implicit Runtime instruction to rewrite a document.
+
+The tool accepts at most 256 bytes per version and refuses a base whose next
+choices exceed that bound. This resource limit does not narrow the Core schema.
+Invalid input returns no partial choices. Scope and compatibility-not-checked
+are reported in-band. See ADR-0055.
