@@ -15,10 +15,10 @@ its evaluator. Runtime #275 records the maintainer's request for a consistent
 CLI/MCP dialect surface; Desk #402 and Runner #86 track its consumers.
 
 The contract used here is Spec commit
-`065aade751fb3a510872842ddb88e09b55574165`, `spec/dialect.md` §§1–3 and §12.
+`9fb1142546e79ab4d03f744415afc098a81efe3e`, `spec/dialect.md` §§1–3 and §12.
 This is a pinned draft companion, not an additional Core `specVersion` or a new
-conformance claim. Its published prose includes implementation-status statements;
-this change's capability report describes only this implementation.
+conformance claim. This pin records reference Runner version-3 support since
+v0.12.0; this change's capability report describes only this implementation.
 
 ## Decision
 
@@ -32,9 +32,12 @@ scope is implemented.
 
 - `init` returns an empty version-2 or version-3 dialect with no sources or
   copies. It creates no file or persisted draft. ADR-0006's authoring lifecycle
-  and host-owned persistence remain unchanged.
+  and host-owned persistence remain unchanged. Starters follow the reference
+  Runner spelling for their version and the JSON report marks `starterTemplate`.
 - Encoding admits a bounded JSON object with a version of 2 or 3 after checking
-  strict JSON and the canonical domain. It reports `encoded`, never `valid`.
+  strict JSON, the canonical domain and version-3 identity spelling (§2).
+  Forbidden version-2-only members and named optional empty containers are refused,
+  never silently omitted. It reports `encoded`, never `valid`.
   Unknown members and source kinds remain encoded as supplied values; they have
   not passed semantic validation or executable-capability checks.
 - Canonical bytes use code-point member order, preserve array order and optional
@@ -65,8 +68,10 @@ cross-language package dependency is added; the CLI/MCP boundary follows ADR-000
 
 ## Evidence and delivery limits
 
-Ten independent mapping/preparation pairs and their upstream manifest are pinned
-under `internal/dialect/testdata`. Each mapping's computed canonical digest is
+Twelve staged mapping/preparation pairs and their upstream manifest are pinned.
+The ten version-2 vectors contain six distinct mapping documents; two version-3
+vectors add bound and unbound-at-import cases. The unbound dialect and binding are
+retained too. Evidence is stored under `internal/dialect/testdata`. Each mapping's computed canonical digest is
 compared to its retained preparation's `mappingDigest`; source checksums are held
 exactly. Additional tests cover Unicode code-point ordering, safe integer limits,
 absence/null, unchanged optional members, JSON-RPC argument boundaries, input

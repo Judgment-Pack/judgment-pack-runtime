@@ -135,8 +135,8 @@ func TestPinnedIndependentMappingDigests(t *testing.T) {
 		}
 		checked++
 	}
-	if checked != 10 {
-		t.Fatalf("expected ten independent mappings, got %d", checked)
+	if checked != 12 {
+		t.Fatalf("expected twelve staged mapping vectors, got %d", checked)
 	}
 }
 func TestInitAndCapabilities(t *testing.T) {
