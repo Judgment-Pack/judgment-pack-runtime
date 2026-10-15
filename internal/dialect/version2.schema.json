@@ -223,7 +223,10 @@
           "maxItems": 128
         }
       },
-      "required": [],
+      "required": [
+        "facts",
+        "evidence"
+      ],
       "additionalProperties": false
     },
     "claimFact": {
