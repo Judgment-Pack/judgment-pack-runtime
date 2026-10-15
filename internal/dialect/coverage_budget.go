@@ -8,7 +8,8 @@ import (
 // Charge the encoded coverage while constructing it, before retaining each
 // component. Counting strings avoids allocating an amplified JSON buffer merely
 // to discover that it exceeds the limit. String accounting matches encoding/json
-// with its default HTML escaping; empty typed envelopes keep field costs in sync.
+// with its default HTML escaping for admitted UTF-8 (malformed bytes are
+// conservatively bounded); empty typed envelopes keep field costs in sync.
 type coverageBudget struct {
 	used, limit int
 }

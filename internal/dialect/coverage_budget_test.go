@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestCoverageBudgetBoundsEncodedReport(t *testing.T) {
@@ -64,12 +65,15 @@ func FuzzCoverageStringBudget(f *testing.F) {
 			t.Fatal(err)
 		}
 		n := len(encoded) - 2
-		b := &coverageBudget{limit: n}
-		if !b.stringContent(s) || b.used != n {
-			t.Fatalf("count=%d want=%d", b.used, n)
+		b := &coverageBudget{limit: 6 * len(s)}
+		// Carrier validation excludes malformed UTF-8. Its replacement spelling
+		// differs across Go encoders (escaped or literal U+FFFD), so require a
+		// conservative bound there and an exact count for admitted strings.
+		if !b.stringContent(s) || b.used < n || (utf8.ValidString(s) && b.used != n) {
+			t.Fatalf("count=%d encoded=%d validUTF8=%t", b.used, n, utf8.ValidString(s))
 		}
-		if n > 0 {
-			b = &coverageBudget{limit: n - 1}
+		if b.used > 0 {
+			b = &coverageBudget{limit: b.used - 1}
 			if b.stringContent(s) || !b.exceeded() {
 				t.Fatal("accepted over-limit string")
 			}
