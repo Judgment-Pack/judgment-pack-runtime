@@ -11,8 +11,8 @@ import (
 )
 
 func (a *App) dialectCommand() *cobra.Command {
-	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
-	for _, operation := range []string{"contract", "init", "canonicalize", "digest"} {
+	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Validate checks version-2 document forms and internal references only; it does not check profiles or preparations. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
+	for _, operation := range []string{"contract", "init", "canonicalize", "digest", "validate"} {
 		group.AddCommand(a.dialectOperation(operation))
 	}
 	return group
@@ -22,11 +22,11 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 	versionText := "2"
 	use := operation
 	args := cobra.NoArgs
-	if operation == "canonicalize" || operation == "digest" {
+	if operation == "canonicalize" || operation == "digest" || operation == "validate" {
 		use += " <dialect-or->"
 		args = cobra.ExactArgs(1)
 	}
-	descriptions := map[string]string{"contract": "Describe the pinned contract and implemented capabilities", "init": "Print a generic starter dialect without saving it", "canonicalize": "Print canonical dialect bytes without full document validation", "digest": "Print the digest of canonical dialect bytes without full document validation"}
+	descriptions := map[string]string{"validate": "Validate version-2 dialect document forms and internal references", "contract": "Describe the pinned contract and implemented capabilities", "init": "Print a generic starter dialect without saving it", "canonicalize": "Print canonical dialect bytes without full document validation", "digest": "Print the digest of canonical dialect bytes without full document validation"}
 	c := &cobra.Command{Use: use, Short: descriptions[operation], Args: args, RunE: func(_ *cobra.Command, args []string) error {
 		command := "dialect " + operation
 		if err := validateFormat(format); err != nil {
@@ -53,7 +53,11 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 			} else if err != nil {
 				return a.operational(command, format, result.ExitIO, "JPS-DIALECT-READ", "The dialect input could not be read as a bounded local regular file or standard input.")
 			}
-			report, code = dialect.Encode(command, data)
+			if operation == "validate" {
+				report, code = dialect.Validate(command, data)
+			} else {
+				report, code = dialect.Encode(command, data)
+			}
 		}
 		if format == "json" {
 			if err := a.writeJSON(report); err != nil {
@@ -69,7 +73,9 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 			var err error
 			switch operation {
 			case "contract":
-				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest\nEncoding versions: 2, 3\nFull document validation, pack compatibility and preparation verification are not implemented by these tools.\n", dialect.SpecURL)
+				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest, validate\nEncoding versions: 2, 3\nDocument validation versions: 2\nProfile compatibility, pack compatibility and preparation verification are not implemented by these tools.\n", dialect.SpecURL)
+			case "validate":
+				_, err = fmt.Fprintln(a.out, "Version-2 document checks passed. Profiles, preparations and pack compatibility were not checked.")
 			case "digest":
 				_, err = fmt.Fprintln(a.out, report.Digest)
 			default:

@@ -21,7 +21,7 @@ func TestDialectCLIAndMCPParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, raw := range []string{`{"version":2,"case":{"facts":[],"evidence":[]}}`, `{"version":3,"x":-0}`, `{"version":3,"sources":[]}`, `{"version":3,"provider":""}`, `{"version":3,"case":{"parameters":{}}}`, `{"version":3,"admits":{"facts":{}}}`, `{"version":2,"n":1.5}`, `{"version":2,"version":3}`, `{"version":4}`, strings.Repeat(" ", dialect.MaxDocumentBytes+1)} {
-		for _, operation := range []string{"canonicalize", "digest"} {
+		for _, operation := range []string{"canonicalize", "digest", "validate"} {
 			code, stdout, stderr := runTest(t, []string{"dialect", operation, "-", "--format", "json"}, raw)
 			if stderr != "" {
 				t.Fatal(stderr)
@@ -102,8 +102,23 @@ func TestDialectCLIArtifactsAndRefusals(t *testing.T) {
 		}
 	}
 	code, stdout, _ := runTest(t, []string{"dialect", "contract", "--format", "json"}, "")
-	if code != 0 || !strings.Contains(stdout, `"structuralValidation":false`) {
+	if code != 0 || !strings.Contains(stdout, `"validationVersions":[2]`) {
 		t.Fatal(stdout)
+	}
+}
+
+func TestDialectValidationHumanAndUnsupported(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"dialect", "validate", "-"}, `{"version":2,"case":{"facts":[],"evidence":[]}}`)
+	if code != 0 || stderr != "" || stdout != "Version-2 document checks passed. Profiles, preparations and pack compatibility were not checked.\n" {
+		t.Fatal(code, stdout, stderr)
+	}
+	code, stdout, stderr = runTest(t, []string{"dialect", "validate", "-"}, `{"version":2,"case":{"facts":[],"evidence":[]},"secret":"do-not-echo"}`)
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "JPS-DIALECT-FORM") || strings.Contains(stderr, "do-not-echo") {
+		t.Fatal(code, stdout, stderr)
+	}
+	code, stdout, stderr = runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, `{"version":3,"case":{"facts":[],"evidence":[]}}`)
+	if code != 2 || stderr != "" || !strings.Contains(stdout, "JPS-DIALECT-VALIDATION-VERSION") || strings.Contains(stdout, `"digest":`) {
+		t.Fatal(code, stdout, stderr)
 	}
 }
 

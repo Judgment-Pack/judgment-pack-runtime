@@ -149,3 +149,4 @@ authority, and following it confers no conformance status on anything.
 | [0050](0050-record-a-callers-binding-digest.md) | Record a caller's binding digest on the evaluation record, as given and never interpreted | accepted |
 | [0051](0051-refuse-citations-where-no-trail-is-kept.md) | Refuse citations where no trail is kept, as a binding is refused | accepted |
 | [0052](0052-offline-dialect-document-tools.md) | Offline dialect document tooling with explicit encoding-only scope | accepted |
+| [0053](0053-validate-versioned-dialect-documents.md) | Validate version-2 dialect document forms and references offline | accepted |

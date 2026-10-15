@@ -79,6 +79,7 @@ jpack dialect contract
 jpack dialect init [--dialect-version 2|3]
 jpack dialect canonicalize <dialect-or->
 jpack dialect digest <dialect-or->
+jpack dialect validate <dialect-or->
 jpack spec validate <pack-or->
 jpack spec test-conformance [suite] [--strict]
 jpack spec schema <spec-version>
@@ -938,16 +939,17 @@ fan-in, fan-out, repeated packs and unresolved results.
 
 ## Dialect document tools
 
-`jpack dialect` provides offline document encoding tools for the draft dialect
+`jpack dialect` provides offline document encoding and version-scoped validation tools for the draft dialect
 companion pinned at Spec commit `9fb1142546e79ab4d03f744415afc098a81efe3e`.
 Use `jpack dialect contract --format json` to discover the implemented operations,
-encoding versions and limits. This is separate from the Core versions reported
+encoding and validation versions and limits. This is separate from the Core versions reported
 by `jpack version`.
 
 ```sh
 jpack dialect init --dialect-version 2 > draft.dialect.json
 jpack dialect canonicalize draft.dialect.json > canonical.dialect.json
 jpack dialect digest canonical.dialect.json
+jpack dialect validate draft.dialect.json --format json
 jpack dialect canonicalize draft.dialect.json --format json
 ```
 
@@ -956,8 +958,15 @@ spelling for its version. JSON reports identify it with `starterTemplate: true`.
 Saving and editing are client operations. Encoding checks strict JSON, safe
 integer literals, the declared version and version-3 identity spelling; it does **not** validate the complete dialect schema, map it against a
 pack, establish executable source support or verify a preparation. Reports say
-`encoded` and `fullDocumentConformance: false`. Contract discovery explicitly
-reports those unavailable checks. Runner still owns binding and preparation.
+`encoded` and `fullDocumentConformance: false`. The separate `validate` operation checks version-2 document forms and internal
+references: closed members, parameters and dependency order, templates, reads,
+conditions, target collisions, admissions and document limits. A pass says
+`document-valid` with `validationScope: "version-2-document"`; it is not a
+preparation-verifier conformance claim. Profile-dependent compatibility (including
+request/adapter fit), pack compatibility, acquisition and preparation verification
+are **not checked**. Version 3 returns unsupported from validation even though its
+bytes can be encoded. Contract discovery advertises `validationVersions: [2]`
+separately from `encodingVersions: [2, 3]`. Runner still owns binding and preparation.
 
 Human `init` and `canonicalize` print the exact canonical document bytes without
 a trailing newline. Human `digest` prints `sha256:…` followed by a newline. JSON
@@ -970,8 +979,8 @@ refused. Preparation canonicalization and decision-disposition JCS are different
 forms and are not exposed by these commands.
 
 The MCP equivalents are `get_dialect_contract`, `dialect_init`,
-`dialect_canonicalize` and `dialect_digest`. They take text, never file paths,
+`dialect_canonicalize`, `dialect_digest` and `dialect_validate`. They take text, never file paths,
 and perform no network calls, project reads, saving or evaluation. Unsupported
-encoding versions return CLI exit 2; malformed or over-limit documents return 1;
+encoding or validation versions return CLI exit 2; malformed or over-limit documents return 1;
 bad invocation and read failures use the existing exits 3 and 4. A refused MCP
 operation carries the same structured report and `isError: true`.

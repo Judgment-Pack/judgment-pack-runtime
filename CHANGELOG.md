@@ -4,9 +4,16 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Add `dialect validate` and `dialect_validate` for version-2 document forms,
+  internal references and limits (#275, ADR-0053). Reports distinguish a document
+  check from profile/pack compatibility and preparation verification; version 3
+  remains encoding-only. The runtime’s conformance claim is stated only in
+  `CONFORMANCE.md`.
+
 - Add offline `dialect contract`, `init`, `canonicalize` and `digest` commands,
   with matching MCP tools, pinned draft provenance and explicit encoding-only
-  scope (#275, ADR-0052). No preparation or full document validation is performed.
+  scope (#275, ADR-0052). These encoding operations do not validate a document
+  or verify a preparation.
   Existing commands, documents and evaluation behavior remain unchanged.
   The runtime’s conformance claim is stated only in `CONFORMANCE.md`.
 

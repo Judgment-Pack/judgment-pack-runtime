@@ -150,7 +150,7 @@ func TestInitAndCapabilities(t *testing.T) {
 		t.Fatal(code)
 	}
 	c := Contract("test")
-	if len(c.Capabilities.Operations) != 4 || c.Capabilities.StructuralValidation || c.Capabilities.SemanticValidation || c.Capabilities.PreparationVerification || c.Capabilities.PackCompatibility {
+	if len(c.Capabilities.Operations) != 5 || !c.Capabilities.StructuralValidation || !c.Capabilities.SemanticValidation || c.Capabilities.PreparationVerification || c.Capabilities.PackCompatibility {
 		t.Fatal(c)
 	}
 }
