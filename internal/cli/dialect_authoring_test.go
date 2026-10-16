@@ -49,7 +49,7 @@ func TestDialectResourcesCLIAndMCP(t *testing.T) {
 			t.Fatal("CLI/MCP resource mismatch")
 		}
 	}
-	code, stdout, stderr := runTest(t, []string{"dialect", "schema", "--dialect-version", "3", "--format", "json"}, "")
+	code, stdout, stderr := runTest(t, []string{"dialect", "schema", "--dialect-version", "4", "--format", "json"}, "")
 	if code != 2 || stderr != "" || strings.Contains(stdout, `"resource":`) {
 		t.Fatal(code, stdout, stderr)
 	}
@@ -93,6 +93,8 @@ func TestDialectCheckCLIAndMCP(t *testing.T) {
 		`{"version":2,"case":{"facts":[{"target":"/expense","source":"/expense"}],"evidence":[{"requirement":"receipt","source":"/r"},{"requirement":"cost-center","source":"/c"}]}}`,
 		`{"version":2,"case":{"facts":[],"evidence":[]}}`,
 		`{"version":2,"case":{"facts":[],"evidence":[]},"unmapped":["/expense"],"unmappedEvidence":["receipt","cost-center"]}`,
+		`{"version":3,"case":{"facts":[{"target":"/expense","source":"/expense"}],"evidence":[{"requirement":"receipt","source":"/r"},{"requirement":"cost-center","source":"/c"}]}}`,
+		`{"version":3,"case":{"facts":[],"evidence":[]},"sources":[{"name":"research","kind":"research"}]}`,
 		`{"version":3}`, `{"version":2,"version":2}`, strings.Repeat(" ", dialect.MaxDocumentBytes+1),
 	} {
 		code, stdout, stderr := runTest(t, []string{"dialect", "check", "-", "--pack", file, "--format", "json"}, raw)
@@ -123,5 +125,44 @@ func TestDialectCheckCLIAndMCP(t *testing.T) {
 	after, err := os.ReadFile(file)
 	if err != nil || !bytes.Equal(pack, after) {
 		t.Fatal("check modified the pack", err)
+	}
+}
+
+func TestDialectVersion3TransportParity(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, raw, stderr := runTest(t, []string{"dialect", "schema", "--dialect-version", "3", "--format", "json"}, "")
+	var cliReport map[string]any
+	if code != 0 || stderr != "" || json.Unmarshal([]byte(raw), &cliReport) != nil {
+		t.Fatal(code, stderr)
+	}
+	mcpReport, isError := dialectMCPResult(t, engine, "get_dialect_schema", map[string]any{"version": 3})
+	delete(cliReport, "command")
+	delete(mcpReport, "command")
+	if isError || !reflect.DeepEqual(cliReport, mcpReport) {
+		t.Fatal("version-3 schema transport mismatch")
+	}
+	for _, name := range []string{"version-3-bound/mapping.json", "unbound-bound-at-import/unbound.json"} {
+		data, err := os.ReadFile("../dialect/testdata/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cliReport = nil
+		code, raw, stderr = runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, string(data))
+		if code != 0 || stderr != "" || json.Unmarshal([]byte(raw), &cliReport) != nil {
+			t.Fatal(code, stderr)
+		}
+		mcpReport, isError = dialectMCPResult(t, engine, "dialect_validate", map[string]any{"document": string(data)})
+		delete(cliReport, "command")
+		delete(mcpReport, "command")
+		if isError || !reflect.DeepEqual(cliReport, mcpReport) {
+			t.Fatal("version-3 validation transport mismatch", name)
+		}
+		code, raw, stderr = runTest(t, []string{"dialect", "validate", "-"}, string(data))
+		if code != 0 || stderr != "" || !strings.HasPrefix(raw, "Version-3 document checks passed.") {
+			t.Fatal(code, raw, stderr)
+		}
 	}
 }

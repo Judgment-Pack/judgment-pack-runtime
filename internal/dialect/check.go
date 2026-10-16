@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"slices"
+	"strconv"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
@@ -64,7 +65,7 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 	if code != 0 {
 		return r, code
 	}
-	r.ValidationScope = "version-2-document-and-declared-pack-inventory"
+	r.ValidationScope = "version-" + strconv.Itoa(r.DialectVersion) + "-document-and-declared-pack-inventory"
 	checked, failure := engine.Validate(pack, validation.Options{})
 	r.PackValidation = &checked
 	if failure != nil {

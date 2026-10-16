@@ -13,10 +13,10 @@ func dialectDefinition(operation string) map[string]any {
 		name = "get_dialect_" + operation
 	}
 	descriptions := map[string]string{
-		"schema":       "Return the Runtime-derived version-2 JSON authoring schema with byte identity. An editing aid: strict carrier and semantic checks still require dialect_validate. Offline; no files read or written.",
+		"schema":       "Return the Runtime-derived version-2 or version-3 JSON authoring schema with byte identity. An editing aid: strict carrier and semantic checks still require dialect_validate. Offline; no files read or written.",
 		"reference":    "Return the exact embedded pinned draft dialect reference, including unimplemented forms. Inspect capabilities separately; reference text is not an implementation support claim. Offline; no files read or written.",
-		"check":        "Validate a version-2 dialect and supplied pack, then compare declared targets with Runtime's over-approximated pack inventory. Distinguishes mapped, partial, acknowledged and missing coverage. Does not check value types, actual values, installed capabilities, profiles or preparations. Both inputs are JSON text, never paths. No execution or persistence.",
-		"validate":     "Validate version-2 dialect document forms, limits and internal references. Profile compatibility, source capabilities, pack compatibility and preparation verification are not checked. Returns document-valid only for this explicit scope. No files are read or written.",
+		"check":        "Validate a supported version-2 or version-3 dialect and supplied pack, then compare declared targets with Runtime's over-approximated pack inventory. Distinguishes mapped, partial, acknowledged and missing coverage. Does not check value types, actual values, installed capabilities, profiles or preparations. Both inputs are JSON text, never paths. No execution or persistence.",
+		"validate":     "Validate version-2 and version-3 dialect document forms, limits and internal references for operation and selected-file sources. Version-3 operations may be unbound; no binding is verified. Other version-3 source kinds are explicitly unsupported. Profile compatibility, source capabilities, pack compatibility and preparation verification are not checked. Returns document-valid only for this explicit scope. No files are read or written.",
 		"contract":     "Describe the pinned dialect contract and implemented operations. Reports which checks are unavailable. Offline; reads no project and writes nothing.",
 		"init":         "Return a generic dialect starter as JSON text. The client saves it. No project, acquisition, model, preparation or evaluation is accessed.",
 		"canonicalize": "Return canonical dialect bytes and their digest. Checks JSON, integer encoding, declared version and version-3 identity spelling; full structural/semantic validation and execution readiness are not checked. No files are read or written.",
@@ -26,9 +26,6 @@ func dialectDefinition(operation string) map[string]any {
 	schema := map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
 	if operation == "init" || operation == "schema" {
 		versions := []int{2, 3}
-		if operation == "schema" {
-			versions = []int{2}
-		}
 		properties["version"] = map[string]any{"type": "integer", "enum": versions, "description": "Dialect version; defaults to 2."}
 	}
 	if operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {

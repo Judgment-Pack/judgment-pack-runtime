@@ -11,7 +11,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
-// Validate checks the version-2 document's closed forms and internal references.
+// Validate checks supported version-2 and version-3 document forms and references.
 // Profile-dependent checks, preparation, source truth and pack compatibility
 // require other inputs and are never implied by document-valid.
 func Validate(command string, data []byte) (Report, int) {
@@ -25,12 +25,11 @@ func invalidDocument(r Report, code, path, message string, exit int) (Report, *d
 
 func validateDocument(command string, data []byte) (Report, *documentCheck, int) {
 	r, code := Encode(command, data)
-	r.ValidationScope = "version-2-document"
+	if r.DialectVersion != 0 {
+		r.ValidationScope = "version-" + strconv.Itoa(r.DialectVersion) + "-document"
+	}
 	if code != result.ExitSuccess {
 		return r, nil, code
-	}
-	if r.DialectVersion != 2 {
-		return invalidDocument(r, "JPS-DIALECT-VALIDATION-VERSION", "/version", "Document validation supports version 2. Version 3 encoding does not imply validation support.", result.ExitUnsupported)
 	}
 	// Encode has already bounded and checked the carrier. Keep json.Number here
 	// too; validation must never round a retained integer through float64.
@@ -38,16 +37,21 @@ func validateDocument(command string, data []byte) (Report, *documentCheck, int)
 	if failure != nil {
 		return invalidDocument(r, "JPS-DIALECT-DOCUMENT", "", "The dialect could not be read.", result.ExitInvalid)
 	}
-	v := documentCheck{}
+	v := documentCheck{version: r.DialectVersion}
 	v.document(value)
 	if v.issue != nil {
-		return invalidDocument(r, v.issue.Code, v.issue.InstancePath, v.issue.Message, result.ExitInvalid)
+		code := result.ExitInvalid
+		if v.issue.Code == "JPS-DIALECT-SOURCE-UNSUPPORTED" {
+			code = result.ExitUnsupported
+		}
+		return invalidDocument(r, v.issue.Code, v.issue.InstancePath, v.issue.Message, code)
 	}
 	r.Status = "document-valid"
 	return r, &v, result.ExitSuccess
 }
 
 type documentCheck struct {
+	version          int
 	issue            *result.Diagnostic
 	factTargets      []string
 	evidenceTargets  []string
@@ -172,7 +176,11 @@ func (v *documentCheck) pointer(value any, path string, target bool) string {
 }
 
 func (v *documentCheck) document(value any) {
-	top := v.object(value, "", []string{"version", "case"}, []string{"sources", "admits", "unmapped", "unmappedEvidence", "provider", "facts", "evidence"})
+	optional := []string{"sources", "admits", "unmapped", "unmappedEvidence"}
+	if v.version == 2 {
+		optional = append(optional, "provider", "facts", "evidence")
+	}
+	top := v.object(value, "", []string{"version", "case"}, optional)
 	if value, ok := top["provider"]; ok {
 		v.choice(value, "/provider", "")
 	}
@@ -228,6 +236,9 @@ func (v *documentCheck) document(value any) {
 				v.parameters(declarations, at(p, "parameters"), scope, previous)
 			}
 			v.source(source, p, scope)
+			if v.issue != nil {
+				return
+			}
 			targets := v.read(source["read"], at(p, "read"), scope)
 			all = append(all, targets)
 			previous[name] = targets
@@ -330,7 +341,24 @@ func (v *documentCheck) parameters(value any, path string, scope map[string]stri
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 func (v *documentCheck) source(s map[string]any, path string, scope map[string]string) {
+	if v.version == 3 {
+		switch s["kind"] {
+		case "http", "sql", "web", "research":
+			v.refuse("JPS-DIALECT-SOURCE-UNSUPPORTED", at(path, "kind"), "Document checks support operation and selected-file sources only. This version-3 source kind is not checked.")
+			return
+		}
+	}
 	kind := v.choice(s["kind"], at(path, "kind"), "operation", "selected-file")
+	unbound := false
+	if v.version == 3 && kind == "operation" {
+		// Any member selects the unbound form. Partial forms and mixtures with
+		// profile pins are refused; none of these names establishes a binding.
+		for _, key := range []string{"platform", "operation", "shape", "record"} {
+			if _, ok := s[key]; ok {
+				unbound = true
+			}
+		}
+	}
 	required := []string{"name", "kind", "read"}
 	optional := []string{"parameters"}
 	acquired := kind == "operation"
@@ -340,17 +368,29 @@ func (v *documentCheck) source(s map[string]any, path string, scope map[string]s
 		acquired = provider == "google-drive"
 	}
 	if acquired {
-		required = append(required, "profile", "profileDigest", "maxAge", "arguments")
+		required = append(required, "maxAge", "arguments")
+		if unbound {
+			required = append(required, "platform", "operation", "shape", "record")
+		} else {
+			required = append(required, "profile", "profileDigest")
+		}
 	}
 	if kind == "operation" {
 		optional = append(optional, "calculation")
 	}
 	v.object(s, path, required, optional)
 	if acquired {
-		v.text(s["profile"], at(path, "profile"), true)
-		d := v.text(s["profileDigest"], at(path, "profileDigest"), true)
-		if !digestPattern.MatchString(d) {
-			v.fail(at(path, "profileDigest"), "Expected a lowercase SHA-256 digest.")
+		if unbound {
+			for _, key := range []string{"platform", "operation", "record"} {
+				v.text(s[key], at(path, key), true)
+			}
+			v.choice(s["shape"], at(path, "shape"), "airbyte", "mcp", "http")
+		} else {
+			v.text(s["profile"], at(path, "profile"), true)
+			d := v.text(s["profileDigest"], at(path, "profileDigest"), true)
+			if !digestPattern.MatchString(d) {
+				v.fail(at(path, "profileDigest"), "Expected a lowercase SHA-256 digest.")
+			}
 		}
 		v.integer(s["maxAge"], at(path, "maxAge"), 1, 86400)
 		request := v.dictionary(s["arguments"], at(path, "arguments"))

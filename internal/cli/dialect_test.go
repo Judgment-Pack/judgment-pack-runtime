@@ -102,7 +102,7 @@ func TestDialectCLIArtifactsAndRefusals(t *testing.T) {
 		}
 	}
 	code, stdout, _ := runTest(t, []string{"dialect", "contract", "--format", "json"}, "")
-	if code != 0 || !strings.Contains(stdout, `"validationVersions":[2]`) {
+	if code != 0 || !strings.Contains(stdout, `"validationVersions":[2,3]`) {
 		t.Fatal(stdout)
 	}
 }
@@ -116,8 +116,8 @@ func TestDialectValidationHumanAndUnsupported(t *testing.T) {
 	if code != 1 || stdout != "" || !strings.Contains(stderr, "JPS-DIALECT-FORM") || strings.Contains(stderr, "do-not-echo") {
 		t.Fatal(code, stdout, stderr)
 	}
-	code, stdout, stderr = runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, `{"version":3,"case":{"facts":[],"evidence":[]}}`)
-	if code != 2 || stderr != "" || !strings.Contains(stdout, "JPS-DIALECT-VALIDATION-VERSION") || strings.Contains(stdout, `"digest":`) {
+	code, stdout, stderr = runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, `{"version":3,"case":{"facts":[],"evidence":[]},"sources":[{"name":"research","kind":"research"}]}`)
+	if code != 2 || stderr != "" || !strings.Contains(stdout, "JPS-DIALECT-SOURCE-UNSUPPORTED") || strings.Contains(stdout, `"digest":`) {
 		t.Fatal(code, stdout, stderr)
 	}
 }

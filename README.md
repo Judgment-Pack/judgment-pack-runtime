@@ -81,7 +81,7 @@ jpack dialect init [--dialect-version 2|3]
 jpack dialect canonicalize <dialect-or->
 jpack dialect digest <dialect-or->
 jpack dialect validate <dialect-or->
-jpack dialect schema [--dialect-version 2]
+jpack dialect schema [--dialect-version 2|3]
 jpack dialect reference
 jpack dialect check <dialect-or-> --pack <pack-or->
 jpack spec validate <pack-or->
@@ -962,15 +962,25 @@ spelling for its version. JSON reports identify it with `starterTemplate: true`.
 Saving and editing are client operations. Encoding checks strict JSON, safe
 integer literals, the declared version and version-3 identity spelling; it does **not** validate the complete dialect schema, map it against a
 pack, establish executable source support or verify a preparation. Reports say
-`encoded` and `fullDocumentConformance: false`. The separate `validate` operation checks version-2 document forms and internal
+`encoded` and `fullDocumentConformance: false`. The separate `validate` operation checks version-2 and version-3 document forms and internal
 references: closed members, parameters and dependency order, templates, reads,
 conditions, target collisions, admissions and document limits. A pass says
-`document-valid` with `validationScope: "version-2-document"`; it is not a
+`document-valid` with `validationScope: "version-2-document"` or `"version-3-document"`; it is not a
 preparation-verifier conformance claim. Profile-dependent compatibility (including
 request/adapter fit), acquisition and preparation verification are **not checked**.
-Declared pack inventory coverage is available through the separate `check` operation. Version 3 returns unsupported from validation even though its
-bytes can be encoded. Contract discovery advertises `validationVersions: [2]`
-separately from `encodingVersions: [2, 3]`. Runner still owns binding and preparation.
+Declared pack inventory coverage is available through the separate `check` operation.
+Both formats support `operation` and `selected-file` sources. Version 3 also
+checks unbound operation declarations (`platform`, `operation`, `shape`, `record`)
+without resolving or verifying their bindings. Partial declarations and mixed
+unbound names/profile pins are refused. The version-3 kinds `http`, `sql`, `web`
+and `research` return unsupported; unknown kinds return malformed-document errors.
+No partial coverage is returned for unsupported sources.
+
+Contract discovery advertises `validationVersions`, `schemaVersions` and
+`packCheckVersions: [2, 3]`, `validationSourceKinds: ["operation", "selected-file"]`,
+`unboundOperationValidation: true`, and `bindingVerification: false`.
+Runner still owns binding and preparation. These integer format versions are not
+artifact release versions; no new portable identity or x.y.z Dialect format is enabled.
 
 Human `init` and `canonicalize` print the exact canonical document bytes without
 a trailing newline. Human `digest` prints `sha256:…` followed by a newline. JSON
@@ -986,7 +996,7 @@ The MCP equivalents are `get_dialect_contract`, `dialect_init`,
 `dialect_canonicalize`, `dialect_digest`, `dialect_validate`, `get_dialect_schema`,
 `get_dialect_reference` and `dialect_check`. They take text, never file paths,
 and perform no network calls, project reads, saving or evaluation. Unsupported
-encoding or validation versions return CLI exit 2; malformed or over-limit documents return 1;
+encoding versions or defined but unsupported source kinds return CLI exit 2; malformed or over-limit documents return 1;
 bad invocation and read failures use the existing exits 3 and 4. A refused MCP
 operation carries the same structured report and `isError: true`.
 
@@ -994,8 +1004,8 @@ operation carries the same structured report and `isError: true`.
 
 `jpack dialect reference` prints the exact pinned companion offline. The text
 includes proposed forms; inspect `dialect contract` for implemented capabilities.
-`jpack dialect schema` prints a **Runtime-derived** version-2 JSON Schema editing
-aid, not a normative Spec artifact. It cannot enforce strict JSON spelling or
+`jpack dialect schema` prints a **Runtime-derived** version-2 or version-3 JSON Schema editing
+aid (`--dialect-version 3`), not a normative Spec artifact. It cannot enforce strict JSON spelling or
 cross-references; run `dialect validate` before treating a document as checked.
 JSON/MCP resource reports identify the text's exact bytes and SHA-256 separately
 from dialect identity. No resource is fetched at runtime.

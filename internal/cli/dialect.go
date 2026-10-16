@@ -12,7 +12,7 @@ import (
 )
 
 func (a *App) dialectCommand() *cobra.Command {
-	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Validate checks version-2 document forms and internal references only; it does not check profiles or preparations. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
+	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Validate checks version-2 and version-3 document forms and internal references for operation and selected-file sources. Version-3 unbound operations are checked as declarations only. Other version-3 source kinds, bindings, profiles and preparations are not checked. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
 	for _, operation := range []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"} {
 		group.AddCommand(a.dialectOperation(operation))
 	}
@@ -28,7 +28,7 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 		use += " <dialect-or->"
 		args = cobra.ExactArgs(1)
 	}
-	descriptions := map[string]string{"schema": "Print the Runtime-derived version-2 authoring schema", "reference": "Print the exact pinned dialect reference offline", "check": "Check declared dialect targets against a validated pack inventory", "validate": "Validate version-2 dialect document forms and internal references", "contract": "Describe the pinned contract and implemented capabilities", "init": "Print a generic starter dialect without saving it", "canonicalize": "Print canonical dialect bytes without full document validation", "digest": "Print the digest of canonical dialect bytes without full document validation"}
+	descriptions := map[string]string{"schema": "Print the Runtime-derived version-2 or version-3 authoring schema", "reference": "Print the exact pinned dialect reference offline", "check": "Check declared dialect targets against a validated pack inventory", "validate": "Validate supported version-2 and version-3 dialect document forms and internal references", "contract": "Describe the pinned contract and implemented capabilities", "init": "Print a generic starter dialect without saving it", "canonicalize": "Print canonical dialect bytes without full document validation", "digest": "Print the digest of canonical dialect bytes without full document validation"}
 	c := &cobra.Command{Use: use, Short: descriptions[operation], Args: args, RunE: func(_ *cobra.Command, args []string) error {
 		command := "dialect " + operation
 		if err := validateFormat(format); err != nil {
@@ -96,11 +96,11 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 			var err error
 			switch operation {
 			case "contract":
-				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest, validate, schema, reference, check\nEncoding versions: 2, 3\nDocument validation versions: 2\nPack checks cover declared inventory only. Value types, profile compatibility and preparation verification are not checked.\n", dialect.SpecURL)
+				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest, validate, schema, reference, check\nEncoding versions: 2, 3\nDocument validation versions: 2, 3\nValidation source kinds: operation, selected-file\nUnbound operation declarations: supported; binding verification: not supported\nPack checks cover declared inventory only. Value types, profile compatibility and preparation verification are not checked.\n", dialect.SpecURL)
 			case "schema", "reference":
 				_, err = fmt.Fprint(a.out, report.Resource.Text)
 			case "validate":
-				_, err = fmt.Fprintln(a.out, "Version-2 document checks passed. Profiles, preparations and pack compatibility were not checked.")
+				_, err = fmt.Fprintf(a.out, "Version-%d document checks passed. Profiles, preparations and pack compatibility were not checked.\n", report.DialectVersion)
 			case "digest":
 				_, err = fmt.Fprintln(a.out, report.Digest)
 			default:
@@ -117,7 +117,7 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 	}}
 	c.Flags().StringVar(&format, "format", format, "output format: human or json; JSON includes scope and provenance")
 	if operation == "init" || operation == "schema" {
-		c.Flags().StringVar(&versionText, "dialect-version", versionText, "dialect version: exactly 2 or 3 for encoding; 2 for schema")
+		c.Flags().StringVar(&versionText, "dialect-version", versionText, "dialect version: exactly 2 or 3")
 	}
 	if operation == "check" {
 		c.Flags().StringVar(&packPath, "pack", "", "pack file or - for standard input; required")

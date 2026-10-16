@@ -152,3 +152,4 @@ authority, and following it confers no conformance status on anything.
 | [0053](0053-validate-versioned-dialect-documents.md) | Validate version-2 dialect document forms and references offline | accepted |
 | [0054](0054-dialect-authoring-resources-and-pack-coverage.md) | Serve pinned authoring resources and compare dialect targets with pack inventory | accepted |
 | [0055](0055-artifact-version-arithmetic.md) | Share exact artifact version options through CLI and MCP | accepted |
+| [0056](0056-version-3-dialect-authoring.md) | Check supported version-3 Dialect declarations through shared authoring tools | accepted |
