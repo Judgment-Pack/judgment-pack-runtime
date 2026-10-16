@@ -20,8 +20,9 @@ root members, and apply strict omission spelling. The named header participates
 in canonical identity. Artifact IDs are not normalized; malformed UTF-8 and
 forbidden whitespace/control bytes fail. Initialization checks supplied argument
 presence, including empty/null arguments, rather than silently ignoring them.
-Authoring schemas use the same strict boundaries and family-specific source
-scope as validation; they remain nonnormative editing aids.
+Authoring schemas share identity spelling, omission constraints and family-specific
+source scope with validation. They remain nonnormative editing aids: UTF-8 byte
+bounds, strict carrier checks and semantic checks require runtime validation.
 
 This extends ADRs 0052–0056 without moving publication policy or storage into
 Runtime. Runtime does not publish, bump, bind or execute a Dialect, and a check
