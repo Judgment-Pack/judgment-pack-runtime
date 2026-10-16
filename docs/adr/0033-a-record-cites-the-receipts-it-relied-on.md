@@ -56,13 +56,18 @@ line of this runtime's trail is therefore already citable by digest; what it can
 Chosen option: **A**, because the record then names, in the gateway's own grammar, what the
 caller says entered the decision — and says nothing more than that.
 
-**The shape.** `cites` is an array of objects, each with exactly three members: `sessionId`, a
-flat token (`[A-Za-z0-9._-]{1,128}`, never `.` or `..`); `callIndex`, an integer from 0 to
-2^53−1; `signature`, exactly 128 lowercase hexadecimal characters. These are the structural
-constraints the gateway's SPEC.md (§§1.1, 1.2a, 3a) puts on an action receipt's citation, so
-nothing is recorded that no conforming receipt could carry. A string is its value — a JSON
-escape is read as the character it spells, and what the grammar admits is ASCII, so no
-malformed Unicode passes as anything. The runtime holds a supplied document to that shape and
+**The shape.** `cites` is an array of objects, each with exactly three members: `sessionId`, any
+JSON string of at most 1024 bytes in UTF-8 (the empty string included, no character excluded, as
+the dialect companion's §5.2 reads a receipt's `sessionId`: "a string; this document does not hold
+it to gateway §3a's token form"); `callIndex`, an integer from 0 to 2^53−1; `signature`, exactly
+128 lowercase hexadecimal characters. The last two are the constraints the gateway's SPEC.md
+(§§1.1, 1.2a) puts on an action receipt's citation; the first is not held to the gateway's token
+form (`[A-Za-z0-9._-]{1,128}`, which this ADR first required and runtime #290 lifted), and the 1024
+bytes are this runtime's own bound, since the companion's §12 gives none for the member. A string
+is its value — a JSON escape is read as the character it spells and the value is recorded exactly
+as given, never trimmed or normalised — except that a string which is not well-formed Unicode (a
+lone surrogate escape, invalid UTF-8) is refused, since decoding would replace it and the record
+would no longer say what the caller gave. The runtime holds a supplied document to that shape and
 to nothing else: it does not check that a session exists, that a receipt verifies, or that the
 cited receipts have anything to do with the facts. A document that is not of the shape is refused as a bad invocation before the
 evaluator is reached, on every surface, exactly as a misspelled argument is.

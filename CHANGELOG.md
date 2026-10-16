@@ -2,6 +2,16 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- A citation's `sessionId` is read as any JSON string, the empty string included, of at most
+  1024 bytes in UTF-8, as the dialect companion's §5.2 reads a receipt's, instead of the
+  gateway's flat token of 1 to 128 characters; one longer than the bound, or not a string,
+  or not well-formed Unicode, is refused by name (`JPS-INVOCATION-CITES`). It is recorded
+  exactly as given, and the record of a citation that was admitted before is byte for byte
+  what it was (runtime #290, ADR-0033). The runtime's conformance claim remains stated only
+  in `CONFORMANCE.md`.
+
 ## 0.33.0 - 2026-10-16
 
 - The release workflow publishes the draft by id after comparing its assets by the

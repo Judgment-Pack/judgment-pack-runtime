@@ -2226,7 +2226,16 @@ func TestExperimentalEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
 		toolCall(t, 4, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": nil}),
 		toolCall(t, 5, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []any{}}),
 		toolCall(t, 6, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": cites, "rehearsal": true}),
+		toolCall(t, 7, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []map[string]any{{"sessionId": "", "callIndex": 0, "signature": strings.Repeat("b", 128)}}}),
+		toolCall(t, 8, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []map[string]any{{"sessionId": "a \"b\" \\ c:d\u2028é\t", "callIndex": 0, "signature": strings.Repeat("c", 128)}}}),
+		toolCall(t, 9, "experimental_evaluate", map[string]any{"pack_id": "intake", "facts": projectFacts, "cites": []map[string]any{{"sessionId": strings.Repeat("s", 1025), "callIndex": 0, "signature": strings.Repeat("c", 128)}}}),
 	}, ""))
+	if toolText(t, responses[6]["result"].(map[string]any)) == "" || responses[6]["result"].(map[string]any)["isError"] != false || responses[7]["result"].(map[string]any)["isError"] != false {
+		t.Fatalf("an empty session and one with odd characters are admitted: %#v %#v", responses[6], responses[7])
+	}
+	if refused := responses[8]["result"].(map[string]any); refused["isError"] != true || !strings.Contains(toolText(t, refused), "sessionId must be at most 1024 bytes in UTF-8") {
+		t.Fatalf("a session over the bound is refused by name: %#v", responses[8])
+	}
 	if responses[0]["result"].(map[string]any)["isError"] != false {
 		t.Fatalf("with citations: %#v", responses[0])
 	}
@@ -2244,8 +2253,13 @@ func TestExperimentalEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("two records -- the cited call and the empty-array call; the refused calls and the rehearsal leave none: %q", data)
+	if len(lines) != 4 {
+		t.Fatalf("four records -- the cited call, the empty-array call and the two odd-session calls; the refused calls and the rehearsal leave none: %q", data)
+	}
+	for index, want := range map[int]string{2: `"cites":[{"sessionId":"","callIndex":0,`, 3: `"cites":[{"sessionId":"a \"b\" \\ c:d\u2028é\t","callIndex":0,`} {
+		if !strings.Contains(lines[index], want) {
+			t.Fatalf("record %d carries the session as given, %q: %s", index, want, lines[index])
+		}
 	}
 	if !strings.Contains(lines[0], `"cites":[{"sessionId":"s-2026-09-12-a","callIndex":17,"signature":"`+strings.Repeat("a", 128)+`"}]`) {
 		t.Fatalf("the citations as given: %s", lines[0])
@@ -2266,7 +2280,7 @@ func TestExperimentalEvaluateRecordsTheCitationsAsGiven(t *testing.T) {
 			t.Fatalf("a member twice: %#v", responses[0])
 		}
 	}
-	if data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName)); err != nil || len(strings.Split(strings.TrimSpace(string(data)), "\n")) != 2 {
+	if data, err := os.ReadFile(filepath.Join(root, "audit", audit.FileName)); err != nil || len(strings.Split(strings.TrimSpace(string(data)), "\n")) != 4 {
 		t.Fatalf("a refused call records nothing: %v %q", err, data)
 	}
 }
