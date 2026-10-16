@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/Judgment-Pack/judgment-pack-exchange",
+  "revision": "e5e59425ebb4e88dbb10732a99cc9d9ef5ab49ee",
+  "files": {
+    "exchange-preset.json": {
+      "upstream": "tests/fixtures/preset-entry/entries/example/company-research/dialect.json",
+      "sha256": "b568330bfd332b248fe9bfc6073bb46cab122346cea821bc1626bf8fe7b1d171"
+    },
+    "LICENSE": {
+      "upstream": "LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  }
+}
