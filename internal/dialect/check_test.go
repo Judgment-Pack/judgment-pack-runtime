@@ -130,7 +130,7 @@ func TestCheckPackRefusalsAndNoChecks(t *testing.T) {
 		d, p []byte
 		exit int
 	}{
-		{"unsupported dialect", []byte(`{"version":3}`), valid, 2},
+		{"unsupported dialect", []byte(`{"version":4}`), valid, 2},
 		{"invalid dialect", []byte(`{"version":2}`), valid, 1},
 		{"duplicate pack", doc, []byte(`{"specVersion":"0.2.0-draft","specVersion":"0.2.0-draft"}`), 1},
 		{"malformed pack", doc, []byte(`{`), 1},

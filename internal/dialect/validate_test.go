@@ -60,11 +60,8 @@ func TestVersion2DocumentValidation(t *testing.T) {
 	for _, version := range []int{2, 3} {
 		starter, _ := Init("test", version)
 		r, code := Validate("test", []byte(starter.Document))
-		if version == 2 && code != 0 {
+		if code != 0 || r.Document == "" || r.Digest == "" {
 			t.Fatal(r)
-		}
-		if version == 3 && (code != result.ExitUnsupported || r.Document != "" || r.Digest != "") {
-			t.Fatal(code, r)
 		}
 	}
 	files, err := filepath.Glob("testdata/*/mapping.json")
@@ -83,11 +80,7 @@ func TestVersion2DocumentValidation(t *testing.T) {
 			t.Fatal(err)
 		}
 		r, code := Validate("test", data)
-		if input.Version == 3 {
-			if code != result.ExitUnsupported || r.Document != "" || r.Digest != "" {
-				t.Fatalf("unsupported version-3 validation: %s %+v", file, r)
-			}
-		} else if input.Version != 2 || code != 0 {
+		if (input.Version != 2 && input.Version != 3) || code != 0 {
 			t.Fatalf("%s: %v", file, r.Diagnostics)
 		}
 	}

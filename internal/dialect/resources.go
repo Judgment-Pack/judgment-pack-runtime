@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"strconv"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -16,6 +17,9 @@ var referenceText string
 
 //go:embed version2.schema.json
 var version2Schema string
+
+// Both resources share the same copy, rule, parameter and template definitions.
+var version3Schema = version3AuthoringSchema()
 
 // Resource describes its own bytes, not a dialect or preparation digest.
 // A runtime-derived schema is an editing aid, never a substitute for Validate.
@@ -41,12 +45,16 @@ func Reference(command string) Report {
 
 func Schema(command string, version int) (Report, int) {
 	r := report(command)
-	if version != 2 {
-		return refused(r, "JPS-DIALECT-SCHEMA-VERSION", "/version", "The Runtime-derived authoring schema supports version 2 only.", result.ExitUnsupported)
+	if version != 2 && version != 3 {
+		return refused(r, "JPS-DIALECT-SCHEMA-VERSION", "/version", "The Runtime-derived authoring schema supports versions 2 and 3.", result.ExitUnsupported)
 	}
 	r.Status = "available"
 	r.DialectVersion = version
-	r.ValidationScope = "version-2-structure-aid"
-	r.Resource = resource(version2Schema, "application/schema+json", "runtime-derived")
+	r.ValidationScope = "version-" + strconv.Itoa(version) + "-structure-aid"
+	schema := version2Schema
+	if version == 3 {
+		schema = version3Schema
+	}
+	r.Resource = resource(schema, "application/schema+json", "runtime-derived")
 	return r, result.ExitSuccess
 }

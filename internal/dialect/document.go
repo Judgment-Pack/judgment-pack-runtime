@@ -49,22 +49,25 @@ type Report struct {
 }
 
 type Capabilities struct {
-	Operations              []string `json:"operations"`
-	EncodingVersions        []int    `json:"encodingVersions"`
-	ValidationVersions      []int    `json:"validationVersions"`
-	SchemaVersions          []int    `json:"schemaVersions"`
-	PackCheckVersions       []int    `json:"packCheckVersions"`
-	PackCheckScope          string   `json:"packCheckScope"`
-	ProfileCompatibility    bool     `json:"profileCompatibility"`
-	MaxDocumentBytes        int      `json:"maxDocumentBytes"`
-	MaxPackBytes            int64    `json:"maxPackBytes"`
-	MaxCoverageComparisons  int64    `json:"maxCoverageComparisons"`
-	MaxCoverageReportBytes  int      `json:"maxCoverageReportBytes"`
-	MaxDepth                int      `json:"maxDepth"`
-	StructuralValidation    bool     `json:"structuralValidation"`
-	SemanticValidation      bool     `json:"semanticValidation"`
-	PackCompatibility       bool     `json:"packCompatibility"`
-	PreparationVerification bool     `json:"preparationVerification"`
+	ValidationSourceKinds      []string `json:"validationSourceKinds"`
+	UnboundOperationValidation bool     `json:"unboundOperationValidation"`
+	BindingVerification        bool     `json:"bindingVerification"`
+	Operations                 []string `json:"operations"`
+	EncodingVersions           []int    `json:"encodingVersions"`
+	ValidationVersions         []int    `json:"validationVersions"`
+	SchemaVersions             []int    `json:"schemaVersions"`
+	PackCheckVersions          []int    `json:"packCheckVersions"`
+	PackCheckScope             string   `json:"packCheckScope"`
+	ProfileCompatibility       bool     `json:"profileCompatibility"`
+	MaxDocumentBytes           int      `json:"maxDocumentBytes"`
+	MaxPackBytes               int64    `json:"maxPackBytes"`
+	MaxCoverageComparisons     int64    `json:"maxCoverageComparisons"`
+	MaxCoverageReportBytes     int      `json:"maxCoverageReportBytes"`
+	MaxDepth                   int      `json:"maxDepth"`
+	StructuralValidation       bool     `json:"structuralValidation"`
+	SemanticValidation         bool     `json:"semanticValidation"`
+	PackCompatibility          bool     `json:"packCompatibility"`
+	PreparationVerification    bool     `json:"preparationVerification"`
 }
 
 func report(command string) Report {
@@ -76,7 +79,7 @@ func report(command string) Report {
 func Contract(command string) Report {
 	r := report(command)
 	r.Status = "available"
-	r.Capabilities = &Capabilities{Operations: []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2}, SchemaVersions: []int{2}, PackCheckVersions: []int{2}, PackCompatibility: true, PackCheckScope: "declared-inventory-coverage", StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxPackBytes: MaxPackBytes, MaxCoverageComparisons: MaxCoverageComparisons, MaxCoverageReportBytes: MaxCoverageReportBytes, MaxDepth: MaxDepth}
+	r.Capabilities = &Capabilities{Operations: []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2, 3}, SchemaVersions: []int{2, 3}, PackCheckVersions: []int{2, 3}, ValidationSourceKinds: []string{"operation", "selected-file"}, UnboundOperationValidation: true, PackCompatibility: true, PackCheckScope: "declared-inventory-coverage", StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxPackBytes: MaxPackBytes, MaxCoverageComparisons: MaxCoverageComparisons, MaxCoverageReportBytes: MaxCoverageReportBytes, MaxDepth: MaxDepth}
 	return r
 }
 

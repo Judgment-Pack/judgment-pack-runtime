@@ -32,7 +32,7 @@ func TestDialectResourcesIdentityAndScope(t *testing.T) {
 	if reference.Resource.Text != string(b) || reference.Resource.Origin != "pinned-specification" {
 		t.Fatal("reference was rewritten")
 	}
-	for _, version := range []int{0, 1, 3, 4} {
+	for _, version := range []int{0, 1, 4} {
 		if r, code := Schema("test", version); code != 2 || r.Resource != nil {
 			t.Fatal(version, r)
 		}
