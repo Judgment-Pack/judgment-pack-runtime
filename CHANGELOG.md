@@ -2,7 +2,18 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.33.0 - 2026-10-16
+
+- The release workflow publishes the draft by id after comparing its assets by the
+  digests the releases API reports, and re-reads the published digests after
+  publication, telling an observed mismatch from a read that could not complete by
+  name (#280, closes #277). This release is the first run of that step.
+
+- Share the exact artifact version options a client needs through the CLI and MCP,
+  computed once from the same arithmetic (#281, ADR-0055).
+
+- Validate supported version-3 dialect declarations through the shared authoring
+  tools (#285, ADR-0056).
 
 - Add offline dialect `schema`, `reference` and `check --pack` operations with
   equivalent MCP tools (#275, ADR-0054). Serve a pinned reference and a labelled
