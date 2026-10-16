@@ -116,7 +116,7 @@ func TestDialectValidationHumanAndUnsupported(t *testing.T) {
 	if code != 1 || stdout != "" || !strings.Contains(stderr, "JPS-DIALECT-FORM") || strings.Contains(stderr, "do-not-echo") {
 		t.Fatal(code, stdout, stderr)
 	}
-	code, stdout, stderr = runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, `{"version":3,"case":{"facts":[],"evidence":[]},"sources":[{"name":"research","kind":"research"}]}`)
+	code, stdout, stderr = runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, `{"version":3,"case":{"facts":[],"evidence":[]},"sources":[{"name":"web","kind":"web"}]}`)
 	if code != 2 || stderr != "" || !strings.Contains(stdout, "JPS-DIALECT-SOURCE-UNSUPPORTED") || strings.Contains(stdout, `"digest":`) {
 		t.Fatal(code, stdout, stderr)
 	}

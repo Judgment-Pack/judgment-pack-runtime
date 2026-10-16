@@ -42,7 +42,7 @@ func TestVersion3ValidationPreservesIdentityAndScope(t *testing.T) {
 		}
 	}
 	c := Contract("test").Capabilities
-	if !c.UnboundOperationValidation || c.BindingVerification || c.ProfileCompatibility || c.PreparationVerification || strings.Join(c.ValidationSourceKinds, ",") != "operation,selected-file" {
+	if !c.UnboundOperationValidation || c.BindingVerification || c.ProfileCompatibility || c.PreparationVerification || strings.Join(c.ValidationSourceKinds, ",") != "operation,selected-file,research" {
 		t.Fatal(c)
 	}
 }
@@ -160,7 +160,7 @@ func TestVersion3InternalReferencesAndCoverage(t *testing.T) {
 	if code != 0 || r.Compatibility == nil || r.ValidationScope != "version-3-document-and-declared-pack-inventory" || r.Compatibility.ValueTypesChecked || r.Compatibility.ExecutionChecked {
 		t.Fatal(code, r)
 	}
-	for _, kind := range []string{"http", "sql", "web", "research", "invented"} {
+	for _, kind := range []string{"http", "sql", "web", "invented"} {
 		d := version3Sample(t, true)
 		sourceAt(d, 0)["kind"] = kind
 		raw, _ := json.Marshal(d)

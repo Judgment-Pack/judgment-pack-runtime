@@ -225,6 +225,7 @@ func (v *documentCheck) document(value any) {
 	caseTargets := v.copy(map[string]any{"facts": c["facts"], "evidence": c["evidence"]}, "/case")
 	all := []readTargets{caseTargets}
 	previous := map[string]readTargets{}
+	researchFields := map[string]map[string]bool{}
 	if raw, ok := top["sources"]; ok {
 		for i, rawSource := range v.list(raw, "/sources", 0, 16) {
 			p := at("/sources", strconv.Itoa(i))
@@ -240,11 +241,22 @@ func (v *documentCheck) document(value any) {
 			if declarations, ok := source["parameters"]; ok {
 				v.parameters(declarations, at(p, "parameters"), scope, previous)
 			}
-			v.source(source, p, scope)
+			var fields map[string]bool
+			if v.version == 3 && source["kind"] == "research" {
+				fields = v.research(source, p, scope)
+			} else {
+				v.source(source, p, scope)
+			}
 			if v.issue != nil {
 				return
 			}
-			targets := v.read(source["read"], at(p, "read"), scope)
+			var targets readTargets
+			if fields != nil {
+				targets = v.researchRead(source["read"], at(p, "read"), scope, fields, researchFields)
+				researchFields[name] = fields
+			} else {
+				targets = v.read(source["read"], at(p, "read"), scope)
+			}
 			all = append(all, targets)
 			previous[name] = targets
 			if v.issue != nil {

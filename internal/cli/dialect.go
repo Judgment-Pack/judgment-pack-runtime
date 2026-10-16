@@ -12,7 +12,7 @@ import (
 )
 
 func (a *App) dialectCommand() *cobra.Command {
-	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Validate checks version-2 and version-3 document forms and internal references for operation and selected-file sources. Version-3 unbound operations are checked as declarations only. Other version-3 source kinds, bindings, profiles and preparations are not checked. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
+	group := &cobra.Command{Use: "dialect", Short: "Offline dialect document tools", Long: "Offline authoring tools for a pinned draft dialect contract. Encoding checks JSON, the canonical number domain, declared version and version-3 identity spelling; it does not validate the full dialect schema, prepare inputs, check source capabilities, or authorize execution. Validate checks version-2 and version-3 document forms and internal references for operation, selected-file and research sources. Version-3 unbound operations are checked as declarations only. Other version-3 source kinds, bindings, profiles and preparations are not checked. Use contract to inspect the implemented operations.", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error { return c.Help() }}
 	for _, operation := range []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"} {
 		group.AddCommand(a.dialectOperation(operation))
 	}
@@ -114,7 +114,7 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 			var err error
 			switch operation {
 			case "contract":
-				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest, validate, schema, reference, check\nEncoding versions: 2, 3\nNamed formats: 2.0.0, 3.0.0\nDocument validation versions: 2, 3\nValidation source kinds: operation, selected-file\nUnbound operation declarations: supported; binding verification: not supported\nPack checks cover declared inventory only. Value types, profile compatibility and preparation verification are not checked.\n", dialect.SpecURL)
+				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest, validate, schema, reference, check\nEncoding versions: 2, 3\nNamed formats: 2.0.0, 3.0.0\nDocument validation versions: 2, 3\nValidation source kinds: operation, selected-file, research\nUnbound operation declarations: supported; binding verification: not supported\nPack checks cover declared inventory only. Value types, profile compatibility and preparation verification are not checked.\n", dialect.SpecURL)
 			case "schema", "reference":
 				_, err = fmt.Fprint(a.out, report.Resource.Text)
 			case "validate":

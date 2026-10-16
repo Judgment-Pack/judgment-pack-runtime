@@ -391,13 +391,15 @@ integer `version` (2 by default; 3 is also available). Encoding and validation t
 `document` as exact JSON text, not a parsed object or file path. They share the
 CLI's report and require no project, credentials, network or model.
 
-`dialect_validate` checks the version-2 document's closed forms, internal
+`dialect_validate` checks version-2 and version-3 documents' closed forms, internal
 references and limits. A pass reports `document-valid` and
-`validationScope: "version-2-document"`, with canonical bytes and their digest.
+`validationScope: "version-2-document"` or `"version-3-document"`, with canonical bytes and their digest.
 It does not check profile/request compatibility, installed capabilities, pack
 coverage, source truth or preparation verification. This validation pass makes no claim about those checks; inspect the separate
-operation capabilities. Version 3 is explicitly unsupported by validation; the ability to encode
-it is separate. Inspect `validationVersions`, not `encodingVersions`, before
+operation capabilities. Version 3 supports operation, selected-file and research
+source declarations; HTTP, SQL and web declarations remain unsupported. Research
+validation checks declarations and reconciliation rules, not acquired results.
+Inspect `validationVersions` and `validationSourceKinds`, not `encodingVersions`, before
 calling the validator. Schema/reference retrieval and declared pack-inventory checks are available
 through their separate tools (ADR-0054).
 

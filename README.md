@@ -972,12 +972,14 @@ Declared pack inventory coverage is available through the separate `check` opera
 Both formats support `operation` and `selected-file` sources. Version 3 also
 checks unbound operation declarations (`platform`, `operation`, `shape`, `record`)
 without resolving or verifying their bindings. Partial declarations and mixed
-unbound names/profile pins are refused. The version-3 kinds `http`, `sql`, `web`
-and `research` return unsupported; unknown kinds return malformed-document errors.
+unbound names/profile pins are refused. Version 3 additionally checks `research`
+questions, parameters, typed requested fields, capability declarations, profile
+assignment shape, and closed reconciliation reads. The version-3 kinds `http`,
+`sql` and `web` return unsupported; unknown kinds return malformed-document errors.
 No partial coverage is returned for unsupported sources.
 
 Contract discovery advertises `validationVersions`, `schemaVersions` and
-`packCheckVersions: [2, 3]`, `validationSourceKinds: ["operation", "selected-file"]`,
+`packCheckVersions: [2, 3]`, `validationSourceKinds: ["operation", "selected-file", "research"]`,
 `unboundOperationValidation: true`, and `bindingVerification: false`.
 Runner still owns binding and preparation. These integer format versions are not
 artifact release versions. Named formats are separately advertised as

@@ -11,7 +11,7 @@ func version3AuthoringSchema() string {
 	}
 	schema["$id"] = "urn:judgmentpack:runtime:dialect:3:authoring-schema:1"
 	schema["title"] = "Dialect version 3 — Runtime authoring schema"
-	schema["$comment"] = "Runtime-derived editing aid from Spec commit " + SpecRevision + "; not a normative schema. Supports operation (bound or unbound) and selected-file only. Use dialect validate for strict carrier, spelling, scope, reference and aggregate checks. Does not bind sources or check profiles, preparations, capability availability or execution readiness."
+	schema["$comment"] = "Runtime-derived editing aid from Spec commit " + SpecRevision + "; not a normative schema. Supports operation and research (bound or unbound), and selected-file. Use dialect validate for strict carrier, spelling, scope, reference and aggregate checks. Does not bind sources or check profiles, preparations, capability availability or execution readiness."
 	properties := schema["properties"].(map[string]any)
 	properties["version"] = map[string]any{"const": 3}
 	for _, name := range []string{"provider", "facts", "evidence"} {
@@ -38,7 +38,7 @@ func version3AuthoringSchema() string {
 	}
 	p["shape"] = map[string]any{"enum": []string{"airbyte", "mcp", "http"}}
 	unbound["required"] = []string{"name", "kind", "read", "platform", "operation", "shape", "record", "maxAge", "arguments"}
-	source["oneOf"] = append(forms, unbound)
+	source["oneOf"] = append(append(forms, unbound), researchAuthoringSchema(defs))
 	encoded, err = json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		panic(err)
@@ -65,4 +65,26 @@ func applyStrictOmissions(schema map[string]any) {
 		p["parameters"].(map[string]any)["minProperties"] = 1
 	}
 
+}
+
+func researchAuthoringSchema(defs map[string]any) map[string]any {
+	text := func(max int) map[string]any {
+		return map[string]any{"type": "string", "minLength": 1, "maxLength": max}
+	}
+	profile := map[string]any{"type": "object", "properties": map[string]any{"profile": text(131072), "profileDigest": map[string]any{"type": "string", "pattern": digestPattern.String() + `(?![\s\S])`}}, "required": []string{"profile", "profileDigest"}, "additionalProperties": false}
+	field := map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 64, "not": map[string]any{"const": "case"}}, "type": map[string]any{"enum": []string{"integer", "decimal", "boolean", "text", "text-list", "range"}}, "required": map[string]any{"type": "boolean"}, "description": text(2048)}, "required": []string{"name", "type", "required", "description"}, "additionalProperties": false}
+	parameters := defs["source"].(map[string]any)["oneOf"].([]any)[0].(map[string]any)["properties"].(map[string]any)["parameters"]
+	reconciliation := map[string]any{"type": "object", "properties": map[string]any{"sources": map[string]any{"type": "array", "minItems": 1, "maxItems": 15, "uniqueItems": true, "items": text(131072)}, "rule": map[string]any{"$ref": "#/$defs/rule"}}, "required": []string{"sources", "rule"}, "additionalProperties": false}
+	return map[string]any{"type": "object", "properties": map[string]any{
+		"name": map[string]any{"type": "string", "minLength": 1, "not": map[string]any{"const": "case"}}, "kind": map[string]any{"const": "research"}, "parameters": parameters,
+		"read":        map[string]any{"oneOf": []any{map[string]any{"$ref": "#/$defs/read"}, reconciliation}},
+		"maxAge":      map[string]any{"type": "integer", "minimum": 1, "maximum": 86400},
+		"question":    map[string]any{"oneOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "object", "properties": map[string]any{"$param": text(131072)}, "required": []string{"$param"}, "additionalProperties": false}, map[string]any{"type": "object", "properties": map[string]any{"$text": map[string]any{"type": "string"}}, "required": []string{"$text"}, "additionalProperties": false}}},
+		"constraints": map[string]any{"type": "object", "additionalProperties": map[string]any{"$ref": "#/$defs/canonicalValue"}}, "model": text(256),
+		"evidence": map[string]any{"type": "array", "items": text(4096)}, "fields": map[string]any{"type": "array", "minItems": 1, "maxItems": 64, "items": field},
+		"capabilities": map[string]any{"enum": [][]string{{"answer"}, {"answer", "search"}, {"answer", "page"}, {"answer", "search", "page"}}},
+		"profile":      text(131072), "profileDigest": map[string]any{"type": "string", "pattern": digestPattern.String() + `(?![\s\S])`},
+		"webProfiles": map[string]any{"type": "object", "properties": map[string]any{"search": profile, "page": profile}, "additionalProperties": false},
+	}, "required": []string{"name", "kind", "read", "maxAge", "question", "constraints", "model", "evidence", "fields", "capabilities"}, "additionalProperties": false,
+		"dependentRequired": map[string]any{"profile": []string{"profileDigest", "webProfiles"}, "profileDigest": []string{"profile", "webProfiles"}, "webProfiles": []string{"profile", "profileDigest"}}}
 }

@@ -86,7 +86,7 @@ func report(command string) Report {
 func Contract(command string) Report {
 	r := report(command)
 	r.Status = "available"
-	r.Capabilities = &Capabilities{FormatVersions: []string{"2.0.0", "3.0.0"}, Operations: []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2, 3}, SchemaVersions: []int{2, 3}, PackCheckVersions: []int{2, 3}, ValidationSourceKinds: []string{"operation", "selected-file"}, UnboundOperationValidation: true, PackCompatibility: true, PackCheckScope: "declared-inventory-coverage", StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxPackBytes: MaxPackBytes, MaxCoverageComparisons: MaxCoverageComparisons, MaxCoverageReportBytes: MaxCoverageReportBytes, MaxDepth: MaxDepth}
+	r.Capabilities = &Capabilities{FormatVersions: []string{"2.0.0", "3.0.0"}, Operations: []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2, 3}, SchemaVersions: []int{2, 3}, PackCheckVersions: []int{2, 3}, ValidationSourceKinds: []string{"operation", "selected-file", "research"}, UnboundOperationValidation: true, PackCompatibility: true, PackCheckScope: "declared-inventory-coverage", StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxPackBytes: MaxPackBytes, MaxCoverageComparisons: MaxCoverageComparisons, MaxCoverageReportBytes: MaxCoverageReportBytes, MaxDepth: MaxDepth}
 	return r
 }
 
