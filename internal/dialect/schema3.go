@@ -17,22 +17,10 @@ func version3AuthoringSchema() string {
 	for _, name := range []string{"provider", "facts", "evidence"} {
 		delete(properties, name)
 	}
-	for _, name := range []string{"sources", "unmapped", "unmappedEvidence"} {
-		properties[name].(map[string]any)["minItems"] = 1
-	}
+	applyStrictOmissions(schema)
 	defs := schema["$defs"].(map[string]any)
-	caseProperties := defs["case"].(map[string]any)["properties"].(map[string]any)
-	caseProperties["parameters"].(map[string]any)["minProperties"] = 1
-	admissions := defs["admits"].(map[string]any)["properties"].(map[string]any)
-	for _, name := range []string{"facts", "evidence"} {
-		admissions[name].(map[string]any)["minProperties"] = 1
-	}
 	source := defs["source"].(map[string]any)
 	forms := source["oneOf"].([]any)
-	for _, form := range forms {
-		p := form.(map[string]any)["properties"].(map[string]any)
-		p["parameters"].(map[string]any)["minProperties"] = 1
-	}
 	// Clone the bound operation rather than weakening it into optional pins.
 	encoded, err := json.Marshal(forms[0])
 	if err != nil {
@@ -56,4 +44,25 @@ func version3AuthoringSchema() string {
 		panic(err)
 	}
 	return string(encoded) + "\n"
+}
+
+func applyStrictOmissions(schema map[string]any) {
+	properties := schema["properties"].(map[string]any)
+	for _, name := range []string{"sources", "unmapped", "unmappedEvidence"} {
+		properties[name].(map[string]any)["minItems"] = 1
+	}
+	defs := schema["$defs"].(map[string]any)
+	caseProperties := defs["case"].(map[string]any)["properties"].(map[string]any)
+	caseProperties["parameters"].(map[string]any)["minProperties"] = 1
+	admissions := defs["admits"].(map[string]any)["properties"].(map[string]any)
+	for _, name := range []string{"facts", "evidence"} {
+		admissions[name].(map[string]any)["minProperties"] = 1
+	}
+	source := defs["source"].(map[string]any)
+	forms := source["oneOf"].([]any)
+	for _, form := range forms {
+		p := form.(map[string]any)["properties"].(map[string]any)
+		p["parameters"].(map[string]any)["minProperties"] = 1
+	}
+
 }

@@ -13,10 +13,10 @@ func dialectDefinition(operation string) map[string]any {
 		name = "get_dialect_" + operation
 	}
 	descriptions := map[string]string{
-		"schema":       "Return the Runtime-derived version-2 or version-3 JSON authoring schema with byte identity. An editing aid: strict carrier and semantic checks still require dialect_validate. Offline; no files read or written.",
+		"schema":       "Return the Runtime-derived legacy version-2/version-3 or named 2.0.0/3.0.0 JSON authoring schema with byte identity. An editing aid: strict carrier and semantic checks still require dialect_validate. Offline; no files read or written.",
 		"reference":    "Return the exact embedded pinned draft dialect reference, including unimplemented forms. Inspect capabilities separately; reference text is not an implementation support claim. Offline; no files read or written.",
-		"check":        "Validate a supported version-2 or version-3 dialect and supplied pack, then compare declared targets with Runtime's over-approximated pack inventory. Distinguishes mapped, partial, acknowledged and missing coverage. Does not check value types, actual values, installed capabilities, profiles or preparations. Both inputs are JSON text, never paths. No execution or persistence.",
-		"validate":     "Validate version-2 and version-3 dialect document forms, limits and internal references for operation and selected-file sources. Version-3 operations may be unbound; no binding is verified. Other version-3 source kinds are explicitly unsupported. Profile compatibility, source capabilities, pack compatibility and preparation verification are not checked. Returns document-valid only for this explicit scope. No files are read or written.",
+		"check":        "Validate a supported legacy or named dialect and supplied pack, then compare declared targets with Runtime's over-approximated pack inventory. Distinguishes mapped, partial, acknowledged and missing coverage. Does not check value types, actual values, installed capabilities, profiles or preparations. Both inputs are JSON text, never paths. No execution or persistence.",
+		"validate":     "Validate legacy version-2/version-3 and named 2.0.0/3.0.0 dialect document forms, limits and internal references for operation and selected-file sources. Version-3 operations may be unbound; no binding is verified. Other version-3 source kinds are explicitly unsupported. Profile compatibility, source capabilities, pack compatibility and preparation verification are not checked. Returns document-valid only for this explicit scope. No files are read or written.",
 		"contract":     "Describe the pinned dialect contract and implemented operations. Reports which checks are unavailable. Offline; reads no project and writes nothing.",
 		"init":         "Return a generic dialect starter as JSON text. The client saves it. No project, acquisition, model, preparation or evaluation is accessed.",
 		"canonicalize": "Return canonical dialect bytes and their digest. Checks JSON, integer encoding, declared version and version-3 identity spelling; full structural/semantic validation and execution readiness are not checked. No files are read or written.",
@@ -26,6 +26,11 @@ func dialectDefinition(operation string) map[string]any {
 	schema := map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
 	if operation == "init" || operation == "schema" {
 		versions := []int{2, 3}
+		properties["formatVersion"] = map[string]any{"type": "string", "enum": []string{"2.0.0", "3.0.0"}}
+		if operation == "init" {
+			properties["id"] = map[string]any{"type": "string"}
+			properties["artifactVersion"] = map[string]any{"type": "string"}
+		}
 		properties["version"] = map[string]any{"type": "integer", "enum": versions, "description": "Dialect version; defaults to 2."}
 	}
 	if operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
@@ -59,14 +64,48 @@ func (s *Server) toolDialect(name string, args json.RawMessage) any {
 			return toolError("Expected an arguments object.")
 		}
 
-		if m := exactMembers(name, args, "version"); m != "" {
+		members := []string{"version", "formatVersion"}
+		if name == "dialect_init" {
+			members = append(members, "id", "artifactVersion")
+		}
+		if m := exactMembers(name, args, members...); m != "" {
 			return toolError(m)
 		}
 		var input struct {
-			Version json.RawMessage `json:"version"`
+			Version         json.RawMessage `json:"version"`
+			FormatVersion   *string         `json:"formatVersion"`
+			ID              string          `json:"id"`
+			ArtifactVersion string          `json:"artifactVersion"`
+		}
+		var rawFields map[string]json.RawMessage
+		if json.Unmarshal(args, &rawFields) != nil {
+			return toolError("Expected an arguments object.")
+		}
+		for _, field := range []string{"formatVersion", "id", "artifactVersion"} {
+			if value, exists := rawFields[field]; exists && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				return toolError("Named format arguments must be strings, not null.")
+			}
 		}
 		if len(args) > 0 && json.Unmarshal(args, &input) != nil {
 			return toolError("Expected an object with an optional integer version.")
+		}
+		if input.FormatVersion != nil {
+			if len(input.Version) > 0 {
+				return toolError("Choose a legacy version or named format, not both.")
+			}
+			if name == "get_dialect_schema" {
+				report, code = dialect.ArtifactSchema(command, *input.FormatVersion)
+			} else {
+				report, code = dialect.InitArtifact(command, *input.FormatVersion, input.ID, input.ArtifactVersion)
+			}
+			reply := toolResult(report)
+			if code != 0 {
+				reply["isError"] = true
+			}
+			return reply
+		}
+		if _, hasID := rawFields["id"]; hasID || rawFields["artifactVersion"] != nil {
+			return toolError("Artifact identity requires formatVersion.")
 		}
 		version := 2
 		if len(input.Version) > 0 && (string(input.Version) == "null" || json.Unmarshal(input.Version, &version) != nil) {

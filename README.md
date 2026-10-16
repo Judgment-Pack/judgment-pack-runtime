@@ -944,7 +944,7 @@ fan-in, fan-out, repeated packs and unresolved results.
 ## Dialect document tools
 
 `jpack dialect` provides offline document encoding and version-scoped validation tools for the draft dialect
-companion pinned at Spec commit `9fb1142546e79ab4d03f744415afc098a81efe3e`.
+companion pinned at Spec commit `b7cc8906c23d92c63f4e42c4706cc1e21b9d324f`.
 Use `jpack dialect contract --format json` to discover the implemented operations,
 encoding and validation versions and limits. This is separate from the Core versions reported
 by `jpack version`.
@@ -980,7 +980,20 @@ Contract discovery advertises `validationVersions`, `schemaVersions` and
 `packCheckVersions: [2, 3]`, `validationSourceKinds: ["operation", "selected-file"]`,
 `unboundOperationValidation: true`, and `bindingVerification: false`.
 Runner still owns binding and preparation. These integer format versions are not
-artifact release versions; no new portable identity or x.y.z Dialect format is enabled.
+artifact release versions. Named formats are separately advertised as
+`formatVersions: ["2.0.0", "3.0.0"]`; they require `id` and a string artifact
+`version`. Both named formats use strict omission rules and preserve all identity
+fields in canonical bytes. Their preparation families remain integer 2 and 3.
+
+```sh
+jpack dialect init --format-version 3.0.0 --id urn:example:dialect:companies --artifact-version 1.0.0
+jpack dialect schema --format-version 3.0.0
+```
+
+MCP `dialect_init` accepts `formatVersion`, `id` and `artifactVersion`;
+`get_dialect_schema` accepts `formatVersion`. Never combine the named selector
+with the legacy `version` argument (`--dialect-version` on CLI). This does not
+authorize a job, perform publication or enable new source kinds.
 
 Human `init` and `canonicalize` print the exact canonical document bytes without
 a trailing newline. Human `digest` prints `sha256:…` followed by a newline. JSON

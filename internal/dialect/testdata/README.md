@@ -1,7 +1,7 @@
 # Pinned dialect document evidence
 
 `provenance.json` records exact files from Judgment-Pack/judgment-pack-spec at
-`9fb1142546e79ab4d03f744415afc098a81efe3e`, their original paths and SHA-256
+`b7cc8906c23d92c63f4e42c4706cc1e21b9d324f`, their original paths and SHA-256
 checksums. `LICENSE` is that repository's license. The reference text is retained
 for review, not fetched by the executable.
 
