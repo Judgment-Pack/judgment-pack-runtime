@@ -485,7 +485,7 @@ const maxSafeInteger = 9007199254740991
 const MaxCitesBytes = 1 << 20
 
 // ParseCites holds a citations document to the gateway's shape: a JSON
-// array whose every element is an object with exactly sessionId (a flat
+// array whose every element is an object with exactly sessionId (a
 // string of 0 to 1024 bytes in UTF-8 and any content, as the dialect
 // companion's §5.2 reads a receipt's), callIndex (an integer literal from 0
 // to 2^53-1) and signature (exactly 128 lowercase hexadecimal characters) —
