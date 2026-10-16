@@ -1,10 +1,10 @@
 {
   "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
-  "revision": "9fb1142546e79ab4d03f744415afc098a81efe3e",
+  "revision": "b7cc8906c23d92c63f4e42c4706cc1e21b9d324f",
   "files": {
     "spec-dialect.md": {
       "upstream": "spec/dialect.md",
-      "sha256": "df98f2b61bd6d7745a2e7aba9fa4b121c34ea891ee6c4d6abcf56f78deecad50"
+      "sha256": "4a4c3ebcfb565da202751b8fddfaba9b8c3dd3f4643f0ad1aebc72d2fdf2c736"
     },
     "LICENSE": {
       "upstream": "LICENSE",
@@ -117,6 +117,90 @@
     "unbound-bound-at-import/binding.json": {
       "upstream": "conformance/dialect/vectors/unbound-bound-at-import/binding.json",
       "sha256": "29e89b730e2eb8d825cf538a271ac63440ff2e236970f57fcf9c730c821ec01e"
+    },
+    "artifact-identity/README.md": {
+      "upstream": "conformance/dialect/artifact-identity/README.md",
+      "sha256": "2bf4cf17371fed3160cfb370a9dbd4e501793576f2155955e8232516274e1d19"
+    },
+    "artifact-identity/manifest.json": {
+      "upstream": "conformance/dialect/artifact-identity/manifest.json",
+      "sha256": "f18f1f5ec9be31ef3d39a8e48c70b5fdebb1f13c484ee48b81f2f234c8c18878"
+    },
+    "artifact-identity/named-unbound-bound-at-import/binding.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-unbound-bound-at-import/binding.json",
+      "sha256": "a6a4e90f57a4f9701d23d558e6d53778f64ce534d5cac2fbb9b782dd608333df"
+    },
+    "artifact-identity/named-unbound-bound-at-import/case.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-unbound-bound-at-import/case.json",
+      "sha256": "780718de39758469b8395dbaca2db1f75eea1e6af644fe4f54b507aef331572f"
+    },
+    "artifact-identity/named-unbound-bound-at-import/dialect.canonical.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-unbound-bound-at-import/dialect.canonical.json",
+      "sha256": "655f0696d50ff58e10d3c3084a6579689da415aced7db491aefc7ed313442b70"
+    },
+    "artifact-identity/named-unbound-bound-at-import/dialect.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-unbound-bound-at-import/dialect.json",
+      "sha256": "6f2e55351da8982efae6e68ed470087d3ee9e5f19f2b70bdd36c62c478936bc8"
+    },
+    "artifact-identity/named-unbound-bound-at-import/preparation.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-unbound-bound-at-import/preparation.json",
+      "sha256": "39f05409ff5a64600fcf669a57fe2724dadc0ae40cfac1162a4d0c62b1e62df0"
+    },
+    "artifact-identity/named-unbound-bound-at-import/profiles.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-unbound-bound-at-import/profiles.json",
+      "sha256": "d8c1936b0821dfa586380a641ddf9485f00b36e5ccf81cc1d0a858d9a5ea9bf8"
+    },
+    "artifact-identity/named-unbound-bound-at-import/sources.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-unbound-bound-at-import/sources.json",
+      "sha256": "455a29ae1c72b6654d3ef918edc0e6d9065afc1b2a8ba600f082a51e99b9527d"
+    },
+    "artifact-identity/named-valid/case.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-valid/case.json",
+      "sha256": "84a6042529b5d316ec36a4757172742f36da61112a6920c1eee8ee6a88fbc5ba"
+    },
+    "artifact-identity/named-valid/dialect.canonical.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-valid/dialect.canonical.json",
+      "sha256": "d2adfc2a5e881b3249a3ccf0ea0807efadd26f8e688dfe8c950e503252f12858"
+    },
+    "artifact-identity/named-valid/dialect.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-valid/dialect.json",
+      "sha256": "77a5597a0e6d8c51c1494d88318454f855d5c7f45f658e4309d9fd3920415fcb"
+    },
+    "artifact-identity/named-valid/preparation.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-valid/preparation.json",
+      "sha256": "fe8e02b09a8d41236c6f603f06f30f15f00886e8f53323b49eab5969465d2cbd"
+    },
+    "artifact-identity/named-valid/profiles.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-valid/profiles.json",
+      "sha256": "b1752a5c851a7df2ee04ebd7beb37eec232f76dda57b81905baab74042420d1a"
+    },
+    "artifact-identity/named-valid/sources.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-valid/sources.json",
+      "sha256": "d87bd771d575c91f870140588464a3a42ae5c71a04c4efc46301ed446b96c4b8"
+    },
+    "artifact-identity/named-version-3-bound/case.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-version-3-bound/case.json",
+      "sha256": "84a6042529b5d316ec36a4757172742f36da61112a6920c1eee8ee6a88fbc5ba"
+    },
+    "artifact-identity/named-version-3-bound/dialect.canonical.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-version-3-bound/dialect.canonical.json",
+      "sha256": "9a22428fbf9a670a9283ee3a5fb9232c1023f60a77a009e674a917d5f974eb97"
+    },
+    "artifact-identity/named-version-3-bound/dialect.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-version-3-bound/dialect.json",
+      "sha256": "8d874f38a514469de0b584273afb8f7a4820a01e9a5a58af7a5dec10c4bcdbf8"
+    },
+    "artifact-identity/named-version-3-bound/preparation.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-version-3-bound/preparation.json",
+      "sha256": "1a8b25b627771cbbafe7612e24981f1817234cf69ae0ada1183e958b6c7ed6d4"
+    },
+    "artifact-identity/named-version-3-bound/profiles.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-version-3-bound/profiles.json",
+      "sha256": "decb22f176d60994312961b60ad1db7207c0aef858b20f6de0a44ffedb4f6778"
+    },
+    "artifact-identity/named-version-3-bound/sources.json": {
+      "upstream": "conformance/dialect/artifact-identity/named-version-3-bound/sources.json",
+      "sha256": "76fc5e1922acab82aa9e6ee1eb0f74e51f142dae77a6c37565c53ebb85582663"
     }
   }
 }

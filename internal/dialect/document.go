@@ -7,16 +7,19 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifactversion"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 const (
-	SpecRevision     = "9fb1142546e79ab4d03f744415afc098a81efe3e"
+	SpecRevision     = "b7cc8906c23d92c63f4e42c4706cc1e21b9d324f"
 	SpecURL          = "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + SpecRevision + "/spec/dialect.md"
 	MaxDocumentBytes = 131072
 	MaxDepth         = 64
@@ -37,6 +40,9 @@ type Report struct {
 	Status                  string              `json:"status"`
 	ValidationScope         string              `json:"validationScope,omitempty"`
 	FullDocumentConformance bool                `json:"fullDocumentConformance"`
+	FormatVersion           string              `json:"formatVersion,omitempty"`
+	ArtifactID              string              `json:"artifactId,omitempty"`
+	ArtifactVersion         string              `json:"artifactVersion,omitempty"`
 	DialectVersion          int                 `json:"dialectVersion,omitempty"`
 	Document                string              `json:"document,omitempty"`
 	Digest                  string              `json:"digest,omitempty"`
@@ -49,6 +55,7 @@ type Report struct {
 }
 
 type Capabilities struct {
+	FormatVersions             []string `json:"formatVersions"`
 	ValidationSourceKinds      []string `json:"validationSourceKinds"`
 	UnboundOperationValidation bool     `json:"unboundOperationValidation"`
 	BindingVerification        bool     `json:"bindingVerification"`
@@ -79,7 +86,7 @@ func report(command string) Report {
 func Contract(command string) Report {
 	r := report(command)
 	r.Status = "available"
-	r.Capabilities = &Capabilities{Operations: []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2, 3}, SchemaVersions: []int{2, 3}, PackCheckVersions: []int{2, 3}, ValidationSourceKinds: []string{"operation", "selected-file"}, UnboundOperationValidation: true, PackCompatibility: true, PackCheckScope: "declared-inventory-coverage", StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxPackBytes: MaxPackBytes, MaxCoverageComparisons: MaxCoverageComparisons, MaxCoverageReportBytes: MaxCoverageReportBytes, MaxDepth: MaxDepth}
+	r.Capabilities = &Capabilities{FormatVersions: []string{"2.0.0", "3.0.0"}, Operations: []string{"contract", "init", "canonicalize", "digest", "validate", "schema", "reference", "check"}, EncodingVersions: []int{2, 3}, ValidationVersions: []int{2, 3}, SchemaVersions: []int{2, 3}, PackCheckVersions: []int{2, 3}, ValidationSourceKinds: []string{"operation", "selected-file"}, UnboundOperationValidation: true, PackCompatibility: true, PackCheckScope: "declared-inventory-coverage", StructuralValidation: true, SemanticValidation: true, MaxDocumentBytes: MaxDocumentBytes, MaxPackBytes: MaxPackBytes, MaxCoverageComparisons: MaxCoverageComparisons, MaxCoverageReportBytes: MaxCoverageReportBytes, MaxDepth: MaxDepth}
 	return r
 }
 
@@ -132,19 +139,43 @@ func Encode(command string, data []byte) (Report, int) {
 	if !ok {
 		return refused(r, "JPS-DIALECT-DOCUMENT", "", "A dialect document must be a JSON object.", result.ExitInvalid)
 	}
-	version, ok := object["version"].(json.Number)
-	if !ok {
-		return refused(r, "JPS-DIALECT-VERSION", "/version", "A dialect document must declare its integer version.", result.ExitInvalid)
+	if selector, named := object["formatVersion"]; named {
+		switch selector {
+		case "2.0.0":
+			r.DialectVersion = 2
+		case "3.0.0":
+			r.DialectVersion = 3
+		default:
+			return refused(r, "JPS-DIALECT-FORMAT", "/formatVersion", "Supported named formats are exactly 2.0.0 and 3.0.0.", result.ExitUnsupported)
+		}
+		r.FormatVersion = selector.(string)
+		id, ok := object["id"].(string)
+		if !ok || id == "" || len(id) > 1024 || strings.IndexFunc(id, func(c rune) bool { return c <= 32 || c == 127 }) >= 0 {
+			return refused(r, "JPS-DIALECT-ID", "/id", "Provide a non-empty stable identifier within 1024 UTF-8 bytes, without ASCII spaces or controls.", result.ExitInvalid)
+		}
+		version, ok := object["version"].(string)
+		if !ok || !artifactGrammar.MatchString(version) {
+			return refused(r, "JPS-DIALECT-ARTIFACT-VERSION", "/version", "Provide an exact three-component artifact version without leading zeroes or suffixes.", result.ExitInvalid)
+		}
+		r.ArtifactID, r.ArtifactVersion = id, version
+	} else {
+		if _, present := object["id"]; present {
+			return refused(r, "JPS-DIALECT-ID", "/id", "Legacy integer formats have no artifact identity.", result.ExitInvalid)
+		}
+		version, ok := object["version"].(json.Number)
+		if !ok {
+			return refused(r, "JPS-DIALECT-VERSION", "/version", "A legacy dialect document must declare its integer version.", result.ExitInvalid)
+		}
+		switch version.String() {
+		case "2":
+			r.DialectVersion = 2
+		case "3":
+			r.DialectVersion = 3
+		default:
+			return refused(r, "JPS-DIALECT-VERSION", "/version", "Supported legacy dialect versions are 2 and 3.", result.ExitUnsupported)
+		}
 	}
-	switch version.String() {
-	case "2":
-		r.DialectVersion = 2
-	case "3":
-		r.DialectVersion = 3
-	default:
-		return refused(r, "JPS-DIALECT-VERSION", "/version", "Supported dialect encoding versions are 2 and 3.", result.ExitUnsupported)
-	}
-	if r.DialectVersion == 3 {
+	if r.DialectVersion == 3 || r.FormatVersion != "" {
 		if path := version3Spelling(object); path != "" {
 			return refused(r, "JPS-DIALECT-V3-SPELLING", path, "Version 3 forbids version-2-only members and requires this optional empty member to be omitted.", result.ExitInvalid)
 		}
@@ -287,4 +318,19 @@ func version3Spelling(top map[string]any) string {
 		}
 	}
 	return ""
+}
+
+var artifactGrammar = regexp.MustCompile(artifactversion.Pattern)
+
+// InitArtifact creates a new named document, not a migration of an existing receipt.
+func InitArtifact(command, format, id, version string) (Report, int) {
+	if !utf8.ValidString(id) || !utf8.ValidString(format) || !utf8.ValidString(version) {
+		return refused(report(command), "JPS-DIALECT-IDENTITY", "/id", "Artifact arguments must be valid UTF-8.", result.ExitInvalid)
+	}
+	raw, _ := json.Marshal(map[string]any{"formatVersion": format, "id": id, "version": version, "case": map[string]any{"facts": []any{}, "evidence": []any{}}})
+	r, code := Validate(command, raw)
+	if code == result.ExitSuccess {
+		r.StarterTemplate = true
+	}
+	return r, code
 }

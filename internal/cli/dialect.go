@@ -21,6 +21,7 @@ func (a *App) dialectCommand() *cobra.Command {
 func (a *App) dialectOperation(operation string) *cobra.Command {
 	format := "human"
 	versionText := "2"
+	formatVersion, artifactID, artifactVersion := "", "", ""
 	packPath := ""
 	use := operation
 	args := cobra.NoArgs
@@ -29,13 +30,22 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 		args = cobra.ExactArgs(1)
 	}
 	descriptions := map[string]string{"schema": "Print the Runtime-derived version-2 or version-3 authoring schema", "reference": "Print the exact pinned dialect reference offline", "check": "Check declared dialect targets against a validated pack inventory", "validate": "Validate supported version-2 and version-3 dialect document forms and internal references", "contract": "Describe the pinned contract and implemented capabilities", "init": "Print a generic starter dialect without saving it", "canonicalize": "Print canonical dialect bytes without full document validation", "digest": "Print the digest of canonical dialect bytes without full document validation"}
-	c := &cobra.Command{Use: use, Short: descriptions[operation], Args: args, RunE: func(_ *cobra.Command, args []string) error {
+	c := &cobra.Command{Use: use, Short: descriptions[operation], Args: args, RunE: func(cmd *cobra.Command, args []string) error {
 		command := "dialect " + operation
 		if err := validateFormat(format); err != nil {
 			return a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
 		}
 		if operation == "check" && (packPath == "" || (packPath == "-" && args[0] == "-")) {
 			return a.operational(command, format, result.ExitInvocation, "JPS-DIALECT-PACK-ARGUMENT", "Check requires --pack; only one operand can read standard input.")
+		}
+		if cmd.Flags().Changed("format-version") && formatVersion == "" {
+			return a.operational(command, format, result.ExitInvocation, "JPS-DIALECT-FORMAT", "A named format selector cannot be empty.")
+		}
+		if formatVersion != "" && cmd.Flags().Changed("dialect-version") {
+			return a.operational(command, format, result.ExitInvocation, "JPS-DIALECT-FORMAT", "Choose a legacy version or a named format, not both.")
+		}
+		if formatVersion == "" && (cmd.Flags().Changed("id") || cmd.Flags().Changed("artifact-version")) {
+			return a.operational(command, format, result.ExitInvocation, "JPS-DIALECT-FORMAT", "Artifact identity requires --format-version.")
 		}
 		version := 2
 		if operation == "init" || operation == "schema" {
@@ -52,9 +62,17 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 		case "contract":
 			report = dialect.Contract(command)
 		case "init":
-			report, code = dialect.Init(command, version)
+			if formatVersion != "" {
+				report, code = dialect.InitArtifact(command, formatVersion, artifactID, artifactVersion)
+			} else {
+				report, code = dialect.Init(command, version)
+			}
 		case "schema":
-			report, code = dialect.Schema(command, version)
+			if formatVersion != "" {
+				report, code = dialect.ArtifactSchema(command, formatVersion)
+			} else {
+				report, code = dialect.Schema(command, version)
+			}
 		case "reference":
 			report = dialect.Reference(command)
 		default:
@@ -96,7 +114,7 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 			var err error
 			switch operation {
 			case "contract":
-				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest, validate, schema, reference, check\nEncoding versions: 2, 3\nDocument validation versions: 2, 3\nValidation source kinds: operation, selected-file\nUnbound operation declarations: supported; binding verification: not supported\nPack checks cover declared inventory only. Value types, profile compatibility and preparation verification are not checked.\n", dialect.SpecURL)
+				_, err = fmt.Fprintf(a.out, "Dialect document tools · draft\nSpecification: %s\nOperations: contract, init, canonicalize, digest, validate, schema, reference, check\nEncoding versions: 2, 3\nNamed formats: 2.0.0, 3.0.0\nDocument validation versions: 2, 3\nValidation source kinds: operation, selected-file\nUnbound operation declarations: supported; binding verification: not supported\nPack checks cover declared inventory only. Value types, profile compatibility and preparation verification are not checked.\n", dialect.SpecURL)
 			case "schema", "reference":
 				_, err = fmt.Fprint(a.out, report.Resource.Text)
 			case "validate":
@@ -117,7 +135,12 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 	}}
 	c.Flags().StringVar(&format, "format", format, "output format: human or json; JSON includes scope and provenance")
 	if operation == "init" || operation == "schema" {
-		c.Flags().StringVar(&versionText, "dialect-version", versionText, "dialect version: exactly 2 or 3")
+		c.Flags().StringVar(&versionText, "dialect-version", versionText, "legacy dialect version: exactly 2 or 3")
+		c.Flags().StringVar(&formatVersion, "format-version", "", "named format: exactly 2.0.0 or 3.0.0")
+		if operation == "init" {
+			c.Flags().StringVar(&artifactID, "id", "", "stable artifact identifier")
+			c.Flags().StringVar(&artifactVersion, "artifact-version", "", "three-component artifact version")
+		}
 	}
 	if operation == "check" {
 		c.Flags().StringVar(&packPath, "pack", "", "pack file or - for standard input; required")

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"encoding/json"
 	"strconv"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -57,4 +58,33 @@ func Schema(command string, version int) (Report, int) {
 	}
 	r.Resource = resource(schema, "application/schema+json", "runtime-derived")
 	return r, result.ExitSuccess
+}
+
+// ArtifactSchema is an authoring aid selected by an exact named format.
+func ArtifactSchema(command, format string) (Report, int) {
+	version := 2
+	if format == "3.0.0" {
+		version = 3
+	} else if format != "2.0.0" {
+		return refused(report(command), "JPS-DIALECT-FORMAT", "/formatVersion", "Unsupported named format.", result.ExitUnsupported)
+	}
+	r, code := Schema(command, version)
+	var schema map[string]any
+	_ = json.Unmarshal([]byte(r.Resource.Text), &schema)
+	applyStrictOmissions(schema)
+	schema["$id"] = "urn:judgmentpack:runtime:dialect:" + format + ":authoring-schema:1"
+	schema["title"] = "Named Dialect " + format + " — Runtime authoring schema"
+	props := schema["properties"].(map[string]any)
+	for _, key := range []string{"provider", "facts", "evidence"} {
+		delete(props, key)
+	}
+	props["formatVersion"] = map[string]any{"const": format}
+	props["id"] = map[string]any{"type": "string", "minLength": 1, "maxLength": 1024, "pattern": `^[^\u0000-\u0020\u007f]+$(?![\s\S])`}
+	props["version"] = map[string]any{"type": "string", "pattern": artifactGrammar.String() + `(?![\s\S])`}
+	schema["required"] = []string{"formatVersion", "id", "version", "case"}
+	// Identity omission rules and UTF-8 byte bounds are enforced by Validate.
+	encoded, _ := json.MarshalIndent(schema, "", "  ")
+	r.Resource = resource(string(encoded)+"\n", "application/schema+json", "runtime-derived")
+	r.FormatVersion = format
+	return r, code
 }

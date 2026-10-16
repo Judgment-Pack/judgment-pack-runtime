@@ -37,7 +37,7 @@ func validateDocument(command string, data []byte) (Report, *documentCheck, int)
 	if failure != nil {
 		return invalidDocument(r, "JPS-DIALECT-DOCUMENT", "", "The dialect could not be read.", result.ExitInvalid)
 	}
-	v := documentCheck{version: r.DialectVersion}
+	v := documentCheck{version: r.DialectVersion, named: r.FormatVersion != ""}
 	v.document(value)
 	if v.issue != nil {
 		code := result.ExitInvalid
@@ -51,6 +51,7 @@ func validateDocument(command string, data []byte) (Report, *documentCheck, int)
 }
 
 type documentCheck struct {
+	named            bool
 	version          int
 	issue            *result.Diagnostic
 	factTargets      []string
@@ -177,10 +178,14 @@ func (v *documentCheck) pointer(value any, path string, target bool) string {
 
 func (v *documentCheck) document(value any) {
 	optional := []string{"sources", "admits", "unmapped", "unmappedEvidence"}
-	if v.version == 2 {
+	if v.version == 2 && !v.named {
 		optional = append(optional, "provider", "facts", "evidence")
 	}
-	top := v.object(value, "", []string{"version", "case"}, optional)
+	required := []string{"version", "case"}
+	if v.named {
+		required = append(required, "formatVersion", "id")
+	}
+	top := v.object(value, "", required, optional)
 	if value, ok := top["provider"]; ok {
 		v.choice(value, "/provider", "")
 	}

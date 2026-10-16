@@ -20,7 +20,7 @@ func TestDialectCLIAndMCPParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, raw := range []string{`{"version":2,"case":{"facts":[],"evidence":[]}}`, `{"version":3,"x":-0}`, `{"version":3,"sources":[]}`, `{"version":3,"provider":""}`, `{"version":3,"case":{"parameters":{}}}`, `{"version":3,"admits":{"facts":{}}}`, `{"version":2,"n":1.5}`, `{"version":2,"version":3}`, `{"version":4}`, strings.Repeat(" ", dialect.MaxDocumentBytes+1)} {
+	for _, raw := range []string{`{"formatVersion":"2.0.0","id":"urn:test","version":"1.2.3","case":{"facts":[],"evidence":[]}}`, `{"formatVersion":"3.0.0","id":"urn:test","version":"1.2.3","case":{"facts":[],"evidence":[]}}`, `{"version":2,"case":{"facts":[],"evidence":[]}}`, `{"version":3,"x":-0}`, `{"version":3,"sources":[]}`, `{"version":3,"provider":""}`, `{"version":3,"case":{"parameters":{}}}`, `{"version":3,"admits":{"facts":{}}}`, `{"version":2,"n":1.5}`, `{"version":2,"version":3}`, `{"version":4}`, strings.Repeat(" ", dialect.MaxDocumentBytes+1)} {
 		for _, operation := range []string{"canonicalize", "digest", "validate"} {
 			code, stdout, stderr := runTest(t, []string{"dialect", operation, "-", "--format", "json"}, raw)
 			if stderr != "" {
@@ -127,6 +127,26 @@ func TestDialectVersionFlagUsesExactSpelling(t *testing.T) {
 		code, raw, _ := runTest(t, []string{"dialect", "init", "--dialect-version", value, "--format", "json"}, "")
 		if code == 0 || strings.Contains(raw, `"document":`) || strings.Contains(raw, `"digest":`) {
 			t.Fatalf("accepted %q: %d %s", value, code, raw)
+		}
+	}
+}
+
+func TestNamedDialectCLIInitAndSchema(t *testing.T) {
+	for _, format := range []string{"2.0.0", "3.0.0"} {
+		code, raw, stderr := runTest(t, []string{"dialect", "init", "--format-version", format, "--id", "urn:test", "--artifact-version", "1.2.3", "--format", "json"}, "")
+		var report dialect.Report
+		if code != 0 || stderr != "" || json.Unmarshal([]byte(raw), &report) != nil || report.ArtifactVersion != "1.2.3" || report.FormatVersion != format {
+			t.Fatal(code, raw, stderr)
+		}
+		code, raw, stderr = runTest(t, []string{"dialect", "schema", "--format-version", format, "--format", "json"}, "")
+		if code != 0 || stderr != "" || json.Unmarshal([]byte(raw), &report) != nil || report.Resource == nil || report.FormatVersion != format {
+			t.Fatal(code, raw, stderr)
+		}
+	}
+	for _, args := range [][]string{{"--format-version", ""}, {"--format-version", "2.0.0", "--dialect-version", "2"}, {"--format-version", "2.0.0"}, {"--id", "urn:test"}, {"--id", ""}, {"--artifact-version", ""}, {"--format-version", "2.0.0", "--id", "urn:test:\xff", "--artifact-version", "1.0.0"}} {
+		code, raw, _ := runTest(t, append([]string{"dialect", "init"}, args...), "")
+		if code == 0 {
+			t.Fatal(args, raw)
 		}
 	}
 }

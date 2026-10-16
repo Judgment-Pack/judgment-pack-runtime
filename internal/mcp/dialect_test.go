@@ -52,3 +52,24 @@ func TestDialectToolDiscoveryAndStrictArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestNamedDialectMCPInitAndSchema(t *testing.T) {
+	for _, format := range []string{"2.0.0", "3.0.0"} {
+		for _, name := range []string{"dialect_init", "get_dialect_schema"} {
+			args := `{"formatVersion":"` + format + `"}`
+			if name == "dialect_init" {
+				args = `{"formatVersion":"` + format + `","id":"urn:test","artifactVersion":"1.2.3"}`
+			}
+			result := runServer(t, rawToolCall(t, 1, name, args))[0]["result"].(map[string]any)
+			if result["isError"] == true || result["structuredContent"].(map[string]any)["formatVersion"] != format {
+				t.Fatal(result)
+			}
+		}
+	}
+	for _, args := range []string{`{"id":""}`, `{"artifactVersion":""}`, `{"formatVersion":null}`, `{"formatVersion":"2.0.0","id":null}`, `{"formatVersion":"2.0.0","id":"urn:test","artifactVersion":null}`, `{"formatVersion":"2.0.0","version":2}`, `{"formatVersion":"2.0.0"}`} {
+		result := runServer(t, rawToolCall(t, 1, "dialect_init", args))[0]["result"].(map[string]any)
+		if result["isError"] != true {
+			t.Fatal(args, result)
+		}
+	}
+}
