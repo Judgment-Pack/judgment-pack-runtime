@@ -1624,7 +1624,8 @@ func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 	properties := items["properties"].(map[string]any)
 	session, index, signature := properties["sessionId"].(map[string]any), properties["callIndex"].(map[string]any), properties["signature"].(map[string]any)
 	if cites["type"] != "array" || items["type"] != "object" || items["additionalProperties"] != false ||
-		session["minLength"] != float64(1) || session["maxLength"] != float64(128) || session["pattern"] != "^[A-Za-z0-9._-]+$" ||
+		session["type"] != "string" || session["minLength"] != nil || session["maxLength"] != float64(1024) || session["pattern"] != nil || session["not"] != nil ||
+		!strings.Contains(session["description"].(string), "at most 1024 bytes in UTF-8") ||
 		index["type"] != "integer" || index["minimum"] != float64(0) || index["maximum"] != float64(9007199254740991) ||
 		signature["pattern"] != "^[0-9a-f]{128}$" {
 		t.Fatalf("the cites schema does not state the handler's shape: %v", cites)
@@ -1632,10 +1633,6 @@ func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 	required, _ := items["required"].([]any)
 	if len(required) != 3 || required[0] != "sessionId" || required[1] != "callIndex" || required[2] != "signature" {
 		t.Fatalf("exactly the three members are required: %v", required)
-	}
-	excluded, _ := session["not"].(map[string]any)["enum"].([]any)
-	if len(excluded) != 2 || excluded[0] != "." || excluded[1] != ".." {
-		t.Fatalf("the schema excludes . and ..: %v", session["not"])
 	}
 	// The advertised schema itself, compiled by the validator this runtime
 	// validates packs with, evaluated on each value: what it admits, the
@@ -1665,7 +1662,10 @@ func TestTheCitesSchemaStatesWhatTheHandlerEnforces(t *testing.T) {
 		`[{"sessionId":"..","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"...","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"s/1","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
-		`[{"sessionId":"` + strings.Repeat("s", 129) + `","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"` + strings.Repeat("s", 1024) + `","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"` + strings.Repeat("s", 1025) + `","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":"a b:\"c\\d","callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		`[{"sessionId":7,"callIndex":0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"s-1","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"s-1","callIndex":-0,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		`[{"sessionId":"s-1","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`,

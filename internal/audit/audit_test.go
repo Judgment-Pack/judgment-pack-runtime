@@ -834,7 +834,13 @@ func TestParseCitesHoldsTheShapeAndNothingElse(t *testing.T) {
 		"a member by another case":             `[{"SessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"a member twice":                       `[{"sessionId":"s","sessionId":"t","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"no signature":                         `[{"sessionId":"s","callIndex":1}]`,
-		"an empty session":                     `[{"sessionId":"","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of 1025 bytes":              `[{"sessionId":"` + strings.Repeat("s", 1025) + `","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a session of 513 two-byte characters": `[{"sessionId":"` + strings.Repeat("é", 513) + `","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a lone low surrogate in the session":  `[{"sessionId":"s\udc00","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"a high surrogate before a non-low":    `[{"sessionId":"s\ud800\u0041","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"invalid UTF-8 in the session":         "[{\"sessionId\":\"s\xff\",\"callIndex\":1,\"signature\":\"" + strings.Repeat("a", 128) + "\"}]",
+		"a null session":                       `[{"sessionId":null,"callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
+		"no session":                           `[{"callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"a session not a string":               `[{"sessionId":7,"callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"a negative index":                     `[{"sessionId":"s","callIndex":-1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"an index as a string":                 `[{"sessionId":"s","callIndex":"1","signature":"` + strings.Repeat("a", 128) + `"}]`,
@@ -846,17 +852,45 @@ func TestParseCitesHoldsTheShapeAndNothingElse(t *testing.T) {
 		"a signature not 128 hex":              `[{"sessionId":"s","callIndex":1,"signature":"x"}]`,
 		"a signature in uppercase hex":         `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("A", 128) + `"}]`,
 		"a signature of 127 hex":               `[{"sessionId":"s","callIndex":1,"signature":"` + strings.Repeat("a", 127) + `"}]`,
-		"a session with a slash":               `[{"sessionId":"../x","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
-		"a session of a dot":                   `[{"sessionId":".","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
-		"a session of two dots":                `[{"sessionId":"..","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
-		"a session of 129 characters":          `[{"sessionId":"` + strings.Repeat("s", 129) + `","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
-		"a session with a space":               `[{"sessionId":"s 1","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"a lone surrogate in the session":      `[{"sessionId":"s\ud800","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"an index beyond 2^53-1":               `[{"sessionId":"s","callIndex":9007199254740992,"signature":"` + strings.Repeat("a", 128) + `"}]`,
 		"a null signature":                     `[{"sessionId":"s","callIndex":1,"signature":null}]`,
 	} {
 		if cites, err := ParseCites([]byte(document)); err == nil {
 			t.Errorf("%s: accepted as %+v", name, cites)
+		}
+	}
+	// A session is any well-formed string of at most MaxSessionIDBytes
+	// bytes, recorded as given: the empty string, spaces, a colon, a quote,
+	// a backslash, a control character, non-ASCII, U+2028, a surrogate pair,
+	// a dot or two, a slash, and exactly the bound.
+	for name, session := range map[string]string{
+		"empty": "", "spaces": " s  1 ", "colon": "a:b", "quote": `a"b`, "backslash": `a\b`,
+		"control": "a\x01\tb\n", "non-ASCII": "séance-日本", "line separator": "a\u2028b", "pair": "a\U0001F600b",
+		"replacement character": "a\ufffdb", "dot": ".", "dots": "..", "slash": "../x",
+		"the bound in bytes": strings.Repeat("s", MaxSessionIDBytes), "the bound in two-byte characters": strings.Repeat("é", MaxSessionIDBytes/2),
+	} {
+		encoded, err := json.Marshal(session)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cites, err := ParseCites([]byte(`[{"sessionId":` + string(encoded) + `,"callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`))
+		if err != nil || len(cites) != 1 || cites[0].SessionID != session {
+			t.Errorf("%s: a session is read as given: %+v %v", name, cites, err)
+		}
+	}
+	// An escaped surrogate pair is the character it spells.
+	if cites, err := ParseCites([]byte(`[{"sessionId":"\ud83d\ude00","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`)); err != nil || cites[0].SessionID != "\U0001F600" {
+		t.Errorf("an escaped pair: %+v %v", cites, err)
+	}
+	// The refusals name what they refuse.
+	for document, want := range map[string]string{
+		`[{"sessionId":"` + strings.Repeat("s", MaxSessionIDBytes+1) + `","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`: "sessionId must be at most 1024 bytes in UTF-8",
+		`[{"sessionId":7,"callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                                  "sessionId must be a string",
+		`[{"sessionId":"s\ud800","callIndex":1,"signature":"` + strings.Repeat("a", 128) + `"}]`:                                          "sessionId must be well-formed Unicode",
+	} {
+		if _, err := ParseCites([]byte(document)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("want %q, got %v", want, err)
 		}
 	}
 	// The bound: a valid document padded to exactly the limit reads; one

@@ -165,6 +165,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -462,13 +463,19 @@ type Citation struct {
 	Signature string `json:"signature"`
 }
 
-// The gateway's grammar for what a citation names: a session id is a flat
-// token (SPEC.md §3a), a signature 128 lowercase hex characters (§1.2a),
-// an index an integer the gateway's canonical domain holds (§1.1).
-var (
-	flatToken    = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
-	signatureHex = regexp.MustCompile(`^[0-9a-f]{128}$`)
-)
+// The gateway's grammar for what a citation names: a signature 128
+// lowercase hex characters (§1.2a), an index an integer the gateway's
+// canonical domain holds (§1.1). A session id is not held to the gateway's
+// token form (SPEC.md §3a): the dialect companion's §5.2 reads a receipt's
+// sessionId as a string, so this runtime reads a citation's the same way,
+// bounded in length by MaxSessionIDBytes.
+var signatureHex = regexp.MustCompile(`^[0-9a-f]{128}$`)
+
+// MaxSessionIDBytes bounds a citation's sessionId, counted in bytes of its
+// UTF-8 form after JSON decoding. The empty string is admitted. The bound is
+// the runtime's own, since the dialect companion's §12 gives none for this
+// member; it matches the 1024 bytes that document gives an artifact id.
+const MaxSessionIDBytes = 1024
 
 const maxSafeInteger = 9007199254740991
 
@@ -478,18 +485,19 @@ const maxSafeInteger = 9007199254740991
 const MaxCitesBytes = 1 << 20
 
 // ParseCites holds a citations document to the gateway's shape: a JSON
-// array whose every element is an object with exactly sessionId (a flat
-// token, [A-Za-z0-9._-]{1,128} and never "." or ".."), callIndex (an
-// integer literal from 0 to 2^53-1) and signature (exactly 128 lowercase
-// hexadecimal characters) — the structural constraints the gateway's
-// SPEC.md §§1.2a and 3a put on an action receipt's citation, so nothing is
-// recorded that no conforming receipt could carry. Member names are
+// array whose every element is an object with exactly sessionId (a
+// string of 0 to 1024 bytes in UTF-8 and any content, as the dialect
+// companion's §5.2 reads a receipt's), callIndex (an integer literal from 0
+// to 2^53-1) and signature (exactly 128 lowercase hexadecimal characters) —
+// the constraints the gateway's SPEC.md §§1.1 and 1.2a put on those two
+// members of an action receipt's citation. Member names are
 // matched exactly and a member twice is refused, since encoding/json would
 // fold "SessionId" onto sessionId and keep the last of two — and a citation
 // is recorded as given, so what is given must be one thing. A string is
 // its value: a JSON escape is read as the character it spells, and a
-// value the grammar admits is ASCII, so a lone surrogate or invalid UTF-8
-// cannot pass as anything. Nothing is resolved or verified. An empty array
+// session that is not well-formed Unicode (a lone surrogate escape or
+// invalid UTF-8) is refused, since decoding would replace it and the
+// citation would no longer be recorded as given. Nothing is resolved or verified. An empty array
 // is no citation, and is returned as nil so that the record omits the
 // member.
 func ParseCites(document []byte) ([]Citation, error) {
@@ -528,8 +536,14 @@ func ParseCites(document []byte) ([]Citation, error) {
 			}
 		}
 		var c Citation
-		if err := decodeString(members["sessionId"], &c.SessionID); err != nil || !flatToken.MatchString(c.SessionID) || c.SessionID == "." || c.SessionID == ".." {
-			return nil, fmt.Errorf("citation %d: sessionId must be a flat token of 1 to 128 characters from A-Z, a-z, 0-9, dot, underscore and hyphen, and not . or ..", i)
+		if err := decodeString(members["sessionId"], &c.SessionID); err != nil {
+			return nil, fmt.Errorf("citation %d: sessionId must be a string", i)
+		}
+		if !wellFormedJSONString(members["sessionId"]) {
+			return nil, fmt.Errorf("citation %d: sessionId must be well-formed Unicode, with no lone surrogate escape and no invalid UTF-8", i)
+		}
+		if len(c.SessionID) > MaxSessionIDBytes {
+			return nil, fmt.Errorf("citation %d: sessionId must be at most %d bytes in UTF-8", i, MaxSessionIDBytes)
 		}
 		if err := decodeCallIndex(members["callIndex"], &c.CallIndex); err != nil || c.CallIndex < 0 || c.CallIndex > maxSafeInteger {
 			return nil, fmt.Errorf("citation %d: callIndex must be an integer from 0 to 9007199254740991", i)
@@ -573,6 +587,61 @@ func exactObject(element json.RawMessage) (map[string]json.RawMessage, error) {
 		return nil, errors.New("not an object")
 	}
 	return members, nil
+}
+
+// wellFormedJSONString reports whether a JSON string literal is valid UTF-8
+// and every \u surrogate escape in it is half of a pair. encoding/json
+// replaces what is not with U+FFFD, which would change what is recorded.
+func wellFormedJSONString(raw json.RawMessage) bool {
+	if !utf8.Valid(raw) {
+		return false
+	}
+	hex4 := func(at int) (rune, bool) {
+		if at+4 > len(raw) {
+			return 0, false
+		}
+		var r rune
+		for _, c := range raw[at : at+4] {
+			switch {
+			case c >= '0' && c <= '9':
+				r = r<<4 | rune(c-'0')
+			case c >= 'a' && c <= 'f':
+				r = r<<4 | rune(c-'a'+10)
+			case c >= 'A' && c <= 'F':
+				r = r<<4 | rune(c-'A'+10)
+			default:
+				return 0, false
+			}
+		}
+		return r, true
+	}
+	for i := 1; i < len(raw)-1; i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		i++
+		if raw[i] != 'u' {
+			continue
+		}
+		r, ok := hex4(i + 1)
+		if !ok {
+			return false
+		}
+		i += 4
+		switch {
+		case r >= 0xDC00 && r <= 0xDFFF:
+			return false
+		case r >= 0xD800 && r <= 0xDBFF:
+			if i+2 < len(raw) && raw[i+1] == '\\' && raw[i+2] == 'u' {
+				if low, ok := hex4(i + 3); ok && low >= 0xDC00 && low <= 0xDFFF {
+					i += 6
+					continue
+				}
+			}
+			return false
+		}
+	}
+	return true
 }
 
 // decodeString reads a JSON string and nothing else; an absent member is
