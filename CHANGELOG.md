@@ -2,7 +2,18 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.34.0 - 2026-10-17
+
+- Named Dialect artifact formats (`formatVersion` `"2.0.0"` or `"3.0.0"`, an opaque `id`
+  and an artifact `version`, per the specification's RFC 0021) are read and written by the
+  offline dialect tools, the schemas, the inventory checks, the CLI and the MCP tools, with
+  format, identity and artifact version kept distinct; integer documents and their canonical
+  identities are unchanged; nothing is bound or executed (#288, ADR-0057).
+
+- Version-3 research sources are validated offline through the shared authoring tools:
+  requested field types, question parameters, capability and profile declarations and
+  reconciliation reads; acquisition, binding verification and preparation stay the Runner's
+  and the Gateway's (#289, ADR-0058).
 
 - A citation's `sessionId` is read as any JSON string, the empty string included, of at most
   1024 bytes in UTF-8, as the dialect companion's §5.2 reads a receipt's, instead of the
