@@ -13,3 +13,10 @@ the evaluation corpus, its manifest schema, and the pack fixtures it names.
 
 The exact embedded revision and per-file SHA-256 digests are recorded in
 internal/artifacts/jps/<version>/lock.json.
+
+The experimental offline Policy tools also embed unmodified nonnormative RFC
+0023 prototype and proposed-draft contract candidate artifacts from that same
+Apache-2.0 specification repository. Their separate exact source revisions,
+per-file SHA-256 digests, upstream LICENSE and NOTICE are retained under
+internal/policy/prototype/ and internal/policy/candidate/. The candidate is not
+an adopted specification artifact or a conformance class.

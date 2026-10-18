@@ -25,6 +25,9 @@ type Options struct {
 	ExpectedSpecVersion string
 	SupportedExtensions []string
 	Limits              carrier.Limits
+	// FormatOverrides is explicit companion-scoped structural validation. The
+	// same bundled schema and input bytes are used; cached defaults are untouched.
+	FormatOverrides []*jsonschema.Format
 }
 
 type OperationalFailure struct {
@@ -70,9 +73,19 @@ func CompileSchema(schemaBytes []byte, resourceID string) (*jsonschema.Schema, e
 // CompileSchemas resolves only explicitly supplied schema resources, using the
 // same URI assertions and ECMAScript expressions as bundled Core validation.
 func CompileSchemas(resources map[string][]byte, resourceID string) (*jsonschema.Schema, error) {
+	return CompileSchemasWithFormats(resources, resourceID)
+}
+
+// CompileSchemasWithFormats keeps the offline compiler's existing defaults and
+// permits an explicit companion contract to override a named format assertion.
+// Overrides never affect other compiled schemas or the bundled Core engine.
+func CompileSchemasWithFormats(resources map[string][]byte, resourceID string, formats ...*jsonschema.Format) (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.AssertFormat()
 	compiler.RegisterFormat(&jsonschema.Format{Name: "uri", Validate: validateRFC3986URI})
+	for _, format := range formats {
+		compiler.RegisterFormat(format)
+	}
 	compiler.UseLoader(offlineSchemaLoader{})
 	compiler.UseRegexpEngine(ecmaRegexpCompile)
 	for id, data := range resources {
@@ -223,7 +236,18 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 		Provenance:   lock.Source.Kind,
 	}
 
-	schemaErr := e.schemas[selectedVersion].Validate(value)
+	schema := e.schemas[selectedVersion]
+	if len(options.FormatOverrides) != 0 {
+		rawSchema, err := set.Schema()
+		if err == nil {
+			id := "urn:judgmentpack:jps:" + selectedVersion + ":schema"
+			schema, err = CompileSchemasWithFormats(map[string][]byte{id: rawSchema}, id, options.FormatOverrides...)
+		}
+		if err != nil {
+			return output, &OperationalFailure{Code: "JPS-SCHEMA-FORMAT-OVERRIDE", Message: "The bundled structural schema could not be compiled with explicit format assertions.", ExitCode: result.ExitIO}
+		}
+	}
+	schemaErr := schema.Validate(value)
 	structuralCollector := newDiagnosticCollector()
 	if schemaErr != nil {
 		var validationError *jsonschema.ValidationError

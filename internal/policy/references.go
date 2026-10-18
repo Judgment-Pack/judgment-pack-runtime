@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-type issue struct{ code, path, message string }
+type issue struct{ code, path, message, candidateCode string }
 
 func problem(code, path, message string) *issue {
 	return &issue{code: code, path: path, message: message}
