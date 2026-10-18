@@ -14,5 +14,8 @@ internal/cli/testdata/*.golden.* -text
 # Pinned dialect contract and independent vectors have exact upstream checksums.
 internal/dialect/testdata/** -text
 
+# Pinned policy prototype files have exact upstream checksums.
+internal/policy/prototype/** -text
+
 # The served authoring schema has a byte digest on every platform.
 internal/dialect/version2.schema.json -text
