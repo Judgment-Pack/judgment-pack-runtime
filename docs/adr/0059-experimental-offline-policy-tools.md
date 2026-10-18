@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-18
 deciders: maintainer
 ---
@@ -53,7 +53,10 @@ The limits distinguish 256 KiB documents, 4 MiB source originals, 1 MiB narrativ
 and review-basis material, 16 MiB aggregate distinct retained bytes and 24 MiB material JSON
 text. MCP's existing 16 MiB stdio line bound remains unchanged: JSON/base64 overhead
 means some material bundles beneath the retained-byte limit cannot fit that transport.
-The CLI can accept the larger named-file material JSON envelope.
+The CLI can accept the larger named-file material JSON envelope. Schema reports
+select the first 100 sorted unique diagnostics and set `diagnosticsTruncated: true`
+when findings remain; material length literals are bounded lexically before
+schema numeric conversion.
 
 The RFC, schemas and synthetic examples are pinned from specification revision
 `8a56a95d555c17640d2db4984363b779536b3c2a`, with per-file digests and license provenance.
@@ -69,12 +72,25 @@ authority, source access, billing behavior or standard conformance.
 
 ## Material decision and review
 
-Material-decision impact categories: `public-surface`, `documented-claim`, `dependency`.
-The public surface and capability statements are new; the pinned prototype artifacts
-add a dependency boundary. This record stays proposed until merge. The introducing
-pull request must record the reviewed SHA and maintainer dispositions under the
-repository review requirements, including any explicitly authorized temporary review
-exception. A second Codex review is same-vendor and does not count as cross-vendor review.
+Material-decision impact categories: `public-surface`, `documented-claim`, `dependency`,
+`security`. The public surface and capability statements are new; the pinned
+prototype artifacts add a dependency boundary. Bounded material parsing and shared
+MCP refusals concern the security posture. Duplicate unknown argument names are
+refused with fixed messages; known duplicate and case findings name only trusted
+canonical members, keeping rejected source prose and base64 out of the response.
+The existing 16 MiB stdio request-line limit is unchanged.
+
+The maintainer explicitly authorized a temporary waiver of the repository's
+different-vendor review requirement for this current Policy work. The bounded
+clean-room OpenAI/Codex review of candidate
+`f6cad9d8b1516485c8e695c56dc2bdd9e4af693e` is same-vendor review under that waiver;
+it is not different-vendor review or independent implementation evidence. The
+introducing pull request records this current exception, the reviewed SHA, each
+finding's maintainer disposition, and the implementation and verification of
+accepted findings. The waiver is scoped to this work and changes no standing
+review rule. This ADR's accepted status is the authorized merge-ready procedural
+transition; it adopts no normative Policy format and makes no standard-conformance
+claim.
 
 ## More information
 

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -33,6 +35,12 @@ func decodeMaterials(data []byte) (materialSet, *issue, int) {
 	if len(entries) > MaxMaterials {
 		return nil, problem("JPS-POLICY-MATERIAL-COUNT", "/materials", "The private Runtime carrier supports at most 16 material registrations."), result.ExitUnsupported
 	}
+	// The schema library converts number tokens to arbitrary-precision values.
+	// Refuse unsupported literals throughout this closed carrier first, including
+	// numbers in unknown or wrong-typed members that schema validation will reject.
+	if failure, code := preflightMaterialNumbers(value, nil); failure != nil {
+		return nil, failure, code
+	}
 	compiled, err := loadSchemas()
 	if err != nil {
 		return nil, problem("JPS-POLICY-ARTIFACT", "", "Pinned prototype schemas could not be compiled."), result.ExitIO
@@ -51,11 +59,7 @@ func decodeMaterials(data []byte) (materialSet, *issue, int) {
 		content := object(entry["content"])
 		encoded := text(entry["dataBase64"])
 		path := indexPath("/materials", i) + "/dataBase64"
-		literal, ok := content["byteLength"].(json.Number)
-		declared, lengthError := strconv.Atoi(literal.String())
-		if !ok || lengthError != nil {
-			return nil, problem("JPS-POLICY-BYTE-LENGTH", indexPath("/materials", i)+"/content/byteLength", "Retained byte length must use an integer literal within the carrier support bound."), result.ExitInvalid
-		}
+		declared := number(content["byteLength"])
 		n, valid := base64Length(encoded)
 		if !valid {
 			return nil, problem("JPS-POLICY-BASE64", path, "Retained material must use strict standard padded base64 without whitespace."), result.ExitInvalid
@@ -97,6 +101,53 @@ func decodeMaterials(data []byte) (materialSet, *issue, int) {
 		existing.mediaTypes[text(content["mediaType"])] = true
 	}
 	return material, nil, result.ExitSuccess
+}
+
+func preflightMaterialNumbers(value any, location []string) (*issue, int) {
+	switch value := value.(type) {
+	case json.Number:
+		path, code := "/materials", "JPS-POLICY-MATERIAL-NUMBER"
+		if len(location) == 4 && location[0] == "materials" && location[2] == "content" && location[3] == "byteLength" {
+			// A wrong-typed materials object can contain an arbitrary key where
+			// the array index belongs. Only bounded, canonical indexes are safe
+			// to include in an error path before the closed schema has passed.
+			if len(location[1]) <= 2 {
+				index, err := strconv.Atoi(location[1])
+				if err == nil && index >= 0 && index < MaxMaterials && strconv.Itoa(index) == location[1] {
+					path, code = carrier.Pointer(location), "JPS-POLICY-BYTE-LENGTH"
+				}
+			}
+		}
+		literal := value.String()
+		if strings.ContainsAny(literal, ".eE") || strings.HasPrefix(literal, "-") && literal != "-0" {
+			return problem(code, path, "Retained-material numbers must use nonnegative integer literals within the carrier support bound."), result.ExitInvalid
+		}
+		if literal == "-0" {
+			literal = "0"
+		}
+		maximum := strconv.Itoa(MaxOriginalBytes)
+		if len(literal) > len(maximum) || len(literal) == len(maximum) && literal > maximum {
+			return problem(code+"-BOUND", path, "Retained-material integer exceeds the original-source byte support bound."), result.ExitUnsupported
+		}
+	case []any:
+		for index, item := range value {
+			if failure, code := preflightMaterialNumbers(item, append(location, strconv.Itoa(index))); failure != nil {
+				return failure, code
+			}
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(value))
+		for key := range value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if failure, code := preflightMaterialNumbers(value[key], append(location, key)); failure != nil {
+				return failure, code
+			}
+		}
+	}
+	return nil, result.ExitSuccess
 }
 
 // base64Length checks alphabet, padding and decoded size without allocating.

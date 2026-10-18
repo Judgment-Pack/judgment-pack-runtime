@@ -12,6 +12,14 @@ All notable changes to tagged releases are documented here.
   no full Core semantic validation, evaluation, acquisition, publication, approval
   or governing-adoption authority determination. RFC 0023 remains Draft and
   nonnormative; no Policy standard-conformance claim is made.
+  The runtime's conformance claim is stated, in full and only, in `CONFORMANCE.md`.
+
+- Refuse duplicate MCP argument names without echoing arbitrary rejected names;
+  known names remain actionable and case checks still require exact spelling.
+  This applies at the shared transport guard for every tool, with the existing
+  16 MiB request-line bound unchanged. Policy schema findings select a stable
+  sorted unique first 100 and mark partial reports with `diagnosticsTruncated`;
+  material length literals are bounded before schema numeric conversion.
 
 ## 0.34.0 - 2026-10-17
 

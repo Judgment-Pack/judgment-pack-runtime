@@ -1569,7 +1569,7 @@ func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 			if !ok || result["isError"] != true {
 				t.Fatalf("want isError tool result, got %#v", responses[0])
 			}
-			want := spelledError(tc.tool, tc.member, strings.ToLower(tc.member))
+			want := spelledError(tc.tool, strings.ToLower(tc.member))
 			if text := toolText(t, result); text != want {
 				t.Fatalf("error = %q, want %q", text, want)
 			}

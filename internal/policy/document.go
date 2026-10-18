@@ -33,29 +33,30 @@ const (
 )
 
 type Report struct {
-	OutputVersion     string                `json:"outputVersion"`
-	Tool              result.Tool           `json:"tool"`
-	Command           string                `json:"command"`
-	ContractVersion   string                `json:"contractVersion"`
-	Specification     string                `json:"specification"`
-	SpecRevision      string                `json:"specRevision"`
-	Experimental      bool                  `json:"experimental"`
-	Maturity          string                `json:"maturity"`
-	Status            string                `json:"status"`
-	Profile           string                `json:"profile"`
-	ProfileVersion    string                `json:"profileVersion"`
-	Kind              string                `json:"kind,omitempty"`
-	ArtifactID        string                `json:"artifactId,omitempty"`
-	ArtifactVersion   string                `json:"artifactVersion,omitempty"`
-	ValidationScope   string                `json:"validationScope,omitempty"`
-	Document          string                `json:"document,omitempty"`
-	BytesDigest       string                `json:"bytesDigest,omitempty"`
-	CanonicalDigest   string                `json:"canonicalDigest,omitempty"`
-	StarterTemplate   bool                  `json:"starterTemplate,omitempty"`
-	RequiredMaterials []MaterialRequirement `json:"requiredMaterials,omitempty"`
-	Resource          *Resource             `json:"resource,omitempty"`
-	Capabilities      Capabilities          `json:"capabilities"`
-	Diagnostics       []result.Diagnostic   `json:"diagnostics"`
+	OutputVersion        string                `json:"outputVersion"`
+	Tool                 result.Tool           `json:"tool"`
+	Command              string                `json:"command"`
+	ContractVersion      string                `json:"contractVersion"`
+	Specification        string                `json:"specification"`
+	SpecRevision         string                `json:"specRevision"`
+	Experimental         bool                  `json:"experimental"`
+	Maturity             string                `json:"maturity"`
+	Status               string                `json:"status"`
+	Profile              string                `json:"profile"`
+	ProfileVersion       string                `json:"profileVersion"`
+	Kind                 string                `json:"kind,omitempty"`
+	ArtifactID           string                `json:"artifactId,omitempty"`
+	ArtifactVersion      string                `json:"artifactVersion,omitempty"`
+	ValidationScope      string                `json:"validationScope,omitempty"`
+	Document             string                `json:"document,omitempty"`
+	BytesDigest          string                `json:"bytesDigest,omitempty"`
+	CanonicalDigest      string                `json:"canonicalDigest,omitempty"`
+	StarterTemplate      bool                  `json:"starterTemplate,omitempty"`
+	RequiredMaterials    []MaterialRequirement `json:"requiredMaterials,omitempty"`
+	Resource             *Resource             `json:"resource,omitempty"`
+	Capabilities         Capabilities          `json:"capabilities"`
+	Diagnostics          []result.Diagnostic   `json:"diagnostics"`
+	DiagnosticsTruncated bool                  `json:"diagnosticsTruncated,omitempty"`
 }
 
 type Resource struct {

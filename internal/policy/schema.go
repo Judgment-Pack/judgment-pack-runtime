@@ -130,7 +130,7 @@ func validateDocument(command string, data []byte) (Report, map[string]any, int)
 	if err := compiled[r.Kind].Validate(doc); err != nil {
 		r.Status = "refused"
 		r.Document = ""
-		r.Diagnostics = schemaDiagnostics(err)
+		r.Diagnostics, r.DiagnosticsTruncated = schemaDiagnostics(err)
 		code := result.ExitInvalid
 		if schemaBound(err) {
 			code = result.ExitUnsupported
@@ -177,22 +177,37 @@ func referenceSelectors(doc map[string]any) *issue {
 	return nil
 }
 
-func schemaDiagnostics(err error) []result.Diagnostic {
+func schemaDiagnostics(err error) ([]result.Diagnostic, bool) {
 	var root *jsonschema.ValidationError
 	if !errors.As(err, &root) {
-		return []result.Diagnostic{result.ErrorDiagnostic("JPS-POLICY-SCHEMA", "policy", "", "Closed prototype schema validation failed.")}
+		return []result.Diagnostic{result.ErrorDiagnostic("JPS-POLICY-SCHEMA", "policy", "", "Closed prototype schema validation failed.")}, false
 	}
 	items := []result.Diagnostic{}
+	truncated := false
 	var walk func(*jsonschema.ValidationError)
 	add := func(code string, path []string, message string) {
-		if len(items) < validation.MaxDiagnostics {
-			items = append(items, result.ErrorDiagnostic(code, "policy", carrier.Pointer(path), message))
-		}
-	}
-	walk = func(e *jsonschema.ValidationError) {
-		if len(items) >= validation.MaxDiagnostics {
+		item := result.ErrorDiagnostic(code, "policy", carrier.Pointer(path), message)
+		index := sort.Search(len(items), func(i int) bool { return !diagnosticLess(items[i], item) })
+		if index < len(items) && items[index] == item {
 			return
 		}
+		// Keep the same sorted, unique first 100 regardless of the schema
+		// dependency's map traversal order. Output storage stays bounded while
+		// every cause in the input-bounded validation tree is considered.
+		if len(items) == validation.MaxDiagnostics {
+			truncated = true
+			if index == len(items) {
+				return
+			}
+			copy(items[index+1:], items[index:len(items)-1])
+			items[index] = item
+			return
+		}
+		items = append(items, result.Diagnostic{})
+		copy(items[index+1:], items[index:len(items)-1])
+		items[index] = item
+	}
+	walk = func(e *jsonschema.ValidationError) {
 		switch k := e.ErrorKind.(type) {
 		case *kind.Required:
 			for _, name := range k.Missing {
@@ -214,16 +229,20 @@ func schemaDiagnostics(err error) []result.Diagnostic {
 		}
 	}
 	walk(root)
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].InstancePath == items[j].InstancePath {
-			return items[i].Code < items[j].Code
-		}
-		return items[i].InstancePath < items[j].InstancePath
-	})
 	if len(items) == 0 {
 		add("JPS-POLICY-SCHEMA", nil, "Value does not satisfy the closed prototype schema.")
 	}
-	return items
+	return items, truncated
+}
+
+func diagnosticLess(a, b result.Diagnostic) bool {
+	if a.InstancePath != b.InstancePath {
+		return a.InstancePath < b.InstancePath
+	}
+	if a.Code != b.Code {
+		return a.Code < b.Code
+	}
+	return a.Message < b.Message
 }
 
 // Upper collection, string and byte bounds describe prototype input support.

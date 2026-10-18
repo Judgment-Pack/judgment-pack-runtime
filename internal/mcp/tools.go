@@ -249,7 +249,11 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 	// Every tool's arguments are held to being given once and spelled
 	// exactly as its schema advertises, here, before any handler reads
 	// the last of two or folds the case.
-	if message := membersOnce(params.Arguments, toolArgumentNames[params.Name]); message != "" {
+	known, registered := toolArgumentNames[params.Name]
+	if message := membersOnce(params.Arguments, known); message != "" {
+		if !registered {
+			return toolError("The tool arguments " + message), nil
+		}
 		return toolError(fmt.Sprintf("The %q arguments %s", params.Name, message)), nil
 	}
 	switch params.Name {
