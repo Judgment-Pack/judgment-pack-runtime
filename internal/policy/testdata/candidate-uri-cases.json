@@ -1,0 +1,250 @@
+[
+  {
+    "uri": "urn:test:plain",
+    "valid": true
+  },
+  {
+    "uri": "https://example.invalid/a",
+    "valid": true
+  },
+  {
+    "uri": "https://%65xample.invalid/a",
+    "valid": true
+  },
+  {
+    "uri": "foo://[v1.a]/",
+    "valid": true
+  },
+  {
+    "uri": "https://[2001:db8::1]/a",
+    "valid": true
+  },
+  {
+    "uri": "https://[::1]:443/a",
+    "valid": true
+  },
+  {
+    "uri": "https://[::ffff:192.0.2.128]/",
+    "valid": true
+  },
+  {
+    "uri": "https://[vF.a:b!$&'()*+,;=]/",
+    "valid": true
+  },
+  {
+    "uri": "HTTPS://EXAMPLE.INVALID/a",
+    "valid": true
+  },
+  {
+    "uri": "https://user:pass@example.invalid/a",
+    "valid": true
+  },
+  {
+    "uri": "https://u%40ser:p%3Ass@example.invalid/a",
+    "valid": true
+  },
+  {
+    "uri": "https://example.invalid/a%5Bb%5D",
+    "valid": true
+  },
+  {
+    "uri": "urn:test:%5Bx%5D",
+    "valid": true
+  },
+  {
+    "uri": "urn:test:%C3%A9",
+    "valid": true
+  },
+  {
+    "uri": "https://example.invalid/a?b=%5Bc%5D",
+    "valid": true
+  },
+  {
+    "uri": "https://example.invalid/#a%5Bb%5D",
+    "valid": true
+  },
+  {
+    "uri": "https://exa!mple.invalid:99999/a",
+    "valid": true
+  },
+  {
+    "uri": "https://example.invalid:/",
+    "valid": true
+  },
+  {
+    "uri": "file:///tmp/example",
+    "valid": true
+  },
+  {
+    "uri": "foo://",
+    "valid": true
+  },
+  {
+    "uri": "foo:",
+    "valid": true
+  },
+  {
+    "uri": "foo:/",
+    "valid": true
+  },
+  {
+    "uri": "foo:a/b:c@d",
+    "valid": true
+  },
+  {
+    "uri": "foo://@/",
+    "valid": true
+  },
+  {
+    "uri": "https://example.invalid/a?x=/a?b#c/d?e",
+    "valid": true
+  },
+  {
+    "uri": "https://example.invalid/..?a=1&b=2#part",
+    "valid": true
+  },
+  {
+    "uri": "foo://256.999.0.1/",
+    "valid": true
+  },
+  {
+    "uri": "urn:test:[x]",
+    "valid": false
+  },
+  {
+    "uri": "https://example.invalid/[x]",
+    "valid": false
+  },
+  {
+    "uri": "https://example.invalid/a?b=[c]",
+    "valid": false
+  },
+  {
+    "uri": "https://example.invalid/#a[b]",
+    "valid": false
+  },
+  {
+    "uri": "urn:test:\u00e9",
+    "valid": false
+  },
+  {
+    "uri": "urn:test:foo bar",
+    "valid": false
+  },
+  {
+    "uri": "urn:test:%",
+    "valid": false
+  },
+  {
+    "uri": "urn:test:%GG",
+    "valid": false
+  },
+  {
+    "uri": "https://%6xample.invalid/a",
+    "valid": false
+  },
+  {
+    "uri": "/relative/path",
+    "valid": false
+  },
+  {
+    "uri": "//example.invalid/path",
+    "valid": false
+  },
+  {
+    "uri": "1foo:bar",
+    "valid": false
+  },
+  {
+    "uri": "foo_:bar",
+    "valid": false
+  },
+  {
+    "uri": "https://[x]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[::1",
+    "valid": false
+  },
+  {
+    "uri": "https://[::1]junk/",
+    "valid": false
+  },
+  {
+    "uri": "https://[::1]:port/",
+    "valid": false
+  },
+  {
+    "uri": "https://[::1%25eth0]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[2001:db8:::1]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[1:2:3:4:5:6:7:8:9]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[127.0.0.1]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[v1.]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[vG.a]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[v1.a%20b]/",
+    "valid": false
+  },
+  {
+    "uri": "https://[VF.x:y]/",
+    "valid": true
+  },
+  {
+    "uri": "https://foo@@example.invalid/",
+    "valid": false
+  },
+  {
+    "uri": "https://[::1]@example.invalid/",
+    "valid": false
+  },
+  {
+    "uri": "https://example.invalid:abc/",
+    "valid": false
+  },
+  {
+    "uri": "https://example.invalid:1:2/",
+    "valid": false
+  },
+  {
+    "uri": "https://example.invalid/#a#b",
+    "valid": false
+  },
+  {
+    "uri": "https://example.invalid/\\path",
+    "valid": false
+  },
+  {
+    "uri": "urn:test:foo\r\n",
+    "valid": false
+  },
+  {
+    "uri": "urn:test:foo\n",
+    "valid": false
+  },
+  {
+    "uri": "https://[::ffff:192.168.001.001]/",
+    "valid": false
+  }
+]

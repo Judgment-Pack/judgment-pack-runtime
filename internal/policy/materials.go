@@ -52,15 +52,6 @@ func decodeMaterialsFormat(data []byte, candidateMode bool) (materialSet, *issue
 		if _, ok := root["materials"].([]any); !ok {
 			return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
 		}
-		for _, item := range entries {
-			entry := object(item)
-			if len(entry) != 2 || object(entry["content"]) == nil {
-				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
-			}
-			if _, ok := entry["dataBase64"].(string); !ok {
-				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
-			}
-		}
 	}
 	if len(entries) > MaxMaterials {
 		return nil, problem("JPS-POLICY-MATERIAL-COUNT", "/materials", "The private Runtime carrier supports at most 16 material registrations."), result.ExitUnsupported
@@ -118,6 +109,13 @@ func decodeMaterialsFormat(data []byte, candidateMode bool) (materialSet, *issue
 		entry := object(item)
 		content := object(entry["content"])
 		if candidateMode {
+			if len(entry) != 2 || object(entry["content"]) == nil {
+				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+			}
+			if _, ok := entry["dataBase64"].(string); !ok {
+				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+			}
+
 			if err, c := candidateSchema("common", content); err != nil {
 				return nil, err, c
 			}

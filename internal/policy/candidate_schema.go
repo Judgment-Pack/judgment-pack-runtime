@@ -38,7 +38,7 @@ func loadCandidateSchemas() (map[string]*jsonschema.Schema, error) {
 		}
 		candidateSchemas = map[string]*jsonschema.Schema{}
 		for name, id := range map[string]string{"common": candidateCommonID, "uri": candidateCommonID + "#/$defs/uri", "policy": "urn:jps:proposal:policy-companion:1.0.0:policy", "governing-adoption": "urn:jps:proposal:policy-companion:1.0.0:governing-adoption"} {
-			s, err := validation.CompileSchemas(resources, id)
+			s, err := compileCandidateSchemas(resources, id)
 			if err != nil {
 				candidateSchemasError = err
 				return
@@ -47,6 +47,10 @@ func loadCandidateSchemas() (map[string]*jsonschema.Schema, error) {
 		}
 	})
 	return candidateSchemas, candidateSchemasError
+}
+
+func compileCandidateSchemas(resources map[string][]byte, id string) (*jsonschema.Schema, error) {
+	return validation.CompileSchemasWithFormats(resources, id, &jsonschema.Format{Name: "uri", Validate: validateCandidateURI})
 }
 
 func validURIFormat(id, version string) bool {

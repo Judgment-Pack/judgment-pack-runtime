@@ -70,9 +70,19 @@ func CompileSchema(schemaBytes []byte, resourceID string) (*jsonschema.Schema, e
 // CompileSchemas resolves only explicitly supplied schema resources, using the
 // same URI assertions and ECMAScript expressions as bundled Core validation.
 func CompileSchemas(resources map[string][]byte, resourceID string) (*jsonschema.Schema, error) {
+	return CompileSchemasWithFormats(resources, resourceID)
+}
+
+// CompileSchemasWithFormats keeps the offline compiler's existing defaults and
+// permits an explicit companion contract to override a named format assertion.
+// Overrides never affect other compiled schemas or the bundled Core engine.
+func CompileSchemasWithFormats(resources map[string][]byte, resourceID string, formats ...*jsonschema.Format) (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.AssertFormat()
 	compiler.RegisterFormat(&jsonschema.Format{Name: "uri", Validate: validateRFC3986URI})
+	for _, format := range formats {
+		compiler.RegisterFormat(format)
+	}
 	compiler.UseLoader(offlineSchemaLoader{})
 	compiler.UseRegexpEngine(ecmaRegexpCompile)
 	for id, data := range resources {
