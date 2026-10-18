@@ -109,6 +109,13 @@ jpack experimental graph evaluate <graph-or-> [--inputs <file-or->] [--rehearsal
 jpack experimental graph explain <graph-or->   (the evaluation plan; nothing is evaluated)
 jpack experimental graph test <graph-or-> --rows <file-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental graph schema
+jpack experimental policy contract
+jpack experimental policy init --kind policy --format-version 0.0.2 --id <id> --version <artifact-version>
+jpack experimental policy schema --kind policy --format-version 0.0.2
+jpack experimental policy canonicalize <document-or->
+jpack experimental policy digest <document-or->
+jpack experimental policy validate <document-or->
+jpack experimental policy check <document-or-> --materials <materials-or->
 ```
 
 The pack argument and `--pack-id` are mutually exclusive: one pack, one source, and supplying both
@@ -1069,3 +1076,63 @@ The tool accepts at most 256 bytes per version and refuses a base whose next
 choices exceed that bound. This resource limit does not narrow the Core schema.
 Invalid input returns no partial choices. Scope and compatibility-not-checked
 are reported in-band. See ADR-0055.
+
+## Experimental offline Policy prototype
+
+`jpack experimental policy` implements the **nonnormative** RFC 0023 prototype,
+exact version `0.0.2`, for `policy` and `governing-adoption` documents
+([ADR-0059](docs/adr/0059-experimental-offline-policy-tools.md)). RFC 0023 remains
+Draft. This is an experimental authoring aid; its results establish no approval,
+governing-adoption authority or standard conformance. Discover the exact scope,
+limits and pinned source revision with `experimental policy contract --format json`.
+No stable Policy format is selected by default.
+
+```bash
+jpack experimental policy contract --format json
+jpack experimental policy init --kind policy --format-version 0.0.2 --id urn:example:policy --version 1.0.0 > policy.json
+jpack experimental policy schema --kind governing-adoption --format-version 0.0.2
+jpack experimental policy validate policy.json --format json
+jpack experimental policy canonicalize policy.json
+jpack experimental policy digest policy.json
+jpack experimental policy check policy.json --materials retained-materials.json --format json
+```
+
+`init` prints a starter template with missing retained materials, identified in
+its JSON report as `starter-template`; it does not produce a checked publication.
+Human output keeps the template as JSON on stdout and prints the missing-material
+caveat on stderr. The client supplies and saves the materials.
+
+The schema resource is a self-contained Runtime editing copy derived from pinned
+prototype schemas; strict validation remains a separate operation. Both selectors
+are required for `init` and `schema`; `init` also requires an artifact `--id` and `--version`,
+which are separate from the prototype format version.
+
+`validate` checks strict document forms, schemas and local references.
+`check` additionally verifies the exact supplied retained-material reference
+closure, raw byte digests and lengths, Policy section anchors, structural Core
+packs and the particular consumer references the prototype defines. It does not
+perform full Core semantic validation or evaluate rules. Encoding tools check
+the canonical number domain, and return canonical identity separately from raw
+byte identity. A supplied Core pack is held to canonical encoding only when a
+reference explicitly requests its canonical identity.
+
+The required `--materials` input is a **private Runtime transport** of supplied
+bytes, not a portable release envelope:
+
+```json
+{"materials":[{"content":{"bytesDigest":"sha256:<64 lowercase hex>","byteLength":12,"mediaType":"text/plain"},"dataBase64":"<base64 of exact retained bytes>"}]}
+```
+
+The example describes the transport shape; replace its placeholder values with
+the exact content reference and bytes. No path or URL is accepted inside it.
+CLI reads only named bounded regular files or `-` for standard input, with at
+most one standard-input operand; it performs no implicit project reads or writes.
+Documents are bounded at 256 KiB, retained source originals at 4 MiB, narrative
+and review-basis material at 1 MiB each, distinct retained bytes at 16 MiB, and
+material JSON text at 24 MiB. Reports and errors do not echo retained bytes.
+The MCP equivalents and their smaller effective stdio envelope are documented
+in [MCP clients](docs/mcp-clients.md#experimental-policy-prototype-tools).
+
+The RFC, prototype schemas and synthetic fixtures are bundled from specification
+revision `8a56a95d555c17640d2db4984363b779536b3c2a`, with per-file digests and
+licensing provenance. They are never fetched at runtime.

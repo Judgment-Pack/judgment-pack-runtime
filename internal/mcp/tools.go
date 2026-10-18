@@ -43,6 +43,7 @@ import (
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
 		artifactVersionDefinition(),
+		policyDefinition("contract"), policyDefinition("init"), policyDefinition("schema"), policyDefinition("canonicalize"), policyDefinition("digest"), policyDefinition("validate"), policyDefinition("check"),
 		dialectDefinition("contract"), dialectDefinition("init"), dialectDefinition("canonicalize"), dialectDefinition("digest"), dialectDefinition("validate"), dialectDefinition("schema"), dialectDefinition("reference"), dialectDefinition("check"),
 		{"name": "experimental_test_cases", "description": "Rehearse a matrix against exact supplied pack bytes. Uses the same canonical comparison and coverage as experimental_test_packs. Reads no project files, writes nothing, and appends no audit record. This experimental surface may change.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "matrix"}, "properties": map[string]any{"pack": map[string]any{"type": "string", "description": "Exact pack JSON text."}, "matrix": map[string]any{"type": "string", "description": "Matrix JSON text in the project's supported matrix format. At least one case with an independently established expectation is required."}}}},
 		{
@@ -248,7 +249,11 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 	// Every tool's arguments are held to being given once and spelled
 	// exactly as its schema advertises, here, before any handler reads
 	// the last of two or folds the case.
-	if message := membersOnce(params.Arguments, toolArgumentNames[params.Name]); message != "" {
+	known, registered := toolArgumentNames[params.Name]
+	if message := membersOnce(params.Arguments, known); message != "" {
+		if !registered {
+			return toolError("The tool arguments " + message), nil
+		}
 		return toolError(fmt.Sprintf("The %q arguments %s", params.Name, message)), nil
 	}
 	switch params.Name {
@@ -256,6 +261,8 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return s.toolArtifactVersion(params.Arguments), nil
 	case "get_dialect_contract", "dialect_init", "dialect_canonicalize", "dialect_digest", "dialect_validate", "get_dialect_schema", "get_dialect_reference", "dialect_check":
 		return s.toolDialect(params.Name, params.Arguments), nil
+	case "experimental_get_policy_contract", "experimental_policy_init", "experimental_get_policy_schema", "experimental_policy_canonicalize", "experimental_policy_digest", "experimental_policy_validate", "experimental_policy_check":
+		return s.toolPolicy(params.Name, params.Arguments), nil
 	case "validate":
 		return s.toolValidate(params.Arguments), nil
 	case "test_conformance":

@@ -1398,7 +1398,7 @@ func TestExperimentalTestGraphsIncludeTracesArgumentIsHeldExactly(t *testing.T) 
 		"a number value":       {raw: `{"include_traces":1}`, want: booleanError},
 		"an object value":      {raw: `{"include_traces":{}}`, want: booleanError},
 		"an array value":       {raw: `{"include_traces":[]}`, want: booleanError},
-		"an upper-case member": {raw: `{"INCLUDE_TRACES":true}`, want: spelledError("experimental_test_graphs", "INCLUDE_TRACES", "include_traces")},
+		"an upper-case member": {raw: `{"INCLUDE_TRACES":true}`, want: spelledError("experimental_test_graphs", "include_traces")},
 		"a camel-cased member": {raw: `{"includeTraces":true}`, want: unknownError("includeTraces")},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -1685,7 +1685,7 @@ func TestExperimentalEvaluateRehearsalArgumentIsHeldExactly(t *testing.T) {
 	// choice of which one the message names.
 	for index, want := range map[int]string{
 		1: booleanError,
-		2: spelledError("experimental_evaluate", "REHEARSAL", "rehearsal"),
+		2: spelledError("experimental_evaluate", "rehearsal"),
 		3: booleanError,
 		4: booleanError,
 		5: booleanError,
@@ -1882,7 +1882,7 @@ func TestExperimentalGraphInventoryAndDocument(t *testing.T) {
 		t.Fatalf("an explicit null is the string-type refusal: %#v", null)
 	}
 	alias := responses[4]["result"].(map[string]any)
-	if alias["isError"] != true || toolText(t, alias) != spelledError("experimental_get_graph", "GRAPH_ID", "graph_id") {
+	if alias["isError"] != true || toolText(t, alias) != spelledError("experimental_get_graph", "graph_id") {
 		t.Fatalf("a case-folded alias is held to the exact spelling: %#v", alias)
 	}
 	if absent := responses[5]["result"].(map[string]any); absent["isError"] != true ||
@@ -2162,7 +2162,7 @@ func TestFetchToolsHoldArgumentsAndNotesExactly(t *testing.T) {
 	}
 	alias := responses[2]["result"].(map[string]any)
 	if alias["isError"] != true ||
-		toolText(t, alias) != spelledError("get_pack", "PACK_ID", "pack_id") {
+		toolText(t, alias) != spelledError("get_pack", "pack_id") {
 		t.Fatalf("the case-folded pack alias is held to the exact spelling: %#v", alias)
 	}
 }
@@ -2315,11 +2315,11 @@ func TestTheEnvelopeIsReadExactlyAndOnce(t *testing.T) {
 	for name, tc := range map[string]struct{ line, want string }{
 		"params twice, the first a rehearsal":     {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + rehearsing + `,"params":` + good + `}`, `carries the member "params" twice`},
 		"params twice, the first citing null":     {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":` + citingNothing + `,"params":` + good + `}`, `carries the member "params" twice`},
-		"Params by another case":                  {`{"jsonrpc":"2.0","id":1,"method":"tools/call","Params":` + good + `}`, `"Params", which is not the member "params"`},
+		"Params by another case":                  {`{"jsonrpc":"2.0","id":1,"method":"tools/call","Params":` + good + `}`, `carries a member with incorrect case; use "params" spelled exactly`},
 		"id twice":                                {`{"jsonrpc":"2.0","id":1,"id":2,"method":"tools/call","params":` + good + `}`, `carries the member "id" twice`},
 		"arguments twice inside params":           {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"experimental_evaluate","arguments":{"pack_id":"intake","facts":` + string(facts) + `,"cites":null},"arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`, `carries the member "arguments" twice`},
-		"Arguments by another case":               {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"experimental_evaluate","Arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`, `"Arguments", which is not the member "arguments"`},
-		"an argument twice for another tool":      {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_schema","arguments":{"name":"a","name":"b"}}}`, `The "get_schema" arguments carries the member "name" twice`},
+		"Arguments by another case":               {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"experimental_evaluate","Arguments":{"pack_id":"intake","facts":` + string(facts) + `}}}`, `carries a member with incorrect case; use "arguments" spelled exactly`},
+		"an argument twice for another tool":      {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_schema","arguments":{"name":"a","name":"b"}}}`, `The "get_schema" arguments carries a repeated member`},
 		"an argument twice for the validate tool": {`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"validate","arguments":{"document":"{}","document":"[]"}}}`, `The "validate" arguments carries the member "document" twice`},
 	} {
 		responses := runServer(t, tc.line)
@@ -2555,6 +2555,6 @@ func rawResponseID(t *testing.T, line string) string {
 
 // spelledError is the central refusal of an argument spelled as a known
 // member by another case, for every tool alike.
-func spelledError(tool, member, exact string) string {
-	return `The "` + tool + `" arguments carries "` + member + `", which is not the member "` + exact + `" spelled exactly.`
+func spelledError(tool, exact string) string {
+	return `The "` + tool + `" arguments carries a member with incorrect case; use "` + exact + `" spelled exactly.`
 }

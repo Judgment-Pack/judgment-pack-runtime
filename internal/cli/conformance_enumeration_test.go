@@ -253,7 +253,7 @@ func flatten(text string) string {
 // countWord spells a count the way the documents do.
 func countWord(t *testing.T, n int) string {
 	t.Helper()
-	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"}
+	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen"}
 	if n < 0 || n >= len(words) {
 		t.Fatalf("no spelling for a count of %d; extend countWord", n)
 	}

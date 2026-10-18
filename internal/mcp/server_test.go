@@ -125,7 +125,7 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 		tool := entry.(map[string]any)
 		advertised[tool["name"].(string)] = tool
 	}
-	for _, want := range []string{"experimental_get_test_matrix_contract", "experimental_validate_test_matrix", "experimental_validate_expectations", "validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example", "list_packs", "get_pack", "experimental_evaluate", "experimental_test_packs", "experimental_test_cases", "experimental_test_graphs", "experimental_list_graphs", "experimental_get_graph"} {
+	for _, want := range []string{"experimental_get_policy_contract", "experimental_policy_init", "experimental_get_policy_schema", "experimental_policy_canonicalize", "experimental_policy_digest", "experimental_policy_validate", "experimental_policy_check", "experimental_get_test_matrix_contract", "experimental_validate_test_matrix", "experimental_validate_expectations", "validate", "test_conformance", "get_schema", "describe_runtime", "list_examples", "get_example", "list_packs", "get_pack", "experimental_evaluate", "experimental_test_packs", "experimental_test_cases", "experimental_test_graphs", "experimental_list_graphs", "experimental_get_graph"} {
 		if _, ok := advertised[want]; !ok {
 			t.Fatalf("tools/list must advertise %q; got %v", want, advertised)
 		}
@@ -182,8 +182,8 @@ func TestServerLifecycleToolsAndValidate(t *testing.T) {
 	if _, present := graphsSchema["required"]; present {
 		t.Fatalf("every test_graphs member is optional: %v", graphsSchema["required"])
 	}
-	if len(advertised) != 26 {
-		t.Fatalf("expected 26 distinct tools, got %d", len(advertised))
+	if len(advertised) != 33 {
+		t.Fatalf("expected 33 distinct tools, got %d", len(advertised))
 	}
 	required := advertised["get_example"]["inputSchema"].(map[string]any)["required"].([]any)
 	if len(required) != 1 || required[0] != "name" {
@@ -1569,7 +1569,7 @@ func TestToolsRefuseCaseFoldedArgumentMembers(t *testing.T) {
 			if !ok || result["isError"] != true {
 				t.Fatalf("want isError tool result, got %#v", responses[0])
 			}
-			want := spelledError(tc.tool, tc.member, strings.ToLower(tc.member))
+			want := spelledError(tc.tool, strings.ToLower(tc.member))
 			if text := toolText(t, result); text != want {
 				t.Fatalf("error = %q, want %q", text, want)
 			}

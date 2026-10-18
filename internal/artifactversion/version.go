@@ -74,7 +74,11 @@ func Options(command, base string, candidate *string) (Report, int) {
 	return r, result.ExitSuccess
 }
 
-func valid(value string) bool { return len(value) <= MaxVersionBytes && grammar.MatchString(value) }
+// Valid checks the existing artifact version grammar and input byte bound.
+// It grants no compatibility or publication permission.
+func Valid(value string) bool { return len(value) <= MaxVersionBytes && grammar.MatchString(value) }
+
+func valid(value string) bool { return Valid(value) }
 
 // increment is called only with components of a validated version.
 func increment(component string) string {

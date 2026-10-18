@@ -341,7 +341,8 @@ func exactID(object []byte) (id json.RawMessage, present bool, unique bool) {
 // membersOnce walks one JSON object's members as tokens and reports the
 // first given twice, or the first spelled as a known member by another
 // case; "" when the object is not one (a later decoder says so) or is in
-// order.
+// order. Refusals name only trusted canonical members; arbitrary rejected names
+// never become response content, including at the shared tools/call guard.
 func membersOnce(object []byte, known []string) string {
 	decoder := json.NewDecoder(bytes.NewReader(object))
 	if tok, err := decoder.Token(); err != nil || tok != json.Delim('{') {
@@ -355,12 +356,17 @@ func membersOnce(object []byte, known []string) string {
 		}
 		name, _ := tok.(string)
 		if seen[name] {
-			return fmt.Sprintf("carries the member %q twice; each member is given once.", name)
+			for _, k := range known {
+				if name == k {
+					return fmt.Sprintf("carries the member %q twice; each member is given once.", k)
+				}
+			}
+			return "carries a repeated member; each member is given once."
 		}
 		seen[name] = true
 		for _, k := range known {
 			if name != k && strings.EqualFold(name, k) {
-				return fmt.Sprintf("carries %q, which is not the member %q spelled exactly.", name, k)
+				return fmt.Sprintf("carries a member with incorrect case; use %q spelled exactly.", k)
 			}
 		}
 		var skip json.RawMessage

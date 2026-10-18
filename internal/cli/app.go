@@ -133,7 +133,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "jpack",
 		Short:         "Judgment Pack Specification tooling",
-		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental namespace is the one exception: it evaluates, under the JPS Core 0.2.0-draft evaluator contract, on a surface that may change without notice. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; no help text, payload, or other file states it, and this one does not either. No command authorizes anything.",
+		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental evaluation commands evaluate under the JPS Core 0.2.0-draft evaluator contract, on a surface that may change without notice. Experimental offline Policy prototype tools check supplied documents and retained materials without evaluation. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; no help text, payload, or other file states it, and this one does not either. No command authorizes anything.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       result.CLIVersion,
@@ -155,14 +155,14 @@ func (a *App) rootCommand() *cobra.Command {
 func (a *App) experimentalCommand() *cobra.Command {
 	experimental := &cobra.Command{
 		Use:   "experimental",
-		Short: "Experimental-surface operations: the evaluator, which may change or vanish",
-		Long:  "Experimental operations (ADR-0007, ADR-0010, ADR-0011). \"Experimental\" here is a stability statement and not a conformance one: this surface may change or be removed without compatibility promise. The evaluator implements the evaluator conformance class of JPS Core 0.2.0-draft -- the §8.2 input preflight, the §8.3 portable disposition, the §8.4 error classes, and the §10 limits. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md: read that file for the claim, its exact version scope, its evidence, and everything it does not assert (§3.4.1, §3.5). This text states no claim, and neither does any payload; every payload carries a conformanceClaimReference member pointing at that file, beside the contract's own version as evaluatorSpecVersion and the pack's own specVersion. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the declared value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so a pack declaring any other version is refused as pack-not-conformant in the preflight phase.",
+		Short: "Experimental-surface operations: evaluator, graphs and offline Policy tools",
+		Long:  "Experimental operations, including offline nonnormative Policy prototype tooling (ADR-0059), which evaluates nothing and establishes no authority. The following evaluator scope applies to evaluation operations only (ADR-0007, ADR-0010, ADR-0011). \"Experimental\" here is a stability statement and not a conformance one: this surface may change or be removed without compatibility promise. The evaluator implements the evaluator conformance class of JPS Core 0.2.0-draft -- the §8.2 input preflight, the §8.3 portable disposition, the §8.4 error classes, and the §10 limits. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md: read that file for the claim, its exact version scope, its evidence, and everything it does not assert (§3.4.1, §3.5). This text states no claim, and neither does any payload; every payload carries a conformanceClaimReference member pointing at that file, beside the contract's own version as evaluatorSpecVersion and the pack's own specVersion. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the declared value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so a pack declaring any other version is refused as pack-not-conformant in the preflight phase.",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()
 		},
 	}
-	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand(), a.compareCommand())
+	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand(), a.compareCommand(), a.policyCommand())
 	return experimental
 }
 
@@ -627,7 +627,7 @@ func (a *App) mcpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve the offline validator and the experimental tools to an MCP client over stdio",
-		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus read-only artifact version arithmetic (get_artifact_version_options; ADR-0055), plus offline dialect encoding tools (get_dialect_contract, dialect_init, dialect_canonicalize, dialect_digest, dialect_validate, get_dialect_schema, get_dialect_reference, dialect_check; ADR-0052, ADR-0053, ADR-0054), plus nine tools on this runtime's experimental surface (experimental_evaluate, experimental_test_packs, experimental_test_cases and experimental_test_graphs, which reach the evaluator, experimental_list_graphs and experimental_get_graph, which serve the graph convention's inventory and documents read-only, and experimental_validate_expectations, which checks proposed exact dispositions against §8.3, experimental_get_test_matrix_contract, which describes the test matrix this runtime admits, and experimental_validate_test_matrix, which checks a proposed matrix against it, three that reach nothing at all; ADR-0007, ADR-0011, ADR-0021, ADR-0026, ADR-0029, ADR-0035, ADR-0036), whose surfaces may still change without notice. That evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim. It holds no credential, opens no network connection, and authorizes nothing.",
+		Long:  "Run a Model Context Protocol server on standard input and output. It exposes the offline validation, conformance, and description operations as MCP tools, plus read-only artifact version arithmetic (get_artifact_version_options; ADR-0055), plus offline dialect encoding tools (get_dialect_contract, dialect_init, dialect_canonicalize, dialect_digest, dialect_validate, get_dialect_schema, get_dialect_reference, dialect_check; ADR-0052, ADR-0053, ADR-0054), plus sixteen tools on this runtime's experimental surface (experimental_evaluate, experimental_test_packs, experimental_test_cases and experimental_test_graphs, which reach the evaluator, experimental_list_graphs and experimental_get_graph, which serve the graph convention's inventory and documents read-only, and experimental_validate_expectations, which checks proposed exact dispositions against §8.3, experimental_get_test_matrix_contract, which describes the test matrix this runtime admits, and experimental_validate_test_matrix, which checks a proposed matrix against it, three that reach nothing at all, and experimental_get_policy_contract, experimental_policy_init, experimental_get_policy_schema, experimental_policy_canonicalize, experimental_policy_digest, experimental_policy_validate and experimental_policy_check, which provide offline nonnormative Policy prototype document and supplied-material checks without evaluation or authority; ADR-0007, ADR-0011, ADR-0021, ADR-0026, ADR-0029, ADR-0035, ADR-0036, ADR-0059), whose surfaces may still change without notice. That evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim. It holds no credential, opens no network connection, and authorizes nothing.",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			server := mcp.NewServer(a.engine, a.runner)
@@ -1024,6 +1024,14 @@ func requestedCommand(args []string) string {
 				switch args[index+1] {
 				case "evaluate", "evaluate-corpus":
 					return "experimental " + args[index+1]
+				case "policy":
+					if index+2 < len(args) {
+						switch args[index+2] {
+						case "contract", "init", "schema", "canonicalize", "digest", "validate", "check":
+							return "experimental policy " + args[index+2]
+						}
+					}
+					return "experimental policy"
 				case "graph":
 					if index+2 < len(args) {
 						switch args[index+2] {
