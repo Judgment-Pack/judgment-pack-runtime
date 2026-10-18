@@ -499,3 +499,42 @@ limit: base64 expands retained bytes and JSON string escaping, document text and
 RPC framing consume more space. Consequently, not every bundle under the 16 MiB
 retained-byte limit fits a single MCP request. A client must bound the complete
 encoded request; CLI named-file input supports the larger material JSON envelope.
+
+### Explicit proposed-draft candidate selection
+
+The seven existing tools also serve the unadopted Policy contract candidate
+`1.0.0`, at `proposed-draft` maturity, pinned to Spec commit
+`4406cec9714ab9bc8e8971237cc79d58682cc904`
+([ADR-0060](adr/0060-explicit-policy-candidate-format.md)). Calling contract
+without arguments or with `{}` returns the exact existing prototype report.
+`{allFormats:true}` explicitly requests the separate registry version 1;
+`{formatVersion:"1.0.0"}` selects the candidate contract. These two arguments
+are mutually exclusive. `{formatVersion:"0.0.2"}` selects the prototype contract.
+
+Init/schema require the exact selected `formatVersion` as before. Document tools
+accept an optional `formatVersion` string for explicit dispatch, including
+candidate classification of malformed or selector-less bytes. The document
+still must carry its own exact selector; no tool inserts or rewrites it.
+Without an operation selector, a document carrying `formatVersion` dispatches
+to the candidate; existing prototype documents retain their behavior. Candidate
+Policies use `workspace-managed` or `externally-managed`, never an alias of the
+prototype's `desk-managed`. Candidate adoption requires candidate Policy bytes.
+
+Candidate reports include their own `formatVersion`, source provenance, maturity
+and exact `candidateCapabilities` artifact. Only full candidate checks add
+`candidateResult`, exactly the portable valid object
+`{status:"valid",formatVersion:"1.0.0",maturity:"proposed-draft"}` or refusal
+`{status:"refused",code:"…"}`. Their bounded finite codes follow the
+[pinned candidate contract](../internal/policy/candidate/README.md#5-resource-limits-and-refusal-classifications).
+Encoding/local validation omit that field; operational failures supply no
+candidate result. MCP sets `isError:true` on refusals. Neither result format
+asserts current authority, permission, trusted review or standard conformance.
+
+Candidate physical bounds and strict JSON parsing precede selector/canonical
+checks, then ordered registration precedes document schema and reference checks.
+Retained artifact byte pins are checked before parsing and optional canonical
+identity. Pack bytes go unchanged to Core structural validation. The private
+material carrier and the 16 MiB stdio request ceiling remain unchanged; duplicate
+base64 registrations can exceed a transport ceiling even when their distinct
+retained bytes fit the candidate. Passing portable raw-input vectors therefore
+promises no larger encoded envelope or independent interoperability evidence.

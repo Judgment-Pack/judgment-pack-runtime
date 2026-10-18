@@ -1136,3 +1136,62 @@ in [MCP clients](docs/mcp-clients.md#experimental-policy-prototype-tools).
 The RFC, prototype schemas and synthetic fixtures are bundled from specification
 revision `8a56a95d555c17640d2db4984363b779536b3c2a`, with per-file digests and
 licensing provenance. They are never fetched at runtime.
+
+### Proposed draft Policy contract candidate
+
+The same experimental commands additionally support the **unadopted,
+proposed-draft** candidate `formatVersion: "1.0.0"`
+([ADR-0060](docs/adr/0060-explicit-policy-candidate-format.md)). It is a review
+candidate for RFC 0023, not a stable format, adopted standard or conformance
+class. Its artifacts are pinned separately to Spec commit
+`4406cec9714ab9bc8e8971237cc79d58682cc904` in
+[the candidate provenance manifest](internal/policy/candidate/provenance.json).
+
+Default `contract` output and all prototype reports keep their existing shape
+for strict clients. Explicit discovery returns a separate `registryVersion: "1"`
+report; selecting one contract returns that format's provenance and capabilities:
+
+```bash
+jpack experimental policy contract --all-formats --format json
+jpack experimental policy contract --format-version 1.0.0 --format json
+jpack experimental policy init --kind policy --format-version 1.0.0 --id urn:example:candidate --version 7.3.42
+jpack experimental policy schema --kind governing-adoption --format-version 1.0.0
+jpack experimental policy check candidate-adoption.json --materials retained-materials.json --format json
+```
+
+`--all-formats` and contract `--format-version` are mutually exclusive. Documents
+with `formatVersion` select the candidate grammar explicitly; supported prototype
+inputs continue using their exact wrapper. An optional `--format-version 1.0.0`
+on canonicalize/digest/validate/check also selects candidate refusal handling for
+malformed or selector-less input. It does not insert a missing selector, rewrite
+an artifact or migrate bytes. Candidate Policies use `workspace-managed` or
+`externally-managed`; `desk-managed` is refused. Artifact `version` remains
+independent of the format selector. Candidate adoption requires retained
+candidate Policy bytes; prototype Policies cannot satisfy those references.
+
+Candidate reports identify `formatVersion`, `proposed-draft` maturity, their
+exact source pin and `candidateCapabilities`. Only a full candidate `check`
+includes `candidateResult`, whose complete value is one of:
+
+```json
+{"status":"valid","formatVersion":"1.0.0","maturity":"proposed-draft"}
+{"status":"refused","code":"invalid-selector"}
+```
+
+The finite refusal codes and phase ordering are defined by the
+[pinned candidate contract](internal/policy/candidate/README.md#5-resource-limits-and-refusal-classifications).
+Runtime retains exit 0 for success, 1 for invalid content and 2 for unsupported
+input; the nested result supplies the portable candidate classification.
+Environment failures are operational errors and provide no candidate result.
+Canonicalize/digest establish encoding and identity only; validate checks closed
+document forms and local references, with retained materials unchecked. Their
+reports omit `candidateResult`.
+
+The Go harness compares all 104 exact portable result objects, acquiring vector
+sources lazily and preserving raw Pack numbers and every retained-byte identity.
+It uses the shared registration/checking engine directly: valid distinct-byte
+bundles can exceed the private 24 MiB JSON/base64 carrier or MCP's 16 MiB request
+limit, especially when identical bytes are registered under multiple media
+types. Those transport ceilings are unchanged. Agreement with these vectors
+supplies no independently authored implementation evidence, approval, current
+authority or permission.

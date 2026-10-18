@@ -1,5 +1,5 @@
 // Package policy supplies bounded offline tools for the explicitly non-normative
-// RFC 0023 prototype. It is not a policy authority or an evaluator.
+// RFC 0023 prototype and proposed-draft candidate. It is not a policy authority or an evaluator.
 package policy
 
 import (
@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifactversion"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -33,6 +34,11 @@ const (
 )
 
 type Report struct {
+	FormatVersion         string           `json:"formatVersion,omitempty"`
+	CandidateCapabilities json.RawMessage  `json:"candidateCapabilities,omitempty"`
+	CandidateResult       *CandidateResult `json:"candidateResult,omitempty"`
+	refusalCode           string
+
 	OutputVersion        string                `json:"outputVersion"`
 	Tool                 result.Tool           `json:"tool"`
 	Command              string                `json:"command"`
@@ -121,7 +127,7 @@ func limits() carrier.Limits {
 	return carrier.Limits{MaxDepth: MaxDepth, MaxNodes: MaxDocumentBytes, MaxStringBytes: MaxDocumentBytes}
 }
 
-func parse(command string, data []byte) (Report, map[string]any, int) {
+func parsePrototype(command string, data []byte) (Report, map[string]any, int) {
 	r := report(command)
 	if len(data) > MaxDocumentBytes {
 		r, c := refused(r, "JPS-POLICY-DOCUMENT-BOUND", "", "Input exceeds this prototype's parsed-document byte support bound.", result.ExitUnsupported)
@@ -175,7 +181,7 @@ func parse(command string, data []byte) (Report, map[string]any, int) {
 // Canonicalize checks strict JSON, the existing canon domain and exact selectors.
 // Encoded is deliberately distinct from document-valid and references-valid.
 func Canonicalize(command string, data []byte) (Report, int) {
-	r, _, code := parse(command, data)
+	r, _, code := parseFormat(command, data, "")
 	return r, code
 }
 func Digest(command string, data []byte) (Report, int) {
@@ -188,23 +194,34 @@ func Digest(command string, data []byte) (Report, int) {
 // placeholders, and the caller must supply its own narrative/pack/policy bytes.
 func Init(command, kind, profileVersion, id, version string) (Report, int) {
 	r := report(command)
+	if profileVersion == CandidateVersion {
+		r = candidateReport(command)
+	}
 	if code, path, message := selector(kind, profileVersion); code != 0 {
 		return refused(r, "JPS-POLICY-SELECTOR", path, message, code)
 	}
 	if !artifactversion.Valid(version) {
 		return refused(r, "JPS-POLICY-ARTIFACT-VERSION", "/version", "Provide an exact three-component artifact version within the reported byte bound.", result.ExitInvalid)
 	}
-	if len(id) > 2048 || !validURI(id) {
+	if (profileVersion == ProfileVersion && len(id) > 2048 || profileVersion == CandidateVersion && utf8.RuneCountInString(id) > 2048) || !validURIFormat(id, profileVersion) {
 		return refused(r, "JPS-POLICY-ID", "/id", "Provide an absolute RFC 3986 URI within the prototype identity bound.", result.ExitInvalid)
 	}
 	content := func(media string) map[string]any {
 		return map[string]any{"bytesDigest": "sha256:" + strings.Repeat("0", 64), "byteLength": 1, "mediaType": media}
 	}
 	proto := map[string]any{"profile": Profile, "proposalVersion": ProfileVersion, "status": "non-normative"}
-	doc := map[string]any{"prototype": proto, "kind": kind, "id": id, "version": version}
+	doc := map[string]any{"kind": kind, "id": id, "version": version}
+	if profileVersion == CandidateVersion {
+		doc["formatVersion"] = CandidateVersion
+	} else {
+		doc["prototype"] = proto
+	}
 	if kind == "policy" {
 		doc["title"] = "Replace with a policy title"
 		doc["managementMode"] = "desk-managed"
+		if profileVersion == CandidateVersion {
+			doc["managementMode"] = "workspace-managed"
+		}
 		doc["content"] = content("text/plain")
 		doc["sourceProvenance"] = []any{}
 		doc["sections"] = []any{map[string]any{"id": "replace-section", "title": "Replace with a section title", "anchor": map[string]any{"startByte": 0, "endByte": 1, "bytesDigest": "sha256:" + strings.Repeat("0", 64)}}}
@@ -229,7 +246,7 @@ func Init(command, kind, profileVersion, id, version string) (Report, int) {
 }
 
 func selector(kind, version string) (int, string, string) {
-	if version != ProfileVersion {
+	if version != ProfileVersion && version != CandidateVersion {
 		return result.ExitUnsupported, "/profileVersion", "The exact supported prototype version is 0.0.2."
 	}
 	if kind != "policy" && kind != "governing-adoption" {

@@ -155,3 +155,4 @@ authority, and following it confers no conformance status on anything.
 | [0056](0056-version-3-dialect-authoring.md) | Check supported version-3 Dialect declarations through shared authoring tools | accepted |
 | [0057](0057-named-dialect-artifact-identity.md) | Share offline tools for named Dialect artifacts | accepted |
 | [0059](0059-experimental-offline-policy-tools.md) | Prototype Policy document and retained-reference checks offline | accepted |
+| [0060](0060-explicit-policy-candidate-format.md) | Add an explicit Policy contract candidate without changing prototype clients | proposed |

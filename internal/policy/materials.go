@@ -19,8 +19,15 @@ type retained struct {
 type materialSet map[string]*retained
 
 func decodeMaterials(data []byte) (materialSet, *issue, int) {
+	return decodeMaterialsFormat(data, false)
+}
+
+func decodeMaterialsFormat(data []byte, candidateMode bool) (materialSet, *issue, int) {
 	if len(data) > MaxMaterialsWireBytes {
 		return nil, problem("JPS-POLICY-MATERIALS-BOUND", "/materials", "The private Runtime materials JSON exceeds its transport byte support bound."), result.ExitUnsupported
+	}
+	if candidateMode && !measureCandidate(data, MaxMaterialsWireBytes, MaxDepth) {
+		return nil, candidateIssue("input-over-bound"), result.ExitUnsupported
 	}
 	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: 8, MaxNodes: 1024, MaxStringBytes: base64.StdEncoding.EncodedLen(MaxOriginalBytes)})
 	if failure != nil {
@@ -28,54 +35,81 @@ func decodeMaterials(data []byte) (materialSet, *issue, int) {
 		if failure.Resource {
 			code = result.ExitUnsupported
 		}
+		if candidateMode {
+			if failure.Resource {
+				return nil, candidateIssue("input-over-bound"), code
+			}
+			return nil, candidateIssue("invalid-carrier"), code
+		}
 		return nil, problem(failure.Diagnostic.Code, "/materials", "Retained-material JSON is malformed or exceeds its support bounds."), code
 	}
 	root := object(value)
 	entries := array(root["materials"])
+	if candidateMode {
+		if root == nil || len(root) != 1 {
+			return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+		}
+		if _, ok := root["materials"].([]any); !ok {
+			return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+		}
+		for _, item := range entries {
+			entry := object(item)
+			if len(entry) != 2 || object(entry["content"]) == nil {
+				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+			}
+			if _, ok := entry["dataBase64"].(string); !ok {
+				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+			}
+		}
+	}
 	if len(entries) > MaxMaterials {
 		return nil, problem("JPS-POLICY-MATERIAL-COUNT", "/materials", "The private Runtime carrier supports at most 16 material registrations."), result.ExitUnsupported
 	}
 	// The schema library converts number tokens to arbitrary-precision values.
 	// Refuse unsupported literals throughout this closed carrier first, including
 	// numbers in unknown or wrong-typed members that schema validation will reject.
-	if failure, code := preflightMaterialNumbers(value, nil); failure != nil {
-		return nil, failure, code
-	}
-	compiled, err := loadSchemas()
-	if err != nil {
-		return nil, problem("JPS-POLICY-ARTIFACT", "", "Pinned prototype schemas could not be compiled."), result.ExitIO
-	}
-	if err := compiled["materials"].Validate(value); err != nil {
-		if schemaBound(err) {
-			return nil, problem("JPS-POLICY-MATERIALS-BOUND", "/materials", "Retained material exceeds the private Runtime carrier support bounds."), result.ExitUnsupported
+	if !candidateMode {
+		if failure, code := preflightMaterialNumbers(value, nil); failure != nil {
+			return nil, failure, code
 		}
-		return nil, problem("JPS-POLICY-MATERIALS-SCHEMA", "/materials", "Provide only materials entries containing a retained content reference and a standard padded dataBase64 string."), result.ExitInvalid
+		compiled, err := loadSchemas()
+		if err != nil {
+			return nil, problem("JPS-POLICY-ARTIFACT", "", "Pinned prototype schemas could not be compiled."), result.ExitIO
+		}
+		if err := compiled["materials"].Validate(value); err != nil {
+			if schemaBound(err) {
+				return nil, problem("JPS-POLICY-MATERIALS-BOUND", "/materials", "Retained material exceeds the private Runtime carrier support bounds."), result.ExitUnsupported
+			}
+			return nil, problem("JPS-POLICY-MATERIALS-SCHEMA", "/materials", "Provide only materials entries containing a retained content reference and a standard padded dataBase64 string."), result.ExitInvalid
+		}
 	}
 	// Complete shape, type and encoded-length checks precede any base64 decoding.
 	distinct := map[string]bool{}
 	total := 0
-	for i, item := range entries {
-		entry := object(item)
-		content := object(entry["content"])
-		encoded := text(entry["dataBase64"])
-		path := indexPath("/materials", i) + "/dataBase64"
-		declared := number(content["byteLength"])
-		n, valid := base64Length(encoded)
-		if !valid {
-			return nil, problem("JPS-POLICY-BASE64", path, "Retained material must use strict standard padded base64 without whitespace."), result.ExitInvalid
-		}
-		if n > MaxOriginalBytes {
-			return nil, problem("JPS-POLICY-ORIGINAL-BOUND", path, "Retained material exceeds the original-source byte support bound."), result.ExitUnsupported
-		}
-		if n != declared {
-			return nil, problem("JPS-POLICY-BYTE-LENGTH", path, "Decoded retained bytes do not match their declared byte length."), result.ExitInvalid
-		}
-		key := text(content["bytesDigest"])
-		if !distinct[key] {
-			distinct[key] = true
-			total += n
-			if total > MaxTotalMaterialBytes {
-				return nil, problem("JPS-POLICY-AGGREGATE-BOUND", "/materials", "Distinct retained material exceeds the aggregate byte support bound."), result.ExitUnsupported
+	if !candidateMode {
+		for i, item := range entries {
+			entry := object(item)
+			content := object(entry["content"])
+			encoded := text(entry["dataBase64"])
+			path := indexPath("/materials", i) + "/dataBase64"
+			declared := number(content["byteLength"])
+			n, valid := base64Length(encoded)
+			if !valid {
+				return nil, problem("JPS-POLICY-BASE64", path, "Retained material must use strict standard padded base64 without whitespace."), result.ExitInvalid
+			}
+			if n > MaxOriginalBytes {
+				return nil, problem("JPS-POLICY-ORIGINAL-BOUND", path, "Retained material exceeds the original-source byte support bound."), result.ExitUnsupported
+			}
+			if n != declared {
+				return nil, problem("JPS-POLICY-BYTE-LENGTH", path, "Decoded retained bytes do not match their declared byte length."), result.ExitInvalid
+			}
+			key := text(content["bytesDigest"])
+			if !distinct[key] {
+				distinct[key] = true
+				total += n
+				if total > MaxTotalMaterialBytes {
+					return nil, problem("JPS-POLICY-AGGREGATE-BOUND", "/materials", "Distinct retained material exceeds the aggregate byte support bound."), result.ExitUnsupported
+				}
 			}
 		}
 	}
@@ -83,9 +117,34 @@ func decodeMaterials(data []byte) (materialSet, *issue, int) {
 	for i, item := range entries {
 		entry := object(item)
 		content := object(entry["content"])
+		if candidateMode {
+			if err, c := candidateSchema("common", content); err != nil {
+				return nil, err, c
+			}
+			encoded := text(entry["dataBase64"])
+			n, ok := base64Length(encoded)
+			if !ok {
+				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+			}
+			if n > MaxOriginalBytes {
+				return nil, candidateIssue("input-over-bound"), result.ExitUnsupported
+			}
+			if n != number(content["byteLength"]) {
+				return nil, candidateIssue("reference-mismatch"), result.ExitInvalid
+			}
+		}
 		raw, err := base64.StdEncoding.Strict().DecodeString(text(entry["dataBase64"]))
 		if err != nil {
+			if candidateMode {
+				return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
+			}
 			return nil, problem("JPS-POLICY-BASE64", indexPath("/materials", i)+"/dataBase64", "Retained material is not strict standard padded base64."), result.ExitInvalid
+		}
+		if candidateMode {
+			if err, code := registerCandidateMaterial(content, raw, material); err != nil {
+				return nil, err, code
+			}
+			continue
 		}
 		key := text(content["bytesDigest"])
 		if digest(raw) != key {
@@ -197,5 +256,37 @@ func prefixed(err *issue, prefix string) *issue {
 	if err == nil {
 		return nil
 	}
-	return &issue{code: err.code, path: prefix + err.path, message: err.message}
+	return &issue{code: err.code, path: prefix + err.path, message: err.message, candidateCode: err.candidateCode}
+}
+
+// registerCandidateMaterial is shared by the private wire carrier and the
+// portable-vector harness. Checks happen in registration order before mutation.
+func registerCandidateMaterial(reference map[string]any, raw []byte, material materialSet) (*issue, int) {
+	if err, code := candidateSchema("common", reference); err != nil {
+		return err, code
+	}
+	if len(raw) > MaxOriginalBytes {
+		return candidateIssue("input-over-bound"), result.ExitUnsupported
+	}
+	key := text(reference["bytesDigest"])
+	existing := material[key]
+	if existing != nil && !bytes.Equal(existing.raw, raw) || len(raw) != number(reference["byteLength"]) || digest(raw) != key {
+		return candidateIssue("reference-mismatch"), result.ExitInvalid
+	}
+	total := 0
+	for _, retained := range material {
+		total += len(retained.raw)
+	}
+	if existing == nil {
+		total += len(raw)
+	}
+	if total > MaxTotalMaterialBytes {
+		return candidateIssue("input-over-bound"), result.ExitUnsupported
+	}
+	if existing == nil {
+		existing = &retained{raw: raw, mediaTypes: map[string]bool{}}
+		material[key] = existing
+	}
+	existing.mediaTypes[text(reference["mediaType"])] = true
+	return nil, 0
 }

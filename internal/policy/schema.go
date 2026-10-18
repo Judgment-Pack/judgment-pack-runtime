@@ -59,14 +59,18 @@ func validURI(id string) bool {
 // resources. Vendored source schemas and their provenance hashes stay unchanged.
 func Schema(command, kindName, version string) (Report, int) {
 	r := report(command)
+	if version == CandidateVersion {
+		r = candidateReport(command)
+	}
 	if code, path, message := selector(kindName, version); code != 0 {
 		return refused(r, "JPS-POLICY-SELECTOR", path, message, code)
 	}
-	raw, err := prototype.ReadFile("prototype/" + kindName + ".schema.json")
+	source, directory, commonURI, revision := schemaSource(version)
+	raw, err := source.ReadFile(directory + "/" + kindName + ".schema.json")
 	if err != nil {
 		return refused(r, "JPS-POLICY-ARTIFACT", "", "The pinned prototype schema is unavailable.", result.ExitIO)
 	}
-	common, _ := prototype.ReadFile("prototype/common.schema.json")
+	common, _ := source.ReadFile(directory + "/common.schema.json")
 	var doc, shared map[string]any
 	if json.Unmarshal(raw, &doc) != nil || json.Unmarshal(common, &shared) != nil {
 		return refused(r, "JPS-POLICY-ARTIFACT", "", "The pinned prototype schema is invalid.", result.ExitIO)
@@ -75,16 +79,19 @@ func Schema(command, kindName, version string) (Report, int) {
 	delete(shared, "$schema")
 	delete(shared, "$ref")
 	rewriteRefs(shared, "#/$defs/", "#/$defs/common/$defs/")
-	rewriteRefs(shared, commonID+"#", "#/$defs/common")
-	rewriteRefs(doc, commonID+"#", "#/$defs/common")
+	rewriteRefs(shared, commonURI+"#", "#/$defs/common")
+	rewriteRefs(doc, commonURI+"#", "#/$defs/common")
 	defs, _ := doc["$defs"].(map[string]any)
 	if defs == nil {
 		defs = map[string]any{}
 		doc["$defs"] = defs
 	}
 	defs["common"] = shared
-	doc["$id"] = "urn:judgmentpack:runtime:experimental-policy:" + ProfileVersion + ":" + kindName + ":authoring-schema:1"
-	doc["$comment"] = "Runtime self-contained editing copy of non-normative RFC 0023 prototype at Spec commit " + SpecRevision + ". Use experimental policy validate/check; schema acceptance grants no approval, execution authority or conformance."
+	doc["$id"] = "urn:judgmentpack:runtime:experimental-policy:" + version + ":" + kindName + ":authoring-schema:1"
+	doc["$comment"] = "Runtime self-contained editing copy of non-normative RFC 0023 prototype at Spec commit " + revision + ". Use experimental policy validate/check; schema acceptance grants no approval, execution authority or conformance."
+	if version == CandidateVersion {
+		doc["$comment"] = "Runtime self-contained editing copy of proposed-draft, unadopted Policy contract candidate at Spec commit " + revision + ". Schema acceptance establishes no authority or conformance."
+	}
 	text, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return refused(r, "JPS-POLICY-ARTIFACT", "", "The editing schema could not be assembled.", result.ExitIO)
@@ -114,9 +121,28 @@ func rewriteRefs(value any, from, to string) {
 }
 
 func validateDocument(command string, data []byte) (Report, map[string]any, int) {
-	r, doc, code := parse(command, data)
+	return validateDocumentFormat(command, data, "")
+}
+func validateDocumentFormat(command string, data []byte, format string) (Report, map[string]any, int) {
+	r, doc, code := parseFormat(command, data, format)
 	if code != 0 {
 		return r, nil, code
+	}
+	if r.FormatVersion == CandidateVersion {
+		if failure, c := candidateSchema(r.Kind, doc); failure != nil {
+			if c == result.ExitIO {
+				rr, code := refused(r, failure.code, failure.path, failure.message, c)
+				return rr, nil, code
+			}
+			rr, code := candidateRefused(r, candidateCode(failure, c))
+			return rr, nil, code
+		}
+		if failure := localReferences(doc); failure != nil {
+			rr, code := candidateRefused(r, candidateLocalCode(doc, failure))
+			return rr, nil, code
+		}
+		r.Status, r.ValidationScope, r.Document = "document-valid", r.Capabilities.ValidationScope, ""
+		return r, doc, 0
 	}
 	if failure := referenceSelectors(doc); failure != nil {
 		r, code := refused(r, failure.code, failure.path, failure.message, result.ExitUnsupported)
@@ -148,6 +174,11 @@ func validateDocument(command string, data []byte) (Report, map[string]any, int)
 }
 func Validate(command string, data []byte) (Report, int) {
 	r, _, code := validateDocument(command, data)
+	return r, code
+}
+
+func ValidateFormat(command string, data []byte, format string) (Report, int) {
+	r, _, code := validateDocumentFormat(command, data, format)
 	return r, code
 }
 

@@ -48,6 +48,26 @@ number domain. Source/schema/example provenance pins specification revision
 resource is fetched at runtime. The shared 16 MiB stdio line bound is unchanged,
 so JSON/base64 overhead reduces the maximum retained material a call can carry.
 
+The proposed-draft, unadopted Policy contract candidate `1.0.0` is an additional
+explicit format ([ADR-0060](adr/0060-explicit-policy-candidate-format.md)). Its
+schemas, prose, examples and 104 portable vectors are pinned separately to Spec
+commit `4406cec9714ab9bc8e8971237cc79d58682cc904`. Format selection, schema and
+provenance differ; material identity, UTF-8 anchors and typed Pack coverage use
+the same engine. Candidate adoption cannot consume prototype Policy bytes.
+No-argument contract discovery and prototype reports retain their exact prior
+shape for strict clients. All-format discovery requires explicit CLI
+`--all-formats` or MCP `allFormats:true` and returns registry version 1.
+
+Candidate full checks return a bounded `candidateResult` with exactly the
+portable status/code object, separate from Runtime diagnostics and exit status.
+Root physical bounds, strict JSON, selection and canonical numeric domain precede
+ordered registration; root schema and semantic checks follow registration.
+Portable tests defer source acquisition to its phase and use shared raw
+registration directly. Duplicate media registrations count bytes once but may
+repeat base64 on the wire, so candidate agreement never widens the private
+24 MiB material JSON or 16 MiB MCP ceiling. No candidate result establishes
+current authority, permission, publication, review trust or independent agreement.
+
 ## Artifact version arithmetic
 
 `internal/artifactversion` owns exact three-component parsing, comparison and

@@ -13,8 +13,8 @@ import (
 
 func (a *App) policyCommand() *cobra.Command {
 	group := &cobra.Command{
-		Use: "policy", Short: "EXPERIMENTAL: offline nonnormative Policy prototype tools",
-		Long: "Offline tools for the nonnormative RFC 0023 Policy prototype, exact format 0.0.2. Validate checks document forms and local references. Check also checks the exact supplied retained-material closure and specific Core references; it does not perform full Core semantic validation or evaluate anything. No approval, governing-adoption authority, publication, billing or source access is established. This experimental surface may change without compatibility promise.",
+		Use: "policy", Short: "EXPERIMENTAL: offline Policy prototype and proposed-draft candidate tools",
+		Long: "Offline tools for the nonnormative RFC 0023 Policy prototype 0.0.2 and unadopted proposed-draft candidate 1.0.0. Discover candidates explicitly with contract --all-formats; no-argument contract retains the prototype contract. Validate checks document forms and local references. Check also checks the exact supplied retained-material closure and specific Core references; it does not perform full Core semantic validation or evaluate anything. No approval, governing-adoption authority, publication, billing or source access is established. This experimental surface may change without compatibility promise.",
 		Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	for _, operation := range []string{"contract", "init", "schema", "canonicalize", "digest", "validate", "check"} {
@@ -25,18 +25,19 @@ func (a *App) policyCommand() *cobra.Command {
 
 func (a *App) policyOperation(operation string) *cobra.Command {
 	format, kind, profileVersion, id, version, materialsPath := "human", "", "", "", "", ""
+	allFormats := false
 	use, args := operation, cobra.NoArgs
 	if operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
 		use += " <document-or->"
 		args = cobra.ExactArgs(1)
 	}
 	descriptions := map[string]string{
-		"contract":     "Describe exact prototype capabilities, limits and pinned provenance",
+		"contract":     "Describe capabilities and pinned provenance; opt into candidate discovery explicitly",
 		"init":         "Print a starter template; missing retained materials remain unchecked",
-		"schema":       "Print the schema for an explicitly selected prototype kind and format",
+		"schema":       "Print the schema for an explicitly selected Policy kind and format",
 		"canonicalize": "Print canonical document bytes; encoding success is not validation",
 		"digest":       "Print the canonical document digest; raw-byte identity is separate",
-		"validate":     "Check prototype document forms and local references offline",
+		"validate":     "Check selected Policy document forms and local references offline",
 		"check":        "Check exact supplied retained materials and references offline",
 	}
 	c := &cobra.Command{Use: use, Short: descriptions[operation], Args: args, RunE: func(cmd *cobra.Command, operands []string) error {
@@ -53,11 +54,25 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 		if operation == "init" && (!cmd.Flags().Changed("id") || !cmd.Flags().Changed("version")) {
 			return a.operational(command, format, result.ExitInvocation, "JPS-POLICY-IDENTITY", "Init requires explicit --id and --version.")
 		}
+		if operation == "contract" && cmd.Flags().Changed("all-formats") && cmd.Flags().Changed("format-version") {
+			return a.operational(command, format, result.ExitInvocation, "JPS-POLICY-SELECTOR", "Use either --all-formats or --format-version.")
+		}
+		if cmd.Flags().Changed("format-version") && profileVersion == "" && operation != "init" && operation != "schema" {
+			return a.operational(command, format, result.ExitInvocation, "JPS-POLICY-SELECTOR", "Provide a nonempty exact format version.")
+		}
 		var report policy.Report
+		var registry *policy.Registry
 		code := result.ExitSuccess
 		switch operation {
 		case "contract":
-			report = policy.Contract(command)
+			if allFormats {
+				r := policy.AllFormats(command)
+				registry = &r
+			} else if cmd.Flags().Changed("format-version") {
+				report, code = policy.ContractFormat(command, profileVersion)
+			} else {
+				report = policy.Contract(command)
+			}
 		case "init":
 			report, code = policy.Init(command, kind, profileVersion, id, version)
 		case "schema":
@@ -71,11 +86,11 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 			}
 			switch operation {
 			case "canonicalize":
-				report, code = policy.Canonicalize(command, data)
+				report, code = policy.CanonicalizeFormat(command, data, profileVersion)
 			case "digest":
-				report, code = policy.Digest(command, data)
+				report, code = policy.DigestFormat(command, data, profileVersion)
 			case "validate":
-				report, code = policy.Validate(command, data)
+				report, code = policy.ValidateFormat(command, data, profileVersion)
 			case "check":
 				materials, err := a.readInput(materialsPath, policy.MaxMaterialsWireBytes, "retained materials")
 				if errors.Is(err, fssecure.ErrTooLarge) {
@@ -83,11 +98,15 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 				} else if err != nil {
 					return a.operational(command, format, result.ExitIO, "JPS-POLICY-MATERIALS-READ", "The retained-material input could not be read as a bounded local regular file or standard input.")
 				}
-				report, code = policy.Check(command, data, materials, a.engine)
+				report, code = policy.CheckFormat(command, data, materials, a.engine, profileVersion)
 			}
 		}
 		if format == "json" {
-			if err := a.writeJSON(report); err != nil {
+			var payload any = report
+			if registry != nil {
+				payload = *registry
+			}
+			if err := a.writeJSON(payload); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}
 		} else if code != result.ExitSuccess {
@@ -100,15 +119,29 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 			var err error
 			switch operation {
 			case "contract":
-				_, err = fmt.Fprintf(a.out, "Policy tools · EXPERIMENTAL · nonnormative prototype %s\nSpecification: %s\nKinds: policy, governing-adoption\nOperations: contract, init, schema, canonicalize, digest, validate, check\nValidate checks document forms and local references. Check checks exact supplied retained materials and specific Core references, without full Core semantic validation or evaluation.\nNo approval, governing-adoption authority or standard conformance is established.\n", policy.PrototypeVersion, policy.SpecURL)
+				if registry != nil {
+					_, err = fmt.Fprintf(a.out, "Policy format registry 1 · EXPERIMENTAL\n0.0.2 · nonnormative prototype · %s\n1.0.0 · proposed-draft candidate, unadopted · %s\nSelect a format explicitly for init/schema. No authority or conformance is established.\n", policy.SpecURL, policy.CandidateURL)
+				} else if report.FormatVersion == policy.CandidateVersion {
+					_, err = fmt.Fprintf(a.out, "Policy candidate %s · EXPERIMENTAL · proposed-draft, unadopted\nSpecification: %s\nKinds: policy, governing-adoption\nNo approval, current authority or standard conformance is established.\n", report.FormatVersion, report.Specification)
+				} else {
+					_, err = fmt.Fprintf(a.out, "Policy tools · EXPERIMENTAL · nonnormative prototype %s\nSpecification: %s\nKinds: policy, governing-adoption\nOperations: contract, init, schema, canonicalize, digest, validate, check\nValidate checks document forms and local references. Check checks exact supplied retained materials and specific Core references, without full Core semantic validation or evaluation.\nNo approval, governing-adoption authority or standard conformance is established.\n", policy.PrototypeVersion, policy.SpecURL)
+				}
 			case "schema":
 				_, err = fmt.Fprint(a.out, report.Resource.Text)
 			case "digest":
 				_, err = fmt.Fprintln(a.out, report.CanonicalDigest)
 			case "validate":
-				_, err = fmt.Fprintln(a.out, "Prototype document and local-reference checks passed. Retained materials were not checked; no authority is established.")
+				if report.FormatVersion == policy.CandidateVersion {
+					_, err = fmt.Fprintln(a.out, "Proposed-draft candidate document and local-reference checks passed. Retained materials were not checked; no authority is established.")
+				} else {
+					_, err = fmt.Fprintln(a.out, "Prototype document and local-reference checks passed. Retained materials were not checked; no authority is established.")
+				}
 			case "check":
-				_, err = fmt.Fprintln(a.out, "Prototype retained-material and reference checks passed. Full Core semantics and evaluation were not checked; no authority is established.")
+				if report.FormatVersion == policy.CandidateVersion {
+					_, err = fmt.Fprintln(a.out, "Proposed-draft candidate retained-material and reference checks passed. Full Core semantics and evaluation were not checked; no authority is established.")
+				} else {
+					_, err = fmt.Fprintln(a.out, "Prototype retained-material and reference checks passed. Full Core semantics and evaluation were not checked; no authority is established.")
+				}
 			case "init":
 				_, err = fmt.Fprintln(a.errOut, "Starter template: retained materials are missing and unchecked; no publication or authority is established.")
 				if err == nil {
@@ -129,11 +162,14 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 	c.Flags().StringVar(&format, "format", format, "output format: human or json; JSON includes scope and provenance")
 	if operation == "init" || operation == "schema" {
 		c.Flags().StringVar(&kind, "kind", "", "required exact kind: policy or governing-adoption")
-		c.Flags().StringVar(&profileVersion, "format-version", "", "required exact nonnormative prototype format: 0.0.2")
+	}
+	c.Flags().StringVar(&profileVersion, "format-version", "", "exact format: prototype 0.0.2 or proposed-draft candidate 1.0.0; required for init/schema, optional explicit dispatch otherwise")
+	if operation == "contract" {
+		c.Flags().BoolVar(&allFormats, "all-formats", false, "explicitly discover all formats in registry version 1")
 	}
 	if operation == "init" {
 		c.Flags().StringVar(&id, "id", "", "required absolute artifact URI identifier")
-		c.Flags().StringVar(&version, "version", "", "required exact three-component artifact version; separate from prototype format")
+		c.Flags().StringVar(&version, "version", "", "required exact three-component artifact version; separate from Policy format")
 	}
 	if operation == "check" {
 		c.Flags().StringVar(&materialsPath, "materials", "", "required retained-material JSON file or -; private Runtime byte transport, not a release envelope")
