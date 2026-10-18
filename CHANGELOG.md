@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.35.0 - 2026-10-18
 
 - Add experimental offline Policy prototype `0.0.2` tooling for `policy` and
   `governing-adoption`: CLI `experimental policy contract|init|schema|canonicalize|digest|validate|check`
