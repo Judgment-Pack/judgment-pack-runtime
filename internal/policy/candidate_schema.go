@@ -50,7 +50,11 @@ func loadCandidateSchemas() (map[string]*jsonschema.Schema, error) {
 }
 
 func compileCandidateSchemas(resources map[string][]byte, id string) (*jsonschema.Schema, error) {
-	return validation.CompileSchemasWithFormats(resources, id, &jsonschema.Format{Name: "uri", Validate: validateCandidateURI})
+	return validation.CompileSchemasWithFormats(resources, id, candidateURIFormat())
+}
+
+func candidateURIFormat() *jsonschema.Format {
+	return &jsonschema.Format{Name: "uri", Validate: validateCandidateURI}
 }
 
 func validURIFormat(id, version string) bool {

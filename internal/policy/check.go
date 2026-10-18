@@ -11,6 +11,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jpscanon"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // Check operates only on supplied bytes. The private carrier accepts no paths,
@@ -253,7 +254,11 @@ func checkAdoption(doc map[string]any, materials materialSet, engine *validation
 	if engine == nil {
 		return problem("JPS-POLICY-ENGINE", "/consumer", "A bundled Core structural validation engine is required."), result.ExitIO
 	}
-	checked, failure := engine.Validate(raw, validation.Options{Through: "structural", Limits: limits()})
+	options := validation.Options{Through: "structural", Limits: limits()}
+	if candidateMode {
+		options.FormatOverrides = []*jsonschema.Format{candidateURIFormat()}
+	}
+	checked, failure := engine.Validate(raw, options)
 	if failure != nil {
 		return problem("JPS-POLICY-CONSUMER-BOUND", "/consumer", "Core structural validation could not complete within supported input bounds."), failure.ExitCode
 	}

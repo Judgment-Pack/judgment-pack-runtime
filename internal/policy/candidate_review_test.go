@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"strings"
@@ -78,6 +79,46 @@ func TestCandidateURIAssertionsCoverArtifactReferences(t *testing.T) {
 		if exit != result.ExitInvalid || r.refusalCode != "invalid-document" {
 			t.Fatalf("URI member %s bypassed assertion %+v exit %d", member, r, exit)
 		}
+	}
+}
+
+func TestCandidateConsumerURIUsesSameAssertionAndPreservesRawBytes(t *testing.T) {
+	raw, err := os.ReadFile("testdata/candidate-uri-cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		URI   string `json:"uri"`
+		Valid bool   `json:"valid"`
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.URI, func(t *testing.T) {
+			f := candidateFixture(t, "refunds")
+			reference := object(f.adoption["consumer"])
+			pack := bytes.Replace(f.raw["consumer-pack.json"], mustJSON(t, reference["id"]), mustJSON(t, tc.URI), 1)
+			// An optional Core number outside jps-canon proves that checking the
+			// candidate URI neither reserializes the Pack nor narrows its numbers.
+			pack = bytes.Replace(pack, []byte(`"specVersion":`), []byte(`"extensions":{"com.example.uri":1.0},"specVersion":`), 1)
+			reference["id"] = tc.URI
+			f.retainConsumer(t, pack)
+			r, exit := Check("check", mustJSON(t, f.adoption), f.wire(t), engine(t))
+			if (exit == 0) != tc.Valid || !tc.Valid && r.CandidateResult.Code != "invalid-document" {
+				t.Fatalf("consumer URI result %+v exit %d expected valid %v", r.CandidateResult, exit, tc.Valid)
+			}
+			if !bytes.Equal(f.raw["consumer-pack.json"], pack) || text(object(reference["content"])["bytesDigest"]) != digest(pack) {
+				t.Fatal("consumer raw identity changed")
+			}
+		})
+	}
+	// Overrides belong to one candidate check, not the caller's shared engine.
+	f := candidateFixture(t, "refunds")
+	reference := object(f.adoption["consumer"])
+	pack := bytes.Replace(f.raw["consumer-pack.json"], mustJSON(t, reference["id"]), mustJSON(t, "https://%65xample.invalid/a"), 1)
+	if report, failure := engine(t).Validate(pack, validation.Options{Through: "structural", Limits: limits()}); failure != nil || report.Status != "invalid" {
+		t.Fatalf("default Core URI behavior changed %+v %v", report, failure)
 	}
 }
 

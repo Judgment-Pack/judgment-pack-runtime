@@ -25,6 +25,9 @@ type Options struct {
 	ExpectedSpecVersion string
 	SupportedExtensions []string
 	Limits              carrier.Limits
+	// FormatOverrides is explicit companion-scoped structural validation. The
+	// same bundled schema and input bytes are used; cached defaults are untouched.
+	FormatOverrides []*jsonschema.Format
 }
 
 type OperationalFailure struct {
@@ -233,7 +236,18 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 		Provenance:   lock.Source.Kind,
 	}
 
-	schemaErr := e.schemas[selectedVersion].Validate(value)
+	schema := e.schemas[selectedVersion]
+	if len(options.FormatOverrides) != 0 {
+		rawSchema, err := set.Schema()
+		if err == nil {
+			id := "urn:judgmentpack:jps:" + selectedVersion + ":schema"
+			schema, err = CompileSchemasWithFormats(map[string][]byte{id: rawSchema}, id, options.FormatOverrides...)
+		}
+		if err != nil {
+			return output, &OperationalFailure{Code: "JPS-SCHEMA-FORMAT-OVERRIDE", Message: "The bundled structural schema could not be compiled with explicit format assertions.", ExitCode: result.ExitIO}
+		}
+	}
+	schemaErr := schema.Validate(value)
 	structuralCollector := newDiagnosticCollector()
 	if schemaErr != nil {
 		var validationError *jsonschema.ValidationError
