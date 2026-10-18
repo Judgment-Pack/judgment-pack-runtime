@@ -64,17 +64,25 @@ func NewEngine() (*Engine, error) {
 }
 
 func CompileSchema(schemaBytes []byte, resourceID string) (*jsonschema.Schema, error) {
-	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaBytes))
-	if err != nil {
-		return nil, fmt.Errorf("decode schema: %w", err)
-	}
+	return CompileSchemas(map[string][]byte{resourceID: schemaBytes}, resourceID)
+}
+
+// CompileSchemas resolves only explicitly supplied schema resources, using the
+// same URI assertions and ECMAScript expressions as bundled Core validation.
+func CompileSchemas(resources map[string][]byte, resourceID string) (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	compiler.AssertFormat()
 	compiler.RegisterFormat(&jsonschema.Format{Name: "uri", Validate: validateRFC3986URI})
 	compiler.UseLoader(offlineSchemaLoader{})
 	compiler.UseRegexpEngine(ecmaRegexpCompile)
-	if err := compiler.AddResource(resourceID, document); err != nil {
-		return nil, fmt.Errorf("register schema: %w", err)
+	for id, data := range resources {
+		document, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("decode schema: %w", err)
+		}
+		if err := compiler.AddResource(id, document); err != nil {
+			return nil, fmt.Errorf("register schema: %w", err)
+		}
 	}
 	compiled, err := compiler.Compile(resourceID)
 	if err != nil {

@@ -53,6 +53,8 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `describe_runtime` | Versions and artifact provenance |
 | `list_examples` / `get_example` | The embedded valid fixtures, read-only; `spec_version` chooses the bundled version, and the evaluator admits `0.2.0-draft` |
 | `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
+| `experimental_get_policy_contract` / `experimental_policy_init` / `experimental_get_policy_schema` | EXPERIMENTAL: exact nonnormative Policy prototype capabilities, starter templates and schemas; no project reads or writes |
+| `experimental_policy_canonicalize` / `experimental_policy_digest` / `experimental_policy_validate` / `experimental_policy_check` | EXPERIMENTAL: supplied Policy document identity, local checks and retained-material reference checks; no evaluation or authority |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_get_test_matrix_contract` | EXPERIMENTAL: discover the project matrix version, closed members, types and authoring rules without reading a project |
 | `experimental_validate_test_matrix` | EXPERIMENTAL: validate matrix carrier and disposition-local constraints; indexed case findings with codes and JSON pointers; no evaluation or writes |
@@ -439,3 +441,61 @@ This read-only tool accesses no project, job history or registry. Version choice
 compatibility review, immutable publication and permission to save stay with the
 caller. Clients discover the capability through `tools/list`. CLI equivalent:
 `jpack artifact version --base 0.1.0 --candidate 1.0.0 --format json`.
+
+## Experimental Policy prototype tools
+
+Discover `experimental_get_policy_contract` before using this additive offline
+surface ([ADR-0059](adr/0059-experimental-offline-policy-tools.md)). All seven
+tools serve the exact nonnormative RFC 0023 prototype `0.0.2`; the RFC remains
+Draft. No stable Policy format is implied. Schema resources are self-contained
+Runtime editing copies derived from pinned prototype schemas. Reports carry
+experimental status,
+pinned provenance, capability scope and diagnostics shared with the CLI.
+
+| Tool | Required arguments |
+| --- | --- |
+| `experimental_get_policy_contract` | None; an optional empty object |
+| `experimental_policy_init` | `kind`, `formatVersion`, `id`, `version`, all strings |
+| `experimental_get_policy_schema` | `kind`, `formatVersion`, both strings |
+| `experimental_policy_canonicalize` | `document`, exact JSON text string |
+| `experimental_policy_digest` | `document`, exact JSON text string |
+| `experimental_policy_validate` | `document`, exact JSON text string |
+| `experimental_policy_check` | `document` and `materials`, exact JSON text strings |
+
+`kind` is exactly `policy` or `governing-adoption`; `formatVersion` is exactly
+`0.0.2`. The explicit artifact `id` and `version` are separate from that format.
+Unknown members, duplicate members, wrong case, missing required arguments and
+null argument values are refused. Malformed or missing arguments are tool errors. Well-typed unsupported selectors,
+invalid artifact identities, and invalid document or retained-material content
+return a typed refusal report with diagnostics, capabilities and `isError: true`.
+
+Init returns a `starter-template` with missing retained materials; it does not
+publish a document or establish a checked adoption. Canonicalize and digest
+report canonical identity separately from raw byte identity; encoding success
+is not validation. Validate checks document forms, schemas and local references.
+Check verifies the exact supplied retained-material closure, raw byte identity,
+Policy section anchors, structural Core packs and specific consumer references.
+Full Core semantics, evaluation, source acquisition, approval and
+governing-adoption authority are outside this surface. A raw Core pack is not
+restricted to the canonical number domain unless an explicit canonical reference
+requests that identity.
+
+The `materials` **string** contains the private Runtime supplied-byte transport:
+
+```json
+{"materials":[{"content":{"bytesDigest":"sha256:<64 lowercase hex>","byteLength":12,"mediaType":"text/plain"},"dataBase64":"<base64 of exact retained bytes>"}]}
+```
+
+Replace the placeholders with exact content references and bytes. This transport
+is not a portable release envelope and accepts no paths or URLs. None of these
+tools reads a project, resolves a locator, writes a file, contacts a provider,
+changes billing or returns retained-material bytes in reports or errors.
+
+The decoded document limit is 256 KiB. Retained source originals are bounded at
+4 MiB, narrative and review-basis material at 1 MiB each, and distinct retained
+bytes at 16 MiB. The material JSON text bound is 24 MiB. The existing **16 MiB
+stdio request-line limit**, including its delimiter, remains the tighter wire
+limit: base64 expands retained bytes and JSON string escaping, document text and
+RPC framing consume more space. Consequently, not every bundle under the 16 MiB
+retained-byte limit fits a single MCP request. A client must bound the complete
+encoded request; CLI named-file input supports the larger material JSON envelope.

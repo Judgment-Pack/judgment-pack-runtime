@@ -155,14 +155,14 @@ func (a *App) rootCommand() *cobra.Command {
 func (a *App) experimentalCommand() *cobra.Command {
 	experimental := &cobra.Command{
 		Use:   "experimental",
-		Short: "Experimental-surface operations: the evaluator, which may change or vanish",
-		Long:  "Experimental operations (ADR-0007, ADR-0010, ADR-0011). \"Experimental\" here is a stability statement and not a conformance one: this surface may change or be removed without compatibility promise. The evaluator implements the evaluator conformance class of JPS Core 0.2.0-draft -- the §8.2 input preflight, the §8.3 portable disposition, the §8.4 error classes, and the §10 limits. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md: read that file for the claim, its exact version scope, its evidence, and everything it does not assert (§3.4.1, §3.5). This text states no claim, and neither does any payload; every payload carries a conformanceClaimReference member pointing at that file, beside the contract's own version as evaluatorSpecVersion and the pack's own specVersion. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the declared value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so a pack declaring any other version is refused as pack-not-conformant in the preflight phase.",
+		Short: "Experimental-surface operations: evaluator, graphs and offline Policy tools",
+		Long:  "Experimental operations, including offline nonnormative Policy prototype tooling (ADR-0059), which evaluates nothing and establishes no authority. The following evaluator scope applies to evaluation operations only (ADR-0007, ADR-0010, ADR-0011). \"Experimental\" here is a stability statement and not a conformance one: this surface may change or be removed without compatibility promise. The evaluator implements the evaluator conformance class of JPS Core 0.2.0-draft -- the §8.2 input preflight, the §8.3 portable disposition, the §8.4 error classes, and the §10 limits. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md: read that file for the claim, its exact version scope, its evidence, and everything it does not assert (§3.4.1, §3.5). This text states no claim, and neither does any payload; every payload carries a conformanceClaimReference member pointing at that file, beside the contract's own version as evaluatorSpecVersion and the pack's own specVersion. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the declared value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so a pack declaring any other version is refused as pack-not-conformant in the preflight phase.",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()
 		},
 	}
-	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand(), a.compareCommand())
+	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand(), a.compareCommand(), a.policyCommand())
 	return experimental
 }
 
@@ -1024,6 +1024,14 @@ func requestedCommand(args []string) string {
 				switch args[index+1] {
 				case "evaluate", "evaluate-corpus":
 					return "experimental " + args[index+1]
+				case "policy":
+					if index+2 < len(args) {
+						switch args[index+2] {
+						case "contract", "init", "schema", "canonicalize", "digest", "validate", "check":
+							return "experimental policy " + args[index+2]
+						}
+					}
+					return "experimental policy"
 				case "graph":
 					if index+2 < len(args) {
 						switch args[index+2] {
