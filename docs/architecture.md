@@ -50,8 +50,8 @@ so JSON/base64 overhead reduces the maximum retained material a call can carry.
 
 The proposed-draft, unadopted Policy contract candidate `1.0.0` is an additional
 explicit format ([ADR-0060](adr/0060-explicit-policy-candidate-format.md)). Its
-schemas, prose, examples and 104 portable vectors are pinned separately to Spec
-commit `4406cec9714ab9bc8e8971237cc79d58682cc904`. Format selection, schema and
+schemas, prose, examples and 124 portable vectors are pinned separately to Spec
+commit `0852c5fa7726e51b36e574a5b110e7f5e012e03d`. Format selection, schema and
 provenance differ; material identity, UTF-8 anchors and typed Pack coverage use
 the same engine. Candidate adoption cannot consume prototype Policy bytes.
 No-argument contract discovery and prototype reports retain their exact prior

@@ -1144,7 +1144,7 @@ proposed-draft** candidate `formatVersion: "1.0.0"`
 ([ADR-0060](docs/adr/0060-explicit-policy-candidate-format.md)). It is a review
 candidate for RFC 0023, not a stable format, adopted standard or conformance
 class. Its artifacts are pinned separately to Spec commit
-`4406cec9714ab9bc8e8971237cc79d58682cc904` in
+`0852c5fa7726e51b36e574a5b110e7f5e012e03d` in
 [the candidate provenance manifest](internal/policy/candidate/provenance.json).
 
 Default `contract` output and all prototype reports keep their existing shape
@@ -1187,7 +1187,7 @@ Canonicalize/digest establish encoding and identity only; validate checks closed
 document forms and local references, with retained materials unchecked. Their
 reports omit `candidateResult`.
 
-The Go harness compares all 104 exact portable result objects, acquiring vector
+The Go harness compares all 124 exact portable result objects, acquiring vector
 sources lazily and preserving raw Pack numbers and every retained-byte identity.
 It uses the shared registration/checking engine directly: valid distinct-byte
 bundles can exceed the private 24 MiB JSON/base64 carrier or MCP's 16 MiB request

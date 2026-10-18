@@ -63,7 +63,7 @@ func TestCandidatePortableVectors(t *testing.T) {
 	}
 	manifest := object(value)
 	cases := array(manifest["cases"])
-	if len(cases) != 104 {
+	if len(cases) != 124 {
 		t.Fatalf("unexpected vector count %d", len(cases))
 	}
 	for _, value := range cases {
@@ -111,7 +111,7 @@ func TestCandidatePortableVectors(t *testing.T) {
 
 func TestCandidateProvenance(t *testing.T) {
 	raw := candidateRead(t, "provenance.json")
-	if digest(raw) != "sha256:eb2644703944bd550f954dac3d51124d611867b54465ed1b0f6541018bdfba21" {
+	if digest(raw) != "sha256:f21466b49e2eb95c33f6e97bef74203a2e2255737476be27e72e3c43fc01f971" {
 		t.Fatal("candidate manifest pin changed")
 	}
 	manifest := mustMap(t, raw)

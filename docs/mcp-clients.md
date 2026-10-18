@@ -504,7 +504,7 @@ encoded request; CLI named-file input supports the larger material JSON envelope
 
 The seven existing tools also serve the unadopted Policy contract candidate
 `1.0.0`, at `proposed-draft` maturity, pinned to Spec commit
-`4406cec9714ab9bc8e8971237cc79d58682cc904`
+`0852c5fa7726e51b36e574a5b110e7f5e012e03d`
 ([ADR-0060](adr/0060-explicit-policy-candidate-format.md)). Calling contract
 without arguments or with `{}` returns the exact existing prototype report.
 `{allFormats:true}` explicitly requests the separate registry version 1;

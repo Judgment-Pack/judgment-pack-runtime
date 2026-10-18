@@ -1,6 +1,6 @@
 {
   "sourceRepository": "https://github.com/Judgment-Pack/judgment-pack-spec",
-  "sourceRevision": "4406cec9714ab9bc8e8971237cc79d58682cc904",
+  "sourceRevision": "0852c5fa7726e51b36e574a5b110e7f5e012e03d",
   "formatVersion": "1.0.0",
   "maturity": "proposed-draft",
   "license": "Apache-2.0",
@@ -14,8 +14,8 @@
     {
       "sourcePath": "rfcs/policy-companion-contract/README.md",
       "path": "README.md",
-      "sha256": "fa67bf571088ea7c9a0ce9936558207a0053342e30f7f9dbc7088723c1b8a8e0",
-      "byteLength": 20590
+      "sha256": "21364149bbd76cc7bc2b917b898d0fa79739bd454f94d4af3510e0e1a6ea88f7",
+      "byteLength": 22250
     },
     {
       "sourcePath": "rfcs/policy-companion-contract/capabilities.json",
@@ -26,8 +26,8 @@
     {
       "sourcePath": "rfcs/policy-companion-contract/common.schema.json",
       "path": "common.schema.json",
-      "sha256": "1fd3ad3ae5d76f99c82247f8202b6a821e1ab942350f9e0684a83a3b0bdea8c7",
-      "byteLength": 5003
+      "sha256": "a26362280ac4cf0ba7a15a6c382ee8c61df97c78be4ef291f1107db24f28dd06",
+      "byteLength": 5262
     },
     {
       "sourcePath": "rfcs/policy-companion-contract/examples/data-access/adoption.json",
@@ -188,8 +188,8 @@
     {
       "sourcePath": "rfcs/policy-companion-contract/vectors/README.md",
       "path": "vectors/README.md",
-      "sha256": "23afb102f1a3407eb8b53e9859af50339392ecd8af453f64c78647673de1a624",
-      "byteLength": 5303
+      "sha256": "d27b79c1932261d3bf64abb07d5c95ccab0a9016e83412c40a129747fdb8eaec",
+      "byteLength": 6372
     },
     {
       "sourcePath": "rfcs/policy-companion-contract/vectors/documents/aggregate-max.json",
@@ -834,16 +834,178 @@
       "byteLength": 2201
     },
     {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-final-lf-pack.json",
+      "path": "vectors/documents/uri-final-lf-pack.json",
+      "sha256": "c418f413e2b19f32dcc2f46664717ff2eb81e940fca57315275d39e63037f495",
+      "byteLength": 1503
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-final-lf.json",
+      "path": "vectors/documents/uri-final-lf.json",
+      "sha256": "2f801fd7b06bf34f5c3a42973249a71bf84c421755a1ef372b1bbd4ccd3710c4",
+      "byteLength": 2297
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-fragment-raw-brackets.json",
+      "path": "vectors/documents/uri-fragment-raw-brackets.json",
+      "sha256": "0ef6ed9f582d15475ec9b5358be05194b372f1fbc1935cc3a175e31e6c526736",
+      "byteLength": 1980
+    },
+    {
       "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-invalid.json",
       "path": "vectors/documents/uri-invalid.json",
       "sha256": "2c8f6c238143c7dfa4381ab81b78365bfd43902a7eea09b872f1ee37ca0789ba",
       "byteLength": 1964
     },
     {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipv6-compressed.json",
+      "path": "vectors/documents/uri-ipv6-compressed.json",
+      "sha256": "6c59778a6d517c252840226d8a3056280777b04e76bf6759c731343f7d01080b",
+      "byteLength": 1978
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipv6-double-compression.json",
+      "path": "vectors/documents/uri-ipv6-double-compression.json",
+      "sha256": "b1be77321cd95c07b4ecf8baaba8751028b831e2787ba8ab6ee2a9c5e884193e",
+      "byteLength": 1973
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipv6-ipv4-tail.json",
+      "path": "vectors/documents/uri-ipv6-ipv4-tail.json",
+      "sha256": "2c26026d56fe5564dad671c20ad55b0237d5137a291edf56c455bd217f6340c2",
+      "byteLength": 1979
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipv6-leading-zero-ipv4-tail-pack.json",
+      "path": "vectors/documents/uri-ipv6-leading-zero-ipv4-tail-pack.json",
+      "sha256": "0ea4f86f542fcfe5a183050daac17f5d43796995965096773ba7481c5ad93e4e",
+      "byteLength": 1523
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipv6-leading-zero-ipv4-tail.json",
+      "path": "vectors/documents/uri-ipv6-leading-zero-ipv4-tail.json",
+      "sha256": "88efbe036d7386812662a46c154cf1521caf9864a9e676d35036038af754a81f",
+      "byteLength": 2317
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipvfuture-invalid-version.json",
+      "path": "vectors/documents/uri-ipvfuture-invalid-version.json",
+      "sha256": "399ba24e5ffb43360654f3c641fc002f61d8cb2f920eed0480808912bbccc2ed",
+      "byteLength": 1964
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipvfuture-lowercase-pack.json",
+      "path": "vectors/documents/uri-ipvfuture-lowercase-pack.json",
+      "sha256": "ebd7ca932ab1557442af46b391d5e1b980c9398a7213d4682a3308732be4cf5a",
+      "byteLength": 1504
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipvfuture-lowercase.json",
+      "path": "vectors/documents/uri-ipvfuture-lowercase.json",
+      "sha256": "13c1a9fff73cddc63b779e619a622cc05e6ffeb4d5eb2d544a43acfe80973bbd",
+      "byteLength": 2298
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipvfuture-uppercase-pack.json",
+      "path": "vectors/documents/uri-ipvfuture-uppercase-pack.json",
+      "sha256": "6992d4add7edc8a3dec0679b28dd58a4838d2cf5f218b4f702081583e9cb8c6b",
+      "byteLength": 1504
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-ipvfuture-uppercase.json",
+      "path": "vectors/documents/uri-ipvfuture-uppercase.json",
+      "sha256": "0ce1badc441db3a4290400dab23f2d8e5afee8fc0bf799abdb7cb01140e9ff10",
+      "byteLength": 2298
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-numeric-regname-leading-zeros.json",
+      "path": "vectors/documents/uri-numeric-regname-leading-zeros.json",
+      "sha256": "2ab9c70bc4c613fabe5bcbacd27ca79b73b08803e918f1755b3735ebcd96ca6f",
+      "byteLength": 1974
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-path-raw-brackets-pack.json",
+      "path": "vectors/documents/uri-path-raw-brackets-pack.json",
+      "sha256": "c0e3ef08c4644024d87d26ed4d77a5c14b1b7f46c8ca0a4b0ce7d8157ade7208",
+      "byteLength": 1518
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-path-raw-brackets.json",
+      "path": "vectors/documents/uri-path-raw-brackets.json",
+      "sha256": "b70d9a76a3b38f58a0f2b075c9ecfe6803b6e0a404c2b526000f85a86b244f67",
+      "byteLength": 2312
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-percent-brackets.json",
+      "path": "vectors/documents/uri-percent-brackets.json",
+      "sha256": "52ed06084ad97c026b15ece99674e6d638d26509506b62ce3d5195da7acd5a63",
+      "byteLength": 1997
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-percent-incomplete.json",
+      "path": "vectors/documents/uri-percent-incomplete.json",
+      "sha256": "f8db4efe5972393c15cd0c8ad8cbe88262ac02845d8863781cad83f970fa212b",
+      "byteLength": 1978
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-percent-nonhex.json",
+      "path": "vectors/documents/uri-percent-nonhex.json",
+      "sha256": "4a239d1009d314a9a0e285848fb1eba211a5574e17907253936aa6820f98534b",
+      "byteLength": 1979
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-percent-regname-pack.json",
+      "path": "vectors/documents/uri-percent-regname-pack.json",
+      "sha256": "50e9179933d3bab136e4872f25874e556cc9b1508410dd945ad564a2a3e90daa",
+      "byteLength": 1518
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-percent-regname.json",
+      "path": "vectors/documents/uri-percent-regname.json",
+      "sha256": "86ea9309a59ba683a85c73442c2638d56aa21f2e9e4f020d3954b043ab7c5f06",
+      "byteLength": 2312
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-percent-unicode.json",
+      "path": "vectors/documents/uri-percent-unicode.json",
+      "sha256": "5f062c610d9c546cba55951e3f9921b0de142ac382dac7d4a00e69ba65cf890f",
+      "byteLength": 1981
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-query-raw-brackets.json",
+      "path": "vectors/documents/uri-query-raw-brackets.json",
+      "sha256": "8d24bd52b12805ba9c602f113ca47c0a1dd141fc35577c09e0581c033ee46e24",
+      "byteLength": 1981
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-raw-unicode.json",
+      "path": "vectors/documents/uri-raw-unicode.json",
+      "sha256": "15bf301598d90e8a1e001973df95a1cb04021e1cb7a4385bf3ca0ef8eecebf7a",
+      "byteLength": 1977
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-rootless-raw-brackets-pack.json",
+      "path": "vectors/documents/uri-rootless-raw-brackets-pack.json",
+      "sha256": "a2b8f1d350ac991ebfd9f94ce6e53e40d19485e1f8ec7baaeb91f2ba279418ca",
+      "byteLength": 1503
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-rootless-raw-brackets.json",
+      "path": "vectors/documents/uri-rootless-raw-brackets.json",
+      "sha256": "4143f4d8d6e9df42e8a8ab8e011b9404b719f4e400dcb25d360d2ac80ff2b39d",
+      "byteLength": 2297
+    },
+    {
+      "sourcePath": "rfcs/policy-companion-contract/vectors/documents/uri-userinfo-percent-brackets.json",
+      "path": "vectors/documents/uri-userinfo-percent-brackets.json",
+      "sha256": "85c63cc716e50e0020cd419f636caf824afbe22826df6abc135cc7433cf4253f",
+      "byteLength": 1992
+    },
+    {
       "sourcePath": "rfcs/policy-companion-contract/vectors/manifest.json",
       "path": "vectors/manifest.json",
-      "sha256": "7681dfd18be6cb8a251095b67f69d6868693c34b3f68a6ee5e94ac06fdbfae30",
-      "byteLength": 185434
+      "sha256": "953177df0e844ad78ebe145d21c9f1e760336eda4ed20247331493c44be8eedd",
+      "byteLength": 223417
     },
     {
       "sourcePath": "LICENSE",
@@ -860,8 +1022,8 @@
     {
       "sourcePath": "rfcs/0023-policy-companion.md",
       "path": "0023-policy-companion.md",
-      "sha256": "626e0422f29aaf69db6d3cb47ee3c3232acccf0f7b658d4fbe042c42d3be49ca",
-      "byteLength": 22215
+      "sha256": "9ae28641c548fc541c3379179a6000b05619099382220abc7849ad503f37bb76",
+      "byteLength": 23233
     }
   ]
 }

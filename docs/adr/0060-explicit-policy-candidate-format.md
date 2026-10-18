@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-18
 deciders: maintainer
 ---
@@ -31,7 +31,7 @@ would break their discovery and authoring flows.
 
 Chosen option: explicit format dispatch around the shared engine. Candidate
 artifacts are separately vendored from immutable Spec commit
-`4406cec9714ab9bc8e8971237cc79d58682cc904`, with a complete per-file provenance
+`0852c5fa7726e51b36e574a5b110e7f5e012e03d`, with a complete per-file provenance
 manifest and independent manifest digest test. Prototype files and ADR-0059
 remain unchanged. This record adopts no normative Policy format.
 
@@ -61,13 +61,23 @@ identity, and Core structural validation receives the original Pack bytes.
 Source and narrative bytes, registrations under distinct media types, consuming
 role bounds and typed Pack references remain shared checks.
 
+Candidate URI assertions use the RFC 3986 `URI` production: a scheme is required
+and a fragment is permitted. Component grammar distinguishes authority, IP
+literals, user information, paths, queries and fragments; percent-encoded host
+characters and IPvFuture literals are valid without network interpretation.
+Generic ports remain digit strings without a network port-range restriction.
+Only candidate schemas/init and candidate-consuming Pack structural checks opt
+into this assertion. The structural engine validates the same raw Pack bytes and
+bundled schema with a per-call URI format override; default Core and prototype
+URI behavior and their cached schemas remain unchanged.
+
 The private Runtime base64 material transport remains separate from portable raw
 vector inputs. Its 24 MiB material JSON ceiling and MCP's 16 MiB request-line
 ceiling remain unchanged. Repeated registrations of identical large bytes can
 fit the candidate's distinct-byte budget while exceeding an encoded transport
 ceiling. The portable harness therefore uses the same shared post-parse checks
 and raw registration function, acquires sources lazily in declaration order and
-stops on the first failure. Passing all 104 vectors promises no larger wire
+stops on the first failure. Passing all 124 vectors promises no larger wire
 envelope, authority, conformance or independent implementation agreement.
 
 ### Consequences
@@ -85,12 +95,33 @@ results extend a public surface; vendored candidate artifacts add a dependency
 boundary; ordered bounded input handling concerns the security posture.
 
 The maintainer authorized a temporary different-vendor review waiver for this
-current Policy work. OpenAI/Codex implementation and any OpenAI/Codex adversarial
-review are same-vendor work under that waiver, never different-vendor review or
-independently authored interoperability evidence. Review records must identify
-the reviewed commit and maintainer dispositions. The waiver changes no standing
-repository requirement. This record remains proposed pending that procedural
-disposition.
+current Policy work. The recorded clean-room review of Runtime commit
+`558df435bbc50fc872b14aceecae1d482b45898d`, performed by OpenAI/Codex
+`gpt-6.1-sol` at `xhigh`, found two P2 issues and no P1 issue. The maintainer
+accepted both findings: candidate URI assertions and private-carrier registration
+phase ordering. The [review and dispositions on PR 296](https://github.com/Judgment-Pack/judgment-pack-runtime/pull/296#issuecomment-6254960095)
+identify that reviewed commit and the bounded review's actual evidence.
+
+Commits `6dd003e29cccf7808227b98157e55cebce4b231b` and
+`2e158c5105046594749139c955839a041331a106` implement those accepted findings,
+including candidate-consuming Pack URI checks over unchanged bytes and schema.
+The coordinator reports that the reviewer closed both findings at `2e158c5`.
+Commit `38b06043283d2ae294653ca8f25c8c5db415dd9e` additionally preserves the
+vendored candidate's exact bytes under Windows checkout conversion. Focused
+verification covers the 124 portable vectors, 62 standalone and 62 consuming
+Pack URI probes, ordered private-wire refusals, schema/init parity and unchanged
+Core/prototype URI behavior. Checkout verification with `core.autocrlf=true`
+checks every vendored source digest/length and the independent provenance pin.
+
+The URI source correction is pinned to the exact candidate commit above and is
+tracked in [Spec PR 217](https://github.com/Judgment-Pack/judgment-pack-spec/pull/217).
+The maintainer requires that source review and repository CI before Runtime merge. This
+accepted status records the maintainer-authorized merge-ready procedural
+transition; it does not adopt a normative Policy format or change the RFC's
+Review status. All implementation, review and agreement evidence described here
+is same-vendor work under the temporary waiver, never different-vendor review
+or independently authored interoperability evidence. The waiver changes no
+standing repository requirement.
 
 ## More information
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestCandidateURIFormatAgreementAndInitSchemaParity(t *testing.T) {
@@ -148,5 +149,20 @@ func TestCandidatePrivateWireRegistrationPhaseOrdering(t *testing.T) {
 				t.Fatalf("native wire phase result %+v exit %d", r.CandidateResult, exit)
 			}
 		})
+	}
+}
+
+func TestCandidateURIAssertionDoesNotAddCoreLengthBounds(t *testing.T) {
+	f := candidateFixture(t, "refunds")
+	id := "urn:test:" + strings.Repeat("a", 3000)
+	pack := bytes.Replace(f.raw["consumer-pack.json"], mustJSON(t, object(f.adoption["consumer"])["id"]), mustJSON(t, id), 1)
+	options := validation.Options{Through: "structural", Limits: limits(), FormatOverrides: []*jsonschema.Format{candidateURIFormat()}}
+	if report, failure := engine(t).Validate(pack, options); failure != nil || report.Status != "valid" {
+		t.Fatalf("URI assertion imposed a companion bound on Core %+v %v", report, failure)
+	}
+	// The companion schema remains the owner of its separate URI character cap.
+	f.policy["id"] = id
+	if report, exit := Validate("validate", mustJSON(t, f.policy)); exit != result.ExitUnsupported || report.refusalCode != "input-over-bound" {
+		t.Fatalf("companion URI bound missing %+v %d", report, exit)
 	}
 }

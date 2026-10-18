@@ -11,7 +11,7 @@ import (
 )
 
 const CandidateVersion = "1.0.0"
-const CandidateRevision = "4406cec9714ab9bc8e8971237cc79d58682cc904"
+const CandidateRevision = "0852c5fa7726e51b36e574a5b110e7f5e012e03d"
 const CandidateURL = "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + CandidateRevision + "/rfcs/policy-companion-contract/README.md"
 
 type formatDescriptor struct {
