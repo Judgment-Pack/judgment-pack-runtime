@@ -107,15 +107,20 @@ Commits `6dd003e29cccf7808227b98157e55cebce4b231b` and
 including candidate-consuming Pack URI checks over unchanged bytes and schema.
 The coordinator reports that the reviewer closed both findings at `2e158c5`.
 Commit `38b06043283d2ae294653ca8f25c8c5db415dd9e` additionally preserves the
-vendored candidate's exact bytes under Windows checkout conversion. Focused
+vendored candidate's exact bytes under Windows checkout conversion, addressing
+the third P2 finding. The [final Runtime correction review](https://github.com/Judgment-Pack/judgment-pack-runtime/pull/296#issuecomment-6254971185)
+closes all three findings through that commit. Focused
 verification covers the 124 portable vectors, 62 standalone and 62 consuming
 Pack URI probes, ordered private-wire refusals, schema/init parity and unchanged
 Core/prototype URI behavior. Checkout verification with `core.autocrlf=true`
 checks every vendored source digest/length and the independent provenance pin.
 
 The URI source correction is pinned to the exact candidate commit above and is
-tracked in [Spec PR 217](https://github.com/Judgment-Pack/judgment-pack-spec/pull/217).
-The maintainer requires that source review and repository CI before Runtime merge. This
+recorded in [Spec PR 217's clean-room review](https://github.com/Judgment-Pack/judgment-pack-spec/pull/217#issuecomment-6254970472).
+That exact `0852c5f` source passed review without P1/P2 findings, 13 focused
+tests, 124 portable vectors and 99 additional URI probes, and merged as
+`a74a440cfc31d0e135cdc8035f3474b17f27f320` after repository CI passed. Runtime
+retains the immutable reviewed source pin; its merge also requires repository CI. This
 accepted status records the maintainer-authorized merge-ready procedural
 transition; it does not adopt a normative Policy format or change the RFC's
 Review status. All implementation, review and agreement evidence described here
