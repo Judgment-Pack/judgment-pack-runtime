@@ -156,4 +156,4 @@ authority, and following it confers no conformance status on anything.
 | [0057](0057-named-dialect-artifact-identity.md) | Share offline tools for named Dialect artifacts | accepted |
 | [0059](0059-experimental-offline-policy-tools.md) | Prototype Policy document and retained-reference checks offline | accepted |
 | [0060](0060-explicit-policy-candidate-format.md) | Add an explicit Policy contract candidate without changing prototype clients | accepted; source/maturity for new explicit 1.0.0 operations superseded by [0061](0061-adopt-official-policy-draft-resources.md) |
-| [0061](0061-adopt-official-policy-draft-resources.md) | Adopt immutable official Policy draft resources in the shared offline reader | proposed |
+| [0061](0061-adopt-official-policy-draft-resources.md) | Adopt immutable official Policy draft resources in the shared offline reader | accepted; effective upon required CI and introducing PR merge |

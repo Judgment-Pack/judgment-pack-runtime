@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-19
 deciders: maintainer
 ---
@@ -98,11 +98,23 @@ gate. The published draft grammar and finite result ordering are reused, includi
 the existing input bounds and original-byte Core checks.
 
 The maintainer's standing temporary different-vendor-review waiver applies to this
-bounded Policy adoption. The parent coordinator will record the exact reviewed
-commit, independent bounded review and any dispositions before merge. A second
-Codex agent is same-vendor review and supplies no independent authorship evidence;
-the waiver changes no standing repository rule. This proposed record does not
-assert completed review, merge or a Runtime release.
+bounded Policy adoption. A separate OpenAI/Codex reviewer, using its actual reused
+`gpt-6.1-sol` selection at `xhigh`, completed an independent bounded review on
+2026-10-19 of commit `7c59c614851c1eb24bb91d316e0129d0e6a7a0c2`, tree
+`b00e7610c1874fc04ac08e9633c77039ea9c06e2`. The reviewer found no actionable P1/P2
+correctness, security, compatibility or false-claim issues and requested no source
+fix. No finding required a maintainer disposition. The complete review record,
+whose SHA-256 is
+`e39bfcada9d0722e7e9d4b7ec18db42f92ab5fa4331e727f29e3751b681e87ea`,
+will be posted on the introducing material pull request before merge, together
+with verification of this procedural completion.
+
+This is independent-agent **same-vendor** review under the authorized waiver;
+it is neither different-vendor review nor independently authored implementation
+evidence. The waiver changes no standing repository rule. This accepted status
+records the maintainer-authorized merge-ready procedural transition. The decision
+takes effect only after required CI passes and the introducing pull request merges;
+this record asserts no completed merge or Runtime release.
 
 ## More information
 
