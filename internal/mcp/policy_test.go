@@ -102,13 +102,14 @@ func TestPolicyCandidateDiscoveryStrictArguments(t *testing.T) {
 	for _, args := range []string{
 		`{"allFormats":true,"formatVersion":"1.0.0"}`, `{"allFormats":null}`, `{"allFormats":"true"}`,
 		`{"AllFormats":true}`, `{"allFormats":true,"allFormats":true}`, `{"formatVersion":null}`,
+		`{"formatVersion":false}`, `{"formatVersion":0}`,
 	} {
 		reply := runServer(t, rawToolCall(t, 1, "experimental_get_policy_contract", args))[0]["result"].(map[string]any)
 		if reply["isError"] != true || reply["structuredContent"] != nil {
 			t.Fatal(args, reply)
 		}
 	}
-	for _, args := range []string{`{"document":"{}","formatVersion":null}`, `{"document":"{}","FormatVersion":"1.0.0"}`} {
+	for _, args := range []string{`{"document":"{}","formatVersion":null}`, `{"document":"{}","formatVersion":false}`, `{"document":"{}","formatVersion":0}`, `{"document":"{}","FormatVersion":"1.0.0"}`} {
 		reply := runServer(t, rawToolCall(t, 1, "experimental_policy_validate", args))[0]["result"].(map[string]any)
 		if reply["isError"] != true || reply["structuredContent"] != nil {
 			t.Fatal(args, reply)

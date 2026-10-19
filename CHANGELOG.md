@@ -2,6 +2,42 @@
 
 All notable changes to tagged releases are documented here.
 
+## 0.37.0 - 2026-10-19
+
+- Adopt the immutable official Policy draft `policy-v1.0.0-draft.1`, Spec commit
+  `0799b37b74e35c4a86bfbf70f7bee80bdb7bbe94`, for existing explicit `1.0.0`
+  CLI/MCP operations (#293, ADR-0061). Retain and verify the complete published
+  archive, HTTPS schema identities, per-file provenance and all 124 corpus rows.
+  The shared Go reader compares exact official results; the unchanged reference
+  reader runs against the retained archive. The release gate verifies its
+  independent manifest pin and inventory. Core pins, schema, numeric/URI behavior
+  and all historical prototype/candidate vendor bytes remain unchanged.
+- **Explicit 1.0.0 report migration:** maturity becomes `draft`; source revision,
+  specification URL, capability exclusions and validation/check scope strings now
+  identify the official draft. Existing `candidateCapabilities` and
+  `candidateResult` names remain. The complete full-check valid result is
+  `{"status":"valid","formatVersion":"1.0.0","maturity":"draft"}`; finite
+  refusal objects and narrower-operation scopes remain. Strict consumers must
+  update their immutable Runtime/Spec pins and exact metadata expectations.
+  Derived editing schemas get release-specific Runtime URNs and a `sourceId`
+  identifying the official HTTPS schema. Default discovery and prototype reports
+  remain byte compatible. Historical candidate reports retain their old pin and
+  proposed maturity; no artifact bytes, approval, Job or live authority migrate.
+
+This requires a minor release under the 0.x policy. Existing command/tool names,
+output/contract versions, exit classes, private 24 MiB material JSON and 16 MiB MCP
+ceilings remain. The host surface stays experimental with false full-document-
+conformance and authority capabilities. Draft support establishes no stable
+maturity or independently authored interoperability; Runtime's conformance claim
+remains solely in `CONFORMANCE.md`. No full Core semantics, evaluation, acquisition,
+publication or governing-authority determination is added.
+The existing Linux/macOS/Windows amd64/arm64 platform targets are unchanged.
+
+Release preparation: required repository CI, the final merged source pin, tagged
+platform archives, checksums, attestations, native smoke and publication checks
+remain release gates. This prepared entry does not assert that those gates have
+completed. The held `v0.35.0` tag/draft remains unchanged.
+
 ## 0.36.0 - 2026-10-19
 
 This release is cumulative from the last published Runtime, `v0.34.0`. It includes

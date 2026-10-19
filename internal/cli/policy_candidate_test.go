@@ -18,7 +18,7 @@ import (
 
 func candidateCLIBytes(t *testing.T, name string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "policy", "candidate", "examples", "refunds", name))
+	raw, err := os.ReadFile(filepath.Join("..", "policy", "official", "conformance", "policy", "1.0.0", "examples", "refunds", name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestPolicyCandidateCLIAndMCPParity(t *testing.T) {
 			if !reflect.DeepEqual(actual, other) {
 				t.Fatalf("candidate CLI/MCP mismatch\n%v\n%v", actual, other)
 			}
-			if actual["specRevision"] != policy.CandidateRevision || actual["maturity"] != "proposed-draft" {
+			if actual["specRevision"] != policy.DraftRevision || actual["maturity"] != "draft" {
 				t.Fatal("candidate provenance")
 			}
 			if tc.operation == "check" {
@@ -134,7 +134,7 @@ func TestPolicyCandidateCLIAndMCPParity(t *testing.T) {
 			args = append(args, "--materials", materialPath)
 		}
 		exit, stdout, stderr := runTest(t, args, candidateCLIBytes(t, "policy.json"))
-		if exit != 0 || stderr != "" || !strings.Contains(stdout, "Proposed-draft candidate") {
+		if exit != 0 || stderr != "" || !strings.Contains(stdout, "Policy draft") {
 			t.Fatalf("candidate human output %d %s %s", exit, stdout, stderr)
 		}
 	}
@@ -183,6 +183,40 @@ func TestPolicyExplicitContractDiscoveryParity(t *testing.T) {
 		exit, _, _ := runTest(t, append([]string{"experimental", "policy", "contract"}, flags...), "")
 		if exit != 3 {
 			t.Fatal("selector conflict accepted")
+		}
+	}
+}
+
+func TestPolicyOfficialDraftInitSchemaParity(t *testing.T) {
+	for _, operation := range []string{"init", "schema"} {
+		for _, kind := range []string{"policy", "governing-adoption"} {
+			t.Run(operation+"/"+kind, func(t *testing.T) {
+				args := []string{"experimental", "policy", operation, "--kind", kind, "--format-version", "1.0.0", "--format", "json"}
+				input := map[string]any{"kind": kind, "formatVersion": "1.0.0"}
+				name := "experimental_get_policy_schema"
+				if operation == "init" {
+					args = append(args, "--id", "urn:test:draft", "--version", "7.3.42")
+					input["id"], input["version"] = "urn:test:draft", "7.3.42"
+					name = "experimental_policy_init"
+				}
+				exit, stdout, stderr := runTest(t, args, "")
+				if exit != 0 || stderr != "" {
+					t.Fatal(exit, stdout, stderr)
+				}
+				var actual map[string]any
+				if err := json.Unmarshal([]byte(stdout), &actual); err != nil {
+					t.Fatal(err)
+				}
+				other, isError := candidateMCPReply(t, name, input)
+				delete(actual, "command")
+				delete(other, "command")
+				if isError || !reflect.DeepEqual(actual, other) || actual["specRevision"] != policy.DraftRevision || actual["specification"] != policy.DraftURL || actual["maturity"] != "draft" || actual["candidateResult"] != nil {
+					t.Fatal("official init/schema CLI/MCP mismatch", actual, other)
+				}
+				if operation == "schema" && actual["resource"].(map[string]any)["sourceId"] != "https://judgmentpack.org/schema/policy/1.0.0/"+kind+".schema.json" {
+					t.Fatal("missing official schema identity")
+				}
+			})
 		}
 	}
 }

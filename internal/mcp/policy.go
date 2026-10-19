@@ -17,9 +17,9 @@ func policyToolName(operation string) string {
 
 func policyDefinition(operation string) map[string]any {
 	descriptions := map[string]string{
-		"contract":     "With no selectors, discover the unchanged pinned RFC 0023 prototype 0.0.2. Explicit allFormats:true discovers registry version 1; formatVersion selects one contract, mutually exclusive. Candidate 1.0.0 is proposed-draft and unadopted. Reports exact kinds, capabilities and limits. Experimental; no project reads, persistence, evaluation or authority.",
-		"init":         "Return a nonnormative Policy companion starter template for an explicitly selected kind, format and identity. Retained materials are missing and unchecked. The client saves it; no publication, approval or governing-adoption authority is established.",
-		"schema":       "Return a self-contained Runtime editing schema derived from pinned nonnormative prototype resources for an explicit kind and explicit prototype 0.0.2 or proposed-draft candidate 1.0.0. Use validate for strict document and local-reference checks. Offline; no project reads or writes.",
+		"contract":     "With no selectors, discover the unchanged pinned RFC 0023 prototype 0.0.2. Explicit allFormats:true discovers registry version 1; formatVersion selects one contract, mutually exclusive. Explicit 1.0.0 selects the immutable official Policy draft release; this experimental host surface establishes no stable conformance. Reports exact kinds, capabilities and limits. Experimental; no project reads, persistence, evaluation or authority.",
+		"init":         "Return a Policy companion starter template for an explicitly selected kind, format and identity. Retained materials are missing and unchecked. The client saves it; no publication, approval or governing-adoption authority is established.",
+		"schema":       "Return a self-contained Runtime editing schema derived from pinned prototype or official draft resources for an explicit kind and explicit prototype 0.0.2 or official draft 1.0.0. Use validate for strict document and local-reference checks. Offline; no project reads or writes.",
 		"canonicalize": "Return canonical Policy companion document bytes and separate canonical/raw byte digests. Encoding success is not document validation, retained-material verification or authority. Experimental; no files read or written.",
 		"digest":       "Return the canonical Policy companion digest and separate raw-byte identity. Encoding success is not validation or authority. Experimental; no files read or written.",
 		"validate":     "Check exact Policy companion document JSON for strict forms, schema and local references. Does not check retained materials, full Core semantics, evaluation, approval or governing-adoption authority. Experimental; no files read or written.",
@@ -29,7 +29,7 @@ func policyDefinition(operation string) map[string]any {
 	schema := map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
 	if operation == "init" || operation == "schema" {
 		properties["kind"] = map[string]any{"type": "string", "enum": []string{"policy", "governing-adoption"}}
-		properties["formatVersion"] = map[string]any{"type": "string", "enum": []string{policy.PrototypeVersion, policy.CandidateVersion}, "description": "Exact prototype 0.0.2 or unadopted proposed-draft candidate 1.0.0; no format is selected by default."}
+		properties["formatVersion"] = map[string]any{"type": "string", "enum": []string{policy.PrototypeVersion, policy.CandidateVersion}, "description": "Exact prototype 0.0.2 or official draft 1.0.0; no format is selected by default."}
 		schema["required"] = []string{"kind", "formatVersion"}
 		if operation == "init" {
 			properties["id"] = map[string]any{"type": "string", "description": "Explicit absolute artifact URI identifier."}
@@ -45,7 +45,7 @@ func policyDefinition(operation string) map[string]any {
 		properties["allFormats"] = map[string]any{"type": "boolean", "description": "Explicit opt-in to registry version 1; mutually exclusive with formatVersion."}
 	}
 	if operation != "init" && operation != "schema" {
-		properties["formatVersion"] = map[string]any{"type": "string", "description": "Optional exact format selection: 0.0.2 prototype or 1.0.0 proposed-draft candidate. Candidate selection also classifies malformed/missing document selectors. No automatic migration."}
+		properties["formatVersion"] = map[string]any{"type": "string", "description": "Optional exact format selection: 0.0.2 prototype or 1.0.0 official draft. Explicit draft selection also classifies malformed/missing document selectors. No automatic migration."}
 	}
 	if operation == "check" {
 		properties["materials"] = map[string]any{"type": "string", "maxLength": policy.MaxMaterialsWireBytes, "description": fmt.Sprintf("Exact retained-material JSON text: {materials:[{content:{bytesDigest,byteLength,mediaType},dataBase64}]}. No paths/URLs. Maximum decoded JSON text %d bytes; stdio's %d-byte line limit can be reached first after JSON/base64 overhead.", policy.MaxMaterialsWireBytes, maxMessageBytes)}

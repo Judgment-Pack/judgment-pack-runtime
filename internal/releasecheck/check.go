@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/policy"
 )
 
 const specificationRepository = "https://github.com/Judgment-Pack/judgment-pack-spec"
@@ -29,6 +30,9 @@ func CheckEmbedded(tag string) error {
 		if err := Validate(tag, set.Lock()); err != nil {
 			return fmt.Errorf("embedded JPS %s: %w", version, err)
 		}
+	}
+	if err := policy.VerifyOfficialArtifacts(); err != nil {
+		return fmt.Errorf("embedded official Policy draft: %w", err)
 	}
 	return nil
 }

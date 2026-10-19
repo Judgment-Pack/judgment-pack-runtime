@@ -13,6 +13,8 @@ import (
 var candidate embed.FS
 
 const candidateCommonID = "urn:jps:proposal:policy-companion:1.0.0:common"
+const draftSchemaPrefix = "https://judgmentpack.org/schema/policy/1.0.0/"
+const draftCommonID = draftSchemaPrefix + "common.schema.json"
 
 var candidateSchemasOnce sync.Once
 var candidateSchemas map[string]*jsonschema.Schema
@@ -20,24 +22,28 @@ var candidateSchemasError error
 
 func schemaSource(version string) (embed.FS, string, string, string) {
 	if version == CandidateVersion {
-		return candidate, candidateFormat.directory, candidateFormat.commonURI, candidateFormat.revision
+		return official, candidateFormat.directory, candidateFormat.commonURI, candidateFormat.revision
 	}
 	return prototype, prototypeFormat.directory, prototypeFormat.commonURI, prototypeFormat.revision
 }
 
 func loadCandidateSchemas() (map[string]*jsonschema.Schema, error) {
 	candidateSchemasOnce.Do(func() {
+		if err := VerifyOfficialArtifacts(); err != nil {
+			candidateSchemasError = err
+			return
+		}
 		resources := map[string][]byte{}
 		for _, name := range []string{"common", "policy", "governing-adoption"} {
-			raw, err := candidate.ReadFile("candidate/" + name + ".schema.json")
+			raw, err := official.ReadFile(candidateFormat.directory + "/" + name + ".schema.json")
 			if err != nil {
 				candidateSchemasError = err
 				return
 			}
-			resources["urn:jps:proposal:policy-companion:1.0.0:"+name] = raw
+			resources[draftSchemaPrefix+name+".schema.json"] = raw
 		}
 		candidateSchemas = map[string]*jsonschema.Schema{}
-		for name, id := range map[string]string{"common": candidateCommonID, "uri": candidateCommonID + "#/$defs/uri", "policy": "urn:jps:proposal:policy-companion:1.0.0:policy", "governing-adoption": "urn:jps:proposal:policy-companion:1.0.0:governing-adoption"} {
+		for name, id := range map[string]string{"common": draftCommonID, "uri": draftCommonID + "#/$defs/uri", "policy": draftSchemaPrefix + "policy.schema.json", "governing-adoption": draftSchemaPrefix + "governing-adoption.schema.json"} {
 			s, err := compileCandidateSchemas(resources, id)
 			if err != nil {
 				candidateSchemasError = err
@@ -71,7 +77,7 @@ func candidateSchema(name string, value any) (*issue, int) {
 	}
 	schemas, err := loadCandidateSchemas()
 	if err != nil {
-		return problem("JPS-POLICY-ARTIFACT", "", "Pinned candidate schemas could not be compiled."), result.ExitIO
+		return problem("JPS-POLICY-ARTIFACT", "", "Pinned official draft schemas could not be verified or compiled."), result.ExitIO
 	}
 	if err := schemas[name].Validate(value); err != nil {
 		if schemaBound(err) {

@@ -22,6 +22,17 @@ the Apache License, Version 2.0; a copy is in the accompanying LICENSE file, and
 the required attribution is in NOTICE. The exact upstream revision and per-file
 SHA-256 digests are recorded in the bundled lock.json.
 
+The same Apache-2.0 attribution covers pinned Policy material under
+internal/policy/prototype/, internal/policy/candidate/ and internal/policy/official/.
+The prototype and historical proposed candidate retain their original source
+bytes and provenance. The official directory embeds the complete immutable
+policy-v1.0.0-draft.1 source archive at Spec commit
+0799b37b74e35c4a86bfbf70f7bee80bdb7bbe94, including schemas, prose, corpus,
+examples, reference Python reader and source dependencies. Its LICENSE and NOTICE
+are retained verbatim; provenance.json records the archive and per-file SHA-256
+digests and lengths. These Python sources are retained artifacts, not additional
+runtime dependencies.
+
 Apache License 2.0 components (Go modules)
 ------------------------------------------
 

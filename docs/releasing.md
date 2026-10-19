@@ -46,6 +46,16 @@ expected bundle digest. Review one lock per bundled version: the release gate ch
 only the version a surface selects by default. Update the embedded registry only when adding a new
 specification version.
 
+Policy draft resources are independently pinned under `internal/policy/official/`,
+with the complete `policy-v1.0.0-draft.1` archive's original source paths. Its
+provenance records the immutable release/tag, exact Spec commit, archive digest and
+per-file bytes. `tools/check-release` also verifies the independent Policy manifest
+pin and full embedded inventory. Updating these resources requires an explicit
+reviewed artifact change and appropriate CLI version increment; it never rewrites
+the retained prototype or historical candidate trees or the Core locks. Policy
+source schema IDs stay distinct from derived Runtime editing schema IDs. See
+[ADR-0061](adr/0061-adopt-official-policy-draft-resources.md) for compatibility.
+
 ## Validate locally
 
 Install the exact GoReleaser version used by the workflow, then run:
