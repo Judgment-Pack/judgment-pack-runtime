@@ -2,6 +2,59 @@
 
 All notable changes to tagged releases are documented here.
 
+## 0.36.0 - 2026-10-19
+
+This release is cumulative from the last published Runtime, `v0.34.0`. It includes
+the offline Policy additions recorded under `0.35.0` below and the later explicit
+contract candidate (#296, ADR-0060). The `v0.35.0` draft at
+`515724946fe83e7db800b4281e74d5daf06524fa` remains held and unpublished; its tag
+is not moved or reused for this release.
+
+- Add experimental offline Policy prototype `0.0.2` tools for `policy` and
+  `governing-adoption`: CLI `experimental policy
+  contract|init|schema|canonicalize|digest|validate|check` and seven experimental
+  MCP equivalents. They check supplied document forms, exact retained-material
+  closure, raw/canonical identity, section anchors and structural Pack references,
+  with bounded inputs and pinned provenance (ADR-0059). Starter templates retain
+  missing-material warnings. No acquisition, implicit project reads, evaluation,
+  publication, approval or current governing-authority determination is performed;
+  full Core semantic validation is outside these checks.
+- Add the separately pinned, **unadopted, proposed-draft** Policy contract
+  candidate `formatVersion: "1.0.0"`. Explicit `contract --all-formats` discovers
+  both formats; `--format-version 1.0.0` selects the candidate contract, templates
+  and schemas. Supplied documents dispatch by their exact selector. The default
+  contract and prototype reports retain their existing shape; no document is
+  silently migrated. Artifact `version` is separate from `formatVersion`.
+- Candidate reports identify their own provenance and capabilities. A full
+  candidate `check` alone supplies the portable `candidateResult` valid/refused
+  object; encoding and document-only checks do not claim retained-material
+  validity. Candidate checks preserve original Pack and retained-material bytes,
+  ordered refusal phases and candidate-specific URI assertions. The shared Go
+  harness agrees with all 124 pinned portable result objects; this is same-vendor
+  evidence, not independently authored interoperability evidence. Existing 24 MiB
+  material-transport and 16 MiB MCP request-line ceilings still apply.
+- Refuse duplicate MCP argument names without echoing arbitrary rejected names,
+  across the shared transport guard. Known names remain actionable and spelling
+  remains exact. Prototype Policy schema findings return a stable sorted unique
+  first 100, mark partial reports with `diagnosticsTruncated`, and bound material
+  length literals before schema numeric conversion.
+
+RFC 0023 remains **Review and unadopted**. Neither the prototype nor the candidate
+is a stable Policy format or normative conformance class. Runtime's complete
+conformance claim remains solely in `CONFORMANCE.md`. These offline tools confer
+no execution permission. Runner's separate experimental
+`local-admin-manual-pack/1` host profile requires explicit enrollment and fresh
+anchored authority admission; published Desk still pins Runtime `v0.34.0` and
+Runner `v0.23.0`, so coordinated companion adoption remains pending.
+
+Source validation: Runtime main CI
+[39165392059](https://github.com/Judgment-Pack/judgment-pack-runtime/actions/runs/39165392059)
+passed at `0554c43d2bea08e06b9a1e7be39834494ee29d5e`, whose tree equals the
+`55a23b884f0ce67fe6a9141b04e081a518fd5d61` source used in the combined manual
+acceptance. Tagged archives, checksums, attestations, native archive smoke and
+publication checks for `v0.36.0` remain release gates; this documentation-only
+preparation does not establish them.
+
 ## 0.35.0 - 2026-10-18
 
 - Add experimental offline Policy prototype `0.0.2` tooling for `policy` and
