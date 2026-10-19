@@ -47,7 +47,7 @@ func vectorBytes(source map[string]any) ([]byte, *issue, int) {
 		if strings.ContainsRune(name, 0) || path.IsAbs(name) || path.Clean(name) != name || strings.HasPrefix(name, "../") {
 			return nil, candidateIssue("invalid-carrier"), result.ExitInvalid
 		}
-		raw, err := candidate.ReadFile("candidate/" + name)
+		raw, err := official.ReadFile("official/conformance/policy/1.0.0/" + name)
 		if err != nil {
 			return nil, candidateIssue("missing-material"), result.ExitInvalid
 		}
@@ -56,8 +56,8 @@ func vectorBytes(source map[string]any) ([]byte, *issue, int) {
 	return bytes.Repeat([]byte{byte(number(source["repeatByte"]))}, number(source["byteLength"])), nil, 0
 }
 
-func TestCandidatePortableVectors(t *testing.T) {
-	value, failure := carrier.Decode(candidateRead(t, "vectors/manifest.json"), limits())
+func TestOfficialDraftPortableVectors(t *testing.T) {
+	value, failure := carrier.Decode(officialRead(t, "conformance/policy/1.0.0/vectors/manifest.json"), limits())
 	if failure != nil {
 		t.Fatal(failure)
 	}
@@ -99,6 +99,9 @@ func TestCandidatePortableVectors(t *testing.T) {
 			}
 
 			actual := mustMap(t, mustJSON(t, r.CandidateResult))
+			if r.SpecRevision != DraftRevision || r.Specification != DraftURL || r.Maturity != "draft" || r.Capabilities.FullDocumentConformance || r.Capabilities.LiveAuthority || r.Capabilities.ExecutionAuthority || r.Capabilities.ApprovalVerification {
+				t.Fatal("official draft metadata or authority boundary changed")
+			}
 			if !reflect.DeepEqual(actual, object(entry["expected"])) {
 				t.Fatalf("result %v want %v; exit %d diagnostics %v", actual, entry["expected"], exit, r.Diagnostics)
 			}
@@ -146,7 +149,7 @@ func TestCandidateRawIdentityAndFormatIsolation(t *testing.T) {
 	f := candidateFixture(t, "refunds")
 	raw := f.raw["policy.json"]
 	r, exit := Canonicalize("canon", raw)
-	if exit != 0 || r.BytesDigest != digest(raw) || r.CanonicalDigest == r.BytesDigest || r.FormatVersion != CandidateVersion || r.SpecRevision != CandidateRevision || r.CandidateResult != nil {
+	if exit != 0 || r.BytesDigest != digest(raw) || r.CanonicalDigest == r.BytesDigest || r.FormatVersion != CandidateVersion || r.SpecRevision != DraftRevision || r.CandidateResult != nil {
 		t.Fatalf("candidate identity %+v exit %d", r, exit)
 	}
 	if r.Document == "" {
@@ -199,7 +202,7 @@ func TestCandidateInitSchemaAndExplicitDiscovery(t *testing.T) {
 		}
 	}
 	var capabilities map[string]any
-	if json.Unmarshal(registry.Formats[1].CandidateCapabilities, &capabilities) != nil || capabilities["maturity"] != "proposed-draft" {
+	if json.Unmarshal(registry.Formats[1].CandidateCapabilities, &capabilities) != nil || capabilities["maturity"] != "draft" {
 		t.Fatal("candidate discovery")
 	}
 }

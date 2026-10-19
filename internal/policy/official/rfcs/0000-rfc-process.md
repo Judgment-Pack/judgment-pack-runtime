@@ -1,0 +1,95 @@
+# RFC 0000: Request for Comments process
+
+- Status: Active
+- Type: Process
+- Created: 2026-07-22
+
+## Summary
+
+A Request for Comments (RFC) is the design record for a material change to the Judgment Pack
+Specification, its profiles, conformance model, or governance. "RFC" is used here in the sense
+adopted by projects such as Rust and React — a proposal opened for public comment and deliberate
+disposition — not the IETF sense of an already-published standard.
+
+This process replaces the earlier Judgment Enhancement Proposal (JEP) process; the required
+sections and evidence bar are unchanged.
+
+## Required sections
+
+Every standards-track RFC should contain:
+
+1. **Summary** — the proposed change in plain language.
+2. **Problem** — the interoperability problem and affected users.
+3. **Evidence** — real examples and known implementation experience.
+4. **Specification** — exact proposed portable semantics.
+5. **Alternatives** — including no change, extension, profile, and product-only behavior.
+6. **Compatibility** — reader, writer, semantic, and migration effects.
+7. **Security and privacy** — abuse, confusion, disclosure, and resource risks.
+8. **Conformance** — positive, negative, boundary, and adversarial cases.
+9. **Implementation** — at least two plausible independent implementations.
+10. **Unresolved questions** — issues that must not be hidden by acceptance.
+
+## Statuses
+
+- `Draft`
+- `Review`
+- `Accepted`
+- `Rejected`
+- `Withdrawn`
+- `Superseded`
+
+Acceptance means the design is approved for the maturity named by the RFC. It does not automatically
+make a feature stable.
+
+## Cross-project exploratory records
+
+An RFC in this directory normally proposes a change to JPS, a profile, the conformance model, or
+governance. A proposal whose every part lands in another repository of the project — the reference
+runtime, the gateway, the research line — may still be recorded here as a **cross-project
+exploratory record** when the design question deserves public visibility before any implementation
+exists. Its `Type` must say so, its text must name where each part would land, and its statuses
+carry adjusted semantics: acceptance endorses the design record as written and confers no authority
+over the owning repository, which makes its own adoption decision by its own process. Nothing
+recorded this way becomes part of JPS by being recorded.
+[RFC 0010](0010-gateway-signing-identity.md) is the first such record.
+
+The provision also covers a **retrospective** record: one filed after its parts were built, when a
+design that spans more than one repository would otherwise have to be reconstructed from each of
+them. Such a record says that it is retrospective, describes what exists rather than proposing it,
+and states the implementation, release and review standing of each part. Its acceptance endorses
+the record as an account of the design and ratifies nothing in the owning repositories, whose
+adoption decisions are their own. [RFC 0014](0014-lineage-record-and-action-binding.md) is the first such record;
+the question was raised by that record and ruled on at its acceptance.
+
+## Review
+
+Research-preview RFCs remain open for public comment for a reasonable period based on complexity.
+Maintainers may request prototypes or conformance cases before disposition. A stable normative
+feature should not be accepted without evidence from two independent implementations.
+
+While the project has a single maintainer, public comment alone has not drawn outside review. The
+pull request adopting [RFC 0009](0009-interim-review-regime.md) and every pull request merged after
+it — where that pull request creates, materially amends, or dispositions an RFC, including RFCs
+0001–0007, which predate the requirement and acquire it the next time such a pull request touches
+them — therefore also carries a recorded adversarial review by a model from a different vendor than
+any model that assisted the drafting, with a written maintainer disposition for each finding. The
+test is commit-relative, not date-relative. What the record must contain, what it cannot prove, what
+the review does not substitute for, and the criteria that end the requirement are in
+[`GOVERNANCE.md`](../GOVERNANCE.md#interim-review-regime); the design record is
+[RFC 0009](0009-interim-review-regime.md).
+
+## Compatibility
+
+During `0.x`, breaking proposals are allowed but must be labeled and accompanied by migration
+guidance. After a stable release, its compatibility policy takes precedence over this draft process.
+
+## Seeded proposals
+
+The following early-stage RFCs are published as `Draft` to make current design questions visible
+rather than settled. They are not part of the specification.
+
+- [RFC 0001 — Pack manifest](0001-pack-manifest.md)
+- [RFC 0002 — Judgment Graph composition](0002-judgment-graph.md)
+- [RFC 0003 — Evidence reference](0003-evidence-reference.md)
+- [RFC 0004 — Planner interface](0004-planner-interface.md) — since dispositioned `Rejected`
+- [RFC 0005 — Pack discovery](0005-pack-discovery.md)

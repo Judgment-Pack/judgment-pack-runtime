@@ -61,6 +61,9 @@ func Schema(command, kindName, version string) (Report, int) {
 	r := report(command)
 	if version == CandidateVersion {
 		r = candidateReport(command)
+		if err := VerifyOfficialArtifacts(); err != nil {
+			return refused(r, "JPS-POLICY-ARTIFACT", "", "The pinned official draft resources failed verification.", result.ExitIO)
+		}
 	}
 	if code, path, message := selector(kindName, version); code != 0 {
 		return refused(r, "JPS-POLICY-SELECTOR", path, message, code)
@@ -90,7 +93,8 @@ func Schema(command, kindName, version string) (Report, int) {
 	doc["$id"] = "urn:judgmentpack:runtime:experimental-policy:" + version + ":" + kindName + ":authoring-schema:1"
 	doc["$comment"] = "Runtime self-contained editing copy of non-normative RFC 0023 prototype at Spec commit " + revision + ". Use experimental policy validate/check; schema acceptance grants no approval, execution authority or conformance."
 	if version == CandidateVersion {
-		doc["$comment"] = "Runtime self-contained editing copy of proposed-draft, unadopted Policy contract candidate at Spec commit " + revision + ". Schema acceptance establishes no authority or conformance."
+		doc["$id"] = "urn:judgmentpack:runtime:experimental-policy:" + DraftRelease + ":" + kindName + ":authoring-schema:1"
+		doc["$comment"] = "Runtime self-contained editing copy of " + draftSchemaPrefix + kindName + ".schema.json from " + DraftRelease + " at Spec commit " + revision + ". The source resource retains its immutable HTTPS identity; this derived copy has a Runtime URN. Schema acceptance establishes no authority or conformance."
 	}
 	text, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
@@ -99,6 +103,9 @@ func Schema(command, kindName, version string) (Report, int) {
 	r.Status = "available"
 	r.Kind = kindName
 	r.Resource = &Resource{Name: kindName + ".schema.json", MediaType: "application/schema+json", Text: string(text) + "\n"}
+	if version == CandidateVersion {
+		r.Resource.SourceID = draftSchemaPrefix + kindName + ".schema.json"
+	}
 	return r, result.ExitSuccess
 }
 func rewriteRefs(value any, from, to string) {

@@ -20,5 +20,8 @@ internal/policy/prototype/** -text
 # Candidate schemas, provenance, examples and vectors also retain exact bytes.
 internal/policy/candidate/** -text
 
+# Official independently released Policy draft resources retain exact bytes.
+internal/policy/official/** -text
+
 # The served authoring schema has a byte digest on every platform.
 internal/dialect/version2.schema.json -text

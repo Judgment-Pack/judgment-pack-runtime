@@ -13,8 +13,8 @@ import (
 
 func (a *App) policyCommand() *cobra.Command {
 	group := &cobra.Command{
-		Use: "policy", Short: "EXPERIMENTAL: offline Policy prototype and proposed-draft candidate tools",
-		Long: "Offline tools for the nonnormative RFC 0023 Policy prototype 0.0.2 and unadopted proposed-draft candidate 1.0.0. Discover candidates explicitly with contract --all-formats; no-argument contract retains the prototype contract. Validate checks document forms and local references. Check also checks the exact supplied retained-material closure and specific Core references; it does not perform full Core semantic validation or evaluate anything. No approval, governing-adoption authority, publication, billing or source access is established. This experimental surface may change without compatibility promise.",
+		Use: "policy", Short: "EXPERIMENTAL: offline Policy prototype and official draft tools",
+		Long: "Offline tools for the nonnormative RFC 0023 Policy prototype 0.0.2 and independently released Policy draft 1.0.0. Discover formats explicitly with contract --all-formats; no-argument contract retains the prototype contract. Validate checks document forms and local references. Check also checks the exact supplied retained-material closure and specific Core references; it does not perform full Core semantic validation or evaluate anything. No approval, governing-adoption authority, publication, billing or source access is established. This experimental surface may change without compatibility promise.",
 		Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	for _, operation := range []string{"contract", "init", "schema", "canonicalize", "digest", "validate", "check"} {
@@ -32,7 +32,7 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 		args = cobra.ExactArgs(1)
 	}
 	descriptions := map[string]string{
-		"contract":     "Describe capabilities and pinned provenance; opt into candidate discovery explicitly",
+		"contract":     "Describe capabilities and pinned provenance; select the official draft explicitly",
 		"init":         "Print a starter template; missing retained materials remain unchecked",
 		"schema":       "Print the schema for an explicitly selected Policy kind and format",
 		"canonicalize": "Print canonical document bytes; encoding success is not validation",
@@ -78,7 +78,7 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 		case "schema":
 			report, code = policy.Schema(command, kind, profileVersion)
 		default:
-			data, err := a.readInput(operands[0], policy.MaxDocumentBytes, "Policy prototype document")
+			data, err := a.readInput(operands[0], policy.MaxDocumentBytes, "Policy document")
 			if errors.Is(err, fssecure.ErrTooLarge) {
 				data = make([]byte, policy.MaxDocumentBytes+1)
 			} else if err != nil {
@@ -120,9 +120,9 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 			switch operation {
 			case "contract":
 				if registry != nil {
-					_, err = fmt.Fprintf(a.out, "Policy format registry 1 · EXPERIMENTAL\n0.0.2 · nonnormative prototype · %s\n1.0.0 · proposed-draft candidate, unadopted · %s\nSelect a format explicitly for init/schema. No authority or conformance is established.\n", policy.SpecURL, policy.CandidateURL)
+					_, err = fmt.Fprintf(a.out, "Policy format registry 1 · EXPERIMENTAL\n0.0.2 · nonnormative prototype · %s\n1.0.0 · official Policy draft · %s\nSelect a format explicitly for init/schema. No authority or conformance is established.\n", policy.SpecURL, policy.DraftURL)
 				} else if report.FormatVersion == policy.CandidateVersion {
-					_, err = fmt.Fprintf(a.out, "Policy candidate %s · EXPERIMENTAL · proposed-draft, unadopted\nSpecification: %s\nKinds: policy, governing-adoption\nNo approval, current authority or standard conformance is established.\n", report.FormatVersion, report.Specification)
+					_, err = fmt.Fprintf(a.out, "Policy draft %s · EXPERIMENTAL · draft maturity\nSpecification: %s\nKinds: policy, governing-adoption\nNo approval, current authority or standard conformance is established.\n", report.FormatVersion, report.Specification)
 				} else {
 					_, err = fmt.Fprintf(a.out, "Policy tools · EXPERIMENTAL · nonnormative prototype %s\nSpecification: %s\nKinds: policy, governing-adoption\nOperations: contract, init, schema, canonicalize, digest, validate, check\nValidate checks document forms and local references. Check checks exact supplied retained materials and specific Core references, without full Core semantic validation or evaluation.\nNo approval, governing-adoption authority or standard conformance is established.\n", policy.PrototypeVersion, policy.SpecURL)
 				}
@@ -132,13 +132,13 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 				_, err = fmt.Fprintln(a.out, report.CanonicalDigest)
 			case "validate":
 				if report.FormatVersion == policy.CandidateVersion {
-					_, err = fmt.Fprintln(a.out, "Proposed-draft candidate document and local-reference checks passed. Retained materials were not checked; no authority is established.")
+					_, err = fmt.Fprintln(a.out, "Policy draft document and local-reference checks passed. Retained materials were not checked; no authority is established.")
 				} else {
 					_, err = fmt.Fprintln(a.out, "Prototype document and local-reference checks passed. Retained materials were not checked; no authority is established.")
 				}
 			case "check":
 				if report.FormatVersion == policy.CandidateVersion {
-					_, err = fmt.Fprintln(a.out, "Proposed-draft candidate retained-material and reference checks passed. Full Core semantics and evaluation were not checked; no authority is established.")
+					_, err = fmt.Fprintln(a.out, "Policy draft retained-material and reference checks passed. Full Core semantics and evaluation were not checked; no authority is established.")
 				} else {
 					_, err = fmt.Fprintln(a.out, "Prototype retained-material and reference checks passed. Full Core semantics and evaluation were not checked; no authority is established.")
 				}
@@ -163,7 +163,7 @@ func (a *App) policyOperation(operation string) *cobra.Command {
 	if operation == "init" || operation == "schema" {
 		c.Flags().StringVar(&kind, "kind", "", "required exact kind: policy or governing-adoption")
 	}
-	c.Flags().StringVar(&profileVersion, "format-version", "", "exact format: prototype 0.0.2 or proposed-draft candidate 1.0.0; required for init/schema, optional explicit dispatch otherwise")
+	c.Flags().StringVar(&profileVersion, "format-version", "", "exact format: prototype 0.0.2 or official draft 1.0.0; required for init/schema, optional explicit dispatch otherwise")
 	if operation == "contract" {
 		c.Flags().BoolVar(&allFormats, "all-formats", false, "explicitly discover all formats in registry version 1")
 	}

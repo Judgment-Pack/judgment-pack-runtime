@@ -13,15 +13,19 @@ import (
 const CandidateVersion = "1.0.0"
 const CandidateRevision = "0852c5fa7726e51b36e574a5b110e7f5e012e03d"
 const CandidateURL = "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + CandidateRevision + "/rfcs/policy-companion-contract/README.md"
+const DraftRelease = "policy-v1.0.0-draft.1"
+const DraftRevision = "0799b37b74e35c4a86bfbf70f7bee80bdb7bbe94"
+const DraftURL = "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + DraftRevision + "/spec/policy.md"
 
 type formatDescriptor struct {
 	version, profile, maturity, revision, url, directory, commonURI string
 }
 
 var prototypeFormat = formatDescriptor{ProfileVersion, Profile, "non-normative", SpecRevision, SpecURL, "prototype", commonID}
-var candidateFormat = formatDescriptor{CandidateVersion, "jps-policy-companion", "proposed-draft", CandidateRevision, CandidateURL, "candidate", candidateCommonID}
+var candidateFormat = formatDescriptor{CandidateVersion, "jps-policy-companion", "draft", DraftRevision, DraftURL, "official/schema/policy/1.0.0", draftCommonID}
 
-// CandidateResult is the complete portable full-check result. It is absent from
+// CandidateResult retains the existing report member name for the complete
+// portable draft full-check result. It is absent from
 // legacy reports and from encoding/local validation, which have narrower scopes.
 type CandidateResult struct {
 	Status        string `json:"status"`
@@ -71,9 +75,9 @@ func candidateReport(command string) Report {
 	r.FormatVersion = f.version
 	r.Capabilities.ProfileVersions = []string{f.version}
 	r.Capabilities.Maturity = f.maturity
-	r.Capabilities.ValidationScope = "closed-candidate-document-and-local-references"
-	r.Capabilities.CheckScope = "candidate-supplied-exact-bytes-anchors-and-scoped-core-references"
-	r.CandidateCapabilities, _ = candidate.ReadFile("candidate/capabilities.json")
+	r.Capabilities.ValidationScope = "closed-draft-document-and-local-references"
+	r.Capabilities.CheckScope = "draft-supplied-exact-bytes-anchors-and-scoped-core-references"
+	r.CandidateCapabilities, _ = official.ReadFile("official/conformance/policy/1.0.0/capabilities.json")
 	return r
 }
 
@@ -83,7 +87,7 @@ func candidateRefused(r Report, code string) (Report, int) {
 	if code == "input-over-bound" || code == "unsupported-format" || code == "unsupported-canonical-identity" {
 		exit = result.ExitUnsupported
 	}
-	return refused(r, "JPS-POLICY-CANDIDATE-"+strings.ToUpper(code), "", "Proposed-draft candidate check refused: "+code+".", exit)
+	return refused(r, "JPS-POLICY-CANDIDATE-"+strings.ToUpper(code), "", "Policy draft check refused: "+code+".", exit)
 }
 
 // Only a strict object carrying the new selector opts into automatic candidate
@@ -244,7 +248,7 @@ func DigestFormat(command string, data []byte, format string) (Report, int) {
 }
 
 func candidateIssue(code string) *issue {
-	return &issue{code: "JPS-POLICY-CANDIDATE-" + strings.ToUpper(code), message: "Proposed-draft candidate check refused: " + code + ".", candidateCode: code}
+	return &issue{code: "JPS-POLICY-CANDIDATE-" + strings.ToUpper(code), message: "Policy draft check refused: " + code + ".", candidateCode: code}
 }
 
 func candidateCode(err *issue, exit int) string {
@@ -277,7 +281,7 @@ func finishCandidateCheck(r Report, code int) (Report, int) {
 		return r, code
 	}
 	if code == 0 {
-		r.CandidateResult = &CandidateResult{Status: "valid", FormatVersion: CandidateVersion, Maturity: "proposed-draft"}
+		r.CandidateResult = &CandidateResult{Status: "valid", FormatVersion: CandidateVersion, Maturity: "draft"}
 	} else if r.refusalCode != "" {
 		r.CandidateResult = &CandidateResult{Status: "refused", Code: r.refusalCode}
 	}

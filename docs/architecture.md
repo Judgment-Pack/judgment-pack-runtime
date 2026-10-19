@@ -48,25 +48,37 @@ number domain. Source/schema/example provenance pins specification revision
 resource is fetched at runtime. The shared 16 MiB stdio line bound is unchanged,
 so JSON/base64 overhead reduces the maximum retained material a call can carry.
 
-The proposed-draft, unadopted Policy contract candidate `1.0.0` is an additional
-explicit format ([ADR-0060](adr/0060-explicit-policy-candidate-format.md)). Its
-schemas, prose, examples and 124 portable vectors are pinned separately to Spec
-commit `0852c5fa7726e51b36e574a5b110e7f5e012e03d`. Format selection, schema and
-provenance differ; material identity, UTF-8 anchors and typed Pack coverage use
-the same engine. Candidate adoption cannot consume prototype Policy bytes.
-No-argument contract discovery and prototype reports retain their exact prior
-shape for strict clients. All-format discovery requires explicit CLI
-`--all-formats` or MCP `allFormats:true` and returns registry version 1.
+Explicit format `1.0.0` selects the official draft resources of
+`policy-v1.0.0-draft.1`, pinned to Spec commit
+`0799b37b74e35c4a86bfbf70f7bee80bdb7bbe94`
+([ADR-0061](adr/0061-adopt-official-policy-draft-resources.md)). The complete
+published archive, original source paths and per-file provenance live under
+`internal/policy/official`; the independent manifest pin and every file are
+verified before schema compilation and by the release gate. The HTTPS source
+schema identities stay distinct from derived release-specific Runtime editing
+URNs, exposed alongside `resource.sourceId`. The same offline engine handles the
+unchanged 1.0.0 grammar, material identity, anchors and typed Pack coverage.
+The archived proposed candidate and prototype trees retain their exact bytes and
+original metadata. Prototype defaults and reports remain byte compatible;
+all-format discovery still requires explicit CLI `--all-formats` or MCP
+`allFormats:true` and returns registry version 1.
 
-Candidate full checks return a bounded `candidateResult` with exactly the
-portable status/code object, separate from Runtime diagnostics and exit status.
+Explicit 1.0.0 reports now carry official source provenance and `draft` maturity,
+retaining `candidateCapabilities` and `candidateResult` member names. Only full
+checks return the exact portable valid/refusal object. Encoding/local validation
+retain their narrower scopes. The promotion deliberately changes 1.0.0 metadata,
+capability exclusions, scope strings and derived editing schema identity; strict
+clients must update their pins. It rewrites no artifact or historical report and
+migrates no approval, Job or host authority. The experimental surface and false
+full-document-conformance/authority flags remain unchanged.
+
 Root physical bounds, strict JSON, selection and canonical numeric domain precede
 ordered registration; root schema and semantic checks follow registration.
 Portable tests defer source acquisition to its phase and use shared raw
 registration directly. Duplicate media registrations count bytes once but may
-repeat base64 on the wire, so candidate agreement never widens the private
-24 MiB material JSON or 16 MiB MCP ceiling. No candidate result establishes
-current authority, permission, publication, review trust or independent agreement.
+repeat base64 on the wire; agreement never widens the private 24 MiB material
+JSON or 16 MiB MCP ceiling. No draft result establishes current authority,
+permission, publication, review trust, stable conformance or independent agreement.
 
 ## Artifact version arithmetic
 
@@ -153,7 +165,7 @@ claim — see [`CONFORMANCE.md`](../CONFORMANCE.md).
 - `internal/audit` composes and appends the opt-in evaluation records of ADR-0018: one JSON line per completed non-rehearsal evaluation (ADR-0028) — for a non-rehearsal graph evaluation, one per node and one for the composite (ADR-0041) — carrying the pack's identity and the digest of its exact bytes, the facts and evidence documents as they reached the engine, and the disposition as the canonical bytes the run produced rather than a re-serialization of them. It is reached only from a configuration that declared an audit directory, only after the evaluator has returned a result, and only from the three deciding surfaces — the test verbs run the same evaluator and record nothing, and a declared rehearsal records nothing either (ADR-0028). It evaluates nothing, changes no payload, and cannot influence a disposition; it does read a clock, which nothing on the payload path does. A record may carry `cites` (ADR-0033): the gateway receipts the caller said the decision relied on, in the gateway's own `{sessionId, callIndex, signature}` shape, held to that shape and otherwise recorded as given — the runtime verifies no receipt and reads no store. A record of `experimental evaluate` or the MCP `experimental_evaluate` tool may also carry `binding` (ADR-0050): a caller's `{kind, digest}` commitment to material of its own, held to that shape (`audit.ParseBinding`, which `audit.Verify` applies to a recorded one, reporting `binding-malformed`) and otherwise recorded as given — the runtime never interprets, verifies or recomputes it. The trail is chained unless the configuration says `chain: false` (ADR-0047 §1): each record carries `trail`, `sequence` and `previous`, the SHA-256 of the exact bytes of the line before it, assigned while the writer holds an exclusive lock on the trail file that `internal/fssecure` takes (`Root.AppendLocked`); nothing read from the trail is re-encoded. `audit.Verify` checks a trail by the same rules, over its exact bytes, from a snapshot whose size `fssecure.SizeBetweenWrites` reads under the lock, shared; `Writer.Repair` appends a discontinuity record after a torn last line and rewrites nothing; and the `jpack audit` commands in `internal/cli` drive them. The same reading lists the checkpoint of every chained record after a sequence, for a deliverer to hand to a holder, and holds a trail to the checkpoints a holder kept, reporting the records none covers as unwitnessed (ADR-0047 §2a); no hand-over is recorded or waited for. A writer given a signing key (`Writer.SignWith`, the key the project's `audit.signingKey` or `JPACK_SIGNING_KEY` names, loaded by `audit.LoadSigner`, which walks the key's path a directory at a time with each held open, refuses a symbolic link anywhere in it and the project's directory by identity, holds the key to its owner alone, and, when `audit.signingPublicKey` or `JPACK_SIGNING_PUBLIC_KEY` names the public key it is expected to have, refuses a seed whose public key is another; on a platform without unix ownership and modes, Windows among them, every key is refused) signs each chained record it appends in the `signatures.jsonl` sidecar beside the trail (ADR-0047 §2b): the signing runs in the step `fssecure.Root.AppendLockedThen` takes after the trail's write and syncs and before the lock is released, so the sidecar follows the trail line for line, and a signature that cannot be written leaves the record unsigned, never the decision failed. `Writer.Rotate` hands signing to a next key with a line the current key signs. `audit.Verify` reads the sidecar in step with the trail, a line at a time, when the verifier supplies public keys, from sizes `fssecure.SizesBetweenWrites` reads under the one shared lock. `jpack audit stamp` asks an RFC 3161 authority to stamp the current checkpoint's digest, through `internal/timestamp` (the request, the HTTP transport and the token's parsing and verification, on `encoding/asn1` and `crypto/x509` alone), and keeps the token with `Writer.RecordStamp` in `stamps.jsonl` under that file's own lock; nothing on the decision path reaches it (ADR-0047 §2a). `audit.Verify` checks those tokens against the verifier's roots before the trail is read, matches their checkpoints against it as it is read, and reports the lag between each covered record's `at` and its first stamp. None of them is an MCP tool.
 - `internal/lock` implements the reviewed-set lock (ADR-0019): a generated, deterministic sibling of `jpack.json` pinning the digest of the configuration's exact bytes and of every declared pack and graph — not a declared matrix or rows document, which no deciding surface applies. Its presence is the whole of the opt-in — no configVersion moves and the configuration schema does not name it, because a configuration that named its own lock could rename it. `packs lock` writes it, `packs verify` names every difference from it, and the three deciding surfaces hold the law one evaluation applies to it before evaluating — a declared rehearsal excepted (ADR-0028); the rehearsal verbs consult it never. It decides nothing about whether a change was right: an amendment and a tampering are the same act to a runtime, and it is not a wall against an editor that re-locks.
 - `internal/compare` evaluates one set of inputs, a matrix admitted under its own rules whose expectations play no part, or a `packs suggest` candidates document, under two versions of a pack through `internal/evaluation` unchanged, and reports the inputs whose §8.3 canonical dispositions, handoff targets or refusals differ (ADR-0045). It opens no project, so it records nothing and consults no lock, and a difference it reports is not an expectation.
-- `internal/policy` owns the experimental offline Policy prototype document and supplied-material checks of ADR-0059; it performs no evaluation or source acquisition.
+- `internal/policy` owns the experimental offline Policy prototype and official draft document and supplied-material checks of ADR-0059 and ADR-0061; it performs no evaluation or source acquisition.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.

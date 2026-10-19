@@ -1081,8 +1081,8 @@ are reported in-band. See ADR-0055.
 
 `jpack experimental policy` implements the **nonnormative** RFC 0023 prototype,
 exact version `0.0.2`, for `policy` and `governing-adoption` documents
-([ADR-0059](docs/adr/0059-experimental-offline-policy-tools.md)). RFC 0023 remains
-Draft. This is an experimental authoring aid; its results establish no approval,
+([ADR-0059](docs/adr/0059-experimental-offline-policy-tools.md)). This retained
+prototype is an experimental authoring aid; its results establish no approval,
 governing-adoption authority or standard conformance. Discover the exact scope,
 limits and pinned source revision with `experimental policy contract --format json`.
 No stable Policy format is selected by default.
@@ -1137,61 +1137,94 @@ The RFC, prototype schemas and synthetic fixtures are bundled from specification
 revision `8a56a95d555c17640d2db4984363b779536b3c2a`, with per-file digests and
 licensing provenance. They are never fetched at runtime.
 
-### Proposed draft Policy contract candidate
+### Official Policy draft selection
 
-The same experimental commands additionally support the **unadopted,
-proposed-draft** candidate `formatVersion: "1.0.0"`
-([ADR-0060](docs/adr/0060-explicit-policy-candidate-format.md)). It is a review
-candidate for RFC 0023, not a stable format, adopted standard or conformance
-class. Its artifacts are pinned separately to Spec commit
-`0852c5fa7726e51b36e574a5b110e7f5e012e03d` in
-[the candidate provenance manifest](internal/policy/candidate/provenance.json).
+The same experimental commands explicitly support the independently released
+Policy draft `formatVersion: "1.0.0"`
+([ADR-0061](docs/adr/0061-adopt-official-policy-draft-resources.md)). Resources are
+pinned to `policy-v1.0.0-draft.1`, Spec commit
+`0799b37b74e35c4a86bfbf70f7bee80bdb7bbe94`, in
+[the official provenance manifest](internal/policy/official/provenance.json).
+The full published archive is retained with exact source paths and per-file
+hashes, including the public HTTPS schemas, prose, complete 124-row corpus,
+examples, reference reader and its frozen dependencies. Runtime verifies that
+inventory before schema compilation and in the release gate; it fetches nothing.
+This is draft support through the existing experimental surface. Runtime's
+conformance claim remains solely in [CONFORMANCE.md](CONFORMANCE.md).
 
-Default `contract` output and all prototype reports keep their existing shape
-for strict clients. Explicit discovery returns a separate `registryVersion: "1"`
-report; selecting one contract returns that format's provenance and capabilities:
+Default `contract` output and all prototype reports keep their existing bytes
+and shape for strict clients. Explicit discovery returns a separate
+`registryVersion: "1"` report; selecting one contract returns that format's
+provenance and capabilities:
 
 ```bash
 jpack experimental policy contract --all-formats --format json
 jpack experimental policy contract --format-version 1.0.0 --format json
-jpack experimental policy init --kind policy --format-version 1.0.0 --id urn:example:candidate --version 7.3.42
+jpack experimental policy init --kind policy --format-version 1.0.0 --id urn:example:policy --version 7.3.42
 jpack experimental policy schema --kind governing-adoption --format-version 1.0.0
-jpack experimental policy check candidate-adoption.json --materials retained-materials.json --format json
+jpack experimental policy check adoption.json --materials retained-materials.json --format json
 ```
 
 `--all-formats` and contract `--format-version` are mutually exclusive. Documents
-with `formatVersion` select the candidate grammar explicitly; supported prototype
-inputs continue using their exact wrapper. An optional `--format-version 1.0.0`
-on canonicalize/digest/validate/check also selects candidate refusal handling for
-malformed or selector-less input. It does not insert a missing selector, rewrite
-an artifact or migrate bytes. Candidate Policies use `workspace-managed` or
-`externally-managed`; `desk-managed` is refused. Artifact `version` remains
-independent of the format selector. Candidate adoption requires retained
-candidate Policy bytes; prototype Policies cannot satisfy those references.
+with `formatVersion` select the draft grammar explicitly; supported prototype
+inputs continue using their exact wrapper. Optional `--format-version 1.0.0` on
+canonicalize/digest/validate/check also selects draft refusal handling for
+malformed or selector-less input. The document must still carry its exact
+selector. No tool inserts it, migrates bytes or changes a Job or approval.
+Draft Policies use `workspace-managed` or `externally-managed`; `desk-managed` is
+refused. Artifact `version` remains independent of the format selector. Draft
+adoptions require retained 1.0.0 Policy bytes; prototype Policies cannot satisfy
+those references.
 
-Candidate reports identify `formatVersion`, `proposed-draft` maturity, their
-exact source pin and `candidateCapabilities`. Only a full candidate `check`
-includes `candidateResult`, whose complete value is one of:
+Explicit 1.0.0 reports identify `profile: "jps-policy-companion"`,
+`profileVersion` and `formatVersion: "1.0.0"`, `maturity: "draft"`, the immutable
+source commit and its `spec/policy.md` URL. The existing `candidateCapabilities`
+member now contains the exact official draft capability artifact. Only a full
+`check` includes `candidateResult`, whose complete value is one of:
 
 ```json
-{"status":"valid","formatVersion":"1.0.0","maturity":"proposed-draft"}
+{"status":"valid","formatVersion":"1.0.0","maturity":"draft"}
 {"status":"refused","code":"invalid-selector"}
 ```
 
 The finite refusal codes and phase ordering are defined by the
-[pinned candidate contract](internal/policy/candidate/README.md#5-resource-limits-and-refusal-classifications).
+[pinned draft contract](internal/policy/official/spec/policy.md#5-resource-limits-and-refusal-classifications).
 Runtime retains exit 0 for success, 1 for invalid content and 2 for unsupported
-input; the nested result supplies the portable candidate classification.
-Environment failures are operational errors and provide no candidate result.
-Canonicalize/digest establish encoding and identity only; validate checks closed
-document forms and local references, with retained materials unchecked. Their
-reports omit `candidateResult`.
+input; the nested result supplies the portable classification. Environment
+failures supply no portable result. Canonicalize/digest establish encoding and
+identity only; validate checks document forms and local references and leaves
+retained materials unchecked. These narrower reports omit `candidateResult`.
+The scopes are `closed-draft-document-and-local-references` for validate and
+`draft-supplied-exact-bytes-anchors-and-scoped-core-references` for check.
+`experimental` stays true and `fullDocumentConformance`, approval, execution,
+live-authority and network-acquisition capabilities stay false. Full Core
+semantics and evaluation remain outside these checks.
 
-The Go harness compares all 124 exact portable result objects, acquiring vector
-sources lazily and preserving raw Pack numbers and every retained-byte identity.
-It uses the shared registration/checking engine directly: valid distinct-byte
-bundles can exceed the private 24 MiB JSON/base64 carrier or MCP's 16 MiB request
-limit, especially when identical bytes are registered under multiple media
-types. Those transport ceilings are unchanged. Agreement with these vectors
-supplies no independently authored implementation evidence, approval, current
-authority or permission.
+**Migration from Runtime v0.36.0:** explicit 1.0.0 report metadata changes from
+`proposed-draft` to `draft`, with a new source pin, URL, capability exclusions and
+scope strings. Strict report consumers must deliberately update their Runtime
+and Spec pins and expected metadata. The report member names, output/contract
+versions, refusal codes and exact Policy/adoption grammar remain unchanged.
+Candidate reports retained from the old Runtime keep their original source and
+maturity; they are historical evidence, never relabeled. The old
+[candidate vendor tree](internal/policy/candidate/provenance.json) and prototype
+bytes remain frozen. Promotion changes no Policy/adoption, Pack, source,
+narrative or review-basis bytes. Prototype migration requires the separate
+[explicit migration](internal/policy/official/conformance/policy/1.0.0/MIGRATION.md),
+new immutable identities and dependent review; nothing migrates implicitly.
+
+Draft schema reports return self-contained Runtime editing copies with a new
+release-specific URN `$id`; `resource.sourceId` names the original immutable
+`https://judgmentpack.org/schema/policy/1.0.0/{kind}.schema.json` resource. The
+editing copy is not served under the upstream ID. Raw upstream resource bytes
+and hashes remain in the official vendor tree.
+
+The Go harness compares all 124 official portable result objects, acquiring
+vector sources lazily and preserving raw Pack numbers and retained-byte
+identities. The unchanged reference reader runs against the same retained
+archive. Portable tests use the shared raw registration/checking engine:
+distinct-byte bundles can exceed the private 24 MiB JSON/base64 carrier or MCP's
+16 MiB request limit, especially with repeated bytes under multiple media types.
+These ceilings remain unchanged. Agreement is same-vendor implementation
+evidence and establishes no stable maturity, independently authored
+interoperability, approval, current authority or permission.

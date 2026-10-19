@@ -1,5 +1,6 @@
 // Package policy supplies bounded offline tools for the explicitly non-normative
-// RFC 0023 prototype and proposed-draft candidate. It is not a policy authority or an evaluator.
+// RFC 0023 prototype and the independently released Policy draft. It is not a
+// policy authority or an evaluator.
 package policy
 
 import (
@@ -69,6 +70,7 @@ type Resource struct {
 	Name      string `json:"name"`
 	MediaType string `json:"mediaType"`
 	Text      string `json:"text"`
+	SourceID  string `json:"sourceId,omitempty"`
 }
 
 type MaterialRequirement struct {
