@@ -928,6 +928,13 @@ env GO111MODULE=on go test ./...
 env GO111MODULE=on CGO_ENABLED=0 go build -trimpath ./cmd/jpack
 ```
 
+`scripts/dev/check.sh` runs every check CI runs, in order, and prints one summary block of passes,
+failures and skips; `--setup` runs the install steps first and `--only NAME` re-runs one check. The
+checks are listed in [`dev.json`](dev.json), the manifest of the Judgment Pack development kit
+(v0.1.0), whose runner is vendored here unchanged. `AGENTS.md` and `CLAUDE.md` carry the same
+instructions for agent sessions, shared rules first and this repository's own after them; CI checks
+that the two are identical (`scripts/sync-agent-docs.sh` writes `CLAUDE.md` from `AGENTS.md`).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md), [docs/architecture.md](docs/architecture.md), and the
 [maintainer release runbook](docs/releasing.md).
 

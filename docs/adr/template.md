@@ -1,7 +1,7 @@
 ---
 status: proposed # proposed | accepted | deprecated | superseded by NNNN
 date: YYYY-MM-DD
-deciders: 
+deciders:
 ---
 
 # {short title naming the problem and the chosen solution}

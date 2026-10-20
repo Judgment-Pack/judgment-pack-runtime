@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "toolchains": {
+    "go": {},
+    "python": {"version": "3.12", "venv": ".venv"}
+  },
+  "setup": [
+    {"name": "python-deps", "run": "python3 -m pip install --disable-pip-version-check -q jsonschema==4.23.0", "toolchain": "python", "timeout": 600}
+  ],
+  "checks": [
+    {"name": "local-paths", "run": "if git grep -nE '(^|[^A-Za-z0-9_])/(home|tmp)/[A-Za-z0-9_.-]+' -- ':!*.png' ':!*.jpg' ':!internal/policy/testdata/candidate-uri-cases.json'; then echo 'a machine-local path is in tracked text'; exit 1; fi", "toolchain": "shell"},
+    {"name": "agent-docs", "run": "scripts/sync-agent-docs.sh --check .", "toolchain": "shell", "summary": "^sync-agent-docs:"},
+    {"name": "diff-check", "run": "git diff --check \"$(git hash-object -t tree /dev/null)\"", "toolchain": "shell"},
+    {"name": "go-fmt", "run": "unformatted=$(gofmt -l $(go list -f '{{.Dir}}' ./...)); if [ -n \"$unformatted\" ]; then echo 'not gofmt-formatted:'; echo \"$unformatted\"; exit 1; fi", "toolchain": "go", "timeout": 600},
+    {"name": "go-vet", "run": "go vet ./...", "toolchain": "go", "timeout": 3000},
+    {"name": "go-test", "run": "go test ./...", "toolchain": "go",
+     "summary": "^(ok|FAIL|---) ", "timeout": 3000},
+    {"name": "conformance", "run": "go run ./cmd/jpack spec test-conformance --quiet", "toolchain": "go", "timeout": 1200},
+    {"name": "build", "run": "CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/jpack", "toolchain": "go", "timeout": 1200},
+    {"name": "registry-template", "run": "python3 scripts/check-registry-template.py", "toolchain": "python",
+     "summary": "^registry template:", "timeout": 300}
+  ]
+}
