@@ -41,3 +41,6 @@
 
 .vscode/*
 !.vscode/tasks.json
+
+# Python virtual environment of the development kit (dev.json).
+/.venv/

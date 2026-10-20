@@ -48,6 +48,10 @@ can pick it up. You're welcome to take it back while it's still open.
 
 ## Before opening a pull request
 
+`scripts/dev/check.sh` runs every check CI runs, from the list in `dev.json` (`--setup` installs
+the Python dependency of one check first); run it once and paste its summary block in the pull
+request body. The commands below are its Go steps:
+
 ```bash
 env GO111MODULE=on go fmt ./...
 env GO111MODULE=on go vet ./...

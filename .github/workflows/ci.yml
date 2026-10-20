@@ -1,5 +1,10 @@
 name: CI
 
+# The check list is dev.json, run by scripts/dev/check.sh (the development kit's vendored runner).
+# `check` sets the toolchains up from the manifest and runs every step. `test` is the operating
+# system and Go version matrix: its job names are required by branch protection, and its legs run
+# the Go steps of dev.json natively on each platform.
+
 on:
   pull_request:
   push:
@@ -49,37 +54,29 @@ jobs:
         env:
           CGO_ENABLED: "0"
 
-  registry-template:
-    name: MCP registry server.json template
+  check:
+    name: check
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Validate rendered template against the vendored schema
-        shell: bash
-        # The schema copy is the one the release workflow's pinned mcp-publisher
-        # enforces; bump both together (ADR-0013).
-        run: |
-          pip3 install --quiet jsonschema==4.23.0
-          sed 's/__VERSION__/9.9.9-rc.1/g' build/mcp-registry/server.json.tmpl > /tmp/server.json
-          python3 - <<'EOF'
-          import json, jsonschema, sys
-          schema = json.load(open('build/mcp-registry/server.schema-2025-12-11.json'))
-          doc = json.load(open('/tmp/server.json'))
-          errors = [
-              '/'.join(map(str, e.path)) + ' - ' + e.message
-              for e in jsonschema.Draft202012Validator(schema).iter_errors(doc)
-          ]
-          # Server-side rules the registry enforces beyond its schema, learned
-          # from live rejections (v0.5.0-rc.1): an OCI package carries its
-          # version in the identifier tag and must not have a version member.
-          for i, package in enumerate(doc.get('packages', [])):
-              if package.get('registryType') == 'oci':
-                  if 'version' in package:
-                      errors.append(f'packages/{i} - OCI packages must not have a version member')
-                  if ':' not in package.get('identifier', ''):
-                      errors.append(f'packages/{i} - OCI identifier must carry the version as its tag')
-          for e in errors:
-              print('INVALID:', e, file=sys.stderr)
-          sys.exit(1 if errors else 0)
-          EOF
+        with:
+          persist-credentials: false
+      # First, so that a manifest that does not parse fails before the long steps start.
+      - name: The manifest parses and its first step runs
+        run: scripts/dev/check.sh --manifest dev.json --only local-paths
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: true
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Setup steps
+        run: scripts/dev/check.sh --setup
+      # Includes the MCP registry server.json template check (scripts/check-registry-template.py).
+      - name: Checks
+        run: scripts/dev/check.sh --all
