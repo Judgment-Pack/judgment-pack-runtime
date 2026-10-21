@@ -19,5 +19,9 @@
     {"name": "build", "run": "CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/jpack", "toolchain": "go", "timeout": 1200},
     {"name": "registry-template", "run": "python3 scripts/check-registry-template.py", "toolchain": "python",
      "summary": "^registry template:", "timeout": 300}
-  ]
+  ],
+  "handover": {
+    "boundary_paths": ["internal/evaluation", "internal/policy", "internal/validation", "internal/mcp"],
+    "shared_paths": ["internal/conformance", "docs/adr"]
+  }
 }
