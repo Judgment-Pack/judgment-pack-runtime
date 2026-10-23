@@ -102,7 +102,24 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 	// The aggregate handoff-target budget is one counter for the whole run, not
 	// one per pack: what it bounds is what the report retains, and a report is
 	// one document however many packs contributed to it (ADR-0025).
+	// Negotiate every participating pack before any matrix acquisition or row.
+	// Like graph preflight, this retains no pack buffers; each execution read
+	// must still agree with the selected contract. Packs without matrices skip.
 	run := &matrixRun{}
+	for _, packID := range selected {
+		entry := p.Config.Packs[packID]
+		if entry.Matrix == "" {
+			continue
+		}
+		pack, err := p.ReadPack(entry)
+		if err != nil {
+			// Existing per-pack mismatch behavior handles unreadable packs.
+			continue
+		}
+		if _, failure := run.selectPackContract(pack); failure != nil {
+			return result.PackTest{}, failure
+		}
+	}
 	for _, packID := range selected {
 		entry, failure := p.testPack(evaluator, packID, p.Config.Packs[packID], command, run)
 		if failure != nil {
@@ -136,6 +153,23 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 	return output, nil
 }
 
+// selectPackContract checks only root declarations, never a matrix or row.
+// Malformed legacy packs retain their existing per-row or per-pack refusals.
+func (run *matrixRun) selectPackContract(pack []byte) (result.EvaluatorContract, *Failure) {
+	contract, selectionFailure := evaluation.SelectContract(pack)
+	if selectionFailure != nil {
+		if selectionFailure.Code == "profile-unsupported" {
+			return contract, &Failure{Code: selectionFailure.Code, Profile: selectionFailure.Profile, ExitCode: selectionFailure.ExitCode}
+		}
+		return contract, nil
+	}
+	if run.contract.SpecVersion != "" && run.contract.Version() != contract.Version() {
+		return contract, &Failure{Code: "JPS-MATRIX-MIXED-CONTRACT", Message: "A test run requires one exact evaluator contract; select packs of one Core version.", ExitCode: result.ExitUnsupported}
+	}
+	run.contract = contract
+	return contract, nil
+}
+
 // testPack runs one pack's matrix. Anything that stops the run before a row can
 // be judged — an unreadable pack, an unreadable or malformed matrix — is a
 // mismatch for that pack and not a silent skip: a matrix that will not load has
@@ -158,7 +192,19 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		report.Detail = "The entry declares no matrix, so no row ran for this pack."
 		return report, nil
 	}
-	found, pack, err := p.readIdentity(entry)
+	pack, err := p.ReadPack(entry)
+	var contract result.EvaluatorContract
+	if err == nil {
+		var failure *Failure
+		contract, failure = run.selectPackContract(pack)
+		if failure != nil {
+			return report, failure
+		}
+	}
+	var found identity
+	if err == nil {
+		found, err = identityFrom(pack)
+	}
 	if err != nil {
 		// A pack that cannot be read or decoded runs no row, and reporting that as a
 		// skip would let a broken pack pass a CI gate. Every row would be refused in
@@ -174,28 +220,16 @@ func (p *Project) testPack(evaluator *evaluation.Engine, id string, entry Pack, 
 		report.Detail = display.Sanitize(err.Error())
 		return report, nil
 	}
-	return p.testLoadedPack(evaluator, id, report, pack, matrix, command, run)
+	return p.testLoadedPack(evaluator, id, report, pack, matrix, command, run, contract)
 }
 
-func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report result.PackTestEntry, pack []byte, matrix Matrix, command string, run *matrixRun) (result.PackTestEntry, *Failure) {
+func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report result.PackTestEntry, pack []byte, matrix Matrix, command string, run *matrixRun, contract result.EvaluatorContract) (result.PackTestEntry, *Failure) {
 	// The origins the rows declare are counted before any of them runs, because
 	// the count is about the row documents and not about what running them
 	// produced. It moves no status: the member that decides a row is its
 	// expectation, and an expectation is authored whatever supplied the facts
 	// (ADR-0024).
 	report.Origins = MatrixOrigins(matrix)
-	contract, selectionFailure := evaluation.SelectContract(pack)
-	if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
-		return report, &Failure{Code: selectionFailure.Code, Profile: selectionFailure.Profile, ExitCode: selectionFailure.ExitCode}
-	}
-	// Malformed legacy inputs continue through the row comparator so authored
-	// expected error classes retain their previous meaning.
-	if selectionFailure == nil {
-		if run.contract.SpecVersion != "" && run.contract.Version() != contract.Version() {
-			return report, &Failure{Code: "JPS-MATRIX-MIXED-CONTRACT", Message: "A test run requires one exact evaluator contract; select packs of one Core version.", ExitCode: result.ExitUnsupported}
-		}
-		run.contract = contract
-	}
 	matrix.DispositionContract = contract
 	admitted := evaluator.AdmitPack(pack)
 	// The pack's declared escalation target is rendered here, once, before any
@@ -345,6 +379,11 @@ func admitsForSomeRowWith(admitted *evaluation.AdmittedPack, matrix Matrix, cont
 // TestSnapshot runs exact supplied bytes without file reads, registration or audit writes.
 // It shares matrix admission, canonical comparisons, target budgets and coverage with Project.Test.
 func TestSnapshot(evaluator *evaluation.Engine, pack, cases []byte, command string) (result.PackTest, error) {
+	run := &matrixRun{}
+	contract, failure := run.selectPackContract(pack)
+	if failure != nil {
+		return result.PackTest{}, failure
+	}
 	found, err := identityFrom(pack)
 	if err != nil {
 		return result.PackTest{}, err
@@ -354,8 +393,7 @@ func TestSnapshot(evaluator *evaluation.Engine, pack, cases []byte, command stri
 		return result.PackTest{}, err
 	}
 	p := &Project{}
-	run := &matrixRun{}
-	report, failure := p.testLoadedPack(evaluator, found.ID, result.PackTestEntry{ID: found.ID, PackID: found.ID, PackVersion: found.Version, Status: "passed", Rows: []result.EvaluationCorpusCase{}}, pack, matrix, command, run)
+	report, failure := p.testLoadedPack(evaluator, found.ID, result.PackTestEntry{ID: found.ID, PackID: found.ID, PackVersion: found.Version, Status: "passed", Rows: []result.EvaluationCorpusCase{}}, pack, matrix, command, run, contract)
 	if failure != nil {
 		return result.PackTest{}, failure
 	}

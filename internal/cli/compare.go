@@ -63,6 +63,12 @@ func (a *App) compareCommand() *cobra.Command {
 					name := [2]string{"old pack", "new pack"}[index]
 					return a.operational(commandName, format, result.ExitIO, "JPS-INPUT-READ", fmt.Sprintf("The %s could not be read as one bounded regular file.", name))
 				}
+				if !oversized {
+					_, failure := evaluation.SelectContract(pack)
+					if failure != nil && failure.Code == "profile-unsupported" {
+						return a.evaluationFailure(commandName, format, failure)
+					}
+				}
 				sides[index] = compare.Side{Path: path, Pack: pack, Oversized: oversized}
 			}
 			data, err := a.readPack(inputsPath, project.MaxMatrixBytes)

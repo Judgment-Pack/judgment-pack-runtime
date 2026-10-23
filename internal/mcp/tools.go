@@ -1139,6 +1139,17 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 			oversized = append(oversized, "pack")
 		}
 	}
+	// Negotiate the complete bounded pack before acquiring other documents or consulting law.
+	contract := result.LegacyEvaluatorContract()
+	if !slices.Contains(oversized, "pack") {
+		selected, selectionFailure := evaluation.SelectContract([]byte(pack))
+		if selectionFailure != nil && selectionFailure.Code != "JPS-EVALUATION-PACK-SPEC-VERSION" {
+			return evaluationToolError(evaluateCommand, selectionFailure)
+		}
+		if selectionFailure == nil {
+			contract = selected
+		}
+	}
 	// The reviewed set is consulted on the bytes this call is about to
 	// evaluate, never on a second read of the path they came from (ADR-0019),
 	// exactly as on the CLI. A pack named by decision id is declared law and is
@@ -1196,16 +1207,6 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	}
 	auditWriter.UnderLaw(reviewed, set.Provenance())
 	evaluator := evaluation.NewEngine(s.engine)
-	contract := result.LegacyEvaluatorContract()
-	if !slices.Contains(oversized, "pack") {
-		selected, selectionFailure := evaluation.SelectContract([]byte(pack))
-		if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
-			return evaluationToolError(evaluateCommand, selectionFailure)
-		}
-		if selectionFailure == nil {
-			contract = selected
-		}
-	}
 	output, failure := evaluator.EvaluateWith([]byte(pack), []byte(facts), []byte(evidence), evaluation.Options{
 		SpecVersion:         contract.Version(),
 		Command:             evaluateCommand,
@@ -1400,6 +1401,11 @@ func (s *Server) toolExperimentalTestCases(raw json.RawMessage) any {
 	}
 	if err := json.Unmarshal(raw, &args); err != nil || args.Pack == "" || args.Matrix == "" {
 		return toolError("Supply nonempty pack and matrix JSON text.")
+	}
+	if len(args.Pack) <= int(carrier.HardMaxBytes) {
+		if _, failure := evaluation.SelectContract([]byte(args.Pack)); failure != nil && failure.Code != "JPS-EVALUATION-PACK-SPEC-VERSION" {
+			return evaluationToolError("mcp experimental_test_cases", failure)
+		}
 	}
 	if len(args.Pack) > int(carrier.HardMaxBytes) || int64(len(args.Matrix)) > project.MaxMatrixBytes {
 		return toolError("The supplied test inputs exceed the runtime input bound.")

@@ -349,6 +349,17 @@ func (a *App) evaluateCommand() *cobra.Command {
 			if packOversized {
 				oversized = append(oversized, "pack")
 			}
+			// Negotiate the complete bounded pack before acquiring other documents or consulting law.
+			contract := result.LegacyEvaluatorContract()
+			if !packOversized && !(quantifiers && outcomeValues) {
+				selected, selectionFailure := evaluation.SelectContract(pack)
+				if selectionFailure != nil && selectionFailure.Code != "JPS-EVALUATION-PACK-SPEC-VERSION" {
+					return a.evaluationFailure("experimental evaluate", format, selectionFailure)
+				}
+				if selectionFailure == nil {
+					contract = selected
+				}
+			}
 			facts, factsOversized, err := a.readEvaluationInput(factsPath)
 			if err != nil {
 				return a.evaluateReadFailure(format, "facts")
@@ -407,16 +418,6 @@ func (a *App) evaluateCommand() *cobra.Command {
 			}
 			auditWriter.UnderLaw(reviewed, set.Provenance())
 			evaluator := evaluation.NewEngine(a.engine)
-			contract := result.LegacyEvaluatorContract()
-			if !packOversized && !(quantifiers && outcomeValues) {
-				selected, selectionFailure := evaluation.SelectContract(pack)
-				if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
-					return a.evaluationFailure("experimental evaluate", format, selectionFailure)
-				}
-				if selectionFailure == nil {
-					contract = selected
-				}
-			}
 			output, failure := evaluator.EvaluateWith(pack, facts, evidence, evaluation.Options{
 				SpecVersion:          contract.Version(),
 				Command:              "experimental evaluate",
