@@ -1313,8 +1313,11 @@ stamps as exact bounded base64 chunks, with structured members and raw-line
 digests for advisory lines up to 64 KiB. `experimental_list_audit_history`
 selects definition history on the server using Desk's exact 4 MiB window,
 typed Unicode decoding and pagination rules, transporting one JSON answer in
-bounded chunks without client JSONL parsing. Its 64 MiB source budget remains
-explicit. `experimental_verify_audit` uses the CLI's
+bounded chunks without client JSONL parsing. History accepts sources up to
+9007199254740990 bytes while retaining the 4 MiB read/recheck window
+([ADR-0069](docs/adr/0069-bound-history-reads-by-window.md)). Raw exports and
+configured verification retain their 64 MiB source limits.
+`experimental_verify_audit` uses the CLI's
 verifier, with supplied checkpoint expectations and optional supplied exact
 trail bytes. All require the server's configured project; none accepts
 a host file path, writes, repairs, manages keys or fetches timestamps. Exports

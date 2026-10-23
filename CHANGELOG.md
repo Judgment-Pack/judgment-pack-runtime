@@ -4,54 +4,118 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- Allow experimental configured definition history above 64 MiB, up to the exact
-  JSON integer source/address ceiling of 9007199254740990 bytes. Keep the 4 MiB
-  read/recheck window and existing projection, transport and session budgets.
-  Raw export and configured verification retain their 64 MiB limits; larger
-  verification inputs remain separate #308 work (ADR-0069).
+Runtime's conformance claim is stated, in full and only, in
+[CONFORMANCE.md](CONFORMANCE.md).
 
-- Add recommended Core `0.3.0` `JPS-RULES-OVERLAP` warnings to semantic CLI/MCP
-  validation, with exact region or witness, rule identities and exclusive rewrites
-  (ADR-0066, #304). Plain validation remains valid; strict conformance runs reject
-  exact overlap while preserving normative document status. Cross-path uncertainty
-  stays a warning. Check the frozen optional expectations with explicit advisory
-  coverage, bounded reasoning and complete-diagnostic output limits.
-  Generated full-pack replacements and witnesses are checked against configured
-  carrier limits before publication; pointer-derived witness storage is bounded
-  before allocation. `rewriteUnavailable` identifies replacements that cannot be
-  supplied within the limits, and unsupported witnesses do not establish exactness.
+## 0.38.0 - 2026-10-23
 
-- Retain every actual contributing rule or forcing exception in optional
-  `contributors` metadata on evaluation JSON, graph nodes and audit evaluation
-  records (ADR-0067). Sort exact typed IDs canonically; omit the member for
-  fallback and non-outcome results. Dispositions, resolution and trace order
-  retain their existing contracts. Historical audit bytes remain unchanged.
-- Prepare explicit Core `0.3.0` base-profile validation and evaluation from immutable
-  Spec commit `65c7cf5598a0f0fc532c80a9e2215090951104ce` (ADR-0063). Preserve legacy
-  defaults and bundle bytes. Discovery separates document versions from exact evaluator
-  contracts and scopes `supportedProfiles` to Core `0.3.0`.
-- Preserve route presence, declaration order, duplicate targets and exact names in
-  portable dispositions. Select pack-aware contracts from exact pack declarations;
-  standalone authoring uses explicit `spec_version`, defaulting to `0.2.0-draft`.
-  Matrix carriers stay at versions `1`–`3`; mixed-version compositions refuse.
-- Resolve conformance-manifest references only against pinned offline resources.
-  Optional rule-overlap assertions are checked separately from normative rows.
-  Conformance posture,
-  evidence and the outstanding URI grammar limitation are recorded solely in
-  [CONFORMANCE.md](CONFORMANCE.md).
+This Runtime minor release collects the changes since `v0.37.0`. Runtime
+`0.38.0`, Spec Core `0.3.0`, and the unreleased Draft RFC 0027/0028 proposals are
+separate versions and contracts. Runtime's conformance claim and its exact scope
+remain stated, in full and only, in [CONFORMANCE.md](CONFORMANCE.md). Explicit
+Core `0.3.0` implementation support adds no evaluator-conformance claim for it.
 
-- Correct ordinary Core `format: "uri"` across all supported document versions,
-  CLI/MCP and evaluator admission (#297, ADR-0064), resolving the URI limitation
-  noted above. Raw brackets in paths,
+- Add explicit Core `0.3.0` base-profile validation and evaluation from immutable
+  Spec commit `65c7cf5598a0f0fc532c80a9e2215090951104ce` (#311, ADR-0063).
+  That pin is not a published Core release tag. Discovery separates document
+  versions from exact evaluator contracts and scopes `supportedProfiles` to
+  Core `0.3.0`; `extended` is refused as `profile-unsupported`.
+  Pack-aware operations select the exact pack contract; standalone authoring
+  accepts explicit `spec_version` and retains the `0.2.0-draft` default.
+  Routed handoffs preserve route presence, declaration order, duplicate targets
+  and exact names. Matrix carriers stay at versions `1`–`3`; mixed-version
+  project walks, compositions and comparisons refuse. Singular target assertions
+  do not select a first route from routed results. New-contract matrix and graph
+  reports have bounded whole-report refusal rather than truncated dispositions.
+- Resolve conformance-manifest references only against registered pinned offline
+  resources. Check optional advisory assertions separately from normative rows;
+  unsupported or empty-check suites cannot silently succeed without a check.
+- Correct ordinary Core `format: "uri"` across supported document versions,
+  CLI/MCP and evaluator admission (#297/#312, ADR-0064). Raw brackets in paths,
   queries and fragments are refused; percent-encoded reg-names and IPvFuture
   (`v` or `V`) are accepted under complete ASCII RFC 3986 component grammar.
-  Generic port syntax, exact source bytes and finite URI diagnostics are preserved.
-  Official Policy shares the corrected parser; prototype Policy `0.0.2` and its
-  retained consumers explicitly preserve their historical assertion. This acceptance
-  change requires a minor release: update Runtime pins deliberately and revalidate
-  original bytes. No artifact IDs, records, canonical identities or jobs migrate.
-  Embedded artifact pins and bytes remain unchanged. Required review and platform
-  CI remain merge gates; this correction adds no Core `0.3.0` evaluator claim.
+  Generic port syntax and exact source bytes are preserved. Official Policy
+  shares the corrected parser; prototype Policy `0.0.2` and retained consumers
+  preserve their historical assertion. Revalidate original bytes when updating
+  Runtime pins: this deliberately changes acceptance. No artifact identity,
+  historical record, canonical identity or Job is migrated.
+- Add recommended Core `0.3.0` `JPS-RULES-OVERLAP` advice to semantic CLI/MCP
+  validation (#304/#315, ADR-0066), with bounded exact regions or witnesses, rule
+  identities and exclusive rewrites. Plain validation remains valid; strict
+  conformance runs reject exact overlap while preserving normative document
+  status. Cross-path uncertainty stays a warning. Optional frozen advisory
+  expectations have explicit coverage and bounded complete-diagnostic output.
+  Witnesses and full-pack replacements obey carrier limits;
+  `rewriteUnavailable` identifies replacements that cannot be supplied within
+  those limits, and unsupported witnesses do not establish exactness.
+- Add `experimental_check_fact_types` and optional exact `pack` text to
+  `experimental_validate_test_matrix` (#310, ADR-0062). Bounded static comparison
+  advice identifies pointers, operators and JSON types without copying fact
+  values, evaluating outcomes or requiring expectations. Matrix-only calls retain
+  their existing shape; unavailable checks are explicit and do not reject rows.
+- Add CLI `experimental analyze-pack PACK --domain DOMAIN` and MCP
+  `experimental_analyze_pack` (#314/#318, ADR-0068). These read-only rehearsals
+  evaluate actual Core `0.3.0` base inputs for optional Draft RFC 0027 agreement,
+  redundancy, coverage, reachability, exception and unknown-blocking advice.
+  Exact pack/domain digests bind the supplied bytes; universal findings cover
+  only the declared finite domain. Domains contain 1–64 complete facts/evidence
+  inputs; domain and report each have a 1 MiB ceiling. Analyzer limits include
+  256 rules, 256 exceptions, 256-character source IDs, 100000 work units and 256
+  finding slots; evaluator work has a separate limit. Incomplete reports say
+  `complete:false` and exit 0; unavailable analysis returns no report and exits 1.
+  JSON stays compact even with `--pretty`. Reports authorize no rule deletion,
+  write no audit record and introduce no strict-validation or publication gate.
+  The Draft report contract is not adoption of RFC 0027 or a later Core version.
+- Retain every actual contributing rule or compatible forcing exception in
+  optional `contributors: [{kind, id}]` metadata on evaluation JSON, graph nodes
+  and audit evaluation records (#305/#316, ADR-0067), aligned with the unreleased
+  Draft RFC 0028 proposal. Sort exact typed IDs canonically; omit the member for
+  fallback and non-outcome results. Dispositions, resolution and trace order
+  retain their contracts. Historical audit bytes are unchanged; absence on an
+  older record means unavailable attribution. Graph headlines and composite
+  records supply no aggregate attribution. Added bytes count toward existing
+  report limits, so near-limit graph reports can refuse earlier. Workflow
+  consumers must enforce their own envelope limits; this does not implement
+  workflow execution version 3 or adopt RFC 0028.
+- Add experimental MCP `experimental_list_audit`,
+  `experimental_list_audit_history` and `experimental_verify_audit` (#308/#313,
+  ADR-0065). Raw exports preserve exact evaluations/signatures/stamps bytes and
+  structured history lines across pages. Intermediate pages are provisional;
+  fixed-prefix completion excludes appends and refuses replacement, truncation
+  or mutation. Server-selected definition history provides newest-first 50-record
+  selection with typed Unicode and unread/next semantics, transporting a bounded
+  JSON projection without client JSONL parsing. Verification uses the CLI verifier
+  and checkpoint parser, with supplied `expect`, `require_checkpoint_through` and
+  exact `trail_base64`. Configured-project authority remains required; no caller
+  host paths, repair, writes, keys or network verification inputs are exposed.
+  CLI commands and audit formats remain unchanged.
+- Allow configured definition history above 64 MiB, up to the exact JSON integer
+  source/address ceiling of 9007199254740990 bytes (#324, ADR-0069). Keep the 4 MiB
+  backward read/recheck window, bounded projection, transport and shared session
+  budgets. Completion transports that captured projection, not all source records;
+  window rechecks do not promise an atomic snapshot against arbitrary writers.
+  Raw export and configured verification retain 64 MiB source limits; supplied
+  verification trails and expectations remain capped at 8 MiB and 1 MiB.
+  Larger export/verification and staged-input contracts remain separate #308 work.
+- Add a reproducible synthetic bulk-evaluation benchmark (#317), with handwritten
+  outcome oracles, exact fixture hashes and machine/toolchain metadata. This is
+  developer measurement, with no bulk Runtime API or performance guarantee.
+  Expand authored regression coverage for URI refusal/escape handling, corpus
+  path/provenance refusals, Unicode sanitization, decimal grammar/comparison
+  boundaries and configured MCP admission (#319–#323).
+
+Compatibility: additive evaluation metadata keeps machine-output and audit record
+versions unchanged; consumers must tolerate unknown output members. Legacy
+bundles/defaults and historical audit bytes remain. Core `0.3.0` clients must
+select its contract deliberately and handle routed handoffs and bounded report
+refusals. The URI acceptance correction requires deliberate Runtime pin updates
+and revalidation. Go 1.24 remains the source floor; the existing Linux/macOS/Windows
+amd64/arm64 release targets are unchanged.
+
+Release preparation: final merged-source CI, required reviews, release provenance
+checks, tagged platform archives, checksums, attestations, native smoke and
+publication checks remain release gates. This entry does not assert that those
+gates have completed or that an immutable release has been published.
 
 ## 0.37.0 - 2026-10-19
 
@@ -2451,21 +2515,3 @@ preparation does not establish them.
   Unreleased. `LICENSE` is deliberately left byte-identical to the canonical Apache-2.0 text: its
   appendix is a template for marking your own files, not a field to fill, and editing it costs a
   clean Apache-2.0 match on automated license scanners. The copyright holder is named in `NOTICE`.)
-
-### Unreleased addition — experimental audit wire tools (#308)
-
-- Add `experimental_list_audit` for byte-exact bounded downloads of all three
-  configured audit files and structured history lines across page boundaries.
-  Fixed-prefix exports exclude appends and refuse replacement, truncation and
-  mutation before completion, with explicit file/page/record/session limits.
-- Add `experimental_verify_audit` using the unchanged CLI verifier and checkpoint
-  parser, with bounded supplied `expect`, `require_checkpoint_through` and exact
-  `trail_base64` input. Configured-project authority remains required; no caller
-  host paths, repair, writes, keys or network verification inputs are exposed.
-  The CLI and existing audit formats remain unchanged (ADR-0065).
-
-- Add `experimental_list_audit_history` for exact server-side Desk history
-  selection within the 64 MiB source/4 MiB window budgets, including typed
-  Unicode behavior, newest-first 50 records and unread/next semantics. Chunk one
-  bounded JSON projection through the existing response ceiling and shared
-  export capacity; clients need no retained JSONL parsing (ADR-0065).
