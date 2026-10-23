@@ -744,54 +744,136 @@ func TestVerifyingWhileWritersAppendSeesOnlyWholeWrites(t *testing.T) {
 	}
 	defer opened.Close()
 	writeRecords(t, opened, `{}`)
-	var group sync.WaitGroup
+	const writers, rounds = 3, 40
+	const maxTrailBytes = 2 << 20
+	type batch struct {
+		start <-chan struct{}
+		graph bool
+	}
+	jobs := make(chan batch)
+	results := make(chan error, writers)
 	stop := make(chan struct{})
-	failures := make(chan error, 64)
-	for range 3 {
+	var group sync.WaitGroup
+	// Even Fatal must stop and join every writer before closing the root.
+	// At most one round's results can remain, and the buffer holds them all.
+	defer func() {
+		close(stop)
+		group.Wait()
+		close(jobs)
+		close(results)
+	}()
+	for range writers {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			for index := 0; ; index++ {
+			for {
 				select {
 				case <-stop:
 					return
-				default:
+				case job := <-jobs:
+					select {
+					case <-stop:
+						return
+					case <-job.start:
+					}
+					results <- appendBatch(opened, job.graph)
 				}
-				failures <- appendBatch(opened, index%2 == 1)
 			}
 		}()
 	}
-	go func() {
-		for err := range failures {
-			if err != nil {
-				t.Error(err)
-			}
+	startBatches := func(graph bool) {
+		start := make(chan struct{})
+		for range writers {
+			jobs <- batch{start: start, graph: graph}
 		}
-	}()
-	previous := int64(0)
-	for range 40 {
-		file, err := os.Open(filepath.Join(root, "audit", FileName))
-		if err != nil {
-			t.Fatal(err)
-		}
-		size, locked, err := fssecure.SizeBetweenWrites(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		report, err := Verify(file, size, Options{})
-		chain := report.Chain
-		file.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if locked && (chain.Status != "valid" || chain.Lines < previous) {
-			t.Fatalf("a snapshot between writes verifies: %v", findingNames(chain))
-		}
-		previous = chain.Lines
+		// The unbuffered sends put one job at each writer's barrier before
+		// any can append or consume another job. Release all three together.
+		close(start)
 	}
-	close(stop)
-	group.Wait()
-	close(failures)
+	previous := int64(0)
+	allLocked := true
+	for round := range rounds {
+		func() {
+			file, err := os.Open(filepath.Join(root, "audit", FileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			startBatches(round%2 == 1)
+			size, locked, err := fssecure.SizeBetweenWrites(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			allLocked = allLocked && locked
+			for range writers {
+				if err := <-results; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if size > maxTrailBytes {
+				t.Fatalf("snapshot exceeds the bounded fixture: %d bytes", size)
+			}
+			// Start the second batch during Verify's first read, and wait for
+			// one append before reading. Every verification therefore overlaps
+			// real writes, even if the scheduler finished the first batch early.
+			var once sync.Once
+			var appendErr error
+			readStarted := false
+			reader := snapshotReaderAt(func(into []byte, offset int64) (int, error) {
+				once.Do(func() {
+					readStarted = true
+					startBatches(round%2 == 0)
+					appendErr = <-results
+				})
+				if appendErr != nil {
+					return 0, appendErr
+				}
+				return file.ReadAt(into, offset)
+			})
+			report, err := Verify(reader, size, Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !readStarted {
+				t.Fatal("verification did not read the snapshot")
+			}
+			for range writers - 1 {
+				if err := <-results; err != nil {
+					t.Fatal(err)
+				}
+			}
+			chain := report.Chain
+			if locked && (chain.Status != "valid" || chain.Lines < previous) {
+				t.Fatalf("a snapshot between writes verifies: %v", findingNames(chain))
+			}
+			previous = chain.Lines
+		}()
+	}
+	data := readTrailFile(t, root)
+	lines := splitLines(data)
+	// Each round appends three singles and three three-record graph batches.
+	if len(lines) != 1+rounds*writers*4 || len(data) > maxTrailBytes {
+		t.Fatalf("bounded trail: %d lines, %d bytes", len(lines), len(data))
+	}
+	if allLocked {
+		checkChain(t, lines)
+		checkBatchesAdjacent(t, lines)
+	}
+	// A snapshot ending one byte inside a write must fail. This guards
+	// against accepting a partial tail as another complete snapshot.
+	cut := verifyBytes(t, data[:len(data)-1], nil)
+	if cut.Status != "invalid" || !hasFinding(cut, FindingIncompleteLastLine) {
+		t.Fatalf("a cut snapshot must report an incomplete tail: %v", findingNames(cut))
+	}
+	t.Logf("bounded trail: %d lines, %d bytes", len(lines), len(data))
+}
+
+// snapshotReaderAt inserts a deterministic append at a verification read.
+// The underlying file is still read through its real ReaderAt implementation.
+type snapshotReaderAt func([]byte, int64) (int, error)
+
+func (read snapshotReaderAt) ReadAt(into []byte, offset int64) (int, error) {
+	return read(into, offset)
 }
 
 // Every report says, once and last among what it does not establish, that the

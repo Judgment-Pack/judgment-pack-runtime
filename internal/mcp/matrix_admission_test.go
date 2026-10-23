@@ -93,7 +93,7 @@ func TestMatrixContractDiscoveryAndArgumentBoundary(t *testing.T) {
 	if r := runServer(t, rawToolCall(t, 2, matrixContractTool, `{"matrix":"{}"}`))[0]["result"].(map[string]any); r["isError"] != true {
 		t.Fatal("accepted a member the contract tool does not declare")
 	}
-	for _, args := range []map[string]any{nil, {"Matrix": "{}"}, {"matrix": nil}, {"matrix": "{}", "pack": "{}"}} {
+	for _, args := range []map[string]any{nil, {"Matrix": "{}"}, {"matrix": nil}, {"matrix": "{}", "pack": nil}} {
 		r := runServer(t, toolCall(t, 3, matrixValidationTool, args))[0]["result"].(map[string]any)
 		if r["isError"] != true {
 			t.Fatal("accepted unsupported args", args)

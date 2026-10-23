@@ -57,7 +57,8 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_policy_canonicalize` / `experimental_policy_digest` / `experimental_policy_validate` / `experimental_policy_check` | EXPERIMENTAL: supplied Policy document identity, local checks and retained-material reference checks; no evaluation or authority |
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_get_test_matrix_contract` | EXPERIMENTAL: discover the project matrix version, closed members, types and authoring rules without reading a project |
-| `experimental_validate_test_matrix` | EXPERIMENTAL: validate matrix carrier and disposition-local constraints; indexed case findings with codes and JSON pointers; no evaluation or writes |
+| `experimental_validate_test_matrix` | EXPERIMENTAL: validate matrix carrier and disposition-local constraints; optional exact pack text adds ordered per-case fact-type advice; no evaluation or writes |
+| `experimental_check_fact_types` | EXPERIMENTAL: static fact-type advice from exact pack and facts JSON text, without test expectations, evaluation or writes |
 | `experimental_validate_expectations` | EXPERIMENTAL SURFACE (ADR-0035): validate proposed exact Core 0.2.0-draft dispositions before authoring admission; no project or evaluation |
 | `experimental_test_cases` | EXPERIMENTAL SURFACE: rehearse an exact `pack` JSON string against a `matrix` JSON string, with the same matrix admission, canonical comparison and coverage as `packs test`; reads no project files and appends no audit record |
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
@@ -383,6 +384,47 @@ evaluate the pack, infer expected answers, verify source authority, or establish
 reachability. Desk source mappings and other application metadata stay outside the
 matrix. Clients retain rejected proposals and control bounded correction and
 human review; a valid report never means tests passed or cases were saved.
+
+Supplying optional `pack` JSON text to `experimental_validate_test_matrix` adds
+`factCheckVersion: "1"` and `factChecks` only after the whole matrix is structurally
+valid. There is one fact-check row per case, in input order, carrying `index`, `id`,
+`status` (`complete` or `unavailable`) and an array of `findings`. Unavailable rows
+also carry a nonempty `message`. The matrix's structural status is unchanged:
+deliberately wrong-type probes remain legal tests, including cases expecting an
+evaluation error. Unsupported or malformed packs produce unavailable advice for
+every row, without changing independently authored expectations.
+
+Prepared inputs need no expectation. Call `experimental_check_fact_types` with
+required `pack` and `facts`, both exact JSON strings, and optional
+`supported_extensions`, an array of strings. Its report carries `outputVersion`,
+`tool`, `command`, `experimental: true`, `contractVersion: "1"`,
+`specVersion: "0.2.0-draft"`, `factCheckVersion: "1"`, `status` and `findings`,
+plus `message` when unavailable. A complete check can have findings; it is not an
+evaluation result or a judgment about policy. Only Core `0.2.0-draft` is supported
+by this advisory. Other declared versions, including Core `0.3.0`, are unavailable;
+this interface does not vendor a newer specification or extend conformance claims.
+
+Both tools reuse the evaluator's static comparability walk: every stated
+comparison is checked, even where evaluation would not reach it. Missing facts
+are not findings. Null, false, zero, JSON numbers, decimal strings, arrays and
+objects retain their representation; nothing is filled in or coerced. Each
+finding has `code: "FACT-NOT-COMPARABLE"`, `path` relative to facts, `operator`,
+`factType`, nonempty `expectedTypes`, and `message`. An optional `within` identifies
+the collection context for the evaluator's internal draft aggregate path; these
+MCP tools do not enable draft grammars. Findings report types, never fact values.
+The caller reviews accidental encodings and deliberate type probes separately.
+
+The ordinary input carrier limits apply: 10 MiB per pack or facts document,
+depth 128, 250,000 nodes and 1 MiB per string. Each check permits 100,000 comparison
+work units, 100 findings and 256 KiB of JSON-serialized findings. A limit discards
+the partial check and returns `unavailable` with an empty findings array. Supported
+extensions are limited to 256 strings, each 1,024 UTF-8 bytes. Pack-aware matrix
+advice permits 256 cases, 16 distinct extension sets, 1,024 findings total and
+4 MiB of JSON-serialized fact-check rows; exceeding a batch bound is a tool error,
+never a clean or partial result. A caller can split a batch to fit these advisory
+bounds. Matrix-only validation retains its existing limits and response shape.
+No project configuration, reviewed-set lock, audit trail, source, model or network
+is accessed by either advisory path.
 
 ## Dialect document tools
 

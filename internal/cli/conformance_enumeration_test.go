@@ -15,11 +15,13 @@ import (
 // evaluator, and names them. That enumeration went stale once already — it said
 // three while six existed — so it is now held mechanically: every surface that
 // reaches the evaluator constructs it, each at its own call site, and this test
-// counts those sites and requires the document to name exactly that many
+// counts those deciding sites and requires the document to name exactly that many
 // surfaces, each one verbatim. A new surface fails here until CONFORMANCE.md
 // names it; a refactor that shares one constructor across surfaces also fails
 // here, deliberately — the count stops being the number of surfaces at that
 // point, and this test's counting rule is what must be rethought alongside it.
+// Static fact advice constructs the same engine for admission and comparability
+// only. Those sites are held separately below and do not extend the claim.
 func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 	enumerated := []string{
 		"`experimental evaluate`",
@@ -46,6 +48,10 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"compare.go":                           1, // experimental compare
 		filepath.Join("..", "mcp", "tools.go"): 4, // experimental_evaluate, experimental_test_packs, experimental_test_cases, experimental_test_graphs
 	}
+	staticSites := map[string]int{
+		filepath.Join("..", "mcp", "fact_advice.go"):      1,
+		filepath.Join("..", "mcp", "matrix_admission.go"): 1,
+	}
 	total := 0
 	for _, count := range expectedSites {
 		total += count
@@ -69,6 +75,21 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 				t.Fatalf("reading %s: %v", path, err)
 			}
 			sites := strings.Count(string(source), "evaluation.NewEngine(")
+			if expected := staticSites[path]; expected != 0 {
+				// Explicitly recognize static admission without silently adding
+				// an evaluating surface to the conformance claim. Keep the
+				// constructor directly chained to AdmitPack and the advice call
+				// visible; a broader refactor requires reviewing this guard.
+				if sites != expected || strings.Count(string(source), "evaluation.NewEngine(s.engine).AdmitPack(") != expected || strings.Count(string(source), ".CheckFactTypes(") != expected {
+					t.Fatalf("%s no longer has exactly %d static-only advice sites", path, expected)
+				}
+				for _, deciding := range []string{".Evaluate", ".RunCase", ".RunCorpus"} {
+					if strings.Contains(string(source), deciding) {
+						t.Fatalf("%s adds deciding call %s to a static-only surface; review the claim scope", path, deciding)
+					}
+				}
+				continue
+			}
 			if sites != expectedSites[path] {
 				t.Fatalf("%s constructs the evaluator %d times and this test expects %d: a surface reaching the evaluator moved, appeared, or vanished, and CONFORMANCE.md's claim-scope sentence must change with it (then this test's two lists)", path, sites, expectedSites[path])
 			}
@@ -253,7 +274,7 @@ func flatten(text string) string {
 // countWord spells a count the way the documents do.
 func countWord(t *testing.T, n int) string {
 	t.Helper()
-	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen"}
+	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen"}
 	if n < 0 || n >= len(words) {
 		t.Fatalf("no spelling for a count of %d; extend countWord", n)
 	}
