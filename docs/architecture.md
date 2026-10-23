@@ -243,3 +243,12 @@ no between-writes file snapshot was taken. No repair, write, private-key loader,
 timestamp fetching or new cryptographic format is exposed. The
 [MCP reference](mcp-clients.md#experimental-audit-reading-and-verification)
 defines budgets, provisional pages, retry lifetime and explicit line statuses.
+
+`experimental_list_audit_history` applies the retained Desk history reader's
+exact 4 MiB backward window and typed Go selection on the server, within the
+64 MiB source ceiling. It preserves raw record strings/digests and unread/next
+semantics, including Unicode escape replacement only for selection. One bounded
+server-authored JSON result travels in base64 chunks, avoiding client JSONL
+parsing while retaining the 4 MiB serialized MCP result cap. History projections
+share the existing eight-slot/five-minute pager with raw exports; immutable
+answers bind configured-project authority and reject cross-kind cursors.

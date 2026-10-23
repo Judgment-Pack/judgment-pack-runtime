@@ -45,3 +45,35 @@ type AuditPage struct {
 	Complete              bool              `json:"complete"`
 	NextCursor            string            `json:"nextCursor,omitempty"`
 }
+
+// AuditDefinitionHistory is the exact logical Desk-compatible history result.
+// It travels as a chunked JSON document, not as retained JSONL for client parsing.
+type AuditDefinitionHistory struct {
+	State   string                  `json:"state"`
+	Records []AuditDefinitionRecord `json:"records"`
+	Next    *int64                  `json:"next,omitempty"`
+	Unread  int                     `json:"unread"`
+}
+
+type AuditDefinitionRecord struct {
+	Raw    string `json:"raw"`
+	Digest string `json:"digest"`
+}
+
+// AuditHistoryPage transports one bounded range of a server-authored JSON
+// history projection. Its source snapshot and complete document identity are
+// fixed across every page and retry.
+type AuditHistoryPage struct {
+	OutputVersion         string `json:"outputVersion"`
+	Tool                  Tool   `json:"tool"`
+	Command               string `json:"command"`
+	AuditHistoryVersion   string `json:"auditHistoryVersion"`
+	SnapshotBetweenWrites bool   `json:"snapshotBetweenWrites"`
+	SourceBytes           int64  `json:"sourceBytes"`
+	ProjectionBytes       int64  `json:"projectionBytes"`
+	ProjectionDigest      string `json:"projectionDigest"`
+	Offset                int64  `json:"offset"`
+	DataBase64            string `json:"dataBase64"`
+	Complete              bool   `json:"complete"`
+	NextCursor            string `json:"nextCursor,omitempty"`
+}

@@ -128,30 +128,35 @@ func openWireSnapshot(source WireSource) (wireSnapshot, error) {
 }
 
 type wireExport struct {
-	authority  string
-	expires    time.Time
-	info       [3]os.FileInfo
-	metadata   []result.AuditFile
-	blocks     [3][][sha256.Size]byte
-	locked     bool
-	id         string
-	sequence   uint64
-	previous   string
-	last       *result.AuditPage
-	complete   bool
-	file       int
-	offset     int64
-	cache      []byte
-	cacheBlock int64
-	line       []byte
-	lineHash   hash.Hash
-	lineOffset int64
-	lineBytes  int64
+	authority          string
+	expires            time.Time
+	info               [3]os.FileInfo
+	metadata           []result.AuditFile
+	blocks             [3][][sha256.Size]byte
+	locked             bool
+	id                 string
+	sequence           uint64
+	previous           string
+	last               *result.AuditPage
+	complete           bool
+	file               int
+	offset             int64
+	cache              []byte
+	cacheBlock         int64
+	line               []byte
+	lineHash           hash.Hash
+	lineOffset         int64
+	lineBytes          int64
+	history            []byte
+	historyDigest      string
+	historySourceBytes int64
+	historyLast        *result.AuditHistoryPage
 }
 
-// Pager owns at most eight short-lived exports. Each retains fixed block hashes,
-// one block cache, one bounded line and the previous response for retry. It holds
-// no file descriptors between calls. A mutex serializes cursor advancement.
+// Pager owns at most eight short-lived raw exports or history projections. Raw
+// exports retain block hashes, one cache and one bounded line; history retains
+// its bounded encoded document. Both keep one previous response for retry and
+// hold no file descriptors between calls. A mutex serializes advancement.
 type Pager struct {
 	mu      sync.Mutex
 	exports map[string]*wireExport
@@ -184,11 +189,7 @@ func (p *Pager) Page(source WireSource, cursor string, pageBytes int) (result.Au
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := p.now()
-	for id, export := range p.exports {
-		if !now.Before(export.expires) {
-			delete(p.exports, id)
-		}
-	}
+	p.expire(now)
 	var export *wireExport
 	if cursor != "" {
 		parts := strings.Split(cursor, ".")
@@ -197,7 +198,7 @@ func (p *Pager) Page(source WireSource, cursor string, pageBytes int) (result.Au
 		}
 		sequence, err := strconv.ParseUint(parts[1], 10, 64)
 		export = p.exports[parts[0]]
-		if err != nil || export == nil || strconv.FormatUint(sequence, 10) != parts[1] {
+		if err != nil || export == nil || export.history != nil || strconv.FormatUint(sequence, 10) != parts[1] {
 			return result.AuditPage{}, ErrWireCursor
 		}
 		if export.authority != source.Authority {
@@ -212,20 +213,10 @@ func (p *Pager) Page(source WireSource, cursor string, pageBytes int) (result.Au
 		if export.complete || sequence != export.sequence {
 			return result.AuditPage{}, ErrWireCursor
 		}
-	} else if len(p.exports) >= MaxWireExports {
-		// Completed exports retain their last response until expiry, but never
-		// prevent a new export from using an otherwise free active slot.
-		oldest := ""
-		for id, e := range p.exports {
-			if e.complete && (oldest == "" || e.expires.Before(p.exports[oldest].expires)) {
-				oldest = id
-			}
-		}
-		if oldest == "" {
-			return result.AuditPage{}, ErrWireCapacity
-		}
-		delete(p.exports, oldest)
+	} else if err := p.makeRoom(); err != nil {
+		return result.AuditPage{}, err
 	}
+
 	snapshot, err := openWireSnapshot(source)
 	if err != nil {
 		if export != nil {
@@ -436,4 +427,29 @@ func (e *wireExport) finishLine(incomplete bool) result.AuditPageRecord {
 	e.line, e.lineBytes = nil, 0
 	e.lineHash.Reset()
 	return record
+}
+
+func (p *Pager) expire(now time.Time) {
+	for id, e := range p.exports {
+		if !now.Before(e.expires) {
+			delete(p.exports, id)
+		}
+	}
+}
+
+func (p *Pager) makeRoom() error {
+	if len(p.exports) < MaxWireExports {
+		return nil
+	}
+	oldest := ""
+	for id, e := range p.exports {
+		if e.complete && (oldest == "" || e.expires.Before(p.exports[oldest].expires)) {
+			oldest = id
+		}
+	}
+	if oldest == "" {
+		return ErrWireCapacity
+	}
+	delete(p.exports, oldest)
+	return nil
 }

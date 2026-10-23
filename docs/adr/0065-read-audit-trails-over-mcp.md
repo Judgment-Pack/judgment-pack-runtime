@@ -29,8 +29,8 @@ objects changes record whitespace, line digests and malformed retained content.
 
 ## Decision outcome
 
-Use the third option through `experimental_list_audit` and
-`experimental_verify_audit`, as detailed in the
+Use the third option through `experimental_list_audit`,
+`experimental_list_audit_history` and `experimental_verify_audit`, as detailed in the
 [MCP reference](../mcp-clients.md#experimental-audit-reading-and-verification).
 This is a Runtime convention, independent of every Core version.
 
@@ -43,11 +43,11 @@ Incomplete final bytes carry `incomplete` and are never a completed decision.
 Invalid UTF-8 and unpaired Unicode surrogate escapes are `malformed`, retaining
 raw bytes without emitting repaired or unsupported structured string values.
 Line state spans raw pages, so ordinary records crossing a byte boundary remain
-available to structured history. No record identity is deduplicated or filtered.
-Compatibility selection decodes the whole members object with Desk's typed
+available to advisory structured reading. No record identity is deduplicated or filtered.
+The dedicated server-side history projection decodes the whole object with Desk's typed
 `recordVersion` and nullable `pack.id`/`graph.id` fields, including Go's
 case-insensitive tag fallback and typed errors in an unrelated identity member.
-Raw members remain available independently of those client selection rules.
+Raw members remain available independently of those history selection rules.
 
 Each export captures fixed sizes, file identities and 64 KiB block hashes. It
 streams one initial pass, reads and verifies each served block into one bounded
@@ -70,11 +70,10 @@ may be evicted to admit a new export, and no cursor survives a server restart.
 No file handles or whole-file buffers survive a call. Bounds are explicit:
 64 MiB per captured file; 256 KiB raw bytes and 128 line results per page;
 64 KiB per decoded/raw-line result. Longer valid records are `oversized`, with
-their bytes still transported through raw chunks. History parity is bounded to
-supported parsed lines: Desk's existing local reader has a 4 MiB read window,
-so a larger valid line may be visible locally but only raw-downloadable here.
-The structured Unicode rule is stricter than Go's historical surrogate
-replacement behavior. Neither limitation changes exact downloads.
+their bytes still transported through raw chunks. These advisory listing
+members retain their 64 KiB/strict-Unicode limits; the dedicated history
+projection below handles the larger window and Go decoding semantics. Neither
+advisory limitation changes exact downloads.
 A 4 MiB serialized MCP result
 limit counts the text and structured representations, base64 and JSON escaping;
 amplified results are refused whole and can be retried as a new export with a
@@ -82,6 +81,36 @@ smaller raw-page size. A serialization refusal invalidates and releases that
 whole export, including continuation/final-page retry state, without affecting
 other exports. An undisclosed continuation cannot occupy an active slot.
 The existing 16 MiB request-line limit also applies.
+
+`experimental_list_audit_history` executes Desk's exact backward 4 MiB read,
+typed Go decoding (including ordinary case/duplicate/null handling and Unicode
+surrogate replacement), newest-first maximum 50, and unread/next semantics.
+Selected raw strings and their LF-excluding digests remain exact. It serializes
+the full Desk-shaped `{state,records:[{raw,digest}],next?,unread}` answer as one
+JSON document with HTML escaping disabled, then transports that document in
+base64 chunks. Clients decode one projected JSON object and never parse retained
+JSONL or implement selection. This resolves the 64 KiB/advisory Unicode gaps
+within the declared 64 MiB source and exact 4 MiB window budgets, without raising
+the 4 MiB MCP result ceiling or claiming unrestricted issue-308 closure.
+
+The encoded projection is bounded at 8 MiB plus 64 KiB: at most 4 MiB source
+bytes selected into raw strings, at most twofold JSON string expansion without
+HTML escaping, and at most 50 small digest/envelope/offset/count additions.
+Escape-max and metadata-limit tests exercise that bound. History and raw
+exports share eight slots and five-minute lifetime, retain one previous page
+for retry, reject cross-kind cursors, bind current configured-project authority
+on every continuation, and invalidate only their own state after a response
+refusal. No source file handles or window buffers persist, only bounded encoded
+projection bytes. A missing audit declaration reports `no-trail`; a missing
+evaluations file reports `no-records`; a present empty trail reports `records`.
+
+History capture takes size under the cooperative trail shared lock, reads and
+rechecks only its bounded window plus guarded identity. It is not atomic against
+arbitrary mutation. Its immutable captured answer is independent of subsequent
+source appends/changes; continuations do not claim continuous source integrity.
+The logical next offset deliberately preserves Desk's repeated-next edge when
+a window-truncated long line ends in LF, and its no-LF-window refusal. Chunk
+transport progress remains finite; no Desk behavior is changed here.
 
 Verification uses `audit.Verify` and `audit.ParseCheckpoints`, exactly as the CLI
 does. `expect` supplies checkpoint JSONL, bounded to 1 MiB;
@@ -98,9 +127,9 @@ verification trust, and no timestamp is fetched.
 
 ### Consequences
 
-- Good: clients can reproduce downloads byte for byte and select supported
-  bounded history lines from structured members and exact digests without
-  parsing retained JSONL.
+- Good: clients can reproduce downloads byte for byte and obtain Desk-equivalent
+  history within the source/window budgets, including exact raw records and
+  digests, without parsing retained JSONL.
 - Good: root-relative openers retain containment, final-symlink and regular-file
   guards; no caller path, repair, write or key-management scope is added.
 - Bad: large files/records have explicit experimental limits, and clients must

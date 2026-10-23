@@ -1267,9 +1267,13 @@ interoperability, approval, current authority or permission.
 
 `experimental_list_audit` exports the configured evaluations, signatures and
 stamps as exact bounded base64 chunks, with structured members and raw-line
-digests for supported history lines up to 64 KiB. `experimental_verify_audit` uses the CLI's
+digests for advisory lines up to 64 KiB. `experimental_list_audit_history`
+selects definition history on the server using Desk's exact 4 MiB window,
+typed Unicode decoding and pagination rules, transporting one JSON answer in
+bounded chunks without client JSONL parsing. Its 64 MiB source budget remains
+explicit. `experimental_verify_audit` uses the CLI's
 verifier, with supplied checkpoint expectations and optional supplied exact
-trail bytes. Both require the server's configured audit project; neither accepts
+trail bytes. All require the server's configured project; none accepts
 a host file path, writes, repairs, manages keys or fetches timestamps. Exports
 are provisional until complete and have explicit size/lifetime limits. See the
 [MCP reference](docs/mcp-clients.md#experimental-audit-reading-and-verification)

@@ -2428,3 +2428,9 @@ preparation does not establish them.
   `trail_base64` input. Configured-project authority remains required; no caller
   host paths, repair, writes, keys or network verification inputs are exposed.
   The CLI and existing audit formats remain unchanged (ADR-0065).
+
+- Add `experimental_list_audit_history` for exact server-side Desk history
+  selection within the 64 MiB source/4 MiB window budgets, including typed
+  Unicode behavior, newest-first 50 records and unread/next semantics. Chunk one
+  bounded JSON projection through the existing response ceiling and shared
+  export capacity; clients need no retained JSONL parsing (ADR-0065).
