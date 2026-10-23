@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -389,5 +390,44 @@ func TestCasePathsRemainBoundedWithAdvisoryCategory(t *testing.T) {
 	}
 	if err := validateCasePath("advisory/rules-touching.json"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAdvisoryOnlyLocalSuiteRefusesZeroChecks(t *testing.T) {
+	// Hand-authored valid manifest with one optional empty advisory assertion.
+	// No fixture is written: refusal must precede fixture loading or execution.
+	const manifest = `{
+		"$schema":"./manifest.schema.json","suiteVersion":"0.3.0","specVersion":"0.3.0","status":"draft",
+		"validationProfile":{"jsonSchemaDialect":"https://json-schema.org/draft/2020-12/schema","formatAssertionRequired":true,"rejectDuplicateObjectMembers":true},
+		"diagnosticVocabulary":{"advisory":["JPS-RULES-OVERLAP"]},
+		"cases":[{"id":"advisory-only","path":"advisory/no-checks.json","layer":"semantic","expectedResult":"valid","expectedDiagnostic":null,"expectedAdvisories":[],"focus":"optional advice only","specSection":"§6.6"}]
+	}`
+	root := t.TempDir()
+	set, err := artifacts.Load(artifacts.CoreVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := set.ManifestSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.schema.json"), schema, 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, strict := range []bool{false, true} {
+		output, failure := NewRunner(engine).RunWithOptions(root, artifacts.CoreVersion, strict)
+		if failure == nil || failure.Code != "JPS-SUITE-NO-CHECKS" || failure.ExitCode != result.ExitInvocation || failure.Message != "Suite contains no supported conformance assertions." {
+			t.Fatalf("strict=%v failure=%+v", strict, failure)
+		}
+		if output.Status != "" || len(output.Cases) != 0 {
+			t.Fatalf("zero-check suite emitted result: %+v", output)
+		}
 	}
 }

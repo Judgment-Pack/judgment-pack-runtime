@@ -631,7 +631,8 @@ node/handoff/headline charging and a final envelope check. Comparisons retain th
 existing report limit. These bounds refuse whole reports rather than truncate
 portable dispositions. The conformance runner reports optional advisory rows as
 `skipped`, `actualStatus: "not-checked"`, with `skipReason` and a separate summary
-count; they never count as passed assertions.
+count; they never count as passed assertions. An advisory-only suite is refused
+with `JPS-SUITE-NO-CHECKS`, with no successful zero-check report.
 
 See [ADR-0063](adr/0063-explicit-core-030-contracts.md) for provenance and contract
 choices, and [CONFORMANCE.md](../CONFORMANCE.md) for conformance posture and evidence.

@@ -308,7 +308,7 @@ Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an ex
 ./bin/jpack spec test-conformance --strict
 ```
 
-By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs. Core `0.3.0` optional `expectedAdvisories` cases are explicitly `skipped`, with `actualStatus: "not-checked"` and a `skipReason`; the summary counts them separately. A skipped advisory is never a passed assertion.
+By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs. Core `0.3.0` optional `expectedAdvisories` cases are explicitly `skipped`, with `actualStatus: "not-checked"` and a `skipReason`; the summary counts them separately. A skipped advisory is never a passed assertion. An advisory-only suite is refused with `JPS-SUITE-NO-CHECKS` because it contains no supported assertion.
 
 Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimental evaluator. Every
 row is compared by disposition equality as §8.3 defines it — both the row's expectation and the

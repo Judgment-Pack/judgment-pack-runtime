@@ -168,7 +168,9 @@ The implemented Core `0.3.0` reader/evaluator supports only `base`; the optional
 
 The unchanged document manifest has 156 entries: 151 normative document assertions
 pass in normal and strict mode, and five optional `expectedAdvisories` rows are
-explicitly skipped/not checked. Rule-overlap advice remains outside this work
+explicitly skipped/not checked. A local advisory-only suite is refused as
+`JPS-SUITE-NO-CHECKS` before execution, rather than returning a zero-check success.
+Rule-overlap advice remains outside this work
 ([#304](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/304)).
 The separately named evaluation corpus contains 20 rows; all 20 match under the
 explicit Core `0.3.0` contract. Supplemental profile, route, precedence, decoder,

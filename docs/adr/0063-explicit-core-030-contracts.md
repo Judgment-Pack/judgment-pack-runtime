@@ -81,7 +81,9 @@ The document runner keeps strict diagnostic equality checks and names optional
 `expectedAdvisories` rows as skipped/not checked, with a separate count and row
 reason. Those assertions are not implemented here; rule-overlap work remains
 [#304](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/304). Skip
-fields are omitted from old reports when unused. Supplemental normative-requirement
+fields are omitted from old reports when unused. A suite with no supported
+assertion is refused before execution as `JPS-SUITE-NO-CHECKS`, so an advisory-only
+local suite cannot return successful zero-check output. Supplemental normative-requirement
 vectors remain separate from each named published corpus.
 
 ## Consequences and review gates

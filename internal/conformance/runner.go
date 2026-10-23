@@ -368,7 +368,11 @@ func validateManifest(manifestBytes, schemaBytes, coreSchemaBytes []byte) (Manif
 	}
 	seenIDs := map[string]bool{}
 	seenPaths := map[string]bool{}
+	hasChecks := false
 	for _, manifestCase := range manifest.Cases {
+		if manifestCase.ExpectedAdvisories == nil {
+			hasChecks = true
+		}
 		if seenIDs[manifestCase.ID] || seenPaths[manifestCase.Path] {
 			return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Suite case IDs and paths must be unique.")
 		}
@@ -389,6 +393,9 @@ func validateManifest(manifestBytes, schemaBytes, coreSchemaBytes []byte) (Manif
 		} else if manifestCase.Layer != category || manifestCase.ExpectedResult == "valid" || manifestCase.ExpectedDiagnostic == nil {
 			return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Negative case category, layer, result, and diagnostic must agree.")
 		}
+	}
+	if !hasChecks {
+		return Manifest{}, invocationFailure("JPS-SUITE-NO-CHECKS", "Suite contains no supported conformance assertions.")
 	}
 	return manifest, nil
 }
