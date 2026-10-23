@@ -58,6 +58,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_get_test_matrix_contract` | EXPERIMENTAL: discover the project matrix version, closed members, types and authoring rules without reading a project |
 | `experimental_validate_test_matrix` | EXPERIMENTAL: validate matrix carrier and disposition-local constraints; optional exact pack text adds ordered per-case fact-type advice; no evaluation or writes |
+| `experimental_analyze_pack` | EXPERIMENTAL: optional Draft RFC 0027 pack-design advice over an explicit finite domain; actual Core 0.3.0 rehearsals, bounded proof scope, no writes or new conformance/strict/publication gate; [contract and limits](../README.md#experimental-finite-domain-pack-design-advice) |
 | `experimental_check_fact_types` | EXPERIMENTAL: static fact-type advice from exact pack and facts JSON text, without test expectations, evaluation or writes |
 | `experimental_validate_expectations` | EXPERIMENTAL SURFACE (ADR-0035): validate proposed dispositions under an explicit Core contract before authoring admission; no project or evaluation |
 | `experimental_test_cases` | EXPERIMENTAL SURFACE: rehearse an exact `pack` JSON string against a `matrix` JSON string, with the same matrix admission, canonical comparison and coverage as `packs test`; reads no project files and appends no audit record |
@@ -68,19 +69,23 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_verify_audit` | EXPERIMENTAL (ADR-0065): the CLI verifier's full report for the configured trail or bounded supplied exact bytes, with supplied checkpoint expectations; no keys, trust roots, repair or writes |
 | `experimental_list_audit_history` | EXPERIMENTAL (ADR-0065): server-selected Desk-compatible definition history within the 64 MiB source/4 MiB read-window budgets, transported as bounded chunks of one JSON result; no client JSONL parsing |
 
-None of these evaluate, decide, or authorize anything — `experimental_list_graphs` and
-`experimental_get_graph` carry the experimental marker for their surface's stability, not because
-they evaluate — except the four that reach the evaluator:
+For inputs under the recorded claim's version, all of these tools operate without
+evaluation except the four that reach the evaluator:
 `experimental_evaluate`, which evaluates one case; `experimental_test_packs` and
 `experimental_test_graphs`, which run declared instance and graph matrices respectively — each
 through the same evaluator and comparison its own CLI counterpart uses, `packs test` and the graph
 project walk; and `experimental_test_cases`, which runs a supplied matrix against supplied pack
 text through the evaluator and comparison `packs test` uses, and reads no project file (ADR-0036).
+A separate evaluator-using advisory tool, `experimental_analyze_pack`, rehearses
+only Core `0.3.0` base inputs over a declared finite domain for optional Draft
+RFC 0027 advice. Its scope is recorded separately in
+[CONFORMANCE.md](../CONFORMANCE.md#evaluator-using-advisory-surfaces-outside-the-claims-version-scope);
+it reads no project configuration and writes no audit record.
 The three matrix tools report
 each row's agreement or divergence with the derived coverage report (ADR-0014, ADR-0023)
 beside it, writing nothing, appending no audit record, and consulting no reviewed set, because a
-matrix row is a rehearsal and not a decision. Each payload names the contract version it applied and
-carries a
+matrix row is a rehearsal and not a decision. Evaluation and matrix payloads name the contract version they applied and
+carry a
 `conformanceClaimReference`
 member pointing at [`CONFORMANCE.md`](../CONFORMANCE.md), where the conformance claim is stated in full
 and only; no tool description, and no line of this document, states any part of it. Whatever that claim

@@ -278,3 +278,9 @@ server-authored JSON result travels in base64 chunks, avoiding client JSONL
 parsing while retaining the 4 MiB serialized MCP result cap. History projections
 share the existing eight-slot/five-minute pager with raw exports; immutable
 answers bind configured-project authority and reject cross-kind cursors.
+
+The optional `internal/packadvice` authoring analyzer rehearses explicit finite Core
+0.3.0 domains through the real evaluator, sharing schema-exact proof-scoped reports
+and bounded refusals between CLI and MCP. It changes no evaluation or strict gate;
+[ADR-0068](adr/0068-finite-domain-pack-design-advice.md) records its limits and
+treatment of skipped conditions, candidate contribution and incomplete checks.

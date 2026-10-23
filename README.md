@@ -24,7 +24,8 @@ published Core release tag. Core `0.3.0` support is base-only. Runtime discovery
 `supportedProfiles: ["base"]` scoped to the Core `0.3.0` evaluator entry. This says
 nothing about Policy or Dialect profile support.
 
-One shared evaluator applies the specification's §§7–8 resolution model per
+For the version covered by the claim in [CONFORMANCE.md](CONFORMANCE.md), one shared
+evaluator applies the specification's §§7–8 resolution model per
 [ADR-0007](docs/adr/0007-experimental-evaluator.md), and ten surfaces reach it: `jpack experimental
 evaluate` and `evaluate-corpus`, the project walk `jpack packs test`, the graph verbs
 `jpack experimental graph evaluate` and `graph test`, the version comparison
@@ -1321,3 +1322,63 @@ are provisional until complete and have explicit size/lifetime limits. See the
 [MCP reference](docs/mcp-clients.md#experimental-audit-reading-and-verification)
 and [ADR-0065](docs/adr/0065-read-audit-trails-over-mcp.md). This is a Runtime
 convention and adds no Core conformance claim.
+
+## Experimental finite-domain pack-design advice
+
+The two evaluator-using advisory surfaces outside that version claim are
+`jpack experimental analyze-pack` and `experimental_analyze_pack`. They evaluate
+only Core `0.3.0` base inputs for optional authoring advice. Their inventory is
+guarded separately from the ten surfaces serving inputs under the recorded claim
+and from static fact advice, which does not evaluate conditions.
+
+`jpack experimental analyze-pack pack.json --domain domain.json` returns optional
+Draft RFC 0027 advice for actual Core `0.3.0` base packs. The domain is supplied
+explicitly, for example:
+
+```json
+{"kind":"finite-cases","inputs":[{"facts":{"score":"70"},"evidence":{}}]}
+```
+
+The shared MCP tool is `experimental_analyze_pack`, with exact JSON strings in
+`pack` and `domain`, and optional `intentional_fallback`, `max_work` and
+`max_findings`. CLI equivalents are `--intentional-fallback`, `--max-work` and
+`--max-findings`. Defaults are 100000 work units and 256 finding slots. Only JSON
+output is supported; this bounded report stays compact even with `--pretty`.
+The command reads local files or `-`; pack and domain cannot both use stdin.
+
+Reports cover compatible agreement, outcome redundancy, coverage, condition and
+candidate reachability, exception effects and unknown blocking. Universal claims
+apply only to those exact declared inputs, including evidence and all resolution
+gates. A true candidate can contribute during conflict. A skipped condition is
+never treated as false; an unproved condition check marks the report incomplete.
+Outcome redundancy does not authorize deleting a rule. Intentional fallback is a
+caller declaration for this domain only. Pack/domain digests bind the exact input
+bytes and the report echoes the parsed domain with exact JSON numbers.
+
+Domains and output have a 1 MiB byte ceiling, depth 32 (root 0), 16384 value
+nodes, 65536 UTF-8 bytes per string/member name and 4096 digits per numeric token.
+Domains contain 1..64 complete inputs with at most 256 evidence entries each.
+Only declared evidence IDs and `present`/`absent`/`unknown` values are accepted;
+omitted evidence IDs remain unknown. The optional analyzer admits at most 256
+rules and 256 exceptions, and IDs must fit the report's 256-character source
+field. These report capabilities do not change Core document conformance.
+
+Work is charged before each input evaluation and each per-input entity/pair
+family predicate. Evaluator internals retain their separate default Core work
+limit of 20971520 units; analyzer work is not a CPU/time guarantee. Pairs are
+generated incrementally. One finding slot and output room stay reserved for an
+incomplete marker. Limited analysis reports `complete:false` with a limitation;
+`usage.findingsTruncated` identifies output truncation specifically. Reports exit
+0 even when incomplete. Refused analyses exit 1 with a bounded
+`{status:"unavailable",code,message}` object and no report; codes are
+`domain-invalid`, `domain-limit`, `pack-unsupported` and `analysis-limit`, not Core
+evaluation error classes. Unsupported packs/profiles/capabilities, evaluator
+failure after admission and a domain echo too large for a minimal bounded report
+refuse analysis. MCP has the same report/refusal objects.
+
+This read-only experimental authoring surface writes no audit record, changes no
+admission, verdict, default, strict-validation or publication behavior. This
+runtime's conformance claim and its version scope are stated, in full and only,
+in [CONFORMANCE.md](CONFORMANCE.md). The report contract remains a Draft proposal; see
+[ADR-0068](docs/adr/0068-finite-domain-pack-design-advice.md) for proof scope,
+limits and the pinned proposal source.
