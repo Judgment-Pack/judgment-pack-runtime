@@ -27,6 +27,9 @@ type Options struct {
 	Command             string
 	SupportedExtensions []string
 
+	// contract is selected from the graph packs, never from an expectation.
+	contract result.EvaluatorContract
+
 	// Audit is the trail this run's records are appended to, or nil for a run
 	// that records nothing. It is a field rather than something derived from
 	// the project, because the project is live on both graph paths and only
@@ -160,7 +163,7 @@ type nodeInputs struct {
 // inputsSupplied says whether the caller supplied an inputs document at all,
 // so empty bytes can be refused as the malformed input they are rather than
 // read as "no inputs".
-func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, graphPath string, inputs []byte, inputsSupplied bool, options Options) (result.GraphEvaluation, *evaluation.Failure) {
+func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, graphPath string, inputs []byte, inputsSupplied bool, options Options) (graphEvaluation result.GraphEvaluation, failure *evaluation.Failure) {
 	if diagnostics := doc.Structural(loaded); len(diagnostics) > 0 {
 		first := diagnostics[0]
 		location := first.InstancePath
@@ -209,18 +212,46 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		}
 	}
 
+	contract, selectionFailure := SelectContract(loaded, doc)
+	if selectionFailure != nil {
+		return result.GraphEvaluation{}, selectionFailure
+	}
+	// Context belongs to the exact successfully selected operation, and is
+	// carried to error envelopes without another pack read. A normative
+	// profile refusal remains the unchanged code/profile diagnostic.
+	defer func() {
+		if failure != nil && failure.Code != "profile-unsupported" {
+			wrapped := *failure
+			wrapped.SpecVersion = contract.Version()
+			failure = &wrapped
+		}
+	}()
+	if options.contract.SpecVersion != "" && options.contract != contract {
+		return result.GraphEvaluation{}, mixedContractFailure()
+	}
 	order, _ := doc.Order()
 	dispositions := map[string]result.Disposition{}
 	nodes := make([]result.GraphNodeEvaluation, 0, len(order))
 	// The run's audit records, held until it has a composite. Empty for a run
 	// that records nothing at all.
 	records := []audit.Record{}
+	reportBytes := int64(0)
 	for _, nodeID := range order {
 		packID := doc.Nodes[nodeID].Pack
 		entry, _ := loaded.Entry(packID)
 		packBytes, oversized, readFailure := readNodePack(loaded, nodeID, packID, entry)
 		if readFailure != nil {
 			return result.GraphEvaluation{}, readFailure
+		}
+		// Re-select from the exact evaluation read. The preflight deliberately
+		// retains contracts rather than every pack buffer; a changed contract
+		// refuses the entire run before any records are appended.
+		selected, selectionFailure := selectNodeContract(packBytes, oversized)
+		if selectionFailure != nil {
+			return result.GraphEvaluation{}, nodeFailure(nodeID, packID, selectionFailure)
+		}
+		if selected != contract {
+			return result.GraphEvaluation{}, mixedContractFailure()
 		}
 		// The caller's check on the bytes just read, before the node they
 		// belong to evaluates. Bytes the read could not present in full carry
@@ -354,6 +385,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		}
 		evaluated, engineFailure := engine.EvaluateWith(packBytes, factsBytes, evidenceBytes, evaluation.Options{
 			Command:             options.Command,
+			SpecVersion:         contract.Version(),
 			SupportedExtensions: options.SupportedExtensions,
 			EvidenceSupplied:    evidenceSupplied,
 			OversizedInputs:     oversized,
@@ -362,12 +394,36 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			RequireComparableFacts: options.RequireComparableFacts,
 		})
 		if engineFailure != nil {
-			return result.GraphEvaluation{}, &evaluation.Failure{
-				Class:    engineFailure.Class,
-				Phase:    engineFailure.Phase,
-				Code:     engineFailure.Code,
-				Message:  fmt.Sprintf("Node %q (pack %q): %s", display.Sanitize(nodeID), display.Sanitize(packID), engineFailure.Message),
-				ExitCode: engineFailure.ExitCode,
+			return result.GraphEvaluation{}, nodeFailure(nodeID, packID, engineFailure)
+		}
+		node := result.GraphNodeEvaluation{
+			Node:          nodeID,
+			Pack:          packID,
+			PackID:        evaluated.PackID,
+			PackVersion:   evaluated.PackVersion,
+			PackSHA256:    strings.TrimPrefix(audit.Digest(packBytes), "sha256:"),
+			SpecVersion:   evaluated.SpecVersion,
+			FactFeeds:     factFeeds,
+			EvidenceFeeds: evidenceFeeds,
+			Disposition:   evaluated.Disposition,
+			HandoffTarget: evaluated.HandoffTarget,
+			UnmetEvidence: evaluated.UnmetEvidence,
+			Trace:         evaluated.Trace,
+		}
+		if contract.Version() == "0.3.0" {
+			components := []any{node, graphHandoffs(node)}
+			if node.Node == doc.Result {
+				components = append(components, node.Disposition)
+			}
+			for _, component := range components {
+				encoded, err := json.Marshal(component)
+				if err != nil {
+					return result.GraphEvaluation{}, reportEncodingFailure(doc.ID)
+				}
+				reportBytes += int64(len(encoded))
+				if reportBytes > MaxEvaluationReportBytes {
+					return result.GraphEvaluation{}, evaluationReportBudgetFailure()
+				}
 			}
 		}
 		// The node's record is composed now, while what it describes is in
@@ -394,20 +450,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			records = append(records, record)
 		}
 		dispositions[nodeID] = evaluated.Disposition
-		nodes = append(nodes, result.GraphNodeEvaluation{
-			Node:          nodeID,
-			Pack:          packID,
-			PackID:        evaluated.PackID,
-			PackVersion:   evaluated.PackVersion,
-			PackSHA256:    strings.TrimPrefix(audit.Digest(packBytes), "sha256:"),
-			SpecVersion:   evaluated.SpecVersion,
-			FactFeeds:     factFeeds,
-			EvidenceFeeds: evidenceFeeds,
-			Disposition:   evaluated.Disposition,
-			HandoffTarget: evaluated.HandoffTarget,
-			UnmetEvidence: evaluated.UnmetEvidence,
-			Trace:         evaluated.Trace,
-		})
+		nodes = append(nodes, node)
 	}
 
 	output := result.GraphEvaluation{
@@ -421,7 +464,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		ConformanceClaimReference: result.EvaluationClaimReference,
 		Label:                     result.GraphCompositeLabel,
 		Kind:                      result.ProjectKind,
-		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion:      contract.Version(),
 		FormatVersion:             FormatVersion,
 		ConfigPath:                loaded.ConfigPath,
 		GraphPath:                 graphPath,
@@ -436,19 +479,22 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			output.Disposition = node.Disposition
 			output.HandoffTarget = node.HandoffTarget
 		}
-		if node.Disposition.Handoff.State == "requested" {
-			output.Handoffs = append(output.Handoffs, result.GraphHandoff{
-				Node:        node.Node,
-				TriggeredBy: node.Disposition.Handoff.TriggeredBy,
-				Target:      node.HandoffTarget,
-			})
-		}
+		output.Handoffs = append(output.Handoffs, graphHandoffs(node)...)
 	}
-	if set, err := artifacts.Load(result.EvaluatorSpecVersion); err == nil {
+	if set, err := artifacts.Load(contract.Version()); err == nil {
 		output.Artifact = &result.Artifact{
-			SpecVersion:  result.EvaluatorSpecVersion,
+			SpecVersion:  contract.Version(),
 			BundleDigest: set.Lock().BundleDigest.Value,
 			Provenance:   set.Lock().Source.Kind,
+		}
+	}
+	if contract.Version() == "0.3.0" {
+		encoded, err := json.Marshal(output)
+		if err != nil {
+			return result.GraphEvaluation{}, reportEncodingFailure(doc.ID)
+		}
+		if int64(len(encoded)) > MaxEvaluationReportBytes {
+			return result.GraphEvaluation{}, evaluationReportBudgetFailure()
 		}
 	}
 	// The whole run is appended here, in one write, or not at all: the node

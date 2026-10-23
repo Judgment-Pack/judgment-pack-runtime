@@ -383,6 +383,22 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			ExitCode: result.ExitInvalid,
 		}
 	}
+	contract, selectionFailure := SelectContract(loaded, doc)
+	if selectionFailure != nil {
+		if selectionFailure.Code == "profile-unsupported" || selectionFailure.Code == "JPS-GRAPH-MIXED-CONTRACT" {
+			return result.GraphTest{}, selectionFailure
+		}
+		// Preserve row assertions about a refused pack. No successful
+		// composition exists from which to claim a different contract.
+		contract = result.LegacyEvaluatorContract()
+	}
+	if selectionFailure == nil && options.contract.SpecVersion != "" && options.contract != contract {
+		return result.GraphTest{}, mixedContractFailure()
+	}
+	options.contract = contract
+	if contract.Version() == "0.3.0" && (options.ReportBudget <= 0 || options.ReportBudget > int(MaxEvaluationReportBytes)) {
+		options.ReportBudget = int(MaxEvaluationReportBytes)
+	}
 	output := result.GraphTest{
 		OutputVersion:             result.OutputVersion,
 		Tool:                      result.CurrentTool(),
@@ -393,7 +409,7 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		Label:                     result.GraphMatrixLabel,
 		Kind:                      result.ProjectKind,
 		FormatVersion:             FormatVersion,
-		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion:      contract.Version(),
 		ConfigPath:                loaded.ConfigPath,
 		GraphPath:                 graphPath,
 		RowsPath:                  rowsPath,
@@ -518,7 +534,7 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 		return outcome
 	}
 	if row.ExpectedDisposition != nil {
-		expected, err := evaluation.DecodeDisposition(row.ExpectedDisposition)
+		expected, err := evaluation.DecodeDispositionWith(row.ExpectedDisposition, options.contract)
 		if err != nil {
 			return mismatch("The row's expected disposition is not a canonicalizable §8.3 disposition, which is a defect in the row and not a result: " + display.Sanitize(err.Error()))
 		}
@@ -569,6 +585,9 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 	// earlier.
 	var expectedTarget *result.HandoffTarget
 	if row.ExpectedHandoffTarget != nil {
+		if evaluated.Disposition.Handoff.Routes != nil {
+			return mismatch("The row's singular expectedHandoffTarget assertion is incompatible with a routed pack; assert handoff.routes in expectedDisposition.")
+		}
 		var renderErr error
 		var expectedRendering, actualRendering string
 		expectedTarget, expectedRendering, actualRendering, renderErr = targetAssertion(row.ExpectedHandoffTarget, evaluated.HandoffTarget)
@@ -620,6 +639,11 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 		// side named.
 		expectedNodeTarget, nodeTargetAsserted := (*result.HandoffTarget)(nil), false
 		if raw, asserted := row.ExpectedNodeHandoffTargets[name]; asserted {
+			if nodeEval.Disposition.Handoff.Routes != nil {
+				comparison.Status = "mismatch"
+				outcome.Nodes = append(outcome.Nodes, comparison)
+				return mismatch(fmt.Sprintf("Node %q uses routes; a singular expectedNodeHandoffTargets assertion is incompatible with its pack.", display.Sanitize(name)))
+			}
 			nodeTargetAsserted = true
 			var renderErr error
 			var expectedRendering, actualRendering string
@@ -631,7 +655,7 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 			}
 			comparison.ExpectedHandoffTarget, comparison.ActualHandoffTarget = expectedRendering, actualRendering
 		}
-		expected, err := evaluation.DecodeDisposition(expectedRaw)
+		expected, err := evaluation.DecodeDispositionWith(expectedRaw, nodeEval.Disposition.Contract)
 		if err != nil {
 			comparison.Status = "mismatch"
 			outcome.Nodes = append(outcome.Nodes, comparison)

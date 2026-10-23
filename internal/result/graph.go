@@ -69,6 +69,8 @@ type GraphNodeEvaluation struct {
 // GraphHandoff is one node's requested handoff, aggregated so a reader of the
 // composite cannot miss an escalation a non-result node requested. It is an
 // aggregation of what the node dispositions already say, never a new fact.
+// Routed packs contribute one entry per selected route in declaration order,
+// including duplicates. Target-only packs keep one entry per requesting node.
 type GraphHandoff struct {
 	Node        string         `json:"node"`
 	TriggeredBy []string       `json:"triggeredBy"`
@@ -326,11 +328,13 @@ type GraphTest struct {
 // which case the identity echoes are empty rather than guessed and Rows and
 // Coverage are absent.
 type GraphSuiteEntry struct {
-	ID           string `json:"id"`
-	Path         string `json:"path"`
-	RowsPath     string `json:"rowsPath,omitempty"`
-	GraphID      string `json:"graphId,omitempty"`
-	GraphVersion string `json:"graphVersion,omitempty"`
+	// Omitted for legacy entries; Core 0.3 entries state their applied contract.
+	EvaluatorSpecVersion string `json:"evaluatorSpecVersion,omitempty"`
+	ID                   string `json:"id"`
+	Path                 string `json:"path"`
+	RowsPath             string `json:"rowsPath,omitempty"`
+	GraphID              string `json:"graphId,omitempty"`
+	GraphVersion         string `json:"graphVersion,omitempty"`
 	// GraphSHA256 is the bare-hex digest of the exact bytes this entry's run
 	// loaded (ADR-0030), read off the one load: a consumer holding the served
 	// document from another call binds these rows to that revision by equality

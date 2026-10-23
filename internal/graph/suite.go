@@ -42,6 +42,34 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 	if selectionFailure != nil {
 		return result.GraphSuite{}, projectFailure(selectionFailure)
 	}
+	contract := result.LegacyEvaluatorContract()
+	contractSelected := false
+	// Preflight the selected entries before any matrix executes so the suite
+	// envelope cannot label graphs evaluated under different Core versions.
+	for _, graphID := range selected {
+		entry, _ := loaded.GraphEntry(graphID)
+		if entry.Rows == "" {
+			continue
+		}
+		document, detail := loadEntryDocument(loaded, entry)
+		if detail != "" || len(document.Structural(loaded)) > 0 {
+			continue
+		}
+		selectedContract, failure := SelectContract(loaded, document)
+		if failure != nil {
+			if failure.Code == "profile-unsupported" || failure.Code == "JPS-GRAPH-MIXED-CONTRACT" {
+				return result.GraphSuite{}, failure
+			}
+			continue
+		}
+		if contractSelected && contract != selectedContract {
+			return result.GraphSuite{}, mixedContractFailure()
+		}
+		contract, contractSelected = selectedContract, true
+	}
+	if contract.Version() == "0.3.0" && (options.ReportBudget <= 0 || options.ReportBudget > int(MaxEvaluationReportBytes)) {
+		options.ReportBudget = int(MaxEvaluationReportBytes)
+	}
 	output := result.GraphSuite{
 		OutputVersion:             result.OutputVersion,
 		Tool:                      result.CurrentTool(),
@@ -52,10 +80,13 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 		Label:                     result.GraphMatrixLabel,
 		Kind:                      result.ProjectKind,
 		FormatVersion:             FormatVersion,
-		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion:      contract.Version(),
 		ConfigPath:                loaded.ConfigPath,
 		ConfigVersion:             loaded.Config.ConfigVersion,
 		Graphs:                    make([]result.GraphSuiteEntry, 0, len(selected)),
+	}
+	if contractSelected {
+		options.contract = contract
 	}
 	spent := 0
 	options.reportSpent = &spent
@@ -140,10 +171,13 @@ func testEntry(loaded *project.Project, engine *evaluation.Engine, id string, en
 	}
 	tested, testFailure := Test(loaded, engine, document, entry.Path, entry.Rows, rows, options)
 	if testFailure != nil {
-		if testFailure.Code == CodeReportBudget {
+		if testFailure.Code == CodeReportBudget || testFailure.Code == "profile-unsupported" || testFailure.Code == "JPS-GRAPH-MIXED-CONTRACT" {
 			return report, testFailure
 		}
 		return mismatch(display.Sanitize(testFailure.Message))
+	}
+	if tested.EvaluatorSpecVersion != result.EvaluatorSpecVersion {
+		report.EvaluatorSpecVersion = tested.EvaluatorSpecVersion
 	}
 	report.Status = tested.Status
 	report.Summary = tested.Summary
