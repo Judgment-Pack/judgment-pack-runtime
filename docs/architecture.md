@@ -14,6 +14,16 @@ current Go packages are internal implementation details; a versioned in-process 
 plugin API remains future work. The public CLI never depends on private source, packages, services,
 or credentials.
 
+## Rule-overlap authoring advice
+
+Core `0.3.0` semantic validation shares a bounded non-normative overlap pass with
+CLI and MCP. It preserves three-valued true/false sets, exact decimal ordering
+and lexical string equality. Strict conformance runs gate exact overlaps while
+retaining normative document results; optional assertions have separate coverage.
+[ADR-0066](adr/0066-bounded-rule-overlap-advice.md) records limits, exclusive
+rewrites and the frozen expectation pointer adapter. Evaluation and disposition
+resolution stay in the existing evaluator.
+
 ## Dialect document tooling
 
 `internal/dialect` implements the offline tools of ADR-0052 and the document

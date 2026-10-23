@@ -1,0 +1,12 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/packs/overlap",
+  "version": "1.0.0",
+  "title": "Overlapping numeric bands",
+  "decision": {"intent": "Assign a band", "question": "Which band applies?"},
+  "outcomes": [{"id": "medium", "label": "Medium"}, {"id": "high", "label": "High"}],
+  "rules": [
+    {"id": "r-medium", "description": "Medium threshold", "outcome": "medium", "onUnknown": "escalate", "when": {"op": "fact", "path": "/score", "operator": "greater-than-or-equal", "value": "40"}},
+    {"id": "r-high", "description": "High threshold", "outcome": "high", "onUnknown": "escalate", "when": {"op": "fact", "path": "/score", "operator": "greater-than-or-equal", "value": "70"}}
+  ]
+}

@@ -55,6 +55,33 @@ type Diagnostic struct {
 	InstancePath  string `json:"instancePath"`
 	Message       string `json:"message"`
 	Profile       string `json:"profile,omitempty"`
+	*OverlapAdvice
+}
+
+// OverlapAdvice is optional so ordinary diagnostics retain comparable value identity.
+type OverlapAdvice struct {
+	Certainty        string          `json:"certainty,omitempty"`
+	Rules            []OverlapRule   `json:"rules,omitempty"`
+	Overlap          *OverlapRegion  `json:"overlap,omitempty"`
+	WitnessFacts     json.RawMessage `json:"witnessFacts,omitempty"`
+	Effect           string          `json:"effect,omitempty"`
+	SuggestedRewrite *OverlapRewrite `json:"suggestedRewrite,omitempty"`
+}
+
+// Overlap fields carry non-normative Core §3.3.1 authoring advice.
+type OverlapRule struct {
+	ID      string `json:"id"`
+	Outcome string `json:"outcome"`
+}
+type OverlapRegion struct {
+	SharedValues  []any  `json:"sharedValues,omitempty"`
+	Path          string `json:"path"`
+	From          string `json:"from,omitempty"`
+	FromInclusive *bool  `json:"fromInclusive,omitempty"`
+}
+type OverlapRewrite struct {
+	RuleID string         `json:"ruleId"`
+	When   map[string]any `json:"when"`
 }
 
 // MarshalJSON preserves the exact normative profile refusal diagnostic.
@@ -141,6 +168,7 @@ type ExpectedDiagnostic struct {
 }
 
 type Case struct {
+	AdvisoryStatus       string              `json:"advisoryStatus,omitempty"`
 	SkipReason           string              `json:"skipReason,omitempty"`
 	ID                   string              `json:"id"`
 	ExpectedStatus       string              `json:"expectedStatus"`
@@ -161,20 +189,27 @@ type SuiteSummary struct {
 	Mismatched int `json:"mismatched"`
 }
 
+type AdvisorySummary struct {
+	Total      int `json:"total"`
+	Passed     int `json:"passed"`
+	Mismatched int `json:"mismatched"`
+}
+
 type Suite struct {
-	OutputVersion         string       `json:"outputVersion"`
-	Tool                  Tool         `json:"tool"`
-	Command               string       `json:"command"`
-	Status                string       `json:"status"`
-	SpecVersion           string       `json:"specVersion"`
-	SuiteVersion          string       `json:"suiteVersion"`
-	CorpusDigest          string       `json:"corpusDigest"`
-	CorpusDigestAlgorithm string       `json:"corpusDigestAlgorithm"`
-	Provenance            string       `json:"provenance"`
-	Summary               SuiteSummary `json:"summary"`
-	Cases                 []Case       `json:"cases"`
-	Diagnostics           []Diagnostic `json:"diagnostics"`
-	DiagnosticsTruncated  bool         `json:"diagnosticsTruncated"`
+	Advisories            *AdvisorySummary `json:"advisories,omitempty"`
+	OutputVersion         string           `json:"outputVersion"`
+	Tool                  Tool             `json:"tool"`
+	Command               string           `json:"command"`
+	Status                string           `json:"status"`
+	SpecVersion           string           `json:"specVersion"`
+	SuiteVersion          string           `json:"suiteVersion"`
+	CorpusDigest          string           `json:"corpusDigest"`
+	CorpusDigestAlgorithm string           `json:"corpusDigestAlgorithm"`
+	Provenance            string           `json:"provenance"`
+	Summary               SuiteSummary     `json:"summary"`
+	Cases                 []Case           `json:"cases"`
+	Diagnostics           []Diagnostic     `json:"diagnostics"`
+	DiagnosticsTruncated  bool             `json:"diagnosticsTruncated"`
 }
 
 type Schema struct {
