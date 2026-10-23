@@ -21,16 +21,21 @@ import (
 
 const HistoryReadBytes int64 = 4 << 20
 
+// MaxHistorySourceBytes bounds source sizes and logical offsets to exact JSON
+// integers. It does not increase the bounded backward reading window.
+const MaxHistorySourceBytes int64 = 9007199254740990
+
 // Valid UTF-8 JSON line bytes expand at most twofold in a JSON string with
 // HTML escaping disabled. Fifty digests plus fixed count/offset metadata fit
 // within the extra 64 KiB; the source window itself bounds total raw strings.
 const MaxHistoryProjectionBytes = 2*HistoryReadBytes + (64 << 10)
 
 var (
-	ErrHistoryArguments  = errors.New("Supply one history kind (pack or graph), an id of 1 to 2048 UTF-8 bytes and an optional nonnegative before offset; use only cursor to continue.")
-	ErrHistoryWindow     = errors.New("A record exceeds the 4 MiB history reading window; download the exact trail instead.")
-	ErrHistoryBefore     = errors.New("The history before offset is beyond the captured trail; start a new history reading.")
-	ErrHistoryProjection = errors.New("The history projection exceeds its bounded encoding limit; no complete result was produced.")
+	ErrHistorySourceLimit = errors.New("The captured history source is outside the supported address range; no complete result was produced.")
+	ErrHistoryArguments   = errors.New("Supply one history kind (pack or graph), an id of 1 to 2048 UTF-8 bytes and an optional nonnegative before offset; use only cursor to continue.")
+	ErrHistoryWindow      = errors.New("A record exceeds the 4 MiB history reading window; download the exact trail instead.")
+	ErrHistoryBefore      = errors.New("The history before offset is beyond the captured trail; start a new history reading.")
+	ErrHistoryProjection  = errors.New("The history projection exceeds its bounded encoding limit; no complete result was produced.")
 )
 
 type HistoryRequest struct {
@@ -43,22 +48,37 @@ type HistoryRequest struct {
 // typed decoder here; raw line text and digest are never repaired or reencoded.
 func DefinitionHistory(reader io.ReaderAt, size int64, request HistoryRequest) (result.AuditDefinitionHistory, error) {
 	out := result.AuditDefinitionHistory{State: "records", Records: []result.AuditDefinitionRecord{}}
-	end := size
-	if request.Before >= 0 {
-		end = request.Before
-	}
-	if end > size || end < 0 {
-		return out, ErrHistoryBefore
+	start, end, err := historyRange(size, request.Before)
+	if err != nil {
+		return out, err
 	}
 	if end == 0 {
 		return out, nil
 	}
-	start := max(int64(0), end-HistoryReadBytes)
 	data := make([]byte, end-start)
 	if _, err := reader.ReadAt(data, start); err != nil {
 		return out, ErrWireRead
 	}
 	return historyWindow(data, start, request)
+}
+
+// historyRange validates before allocation or reads, including direct readers
+// that do not pass through the pager's argument checks. -1 means omitted.
+func historyRange(size, before int64) (start, end int64, err error) {
+	if size < 0 || size > MaxHistorySourceBytes {
+		return 0, 0, ErrHistorySourceLimit
+	}
+	if before < -1 {
+		return 0, 0, ErrHistoryArguments
+	}
+	end = size
+	if before >= 0 {
+		end = before
+	}
+	if end > size {
+		return 0, 0, ErrHistoryBefore
+	}
+	return max(int64(0), end-HistoryReadBytes), end, nil
 }
 
 func historyWindow(data []byte, start int64, request HistoryRequest) (result.AuditDefinitionHistory, error) {
@@ -129,17 +149,10 @@ func captureHistory(source WireSource, declared bool, request HistoryRequest) ([
 		} else {
 			defer files[0].Close()
 			size, locked = sizes[0], held
-			if size > MaxWireFileBytes {
-				return nil, 0, false, ErrWireLimit
+			start, end, err := historyRange(size, request.Before)
+			if err != nil {
+				return nil, 0, false, err
 			}
-			end := size
-			if request.Before >= 0 {
-				end = request.Before
-			}
-			if end > size {
-				return nil, 0, false, ErrHistoryBefore
-			}
-			start := max(int64(0), end-HistoryReadBytes)
 			data := make([]byte, end-start)
 			if len(data) > 0 {
 				if _, err := files[0].ReadAt(data, start); err != nil {

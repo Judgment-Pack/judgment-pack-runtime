@@ -113,10 +113,10 @@ func loadAuditProjectFor(history bool) (*project.Project, string) {
 }
 
 func auditHistoryDefinition() map[string]any {
-	return map[string]any{"name": auditHistoryTool, "description": "Read configured definition history with Desk's exact 4 MiB backward window, newest-first 50-record selection, typed Go JSON decoding and unread/next semantics. Start with kind (pack or graph), id and optional before byte offset; continue with only cursor and optional page_bytes. Transport is bounded base64 chunks of one server-authored JSON result, never retained JSONL for client selection. Exact raw record strings/digests include CR and whitespace; surrogate replacement affects typed selection only. Immutable answer, configured authority checked on every continuation; shares eight five-minute slots with raw exports. 64 MiB source, 8 MiB plus 64 KiB projection, 256 KiB raw chunk and 4 MiB serialized-result ceilings. No caller path, evaluation, writes, keys or network. Experimental Runtime convention; no new Core claim.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
+	return map[string]any{"name": auditHistoryTool, "description": "Read configured definition history with Desk's exact 4 MiB backward window, newest-first 50-record selection, typed Go JSON decoding and unread/next semantics. Start with kind (pack or graph), id and optional before byte offset; continue with only cursor and optional page_bytes. Transport is bounded base64 chunks of one server-authored JSON result, never retained JSONL for client selection. Exact raw record strings/digests include CR and whitespace; surrogate replacement affects typed selection only. Immutable answer, configured authority checked on every continuation; shares eight five-minute slots with raw exports. 9007199254740990-byte source/address range with a 4 MiB backward read/recheck window, 8 MiB plus 64 KiB projection, 256 KiB raw chunk and 4 MiB serialized-result ceilings. No caller path, evaluation, writes, keys or network. Experimental Runtime convention; no new Core claim.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
 		"kind":       map[string]any{"type": "string", "enum": []string{"pack", "graph"}},
 		"id":         map[string]any{"type": "string", "minLength": 1, "maxLength": 2048},
-		"before":     map[string]any{"type": "integer", "minimum": 0, "maximum": int64(9007199254740990)},
+		"before":     map[string]any{"type": "integer", "minimum": 0, "maximum": audit.MaxHistorySourceBytes},
 		"cursor":     map[string]any{"type": "string", "minLength": 1, "maxLength": 85},
 		"page_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": audit.MaxWirePage, "default": audit.DefaultWirePage},
 	}}}
@@ -146,7 +146,7 @@ func (s *Server) toolAuditHistory(raw json.RawMessage) any {
 	} else {
 		kind, _, badKind := textArgument("kind", args["kind"])
 		id, _, badID := textArgument("id", args["id"])
-		before, ok := auditInteger(args["before"], -1, 9007199254740990)
+		before, ok := auditInteger(args["before"], -1, audit.MaxHistorySourceBytes)
 		if badKind != "" || badID != "" || (kind != "pack" && kind != "graph") || len(id) == 0 || len(id) > 2048 || !ok {
 			return toolError(audit.ErrHistoryArguments.Error())
 		}
