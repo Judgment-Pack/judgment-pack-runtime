@@ -318,12 +318,17 @@ func TestAuditHistoryMissingStatesAndSourceLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = file.Truncate(MaxWireFileBytes + 1)
+	if err == nil {
+		// A valid record tail with no LF still refuses by the window policy.
+		tail := []byte(`{"recordVersion":"1","pack":{"id":"same"}}`)
+		_, err = file.WriteAt(tail, int64(MaxWireFileBytes+1-len(tail)))
+	}
 	file.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = NewPager().HistoryPage(source, true, "", &HistoryRequest{Kind: "pack", ID: "same", Before: -1}, 1)
-	if !errors.Is(err, ErrWireLimit) {
+	if !errors.Is(err, ErrHistoryWindow) {
 		t.Fatal(err)
 	}
 }
@@ -431,5 +436,105 @@ func TestAuditHistoryWaitsForTrailAndSerializesRetry(t *testing.T) {
 	first, second := <-responses, <-responses
 	if first.err != nil || second.err != nil || !reflect.DeepEqual(first.page, second.page) {
 		t.Fatal("concurrent history retry advanced twice")
+	}
+}
+
+// offsetHistoryReader supplies one authored tail without allocating its logical
+// prefix. Every read must fit the expected backward window.
+type offsetHistoryReader struct {
+	start int64
+	tail  []byte
+	bytes int64
+	calls int
+}
+
+func (r *offsetHistoryReader) ReadAt(p []byte, off int64) (int, error) {
+	r.calls++
+	r.bytes += int64(len(p))
+	if off < r.start || off+int64(len(p)) > r.start+HistoryReadBytes {
+		return 0, fmt.Errorf("read outside window: %d + %d", off, len(p))
+	}
+	clear(p)
+	tailStart := r.start + HistoryReadBytes - int64(len(r.tail))
+	for i := range p {
+		at := off + int64(i) - tailStart
+		if at >= 0 && at < int64(len(r.tail)) {
+			p[i] = r.tail[at]
+		}
+	}
+	return len(p), nil
+}
+
+func TestAuditHistorySourceAddressRange(t *testing.T) {
+	raw := " " + `{"recordVersion":"1","pack":{"id":"same"}}` + "\r"
+	tail := []byte("\n" + raw + "\npartial")
+	reader := &offsetHistoryReader{start: MaxHistorySourceBytes - HistoryReadBytes, tail: tail}
+	got, err := DefinitionHistory(reader, MaxHistorySourceBytes, HistoryRequest{Kind: "pack", ID: "same", Before: -1})
+	next := MaxHistorySourceBytes - int64(len(tail)) + 1
+	digest := sha256.Sum256([]byte(raw))
+	want := result.AuditDefinitionHistory{State: "records", Records: []result.AuditDefinitionRecord{{Raw: raw, Digest: "sha256:" + hex.EncodeToString(digest[:])}}, Unread: 1, Next: &next}
+	if err != nil || !reflect.DeepEqual(got, want) || reader.calls != 1 || reader.bytes != HistoryReadBytes {
+		t.Fatalf("ceiling window: %#v %v; reads %d/%d", got, err, reader.calls, reader.bytes)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil || !bytes.Contains(encoded, []byte(fmt.Sprintf(`"next":%d`, next))) {
+		t.Fatal("high next lost integer precision", string(encoded), err)
+	}
+	for _, row := range []struct {
+		size, before int64
+		want         error
+	}{
+		{MaxHistorySourceBytes + 1, -1, ErrHistorySourceLimit},
+		{MaxHistorySourceBytes + 1, 0, ErrHistorySourceLimit},
+		{-1, -1, ErrHistorySourceLimit},
+		{10, 11, ErrHistoryBefore},
+		{10, -2, ErrHistoryArguments},
+		{MaxHistorySourceBytes, MaxHistorySourceBytes + 1, ErrHistoryBefore},
+	} {
+		reader := &offsetHistoryReader{}
+		if _, err := DefinitionHistory(reader, row.size, HistoryRequest{Before: row.before}); err != row.want || reader.calls != 0 {
+			t.Fatalf("range %d/%d read or wrong refusal: %v calls=%d", row.size, row.before, err, reader.calls)
+		}
+	}
+}
+
+func TestAuditHistoryLargeCaptureRechecksWindow(t *testing.T) {
+	source, dir := wireFixture(t, nil)
+	name := filepath.Join(dir, FileName)
+	f, err := os.Create(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := int64(MaxWireFileBytes + 1)
+	tail := []byte("\n" + `{"recordVersion":"1","pack":{"id":"same"}}` + "\n")
+	if err := f.Truncate(size); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if _, err := f.WriteAt(tail, size-int64(len(tail))); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+	open := source.Open[0]
+	calls := 0
+	source.Open[0] = func() (*os.File, error) {
+		calls++
+		if calls == 3 {
+			f, err := os.OpenFile(name, os.O_WRONLY, 0)
+			if err != nil {
+				return nil, err
+			}
+			_, err = f.WriteAt([]byte("X"), size-3)
+			f.Close()
+			if err != nil {
+				return nil, err
+			}
+		}
+		return open()
+	}
+	p := NewPager()
+	if _, err := p.HistoryPage(source, true, "", &HistoryRequest{Kind: "pack", ID: "same", Before: -1}, 1); err != ErrWireChanged || len(p.exports) != 0 {
+		t.Fatal("large changed capture published", err)
 	}
 }

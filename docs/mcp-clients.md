@@ -66,7 +66,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_list_graphs` / `experimental_get_graph` | EXPERIMENTAL SURFACE (ADR-0029): this project's configured graphs, by configured id — the graph siblings of `list_packs`/`get_pack`, read-only |
 | `experimental_list_audit` | EXPERIMENTAL (ADR-0065): bounded exact byte export of configured evaluations, signatures and stamps, plus supported structured history lines; provisional until complete |
 | `experimental_verify_audit` | EXPERIMENTAL (ADR-0065): the CLI verifier's full report for the configured trail or bounded supplied exact bytes, with supplied checkpoint expectations; no keys, trust roots, repair or writes |
-| `experimental_list_audit_history` | EXPERIMENTAL (ADR-0065): server-selected Desk-compatible definition history within the 64 MiB source/4 MiB read-window budgets, transported as bounded chunks of one JSON result; no client JSONL parsing |
+| `experimental_list_audit_history` | EXPERIMENTAL (ADR-0065): server-selected Desk-compatible definition history within a 9007199254740990-byte source address range and 4 MiB read window (ADR-0069), transported as bounded chunks of one JSON result; no client JSONL parsing |
 
 None of these evaluate, decide, or authorize anything — `experimental_list_graphs` and
 `experimental_get_graph` carry the experimental marker for their surface's stability, not because
@@ -802,7 +802,12 @@ on the server. Start with `{"kind":"pack","id":"decision-id"}` (or
 `kind:"graph"`), optional `before` byte offset, and optional `page_bytes`.
 The id is 1–2048 UTF-8 bytes. `before` is an integer from 0 to
 9007199254740990; omission starts at the captured file end. The source is only
-configured `evaluations.jsonl`, at most 64 MiB. No caller path is accepted.
+configured `evaluations.jsonl`, at most 9007199254740990 bytes (2^53−2).
+This finite address ceiling keeps source sizes and logical offsets exact for
+JSON-number clients; it does not promise filesystem support at that size.
+Sources above the ceiling refuse even with a smaller `before`. An offset beyond
+the captured size refuses before reading; `before:0` selects an empty window.
+No caller path is accepted ([ADR-0069](adr/0069-bound-history-reads-by-window.md)).
 Absent/broken projects refuse; absent audit declaration yields `no-trail`,
 missing evaluations yields `no-records`, and present empty evaluations yields
 `records` with an empty array. Directory containment and guarded regular-file
@@ -866,6 +871,12 @@ count and offset metadata fit within the extra 64 KiB. Tests exercise both
 escaping maxima and maximum record/identifier metadata. Only encoded projection
 bytes and one bounded previous page survive a call; the source window is freed.
 The eight-slot capacity also bounds retained projection state. This establishes
-Desk-equivalent history within the declared 64 MiB source/4 MiB window budgets,
+Desk-equivalent history within the declared source address range and unchanged
+4 MiB read/recheck window,
 alongside byte-exact raw downloads within their file budget; it is not an
-unrestricted issue-308 closure or a new Core conformance claim.
+unrestricted issue-308 closure or a new Core conformance claim. Raw exports and
+configured verification remain limited to 64 MiB per source; supplied verification
+trail and expectation inputs remain limited to 8 MiB and 1 MiB respectively.
+The window bounds source reads and transient work independently of source size;
+it is not a 4 MiB total-memory guarantee (line splitting and decoding also
+allocate bounded transient data).

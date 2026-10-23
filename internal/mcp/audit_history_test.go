@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -295,4 +296,85 @@ func TestAuditHistoryNoTrailAndRejectedResponseCleanup(t *testing.T) {
 	}
 	result.CLIVersion = version
 	historyRPCPage(t, s, map[string]any{"kind": "pack", "id": "same", "page_bytes": 1})
+}
+
+func TestAuditHistorySparseSourceWindows(t *testing.T) {
+	for _, size := range []int64{64 << 20, (64 << 20) + 1} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			dir := auditMCPProject(t)
+			name := filepath.Join(dir, "audit", audit.FileName)
+			f, err := os.Create(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			// Only Truncate creates the hole; writes are bounded authored suffixes.
+			if err := f.Truncate(size); err != nil {
+				t.Fatal(err)
+			}
+			older := " " + `{"recordVersion":"1","pack":{"id":"same"},"n":1}` + "\r"
+			newer := "\t" + `{"recordVersion":"1","pack":{"id":"same"},"n":2}` + " "
+			nonmatch := `{"recordVersion":"1","pack":{"id":"other"}}`
+			tail := []byte("\n" + older + "\n" + nonmatch + "\nbad\n" + newer + "\npartial")
+			olderEnd := int64(8 << 20)
+			oldTail := []byte("\n" + older + "\n")
+			for _, w := range []struct {
+				end  int64
+				data []byte
+			}{{olderEnd, oldTail}, {size, tail}} {
+				if _, err := f.WriteAt(w.data, w.end-int64(len(w.data))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			check := func(before *int64, sourceBytes int64, raws []string, unread int, next *int64) []byte {
+				t.Helper()
+				args := map[string]any{"kind": "pack", "id": "same", "page_bytes": 17}
+				if before != nil {
+					args["before"] = *before
+				}
+				pages, encoded := historyRPCDrain(t, NewServer(nil, nil), args)
+				want := result.AuditDefinitionHistory{State: "records", Records: []result.AuditDefinitionRecord{}, Unread: unread, Next: next}
+				for _, raw := range raws {
+					digest := sha256.Sum256([]byte(raw))
+					want.Records = append(want.Records, result.AuditDefinitionRecord{Raw: raw, Digest: "sha256:" + hex.EncodeToString(digest[:])})
+				}
+				var got result.AuditDefinitionHistory
+				if json.Unmarshal(encoded, &got) != nil || !reflect.DeepEqual(got, want) || pages[0].SourceBytes != sourceBytes {
+					t.Fatalf("sparse history: %#v want %#v source=%d", got, want, pages[0].SourceBytes)
+				}
+				return encoded
+			}
+			next := size - int64(len(tail)) + 1
+			captured := check(nil, size, []string{newer, older}, 2, &next)
+			oldNext := olderEnd - int64(len(oldTail)) + 1
+			check(&olderEnd, size, []string{older}, 0, &oldNext)
+			zero := int64(0)
+			check(&zero, size, nil, 0, nil)
+			for _, before := range []int64{size + 1, audit.MaxHistorySourceBytes} {
+				answer, _ := auditRPC(t, NewServer(nil, nil), auditHistoryTool, fmt.Sprintf(`{"kind":"pack","id":"same","before":%d}`, before))
+				if answer["isError"] != true || toolText(t, answer) != audit.ErrHistoryBefore.Error() {
+					t.Fatal(answer)
+				}
+			}
+			answer, _ := auditRPC(t, NewServer(nil, nil), auditHistoryTool, `{"kind":"pack","id":"same","before":9007199254740991}`)
+			if answer["isError"] != true || toolText(t, answer) != audit.ErrHistoryArguments.Error() {
+				t.Fatal(answer)
+			}
+			if size > audit.MaxWireFileBytes {
+				for _, tool := range []string{auditListTool, auditVerifyTool} {
+					answer, n := auditRPC(t, NewServer(nil, nil), tool, `{}`)
+					if answer["isError"] != true || n > 1024 || toolText(t, answer) != audit.ErrWireLimit.Error() {
+						t.Fatal("raw/verify source gate changed", answer)
+					}
+				}
+			}
+			if _, err := f.WriteAt([]byte("\nappended\n"), size); err != nil {
+				t.Fatal(err)
+			}
+			fresh := check(&size, size+10, []string{newer, older}, 2, &next)
+			if !bytes.Equal(captured, fresh) {
+				t.Fatal("fresh old-end selection changed after append")
+			}
+		})
+	}
 }
