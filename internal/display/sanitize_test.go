@@ -16,6 +16,7 @@ func TestSanitize(t *testing.T) {
 		{name: "bidi override", input: "a\u202eb", want: "a?b"},
 		{name: "line separator", input: "a\u2028b", want: "a?b"},
 		{name: "paragraph separator", input: "a\u2029b", want: "a?b"},
+		{name: "mixed direction controls", input: "safe\u009b31m\u061c\u200e\u200f\u202e\u2066\u2028text", want: "safe?31m??????text"},
 		{name: "plain ASCII", input: "safetext", want: "safetext"},
 		{name: "ordinary space", input: "a b", want: "a b"},
 		{name: "non-breaking space", input: "a\u00a0b", want: "a\u00a0b"},
