@@ -64,6 +64,9 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
 | `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
 | `experimental_list_graphs` / `experimental_get_graph` | EXPERIMENTAL SURFACE (ADR-0029): this project's configured graphs, by configured id — the graph siblings of `list_packs`/`get_pack`, read-only |
+| `experimental_list_audit` | EXPERIMENTAL (ADR-0065): bounded exact byte export of configured evaluations, signatures and stamps, plus supported structured history lines; provisional until complete |
+| `experimental_verify_audit` | EXPERIMENTAL (ADR-0065): the CLI verifier's full report for the configured trail or bounded supplied exact bytes, with supplied checkpoint expectations; no keys, trust roots, repair or writes |
+| `experimental_list_audit_history` | EXPERIMENTAL (ADR-0065): server-selected Desk-compatible definition history within the 64 MiB source/4 MiB read-window budgets, transported as bounded chunks of one JSON result; no client JSONL parsing |
 
 None of these evaluate, decide, or authorize anything — `experimental_list_graphs` and
 `experimental_get_graph` carry the experimental marker for their surface's stability, not because
@@ -647,3 +650,222 @@ regions/rewrites and marks truncation explicitly. See
 
 See [ADR-0063](adr/0063-explicit-core-030-contracts.md) for provenance and contract
 choices, and [CONFORMANCE.md](../CONFORMANCE.md) for conformance posture and evidence.
+
+## Experimental audit reading and verification
+
+`experimental_list_audit`, `experimental_list_audit_history` and
+`experimental_verify_audit` are read-only Runtime
+conventions ([ADR-0065](adr/0065-read-audit-trails-over-mcp.md), #308). They add
+no Core conformance claim or signed audit format. The CLI and retained audit
+formats remain unchanged. Neither tool evaluates, writes, repairs, loads a
+signing key, fetches a timestamp nor accepts a server filesystem path.
+
+All require a present, loadable project, located by `JPACK_CONFIG` or the
+server's `jpack.json`. Export/verification require a contained declared
+`audit.dir`; history reports `no-trail` when that declaration is absent.
+No argument changes
+that authority. All configured file reads retain the project's rooted
+containment, final-symlink and regular-file guards. The supplied-data verification
+mode also requires this configured project and contained directory. Errors are
+finite `isError:true` tool results and never repeat retained contents, rejected
+values, private-key settings or host paths. A valid verification report whose
+`status` is `invalid` remains `isError:false`: it reports findings successfully.
+
+### Listing and exact downloads
+
+Call `experimental_list_audit` with `{}` or `{"page_bytes":65536}`. Only
+`cursor` and `page_bytes` are accepted, once with exact spellings. Omit the
+cursor to start; a supplied cursor must be a nonempty string of at most 85 ASCII
+bytes. `page_bytes` is an integer from 1 to 262144, default 65536. Null, strings
+for integers, fractional/exponent notation, unknown or repeated members and
+caller paths are refused, including in standalone handler calls.
+
+The `auditWireVersion:"1"` report also carries the usual `outputVersion`,
+`tool` and `command`, plus:
+
+| Member | Meaning |
+| --- | --- |
+| `files` | Fixed order: `evaluations.jsonl`, `signatures.jsonl`, `stamps.jsonl`. Each has `name`, `present`, `bytes` and, when present, `digest` of the captured exact prefix, including every delimiter. Missing and present-but-empty are distinct. |
+| `file`, `offset`, `dataBase64` | This page's fixed filename, starting byte offset and canonical padded base64 of exact bytes. Append decoded bytes at the stated offset. Never reconstruct a download by reencoding `members`. |
+| `records` | Line results whose final bytes were transported on this page, including a line begun on an earlier raw page. No filtering or identity deduplication occurs. |
+| `pendingLine` | A line has begun and a later page will finish it. Its structured result has not been omitted. |
+| `fileComplete` | This captured file prefix has been fully transported; the next page visits the next fixed file. Missing/empty files each have a zero-byte page. |
+| `complete`, `nextCursor` | Only `complete:true` with no cursor finishes the whole export after final integrity checks. Every provisional page carries a continuation. |
+| `snapshotBetweenWrites` | The initial trail/sidecar sizes were captured under the existing cooperative trail lock. False when no trail exists or locking is unsupported. Stamps are captured separately under their own shared lock, after releasing the trail lock, even when evaluations is absent; this flag describes only the trail/sidecar capture. This is not a claim of an atomic snapshot against arbitrary writers. |
+
+A line result has `offset`, `bytes`, `digest` and `status`. The byte count and
+SHA-256 exclude only the LF delimiter: whitespace and a preceding CR remain
+part of the exact line and its digest. Status is:
+
+| Status | Retained information |
+| --- | --- |
+| `parsed` | A complete UTF-8 JSON-object line of at most 65536 bytes; all members in `members`, exact bytes in `rawLineBase64`, with no schema reinterpretation. |
+| `malformed` | A complete bounded line that is empty, nonobject, invalid JSON/UTF-8 or contains an unpaired Unicode surrogate escape; exact bytes in `rawLineBase64`, no `members`, no silent Unicode repair. |
+| `oversized` | A complete line longer than 65536 bytes; count, offset and digest only. Its complete bytes still travel in raw chunks. A valid Runtime record may exceed this structured limit. |
+| `incomplete` | Final bytes after the last LF, with count, offset and digest; exact `rawLineBase64` only within the structured limit, no `members`. This is never a completed decision. |
+
+The base64 encoding of an empty raw line is the empty string; that optional
+field may be absent for a zero-byte malformed line. Consumers can select ordinary
+definition history directly from `members.recordVersion`, `members.pack.id` or
+`members.graph.id`, retain the separately supplied exact raw line and digest,
+and order/filter by offsets. They need not parse JSONL. Cross-page lines are
+reported exactly once when finished. For supported parsed lines, reproduce
+Desk's history selection with version `"1"`, the desired pack or graph identity,
+newest first, retaining duplicate identities. Faithful selection uses Desk's
+whole-object typed JSON decoding, rather than exact-key map lookups: Go matches
+the `recordVersion`, `pack`, `graph` and nested `id` tags with exact-name or
+case-insensitive fallback, including its ordinary null/duplicate-member behavior.
+Both optional identity objects must decode successfully, even if only the other
+kind is requested. For example, `{"RecordVersion":"1","pack":{"id":"same"}}`
+is selected for that pack, while
+`{"recordVersion":"1","pack":{"id":"same"},"graph":{"id":1}}` is omitted
+because the unrelated typed `graph.id` is malformed. The wire preserves every
+member; it does not filter by these history rules. This is explicitly bounded history
+parity for these advisory listing members: Desk's local reader has a 4 MiB read window, while this listing's decoded
+line limit is 64 KiB. A larger valid line can appear in local Desk history but
+has only raw downloadable bytes and `oversized` metadata in this listing. Skipping it is
+not exact history parity; consumers must say that structured history is limited.
+The Unicode rule is also stricter than Go's historical replacement behavior:
+unpaired surrogate escapes remain exact raw bytes but have no structured members.
+Use `experimental_list_audit_history` below for exact server-side history
+selection within the declared source/window budgets, including those cases.
+
+Follow the returned cursor on the same server instance, optionally changing
+`page_bytes`. The most recently answered cursor can be retried idempotently,
+returning its original response even if the retry requests another page size;
+this includes the final response. Older cursors are refused. The initial request
+without a cursor starts a new export and is not an idempotent resume. At most
+eight export states are retained for five minutes from creation; completed
+states can be evicted to admit a new export. Cursors do not survive restart.
+Concurrent calls for one current cursor return the same page and advance once.
+
+Each captured file is bounded at 64 MiB. The initial pass streams fixed 64 KiB
+block hashes and a full digest, serving verifies each block into a single cache,
+and finalization checks every captured block again. Thus file I/O is linear;
+small byte pages do not rehash the whole file. Identity, presence and minimum
+size are checked on every advancing call. Later appends are excluded. Replacement,
+removal, truncation or a changed unserved block causes refusal; in-place edits
+to already served blocks may be detected only by the final pass. An intermediate
+page is provisional. Discard the whole export if any page fails or completion
+is not reached. Retrying the latest answered cursor returns that historical
+page, without making a new statement about current filesystem contents.
+
+Memory remains bounded by block hashes, one 64 KiB block, one 64 KiB pending
+line and the last response per export, rather than full-file materialization.
+A page returns at most 128 line results and can therefore contain fewer raw
+bytes than requested. The complete serialized MCP tool result is limited to
+4 MiB, counting text/structured duplication, base64 and escaping. An amplified
+response is refused whole. The server invalidates that export and releases its
+state, including on a rejected continuation/final page; the old cursor cannot
+resume. Start a new export with smaller `page_bytes`. Rejected responses retain
+no inaccessible active slots and do not invalidate other accepted exports.
+No refusal can claim a partially exported file is complete.
+
+### Verification and checkpoint expectations
+
+`experimental_verify_audit` accepts only these optional members:
+
+| Argument | Meaning and bound |
+| --- | --- |
+| `expect` | Supplied checkpoint JSONL, content equivalent of CLI `--expect`, at most 1 MiB. Uses the same `audit.ParseCheckpoints`: every supplied checkpoint must match, blank lines pass, empty/no-checkpoint or unsupported versions refuse. Combine repeated CLI expectation files as newline-separated supplied text. |
+| `require_checkpoint_through` | Integer 0–9007199254740990, default 0. Same `audit.Verify` requirement as CLI `--require-checkpoint-through`; 0 requests no minimum. |
+| `trail_base64` | Canonical padded base64 of at most 8 MiB of exact supplied bytes, content equivalent of CLI `--trail` without a path selector. Omit to verify the guarded configured `evaluations.jsonl`, bounded to 64 MiB. The empty string supplies an empty trail. |
+
+The existing 16 MiB complete request-line ceiling applies in addition to these
+decoded bounds, and the 4 MiB serialized result limit applies here too. Null,
+unknown members, paths, malformed/case-folded/repeated arguments, noncanonical
+base64 and out-of-bound values refuse with no partial report. No signature
+public keys, stamp roots or witness inputs are accepted; their coverage remains
+explicitly unchecked. Signatures/stamps remain downloadable independently.
+
+The tool calls the CLI's same `audit.Verify` implementation and returns every
+field of `AuditVerification`, including coverage, segments/discontinuities,
+held/required checkpoint results, findings/totals, incomplete-tail digest and the
+statements of what the verification does and does not establish. Source metadata
+is honest: `command` is `mcp experimental_verify_audit`; configured `trailPath`
+is project-relative, while supplied bytes use `(supplied trail)` and
+`snapshotBetweenWrites:false`. The corresponding CLI file read can report true
+because it captured a file size under a cooperative lock. No verifier field is
+replaced to hide those source differences. A missing configured trail refuses;
+a present empty trail receives the same report as CLI verification of empty bytes.
+
+For example, `{"expect":"{\"checkpointVersion\":\"1\",...}\n","require_checkpoint_through":1}`
+supplies held checkpoint text; the actual checkpoint must contain exactly the
+CLI's supported four members. `{"trail_base64":""}` checks an empty supplied
+trail under the same configured-project requirement.
+
+### Server-side definition history
+
+`experimental_list_audit_history` closes the advisory listing's line-size and
+Unicode-selection gaps by producing the complete Desk-shaped history answer
+on the server. Start with `{"kind":"pack","id":"decision-id"}` (or
+`kind:"graph"`), optional `before` byte offset, and optional `page_bytes`.
+The id is 1–2048 UTF-8 bytes. `before` is an integer from 0 to
+9007199254740990; omission starts at the captured file end. The source is only
+configured `evaluations.jsonl`, at most 64 MiB. No caller path is accepted.
+Absent/broken projects refuse; absent audit declaration yields `no-trail`,
+missing evaluations yields `no-records`, and present empty evaluations yields
+`records` with an empty array. Directory containment and guarded regular-file
+opening remain mandatory for declared audit storage.
+
+Selection follows the existing Desk reader exactly: one backward 4 MiB window;
+discard its leading partial line whenever the window starts above offset zero;
+skip an incomplete final line and count it unread; decode each complete UTF-8
+line into the typed `recordVersion`, `pack.id` and `graph.id` structure; return
+up to 50 matching version-1 records newest first. Empty/invalid JSON/UTF-8,
+unsupported versions and malformed typed members increment `unread`.
+Valid nonmatching records do not. Go's ordinary case folding, duplicate/null
+semantics and unpaired-surrogate replacement affect selection exactly as in
+Desk. Raw selected lines remain the original UTF-8 source text, including CR
+and whitespace; their digests exclude only LF. No source bytes are normalized.
+An unpaired escape in `raw` is a literal backslash escape inside a JSON string,
+so the projection never emits unsupported Unicode scalars as JSON members.
+
+The server produces one JSON document of exactly
+`{state, records:[{raw,digest}], next?, unread}`. Consumers reassemble and decode
+this JSON object; they do not split retained JSONL, decode record identities or
+implement history selection. `next`, when present, is the next logical `before`
+offset for a fresh history query. It retains Desk's edge behavior: a
+window-truncated long line ending in LF can yield empty records and a repeated
+`next` offset; a window containing no LF above offset zero refuses. The chunk
+transport still always advances to a finite completed document. This tool does
+not correct the separate Desk pagination behavior.
+
+To keep large valid history answers within the unchanged 4 MiB serialized MCP
+result ceiling, outer pages carry `auditHistoryVersion:"1"`, the normal
+`outputVersion`/`tool`/`command`, `sourceBytes`, `snapshotBetweenWrites`,
+`projectionBytes`, `projectionDigest`, `offset`, `dataBase64`, `complete` and
+optional `nextCursor`. Decode and concatenate the base64 ranges at their offsets;
+validate total length/digest and require `complete:true` before using the answer.
+The projection includes a trailing LF, covered by its digest. Unlike record
+digests, this digest covers the entire server-authored JSON document.
+
+`page_bytes` is 1–262144, default 65536. Continue on the same server with only
+`cursor` and optional `page_bytes`; selectors on a continuation refuse. Raw
+export/history cursors are distinct and cannot be exchanged. Both operations
+share the same eight retained slots, five-minute lifetime, latest answered
+cursor retry (including final), completed-state eviction and whole-response
+refusal cleanup. Every continuation reloads and binds the configured project
+authority. A serialization refusal invalidates only its export and permits a
+fresh smaller-page request. Input strings remain subject to the existing
+well-formed Unicode transport contract; standalone handlers enforce it too.
+
+Initial capture takes its size under the trail's cooperative shared lock,
+reads only the required window, then reopens the guarded identity and rechecks
+that bounded window. This detects stable replacement/shrink/edits during
+capture; it is not atomic against arbitrary noncooperating mutation. No source
+file handle persists. The encoded projection is immutable: later appends or
+source changes do not alter a captured answer, and retries make no continuous
+filesystem-integrity claim. New logical queries take fresh snapshots.
+
+Each retained projection is capped at 8 MiB plus 64 KiB. At most 4 MiB of raw
+window bytes can appear in selected records; JSON string encoding with HTML
+escaping disabled expands these valid UTF-8 bytes by at most two (including
+backslashes, quotes, CR/TAB and U+2028/U+2029). Fifty digests and fixed envelope,
+count and offset metadata fit within the extra 64 KiB. Tests exercise both
+escaping maxima and maximum record/identifier metadata. Only encoded projection
+bytes and one bounded previous page survive a call; the source window is freed.
+The eight-slot capacity also bounds retained projection state. This establishes
+Desk-equivalent history within the declared 64 MiB source/4 MiB window budgets,
+alongside byte-exact raw downloads within their file budget; it is not an
+unrestricted issue-308 closure or a new Core conformance claim.

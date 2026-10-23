@@ -155,8 +155,10 @@ authority, and following it confers no conformance status on anything.
 | [0056](0056-version-3-dialect-authoring.md) | Check supported version-3 Dialect declarations through shared authoring tools | accepted |
 | [0057](0057-named-dialect-artifact-identity.md) | Share offline tools for named Dialect artifacts | accepted |
 | [0059](0059-experimental-offline-policy-tools.md) | Prototype Policy document and retained-reference checks offline | accepted |
-| [0060](0060-explicit-policy-candidate-format.md) | Add an explicit Policy contract candidate without changing prototype clients | accepted; source/maturity for new explicit 1.0.0 operations superseded by [0061](0061-adopt-official-policy-draft-resources.md) |
+| [0060](0060-explicit-policy-candidate-format.md) | Add an explicit Policy contract candidate without changing prototype clients | accepted; source/maturity for new explicit 1.0.0 operations superseded by [0061](0061-adopt-official-policy-draft-resources.md); candidate-only corrected URI scope superseded by [0064](0064-share-uri-component-grammar.md) |
 | [0061](0061-adopt-official-policy-draft-resources.md) | Adopt immutable official Policy draft resources in the shared offline reader | accepted; effective upon required CI and introducing PR merge |
 | [0062](0062-static-fact-type-advice.md) | Expose bounded static fact-type advice without authoring expectations | proposed |
-| [0063](0063-explicit-core-030-contracts.md) | Add explicit base-only Core 0.3.0 contracts without changing legacy defaults | proposed; optional-advisory skipping superseded by [0066](0066-bounded-rule-overlap-advice.md) |
+| [0063](0063-explicit-core-030-contracts.md) | Add explicit base-only Core 0.3.0 contracts without changing legacy defaults | accepted; optional-advisory skipping superseded by [0066](0066-bounded-rule-overlap-advice.md) |
+| [0064](0064-share-uri-component-grammar.md) | Share RFC 3986 URI grammar while preserving prototype Policy compatibility | accepted; partially supersedes [0060](0060-explicit-policy-candidate-format.md)'s candidate-only corrected URI scope |
+| [0065](0065-read-audit-trails-over-mcp.md) | Read exact configured audit bytes and structured history with bounded MCP tools | accepted |
 | [0066](0066-bounded-rule-overlap-advice.md) | Report bounded rule-overlap advice without changing document conformance | accepted |
