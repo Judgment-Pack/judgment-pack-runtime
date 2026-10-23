@@ -40,7 +40,7 @@ func loadSchemas() (map[string]*jsonschema.Schema, error) {
 		}
 		schemas = map[string]*jsonschema.Schema{}
 		for name, id := range map[string]string{"common": commonID, "uri": commonID + "#/$defs/uri", "policy": "urn:jps:prototype:policy-companion:0.0.2:policy", "governing-adoption": "urn:jps:prototype:policy-companion:0.0.2:governing-adoption", "materials": wireID} {
-			s, err := validation.CompileSchemas(resources, id)
+			s, err := validation.CompileSchemasWithFormats(resources, id, prototypeURIFormat())
 			if err != nil {
 				schemasError = err
 				return
