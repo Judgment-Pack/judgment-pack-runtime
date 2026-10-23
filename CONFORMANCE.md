@@ -207,3 +207,21 @@ makes a divergence as likely to be a defect in the row as in the implementation,
 project-issued erratum can mark a row defective. Report the divergence to the specification project
 and to this repository. Until an erratum exists, the correct outcome is a fixed implementation or a
 withdrawn claim — edited here, in this file — and never a self-issued exclusion.
+
+## Runtime-specific audit wire contract evidence
+
+The following are experimental Runtime convention checks for issue #308 and
+[ADR-0065](docs/adr/0065-read-audit-trails-over-mcp.md). They are outside JPS Core
+and add no validator/evaluator conformance claim, signed format, cryptographic
+coverage or independently authored interoperability assertion.
+
+| Runtime contract row | Evidence | Scope |
+| --- | --- | --- |
+| Exact evaluations/signatures/stamps export | `internal/mcp/testdata/audit-wire-cases.json`, `TestAuditWireContractRowsDownloadAndHistoryFromToolsAlone` | All three downloads reconstruct byte for byte, including CR/whitespace, malformed UTF-8/JSON and incomplete tails |
+| Advisory raw-listing members | Same contract rows; `TestAuditWirePreservesBytesAndCrossPageMembers` | Full parsed members for supported lines up to 64 KiB, exact raw-line bytes and SHA-256 excluding only LF across byte boundaries; larger/malformed-Unicode lines remain raw-downloadable and server-side history handles their Desk selection separately |
+| Verification and held checkpoint parity | `TestAuditWireFullVerifyReportMatchesCLIExpectAndTrail` | Full CLI report with configured/supplied trails, held/multiple/mismatched expectations, required coverage, malformed bindings and incomplete tails; source labels and file-lock metadata remain explicit |
+| Bounded, contained read authority | `TestAuditToolsStrictStandaloneAndTransportArguments`, `TestAuditToolsProjectAuthorityAndFileGuards`, `TestAuditWireSerializedResponseBudgetIncludesBothRepresentations` | Strict bounded inputs/results, configured project, containment, final-symlink/regular-file guards, finite nondisclosing refusals |
+| Provisional export and cursor integrity | `TestAuditWireChangedFilesNeverComplete`, `TestAuditWireAppendExclusionAndCursorRetries`, `TestAuditWireCapacityExpiryLimitsAndConcurrentRetry` | Append exclusion, replacement/truncation/mutation refusal before completion, idempotent latest retry, bounded expiry/capacity and concurrent advancement |
+| Independent stamps and refusal recovery | `TestAuditWireStampsWaitForIndependentWriterLock`, `TestAuditWireSerializedRefusalsInvalidateOnlyTheirExport` | Stamps wait for their cooperating writer with/without evaluations; trail-only lock flag remains honest; initial/continuation/final serialized refusals release only their export and allow smaller-page restart |
+| Server-selected definition history | `internal/mcp/testdata/audit-history-cases.json`, `TestAuditHistoryToolsOnlyHandAuthoredRows`, `TestAuditHistoryExactDeskWindowAndUnicode`, `TestAuditHistoryFiftyNextAndWindowRefusals` | Exact Desk-shaped result within 64 MiB sources/4 MiB windows, including newest 50, unread/next, boundary/repeated-next behavior, typed/case/duplicate/Unicode decoding and exact raw-line strings/digests; consumers decode one projected JSON document, never retained JSONL |
+| Bounded history transport/state | `TestAuditHistoryProjectionEscapeAndMetadataBounds`, `TestAuditHistorySharedCapacityCursorKindsAndSnapshot`, `TestAuditHistoryLargeProjectionAppendAndBefore`, `TestAuditHistoryNoTrailAndRejectedResponseCleanup` | Escape-max 8 MiB plus 64 KiB projection, unchanged response cap, shared eight-slot/five-minute state, cross-kind cursor refusal, source/authority snapshot semantics and refusal cleanup |

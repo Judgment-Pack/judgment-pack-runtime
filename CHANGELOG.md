@@ -2429,3 +2429,21 @@ preparation does not establish them.
   Unreleased. `LICENSE` is deliberately left byte-identical to the canonical Apache-2.0 text: its
   appendix is a template for marking your own files, not a field to fill, and editing it costs a
   clean Apache-2.0 match on automated license scanners. The copyright holder is named in `NOTICE`.)
+
+### Unreleased addition — experimental audit wire tools (#308)
+
+- Add `experimental_list_audit` for byte-exact bounded downloads of all three
+  configured audit files and structured history lines across page boundaries.
+  Fixed-prefix exports exclude appends and refuse replacement, truncation and
+  mutation before completion, with explicit file/page/record/session limits.
+- Add `experimental_verify_audit` using the unchanged CLI verifier and checkpoint
+  parser, with bounded supplied `expect`, `require_checkpoint_through` and exact
+  `trail_base64` input. Configured-project authority remains required; no caller
+  host paths, repair, writes, keys or network verification inputs are exposed.
+  The CLI and existing audit formats remain unchanged (ADR-0065).
+
+- Add `experimental_list_audit_history` for exact server-side Desk history
+  selection within the 64 MiB source/4 MiB window budgets, including typed
+  Unicode behavior, newest-first 50 records and unread/next semantics. Chunk one
+  bounded JSON projection through the existing response ceiling and shared
+  export capacity; clients need no retained JSONL parsing (ADR-0065).
