@@ -204,3 +204,18 @@ makes a divergence as likely to be a defect in the row as in the implementation,
 project-issued erratum can mark a row defective. Report the divergence to the specification project
 and to this repository. Until an erratum exists, the correct outcome is a fixed implementation or a
 withdrawn claim — edited here, in this file — and never a self-issued exclusion.
+
+## Runtime-specific audit wire contract evidence
+
+The following are experimental Runtime convention checks for issue #308 and
+[ADR-0065](docs/adr/0065-read-audit-trails-over-mcp.md). They are outside JPS Core
+and add no validator/evaluator conformance claim, signed format, cryptographic
+coverage or independently authored interoperability assertion.
+
+| Runtime contract row | Evidence | Scope |
+| --- | --- | --- |
+| Exact evaluations/signatures/stamps export | `internal/mcp/testdata/audit-wire-cases.json`, `TestAuditWireContractRowsDownloadAndHistoryFromToolsAlone` | All three downloads reconstruct byte for byte, including CR/whitespace, malformed UTF-8/JSON and incomplete tails |
+| Bounded structured definition history | Same contract rows; `TestAuditWirePreservesBytesAndCrossPageMembers` | Full parsed members for supported lines up to 64 KiB, duplicate identities, pack/graph selection, exact raw-line bytes and SHA-256 excluding only LF, across byte boundaries; larger valid lines are raw-downloadable only, unlike Desk's 4 MiB local read window; malformed surrogate escapes are retained without Go's historical replacement |
+| Verification and held checkpoint parity | `TestAuditWireFullVerifyReportMatchesCLIExpectAndTrail` | Full CLI report with configured/supplied trails, held/multiple/mismatched expectations, required coverage, malformed bindings and incomplete tails; source labels and file-lock metadata remain explicit |
+| Bounded, contained read authority | `TestAuditToolsStrictStandaloneAndTransportArguments`, `TestAuditToolsProjectAuthorityAndFileGuards`, `TestAuditWireSerializedResponseBudgetIncludesBothRepresentations` | Strict bounded inputs/results, configured project, containment, final-symlink/regular-file guards, finite nondisclosing refusals |
+| Provisional export and cursor integrity | `TestAuditWireChangedFilesNeverComplete`, `TestAuditWireAppendExclusionAndCursorRetries`, `TestAuditWireCapacityExpiryLimitsAndConcurrentRetry` | Append exclusion, replacement/truncation/mutation refusal before completion, idempotent latest retry, bounded expiry/capacity and concurrent advancement |

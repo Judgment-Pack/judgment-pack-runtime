@@ -222,3 +222,25 @@ Runtime discovery separates document versions from evaluator capabilities. Profi
 metadata is scoped to Core `0.3.0` and does not change Policy or Dialect contracts.
 The full conformance posture and outstanding review are recorded only in
 [CONFORMANCE.md](../CONFORMANCE.md).
+
+## Experimental audit wire reading
+
+[ADR-0065](adr/0065-read-audit-trails-over-mcp.md) adds read-only MCP audit
+listing and verification; it narrows the earlier statement that none of the
+audit commands has an MCP equivalent. `internal/audit.Pager` transports exact
+fixed prefixes of the three configured audit files, using retained block hashes,
+one block cache, a bounded cross-page line reader and a final integrity pass.
+Structured line results carry exact line bytes/digests and every decoded member;
+raw base64 chunks retain malformed, oversized and incomplete data as well.
+Intermediate pages remain provisional until successful completion.
+
+`internal/mcp` supplies only root-authorized project openers and bounded caller
+data. No caller input selects a server filesystem path. Presence, project loading,
+directory containment, final-symlink and regular-file guards precede reads.
+`experimental_verify_audit` calls `audit.Verify` and `audit.ParseCheckpoints`,
+sharing the CLI's full verification report. Supplied exact bytes replace CLI
+`--trail` file access without adding path authority; their source metadata says
+no between-writes file snapshot was taken. No repair, write, private-key loader,
+timestamp fetching or new cryptographic format is exposed. The
+[MCP reference](mcp-clients.md#experimental-audit-reading-and-verification)
+defines budgets, provisional pages, retry lifetime and explicit line statuses.

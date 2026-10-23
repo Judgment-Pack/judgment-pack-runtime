@@ -159,3 +159,4 @@ authority, and following it confers no conformance status on anything.
 | [0061](0061-adopt-official-policy-draft-resources.md) | Adopt immutable official Policy draft resources in the shared offline reader | accepted; effective upon required CI and introducing PR merge |
 | [0062](0062-static-fact-type-advice.md) | Expose bounded static fact-type advice without authoring expectations | proposed |
 | [0063](0063-explicit-core-030-contracts.md) | Add explicit base-only Core 0.3.0 contracts without changing legacy defaults | proposed |
+| [0065](0065-read-audit-trails-over-mcp.md) | Read exact configured audit bytes and structured history with bounded MCP tools | proposed |

@@ -1262,3 +1262,16 @@ distinct-byte bundles can exceed the private 24 MiB JSON/base64 carrier or MCP's
 These ceilings remain unchanged. Agreement is same-vendor implementation
 evidence and establishes no stable maturity, independently authored
 interoperability, approval, current authority or permission.
+
+### Experimental audit reading over MCP
+
+`experimental_list_audit` exports the configured evaluations, signatures and
+stamps as exact bounded base64 chunks, with structured members and raw-line
+digests for supported history lines up to 64 KiB. `experimental_verify_audit` uses the CLI's
+verifier, with supplied checkpoint expectations and optional supplied exact
+trail bytes. Both require the server's configured audit project; neither accepts
+a host file path, writes, repairs, manages keys or fetches timestamps. Exports
+are provisional until complete and have explicit size/lifetime limits. See the
+[MCP reference](docs/mcp-clients.md#experimental-audit-reading-and-verification)
+and [ADR-0065](docs/adr/0065-read-audit-trails-over-mcp.md). This is a Runtime
+convention and adds no Core conformance claim.
