@@ -297,6 +297,11 @@ func FailureMessageFor(err error) string {
 // member existed, and it is additive, so recordVersion stays "1". It is a
 // member of the line like any other, so the chain and the record signature
 // cover it as they cover the rest of the line.
+//
+// Contributors retains the evaluation's complete actual rule or forcing-
+// exception attribution beside the disposition (ADR-0067). Historical records
+// without it are not rewritten or interpreted as complete attribution. Graph
+// composites carry none; each evaluation record names its own pack's sources.
 type Record struct {
 	RecordVersion        string                 `json:"recordVersion"`
 	Trail                string                 `json:"trail,omitempty"`
@@ -319,6 +324,7 @@ type Record struct {
 	Binding              *Binding               `json:"binding,omitempty"`
 	UnknownCauses        []result.UnknownCause  `json:"unknownCauses,omitempty"`
 	TypeMismatches       []result.TypeMismatch  `json:"typeMismatches,omitempty"`
+	Contributors         []result.Contributor   `json:"contributors,omitempty"`
 	Disposition          json.RawMessage        `json:"disposition"`
 }
 
@@ -925,6 +931,7 @@ func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, cites []Citati
 		Cites:          cites,
 		UnknownCauses:  causes,
 		TypeMismatches: mismatches,
+		Contributors:   evaluated.Contributors,
 		Disposition:    disposition,
 	}), nil
 }
