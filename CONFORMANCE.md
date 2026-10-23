@@ -179,13 +179,16 @@ These results are implementation evidence, not an exhaustive check of the versio
 requirements.
 
 A new Core `0.3.0` evaluator-conformance claim is deferred until complete integration
-and required review settle it. In particular, the existing Core URI grammar defect
-([#297](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/297)) also applies
-to the shared Core `0.3.0` validator: the character allowlist and URL parser do not
-fully enforce RFC 3986 component grammar. Passing the indexed corpus does not resolve
-that defect. Its compatibility change is separate work; this preparation preserves
-the existing URI behavior. This section makes no partial or qualified conformance
-claim. The recorded `0.2.0-draft` claim above remains as recorded.
+and required review settle it. The shared Core URI grammar correction
+([#297](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/297),
+[ADR-0064](docs/adr/0064-share-uri-component-grammar.md)) replaces the former
+character allowlist/URL parser with complete ASCII RFC 3986 component grammar
+for ordinary Core validation and evaluator admission. Authored URI fixtures,
+repaired-reference agreement and entry-point tests are scoped implementation
+evidence; fixing that defect alone does not establish the complete evaluator
+claim. Historical prototype Policy compatibility remains explicitly scoped.
+This section makes no partial or qualified conformance claim. The recorded
+`0.2.0-draft` claim above remains as recorded.
 
 ## Corroboration, which is not the claim's basis
 

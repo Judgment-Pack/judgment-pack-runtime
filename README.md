@@ -1263,6 +1263,22 @@ These ceilings remain unchanged. Agreement is same-vendor implementation
 evidence and establishes no stable maturity, independently authored
 interoperability, approval, current authority or permission.
 
+Ordinary Core `format: "uri"` now applies complete ASCII RFC 3986 component
+grammar across CLI/MCP validation and evaluator admission. This changes acceptance:
+raw brackets in `urn:test:[x]`, paths, queries and fragments are refused, while
+percent-encoded reg-names such as `https://%65xample.invalid/a` and IPvFuture
+literals such as `foo://[v1.a]/` are accepted. Both `v` and `V`, IPv6, valid percent
+escapes, query/fragment punctuation and generic digit-only ports are preserved.
+Malformed escapes, final LF and scoped IPv6 are refused. This checks generic
+syntax without resolving a URI or granting trust. Exact spelling and stored
+identities are preserved. Update Runtime pins deliberately and revalidate original
+bytes; no IDs, records or jobs migrate automatically. Official Policy uses the
+shared corrected assertion. Historical prototype Policy `0.0.2`, including its
+retained Core consumers, keeps its old assertion through a scoped compatibility
+path. [ADR-0064](docs/adr/0064-share-uri-component-grammar.md) records the acceptance
+and migration decision. This correction establishes no new Core `0.3.0`
+evaluator-conformance claim.
+
 ### Experimental audit reading over MCP
 
 `experimental_list_audit` exports the configured evaluations, signatures and
