@@ -88,7 +88,8 @@ type ComparedSide struct {
 // ComparedRefusal is a refused evaluation's class, phase and this runtime's
 // code. Two refusals are the same when all three are.
 type ComparedRefusal struct {
-	Class string `json:"class,omitempty"`
-	Phase string `json:"phase,omitempty"`
-	Code  string `json:"code"`
+	Class   string `json:"class,omitempty"`
+	Phase   string `json:"phase,omitempty"`
+	Code    string `json:"code"`
+	Profile string `json:"profile,omitempty"`
 }
