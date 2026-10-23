@@ -10,14 +10,10 @@
 // (result.EvaluationClaimReference). The surface may still change or be removed
 // without compatibility promise, which is what "experimental" names here.
 //
-// Only a pack declaring specVersion 0.2.0-draft is evaluated. §11 makes the
-// declared value exact and says an unedited 0.1.0-draft pack "must be re-declared
-// before an implementation claiming this draft evaluates it", so a pack declaring
-// any other version is refused as pack-not-conformant in the preflight phase
-// (declaredSpecVersion) rather than evaluated under a contract it has not opted
-// into. Every payload still names the contract's own version
-// (result.EvaluatorSpecVersion) beside the pack's, because they are two facts and
-// a consumer should read the applied contract rather than infer it.
+// Options selects an exact evaluator version: the default remains 0.2.0-draft;
+// Core 0.3.0 is explicit and supports only the base profile. A pack must declare
+// the selected version before its §§7–8 semantics are applied. Every successful
+// payload names that applied version beside the pack's declared version.
 //
 // Evaluation is a pure function of its inputs: a conformant pack, one facts
 // document, the tri-state availability of declared evidence, and the
@@ -67,6 +63,7 @@ import (
 // admits as message detail rather than as the class. A failure that §8.4 does not
 // classify at all — a bad invocation, an internal fault — carries no class.
 type Failure struct {
+	Profile  string
 	Class    string
 	Phase    string
 	Code     string
@@ -77,6 +74,9 @@ type Failure struct {
 // Options carries one evaluation's caller opt-ins. The zero value is the
 // published surface: Core conditions only, no draft grammar, no work budget.
 type Options struct {
+	// SpecVersion selects an exact evaluator contract; empty preserves 0.2.
+	SpecVersion       string
+	SupportedProfiles []string
 	// Command names the reporting surface, exactly as in the describe package.
 	Command string
 	// SupportedExtensions is the consumer's extension capability set.
@@ -256,6 +256,7 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 		budget:        options.workLimit(),
 	}
 	disposition, target, trace, failure := resolve(packRoot, factsDocument, walk)
+	disposition.Contract = options.contract()
 	if failure != nil {
 		return result.Evaluation{}, failure
 	}
@@ -270,7 +271,7 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 		Experimental:              true,
 		ConformanceClaimReference: result.EvaluationClaimReference,
 		SpecVersion:               validated.SpecVersion,
-		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion:      options.contract().Version(),
 		PackID:                    packIdentity(packRoot, "id"),
 		PackVersion:               packIdentity(packRoot, "version"),
 		Disposition:               disposition,
@@ -422,10 +423,12 @@ func admissionKey(options Options) string {
 		supported = []string{}
 	}
 	encoded, _ := json.Marshal(struct {
+		Version   string   `json:"c"`
+		Profiles  []string `json:"p"`
 		Supported []string `json:"s"`
 		RFC0008   bool     `json:"r"`
 		RFC0016   bool     `json:"v"`
-	}{supported, options.RFC0008Quantifiers, options.RFC0016OutcomeValues})
+	}{options.contract().Version(), options.SupportedProfiles, supported, options.RFC0008Quantifiers, options.RFC0016OutcomeValues})
 	return string(encoded)
 }
 
@@ -450,7 +453,7 @@ func (a *AdmittedPack) admission(options Options) *packAdmission {
 	admission := &packAdmission{}
 	validated, packRoot, unsupported, failure := a.engine.conformance(a.pack, options)
 	if failure == nil {
-		failure = declaredSpecVersion(validated.SpecVersion)
+		failure = declaredSpecVersionWith(validated.SpecVersion, options.contract())
 	}
 	admission.validated, admission.packRoot = validated, packRoot
 	admission.unsupported, admission.failure = unsupported, failure
@@ -465,8 +468,22 @@ func (a *AdmittedPack) admission(options Options) *packAdmission {
 // Admits reports whether this pack reaches §8 under a capability set, from
 // the memo — the raw byte limit stays with EvaluateWith, as it always has.
 func (a *AdmittedPack) Admits(supported []string) bool {
-	admission := a.admission(Options{SupportedExtensions: supported})
+	return a.AdmitsWith(Options{SupportedExtensions: supported})
+}
+
+// AdmitsWith checks static pack admission under an explicit version and profile
+// capability set, using the same memo as evaluation and fact advice. Like
+// Admits, it leaves the raw byte limit to EvaluateWith or SelectContract.
+func (a *AdmittedPack) AdmitsWith(options Options) bool {
+	if oneDraft(options) != nil {
+		return false
+	}
+	admission := a.admission(options)
 	return admission.failure == nil && admission.unsupported == nil
+}
+
+func (e *Engine) AdmitsWith(pack []byte, options Options) bool {
+	return e.AdmitPack(pack).AdmitsWith(options)
 }
 
 // packIdentity reads one identity member off the pack that was evaluated. Both
@@ -491,6 +508,23 @@ func packIdentity(packRoot map[string]any, member string) string {
 // because §8.2 compares the extension sets last, after the facts and evidence
 // documents are admitted, and §8.4 makes that order the error precedence.
 func (e *Engine) conformance(pack []byte, options Options) (result.Validation, map[string]any, *Failure, *Failure) {
+
+	// A draft projection must not obscure a Core 0.3 profile refusal. Legacy
+	// draft carriers still follow their existing grammar/refusal path unchanged.
+	if options.RFC0008Quantifiers || options.RFC0016OutcomeValues {
+		_, diagnostic, scanFailure := validation.NegotiateProfile(pack, carrier.DefaultLimits(), options.SupportedProfiles)
+		if scanFailure == nil && diagnostic != nil {
+			status := "invalid"
+			if diagnostic.Code == "profile-unsupported" {
+				status = "unsupported"
+			}
+			return result.Validation{}, nil, nil, packNotConformant(result.Validation{Status: status, Diagnostics: []result.Diagnostic{*diagnostic}})
+		}
+	}
+	if options.contract().Version() != result.EvaluatorSpecVersion && (options.RFC0008Quantifiers || options.RFC0016OutcomeValues) {
+		return result.Validation{}, nil, nil, &Failure{Code: "JPS-INVOCATION-DRAFT-RFC", Message: "Draft RFC opt-ins apply only to the Core 0.2.0-draft evaluator contract.", ExitCode: result.ExitInvocation}
+	}
+
 	if options.RFC0008Quantifiers {
 		return e.draftConformance(pack, options, rfc0008Grammar)
 	}
@@ -498,6 +532,7 @@ func (e *Engine) conformance(pack []byte, options Options) (result.Validation, m
 		return e.draftConformance(pack, options, rfc0016Grammar)
 	}
 	validated, operational := e.validator.Validate(pack, validation.Options{
+		SupportedProfiles:   options.SupportedProfiles,
 		Through:             "semantic",
 		SupportedExtensions: options.SupportedExtensions,
 		Limits:              carrier.DefaultLimits(),
@@ -523,6 +558,9 @@ func (e *Engine) conformance(pack []byte, options Options) (result.Validation, m
 // conformance, naming the first diagnostic so the refusal is self-sufficient.
 // This is §8.4's pack-not-conformant class, whichever layer the pack failed at.
 func packNotConformant(validated result.Validation) *Failure {
+	if len(validated.Diagnostics) == 1 && validated.Diagnostics[0].Code == "profile-unsupported" {
+		return &Failure{Code: "profile-unsupported", Profile: validated.Diagnostics[0].Profile, ExitCode: result.ExitUnsupported, Phase: result.PhasePreflight}
+	}
 	exitCode := result.ExitInvalid
 	if validated.Status == "unsupported" {
 		exitCode = result.ExitUnsupported

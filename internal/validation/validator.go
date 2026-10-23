@@ -24,6 +24,7 @@ type Options struct {
 	Through             string
 	ExpectedSpecVersion string
 	SupportedExtensions []string
+	SupportedProfiles   []string
 	Limits              carrier.Limits
 	// FormatOverrides is explicit companion-scoped structural validation. The
 	// same bundled schema and input bytes are used; cached defaults are untouched.
@@ -184,6 +185,20 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 		options.Limits = carrier.DefaultLimits()
 	}
 	output := result.NewValidation(options.Through)
+	if options.Through != "carrier" {
+		_, diagnostic, scanFailure := NegotiateProfile(data, options.Limits, options.SupportedProfiles)
+		if scanFailure == nil && diagnostic != nil {
+			output.SpecVersion = "0.3.0"
+			output.Layers = append(output.Layers, result.Layer{Name: "carrier", Status: "passed"})
+			if diagnostic.Code == "profile-unsupported" {
+				output.Status = "unsupported"
+				output.Diagnostics = []result.Diagnostic{*diagnostic}
+				return output, nil
+			}
+			return structuralBootstrapFailure(output, diagnostic.InstancePath, diagnostic.Code, diagnostic.Message), nil
+		}
+	}
+
 	value, carrierFailure := carrier.Decode(data, options.Limits)
 	if carrierFailure != nil {
 		if carrierFailure.Resource {

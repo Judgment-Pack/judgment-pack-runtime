@@ -3,6 +3,7 @@ package result
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -53,6 +54,19 @@ type Diagnostic struct {
 	Severity      string `json:"severity"`
 	InstancePath  string `json:"instancePath"`
 	Message       string `json:"message"`
+	Profile       string `json:"profile,omitempty"`
+}
+
+// MarshalJSON preserves the exact normative profile refusal diagnostic.
+func (d Diagnostic) MarshalJSON() ([]byte, error) {
+	if d.Code == "profile-unsupported" {
+		return json.Marshal(struct {
+			Code    string `json:"code"`
+			Profile string `json:"profile"`
+		}{d.Code, d.Profile})
+	}
+	type plain Diagnostic
+	return json.Marshal(plain(d))
 }
 
 func ErrorDiagnostic(code, layer, instancePath, message string) Diagnostic {
@@ -250,23 +264,11 @@ type Example struct {
 // (conformanceClaimReference, OutputVersion "2").
 const EvaluationClaimReference = "CONFORMANCE.md"
 
-// EvaluatorSpecVersion names the exact JPS Core version whose evaluator contract
-// this runtime's experimental evaluator applies: the §8.2 input preflight, the
-// §8.3 portable disposition, and the §8.4 error classes and their precedence.
-//
-// It is reported independently of the pack's own specVersion, and every
-// evaluation payload carries both, because they are two different facts even
-// though this evaluator now requires them to be equal: §11 makes the declared
-// value exact, so a pack must declare this version to be evaluated at all, and a
-// pack declaring any other is refused as pack-not-conformant in the preflight
-// phase (evaluation.declaredSpecVersion). Keeping both members means a consumer
-// reads the contract that was applied from the payload rather than inferring it
-// from the pack, and it survives a later version that admits more than one.
-//
-// It is also the exact version the claim in CONFORMANCE.md is made against, and
-// therefore the version scope of that claim: nothing is claimed under
-// 0.1.0-draft, which defines no evaluator class and under which §3.4.1 forbids
-// such a claim outright.
+// EvaluatorSpecVersion is the legacy default evaluator contract. Explicit Core
+// 0.3 operations use EvaluatorContract instead. Evaluation payloads report the
+// selected contract separately from the pack's declared specVersion; the two
+// must agree before evaluation. This constant remains unchanged for legacy
+// callers, expected-disposition readers, and recorded results.
 const EvaluatorSpecVersion = "0.2.0-draft"
 
 // HandoffTarget echoes the pack's declared escalation target when a handoff is
@@ -386,13 +388,17 @@ func (h *HandoffTarget) Rendered() (string, error) {
 type Handoff struct {
 	State       string   `json:"state"`
 	TriggeredBy []string `json:"triggeredBy,omitempty"`
+	// Routes is nil for target-only packs and nonnil (including empty) for routed packs.
+	Routes []HandoffTarget `json:"routes,omitempty"`
 }
 
 // Disposition is the portable disposition of JPS Core §8.3: kind ("outcome",
 // "not-applicable", or "unresolved"), the outcome id exactly when kind is
 // "outcome", the retained reason set as a sorted duplicate-free array (empty
 // exactly when kind is "outcome"), and the handoff object. Under JPS Core
-// 0.2.0-draft it carries these members and no others.
+// 0.2.0-draft it carries these members and no others. Core 0.3 additionally
+// carries handoff.routes exactly when the pack declares escalation.routes.
+// Contract is operation metadata and never a portable disposition member.
 //
 // Value is the one member that is not Core's. The specification's RFC 0016
 // (Draft) proposes it, and the evaluator sets it under that RFC's opt-in and
@@ -412,11 +418,12 @@ type Handoff struct {
 // is required", and a byte comparison must recanonicalize either side it did not
 // itself produce.
 type Disposition struct {
-	Kind      string         `json:"kind"`
-	OutcomeID string         `json:"outcomeId,omitempty"`
-	Reasons   []string       `json:"reasons"`
-	Handoff   Handoff        `json:"handoff"`
-	Value     map[string]any `json:"value,omitempty"`
+	Contract  EvaluatorContract `json:"-"`
+	Kind      string            `json:"kind"`
+	OutcomeID string            `json:"outcomeId,omitempty"`
+	Reasons   []string          `json:"reasons"`
+	Handoff   Handoff           `json:"handoff"`
+	Value     map[string]any    `json:"value,omitempty"`
 }
 
 // Canonical returns the disposition's RFC 8785 canonicalization: members ordered
@@ -433,7 +440,8 @@ type Disposition struct {
 // iff kind is "outcome", reasons is empty iff kind is "outcome", and triggeredBy
 // is present iff the handoff state is "requested" — the exact reason set of a
 // not-applicable result, triggeredBy being a subset of reasons, and the direct
-// request a retained exception-escalation reason is. The one place
+// request a retained exception-escalation reason is. Core 0.3 permits that
+// direct request to select no route, retaining its reason with state none. The one place
 // canonicalization lives is therefore also the place that holds a caller to them.
 // The engine builds no illegal value; an exported type can be handed one.
 //
@@ -445,10 +453,22 @@ type Disposition struct {
 // Whether the handoff state agrees with the pack's escalation object (§8.1) is
 // pack-dependent in the same way and is likewise the engine's.
 func (d Disposition) Canonical() ([]byte, error) {
+	return d.CanonicalWith(d.Contract)
+}
+
+func (d Disposition) CanonicalWith(contract EvaluatorContract) ([]byte, error) {
+	d.Contract = contract
 	if err := d.validate(); err != nil {
 		return nil, err
 	}
 	handoff := map[string]any{"state": d.Handoff.State}
+	if d.Handoff.Routes != nil {
+		routes := make([]any, len(d.Handoff.Routes))
+		for i, target := range d.Handoff.Routes {
+			routes[i] = map[string]any{"kind": target.Kind, "name": target.Name}
+		}
+		handoff["routes"] = routes
+	}
 	if len(d.Handoff.TriggeredBy) > 0 {
 		handoff["triggeredBy"] = sortedSet(d.Handoff.TriggeredBy)
 	}
@@ -504,6 +524,29 @@ const ReasonExceptionEscalation = "exception-escalation"
 // absent. The reason set is compared as a set, since duplicates in the assembled
 // value are the caller's and not a difference in the disposition.
 func (d Disposition) validate() error {
+	if err := d.Contract.Validate(); err != nil {
+		return err
+	}
+	if d.Contract.Version() == "0.3.0" && d.Value != nil {
+		return errors.New("§8.3: Core 0.3 admits no value member")
+	}
+	if d.Handoff.Routes != nil {
+		if d.Contract.Version() != "0.3.0" {
+			return errors.New("§8.3: routes is not admitted by this evaluator contract")
+		}
+		if len(d.Handoff.Routes) > 8 {
+			return errors.New("§4.1: base handoff routes exceeds 8")
+		}
+		if (len(d.Handoff.Routes) > 0) != (d.Handoff.State == "requested") {
+			return errors.New("§8.3: routed handoff state must agree with selected routes")
+		}
+		for _, target := range d.Handoff.Routes {
+			if !slices.Contains([]string{"human-role", "queue", "system"}, target.Kind) || target.Name == "" {
+				return errors.New("§6.7: route target requires an admitted kind and nonempty name")
+			}
+		}
+	}
+
 	if !slices.Contains(dispositionKinds, d.Kind) {
 		return fmt.Errorf("§8.3: kind must be \"outcome\", \"not-applicable\", or \"unresolved\"; got %q", d.Kind)
 	}
@@ -549,17 +592,11 @@ func (d Disposition) validate() error {
 			return fmt.Errorf("§8.3: handoff.triggeredBy must be a subset of reasons; %q is not a retained reason", trigger)
 		}
 	}
-	// The other direction of that membership, for one reason only. §8 records
-	// exception-escalation exactly when a true exception with effect escalate
-	// made a direct request, §8.1 makes that request regardless of the trigger
-	// list — "including a direct exception request made when the pack carries no
-	// escalation object" — and §8.3 puts exception-escalation in triggeredBy
-	// whenever that request was made. So a retained exception-escalation reason
-	// is a requested handoff naming itself, for every pack: no escalation
-	// configuration can make it anything else, which is what keeps this beside
-	// the other rules here rather than with the pack-dependent ones the engine
-	// owns. With the presence iff above, this also settles the state.
-	if slices.Contains(reasons, ReasonExceptionEscalation) != slices.Contains(d.Handoff.TriggeredBy, ReasonExceptionEscalation) {
+	// A direct request names itself when a handoff is made. Core 0.3 routed
+	// packs can retain that reason but select no route (§8.1), in which case
+	// state is none and triggeredBy is absent. Legacy and target-only packs
+	// preserve the unconditional direct-request invariant.
+	if !(d.Contract.Version() == "0.3.0" && d.Handoff.Routes != nil && d.Handoff.State == "none") && slices.Contains(reasons, ReasonExceptionEscalation) != slices.Contains(d.Handoff.TriggeredBy, ReasonExceptionEscalation) {
 		return errors.New("§8.3: a retained \"exception-escalation\" reason is a direct request, so handoff.state must be \"requested\" and handoff.triggeredBy must name it (§8.1)")
 	}
 	return d.validateValue()

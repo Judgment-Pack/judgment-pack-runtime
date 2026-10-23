@@ -44,19 +44,32 @@ func (f *Failure) Error() string {
 }
 
 type parser struct {
-	decoder *json.Decoder
-	limits  Limits
-	nodes   int
-	data    []byte
+	decoder  *json.Decoder
+	limits   Limits
+	nodes    int
+	data     []byte
+	rootScan bool
 }
 
 func Decode(data []byte, limits Limits) (any, *Failure) {
+	return decode(data, limits, false)
+}
+
+// ScanRootDeclarations parses the complete bounded carrier while retaining only
+// the root version and profile declarations. It never accepts a JSON prefix.
+func ScanRootDeclarations(data []byte, limits Limits) (map[string]any, *Failure) {
+	value, failure := decode(data, limits, true)
+	root, _ := value.(map[string]any)
+	return root, failure
+}
+
+func decode(data []byte, limits Limits, rootScan bool) (any, *Failure) {
 	if !utf8.Valid(data) {
 		return nil, invalid("JPS-CARRIER-INVALID-JSON", "", "Input is not valid UTF-8 JSON.")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	p := parser{decoder: decoder, limits: limits, data: data}
+	p := parser{decoder: decoder, limits: limits, data: data, rootScan: rootScan}
 	value, failure := p.value(nil, 0)
 	if failure != nil {
 		return nil, failure
@@ -205,6 +218,10 @@ func (p *parser) value(location []string, depth int) (any, *Failure) {
 
 func (p *parser) object(location []string, depth int) (map[string]any, *Failure) {
 	value := map[string]any{}
+	var seen map[string]bool
+	if p.rootScan {
+		seen = map[string]bool{}
+	}
 	for p.decoder.More() {
 		token, err := p.decoder.Token()
 		if err != nil {
@@ -218,14 +235,23 @@ func (p *parser) object(location []string, depth int) (map[string]any, *Failure)
 		if len(key) > p.limits.MaxStringBytes {
 			return nil, resource("JPS-RESOURCE-STRING-LIMIT", Pointer(memberLocation), "Input contains an object member name exceeding the configured limit.")
 		}
-		if _, exists := value[key]; exists {
+		_, exists := value[key]
+		if p.rootScan {
+			exists = seen[key]
+		}
+		if exists {
 			return nil, invalid("JPS-CARRIER-DUPLICATE-MEMBER", Pointer(memberLocation), "Object member name is duplicated.")
+		}
+		if p.rootScan {
+			seen[key] = true
 		}
 		item, failure := p.value(memberLocation, depth)
 		if failure != nil {
 			return nil, failure
 		}
-		value[key] = item
+		if !p.rootScan || depth == 1 && (key == "specVersion" || key == "profile") {
+			value[key] = item
+		}
 	}
 	if token, err := p.decoder.Token(); err != nil || token != json.Delim('}') {
 		return nil, p.invalidJSON(Pointer(location), "expected the end of the object", err)
@@ -241,7 +267,9 @@ func (p *parser) array(location []string, depth int) ([]any, *Failure) {
 		if failure != nil {
 			return nil, failure
 		}
-		value = append(value, item)
+		if !p.rootScan {
+			value = append(value, item)
+		}
 	}
 	if token, err := p.decoder.Token(); err != nil || token != json.Delim(']') {
 		return nil, p.invalidJSON(Pointer(location), "expected the end of the array", err)
