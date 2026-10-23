@@ -25,8 +25,15 @@ func TestURIComponentsRFC3986(t *testing.T) {
 			if got := Valid(tc.URI); got != tc.Valid {
 				t.Fatalf("Valid(%q) = %v, want %v", tc.URI, got, tc.Valid)
 			}
-			if got := Validate(tc.URI) == nil; got != tc.Valid {
+			err := Validate(tc.URI)
+			if got := err == nil; got != tc.Valid {
 				t.Fatal("format callback differs from predicate")
+			}
+			if err != nil {
+				const want = "URI does not satisfy RFC 3986 component grammar"
+				if err.Error() != want {
+					t.Fatalf("Validate(%q) error = %q, want %q", tc.URI, err.Error(), want)
+				}
 			}
 		})
 	}
