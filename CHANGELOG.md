@@ -4,6 +4,12 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Allow experimental configured definition history above 64 MiB, up to the exact
+  JSON integer source/address ceiling of 9007199254740990 bytes. Keep the 4 MiB
+  read/recheck window and existing projection, transport and session budgets.
+  Raw export and configured verification retain their 64 MiB limits; larger
+  verification inputs remain separate #308 work (ADR-0069).
+
 - Add recommended Core `0.3.0` `JPS-RULES-OVERLAP` warnings to semantic CLI/MCP
   validation, with exact region or witness, rule identities and exclusive rewrites
   (ADR-0066, #304). Plain validation remains valid; strict conformance runs reject
