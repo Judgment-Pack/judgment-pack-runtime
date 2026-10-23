@@ -1,0 +1,10 @@
+{
+  "historyVersion":"1",
+  "cases":[
+    {"name":"surrogate-selection-keeps-raw","data":"{\"recordVersion\":\"1\",\"pack\":{\"id\":\"\\ud800\"}}\r\n","kind":"pack","id":"�","raw":["{\"recordVersion\":\"1\",\"pack\":{\"id\":\"\\ud800\"}}\r"],"unread":0},
+    {"name":"typed-case-and-unrelated-error","data":"{\"RecordVersion\":\"1\",\"Graph\":{\"ID\":\"é\"}}\n{\"recordVersion\":\"1\",\"graph\":{\"id\":\"é\"},\"pack\":{\"id\":false}}\n{\"recordVersion\":\"1\",\"pack\":{\"id\":\"other\"}}\n","kind":"graph","id":"é","raw":["{\"RecordVersion\":\"1\",\"Graph\":{\"ID\":\"é\"}}"],"unread":1},
+    {"name":"invalid-utf8-before-nonascii-selection","dataHex":"ff0a7b227265636f726456657273696f6e223a2231222c227061636b223a7b226964223a22c3a9227d7d0a","kind":"pack","id":"é","raw":["{\"recordVersion\":\"1\",\"pack\":{\"id\":\"é\"}}"],"unread":1},
+    {"name":"unsupported-version-and-partial","data":"{\"recordVersion\":\"2\",\"pack\":{\"id\":\"same\"}}\npartial","kind":"pack","id":"same","raw":[],"unread":2},
+    {"name":"duplicate-case-order","data":"{\"recordVersion\":\"1\",\"RecordVersion\":\"2\",\"pack\":{\"id\":\"same\"}}\n{\"recordVersion\":\"2\",\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"}}\n","kind":"pack","id":"same","raw":["{\"recordVersion\":\"2\",\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"}}"],"unread":1}
+  ]
+}

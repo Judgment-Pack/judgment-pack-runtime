@@ -1,0 +1,17 @@
+{
+  "auditWireVersion": "1",
+  "scope": "Runtime-specific experimental audit transport; no Core conformance claim",
+  "cases": [
+    {"name":"empty-present","evaluations":"","statuses":[],"packHistoryCount":0,"graphHistoryCount":0},
+    {"name":"pack-and-graph-same-id","evaluations":" {\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"},\"unknown\":[1,true]} \r\n{\"recordVersion\":\"1\",\"graph\":{\"id\":\"same\"}}\n","statuses":["parsed","parsed"],"packHistoryCount":1,"graphHistoryCount":1},
+    {"name":"malformed-kept","evaluations":"\nnot-json\n[]\n","statuses":["malformed","malformed","malformed"],"packHistoryCount":0,"graphHistoryCount":0},
+    {"name":"invalid-utf8-kept","evaluationsHex":"7b2278223a22ff227d0a","statuses":["malformed"],"packHistoryCount":0,"graphHistoryCount":0},
+    {"name":"incomplete-kept","evaluations":"{\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"}}","statuses":["incomplete"],"packHistoryCount":0,"graphHistoryCount":0},
+    {"name":"duplicate-identities-retained","evaluations":"{\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"},\"n\":1}\n{\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"},\"n\":2}\n","statuses":["parsed","parsed"],"packHistoryCount":2,"graphHistoryCount":0},
+    {"name":"unpaired-surrogates-kept","evaluations":"{\"x\":\"\\ud800\"}\n{\"\\udfff\":1}\n{\"x\":\"\\ud83d\\ude00\"}\n","statuses":["malformed","malformed","parsed"],"packHistoryCount":0,"graphHistoryCount":0},
+    {"name":"typed-unrelated-graph-id-refuses-pack","evaluations":"{\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"},\"graph\":{\"id\":1}}\n","statuses":["parsed"],"packHistoryCount":0,"graphHistoryCount":0},
+    {"name":"typed-unrelated-pack-id-refuses-graph","evaluations":"{\"recordVersion\":\"1\",\"graph\":{\"id\":\"same\"},\"pack\":{\"id\":true}}\n","statuses":["parsed"],"packHistoryCount":0,"graphHistoryCount":0},
+    {"name":"typed-case-folded-members","evaluations":"{\"RecordVersion\":\"1\",\"Pack\":{\"ID\":\"same\"}}\n{\"RECORDVERSION\":\"1\",\"GRAPH\":{\"Id\":\"same\"}}\n","statuses":["parsed","parsed"],"packHistoryCount":1,"graphHistoryCount":1},
+    {"name":"typed-duplicate-and-case-variant-order","evaluations":"{\"recordVersion\":\"1\",\"RecordVersion\":\"2\",\"pack\":{\"id\":\"same\"}}\n{\"recordVersion\":\"2\",\"recordVersion\":\"1\",\"pack\":{\"id\":\"same\"}}\n","statuses":["parsed","parsed"],"packHistoryCount":1,"graphHistoryCount":0}
+  ]
+}
