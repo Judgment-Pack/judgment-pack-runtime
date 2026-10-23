@@ -167,11 +167,15 @@ The implemented Core `0.3.0` reader/evaluator supports only `base`; the optional
 `extended` profile is refused as `profile-unsupported` before schema interpretation.
 
 The unchanged document manifest has 156 entries: 151 normative document assertions
-pass in normal and strict mode, and five optional `expectedAdvisories` rows are
-explicitly skipped/not checked. A local advisory-only suite is refused as
-`JPS-SUITE-NO-CHECKS` before execution, rather than returning a zero-check success.
-Rule-overlap advice remains outside this work
-([#304](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/304)).
+pass in normal and strict mode, and five optional `expectedAdvisories` assertions
+match in both modes. Plain mode passes 156/156 rows. Strict mode passes 155/156:
+the authored exact-overlap row is rejected by the recommended authoring gate,
+while its normative `actualStatus` remains `valid`. This is not a normative
+conformance failure. Optional coverage is reported separately in `advisories`
+and `advisoryStatus`; advisory-only suites now perform supported assertions.
+The frozen advisory rule-object pointers are adapted to Runtime `when` pointers
+for comparison only; frozen artifacts are unchanged. See
+[ADR-0066](docs/adr/0066-bounded-rule-overlap-advice.md).
 The separately named evaluation corpus contains 20 rows; all 20 match under the
 explicit Core `0.3.0` contract. Supplemental profile, route, precedence, decoder,
 and downstream integration vectors are separate evidence and do not add corpus rows.

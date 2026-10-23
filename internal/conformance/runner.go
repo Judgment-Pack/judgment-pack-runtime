@@ -22,11 +22,12 @@ import (
 )
 
 const (
-	MaxSuiteCases         = 10_000
-	MaxSuiteBytes         = int64(100 * 1024 * 1024)
-	MaxManifestBytes      = int64(10 * 1024 * 1024)
-	MaxResultDiagnostics  = 1_000
-	CorpusDigestAlgorithm = "sha256-length-prefixed-v1"
+	MaxSuiteCases            = 10_000
+	MaxSuiteBytes            = int64(100 * 1024 * 1024)
+	MaxManifestBytes         = int64(10 * 1024 * 1024)
+	MaxResultDiagnostics     = 1_000
+	MaxResultDiagnosticBytes = 4 * 1024 * 1024
+	CorpusDigestAlgorithm    = "sha256-length-prefixed-v1"
 )
 
 var casePathPattern = regexp.MustCompile(`^(?:advisory|carrier|structural|semantic|valid)/[a-z0-9][a-z0-9-]*\.json$`)
@@ -110,18 +111,8 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		Diagnostics:           []result.Diagnostic{},
 	}
 	remainingDiagnostics := MaxResultDiagnostics
+	remainingDiagnosticBytes := MaxResultDiagnosticBytes
 	for _, manifestCase := range manifest.Cases {
-		if manifestCase.ExpectedAdvisories != nil {
-			output.Summary.Total++
-			output.Summary.Skipped++
-			output.Cases = append(output.Cases, result.Case{
-				ID: manifestCase.ID, ExpectedStatus: manifestCase.ExpectedResult,
-				ActualStatus: "not-checked", Status: "skipped",
-				ActualDiagnostics: []result.Diagnostic{},
-				SkipReason:        "Optional expectedAdvisories assertions are not implemented.",
-			})
-			continue
-		}
 		fixture, err := source.loadCase(manifestCase.Path)
 		if err != nil {
 			return result.Suite{}, &validation.OperationalFailure{
@@ -137,6 +128,8 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		if operational != nil {
 			return result.Suite{}, operational
 		}
+		normative, advice := splitAdvice(actual.Diagnostics, strict)
+		actual.Diagnostics = append(append([]result.Diagnostic{}, normative...), advice...)
 		caseResult := result.Case{
 			ID:                manifestCase.ID,
 			ExpectedStatus:    manifestCase.ExpectedResult,
@@ -150,10 +143,31 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 				Path: manifestCase.ExpectedDiagnostic.Path,
 			}
 		}
-		matches := actual.Status == manifestCase.ExpectedResult && expectedDiagnosticPresent(caseResult.ExpectedDiagnostic, actual.Diagnostics)
+		matches := actual.Status == manifestCase.ExpectedResult && expectedDiagnosticPresent(caseResult.ExpectedDiagnostic, normative)
+		if manifestCase.ExpectedAdvisories != nil {
+			if output.Advisories == nil {
+				output.Advisories = &result.AdvisorySummary{}
+			}
+			output.Advisories.Total++
+			caseResult.AdvisoryStatus = "passed"
+			if !actual.DiagnosticsTruncated && advisoryExpectationsMatch(manifestCase.ExpectedAdvisories, advice, strict) {
+				output.Advisories.Passed++
+			} else {
+				output.Advisories.Mismatched++
+				caseResult.AdvisoryStatus = "mismatch"
+				matches = false
+			}
+		}
 		if strict {
+			// Exact overlap blocks this authoring gate even when an optional
+			// expectation correctly predicts it; normative actualStatus stays valid.
+			for _, d := range advice {
+				if d.Severity == "error" {
+					matches = false
+				}
+			}
 			// Computed before truncation, so a stray diagnostic is never cut away.
-			caseResult.StrayDiagnostics = strayDiagnostics(caseResult.ExpectedDiagnostic, actual.Diagnostics)
+			caseResult.StrayDiagnostics = strayDiagnostics(caseResult.ExpectedDiagnostic, normative)
 			if len(caseResult.StrayDiagnostics) > 0 {
 				matches = false
 			}
@@ -165,6 +179,14 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		} else {
 			output.Summary.Passed++
 		}
+		// Keep whole diagnostics, including complete regions and rewrites.
+		// Matching and strict failure were computed before display truncation.
+		var byteTruncated bool
+		caseResult.ActualDiagnostics, byteTruncated = retainDiagnosticBytes(caseResult.ActualDiagnostics, &remainingDiagnosticBytes)
+		if byteTruncated {
+			caseResult.DiagnosticsTruncated, output.DiagnosticsTruncated = true, true
+		}
+
 		if len(caseResult.ActualDiagnostics) > remainingDiagnostics {
 			caseResult.ActualDiagnostics = append([]result.Diagnostic(nil), caseResult.ActualDiagnostics[:remainingDiagnostics]...)
 			caseResult.DiagnosticsTruncated = true
@@ -368,10 +390,19 @@ func validateManifest(manifestBytes, schemaBytes, coreSchemaBytes []byte) (Manif
 	}
 	seenIDs := map[string]bool{}
 	seenPaths := map[string]bool{}
-	hasChecks := false
 	for _, manifestCase := range manifest.Cases {
-		if manifestCase.ExpectedAdvisories == nil {
-			hasChecks = true
+		if manifestCase.ExpectedAdvisories != nil {
+			var advice []struct {
+				Rules []result.OverlapRule `json:"rules"`
+			}
+			if json.Unmarshal(manifestCase.ExpectedAdvisories, &advice) != nil {
+				return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Invalid advisory expectations.")
+			}
+			for _, d := range advice {
+				if len(d.Rules) != 2 || d.Rules[0].ID == d.Rules[1].ID {
+					return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "An overlap advisory requires two distinct rule ids.")
+				}
+			}
 		}
 		if seenIDs[manifestCase.ID] || seenPaths[manifestCase.Path] {
 			return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Suite case IDs and paths must be unique.")
@@ -393,9 +424,6 @@ func validateManifest(manifestBytes, schemaBytes, coreSchemaBytes []byte) (Manif
 		} else if manifestCase.Layer != category || manifestCase.ExpectedResult == "valid" || manifestCase.ExpectedDiagnostic == nil {
 			return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Negative case category, layer, result, and diagnostic must agree.")
 		}
-	}
-	if !hasChecks {
-		return Manifest{}, invocationFailure("JPS-SUITE-NO-CHECKS", "Suite contains no supported conformance assertions.")
 	}
 	return manifest, nil
 }

@@ -632,10 +632,21 @@ canonical disposition text (`JPS-RESOURCE-MATRIX-DISPOSITIONS`). Graph reports a
 Core `0.3.0` graph matrix/suite reports are bounded at 16 MiB, with incremental
 node/handoff/headline charging and a final envelope check. Comparisons retain their
 existing report limit. These bounds refuse whole reports rather than truncate
-portable dispositions. The conformance runner reports optional advisory rows as
-`skipped`, `actualStatus: "not-checked"`, with `skipReason` and a separate summary
-count; they never count as passed assertions. An advisory-only suite is refused
-with `JPS-SUITE-NO-CHECKS`, with no successful zero-check report.
+portable dispositions. The conformance runner checks optional rule-overlap expectations with per-row
+`advisoryStatus` and separate `advisories` totals; its aggregate summary counts
+all checked manifest rows. Advisory-only suites are supported. MCP `validate`
+returns Core `0.3.0` overlap advice as warnings with rule identities, exact region
+or witness where decidable, and a pasteable `suggestedRewrite: {ruleId, when}`
+when the complete rewritten pack fits the configured carrier and generation
+limits. Otherwise `rewriteUnavailable` carries a reason and `suggestedRewrite`
+is omitted. Generated facts must fit those carrier limits too; without an
+admissible witness or supported exact region, certainty stays `not-excluded`.
+The diagnostic pointer is `/rules/<index>/when`; document status remains valid.
+Independent paths or bounded-analysis uncertainty report `not-excluded`. The CLI
+strict authoring gate rejects exact overlap while retaining normative document
+status; MCP validation remains plain validation. Diagnostic output retains whole
+regions/rewrites and marks truncation explicitly. See
+[ADR-0066](adr/0066-bounded-rule-overlap-advice.md).
 
 See [ADR-0063](adr/0063-explicit-core-030-contracts.md) for provenance and contract
 choices, and [CONFORMANCE.md](../CONFORMANCE.md) for conformance posture and evidence.

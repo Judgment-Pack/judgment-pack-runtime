@@ -285,6 +285,11 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 		return output, nil
 	}
 	output.Status = "valid"
+	// Core 0.3.0 introduces this recommended, non-normative check. Earlier
+	// contracts and admission/evaluation statuses retain their existing behavior.
+	if selectedVersion == artifacts.CoreVersion {
+		output.Diagnostics, output.DiagnosticsTruncated = ruleOverlapDiagnosticsWithLimits(root, options.Limits)
+	}
 	return output, nil
 }
 

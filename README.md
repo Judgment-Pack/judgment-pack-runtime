@@ -298,6 +298,21 @@ Standard input is accepted explicitly with `-`:
 ./bin/jpack spec validate --format json - < pack.json
 ```
 
+Core `0.3.0` semantic validation also reports recommended `JPS-RULES-OVERLAP`
+warnings for pairs naming different outcomes. The diagnostic points at
+`/rules/<index>/when`, identifies both rules/outcomes, includes an exact region
+or witness when decidable, and supplies `suggestedRewrite: {ruleId, when}` when
+the complete rewritten pack fits the applicable carrier and generation limits.
+Otherwise `rewriteUnavailable` explains why no pasteable replacement is supplied.
+Generated facts are checked against the same carrier limits before publication;
+if no admissible witness or supported exact region is available, certainty stays
+`not-excluded`. Ascending bands use `all` of the lower comparison and an exclusive upper bound;
+other pairs use `all` of the first condition and `not` of the second. Missing or
+incomparable facts preserve `unknown`, including under `not`. Plain validation
+still passes. Same-outcome pairs are silent. Analysis limits or independent paths
+produce `not-excluded`; output bounds set `diagnosticsTruncated` without cutting
+an exact region or rewrite. See [ADR-0066](docs/adr/0066-bounded-rule-overlap-advice.md).
+
 Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an exact bundled version:
 
 ```bash
@@ -308,7 +323,7 @@ Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an ex
 ./bin/jpack spec test-conformance --strict
 ```
 
-By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs. Core `0.3.0` optional `expectedAdvisories` cases are explicitly `skipped`, with `actualStatus: "not-checked"` and a `skipReason`; the summary counts them separately. A skipped advisory is never a passed assertion. An advisory-only suite is refused with `JPS-SUITE-NO-CHECKS` because it contains no supported assertion.
+By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs. Core `0.3.0` optional `expectedAdvisories` assertions are checked, with per-row `advisoryStatus` and separate `advisories` totals; the aggregate summary includes all checked manifest rows. Exact rule overlap fails strict mode even when its advisory expectation matches; normative document `actualStatus` stays valid. `not-excluded` remains a warning in every mode. Advisory-only suites are supported.
 
 Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimental evaluator. Every
 row is compared by disposition equality as §8.3 defines it — both the row's expectation and the
