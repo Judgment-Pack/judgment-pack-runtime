@@ -159,4 +159,4 @@ authority, and following it confers no conformance status on anything.
 | [0061](0061-adopt-official-policy-draft-resources.md) | Adopt immutable official Policy draft resources in the shared offline reader | accepted; effective upon required CI and introducing PR merge |
 | [0062](0062-static-fact-type-advice.md) | Expose bounded static fact-type advice without authoring expectations | proposed |
 | [0063](0063-explicit-core-030-contracts.md) | Add explicit base-only Core 0.3.0 contracts without changing legacy defaults | proposed |
-| [0064](0064-share-uri-component-grammar.md) | Share RFC 3986 URI grammar while preserving prototype Policy compatibility | proposed; partially supersedes [0060](0060-explicit-policy-candidate-format.md)'s candidate-only corrected URI scope |
+| [0064](0064-share-uri-component-grammar.md) | Share RFC 3986 URI grammar while preserving prototype Policy compatibility | accepted; partially supersedes [0060](0060-explicit-policy-candidate-format.md)'s candidate-only corrected URI scope |
