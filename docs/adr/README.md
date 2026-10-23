@@ -160,3 +160,4 @@ authority, and following it confers no conformance status on anything.
 | [0062](0062-static-fact-type-advice.md) | Expose bounded static fact-type advice without authoring expectations | proposed |
 | [0063](0063-explicit-core-030-contracts.md) | Add explicit base-only Core 0.3.0 contracts without changing legacy defaults | proposed; optional-advisory skipping superseded by [0066](0066-bounded-rule-overlap-advice.md) |
 | [0066](0066-bounded-rule-overlap-advice.md) | Report bounded rule-overlap advice without changing document conformance | proposed |
+| [0068](0068-finite-domain-pack-design-advice.md) | Rehearse an explicit finite domain for optional pack-design advice | proposed |

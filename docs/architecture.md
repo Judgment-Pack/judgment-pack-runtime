@@ -232,3 +232,9 @@ Runtime discovery separates document versions from evaluator capabilities. Profi
 metadata is scoped to Core `0.3.0` and does not change Policy or Dialect contracts.
 The full conformance posture and outstanding review are recorded only in
 [CONFORMANCE.md](../CONFORMANCE.md).
+
+The optional `internal/packadvice` authoring analyzer rehearses explicit finite Core
+0.3.0 domains through the real evaluator, sharing schema-exact proof-scoped reports
+and bounded refusals between CLI and MCP. It changes no evaluation or strict gate;
+[ADR-0068](adr/0068-finite-domain-pack-design-advice.md) records its limits and
+treatment of skipped conditions, candidate contribution and incomplete checks.
