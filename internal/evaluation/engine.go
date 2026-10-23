@@ -63,12 +63,14 @@ import (
 // admits as message detail rather than as the class. A failure that §8.4 does not
 // classify at all — a bad invocation, an internal fault — carries no class.
 type Failure struct {
-	Profile  string
-	Class    string
-	Phase    string
-	Code     string
-	Message  string
-	ExitCode int
+	// SpecVersion is the selected operation contract, never a diagnostic member.
+	SpecVersion string
+	Profile     string
+	Class       string
+	Phase       string
+	Code        string
+	Message     string
+	ExitCode    int
 }
 
 // Options carries one evaluation's caller opt-ins. The zero value is the
