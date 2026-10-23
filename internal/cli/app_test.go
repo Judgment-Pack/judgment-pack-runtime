@@ -1934,7 +1934,7 @@ func TestExamplesSpecVersionServesTheSetTheEvaluatorAdmits(t *testing.T) {
 
 	// The human output says whether a pack made from the listed set needs re-declaring.
 	_, listed, _ := runTest(t, []string{"spec", "examples"}, "")
-	if !strings.Contains(listed, "the evaluator admits only "+result.EvaluatorSpecVersion+": re-declare specVersion before evaluating, or use --spec-version "+result.EvaluatorSpecVersion) {
+	if !strings.Contains(listed, "the evaluator admits "+result.EvaluatorSpecVersion+" and 0.3.0 base: re-declare specVersion before evaluating, or use --spec-version "+result.EvaluatorSpecVersion) {
 		t.Fatalf("the default listing must say the evaluator refuses its version:\n%s", listed)
 	}
 	_, listed, _ = runTest(t, []string{"spec", "examples", "--spec-version", result.EvaluatorSpecVersion}, "")
@@ -1942,7 +1942,7 @@ func TestExamplesSpecVersionServesTheSetTheEvaluatorAdmits(t *testing.T) {
 		t.Fatalf("the evaluator's own set must say it needs no re-declaration:\n%s", listed)
 	}
 	_, shown, _ := runTest(t, []string{"spec", "examples", name}, "")
-	if !strings.Contains(shown, "declares: "+artifacts.DraftVersion) || !strings.Contains(shown, "the evaluator admits only "+result.EvaluatorSpecVersion) {
+	if !strings.Contains(shown, "declares: "+artifacts.DraftVersion) || !strings.Contains(shown, "the evaluator admits "+result.EvaluatorSpecVersion+" and 0.3.0 base") {
 		t.Fatalf("one example's human output must name both versions:\n%s", shown)
 	}
 }

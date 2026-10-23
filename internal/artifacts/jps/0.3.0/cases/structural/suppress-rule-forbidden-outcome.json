@@ -1,0 +1,34 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/suppress-rule-forbidden-outcome",
+  "version": "0.1.0",
+  "title": "Suppress-rule exception with forbidden outcome",
+  "decision": {
+    "intent": "Exercise exception discriminators.",
+    "question": "Is a suppress-rule effect carrying an outcome operand rejected?"
+  },
+  "outcomes": [
+    { "id": "accept", "label": "Accept" },
+    { "id": "reject", "label": "Reject" }
+  ],
+  "rules": [
+    {
+      "id": "literal-rule",
+      "description": "A structurally minimal rule.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "accept",
+      "onUnknown": "ignore"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "suppressed-rule-test",
+      "description": "Intentionally carries a forbidden outcome operand.",
+      "when": { "op": "literal", "value": true },
+      "effect": "suppress-rule",
+      "targetRule": "literal-rule",
+      "outcome": "reject",
+      "onUnknown": "ignore"
+    }
+  ]
+}

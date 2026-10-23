@@ -362,16 +362,13 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 // not they held; it touches neither Status nor Summary, and a run with every
 // probe missing still exits by its rows alone.
 func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, graphPath, rowsPath string, rows Rows, options Options) (result.GraphTest, *evaluation.Failure) {
-	// LoadRows refuses an empty matrix, and this precondition is enforced here
-	// too so no caller can obtain a clean 0/0 report over nothing.
-	if len(rows.Cases) == 0 {
-		return result.GraphTest{}, &evaluation.Failure{
-			Code:     "JPS-GRAPH-ROWS-EMPTY",
-			Message:  "The graph matrix declares no rows; an empty matrix tests nothing.",
-			ExitCode: result.ExitInvalid,
-		}
+	// Structural graph admission identifies the packs safely. Preserve the
+	// legacy empty-row refusal when an invalid graph cannot identify them.
+	diagnostics := doc.Structural(loaded)
+	if len(rows.Cases) == 0 && len(diagnostics) > 0 {
+		return result.GraphTest{}, emptyRowsFailure()
 	}
-	if diagnostics := doc.Structural(loaded); len(diagnostics) > 0 {
+	if len(diagnostics) > 0 {
 		first := diagnostics[0]
 		location := first.InstancePath
 		if location == "" {
@@ -383,6 +380,34 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			ExitCode: result.ExitInvalid,
 		}
 	}
+	contract, selectionFailure := SelectContract(loaded, doc)
+	if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
+		return result.GraphTest{}, selectionFailure
+	}
+	// Even a direct caller's empty matrix is another document admission;
+	// unsupported profiles outrank it, while legacy empty-row behavior stays.
+	if len(rows.Cases) == 0 {
+		failure := emptyRowsFailure()
+		if selectionFailure == nil && contract.Version() == "0.3.0" {
+			failure.SpecVersion = contract.Version()
+		}
+		return result.GraphTest{}, failure
+	}
+	if selectionFailure != nil {
+		if selectionFailure.Code == "JPS-GRAPH-MIXED-CONTRACT" {
+			return result.GraphTest{}, selectionFailure
+		}
+		// Preserve row assertions about a refused pack. No successful
+		// composition exists from which to claim a different contract.
+		contract = result.LegacyEvaluatorContract()
+	}
+	if selectionFailure == nil && options.contract.SpecVersion != "" && options.contract != contract {
+		return result.GraphTest{}, mixedContractFailure()
+	}
+	options.contract = contract
+	if contract.Version() == "0.3.0" && (options.ReportBudget <= 0 || options.ReportBudget > int(MaxEvaluationReportBytes)) {
+		options.ReportBudget = int(MaxEvaluationReportBytes)
+	}
 	output := result.GraphTest{
 		OutputVersion:             result.OutputVersion,
 		Tool:                      result.CurrentTool(),
@@ -393,7 +418,7 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		Label:                     result.GraphMatrixLabel,
 		Kind:                      result.ProjectKind,
 		FormatVersion:             FormatVersion,
-		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion:      contract.Version(),
 		ConfigPath:                loaded.ConfigPath,
 		GraphPath:                 graphPath,
 		RowsPath:                  rowsPath,
@@ -481,6 +506,15 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 	return output, nil
 }
 
+// emptyRowsFailure holds the direct-call precondition LoadRows also enforces.
+func emptyRowsFailure() *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:     "JPS-GRAPH-ROWS-EMPTY",
+		Message:  "The graph matrix declares no rows; an empty matrix tests nothing.",
+		ExitCode: result.ExitInvalid,
+	}
+}
+
 // runRow judges one row. A row's expected dispositions pass through the same
 // strict gate the comparator applies everywhere (DecodeDisposition), so a row
 // carrying an illegal §8.3 value is a defect in the row, reported as its own
@@ -518,7 +552,7 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 		return outcome
 	}
 	if row.ExpectedDisposition != nil {
-		expected, err := evaluation.DecodeDisposition(row.ExpectedDisposition)
+		expected, err := evaluation.DecodeDispositionWith(row.ExpectedDisposition, options.contract)
 		if err != nil {
 			return mismatch("The row's expected disposition is not a canonicalizable §8.3 disposition, which is a defect in the row and not a result: " + display.Sanitize(err.Error()))
 		}
@@ -569,6 +603,9 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 	// earlier.
 	var expectedTarget *result.HandoffTarget
 	if row.ExpectedHandoffTarget != nil {
+		if evaluated.Disposition.Handoff.Routes != nil {
+			return mismatch("The row's singular expectedHandoffTarget assertion is incompatible with a routed pack; assert handoff.routes in expectedDisposition.")
+		}
 		var renderErr error
 		var expectedRendering, actualRendering string
 		expectedTarget, expectedRendering, actualRendering, renderErr = targetAssertion(row.ExpectedHandoffTarget, evaluated.HandoffTarget)
@@ -620,6 +657,11 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 		// side named.
 		expectedNodeTarget, nodeTargetAsserted := (*result.HandoffTarget)(nil), false
 		if raw, asserted := row.ExpectedNodeHandoffTargets[name]; asserted {
+			if nodeEval.Disposition.Handoff.Routes != nil {
+				comparison.Status = "mismatch"
+				outcome.Nodes = append(outcome.Nodes, comparison)
+				return mismatch(fmt.Sprintf("Node %q uses routes; a singular expectedNodeHandoffTargets assertion is incompatible with its pack.", display.Sanitize(name)))
+			}
 			nodeTargetAsserted = true
 			var renderErr error
 			var expectedRendering, actualRendering string
@@ -631,7 +673,7 @@ func runRow(loaded *project.Project, engine *evaluation.Engine, doc Document, gr
 			}
 			comparison.ExpectedHandoffTarget, comparison.ActualHandoffTarget = expectedRendering, actualRendering
 		}
-		expected, err := evaluation.DecodeDisposition(expectedRaw)
+		expected, err := evaluation.DecodeDispositionWith(expectedRaw, nodeEval.Disposition.Contract)
 		if err != nil {
 			comparison.Status = "mismatch"
 			outcome.Nodes = append(outcome.Nodes, comparison)

@@ -52,7 +52,14 @@ func resolve(pack map[string]any, facts any, eval *evaluator) (result.Dispositio
 	// keeps the term independent of the order §8 reaches them in and complete
 	// before the walk starts, which is the same discipline every condition tree's
 	// charge follows.
-	if !eval.charge(len(asArray(pack["evidenceRequirements"])) + len(asArray(pack["exceptions"])) + len(asArray(pack["rules"]))) {
+	routeWork := 0
+	if escalation, ok := pack["escalation"].(map[string]any); ok {
+		for _, item := range asArray(escalation["routes"]) {
+			route, _ := item.(map[string]any)
+			routeWork += 1 + len(asArray(route["triggers"]))
+		}
+	}
+	if !eval.charge(len(asArray(pack["evidenceRequirements"])) + len(asArray(pack["exceptions"])) + len(asArray(pack["rules"])) + routeWork) {
 		return result.Disposition{}, nil, nil, workLimitFailure(eval)
 	}
 
@@ -293,6 +300,11 @@ func (r *resolver) dispose(kind, outcomeID string) (result.Disposition, *result.
 // and a requested handoff is a request rather than evidence that one occurred.
 func (r *resolver) disposition(kind, outcomeID string) (result.Disposition, *result.HandoffTarget) {
 	disposition := result.Disposition{Kind: kind, OutcomeID: outcomeID, Reasons: []string{}, Handoff: result.Handoff{State: "none"}}
+	escalation, _ := r.pack["escalation"].(map[string]any)
+	routes, routed := escalation["routes"].([]any)
+	if routed {
+		disposition.Handoff.Routes = []result.HandoffTarget{}
+	}
 	if kind == "outcome" {
 		return disposition, nil
 	}
@@ -306,7 +318,6 @@ func (r *resolver) disposition(kind, outcomeID string) (result.Disposition, *res
 	// request. It is always a subset of the retained reason set, and it is
 	// smaller than that set whenever escalation.triggers does not name every
 	// retained reason.
-	escalation, _ := r.pack["escalation"].(map[string]any)
 	triggeredBy := []string{}
 	if escalation != nil {
 		for _, trigger := range asArray(escalation["triggers"]) {
@@ -326,6 +337,36 @@ func (r *resolver) disposition(kind, outcomeID string) (result.Disposition, *res
 		return disposition, nil
 	}
 	sort.Strings(triggeredBy)
+	if routed {
+		for _, raw := range routes {
+			route, _ := raw.(map[string]any)
+			selected := false
+			filters, filtered := route["triggers"]
+			if !filtered {
+				selected = true
+			} else {
+				for _, rawReason := range asArray(filters) {
+					reason, _ := rawReason.(string)
+					if r.reasons[reason] {
+						selected = true
+						break
+					}
+				}
+			}
+			if selected {
+				target, _ := route["target"].(map[string]any)
+				kind, _ := target["kind"].(string)
+				name, _ := target["name"].(string)
+				disposition.Handoff.Routes = append(disposition.Handoff.Routes, result.HandoffTarget{Kind: kind, Name: name})
+			}
+		}
+		if len(disposition.Handoff.Routes) == 0 {
+			return disposition, nil
+		}
+		disposition.Handoff.State = "requested"
+		disposition.Handoff.TriggeredBy = triggeredBy
+		return disposition, nil
+	}
 	disposition.Handoff = result.Handoff{State: "requested", TriggeredBy: triggeredBy}
 	if escalation != nil {
 		if target, ok := escalation["target"].(map[string]any); ok {

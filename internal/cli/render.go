@@ -50,7 +50,26 @@ func (a *App) operational(command, format string, exitCode int, code, message st
 // this runtime's finer diagnostic code beside them as the detail §8.4 admits. A
 // refusal §8.4 does not classify is reported as any other operational error.
 // No disposition accompanies either.
-func (a *App) evaluationFailure(command, format string, failure *evaluation.Failure) error {
+func (a *App) evaluationFailure(command, format string, failure *evaluation.Failure, contracts ...result.EvaluatorContract) error {
+	contract := result.LegacyEvaluatorContract()
+	if len(contracts) > 0 {
+		contract = contracts[0]
+	} else if failure.SpecVersion != "" {
+		selected := result.EvaluatorContract{SpecVersion: failure.SpecVersion}
+		if selected.Validate() == nil {
+			contract = selected
+		}
+	}
+	if failure.Code == "profile-unsupported" {
+		if format == "json" {
+			if err := a.writeJSON(result.NewProfileUnsupported(command, failure.Profile)); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+		} else {
+			fmt.Fprintf(a.out, "unsupported: profile-unsupported (%s)\n", display.Sanitize(failure.Profile))
+		}
+		return &handledExit{code: failure.ExitCode}
+	}
 	if failure.Class == "" {
 		return a.operational(command, format, failure.ExitCode, failure.Code, failure.Message)
 	}
@@ -59,7 +78,7 @@ func (a *App) evaluationFailure(command, format string, failure *evaluation.Fail
 		status = "unsupported"
 	}
 	if format == "json" {
-		if err := a.writeJSON(result.NewEvaluationError(command, status, failure.Class, failure.Phase, failure.Code, failure.Message)); err != nil {
+		if err := a.writeJSON(result.NewEvaluationErrorWith(command, status, failure.Class, failure.Phase, failure.Code, failure.Message, contract)); err != nil {
 			return &handledExit{code: result.ExitIO}
 		}
 		return &handledExit{code: failure.ExitCode}
@@ -104,7 +123,11 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 		return a.writeJSON(output)
 	}
 	if output.Status == "valid" {
-		fmt.Fprintf(a.out, "passed: %d/%d conformance cases matched expectations\n", output.Summary.Passed, output.Summary.Total)
+		if output.Summary.Skipped > 0 {
+			fmt.Fprintf(a.out, "passed: %d/%d checked conformance cases matched expectations; %d skipped (not checked)\n", output.Summary.Passed, output.Summary.Total-output.Summary.Skipped, output.Summary.Skipped)
+		} else {
+			fmt.Fprintf(a.out, "passed: %d/%d conformance cases matched expectations\n", output.Summary.Passed, output.Summary.Total)
+		}
 	} else {
 		fmt.Fprintf(a.out, "mismatch: %d/%d conformance cases did not match expectations\n", output.Summary.Mismatched, output.Summary.Total)
 		for _, item := range output.Cases {
@@ -117,6 +140,13 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 				for _, stray := range item.StrayDiagnostics {
 					fmt.Fprintf(a.out, "    stray diagnostic %s at %q\n", display.Sanitize(stray.Code), display.Sanitize(stray.InstancePath))
 				}
+			}
+		}
+	}
+	if output.Summary.Skipped > 0 {
+		for _, item := range output.Cases {
+			if item.Status == "skipped" {
+				fmt.Fprintf(a.out, "- %s [not checked]: %s\n", display.Sanitize(item.ID), display.Sanitize(item.SkipReason))
 			}
 		}
 	}
@@ -160,11 +190,11 @@ func (a *App) renderExamples(format string, output result.Examples) error {
 // evaluated as it stands. A document declaring another version is refused by the
 // evaluator (§11), and the one edit it needs is its specVersion.
 func (a *App) renderExampleEvaluatorNote(specVersion, evaluatorSpecVersion string) {
-	if specVersion == evaluatorSpecVersion {
-		fmt.Fprintf(a.out, "the evaluator admits %s: a pack made from this set needs no re-declaration\n", display.Sanitize(evaluatorSpecVersion))
+	if specVersion == evaluatorSpecVersion || specVersion == "0.3.0" {
+		fmt.Fprintf(a.out, "the evaluator admits %s: a pack made from this set needs no re-declaration\n", display.Sanitize(specVersion))
 		return
 	}
-	fmt.Fprintf(a.out, "the evaluator admits only %s: re-declare specVersion before evaluating, or use --spec-version %s\n", display.Sanitize(evaluatorSpecVersion), display.Sanitize(evaluatorSpecVersion))
+	fmt.Fprintf(a.out, "the evaluator admits %s and 0.3.0 base: re-declare specVersion before evaluating, or use --spec-version %s\n", display.Sanitize(evaluatorSpecVersion), display.Sanitize(evaluatorSpecVersion))
 }
 
 func (a *App) renderExample(format string, output result.Example) error {
@@ -724,7 +754,9 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 	}
 	if output.Disposition.Handoff.State == "requested" {
 		triggers := display.Sanitize(strings.Join(output.Disposition.Handoff.TriggeredBy, ", "))
-		if target := output.HandoffTarget; target != nil {
+		if output.Disposition.Handoff.Routes != nil {
+			a.printRoutes(output.Disposition.Handoff.Routes, triggers)
+		} else if target := output.HandoffTarget; target != nil {
 			fmt.Fprintf(a.out, "handoff: requested -> %s %q (triggered by %s)\n", display.Sanitize(target.Kind), display.Sanitize(target.Name), triggers)
 		} else {
 			fmt.Fprintf(a.out, "handoff: requested (no declared destination; triggered by %s)\n", triggers)
@@ -810,7 +842,16 @@ func (a *App) renderGraphEvaluation(format string, output result.GraphEvaluation
 	for _, handoff := range output.Handoffs {
 		target := "no declared destination"
 		if handoff.Target != nil {
-			target = fmt.Sprintf("%s %q", display.Sanitize(handoff.Target.Kind), display.Sanitize(handoff.Target.Name))
+			if output.EvaluatorSpecVersion == "0.3.0" {
+				rendered, err := handoff.Target.Rendered()
+				if err != nil {
+					target = "unavailable"
+				} else {
+					target = display.Sanitize(rendered)
+				}
+			} else {
+				target = fmt.Sprintf("%s %q", display.Sanitize(handoff.Target.Kind), display.Sanitize(handoff.Target.Name))
+			}
 		}
 		fmt.Fprintf(a.out, "handoff[%s]: requested -> %s (triggered by %s)\n", display.Sanitize(handoff.Node), target, display.Sanitize(strings.Join(handoff.TriggeredBy, ", ")))
 	}
@@ -1012,7 +1053,9 @@ func (a *App) printDisposition(label string, disposition result.Disposition, tar
 	fmt.Fprintf(a.out, "%s: %s\n", label, dispositionSummary(disposition))
 	if disposition.Handoff.State == "requested" {
 		triggers := display.Sanitize(strings.Join(disposition.Handoff.TriggeredBy, ", "))
-		if target != nil {
+		if disposition.Handoff.Routes != nil {
+			a.printRoutes(disposition.Handoff.Routes, triggers)
+		} else if target != nil {
 			fmt.Fprintf(a.out, "handoff: requested -> %s %q (triggered by %s)\n", display.Sanitize(target.Kind), display.Sanitize(target.Name), triggers)
 		} else {
 			fmt.Fprintf(a.out, "handoff: requested (no declared destination; triggered by %s)\n", triggers)
@@ -1134,4 +1177,15 @@ func joinNonEmpty(values ...string) string {
 		}
 	}
 	return strings.Join(output, " ")
+}
+
+// Human renderings are bounded; portable disposition route names stay exact.
+func (a *App) printRoutes(routes []result.HandoffTarget, triggers string) {
+	for index := range routes {
+		rendered, err := routes[index].Rendered()
+		if err != nil {
+			rendered = "unavailable"
+		}
+		fmt.Fprintf(a.out, "handoff route[%d]: requested -> %s (triggered by %s)\n", index, display.Sanitize(rendered), triggers)
+	}
 }

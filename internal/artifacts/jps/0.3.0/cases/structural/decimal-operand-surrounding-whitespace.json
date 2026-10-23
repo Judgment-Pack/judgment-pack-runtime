@@ -1,0 +1,28 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/decimal-operand-surrounding-whitespace",
+  "version": "0.1.0",
+  "title": "Decimal operand with surrounding whitespace",
+  "decision": {
+    "intent": "Exercise the ordered-operand decimal grammar.",
+    "question": "Is a decimal operand with surrounding whitespace rejected?"
+  },
+  "outcomes": [
+    { "id": "accept", "label": "Accept" },
+    { "id": "reject", "label": "Reject" }
+  ],
+  "rules": [
+    {
+      "id": "ordered-rule",
+      "description": "Uses a decimal operand with surrounding whitespace.",
+      "when": {
+        "op": "fact",
+        "path": "/amount",
+        "operator": "greater-than",
+        "value": " 10 "
+      },
+      "outcome": "accept",
+      "onUnknown": "escalate"
+    }
+  ]
+}

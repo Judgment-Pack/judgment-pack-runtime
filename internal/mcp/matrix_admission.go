@@ -17,24 +17,31 @@ const maxMatrixFactFindings = 1024
 const maxMatrixFactBytes = 4 << 20
 
 func matrixContractDefinition() map[string]any {
-	return map[string]any{"name": matrixContractTool, "description": "Return the supported project test-matrix authoring contract. Read-only, experimental. No project, model, network or evaluator is accessed.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}}}
+	return map[string]any{"name": matrixContractTool, "description": "Return the supported project test-matrix authoring contract. Optional spec_version selects Core 0.2.0-draft (default) or 0.3.0 base without changing matrix carrier versions 1-3. Read-only, experimental. No project, model, network or evaluator is accessed.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"spec_version": evaluatorSpecProperty()}}}
 }
 func matrixValidationDefinition() map[string]any {
-	return map[string]any{"name": matrixValidationTool, "description": "Validate a proposed project test matrix without executing tests. Every admitted row gets an indexed finding using the existing matrix and disposition decoders. Checks representation. Optional pack text adds ordered per-case static fact-type advisories for Core 0.2.0-draft; these do not change admission or establish policy, coverage, reachability or expected results. A valid matrix with pack permits at most 256 cases and 16 distinct supported-extension sets (each at most 256 strings of 1024 UTF-8 bytes), 100000 comparison work units per case, 100 findings and 256 KiB of serialized findings per case, and 1024 findings and 4 MiB of serialized fact-check rows in total. An exceeded batch bound is a tool error, never a clean check; per-case admission/work/report failure is unavailable. No files, model, network or audit records are accessed. Experimental.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"matrix"}, "properties": map[string]any{"pack": map[string]any{"type": "string", "description": "Optional exact pack JSON text for static fact-type advisories. No evaluation is performed."}, "matrix": map[string]any{"type": "string", "description": "Exact matrix JSON text. Desk sourceMappings and other UI metadata must be kept outside the matrix."}}}}
+	return map[string]any{"name": matrixValidationTool, "description": "Validate a proposed project test matrix without executing tests. Every admitted row gets an indexed finding using the existing matrix and disposition decoders. Optional spec_version selects the exact expectation contract, default 0.2.0-draft; a supplied pack selects its own exact contract, and a conflicting explicit version is refused. Route presence never selects a version. Checks representation. Optional pack text adds ordered per-case static fact-type advisories under the exact selected Core 0.2.0-draft or 0.3.0 base contract; these do not change admission or establish policy, coverage, reachability or expected results. A valid matrix with pack permits at most 256 cases and 16 distinct supported-extension sets (each at most 256 strings of 1024 UTF-8 bytes), 100000 comparison work units per case, 100 findings and 256 KiB of serialized findings per case, and 1024 findings and 4 MiB of serialized fact-check rows in total. An exceeded batch bound is a tool error, never a clean check; per-case admission/work/report failure is unavailable. No files, model, network or audit records are accessed. Experimental.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"matrix"}, "properties": map[string]any{"spec_version": evaluatorSpecProperty(), "pack": map[string]any{"type": "string", "description": "Optional exact pack JSON text for static fact-type advisories. No evaluation is performed."}, "matrix": map[string]any{"type": "string", "description": "Exact matrix JSON text. Desk sourceMappings and other UI metadata must be kept outside the matrix."}}}}
 }
 func matrixEnvelope(command string) map[string]any {
 	return map[string]any{"outputVersion": result.OutputVersion, "tool": result.CurrentTool(), "command": "mcp " + command, "experimental": true, "contractVersion": "1", "specVersion": expectationSpec}
 }
 func (s *Server) toolMatrixContract(args json.RawMessage) any {
-	if message := noArguments(matrixContractTool, args); message != "" {
+	if len(args) == 0 || string(args) == "null" {
+		args = json.RawMessage(`{}`)
+	}
+	if message := exactMembers(matrixContractTool, args, "spec_version"); message != "" {
 		return toolError(message)
 	}
-	report := matrixEnvelope(matrixContractTool)
-	report["contract"] = project.MatrixContract()
+	contract, _, message := standaloneContract(args)
+	if message != "" {
+		return toolError(message)
+	}
+	report := matrixEnvelopeWith(matrixContractTool, contract)
+	report["contract"] = project.MatrixContractWith(contract)
 	return toolResult(report)
 }
 func (s *Server) toolValidateMatrix(args json.RawMessage) any {
-	if message := exactMembers(matrixValidationTool, args, "matrix", "pack"); message != "" {
+	if message := exactMembers(matrixValidationTool, args, "matrix", "pack", "spec_version"); message != "" {
 		return toolError(message)
 	}
 	var input struct {
@@ -49,8 +56,24 @@ func (s *Server) toolValidateMatrix(args json.RawMessage) any {
 	if _, present := members["pack"]; present && input.Pack == nil {
 		return toolError("Expected pack as a JSON string when supplied.")
 	}
-	checked := project.ValidateMatrix([]byte(*input.Matrix))
-	report := matrixEnvelope(matrixValidationTool)
+	contract, explicit, message := standaloneContract(args)
+	if message != "" {
+		return toolError(message)
+	}
+	if input.Pack != nil {
+		selected, failure := evaluation.SelectContract([]byte(*input.Pack))
+		if failure != nil && failure.Code == "profile-unsupported" {
+			return evaluationToolError("mcp "+matrixValidationTool, failure)
+		}
+		if failure == nil && explicit && contract.Version() != selected.Version() {
+			return toolError("spec_version conflicts with the exact supplied pack contract.")
+		}
+		if failure == nil {
+			contract = selected
+		}
+	}
+	checked := project.ValidateMatrixWith([]byte(*input.Matrix), contract)
+	report := matrixEnvelopeWith(matrixValidationTool, contract)
 	report["status"], report["findings"], report["results"] = checked.Status, checked.Findings, checked.Results
 	if input.Pack != nil && checked.Status == "valid" {
 		matrix, err := project.DecodeMatrix([]byte(*input.Matrix))
@@ -109,7 +132,7 @@ func (s *Server) toolValidateMatrix(args json.RawMessage) any {
 			findings := []evaluation.FactTypeFinding{}
 			var failure *evaluation.Failure
 			if capabilityMessages[index] == "" {
-				findings, failure = admitted.CheckFactTypes(item.Facts, evaluation.Options{SupportedExtensions: supportedExtensions[index], WorkBudget: factAdviceWorkBudget})
+				findings, failure = admitted.CheckFactTypes(item.Facts, evaluation.Options{SpecVersion: contract.Version(), SupportedExtensions: supportedExtensions[index], WorkBudget: factAdviceWorkBudget})
 			}
 			row := map[string]any{"index": index, "id": item.ID, "status": "complete", "findings": findings}
 			total += len(findings)
@@ -119,7 +142,7 @@ func (s *Server) toolValidateMatrix(args json.RawMessage) any {
 			if capabilityMessages[index] != "" {
 				row["status"], row["message"] = "unavailable", capabilityMessages[index]
 			} else if failure != nil {
-				row["status"], row["message"], row["findings"] = "unavailable", factAdviceFailureMessage(failure), []evaluation.FactTypeFinding{}
+				setFactAdviceFailure(row, failure)
 			}
 			encoded, _ := json.Marshal(row)
 			reportBytes += len(encoded) + 1

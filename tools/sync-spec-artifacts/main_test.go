@@ -62,6 +62,26 @@ func TestValidateEvaluationPackPath(t *testing.T) {
 	}
 }
 
+func TestValidateCasePath(t *testing.T) {
+	for _, accepted := range []string{
+		"advisory/rules-overlap-exact.json", "carrier/a.json", "structural/a.json",
+		"semantic/a.json", "valid/a.json",
+	} {
+		if err := validateCasePath(accepted); err != nil {
+			t.Errorf("%q must be accepted: %v", accepted, err)
+		}
+	}
+	for _, rejected := range []string{
+		"", "advisory", "advisory/../schema.json", "../advisory/a.json",
+		"/advisory/a.json", "advisory\\a.json", "advisory/./a.json",
+		"advisory/a\x00.json", "unknown/a.json",
+	} {
+		if err := validateCasePath(rejected); err == nil {
+			t.Errorf("%q must be rejected", rejected)
+		}
+	}
+}
+
 // --- end-to-end import behaviour (issue #97) -------------------------------
 
 // specCheckout builds a throwaway specification checkout whose origin carries

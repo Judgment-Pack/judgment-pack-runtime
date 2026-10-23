@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -179,7 +181,12 @@ func TestSuiteResultCapsRetainedDiagnostics(t *testing.T) {
 
 func writeLocalSuite(t *testing.T) string {
 	t.Helper()
-	set, err := artifacts.Load(artifacts.DraftVersion)
+	return writeLocalSuiteVersion(t, artifacts.DraftVersion)
+}
+
+func writeLocalSuiteVersion(t *testing.T, version string) string {
+	t.Helper()
+	set, err := artifacts.Load(version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,5 +303,131 @@ func TestStrictModePassesBundledSuite(t *testing.T) {
 	}
 	if actual.Status != "valid" || actual.Summary.Total != 47 || actual.Summary.Passed != 47 || actual.Summary.Mismatched != 0 {
 		t.Fatalf("unexpected strict suite result: %#v", actual.Summary)
+	}
+}
+
+func TestCore030SuiteReportsOptionalAdvisoriesUnchecked(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, strict := range []bool{false, true} {
+		t.Run(fmt.Sprint("strict=", strict), func(t *testing.T) {
+			actual, failure := NewRunner(engine).RunWithOptions("", artifacts.CoreVersion, strict)
+			if failure != nil {
+				t.Fatal(failure)
+			}
+			if actual.Status != "valid" || actual.Summary.Total != 156 || actual.Summary.Passed != 151 || actual.Summary.Skipped != 5 || actual.Summary.Mismatched != 0 {
+				for _, item := range actual.Cases {
+					if item.Status == "mismatch" {
+						t.Logf("%+v", item)
+					}
+				}
+				t.Fatalf("unexpected Core 0.3 summary: %+v", actual.Summary)
+			}
+			for _, item := range actual.Cases {
+				if item.Status == "skipped" && (item.ActualStatus != "not-checked" || item.SkipReason == "" || len(item.ActualDiagnostics) != 0) {
+					t.Fatalf("skipped row lacks truthful detail: %+v", item)
+				}
+			}
+		})
+	}
+}
+
+func TestCore030LocalSuiteUsesOnlyBundledSchemaDependency(t *testing.T) {
+	root := writeLocalSuiteVersion(t, artifacts.CoreVersion)
+	// A sibling with the upstream resource's basename must never be consulted.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(root), "judgment-pack-core.schema.json"), []byte(`{"not":{}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, failure := NewRunner(engine).RunWithOptions(root, artifacts.CoreVersion, true)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	bundled, failure := NewRunner(engine).RunWithOptions("", artifacts.CoreVersion, true)
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	if local.CorpusDigest != bundled.CorpusDigest || local.Summary != bundled.Summary {
+		t.Fatalf("local differs: %+v vs %+v", local.Summary, bundled.Summary)
+	}
+}
+
+func TestLegacySuitesRetainStrictAssertionsAndOutput(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range []string{artifacts.DraftVersion, artifacts.EvaluatorDraftVersion} {
+		actual, failure := NewRunner(engine).RunWithOptions("", version, true)
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		if actual.Status != "valid" || actual.Summary.Passed != actual.Summary.Total || actual.Summary.Skipped != 0 {
+			t.Fatalf("legacy suite changed: %+v", actual.Summary)
+		}
+		encoded, err := json.Marshal(actual)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{`"skipped":`, `"skipReason":`} {
+			if strings.Contains(string(encoded), field) {
+				t.Fatalf("new field leaked into legacy output: %s", field)
+			}
+		}
+	}
+}
+
+func TestCasePathsRemainBoundedWithAdvisoryCategory(t *testing.T) {
+	for _, invalid := range []string{"../schema.json", "advisory/../../schema.json", "/advisory/a.json", "advisory/nested/a.json", `advisory\a.json`, "advisory/.json"} {
+		if validateCasePath(invalid) == nil {
+			t.Errorf("accepted unsafe path %q", invalid)
+		}
+	}
+	if err := validateCasePath("advisory/rules-touching.json"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAdvisoryOnlyLocalSuiteRefusesZeroChecks(t *testing.T) {
+	// Hand-authored valid manifest with one optional empty advisory assertion.
+	// No fixture is written: refusal must precede fixture loading or execution.
+	const manifest = `{
+		"$schema":"./manifest.schema.json","suiteVersion":"0.3.0","specVersion":"0.3.0","status":"draft",
+		"validationProfile":{"jsonSchemaDialect":"https://json-schema.org/draft/2020-12/schema","formatAssertionRequired":true,"rejectDuplicateObjectMembers":true},
+		"diagnosticVocabulary":{"advisory":["JPS-RULES-OVERLAP"]},
+		"cases":[{"id":"advisory-only","path":"advisory/no-checks.json","layer":"semantic","expectedResult":"valid","expectedDiagnostic":null,"expectedAdvisories":[],"focus":"optional advice only","specSection":"§6.6"}]
+	}`
+	root := t.TempDir()
+	set, err := artifacts.Load(artifacts.CoreVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := set.ManifestSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.schema.json"), schema, 0600); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, strict := range []bool{false, true} {
+		output, failure := NewRunner(engine).RunWithOptions(root, artifacts.CoreVersion, strict)
+		if failure == nil || failure.Code != "JPS-SUITE-NO-CHECKS" || failure.ExitCode != result.ExitInvocation || failure.Message != "Suite contains no supported conformance assertions." {
+			t.Fatalf("strict=%v failure=%+v", strict, failure)
+		}
+		if output.Status != "" || len(output.Cases) != 0 {
+			t.Fatalf("zero-check suite emitted result: %+v", output)
+		}
 	}
 }

@@ -143,7 +143,7 @@ func TestExampleRejectsUnknownName(t *testing.T) {
 }
 
 // The runtime description lists every bundled specification version, and its one
-// provenance string describes all of them: a payload that names two versions must
+// provenance string describes all of them: a payload that names several versions must
 // not report the provenance of one.
 func TestRuntimeDescribesEveryBundledVersion(t *testing.T) {
 	set, err := artifacts.Load(artifacts.DraftVersion)
@@ -170,7 +170,7 @@ func TestRuntimeDescribesEveryBundledVersion(t *testing.T) {
 
 // bundledProvenance reports the *least-trusted* kind among the bundles, which is
 // the one a release gate acts on, so the kinds carry an explicit order rather than
-// the loop reporting whichever bundle it visited last. Both bundles are imported
+// the loop reporting whichever bundle it visited last. All bundles are imported
 // from an immutable ref today, so the ordering is pinned here directly.
 func TestProvenanceKindsCarryAnExplicitTrustOrder(t *testing.T) {
 	if provenanceRank("immutable-git-ref") >= provenanceRank("unreleased-local-snapshot") {
@@ -178,5 +178,43 @@ func TestProvenanceKindsCarryAnExplicitTrustOrder(t *testing.T) {
 	}
 	if provenanceRank("unreleased-local-snapshot") >= provenanceRank("a-kind-this-runtime-does-not-mint") {
 		t.Fatal("an unrecognized kind must rank below every known one: it is not evidence of a trustworthy bundle")
+	}
+}
+
+func TestEvaluatorCapabilitiesAreExactAndProfileScoped(t *testing.T) {
+	actual := Runtime(loadSet(t), "describe_runtime")
+	want := []result.EvaluatorCapability{
+		{SpecVersion: "0.2.0-draft"},
+		{SpecVersion: "0.3.0", SupportedProfiles: []string{"base"}},
+	}
+	if !reflect.DeepEqual(actual.EvaluatorCapabilities, want) {
+		t.Fatalf("capabilities: %+v", actual.EvaluatorCapabilities)
+	}
+}
+
+func TestExamplesReportApplicableEvaluatorContract(t *testing.T) {
+	for _, version := range artifacts.SupportedVersions() {
+		set, err := artifacts.Load(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := result.EvaluatorSpecVersion
+		if version == artifacts.CoreVersion {
+			want = artifacts.CoreVersion
+		}
+		catalog, err := Examples(set, "spec examples")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if catalog.EvaluatorSpecVersion != want {
+			t.Fatalf("%s catalog contract: %s", version, catalog.EvaluatorSpecVersion)
+		}
+		example, _, err := Example(set, catalog.Examples[0].Name, "spec examples")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if example.EvaluatorSpecVersion != want {
+			t.Fatalf("%s example contract: %s", version, example.EvaluatorSpecVersion)
+		}
 	}
 }

@@ -82,7 +82,7 @@ func profileFor(set packProbeSet, groups []boundaryGroup, matrix Matrix, rows []
 	}
 	if withCoverage {
 		for _, origin := range origins {
-			subset := Matrix{MatrixVersion: matrix.MatrixVersion}
+			subset := Matrix{MatrixVersion: matrix.MatrixVersion, DispositionContract: matrix.DispositionContract}
 			for _, index := range origin.rows {
 				subset.Cases = append(subset.Cases, matrix.Cases[index])
 			}

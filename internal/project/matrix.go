@@ -13,6 +13,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 // MatrixVersion is the newest matrixVersion this runtime accepts — the shape a
@@ -94,8 +95,10 @@ var matrixVersionMembers = map[string]string{"expectedHandoffTarget": "2", "cite
 // declares it, and the corpus's packs are fixtures of the specification rather
 // than a project's policy.
 type Matrix struct {
-	MatrixVersion string                  `json:"matrixVersion,omitempty"`
-	Cases         []evaluation.MatrixCase `json:"cases"`
+	// DispositionContract is operation context, never a matrix carrier member.
+	DispositionContract result.EvaluatorContract `json:"-"`
+	MatrixVersion       string                   `json:"matrixVersion,omitempty"`
+	Cases               []evaluation.MatrixCase  `json:"cases"`
 }
 
 // LoadMatrix reads and checks one matrix document through the rooted reader.

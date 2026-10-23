@@ -1,0 +1,34 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/force-outcome-forbidden-target-rule",
+  "version": "0.1.0",
+  "title": "Force-outcome exception with forbidden targetRule",
+  "decision": {
+    "intent": "Exercise exception discriminators.",
+    "question": "Is a force-outcome effect carrying a targetRule operand rejected?"
+  },
+  "outcomes": [
+    { "id": "accept", "label": "Accept" },
+    { "id": "reject", "label": "Reject" }
+  ],
+  "rules": [
+    {
+      "id": "literal-rule",
+      "description": "A structurally minimal rule.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "accept",
+      "onUnknown": "ignore"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "forced-review-test",
+      "description": "Intentionally carries a forbidden targetRule operand.",
+      "when": { "op": "literal", "value": true },
+      "effect": "force-outcome",
+      "outcome": "reject",
+      "targetRule": "literal-rule",
+      "onUnknown": "ignore"
+    }
+  ]
+}

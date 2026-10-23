@@ -42,9 +42,18 @@ type Input struct {
 // and proportional to it, not equal to it.
 const MaxReportBytes = project.MaxMatrixBytes
 
-// ErrReportTooLarge is the one failure Run returns: the differences would not
-// fit MaxReportBytes.
+// ErrReportTooLarge refuses differences that would not fit MaxReportBytes.
 var ErrReportTooLarge = errors.New("the comparison's report would exceed its byte limit")
+
+// ErrMixedContracts refuses a comparison before execution when the selected
+// pack contracts differ. A comparison carries one exact evaluator contract.
+var ErrMixedContracts = errors.New("JPS-COMPARE-MIXED-CONTRACT: comparisons require one exact evaluator contract")
+
+// SelectionError preserves normative refusals that must precede row evaluation.
+// Callers must preserve Failure.Code and Failure.Profile without adding a message.
+type SelectionError struct{ Failure *evaluation.Failure }
+
+func (e *SelectionError) Error() string { return e.Failure.Code }
 
 // Side is one of the two packs as the caller read it: the path it names, its
 // bytes, and whether the bounded read stopped at the limit.
@@ -98,6 +107,22 @@ type outcome struct {
 // evidence availability, and its supported extensions joined by the caller's.
 // A pack is admitted once per side, as packs test admits it once per matrix.
 func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs []Input, supported []string, command string) (result.PackComparison, error) {
+	oldContract, oldFailure := evaluation.SelectContract(oldPack.Pack)
+	newContract, newFailure := evaluation.SelectContract(newPack.Pack)
+	for _, failure := range []*evaluation.Failure{oldFailure, newFailure} {
+		if failure != nil && failure.Code == "profile-unsupported" {
+			return result.PackComparison{}, &SelectionError{Failure: failure}
+		}
+	}
+	if !oldPack.Oversized && !newPack.Oversized && oldFailure == nil && newFailure == nil && oldContract != newContract {
+		return result.PackComparison{}, ErrMixedContracts
+	}
+	contract := result.LegacyEvaluatorContract()
+	if oldFailure == nil && !oldPack.Oversized {
+		contract = oldContract
+	} else if newFailure == nil && !newPack.Oversized {
+		contract = newContract
+	}
 	comparison := result.PackComparison{
 		OutputVersion:             result.OutputVersion,
 		Tool:                      result.CurrentTool(),
@@ -107,7 +132,7 @@ func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs [
 		Rehearsal:                 true,
 		ConformanceClaimReference: result.EvaluationClaimReference,
 		Label:                     result.ComparisonLabel,
-		EvaluatorSpecVersion:      result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion:      contract.Version(),
 		Old:                       result.ComparedPack{Path: oldPack.Path, Digest: digest(oldPack)},
 		New:                       result.ComparedPack{Path: newPack.Path, Digest: digest(newPack)},
 		Inputs:                    result.ComparedInputs{Kind: kind, Count: len(inputs)},
@@ -122,8 +147,8 @@ func Run(engine *evaluation.Engine, oldPack, newPack Side, kind string, inputs [
 				extensions = append(extensions, name)
 			}
 		}
-		before := evaluate(engine, oldAdmitted, oldPack, input, extensions, command, &comparison.Old)
-		after := evaluate(engine, newAdmitted, newPack, input, extensions, command, &comparison.New)
+		before := evaluate(engine, oldAdmitted, oldPack, input, extensions, command, &comparison.Old, contract)
+		after := evaluate(engine, newAdmitted, newPack, input, extensions, command, &comparison.New, contract)
 		if unresolved(before) && unresolved(after) {
 			comparison.Inputs.UnresolvedUnderBoth++
 		}
@@ -174,14 +199,14 @@ func digest(pack Side) string {
 
 // evaluate runs one input under one pack and, the first time an evaluation of
 // it succeeds, records the pack's own id and version on its report.
-func evaluate(engine *evaluation.Engine, admitted *evaluation.AdmittedPack, pack Side, input Input, extensions []string, command string, named *result.ComparedPack) outcome {
-	options := evaluation.Options{Command: command, SupportedExtensions: extensions}
+func evaluate(engine *evaluation.Engine, admitted *evaluation.AdmittedPack, pack Side, input Input, extensions []string, command string, named *result.ComparedPack, contract result.EvaluatorContract) outcome {
+	options := evaluation.Options{Command: command, SpecVersion: contract.Version(), SupportedExtensions: extensions}
 	if pack.Oversized {
 		options.OversizedInputs = []string{"pack"}
 	}
 	evaluated, failure := engine.EvaluateAdmitted(admitted, input.Facts, input.Evidence, options)
 	if failure != nil {
-		return outcome{refused: &result.ComparedRefusal{Class: failure.Class, Phase: failure.Phase, Code: failure.Code}}
+		return outcome{refused: &result.ComparedRefusal{Class: failure.Class, Phase: failure.Phase, Code: failure.Code, Profile: failure.Profile}}
 	}
 	if named.PackID == "" && named.PackVersion == "" {
 		named.PackID, named.PackVersion = evaluated.PackID, evaluated.PackVersion

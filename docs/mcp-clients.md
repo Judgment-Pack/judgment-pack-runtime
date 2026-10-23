@@ -50,8 +50,8 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `validate` | Carrier, structural, and semantic conformance for one document |
 | `test_conformance` | Run a version-pinned conformance corpus |
 | `get_schema` | The exact bundled JSON Schema, with digest |
-| `describe_runtime` | Versions and artifact provenance |
-| `list_examples` / `get_example` | The embedded valid fixtures, read-only; `spec_version` chooses the bundled version, and the evaluator admits `0.2.0-draft` |
+| `describe_runtime` | Document versions, version-scoped evaluator capabilities and artifact provenance |
+| `list_examples` / `get_example` | The embedded valid fixtures, read-only; `spec_version` chooses the bundled version; evaluator guidance matches `0.3.0` examples and retains the legacy contract for default examples |
 | `list_packs` / `get_pack` | This project's own packs, by decision id, through its `jpack.json` |
 | `experimental_get_policy_contract` / `experimental_policy_init` / `experimental_get_policy_schema` | EXPERIMENTAL: exact Policy prototype or explicitly selected official draft capabilities, starter templates and schemas; no project reads or writes |
 | `experimental_policy_canonicalize` / `experimental_policy_digest` / `experimental_policy_validate` / `experimental_policy_check` | EXPERIMENTAL: supplied Policy document identity, local checks and retained-material reference checks; no evaluation or authority |
@@ -59,7 +59,7 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_get_test_matrix_contract` | EXPERIMENTAL: discover the project matrix version, closed members, types and authoring rules without reading a project |
 | `experimental_validate_test_matrix` | EXPERIMENTAL: validate matrix carrier and disposition-local constraints; optional exact pack text adds ordered per-case fact-type advice; no evaluation or writes |
 | `experimental_check_fact_types` | EXPERIMENTAL: static fact-type advice from exact pack and facts JSON text, without test expectations, evaluation or writes |
-| `experimental_validate_expectations` | EXPERIMENTAL SURFACE (ADR-0035): validate proposed exact Core 0.2.0-draft dispositions before authoring admission; no project or evaluation |
+| `experimental_validate_expectations` | EXPERIMENTAL SURFACE (ADR-0035): validate proposed dispositions under an explicit Core contract before authoring admission; no project or evaluation |
 | `experimental_test_cases` | EXPERIMENTAL SURFACE: rehearse an exact `pack` JSON string against a `matrix` JSON string, with the same matrix admission, canonical comparison and coverage as `packs test`; reads no project files and appends no audit record |
 | `experimental_test_packs` | EXPERIMENTAL SURFACE (ADR-0021): run declared instance matrices, the same payload `jpack packs test --format json` emits |
 | `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
@@ -82,7 +82,7 @@ carries a
 member pointing at [`CONFORMANCE.md`](../CONFORMANCE.md), where the conformance claim is stated in full
 and only; no tool description, and no line of this document, states any part of it. Whatever that claim
 says, it is about this implementation and not about the pack, the facts, or the wisdom of acting on a
-disposition (JPS §3.5). It evaluates only a pack declaring `specVersion` `0.2.0-draft` (§11).
+disposition (JPS §3.5). Pack-aware tools select the exact `0.2.0-draft` or base-only Core `0.3.0` contract from the associated pack declaration.
 
 On the wire, one request is one line of valid UTF-8 JSON, bounded at 16 MiB. A line that is not
 valid UTF-8, or that carries an unpaired surrogate escape (`\ud800`–`\udfff` without its pair)
@@ -125,7 +125,8 @@ one `results` entry per input. Each entry has its input `index` and `status`.
 Valid entries include `canonical` JSON text. Invalid entries include a `code`
 and `message`; the example is `JPS-EXPECTATION-INVALID` because an unresolved
 disposition must retain reasons. Invalid expectations are reported rather than
-dropped; the report itself is a successful tool call. Unknown versions,
+dropped; the report itself is a successful tool call. Standalone authoring accepts `spec_version: "0.3.0"`; omission preserves the
+`0.2.0-draft` default. Route presence never selects the contract. Unknown versions,
 unknown arguments, empty/oversized batches, and non-string entries are tool errors.
 
 A call accepts 1–256 strings; each is limited to 16 KiB, depth 16, 1,024 JSON
@@ -398,11 +399,11 @@ Prepared inputs need no expectation. Call `experimental_check_fact_types` with
 required `pack` and `facts`, both exact JSON strings, and optional
 `supported_extensions`, an array of strings. Its report carries `outputVersion`,
 `tool`, `command`, `experimental: true`, `contractVersion: "1"`,
-`specVersion: "0.2.0-draft"`, `factCheckVersion: "1"`, `status` and `findings`,
+the selected `specVersion`, `factCheckVersion: "1"`, `status` and `findings`,
 plus `message` when unavailable. A complete check can have findings; it is not an
-evaluation result or a judgment about policy. Only Core `0.2.0-draft` is supported
-by this advisory. Other declared versions, including Core `0.3.0`, are unavailable;
-this interface does not vendor a newer specification or extend conformance claims.
+evaluation result or a judgment about policy. Advice selects the exact associated
+pack contract (`0.2.0-draft` or base-only `0.3.0`), and preserves an unsupported
+profile refusal. It changes no independently authored expectation.
 
 Both tools reuse the evaluator's static comparability walk: every stated
 comparison is checked, even where evaluation would not reach it. Missing facts
@@ -596,3 +597,42 @@ The Go reader's agreement with all 124 exact official results and the retained
 reference reader supplies same-vendor evidence. It establishes no stable maturity,
 independently authored interoperability, current authority, permission or trusted
 review. Runtime's conformance claim remains solely in [CONFORMANCE.md](../CONFORMANCE.md).
+
+## Core 0.3.0 selection and routed reports
+
+`describe_runtime` reports document `supportedSpecVersions` separately from
+`evaluatorCapabilities`. The `0.3.0` evaluator entry carries
+`supportedProfiles: ["base"]`; profile support is scoped to that entry, with no
+Policy or Dialect implication. Missing pack profile means base without changing
+its bytes. A declared extended profile is refused with exactly the diagnostic
+`{"code":"profile-unsupported","profile":"extended"}`, before structural
+interpretation or facts/evidence admission.
+
+Standalone matrix-contract discovery, matrix validation without a pack, and
+expectation validation accept an explicit `spec_version`, defaulting to
+`0.2.0-draft`. When exact pack text is supplied, that pack selects the contract.
+Matrix carriers stay at versions `1`–`3`; they gain no implicit route-based dispatch.
+Project walks, graphs and comparison refuse mixed exact Core versions before
+running any evaluation, even if no input row would run.
+
+Core `0.3.0` routed dispositions retain route presence, exact target names,
+declaration order and duplicates. A routed handoff with no selected target carries
+`routes: []`; a target-only pack keeps its previous canonical bytes. Singular
+target assertions mismatch for routed results, including null assertions. Graph
+handoffs fan out in declaration order, retaining duplicate targets. Aggregated target
+displays are sanitized; portable route names remain exact. Core `0.3.0` graph suite
+entries add `evaluatorSpecVersion`, omitted from legacy entries. Audit records
+retain exact canonical bytes and the actual selected contract.
+
+Core `0.3.0` project matrix reports allow at most 10 MiB of expected plus actual
+canonical disposition text (`JPS-RESOURCE-MATRIX-DISPOSITIONS`). Graph reports and
+Core `0.3.0` graph matrix/suite reports are bounded at 16 MiB, with incremental
+node/handoff/headline charging and a final envelope check. Comparisons retain their
+existing report limit. These bounds refuse whole reports rather than truncate
+portable dispositions. The conformance runner reports optional advisory rows as
+`skipped`, `actualStatus: "not-checked"`, with `skipReason` and a separate summary
+count; they never count as passed assertions. An advisory-only suite is refused
+with `JPS-SUITE-NO-CHECKS`, with no successful zero-check report.
+
+See [ADR-0063](adr/0063-explicit-core-030-contracts.md) for provenance and contract
+choices, and [CONFORMANCE.md](../CONFORMANCE.md) for conformance posture and evidence.

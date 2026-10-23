@@ -19,12 +19,12 @@ const expectationSpec = "0.2.0-draft"
 func expectationToolDefinition() map[string]any {
 	return map[string]any{
 		"name":        expectationTool,
-		"description": "EXPERIMENTAL SURFACE (ADR-0035): check proposed exact JPS dispositions before admitting authoring test cases. This surface may change or be removed without compatibility promise. This read-only operation uses the same strict disposition decoder as the runtime's matrix comparator. It checks representation and disposition-local constraints, not whether a pack produces the expectation, whether the policy is correct, or whether a declared outcome or handoff agrees with a particular pack. Pack-independent reachability is checked after that grammar gate and only when the grammar gate passes: a JPS-EXPECTATION-UNREACHABLE finding means §8's step order or §5's local-identifier grammar puts the disposition beyond every conforming pack — an unresolved result retaining not-applicable, no-match beside another reason, or an outcomeId outside ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$ — so the expectation and not the candidate is what must change; an input that is both malformed and unreachable is reported for its grammar defect, under JPS-EXPECTATION-INVALID. A valid finding is therefore necessary, not sufficient: pack-dependent reachability is not checked, so an outcome id it admits may name no declared outcome of your pack and a handoff may be one your pack does not configure. Reason and trigger sets are normalized rather than refused — duplicates and order carry no meaning in a §8.3 set — so the canonical text of a valid finding, not the text submitted, is what this runtime compared. Every input has one indexed valid/invalid result, and an invalid finding carries the code and the rule that refused it; none are silently dropped. A JPS-EXPECTATION-LIMIT finding means the input was not admitted, not that Core prohibits its meaning, so branch on the code rather than the status. No pack, project, evaluator, audit record, source, credential or network is accessed. Only JPS 0.2.0-draft is supported. Each expectation is JSON text, limited to 16 KiB, depth 16, 1024 nodes and 8 KiB per string; a call carries 1–256 expectations.",
+		"description": "EXPERIMENTAL SURFACE (ADR-0035): check proposed exact JPS dispositions before admitting authoring test cases. This surface may change or be removed without compatibility promise. This read-only operation uses the same strict disposition decoder as the runtime's matrix comparator. It checks representation and disposition-local constraints, not whether a pack produces the expectation, whether the policy is correct, or whether a declared outcome or handoff agrees with a particular pack. Pack-independent reachability is checked after that grammar gate and only when the grammar gate passes: a JPS-EXPECTATION-UNREACHABLE finding means §8's step order or §5's local-identifier grammar puts the disposition beyond every conforming pack — an unresolved result retaining not-applicable, no-match beside another reason, or an outcomeId outside ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$ — so the expectation and not the candidate is what must change; an input that is both malformed and unreachable is reported for its grammar defect, under JPS-EXPECTATION-INVALID. A valid finding is therefore necessary, not sufficient: pack-dependent reachability is not checked, so an outcome id it admits may name no declared outcome of your pack and a handoff may be one your pack does not configure. Reason and trigger sets are normalized rather than refused — duplicates and order carry no meaning in a §8.3 set — so the canonical text of a valid finding, not the text submitted, is what this runtime compared. Every input has one indexed valid/invalid result, and an invalid finding carries the code and the rule that refused it; none are silently dropped. A JPS-EXPECTATION-LIMIT finding means the input was not admitted, not that Core prohibits its meaning, so branch on the code rather than the status. No pack, project, evaluator, audit record, source, credential or network is accessed. Supports exact Core 0.2.0-draft and 0.3.0 base contracts. Optional spec_version defaults to 0.2.0-draft; route presence never selects a version. Route order and duplicate targets are retained. Each expectation is JSON text, limited to 16 KiB, depth 16, 1024 nodes and 8 KiB per string; a call carries 1–256 expectations.",
 		"inputSchema": map[string]any{
 			"type": "object", "additionalProperties": false,
-			"required": []string{"spec_version", "expectations"},
+			"required": []string{"expectations"},
 			"properties": map[string]any{
-				"spec_version": map[string]any{"type": "string", "enum": []string{expectationSpec}},
+				"spec_version": evaluatorSpecProperty(),
 				"expectations": map[string]any{"type": "array", "minItems": 1, "maxItems": maxExpectations,
 					"items": map[string]any{"type": "string", "description": "One complete expected §8.3 disposition as JSON text; byte and structural limits are enforced before disposition decoding."}},
 			},
@@ -50,8 +50,9 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 	if err := json.Unmarshal(rawArgs, &args); err != nil || !isBatchArray(args.Expectations) {
 		return toolError(notABatch)
 	}
-	if args.SpecVersion != expectationSpec {
-		return toolError("Expectation validation supports exactly spec_version 0.2.0-draft.")
+	contract, _, message := standaloneContract(rawArgs)
+	if message != "" {
+		return toolError(message)
 	}
 	count, counted := countBatch(args.Expectations)
 	if !counted {
@@ -86,7 +87,7 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 				if failure.Resource {
 					row.Code = "JPS-EXPECTATION-LIMIT"
 				}
-			} else if disposition, err := evaluation.DecodeDisposition(json.RawMessage(text)); err != nil {
+			} else if disposition, err := evaluation.DecodeDispositionWith(json.RawMessage(text), contract); err != nil {
 				row.Message = err.Error()
 			} else if unreachable := unreachableExpectation(disposition); unreachable != "" {
 				// After the §8.3 grammar gate, never before it. A shape that is
@@ -108,7 +109,7 @@ func (s *Server) toolValidateExpectations(rawArgs json.RawMessage) any {
 		}
 		results[i] = row
 	}
-	return toolResult(result.NewExpectationReport("mcp "+expectationTool, expectationSpec, results))
+	return toolResult(result.NewExpectationReport("mcp "+expectationTool, contract.Version(), results))
 }
 
 // localIdentifier is §5's local-object-identifier grammar, quoted from the

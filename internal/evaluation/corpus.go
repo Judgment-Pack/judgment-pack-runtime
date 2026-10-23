@@ -403,7 +403,7 @@ func (e *Engine) runCorpusCase(set *artifacts.Set, admissions map[string]*Admitt
 	// No rendering is computed for a bundled row: that manifest's schema closes
 	// its case object, so no corpus row can declare expectedHandoffTarget and no
 	// corpus row can reach the member this would feed (ADR-0025).
-	return e.RunCaseAdmitted(admitted, item.MatrixCase, HandoffTargetRendering{}, "experimental evaluate-corpus")
+	return e.RunCaseAdmittedWith(admitted, item.MatrixCase, HandoffTargetRendering{}, "experimental evaluate-corpus", Options{SpecVersion: set.Lock().SpecVersion})
 }
 
 // RunCase runs one case-carrier row against one pack document and reports the
@@ -442,6 +442,12 @@ func (e *Engine) RunCase(pack []byte, item MatrixCase, command string) result.Ev
 // (issue #78): the same judgment, without re-validating and re-decoding the
 // pack bytes for every row.
 func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declared HandoffTargetRendering, command string) result.EvaluationCorpusCase {
+	return e.RunCaseAdmittedWith(admitted, item, declared, command, Options{})
+}
+
+// RunCaseAdmittedWith applies one explicit evaluator contract to evaluation and
+// expected-disposition admission. An empty SpecVersion preserves Core 0.2.
+func (e *Engine) RunCaseAdmittedWith(admitted *AdmittedPack, item MatrixCase, declared HandoffTargetRendering, command string, options Options) result.EvaluationCorpusCase {
 	outcome := result.EvaluationCorpusCase{
 		ID:                 item.ID,
 		Origin:             item.Origin,
@@ -451,7 +457,7 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declar
 		ExpectedErrorPhase: item.ExpectedErrorPhase,
 	}
 	if item.ExpectedDisposition != nil {
-		expected, err := canonicalDisposition(item.ExpectedDisposition)
+		expected, err := canonicalDispositionWith(item.ExpectedDisposition, options.contract())
 		if err != nil {
 			return corpusMismatch(outcome, "The row's expected disposition is not a canonicalizable §8.3 disposition, which is a defect in the bundled carrier and not a result: "+err.Error())
 		}
@@ -479,8 +485,8 @@ func (e *Engine) RunCaseAdmitted(admitted *AdmittedPack, item MatrixCase, declar
 		expectedTarget, outcome.ExpectedHandoffTarget = decoded, rendered
 	}
 
-	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability,
-		Options{Command: command, SupportedExtensions: item.SupportedExtensions})
+	options.Command, options.SupportedExtensions = command, item.SupportedExtensions
+	evaluated, failure := e.EvaluateAdmitted(admitted, item.Facts, item.EvidenceAvailability, options)
 	if failure != nil {
 		outcome.ActualErrorClass, outcome.ActualErrorPhase = failure.Class, failure.Phase
 		if item.ExpectedErrorClass == "" {
@@ -702,7 +708,11 @@ func corpusMismatch(outcome result.EvaluationCorpusCase, detail string) result.E
 // expectation to §8.3's three presence rules, so a carrier defect the manifest
 // schema cannot catch is named as one.
 func canonicalDisposition(raw json.RawMessage) (string, error) {
-	disposition, err := DecodeDisposition(raw)
+	return canonicalDispositionWith(raw, result.LegacyEvaluatorContract())
+}
+
+func canonicalDispositionWith(raw json.RawMessage, contract result.EvaluatorContract) (string, error) {
+	disposition, err := DecodeDispositionWith(raw, contract)
 	if err != nil {
 		return "", err
 	}
@@ -721,16 +731,30 @@ func canonicalDisposition(raw json.RawMessage) (string, error) {
 // decoder could accept as a witness the exact expectation the comparator
 // refuses. One gate, however many readers.
 func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
+	return DecodeDispositionWith(raw, result.LegacyEvaluatorContract())
+}
+
+// DecodeDispositionWith admits expectations under the explicitly selected Core
+// contract. Route presence never selects or upgrades the contract.
+func DecodeDispositionWith(raw json.RawMessage, contract result.EvaluatorContract) (result.Disposition, error) {
+	if err := contract.Validate(); err != nil {
+		return result.Disposition{}, err
+	}
+	if _, failure := carrier.Decode(raw, carrier.DefaultLimits()); failure != nil {
+		return result.Disposition{}, failure
+	}
+
 	// Member names are held to their exact §8.3 spellings before the decoder
 	// runs, because encoding/json case-folds them: "Kind" or a handoff
 	// carrying "State" would bind past DisallowUnknownFields and canonicalize
 	// as the members they are not — the same hole the row carriers close for
 	// their own members, closed here once for every reader of an expected
 	// disposition.
-	if err := exactDispositionMembers(raw); err != nil {
+	if err := exactDispositionMembersWith(raw, contract); err != nil {
 		return result.Disposition{}, err
 	}
 	var disposition result.Disposition
+	disposition.Contract = contract
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&disposition); err != nil {
@@ -758,6 +782,10 @@ func DecodeDisposition(raw json.RawMessage) (result.Disposition, error) {
 // at all is refused here rather than passed on, because the pass below would
 // otherwise be skipped for the one input that most needs it.
 func exactDispositionMembers(raw json.RawMessage) error {
+	return exactDispositionMembersWith(raw, result.LegacyEvaluatorContract())
+}
+
+func exactDispositionMembersWith(raw json.RawMessage, contract result.EvaluatorContract) error {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {
 		var wrongType *json.UnmarshalTypeError
@@ -775,7 +803,7 @@ func exactDispositionMembers(raw json.RawMessage) error {
 	// held to §8.3 as it is published, which has no such member, and no surface
 	// that reads an expectation evaluates under that opt-in.
 	if _, present := object["value"]; present {
-		return errors.New("§8.3: the disposition carries \"value\", which is the member of the specification's draft RFC 0016 and no member of §8.3. An expected disposition is held to §8.3 as JPS Core " + result.EvaluatorSpecVersion + " publishes it")
+		return errors.New("§8.3: the disposition carries \"value\", which is the member of the specification's draft RFC 0016 and no member of §8.3. An expected disposition is held to §8.3 as JPS Core " + contract.Version() + " publishes it")
 	}
 	if err := memberSpellings(object, []string{"kind", "outcomeId", "reasons", "handoff"}, "the disposition"); err != nil {
 		return err
@@ -807,11 +835,33 @@ func exactDispositionMembers(raw json.RawMessage) error {
 	if err := json.Unmarshal(handoffRaw, &handoff); err != nil {
 		return nil
 	}
-	if err := memberSpellings(handoff, []string{"state", "triggeredBy"}, "the disposition's handoff member"); err != nil {
+	members := []string{"state", "triggeredBy"}
+	if contract.Version() == "0.3.0" {
+		members = append(members, "routes")
+	}
+	if err := memberSpellings(handoff, members, "the disposition's handoff member"); err != nil {
 		return err
 	}
 	if value, present := handoff["state"]; !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 		return errors.New("§8.3: handoff.state must be present and non-null")
+	}
+	if routes, present := handoff["routes"]; present {
+		if bytes.Equal(bytes.TrimSpace(routes), []byte("null")) {
+			return errors.New("§8.3: handoff.routes must not be null")
+		}
+		var targets []json.RawMessage
+		if err := json.Unmarshal(routes, &targets); err != nil {
+			return err
+		}
+		for _, target := range targets {
+			decoded, err := DecodeHandoffTarget(target)
+			if err != nil {
+				return err
+			}
+			if decoded == nil {
+				return errors.New("§8.3: a route target must not be null")
+			}
+		}
 	}
 	state, stateKnown := knownValue(handoff["state"], "none", "requested")
 	_, hasTriggers := handoff["triggeredBy"]
