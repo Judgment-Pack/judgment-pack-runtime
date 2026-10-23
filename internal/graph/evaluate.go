@@ -176,6 +176,25 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			ExitCode: result.ExitInvalid,
 		}
 	}
+	// Negotiate from complete bounded pack reads before admitting graph inputs.
+	// Structural graph admission above is needed to identify the participating
+	// packs safely. Other selection refusals keep their legacy position after
+	// graph invocation checks; unsupported profiles must precede those checks.
+	contract, selectionFailure := SelectContract(loaded, doc)
+	if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
+		return result.GraphEvaluation{}, selectionFailure
+	}
+	if selectionFailure == nil {
+		// Carry successfully selected operation context without another read.
+		// A normative profile refusal remains the unchanged code/profile pair.
+		defer func() {
+			if failure != nil && failure.Code != "profile-unsupported" {
+				wrapped := *failure
+				wrapped.SpecVersion = contract.Version()
+				failure = &wrapped
+			}
+		}()
+	}
 	perNode, failure := parseInputs(inputs, inputsSupplied, doc)
 	if failure != nil {
 		return result.GraphEvaluation{}, failure
@@ -212,20 +231,9 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		}
 	}
 
-	contract, selectionFailure := SelectContract(loaded, doc)
 	if selectionFailure != nil {
 		return result.GraphEvaluation{}, selectionFailure
 	}
-	// Context belongs to the exact successfully selected operation, and is
-	// carried to error envelopes without another pack read. A normative
-	// profile refusal remains the unchanged code/profile diagnostic.
-	defer func() {
-		if failure != nil && failure.Code != "profile-unsupported" {
-			wrapped := *failure
-			wrapped.SpecVersion = contract.Version()
-			failure = &wrapped
-		}
-	}()
 	if options.contract.SpecVersion != "" && options.contract != contract {
 		return result.GraphEvaluation{}, mixedContractFailure()
 	}
@@ -272,8 +280,8 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		evidence := in.evidence
 		factFeeds := []result.GraphFactFeed{}
 		evidenceFeeds := []result.GraphEvidenceFeed{}
-		// A collision between an edge's feed and the caller's own documents is
-		// an invocation refusal, and it precedes the engine's §8.2 preflight
+		// After profile negotiation, a collision between an edge's feed and the
+		// caller's documents precedes the engine's remaining §8.2 preflight
 		// exactly as every other invocation guard on this surface does — dual
 		// stdin, a missing document, a malformed inputs object: a caller who
 		// supplied colliding inputs has not yet posed a well-formed evaluation

@@ -362,16 +362,13 @@ func LoadRows(data []byte, name string) (Rows, *evaluation.Failure) {
 // not they held; it touches neither Status nor Summary, and a run with every
 // probe missing still exits by its rows alone.
 func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, graphPath, rowsPath string, rows Rows, options Options) (result.GraphTest, *evaluation.Failure) {
-	// LoadRows refuses an empty matrix, and this precondition is enforced here
-	// too so no caller can obtain a clean 0/0 report over nothing.
-	if len(rows.Cases) == 0 {
-		return result.GraphTest{}, &evaluation.Failure{
-			Code:     "JPS-GRAPH-ROWS-EMPTY",
-			Message:  "The graph matrix declares no rows; an empty matrix tests nothing.",
-			ExitCode: result.ExitInvalid,
-		}
+	// Structural graph admission identifies the packs safely. Preserve the
+	// legacy empty-row refusal when an invalid graph cannot identify them.
+	diagnostics := doc.Structural(loaded)
+	if len(rows.Cases) == 0 && len(diagnostics) > 0 {
+		return result.GraphTest{}, emptyRowsFailure()
 	}
-	if diagnostics := doc.Structural(loaded); len(diagnostics) > 0 {
+	if len(diagnostics) > 0 {
 		first := diagnostics[0]
 		location := first.InstancePath
 		if location == "" {
@@ -384,8 +381,20 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		}
 	}
 	contract, selectionFailure := SelectContract(loaded, doc)
+	if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
+		return result.GraphTest{}, selectionFailure
+	}
+	// Even a direct caller's empty matrix is another document admission;
+	// unsupported profiles outrank it, while legacy empty-row behavior stays.
+	if len(rows.Cases) == 0 {
+		failure := emptyRowsFailure()
+		if selectionFailure == nil && contract.Version() == "0.3.0" {
+			failure.SpecVersion = contract.Version()
+		}
+		return result.GraphTest{}, failure
+	}
 	if selectionFailure != nil {
-		if selectionFailure.Code == "profile-unsupported" || selectionFailure.Code == "JPS-GRAPH-MIXED-CONTRACT" {
+		if selectionFailure.Code == "JPS-GRAPH-MIXED-CONTRACT" {
 			return result.GraphTest{}, selectionFailure
 		}
 		// Preserve row assertions about a refused pack. No successful
@@ -495,6 +504,15 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		*options.reportSpent = spent
 	}
 	return output, nil
+}
+
+// emptyRowsFailure holds the direct-call precondition LoadRows also enforces.
+func emptyRowsFailure() *evaluation.Failure {
+	return &evaluation.Failure{
+		Code:     "JPS-GRAPH-ROWS-EMPTY",
+		Message:  "The graph matrix declares no rows; an empty matrix tests nothing.",
+		ExitCode: result.ExitInvalid,
+	}
 }
 
 // runRow judges one row. A row's expected dispositions pass through the same
