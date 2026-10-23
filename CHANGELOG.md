@@ -4,6 +4,17 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Add recommended Core `0.3.0` `JPS-RULES-OVERLAP` warnings to semantic CLI/MCP
+  validation, with exact region or witness, rule identities and exclusive rewrites
+  (ADR-0066, #304). Plain validation remains valid; strict conformance runs reject
+  exact overlap while preserving normative document status. Cross-path uncertainty
+  stays a warning. Check the frozen optional expectations with explicit advisory
+  coverage, bounded reasoning and complete-diagnostic output limits.
+  Generated full-pack replacements and witnesses are checked against configured
+  carrier limits before publication; pointer-derived witness storage is bounded
+  before allocation. `rewriteUnavailable` identifies replacements that cannot be
+  supplied within the limits, and unsupported witnesses do not establish exactness.
+
 - Prepare explicit Core `0.3.0` base-profile validation and evaluation from immutable
   Spec commit `65c7cf5598a0f0fc532c80a9e2215090951104ce` (ADR-0063). Preserve legacy
   defaults and bundle bytes. Discovery separates document versions from exact evaluator
@@ -13,8 +24,8 @@ All notable changes to tagged releases are documented here.
   standalone authoring uses explicit `spec_version`, defaulting to `0.2.0-draft`.
   Matrix carriers stay at versions `1`–`3`; mixed-version compositions refuse.
 - Resolve conformance-manifest references only against pinned offline resources.
-  Optional advisory assertions are reported as skipped/not checked rather than passed.
-  Existing suite reports omit skip fields when unused. Conformance posture,
+  Optional rule-overlap assertions are checked separately from normative rows.
+  Conformance posture,
   evidence and the outstanding URI grammar limitation are recorded solely in
   [CONFORMANCE.md](CONFORMANCE.md).
 

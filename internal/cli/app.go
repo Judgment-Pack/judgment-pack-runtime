@@ -745,7 +745,8 @@ func (a *App) testConformanceCommand() *cobra.Command {
 			"By default a case passes when its expected diagnostic is among those reported; extra detail is allowed.\n" +
 			"With --strict a case also fails when a diagnostic is reported that its manifest entry does not expect,\n" +
 			"and the failure names each stray diagnostic. The corpus's single-defect rule (one defect per fixture)\n" +
-			"is only checked under --strict.",
+			"is only checked under --strict. Exact Core 0.3.0 rule overlap also fails strict mode;\n" +
+			"not-excluded overlap remains a warning and document conformance is unchanged.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateCommonOptions(format, quiet); err != nil {
@@ -772,7 +773,7 @@ func (a *App) testConformanceCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&specVersion, "spec-version", specVersion, "exact JPS version; defaults to "+artifacts.DraftVersion)
-	command.Flags().BoolVar(&strict, "strict", strict, "also fail a case that reports a diagnostic its manifest entry does not expect (the single-defect rule)")
+	command.Flags().BoolVar(&strict, "strict", strict, "also enforce the single-defect rule and reject exact Core 0.3.0 rule overlap")
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().BoolVar(&quiet, "quiet", quiet, "suppress successful human output")
 	command.Flags().BoolVar(&noColor, "no-color", noColor, "disable terminal color")

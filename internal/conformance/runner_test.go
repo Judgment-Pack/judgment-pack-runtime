@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
-	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -306,7 +305,7 @@ func TestStrictModePassesBundledSuite(t *testing.T) {
 	}
 }
 
-func TestCore030SuiteReportsOptionalAdvisoriesUnchecked(t *testing.T) {
+func TestCore030SuiteChecksOptionalAdvisoriesAndStrictGate(t *testing.T) {
 	engine, err := validation.NewEngine()
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +316,11 @@ func TestCore030SuiteReportsOptionalAdvisoriesUnchecked(t *testing.T) {
 			if failure != nil {
 				t.Fatal(failure)
 			}
-			if actual.Status != "valid" || actual.Summary.Total != 156 || actual.Summary.Passed != 151 || actual.Summary.Skipped != 5 || actual.Summary.Mismatched != 0 {
+			wantStatus, wantPassed, wantMismatch := "valid", 156, 0
+			if strict {
+				wantStatus, wantPassed, wantMismatch = "mismatch", 155, 1
+			}
+			if actual.Status != wantStatus || actual.Summary.Total != 156 || actual.Summary.Passed != wantPassed || actual.Summary.Skipped != 0 || actual.Summary.Mismatched != wantMismatch || actual.Advisories == nil || actual.Advisories.Total != 5 || actual.Advisories.Passed != 5 || actual.Advisories.Mismatched != 0 {
 				for _, item := range actual.Cases {
 					if item.Status == "mismatch" {
 						t.Logf("%+v", item)
@@ -325,10 +328,20 @@ func TestCore030SuiteReportsOptionalAdvisoriesUnchecked(t *testing.T) {
 				}
 				t.Fatalf("unexpected Core 0.3 summary: %+v", actual.Summary)
 			}
+			normative := 0
 			for _, item := range actual.Cases {
-				if item.Status == "skipped" && (item.ActualStatus != "not-checked" || item.SkipReason == "" || len(item.ActualDiagnostics) != 0) {
-					t.Fatalf("skipped row lacks truthful detail: %+v", item)
+				if item.AdvisoryStatus == "" {
+					normative++
+					if item.Status != "passed" {
+						t.Fatalf("normative assertion changed: %+v", item)
+					}
 				}
+				if item.AdvisoryStatus != "" && (item.AdvisoryStatus != "passed" || item.ActualStatus != "valid") {
+					t.Fatalf("advisory/document status: %+v", item)
+				}
+			}
+			if normative != 151 {
+				t.Fatalf("normative assertions: %d", normative)
 			}
 		})
 	}
@@ -393,9 +406,9 @@ func TestCasePathsRemainBoundedWithAdvisoryCategory(t *testing.T) {
 	}
 }
 
-func TestAdvisoryOnlyLocalSuiteRefusesZeroChecks(t *testing.T) {
+func TestAdvisoryOnlyLocalSuiteChecksEmptyExpectation(t *testing.T) {
 	// Hand-authored valid manifest with one optional empty advisory assertion.
-	// No fixture is written: refusal must precede fixture loading or execution.
+	// An empty expectation is now a supported assertion, not a skipped check.
 	const manifest = `{
 		"$schema":"./manifest.schema.json","suiteVersion":"0.3.0","specVersion":"0.3.0","status":"draft",
 		"validationProfile":{"jsonSchemaDialect":"https://json-schema.org/draft/2020-12/schema","formatAssertionRequired":true,"rejectDuplicateObjectMembers":true},
@@ -421,13 +434,20 @@ func TestAdvisoryOnlyLocalSuiteRefusesZeroChecks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(root, "advisory"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := set.Case("advisory/rules-touching.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "advisory/no-checks.json"), fixture, 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, strict := range []bool{false, true} {
 		output, failure := NewRunner(engine).RunWithOptions(root, artifacts.CoreVersion, strict)
-		if failure == nil || failure.Code != "JPS-SUITE-NO-CHECKS" || failure.ExitCode != result.ExitInvocation || failure.Message != "Suite contains no supported conformance assertions." {
-			t.Fatalf("strict=%v failure=%+v", strict, failure)
-		}
-		if output.Status != "" || len(output.Cases) != 0 {
-			t.Fatalf("zero-check suite emitted result: %+v", output)
+		if failure != nil || output.Status != "valid" || output.Summary.Passed != 1 || output.Advisories == nil || output.Advisories.Passed != 1 {
+			t.Fatalf("strict=%v output=%+v failure=%v", strict, output, failure)
 		}
 	}
 }
