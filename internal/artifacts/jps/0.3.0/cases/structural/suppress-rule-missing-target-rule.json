@@ -1,0 +1,32 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/suppress-rule-missing-target-rule",
+  "version": "0.1.0",
+  "title": "Incomplete suppress-rule exception",
+  "decision": {
+    "intent": "Exercise exception discriminators.",
+    "question": "Is a suppress-rule effect without a targetRule rejected?"
+  },
+  "outcomes": [
+    { "id": "accept", "label": "Accept" },
+    { "id": "reject", "label": "Reject" }
+  ],
+  "rules": [
+    {
+      "id": "literal-rule",
+      "description": "A structurally minimal rule.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "accept",
+      "onUnknown": "ignore"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "suppressed-rule-test",
+      "description": "Intentionally omits the required targetRule.",
+      "when": { "op": "literal", "value": true },
+      "effect": "suppress-rule",
+      "onUnknown": "ignore"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/decimal-operand-leading-zeros",
+  "version": "0.1.0",
+  "title": "Decimal operand with leading zeros",
+  "decision": {
+    "intent": "Exercise the ordered-operand decimal grammar.",
+    "question": "Is a decimal operand with leading zeroes rejected?"
+  },
+  "outcomes": [
+    { "id": "accept", "label": "Accept" },
+    { "id": "reject", "label": "Reject" }
+  ],
+  "rules": [
+    {
+      "id": "ordered-rule",
+      "description": "Uses a decimal operand with prohibited leading zeroes.",
+      "when": {
+        "op": "fact",
+        "path": "/amount",
+        "operator": "greater-than",
+        "value": "007"
+      },
+      "outcome": "accept",
+      "onUnknown": "escalate"
+    }
+  ]
+}

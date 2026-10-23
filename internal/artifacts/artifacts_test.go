@@ -1,8 +1,12 @@
 package artifacts
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -100,13 +104,12 @@ func TestExampleReturnsBytesAndRejectsUnknownNames(t *testing.T) {
 	}
 }
 
-// Both drafts are bundled and load independently, and each verifies against its
-// own lock. The evaluation corpus exists only in the version whose Core defines
-// the evaluator conformance class.
+// All three exact versions load independently and verify against their own
+// locks. Only versions with an indexed evaluation corpus expose that corpus.
 func TestEveryBundledVersionLoads(t *testing.T) {
 	versions := SupportedVersions()
-	if len(versions) != 2 || versions[0] != DraftVersion || versions[1] != EvaluatorDraftVersion {
-		t.Fatalf("SupportedVersions = %v, want %v", versions, []string{DraftVersion, EvaluatorDraftVersion})
+	if len(versions) != 3 || versions[0] != DraftVersion || versions[1] != EvaluatorDraftVersion || versions[2] != CoreVersion {
+		t.Fatalf("SupportedVersions = %v, want %v", versions, []string{DraftVersion, EvaluatorDraftVersion, CoreVersion})
 	}
 	for _, version := range versions {
 		set, err := Load(version)
@@ -164,5 +167,85 @@ func TestEvaluationCorpusIsBundledOnlyWhereItIsPublished(t *testing.T) {
 	// read from outside the digest-locked set.
 	if _, err := newer.EvaluationPack("packs/../../schema.json"); err == nil {
 		t.Fatal("an unrecorded path must be refused")
+	}
+}
+
+func TestCore030ExactProvenanceAndCompleteIndexedFixtures(t *testing.T) {
+	set, err := Load(CoreVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := set.Lock()
+	const pin = "65c7cf5598a0f0fc532c80a9e2215090951104ce"
+	if len(lock.Files) != 165 {
+		t.Fatalf("Core 0.3 lock files: %d", len(lock.Files))
+	}
+	if lock.Source.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || lock.Source.Ref != pin || lock.Source.BaseCommit != pin || lock.Source.Kind != "immutable-git-ref" || lock.Source.WorktreeDirty {
+		t.Fatalf("unexpected source: %+v", lock.Source)
+	}
+	if lock.BundleDigest.Value != "018b8221c424fa530d7482b160f4d7faa59cd9d2e80d3f6e2f8748dfb0d7e743" {
+		t.Fatalf("bundle digest: %+v", lock.BundleDigest)
+	}
+	manifestBytes, err := set.Manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Cases []struct {
+			Path string `json:"path"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Cases) != 156 {
+		t.Fatalf("document cases: %d", len(manifest.Cases))
+	}
+	indexed := map[string]bool{}
+	for _, item := range manifest.Cases {
+		indexed["cases/"+item.Path] = true
+	}
+	evaluationBytes, err := set.EvaluationManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evaluation struct {
+		Cases []struct {
+			Pack string `json:"pack"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(evaluationBytes, &evaluation); err != nil {
+		t.Fatal(err)
+	}
+	if len(evaluation.Cases) != 20 {
+		t.Fatalf("evaluation rows: %d", len(evaluation.Cases))
+	}
+	for _, item := range evaluation.Cases {
+		indexed["evaluation/"+item.Pack] = true
+	}
+	for _, entry := range lock.Files {
+		var data []byte
+		switch {
+		case strings.HasPrefix(entry.Path, "cases/"):
+			data, err = set.Case(strings.TrimPrefix(entry.Path, "cases/"))
+		case strings.HasPrefix(entry.Path, "evaluation/packs/"):
+			data, err = set.EvaluationPack(strings.TrimPrefix(entry.Path, "evaluation/"))
+		default:
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		if len(data) != entry.Bytes || hex.EncodeToString(sum[:]) != entry.SHA256 {
+			t.Fatalf("fixture digest mismatch: %s", entry.Path)
+		}
+		if !indexed[entry.Path] {
+			t.Fatalf("unindexed fixture: %s", entry.Path)
+		}
+		delete(indexed, entry.Path)
+	}
+	if len(indexed) != 0 {
+		t.Fatalf("indexed fixtures missing from hash inventory: %v", indexed)
 	}
 }

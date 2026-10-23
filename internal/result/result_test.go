@@ -370,9 +370,10 @@ func TestEveryDispositionMemberReachesTheCanonicalForm(t *testing.T) {
 		Value:     map[string]any{"currency": "CAD"},
 	}
 	unresolved := Disposition{
-		Kind:    "unresolved",
-		Reasons: []string{"conflict"},
-		Handoff: Handoff{State: "requested", TriggeredBy: []string{"conflict"}},
+		Contract: Core030EvaluatorContract(),
+		Kind:     "unresolved",
+		Reasons:  []string{"conflict"},
+		Handoff:  Handoff{State: "requested", TriggeredBy: []string{"conflict"}, Routes: []HandoffTarget{{Kind: "queue", Name: "Review"}}},
 	}
 	encoded := map[string]string{}
 	for _, disposition := range []Disposition{outcome, unresolved} {
@@ -389,6 +390,9 @@ func TestEveryDispositionMemberReachesTheCanonicalForm(t *testing.T) {
 				continue
 			}
 			name := strings.Split(field.Tag.Get("json"), ",")[0]
+			if subject == reflect.TypeOf(Disposition{}) && field.Name == "Contract" && name == "-" {
+				continue
+			}
 			if name == "" || name == "-" {
 				t.Fatalf("%s.%s carries no JSON member name", subject.Name(), field.Name)
 			}

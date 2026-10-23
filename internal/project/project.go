@@ -156,9 +156,17 @@ func SchemaDescription(command string) result.ConfigSchema {
 // operational failures the rest of the runtime reports: a code, a message, and
 // the exit class the CLI uses; the MCP surface reports the same message in band.
 type Failure struct {
+	Profile  string
 	Code     string
 	Message  string
 	ExitCode int
+}
+
+func (f *Failure) Error() string {
+	if f.Message == "" {
+		return f.Code
+	}
+	return f.Message
 }
 
 // Hint is one non-normative agent hint: where a value is held, and how to get it.
@@ -302,6 +310,7 @@ type Project struct {
 	// allowed, and the number here is derived from two other limits rather than
 	// being a preference.
 	handoffTargetReportBudget int
+	dispositionReportBudget   int
 	// profileEntryBudget, when a test sets it, replaces MaxProfileWork.
 	profileEntryBudget int
 }

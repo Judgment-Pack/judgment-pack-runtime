@@ -100,6 +100,9 @@ strict UTF-8 JSON carrier parser
 exact specVersion registry ──► embedded schema and metadata
         │
         ▼
+Core 0.3.0 profile negotiation (base only)
+        │
+        ▼
 Draft 2020-12 structural validator
         │
         ▼
@@ -117,8 +120,9 @@ resolves a decision outcome, fetches a locator, loads an extension, or authorize
 evaluation exists only behind the explicitly experimental surface of
 [ADR-0007](adr/0007-experimental-evaluator.md).
 
-That surface has its own flow, which the evaluator class of JPS Core `0.2.0-draft` fixes
-([ADR-0010](adr/0010-evaluator-aligned-to-core-0.2.0-draft.md)):
+That surface has its own flow, selected under the exact Core contract
+([ADR-0010](adr/0010-evaluator-aligned-to-core-0.2.0-draft.md),
+[ADR-0063](adr/0063-explicit-core-030-contracts.md)):
 
 ```text
 §8.2 input preflight, in this order and complete before resolution begins
@@ -136,9 +140,10 @@ The preflight order is also §8.4's error precedence — `pack-not-conformant`, 
 `unsupported-required-extension`, `resource-exhaustion` — so the first failure encountered is the one
 reported, and an input error is never overtaken by a result. Every surface reports the byte limit
 inside that preflight rather than at the read, so an oversized input is classed and ordered like any
-other preflight condition. Only a pack declaring `specVersion` `0.2.0-draft` is evaluated — §11 makes the
-declared value exact, so any other version is refused as `pack-not-conformant` in the preflight — and a
-payload still names both the pack's `specVersion` and the contract's `evaluatorSpecVersion`. The
+other preflight condition. Pack-aware operations select `0.2.0-draft` or `0.3.0`
+from the exact pack declaration. Core `0.3.0` profile negotiation precedes structural
+interpretation and facts/evidence admission; only `base` is supported. A payload
+names both the pack's `specVersion` and the applied `evaluatorSpecVersion`. The
 evaluation phase also carries the two limits §10 requires of the class — the evaluation-work limit and
 the collection-size limit of `internal/evaluation/limits.go` — and reaching the work limit is
 `resource-exhaustion` on the ordinary Core path, not only under the draft-RFC opt-in. The conformance
@@ -157,7 +162,7 @@ claim — see [`CONFORMANCE.md`](../CONFORMANCE.md).
 - `internal/fssecure` opens selected local files defensively and enforces bounded regular-file reads, and roots a project's own reads at one directory so a configured path cannot leave it. It also holds the two writes bounded by a project's handle — appending a record beneath that same held directory (ADR-0018), and replacing a generated file whole (ADR-0019) — under exactly the refusals a read is held to, and it resolves nothing to a pathname for a caller to open. The runtime's other writes, `--write` on `spec schema`, `spec examples`, `packs schema`, and `packs suggest`, are create-exclusive copies at a pathname the operator named and are in `internal/cli`, outside this containment rule because they are outside any project. `packs suggest` adds one refusal in front of its own: a destination the configuration declares as a pack, a matrix, a graph, or a `rows` document is refused by name, resolved through symlinks at both ends, because the exclusive open would happily create a declared document that is not there yet (ADR-0024).
 - `internal/result` defines machine output version 2 and exit classes.
 - `internal/describe` composes the machine descriptions the CLI and MCP server share, so neither drifts.
-- `internal/evaluation` implements the EXPERIMENTAL JPS §§7–8 evaluator (ADR-0007), aligned to the §§8.2–8.4 evaluator class of Core `0.2.0-draft` (ADR-0010) and admitting only packs that declare that version, plus the bundled evaluation-corpus runner; and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts and which the claim in `CONFORMANCE.md` does not cover. A second CLI opt-in, which cannot be combined with the first, is the draft-RFC prototype of the specification's RFC 0016 outcome values (ADR-0039), on the same terms.
+- `internal/evaluation` implements the EXPERIMENTAL JPS §§7–8 evaluator (ADR-0007), with explicit Core `0.2.0-draft` and base-only `0.3.0` contracts (ADR-0010, ADR-0063), plus the bundled evaluation-corpus runner; and behind a further CLI opt-in the draft-RFC prototype of the specification's RFC 0008 collection quantifiers (ADR-0009), whose packs no published JPS version accepts and which the claim in `CONFORMANCE.md` does not cover. A second CLI opt-in, which cannot be combined with the first, is the draft-RFC prototype of the specification's RFC 0016 outcome values (ADR-0039), on the same terms.
 - `internal/jpscanon` shares the existing safe-integer `jps-canon` document encoding between Dialect and the experimental Policy tools. It is distinct from the portable-disposition encoding below.
 - `internal/jcs` canonicalizes the one value JPS §8.3 compares byte for byte, the portable disposition, over the strings, arrays, and objects a disposition is made of, and the Booleans the `value` member of draft RFC 0016 adds (ADR-0039), and nothing else.
 - `internal/project` implements the `jpack.json` project convention (ADR-0012): a NON-NORMATIVE convention of this runtime, not part of the specification, that names a project's packs by decision id, checks the files it points at, and runs each pack's instance matrix through the same row machinery the bundled evaluation corpus uses. It resolves nothing at decision time, reads no source a hint names, and holds no pack's identity — the pack document does, and everything here is a validated reference to it. `packs suggest` (ADR-0024) derives candidate row *inputs* from a pack's own compared literals and emits them as a document that is deliberately not a matrix; it runs no evaluator and states no expectation, because the expectation is the half only the policy text answers, and the matrix loader's existing refusals are what keep a candidate from ever loading as a row. When rows declare an `origin`, `packs test` also profiles the matrix against that history (ADR-0034): agreement and coverage per origin, and each origin's cases placed against each comparison boundary the pack draws, read from the run already made and gating nothing; a row may cite the receipts its facts came under (`cites`, `matrixVersion "3"`, the gateway's shape held as ADR-0033 holds a record's), carried as the values declared and verified by nothing here.
@@ -191,3 +196,29 @@ proposals belong to the specification's RFC process instead.
 The create / read / update / delete authoring loop this runtime supports -- and why it lives in the
 client rather than in a runtime store -- is walked end to end in
 [authoring-lifecycle.md](authoring-lifecycle.md).
+
+## Core contract boundaries
+
+The `0.3.0` resources are an exact immutable Spec commit pin,
+`65c7cf5598a0f0fc532c80a9e2215090951104ce`, rather than a published Core tag.
+The conformance runner registers the exact Core schema as an explicit in-memory
+resource for manifest references. Local suites must match the bundled manifest
+schema; they cannot retrieve remote schemas or traverse to sibling resources.
+Optional advisory rows carry explicit skipped/not-checked results, counted
+separately from assertions that pass.
+
+An evaluator contract travels through pack admission, cache identity, resolution,
+expected/actual disposition decoding, canonicalization, failures and audit metadata.
+Legacy APIs preserve the `0.2.0-draft` default. Version is never inferred from route
+presence. Core `0.3.0` handoff routes retain nil versus empty presence, exact names,
+authored order and duplicates; reason and trigger sets retain their set semantics.
+Graph fan-out retains the ordered routes; aggregated display targets remain sanitized
+and never replace the exact portable names. Core `0.3.0` graph suite entries add
+`evaluatorSpecVersion`, omitted from legacy entries. Singular target assertions mismatch
+on routed results. Project, graph and comparison walks refuse mixed exact contracts
+before evaluation. Old audit records keep their original contract and canonical bytes.
+
+Runtime discovery separates document versions from evaluator capabilities. Profile
+metadata is scoped to Core `0.3.0` and does not change Policy or Dialect contracts.
+The full conformance posture and outstanding review are recorded only in
+[CONFORMANCE.md](../CONFORMANCE.md).

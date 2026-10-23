@@ -246,6 +246,9 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			if _, keepsTrail := loaded.TrailName(); len(cites) > 0 && !keepsTrail && !rehearsal {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-CITES", citesNoTrailMessage)
 			}
+			if _, profileFailure := graph.SelectContract(loaded, document); profileFailure != nil && profileFailure.Code == "profile-unsupported" {
+				return a.evaluationFailure(commandName, format, profileFailure)
+			}
 			var inputs []byte
 			if inputsPath != "" {
 				data, err := a.readPack(inputsPath, graph.MaxInputsBytes)
@@ -467,6 +470,9 @@ func (a *App) graphTestCommand() *cobra.Command {
 				return failure
 			}
 			defer loaded.Close()
+			if _, profileFailure := graph.SelectContract(loaded, document); profileFailure != nil && profileFailure.Code == "profile-unsupported" {
+				return a.evaluationFailure(commandName, format, profileFailure)
+			}
 			data, err := a.readPack(rowsPath, graph.MaxRowsBytes)
 			if errors.Is(err, fssecure.ErrTooLarge) {
 				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-GRAPH-ROWS-BYTE-LIMIT", "The rows document exceeds this runtime's documented byte limit.")

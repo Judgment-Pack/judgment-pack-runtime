@@ -101,7 +101,7 @@ func TestFactAdviceUnavailableForMalformedLimitedOrUnsupportedInputs(t *testing.
 		{"pack": pack, "facts": ""},
 		{"pack": pack, "facts": `{"amount":{},"amount":{}}`},
 		{"pack": pack, "facts": `{"amount":{"value":"` + strings.Repeat("9", factAdviceWorkBudget) + `"}}`},
-		{"pack": strings.Replace(pack, "0.2.0-draft", "0.3.0", 1), "facts": "{}"},
+		{"pack": strings.Replace(pack, "0.2.0-draft", "0.4.0", 1), "facts": "{}"},
 		{"pack": extended, "facts": "{}"},
 	} {
 		r := runServer(t, toolCall(t, 1, factAdviceTool, args))[0]["result"].(map[string]any)

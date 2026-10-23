@@ -78,7 +78,7 @@ func matrixWitnesses(matrix Matrix) []ProbeWitness {
 		if len(row.ExpectedDisposition) == 0 {
 			continue
 		}
-		if witness, ok := DecodeWitness(fmt.Sprintf("Row %q", display.Sanitize(row.ID)), row.ExpectedDisposition); ok {
+		if witness, ok := DecodeWitnessWith(fmt.Sprintf("Row %q", display.Sanitize(row.ID)), row.ExpectedDisposition, matrix.DispositionContract); ok {
 			witnesses = append(witnesses, witness)
 		}
 	}
@@ -103,7 +103,12 @@ type ProbeWitness struct {
 // decode witnesses nothing — the comparator already reports such a row as its
 // own mismatch.
 func DecodeWitness(label string, raw json.RawMessage) (ProbeWitness, bool) {
-	expected, err := evaluation.DecodeDisposition(raw)
+	return DecodeWitnessWith(label, raw, result.LegacyEvaluatorContract())
+}
+
+// DecodeWitnessWith admits a witness using the caller's exact disposition contract.
+func DecodeWitnessWith(label string, raw json.RawMessage, contract result.EvaluatorContract) (ProbeWitness, bool) {
+	expected, err := evaluation.DecodeDispositionWith(raw, contract)
 	if err != nil {
 		return ProbeWitness{}, false
 	}
@@ -626,7 +631,7 @@ func boundaryWitnesses(groups []boundaryGroup, matrix Matrix) []stageWitnesses {
 			continue
 		}
 		label := fmt.Sprintf("Row %q", display.Sanitize(row.ID))
-		witness, ok := DecodeWitness(label, row.ExpectedDisposition)
+		witness, ok := DecodeWitnessWith(label, row.ExpectedDisposition, matrix.DispositionContract)
 		if !ok {
 			continue
 		}

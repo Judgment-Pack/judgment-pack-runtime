@@ -47,13 +47,13 @@ func coverage(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		}
 		if row.ExpectedDisposition != nil {
 			label := fmt.Sprintf("Row %q (headline)", display.Sanitize(row.ID))
-			if witness, ok := project.DecodeWitness(label, row.ExpectedDisposition); ok {
+			if witness, ok := project.DecodeWitnessWith(label, row.ExpectedDisposition, options.contract); ok {
 				witnesses[doc.Result] = append(witnesses[doc.Result], witness)
 			}
 		}
 		for _, name := range sortedKeys(row.ExpectedNodes) {
 			label := fmt.Sprintf("Row %q", display.Sanitize(row.ID))
-			if witness, ok := project.DecodeWitness(label, row.ExpectedNodes[name]); ok {
+			if witness, ok := project.DecodeWitnessWith(label, row.ExpectedNodes[name], options.contract); ok {
 				witnesses[name] = append(witnesses[name], witness)
 			}
 		}
@@ -82,7 +82,8 @@ func coverage(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 		if err != nil {
 			continue
 		}
-		if !engine.Admits(data, options.SupportedExtensions) {
+		contract, failure := evaluation.SelectContract(data)
+		if failure != nil || contract.Version() != options.contract.Version() || !engine.AdmitsWith(data, evaluation.Options{SpecVersion: contract.Version(), SupportedExtensions: options.SupportedExtensions}) {
 			continue
 		}
 		root := project.PackRoot(data)

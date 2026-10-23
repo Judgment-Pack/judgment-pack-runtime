@@ -13,7 +13,7 @@ const maxFactAdviceExtensions = 256
 const maxFactAdviceExtensionBytes = 1024
 
 func factAdviceDefinition() map[string]any {
-	return map[string]any{"name": factAdviceTool, "description": "Read-only static fact comparability advice for exact pack and facts JSON. Only Core 0.2.0-draft is supported. Uses Runtime comparison rules without evaluating decisions, requiring test expectations, coercing facts, reading project files or writing audit records. Missing facts are not findings; null, false, zero and decimal strings retain their types. A complete check with findings is not an execution result. Carrier limits apply (10 MiB per document, depth 128, 250000 nodes, 1 MiB strings); each check permits 100000 comparison work units, 100 findings and 256 KiB of serialized findings. A refused or limited check is unavailable, never clean. Experimental.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "facts"}, "properties": map[string]any{"pack": map[string]any{"type": "string"}, "facts": map[string]any{"type": "string"}, "supported_extensions": map[string]any{"type": "array", "maxItems": maxFactAdviceExtensions, "items": map[string]any{"type": "string", "maxLength": maxFactAdviceExtensionBytes}}}}}
+	return map[string]any{"name": factAdviceTool, "description": "Read-only static fact comparability advice for exact pack and facts JSON. The exact pack bytes select Core 0.2.0-draft or Core 0.3.0 base. Uses Runtime comparison rules without evaluating decisions, requiring test expectations, coercing facts, reading project files or writing audit records. Missing facts are not findings; null, false, zero and decimal strings retain their types. A complete check with findings is not an execution result. Carrier limits apply (10 MiB per document, depth 128, 250000 nodes, 1 MiB strings); each check permits 100000 comparison work units, 100 findings and 256 KiB of serialized findings. A refused or limited check is unavailable, never clean. Experimental.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "facts"}, "properties": map[string]any{"pack": map[string]any{"type": "string"}, "facts": map[string]any{"type": "string"}, "supported_extensions": map[string]any{"type": "array", "maxItems": maxFactAdviceExtensions, "items": map[string]any{"type": "string", "maxLength": maxFactAdviceExtensionBytes}}}}}
 }
 func (s *Server) toolFactAdvice(args json.RawMessage) any {
 	if message := exactMembers(factAdviceTool, args, "pack", "facts", "supported_extensions"); message != "" {
@@ -31,12 +31,16 @@ func (s *Server) toolFactAdvice(args json.RawMessage) any {
 	if message != "" {
 		return toolError(message)
 	}
+	contract, selectionFailure := evaluation.SelectContract([]byte(*input.Pack))
+	if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
+		return evaluationToolError("mcp "+factAdviceTool, selectionFailure)
+	}
 	admitted := evaluation.NewEngine(s.engine).AdmitPack([]byte(*input.Pack))
-	findings, failure := admitted.CheckFactTypes([]byte(*input.Facts), evaluation.Options{SupportedExtensions: extensions, WorkBudget: factAdviceWorkBudget})
-	report := matrixEnvelope(factAdviceTool)
+	findings, failure := admitted.CheckFactTypes([]byte(*input.Facts), evaluation.Options{SpecVersion: contract.Version(), SupportedExtensions: extensions, WorkBudget: factAdviceWorkBudget})
+	report := matrixEnvelopeWith(factAdviceTool, contract)
 	report["factCheckVersion"], report["status"], report["findings"] = "1", "complete", findings
 	if failure != nil {
-		report["status"], report["message"], report["findings"] = "unavailable", factAdviceFailureMessage(failure), []evaluation.FactTypeFinding{}
+		setFactAdviceFailure(report, failure)
 	}
 	return toolResult(report)
 }
@@ -64,4 +68,14 @@ func factAdviceExtensions(raw json.RawMessage) ([]string, string) {
 // independent of submitted values; the runtime-owned code identifies the gate.
 func factAdviceFailureMessage(failure *evaluation.Failure) string {
 	return fmt.Sprintf("Fact type advice is unavailable (%s); no complete check was produced.", failure.Code)
+}
+
+// Profile refusal data survives advice projection without an input-derived message.
+func setFactAdviceFailure(report map[string]any, failure *evaluation.Failure) {
+	report["status"], report["findings"] = "unavailable", []evaluation.FactTypeFinding{}
+	if failure.Code == "profile-unsupported" {
+		report["code"], report["profile"] = failure.Code, failure.Profile
+		return
+	}
+	report["message"] = factAdviceFailureMessage(failure)
 }

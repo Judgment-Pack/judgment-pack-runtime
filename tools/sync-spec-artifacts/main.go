@@ -340,7 +340,7 @@ func validateCasePath(value string) error {
 		return fmt.Errorf("unsafe fixture path in manifest: %q", value)
 	}
 	parts := strings.Split(value, "/")
-	if len(parts) < 2 || !map[string]bool{"carrier": true, "structural": true, "semantic": true, "valid": true}[parts[0]] {
+	if len(parts) < 2 || !map[string]bool{"advisory": true, "carrier": true, "structural": true, "semantic": true, "valid": true}[parts[0]] {
 		return fmt.Errorf("unsupported fixture path in manifest: %q", value)
 	}
 	for _, part := range parts {

@@ -9,12 +9,16 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 // MatrixContract describes the authoring carrier; DecodeMatrix remains the
 // authority. Facts/evidence are evaluator inputs and may deliberately be invalid
 // in a case expecting an evaluation error.
-func MatrixContract() map[string]any {
+func MatrixContract() map[string]any { return MatrixContractWith(result.LegacyEvaluatorContract()) }
+
+// MatrixContractWith describes expectations under one explicitly selected Core contract.
+func MatrixContractWith(contract result.EvaluatorContract) map[string]any {
 	return map[string]any{
 		"contractVersion": "1", "matrixVersion": MatrixVersion,
 		"supportedVersions": SupportedMatrixVersions(), "defaultVersion": MatrixVersionDefault,
@@ -28,7 +32,7 @@ func MatrixContract() map[string]any {
 			"supportedExtensions":  "array of strings", "expectedErrorClass": "nonempty string", "expectedErrorPhase": "string; only with expectedErrorClass",
 			"expectedHandoffTarget": "null or {kind, name}; only with expectedDisposition",
 			"cites":                 "array of {sessionId, callIndex, signature} gateway receipt citations; never invent receipts",
-			"expectedDisposition":   "complete JPS 0.2.0-draft disposition; validated with the runtime disposition decoder",
+			"expectedDisposition":   "complete JPS " + contract.Version() + " disposition; validated with the runtime disposition decoder",
 		},
 		"outcomeExample": map[string]any{"kind": "outcome", "outcomeId": "declared-outcome", "reasons": []string{}, "handoff": map[string]string{"state": "none"}},
 		"limits":         map[string]any{"bytes": MaxMatrixBytes, "cases": MaxMatrixCases},
@@ -56,10 +60,18 @@ type MatrixAdmission struct {
 // ValidateMatrix accounts for every admitted row, without a project or evaluator.
 // Per-row carrier checks reuse DecodeMatrix, never a second permissive decoder.
 func ValidateMatrix(data []byte) MatrixAdmission {
+	return ValidateMatrixWith(data, result.LegacyEvaluatorContract())
+}
+
+// ValidateMatrixWith applies the supplied contract without inferring it from expectations.
+func ValidateMatrixWith(data []byte, contract result.EvaluatorContract) MatrixAdmission {
 	report := MatrixAdmission{Status: "invalid", Findings: []MatrixFinding{}, Results: []MatrixAdmissionRow{}}
 	fail := func(code, path, message string) MatrixAdmission {
 		report.Findings = append(report.Findings, MatrixFinding{code, path, message})
 		return report
+	}
+	if err := contract.Validate(); err != nil {
+		return fail("MATRIX-CONTRACT", "", err.Error())
 	}
 	if int64(len(data)) > MaxMatrixBytes {
 		return fail("MATRIX-LIMIT", "", "Matrix exceeds the input limit.")
@@ -127,7 +139,7 @@ func ValidateMatrix(data []byte) MatrixAdmission {
 				if err != nil {
 					add("MATRIX-ROW", "", err.Error())
 				} else if disposition := admitted.Cases[0].ExpectedDisposition; disposition != nil {
-					if _, err := evaluation.DecodeDisposition(disposition); err != nil {
+					if _, err := evaluation.DecodeDispositionWith(disposition, contract); err != nil {
 						add("MATRIX-EXPECTATION", "/expectedDisposition", err.Error())
 					}
 				}
