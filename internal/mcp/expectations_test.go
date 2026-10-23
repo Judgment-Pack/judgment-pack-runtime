@@ -621,12 +621,12 @@ func TestExpectationToolIsAdvertisedAsItBehaves(t *testing.T) {
 		t.Fatal(schema)
 	}
 	required := schema["required"].([]string)
-	if len(required) != 2 || required[0] != "spec_version" || required[1] != "expectations" {
+	if len(required) != 1 || required[0] != "expectations" {
 		t.Fatal(required)
 	}
 	properties := schema["properties"].(map[string]any)
 	version := properties["spec_version"].(map[string]any)
-	if enum := version["enum"].([]string); len(enum) != 1 || enum[0] != expectationSpec {
+	if enum := version["enum"].([]string); len(enum) != 2 || enum[0] != expectationSpec || enum[1] != "0.3.0" {
 		t.Fatal(version)
 	}
 	expectations := properties["expectations"].(map[string]any)

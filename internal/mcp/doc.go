@@ -25,7 +25,7 @@
 // in full and only, in CONFORMANCE.md, and the payloads reference it by their
 // own contracts — a successful evaluation or matrix payload carries the
 // reference beside the contract version applied
-// (result.EvaluationClaimReference, result.EvaluatorSpecVersion), the corpus
+// (result.EvaluationClaimReference, result.EvaluatorContract), the corpus
 // payload carries the reference beside its pinned specVersion, and a
 // classified refusal envelope carries the class's evaluatorSpecVersion inside
 // its evaluationError member and no reference at all.

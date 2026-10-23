@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -45,7 +46,7 @@ func toolDefinitions() []map[string]any {
 		artifactVersionDefinition(),
 		policyDefinition("contract"), policyDefinition("init"), policyDefinition("schema"), policyDefinition("canonicalize"), policyDefinition("digest"), policyDefinition("validate"), policyDefinition("check"),
 		dialectDefinition("contract"), dialectDefinition("init"), dialectDefinition("canonicalize"), dialectDefinition("digest"), dialectDefinition("validate"), dialectDefinition("schema"), dialectDefinition("reference"), dialectDefinition("check"),
-		{"name": "experimental_test_cases", "description": "Rehearse a matrix against exact supplied pack bytes. Uses the same canonical comparison and coverage as experimental_test_packs. Reads no project files, writes nothing, and appends no audit record. This experimental surface may change.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "matrix"}, "properties": map[string]any{"pack": map[string]any{"type": "string", "description": "Exact pack JSON text."}, "matrix": map[string]any{"type": "string", "description": "Matrix JSON text in the project's supported matrix format. At least one case with an independently established expectation is required."}}}},
+		{"name": "experimental_test_cases", "description": "Rehearse a matrix against exact supplied pack bytes. The pack selects the Core 0.2.0-draft or 0.3.0 base disposition contract; routed packs require complete handoff.routes assertions rather than expectedHandoffTarget. Core 0.3 reports refuse atomically when retained exact expected and actual canonical disposition text exceeds 10 MiB. Uses the same canonical comparison and coverage as experimental_test_packs. Reads no project files, writes nothing, and appends no audit record. This experimental surface may change.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "matrix"}, "properties": map[string]any{"pack": map[string]any{"type": "string", "description": "Exact pack JSON text."}, "matrix": map[string]any{"type": "string", "description": "Matrix JSON text in the project's supported matrix format. At least one case with an independently established expectation is required."}}}},
 		{
 			"name":        "validate",
 			"description": "Validate one JPS document for carrier, structural, and semantic conformance. It does not evaluate rules, choose an outcome, or authorize anything.",
@@ -93,7 +94,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "list_examples",
-			"description": "List the bundled valid JPS example documents: version-pinned conformance fixtures the runtime embeds and digest-locks, offered read-only as starting points for authoring. They are not authored templates. Use get_example to fetch one by name. Each bundled version has its own set, and spec_version chooses it; with no argument the set is " + artifacts.DraftVersion + ". The evaluator admits only " + result.EvaluatorSpecVersion + " (Core §11), and the result names both versions: a pack made from an example of another version must have its specVersion re-declared before it is evaluated, so pass spec_version \"" + result.EvaluatorSpecVersion + "\" when you mean to evaluate what you author. That clears the evaluator's version check and nothing else: required-extension-supported declares a required extension, and the evaluator refuses it unless that extension is supported.",
+			"description": "List the bundled valid JPS example documents: version-pinned conformance fixtures the runtime embeds and digest-locks, offered read-only as starting points for authoring. They are not authored templates. Use get_example to fetch one by name. Each bundled version has its own set, and spec_version chooses it; with no argument the set is " + artifacts.DraftVersion + ". The evaluator admits " + result.EvaluatorSpecVersion + " and 0.3.0 base (Core §11), and the result names both versions: a pack made from an example of another version must have its specVersion re-declared before it is evaluated, so pass spec_version \"" + result.EvaluatorSpecVersion + "\" when you mean to evaluate what you author. That clears the evaluator's version check and nothing else: required-extension-supported declares a required extension, and the evaluator refuses it unless that extension is supported.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -142,7 +143,7 @@ func toolDefinitions() []map[string]any {
 		factAdviceDefinition(),
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; an evaluation error reports its §8.4 error class and no disposition, and a refusal the project's configuration asks for (the reviewed-set and comparable-facts refusals below) reports its own code, no §8.4 class and no disposition. Only a pack declaring specVersion 0.2.0-draft is evaluated: JPS §11 makes the value exact and requires an unedited 0.1.0-draft pack to be re-declared -- one edit, the specVersion string -- before an implementation claiming this draft evaluates it, so any other version is refused as pack-not-conformant in the preflight phase. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. A call may pass \"binding\", the caller's {kind, digest} commitment to material of its own, which the record carries as given beside cites, under the chain and the record signature: the runtime never interprets, verifies or recomputes the digest, the caller's own verifier checks its value, and a call that passes a binding while declaring a rehearsal, or in a project that declares no audit directory, is refused, since nothing would record it (ADR-0050). In a project with a reviewed-set lock (ADR-0019), a pack named by pack_id is held to it and a pack passed as text is a draft, and the payload's \"reviewed\" member says which (ADR-0044); a project whose jpack.json sets requireReviewed refuses, before evaluating, every call that is not a rehearsal and passes a draft or finds no lock (JPS-LOCK-REVIEW-REQUIRED). A project whose jpack.json sets requireComparableFacts refuses, before evaluating and rehearsal or not, a call in which a fact that some comparison of the pack reads is present and of a JSON type that comparison can never match -- for equals, not-equals and in a type no operand has, null included; for an ordered comparison anything but a decimal string, so a string outside the decimal grammar is refused as well as a JSON number -- naming each pointer and type and never a value; it refuses under the same code when checking the pack's comparisons would pass this evaluation's work limit, whatever the pack compares (JPS-FACTS-COMPARABLE-REQUIRED, ADR-0046). That refusal is the project's, not an evaluation error, and carries no §8.4 class. An absent fact is not refused. In a project with an audit directory, a record also names the trace's typeMismatches and unknownCauses, when there are any, and is chained to the line before it by the SHA-256 of that line's exact bytes unless the project's jpack.json says \"chain\": false (ADR-0047); a trail whose last line is incomplete refuses the call (JPS-AUDIT-WRITE) rather than chain a record after it. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; an evaluation error reports its §8.4 error class and no disposition, and a refusal the project's configuration asks for (the reviewed-set and comparable-facts refusals below) reports its own code, no §8.4 class and no disposition. The exact pack declaration selects Core 0.2.0-draft or 0.3.0 base; extended profiles are refused before schema interpretation or facts admission. Ordered routed destinations and duplicates are retained, and routed outputs carry no singular target. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. A call may pass \"binding\", the caller's {kind, digest} commitment to material of its own, which the record carries as given beside cites, under the chain and the record signature: the runtime never interprets, verifies or recomputes the digest, the caller's own verifier checks its value, and a call that passes a binding while declaring a rehearsal, or in a project that declares no audit directory, is refused, since nothing would record it (ADR-0050). In a project with a reviewed-set lock (ADR-0019), a pack named by pack_id is held to it and a pack passed as text is a draft, and the payload's \"reviewed\" member says which (ADR-0044); a project whose jpack.json sets requireReviewed refuses, before evaluating, every call that is not a rehearsal and passes a draft or finds no lock (JPS-LOCK-REVIEW-REQUIRED). A project whose jpack.json sets requireComparableFacts refuses, before evaluating and rehearsal or not, a call in which a fact that some comparison of the pack reads is present and of a JSON type that comparison can never match -- for equals, not-equals and in a type no operand has, null included; for an ordered comparison anything but a decimal string, so a string outside the decimal grammar is refused as well as a JSON number -- naming each pointer and type and never a value; it refuses under the same code when checking the pack's comparisons would pass this evaluation's work limit, whatever the pack compares (JPS-FACTS-COMPARABLE-REQUIRED, ADR-0046). That refusal is the project's, not an evaluation error, and carries no §8.4 class. An absent fact is not refused. In a project with an audit directory, a record also names the trace's typeMismatches and unknownCauses, when there are any, and is chained to the line before it by the SHA-256 of that line's exact bytes unless the project's jpack.json says \"chain\": false (ADR-0047); a trail whose last line is incomplete refuses the call (JPS-AUDIT-WRITE) rather than chain a record after it. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -742,6 +743,9 @@ func (s *Server) toolExperimentalTestPacks(rawArgs json.RawMessage) any {
 	defer loaded.Close()
 	output, projectFailure := loaded.TestWith(evaluation.NewEngine(s.engine), packID, testPacksCommand, project.TestOptions{RequireMatrix: requireMatrix})
 	if projectFailure != nil {
+		if projectFailure.Code == "profile-unsupported" {
+			return evaluationToolError(testPacksCommand, &evaluation.Failure{Code: projectFailure.Code, Profile: projectFailure.Profile, ExitCode: projectFailure.ExitCode})
+		}
 		return toolError(projectFailure.Message)
 	}
 	encoded, err := json.Marshal(output)
@@ -930,6 +934,9 @@ func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
 		// Audit and LawCheck are deliberately left nil; see the doc comment.
 	})
 	if graphFailure != nil {
+		if graphFailure.Code == "profile-unsupported" || graphFailure.SpecVersion == "0.3.0" {
+			return evaluationToolError(testGraphsCommand, graphFailure)
+		}
 		return toolError(graphFailure.Message)
 	}
 	encoded, err := json.Marshal(output)
@@ -1189,7 +1196,18 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	}
 	auditWriter.UnderLaw(reviewed, set.Provenance())
 	evaluator := evaluation.NewEngine(s.engine)
+	contract := result.LegacyEvaluatorContract()
+	if !slices.Contains(oversized, "pack") {
+		selected, selectionFailure := evaluation.SelectContract([]byte(pack))
+		if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
+			return evaluationToolError(evaluateCommand, selectionFailure)
+		}
+		if selectionFailure == nil {
+			contract = selected
+		}
+	}
 	output, failure := evaluator.EvaluateWith([]byte(pack), []byte(facts), []byte(evidence), evaluation.Options{
+		SpecVersion:         contract.Version(),
 		Command:             evaluateCommand,
 		SupportedExtensions: args.SupportedExtensions,
 		// The evidence document is supplied exactly when the key was present, empty
@@ -1203,7 +1221,7 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		RequireComparableFacts: loaded.RequiresComparableFacts(),
 	})
 	if failure != nil {
-		return evaluationToolError(evaluateCommand, failure)
+		return evaluationToolError(evaluateCommand, failure, contract)
 	}
 	// The record is written before the disposition is returned, and a failed
 	// write refuses the call: a project that asked to be told what its packs
@@ -1301,7 +1319,16 @@ func resolvePackID(loaded *project.Project, packID string) (string, bool, map[st
 // model reads the machine-readable identity instead of parsing it back out of
 // prose, and the text content stays for a client that reads only text. Neither
 // form carries a disposition, ever (§8.4): the envelope type has no such member.
-func evaluationToolError(command string, failure *evaluation.Failure) map[string]any {
+func evaluationToolError(command string, failure *evaluation.Failure, contracts ...result.EvaluatorContract) map[string]any {
+	contract := result.LegacyEvaluatorContract()
+	if len(contracts) > 0 {
+		contract = contracts[0]
+	} else if failure.SpecVersion != "" {
+		selected := result.EvaluatorContract{SpecVersion: failure.SpecVersion}
+		if selected.Validate() == nil {
+			contract = selected
+		}
+	}
 	status := "error"
 	if failure.ExitCode == result.ExitUnsupported {
 		status = "unsupported"
@@ -1311,10 +1338,15 @@ func evaluationToolError(command string, failure *evaluation.Failure) map[string
 	// operational failure.
 	envelope := result.NewOperationalResult(command, status, failure.Code, failure.Message)
 	if failure.Class != "" {
-		envelope = result.NewEvaluationError(command, status, failure.Class, failure.Phase, failure.Code, failure.Message)
+		envelope = result.NewEvaluationErrorWith(command, status, failure.Class, failure.Phase, failure.Code, failure.Message, contract)
+	}
+	failureText := evaluationFailureMessage(failure)
+	if failure.Code == "profile-unsupported" {
+		envelope = result.NewProfileUnsupported(command, failure.Profile)
+		failureText = jsonText(envelope)
 	}
 	return map[string]any{
-		"content":           []map[string]any{{"type": "text", "text": evaluationFailureMessage(failure)}},
+		"content":           []map[string]any{{"type": "text", "text": failureText}},
 		"structuredContent": envelope,
 		"isError":           true,
 	}
@@ -1374,6 +1406,10 @@ func (s *Server) toolExperimentalTestCases(raw json.RawMessage) any {
 	}
 	output, err := project.TestSnapshot(evaluation.NewEngine(s.engine), []byte(args.Pack), []byte(args.Matrix), "mcp experimental_test_cases")
 	if err != nil {
+		var failure *project.Failure
+		if errors.As(err, &failure) && failure.Code == "profile-unsupported" {
+			return evaluationToolError("mcp experimental_test_cases", &evaluation.Failure{Code: failure.Code, Profile: failure.Profile, ExitCode: failure.ExitCode})
+		}
 		return toolError(err.Error())
 	}
 	encoded, err := json.Marshal(output)

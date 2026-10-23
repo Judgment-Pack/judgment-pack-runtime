@@ -34,6 +34,7 @@ func (a *App) compareCommand() *cobra.Command {
 			"A difference says the two versions decide an input differently and nothing about which is right: it is not an expectation, and nothing here is a decision. " +
 			"The command opens no project, so it appends no audit record and consults no reviewed set, and its payload carries \"rehearsal\": true (ADR-0028). " +
 			"It exits 0 whenever the comparison ran, however many inputs differ; a run whose differences would pass 16 MiB of compact JSON is refused rather than truncated, and the rendered report is bounded by that and proportional to it. " +
+			"Both packs must select one exact Core contract, 0.2.0-draft or 0.3.0 base; a mixed-contract comparison is refused. Ordered routes and duplicate destinations participate in canonical comparison. " +
 			"The draft-RFC opt-ins of experimental evaluate are not offered here. " +
 			"This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim.",
 		Args: cobra.ArbitraryArgs,
@@ -76,6 +77,13 @@ func (a *App) compareCommand() *cobra.Command {
 				return a.operational(commandName, format, result.ExitInvalid, "JPS-COMPARE-INPUTS", err.Error())
 			}
 			comparison, err := compare.Run(evaluation.NewEngine(a.engine), sides[0], sides[1], kind, inputs, supported, commandName)
+			var selection *compare.SelectionError
+			if errors.As(err, &selection) {
+				return a.evaluationFailure(commandName, format, selection.Failure)
+			}
+			if errors.Is(err, compare.ErrMixedContracts) {
+				return a.operational(commandName, format, result.ExitUnsupported, "JPS-COMPARE-MIXED-CONTRACT", "Comparisons require packs with one exact evaluator contract.")
+			}
 			if errors.Is(err, compare.ErrReportTooLarge) {
 				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-COMPARE-REPORT-LIMIT", fmt.Sprintf("The comparison's differences would exceed %d bytes of JSON; compare fewer inputs at a time.", compare.MaxReportBytes))
 			}

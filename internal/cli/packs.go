@@ -629,7 +629,7 @@ func (a *App) packsTestCommand() *cobra.Command {
 			"run in which no row ran at all is reported skipped rather than passed unless a mismatch was found: a " +
 			"green gate over zero rows would say a project was tested when nothing was. With --require-matrix, a " +
 			"selected pack that declares no matrix is reported mismatch and fails the run (ADR-0042), and the " +
-			"payload carries requireMatrix: true. Exit " +
+			"payload carries requireMatrix: true. Each pack selects its exact Core 0.2.0-draft or 0.3.0 base contract; one run refuses mixed contracts. Core 0.3 routed assertions use complete handoff.routes, and expectedHandoffTarget is incompatible with routed packs. A Core 0.3 run refuses atomically if the retained exact expected and actual canonical disposition text exceeds 10 MiB. Exit " +
 			"0 when every row matched its expectation, 1 when any did not, 1 when no row ran, and 1 under " +
 			"--require-matrix when a selected pack declares no matrix.",
 		Args: cobra.NoArgs,
@@ -732,5 +732,8 @@ func (a *App) loadProject(configPath, command, format string) (*project.Project,
 // there must not be: a configuration this runtime could not read is not an
 // evaluation error, because no evaluation was ever attempted.
 func (a *App) projectFailure(command, format string, failure *project.Failure) error {
+	if failure.Code == "profile-unsupported" {
+		return a.evaluationFailure(command, format, &evaluation.Failure{Code: failure.Code, Profile: failure.Profile, ExitCode: failure.ExitCode})
+	}
 	return a.operational(command, format, failure.ExitCode, failure.Code, failure.Message)
 }
