@@ -1,0 +1,14 @@
+[
+  {"facts":{"synthetic":true,"category":"complete"},"outcome":"proceed"},
+  {"facts":{"synthetic":true,"category":"approved"},"outcome":"proceed"},
+  {"facts":{"synthetic":true,"category":"routine"},"outcome":"proceed"},
+  {"facts":{"synthetic":true,"category":"incomplete"},"outcome":"clarify"},
+  {"facts":{"synthetic":true,"category":"ambiguous"},"outcome":"clarify"},
+  {"facts":{"synthetic":true,"category":"pending"},"outcome":"clarify"},
+  {"facts":{"synthetic":true,"category":"unauthorized"},"outcome":"decline"},
+  {"facts":{"synthetic":true,"category":"duplicate"},"outcome":"decline"},
+  {"facts":{"synthetic":true,"category":"out-of-scope"},"outcome":"decline"},
+  {"facts":{"synthetic":true,"category":"sensitive"},"outcome":"specialist"},
+  {"facts":{"synthetic":true,"category":"novel"},"outcome":"specialist"},
+  {"facts":{"synthetic":true,"category":"cross-border"},"outcome":"specialist"}
+]
