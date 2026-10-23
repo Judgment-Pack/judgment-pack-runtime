@@ -59,10 +59,9 @@ surface selects what reaches it rather than carrying a claim of its own: the pro
 surfaces choose which packs and inputs reach the evaluator, and the dispositions they report as
 evaluated — a row's actual disposition, a node's, a composite's echoed headline, either side of a
 comparison — are that evaluator's; a row's expected disposition is the project's own authored expectation, which no
-evaluator produced. Every input any of them admits
-declares `specVersion` `0.2.0-draft`, and nothing else is evaluated at all — the evaluator's
-admitted version scope and this claim's version scope are the same set, for the reason §11 gives
-below. The `experimental` namespace
+evaluator produced. Inputs covered by this claim declare `specVersion` `0.2.0-draft`. The runtime also
+implements an explicitly selected Core `0.3.0` contract; implementation support
+and the version scope of this claim are separate facts. The `experimental` namespace
 names the **stability** of that surface — it may change or be removed without a compatibility promise —
 and has never meant, and no longer says, that no claim is made. The limits the claim is made under are
 the documented ones below; §10 leaves an implementation to define its own limits, so a caller that
@@ -116,7 +115,8 @@ limits, and an input above either one is outside the portable claim. Both are st
 
 That this implementation satisfies **every** requirement of §§7–10 — the semantics of §§7–8, the §8.3
 portable disposition, the §8.4 error classes and their fixed precedence, and the documented limits
-above — for every input it admits, not merely for the inputs it happened to run (§3.4, §3.5).
+above — for every input admitted under that exact contract, not merely for the inputs it happened to run
+(§3.4, §3.5).
 
 ## What this claim does not assert
 
@@ -143,25 +143,13 @@ above — for every input it admits, not merely for the inputs it happened to ru
 - **Nothing about a deployment or a particular run** in production, and nothing about the facts and
   evidence a caller supplied for it (§3.5).
 - **Nothing under any other `specVersion`.** A claim attaches to one exact version and is not
-  inherited, forward or backward (§3.4.1, §11). The evaluator's admitted inputs match that scope
-  exactly: **only a pack declaring `specVersion` `0.2.0-draft` is evaluated at all.** §11 makes the
-  declared value exact and says an unedited `0.1.0-draft` pack "is not structurally conforming to
-  `0.2.0-draft` and must be re-declared before an implementation claiming this draft evaluates it", so
-  a pack declaring any other version — `0.1.0-draft` included — is refused as `pack-not-conformant` in
-  the `preflight` phase, with a message citing that rule. There is no second, unclaimed legacy path:
-  one evaluator, one admitted version, and no input inside the claim that the claim's version scope
-  does not cover.
+  inherited, forward or backward (§3.4.1, §11). The existing claim above remains exactly
+  `0.2.0-draft`. Core `0.3.0` implementation support does not extend it.
 
-  Re-declaring is **one edit**: the `specVersion` string, and nothing else in the document. §11 says
-  `0.2.0-draft` changes no part of the document format, so every member, every cross-field rule, and
-  every document-conformance verdict of §§3.1–3.3 is unchanged. This runtime still bundles
-  `0.1.0-draft` and `spec validate` still validates such a pack against its own published schema;
-  document conformance is untouched by this class (§3.4), and it is only evaluation that requires the
-  re-declaration.
+  `0.1.0-draft` remains validation-only. Re-declaring it to `0.2.0-draft` changes the
+  `specVersion` string, as that version's §11 requires; Core `0.3.0` is a separately
+  selected contract with its own profile and routed-handoff requirements.
 
-  When a later `specVersion` publishes this class, this claim does not extend to it: the corpus
-  published for that exact version must be run and this file restated before anything is claimed under
-  it.
 - **Nothing about the draft-RFC prototypes.** With `--rfc0008-quantifiers` this runtime admits
   condition operators no published JPS version defines, so a pack using one is not a semantically
   conforming document and is not an input this class describes. With `--rfc0016-outcome-values` it
@@ -169,6 +157,33 @@ above — for every input it admits, not merely for the inputs it happened to ru
   structurally conforming document, and it writes a disposition with a member §8.3 does not define.
   Neither is an exception to a requirement of the class; each is a surface whose inputs the class
   does not define, and no claim is made on either.
+
+## Core 0.3.0 preparation evidence and outstanding review
+
+The implementation bundles exact Spec commit
+`65c7cf5598a0f0fc532c80a9e2215090951104ce`, with per-file hashes and an immutable
+commit provenance lock. No published Core `0.3.0` tag is represented by that pin.
+The implemented Core `0.3.0` reader/evaluator supports only `base`; the optional
+`extended` profile is refused as `profile-unsupported` before schema interpretation.
+
+The unchanged document manifest has 156 entries: 151 normative document assertions
+pass in normal and strict mode, and five optional `expectedAdvisories` rows are
+explicitly skipped/not checked. Rule-overlap advice remains outside this work
+([#304](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/304)).
+The separately named evaluation corpus contains 20 rows; all 20 match under the
+explicit Core `0.3.0` contract. Supplemental profile, route, precedence, decoder,
+and downstream integration vectors are separate evidence and do not add corpus rows.
+These results are implementation evidence, not an exhaustive check of the version's
+requirements.
+
+A new Core `0.3.0` evaluator-conformance claim is deferred until complete integration
+and required review settle it. In particular, the existing Core URI grammar defect
+([#297](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/297)) also applies
+to the shared Core `0.3.0` validator: the character allowlist and URL parser do not
+fully enforce RFC 3986 component grammar. Passing the indexed corpus does not resolve
+that defect. Its compatibility change is separate work; this preparation preserves
+the existing URI behavior. This section makes no partial or qualified conformance
+claim. The recorded `0.2.0-draft` claim above remains as recorded.
 
 ## Corroboration, which is not the claim's basis
 

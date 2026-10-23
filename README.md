@@ -15,10 +15,14 @@ class it claims — not against this runtime. Results from the corpus published 
 it names are required evidence for such a claim and are not exhaustive evidence of it (§3.4.1).
 
 The runtime **validates documents**. It does not fetch a source, authorize an action, or establish
-truth, organizational authority, safety, or operational fitness. It bundles two specification
-versions, `0.1.0-draft` and `0.2.0-draft`, and validates a document against the exact version that
-document declares; `0.1.0-draft` defines carrier, structural, and semantic document conformance
-only, and `0.2.0-draft` changes no part of the document format.
+truth, organizational authority, safety, or operational fitness. It bundles `0.1.0-draft`,
+`0.2.0-draft`, and Core `0.3.0`, and validates a document against its exact declaration.
+Core `0.3.0` resources are pinned to Spec commit
+`65c7cf5598a0f0fc532c80a9e2215090951104ce`; this is an immutable source pin, not a
+published Core release tag. Core `0.3.0` support is base-only. Runtime discovery reports
+`evaluatorCapabilities` separately from document `supportedSpecVersions`, with
+`supportedProfiles: ["base"]` scoped to the Core `0.3.0` evaluator entry. This says
+nothing about Policy or Dialect profile support.
 
 One shared evaluator applies the specification's §§7–8 resolution model per
 [ADR-0007](docs/adr/0007-experimental-evaluator.md), and ten surfaces reach it: `jpack experimental
@@ -31,11 +35,13 @@ about conformance. That evaluator implements the evaluator conformance class Cor
 the §8.2 input preflight, the §8.3 portable disposition with its RFC 8785 byte agreement, the §8.4
 error classes and their fixed precedence, and the §10 limits — per
 [ADR-0010](docs/adr/0010-evaluator-aligned-to-core-0.2.0-draft.md) and
-[ADR-0011](docs/adr/0011-first-evaluator-conformance-claim.md). Only a pack declaring `specVersion`
-`0.2.0-draft` is evaluated: §11 makes the declared value exact and requires an unedited `0.1.0-draft`
-pack to be re-declared — one edit, the `specVersion` string, and nothing else in the document — before
-an implementation claiming this draft evaluates it, so any other version is refused as
-`pack-not-conformant` in the `preflight` phase.
+[ADR-0011](docs/adr/0011-first-evaluator-conformance-claim.md).
+
+Pack-aware operations select the evaluator contract from the exact pack's
+`specVersion`: `0.2.0-draft` or `0.3.0`. Internal legacy entry points and standalone
+authoring tools retain their `0.2.0-draft` default; standalone tools accept explicit
+`spec_version: "0.3.0"`. Selection never infers a version from a `routes` member.
+See [ADR-0063](docs/adr/0063-explicit-core-030-contracts.md) for the compatibility decisions.
 
 **This runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).** JPS §3.4.1 fixes the entire form such a claim may take — the class,
@@ -298,10 +304,11 @@ Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an ex
 ./bin/jpack spec test-conformance
 ./bin/jpack spec test-conformance --format json
 ./bin/jpack spec test-conformance --spec-version 0.2.0-draft
+./bin/jpack spec test-conformance --spec-version 0.3.0
 ./bin/jpack spec test-conformance --strict
 ```
 
-By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs.
+By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs. Core `0.3.0` optional `expectedAdvisories` cases are explicitly `skipped`, with `actualStatus: "not-checked"` and a `skipReason`; the summary counts them separately. A skipped advisory is never a passed assertion.
 
 Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimental evaluator. Every
 row is compared by disposition equality as §8.3 defines it — both the row's expectation and the
@@ -316,6 +323,7 @@ a project-issued erratum can excuse a row:
 ./bin/jpack experimental evaluate-corpus
 ./bin/jpack experimental evaluate-corpus --format json
 ./bin/jpack experimental evaluate-corpus --spec-version 0.2.0-draft
+./bin/jpack experimental evaluate-corpus --spec-version 0.3.0
 ```
 
 Inspect or copy the bundled schema without network access:
@@ -323,6 +331,7 @@ Inspect or copy the bundled schema without network access:
 ```bash
 ./bin/jpack spec schema 0.1.0-draft
 ./bin/jpack spec schema 0.2.0-draft
+./bin/jpack spec schema 0.3.0
 ./bin/jpack spec schema 0.1.0-draft --write schema.json
 ./bin/jpack spec schema 0.1.0-draft --write -
 ```
@@ -336,9 +345,14 @@ Validation short-circuits in this order:
 
 1. strict UTF-8 JSON carrier parsing, including duplicate-member rejection;
 2. exact `specVersion` dispatch;
-3. Draft 2020-12 structural validation with URI, date, and date-time assertions;
-4. normative semantic reference and extension-declaration checks; and
-5. required-extension capability negotiation.
+3. Core `0.3.0` profile negotiation, defaulting an absent declaration to `base` without changing input bytes;
+4. Draft 2020-12 structural validation with URI, date, and date-time assertions;
+5. normative semantic reference and extension-declaration checks; and
+6. required-extension capability negotiation.
+
+A known unsupported Core profile is refused before schema interpretation or facts/evidence admission,
+with exactly `{"code":"profile-unsupported","profile":"extended"}`. Unknown, empty, null,
+and non-string profile declarations are structural errors; malformed carrier input remains a carrier error.
 
 An unknown but syntactically usable `specVersion` is `unsupported`, not `invalid`. The conformance
 runner deliberately pins each case to the suite's declared specification version, so a fixture that
@@ -358,16 +372,28 @@ claim for it is stated, in full and only, in [CONFORMANCE.md](CONFORMANCE.md) �
 version scope, and everything it does not assert — and this section states no part of it: this section
 is the behavior.
 
-**Only a pack declaring `specVersion` `0.2.0-draft` is evaluated.** The §8.2 preflight, the §8.3
-disposition shape, and the §8.4 error classes are that version's, and §11 makes a declared version
-exact: "an unedited `0.1.0-draft` pack is not structurally conforming to `0.2.0-draft` and must be
-re-declared before an implementation claiming this draft evaluates it." So a pack declaring any other
-version — `0.1.0-draft` included — is refused as `pack-not-conformant` in the `preflight` phase
-(`JPS-EVALUATION-PACK-SPEC-VERSION`), and the message cites that rule and states the remedy: **one
-edit, the `specVersion` string**, and nothing else in the document, since §11 says `0.2.0-draft` changes
-no part of the document format. There is no second, unclaimed legacy path. Document validation is
-untouched — `spec validate` still validates a `0.1.0-draft` pack against its own published schema, and
-document conformance needs no evaluator (§3.4).
+The evaluator applies the exact selected `0.2.0-draft` or Core `0.3.0` contract.
+A `0.1.0-draft` pack remains validation-only and must be deliberately re-declared
+before evaluation. Core `0.3.0` permits ordered escalation routes under the base
+profile's maximum of eight. The disposition retains authored route order, duplicate
+targets, and exact target names. Routed `handoff.routes` is present even when empty;
+target-only packs retain their existing canonical bytes. Omitted profile means base,
+and a declared `extended` profile is unsupported.
+
+Matrix carriers remain versions `1`–`3`; the selected Core contract governs their
+expected dispositions. Project walks, graphs, and comparisons require one exact
+Core version and refuse mixed versions before evaluation. A singular handoff-target
+assertion on a routed result mismatches, including an assertion of null; it never
+chooses the first route. Graph handoffs fan out in declaration order and preserve
+duplicates. Audit records retain the exact produced canonical bytes and applied
+contract, and old records retain their original interpretation.
+
+Core `0.3.0` project matrix reports bound expected plus actual canonical disposition
+text at 10 MiB (`JPS-RESOURCE-MATRIX-DISPOSITIONS`). Graph evaluation and Core `0.3.0`
+graph matrix/suite reports use the graph's 16 MiB report bound; nodes, handoffs and
+headline are charged incrementally and the final envelope is checked. Comparison
+reports retain their existing `MaxReportBytes` bound. These are Runtime report
+limits, separate from the portable disposition's profile limit.
 
 Every evaluation payload still names both versions — `specVersion` is the pack's own, and
 `evaluatorSpecVersion` is the contract's — because they are two different facts and a consumer should
@@ -384,8 +410,9 @@ error. An evidence input that is not a JSON object, names an undeclared requirem
 value outside `present`, `absent`, and `unknown` is refused.
 
 **A produced result is the portable disposition (§8.3).** Under `--format json` without `--pretty`
-the `disposition` member is written in its RFC 8785 canonical form: members ordered by name, both sets
-sorted and duplicate-free, absent members omitted rather than serialized as `null`, and no whitespace.
+the `disposition` member is written in its RFC 8785 canonical form: members ordered by name, reason and trigger sets
+sorted and duplicate-free, route arrays kept in authored order with duplicates, absent
+members omitted rather than serialized as `null`, and no whitespace.
 `--pretty` indents the whole payload and that indentation reaches inside this member too, so the member
 order and both sets stay canonical but those exact bytes are not present. §8.3 requires
 canonicalization "where a byte comparison is required", so a byte comparison against another

@@ -52,6 +52,20 @@ Bundled specification artifacts are pinned to an immutable upstream tag or exact
 verified byte-for-byte at runtime and during release checks. Updating those artifacts does not
 rewrite an existing CLI release.
 
+Document support and evaluator support are reported separately. The additive
+`evaluatorCapabilities` entries name exact Core contracts; `supportedProfiles` on
+the `0.3.0` entry lists only `base` and makes no profile promise for other formats.
+Legacy authoring defaults remain `0.2.0-draft`; explicit standalone `spec_version`
+selects the new contract, while pack-aware operations use the exact associated pack.
+Matrix carrier versions `1`–`3` are unchanged: the explicit contract selects the
+portable disposition grammar, rather than adding a closed matrix member. Additive
+skip metadata is omitted from old suite reports when no case is skipped.
+
+The Core `0.3.0` bundle uses full Spec commit
+`65c7cf5598a0f0fc532c80a9e2215090951104ce`, not a published Core release tag.
+This source provenance does not by itself establish a conformance claim; see
+[CONFORMANCE.md](CONFORMANCE.md).
+
 ## Compatibility dimensions
 
 Release notes describe compatibility separately for:

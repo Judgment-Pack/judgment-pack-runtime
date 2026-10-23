@@ -143,7 +143,7 @@ func TestExampleRejectsUnknownName(t *testing.T) {
 }
 
 // The runtime description lists every bundled specification version, and its one
-// provenance string describes all of them: a payload that names two versions must
+// provenance string describes all of them: a payload that names several versions must
 // not report the provenance of one.
 func TestRuntimeDescribesEveryBundledVersion(t *testing.T) {
 	set, err := artifacts.Load(artifacts.DraftVersion)
@@ -170,7 +170,7 @@ func TestRuntimeDescribesEveryBundledVersion(t *testing.T) {
 
 // bundledProvenance reports the *least-trusted* kind among the bundles, which is
 // the one a release gate acts on, so the kinds carry an explicit order rather than
-// the loop reporting whichever bundle it visited last. Both bundles are imported
+// the loop reporting whichever bundle it visited last. All bundles are imported
 // from an immutable ref today, so the ordering is pinned here directly.
 func TestProvenanceKindsCarryAnExplicitTrustOrder(t *testing.T) {
 	if provenanceRank("immutable-git-ref") >= provenanceRank("unreleased-local-snapshot") {

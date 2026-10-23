@@ -104,9 +104,8 @@ func TestExampleReturnsBytesAndRejectsUnknownNames(t *testing.T) {
 	}
 }
 
-// Both drafts are bundled and load independently, and each verifies against its
-// own lock. The evaluation corpus exists only in the version whose Core defines
-// the evaluator conformance class.
+// All three exact versions load independently and verify against their own
+// locks. Only versions with an indexed evaluation corpus expose that corpus.
 func TestEveryBundledVersionLoads(t *testing.T) {
 	versions := SupportedVersions()
 	if len(versions) != 3 || versions[0] != DraftVersion || versions[1] != EvaluatorDraftVersion || versions[2] != CoreVersion {
@@ -178,6 +177,9 @@ func TestCore030ExactProvenanceAndCompleteIndexedFixtures(t *testing.T) {
 	}
 	lock := set.Lock()
 	const pin = "65c7cf5598a0f0fc532c80a9e2215090951104ce"
+	if len(lock.Files) != 165 {
+		t.Fatalf("Core 0.3 lock files: %d", len(lock.Files))
+	}
 	if lock.Source.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || lock.Source.Ref != pin || lock.Source.BaseCommit != pin || lock.Source.Kind != "immutable-git-ref" || lock.Source.WorktreeDirty {
 		t.Fatalf("unexpected source: %+v", lock.Source)
 	}

@@ -2,6 +2,22 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- Prepare explicit Core `0.3.0` base-profile validation and evaluation from immutable
+  Spec commit `65c7cf5598a0f0fc532c80a9e2215090951104ce` (ADR-0063). Preserve legacy
+  defaults and bundle bytes. Discovery separates document versions from exact evaluator
+  contracts and scopes `supportedProfiles` to Core `0.3.0`.
+- Preserve route presence, declaration order, duplicate targets and exact names in
+  portable dispositions. Select pack-aware contracts from exact pack declarations;
+  standalone authoring uses explicit `spec_version`, defaulting to `0.2.0-draft`.
+  Matrix carriers stay at versions `1`–`3`; mixed-version compositions refuse.
+- Resolve conformance-manifest references only against pinned offline resources.
+  Optional advisory assertions are reported as skipped/not checked rather than passed.
+  Existing suite reports omit skip fields when unused. Conformance posture,
+  evidence and the outstanding URI grammar limitation are recorded solely in
+  [CONFORMANCE.md](CONFORMANCE.md).
+
 ## 0.37.0 - 2026-10-19
 
 - Adopt the immutable official Policy draft `policy-v1.0.0-draft.1`, Spec commit
