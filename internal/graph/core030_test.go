@@ -260,3 +260,44 @@ func TestCore030GraphClassedRefusalCarriesSelectedContract(t *testing.T) {
 		t.Fatalf("selected refusal contract: %+v", failure)
 	}
 }
+
+func TestCore030GraphSuiteChargesItsFinalEnvelope(t *testing.T) {
+	loaded := writeProject(t, map[string]string{
+		"jpack.json": `{"configVersion":"2","packs":{"p":{"path":"p.json"}},"graphs":{"routes":{"path":"graph.json","rows":"rows.json"}}}`,
+		"p.json":     coreGraphPack("0.3.0", graphRoutes, ""),
+		"graph.json": `{"formatVersion":"1","id":"routes","version":"1.0.0","nodes":{"a":{"pack":"p"}},"edges":[],"result":"a"}`,
+		"rows.json":  `{"cases":[{"id":"r","inputs":{},"expectedDisposition":` + graphCanonical + `}]}`,
+	})
+	engine := newEngine(t)
+	full, failure := TestProject(loaded, engine, "", Options{})
+	if failure != nil || full.Status != "passed" {
+		t.Fatalf("full suite: %+v %+v", full, failure)
+	}
+	encoded, err := json.Marshal(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entriesBytes := 0
+	for _, entry := range full.Graphs {
+		encodedEntry, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entriesBytes += len(encodedEntry)
+	}
+	budget := len(encoded) - 1
+	if entriesBytes >= budget {
+		t.Fatalf("test needs entries that fit below the complete suite: entries=%d budget=%d", entriesBytes, budget)
+	}
+	refused, failure := TestProject(loaded, engine, "", Options{ReportBudget: budget})
+	if failure == nil || failure.Code != CodeReportBudget || failure.SpecVersion != "0.3.0" || !strings.Contains(failure.Message, "graph suite report") {
+		t.Fatalf("outer envelope did not refuse: %+v %+v", refused, failure)
+	}
+	if !reflect.DeepEqual(refused, result.GraphSuite{}) {
+		t.Fatalf("refusal leaked a partial suite: %+v", refused)
+	}
+	exact, failure := TestProject(loaded, engine, "", Options{ReportBudget: len(encoded)})
+	if failure != nil || exact.Status != "passed" || exact.EvaluatorSpecVersion != "0.3.0" {
+		t.Fatalf("exact final budget: %+v %+v", exact, failure)
+	}
+}

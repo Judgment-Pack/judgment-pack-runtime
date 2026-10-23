@@ -2,6 +2,9 @@
 # checkout-time line-ending conversion.
 internal/artifacts/jps/** -text
 
+# This exact upstream carrier vector intentionally ends with trailing whitespace.
+internal/artifacts/jps/0.3.0/cases/carrier/trailing-whitespace.json -whitespace
+
 # The gateway's witness vectors are a byte-for-byte copy held to a lock of
 # their digests, and a vector's files are its bytes exactly.
 internal/audit/testdata/witness/** -text

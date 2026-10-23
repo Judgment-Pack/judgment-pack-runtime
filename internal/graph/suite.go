@@ -127,6 +127,26 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 	if output.Status == "passed" && output.Summary.Total == 0 {
 		output.Status = "skipped"
 	}
+	// Core 0.3's retained-report cap includes the suite envelope around the
+	// entries charged above. Check the complete serialization before exposing
+	// a result; the legacy contract keeps its existing entry-only accounting.
+	if contract.Version() == "0.3.0" {
+		encoded, err := json.Marshal(output)
+		if err != nil {
+			failure := reportEncodingFailure("project graph suite")
+			failure.SpecVersion = contract.Version()
+			return result.GraphSuite{}, failure
+		}
+		if len(encoded) > options.ReportBudget {
+			return result.GraphSuite{}, &evaluation.Failure{
+				SpecVersion: contract.Version(),
+				Code:        CodeReportBudget,
+				Message: fmt.Sprintf("The graph suite report reached %d bytes after %d row(s), over this surface's %d-byte budget; no partial suite is reported.",
+					len(encoded), output.Summary.Total, options.ReportBudget),
+				ExitCode: result.ExitIO,
+			}
+		}
+	}
 	return output, nil
 }
 
