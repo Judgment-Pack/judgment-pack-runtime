@@ -123,7 +123,11 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 		return a.writeJSON(output)
 	}
 	if output.Status == "valid" {
-		fmt.Fprintf(a.out, "passed: %d/%d conformance cases matched expectations\n", output.Summary.Passed, output.Summary.Total)
+		if output.Summary.Skipped > 0 {
+			fmt.Fprintf(a.out, "passed: %d/%d checked conformance cases matched expectations; %d skipped (not checked)\n", output.Summary.Passed, output.Summary.Total-output.Summary.Skipped, output.Summary.Skipped)
+		} else {
+			fmt.Fprintf(a.out, "passed: %d/%d conformance cases matched expectations\n", output.Summary.Passed, output.Summary.Total)
+		}
 	} else {
 		fmt.Fprintf(a.out, "mismatch: %d/%d conformance cases did not match expectations\n", output.Summary.Mismatched, output.Summary.Total)
 		for _, item := range output.Cases {
@@ -136,6 +140,13 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 				for _, stray := range item.StrayDiagnostics {
 					fmt.Fprintf(a.out, "    stray diagnostic %s at %q\n", display.Sanitize(stray.Code), display.Sanitize(stray.InstancePath))
 				}
+			}
+		}
+	}
+	if output.Summary.Skipped > 0 {
+		for _, item := range output.Cases {
+			if item.Status == "skipped" {
+				fmt.Fprintf(a.out, "- %s [not checked]: %s\n", display.Sanitize(item.ID), display.Sanitize(item.SkipReason))
 			}
 		}
 	}

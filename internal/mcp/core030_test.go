@@ -162,3 +162,15 @@ func TestCore030PublicFailureContextFallback(t *testing.T) {
 		t.Fatal("unsupported context became a contract", report)
 	}
 }
+
+func TestCore030PublicExamplesNameTheSelectedEvaluator(t *testing.T) {
+	report := core030Both(t, toolCall(t, 1, "list_examples", map[string]any{"spec_version": "0.3.0"}))
+	if report["specVersion"] != "0.3.0" || report["evaluatorSpecVersion"] != "0.3.0" {
+		t.Fatal(report)
+	}
+	response := runServer(t, toolCall(t, 2, "get_example", map[string]any{"spec_version": "0.3.0", "name": "minimal-expense-approval"}))[0]["result"].(map[string]any)
+	report = response["structuredContent"].(map[string]any)
+	if report["specVersion"] != "0.3.0" || report["evaluatorSpecVersion"] != "0.3.0" {
+		t.Fatal(report)
+	}
+}

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -131,5 +132,48 @@ func TestCore030CLIFailureContextFallback(t *testing.T) {
 	}
 	if report.EvaluationError.EvaluatorSpecVersion != result.EvaluatorSpecVersion {
 		t.Fatal("unsupported context became a contract", report)
+	}
+}
+
+func TestCore030CLIConformanceShowsUncheckedAdvisoryCases(t *testing.T) {
+	var text bytes.Buffer
+	app := &App{out: &text}
+	suite := result.Suite{Status: "valid", SpecVersion: "0.3.0", Summary: result.SuiteSummary{Total: 156, Passed: 151, Skipped: 5}}
+	for index := 0; index < 5; index++ {
+		suite.Cases = append(suite.Cases, result.Case{ID: fmt.Sprintf("advice-%d", index), Status: "skipped", ActualStatus: "not-checked", SkipReason: "Optional expectedAdvisories assertions are not implemented."})
+	}
+	if err := app.renderSuite("human", suite); err != nil {
+		t.Fatal(err)
+	}
+	rendered := text.String()
+	if !strings.Contains(rendered, "151/151 checked conformance cases matched expectations; 5 skipped (not checked)") || strings.Count(rendered, "[not checked]: Optional expectedAdvisories assertions are not implemented.") != 5 {
+		t.Fatal(rendered)
+	}
+	text.Reset()
+	suite.Summary = result.SuiteSummary{Total: 20, Passed: 20}
+	suite.Cases = nil
+	if err := app.renderSuite("human", suite); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(text.String(), "passed: 20/20 conformance cases matched expectations\n") || strings.Contains(text.String(), "skipped") {
+		t.Fatal("legacy renderer changed", text.String())
+	}
+}
+
+func TestCore030CLIExamplesNameTheSelectedEvaluator(t *testing.T) {
+	code, stdout, stderr := runTest(t, []string{"spec", "examples", "--spec-version", "0.3.0", "--format", "json"}, "")
+	if code != 0 || stderr != "" {
+		t.Fatal(code, stdout, stderr)
+	}
+	var report map[string]any
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report["specVersion"] != "0.3.0" || report["evaluatorSpecVersion"] != "0.3.0" {
+		t.Fatal(report)
+	}
+	code, stdout, stderr = runTest(t, []string{"spec", "examples", "--spec-version", "0.3.0"}, "")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "the evaluator admits 0.3.0: a pack made from this set needs no re-declaration") {
+		t.Fatal(code, stdout, stderr)
 	}
 }
