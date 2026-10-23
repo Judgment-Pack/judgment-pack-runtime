@@ -164,4 +164,4 @@ authority, and following it confers no conformance status on anything.
 | [0066](0066-bounded-rule-overlap-advice.md) | Report bounded rule-overlap advice without changing document conformance | accepted |
 | [0067](0067-complete-outcome-contributors.md) | Retain every actual outcome contributor outside the disposition | accepted |
 | [0068](0068-finite-domain-pack-design-advice.md) | Rehearse an explicit finite domain for optional pack-design advice | accepted |
-| [0069](0069-bound-history-reads-by-window.md) | Bound history reads by window independently of source size | proposed |
+| [0069](0069-bound-history-reads-by-window.md) | Bound history reads by window independently of source size | accepted |
