@@ -222,3 +222,12 @@ Runtime discovery separates document versions from evaluator capabilities. Profi
 metadata is scoped to Core `0.3.0` and does not change Policy or Dialect contracts.
 The full conformance posture and outstanding review are recorded only in
 [CONFORMANCE.md](../CONFORMANCE.md).
+
+Core schema compilation applies the shared `internal/uriformat` ASCII RFC 3986
+component parser. CLI/MCP validation, ordinary Core evaluation admission and the
+official Policy reader use the same predicate without altering identifier bytes.
+Historical prototype Policy `0.0.2` schema and retained Core consumer checks opt
+into the former predicate through a named compatibility override. It preserves
+prototype behavior and is not an RFC-conformance implementation. No artifact pins,
+network semantics, trust or authority change; [ADR-0064](adr/0064-share-uri-component-grammar.md)
+records the acceptance change and explicit migration scope.

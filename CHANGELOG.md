@@ -18,6 +18,19 @@ All notable changes to tagged releases are documented here.
   evidence and the outstanding URI grammar limitation are recorded solely in
   [CONFORMANCE.md](CONFORMANCE.md).
 
+- Correct ordinary Core `format: "uri"` across all supported document versions,
+  CLI/MCP and evaluator admission (#297, ADR-0064), resolving the URI limitation
+  noted above. Raw brackets in paths,
+  queries and fragments are refused; percent-encoded reg-names and IPvFuture
+  (`v` or `V`) are accepted under complete ASCII RFC 3986 component grammar.
+  Generic port syntax, exact source bytes and finite URI diagnostics are preserved.
+  Official Policy shares the corrected parser; prototype Policy `0.0.2` and its
+  retained consumers explicitly preserve their historical assertion. This acceptance
+  change requires a minor release: update Runtime pins deliberately and revalidate
+  original bytes. No artifact IDs, records, canonical identities or jobs migrate.
+  Embedded artifact pins and bytes remain unchanged. Required review and platform
+  CI remain merge gates; this correction adds no Core `0.3.0` evaluator claim.
+
 ## 0.37.0 - 2026-10-19
 
 - Adopt the immutable official Policy draft `policy-v1.0.0-draft.1`, Spec commit
