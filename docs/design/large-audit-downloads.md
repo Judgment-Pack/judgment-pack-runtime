@@ -78,7 +78,7 @@ out-of-range offsets refuse. All public numbers fit exactly in JSON integers.
 | Live large-download sessions | Two per server, also consuming slots from the existing shared eight-slot audit pool |
 | Lifetime | Five minutes without an advancing commit; absolute thirty minutes from creation; replay does not renew either deadline |
 | Advancing calls | At most 65536 per session, including start and terminal transitions |
-| Answer replays | At most 1024 per session, including duplicate starts; exhaustion invalidates that session |
+| Answer replays | At most 1024 per session, including duplicate starts and terminal cancel acknowledgements; exhaustion removes retry access, without changing a committed terminal outcome |
 | Retained payload accounting | At most 8 MiB per large session, including hash arrays, cache, initial reply and latest reply; also a fixed bound on metadata and hash-state objects |
 | Transient work payload | At most 16 MiB additional accounted payload for the one admitted advancing call, including candidate state, output and encoding buffers |
 | Concurrent source work for this tool | One admitted advancing call per server; another call gets a finite busy refusal without entering an unbounded queue |
@@ -305,6 +305,55 @@ sessions also receive busy rather than queue while the download-work permit is
 held. No refusal caused by contention changes the current cursor, deadlines or
 source work. Initial capture uses the same work permit.
 
+**Transport prerequisite before tool exposure:** current
+`internal/mcp/server.go` scans a line, calls `handle` synchronously, then scans
+the next line; `Serve`/`handle`/`callTool` carry no request context. A blocked
+source read therefore prevents later cancellation or unrelated requests from
+reaching this registry at all. Pager locks and permits alone cannot provide the
+proposed isolation. Require bounded stdio dispatch and request-context plumbing
+before advertising the new tool; a synchronous transport does not expose it.
+This is a prerequisite design, not authorization to implement transport changes.
+
+The candidate dispatcher has one scanner, one download worker, one legacy
+worker, one control worker and one output writer, all fixed per server. Route
+existing handlers through the single legacy worker in input order, with at most
+one additional pending legacy request; existing tools never execute concurrently
+with each other. Only the new download work may overlap that lane. New-tool
+cancel/replay/busy handling uses the control lane, with no pending control queue;
+source advancement uses the download lane, with no pending download queue. A
+request finding either new lane occupied gets a finite busy reply rather than a
+new goroutine. Strict envelope/argument validation and the existing 16 MiB line
+limit apply before admission. Retain only each worker's admitted request, the
+one pending legacy request and the scanner's current line, with size-accounted
+copies; there is no general request queue or goroutine per message.
+
+One writer owns stdout and emits whole JSON-RPC lines without interleaving,
+matching replies by request ID; new replies may overtake legacy replies. Each
+worker may retain at most one response pending that writer, and the scanner at
+most one immediate refusal. Use bounded writer staging, at most 64 KiB, rather
+than an accumulating output queue. New-tool results retain their 4 MiB data /
+16 KiB control limits; the already bounded request ID/envelope is also accounted
+for, not silently excluded from transport buffering. The legacy lane retains
+its existing handler/result semantics and only one active result; this proposal
+does not parallelize old handlers or impose a new old-tool result-size policy.
+When pending-input or output ownership is full, apply input backpressure instead
+of allocating more state. A blocked stdout, full legacy pending slot, blocked
+control metadata read or stalled scanner syscall can therefore delay later
+requests. Isolation means a download's source read alone does not prevent
+admission and dispatch of an otherwise admissible cancel or legacy request; it
+is not unconditional delivery or a hard response deadline under backpressure.
+
+Create a context for every admitted new-tool request and carry it from dispatch
+through the handler, guarded capture and block engine. Server shutdown, input
+closure and output failure signal active new work; explicit cancellation uses
+the session transition below and signals its active context. Existing handlers
+keep their serialized lifecycle, including draining already admitted legacy
+requests on normal input closure. Cancellation is observed between operations;
+an active source syscall still owns its worker, buffers and permits until it
+returns. Never spawn a replacement worker to bypass it. Verify these bounds and
+context paths through the actual stdio dispatcher before tool exposure, not
+merely with concurrent calls to pager helpers.
+
 Serialize and size-check the **whole** candidate MCP result before committing
 the next sequence and retry cache. An encoding/response-budget refusal
 invalidates only that session, including initial-ID mapping and retry state;
@@ -314,19 +363,51 @@ response is committed, a lost transport response is recovered through replay;
 do not “roll back” because delivery is uncertain.
 
 `{"cursor":"<issued token>","cancel":true}` is the only cancellation form;
-it forbids `page_bytes` and returns a terminal cancelled reply. Accept any
-authentic issued sequence for that session, so a client can cancel after losing
-a reply; do not accept arbitrary future sequence numbers. If work is active,
-signal cancellation and return retryable busy until the worker closes its
-handles and acknowledges termination. Check the signal between blocks and
-before publication; never claim cancellation complete while reads continue.
-Retain a small replayable cancellation tombstone, evictable like a completed
-record, while releasing the large-session quota and heavy state immediately.
-It still uses one of the eight shared slots until evicted. Restart loses it.
+it forbids `page_bytes`. After current authority/root/expiry and budget checks,
+accept any authentic issued sequence for that session, including stale issued
+tokens; arbitrary future sequence numbers refuse. Completion commit and cancel
+intent are linearized under the same short session-state lock. A serialized
+completion candidate is still provisional until its commit wins that lock.
+
+| State when cancel is linearized | Reply and resulting state |
+| --- | --- |
+| Live, without active work | Commit `cancelled`, release heavy state and return the saved terminal cancelled reply. |
+| Live, with active work | Record cancel intent before signalling the active context; return retryable busy while ownership remains active. This intent prevents any later progress or completion commit. When the owner closes its handles, commit `cancelled` and save its terminal reply. |
+| Cancel intent already pending | Return retryable busy while work remains active; do not accept a second transition or reset budgets/deadlines. |
+| Committed `cancelled` tombstone | Return the same saved terminal cancelled reply; no new transition or source work. |
+| Committed `complete` record | Return the same saved `complete:true` final reply as a terminal acknowledgement that completion already won, even for an older issued token. Preserve its final retry response; do not create a cancelled tombstone or replace the saved outcome. |
+| Unknown, evicted or expired record | Return the existing terminal cursor refusal; do not reconstruct or infer a cancellation/completion outcome. |
+
+Thus committed completion is immutable and wins over every later explicit
+cancel. Conversely, cancel intent linearized first makes completion publication
+impossible, even when final source reads or serialization already finished.
+Check that intent before committing, not just before starting finalization.
+The active advancement then returns the terminal cancelled result after cleanup;
+it cannot publish its abandoned candidate. Never acknowledge terminal
+cancellation while reads continue. A busy response caused by accepted cancel
+intent is the explicit exception to contention-only busy's no-state-change rule.
+
+A first cancellation terminal commit consumes one advancing-call allowance;
+reserve it when accepting intent. The abandoned in-flight step consumes no
+additional advancing commit. Pending busy responses consume neither a replay nor
+a second advance. Repeated cancel on a tombstone and late cancel on completion
+each consume one of the existing 1024 replay allowances, just like final-response
+retry; their request tokens never become a new latest answered progress cursor.
+They do not renew deadlines, reset counters or replace the canonical terminal
+reply. On replay exhaustion, expiry or eviction, retry access can disappear but
+the prior terminal outcome is not revoked or converted to cancellation. While
+retained and within budget, a lost final reply remains recoverable after a late
+cancel by retrying the final answered cursor or repeating that cancel.
+
+Retain a small replayable cancelled tombstone, evictable like a completed record,
+and release heavy state and the large-session quota only after cleanup. It
+still uses one of the eight shared slots until evicted. Restart loses it.
 
 A request context cancelled before commit aborts the candidate step and
 invalidates that session after handles close; a new session is needed. A context
-cancelled after commit leaves the answered response replayable. Source read,
+cancelled after commit leaves the answered response replayable. A context
+signalled by accepted explicit cancel follows the cancelled transition above,
+rather than the generic context-abort removal path. Source read,
 identity, authority, hash, counter or resource-limit failure likewise terminates
 that session. Busy and malformed arguments before work are nonterminal. All
 refusals use `isError:true`, with the same bounded versioned error object in
@@ -353,8 +434,9 @@ Expiry cannot promise immediate descriptor release for an OS call that stalls.
 An expired in-flight operation keeps its work permit, slot reservation and
 large-session quota until ownership is relinquished; replacement admissions
 cannot multiply buffers behind stalled operations.
-No permanent worker, file descriptor, lock, private spool or audit-file write
-survives a normal call. Capacity admission may evict terminal records but never
+No session-specific worker, file descriptor, lock, private spool or audit-file
+write survives a normal call; the fixed dispatcher workers are server-scoped.
+Capacity admission may evict terminal records but never
 silently evicts a live export. At two live large sessions or eight live shared
 slots, a new start refuses without doing source I/O or evicting another live
 raw/history session.
@@ -384,7 +466,8 @@ test must exercise the same engine as the synthetic readers.
 | Idempotency | Lost initial reply with same start ID uses one slot; latest prep/data/final reply is identical under changed `page_bytes`; concurrent duplicate gets busy or identical cached response and advances once. Mutation: rehash/re-read a retry or allocate a second start. |
 | Finite lifetime/work | Fake clock reaches idle and absolute deadlines, including during a step; exact call/replay cap and one-past cases; sweeper releases abandoned state and no replay refreshes deadlines. Mutation: slide absolute expiry or omit a counter. |
 | Capacity and isolation | Two large sessions, eight shared slots, terminal eviction and busy permit; no v1/history state is lost. Mutation: hold the shared mutex over a slow large read or evict live state. |
-| Publication and cancellation | Encoding/size/accounting failures on start/continuation/final response release state; inject cancellation before/after commit and during a read, concurrent stale-token cancel, lost cancel response and repeated cancel. Mutation: publish cursor before serialization, advance on failure, or acknowledge cancel while work continues. |
+| Transport dispatch and context | Through actual stdio pipes, gate an admitted source read, then send cancel, another download and an unrelated legacy request with distinct IDs. With output draining and admission space, observe pending-cancel busy, download busy and the legacy reply before releasing the source gate; afterwards observe cleanup/cancelled and no leaked owner. Keep old handlers serial; saturate input/output bounds and test shutdown/output-failure context propagation without added workers/queues. Mutation: dispatch synchronously in the scanner, drop the request context, write interleaved replies or spawn a goroutine per request. Concurrent pager calls alone do not satisfy this evidence. |
+| Publication and cancellation | Encoding/size/accounting failures on start/continuation/final response release state. Synchronize both terminal race winners: cancel intent before completion commit prohibits complete; completion commit before stale-token cancel returns saved complete. Lose the final transport reply, issue late/repeated cancel, then retry the final cursor; byte-identical complete remains recoverable within budget. Lose/retry cancelled replies, verify one terminal advance and replay-counter/deadline rules through exhaustion. Mutation: overwrite committed complete with cancelled, publish after accepted cancel, advance on failure or acknowledge cancellation before cleanup. |
 | Resource ownership | Instrument handles, locks, hash-array lengths/capacities, cache and retained replies through success/failure/expiry/restart; enforce 8 MiB payload accounting without calling it RSS. Mutation: retain whole source/spool, unbounded history of replies or leaked pending reservation. |
 
 ## Implementation slices and adoption gates
@@ -400,8 +483,12 @@ test must exercise the same engine as the synthetic readers.
    factor shared admission ownership and add root identity, slot accounting,
    cursor ownership, cancellation and expiry tests. Prove no existing writer or
    CLI lock semantics change, and preserve v1/history retry/capacity behavior.
-4. Add the raw-only MCP definition, strict arguments, versioned result/error
-   vectors and complete response accounting. Run focused contract, mutation and
+4. Before exposing the tool, implement and prove the bounded stdio dispatcher
+   and new-request contexts above, retaining existing-tool serialization. Run
+   the gated-read cancellation/unrelated-tool tests through that transport,
+   including backpressure, ownership and both terminal race winners. Then add
+   the raw-only MCP definition, strict arguments, versioned result/error vectors
+   and complete response accounting. Run focused contract, mutation and
    three-file tests, then the repository's required integration checks once on
    the stable candidate. Review complete diff and interactions, rather than
    treating passing helper tests as the wire review.
@@ -439,10 +526,10 @@ separate authorized change in its owning repository.
 - Is latest-answer-only retry with a bounded replay budget sufficient for clients
   that reconnect through intermediaries? Durable or random-access resumption
   requires a separate authority, storage and retention contract.
-- Does the proposed cancellation rule work for all server transports: busy
-  acknowledgement while a syscall is active, then a terminal tombstone only
-  after it returns? Validate exact publication races before adopting the wire;
-  acknowledging immediate release while a read remains active is unsuitable.
+- Can each intended transport prove the required bounded dispatch, request
+  contexts and terminal linearization end to end? Current synchronous stdio
+  cannot supply them. Keep the tool unexposed until the stated prerequisite is
+  met; backpressure and stalled syscalls retain the explicit limitations above.
 
 Large configured verification needs its own bounded parser/chain/report state,
 continuation semantics and report-size decisions. Staged supplied verification
