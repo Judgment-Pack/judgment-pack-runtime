@@ -9,7 +9,6 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestCandidateURIFormatAgreementAndInitSchemaParity(t *testing.T) {
@@ -48,8 +47,8 @@ func TestCandidateURIFormatAgreementAndInitSchemaParity(t *testing.T) {
 			}
 		})
 	}
-	// Candidate compilation must not replace the historical URI assertion used
-	// by Core/prototype consumers, even within the same process.
+	// Prototype compilation explicitly retains its historical assertion while
+	// ordinary Core uses corrected component grammar in the same process.
 	if !validURI("urn:test:[x]") {
 		t.Fatal("prototype URI behavior changed")
 	}
@@ -60,8 +59,8 @@ func TestCandidateURIFormatAgreementAndInitSchemaParity(t *testing.T) {
 	}
 	consumer := mustMap(t, legacy.raw["consumer-pack.json"])
 	consumer["id"] = "urn:test:[x]"
-	if report, failure := engine(t).Validate(mustJSON(t, consumer), validation.Options{Through: "structural", Limits: limits()}); failure != nil || report.Status != "valid" {
-		t.Fatalf("Core URI behavior changed %+v %v", report, failure)
+	if report, failure := engine(t).Validate(mustJSON(t, consumer), validation.Options{Through: "structural", Limits: limits()}); failure != nil || report.Status != "invalid" {
+		t.Fatalf("Core URI component grammar bypassed %+v %v", report, failure)
 	}
 }
 
@@ -114,12 +113,12 @@ func TestCandidateConsumerURIUsesSameAssertionAndPreservesRawBytes(t *testing.T)
 			}
 		})
 	}
-	// Overrides belong to one candidate check, not the caller's shared engine.
+	// Official Policy and ordinary Core share the corrected default predicate.
 	f := candidateFixture(t, "refunds")
 	reference := object(f.adoption["consumer"])
 	pack := bytes.Replace(f.raw["consumer-pack.json"], mustJSON(t, reference["id"]), mustJSON(t, "https://%65xample.invalid/a"), 1)
-	if report, failure := engine(t).Validate(pack, validation.Options{Through: "structural", Limits: limits()}); failure != nil || report.Status != "invalid" {
-		t.Fatalf("default Core URI behavior changed %+v %v", report, failure)
+	if report, failure := engine(t).Validate(pack, validation.Options{Through: "structural", Limits: limits()}); failure != nil || report.Status != "valid" {
+		t.Fatalf("default Core URI grammar differs %+v %v", report, failure)
 	}
 }
 
@@ -156,7 +155,7 @@ func TestCandidateURIAssertionDoesNotAddCoreLengthBounds(t *testing.T) {
 	f := candidateFixture(t, "refunds")
 	id := "urn:test:" + strings.Repeat("a", 3000)
 	pack := bytes.Replace(f.raw["consumer-pack.json"], mustJSON(t, object(f.adoption["consumer"])["id"]), mustJSON(t, id), 1)
-	options := validation.Options{Through: "structural", Limits: limits(), FormatOverrides: []*jsonschema.Format{candidateURIFormat()}}
+	options := validation.Options{Through: "structural", Limits: limits()}
 	if report, failure := engine(t).Validate(pack, options); failure != nil || report.Status != "valid" {
 		t.Fatalf("URI assertion imposed a companion bound on Core %+v %v", report, failure)
 	}
