@@ -402,3 +402,120 @@ func TestAuditWireFinalizationRechecksNames(t *testing.T) {
 		t.Fatal("replacement during finalization completed", err, calls)
 	}
 }
+
+func TestAuditWireStampsWaitForIndependentWriterLock(t *testing.T) {
+	for _, withTrail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "without-evaluations", true: "with-evaluations"}[withTrail], func(t *testing.T) {
+			contents := map[string][]byte{StampsName: []byte(`{"v":`)}
+			if withTrail {
+				contents[FileName] = []byte("{}\n")
+			}
+			source, dir := wireFixture(t, contents)
+			root, err := fssecure.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			release, started := make(chan struct{}), make(chan bool, 1)
+			writerDone := make(chan error, 1)
+			var once sync.Once
+			writerFinished := false
+			defer func() {
+				once.Do(func() { close(release) })
+				if !writerFinished {
+					select {
+					case <-writerDone:
+					case <-time.After(3 * time.Second):
+						t.Error("stamp writer did not finish")
+					}
+				}
+			}()
+			go func() {
+				err, _ := root.AppendExistingLockedThen(StampsName, func(state fssecure.AppendState) ([]byte, error) {
+					started <- state.Locked
+					<-release
+					return []byte("1}\n"), nil
+				}, nil)
+				writerDone <- err
+			}()
+			select {
+			case locked := <-started:
+				if !locked {
+					t.Skip("cooperative file locks unavailable")
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("stamp writer never took its lock")
+			}
+			open := source.Open[2]
+			stampOpened := make(chan struct{}, 1)
+			source.Open[2] = func() (*os.File, error) {
+				file, err := open()
+				select {
+				case stampOpened <- struct{}{}:
+				default:
+				}
+				return file, err
+			}
+			pager := NewPager()
+			type reply struct {
+				page result.AuditPage
+				err  error
+			}
+			answer := make(chan reply, 1)
+			go func() { page, err := pager.Page(source, "", DefaultWirePage); answer <- reply{page, err} }()
+			select {
+			case <-stampOpened:
+			case <-time.After(3 * time.Second):
+				t.Fatal("export never opened stamps")
+			}
+			select {
+			case got := <-answer:
+				t.Fatalf("export returned during cooperating stamp append: %v", got.err)
+			case <-time.After(75 * time.Millisecond):
+			}
+			once.Do(func() { close(release) })
+			writerErr := <-writerDone
+			writerFinished = true
+			if writerErr != nil {
+				t.Fatal(writerErr)
+			}
+			var got reply
+			select {
+			case got = <-answer:
+			case <-time.After(3 * time.Second):
+				t.Fatal("export did not resume after stamp append")
+			}
+			if got.err != nil || got.page.Files[2].Bytes != int64(len("{\"v\":1}\n")) || got.page.SnapshotBetweenWrites != withTrail {
+				t.Fatal("stamp prefix or trail-only flag differs", got.err, got.page)
+			}
+			_, files := wireDrain(t, pager, source, got.page.NextCursor, DefaultWirePage)
+			if string(files[StampsName]) != "{\"v\":1}\n" {
+				t.Fatal("export retained an in-progress stamp prefix", string(files[StampsName]))
+			}
+		})
+	}
+}
+
+func TestAuditWireDiscardSerializesWithCursorAdvancement(t *testing.T) {
+	source, _ := wireFixture(t, map[string][]byte{FileName: []byte("{}\n")})
+	pager := NewPager()
+	first, err := pager.Page(source, "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := pager.Page(source, "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); pager.Discard(first.NextCursor) }()
+	go func() { defer wg.Done(); _, _ = pager.Page(source, first.NextCursor, 1) }()
+	wg.Wait()
+	if _, err := pager.Page(source, first.NextCursor, 1); !errors.Is(err, ErrWireCursor) {
+		t.Fatal("discarded export retained cursor state", err)
+	}
+	if _, err := pager.Page(source, other.NextCursor, 1); err != nil {
+		t.Fatal("discard removed an unrelated export", err)
+	}
+}

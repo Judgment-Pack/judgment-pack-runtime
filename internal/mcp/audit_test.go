@@ -28,7 +28,7 @@ func auditMCPProject(t *testing.T) string {
 	return dir
 }
 
-func auditRPC(t *testing.T, server *Server, name, args string) (map[string]any, int) {
+func auditRawRPC(t *testing.T, server *Server, name, args string) []byte {
 	t.Helper()
 	var output, log bytes.Buffer
 	if err := server.Serve(strings.NewReader(rawToolCall(t, 1, name, args)), &output, &log); err != nil {
@@ -37,33 +37,41 @@ func auditRPC(t *testing.T, server *Server, name, args string) (map[string]any, 
 	if _, unpaired := carrier.UnpairedSurrogateEscape(output.Bytes()); unpaired || !utf8.Valid(output.Bytes()) {
 		t.Fatal("audit response emitted malformed Unicode")
 	}
+	return output.Bytes()
+}
+
+func auditRPC(t *testing.T, server *Server, name, args string) (map[string]any, int) {
+	t.Helper()
+	data := auditRawRPC(t, server, name, args)
 	var reply struct {
 		Result map[string]any `json:"result"`
 		Error  *rpcError      `json:"error"`
 	}
-	if err := json.Unmarshal(output.Bytes(), &reply); err != nil || reply.Error != nil {
-		t.Fatalf("RPC failed: %v %s", err, output.String())
+	if err := json.Unmarshal(data, &reply); err != nil || reply.Error != nil {
+		t.Fatalf("RPC failed: %v %s", err, data)
 	}
-	return reply.Result, output.Len()
+	return reply.Result, len(data)
 }
 
 func auditPageRPC(t *testing.T, server *Server, args string) result.AuditPage {
 	t.Helper()
-	answer, size := auditRPC(t, server, auditListTool, args)
-	if answer["isError"] != false {
-		t.Fatal(answer)
-	}
-	if size > maxAuditResponseBytes+128 {
+	data := auditRawRPC(t, server, auditListTool, args)
+	if len(data) > maxAuditResponseBytes+128 {
 		t.Fatal("serialized response limit exceeded")
 	}
-	data, err := json.Marshal(answer["structuredContent"])
-	if err != nil {
-		t.Fatal(err)
+	var reply struct {
+		Result struct {
+			IsError bool             `json:"isError"`
+			Page    result.AuditPage `json:"structuredContent"`
+		} `json:"result"`
+		Error *rpcError `json:"error"`
 	}
-	var page result.AuditPage
-	if err := json.Unmarshal(data, &page); err != nil {
-		t.Fatal(err)
+	// Decode the actual wire bytes directly. A map round trip would reorder
+	// case-variant members or discard duplicates before the typed history reader.
+	if err := json.Unmarshal(data, &reply); err != nil || reply.Error != nil || reply.Result.IsError {
+		t.Fatalf("audit page failed: %v %s", err, data)
 	}
+	page := reply.Result.Page
 	if page.OutputVersion != "2" || page.AuditWireVersion != "1" || page.Tool.Name != "jpack" || page.Tool.Version == "" || page.Command != "mcp experimental_list_audit" {
 		t.Fatal("audit wire envelope changed")
 	}
@@ -80,12 +88,20 @@ func fileHistory(data []byte, kind, id string) []historyLine {
 	lines := bytes.Split(data, []byte{'\n'})
 	for i := len(lines) - 2; i >= 0; i-- {
 		line := lines[i]
-		var members map[string]any
-		if !utf8.Valid(line) || json.Unmarshal(line, &members) != nil || members["recordVersion"] != "1" {
+		var record struct {
+			RecordVersion string `json:"recordVersion"`
+			Pack          *struct {
+				ID string `json:"id"`
+			} `json:"pack"`
+			Graph *struct {
+				ID string `json:"id"`
+			} `json:"graph"`
+		}
+		if !utf8.Valid(line) || json.Unmarshal(line, &record) != nil || record.RecordVersion != "1" {
 			continue
 		}
-		identity, ok := members[kind].(map[string]any)
-		if !ok || identity["id"] != id {
+		matches := kind == "pack" && record.Pack != nil && record.Pack.ID == id || kind == "graph" && record.Graph != nil && record.Graph.ID == id
+		if !matches {
 			continue
 		}
 		digest := sha256.Sum256(line)
@@ -102,12 +118,23 @@ func structuredHistory(t *testing.T, records []result.AuditPageRecord, kind, id 
 		if record.Status != "parsed" {
 			continue
 		}
-		var members map[string]any
-		if json.Unmarshal(record.Members, &members) != nil {
-			t.Fatal("unreadable structured object")
+		var members struct {
+			RecordVersion string `json:"recordVersion"`
+			Pack          *struct {
+				ID string `json:"id"`
+			} `json:"pack"`
+			Graph *struct {
+				ID string `json:"id"`
+			} `json:"graph"`
 		}
-		identity, ok := members[kind].(map[string]any)
-		if !ok || identity["id"] != id || members["recordVersion"] != "1" {
+		// Decode the whole object as Desk does: Go's typed JSON decoder
+		// folds member case and refuses a malformed typed member even when
+		// the requested history would select the other identity.
+		if json.Unmarshal(record.Members, &members) != nil || members.RecordVersion != "1" {
+			continue
+		}
+		matches := kind == "pack" && members.Pack != nil && members.Pack.ID == id || kind == "graph" && members.Graph != nil && members.Graph.ID == id
+		if !matches {
 			continue
 		}
 		// No JSONL parsing here: history selects structured members, retaining
@@ -129,8 +156,9 @@ func TestAuditWireContractRowsDownloadAndHistoryFromToolsAlone(t *testing.T) {
 	var cases struct {
 		Version string `json:"auditWireVersion"`
 		Cases   []struct {
-			Name, Evaluations, EvaluationsHex string
-			Statuses                          []string
+			Name, Evaluations, EvaluationsHex   string
+			Statuses                            []string
+			PackHistoryCount, GraphHistoryCount int
 		}
 	}
 	if err := json.Unmarshal(fixture, &cases); err != nil || cases.Version != audit.WireVersion {
@@ -203,6 +231,13 @@ func TestAuditWireContractRowsDownloadAndHistoryFromToolsAlone(t *testing.T) {
 				want := fileHistory(data, kind, "same")
 				if !reflect.DeepEqual(got, want) {
 					t.Fatalf("%s history differs: %#v %#v", kind, got, want)
+				}
+				expected := row.PackHistoryCount
+				if kind == "graph" {
+					expected = row.GraphHistoryCount
+				}
+				if len(got) != expected {
+					t.Fatalf("%s history has %d rows, authored expectation %d", kind, len(got), expected)
 				}
 			}
 		})
@@ -431,5 +466,63 @@ func TestAuditWireDecodedInputBoundsRefuseWhole(t *testing.T) {
 		if answer["isError"] != true || size > 1024 {
 			t.Fatal("supplied data limit not enforced", answer)
 		}
+	}
+}
+
+func TestAuditWireSerializedRefusalsInvalidateOnlyTheirExport(t *testing.T) {
+	for _, stage := range []string{"initial", "continuation", "final"} {
+		t.Run(stage, func(t *testing.T) {
+			dir := auditMCPProject(t)
+			line := []byte(`{"v":"` + strings.Repeat("<", audit.MaxWireRecord-9) + `"}` + "\n")
+			large := bytes.Repeat(line, 4)
+			evaluations, stamps := large, []byte{}
+			if stage == "final" {
+				evaluations, stamps = nil, large
+			}
+			for name, data := range map[string][]byte{audit.FileName: evaluations, audit.StampsName: stamps} {
+				if err := os.WriteFile(filepath.Join(dir, "audit", name), data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			server := NewServer(nil, nil)
+			unrelated := auditPageRPC(t, server, `{"page_bytes":1}`)
+			refusedCursor := ""
+			if stage != "initial" {
+				first := auditPageRPC(t, server, `{"page_bytes":1}`)
+				refusedCursor = first.NextCursor
+				if stage == "final" {
+					args, _ := json.Marshal(map[string]any{"cursor": refusedCursor, "page_bytes": 1})
+					second := auditPageRPC(t, server, string(args))
+					refusedCursor = second.NextCursor
+				}
+			}
+			attempts := 1
+			if stage == "initial" {
+				attempts = audit.MaxWireExports + 1
+			}
+			for range attempts {
+				args := map[string]any{"page_bytes": audit.MaxWirePage}
+				if refusedCursor != "" {
+					args["cursor"] = refusedCursor
+				}
+				encoded, _ := json.Marshal(args)
+				answer, size := auditRPC(t, server, auditListTool, string(encoded))
+				if answer["isError"] != true || !strings.Contains(toolText(t, answer), "4 MiB") || size > 1024 {
+					t.Fatal("expected finite whole-page refusal", answer)
+				}
+			}
+			if refusedCursor != "" {
+				args, _ := json.Marshal(map[string]any{"cursor": refusedCursor, "page_bytes": 1})
+				answer, _ := auditRPC(t, server, auditListTool, string(args))
+				if answer["isError"] != true || toolText(t, answer) != audit.ErrWireCursor.Error() {
+					t.Fatal("refused export remained resumable", answer)
+				}
+			}
+			// A separate accepted export must survive invalidation, and a new
+			// small-page export must start immediately without waiting for expiry.
+			args, _ := json.Marshal(map[string]any{"cursor": unrelated.NextCursor, "page_bytes": 1})
+			auditPageRPC(t, server, string(args))
+			auditPageRPC(t, server, `{"page_bytes":1}`)
+		})
 	}
 }

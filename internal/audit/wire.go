@@ -66,9 +66,10 @@ func (s *wireSnapshot) close() {
 	}
 }
 
-// openWireSnapshot retains the existing trail/sidecar between-writes size
-// capture. Stamps remain independently locked, as for CLI verification. When
-// evaluations is absent there is no trail lock and the result says so.
+// openWireSnapshot captures trail/sidecar sizes under the shared trail lock,
+// releases it, then captures stamps under that file's own shared lock. Locks
+// are never nested. The result flag describes only the trail/sidecar capture;
+// it remains false when evaluations is absent even if stamps was locked.
 func openWireSnapshot(source WireSource) (wireSnapshot, error) {
 	optional := func(open func() (*os.File, error)) func() (*os.File, error) {
 		return func() (*os.File, error) {
@@ -79,34 +80,49 @@ func openWireSnapshot(source WireSource) (wireSnapshot, error) {
 			return f, err
 		}
 	}
-	trail, err := source.Open[0]()
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return wireSnapshot{}, ErrWireRead
+	var snapshot wireSnapshot
+	failed := func() (wireSnapshot, error) { snapshot.close(); return wireSnapshot{}, ErrWireRead }
+	trail, err := optional(source.Open[0])()
+	if err != nil {
+		return failed()
 	}
 	if trail != nil {
 		trail.Close()
-		files, sizes, locked, err := fssecure.OpenSnapshot(source.Open[0], optional(source.Open[1]), optional(source.Open[2]))
+		files, sizes, locked, err := fssecure.OpenSnapshot(source.Open[0], optional(source.Open[1]))
 		if err != nil {
-			return wireSnapshot{}, ErrWireRead
+			return failed()
 		}
-		return wireSnapshot{files: [3]*os.File{files[0], files[1], files[2]}, sizes: [3]int64{sizes[0], sizes[1], sizes[2]}, locked: locked}, nil
-	}
-	var snapshot wireSnapshot
-	for i := 1; i < 3; i++ {
-		file, err := optional(source.Open[i])()
+		snapshot.files[0], snapshot.files[1] = files[0], files[1]
+		snapshot.sizes[0], snapshot.sizes[1], snapshot.locked = sizes[0], sizes[1], locked
+	} else {
+		// With no trail there is no lock that coordinates signatures; retain
+		// their guarded exact prefix without claiming between-writes capture.
+		sidecar, err := optional(source.Open[1])()
 		if err != nil {
-			snapshot.close()
-			return wireSnapshot{}, ErrWireRead
+			return failed()
 		}
-		snapshot.files[i] = file
-		if file != nil {
-			info, err := file.Stat()
+		snapshot.files[1] = sidecar
+		if sidecar != nil {
+			info, err := sidecar.Stat()
 			if err != nil {
-				snapshot.close()
-				return wireSnapshot{}, ErrWireRead
+				return failed()
 			}
-			snapshot.sizes[i] = info.Size()
+			snapshot.sizes[1] = info.Size()
 		}
+	}
+	stamps, err := optional(source.Open[2])()
+	if err != nil {
+		return failed()
+	}
+	if stamps != nil {
+		stamps.Close()
+		// OpenSnapshot reopens the guarded name under its shared lock and
+		// retries identity changes. The earlier probe only settled absence.
+		files, sizes, _, err := fssecure.OpenSnapshot(source.Open[2])
+		if err != nil {
+			return failed()
+		}
+		snapshot.files[2], snapshot.sizes[2] = files[0], sizes[0]
 	}
 	return snapshot, nil
 }
@@ -144,6 +160,16 @@ type Pager struct {
 
 func NewPager() *Pager {
 	return &Pager{exports: make(map[string]*wireExport), now: time.Now}
+}
+
+// Discard invalidates the whole export containing cursor. A transport calls
+// this when it cannot publish a bounded page, so an undisclosed continuation
+// cannot occupy a slot until expiry. Empty cursors and absent export IDs are harmless.
+func (p *Pager) Discard(cursor string) {
+	id, _, _ := strings.Cut(cursor, ".")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.exports, id)
 }
 
 // Page transports the captured prefixes in fixed file order. Initial hashing,

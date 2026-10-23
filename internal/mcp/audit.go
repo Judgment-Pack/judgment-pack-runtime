@@ -137,7 +137,15 @@ func (s *Server) toolListAudit(raw json.RawMessage) any {
 	if err != nil {
 		return toolError(err.Error())
 	}
-	return boundedAuditResult(page)
+	response := boundedAuditResult(page)
+	if response.(map[string]any)["isError"] == true {
+		// The rejected response cannot deliver its continuation. Invalidate
+		// the whole export, including final-page retry state, so the caller
+		// can immediately restart with a smaller raw-page size.
+		s.auditPager.Discard(page.NextCursor)
+		s.auditPager.Discard(cursor)
+	}
+	return response
 }
 
 func (s *Server) toolVerifyAudit(raw json.RawMessage) any {

@@ -44,6 +44,10 @@ Invalid UTF-8 and unpaired Unicode surrogate escapes are `malformed`, retaining
 raw bytes without emitting repaired or unsupported structured string values.
 Line state spans raw pages, so ordinary records crossing a byte boundary remain
 available to structured history. No record identity is deduplicated or filtered.
+Compatibility selection decodes the whole members object with Desk's typed
+`recordVersion` and nullable `pack.id`/`graph.id` fields, including Go's
+case-insensitive tag fallback and typed errors in an unrelated identity member.
+Raw members remain available independently of those client selection rules.
 
 Each export captures fixed sizes, file identities and 64 KiB block hashes. It
 streams one initial pass, reads and verifies each served block into one bounded
@@ -54,7 +58,10 @@ served blocks may be detected only at completion; intermediate pages are
 provisional, and clients must discard an export that never finishes successfully.
 This is integrity detection for retained prefixes, not an atomic transaction
 against noncooperating writers. The between-writes flag retains the existing
-cooperative trail/sidecar size-capture meaning; stamps use their independent lock.
+cooperative trail/sidecar size-capture meaning. Stamps size capture waits under
+its own shared lock after the trail lock is released, including with no
+evaluations file. Locks are not nested, and the flag remains trail-only. This
+read-side improvement changes no CLI audit behavior.
 
 A per-server pager serializes advancement, retains at most eight exports for
 five minutes, and keeps the latest answered cursor's response for idempotent
@@ -71,7 +78,10 @@ replacement behavior. Neither limitation changes exact downloads.
 A 4 MiB serialized MCP result
 limit counts the text and structured representations, base64 and JSON escaping;
 amplified results are refused whole and can be retried as a new export with a
-smaller raw-page size. The existing 16 MiB request-line limit also applies.
+smaller raw-page size. A serialization refusal invalidates and releases that
+whole export, including continuation/final-page retry state, without affecting
+other exports. An undisclosed continuation cannot occupy an active slot.
+The existing 16 MiB request-line limit also applies.
 
 Verification uses `audit.Verify` and `audit.ParseCheckpoints`, exactly as the CLI
 does. `expect` supplies checkpoint JSONL, bounded to 1 MiB;

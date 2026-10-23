@@ -676,7 +676,7 @@ The `auditWireVersion:"1"` report also carries the usual `outputVersion`,
 | `pendingLine` | A line has begun and a later page will finish it. Its structured result has not been omitted. |
 | `fileComplete` | This captured file prefix has been fully transported; the next page visits the next fixed file. Missing/empty files each have a zero-byte page. |
 | `complete`, `nextCursor` | Only `complete:true` with no cursor finishes the whole export after final integrity checks. Every provisional page carries a continuation. |
-| `snapshotBetweenWrites` | The initial trail/sidecar sizes were captured under the existing cooperative trail lock. False when no trail exists or locking is unsupported. Stamps retain their independent-lock semantics. This is not a claim of an atomic snapshot against arbitrary writers. |
+| `snapshotBetweenWrites` | The initial trail/sidecar sizes were captured under the existing cooperative trail lock. False when no trail exists or locking is unsupported. Stamps are captured separately under their own shared lock, after releasing the trail lock, even when evaluations is absent; this flag describes only the trail/sidecar capture. This is not a claim of an atomic snapshot against arbitrary writers. |
 
 A line result has `offset`, `bytes`, `digest` and `status`. The byte count and
 SHA-256 exclude only the LF delimiter: whitespace and a preceding CR remain
@@ -696,7 +696,16 @@ definition history directly from `members.recordVersion`, `members.pack.id` or
 and order/filter by offsets. They need not parse JSONL. Cross-page lines are
 reported exactly once when finished. For supported parsed lines, reproduce
 Desk's history selection with version `"1"`, the desired pack or graph identity,
-newest first, retaining duplicate identities. This is explicitly bounded history
+newest first, retaining duplicate identities. Faithful selection uses Desk's
+whole-object typed JSON decoding, rather than exact-key map lookups: Go matches
+the `recordVersion`, `pack`, `graph` and nested `id` tags with exact-name or
+case-insensitive fallback, including its ordinary null/duplicate-member behavior.
+Both optional identity objects must decode successfully, even if only the other
+kind is requested. For example, `{"RecordVersion":"1","pack":{"id":"same"}}`
+is selected for that pack, while
+`{"recordVersion":"1","pack":{"id":"same"},"graph":{"id":1}}` is omitted
+because the unrelated typed `graph.id` is malformed. The wire preserves every
+member; it does not filter by these history rules. This is explicitly bounded history
 parity: Desk's local reader has a 4 MiB read window, while this wire's decoded
 line limit is 64 KiB. A larger valid line can appear in local Desk history but
 has only raw downloadable bytes and `oversized` metadata here. Skipping it is
@@ -729,8 +738,11 @@ line and the last response per export, rather than full-file materialization.
 A page returns at most 128 line results and can therefore contain fewer raw
 bytes than requested. The complete serialized MCP tool result is limited to
 4 MiB, counting text/structured duplication, base64 and escaping. An amplified
-response is refused whole; discard that export and start a new one with smaller
-`page_bytes`. No refusal can claim a partially exported file is complete.
+response is refused whole. The server invalidates that export and releases its
+state, including on a rejected continuation/final page; the old cursor cannot
+resume. Start a new export with smaller `page_bytes`. Rejected responses retain
+no inaccessible active slots and do not invalidate other accepted exports.
+No refusal can claim a partially exported file is complete.
 
 ### Verification and checkpoint expectations
 
