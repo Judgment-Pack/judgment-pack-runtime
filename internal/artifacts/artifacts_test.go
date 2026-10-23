@@ -163,10 +163,83 @@ func TestEvaluationCorpusIsBundledOnlyWhereItIsPublished(t *testing.T) {
 			t.Fatal("a bundled corpus artifact must not be empty")
 		}
 	}
-	// A path the lock does not record is refused, so a corpus fixture cannot be
-	// read from outside the digest-locked set.
-	if _, err := newer.EvaluationPack("packs/../../schema.json"); err == nil {
-		t.Fatal("an unrecorded path must be refused")
+}
+
+// The path grammar rejects malformed manifest paths before joining them; the
+// lock independently rejects admissible names that are absent from the corpus.
+func TestEvaluationPackPathLayers(t *testing.T) {
+	set, err := Load(EvaluatorDraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		path    string
+		wantErr string
+	}{
+		{
+			name:    "grammar/missing-prefix",
+			path:    "schema.json",
+			wantErr: "not an evaluation-corpus pack path: schema.json",
+		},
+		{
+			name:    "grammar/empty-name",
+			path:    "packs/",
+			wantErr: "not an evaluation-corpus pack path: packs/",
+		},
+		{
+			name:    "grammar/nested-path",
+			path:    "packs/nested/a.json",
+			wantErr: "not an evaluation-corpus pack path: packs/nested/a.json",
+		},
+		{
+			name:    "grammar/traversal-to-locked-schema",
+			path:    "packs/../../schema.json",
+			wantErr: "not an evaluation-corpus pack path: packs/../../schema.json",
+		},
+		{
+			name:    "grammar/non-json-suffix",
+			path:    "packs/a.txt",
+			wantErr: "not an evaluation-corpus pack path: packs/a.txt",
+		},
+		{
+			name:    "grammar/leading-slash",
+			path:    "/packs/a.json",
+			wantErr: "not an evaluation-corpus pack path: /packs/a.json",
+		},
+		{
+			name:    "lock/uppercase-name",
+			path:    "packs/A.json",
+			wantErr: "artifact is not recorded in lock: evaluation/packs/A.json",
+		},
+		{
+			name:    "lock/dot-name",
+			path:    "packs/..json",
+			wantErr: "artifact is not recorded in lock: evaluation/packs/..json",
+		},
+		{
+			name: "accepted/known-corpus-pack",
+			path: "packs/data-request-intake-triage.json",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := set.EvaluationPack(tc.path)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(data) == 0 {
+					t.Fatal("a bundled corpus pack must not be empty")
+				}
+				return
+			}
+			if err == nil || err.Error() != tc.wantErr {
+				t.Errorf("EvaluationPack(%q) error = %v, want %q", tc.path, err, tc.wantErr)
+			}
+			if data != nil {
+				t.Errorf("EvaluationPack(%q) returned %d bytes for a rejected path", tc.path, len(data))
+			}
+		})
 	}
 }
 
