@@ -66,16 +66,18 @@ gitignored in this repository. Copy a snippet, don't commit one.
 | `experimental_test_graphs` | EXPERIMENTAL SURFACE (ADR-0026): run declared graph matrices, the same payload the graph project walk emits |
 | `experimental_list_graphs` / `experimental_get_graph` | EXPERIMENTAL SURFACE (ADR-0029): this project's configured graphs, by configured id — the graph siblings of `list_packs`/`get_pack`, read-only |
 
-None of these evaluate, decide, or authorize anything — `experimental_list_graphs` and
-`experimental_get_graph` carry the experimental marker for their surface's stability, not because
-they evaluate — except the five that reach the evaluator:
-`experimental_analyze_pack`, which rehearses a caller-declared finite domain for optional
-non-normative authoring advice (ADR-0068) without project reads or audit writes;
+For inputs under the recorded claim's version, all of these tools operate without
+evaluation except the four that reach the evaluator:
 `experimental_evaluate`, which evaluates one case; `experimental_test_packs` and
 `experimental_test_graphs`, which run declared instance and graph matrices respectively — each
 through the same evaluator and comparison its own CLI counterpart uses, `packs test` and the graph
 project walk; and `experimental_test_cases`, which runs a supplied matrix against supplied pack
 text through the evaluator and comparison `packs test` uses, and reads no project file (ADR-0036).
+A separate evaluator-using advisory tool, `experimental_analyze_pack`, rehearses
+only Core `0.3.0` base inputs over a declared finite domain for optional Draft
+RFC 0027 advice. Its scope is recorded separately in
+[CONFORMANCE.md](../CONFORMANCE.md#evaluator-using-advisory-surfaces-outside-the-claims-version-scope);
+it reads no project configuration and writes no audit record.
 The three matrix tools report
 each row's agreement or divergence with the derived coverage report (ADR-0014, ADR-0023)
 beside it, writing nothing, appending no audit record, and consulting no reviewed set, because a

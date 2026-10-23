@@ -24,12 +24,12 @@ published Core release tag. Core `0.3.0` support is base-only. Runtime discovery
 `supportedProfiles: ["base"]` scoped to the Core `0.3.0` evaluator entry. This says
 nothing about Policy or Dialect profile support.
 
-One shared evaluator applies the specification's §§7–8 resolution model per
-[ADR-0007](docs/adr/0007-experimental-evaluator.md), and twelve surfaces reach it: `jpack experimental
+For the version covered by the claim in [CONFORMANCE.md](CONFORMANCE.md), one shared
+evaluator applies the specification's §§7–8 resolution model per
+[ADR-0007](docs/adr/0007-experimental-evaluator.md), and ten surfaces reach it: `jpack experimental
 evaluate` and `evaluate-corpus`, the project walk `jpack packs test`, the graph verbs
 `jpack experimental graph evaluate` and `graph test`, the version comparison
-`jpack experimental compare`, the finite-domain authoring analyzer
-`jpack experimental analyze-pack`, and the `experimental_analyze_pack`, `experimental_evaluate`,
+`jpack experimental compare`, and the `experimental_evaluate`,
 `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools. The `experimental` namespace is a **stability**
 statement: such a surface may change or be removed without compatibility promise. It is not a statement
 about conformance. That evaluator implements the evaluator conformance class Core `0.2.0-draft` adds —
@@ -1281,6 +1281,12 @@ interoperability, approval, current authority or permission.
 
 ## Experimental finite-domain pack-design advice
 
+The two evaluator-using advisory surfaces outside that version claim are
+`jpack experimental analyze-pack` and `experimental_analyze_pack`. They evaluate
+only Core `0.3.0` base inputs for optional authoring advice. Their inventory is
+guarded separately from the ten surfaces serving inputs under the recorded claim
+and from static fact advice, which does not evaluate conditions.
+
 `jpack experimental analyze-pack pack.json --domain domain.json` returns optional
 Draft RFC 0027 advice for actual Core `0.3.0` base packs. The domain is supplied
 explicitly, for example:
@@ -1327,7 +1333,8 @@ failure after admission and a domain echo too large for a minimal bounded report
 refuse analysis. MCP has the same report/refusal objects.
 
 This read-only experimental authoring surface writes no audit record, changes no
-admission, verdict, default, strict-validation or publication behavior, and adds
-no conformance claim. The report contract remains a Draft proposal; see
+admission, verdict, default, strict-validation or publication behavior. This
+runtime's conformance claim and its version scope are stated, in full and only,
+in [CONFORMANCE.md](CONFORMANCE.md). The report contract remains a Draft proposal; see
 [ADR-0068](docs/adr/0068-finite-domain-pack-design-advice.md) for proof scope,
 limits and the pinned proposal source.
