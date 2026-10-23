@@ -1,0 +1,31 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/benchmarks/synthetic-triage",
+  "version": "1.0.0",
+  "title": "Synthetic bulk evaluation triage",
+  "description": "Handwritten fictional request routing fixture; no customer data or operational authority.",
+  "decision": {"intent": "Route a fictional request by its assessed intake category.", "question": "Which intake queue receives this request?"},
+  "applicability": {"op": "fact", "path": "/synthetic", "operator": "equals", "value": true},
+  "outcomes": [
+    {"id": "proceed", "label": "Proceed"},
+    {"id": "clarify", "label": "Clarify"},
+    {"id": "decline", "label": "Decline"},
+    {"id": "specialist", "label": "Specialist review"}
+  ],
+  "rules": [
+    {"id": "complete", "description": "Accept complete intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "complete"}, "outcome": "proceed", "onUnknown": "escalate", "rationale": "Complete intake can proceed."},
+    {"id": "approved", "description": "Accept approved intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "approved"}, "outcome": "proceed", "onUnknown": "escalate", "rationale": "Approved intake can proceed."},
+    {"id": "routine", "description": "Accept routine intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "routine"}, "outcome": "proceed", "onUnknown": "escalate", "rationale": "Routine intake can proceed."},
+    {"id": "incomplete", "description": "Return incomplete intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "incomplete"}, "outcome": "clarify", "onUnknown": "escalate", "rationale": "Incomplete intake needs clarification."},
+    {"id": "ambiguous", "description": "Return ambiguous intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "ambiguous"}, "outcome": "clarify", "onUnknown": "escalate", "rationale": "Ambiguous intake needs clarification."},
+    {"id": "pending", "description": "Return pending intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "pending"}, "outcome": "clarify", "onUnknown": "escalate", "rationale": "Pending intake needs clarification."},
+    {"id": "unauthorized", "description": "Decline unauthorized intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "unauthorized"}, "outcome": "decline", "onUnknown": "escalate", "rationale": "Unauthorized intake is declined."},
+    {"id": "duplicate", "description": "Decline duplicate intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "duplicate"}, "outcome": "decline", "onUnknown": "escalate", "rationale": "Duplicate intake is declined."},
+    {"id": "out-of-scope", "description": "Decline out of scope intake.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "out-of-scope"}, "outcome": "decline", "onUnknown": "escalate", "rationale": "Out of scope intake is declined."},
+    {"id": "sensitive", "description": "Route sensitive intake to a specialist.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "sensitive"}, "outcome": "specialist", "onUnknown": "escalate", "rationale": "Sensitive intake needs a specialist."},
+    {"id": "novel", "description": "Route novel intake to a specialist.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "novel"}, "outcome": "specialist", "onUnknown": "escalate", "rationale": "Novel intake needs a specialist."},
+    {"id": "cross-border", "description": "Route cross border intake to a specialist.", "when": {"op": "fact", "path": "/category", "operator": "equals", "value": "cross-border"}, "outcome": "specialist", "onUnknown": "escalate", "rationale": "Cross border intake needs a specialist."}
+  ],
+  "fallbackOutcome": "clarify",
+  "escalation": {"triggers": ["not-applicable", "unknown", "conflict", "no-match"], "target": {"kind": "human-role", "name": "Synthetic intake reviewer"}}
+}
