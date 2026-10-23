@@ -165,6 +165,13 @@ claim — see [`CONFORMANCE.md`](../CONFORMANCE.md).
 
 ## Packages
 
+Completed pack evaluations derive a complete typed `contributors` list from the final
+outcome and its walk trace, outside the portable disposition
+([ADR-0067](adr/0067-complete-outcome-contributors.md)). CLI/MCP evaluation JSON, graph
+nodes and audit evaluation records retain this metadata. Attribution sorts by kind then
+exact ID while the trace preserves document order; fallback and non-outcome results carry
+none. Graph aggregates and disposition comparison summaries do not synthesize attribution.
+
 - `internal/carrier` performs bounded strict JSON decoding and JSON Pointer tracking.
 - `internal/artifacts` embeds exact files and verifies their lock before use.
 - `internal/validation` compiles offline schemas and performs semantic checks.
