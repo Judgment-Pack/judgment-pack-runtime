@@ -25,6 +25,7 @@
   {"uri":"urn:test:%5Bx%5d","valid":true},
   {"uri":"urn:test:%C3%A9","valid":true},
   {"uri":"https://example.invalid/a%5Bb%5D?b=%5Bc%5D#d%5Be%5D","valid":true},
+  {"uri":"https://example.invalid/?q=%5d","valid":true},
   {"uri":"foo:/a//b/./../:@!$&'()*+,;=~_-","valid":true},
   {"uri":"https://example.invalid/a?x=/a?b#c/d?e","valid":true},
   {"uri":"foo:?#","valid":true},
