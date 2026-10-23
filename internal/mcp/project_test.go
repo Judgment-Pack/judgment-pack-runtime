@@ -952,6 +952,54 @@ func TestExperimentalTestPacksWithNoConfigurationIsAToolError(t *testing.T) {
 	}
 }
 
+// Each deciding tool that calls project.Present in tools.go must send a
+// present-but-unloadable configuration to the loader. A directory needs no
+// platform exception: the loader requires a bounded regular file.
+func TestDecidingProjectToolsRefusePresentButUnloadableConfiguration(t *testing.T) {
+	pack, err := os.ReadFile(filepath.Join("..", "evaluation", "testdata", "data-request-intake-triage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluateArgs := map[string]any{"pack": string(pack), "facts": projectFacts}
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+	}{
+		{name: "experimental_test_packs"},
+		{name: "experimental_test_graphs"},
+		{name: "experimental_evaluate", args: evaluateArgs},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), project.DefaultConfigName)
+			if err := os.Mkdir(configPath, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(project.ConfigEnv, configPath)
+			outcome := runServer(t, toolCall(t, 1, tc.name, tc.args))[0]["result"].(map[string]any)
+			if outcome["isError"] != true {
+				t.Fatalf("%s must refuse an unloadable configuration: %#v", tc.name, outcome)
+			}
+			text := toolText(t, outcome)
+			if !strings.Contains(text, "No project configuration could be read as one bounded regular file") {
+				t.Errorf("%s must carry the loader's refusal: %q", tc.name, text)
+			}
+			if strings.Contains(text, "No project configuration was found") {
+				t.Errorf("%s must not describe a present configuration as absent: %q", tc.name, text)
+			}
+		})
+	}
+
+	// Attribute the refusal to the configuration's file type: the same inline
+	// pack and facts do evaluate when no configuration is present.
+	t.Run("absent_configuration_allows_inline_evaluation", func(t *testing.T) {
+		t.Setenv(project.ConfigEnv, filepath.Join(t.TempDir(), project.DefaultConfigName))
+		outcome := runServer(t, toolCall(t, 1, "experimental_evaluate", evaluateArgs))[0]["result"].(map[string]any)
+		if outcome["isError"] != false {
+			t.Fatalf("the inline pack and facts must evaluate without a configuration: %#v", outcome)
+		}
+	})
+}
+
 // A matrix run is a rehearsal, not a decision: in a project that declares an
 // audit directory, experimental_test_packs appends nothing at all (ADR-0018,
 // ADR-0021), where the same project's experimental_evaluate would append one
@@ -1491,6 +1539,9 @@ func TestExperimentalTestGraphsWithNoConfigurationIsAToolError(t *testing.T) {
 	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
 	if outcome["isError"] != true {
 		t.Fatalf("no configuration is a tool error, not a skipped suite: %#v", outcome)
+	}
+	if text := toolText(t, outcome); !strings.Contains(text, "No project configuration was found") {
+		t.Fatalf("the refusal must say where the runtime looked: %q", text)
 	}
 }
 
