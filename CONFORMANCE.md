@@ -167,11 +167,15 @@ The implemented Core `0.3.0` reader/evaluator supports only `base`; the optional
 `extended` profile is refused as `profile-unsupported` before schema interpretation.
 
 The unchanged document manifest has 156 entries: 151 normative document assertions
-pass in normal and strict mode, and five optional `expectedAdvisories` rows are
-explicitly skipped/not checked. A local advisory-only suite is refused as
-`JPS-SUITE-NO-CHECKS` before execution, rather than returning a zero-check success.
-Rule-overlap advice remains outside this work
-([#304](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/304)).
+pass in normal and strict mode, and five optional `expectedAdvisories` assertions
+match in both modes. Plain mode passes 156/156 rows. Strict mode passes 155/156:
+the authored exact-overlap row is rejected by the recommended authoring gate,
+while its normative `actualStatus` remains `valid`. This is not a normative
+conformance failure. Optional coverage is reported separately in `advisories`
+and `advisoryStatus`; advisory-only suites now perform supported assertions.
+The frozen advisory rule-object pointers are adapted to Runtime `when` pointers
+for comparison only; frozen artifacts are unchanged. See
+[ADR-0066](docs/adr/0066-bounded-rule-overlap-advice.md).
 The separately named evaluation corpus contains 20 rows; all 20 match under the
 explicit Core `0.3.0` contract. Supplemental profile, route, precedence, decoder,
 and downstream integration vectors are separate evidence and do not add corpus rows.
@@ -179,13 +183,16 @@ These results are implementation evidence, not an exhaustive check of the versio
 requirements.
 
 A new Core `0.3.0` evaluator-conformance claim is deferred until complete integration
-and required review settle it. In particular, the existing Core URI grammar defect
-([#297](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/297)) also applies
-to the shared Core `0.3.0` validator: the character allowlist and URL parser do not
-fully enforce RFC 3986 component grammar. Passing the indexed corpus does not resolve
-that defect. Its compatibility change is separate work; this preparation preserves
-the existing URI behavior. This section makes no partial or qualified conformance
-claim. The recorded `0.2.0-draft` claim above remains as recorded.
+and required review settle it. The shared Core URI grammar correction
+([#297](https://github.com/Judgment-Pack/judgment-pack-runtime/issues/297),
+[ADR-0064](docs/adr/0064-share-uri-component-grammar.md)) replaces the former
+character allowlist/URL parser with complete ASCII RFC 3986 component grammar
+for ordinary Core validation and evaluator admission. Authored URI fixtures,
+repaired-reference agreement and entry-point tests are scoped implementation
+evidence; fixing that defect alone does not establish the complete evaluator
+claim. Historical prototype Policy compatibility remains explicitly scoped.
+This section makes no partial or qualified conformance claim. The recorded
+`0.2.0-draft` claim above remains as recorded.
 
 ## Corroboration, which is not the claim's basis
 
@@ -204,3 +211,21 @@ makes a divergence as likely to be a defect in the row as in the implementation,
 project-issued erratum can mark a row defective. Report the divergence to the specification project
 and to this repository. Until an erratum exists, the correct outcome is a fixed implementation or a
 withdrawn claim — edited here, in this file — and never a self-issued exclusion.
+
+## Runtime-specific audit wire contract evidence
+
+The following are experimental Runtime convention checks for issue #308 and
+[ADR-0065](docs/adr/0065-read-audit-trails-over-mcp.md). They are outside JPS Core
+and add no validator/evaluator conformance claim, signed format, cryptographic
+coverage or independently authored interoperability assertion.
+
+| Runtime contract row | Evidence | Scope |
+| --- | --- | --- |
+| Exact evaluations/signatures/stamps export | `internal/mcp/testdata/audit-wire-cases.json`, `TestAuditWireContractRowsDownloadAndHistoryFromToolsAlone` | All three downloads reconstruct byte for byte, including CR/whitespace, malformed UTF-8/JSON and incomplete tails |
+| Advisory raw-listing members | Same contract rows; `TestAuditWirePreservesBytesAndCrossPageMembers` | Full parsed members for supported lines up to 64 KiB, exact raw-line bytes and SHA-256 excluding only LF across byte boundaries; larger/malformed-Unicode lines remain raw-downloadable and server-side history handles their Desk selection separately |
+| Verification and held checkpoint parity | `TestAuditWireFullVerifyReportMatchesCLIExpectAndTrail` | Full CLI report with configured/supplied trails, held/multiple/mismatched expectations, required coverage, malformed bindings and incomplete tails; source labels and file-lock metadata remain explicit |
+| Bounded, contained read authority | `TestAuditToolsStrictStandaloneAndTransportArguments`, `TestAuditToolsProjectAuthorityAndFileGuards`, `TestAuditWireSerializedResponseBudgetIncludesBothRepresentations` | Strict bounded inputs/results, configured project, containment, final-symlink/regular-file guards, finite nondisclosing refusals |
+| Provisional export and cursor integrity | `TestAuditWireChangedFilesNeverComplete`, `TestAuditWireAppendExclusionAndCursorRetries`, `TestAuditWireCapacityExpiryLimitsAndConcurrentRetry` | Append exclusion, replacement/truncation/mutation refusal before completion, idempotent latest retry, bounded expiry/capacity and concurrent advancement |
+| Independent stamps and refusal recovery | `TestAuditWireStampsWaitForIndependentWriterLock`, `TestAuditWireSerializedRefusalsInvalidateOnlyTheirExport` | Stamps wait for their cooperating writer with/without evaluations; trail-only lock flag remains honest; initial/continuation/final serialized refusals release only their export and allow smaller-page restart |
+| Server-selected definition history | `internal/mcp/testdata/audit-history-cases.json`, `TestAuditHistoryToolsOnlyHandAuthoredRows`, `TestAuditHistoryExactDeskWindowAndUnicode`, `TestAuditHistoryFiftyNextAndWindowRefusals` | Exact Desk-shaped result within 64 MiB sources/4 MiB windows, including newest 50, unread/next, boundary/repeated-next behavior, typed/case/duplicate/Unicode decoding and exact raw-line strings/digests; consumers decode one projected JSON document, never retained JSONL |
+| Bounded history transport/state | `TestAuditHistoryProjectionEscapeAndMetadataBounds`, `TestAuditHistorySharedCapacityCursorKindsAndSnapshot`, `TestAuditHistoryLargeProjectionAppendAndBefore`, `TestAuditHistoryNoTrailAndRejectedResponseCleanup` | Escape-max 8 MiB plus 64 KiB projection, unchanged response cap, shared eight-slot/five-minute state, cross-kind cursor refusal, source/authority snapshot semantics and refusal cleanup |

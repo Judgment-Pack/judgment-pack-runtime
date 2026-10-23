@@ -1,4 +1,6 @@
-package policy
+// Package uriformat implements the ASCII URI production of RFC 3986 Appendix A.
+// It checks syntax only and never normalizes or resolves an identifier.
+package uriformat
 
 import (
 	"errors"
@@ -6,22 +8,22 @@ import (
 	"strings"
 )
 
-// Candidate URI assertions follow the components in RFC 3986 Appendix A,
+// Validate asserts the components in RFC 3986 Appendix A,
 // https://www.rfc-editor.org/rfc/rfc3986#appendix-A. This is generic URI syntax,
 // with no scheme-specific network, DNS, port-range or publication semantics.
-// Core/prototype schemas retain their existing URI predicate.
-func validateCandidateURI(value any) error {
+func Validate(value any) error {
 	uri, ok := value.(string)
 	if !ok {
 		return nil
 	}
-	if !candidateURI(uri) {
-		return errors.New("URI does not satisfy the candidate URI format assertion")
+	if !Valid(uri) {
+		return errors.New("URI does not satisfy RFC 3986 component grammar")
 	}
 	return nil
 }
 
-func candidateURI(uri string) bool {
+// Valid reports whether uri is a complete absolute RFC 3986 URI.
+func Valid(uri string) bool {
 	scheme, rest, found := strings.Cut(uri, ":")
 	if !found || scheme == "" || !uriAlpha(scheme[0]) {
 		return false
@@ -106,7 +108,7 @@ func uriIPLiteral(literal string) bool {
 		}
 		return uriComponent(address, ":", false)
 	}
-	// Scoped addresses are a later extension, outside the candidate's exact
+	// Scoped addresses are a later extension, outside the exact
 	// RFC 3986 assertion; a plain IPv4 address cannot occupy IP-literal.
 	address, err := netip.ParseAddr(literal)
 	return err == nil && address.Is6() && address.Zone() == ""
