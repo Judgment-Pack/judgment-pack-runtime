@@ -10,6 +10,10 @@ All notable changes to tagged releases are documented here.
   exact overlap while preserving normative document status. Cross-path uncertainty
   stays a warning. Check the frozen optional expectations with explicit advisory
   coverage, bounded reasoning and complete-diagnostic output limits.
+  Generated full-pack replacements and witnesses are checked against configured
+  carrier limits before publication; pointer-derived witness storage is bounded
+  before allocation. `rewriteUnavailable` identifies replacements that cannot be
+  supplied within the limits, and unsupported witnesses do not establish exactness.
 
 - Prepare explicit Core `0.3.0` base-profile validation and evaluation from immutable
   Spec commit `65c7cf5598a0f0fc532c80a9e2215090951104ce` (ADR-0063). Preserve legacy

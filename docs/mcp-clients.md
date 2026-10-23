@@ -633,7 +633,11 @@ portable dispositions. The conformance runner checks optional rule-overlap expec
 `advisoryStatus` and separate `advisories` totals; its aggregate summary counts
 all checked manifest rows. Advisory-only suites are supported. MCP `validate`
 returns Core `0.3.0` overlap advice as warnings with rule identities, exact region
-or witness where decidable, and a pasteable `suggestedRewrite: {ruleId, when}`.
+or witness where decidable, and a pasteable `suggestedRewrite: {ruleId, when}`
+when the complete rewritten pack fits the configured carrier and generation
+limits. Otherwise `rewriteUnavailable` carries a reason and `suggestedRewrite`
+is omitted. Generated facts must fit those carrier limits too; without an
+admissible witness or supported exact region, certainty stays `not-excluded`.
 The diagnostic pointer is `/rules/<index>/when`; document status remains valid.
 Independent paths or bounded-analysis uncertainty report `not-excluded`. The CLI
 strict authoring gate rejects exact overlap while retaining normative document

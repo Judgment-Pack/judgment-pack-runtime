@@ -60,12 +60,13 @@ type Diagnostic struct {
 
 // OverlapAdvice is optional so ordinary diagnostics retain comparable value identity.
 type OverlapAdvice struct {
-	Certainty        string          `json:"certainty,omitempty"`
-	Rules            []OverlapRule   `json:"rules,omitempty"`
-	Overlap          *OverlapRegion  `json:"overlap,omitempty"`
-	WitnessFacts     json.RawMessage `json:"witnessFacts,omitempty"`
-	Effect           string          `json:"effect,omitempty"`
-	SuggestedRewrite *OverlapRewrite `json:"suggestedRewrite,omitempty"`
+	Certainty          string          `json:"certainty,omitempty"`
+	Rules              []OverlapRule   `json:"rules,omitempty"`
+	Overlap            *OverlapRegion  `json:"overlap,omitempty"`
+	WitnessFacts       json.RawMessage `json:"witnessFacts,omitempty"`
+	Effect             string          `json:"effect,omitempty"`
+	SuggestedRewrite   *OverlapRewrite `json:"suggestedRewrite,omitempty"`
+	RewriteUnavailable string          `json:"rewriteUnavailable,omitempty"`
 }
 
 // Overlap fields carry non-normative Core §3.3.1 authoring advice.

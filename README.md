@@ -301,8 +301,12 @@ Standard input is accepted explicitly with `-`:
 Core `0.3.0` semantic validation also reports recommended `JPS-RULES-OVERLAP`
 warnings for pairs naming different outcomes. The diagnostic points at
 `/rules/<index>/when`, identifies both rules/outcomes, includes an exact region
-or witness when decidable, and supplies `suggestedRewrite: {ruleId, when}`.
-Ascending bands use `all` of the lower comparison and an exclusive upper bound;
+or witness when decidable, and supplies `suggestedRewrite: {ruleId, when}` when
+the complete rewritten pack fits the applicable carrier and generation limits.
+Otherwise `rewriteUnavailable` explains why no pasteable replacement is supplied.
+Generated facts are checked against the same carrier limits before publication;
+if no admissible witness or supported exact region is available, certainty stays
+`not-excluded`. Ascending bands use `all` of the lower comparison and an exclusive upper bound;
 other pairs use `all` of the first condition and `not` of the second. Missing or
 incomparable facts preserve `unknown`, including under `not`. Plain validation
 still passes. Same-outcome pairs are silent. Analysis limits or independent paths

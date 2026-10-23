@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
@@ -89,6 +90,10 @@ func overlapDNF(node map[string]any, truth bool, budget *overlapBudget) overlapF
 }
 
 func ruleOverlapDiagnostics(root map[string]any) ([]result.Diagnostic, bool) {
+	return ruleOverlapDiagnosticsWithLimits(root, carrier.DefaultLimits())
+}
+
+func ruleOverlapDiagnosticsWithLimits(root map[string]any, limits carrier.Limits) ([]result.Diagnostic, bool) {
 	collector := newDiagnosticCollector()
 	budget := &overlapBudget{overlapWorkLimit}
 	remainingOutput := overlapOutputLimit
@@ -120,14 +125,25 @@ func ruleOverlapDiagnostics(root map[string]any) ([]result.Diagnostic, bool) {
 			d.Certainty = "not-excluded"
 			d.Rules = []result.OverlapRule{{ID: stringValue(a["id"]), Outcome: stringValue(a["outcome"])}, {ID: stringValue(b["id"]), Outcome: stringValue(b["outcome"])}}
 			d.Effect = "Core §8 records conflict; the disposition is unresolved."
-			d.SuggestedRewrite = exclusiveRewrite(a, b)
 			if exact {
-				d.Certainty = "exact"
-				d.WitnessFacts, _ = json.Marshal(overlapFacts(path, witness))
 				d.Overlap = simpleOverlap(a, b)
+				if facts, ok := boundedOverlapFacts(path, witness, limits, budget); ok {
+					d.WitnessFacts = facts
+				}
+				if len(d.WitnessFacts) > 0 || d.Overlap != nil {
+					d.Certainty = "exact"
+				}
 			}
-			rewrite, _ := json.Marshal(d.SuggestedRewrite)
-			d.Message = fmt.Sprintf("Rules %q (%s) and %q (%s): overlap %s. %s Suggested exclusive rewrite: %s", a["id"], a["outcome"], b["id"], b["outcome"], d.Certainty, d.Effect, rewrite)
+			d.SuggestedRewrite = boundedExclusiveRewrite(root, exclusiveRewrite(a, b), limits, budget)
+			suggestion := ""
+			if d.SuggestedRewrite != nil {
+				rewrite, _ := json.Marshal(d.SuggestedRewrite)
+				suggestion = "Suggested exclusive rewrite: " + string(rewrite)
+			} else {
+				d.RewriteUnavailable = overlapRewriteUnavailable
+				suggestion = "Exclusive rewrite unavailable: " + d.RewriteUnavailable
+			}
+			d.Message = fmt.Sprintf("Rules %q (%s) and %q (%s): overlap %s. %s %s", a["id"], a["outcome"], b["id"], b["outcome"], d.Certainty, d.Effect, suggestion)
 			encoded, _ := json.Marshal(d)
 			remainingOutput -= len(encoded)
 			if remainingOutput < 0 {
@@ -416,18 +432,6 @@ func overlapKey(v any) string {
 		b, _ := json.Marshal(v)
 		return "v:" + string(b)
 	}
-}
-
-func overlapFacts(path string, value any) any {
-	if path == "" {
-		return value
-	}
-	tokens := strings.Split(path[1:], "/")
-	for i := len(tokens) - 1; i >= 0; i-- {
-		token := strings.ReplaceAll(strings.ReplaceAll(tokens[i], "~1", "/"), "~0", "~")
-		value = map[string]any{token: value}
-	}
-	return value
 }
 
 func exclusiveRewrite(a, b map[string]any) *result.OverlapRewrite {
