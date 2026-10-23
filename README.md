@@ -595,6 +595,17 @@ record also carries `typeMismatches` and `unknownCauses`, gathered from the trac
 and causes, never values (ADR-0046). A graph run's node records carry their own node's notes, and
 the composite carries none. A record with nothing to note is byte for byte what it was.
 
+Evaluation JSON from the CLI and MCP also carries `contributors` when rules or forcing
+exceptions supplied its final outcome ([ADR-0067](docs/adr/0067-complete-outcome-contributors.md)).
+Every actual contributor is retained as `{"kind":"rule","id":"local-id"}` or
+`{"kind":"forcing-exception","id":"local-id"}`, sorted by kind then exact ID.
+Agreeing rules all receive credit; compatible forcing exceptions all receive credit while
+normal rules are skipped. Fallback, not-applicable, unresolved and failed evaluations carry
+no contributor metadata. Graph nodes and audit evaluation records retain their own pack's
+list; a graph aggregate carries none. The disposition stays in its closed Core form,
+and the trace keeps document order. Existing records without this member retain their
+original bytes and do not establish complete attribution.
+
 **The trail is chained** ([ADR-0047](docs/adr/0047-make-a-decision-record-defensible.md) §1). Each
 record also carries `trail` (the trail's identity, 128 random bits in hex), `sequence` (its line
 number, from 1) and `previous` (the SHA-256 of the exact bytes of the line before it, without its

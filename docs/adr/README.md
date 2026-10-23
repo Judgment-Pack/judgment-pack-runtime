@@ -162,4 +162,5 @@ authority, and following it confers no conformance status on anything.
 | [0064](0064-share-uri-component-grammar.md) | Share RFC 3986 URI grammar while preserving prototype Policy compatibility | accepted; partially supersedes [0060](0060-explicit-policy-candidate-format.md)'s candidate-only corrected URI scope |
 | [0065](0065-read-audit-trails-over-mcp.md) | Read exact configured audit bytes and structured history with bounded MCP tools | accepted |
 | [0066](0066-bounded-rule-overlap-advice.md) | Report bounded rule-overlap advice without changing document conformance | accepted |
+| [0067](0067-complete-outcome-contributors.md) | Retain every actual outcome contributor outside the disposition | accepted |
 | [0068](0068-finite-domain-pack-design-advice.md) | Rehearse an explicit finite domain for optional pack-design advice | accepted |
