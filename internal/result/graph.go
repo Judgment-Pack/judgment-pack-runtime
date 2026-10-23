@@ -47,9 +47,9 @@ type GraphEvidenceFeed struct {
 // GraphNodeEvaluation is one node's evaluation inside a graph run: the graph's
 // node id, the project decision id it names, the evaluated pack's own identity
 // echoes, the feeds that arrived over in-edges, and the same disposition,
-// handoff target, and trace a standalone evaluation reports. Nothing is
-// summarized away: the composite is these results side by side, not a
-// replacement for them.
+// handoff target, contributors, and trace a standalone evaluation reports.
+// Nothing is summarized away: the composite is these results side by side,
+// not a replacement for them.
 type GraphNodeEvaluation struct {
 	Node        string `json:"node"`
 	Pack        string `json:"pack"`
@@ -63,6 +63,7 @@ type GraphNodeEvaluation struct {
 	Disposition   Disposition         `json:"disposition"`
 	HandoffTarget *HandoffTarget      `json:"handoffTarget,omitempty"`
 	UnmetEvidence []UnmetEvidence     `json:"unmetEvidence,omitempty"`
+	Contributors  []Contributor       `json:"contributors,omitempty"`
 	Trace         []TraceEntry        `json:"trace"`
 }
 

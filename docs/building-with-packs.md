@@ -797,6 +797,36 @@ convention" is not the same fact as "ran on unreviewed law". There is no "declar
 value: a deciding surface refuses such a run before it evaluates, so `reviewed: true` is a claim
 about what actually ran rather than a label.
 
+When rules or forcing exceptions supplied the final outcome, the evaluation JSON and its
+audit line carry the complete `contributors` list
+([ADR-0067](adr/0067-complete-outcome-contributors.md)). Each member is exactly
+`{"kind":"rule","id":"local-id"}` or `{"kind":"forcing-exception","id":"local-id"}`.
+IDs are copied exactly from the pack, without truncation or normalization. Members sort by
+kind then Unicode code-point ID; agreeing rules all count, and compatible forcing exceptions
+all count. The list has one kind because a forced outcome skips normal rules. False, unknown,
+suppressed, skipped and escalating entries do not receive credit. Neither do candidates
+discarded by a conflict, missing evidence, or a draft outcome value that cannot resolve.
+Fallback, not-applicable and unresolved results omit the member; failed evaluations produce
+no evaluation record. The list length is its contributor count, with no representative chosen.
+
+This metadata stays outside the closed Core disposition and leaves its canonical bytes and
+the document-ordered trace unchanged. Each graph node and node audit record carries its own
+pack's list. Graph headlines, composite audit records, matrix/corpus summaries and pack
+comparison reports do not aggregate or assert complete contributor evidence. CLI human output
+continues to show the trace; CLI JSON and both MCP serializations retain the list. Existing
+Core `0.3.0` graph report byte limits count the added node metadata, so a report near that
+limit may now be refused; no list is truncated. Existing admission, work and audit-line limits
+also remain in force. The [unreleased workflow attribution proposal](https://github.com/Judgment-Pack/judgment-pack-spec/blob/84c5b5db8a2eb0f38e000a66375bebbb6f3d6157/rfcs/0028-complete-workflow-contributors.md)
+gives downstream model-2 envelopes their own 4096-member and
+65536-byte ceilings and must refuse oversized output; this Runtime metadata does not assert
+that every evaluation fits those envelopes or implement workflow execution version 3.
+
+Old audit bytes are retained exactly. An older record without this member does not establish
+complete attribution: do not treat an absent list or a historical singular representative as
+a complete set. Replaying retained pack and input evidence is a separate operation. The new
+member is covered by the audit chain and record signature like the rest of the line; those
+commitments do not independently prove that a condition was true or the list complete.
+
 Where the evaluation's trace noted something about the inputs, the line says so too (ADR-0046).
 `typeMismatches` lists each `equals`, `not-equals` or `in` comparison the walk evaluated whose fact
 had a JSON type no operand had. `unknownCauses` lists each cause of an unknown: an absent pointer, a

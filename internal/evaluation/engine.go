@@ -279,6 +279,7 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 		Disposition:               disposition,
 		HandoffTarget:             target,
 		UnmetEvidence:             walk.unmetEvidence,
+		Contributors:              outcomeContributors(disposition, trace),
 		Trace:                     trace,
 	}
 	if options.RFC0008Quantifiers {

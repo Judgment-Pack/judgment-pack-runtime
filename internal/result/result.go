@@ -886,8 +886,19 @@ type Evaluation struct {
 	Disposition               Disposition     `json:"disposition"`
 	HandoffTarget             *HandoffTarget  `json:"handoffTarget,omitempty"`
 	UnmetEvidence             []UnmetEvidence `json:"unmetEvidence,omitempty"`
+	Contributors              []Contributor   `json:"contributors,omitempty"`
 	Trace                     []TraceEntry    `json:"trace"`
 	Artifact                  *Artifact       `json:"artifact,omitempty"`
+}
+
+// Contributor identifies a rule or forcing exception that actually supplied the
+// final outcome. Contributors are complete, sorted by kind then code-point ID,
+// and absent for fallback and non-outcome results. IDs are exact pack localIds;
+// the kind distinguishes the rule and exception namespaces. This is informative
+// evaluation metadata, outside the closed Core disposition (ADR-0067).
+type Contributor struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
 }
 
 // ReviewedSet names the revision of a project's reviewed set (ADR-0019) that

@@ -4,6 +4,11 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Retain every actual contributing rule or forcing exception in optional
+  `contributors` metadata on evaluation JSON, graph nodes and audit evaluation
+  records (ADR-0067). Sort exact typed IDs canonically; omit the member for
+  fallback and non-outcome results. Dispositions, resolution and trace order
+  retain their existing contracts. Historical audit bytes remain unchanged.
 - Prepare explicit Core `0.3.0` base-profile validation and evaluation from immutable
   Spec commit `65c7cf5598a0f0fc532c80a9e2215090951104ce` (ADR-0063). Preserve legacy
   defaults and bundle bytes. Discovery separates document versions from exact evaluator
