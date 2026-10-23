@@ -44,6 +44,7 @@ import (
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
+		auditListDefinition(), auditVerifyDefinition(), auditHistoryDefinition(),
 		artifactVersionDefinition(),
 		policyDefinition("contract"), policyDefinition("init"), policyDefinition("schema"), policyDefinition("canonicalize"), policyDefinition("digest"), policyDefinition("validate"), policyDefinition("check"),
 		dialectDefinition("contract"), dialectDefinition("init"), dialectDefinition("canonicalize"), dialectDefinition("digest"), dialectDefinition("validate"), dialectDefinition("schema"), dialectDefinition("reference"), dialectDefinition("check"),
@@ -260,6 +261,12 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return toolError(fmt.Sprintf("The %q arguments %s", params.Name, message)), nil
 	}
 	switch params.Name {
+	case auditListTool:
+		return s.toolListAudit(params.Arguments), nil
+	case auditVerifyTool:
+		return s.toolVerifyAudit(params.Arguments), nil
+	case auditHistoryTool:
+		return s.toolAuditHistory(params.Arguments), nil
 	case "get_artifact_version_options":
 		return s.toolArtifactVersion(params.Arguments), nil
 	case "get_dialect_contract", "dialect_init", "dialect_canonicalize", "dialect_digest", "dialect_validate", "get_dialect_schema", "get_dialect_reference", "dialect_check":

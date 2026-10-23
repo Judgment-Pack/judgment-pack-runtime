@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/conformance"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -36,13 +37,14 @@ const (
 // Server maps MCP tool calls onto the offline validation core. It holds no
 // network connection and no credential.
 type Server struct {
-	engine *validation.Engine
-	runner *conformance.Runner
+	engine     *validation.Engine
+	runner     *conformance.Runner
+	auditPager *audit.Pager
 }
 
 // NewServer builds a server over an already-constructed engine and runner.
 func NewServer(engine *validation.Engine, runner *conformance.Runner) *Server {
-	return &Server{engine: engine, runner: runner}
+	return &Server{engine: engine, runner: runner, auditPager: audit.NewPager()}
 }
 
 type rpcRequest struct {
