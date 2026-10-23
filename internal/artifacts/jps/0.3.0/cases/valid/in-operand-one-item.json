@@ -1,0 +1,36 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/in-operand-one-item",
+  "version": "0.1.0",
+  "title": "One-item in operand",
+  "decision": {
+    "intent": "Exercise the membership-operand shape.",
+    "question": "Is a one-item membership operand accepted?"
+  },
+  "outcomes": [
+    {
+      "id": "accept",
+      "label": "Accept"
+    },
+    {
+      "id": "reject",
+      "label": "Reject"
+    }
+  ],
+  "rules": [
+    {
+      "id": "membership-rule",
+      "description": "Uses a single-item array satisfying the membership minimum.",
+      "when": {
+        "op": "fact",
+        "path": "/category",
+        "operator": "in",
+        "value": [
+          "one-category"
+        ]
+      },
+      "outcome": "accept",
+      "onUnknown": "escalate"
+    }
+  ]
+}

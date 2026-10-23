@@ -1,0 +1,34 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/empty-in-operand",
+  "version": "0.1.0",
+  "title": "Empty in operand",
+  "decision": {
+    "intent": "Exercise the membership-operand shape.",
+    "question": "Is an empty membership operand rejected?"
+  },
+  "outcomes": [
+    {
+      "id": "accept",
+      "label": "Accept"
+    },
+    {
+      "id": "reject",
+      "label": "Reject"
+    }
+  ],
+  "rules": [
+    {
+      "id": "membership-rule",
+      "description": "Uses an empty array where membership requires at least one item.",
+      "when": {
+        "op": "fact",
+        "path": "/category",
+        "operator": "in",
+        "value": []
+      },
+      "outcome": "accept",
+      "onUnknown": "escalate"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/decimal-operand-empty",
+  "version": "0.1.0",
+  "title": "Empty decimal operand",
+  "decision": {
+    "intent": "Exercise the ordered-operand decimal grammar.",
+    "question": "Is an empty string decimal operand rejected?"
+  },
+  "outcomes": [
+    { "id": "accept", "label": "Accept" },
+    { "id": "reject", "label": "Reject" }
+  ],
+  "rules": [
+    {
+      "id": "ordered-rule",
+      "description": "Uses an empty string as a decimal operand.",
+      "when": {
+        "op": "fact",
+        "path": "/amount",
+        "operator": "greater-than",
+        "value": ""
+      },
+      "outcome": "accept",
+      "onUnknown": "escalate"
+    }
+  ]
+}

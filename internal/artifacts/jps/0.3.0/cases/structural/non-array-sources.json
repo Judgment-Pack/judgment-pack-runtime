@@ -1,0 +1,41 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/non-array-sources",
+  "version": "0.1.0",
+  "title": "Non-array sources",
+  "decision": {
+    "intent": "Exercise source collection type validation.",
+    "question": "Is a single source object rejected where an array is required?"
+  },
+  "sources": {
+    "id": "policy",
+    "title": "Example policy",
+    "publishedAt": "2026-02-28",
+    "locator": {
+      "kind": "uri",
+      "value": "https://example.com/policy"
+    }
+  },
+  "outcomes": [
+    {
+      "id": "accept",
+      "label": "Accept"
+    },
+    {
+      "id": "reject",
+      "label": "Reject"
+    }
+  ],
+  "rules": [
+    {
+      "id": "literal-rule",
+      "description": "A structurally minimal rule.",
+      "when": {
+        "op": "literal",
+        "value": true
+      },
+      "outcome": "accept",
+      "onUnknown": "ignore"
+    }
+  ]
+}

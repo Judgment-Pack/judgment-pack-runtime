@@ -1,0 +1,28 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/judgment-packs/decimal-operand-negative",
+  "version": "0.1.0",
+  "title": "Negative fractional decimal operand",
+  "decision": {
+    "intent": "Exercise decimal operand grammar with a conforming negative fraction.",
+    "question": "Does an ordered comparison accept a negative decimal fraction?"
+  },
+  "outcomes": [
+    { "id": "accept", "label": "Accept" },
+    { "id": "reject", "label": "Reject" }
+  ],
+  "rules": [
+    {
+      "id": "ordered-rule",
+      "description": "Uses a valid negative decimal fraction operand.",
+      "when": {
+        "op": "fact",
+        "path": "/amount",
+        "operator": "greater-than",
+        "value": "-0.5"
+      },
+      "outcome": "accept",
+      "onUnknown": "ignore"
+    }
+  ]
+}
