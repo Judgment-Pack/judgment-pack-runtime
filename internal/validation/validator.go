@@ -267,7 +267,7 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	if schemaErr != nil {
 		var validationError *jsonschema.ValidationError
 		if errors.As(schemaErr, &validationError) {
-			collectStructural(validationError, structuralCollector)
+			collectStructural(validationError, structuralCollector, selectedVersion == artifacts.CoreVersion)
 		} else {
 			structuralCollector.addError("JPS-STRUCTURE-SCHEMA", "structural", "", "Structural validation failed.")
 		}
@@ -343,7 +343,7 @@ func structuralBootstrapFailure(output result.Validation, location, code, messag
 	return output
 }
 
-func collectStructural(validationError *jsonschema.ValidationError, diagnostics *diagnosticCollector) {
+func collectStructural(validationError *jsonschema.ValidationError, diagnostics *diagnosticCollector, core030 bool) {
 	if diagnostics.full() {
 		diagnostics.truncated = true
 		return
@@ -351,6 +351,27 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 	location := append([]string(nil), validationError.InstanceLocation...)
 	add := func(code string, parts []string, message string) bool {
 		return diagnostics.addError(code, "structural", carrier.Pointer(parts), message)
+	}
+	// These new Core 0.3 route constraints have corpus-pinned diagnostics.
+	// Keep legacy schemas and condition-shape diagnostics unchanged.
+	if core030 {
+		switch validationError.ErrorKind.(type) {
+		case *kind.OneOf:
+			if len(location) == 1 && location[0] == "escalation" {
+				add("JPS-STRUCTURE-ONEOF", location, "Escalation must declare exactly one of target or routes.")
+				return
+			}
+		case *kind.MaxItems:
+			if len(location) == 2 && location[0] == "escalation" && location[1] == "routes" {
+				add("JPS-STRUCTURE-MAXITEMS", location, "Escalation routes exceed the selected profile limit.")
+				return
+			}
+		case *kind.Not:
+			if len(location) == 4 && location[0] == "escalation" && location[1] == "routes" && location[3] == "triggers" {
+				add("JPS-STRUCTURE-NOT", location, "Route triggers must be a subset of escalation triggers.")
+				return
+			}
+		}
 	}
 	handled := false
 
@@ -433,7 +454,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 			return
 		}
 		for _, cause := range relevantCauses {
-			collectStructural(cause, diagnostics)
+			collectStructural(cause, diagnostics, core030)
 		}
 		return
 	case *kind.Not, *kind.AllOf:
@@ -452,7 +473,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		add("JPS-STRUCTURE-SCHEMA", location, "Value does not satisfy a structural constraint.")
 	}
 	for _, cause := range validationError.Causes {
-		collectStructural(cause, diagnostics)
+		collectStructural(cause, diagnostics, core030)
 	}
 }
 

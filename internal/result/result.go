@@ -141,6 +141,7 @@ type ExpectedDiagnostic struct {
 }
 
 type Case struct {
+	SkipReason           string              `json:"skipReason,omitempty"`
 	ID                   string              `json:"id"`
 	ExpectedStatus       string              `json:"expectedStatus"`
 	ActualStatus         string              `json:"actualStatus"`
@@ -154,6 +155,7 @@ type Case struct {
 }
 
 type SuiteSummary struct {
+	Skipped    int `json:"skipped,omitempty"`
 	Total      int `json:"total"`
 	Passed     int `json:"passed"`
 	Mismatched int `json:"mismatched"`
@@ -188,13 +190,19 @@ type Schema struct {
 	WrittenTo     string `json:"writtenTo,omitempty"`
 }
 
+type EvaluatorCapability struct {
+	SpecVersion       string   `json:"specVersion"`
+	SupportedProfiles []string `json:"supportedProfiles,omitempty"`
+}
+
 type Version struct {
-	OutputVersion      string   `json:"outputVersion"`
-	Tool               Tool     `json:"tool"`
-	Command            string   `json:"command"`
-	Status             string   `json:"status"`
-	SupportedSpecs     []string `json:"supportedSpecVersions"`
-	ArtifactProvenance string   `json:"artifactProvenance"`
+	EvaluatorCapabilities []EvaluatorCapability `json:"evaluatorCapabilities"`
+	OutputVersion         string                `json:"outputVersion"`
+	Tool                  Tool                  `json:"tool"`
+	Command               string                `json:"command"`
+	Status                string                `json:"status"`
+	SupportedSpecs        []string              `json:"supportedSpecVersions"`
+	ArtifactProvenance    string                `json:"artifactProvenance"`
 }
 
 // ExampleKind labels the example payloads: the bundled examples are the
@@ -209,8 +217,8 @@ type ExampleSummary struct {
 }
 
 // Examples lists one bundled version's valid examples. SpecVersion is the
-// version the listed documents declare; EvaluatorSpecVersion is the only version
-// the evaluator admits (§11). The two differ for the default set, and a reader
+// version the listed documents declare; EvaluatorSpecVersion is the applicable
+// evaluator contract, or the legacy guidance for the validation-only default. A reader
 // needs both to know whether a document made from an example can be evaluated
 // without re-declaring it.
 type Examples struct {

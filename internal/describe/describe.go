@@ -21,11 +21,15 @@ import (
 // itself without forking the shape of the result.
 func Runtime(set *artifacts.Set, command string) result.Version {
 	return result.Version{
-		OutputVersion:      result.OutputVersion,
-		Tool:               result.CurrentTool(),
-		Command:            command,
-		Status:             "valid",
-		SupportedSpecs:     artifacts.SupportedVersions(),
+		OutputVersion:  result.OutputVersion,
+		Tool:           result.CurrentTool(),
+		Command:        command,
+		Status:         "valid",
+		SupportedSpecs: artifacts.SupportedVersions(),
+		EvaluatorCapabilities: []result.EvaluatorCapability{
+			{SpecVersion: result.EvaluatorSpecVersion},
+			{SpecVersion: artifacts.CoreVersion, SupportedProfiles: []string{"base"}},
+		},
 		ArtifactProvenance: bundledProvenance(set),
 	}
 }
@@ -118,7 +122,7 @@ func Examples(set *artifacts.Set, command string) (result.Examples, error) {
 		Command:              command,
 		Status:               "valid",
 		SpecVersion:          set.Lock().SpecVersion,
-		EvaluatorSpecVersion: result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion: exampleEvaluatorVersion(set),
 		Provenance:           set.Lock().Source.Kind,
 		Kind:                 result.ExampleKind,
 		Examples:             summaries,
@@ -141,7 +145,7 @@ func Example(set *artifacts.Set, name, command string) (result.Example, []byte, 
 		Command:              command,
 		Status:               "valid",
 		SpecVersion:          set.Lock().SpecVersion,
-		EvaluatorSpecVersion: result.EvaluatorSpecVersion,
+		EvaluatorSpecVersion: exampleEvaluatorVersion(set),
 		Name:                 info.Name,
 		Focus:                info.Focus,
 		SpecSection:          info.SpecSection,
@@ -155,4 +159,12 @@ func Example(set *artifacts.Set, name, command string) (result.Example, []byte, 
 func stringFrom(value any) string {
 	text, _ := value.(string)
 	return text
+}
+
+// Default validation-only examples retain their existing evaluator guidance.
+func exampleEvaluatorVersion(set *artifacts.Set) string {
+	if set.Lock().SpecVersion == artifacts.CoreVersion {
+		return artifacts.CoreVersion
+	}
+	return result.EvaluatorSpecVersion
 }

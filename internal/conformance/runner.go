@@ -29,17 +29,18 @@ const (
 	CorpusDigestAlgorithm = "sha256-length-prefixed-v1"
 )
 
-var casePathPattern = regexp.MustCompile(`^(?:carrier|structural|semantic|valid)/[a-z0-9][a-z0-9-]*\.json$`)
+var casePathPattern = regexp.MustCompile(`^(?:advisory|carrier|structural|semantic|valid)/[a-z0-9][a-z0-9-]*\.json$`)
 
 type Manifest struct {
 	SuiteVersion string `json:"suiteVersion"`
 	SpecVersion  string `json:"specVersion"`
 	Cases        []struct {
-		ID                  string   `json:"id"`
-		Path                string   `json:"path"`
-		Layer               string   `json:"layer"`
-		ExpectedResult      string   `json:"expectedResult"`
-		SupportedExtensions []string `json:"supportedExtensions"`
+		ID                  string          `json:"id"`
+		Path                string          `json:"path"`
+		Layer               string          `json:"layer"`
+		ExpectedResult      string          `json:"expectedResult"`
+		SupportedExtensions []string        `json:"supportedExtensions"`
+		ExpectedAdvisories  json.RawMessage `json:"expectedAdvisories"`
 		ExpectedDiagnostic  *struct {
 			Code string `json:"code"`
 			Path string `json:"path"`
@@ -52,11 +53,12 @@ type Runner struct {
 }
 
 type suiteSource struct {
-	manifestBytes []byte
-	schemaBytes   []byte
-	loadCase      func(string) ([]byte, error)
-	corpusDigest  string
-	provenance    string
+	manifestBytes   []byte
+	schemaBytes     []byte
+	coreSchemaBytes []byte
+	loadCase        func(string) ([]byte, error)
+	corpusDigest    string
+	provenance      string
 }
 
 func NewRunner(engine *validation.Engine) *Runner {
@@ -86,7 +88,7 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 	if failure != nil {
 		return result.Suite{}, failure
 	}
-	manifest, failure := validateManifest(source.manifestBytes, source.schemaBytes)
+	manifest, failure := validateManifest(source.manifestBytes, source.schemaBytes, source.coreSchemaBytes)
 	if failure != nil {
 		return result.Suite{}, failure
 	}
@@ -109,6 +111,17 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 	}
 	remainingDiagnostics := MaxResultDiagnostics
 	for _, manifestCase := range manifest.Cases {
+		if manifestCase.ExpectedAdvisories != nil {
+			output.Summary.Total++
+			output.Summary.Skipped++
+			output.Cases = append(output.Cases, result.Case{
+				ID: manifestCase.ID, ExpectedStatus: manifestCase.ExpectedResult,
+				ActualStatus: "not-checked", Status: "skipped",
+				ActualDiagnostics: []result.Diagnostic{},
+				SkipReason:        "Optional expectedAdvisories assertions are not implemented.",
+			})
+			continue
+		}
 		fixture, err := source.loadCase(manifestCase.Path)
 		if err != nil {
 			return result.Suite{}, &validation.OperationalFailure{
@@ -192,6 +205,10 @@ func bundledSource(version string) (suiteSource, *validation.OperationalFailure)
 	if err != nil {
 		return suiteSource{}, internalFailure("JPS-ARTIFACT-MANIFEST-SCHEMA", "Bundled conformance schema is unavailable.")
 	}
+	coreSchemaBytes, err := set.Schema()
+	if err != nil {
+		return suiteSource{}, internalFailure("JPS-ARTIFACT-SCHEMA", "Bundled Core schema is unavailable.")
+	}
 	var manifest Manifest
 	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 		return suiteSource{}, internalFailure("JPS-ARTIFACT-MANIFEST", "Bundled conformance metadata is invalid.")
@@ -206,11 +223,12 @@ func bundledSource(version string) (suiteSource, *validation.OperationalFailure)
 	}
 	lock := set.Lock()
 	return suiteSource{
-		manifestBytes: manifestBytes,
-		schemaBytes:   schemaBytes,
-		loadCase:      set.Case,
-		corpusDigest:  suiteDigest(manifestBytes, schemaBytes, cases),
-		provenance:    lock.Source.Kind,
+		manifestBytes:   manifestBytes,
+		schemaBytes:     schemaBytes,
+		coreSchemaBytes: coreSchemaBytes,
+		loadCase:        set.Case,
+		corpusDigest:    suiteDigest(manifestBytes, schemaBytes, cases),
+		provenance:      lock.Source.Kind,
 	}, nil
 }
 
@@ -264,7 +282,11 @@ func localSource(argument, requestedVersion string) (suiteSource, *validation.Op
 		return suiteSource{}, invocationFailure("JPS-SUITE-MANIFEST-SCHEMA", "Local suite manifest schema must match the bundled schema for its exact JPS version.")
 	}
 
-	manifest, failure := validateManifest(manifestBytes, schemaBytes)
+	coreSchemaBytes, err := set.Schema()
+	if err != nil {
+		return suiteSource{}, internalFailure("JPS-ARTIFACT-SCHEMA", "Bundled Core schema is unavailable.")
+	}
+	manifest, failure := validateManifest(manifestBytes, schemaBytes, coreSchemaBytes)
 	if failure != nil {
 		return suiteSource{}, failure
 	}
@@ -293,8 +315,9 @@ func localSource(argument, requestedVersion string) (suiteSource, *validation.Op
 	}
 	digestValue := suiteDigest(manifestBytes, schemaBytes, caseBytes)
 	return suiteSource{
-		manifestBytes: manifestBytes,
-		schemaBytes:   schemaBytes,
+		manifestBytes:   manifestBytes,
+		schemaBytes:     schemaBytes,
+		coreSchemaBytes: coreSchemaBytes,
 		loadCase: func(casePath string) ([]byte, error) {
 			data, ok := caseBytes[casePath]
 			if !ok {
@@ -307,7 +330,7 @@ func localSource(argument, requestedVersion string) (suiteSource, *validation.Op
 	}, nil
 }
 
-func validateManifest(manifestBytes, schemaBytes []byte) (Manifest, *validation.OperationalFailure) {
+func validateManifest(manifestBytes, schemaBytes, coreSchemaBytes []byte) (Manifest, *validation.OperationalFailure) {
 	value, failure := carrier.Decode(manifestBytes, carrier.DefaultLimits())
 	if failure != nil {
 		if failure.Resource {
@@ -315,7 +338,17 @@ func validateManifest(manifestBytes, schemaBytes []byte) (Manifest, *validation.
 		}
 		return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Suite manifest is not valid strict JSON.")
 	}
-	compiled, err := validation.CompileSchema(schemaBytes, "urn:judgmentpack:jps:conformance-manifest")
+	// Resolve references only against these exact, pinned in-memory resources.
+	// Local suites never cause sibling reads, URI retrieval, or schema rewrites.
+	resources := map[string][]byte{"urn:judgmentpack:jps:conformance-manifest": schemaBytes}
+	var coreSchema struct {
+		ID string `json:"$id"`
+	}
+	if err := json.Unmarshal(coreSchemaBytes, &coreSchema); err != nil || coreSchema.ID == "" {
+		return Manifest{}, internalFailure("JPS-SUITE-MANIFEST-SCHEMA", "Bundled Core schema identity is unavailable.")
+	}
+	resources[coreSchema.ID] = coreSchemaBytes
+	compiled, err := validation.CompileSchemas(resources, "urn:judgmentpack:jps:conformance-manifest")
 	if err != nil {
 		return Manifest{}, internalFailure("JPS-SUITE-MANIFEST-SCHEMA", "Suite manifest schema could not be compiled.")
 	}
@@ -345,9 +378,13 @@ func validateManifest(manifestBytes, schemaBytes []byte) (Manifest, *validation.
 			return Manifest{}, invocationFailure("JPS-SUITE-FIXTURE-PATH", "Suite contains an unsafe fixture path.")
 		}
 		category := strings.SplitN(manifestCase.Path, "/", 2)[0]
-		if category == "valid" {
+		if category == "valid" || category == "advisory" {
 			if manifestCase.Layer != "semantic" || manifestCase.ExpectedResult != "valid" || manifestCase.ExpectedDiagnostic != nil {
 				return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Valid-category cases must be semantic valid cases without an expected diagnostic.")
+			}
+		} else if manifest.SpecVersion == artifacts.CoreVersion && category == "carrier" && manifestCase.ExpectedResult == "valid" {
+			if manifestCase.Layer != "carrier" || manifestCase.ExpectedDiagnostic != nil {
+				return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Positive carrier cases must use the carrier layer without an expected diagnostic.")
 			}
 		} else if manifestCase.Layer != category || manifestCase.ExpectedResult == "valid" || manifestCase.ExpectedDiagnostic == nil {
 			return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Negative case category, layer, result, and diagnostic must agree.")

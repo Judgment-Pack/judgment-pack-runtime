@@ -180,3 +180,41 @@ func TestProvenanceKindsCarryAnExplicitTrustOrder(t *testing.T) {
 		t.Fatal("an unrecognized kind must rank below every known one: it is not evidence of a trustworthy bundle")
 	}
 }
+
+func TestEvaluatorCapabilitiesAreExactAndProfileScoped(t *testing.T) {
+	actual := Runtime(loadSet(t), "describe_runtime")
+	want := []result.EvaluatorCapability{
+		{SpecVersion: "0.2.0-draft"},
+		{SpecVersion: "0.3.0", SupportedProfiles: []string{"base"}},
+	}
+	if !reflect.DeepEqual(actual.EvaluatorCapabilities, want) {
+		t.Fatalf("capabilities: %+v", actual.EvaluatorCapabilities)
+	}
+}
+
+func TestExamplesReportApplicableEvaluatorContract(t *testing.T) {
+	for _, version := range artifacts.SupportedVersions() {
+		set, err := artifacts.Load(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := result.EvaluatorSpecVersion
+		if version == artifacts.CoreVersion {
+			want = artifacts.CoreVersion
+		}
+		catalog, err := Examples(set, "spec examples")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if catalog.EvaluatorSpecVersion != want {
+			t.Fatalf("%s catalog contract: %s", version, catalog.EvaluatorSpecVersion)
+		}
+		example, _, err := Example(set, catalog.Examples[0].Name, "spec examples")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if example.EvaluatorSpecVersion != want {
+			t.Fatalf("%s example contract: %s", version, example.EvaluatorSpecVersion)
+		}
+	}
+}
