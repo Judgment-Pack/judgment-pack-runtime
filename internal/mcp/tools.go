@@ -43,13 +43,14 @@ import (
 // CONFORMANCE.md (ADR-0011), and these descriptions reference it.
 func toolDefinitions() []map[string]any {
 	return []map[string]any{
+		auditListDefinition(), auditVerifyDefinition(), auditHistoryDefinition(),
 		artifactVersionDefinition(),
 		policyDefinition("contract"), policyDefinition("init"), policyDefinition("schema"), policyDefinition("canonicalize"), policyDefinition("digest"), policyDefinition("validate"), policyDefinition("check"),
 		dialectDefinition("contract"), dialectDefinition("init"), dialectDefinition("canonicalize"), dialectDefinition("digest"), dialectDefinition("validate"), dialectDefinition("schema"), dialectDefinition("reference"), dialectDefinition("check"),
 		{"name": "experimental_test_cases", "description": "Rehearse a matrix against exact supplied pack bytes. The pack selects the Core 0.2.0-draft or 0.3.0 base disposition contract; routed packs require complete handoff.routes assertions rather than expectedHandoffTarget. Core 0.3 reports refuse atomically when retained exact expected and actual canonical disposition text exceeds 10 MiB. Uses the same canonical comparison and coverage as experimental_test_packs. Reads no project files, writes nothing, and appends no audit record. This experimental surface may change.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"pack", "matrix"}, "properties": map[string]any{"pack": map[string]any{"type": "string", "description": "Exact pack JSON text."}, "matrix": map[string]any{"type": "string", "description": "Matrix JSON text in the project's supported matrix format. At least one case with an independently established expectation is required."}}}},
 		{
 			"name":        "validate",
-			"description": "Validate one JPS document for carrier, structural, and semantic conformance. It does not evaluate rules, choose an outcome, or authorize anything.",
+			"description": "Validate one JPS document for carrier, structural, and semantic conformance. Core 0.3.0 semantic validation also returns bounded non-normative JPS-RULES-OVERLAP warnings with bounded exclusive rewrites or rewriteUnavailable reasons; warnings preserve valid status. It does not evaluate rules, choose an outcome, or authorize anything.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -62,7 +63,7 @@ func toolDefinitions() []map[string]any {
 		},
 		{
 			"name":        "test_conformance",
-			"description": "Run a version-pinned JPS conformance corpus; the bundled corpus by default.",
+			"description": "Run a version-pinned JPS conformance corpus; the bundled corpus by default. Core 0.3.0 optional rule-overlap assertions are checked and counted separately from normative conformance.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -259,6 +260,12 @@ func (s *Server) callTool(rawParams json.RawMessage) (any, *rpcError) {
 		return toolError(fmt.Sprintf("The %q arguments %s", params.Name, message)), nil
 	}
 	switch params.Name {
+	case auditListTool:
+		return s.toolListAudit(params.Arguments), nil
+	case auditVerifyTool:
+		return s.toolVerifyAudit(params.Arguments), nil
+	case auditHistoryTool:
+		return s.toolAuditHistory(params.Arguments), nil
 	case "get_artifact_version_options":
 		return s.toolArtifactVersion(params.Arguments), nil
 	case "get_dialect_contract", "dialect_init", "dialect_canonicalize", "dialect_digest", "dialect_validate", "get_dialect_schema", "get_dialect_reference", "dialect_check":

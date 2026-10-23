@@ -105,6 +105,12 @@ func (a *App) renderValidation(format string, output result.Validation) error {
 		if output.Artifact != nil {
 			fmt.Fprintf(a.out, "artifacts: %s · sha256 %s\n", display.Sanitize(output.Artifact.Provenance), output.Artifact.BundleDigest)
 		}
+		for _, diagnostic := range output.Diagnostics {
+			fmt.Fprintf(a.out, "%s %s %s: %s\n", display.Sanitize(diagnostic.Severity), display.Sanitize(diagnostic.Code), display.Sanitize(diagnostic.InstancePath), display.Sanitize(diagnostic.Message))
+		}
+		if output.DiagnosticsTruncated {
+			fmt.Fprintln(a.out, "diagnostics: truncated at the validation output limit")
+		}
 		return nil
 	}
 	fmt.Fprintf(a.out, "%s: JPS document conformance was not established\n", output.Status)
@@ -122,17 +128,31 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 	if format == "json" {
 		return a.writeJSON(output)
 	}
+	caseLabel := "conformance cases"
+	if output.Advisories != nil {
+		caseLabel = "suite cases"
+	}
 	if output.Status == "valid" {
 		if output.Summary.Skipped > 0 {
 			fmt.Fprintf(a.out, "passed: %d/%d checked conformance cases matched expectations; %d skipped (not checked)\n", output.Summary.Passed, output.Summary.Total-output.Summary.Skipped, output.Summary.Skipped)
 		} else {
-			fmt.Fprintf(a.out, "passed: %d/%d conformance cases matched expectations\n", output.Summary.Passed, output.Summary.Total)
+			fmt.Fprintf(a.out, "passed: %d/%d %s matched expectations\n", output.Summary.Passed, output.Summary.Total, caseLabel)
 		}
 	} else {
-		fmt.Fprintf(a.out, "mismatch: %d/%d conformance cases did not match expectations\n", output.Summary.Mismatched, output.Summary.Total)
+		fmt.Fprintf(a.out, "mismatch: %d/%d %s did not match expectations\n", output.Summary.Mismatched, output.Summary.Total, caseLabel)
 		for _, item := range output.Cases {
 			if item.Status == "mismatch" {
-				if len(item.StrayDiagnostics) > 0 && item.ExpectedStatus == item.ActualStatus {
+				exact := false
+				for _, d := range item.ActualDiagnostics {
+					if d.Code == "JPS-RULES-OVERLAP" && d.Severity == "error" {
+						exact = true
+					}
+				}
+				if exact {
+					fmt.Fprintf(a.out, "- %s: strict mode rejects exact rule overlap (document remains %s)\n", display.Sanitize(item.ID), display.Sanitize(item.ActualStatus))
+				} else if item.AdvisoryStatus == "mismatch" {
+					fmt.Fprintf(a.out, "- %s: advisory expectations did not match\n", display.Sanitize(item.ID))
+				} else if len(item.StrayDiagnostics) > 0 && item.ExpectedStatus == item.ActualStatus {
 					fmt.Fprintf(a.out, "- %s: reported %d diagnostic(s) the manifest does not expect\n", display.Sanitize(item.ID), len(item.StrayDiagnostics))
 				} else {
 					fmt.Fprintf(a.out, "- %s: expected %s, got %s\n", display.Sanitize(item.ID), display.Sanitize(item.ExpectedStatus), display.Sanitize(item.ActualStatus))
@@ -149,6 +169,16 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 				fmt.Fprintf(a.out, "- %s [not checked]: %s\n", display.Sanitize(item.ID), display.Sanitize(item.SkipReason))
 			}
 		}
+	}
+	for _, item := range output.Cases {
+		for _, d := range item.ActualDiagnostics {
+			if d.Code == "JPS-RULES-OVERLAP" {
+				fmt.Fprintf(a.out, "- %s: %s %s %s: %s\n", display.Sanitize(item.ID), display.Sanitize(d.Severity), display.Sanitize(d.Code), display.Sanitize(d.InstancePath), display.Sanitize(d.Message))
+			}
+		}
+	}
+	if output.Advisories != nil {
+		fmt.Fprintf(a.out, "optional advisory assertions: %d/%d matched; outside normative conformance\n", output.Advisories.Passed, output.Advisories.Total)
 	}
 	fmt.Fprintf(a.out, "JPS %s · suite %s · %s\n", display.Sanitize(output.SpecVersion), display.Sanitize(output.SuiteVersion), display.Sanitize(output.Provenance))
 	fmt.Fprintf(a.out, "corpus: %s:%s\n", output.CorpusDigestAlgorithm, output.CorpusDigest)

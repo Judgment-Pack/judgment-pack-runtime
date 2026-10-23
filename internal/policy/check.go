@@ -255,8 +255,8 @@ func checkAdoption(doc map[string]any, materials materialSet, engine *validation
 		return problem("JPS-POLICY-ENGINE", "/consumer", "A bundled Core structural validation engine is required."), result.ExitIO
 	}
 	options := validation.Options{Through: "structural", Limits: limits()}
-	if candidateMode {
-		options.FormatOverrides = []*jsonschema.Format{candidateURIFormat()}
+	if !candidateMode {
+		options.FormatOverrides = []*jsonschema.Format{prototypeURIFormat()}
 	}
 	checked, failure := engine.Validate(raw, options)
 	if failure != nil {

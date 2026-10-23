@@ -298,6 +298,21 @@ Standard input is accepted explicitly with `-`:
 ./bin/jpack spec validate --format json - < pack.json
 ```
 
+Core `0.3.0` semantic validation also reports recommended `JPS-RULES-OVERLAP`
+warnings for pairs naming different outcomes. The diagnostic points at
+`/rules/<index>/when`, identifies both rules/outcomes, includes an exact region
+or witness when decidable, and supplies `suggestedRewrite: {ruleId, when}` when
+the complete rewritten pack fits the applicable carrier and generation limits.
+Otherwise `rewriteUnavailable` explains why no pasteable replacement is supplied.
+Generated facts are checked against the same carrier limits before publication;
+if no admissible witness or supported exact region is available, certainty stays
+`not-excluded`. Ascending bands use `all` of the lower comparison and an exclusive upper bound;
+other pairs use `all` of the first condition and `not` of the second. Missing or
+incomparable facts preserve `unknown`, including under `not`. Plain validation
+still passes. Same-outcome pairs are silent. Analysis limits or independent paths
+produce `not-excluded`; output bounds set `diagnosticsTruncated` without cutting
+an exact region or rewrite. See [ADR-0066](docs/adr/0066-bounded-rule-overlap-advice.md).
+
 Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an exact bundled version:
 
 ```bash
@@ -308,7 +323,7 @@ Run a bundled document-conformance corpus — `0.1.0-draft` by default, or an ex
 ./bin/jpack spec test-conformance --strict
 ```
 
-By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs. Core `0.3.0` optional `expectedAdvisories` cases are explicitly `skipped`, with `actualStatus: "not-checked"` and a `skipReason`; the summary counts them separately. A skipped advisory is never a passed assertion. An advisory-only suite is refused with `JPS-SUITE-NO-CHECKS` because it contains no supported assertion.
+By default a case passes when its expected diagnostic is among those reported; `--strict` also fails a case that reports a diagnostic its manifest entry does not expect, naming each one, which is what the corpus's single-defect rule needs. Core `0.3.0` optional `expectedAdvisories` assertions are checked, with per-row `advisoryStatus` and separate `advisories` totals; the aggregate summary includes all checked manifest rows. Exact rule overlap fails strict mode even when its advisory expectation matches; normative document `actualStatus` stays valid. `not-excluded` remains a warning in every mode. Advisory-only suites are supported.
 
 Run the bundled **evaluation** corpus of JPS `0.2.0-draft` through the experimental evaluator. Every
 row is compared by disposition equality as §8.3 defines it — both the row's expectation and the
@@ -1262,3 +1277,36 @@ distinct-byte bundles can exceed the private 24 MiB JSON/base64 carrier or MCP's
 These ceilings remain unchanged. Agreement is same-vendor implementation
 evidence and establishes no stable maturity, independently authored
 interoperability, approval, current authority or permission.
+
+Ordinary Core `format: "uri"` now applies complete ASCII RFC 3986 component
+grammar across CLI/MCP validation and evaluator admission. This changes acceptance:
+raw brackets in `urn:test:[x]`, paths, queries and fragments are refused, while
+percent-encoded reg-names such as `https://%65xample.invalid/a` and IPvFuture
+literals such as `foo://[v1.a]/` are accepted. Both `v` and `V`, IPv6, valid percent
+escapes, query/fragment punctuation and generic digit-only ports are preserved.
+Malformed escapes, final LF and scoped IPv6 are refused. This checks generic
+syntax without resolving a URI or granting trust. Exact spelling and stored
+identities are preserved. Update Runtime pins deliberately and revalidate original
+bytes; no IDs, records or jobs migrate automatically. Official Policy uses the
+shared corrected assertion. Historical prototype Policy `0.0.2`, including its
+retained Core consumers, keeps its old assertion through a scoped compatibility
+path. [ADR-0064](docs/adr/0064-share-uri-component-grammar.md) records the acceptance
+and migration decision. This correction establishes no new Core `0.3.0`
+evaluator-conformance claim.
+
+### Experimental audit reading over MCP
+
+`experimental_list_audit` exports the configured evaluations, signatures and
+stamps as exact bounded base64 chunks, with structured members and raw-line
+digests for advisory lines up to 64 KiB. `experimental_list_audit_history`
+selects definition history on the server using Desk's exact 4 MiB window,
+typed Unicode decoding and pagination rules, transporting one JSON answer in
+bounded chunks without client JSONL parsing. Its 64 MiB source budget remains
+explicit. `experimental_verify_audit` uses the CLI's
+verifier, with supplied checkpoint expectations and optional supplied exact
+trail bytes. All require the server's configured project; none accepts
+a host file path, writes, repairs, manages keys or fetches timestamps. Exports
+are provisional until complete and have explicit size/lifetime limits. See the
+[MCP reference](docs/mcp-clients.md#experimental-audit-reading-and-verification)
+and [ADR-0065](docs/adr/0065-read-audit-trails-over-mcp.md). This is a Runtime
+convention and adds no Core conformance claim.
