@@ -62,8 +62,21 @@ func (s *Server) toolValidateMatrix(args json.RawMessage) any {
 		if len(matrix.Cases) > maxFactAdviceCases {
 			return toolError("Fact type advice permits at most 256 cases. Check a smaller group of cases.")
 		}
+		// Preserve raw capability types for advice. The legacy matrix decoder
+		// accepts null slices and null entries through []string decoding; keep
+		// that structural admission, but never advise using normalized values.
+		var rawMatrix struct {
+			Cases []struct {
+				Extensions json.RawMessage `json:"supportedExtensions"`
+			} `json:"cases"`
+		}
+		if json.Unmarshal([]byte(*input.Matrix), &rawMatrix) != nil || len(rawMatrix.Cases) != len(matrix.Cases) {
+			return toolError("Fact type advice could not inspect the supplied matrix capabilities.")
+		}
+		supportedExtensions := make([][]string, len(matrix.Cases))
+		capabilityMessages := make([]string, len(matrix.Cases))
 		capabilities := map[string]bool{}
-		for _, item := range matrix.Cases {
+		for index, item := range matrix.Cases {
 			if len(item.SupportedExtensions) > maxFactAdviceExtensions {
 				return toolError("Fact type advice permits at most 256 supported extensions per case.")
 			}
@@ -72,7 +85,13 @@ func (s *Server) toolValidateMatrix(args json.RawMessage) any {
 					return toolError("Fact type advice permits at most 1024 UTF-8 bytes per supported extension.")
 				}
 			}
-			names := slices.Clone(item.SupportedExtensions)
+			extensions, message := factAdviceExtensions(rawMatrix.Cases[index].Extensions)
+			if message != "" {
+				capabilityMessages[index] = "Fact type advice is unavailable: supportedExtensions must be an array of at most 256 strings, each at most 1024 UTF-8 bytes."
+				continue
+			}
+			supportedExtensions[index] = extensions
+			names := slices.Clone(extensions)
 			if names == nil {
 				names = []string{}
 			}
@@ -87,13 +106,19 @@ func (s *Server) toolValidateMatrix(args json.RawMessage) any {
 		rows := make([]map[string]any, 0, len(matrix.Cases))
 		total, reportBytes := 0, 2
 		for index, item := range matrix.Cases {
-			findings, failure := admitted.CheckFactTypes(item.Facts, evaluation.Options{SupportedExtensions: item.SupportedExtensions, WorkBudget: factAdviceWorkBudget})
+			findings := []evaluation.FactTypeFinding{}
+			var failure *evaluation.Failure
+			if capabilityMessages[index] == "" {
+				findings, failure = admitted.CheckFactTypes(item.Facts, evaluation.Options{SupportedExtensions: supportedExtensions[index], WorkBudget: factAdviceWorkBudget})
+			}
 			row := map[string]any{"index": index, "id": item.ID, "status": "complete", "findings": findings}
 			total += len(findings)
 			if total > maxMatrixFactFindings {
 				return toolError("Fact type findings exceed the report limit. Check a smaller group of cases.")
 			}
-			if failure != nil {
+			if capabilityMessages[index] != "" {
+				row["status"], row["message"] = "unavailable", capabilityMessages[index]
+			} else if failure != nil {
 				row["status"], row["message"], row["findings"] = "unavailable", factAdviceFailureMessage(failure), []evaluation.FactTypeFinding{}
 			}
 			encoded, _ := json.Marshal(row)

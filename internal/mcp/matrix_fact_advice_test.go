@@ -183,3 +183,49 @@ func TestMatrixFactAdviceCountsCapabilitySetsByMeaning(t *testing.T) {
 		t.Fatal("equivalent empty capability sets counted twice", r)
 	}
 }
+
+func TestMatrixFactAdviceKeepsRawNullCapabilitiesUnavailable(t *testing.T) {
+	pack, _ := comparableServerProject(t, `"configVersion":"5"`)
+	// Matrix-only admission historically accepts these representations. Advice
+	// must inspect the raw members before []string decoding can normalize them.
+	matrix := `{"matrixVersion":"3","cases":[{"id":"null-array","facts":{"amount":{"value":0}},"supportedExtensions":null,"expectedErrorClass":"malformed-input"},{"id":"null-entry","facts":{"amount":{"value":false}},"supportedExtensions":[null],"expectedErrorClass":"malformed-input"},{"id":"omitted","facts":{"amount":{"value":0}},"expectedErrorClass":"malformed-input"},{"id":"empty","facts":{"amount":{"value":"0"}},"supportedExtensions":[],"expectedErrorClass":"malformed-input"}]}`
+	legacy := matrixReport(t, matrix)
+	if legacy["status"] != "valid" || legacy["factChecks"] != nil || legacy["factCheckVersion"] != nil {
+		t.Fatal("changed legacy admission or shape", legacy)
+	}
+	wantResults := []any{}
+	for index, id := range []string{"null-array", "null-entry", "omitted", "empty"} {
+		wantResults = append(wantResults, map[string]any{"index": float64(index), "id": id, "status": "valid", "findings": []any{}})
+	}
+	if !reflect.DeepEqual(legacy["results"], wantResults) {
+		t.Fatal("legacy structural results changed", legacy["results"])
+	}
+	response := runServer(t, toolCall(t, 1, matrixValidationTool, map[string]any{"matrix": matrix, "pack": pack}))[0]["result"].(map[string]any)
+	if response["isError"] == true {
+		t.Fatal(response)
+	}
+	report := response["structuredContent"].(map[string]any)
+	if report["status"] != legacy["status"] || report["factCheckVersion"] != "1" || !reflect.DeepEqual(report["results"], legacy["results"]) {
+		t.Fatal("advice changed structural admission", report)
+	}
+	rows := report["factChecks"].([]any)
+	if len(rows) != 4 {
+		t.Fatal("lost advisory rows", rows)
+	}
+	for index, id := range []string{"null-array", "null-entry", "omitted", "empty"} {
+		row := rows[index].(map[string]any)
+		if row["index"] != float64(index) || row["id"] != id {
+			t.Fatal("lost advisory order", row)
+		}
+		if index < 2 {
+			if row["status"] != "unavailable" || row["message"] == nil || row["message"] == "" || len(row["findings"].([]any)) != 0 {
+				t.Error("null capabilities silently normalized into a completed check", row)
+			}
+		} else if row["status"] != "complete" || len(row["findings"].([]any)) != 3-index {
+			t.Error("omitted and empty capabilities must preserve fact advice", row)
+		}
+	}
+	if after := matrixReport(t, matrix); !reflect.DeepEqual(legacy, after) {
+		t.Fatal("advice changed later matrix-only behavior", after)
+	}
+}
