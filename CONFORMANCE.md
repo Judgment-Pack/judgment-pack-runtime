@@ -49,7 +49,8 @@ jpack experimental evaluate-corpus --spec-version 0.2.0-draft --format json
 ```
 
 The claim applies to **conforming Core-class inputs reaching this runtime's one shared evaluator**
-through the ten surfaces that reach it — `experimental evaluate`, `experimental evaluate-corpus`,
+for that contract through the ten surfaces that reach it — `experimental evaluate`,
+`experimental evaluate-corpus`,
 `packs test`, `experimental graph evaluate`, `experimental graph test`, `experimental compare`, and the
 `experimental_evaluate`, `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools — and
 **not to draft-RFC prototype
@@ -67,6 +68,24 @@ and has never meant, and no longer says, that no claim is made. The limits the c
 the documented ones below; §10 leaves an implementation to define its own limits, so a caller that
 configures a lower one has selected a documented limit of its own, and an input above either
 implementation's limit is outside the portable claim in the first place.
+
+## Evaluator-using advisory surfaces outside the claim's version scope
+
+The two evaluator-using advisory surfaces outside that version claim are
+`experimental analyze-pack` and `experimental_analyze_pack`. Both call the shared
+finite-domain analyzer, which admits and evaluates only Core `0.3.0` base packs.
+They therefore accept no input under the `0.2.0-draft` claim above and are separate
+from its ten-surface enumeration. They run the real evaluator for optional
+Draft RFC 0027 authoring advice; they are not static-only comparability checks.
+Their reports do not change the recorded claim or extend its version scope.
+
+`internal/cli/conformance_enumeration_test.go` inventories these two constructor
+sites separately, holds their direct analyzer wiring and explicit Core `0.3.0`
+selection, and continues to reject unaccounted evaluator constructors. Static
+fact-advice constructor sites retain their independent admission/comparability
+only guard. Moving or adding a surface, rewiring advice to another evaluation
+path, or widening the analyzer's supported contract requires reviewing both this
+inventory and those guards.
 
 ## The limits this class requires (§10)
 

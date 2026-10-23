@@ -81,6 +81,7 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"experimental", "--help"}, mustReference: true},
 		{args: []string{"experimental", "evaluate", "--help"}, mustReference: true},
 		{args: []string{"experimental", "evaluate-corpus", "--help"}, mustReference: true},
+		{args: []string{"experimental", "analyze-pack", "--help"}, mustReference: true},
 		// The graph surface (ADR-0015). The group and its evaluate verb speak
 		// about the evaluator, so they say where the claim is stated; the other
 		// verbs evaluate nothing and are inventoried for the phrase scans.
@@ -154,7 +155,7 @@ func claimSurfaces(t *testing.T) []claimSurface {
 	if len(listed.Result.Tools) == 0 {
 		t.Fatalf("tools/list returned no tool: %q", stdout)
 	}
-	evaluationTools := map[string]bool{"experimental_evaluate": false, "experimental_test_packs": false, "experimental_test_graphs": false}
+	evaluationTools := map[string]bool{"experimental_analyze_pack": false, "experimental_evaluate": false, "experimental_test_packs": false, "experimental_test_graphs": false}
 	for _, tool := range listed.Result.Tools {
 		if tool.Description == "" {
 			t.Fatalf("tool %q has no description", tool.Name)
@@ -601,6 +602,8 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 	}
 	for _, required := range []string{
 		"cli packs --help",
+		"cli experimental analyze-pack --help",
+		"mcp tools/list experimental_analyze_pack",
 		"cli packs list --help",
 		"cli experimental graph list --help",
 		"cli packs validate --help",

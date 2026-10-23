@@ -20,8 +20,9 @@ import (
 // names it; a refactor that shares one constructor across surfaces also fails
 // here, deliberately — the count stops being the number of surfaces at that
 // point, and this test's counting rule is what must be rethought alongside it.
-// Static fact advice constructs the same engine for admission and comparability
-// only. Those sites are held separately below and do not extend the claim.
+// Static fact advice constructs the same engine for admission/comparability only.
+// Core 0.3 advisory rehearsals use the evaluator outside the recorded version
+// claim. Both inventories are held separately below, without extending that claim.
 func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 	enumerated := []string{
 		"`experimental evaluate`",
@@ -52,6 +53,15 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		filepath.Join("..", "mcp", "fact_advice.go"):      1,
 		filepath.Join("..", "mcp", "matrix_admission.go"): 1,
 	}
+	advisorySites := map[string]string{
+		"pack_advice.go": "a.engine",
+		filepath.Join("..", "mcp", "pack_advice.go"): "s.engine",
+	}
+	advisorySurfaces := []string{"`experimental analyze-pack`", "`experimental_analyze_pack`"}
+	if len(advisorySites) != len(advisorySurfaces) {
+		t.Fatal("advisory constructor and surface inventories diverged")
+	}
+	inventoriedAdvisorySites := 0
 	total := 0
 	for _, count := range expectedSites {
 		total += count
@@ -75,6 +85,13 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 				t.Fatalf("reading %s: %v", path, err)
 			}
 			sites := strings.Count(string(source), "evaluation.NewEngine(")
+			if receiver, exists := advisorySites[path]; exists {
+				if fault := advisorySiteFault(string(source), receiver); fault != "" {
+					t.Fatalf("%s: %s", path, fault)
+				}
+				inventoriedAdvisorySites++
+				continue
+			}
 			if expected := staticSites[path]; expected != 0 {
 				// Explicitly recognize static admission without silently adding
 				// an evaluating surface to the conformance claim. Keep the
@@ -91,8 +108,31 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 				continue
 			}
 			if sites != expectedSites[path] {
-				t.Fatalf("%s constructs the evaluator %d times and this test expects %d: a surface reaching the evaluator moved, appeared, or vanished, and CONFORMANCE.md's claim-scope sentence must change with it (then this test's two lists)", path, sites, expectedSites[path])
+				t.Fatalf("%s constructs the evaluator %d times and this test expects %d: a surface reaching the evaluator moved, appeared, or vanished; review CONFORMANCE.md's claimed-version and advisory inventories with this test", path, sites, expectedSites[path])
 			}
+		}
+	}
+
+	if inventoriedAdvisorySites != len(advisorySites) {
+		t.Fatalf("found %d of %d inventoried evaluator-using advisory sites", inventoriedAdvisorySites, len(advisorySites))
+	}
+	analyzer, err := os.ReadFile(filepath.Join("..", "packadvice", "analyze.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fault := advisoryContractFault(string(analyzer)); fault != "" {
+		t.Fatal(fault)
+	}
+	for _, document := range []struct {
+		name     string
+		surfaces []string
+	}{
+		{"CONFORMANCE.md", advisorySurfaces},
+		{"README.md", []string{"`jpack experimental analyze-pack`", "`experimental_analyze_pack`"}},
+	} {
+		listed := between(t, document.name, flatten(readDocument(t, document.name)), "The "+countWord(t, len(advisorySurfaces))+" evaluator-using advisory surfaces outside that version claim are ", ".")
+		if fault := listFault(asWritten(document.surfaces), codeSpans(t, document.name, listed)); fault != "" {
+			t.Fatalf("%s advisory inventory %s", document.name, fault)
 		}
 	}
 
@@ -274,7 +314,7 @@ func flatten(text string) string {
 // countWord spells a count the way the documents do.
 func countWord(t *testing.T, n int) string {
 	t.Helper()
-	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"}
+	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "twenty-one"}
 	if n < 0 || n >= len(words) {
 		t.Fatalf("no spelling for a count of %d; extend countWord", n)
 	}
@@ -364,4 +404,79 @@ func listFault(spellings map[string]string, entries []string) string {
 		return "does not name " + strings.Join(missing, ", ")
 	}
 	return ""
+}
+
+// Advisory constructors cannot hide a widened evaluation path in the static-only
+// exception or silently join the claim's ten constructor sites. As with the
+// existing static guard, a refactor requires explicit inventory review.
+func advisorySiteFault(source, receiver string) string {
+	chain := "packadvice.Analyze(evaluation.NewEngine(" + receiver + "),"
+	if strings.Count(source, "evaluation.NewEngine(") != 1 || strings.Count(source, "packadvice.Analyze(") != 1 || strings.Count(source, chain) != 1 {
+		return "evaluator-using advisory must have exactly one direct shared-analyzer constructor site"
+	}
+	for _, call := range []string{".Evaluate", ".RunCase", ".RunCorpus", ".CheckFactTypes("} {
+		if strings.Contains(source, call) {
+			return "evaluator-using advisory adds a path outside the inventoried shared analyzer: " + call
+		}
+	}
+	return ""
+}
+func advisoryContractFault(source string) string {
+	// Exact spellings intentionally force review if the version gate or selected
+	// evaluator contract is refactored; support cannot expand by updating only a
+	// surface's constructor exemption.
+	gate := `if failure != nil || contract.Version() != "0.3.0" {`
+	selected := `evalOptions := evaluation.Options{SpecVersion: "0.3.0",`
+	if strings.Count(source, gate) != 1 || strings.Count(source, selected) != 1 {
+		return "inventoried advisory analyzer must gate and select only Core 0.3.0"
+	}
+	if strings.Count(source, ".EvaluateAdmitted(") != 1 || strings.Count(source, ".Evaluate") != 1 || strings.Contains(source, "evaluation.NewEngine(") {
+		return "inventoried advisory analyzer must retain its one admitted evaluation path"
+	}
+	for _, call := range []string{".RunCase", ".RunCorpus"} {
+		if strings.Contains(source, call) {
+			return "inventoried advisory analyzer adds evaluation entrypoint: " + call
+		}
+	}
+	return ""
+}
+func TestAdvisoryInventoryGuardsRejectChangedScope(t *testing.T) {
+	site := `packadvice.Analyze(evaluation.NewEngine(a.engine), pack, domain, options)`
+	for _, row := range []struct {
+		name, source string
+		valid        bool
+	}{
+		{"shared analyzer", site, true},
+		{"constructor missing", `packadvice.Analyze(engine, pack, domain, options)`, false},
+		{"second constructor", site + `; evaluation.NewEngine(a.engine)`, false},
+		{"second analyzer", site + `; packadvice.Analyze(engine,pack,domain,options)`, false},
+		{"different engine", strings.Replace(site, "a.engine", "s.engine", 1), false},
+		{"static reclassification", `evaluation.NewEngine(a.engine).AdmitPack(pack).CheckFactTypes(facts,options)`, false},
+		{"extra deciding path", site + `; engine.EvaluateWith(pack,facts,evidence,options)`, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			if got := advisorySiteFault(row.source, "a.engine"); (got == "") != row.valid {
+				t.Fatal(row.name, got)
+			}
+		})
+	}
+	contract := `if failure != nil || contract.Version() != "0.3.0" { return nil, Refuse("pack-unsupported") }
+    evalOptions := evaluation.Options{SpecVersion: "0.3.0", Command:"advice"}
+    engine.EvaluateAdmitted(admitted,facts,evidence,evalOptions)`
+	for _, row := range []struct {
+		name, source string
+		valid        bool
+	}{
+		{"explicit Core 0.3 only", contract, true},
+		{"older admitted version", strings.Replace(contract, `contract.Version() != "0.3.0"`, `contract.Version() != "0.2.0-draft"`, 1), false},
+		{"older evaluator selection", strings.Replace(contract, `SpecVersion: "0.3.0"`, `SpecVersion: "0.2.0-draft"`, 1), false},
+		{"missing version gate", strings.Replace(contract, `if failure != nil || contract.Version() != "0.3.0" {`, `if failure != nil {`, 1), false},
+		{"second evaluation path", contract + `; engine.EvaluateWith(pack,facts,evidence,options)`, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			if got := advisoryContractFault(row.source); (got == "") != row.valid {
+				t.Fatal(row.name, got)
+			}
+		})
+	}
 }

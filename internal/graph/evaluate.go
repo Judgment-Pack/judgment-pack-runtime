@@ -416,6 +416,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			Disposition:   evaluated.Disposition,
 			HandoffTarget: evaluated.HandoffTarget,
 			UnmetEvidence: evaluated.UnmetEvidence,
+			Contributors:  evaluated.Contributors,
 			Trace:         evaluated.Trace,
 		}
 		if contract.Version() == "0.3.0" {
