@@ -41,7 +41,7 @@ func dialectDefinition(operation string) map[string]any {
 		properties["pack"] = map[string]any{"type": "string", "description": fmt.Sprintf("Exact pack JSON text, never a path. Maximum %d UTF-8 bytes; the byte bound is enforced after transport decoding.", dialect.MaxPackBytes), "maxLength": dialect.MaxPackBytes}
 		schema["required"] = []string{"document", "pack"}
 	}
-	return map[string]any{"name": name, "description": descriptions[operation], "inputSchema": schema, "annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}
+	return map[string]any{"name": name, "description": descriptions[operation], "inputSchema": schema}
 }
 func (s *Server) toolDialect(name string, args json.RawMessage) any {
 	command := "mcp " + name

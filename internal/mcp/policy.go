@@ -51,7 +51,7 @@ func policyDefinition(operation string) map[string]any {
 		properties["materials"] = map[string]any{"type": "string", "maxLength": policy.MaxMaterialsWireBytes, "description": fmt.Sprintf("Exact retained-material JSON text: {materials:[{content:{bytesDigest,byteLength,mediaType},dataBase64}]}. No paths/URLs. Maximum decoded JSON text %d bytes; stdio's %d-byte line limit can be reached first after JSON/base64 overhead.", policy.MaxMaterialsWireBytes, maxMessageBytes)}
 		schema["required"] = []string{"document", "materials"}
 	}
-	return map[string]any{"name": policyToolName(operation), "description": descriptions[operation], "inputSchema": schema, "annotations": map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}
+	return map[string]any{"name": policyToolName(operation), "description": descriptions[operation], "inputSchema": schema}
 }
 
 func (s *Server) toolPolicy(name string, args json.RawMessage) any {

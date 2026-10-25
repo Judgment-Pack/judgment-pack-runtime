@@ -165,3 +165,4 @@ authority, and following it confers no conformance status on anything.
 | [0067](0067-complete-outcome-contributors.md) | Retain every actual outcome contributor outside the disposition | accepted |
 | [0068](0068-finite-domain-pack-design-advice.md) | Rehearse an explicit finite domain for optional pack-design advice | accepted |
 | [0069](0069-bound-history-reads-by-window.md) | Bound history reads by window independently of source size | accepted |
+| [0070](0070-publish-owner-taxonomy-and-method-skills.md) | Publish truthful owner taxonomy and digest-addressed method skills | proposed |

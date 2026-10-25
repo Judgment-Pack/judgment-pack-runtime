@@ -1,0 +1,14 @@
+[
+ {
+  "name":"empty","description":"","instructions":"text","tools":[],"resources":[],"taxonomies":{},
+  "profile":{"effect":"pure","operations":[]},
+  "canonical":"{\"description\":\"\",\"instructions\":\"text\",\"kind\":\"method\",\"name\":\"empty\",\"resources\":[],\"tools\":[]}"
+ },
+ {
+  "name":"method","description":"two","instructions":"<&>\n😀","tools":["read","evaluate"],
+  "resources":[{"name":"terminal","text":"separate admission"}],
+  "taxonomies":{"read":{"operation":"read","effect":"read"},"evaluate":{"operation":"evaluate","effect":"act","experimental":true}},
+  "profile":{"effect":"act","operations":["read","evaluate"]},
+  "canonical":"{\"dependencies\":[{\"name\":\"read\",\"taxonomy\":{\"effect\":\"read\",\"operation\":\"read\"}},{\"name\":\"evaluate\",\"taxonomy\":{\"effect\":\"act\",\"experimental\":true,\"operation\":\"evaluate\"}}],\"description\":\"two\",\"instructions\":\"<&>\\n😀\",\"kind\":\"method\",\"name\":\"method\",\"resources\":[{\"name\":\"terminal\",\"text\":\"separate admission\"}],\"tools\":[\"read\",\"evaluate\"]}"
+ }
+]

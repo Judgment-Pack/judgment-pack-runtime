@@ -39,6 +39,29 @@ gitignored in this repository. Copy a snippet, don't commit one.
 
 ## The tools
 
+Every served tool carries owner metadata directly in `_meta`: `operation`, `effect`,
+optional `checkKind`, and `experimental:true` for the experimental surface. Names,
+descriptions and input schemas retain their forms. Hosts restrict these declarations;
+they do not infer a weaker effect from a name, current configuration or rehearsal input.
+MCP hints derive from effect. Pure/read tools are read-only and idempotent, with
+`destructiveHint:false` and `openWorldHint:false`. The audit-capable
+`experimental_evaluate` is `evaluate/act`: not read-only/idempotent, and conservatively
+destructive/openWorld. This metadata grants no execution approval.
+
+| Family / effect (check subkind) | Tools |
+| --- | --- |
+| discover / read | `describe_runtime`, `list_examples`, `list_packs`, `experimental_list_graphs` |
+| discover / pure | `get_dialect_contract`, `experimental_get_policy_contract`, `experimental_get_test_matrix_contract` |
+| read / read | `get_schema`, `get_example`, `get_pack`, `get_dialect_schema`, `get_dialect_reference`, `experimental_get_policy_schema`, `experimental_get_graph`, `experimental_list_audit`, `experimental_list_audit_history` |
+| check / pure (validate) | `validate`, `dialect_validate`, `experimental_policy_validate`, `experimental_validate_test_matrix`, `experimental_validate_expectations` |
+| check / pure (check) | `dialect_check`, `experimental_policy_check` |
+| check / pure (advise, analyze, test respectively) | `experimental_check_fact_types`, `experimental_analyze_pack`, `experimental_test_cases` |
+| check / read (test) | `test_conformance`, `experimental_test_packs`, `experimental_test_graphs` |
+| check / read (verify) | `experimental_verify_audit` |
+| transform / pure | `get_artifact_version_options`, `dialect_init`, `dialect_canonicalize`, `dialect_digest`, `experimental_policy_init`, `experimental_policy_canonicalize`, `experimental_policy_digest` |
+| evaluate / act | `experimental_evaluate` |
+
+
 | Tool | Purpose |
 | --- | --- |
 | `get_artifact_version_options` | Exact x.y.z patch/minor/major choices and optional candidate comparison; no compatibility or save authorization |
@@ -266,9 +289,48 @@ handle every read is bound to, into the project's own tree; a refused evaluation
 record that cannot be written is reported as a tool error instead of a disposition. A project that
 declares no `audit` member is written to by nothing.
 
+## Method skills
+
+MCP `resources/list` discovers exactly six method skills and `resources/read` returns
+one JSON definition. Each content-addressed URI is
+`judgment-pack://methods/1/<name>/<digest-hex>`; pass the exact listed `uri`.
+There is no mutable latest alias, pagination or subscription. Unknown/changed URIs
+refuse; no older digest is redirected after a binary upgrade. Each definition is
+bounded to 64 KiB and includes `kind:"method"`, publication `version:"1"`,
+name/description, unchanged empty-argument prompt instructions, ordered `tools`,
+dependency taxonomies, resources, exact `digest`, derived `profile` and publisher.
+Version 1 selects this publication revision; the digest identifies exact content.
+The publisher label alone proves no trust or signature.
+
+Digest bytes match Agent `skillDigest` (ADR-0027): canonical JSON of kind, name,
+description, instructions, tools, resources and ordered `{name,taxonomy}` dependencies;
+omit dependencies only for an empty tool list. Object keys sort by UTF-16 code units,
+strings use minimal ECMAScript escapes; SHA-256 receives UTF-8 and is prefixed `sha256:`.
+Profile is computed from admitted dependencies, never accepted as authority from text.
+
+| Method | Complete Runtime profile |
+| --- | --- |
+| `author_pack` | act; discover/read/check/evaluate |
+| `test_pack` | act; check/evaluate |
+| `present_pack`, `explain_disposition` | act; read/evaluate |
+| `fix_pack` | read; check (including project matrix rerun) |
+| `author_graph` | read; discover/read/check; optional separate host terminal prerequisite |
+
+Optional evaluation branches count: these unchanged methods may call an audit-capable
+evaluator. Publishing read/check-only profiles would understate their instructions.
+`author_graph`'s terminal prerequisite is explicitly bound in its named skill resource;
+its profile describes only the declared Runtime tools and grants no terminal access.
+Hosts must refuse unresolved external prerequisites or unadmitted dependencies.
+
+Resource discovery does not import skills into Agent. An importer must establish Runtime
+provenance, verify the exact bundle digest against admitted tool metadata, recompute its
+profile and apply its existing offers/presets/approvals. Agent's current foundation refuses
+Runtime act until canonical approval/continuation integration exists; this producer does
+not complete that integration or #220's default catalogue. See [ADR-0070](adr/0070-publish-owner-taxonomy-and-method-skills.md).
+
 ## The prompts
 
-The server also serves six **method prompts** (MCP `prompts` capability) — static, versioned,
+The server also serves seven **method prompts** (MCP `prompts` capability) — static, versioned,
 non-normative guidance that your client's model executes with your key. In Claude Code they appear
 as slash commands (`/mcp__jpack__author_pack`, `…test_pack`, `…fix_pack`,
 `…explain_disposition`, `…present_pack`, `…author_graph`); other clients surface them differently or not at all, and everything
@@ -281,6 +343,7 @@ works without them.
 | `fix_pack` | Repairing a non-conformant pack from the validator's diagnostics, in carrier → structural → semantic order |
 | `explain_disposition` | Narrating an evaluation payload strictly from the record it carries — the authoritative disposition, the informative (possibly partial) `trace[]`, the pack's members: reproduce the complete reason set, echo the handoff as recorded, and never soften or extend the disposition |
 | `present_pack` | Presenting one pack to an audience, grounded in the document alone: every statement traceable to a member, the representation labeled as one reading, omissions stated, semantics kept the format's — and no outcome ever simulated in place of an evaluation |
+| `replay_history` | Replaying recorded decisions as independently retained test expectations, not learning policy from outcomes |
 | `author_graph` | Composing existing packs into an experimental graph document: declare only relationships the source states, check both ends of every verbatim edge, record what cannot be declared, validate to exit 0, give the graph its rows and read the coverage report, and hand the proposal — the `jpack.json` declaration included — to a human; the packs themselves are never edited |
 
 Following a prompt does not make a pack conformant — only validation decides that — and the
