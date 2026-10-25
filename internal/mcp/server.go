@@ -32,6 +32,7 @@ const (
 	codeInvalidRequest = -32600
 	codeMethodNotFound = -32601
 	codeInvalidParams  = -32602
+	codeInternal       = -32603
 )
 
 // Server maps MCP tool calls onto the offline validation core. It holds no
@@ -189,9 +190,19 @@ func (s *Server) handle(request *rpcRequest) (map[string]any, bool) {
 	case "ping":
 		return s.reply(request, map[string]any{}, nil)
 	case "tools/list":
-		return s.reply(request, map[string]any{"tools": toolDefinitions()}, nil)
+		tools, err := classifiedTools(toolDefinitions(), toolDeclarations)
+		if err != nil {
+			return s.reply(request, nil, &rpcError{Code: codeInternal, Message: "Tool taxonomy is unavailable."})
+		}
+		return s.reply(request, map[string]any{"tools": tools}, nil)
 	case "tools/call":
 		res, rerr := s.callTool(request.Params)
+		return s.reply(request, res, rerr)
+	case "resources/list":
+		res, rerr := methodResources(request.Params, false)
+		return s.reply(request, res, rerr)
+	case "resources/read":
+		res, rerr := methodResources(request.Params, true)
 		return s.reply(request, res, rerr)
 	case "prompts/list":
 		return s.reply(request, map[string]any{"prompts": listPrompts()}, nil)
@@ -233,7 +244,7 @@ func (s *Server) initializeResult(rawParams json.RawMessage) map[string]any {
 	}
 	return map[string]any{
 		"protocolVersion": version,
-		"capabilities":    map[string]any{"tools": map[string]any{}, "prompts": map[string]any{}},
+		"capabilities":    map[string]any{"tools": map[string]any{}, "prompts": map[string]any{}, "resources": map[string]any{}},
 		"serverInfo": map[string]any{
 			"name":    result.CLIName,
 			"version": result.CLIVersion,
