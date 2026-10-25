@@ -7,6 +7,43 @@ All notable changes to tagged releases are documented here.
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
 
+## 0.39.0-alpha.1 - 2026-10-25
+
+This scoped prerelease publishes the Runtime metadata needed for Agent v0.11.0
+integration (#329/#330). It does not complete the final v0.39.0 milestone.
+Release preparation, review and artifact evidence are tracked in #331.
+
+- Publish owner `operation` and `effect`, with applicable `checkKind` and
+  `experimental` metadata, on every served MCP tool. Missing or invalid owner
+  declarations refuse tool discovery. Standard MCP annotations derive from the
+  actual effect; tool names, handlers, schemas and existing prompt text remain
+  unchanged.
+- Classify `experimental_evaluate` as `evaluate`/`act` because its capability can
+  append audit records. A rehearsal or currently disabled audit does not weaken
+  that declaration. Metadata grants no approval or execution authority; consumers
+  must use their own exact approved call and continuation path.
+- Expose six method skills through MCP resources: `author_pack`, `fix_pack`,
+  `test_pack`, `present_pack`, `explain_disposition` and `author_graph`. Definitions
+  use bounded, digest-addressed URIs and bind instruction bytes plus tool dependency
+  taxonomy. Their profiles derive from the complete dependency set. Only exact
+  currently served URIs resolve; old identities are not redirected after upgrades.
+  Importers must verify the content and handle unresolved external prerequisites,
+  rather than treating method text as tool authority.
+- Preserve existing audit formats, project behavior, specification pins and
+  conformance claims. Larger raw audit downloads/verification and staged inputs
+  (#308), persisted-format fingerprints (#327), and release-CI reuse (#328) remain
+  separate final-milestone work. Core 0.3.0 implementation support remains distinct
+  from final Spec publication and any evaluator-conformance claim.
+
+Pin this exact prerelease when testing the new integration. Its interfaces may
+change before the final release. Existing release gates still verify signed tag
+identity, immutable specification provenance, native archives, checksums,
+attestations and distribution artifacts. GitHub and OCI `latest` are not moved
+for a prerelease. The existing MCP registry publication does include prereleases;
+registry clients should pin a version because its newest-version ordering does
+not distinguish prerelease maturity. See [releasing](docs/releasing.md) and
+[ADR-0070](docs/adr/0070-publish-owner-taxonomy-and-method-skills.md).
+
 ## 0.38.0 - 2026-10-23
 
 This Runtime minor release collects the changes since `v0.37.0`. Runtime
