@@ -66,6 +66,12 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 		return r, code
 	}
 	r.ValidationScope = "version-" + strconv.Itoa(r.DialectVersion) + "-document-and-declared-pack-inventory"
+	return checkDeclaredInventory(r, document, pack, engine)
+}
+
+// Both document readers reach the same pack validation and bounded inventory walk.
+func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engine *validation.Engine) (Report, int) {
+	code := result.ExitSuccess
 	checked, failure := engine.Validate(pack, validation.Options{})
 	r.PackValidation = &checked
 	if failure != nil {

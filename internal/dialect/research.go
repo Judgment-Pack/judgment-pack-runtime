@@ -45,15 +45,15 @@ func (v *documentCheck) research(s map[string]any, path string, scope map[string
 		v.template(s["question"], at(path, "question"), scope)
 	}
 	v.dictionary(s["constraints"], at(path, "constraints"))
-	v.boundedText(s["model"], at(path, "model"), 256)
+	v.boundedText(s["model"], at(path, "model"), v.ceiling(256))
 	for i, e := range v.list(s["evidence"], at(path, "evidence"), 0, 0) {
-		v.boundedText(e, at(at(path, "evidence"), strconv.Itoa(i)), 4096)
+		v.boundedText(e, at(at(path, "evidence"), strconv.Itoa(i)), v.ceiling(4096))
 	}
 	fields := map[string]bool{}
-	for i, item := range v.list(s["fields"], at(path, "fields"), 1, 64) {
+	for i, item := range v.list(s["fields"], at(path, "fields"), 1, v.ceiling(64)) {
 		p := at(at(path, "fields"), strconv.Itoa(i))
 		f := v.object(item, p, []string{"name", "type", "required", "description"}, nil)
-		name := v.boundedText(f["name"], at(p, "name"), 64)
+		name := v.boundedText(f["name"], at(p, "name"), v.ceiling(64))
 		if name == "case" || fields[name] {
 			v.fail(at(p, "name"), "Field name is reserved or repeated.")
 		}
@@ -62,9 +62,9 @@ func (v *documentCheck) research(s map[string]any, path string, scope map[string
 		if _, ok := f["required"].(bool); !ok {
 			v.fail(at(p, "required"), "Required must be a boolean.")
 		}
-		v.boundedText(f["description"], at(p, "description"), 2048)
+		v.boundedText(f["description"], at(p, "description"), v.ceiling(2048))
 	}
-	capabilities := v.list(s["capabilities"], at(path, "capabilities"), 1, 3)
+	capabilities := v.list(s["capabilities"], at(path, "capabilities"), 1, v.ceiling(3))
 	last := -1
 	web := []string{}
 	for i, c := range capabilities {
@@ -131,7 +131,7 @@ func researchPointer(s string, fields map[string]bool, taken bool) bool {
 }
 
 // Read only pointer-bearing syntax. Constants may contain arbitrary member names.
-func readPointers(read map[string]any, visit func(string, bool)) {
+func readPointers(read map[string]any, retainedDraft bool, visit func(string, bool)) {
 	if unwrap, ok := read["unwrap"].([]any); ok {
 		for _, p := range unwrap {
 			if s, ok := p.(string); ok {
@@ -144,6 +144,15 @@ func readPointers(read map[string]any, visit func(string, bool)) {
 			items, _ := copy[k].([]any)
 			for _, item := range items {
 				f, _ := item.(map[string]any)
+				if retainedDraft {
+					_, conversion := f["conversion"]
+					_, availability := f["availability"]
+					if conversion || availability {
+						// The structurally checked pointer selects the whole retained
+						// frame, not a value in the current research declaration.
+						continue
+					}
+				}
 				if s, ok := f["source"].(string); ok {
 					visit(s, true)
 				}
@@ -190,7 +199,7 @@ func (v *documentCheck) researchRead(value any, path string, scope map[string]st
 	if _, ok := read["sources"]; !ok {
 		targets := v.read(value, path, scope)
 		if v.issue == nil {
-			readPointers(read, func(ptr string, taken bool) {
+			readPointers(read, v.retainedDraft, func(ptr string, taken bool) {
 				if !researchPointer(ptr, fields, taken) {
 					v.fail(path, "Research read names a pointer outside declared field values or selects a conflicting observation.")
 				}
@@ -204,7 +213,7 @@ func (v *documentCheck) researchRead(value any, path string, scope map[string]st
 		entries["/current/fields/"+escape(name)] = true
 	}
 	seen := map[string]bool{}
-	for i, raw := range v.list(read["sources"], at(path, "sources"), 1, 15) {
+	for i, raw := range v.list(read["sources"], at(path, "sources"), 1, v.ceiling(15)) {
 		name := v.text(raw, at(at(path, "sources"), strconv.Itoa(i)), true)
 		prior, ok := earlier[name]
 		if !ok || seen[name] {
@@ -226,7 +235,7 @@ func (v *documentCheck) researchRead(value any, path string, scope map[string]st
 		c := raw.(map[string]any)
 		walkConditions(c["when"], func(condition map[string]any) { every[jsonKey(condition)] = true })
 	}
-	readPointers(read, func(ptr string, taken bool) {
+	readPointers(read, v.retainedDraft, func(ptr string, taken bool) {
 		if taken {
 			return
 		}

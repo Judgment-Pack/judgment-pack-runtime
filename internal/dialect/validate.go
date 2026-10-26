@@ -24,7 +24,19 @@ func invalidDocument(r Report, code, path, message string, exit int) (Report, *d
 }
 
 func validateDocument(command string, data []byte) (Report, *documentCheck, int) {
-	r, code := Encode(command, data)
+	return validateDocumentWithLimits(command, data, MaxDocumentBytes, documentLimits(), false)
+}
+
+func validateDocumentWithLimits(command string, data []byte, maxBytes int, limits carrier.Limits, retainedDraft bool) (Report, *documentCheck, int) {
+	return validateDocumentWithProfile(command, data, maxBytes, limits, retainedDraft, "base")
+}
+
+func validateDocumentWithProfile(command string, data []byte, maxBytes int, limits carrier.Limits, retainedDraft bool, profile string) (Report, *documentCheck, int) {
+	maxIDBytes := 1024
+	if retainedDraft && profile == "extended" {
+		maxIDBytes = 2048
+	}
+	r, code := encodeDocumentWithIDLimit(command, data, maxBytes, limits, maxIDBytes)
 	if r.DialectVersion != 0 {
 		r.ValidationScope = "version-" + strconv.Itoa(r.DialectVersion) + "-document"
 	}
@@ -33,11 +45,11 @@ func validateDocument(command string, data []byte) (Report, *documentCheck, int)
 	}
 	// Encode has already bounded and checked the carrier. Keep json.Number here
 	// too; validation must never round a retained integer through float64.
-	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: MaxDocumentBytes, MaxStringBytes: MaxDocumentBytes})
+	value, failure := carrier.Decode(data, limits)
 	if failure != nil {
 		return invalidDocument(r, "JPS-DIALECT-DOCUMENT", "", "The dialect could not be read.", result.ExitInvalid)
 	}
-	v := documentCheck{version: r.DialectVersion, named: r.FormatVersion != ""}
+	v := documentCheck{version: r.DialectVersion, named: r.FormatVersion != "", retainedDraft: retainedDraft, extended: retainedDraft && profile == "extended"}
 	v.document(value)
 	if v.issue != nil {
 		code := result.ExitInvalid
@@ -51,6 +63,8 @@ func validateDocument(command string, data []byte) (Report, *documentCheck, int)
 }
 
 type documentCheck struct {
+	retainedDraft    bool
+	extended         bool
 	named            bool
 	version          int
 	issue            *result.Diagnostic
@@ -61,6 +75,14 @@ type documentCheck struct {
 }
 type target struct{ name, path string }
 type readTargets struct{ facts, evidence []target }
+
+// ceiling applies only Core's resource rows, never fixed grammar or numeric domains.
+func (v *documentCheck) ceiling(base int) int {
+	if v.extended {
+		return base * 2
+	}
+	return base
+}
 
 func (v *documentCheck) fail(path, message string) {
 	v.refuse("JPS-DIALECT-FORM", path, message)
@@ -178,6 +200,9 @@ func (v *documentCheck) pointer(value any, path string, target bool) string {
 
 func (v *documentCheck) document(value any) {
 	optional := []string{"sources", "admits", "unmapped", "unmappedEvidence"}
+	if v.retainedDraft {
+		optional = append(optional, "profile")
+	}
 	if v.version == 2 && !v.named {
 		optional = append(optional, "provider", "facts", "evidence")
 	}
@@ -186,6 +211,19 @@ func (v *documentCheck) document(value any) {
 		required = append(required, "formatVersion", "id")
 	}
 	top := v.object(value, "", required, optional)
+	if v.retainedDraft {
+		declared := "base"
+		if raw, present := top["profile"]; present {
+			declared = v.choice(raw, "/profile", "base", "extended")
+		}
+		selected := "base"
+		if v.extended {
+			selected = "extended"
+		}
+		if declared != selected {
+			v.fail("/profile", "The document profile must equal the trusted Draft selection.")
+		}
+	}
 	if value, ok := top["provider"]; ok {
 		v.choice(value, "/provider", "")
 	}
@@ -227,7 +265,7 @@ func (v *documentCheck) document(value any) {
 	previous := map[string]readTargets{}
 	researchFields := map[string]map[string]bool{}
 	if raw, ok := top["sources"]; ok {
-		for i, rawSource := range v.list(raw, "/sources", 0, 16) {
+		for i, rawSource := range v.list(raw, "/sources", 0, v.ceiling(16)) {
 			p := at("/sources", strconv.Itoa(i))
 			source := v.dictionary(rawSource, p)
 			name := v.text(source["name"], at(p, "name"), true)
@@ -269,8 +307,8 @@ func (v *documentCheck) document(value any) {
 	written := map[string]bool{}
 	for _, r := range all {
 		for _, t := range r.facts {
-			if len(facts) >= 256 {
-				v.refuse("JPS-DIALECT-COUNT-LIMIT", "", "A dialect admits at most 256 fact targets.")
+			if len(facts) >= v.ceiling(256) {
+				v.refuse("JPS-DIALECT-COUNT-LIMIT", "", "A dialect admits at most "+strconv.Itoa(v.ceiling(256))+" fact targets.")
 				return
 			}
 			for _, other := range facts {
@@ -290,8 +328,8 @@ func (v *documentCheck) document(value any) {
 			evidence[t.name] = true
 		}
 	}
-	if len(facts) > 256 || len(evidence) > 128 {
-		v.refuse("JPS-DIALECT-COUNT-LIMIT", "", "A dialect admits at most 256 fact targets and 128 evidence targets.")
+	if len(facts) > v.ceiling(256) || len(evidence) > v.ceiling(128) {
+		v.refuse("JPS-DIALECT-COUNT-LIMIT", "", "A dialect admits at most "+strconv.Itoa(v.ceiling(256))+" fact targets and "+strconv.Itoa(v.ceiling(128))+" evidence targets.")
 	}
 	if raw, ok := top["admits"]; ok {
 		admits := v.object(raw, "/admits", nil, []string{"facts", "evidence"})
@@ -350,8 +388,8 @@ func (v *documentCheck) parameters(value any, path string, scope map[string]stri
 		}
 		scope[name] = typ
 	}
-	if len(scope) > 64 {
-		v.refuse("JPS-DIALECT-COUNT-LIMIT", path, "A scope admits at most 64 parameters, including runAt.")
+	if len(scope) > v.ceiling(64) {
+		v.refuse("JPS-DIALECT-COUNT-LIMIT", path, "A scope admits at most "+strconv.Itoa(v.ceiling(64))+" parameters, including runAt.")
 	}
 }
 
@@ -496,7 +534,7 @@ func (v *documentCheck) read(value any, path string, scope map[string]string) re
 	}
 	if raw, ok := r["unwrap"]; ok {
 		p := at(path, "unwrap")
-		for i, ptr := range v.list(raw, p, 1, 4) {
+		for i, ptr := range v.list(raw, p, 1, v.ceiling(4)) {
 			v.pointer(ptr, at(p, strconv.Itoa(i)), false)
 		}
 	}
@@ -510,9 +548,16 @@ func (v *documentCheck) copy(value any, path string) readTargets {
 	r := readTargets{}
 	if raw, ok := c["facts"]; ok {
 		p := at(path, "facts")
-		for i, item := range v.list(raw, p, 0, 256) {
+		for i, item := range v.list(raw, p, 0, v.ceiling(256)) {
 			q := at(p, strconv.Itoa(i))
-			f := v.object(item, q, []string{"target", "source"}, nil)
+			required := []string{"target", "source"}
+			if entry, ok := item.(map[string]any); ok && v.retainedDraft {
+				if conversion, present := entry["conversion"]; present {
+					required = append(required, "conversion")
+					v.retainedConversion(conversion, at(q, "conversion"), false)
+				}
+			}
+			f := v.object(item, q, required, nil)
 			t := v.pointer(f["target"], at(q, "target"), true)
 			v.pointer(f["source"], at(q, "source"), false)
 			r.facts = append(r.facts, target{t, at(q, "target")})
@@ -521,9 +566,17 @@ func (v *documentCheck) copy(value any, path string) readTargets {
 	if raw, ok := c["evidence"]; ok {
 		p := at(path, "evidence")
 		seen := map[string]bool{}
-		for i, item := range v.list(raw, p, 0, 128) {
+		for i, item := range v.list(raw, p, 0, v.ceiling(128)) {
 			q := at(p, strconv.Itoa(i))
-			e := v.object(item, q, []string{"requirement", "source"}, nil)
+			required := []string{"requirement", "source"}
+			if entry, ok := item.(map[string]any); ok && v.retainedDraft {
+				if availability, present := entry["availability"]; present {
+					required = append(required, "availability")
+					v.retainedConversion(availability, at(q, "availability"), true)
+					v.boundedText(entry["requirement"], at(q, "requirement"), 160)
+				}
+			}
+			e := v.object(item, q, required, nil)
 			name := v.text(e["requirement"], at(q, "requirement"), true)
 			v.pointer(e["source"], at(q, "source"), false)
 			if seen[name] {
@@ -548,7 +601,7 @@ func (v *documentCheck) rule(value any, path string, scope map[string]string) re
 		}
 		declared[name] = typ
 	}
-	clauses := v.list(r["clauses"], at(path, "clauses"), 1, 64)
+	clauses := v.list(r["clauses"], at(path, "clauses"), 1, v.ceiling(64))
 	targets := readTargets{}
 	facts, evidence := map[string]bool{}, map[string]bool{}
 	for i, raw := range clauses {
@@ -622,7 +675,7 @@ func (v *documentCheck) condition(value any, path string, declared map[string]st
 		}
 	}
 	if op == "all" || op == "any" {
-		for i, item := range v.list(c["of"], at(path, "of"), 0, 64) {
+		for i, item := range v.list(c["of"], at(path, "of"), 0, v.ceiling(64)) {
 			v.condition(item, at(at(path, "of"), strconv.Itoa(i)), declared)
 		}
 	} else if op == "not" {

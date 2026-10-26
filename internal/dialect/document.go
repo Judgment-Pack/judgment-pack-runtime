@@ -120,11 +120,23 @@ func Init(command string, version int) (Report, int) {
 // members and source kinds are retained verbatim as values, not admitted as
 // executable. Document checking is a separate, version-scoped operation.
 func Encode(command string, data []byte) (Report, int) {
+	return encodeDocument(command, data, MaxDocumentBytes, documentLimits())
+}
+
+func documentLimits() carrier.Limits {
+	return carrier.Limits{MaxDepth: MaxDepth, MaxNodes: MaxDocumentBytes, MaxStringBytes: MaxDocumentBytes}
+}
+
+func encodeDocument(command string, data []byte, maxBytes int, limits carrier.Limits) (Report, int) {
+	return encodeDocumentWithIDLimit(command, data, maxBytes, limits, 1024)
+}
+
+func encodeDocumentWithIDLimit(command string, data []byte, maxBytes int, limits carrier.Limits, maxIDBytes int) (Report, int) {
 	r := report(command)
-	if len(data) > MaxDocumentBytes {
+	if len(data) > maxBytes {
 		return refused(r, "JPS-DIALECT-BYTE-LIMIT", "", "The dialect exceeds the document byte limit.", result.ExitInvalid)
 	}
-	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: MaxDocumentBytes, MaxStringBytes: MaxDocumentBytes})
+	value, failure := carrier.Decode(data, limits)
 	if failure != nil {
 		r.Status = "refused"
 		r.Diagnostics = []result.Diagnostic{failure.Diagnostic}
@@ -149,8 +161,8 @@ func Encode(command string, data []byte) (Report, int) {
 		}
 		r.FormatVersion = selector.(string)
 		id, ok := object["id"].(string)
-		if !ok || id == "" || len(id) > 1024 || strings.IndexFunc(id, func(c rune) bool { return c <= 32 || c == 127 }) >= 0 {
-			return refused(r, "JPS-DIALECT-ID", "/id", "Provide a non-empty stable identifier within 1024 UTF-8 bytes, without ASCII spaces or controls.", result.ExitInvalid)
+		if !ok || id == "" || len(id) > maxIDBytes || strings.IndexFunc(id, func(c rune) bool { return c <= 32 || c == 127 }) >= 0 {
+			return refused(r, "JPS-DIALECT-ID", "/id", "Provide a non-empty stable identifier within "+strconv.Itoa(maxIDBytes)+" UTF-8 bytes, without ASCII spaces or controls.", result.ExitInvalid)
 		}
 		version, ok := object["version"].(string)
 		if !ok || !artifactGrammar.MatchString(version) {

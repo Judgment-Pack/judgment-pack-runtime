@@ -23,6 +23,8 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 	versionText := "2"
 	formatVersion, artifactID, artifactVersion := "", "", ""
 	packPath := ""
+	draftContract, draftProfile := "", ""
+	retainedFrame := false
 	use := operation
 	args := cobra.NoArgs
 	if operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
@@ -34,6 +36,9 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 		command := "dialect " + operation
 		if err := validateFormat(format); err != nil {
 			return a.operational(command, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+		}
+		if cmd.Flags().Changed("draft-contract") || cmd.Flags().Changed("draft-profile") || cmd.Flags().Changed("retained-frame") {
+			return a.runRetainedColumnDraft(command, operation, args, format, packPath, draftContract, draftProfile, retainedFrame)
 		}
 		if operation == "check" && (packPath == "" || (packPath == "-" && args[0] == "-")) {
 			return a.operational(command, format, result.ExitInvocation, "JPS-DIALECT-PACK-ARGUMENT", "Check requires --pack; only one operand can read standard input.")
@@ -145,7 +150,91 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 	if operation == "check" {
 		c.Flags().StringVar(&packPath, "pack", "", "pack file or - for standard input; required")
 	}
+	if operation == "contract" || operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
+		c.Flags().StringVar(&draftContract, "draft-contract", "", "explicit experimental selector: "+dialect.RetainedColumnDraftSelector)
+		c.Flags().StringVar(&draftProfile, "draft-profile", "", "explicit experimental profile: base or extended; requires --draft-contract")
+		if operation == "validate" {
+			c.Flags().BoolVar(&retainedFrame, "retained-frame", false, "validate a standalone retained frame; requires both Draft selection flags")
+		}
+	}
 	return c
+}
+
+// Resolve the trusted experimental selection before opening either artifact.
+func (a *App) runRetainedColumnDraft(command, operation string, args []string, format, packPath, selector, profile string, retainedFrame bool) error {
+	selected, selection, code := dialect.SelectRetainedColumnDraft(command, selector, profile)
+	var output any = selected
+	report := selected.Report
+	if code == result.ExitSuccess {
+		if operation == "check" && (packPath == "" || (packPath == "-" && args[0] == "-")) {
+			return a.operational(command, format, result.ExitInvocation, "JPS-DIALECT-PACK-ARGUMENT", "Check requires --pack; only one operand can read standard input.")
+		}
+		if operation == "contract" {
+			selected, code = dialect.ContractRetainedColumnDraft(command, selection)
+			output, report = selected, selected.Report
+		} else {
+			bound := selected.Limits.DocumentBytes
+			if retainedFrame {
+				bound = selected.Limits.FrameBytes
+			}
+			data, err := a.readInput(args[0], int64(bound), "dialect")
+			if errors.Is(err, fssecure.ErrTooLarge) {
+				data = make([]byte, bound+1)
+			} else if err != nil {
+				return a.operational(command, format, result.ExitIO, "JPS-DIALECT-READ", "The dialect input could not be read as a bounded local regular file or standard input.")
+			}
+			switch operation {
+			case "check":
+				pack, err := a.readInput(packPath, dialect.MaxPackBytes, "pack")
+				if errors.Is(err, fssecure.ErrTooLarge) {
+					pack = make([]byte, dialect.MaxPackBytes+1)
+				} else if err != nil {
+					return a.operational(command, format, result.ExitIO, "JPS-DIALECT-PACK-READ", "The pack input could not be read as a bounded local regular file or standard input.")
+				}
+				selected, code = dialect.CheckRetainedColumnDraft(command, data, pack, a.engine, selection)
+				output, report = selected, selected.Report
+			case "validate":
+				if retainedFrame {
+					frame, frameCode := dialect.ValidateRetainedColumnDraftFrame(command, data, selection)
+					code, output, report = frameCode, frame, frame.Report
+				} else {
+					selected, code = dialect.ValidateRetainedColumnDraft(command, data, selection)
+					output, report = selected, selected.Report
+				}
+			default:
+				selected, code = dialect.EncodeRetainedColumnDraft(command, data, selection)
+				output, report = selected, selected.Report
+			}
+		}
+	}
+	var err error
+	switch {
+	case format == "json":
+		err = a.writeJSON(output)
+	case report.Compatibility != nil:
+		err = renderDialectCompatibility(a.out, report.Compatibility)
+	case code != result.ExitSuccess:
+		for _, diagnostic := range report.Diagnostics {
+			if _, err = fmt.Fprintln(a.errOut, diagnostic.Code+": "+display.Sanitize(diagnostic.Message)); err != nil {
+				break
+			}
+		}
+	case operation == "contract":
+		_, err = fmt.Fprintf(a.out, "Experimental Draft %s · %s\nProfile: %s; role: document-validation\nOperations: contract, canonicalize, digest, validate (document or retained frame), check\nDocument limit: %d UTF-8 bytes; frame limit: %d UTF-8 bytes\nCanonicalize and digest check encoding only. Pack checks cover declared inventory.\n", selected.Contract, selected.Spec.Revision, selected.Profile, selected.Limits.DocumentBytes, selected.Limits.FrameBytes)
+	case operation == "validate":
+		_, err = fmt.Fprintln(a.out, "Experimental Draft checks passed: "+report.ValidationScope+".")
+	case operation == "digest":
+		_, err = fmt.Fprintln(a.out, report.Digest)
+	default:
+		_, err = fmt.Fprint(a.out, report.Document)
+	}
+	if err != nil {
+		return &handledExit{code: result.ExitIO}
+	}
+	if code != result.ExitSuccess {
+		return &handledExit{code: code}
+	}
+	return nil
 }
 
 func renderDialectCompatibility(out io.Writer, c *dialect.Compatibility) error {
