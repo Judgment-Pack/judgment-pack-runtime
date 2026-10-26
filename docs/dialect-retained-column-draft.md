@@ -29,6 +29,15 @@ pointers remain in canonical bytes and affect the digest. Retained-frame validat
 reports a digest of its exact supplied frame bytes; it does not canonicalize opaque
 retained strings or establish original declaration provenance.
 
+For standalone frame reports, `document` retains the complete exact original JSON
+text and `digest` identifies those bytes. Parse that text to recover every value,
+status, ordered declaration, absent/null distinction and original escape spelling.
+The unpublished `frameSummary` contains only contract version, origin and value,
+declaration and field counts. The full typed inspection remains available to
+internal Go callers; its duplicate raw strings are not repeated on the wire.
+Both MCP report forms contain the same complete report. This keeps the Base frame
+response bounded without reducing accepted input or changing ordinary reports.
+
 The selected contract response reports only role `document-validation` in
 `capabilities.conversionContracts`, with fixed trusted identity:
 

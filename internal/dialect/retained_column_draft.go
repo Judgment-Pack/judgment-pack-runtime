@@ -289,7 +289,19 @@ type RetainedColumnDraftField struct {
 }
 type RetainedColumnDraftFrameReport struct {
 	RetainedColumnDraftReport
-	Frame *RetainedColumnDraftFrame `json:"frame,omitempty"`
+	// Keep typed inspection available internally. On the unpublished wire
+	// surface, Document retains every exact source byte once per report;
+	// repeating all decoded strings here amplifies the dual MCP response.
+	Frame        *RetainedColumnDraftFrame        `json:"-"`
+	FrameSummary *RetainedColumnDraftFrameSummary `json:"frameSummary,omitempty"`
+}
+
+type RetainedColumnDraftFrameSummary struct {
+	ContractVersion  string `json:"contractVersion"`
+	Origin           string `json:"origin"`
+	ValueCount       int    `json:"valueCount"`
+	DeclarationCount int    `json:"declarationCount"`
+	FieldCount       int    `json:"fieldCount"`
 }
 
 // ValidateRetainedColumnDraftFrame checks a complete standalone retained frame.
@@ -334,6 +346,13 @@ func ValidateRetainedColumnDraftFrame(command string, data []byte, selection Ret
 	out.Document = string(data)
 	out.Digest = retainedDraftDigest(string(data))
 	out.Frame = frame
+	out.FrameSummary = &RetainedColumnDraftFrameSummary{ContractVersion: frame.ContractVersion, Origin: frame.Origin, ValueCount: len(frame.Values)}
+	if frame.Research != nil {
+		out.FrameSummary.FieldCount = len(frame.Research.Fields)
+		if frame.Research.Declaration != nil {
+			out.FrameSummary.DeclarationCount = len(frame.Research.Declaration.Fields)
+		}
+	}
 	return out, result.ExitSuccess
 }
 

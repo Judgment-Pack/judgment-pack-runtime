@@ -73,3 +73,13 @@ They distinguish handwritten projected old-source families from independent
 full-frame grammar stress cases, and from whitespace used only to reach an exact
 byte ceiling. The pinned Desk/Agent pack domain is 1 MiB; Runtime's ordinary
 10 MiB decoded pack cap and 16 MiB incoming MCP line cap remain separate limits.
+
+Standalone frame wire reports retain all exact original data once per report in
+`document`, with its exact digest and bounded `frameSummary` counts. Parsing that
+original text reconstructs every value, status, declaration and escape spelling.
+The complete typed Frame remains available internally in Go and is not repeated
+in JSON. Both MCP report representations remain equivalent. With Base frame F,
+JSON quoting of valid original JSON costs at most 2F; quoting that report text
+again costs at most 4F. The complete dual response therefore fits 6F plus bounded
+fixed report/summary metadata, below 16 MiB for F=2 MiB. This does not establish a
+full Extended response guarantee or change ordinary transport/report defaults.

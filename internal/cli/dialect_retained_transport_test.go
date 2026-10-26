@@ -181,14 +181,22 @@ func retainedTransportAssert(t *testing.T, operation, raw, pack string, frame bo
 		if json.Unmarshal([]byte(raw), &original) != nil {
 			t.Fatal("handwritten frame is not JSON")
 		}
-		inspected := mcp["frame"].(map[string]any)
-		if !reflect.DeepEqual(original["values"], inspected["values"]) {
-			t.Fatal("retained original values changed")
+		var reconstructed map[string]any
+		if json.Unmarshal([]byte(mcp["document"].(string)), &reconstructed) != nil || !reflect.DeepEqual(original, reconstructed) {
+			t.Fatal("complete frame values/statuses/declarations/escapes cannot be reconstructed")
 		}
+		if _, duplicate := mcp["frame"]; duplicate {
+			t.Fatal("redundant complete frame was emitted on the wire")
+		}
+		summary := map[string]any{"contractVersion": original["contractVersion"], "origin": original["origin"], "valueCount": float64(len(original["values"].(map[string]any))), "declarationCount": float64(0), "fieldCount": float64(0)}
 		if research, ok := original["research"].(map[string]any); ok {
-			if !reflect.DeepEqual(research["fields"], inspected["research"].(map[string]any)["fields"]) {
-				t.Fatal("retained opaque typed fields changed")
+			summary["fieldCount"] = float64(len(research["fields"].(map[string]any)))
+			if declaration, ok := research["declaration"].(map[string]any); ok {
+				summary["declarationCount"] = float64(len(declaration["fields"].([]any)))
 			}
+		}
+		if !reflect.DeepEqual(mcp["frameSummary"], summary) {
+			t.Fatal("frame summary differs from the complete original data")
 		}
 	}
 	if want == "refused" {
@@ -332,4 +340,65 @@ func TestRetainedColumnTransportBaseOpaqueHTMLFrame(t *testing.T) {
 			retainedTransportAssert(t, "validate", exact+" ", "", true, "refused")
 		})
 	}
+}
+
+// Construct the complete frame by hand. Go's JSON encoder would pre-escape
+// literal U+2028/U+2029 and hide the admitted three-byte UTF-8 input boundary.
+func TestRetainedColumnTransportBaseLiteralSeparators(t *testing.T) {
+	for _, tc := range []struct{ name, unit string }{
+		{"line", "\u2028"},
+		{"mandatory-quote", `\"`},
+		{"mandatory-backslash", `\\`},
+		{"paragraph", "\u2029"},
+		{"escaped-separators", `\u2028\u2029`},
+		{"literal-backslash-u", `\\u2028\\u2029\\\\u2028\\\\u2029`},
+		{"mixed-escaping", "\u2028" + `\\u2028\\u2029\\\\u2028\u0000\n\t\"\\` + "\u2029é😀"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prefix := `{"contractVersion":"1","origin":"generated","values":{},"research":{"recordRecipeRevision":"r","declaration":null,"fields":{"Column":{"status":"supported","valueJson":"`
+			suffix := `"}}}}`
+			room := dialect.RetainedColumnDraftFrameBytes - len(prefix) - len(suffix)
+			payload := strings.Repeat(tc.unit, room/len(tc.unit)) + strings.Repeat("x", room%len(tc.unit))
+			exact := prefix + payload + suffix
+			if len(exact) != dialect.RetainedColumnDraftFrameBytes {
+				t.Fatal("handwritten raw UTF-8 frame boundary", len(exact))
+			}
+			retainedTransportAssert(t, "validate", exact, "", true, "retained-frame-valid")
+			retainedTransportAssert(t, "validate", exact+" ", "", true, "refused")
+		})
+	}
+}
+
+// Full-document reports already retain only the canonical document. Exercise
+// their separate Base envelope with raw UTF-8/mandatory escaping as well.
+func TestRetainedColumnTransportBaseRawDocumentEscapes(t *testing.T) {
+	for _, tc := range []struct{ name, unit string }{{"line", "\u2028"}, {"paragraph", "\u2029"}, {"quote", `\"`}, {"backslash", `\\`}} {
+		t.Run(tc.name, func(t *testing.T) {
+			prefix := `{"version":3,"case":{"facts":[],"evidence":[]},"sources":[{"name":"original","kind":"operation","profile":"profile1","profileDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","maxAge":86400,"arguments":{"payload":[`
+			suffix := `]},"read":{"copy":{"facts":[],"evidence":[]}}}]}`
+			chunks := make([]string, 16)
+			room := dialect.RetainedColumnDraftDocumentBytes - len(prefix) - len(suffix) - (16*2 + 15)
+			perChunk := room / 16
+			for i := range chunks {
+				n := perChunk
+				if i < room%16 {
+					n++
+				}
+				chunks[i] = `"` + strings.Repeat(tc.unit, n/len(tc.unit)) + strings.Repeat("x", n%len(tc.unit)) + `"`
+			}
+			exact := prefix + strings.Join(chunks, ",") + suffix
+			if len(exact) != dialect.RetainedColumnDraftDocumentBytes {
+				t.Fatal("handwritten full document byte boundary", len(exact))
+			}
+			retainedTransportAssert(t, "validate", exact, "", false, "document-valid")
+			retainedTransportAssert(t, "validate", exact+" ", "", false, "refused")
+		})
+	}
+}
+
+func TestRetainedColumnTransportFrameReconstruction(t *testing.T) {
+	// Deliberately noncanonical source spacing/order, a historical null, an
+	// absent member, opaque malformed typed JSON, and ordered declarations.
+	raw := ` { "origin":"generated", "contractVersion":"1", "values":{"Null":null,"Empty":"","Escaped":"\\u2028","Literal":"` + "\u2028" + `"},"research":{"recordRecipeRevision":"v1","declaration":{"recipeRevision":"v1","fields":[{"name":"Second","fieldJson":" {\"name\":\"Second\",\"type\":\"future\",\"n\":-0} "},{"name":"First","fieldJson":"{\"name\":\"First\",\"type\":\"text\"}"}]},"fields":{"Null":{"status":"supported","valueJson":"null"},"Missing":{"status":"missing"},"Control":{"status":"conflicting","valueJson":"\\u2028 \u0000 \" \\\\"},"Malformed":{"status":"interpretation","valueJson":"\"\\ud800\""}}}} `
+	retainedTransportAssert(t, "validate", raw, "", true, "retained-frame-valid")
 }
