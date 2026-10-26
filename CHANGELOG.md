@@ -4,6 +4,12 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Prepare the retained-column RC2 archive importer and independent embedded
+  provenance/release checks for proposed `v0.39.0-alpha.2`. No RC2 artifacts or
+  support pins are installed by this preparation; the selected CLI/MCP reader
+  still reports its historical Draft identity. See the
+  [release-note draft](docs/releases/v0.39.0-alpha.2.md).
+
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
 

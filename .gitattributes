@@ -28,3 +28,6 @@ internal/policy/official/** -text
 
 # The served authoring schema has a byte digest on every platform.
 internal/dialect/version2.schema.json -text
+
+# Independently pinned retained-column release resources retain exact bytes.
+internal/dialect/retained-column/official/** -text

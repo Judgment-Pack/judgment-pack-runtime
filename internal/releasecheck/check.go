@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/dialect"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/policy"
 )
 
@@ -33,6 +34,9 @@ func CheckEmbedded(tag string) error {
 	}
 	if err := policy.VerifyOfficialArtifacts(); err != nil {
 		return fmt.Errorf("embedded official Policy draft: %w", err)
+	}
+	if err := dialect.VerifyRetainedColumnArtifacts(); err != nil {
+		return fmt.Errorf("embedded retained-column leaf: %w", err)
 	}
 	return nil
 }

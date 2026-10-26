@@ -66,6 +66,12 @@ The Core `0.3.0` bundle uses full Spec commit
 This source provenance does not by itself establish a conformance claim; see
 [CONFORMANCE.md](CONFORMANCE.md).
 
+Selected retained-column leaf support has a separate exact distribution/source/schema/corpus
+identity. Core `specVersion: "0.3.0"` does not select or imply this support. RC2 import
+preparation installs no leaf identity; the explicit CLI/MCP reader continues to report
+`Draft RFC0029` at its historical source revision until a reviewed immutable import and
+selection change ship together. Historical Draft test resources retain their original labels.
+
 ## Compatibility dimensions
 
 Release notes describe compatibility separately for:
