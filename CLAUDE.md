@@ -63,10 +63,19 @@ summary block, and anything you stopped on or chose not to do.
 ## This repository
 
 - The checks are `dev.json`, run by `scripts/dev/check.sh`; the `check` job in CI runs the same
-  list. The `test` job is a matrix (one leg per operating system and Go version, the Go 1.24 floor
-  included) whose leg names branch protection requires; its legs run the Go steps natively and
-  are the one place the list is repeated in the workflow. A Go step added to `dev.json` is added
-  to the matrix as well.
+  list (scoped on a pull request, see below). The `test` job is a matrix (one leg per operating
+  system and Go version, the Go 1.24 floor included) whose leg names branch protection requires;
+  its legs run the Go steps natively and are the one place the list is repeated in the workflow.
+  A Go step added to `dev.json` is added to the matrix as well.
+- A pull request's `check` job runs `scripts/dev/check.sh --all --changed origin/<base>`: only the
+  steps that `jpdev.json` maps its changed paths to, and the whole list when a changed path matches
+  no rule (the workflows, `.gitattributes`, `.gitignore`, a file in a new place) or when
+  `jpdev.json`, `dev.json` or the runner changed. A push to `main` runs the whole list, and only
+  that run is what a release is held to; the `test` matrix is not scoped. Run the same selection
+  locally with `scripts/dev/check.sh --changed origin/main` (or `jpdev check --changed`). The Go
+  tests read `README.md`, `CHANGELOG.md`, `CONFORMANCE.md` and `docs/`, so a documentation change
+  selects `go-test`. A new `//go:embed` file, a new step or a new input of a step is mapped in
+  `jpdev.json`; when unsure, map it broader.
 - `go.mod` carries `go 1.24.0`: the runtime reads through `os.Root`, a Go 1.24 standard-library
   type. Do not raise the floor without saying so in the pull request.
 - The specification is owned by `judgment-pack-spec`; the specification artifacts embedded here

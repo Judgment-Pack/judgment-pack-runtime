@@ -1,9 +1,10 @@
 name: CI
 
 # The check list is dev.json, run by scripts/dev/check.sh (the development kit's vendored runner).
-# `check` sets the toolchains up from the manifest and runs every step. `test` is the operating
-# system and Go version matrix: its job names are required by branch protection, and its legs run
-# the Go steps of dev.json natively on each platform.
+# `check` sets the toolchains up from the manifest and runs the steps: on a pull request the steps
+# jpdev.json maps the changed paths to (`check.sh --changed`), on a push to main the whole list.
+# `test` is the operating system and Go version matrix: its job names are required by branch
+# protection, and its legs run the Go steps of dev.json natively on each platform.
 
 on:
   pull_request:
@@ -59,9 +60,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # The whole history, so that --changed finds the merge base with the base branch.
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       # First, so that a manifest that does not parse fails before the long steps start.
       - name: Set up Go
@@ -76,5 +79,16 @@ jobs:
       - name: Setup steps
         run: scripts/dev/check.sh --setup
       # Includes the MCP registry server.json template check (scripts/check-registry-template.py).
+      # A pull request runs the steps jpdev.json maps its changed paths to, and the whole list when
+      # a path is unmapped or the mapping, dev.json or the runner changed. A push to main runs the
+      # whole list, and only that run is what a release is held to.
       - name: Checks
-        run: scripts/dev/check.sh --all
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            scripts/dev/check.sh --all --changed "origin/$BASE_REF"
+          else
+            scripts/dev/check.sh --all
+          fi
