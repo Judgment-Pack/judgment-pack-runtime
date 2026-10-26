@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "changed": [
+    {
+      "paths": ["**/*.go", "go.mod", "go.sum"],
+      "checks": ["local-paths", "agent-docs", "diff-check",
+                 "go-fmt", "go-vet", "go-test", "conformance", "build"]
+    },
+    {
+      "paths": ["internal/artifacts/jps/**",
+                "internal/policy/candidate/**", "internal/policy/official/**", "internal/policy/prototype/**",
+                "internal/dialect/version2.schema.json", "internal/dialect/testdata/spec-dialect.md",
+                "internal/graph/graph.schema.json", "internal/project/jpack.schema.json",
+                "internal/bulkbench/testdata/**"],
+      "checks": ["local-paths", "agent-docs", "diff-check",
+                 "go-vet", "go-test", "conformance", "build"]
+    },
+    {
+      "paths": ["internal/*/testdata/**"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "go-test"]
+    },
+    {
+      "paths": ["*.md", "docs/**", "internal/bulkbench/README.md"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "go-test"]
+    },
+    {
+      "paths": ["build/mcp-registry/**", "scripts/check-registry-template.py"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "registry-template"]
+    },
+    {
+      "paths": ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES", ".editorconfig", ".vscode/**", "bin/.gitkeep",
+                ".goreleaser.yml", "build/oci/Dockerfile",
+                ".github/dependabot.yml", ".github/pull_request_template.md",
+                "scripts/sync-agent-docs.sh", "scripts/dev/handover_check.sh"],
+      "checks": ["local-paths", "agent-docs", "diff-check"]
+    }
+  ]
+}
