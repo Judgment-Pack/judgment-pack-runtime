@@ -1,6 +1,10 @@
-# Experimental retained-column Draft reader
+# Historical retained-column Draft reader
 
-Runtime has an explicit experimental entry for RFC 0029 at Spec revision
+This page records the historical Draft experiment and its original pins. Current
+selected support is documented in [the RC2 reader](dialect-retained-column-rc2.md).
+The historical selector below is no longer accepted as a selected identity.
+
+That historical Runtime had an explicit experimental entry for RFC 0029 at Spec revision
 `ade3914b0b81ef299e5b9a8d6147f37ff3f0976c`. This is a Draft experiment, with no
 normative adoption, preparation verification, source authenticity or execution claim.
 The existing dialect operations retain their default contract and limits.

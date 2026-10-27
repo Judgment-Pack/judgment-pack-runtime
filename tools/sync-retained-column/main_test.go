@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,5 +195,119 @@ func TestRunRefusesExistingDestination(t *testing.T) {
 	raw, err := os.ReadFile(sentinel)
 	if err != nil || string(raw) != "preserve existing artifact bytes" {
 		t.Fatal("existing destination changed", err)
+	}
+}
+
+// These headers model git archive's PAX comment by hand. Metadata cannot
+// introduce archive members, override paths, or replace the source identity.
+func TestGitArchiveGlobalMetadata(t *testing.T) {
+	revision := strings.Repeat("1", 40)
+	for _, name := range []string{"valid", "wrong comment", "path override", "unknown record", "wrong name", "duplicate", "late", "member traversal", "member symlink", "member duplicate", "member special"} {
+		t.Run(name, func(t *testing.T) {
+			var out bytes.Buffer
+			zip := gzip.NewWriter(&out)
+			writer := tar.NewWriter(zip)
+			metadata := &tar.Header{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader, PAXRecords: map[string]string{"comment": revision}, Format: tar.FormatPAX}
+			switch name {
+			case "wrong comment":
+				metadata.PAXRecords["comment"] = strings.Repeat("2", 40)
+			case "path override":
+				metadata.PAXRecords["path"] = "../outside"
+			case "unknown record":
+				metadata.PAXRecords["unknown"] = "value"
+			case "wrong name":
+				metadata.Name = archivePrefix + "metadata"
+			}
+			write := func(h *tar.Header) {
+				t.Helper()
+				if err := writer.WriteHeader(h); err != nil {
+					t.Fatal(err)
+				}
+			}
+			member := &tar.Header{Name: archivePrefix + "safe", Typeflag: tar.TypeReg, Mode: 0644}
+			if name == "late" {
+				write(member)
+			}
+			write(metadata)
+			if name == "duplicate" {
+				write(metadata)
+			}
+			write(member)
+			switch name {
+			case "member traversal":
+				write(&tar.Header{Name: archivePrefix + "../outside", Typeflag: tar.TypeReg})
+			case "member symlink":
+				write(&tar.Header{Name: archivePrefix + "link", Typeflag: tar.TypeSymlink, Linkname: "outside"})
+			case "member duplicate":
+				write(member)
+			case "member special":
+				write(&tar.Header{Name: archivePrefix + "fifo", Typeflag: tar.TypeFifo})
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := zip.Close(); err != nil {
+				t.Fatal(err)
+			}
+			raw := out.Bytes()
+			files, err := readArchive(raw, retainedcolumn.Digest(raw), revision)
+			if name == "valid" {
+				if err != nil || len(files) != 1 || files["safe"] == nil {
+					t.Fatal("Git metadata fixture refused", err)
+				}
+			} else if err == nil {
+				t.Fatal("unsafe metadata/member accepted")
+			}
+		})
+	}
+}
+
+func TestGitArchiveGlobalMetadataByteBudget(t *testing.T) {
+	revision := strings.Repeat("1", 40)
+	// Repeated identical PAX keys collapse in Go's parsed map. A handwritten
+	// payload ensures the metadata budget still counts all serialized records.
+	var plain bytes.Buffer
+	writer := tar.NewWriter(&plain)
+	if err := writer.WriteHeader(&tar.Header{Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader, Format: tar.FormatPAX, PAXRecords: map[string]string{"comment": revision}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	header := append([]byte(nil), plain.Bytes()[:512]...)
+	payload := []byte(strings.Repeat("52 comment="+revision+"\n", 30))
+	copy(header[124:136], []byte(fmt.Sprintf("%011o\x00", len(payload))))
+	copy(header[148:156], []byte("        "))
+	sum := 0
+	for _, b := range header {
+		sum += int(b)
+	}
+	copy(header[148:156], []byte(fmt.Sprintf("%06o\x00 ", sum)))
+	var compressed bytes.Buffer
+	zip := gzip.NewWriter(&compressed)
+	for _, part := range [][]byte{header, payload, make([]byte, (512-len(payload)%512)%512), make([]byte, 1024)} {
+		if _, err := zip.Write(part); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zip.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Validate this hand-built fixture reaches the parsed one-comment shape.
+	unzip, err := gzip.NewReader(bytes.NewReader(compressed.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := tar.NewReader(unzip).Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Name != "pax_global_header" || len(parsed.PAXRecords) != 1 || parsed.PAXRecords["comment"] != revision {
+		t.Fatal("invalid handcrafted metadata fixture")
+	}
+	_, _ = io.Copy(io.Discard, unzip)
+	_ = unzip.Close()
+	if _, err := readArchive(compressed.Bytes(), retainedcolumn.Digest(compressed.Bytes()), revision); err == nil {
+		t.Fatal("oversized metadata accepted")
 	}
 }

@@ -4,10 +4,13 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- Prepare the retained-column RC2 archive importer and independent embedded
-  provenance/release checks for proposed `v0.39.0-alpha.2`. No RC2 artifacts or
-  support pins are installed by this preparation; the selected CLI/MCP reader
-  still reports its historical Draft identity. See the
+- Install and select the official retained-column/1 leaf from Spec `v0.3.0-rc.2`
+  with independently pinned provenance and admission-time inventory verification.
+  The explicit CLI/MCP adapter selects the exact RC2 tuple, reports maturity `draft`
+  and supports document validation/declared inventory coverage for Base/Extended.
+  Generated retained values now admit up to 524288 UTF-8 bytes; asserted values
+  remain bounded at 16000 in both profiles. Historical Draft fixtures remain pinned.
+  See the [RC2 reader](docs/dialect-retained-column-rc2.md) and
   [release-note draft](docs/releases/v0.39.0-alpha.2.md).
 
 Runtime's conformance claim is stated, in full and only, in

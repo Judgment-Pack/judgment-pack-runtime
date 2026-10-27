@@ -56,12 +56,13 @@ the retained prototype or historical candidate trees or the Core locks. Policy
 source schema IDs stay distinct from derived Runtime editing schema IDs. See
 [ADR-0061](adr/0061-adopt-official-policy-draft-resources.md) for compatibility.
 
-## Prepare the retained-column RC2 leaf import
+## Refresh the selected retained-column RC2 leaf import
 
-RC2 preparation is separate from installation and selected leaf support. No RC2
-resources are currently installed; the opt-in CLI/MCP reader still reports its
-historical Draft RFC0029 identity. Core locks, Policy resources and the general
-Core registry remain independent of this leaf.
+The current opt-in CLI/MCP reader selects the installed official `v0.3.0-rc.2`
+leaf with draft maturity and document-validation role. Its exact source/schema/corpus
+and independent provenance pin are compiled in `retained_column_artifacts.go`.
+Core locks, Policy resources and the general Core registry remain independent.
+Historical Draft fixtures retain their original labels; they are not RC2 evidence.
 
 After the maintainer confirms adoption and immutable publication of the official
 Spec `v0.3.0-rc.2`, verify its exact tag/source commit, immutable release state,
@@ -96,10 +97,11 @@ hashes and per-file lengths/hashes, and prints the generated provenance digest.
 The tar.gz itself and external publication/attestation evidence remain release
 evidence; they are not represented as verified by the local manifest.
 
-A separate reviewed integration must install that independent provenance digest
+A reviewed integration must install that independent provenance digest
 and exact tuple in `internal/dialect/retained_column_artifacts.go`, switch the
 selected reader identity and source URL/maturity truthfully, and update selected
-CLI/MCP APIs/tests together. Run every applicable published document-validation
+CLI/MCP APIs/tests together. Every selected admission verifies the installed bytes;
+Go embedding must include underscore files named by the inventory (`all:`). Run every applicable published document-validation
 case with the installed identity and preserve historical ordinary/Draft regression
 evidence. An imported directory alone enables no support. `tools/check-release`
 refuses unpinned resources, changed or missing installed bytes, extra inventory,

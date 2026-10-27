@@ -13,12 +13,16 @@ import (
 // independent provenance pin and exact supported tuple in this file. An empty
 // pin means no RC2 installation, not a placeholder RC2 capability.
 //
-//go:embed retained-column
+//go:embed all:retained-column
 var retainedColumnArtifacts embed.FS
 
-const retainedColumnProvenancePin = ""
+const retainedColumnProvenancePin = "sha256:a13a5c76ef3e010b31266d0fd779450ba985c41df779280a3da42c3a79acdfd4"
 
-var retainedColumnInstalledIdentity = retainedcolumn.Identity{}
+var retainedColumnInstalledIdentity = retainedcolumn.Identity{
+	Version: "0.3.0-rc.2", Revision: "bcac15b7537ce21879201b5e5dfe795496225121",
+	SchemaSHA256: "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557",
+	CorpusSHA256: "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863",
+}
 
 // VerifyRetainedColumnArtifacts binds installed resources to the identity the
 // selected CLI/MCP reader actually reports, independently of caller agreement.

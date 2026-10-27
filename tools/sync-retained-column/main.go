@@ -86,7 +86,7 @@ func verifySourceWith(o options, read func(string, ...string) ([]byte, error)) e
 	}
 	return nil
 }
-func readArchive(raw []byte, pin string) (fstest.MapFS, error) {
+func readArchive(raw []byte, pin, revision string) (fstest.MapFS, error) {
 	if retainedcolumn.Digest(raw) != pin {
 		return nil, errors.New("archive differs from independently verified digest")
 	}
@@ -100,7 +100,9 @@ func readArchive(raw []byte, pin string) (fstest.MapFS, error) {
 	files := fstest.MapFS{}
 	seen := map[string]bool{}
 	var total int64
+	var entries int
 	for {
+		before := expanded.N
 		header, err := reader.Next()
 		if err == io.EOF {
 			break
@@ -108,6 +110,20 @@ func readArchive(raw []byte, pin string) (fstest.MapFS, error) {
 		if err != nil {
 			return nil, err
 		}
+		// git archive emits one leading PAX global comment naming the source
+		// commit. It is metadata, never a file or a path override. Go returns
+		// this header after parsing its records, unlike per-file PAX headers.
+		// Admit only that exact bounded form; retain all member safety checks.
+		if header.Typeflag == tar.TypeXGlobalHeader {
+			if entries != 0 || header.Name != "pax_global_header" || header.Format != tar.FormatPAX ||
+				expanded.N < before-1024 || len(header.PAXRecords) != 1 ||
+				len(revision) != 40 || header.PAXRecords["comment"] != revision {
+				return nil, errors.New("archive has unsupported global metadata")
+			}
+			entries++
+			continue
+		}
+		entries++
 		name := strings.TrimPrefix(header.Name, archivePrefix)
 		directory := header.Typeflag == tar.TypeDir
 		if !strings.HasPrefix(header.Name, archivePrefix) || strings.Contains(name, "\\") {
@@ -153,7 +169,7 @@ func readArchive(raw []byte, pin string) (fstest.MapFS, error) {
 // prepare is also exercised with explicitly synthetic, handwritten archives;
 // it accepts no capability report as an installation trust anchor.
 func prepare(raw []byte, o options, sourceFile func(string) ([]byte, error)) (fstest.MapFS, string, error) {
-	files, err := readArchive(raw, o.archivePin)
+	files, err := readArchive(raw, o.archivePin, o.revision)
 	if err != nil {
 		return nil, "", err
 	}

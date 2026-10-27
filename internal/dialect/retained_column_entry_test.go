@@ -34,7 +34,7 @@ func TestRetainedColumnEntryPackTargets(t *testing.T) {
 					if code != 0 || r.Status != "complete" || r.Compatibility == nil || !reflect.DeepEqual(r.Compatibility.Facts, []CoverageEntry{{Target: "/converted", Status: "mapped", Producers: []string{"/converted"}, AcknowledgedBy: []string{}}}) || !reflect.DeepEqual(r.Compatibility.Evidence, []CoverageEntry{{Target: "receipt", Status: "mapped", Producers: []string{"receipt"}, AcknowledgedBy: []string{}}}) {
 						t.Fatalf("converted targets did not reach ordinary inventory: code=%d %+v", code, r)
 					}
-					if r.Compatibility.ValueTypesChecked || r.Compatibility.ExecutionChecked || !r.Compatibility.InventoryOverApproximates || r.FullDocumentConformance || r.Maturity != "experimental-draft" || r.Spec.Revision != RetainedColumnDraftRevision {
+					if r.Compatibility.ValueTypesChecked || r.Compatibility.ExecutionChecked || !r.Compatibility.InventoryOverApproximates || r.FullDocumentConformance || r.Maturity != "draft" || r.Spec.Revision != RetainedColumnDraftRevision {
 						t.Fatal("overstated Draft check", r)
 					}
 					encoded, code := EncodeRetainedColumnDraft("test", draftJSON(t, d), RetainedColumnDraftBase())

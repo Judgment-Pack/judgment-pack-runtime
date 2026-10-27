@@ -48,7 +48,7 @@ func draftEntry(f map[string]any) map[string]any {
 }
 
 func TestRetainedColumnDraftIdentityAndSelection(t *testing.T) {
-	for _, fixture := range []struct{ file, digest string }{{"contract.schema.json", RetainedColumnDraftSchema}, {"cases.json", RetainedColumnDraftCorpus}} {
+	for _, fixture := range []struct{ file, digest string }{{"contract.schema.json", "sha256:996cec17473987eebf1aa553536df0ce5a740971532567f411282ee70036879f"}, {"cases.json", "sha256:e2ac53f56cd5ab779e032d2847b49fa04438ffb9df57d456f75f2ba058dc12d2"}} {
 		raw, err := os.ReadFile("testdata/retained-column-draft/" + fixture.file)
 		if err != nil {
 			t.Fatal(err)
@@ -101,7 +101,7 @@ func TestRetainedColumnDraftDocuments(t *testing.T) {
 				}
 				raw := draftJSON(t, d)
 				r, code := ValidateRetainedColumnDraft("test", raw, RetainedColumnDraftBase())
-				if code != 0 || r.Status != "document-valid" || r.ValidationScope != "experimental-retained-column-base-document" || r.Spec.Revision != RetainedColumnDraftRevision || r.FullDocumentConformance || r.Maturity != "experimental-draft" || r.Capabilities != nil {
+				if code != 0 || r.Status != "document-valid" || r.ValidationScope != "experimental-retained-column-base-document" || r.Spec.Revision != RetainedColumnDraftRevision || r.FullDocumentConformance || r.Maturity != "draft" || r.Capabilities != nil {
 					t.Fatalf("%d %v %s: %+v", version, named, kind, r)
 				}
 				if old, code := Validate("test", raw); code == 0 || old.Status != "refused" {
@@ -321,7 +321,7 @@ func TestRetainedColumnDraftBounds(t *testing.T) {
 		})
 	}
 	for _, n := range []int{16000, 16001} {
-		f := draftGenerated()
+		f := map[string]any{"contractVersion": "1", "origin": "asserted", "values": map[string]any{}, "research": nil}
 		f["values"].(map[string]any)["Column"] = strings.Repeat("x", n)
 		r, code := ValidateRetainedColumnDraftFrame("test", draftJSON(t, f), RetainedColumnDraftBase())
 		if (code == 0) != (n == 16000) || code != 0 && r.Diagnostics[0].Code != "input-over-bound" {
