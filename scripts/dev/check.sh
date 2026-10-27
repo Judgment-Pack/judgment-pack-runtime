@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # from judgment-pack-devkit v0.10.0 (templates/check.sh)
+# source patch: Judgment-Pack/judgment-pack-devkit@2f7f84922ee9131962d935b322889d289defb56f (unreleased commit; #57)
 # scripts/dev/check.sh [--setup] [--only a,b | --changed [BASE]] [--skip a,b] [--all] [--manifest FILE]
-# Runs the checks of dev.json in order and prints one summary block; exit status = failures.
+# Runs dev.json checks in order; exit counts failures, or is nonzero for infrastructure-unrun checks.
 # --changed runs only the checks jpdev.json maps the paths changed since the merge base of BASE
 # (default: the default branch) and HEAD to, with changed_checks.py vendored beside this script;
 # the whole list runs when a changed path is unmapped, when jpdev.json, the manifest, this script
@@ -158,5 +159,8 @@ for n, s, head, extra in rows: print('\n'.join(['%-8s %-24s %s' % (s, n, head)] 
 totals = tuple(sum(1 for r in rows if r[1] == k) for k in ('PASS', 'FAIL', 'SKIP', 'NOT RUN'))
 if infrastructure: print('== %d passed, %d failed, %d skipped, %d not run; infrastructure failure ==' % totals)
 else: print('== %d passed, %d failed, %d skipped, %d not run ==' % totals)
-sys.exit(min(failed, 255))
+# Preserve completed-check statuses/counts. Infrastructure is nonzero only when
+# it prevented a selected step from running, not when all selected steps finished.
+exit_status = failed or (1 if infrastructure and totals[3] else 0)
+sys.exit(min(exit_status, 255))
 PY

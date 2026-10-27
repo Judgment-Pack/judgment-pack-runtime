@@ -311,3 +311,318 @@ func TestGitArchiveGlobalMetadataByteBudget(t *testing.T) {
 		t.Fatal("oversized metadata accepted")
 	}
 }
+
+// Construct the per-file extension bytes by hand: tar.Writer derives known PAX
+// fields from Header, so a caller's conflicting path record is not a safe-target
+// override fixture. The extension below precedes an ordinary in-prefix member.
+func perFilePAXArchive(t *testing.T, key, value string, directory bool) []byte {
+	t.Helper()
+	var regular bytes.Buffer
+	writer := tar.NewWriter(&regular)
+	typ := byte(tar.TypeReg)
+	if directory {
+		typ = tar.TypeDir
+	}
+	if err := writer.WriteHeader(&tar.Header{Name: archivePrefix + "original", Typeflag: typ, Mode: 0644}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	record := ""
+	if key != "" {
+		body := " " + key + "=" + value + "\n"
+		length := len(body) + 1
+		for {
+			next := len(fmt.Sprint(length)) + len(body)
+			if next == length {
+				break
+			}
+			length = next
+		}
+		record = fmt.Sprint(length) + body
+	}
+	header := append([]byte(nil), regular.Bytes()[:512]...)
+	clear(header[:100])
+	copy(header[:100], "pax_file_header")
+	header[156] = tar.TypeXHeader
+	copy(header[124:136], []byte(fmt.Sprintf("%011o\x00", len(record))))
+	copy(header[148:156], []byte("        "))
+	sum := 0
+	for _, b := range header {
+		sum += int(b)
+	}
+	copy(header[148:156], []byte(fmt.Sprintf("%06o\x00 ", sum)))
+	var out bytes.Buffer
+	zip := gzip.NewWriter(&out)
+	for _, part := range [][]byte{header, []byte(record), make([]byte, (512-len(record)%512)%512), regular.Bytes()} {
+		if _, err := zip.Write(part); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zip.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+func TestPerFilePAXMetadataRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, value string
+		directory        bool
+	}{
+		{"unknown", "unknown", "value", false},
+		{"safe path override", "path", archivePrefix + "safe", false},
+		{"per-file source comment", "comment", strings.Repeat("1", 40), false},
+		{"empty header", "", "", false},
+		{"directory safe path override", "path", archivePrefix + "safe", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := perFilePAXArchive(t, tc.key, tc.value, tc.directory)
+			zip, err := gzip.NewReader(bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			header, err := tar.NewReader(zip).Next()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if header.Format != tar.FormatPAX || header.Typeflag == tar.TypeXHeader {
+				t.Fatal("fixture did not reach effective PAX member")
+			}
+			if tc.key != "" && header.PAXRecords[tc.key] != tc.value {
+				t.Fatal("fixture lost per-file record")
+			}
+			if tc.key == "path" && header.Name != archivePrefix+"safe" {
+				t.Fatal("fixture did not apply safe path override")
+			}
+			_ = zip.Close()
+			if _, err := readArchive(raw, retainedcolumn.Digest(raw), strings.Repeat("1", 40)); err == nil || !strings.Contains(err.Error(), "unsupported per-file metadata") {
+				t.Fatal("unsupported per-file metadata admitted", err)
+			}
+		})
+	}
+}
+
+// GNU extensions are handwritten so even empty and short overrides are present.
+func gnuMetadataArchive(t *testing.T, flag byte, format tar.Format, value string, directory, dangling bool) []byte {
+	t.Helper()
+	var member bytes.Buffer
+	writer := tar.NewWriter(&member)
+	typ := byte(tar.TypeReg)
+	if directory {
+		typ = tar.TypeDir
+	}
+	if err := writer.WriteHeader(&tar.Header{Name: archivePrefix + "original", Typeflag: typ, Mode: 0644, Format: format}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(value)
+	if value != "" {
+		payload = append(payload, 0)
+	}
+	header := append([]byte(nil), member.Bytes()[:512]...)
+	clear(header[:100])
+	copy(header[:100], "././@LongLink")
+	header[156] = flag
+	copy(header[124:136], []byte(fmt.Sprintf("%011o\x00", len(payload))))
+	copy(header[148:156], []byte("        "))
+	sum := 0
+	for _, b := range header {
+		sum += int(b)
+	}
+	copy(header[148:156], []byte(fmt.Sprintf("%06o\x00 ", sum)))
+	tail := member.Bytes()
+	if dangling {
+		tail = tail[512:]
+	}
+	var out bytes.Buffer
+	zip := gzip.NewWriter(&out)
+	for _, part := range [][]byte{header, payload, make([]byte, (512-len(payload)%512)%512), tail} {
+		if _, err := zip.Write(part); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zip.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
+}
+
+func TestGNUArchiveMetadataRefusals(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		flag      byte
+		format    tar.Format
+		value     string
+		directory bool
+		dangling  bool
+	}{
+		{"safe long name", tar.TypeGNULongName, tar.FormatGNU, archivePrefix + "safe", false, false},
+		{"safe long link", tar.TypeGNULongLink, tar.FormatGNU, "safe", false, false},
+		{"empty long name", tar.TypeGNULongName, tar.FormatGNU, "", false, false},
+		{"empty long link", tar.TypeGNULongLink, tar.FormatGNU, "", false, false},
+		{"mixed format long name", tar.TypeGNULongName, tar.FormatUSTAR, archivePrefix + "safe", false, false},
+		{"mixed format long link", tar.TypeGNULongLink, tar.FormatUSTAR, "safe", false, false},
+		{"dangling long name", tar.TypeGNULongName, tar.FormatGNU, archivePrefix + "safe", false, true},
+		{"dangling empty long link", tar.TypeGNULongLink, tar.FormatGNU, "", false, true},
+		{"directory long name", tar.TypeGNULongName, tar.FormatGNU, archivePrefix + "safe", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := gnuMetadataArchive(t, tc.flag, tc.format, tc.value, tc.directory, tc.dangling)
+			zip, err := gzip.NewReader(bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			header, err := tar.NewReader(zip).Next()
+			if tc.dangling {
+				if err != io.EOF {
+					t.Fatal("fixture did not reach transparent metadata EOF", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if header.Typeflag == tar.TypeGNULongName || header.Typeflag == tar.TypeGNULongLink || header.Format == tar.FormatUSTAR {
+					t.Fatal("fixture did not reach effective GNU or mixed-format member")
+				}
+				if tc.value != "" && tc.flag == tar.TypeGNULongName && header.Name != tc.value {
+					t.Fatal("fixture lost safe name override")
+				}
+				if tc.value != "" && tc.flag == tar.TypeGNULongLink && header.Linkname != tc.value {
+					t.Fatal("fixture lost link metadata")
+				}
+			}
+			_ = zip.Close()
+			if _, err := readArchive(raw, retainedcolumn.Digest(raw), strings.Repeat("1", 40)); err == nil || !strings.Contains(err.Error(), "unsupported per-file metadata") {
+				t.Fatal("unsupported GNU metadata admitted", err)
+			}
+		})
+	}
+}
+
+func TestDanglingPAXMetadataRefusals(t *testing.T) {
+	for _, key := range []string{"", "unknown", "path"} {
+		t.Run("record="+key, func(t *testing.T) {
+			raw := perFilePAXArchive(t, key, archivePrefix+"safe", false)
+			zip, err := gzip.NewReader(bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			plain, err := io.ReadAll(zip)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := zip.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// Remove the zero-length member header, preserving the manually
+			// written extension and the two zero end-marker blocks.
+			plain = append(plain[:len(plain)-1536], plain[len(plain)-1024:]...)
+			if _, err := tar.NewReader(bytes.NewReader(plain)).Next(); err != io.EOF {
+				t.Fatal("fixture did not reach transparent metadata EOF", err)
+			}
+			var out bytes.Buffer
+			writer := gzip.NewWriter(&out)
+			if _, err := writer.Write(plain); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			raw = out.Bytes()
+			if _, err := readArchive(raw, retainedcolumn.Digest(raw), strings.Repeat("1", 40)); err == nil || !strings.Contains(err.Error(), "unsupported per-file metadata") {
+				t.Fatal("dangling per-file metadata admitted", err)
+			}
+		})
+	}
+}
+
+func TestArchiveTrailingPadding(t *testing.T) {
+	for _, name := range []string{"zero padding", "nonzero byte", "second archive", "hidden metadata"} {
+		t.Run(name, func(t *testing.T) {
+			var plain bytes.Buffer
+			writer := tar.NewWriter(&plain)
+			if err := writer.WriteHeader(&tar.Header{Name: archivePrefix + "safe", Mode: 0644, Format: tar.FormatUSTAR}); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			var trailing []byte
+			switch name {
+			case "zero padding":
+				trailing = make([]byte, 1536)
+			case "nonzero byte":
+				trailing = []byte{0, 0, 1}
+			case "second archive":
+				trailing = plain.Bytes()
+			case "hidden metadata":
+				trailing = append([]byte(nil), plain.Bytes()[:512]...)
+				trailing[156] = tar.TypeGNULongName
+			}
+			var out bytes.Buffer
+			zip := gzip.NewWriter(&out)
+			for _, part := range [][]byte{plain.Bytes(), trailing} {
+				if _, err := zip.Write(part); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := zip.Close(); err != nil {
+				t.Fatal(err)
+			}
+			raw := out.Bytes()
+			files, err := readArchive(raw, retainedcolumn.Digest(raw), strings.Repeat("1", 40))
+			if name == "zero padding" {
+				if err != nil || len(files) != 1 || files["safe"] == nil {
+					t.Fatal("zero padding refused", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "nonzero trailing data") {
+				t.Fatal("nonzero trailing data admitted", err)
+			}
+		})
+	}
+}
+
+func TestUnsupportedMemberFormats(t *testing.T) {
+	for _, name := range []string{"GNU", "V7"} {
+		t.Run(name, func(t *testing.T) {
+			var plain bytes.Buffer
+			writer := tar.NewWriter(&plain)
+			if err := writer.WriteHeader(&tar.Header{Name: archivePrefix + "safe", Mode: 0644, Format: tar.FormatGNU}); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			data := plain.Bytes()
+			if name == "V7" {
+				clear(data[257:512])
+				copy(data[148:156], []byte("        "))
+				sum := 0
+				for _, b := range data[:512] {
+					sum += int(b)
+				}
+				copy(data[148:156], []byte(fmt.Sprintf("%06o\x00 ", sum)))
+			}
+			header, err := tar.NewReader(bytes.NewReader(data)).Next()
+			if err != nil || header.Format == tar.FormatUSTAR {
+				t.Fatal("invalid unsupported format fixture", err)
+			}
+			var out bytes.Buffer
+			zip := gzip.NewWriter(&out)
+			if _, err := zip.Write(data); err != nil {
+				t.Fatal(err)
+			}
+			if err := zip.Close(); err != nil {
+				t.Fatal(err)
+			}
+			raw := out.Bytes()
+			if _, err := readArchive(raw, retainedcolumn.Digest(raw), strings.Repeat("1", 40)); err == nil || !strings.Contains(err.Error(), "unsupported per-file metadata") {
+				t.Fatal("unsupported member format admitted", err)
+			}
+		})
+	}
+}

@@ -86,6 +86,37 @@ func verifySourceWith(o options, read func(string, ...string) ([]byte, error)) e
 	}
 	return nil
 }
+
+// archiveHeaderReader observes only the first physical header of each Next.
+// Go consumes extension headers internally, even when no member follows them.
+// skip is the already-known padding of the preceding admitted member/metadata.
+// All header validation and interpretation remains with archive/tar.
+type archiveHeaderReader struct {
+	io.Reader
+	skip   int64
+	header [512]byte
+	copied int
+}
+
+func (r *archiveHeaderReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	skip := min(int64(n), r.skip)
+	r.skip -= skip
+	r.copied += copy(r.header[r.copied:], p[skip:n])
+	return n, err
+}
+
+type archivePaddingWriter struct{}
+
+func (archivePaddingWriter) Write(p []byte) (int, error) {
+	for _, b := range p {
+		if b != 0 {
+			return 0, errors.New("archive has nonzero trailing data")
+		}
+	}
+	return len(p), nil
+}
+
 func readArchive(raw []byte, pin, revision string) (fstest.MapFS, error) {
 	if retainedcolumn.Digest(raw) != pin {
 		return nil, errors.New("archive differs from independently verified digest")
@@ -96,14 +127,25 @@ func readArchive(raw []byte, pin, revision string) (fstest.MapFS, error) {
 	}
 	defer compressed.Close()
 	expanded := &io.LimitedReader{R: compressed, N: maxArchiveBytes + 1}
-	reader := tar.NewReader(expanded)
+	physical := &archiveHeaderReader{Reader: expanded}
+	reader := tar.NewReader(physical)
 	files := fstest.MapFS{}
 	seen := map[string]bool{}
 	var total int64
 	var entries int
+	var padding int64
 	for {
+		physical.skip, physical.copied = padding, 0
 		before := expanded.N
 		header, err := reader.Next()
+		// Inspect the first physical header before EOF as well: dangling extension
+		// records have no effective member for the format/record checks below.
+		if physical.copied == len(physical.header) {
+			switch physical.header[156] {
+			case tar.TypeXHeader, tar.TypeGNULongName, tar.TypeGNULongLink:
+				return nil, errors.New("archive has unsupported per-file metadata")
+			}
+		}
 		if err == io.EOF {
 			break
 		}
@@ -121,9 +163,16 @@ func readArchive(raw []byte, pin, revision string) (fstest.MapFS, error) {
 				return nil, errors.New("archive has unsupported global metadata")
 			}
 			entries++
+			padding = (512 - (before-expanded.N-512)%512) % 512
 			continue
 		}
+		// Ordinary Git members use USTAR. Refuse unsupported effective formats
+		// as well as metadata records, including mixed-format extensions.
+		if header.Format != tar.FormatUSTAR || len(header.PAXRecords) != 0 {
+			return nil, errors.New("archive has unsupported per-file metadata")
+		}
 		entries++
+		padding = 0
 		name := strings.TrimPrefix(header.Name, archivePrefix)
 		directory := header.Typeflag == tar.TypeDir
 		if !strings.HasPrefix(header.Name, archivePrefix) || strings.Contains(name, "\\") {
@@ -146,6 +195,7 @@ func readArchive(raw []byte, pin, revision string) (fstest.MapFS, error) {
 			return nil, errors.New("archive contains a nonregular or oversized member")
 		}
 		total += header.Size
+		padding = (512 - header.Size%512) % 512
 		data, err := io.ReadAll(io.LimitReader(reader, header.Size+1))
 		if err != nil {
 			return nil, err
@@ -157,7 +207,7 @@ func readArchive(raw []byte, pin, revision string) (fstest.MapFS, error) {
 	}
 	// Consume through the gzip trailer so corrupt/truncated gzip streams fail,
 	// even when the tar end marker was already reached. Bound tar padding too.
-	if _, err := io.Copy(io.Discard, expanded); err != nil {
+	if _, err := io.Copy(archivePaddingWriter{}, expanded); err != nil {
 		return nil, err
 	}
 	if expanded.N <= 0 {
