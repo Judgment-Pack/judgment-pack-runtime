@@ -56,6 +56,58 @@ the retained prototype or historical candidate trees or the Core locks. Policy
 source schema IDs stay distinct from derived Runtime editing schema IDs. See
 [ADR-0061](adr/0061-adopt-official-policy-draft-resources.md) for compatibility.
 
+## Refresh the selected retained-column RC2 leaf import
+
+The current opt-in CLI/MCP reader selects the installed official `v0.3.0-rc.2`
+leaf with draft maturity and document-validation role. Its exact source/schema/corpus
+and independent provenance pin are compiled in `retained_column_artifacts.go`.
+Core locks, Policy resources and the general Core registry remain independent.
+Historical Draft fixtures retain their original labels; they are not RC2 evidence.
+
+After the maintainer confirms adoption and immutable publication of the official
+Spec `v0.3.0-rc.2`, verify its exact tag/source commit, immutable release state,
+asset checksums and attestations using the Spec release process. Record those
+observations separately: the offline importer cannot establish publication,
+immutability or source authenticity from local bytes or a Git remote URL.
+Review the release inventory digest independently. Use a clean official checkout
+at that exact tag and the verified tar.gz asset, then run:
+
+```bash
+env GO111MODULE=on go run ./tools/sync-retained-column \
+  --source ../judgment-pack-spec \
+  --source-ref v0.3.0-rc.2 \
+  --source-commit "$RC2_SOURCE_COMMIT" \
+  --archive "$RC2_VERIFIED_ARCHIVE" \
+  --archive-sha256 "$RC2_VERIFIED_ARCHIVE_DIGEST" \
+  --inventory-sha256 "$RC2_REVIEWED_INVENTORY_DIGEST" \
+  --destination ./internal/dialect/retained-column/official
+```
+
+Digest arguments include `sha256:`. The destination must be new and exclusively
+owned during import. The helper follows the existing staged import pattern; the
+portable directory rename can replace an empty directory created concurrently,
+so concurrent destination writers are outside this maintainer workflow. It
+never overwrites a nonempty artifact set. All checks complete before staging;
+materialized bytes are verified again before publication of the directory.
+
+Review every imported byte and `provenance.json`. The helper retains the closed
+leaf inventory, generated `release-identity.json` and all files the inventory
+names at their original upstream paths, records exact archive and inventory
+hashes and per-file lengths/hashes, and prints the generated provenance digest.
+The tar.gz itself and external publication/attestation evidence remain release
+evidence; they are not represented as verified by the local manifest.
+
+A reviewed integration must install that independent provenance digest
+and exact tuple in `internal/dialect/retained_column_artifacts.go`, switch the
+selected reader identity and source URL/maturity truthfully, and update selected
+CLI/MCP APIs/tests together. Every selected admission verifies the installed bytes;
+Go embedding must include underscore files named by the inventory (`all:`). Run every applicable published document-validation
+case with the installed identity and preserve historical ordinary/Draft regression
+evidence. An imported directory alone enables no support. `tools/check-release`
+refuses unpinned resources, changed or missing installed bytes, extra inventory,
+unsupported identities and disagreement with the selected reader. No final Core,
+producer or preparation-verifier claim follows from this document-validation role.
+
 ## Validate locally
 
 Install the exact GoReleaser version used by the workflow, then run:

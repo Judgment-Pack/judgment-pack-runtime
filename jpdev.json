@@ -10,6 +10,7 @@
       "paths": ["internal/artifacts/jps/**",
                 "internal/policy/candidate/**", "internal/policy/official/**", "internal/policy/prototype/**",
                 "internal/dialect/version2.schema.json", "internal/dialect/testdata/spec-dialect.md",
+                "internal/dialect/retained-column/**",
                 "internal/graph/graph.schema.json", "internal/project/jpack.schema.json",
                 "internal/bulkbench/testdata/**"],
       "checks": ["local-paths", "agent-docs", "diff-check",

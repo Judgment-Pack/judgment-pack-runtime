@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -59,7 +61,7 @@ func TestRetainedColumnEntryCLIAndMCP(t *testing.T) {
 					if isError || !reflect.DeepEqual(cliReport, mcpReport) {
 						t.Fatal("actual CLI/MCP Draft mismatch", cliReport, mcpReport)
 					}
-					if cliReport["maturity"] != "experimental-draft" || cliReport["specRevision"] != dialect.RetainedColumnDraftRevision || cliReport["fullDocumentConformance"] != false {
+					if cliReport["maturity"] != "draft" || cliReport["specRevision"] != dialect.RetainedColumnDraftRevision || cliReport["fullDocumentConformance"] != false {
 						t.Fatal("wrong Draft identity/scope", cliReport)
 					}
 					if operation == "check" {
@@ -102,7 +104,7 @@ func TestRetainedColumnEntryCLISelectionBeforeFileRead(t *testing.T) {
 	}
 	raw := retainedEntryDocument("text", "base")
 	code, out, _ := runTest(t, []string{"dialect", "validate", "-", "--format", "json"}, raw)
-	if code == 0 || strings.Contains(out, "conversionContracts") || strings.Contains(out, `"maturity":"experimental-draft"`) {
+	if code == 0 || strings.Contains(out, "conversionContracts") || strings.Contains(out, dialect.RetainedColumnDraftRevision) {
 		t.Fatal("Draft auto-enabled", code, out)
 	}
 }
@@ -143,5 +145,90 @@ func TestRetainedColumnEntryCLIFrameAndByteBoundaries(t *testing.T) {
 	code, out, stderr := runTest(t, []string{"dialect", "validate", "-", "--retained-frame", "--draft-contract", dialect.RetainedColumnDraftSelector, "--draft-profile", "extended", "--format", "json"}, frame)
 	if len(frame) >= dialect.RetainedColumnDraftExtendedFrameBytes || code != 0 || stderr != "" || !strings.Contains(out, `"status":"retained-frame-valid"`) {
 		t.Fatal("CLI should admit decoded large opaque frame", code, stderr)
+	}
+}
+
+// Use the installed published recipes through both actual application handlers.
+// Independent maximum generated values are frame API checks, not snapshot claims.
+func TestRetainedColumnRC2CLIAndMCPRawValues(t *testing.T) {
+	raw, err := os.ReadFile("../dialect/retained-column/official/conformance/retained-column/1/cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var corpus struct {
+		Bounds []struct {
+			ID            string `json:"id"`
+			Origin        string `json:"origin"`
+			Unit          string `json:"unit"`
+			Repeat        int    `json:"repeat"`
+			Suffix        string `json:"suffix"`
+			ListItems     int    `json:"listItems"`
+			ItemBytes     int    `json:"itemBytes"`
+			ExpectedBytes int    `json:"expectedBytes"`
+			Expected      struct {
+				Refusal string `json:"refusal"`
+			} `json:"expected"`
+		} `json:"rawValueBounds"`
+	}
+	if err = json.Unmarshal(raw, &corpus); err != nil {
+		t.Fatal(err)
+	}
+	if len(corpus.Bounds) != 11 {
+		t.Fatal("published recipe inventory changed")
+	}
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range corpus.Bounds {
+		for _, profile := range []string{"base", "extended"} {
+			t.Run(tc.ID+"/"+profile, func(t *testing.T) {
+				value := strings.Repeat(tc.Unit, tc.Repeat) + tc.Suffix
+				if tc.ListItems != 0 {
+					items := make([]string, tc.ListItems)
+					for i := range items {
+						items[i] = strings.Repeat("x", tc.ItemBytes)
+					}
+					encoded, _ := json.Marshal(items)
+					value = string(encoded)
+				}
+				if tc.ExpectedBytes != 0 && len(value) != tc.ExpectedBytes {
+					t.Fatal("published byte recipe changed")
+				}
+				frame := map[string]any{"contractVersion": "1", "origin": tc.Origin, "values": map[string]any{"Column": value}, "research": nil}
+				if tc.Origin == "generated" {
+					frame["research"] = map[string]any{"recordRecipeRevision": "r", "declaration": nil, "fields": map[string]any{"Opaque": map[string]any{"status": "supported", "valueJson": "{invalid typed raw"}}}
+				}
+				encoded, _ := json.Marshal(frame)
+				document := string(encoded)
+				argv := []string{"dialect", "validate", "-", "--retained-frame", "--draft-contract", dialect.RetainedColumnDraftSelector, "--draft-profile", profile, "--format", "json"}
+				code, out, stderr := runTest(t, argv, document)
+				var cliReport map[string]any
+				if stderr != "" || json.Unmarshal([]byte(out), &cliReport) != nil {
+					t.Fatal("CLI failed to emit report", code, stderr)
+				}
+				mcpReport, isError := dialectMCPResult(t, engine, "dialect_validate", map[string]any{"draftContract": dialect.RetainedColumnDraftSelector, "draftProfile": profile, "retainedFrame": true, "document": document})
+				delete(cliReport, "command")
+				delete(mcpReport, "command")
+				if !reflect.DeepEqual(cliReport, mcpReport) || isError != (code != 0) {
+					t.Fatal("CLI/MCP parity failed", code, isError)
+				}
+				if tc.Expected.Refusal != "" {
+					diagnostics := cliReport["diagnostics"].([]any)
+					if code == 0 || len(diagnostics) != 1 || diagnostics[0].(map[string]any)["code"] != tc.Expected.Refusal || cliReport["document"] != nil {
+						t.Fatal("public value bound not enforced", code)
+					}
+				} else {
+					sum := sha256.Sum256(encoded)
+					if code != 0 || cliReport["document"] != document || cliReport["digest"] != fmt.Sprintf("sha256:%x", sum) || cliReport["frame"] != nil || cliReport["frameSummary"] == nil {
+						t.Fatal("raw frame wire preservation failed", code)
+					}
+					spec := cliReport["spec"].(map[string]any)
+					if cliReport["maturity"] != "draft" || cliReport["role"] != "document-validation" || spec["version"] != "0.3.0-rc.2" || spec["revision"] != "bcac15b7537ce21879201b5e5dfe795496225121" || spec["schemaSha256"] != "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557" || spec["corpusSha256"] != "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863" {
+						t.Fatal("public installed identity changed")
+					}
+				}
+			})
+		}
 	}
 }

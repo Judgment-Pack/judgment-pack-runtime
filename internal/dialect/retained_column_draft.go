@@ -1,7 +1,7 @@
 package dialect
 
 // This opt-in internal reader implements document/retained-frame structure from
-// RFC 0029 at the immutable Draft revision below. It executes no conversions.
+// the installed immutable RC2 leaf below. It executes no conversions.
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,9 +16,9 @@ import (
 const (
 	RetainedColumnDraftContract              = "retained-column/1"
 	RetainedColumnDraftSelector              = RetainedColumnDraftContract + "@" + RetainedColumnDraftRevision
-	RetainedColumnDraftRevision              = "ade3914b0b81ef299e5b9a8d6147f37ff3f0976c"
-	RetainedColumnDraftSchema                = "sha256:996cec17473987eebf1aa553536df0ce5a740971532567f411282ee70036879f"
-	RetainedColumnDraftCorpus                = "sha256:e2ac53f56cd5ab779e032d2847b49fa04438ffb9df57d456f75f2ba058dc12d2"
+	RetainedColumnDraftRevision              = "bcac15b7537ce21879201b5e5dfe795496225121"
+	RetainedColumnDraftSchema                = "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557"
+	RetainedColumnDraftCorpus                = "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863"
 	RetainedColumnDraftDocumentBytes         = 1048576
 	RetainedColumnDraftFrameBytes            = 2097152
 	RetainedColumnDraftExtendedDocumentBytes = 2097152
@@ -44,7 +44,7 @@ type RetainedColumnDraftSelection struct {
 
 func RetainedColumnDraftBase() RetainedColumnDraftSelection {
 	return RetainedColumnDraftSelection{RetainedColumnDraftContract, RetainedColumnDraftIdentity{
-		"Draft RFC0029", RetainedColumnDraftRevision, RetainedColumnDraftSchema, RetainedColumnDraftCorpus}, "base"}
+		"0.3.0-rc.2", RetainedColumnDraftRevision, RetainedColumnDraftSchema, RetainedColumnDraftCorpus}, "base"}
 }
 
 type RetainedColumnDraftLimits struct {
@@ -68,8 +68,8 @@ func retainedDraftReport(command string) RetainedColumnDraftReport {
 	s := RetainedColumnDraftBase()
 	r := report(command)
 	r.SpecRevision = RetainedColumnDraftRevision
-	r.Specification = "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + RetainedColumnDraftRevision + "/rfcs/0029-retained-column-conversions.md"
-	r.Maturity = "experimental-draft"
+	r.Specification = "https://github.com/Judgment-Pack/judgment-pack-spec/blob/" + RetainedColumnDraftRevision + "/spec/retained-column.md"
+	r.Maturity = "draft"
 	return RetainedColumnDraftReport{r, s.Contract, s.Spec, s.Profile, "document-validation",
 		RetainedColumnDraftLimits{RetainedColumnDraftDocumentBytes, RetainedColumnDraftFrameBytes}, nil}
 }
@@ -82,7 +82,10 @@ func retainedDraftRefused(r RetainedColumnDraftReport, code, path, message strin
 // Selection is checked before inspecting artifact bytes, even malformed bytes.
 func retainedDraftSelection(r RetainedColumnDraftReport, selection RetainedColumnDraftSelection) (RetainedColumnDraftReport, int) {
 	if selection.Contract != r.Contract || selection.Spec != r.Spec {
-		return retainedDraftRefused(r, "capability-unsupported", "", "The exact experimental Draft contract and specification identity are required.", result.ExitUnsupported)
+		return retainedDraftRefused(r, "capability-unsupported", "", "The exact installed retained-column contract and specification identity are required.", result.ExitUnsupported)
+	}
+	if err := VerifyRetainedColumnArtifacts(); err != nil {
+		return retainedDraftRefused(r, "capability-unsupported", "", "The selected retained-column installation failed verification.", result.ExitUnsupported)
 	}
 	switch selection.Profile {
 	case "base":
@@ -92,7 +95,7 @@ func retainedDraftSelection(r RetainedColumnDraftReport, selection RetainedColum
 		r.Limits = RetainedColumnDraftLimits{RetainedColumnDraftExtendedDocumentBytes, RetainedColumnDraftExtendedFrameBytes}
 		return r, result.ExitSuccess
 	default:
-		return retainedDraftRefused(r, "input-malformed", "/profile", "Unknown Draft profile.", result.ExitInvalid)
+		return retainedDraftRefused(r, "input-malformed", "/profile", "Unknown retained-column profile.", result.ExitInvalid)
 	}
 }
 
@@ -132,7 +135,7 @@ func validateRetainedColumnDraftDocument(command string, data []byte, selection 
 		return r, nil, code
 	}
 	if len(data) > r.Limits.DocumentBytes {
-		r, code = retainedDraftRefused(r, "input-over-bound", "", "The experimental Draft document exceeds its byte limit.", result.ExitInvalid)
+		r, code = retainedDraftRefused(r, "input-over-bound", "", "The selected retained-column document exceeds its byte limit.", result.ExitInvalid)
 		return r, nil, code
 	}
 	// Byte admission and parser work budgets are independent. The extended node
@@ -196,7 +199,7 @@ func EncodeRetainedColumnDraft(command string, data []byte, selection RetainedCo
 		return r, code
 	}
 	if len(data) > r.Limits.DocumentBytes {
-		return retainedDraftRefused(r, "input-over-bound", "", "The experimental Draft document exceeds its byte limit.", result.ExitInvalid)
+		return retainedDraftRefused(r, "input-over-bound", "", "The selected retained-column document exceeds its byte limit.", result.ExitInvalid)
 	}
 	maxIDBytes := 1024
 	if r.Profile == "extended" {
@@ -215,7 +218,7 @@ func CheckRetainedColumnDraft(command string, data, pack []byte, engine *validat
 	}
 	// Bound both operands before parsing either, matching ordinary Check ordering.
 	if len(data) > r.Limits.DocumentBytes {
-		return retainedDraftRefused(r, "input-over-bound", "", "The experimental Draft document exceeds its byte limit.", result.ExitInvalid)
+		return retainedDraftRefused(r, "input-over-bound", "", "The selected retained-column document exceeds its byte limit.", result.ExitInvalid)
 	}
 	if int64(len(pack)) > MaxPackBytes {
 		return retainedDraftRefused(r, "JPS-DIALECT-PACK-BYTE-LIMIT", "", "The pack exceeds the document byte limit.", result.ExitInvalid)
@@ -375,8 +378,12 @@ func (v *documentCheck) retainedFrame(value any) *RetainedColumnDraftFrame {
 			out.Values[name] = nil
 		} else {
 			text := v.text(values[name], path, false)
-			if len(text) > 16000 {
-				v.refuse("JPS-DIALECT-COUNT-LIMIT", path, "A retained column is at most 16000 UTF-8 bytes.")
+			limit := 16000
+			if out.Origin == "generated" {
+				limit = 524288
+			}
+			if len(text) > limit {
+				v.refuse("JPS-DIALECT-COUNT-LIMIT", path, "The retained column exceeds its origin-specific UTF-8 byte limit.")
 			}
 			out.Values[name] = &text
 		}

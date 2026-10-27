@@ -1,0 +1,936 @@
+import { selected as retainedSelected, applyColumn, selectedPreparation, producer } from "./retained.ts";
+// Recomputing a preparation (§11, "Findings" 1–4) by §§3–9, at the given preparation's verifiedAt.
+import { BOUNDS, scanBytes } from "./bounds.ts";
+import { verify as edVerify } from "./ed25519.ts";
+import { endpointInScope } from "./endpoint.ts";
+import { DIGEST, Refusal, compareDecimals, placeholders, profileDigestOf, sha256hex, stringTemplate } from "./forms.ts";
+import type { Acquisition, ClaimForm, CopyRead, Dialect, ParamType, Profile, QualityFact, Rule, Source } from "./forms.ts";
+import {
+  NotRead, OutsideDomain, arr, bool, canon, compareCodePoints, decode, depth, inCanonDomain, isInteger, intValue, jsonEqual, member,
+  num, obj, parse, preparationForm, resolve, sortedDistinct, str, utf8, writeAt,
+} from "./json.ts";
+import type { JArr, JObj, JStr, JVal } from "./json.ts";
+import { instant } from "./time.ts";
+
+/** A finding (§11): the reading ends at it, and reports it. */
+export class Finding extends Error {
+  code: string;
+  constructor(code: string, why: string) {
+    super(why);
+    this.code = code;
+  }
+}
+const finding = (code: string, why: string): never => {
+  throw new Finding(code, why);
+};
+
+const AVAILABILITY = new Set(["present", "absent", "unknown"]);
+export const VERIFICATION = "verified acquisitions; session sealing and input truth are not established";
+const RECEIPT_CONTEXT = "judgment-pack-gateway/receipt/3:";
+
+type Origin = { kind: "case"; pointer: string } | { kind: "source"; source: string; pointer: string } | { kind: "runAt" };
+type ScopeValue = { type: ParamType; value: JVal; origin: Origin };
+type Scope = Map<string, ScopeValue>;
+type Claim = { facts: JObj; evidence: Map<string, string>; status: string; reason: string; basis: string[] };
+
+export type Outcome = {
+  name: string;
+  source?: Source;
+  scope: Scope;
+  skipped: boolean;
+  request?: JObj;
+  claim?: Claim;
+  class: string;
+  generatedInfluence: boolean;
+  citation?: JObj;
+  calculation?: JObj; // the lineage's calculation member
+  calculatorComputed: boolean;
+  isCalculator: boolean;
+  committed: Set<string>; // parameters the source's own acquisition commits
+  ambiguous: Set<string>; // parameters the request carries only in a $text that names another too
+  factTargets: string[];
+  evidenceTargets: string[];
+  readDigest: string;
+  candidateFrom: Map<string, string[]>; // "fact:" or "evidence:" + target
+  // of an acquired research source: its citations, each retained response's in order and then the record's own when
+  // it has one (§9.1, §9.3); and the research record itself, for a later reconciliation (§6.4)
+  citations?: JObj[];
+  record?: JVal;
+  transformations: Map<string, JObj>;
+};
+
+export type Recomputed = {
+  preparation: JObj;
+  outcomes: Outcome[];
+  factsDocument: JObj;
+  evidenceDocument: JObj;
+  lineage: JObj[];
+};
+
+const digestOf = (v: JVal) => "sha256:" + sha256hex(canon(v));
+
+function ofType(v: JVal, t: ParamType): boolean {
+  if (t === "string") return v.t === "str";
+  if (t === "integer") return isInteger(v);
+  return v.t === "str" && instant(v.v) !== null;
+}
+
+// ---- reads (§6) ----
+
+const QUALITY_DECIMAL = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/;
+const QUALITY_WHITESPACE_EDGE = /^[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/gu;
+const QUALITY_WHITESPACE_RUN = /[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/gu;
+const qualityTrim = (value: string) => value.replace(QUALITY_WHITESPACE_EDGE, "");
+
+function decimalNumber(literal: string): string {
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(literal)!;
+  const digits = m[2] + (m[3] ?? "");
+  const point = m[2].length + Number(m[4] ?? "0");
+  let whole = point <= 0 ? "0" : point >= digits.length ? digits + "0".repeat(point - digits.length) : digits.slice(0, point);
+  let fraction = point <= 0 ? "0".repeat(-point) + digits : point >= digits.length ? "" : digits.slice(point);
+  whole = whole.replace(/^0+(?=\d)/, "");
+  fraction = fraction.replace(/0+$/, "");
+  const magnitude = whole + (fraction ? `.${fraction}` : "");
+  return magnitude === "0" ? "0" : m[1] + magnitude;
+}
+
+function converted(v: JVal, rule: JObj): { value?: JVal; failure?: string } {
+  if (v.t === "null") return { value: v };
+  const kind = (rule.m.get("kind") as JStr).v;
+  if (kind === "decimal-from-number") return v.t === "num" ? { value: str(decimalNumber(v.lit)) } : { failure: "not-a-number" };
+  if (v.t !== "str") return { failure: "invalid-encoding" };
+  if (kind === "trim") return { value: str(qualityTrim(v.v)) };
+  if (kind === "collapse-whitespace") return { value: str(qualityTrim(v.v).replace(QUALITY_WHITESPACE_RUN, " ")) };
+  if (kind === "boolean-from-text") {
+    for (const [name, answer] of [["true", true], ["false", false]] as const) {
+      if ((rule.m.get(name) as JArr).a.some((x) => (x as JStr).v === v.v)) return { value: bool(answer) };
+    }
+    return { failure: "out-of-domain" };
+  }
+  if (kind === "decimal-from-text") {
+    const whitespace = (rule.m.get("whitespace") as JStr).v;
+    let text = whitespace === "trim" ? qualityTrim(v.v) : v.v;
+    if (whitespace === "reject" && text !== qualityTrim(text)) return { failure: "invalid-encoding" };
+    let sign = "";
+    if (/^[+-]/.test(text)) { sign = text[0]; text = text.slice(1); }
+    const signs = (rule.m.get("sign") as JStr).v;
+    if ((sign === "+" && signs !== "plus-minus") || (sign === "-" && signs === "none")) return { failure: "invalid-encoding" };
+    const thousands = (rule.m.get("thousandsSeparator") as JStr).v;
+    const decimalParts = text.split((rule.m.get("decimalSeparator") as JStr).v);
+    if (decimalParts.length > 2) return { failure: "not-a-number" };
+    const [integer, fraction] = decimalParts;
+    const digits = (part: string) => /^[0-9]+$/.test(part);
+    if (fraction !== undefined && !digits(fraction)) return { failure: "not-a-number" };
+    const groups = thousands ? integer.split(thousands) : [integer];
+    if (groups.length === 1) {
+      if (!digits(integer) || (integer.length > 1 && integer.startsWith("0"))) return { failure: "not-a-number" };
+    } else if (groups[0].length < 1 || groups[0].length > 3 || !digits(groups[0]) || groups[0].startsWith("0")
+        || groups.slice(1).some((group) => group.length !== 3 || !digits(group))) return { failure: "not-a-number" };
+    let result = (sign === "-" ? "-" : "") + groups.join("");
+    if (fraction !== undefined) result += `.${fraction}`;
+    return QUALITY_DECIMAL.test(result) ? { value: str(result) } : { failure: "not-a-number" };
+  }
+  const format = (rule.m.get("format") as JStr).v;
+  const match = (format === "YYYY-MM-DD" ? /^(\d{4})-(\d{2})-(\d{2})$/ : /^(\d{2})\/(\d{2})\/(\d{4})$/).exec(v.v);
+  if (!match) return { failure: "invalid-encoding" };
+  const parts = format === "YYYY-MM-DD" ? [match[1], match[2], match[3]] : format === "MM/DD/YYYY" ? [match[3], match[1], match[2]] : [match[3], match[2], match[1]];
+  const [year, month, day] = parts.map(Number);
+  if (!validDate(year, month, day)) return { failure: "invalid-encoding" };
+  return { value: str(`${parts[0]}-${parts[1]}-${parts[2]}`) };
+}
+
+function validDate(year: number, month: number, day: number): boolean {
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= days[month - 1];
+}
+
+function qualityType(v: JVal, type: QualityFact["qualityType"]): boolean {
+  if (v.t === "null") return false;
+  if (type === "string") return v.t === "str";
+  if (type === "decimal") return v.t === "str" && QUALITY_DECIMAL.test(v.v);
+  if (type === "boolean") return v.t === "bool";
+  if (type === "date" && v.t === "str") {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.v);
+    return m !== null && validDate(Number(m[1]), Number(m[2]), Number(m[3]));
+  }
+  return false;
+}
+
+function applyCopy(copy: CopyRead, value: JVal, who: string, transformations?: Map<string, JObj>): Claim {
+  const facts = obj();
+  for (const f of copy.facts) {
+    if (retainedSelected() && f.conversion) {
+      const column = applyColumn(value, f.source!, f.conversion);
+      transformations?.set("fact:" + f.target, column.fragment);
+      if (column.value !== undefined) writeAt(facts, f.target, column.value);
+      continue;
+    }
+    if (f.qualityType === undefined) {
+      const legacy = resolve(value, f.source!);
+      if (legacy === undefined) continue;
+      if (!inCanonDomain(legacy)) finding("read-failed", `${who}: the value at ${f.source} is outside the canon domain`);
+      writeAt(facts, f.target, legacy);
+      continue;
+    }
+    const observations = f.observations ?? [{ id: "source", source: f.source! }];
+    const applications: JObj[] = [], present = new Map<string, JVal>();
+    for (const observation of observations) {
+      const raw = resolve(value, observation.source);
+      const fields: [string, JVal][] = [["id", str(observation.id)], ["source", str(observation.source)], ["state", str("missing")]];
+      if (raw !== undefined) {
+        const result = f.convert ? converted(raw, f.convert) : { value: raw };
+        fields[2] = ["state", str(result.failure ? "failed" : "present")];
+        fields.push(["sourceText", str(raw.t === "num" ? raw.lit : decode(preparationForm(raw)))]);
+        if (f.convert) fields.push(["rule", f.convert]);
+        if (result.failure) fields.push(["failure", obj([["code", str(result.failure)]])]);
+        else { fields.push(["result", result.value!]); present.set(observation.id, result.value!); }
+      }
+      applications.push(obj(fields));
+    }
+    const findings: JObj[] = [];
+    let selected: JVal | undefined, reconciliation: JObj | undefined;
+    if (f.reconcile) {
+      const fields: [string, JVal][] = [["mode", str(f.reconcile.mode)], ["observed", arr(Array.from(present.keys()).map(str))]];
+      if (f.reconcile.mode === "agree" && present.size) {
+        selected = Array.from(present.values())[0];
+        if (Array.from(present.values()).slice(1).some((x) => !jsonEqual(selected!, x))) { selected = undefined; fields.push(["conflict", bool(true)]); findings.push(obj([["code", str("conflict")]])); }
+        else fields.push(["agreed", bool(true)]);
+      } else {
+        const chosen = (f.reconcile.precedence ?? observations.map((x) => x.id)).find((x) => present.has(x));
+        if (chosen !== undefined) { selected = present.get(chosen); fields.push(["chosen", str(chosen)]); }
+      }
+      reconciliation = obj(fields);
+    } else selected = present.values().next().value;
+    if (selected === undefined && f.required && !findings.length) findings.push(obj([["code", str("missing-required")]]));
+    if (selected !== undefined && !qualityType(selected, f.qualityType)) { selected = undefined; findings.push(obj([["code", str("wrong-type")]])); }
+    if (selected !== undefined && selected.t !== "null" && f.domain) {
+      let inside = f.domain.m.has("in") && (f.domain.m.get("in") as JArr).a.some((x) => jsonEqual(x, selected!));
+      if (f.domain.m.has("decimalRange") && selected.t === "str" && QUALITY_DECIMAL.test(selected.v)) {
+        const range = f.domain.m.get("decimalRange") as JObj;
+        inside = compareDecimals((range.m.get("min") as JStr).v, selected.v) <= 0 && compareDecimals(selected.v, (range.m.get("max") as JStr).v) <= 0;
+      }
+      if (!inside) { selected = undefined; findings.push(obj([["code", str("out-of-domain")]])); }
+    }
+    if (transformations && f.qualityType) {
+      const fields: [string, JVal][] = [["applications", arr(applications)], ["findings", arr(findings)]];
+      if (reconciliation) fields.push(["reconciliation", reconciliation]);
+      transformations.set(f.target, obj(fields));
+    }
+    if (selected === undefined) continue;
+    if (!inCanonDomain(selected)) finding("read-failed", `${who}: the value for ${f.target} is outside the canon domain`);
+    writeAt(facts, f.target, selected);
+  }
+  const evidence = new Map<string, string>();
+  for (const e of copy.evidence) {
+    const column = retainedSelected() && e.availability ? applyColumn(value, e.source, e.availability, true) : undefined;
+    if (column) transformations?.set("evidence:" + e.requirement, column.fragment);
+    const v = column ? column.value : resolve(value, e.source);
+    if (v === undefined) continue;
+    if (v.t !== "str" || !AVAILABILITY.has(v.v)) finding("read-failed", `${who}: the value at ${e.source} is not an availability`);
+    evidence.set(e.requirement, (v as JStr).v);
+  }
+  const basis = sortedDistinct([...copy.facts.flatMap((f) => f.observations?.map((o) => o.source) ?? [f.source!]), ...copy.evidence.map((e) => e.source)]);
+  return { facts, evidence, status: "resolved", reason: "copied", basis };
+}
+
+/** Apply one shared hand-written §6.2a vector through the preparation implementation. */
+export function applyQualityFact(copy: CopyRead, value: JVal): { facts: JObj; transformations: Map<string, JObj> } {
+  const transformations = new Map<string, JObj>();
+  const claim = applyCopy(copy, value, "quality vector", transformations);
+  return { facts: claim.facts, transformations };
+}
+
+function applyRule(rule: Rule, value: JVal, scope: Scope, who: string): Claim {
+  const basis = new Set<string>();
+  const param = (n: string) => scope.get(n)!.value;
+  const holds = (c: JObj): boolean => {
+    const op = (c.m.get("op") as JStr).v;
+    if (op === "always") return true;
+    if (op === "all") {
+      for (const x of (c.m.get("of") as { a: JVal[] }).a) if (!holds(x as JObj)) return false;
+      return true;
+    }
+    if (op === "any") {
+      for (const x of (c.m.get("of") as { a: JVal[] }).a) if (holds(x as JObj)) return true;
+      return false;
+    }
+    if (op === "not") return !holds(c.m.get("of") as JObj);
+    const field = (c.m.get("field") as JStr).v;
+    basis.add(field);
+    const v = resolve(value, field);
+    if (v === undefined) return false;
+    switch (op) {
+      case "exists":
+        return true;
+      case "equals":
+        return jsonEqual(v, c.m.get("to")!);
+      case "equalsParam":
+        return jsonEqual(v, param((c.m.get("param") as JStr).v));
+      case "isTrue":
+        return v.t === "bool" && v.v;
+      case "isDecimalString":
+        return v.t === "str" && /^(?:0|[1-9][0-9]*)$/.test(v.v);
+      case "freshWithin": {
+        if (v.t !== "str") return false;
+        const at = instant(v.v);
+        const asOf = (c.m.get("asOf") as JStr).v;
+        const maxAge = (c.m.get("maxAge") as JStr).v;
+        if (at === null || rule.parameters.get(asOf) !== "timestamp" || rule.parameters.get(maxAge) !== "integer") return false;
+        const n = instant((param(asOf) as JStr).v)!;
+        const m = intValue(param(maxAge) as never);
+        const age = n - at;
+        return age >= 0 && age <= m;
+      }
+    }
+    return false;
+  };
+  const match = rule.clauses.find((cl) => holds(cl.when))!;
+  const facts = obj();
+  for (const f of match.claim.facts) {
+    const v = resolve(value, f.from);
+    if (v === undefined) finding("read-failed", `${who}: ${f.from} does not resolve`);
+    if (!inCanonDomain(v!)) finding("read-failed", `${who}: the value at ${f.from} is outside the canon domain`);
+    writeAt(facts, f.pointer, v!);
+  }
+  return {
+    facts,
+    evidence: new Map(match.claim.evidence),
+    status: match.claim.acquisitionStatus,
+    reason: match.reason,
+    basis: sortedDistinct(basis),
+  };
+}
+
+/** The value read (§6.1): the result, then each unwrap, measured against its bounds when it is unwrapped. */
+function valueRead(result: JVal, unwrap: string[], who: string): JVal {
+  let cur = result;
+  for (const p of unwrap) {
+    const v = resolve(cur, p);
+    if (v === undefined || v.t !== "str") finding("read-failed", `${who}: unwrap ${p} is not a string`);
+    const bytes = utf8((v as JStr).v);
+    if (bytes.length > BOUNDS.unwrappedBytes) throw new Refusal("input-over-bound", `${who}: an unwrapped string's bytes`);
+    const scan = scanBytes(bytes);
+    if (scan.nesting > BOUNDS.readNesting || !scan.numbersWithin) throw new Refusal("input-over-bound", `${who}: an unwrapped value`);
+    try {
+      cur = parse(decode(bytes));
+    } catch (e) {
+      if (e instanceof NotRead) finding("read-failed", `${who}: unwrap ${p} does not hold exactly one JSON value`);
+      throw e;
+    }
+  }
+  return cur;
+}
+
+// ---- templates and commitments (§4.1) ----
+
+function instantiate(t: JVal, scope: Scope): JVal {
+  if (t.t === "arr") return arr(t.a.map((x) => instantiate(x, scope)));
+  if (t.t !== "obj") return t;
+  const keys = Array.from(t.m.keys());
+  if (keys.some((k) => k.startsWith("$"))) {
+    const [name, a] = Array.from(t.m)[0];
+    const n = (a as JStr).v;
+    if (name === "$param") return scope.get(n)!.value;
+    let out = "";
+    let pos = 0;
+    for (const p of placeholders(n)!) {
+      const lit = (scope.get(p.name)!.value as { lit: string }).lit;
+      out += n.slice(pos, p.start) + (lit === "-0" ? "0" : lit);
+      pos = p.end;
+    }
+    return str(out + n.slice(pos));
+  }
+  return obj(keys.map((k) => [k, instantiate(t.m.get(k)!, scope)]));
+}
+
+function commitments(t: JVal, committed: Set<string>, ambiguous: Set<string>): void {
+  if (t.t === "arr") {
+    for (const x of t.a) commitments(x, committed, ambiguous);
+    return;
+  }
+  if (t.t !== "obj") return;
+  if (Array.from(t.m.keys()).some((k) => k.startsWith("$"))) {
+    const [name, a] = Array.from(t.m)[0];
+    if (name === "$param") {
+      committed.add((a as JStr).v);
+    } else {
+      const names = new Set(placeholders((a as JStr).v)!.map((p) => p.name));
+      if (names.size === 1) for (const n of names) committed.add(n);
+      else for (const n of names) ambiguous.add(n);
+    }
+    return;
+  }
+  for (const x of t.m.values()) commitments(x, committed, ambiguous);
+}
+
+/** §4.1: why a request does not fit its profile, or null. A tool call under `mcp`; under `http` and `airbyte`
+ * any object, but that `adapter-http`'s `query` is an object of string templates; nothing under `command`. */
+function requestMisfit(s: Source, p: Profile): string | null {
+  const request = s.template as JObj;
+  if (p.shape === "command") return "a profile of shape command serves no operation";
+  if (p.shape === "mcp") {
+    const keys = Array.from(request.m.keys()).sort();
+    const tool = request.m.get("tool");
+    const name = tool !== undefined && tool.t === "str" ? tool.v : undefined;
+    if (keys.join(",") !== "arguments,tool" || name === undefined || name === "") return "a request that is not a tool call, under a profile of shape mcp";
+    if (!(p.tools ?? []).includes(name)) return "a tool the profile does not allow";
+    return null;
+  }
+  const query = request.m.get("query");
+  if ((member(p.adapter, "name") as JStr).v === "adapter-http" && query !== undefined) {
+    const fits = query.t === "obj" && !Array.from(query.m.keys()).some((k) => k.startsWith("$")) && Array.from(query.m.values()).every((x) => stringTemplate(x, s.scope!));
+    if (!fits) return "a query that is not an object of string templates, under adapter-http";
+  }
+  return null;
+}
+
+// ---- acquisitions (§5.2) ----
+
+/** The instants of a receipt's `acquisition.observedAt` and `servedAt`, which check 1 found present. */
+type Times = { observed: number; served: number };
+
+/** §5.2, checks 1–5; returns the instants check 1 found, which the time rule reads (`checkTimes`). */
+function checkReceipt(acq: Acquisition, profile: Profile, request: JObj, who: string): Times {
+  const invalid = (why: string): never => finding("acquisition-invalid", `${who}: ${why}`);
+  const E = acq.receipt;
+  const stringOf = (v: JVal | undefined) => (v !== undefined && v.t === "str" ? v.v : null);
+  const s = (k: string) => stringOf(E.m.get(k));
+  // 1. the receipt's version and kind, and the form of each member this list reads
+  if (s("receiptVersion") !== "3" || s("kind") !== "acquisition") invalid("not a version-3 acquisition receipt");
+  const keyId = s("keyId");
+  const signature = s("signature");
+  if (keyId === null || !/^[0-9a-f]{32}$/.test(keyId)) invalid("keyId is not 32 hexadecimal characters");
+  if (signature === null || !/^[0-9a-f]{128}$/.test(signature)) invalid("signature is not 128 hexadecimal characters");
+  if (s("source") === null || s("authority") === null) invalid("source or authority is not a string");
+  const acquisition = E.m.get("acquisition");
+  if (acquisition === undefined || acquisition.t !== "obj") invalid("acquisition is not an object");
+  // a receipt that attests a page is not read, whatever the shape
+  if (member(acquisition, "pageItems") !== undefined) invalid("the receipt attests a page (pageItems)");
+  // the members the time and session rules read (round 9, issue #182 item 4): each time a string with an instant (§1),
+  // `callIndex` an integer at least zero, `sessionId` a string not held to the gateway's token form; a member of another
+  // type or form makes the receipt malformed, before the time and session rules
+  // (`acquisition.observedAt` is read in `acquisition` alone: a top-level `observedAt` is another member)
+  const served = s("servedAt");
+  const observed = stringOf(member(acquisition, "observedAt"));
+  const times = { served: served === null ? null : instant(served), observed: observed === null ? null : instant(observed) };
+  if (times.served === null) invalid("servedAt is not a timestamp with an instant");
+  if (times.observed === null) invalid("acquisition.observedAt is not a timestamp with an instant");
+  const callIndex = E.m.get("callIndex");
+  if (!isInteger(callIndex) || intValue(callIndex) < 0) invalid("callIndex is not an integer at least zero");
+  if (s("sessionId") === null) invalid("sessionId is not a string");
+  for (const k of ["argumentsCommitment", "resultDigest"]) if (!DIGEST.test(s(k) ?? "")) invalid(`${k} is not a digest`);
+  // 2. the key and the signature
+  if (keyId !== sha256hex(profile.key).slice(0, 32)) invalid("keyId is not the profile key's identifier");
+  const unsigned = obj(Array.from(E.m).filter(([k]) => k !== "signature"));
+  let signed: Uint8Array;
+  try {
+    signed = Buffer.concat([Buffer.from(RECEIPT_CONTEXT, "ascii"), canon(unsigned)]);
+  } catch (e) {
+    if (e instanceof OutsideDomain) return invalid("the receipt is outside the canon domain");
+    throw e;
+  }
+  if (!edVerify(profile.key, signed, Uint8Array.from(Buffer.from(signature!, "hex")))) invalid("the signature does not verify");
+  // 3. the source, the authority, and the channel
+  if (s("source") !== profile.source || s("authority") !== profile.authority) invalid("source or authority is not the profile's");
+  const field = (k: string) => member(acquisition, k);
+  const same = (a: JVal | undefined, b: JVal) => a !== undefined && jsonEqual(a, b);
+  const endpoint = field("endpoint");
+  const endpointMatches = profile.endpointScope === undefined
+    ? same(endpoint, profile.endpoint)
+    : endpoint?.t === "str" && endpointInScope(endpoint.v, profile.endpointScope);
+  if (!same(field("adapter"), profile.adapter) || !same(field("shape"), str(profile.shape)) || !endpointMatches) {
+    invalid("the adapter, shape or endpoint is not the profile's");
+  }
+  // 4. the commitment to the request
+  const salt = Buffer.from((acq.salts.m.get("args") as JStr).v, "hex");
+  const commitment = Buffer.concat([salt, Buffer.from("args:", "ascii"), canon(request)]);
+  if (s("argumentsCommitment") !== "sha256:" + sha256hex(commitment)) invalid("argumentsCommitment does not commit this request");
+  // 5. the result's digest
+  if (!inCanonDomain(acq.result)) invalid("the result is outside the canon domain");
+  if (s("resultDigest") !== digestOf(acq.result)) invalid("resultDigest is not the result's");
+  return times as Times;
+}
+
+/** §5.2, the sessions: a receipt joins the preparation's receipts so far, which must stay in one of the two forms; its
+ * citation is returned. Check 1 held its `callIndex` and `sessionId` to their forms (`checkReceipt`), so
+ * `acquisition-sessions` names only a well-formed session set that fails the rule. */
+function joinSessions(E: JObj, sessions: { sessionId: string; callIndex: number }[], who: string): JObj {
+  const callIndex = E.m.get("callIndex");
+  const sessionId = E.m.get("sessionId");
+  sessions.push({ sessionId: (sessionId as JStr).v, callIndex: intValue(callIndex as never) });
+  if (!inOneForm(sessions)) finding("acquisition-sessions", `${who}: the acquisitions so far are in neither form`);
+  return obj([["callIndex", callIndex!], ["sessionId", sessionId!], ["signature", E.m.get("signature")!]]);
+}
+
+// ---- research (§4.3, §4.4, §5.1, §5.2, §6.4) ----
+
+/** §4.4, §5.1, finding 1: a research source's AI profile, its web profiles in `search`, `page` order, then each retained
+ * response's profile in order. Each assigned profile is the trusted one of its id and digest, of class `generated`,
+ * declaring the capability it serves and, when it declares a model, the source's; a retained response names one of
+ * the source's assignments. Returns the AI profile. */
+function researchMismatch(s: Source, profiles: Profile[], acq: Acquisition | undefined): Profile {
+  const r = s.research!;
+  const assigned = (id: string, digest: string, capability: string): Profile => {
+    const p = profiles.find((x) => x.id === id);
+    if (p === undefined || profileDigestOf(p) !== digest) return finding("profile-mismatch", `${s.name}: no trusted profile ${id} of that digest`);
+    if (p.class !== "generated") finding("profile-mismatch", `${s.name}: ${id} is not of class generated`);
+    if (p.research === undefined || !p.research.capabilities.includes(capability)) finding("profile-mismatch", `${s.name}: ${id} does not declare ${capability}`);
+    if (p.research!.model !== undefined && p.research!.model !== r.model) finding("profile-mismatch", `${s.name}: ${id} declares another model`);
+    return p;
+  };
+  const ai = assigned(s.profile!, s.profileDigest!, "answer");
+  const pairs: [string, string][] = [[s.profile!, s.profileDigest!]];
+  for (const c of ["search", "page"]) {
+    const w = r.web.get(c);
+    if (w === undefined) continue;
+    assigned(w.profile, w.profileDigest, c);
+    pairs.push([w.profile, w.profileDigest]);
+  }
+  if (acq === undefined) return ai;
+  (member(acq.result, "responses") as JArr).a.forEach((x, k) => {
+    const ref = member(x, "profile");
+    const id = (member(ref, "id") as JStr).v;
+    const digest = (member(ref, "digest") as JStr).v;
+    const p = profiles.find((y) => y.id === id);
+    if (p === undefined || profileDigestOf(p) !== digest) finding("profile-mismatch", `${s.name}: retained response ${k} names no trusted profile`);
+    if (!pairs.some(([i, d]) => i === id && d === digest) || p!.class !== "generated") finding("profile-mismatch", `${s.name}: retained response ${k} names no assignment`);
+  });
+  return ai;
+}
+
+/** §5.2, §11, finding 3 for research: each retained response in order, its checks completed before the next's, under
+ * its own trusted profile and over its own request; the record in the canon domain; then the record's own receipt, when
+ * it has one, under the source's profile and over the source's request. Every receipt joins the sessions in that order. */
+function acquireResearch(
+  s: Source, outcome: Outcome, acq: Acquisition, profiles: Profile[], ai: Profile, sessions: { sessionId: string; callIndex: number }[], at: number,
+): void {
+  const r = s.research!;
+  const request = obj([["question", instantiate(r.question, outcome.scope)], ...r.request]);
+  outcome.request = request;
+  const citations: JObj[] = [];
+  (member(acq.result, "responses") as JArr).a.forEach((x, k) => {
+    const who = `${s.name}: retained response ${k}`;
+    const retained = x as JObj;
+    const result = retained.m.get("result");
+    if (result === undefined) return finding("acquisition-missing", `${who} has no result`);
+    const profile = profiles.find((p) => p.id === (member(retained.m.get("profile"), "id") as JStr).v)!;
+    const held: Acquisition = { result, receipt: retained.m.get("receipt") as JObj, salts: retained.m.get("salts") as JObj, own: true };
+    checkTimes(checkReceipt(held, profile, retained.m.get("request") as JObj, who), s.maxAge!, at, who);
+    citations.push(joinSessions(held.receipt, sessions, who));
+  });
+  if (!inCanonDomain(acq.result)) finding("acquisition-invalid", `${s.name}: the research record is outside the canon domain`);
+  if (acq.own) {
+    const who = `${s.name}: the research record's own receipt`;
+    checkTimes(checkReceipt(acq, ai, request, who), s.maxAge!, at, who);
+    outcome.citation = joinSessions(acq.receipt, sessions, who);
+    citations.push(outcome.citation);
+  }
+  outcome.citations = citations;
+  outcome.record = acq.result;
+  // §11: the source's own acquisition commits what its request commits only under the record's own receipt, the one
+  // receipt over the source's request (§5.2)
+  commitments(r.question, outcome.committed, outcome.ambiguous);
+  if (!acq.own) outcome.committed.clear();
+}
+
+/** §4.3, §6.4: a plain research read applies to `R`; a reconciliation to `{"current": C, "sources": U}`, each earlier
+ * source it names that was acquired holding its record, a skipped one absent, held to the nesting bound first. */
+function researchClaim(s: Source, outcome: Outcome, outcomes: Outcome[]): Claim {
+  let value: JVal;
+  if (s.read.sources === undefined) {
+    value = valueRead(outcome.record!, s.read.unwrap, s.name);
+  } else {
+    const held: [string, JVal][] = [];
+    for (const n of s.read.sources) {
+      const o = outcomes.find((x) => x.name === n)!;
+      if (!o.skipped) held.push([n, o.record!]);
+    }
+    value = obj([["current", outcome.record!], ["sources", obj(held)]]);
+    if (depth(value) > BOUNDS.readNesting) throw new Refusal("input-over-bound", `${s.name}: the combined value nests too deep`);
+  }
+  return s.read.copy ? applyCopy(s.read.copy, value, s.name, outcome.transformations) : applyRule(s.read.rule!, value, outcome.scope, s.name);
+}
+
+function researchExecutionLineage(record: JVal): JObj {
+  const execution = member(record, "execution") as JObj;
+  const retained = member(execution, "retainedBytes") as JArr;
+  return obj([
+    ["resolvedSettings", member(execution, "resolvedSettings")!],
+    ["retainedBytes", arr(retained.a.map((value) => {
+      const item = value as JObj;
+      const decoded = Uint8Array.from(Buffer.from((member(item, "base64") as JStr).v, "base64"));
+      return obj([
+        ["mediaType", member(item, "mediaType")!],
+        ["digest", str(`sha256:${sha256hex(decoded)}`)],
+      ]);
+    }))],
+  ]);
+}
+
+/** §5.2, the times: the instants check 1 found present (`checkReceipt`), so `acquisition-stale` names only one
+ * outside the window. */
+function checkTimes(times: Times, maxAge: number, at: number, who: string): void {
+  for (const t of [times.observed, times.served]) {
+    if (t < at - maxAge || t > at + 30) finding("acquisition-stale", `${who}: a time is outside the source's window`);
+  }
+}
+
+function inOneForm(sessions: { sessionId: string; callIndex: number }[]): boolean {
+  const ids = sessions.map((x) => x.sessionId);
+  const idx = sessions.map((x) => x.callIndex);
+  const shared = new Set(ids).size === 1 && new Set(idx).size === idx.length;
+  const alone = new Set(ids).size === ids.length && idx.every((k) => k === 0);
+  return shared || alone;
+}
+
+// ---- calculated values (§7) ----
+
+function checkCalculation(value: JVal, source: Source, profile: Profile, scope: Scope, at: number, who: string): { status: string; lineage: JObj } {
+  const invalid = (why: string): never => finding("calculation-invalid", `${who}: ${why}`);
+  const calc = member(value, "calculation");
+  if (value.t !== "obj" || calc === undefined || calc.t !== "obj") return invalid("the value read has no object calculation");
+  const keys = Array.from(calc.m.keys()).sort();
+  if (keys.join(",") !== "asOf,calculator,inputs,status") invalid("calculation is not of exactly its members");
+  const calculator = calc.m.get("calculator")!;
+  if (calculator.t !== "obj" || Array.from(calculator.m.keys()).sort().join(",") !== "name,version") invalid("calculator is not of exactly name and version");
+  const status = calc.m.get("status")!;
+  if (status.t !== "str" || !["computed", "input-missing", "cannot-compute"].includes(status.v)) invalid("status is not a status");
+  const inputs = calc.m.get("inputs")!;
+  const asOf = calc.m.get("asOf")!;
+  if (inputs.t !== "obj" || asOf.t !== "obj") return invalid("inputs or asOf is not an object");
+  if (!jsonEqual(calculator, profile.calculator!)) invalid("the calculator is not the profile's");
+  const bound = source.calculation!;
+  for (const [name, v] of inputs.m) {
+    const parameter = bound.inputs.get(name);
+    if (parameter === undefined) invalid(`the input ${name} is not bound`);
+    if (!inCanonDomain(v) || Buffer.compare(Buffer.from(canon(v)), Buffer.from(canon(scope.get(parameter!)!.value))) !== 0) {
+      invalid(`the input ${name} is not the value of ${parameter}`);
+    }
+  }
+  const asOfInstants = new Map<string, number>();
+  for (const [table, ts] of asOf.m) {
+    if (!bound.tables.has(table)) invalid(`the table ${table} is not named`);
+    const t = ts.t === "str" ? instant(ts.v) : null;
+    if (t === null) invalid(`the table ${table} has no instant`);
+    asOfInstants.set(table, t!);
+  }
+  if ((status as JStr).v === "computed") {
+    for (const name of bound.inputs.keys()) if (!inputs.m.has(name)) invalid(`the bound input ${name} is not echoed`);
+    for (const [table, limit] of bound.tables) {
+      const t = asOfInstants.get(table);
+      if (t === undefined) invalid(`the named table ${table} is not reported`);
+      if (at - t! > limit || t! - at > 30) invalid(`the table ${table} is outside its limit`);
+    }
+  }
+  const echoed = Array.from(inputs.m.keys()).sort(compareCodePoints).map((name) => {
+    const parameter = bound.inputs.get(name)!;
+    const origin = scope.get(parameter)!.origin;
+    const where: [string, JVal][] =
+      origin.kind === "case"
+        ? [["source", str("case")], ["pointer", str(origin.pointer)]]
+        : origin.kind === "source"
+          ? [["source", str(origin.source)], ["pointer", str(origin.pointer)]]
+          : [];
+    return obj([["name", str(name)], ["parameter", str(parameter)], ...where]);
+  });
+  const lineage = obj([["calculator", calculator], ["status", status], ["asOf", asOf], ["inputs", arr(echoed)]]);
+  return { status: (status as JStr).v, lineage };
+}
+
+// ---- the recomputation ----
+
+export function recompute(d: Dialect, caseDoc: JVal, acquisitions: Map<string, Acquisition>, profiles: Profile[], verifiedAt: string): Recomputed {
+  const at = instant(verifiedAt)!;
+  const runAt: ScopeValue = { type: "timestamp", value: str(verifiedAt), origin: { kind: "runAt" } };
+
+  // 1. profile-mismatch, the sources in their order
+  const profileOf = new Map<string, Profile>();
+  for (const s of d.sources) {
+    if (s.research !== undefined) {
+      profileOf.set(s.name, researchMismatch(s, profiles, acquisitions.get(s.name)));
+      continue;
+    }
+    if (s.profile === undefined) continue;
+    const p = profiles.find((x) => x.id === s.profile);
+    if (p === undefined || profileDigestOf(p) !== s.profileDigest) finding("profile-mismatch", `${s.name}: no trusted profile of that id and digest`);
+    // Web is refused in the kind phase; other non-research bindings cannot use a scope.
+    if (p!.endpointScope !== undefined) finding("profile-mismatch", `${s.name}: endpointScope needs a page binding`);
+    // §4.4: a profile the binding document names serves the unbound source's shape and record
+    const catalog = d.boundFrom.get(s.name);
+    if (catalog !== undefined && (p!.shape !== catalog.shape || (member(p!.adapter, "name") as JStr).v !== catalog.record)) {
+      finding("profile-mismatch", `${s.name}: bound to a profile of another shape or record`);
+    }
+    if (s.kind === "operation") {
+      const misfit = requestMisfit(s, p!);
+      if (misfit !== null) finding("profile-mismatch", `${s.name}: ${misfit}`);
+    }
+    if ((p!.calculator !== undefined) !== (s.calculation !== undefined)) finding("profile-mismatch", `${s.name}: calculation and the profile's calculator`);
+    if (retainedSelected()) producer(s, p!);
+    profileOf.set(s.name, p!);
+  }
+
+  // 2. the case
+  const caseScope: Scope = new Map();
+  for (const cp of d.caseParams) {
+    const v = resolve(caseDoc, cp.pointer);
+    if (v === undefined || !ofType(v, cp.type)) finding("parameter-invalid", `case parameter ${cp.name}`);
+    caseScope.set(cp.name, { type: cp.type, value: v!, origin: { kind: "case", pointer: cp.pointer } });
+  }
+  const caseRead = obj([["copy", obj([["facts", d.caseFacts], ["evidence", d.caseEvidence]])]]);
+  const outcomes: Outcome[] = [];
+  const caseTransformations = new Map<string, JObj>();
+  outcomes.push({
+    name: "case",
+    scope: new Map([...caseScope, ["runAt", runAt]]),
+    skipped: false,
+    claim: applyCopy(d.caseCopy, caseDoc, "case", caseTransformations),
+    class: "asserted",
+    generatedInfluence: false,
+    calculatorComputed: false,
+    isCalculator: false,
+    committed: new Set(),
+    ambiguous: new Set(),
+    factTargets: d.caseFactTargets,
+    evidenceTargets: d.caseEvidenceTargets,
+    readDigest: digestOf(caseRead),
+    candidateFrom: copyCandidates(d.caseCopy),
+    transformations: caseTransformations,
+  });
+
+  // 3. the sources, in their order
+  const sessions: { sessionId: string; callIndex: number }[] = [];
+  for (const s of d.sources) {
+    const profile = profileOf.get(s.name)!;
+    const scope: Scope = new Map(caseScope);
+    let skipped = false;
+    for (const sp of s.parameters) {
+      const up = outcomes.find((o) => o.name === sp.from)!;
+      const v = up.skipped || up.claim!.status !== "resolved" ? undefined : resolve(up.claim!.facts, sp.pointer);
+      if (v === undefined) {
+        skipped = true;
+        continue;
+      }
+      if (!ofType(v, sp.type)) finding("parameter-invalid", `${s.name}: source parameter ${sp.name}`);
+      scope.set(sp.name, { type: sp.type, value: v, origin: { kind: "source", source: sp.from, pointer: sp.pointer } });
+    }
+    scope.set("runAt", runAt);
+    const generatedInfluence =
+      profile.class === "generated" || s.parameters.some((sp) => outcomes.find((o) => o.name === sp.from)!.generatedInfluence);
+    const outcome: Outcome = {
+      name: s.name,
+      source: s,
+      scope,
+      skipped,
+      class: profile.class,
+      generatedInfluence,
+      calculatorComputed: false,
+      isCalculator: profile.calculator !== undefined,
+      committed: new Set(),
+      ambiguous: new Set(),
+      factTargets: s.factTargets,
+      evidenceTargets: s.evidenceTargets,
+      readDigest: digestOf(s.read.raw),
+      candidateFrom: s.read.copy ? copyCandidates(s.read.copy) : ruleCandidates(s.read.rule!),
+      transformations: new Map(),
+    };
+    outcomes.push(outcome);
+    if (skipped) {
+      if (acquisitions.has(s.name)) finding("acquisition-unexpected", `${s.name} is skipped and has an acquisition`);
+      outcome.claim = {
+        facts: obj(), evidence: new Map(), status: "unknown",
+        reason: "dependency-unavailable", basis: [],
+      };
+      continue;
+    }
+    if (s.research !== undefined) {
+      const held = acquisitions.get(s.name);
+      if (held === undefined) return finding("acquisition-missing", `${s.name} has no acquisition`);
+      acquireResearch(s, outcome, held, profiles, profile, sessions, at);
+      outcome.claim = researchClaim(s, outcome, outcomes);
+      continue;
+    }
+    const request = instantiate(s.template!, scope) as JObj;
+    outcome.request = request;
+    commitments(s.template!, outcome.committed, outcome.ambiguous);
+    const acq = acquisitions.get(s.name);
+    if (acq === undefined) return finding("acquisition-missing", `${s.name} has no acquisition`);
+    checkTimes(checkReceipt(acq, profile, request, s.name), s.maxAge!, at, s.name);
+    outcome.citation = joinSessions(acq.receipt, sessions, s.name);
+
+    const value = valueRead(acq.result, s.read.unwrap, s.name);
+    if (outcome.isCalculator) {
+      const c = checkCalculation(value, s, profile, scope, at, s.name);
+      outcome.calculation = c.lineage;
+      const echoed = member(member(value, "calculation"), "inputs") as JObj;
+      for (const name of echoed.m.keys()) outcome.committed.add(s.calculation!.inputs.get(name)!);
+      if (c.status !== "computed") {
+        outcome.claim = {
+          facts: obj(),
+          evidence: new Map(s.evidenceTargets.map((r) => [r, "unknown"])),
+          status: "unknown",
+          reason: c.status === "input-missing" ? "calculation-input-missing" : "calculation-cannot-compute",
+          basis: ["/calculation/status"],
+        };
+        continue;
+      }
+      outcome.calculatorComputed = true;
+    }
+    if (retainedSelected()) producer(s, profile, acq.result, acq.receipt);
+    outcome.claim = s.read.copy ? applyCopy(s.read.copy, value, s.name, outcome.transformations) : applyRule(s.read.rule!, value, scope, s.name);
+  }
+  for (const name of acquisitions.keys()) {
+    if (!d.sources.some((s) => s.name === name)) finding("acquisition-unexpected", `the acquisition ${name} names no source`);
+  }
+
+  // 4. admission (§8.2)
+  for (const o of outcomes) {
+    const admitted = (list: string[] | undefined) => {
+      const l = list ?? ["asserted", "record"];
+      return l.includes(o.class) && (!o.generatedInfluence || l.includes("generated"));
+    };
+    for (const t of o.factTargets) if (!admitted(d.admitsFacts.get(t))) finding("admission-refused", `${o.name}: fact target ${t}`);
+    for (const r of o.evidenceTargets) if (!admitted(d.admitsEvidence.get(r))) finding("admission-refused", `${o.name}: requirement ${r}`);
+  }
+
+  // the preparation (§9): in versions 2 and 3 alike, `cites` ordered by callIndex, those of one index in the order of
+  // `sources`, as the Runner writes it (§9.1); in a preparation with a `research` source, in the order of `sources`
+  // instead, a research source adding its every citation in order, each other acquired source its one
+  const order = new Map(d.sources.map((s, k) => [s.name, k]));
+  let cites: JObj[];
+  if (d.sources.some((s) => s.research !== undefined)) {
+    cites = outcomes.flatMap((o) => o.citations ?? (o.citation !== undefined ? [o.citation] : []));
+  } else {
+    const cited = outcomes.filter((o) => o.citation !== undefined);
+    cited.sort((a, b) => {
+      const x = intValue(a.citation!.m.get("callIndex") as never);
+      const y = intValue(b.citation!.m.get("callIndex") as never);
+      return x !== y ? x - y : order.get(a.name)! - order.get(b.name)!;
+    });
+    cites = cited.map((o) => o.citation!);
+  }
+  const lineage: JObj[] = [];
+  for (const o of outcomes) {
+    const entry = (kind: "fact" | "evidence", target: string): JObj => {
+      const present = o.claim === undefined ? false : kind === "fact" ? resolve(o.claim.facts, target) !== undefined : o.claim.evidence.has(target);
+      const e: [string, JVal][] = [
+        ["source", str(o.name)],
+        ["kind", str(kind)],
+        ["target", str(target)],
+        ["class", str(o.class)],
+        ["generatedInfluence", bool(o.generatedInfluence)],
+        ["present", bool(present)],
+        ["status", str(statusOf(o))],
+        ["reason", str(reasonOf(o))],
+        ["basis", arr((o.claim?.basis ?? []).map(str))],
+      ];
+      const cand = o.candidateFrom.get(`${kind}:${target}`);
+      if (cand !== undefined && cand.length > 0) e.push(["candidateFrom", arr(cand.map(str))]);
+      e.push(["readDigest", str(o.readDigest)]);
+      if (o.citation !== undefined) e.push(["receipt", o.citation]);
+      // §9.3, version 3: an acquired research source's citations, in the order `cites` has them
+      if (o.citations !== undefined) e.push(["receipts", arr(o.citations)]);
+      if (o.calculation !== undefined) e.push(["calculation", o.calculation]);
+      if (o.source?.research?.resultMember === "results" && o.record !== undefined) e.push(["researchExecution", researchExecutionLineage(o.record)]);
+      if (kind === "fact" && o.transformations.has(target)) e.push(["transformation", o.transformations.get(target)!]);
+      const columnKey = `${kind}:${target}`;
+      if (retainedSelected() && o.transformations.has(columnKey)) e.push(["columnTransformation", o.transformations.get(columnKey)!]);
+      if (o.source !== undefined && o.source.parameters.length > 0) {
+        const parameters = [...o.source.parameters].sort((a, b) =>
+          compareCodePoints(a.name, b.name));
+        e.push(["dependencies", arr(parameters.map((p) => obj([
+          ["parameter", str(p.name)], ["source", str(p.from)], ["pointer", str(p.pointer)],
+        ])))]);
+      }
+      return obj(e);
+    };
+    for (const t of [...o.factTargets].sort(compareCodePoints)) lineage.push(entry("fact", t));
+    for (const r of [...o.evidenceTargets].sort(compareCodePoints)) lineage.push(entry("evidence", r));
+  }
+  const outcomeValues = outcomes.map((o) => {
+    const params: [string, JVal][] = Array.from(o.scope).map(([k, v]) => [k, v.value]);
+    const e: [string, JVal][] = [["name", str(o.name)], ["parameters", obj(params)]];
+    if (o.request !== undefined) e.push(["arguments", o.request]);
+    if (o.claim !== undefined) e.push(["claim", claimValue(o.claim)]);
+    e.push(["status", str(statusOf(o))], ["reason", str(reasonOf(o))]);
+    return obj(e);
+  });
+  const preparation = obj([
+    ["version", num(String(d.version))],
+    ["verifiedAt", str(verifiedAt)],
+    ["mappingDigest", str(digestOf(d.raw))],
+    ["verification", str(VERIFICATION)],
+    ["cites", arr(cites)],
+    ["lineage", arr(lineage)],
+    ["outcomes", arr(outcomeValues)],
+  ]);
+
+  // the facts and evidence-availability documents (§8.1)
+  const factsDocument = obj();
+  const evidenceDocument = obj();
+  for (const o of outcomes) {
+    if (o.claim === undefined) continue;
+    for (const t of o.factTargets) {
+      const v = resolve(o.claim.facts, t);
+      if (v !== undefined) writeAt(factsDocument, t, v);
+    }
+    for (const [r, a] of o.claim.evidence) evidenceDocument.m.set(r, str(a));
+  }
+  selectedPreparation(preparation);
+  return { preparation, outcomes, factsDocument, evidenceDocument, lineage };
+}
+
+function statusOf(o: Outcome): string {
+  return o.claim!.status;
+}
+function reasonOf(o: Outcome): string {
+  return o.claim!.reason;
+}
+
+function claimValue(c: Claim): JObj {
+  return obj([
+    ["facts", c.facts],
+    ["evidenceAvailability", obj(Array.from(c.evidence).map(([k, v]) => [k, str(v)]))],
+    ["acquisitionStatus", str(c.status)],
+    ["reason", str(c.reason)],
+    ["basis", arr(c.basis.map(str))],
+  ]);
+}
+
+function copyCandidates(copy: CopyRead): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  for (const f of copy.facts) m.set(`fact:${f.target}`, f.observations?.map((o) => o.source) ?? [f.source!]);
+  for (const e of copy.evidence) m.set(`evidence:${e.requirement}`, [e.source]);
+  return m;
+}
+
+function ruleCandidates(rule: Rule): Map<string, string[]> {
+  const m = new Map<string, Set<string>>();
+  for (const c of rule.clauses) {
+    for (const f of (c.claim as ClaimForm).facts) {
+      const k = `fact:${f.pointer}`;
+      if (!m.has(k)) m.set(k, new Set());
+      m.get(k)!.add(f.from);
+    }
+  }
+  return new Map(Array.from(m).map(([k, v]) => [k, sortedDistinct(v)]));
+}
+
+/** The parameters a rule's conditions name, at any depth (§11, unsignedParameters). */
+export function conditionParameters(rule: Rule): Set<string> {
+  const out = new Set<string>();
+  const walk = (c: JVal | undefined) => {
+    if (c === undefined || c.t !== "obj") return;
+    const op = (c.m.get("op") as JStr).v;
+    if (op === "equalsParam") out.add((c.m.get("param") as JStr).v);
+    if (op === "freshWithin") {
+      out.add((c.m.get("asOf") as JStr).v);
+      out.add((c.m.get("maxAge") as JStr).v);
+    }
+    if (op === "all" || op === "any") for (const x of (c.m.get("of") as { a: JVal[] }).a) walk(x);
+    if (op === "not") walk(c.m.get("of"));
+  };
+  for (const cl of rule.clauses) walk(cl.when);
+  return out;
+}
