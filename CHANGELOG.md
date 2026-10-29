@@ -273,6 +273,9 @@ preparation does not establish them.
 
 ## 0.35.0 - 2026-10-18
 
+Never published. Its draft release was retired on 2026-10-30, and the tag `v0.35.0` is kept as history.
+Everything below first shipped in 0.36.0 and is in every later release.
+
 - Add experimental offline Policy prototype `0.0.2` tooling for `policy` and
   `governing-adoption`: CLI `experimental policy contract|init|schema|canonicalize|digest|validate|check`
   and seven explicitly experimental MCP tools share exact document and supplied
