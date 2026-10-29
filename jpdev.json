@@ -4,7 +4,11 @@
     {
       "paths": ["**/*.go", "go.mod", "go.sum"],
       "checks": ["local-paths", "agent-docs", "diff-check",
-                 "go-fmt", "go-vet", "go-test", "conformance", "build"]
+                 "go-fmt", "go-vet", "go-test", "conformance", "build", "audit-formats"]
+    },
+    {
+      "paths": ["internal/auditformat/*.json"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "go-test", "audit-formats"]
     },
     {
       "paths": ["internal/artifacts/jps/**",

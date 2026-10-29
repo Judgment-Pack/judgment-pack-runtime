@@ -30,7 +30,7 @@ func syntheticInstallation(t *testing.T) (fstest.MapFS, string, Identity) {
 		files[name] = &fstest.MapFile{Data: raw}
 	}
 	encode(InventoryPath, inventory)
-	encode("release-identity.json", ReleaseIdentity{Version, Release, "0.3.0", "draft", "release-candidate", revision})
+	encode("release-identity.json", ReleaseIdentity{Version, Release, "0.3.0", "draft", "", revision})
 	identity := Identity{Version, revision, inventory.SchemaSHA256, inventory.CorpusSHA256}
 	p := Provenance{SourceRepository: Repository, SourceRelease: Release, SourceRevision: revision, SourceKind: "immutable-git-ref", SourceArchiveSHA256: "sha256:" + strings.Repeat("2", 64), InventorySHA256: Digest(files[InventoryPath].Data), Identity: identity}
 	for name, file := range files {
@@ -40,7 +40,7 @@ func syntheticInstallation(t *testing.T) (fstest.MapFS, string, Identity) {
 	return files, Digest(files["provenance.json"].Data), identity
 }
 func TestVerifySyntheticInstallationAndRefusals(t *testing.T) {
-	for _, name := range []string{"valid", "manifest pin", "selected identity", "archive identity", "dirty", "moving source", "wrong repository", "missing schema", "changed schema", "changed corpus", "changed inventory", "changed release identity", "extra file", "unmanifested inventory", "duplicate inventory", "bad length"} {
+	for _, name := range []string{"valid", "manifest pin", "selected identity", "archive identity", "dirty", "moving source", "wrong repository", "missing schema", "changed schema", "changed corpus", "changed inventory", "changed release identity", "candidate release identity", "earlier candidate identity", "extra file", "unmanifested inventory", "duplicate inventory", "bad length"} {
 		t.Run(name, func(t *testing.T) {
 			files, pin, identity := syntheticInstallation(t)
 			editManifest := func(edit func(*Provenance)) {
@@ -76,6 +76,23 @@ func TestVerifySyntheticInstallationAndRefusals(t *testing.T) {
 				files[InventoryPath].Data = append(files[InventoryPath].Data, ' ')
 			case "changed release identity":
 				files["release-identity.json"].Data = []byte("{}")
+			case "candidate release identity", "earlier candidate identity":
+				// The candidate form carries "distribution"; the second is the exact
+				// identity v0.3.0-rc.2 generated. The installed final reader refuses
+				// both, as the Spec's own readers do. The provenance is re-pinned so
+				// only the release identity check can refuse.
+				raw := []byte(`{"distribution":"release-candidate","maturity":"draft","releaseVersion":"` + Version + `","sourceCommit":"` + identity.Revision + `","specVersion":"0.3.0","tag":"` + Release + `"}`)
+				if name == "earlier candidate identity" {
+					raw = []byte(`{"distribution":"release-candidate","maturity":"draft","releaseVersion":"0.3.0-rc.2","sourceCommit":"` + identity.Revision + `","specVersion":"0.3.0","tag":"v0.3.0-rc.2"}`)
+				}
+				files["release-identity.json"].Data = raw
+				editManifest(func(p *Provenance) {
+					for i := range p.Files {
+						if p.Files[i].Path == "release-identity.json" {
+							p.Files[i] = File{"release-identity.json", len(raw), Digest(raw)}
+						}
+					}
+				})
 			case "extra file":
 				files["extra.json"] = &fstest.MapFile{Data: []byte("{}")}
 			case "unmanifested inventory":

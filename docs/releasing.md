@@ -56,32 +56,44 @@ the retained prototype or historical candidate trees or the Core locks. Policy
 source schema IDs stay distinct from derived Runtime editing schema IDs. See
 [ADR-0061](adr/0061-adopt-official-policy-draft-resources.md) for compatibility.
 
-## Refresh the selected retained-column RC2 leaf import
+## Refresh the selected retained-column leaf import
 
-The current opt-in CLI/MCP reader selects the installed official `v0.3.0-rc.2`
+The current opt-in CLI/MCP reader selects the installed official `v0.3.0`
 leaf with draft maturity and document-validation role. Its exact source/schema/corpus
 and independent provenance pin are compiled in `retained_column_artifacts.go`.
 Core locks, Policy resources and the general Core registry remain independent.
-Historical Draft fixtures retain their original labels; they are not RC2 evidence.
+Historical Draft fixtures retain their original labels; they are not release evidence.
+Runtime 0.39.0-alpha.2 installed the `v0.3.0-rc.2` candidate of this leaf; the
+installed reader now refuses that candidate's identity.
+
+A Spec pre-release takes one of two forms: `-rc.N` is a candidate of the complete
+milestone, and `-alpha.N` is a scoped cut for a named consumer that never graduates;
+the development kit's release policy defines both.
 
 After the maintainer confirms adoption and immutable publication of the official
-Spec `v0.3.0-rc.2`, verify its exact tag/source commit, immutable release state,
+Spec release, verify its exact tag/source commit, immutable release state,
 asset checksums and attestations using the Spec release process. Record those
 observations separately: the offline importer cannot establish publication,
 immutability or source authenticity from local bytes or a Git remote URL.
 Review the release inventory digest independently. Use a clean official checkout
-at that exact tag and the verified tar.gz asset, then run:
+at that exact tag and the verified tar.gz asset. A reviewed artifact update never
+overwrites a nonempty set: remove the previous `official/` import in the same
+change, then run:
 
 ```bash
 env GO111MODULE=on go run ./tools/sync-retained-column \
   --source ../judgment-pack-spec \
-  --source-ref v0.3.0-rc.2 \
-  --source-commit "$RC2_SOURCE_COMMIT" \
-  --archive "$RC2_VERIFIED_ARCHIVE" \
-  --archive-sha256 "$RC2_VERIFIED_ARCHIVE_DIGEST" \
-  --inventory-sha256 "$RC2_REVIEWED_INVENTORY_DIGEST" \
+  --source-ref v0.3.0 \
+  --source-commit "$SOURCE_COMMIT" \
+  --archive "$VERIFIED_ARCHIVE" \
+  --archive-sha256 "$VERIFIED_ARCHIVE_DIGEST" \
+  --inventory-sha256 "$REVIEWED_INVENTORY_DIGEST" \
   --destination ./internal/dialect/retained-column/official
 ```
+
+The importer admits only the release named by `internal/retainedcolumn`
+(`Release`, `Version`, `InventoryPath`); adopting another release changes those
+constants, the reader identity and its tests in the same reviewed change.
 
 Digest arguments include `sha256:`. The destination must be new and exclusively
 owned during import. The helper follows the existing staged import pattern; the
@@ -108,6 +120,41 @@ refuses unpinned resources, changed or missing installed bytes, extra inventory,
 unsupported identities and disagreement with the selected reader. No final Core,
 producer or preparation-verifier claim follows from this document-validation role.
 
+## Audit line formats
+
+The audit trail's persisted lines (`evaluations.jsonl` records and discontinuities,
+`signatures.jsonl` record signatures and key rotations, `stamps.jsonl` stamps) are
+fingerprinted in `internal/auditformat/`. `catalog.json` is generated: each line
+type's normalized JSON shape and its SHA-256 digest. A member the runtime builds
+itself as raw JSON, the record's canonical `disposition`, is fingerprinted through
+the type declaring its members (`result.CanonicalDispositionShape`), and a string
+member may declare a grammar (the stamp `token` is standard padded `base64`).
+Exemplar lines produced by the writers' own encoders are held to those declared
+shapes and grammars: a member the builder writes but the shape does not declare,
+a declared member no exemplar writes, or a token in another encoding fails.
+The fingerprint covers shape and those declared grammars, not other value
+encodings or spellings, such as a timestamp's.
+
+`changes.json` is written by hand and only appended to: every digest a line type
+has had, with the decision that admitted it (`baseline`, `compatible-addition` at
+the same format version, or `new-format-version` at the next integer with its
+`readingRule`) and a reason. `status.json` is kept apart: per trail file, the
+format the code `writes` (checked against the writer constant), the last accepted
+compatibility `baseline`, and the last format `released`. A format that shipped in
+any release, a pre-release included, carries compatibility obligations, so
+`baseline <= released <= writes`. Its `releasedChanges` pins the count and digest
+of the change records already released; they must stay unchanged and in order, so
+a released record cannot be rewritten in place.
+
+`go run ./tools/audit-formats` (the `audit-formats` check) regenerates the catalog
+in memory and fails on a stale catalog, on a digest no change record names, on a
+rewritten released record, on a status the writer constants contradict, and on an
+exemplar that does not conform. After changing a persisted line, run it with
+`-write`, append the change record, and update `status.json` when the format
+version moves. When a release ships, set `released` to the format it carries and
+move `releasedChanges` to cover every record then present (the count and the
+digest the check reports for that prefix).
+
 ## Validate locally
 
 Install the exact GoReleaser version used by the workflow, then run:
@@ -120,6 +167,7 @@ env GO111MODULE=on go test ./...
 env GO111MODULE=on go run ./cmd/jpack spec test-conformance --quiet
 env GO111MODULE=on go run ./cmd/jpack spec test-conformance --spec-version 0.2.0-draft --quiet
 env GO111MODULE=on go run ./cmd/jpack experimental evaluate-corpus
+env GO111MODULE=on go run ./tools/audit-formats
 env GO111MODULE=on go run ./tools/check-release --tag <cli-tag>
 goreleaser check
 goreleaser release --snapshot --clean

@@ -17,6 +17,8 @@
      "summary": "^(ok|FAIL|---) ", "timeout": 3000},
     {"name": "conformance", "run": "go run ./cmd/jpack spec test-conformance --quiet", "toolchain": "go", "timeout": 1200},
     {"name": "build", "run": "CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/jpack", "toolchain": "go", "timeout": 1200},
+    {"name": "audit-formats", "run": "go run ./tools/audit-formats", "toolchain": "go",
+     "summary": "^audit-formats:", "timeout": 600},
     {"name": "registry-template", "run": "python3 scripts/check-registry-template.py", "toolchain": "python",
      "summary": "^registry template:", "timeout": 300}
   ],

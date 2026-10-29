@@ -14,10 +14,10 @@ import (
 
 const (
 	Repository    = "https://github.com/Judgment-Pack/judgment-pack-spec"
-	Release       = "v0.3.0-rc.2"
-	Version       = "0.3.0-rc.2"
+	Release       = "v0.3.0"
+	Version       = "0.3.0"
 	Contract      = "retained-column/1"
-	InventoryPath = "releases/v0.3.0-rc.2.retained-column.json"
+	InventoryPath = "releases/v0.3.0.retained-column.json"
 	SchemaPath    = "schema/retained-column/1/contract.schema.json"
 	CorpusPath    = "conformance/retained-column/1/cases.json"
 )
@@ -36,8 +36,10 @@ type ReleaseIdentity struct {
 	Tag            string `json:"tag"`
 	SpecVersion    string `json:"specVersion"`
 	Maturity       string `json:"maturity"`
-	Distribution   string `json:"distribution"`
-	SourceCommit   string `json:"sourceCommit"`
+	// Distribution is present only on a release candidate's identity
+	// ("release-candidate"). The installed final release carries none.
+	Distribution string `json:"distribution,omitempty"`
+	SourceCommit string `json:"sourceCommit"`
 }
 type Inventory struct {
 	Contract     string            `json:"contract"`
@@ -85,7 +87,7 @@ func Inspect(source fs.FS, revision, inventoryPin string) (Identity, Inventory, 
 	}
 	raw, err := fs.ReadFile(source, "release-identity.json")
 	var release ReleaseIdentity
-	if err != nil || json.Unmarshal(raw, &release) != nil || release.ReleaseVersion != Version || release.Tag != Release || release.SpecVersion != "0.3.0" || release.Maturity != "draft" || release.Distribution != "release-candidate" || release.SourceCommit != revision {
+	if err != nil || json.Unmarshal(raw, &release) != nil || release.ReleaseVersion != Version || release.Tag != Release || release.SpecVersion != "0.3.0" || release.Maturity != "draft" || release.Distribution != "" || release.SourceCommit != revision {
 		return fail("release identity differs from the exact installation")
 	}
 	raw, err = fs.ReadFile(source, InventoryPath)

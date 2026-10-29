@@ -216,8 +216,8 @@ client rather than in a runtime store -- is walked end to end in
 
 ## Core contract boundaries
 
-The `0.3.0` resources are an exact immutable Spec commit pin,
-`65c7cf5598a0f0fc532c80a9e2215090951104ce`, rather than a published Core tag.
+The `0.3.0` resources are imported from the published Spec tag `v0.3.0`, commit
+`27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`.
 The conformance runner registers the exact Core schema as an explicit in-memory
 resource for manifest references. Local suites must match the bundled manifest
 schema; they cannot retrieve remote schemas or traverse to sibling resources.

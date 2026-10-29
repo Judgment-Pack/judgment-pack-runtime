@@ -1,0 +1,9 @@
+{
+  "statusVersion": 1,
+  "releasedChanges": {"count": 5, "sha256": "sha256:45b21afd9b94dd20fbac756816159f1cabf54522abc53eba6adb6458a77eb63b"},
+  "files": [
+    {"file": "evaluations.jsonl", "writes": "1", "baseline": "1", "released": "1"},
+    {"file": "signatures.jsonl", "writes": "1", "baseline": "1", "released": "1"},
+    {"file": "stamps.jsonl", "writes": "1", "baseline": "1", "released": "1"}
+  ]
+}

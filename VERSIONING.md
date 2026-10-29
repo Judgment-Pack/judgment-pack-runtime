@@ -61,18 +61,19 @@ Matrix carrier versions `1`–`3` are unchanged: the explicit contract selects t
 portable disposition grammar, rather than adding a closed matrix member. Additive
 skip metadata is omitted from old suite reports when no case is skipped.
 
-The Core `0.3.0` bundle uses full Spec commit
-`65c7cf5598a0f0fc532c80a9e2215090951104ce`, not a published Core release tag.
+The Core `0.3.0` bundle is imported from the published Spec tag `v0.3.0` at
+commit `27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`; its bytes are those of the
+earlier commit pin `65c7cf5598a0f0fc532c80a9e2215090951104ce`, unchanged.
 This source provenance does not by itself establish a conformance claim; see
 [CONFORMANCE.md](CONFORMANCE.md).
 
 Selected retained-column leaf support has a separate exact distribution/source/schema/corpus
-identity. Core `specVersion: "0.3.0"` does not select or imply this support. The explicit CLI/MCP reader selects the installed official `v0.3.0-rc.2`
-leaf, source `bcac15b7537ce21879201b5e5dfe795496225121`, with maturity `draft`
+identity. Core `specVersion: "0.3.0"` does not select or imply this support. The explicit CLI/MCP reader selects the installed official `v0.3.0`
+leaf, source `27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`, with maturity `draft`
 and document-validation role for Base/Extended. Compatibility flag names
-`--draft-contract`/`draftContract` require the exact installed RC2 selector;
-historical Draft selectors refuse. Historical Draft test resources retain their
-original labels. See [the RC2 reader](docs/dialect-retained-column-rc2.md).
+`--draft-contract`/`draftContract` require the exact installed release selector;
+historical Draft selectors and the `v0.3.0-rc.2` candidate selector refuse. Historical Draft test resources retain their
+original labels. See [the selected reader](docs/dialect-retained-column.md).
 
 ## Compatibility dimensions
 

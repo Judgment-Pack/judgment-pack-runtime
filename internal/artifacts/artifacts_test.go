@@ -249,11 +249,11 @@ func TestCore030ExactProvenanceAndCompleteIndexedFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	lock := set.Lock()
-	const pin = "65c7cf5598a0f0fc532c80a9e2215090951104ce"
+	const tag, pin = "v0.3.0", "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc"
 	if len(lock.Files) != 165 {
 		t.Fatalf("Core 0.3 lock files: %d", len(lock.Files))
 	}
-	if lock.Source.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || lock.Source.Ref != pin || lock.Source.BaseCommit != pin || lock.Source.Kind != "immutable-git-ref" || lock.Source.WorktreeDirty {
+	if lock.Source.Repository != "https://github.com/Judgment-Pack/judgment-pack-spec" || lock.Source.Ref != tag || lock.Source.BaseCommit != pin || lock.Source.Kind != "immutable-git-ref" || lock.Source.WorktreeDirty {
 		t.Fatalf("unexpected source: %+v", lock.Source)
 	}
 	if lock.BundleDigest.Value != "018b8221c424fa530d7482b160f4d7faa59cd9d2e80d3f6e2f8748dfb0d7e743" {

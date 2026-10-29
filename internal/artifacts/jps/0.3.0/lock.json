@@ -4,8 +4,8 @@
   "source": {
     "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
     "kind": "immutable-git-ref",
-    "baseCommit": "65c7cf5598a0f0fc532c80a9e2215090951104ce",
-    "ref": "65c7cf5598a0f0fc532c80a9e2215090951104ce",
+    "baseCommit": "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc",
+    "ref": "v0.3.0",
     "worktreeDirty": false
   },
   "bundleDigest": {

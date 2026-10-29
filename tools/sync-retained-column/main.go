@@ -1,4 +1,4 @@
-// Command sync-retained-column imports reviewed bytes from a verified RC2
+// Command sync-retained-column imports reviewed bytes from a verified release
 // archive and its clean immutable source checkout. It performs no network fetch,
 // publication verification, registry update or capability selection.
 package main
@@ -23,7 +23,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/retainedcolumn"
 )
 
-const archivePrefix = "judgment-pack-spec-0.3.0-rc.2/"
+const archivePrefix = "judgment-pack-spec-" + retainedcolumn.Version + "/"
 const maxArchiveBytes = 256 << 20 // Maintainer import budget, not a Runtime admission limit.
 
 type options struct{ source, destination, archive, archivePin, revision, inventoryPin, sourceRef string }
@@ -32,11 +32,11 @@ func main() {
 	var o options
 	flag.StringVar(&o.source, "source", "", "clean official Spec checkout at the verified release tag")
 	flag.StringVar(&o.destination, "destination", "", "new leaf artifact directory (must not exist)")
-	flag.StringVar(&o.archive, "archive", "", "independently verified official RC2 tar.gz release asset")
+	flag.StringVar(&o.archive, "archive", "", "independently verified official tar.gz release asset")
 	flag.StringVar(&o.archivePin, "archive-sha256", "", "independently verified sha256: archive digest")
 	flag.StringVar(&o.inventoryPin, "inventory-sha256", "", "reviewed sha256: release inventory digest")
 	flag.StringVar(&o.revision, "source-commit", "", "verified immutable 40-hex source commit")
-	flag.StringVar(&o.sourceRef, "source-ref", "", "exact release tag v0.3.0-rc.2")
+	flag.StringVar(&o.sourceRef, "source-ref", "", "exact release tag "+retainedcolumn.Release)
 	flag.Parse()
 	pin, err := run(o)
 	if err != nil {
@@ -57,7 +57,7 @@ func git(source string, args ...string) ([]byte, error) {
 func verifySource(o options) error { return verifySourceWith(o, git) }
 func verifySourceWith(o options, read func(string, ...string) ([]byte, error)) error {
 	if o.source == "" || o.sourceRef != retainedcolumn.Release {
-		return errors.New("clean official source checkout and exact RC2 release tag are required")
+		return errors.New("clean official source checkout and the exact supported release tag are required")
 	}
 	origin, err := read(o.source, "remote", "get-url", "origin")
 	if err != nil {

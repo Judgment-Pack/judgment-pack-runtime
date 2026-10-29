@@ -89,11 +89,12 @@ func CheckpointDigest(checkpoint result.AuditCheckpoint) []byte {
 	return sum[:]
 }
 
-// stampLine is a stamps line, its members in code-point order.
+// stampLine is a stamps line, its members in code-point order. The token is
+// standard padded base64; the format tag declares it to the audit-formats check.
 type stampLine struct {
 	Checkpoint   result.AuditCheckpoint `json:"checkpoint"`
 	StampVersion string                 `json:"stampVersion"`
-	Token        string                 `json:"token"`
+	Token        string                 `json:"token" format:"base64"`
 }
 
 // encodeStampLine is a stamps line, newline included.

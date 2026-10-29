@@ -17,9 +17,8 @@ it names are required evidence for such a claim and are not exhaustive evidence 
 The runtime **validates documents**. It does not fetch a source, authorize an action, or establish
 truth, organizational authority, safety, or operational fitness. It bundles `0.1.0-draft`,
 `0.2.0-draft`, and Core `0.3.0`, and validates a document against its exact declaration.
-Core `0.3.0` resources are pinned to Spec commit
-`65c7cf5598a0f0fc532c80a9e2215090951104ce`; this is an immutable source pin, not a
-published Core release tag. Core `0.3.0` support is base-only. Runtime discovery reports
+Core `0.3.0` resources are imported from the published Spec tag `v0.3.0`, commit
+`27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`. Core `0.3.0` support is base-only. Runtime discovery reports
 `evaluatorCapabilities` separately from document `supportedSpecVersions`, with
 `supportedProfiles: ["base"]` scoped to the Core `0.3.0` evaluator entry. This says
 nothing about Policy or Dialect profile support.

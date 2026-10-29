@@ -54,6 +54,8 @@ jobs:
         run: go build -trimpath ./cmd/jpack
         env:
           CGO_ENABLED: "0"
+      - name: Check audit line formats
+        run: go run ./tools/audit-formats
 
   check:
     name: check
@@ -66,7 +68,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # First, so that a manifest that does not parse fails before the long steps start.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
