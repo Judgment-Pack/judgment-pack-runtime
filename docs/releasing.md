@@ -125,20 +125,35 @@ producer or preparation-verifier claim follows from this document-validation rol
 The audit trail's persisted lines (`evaluations.jsonl` records and discontinuities,
 `signatures.jsonl` record signatures and key rotations, `stamps.jsonl` stamps) are
 fingerprinted in `internal/auditformat/`. `catalog.json` is generated: each line
-type's normalized JSON shape and its SHA-256 digest. `changes.json` is written by
-hand and only appended to: every digest a line type has had, with the decision that
-admitted it (`baseline`, `compatible-addition` at the same format version, or
-`new-format-version` at the next integer with its `readingRule`) and a reason.
-`status.json` is kept apart: per trail file, the format the code `writes` (checked
-against the writer constant), the last accepted compatibility `baseline`, and the
-last format `released`. A format that shipped in any release, a pre-release
-included, carries compatibility obligations, so `baseline <= released <= writes`.
+type's normalized JSON shape and its SHA-256 digest. A member the runtime builds
+itself as raw JSON, the record's canonical `disposition`, is fingerprinted through
+the type declaring its members (`result.CanonicalDispositionShape`), and a string
+member may declare a grammar (the stamp `token` is standard padded `base64`).
+Exemplar lines produced by the writers' own encoders are held to those declared
+shapes and grammars: a member the builder writes but the shape does not declare,
+a declared member no exemplar writes, or a token in another encoding fails.
+The fingerprint covers shape and those declared grammars, not other value
+encodings or spellings, such as a timestamp's.
 
-`go run ./tools/audit-formats` (the `audit-formats` check) regenerates the catalog in
-memory and fails on a stale catalog, on a digest no change record names, and on a
-status the writer constants contradict. After changing a persisted line, run it with
-`-write`, append the change record, and update `status.json` when the format version
-moves. When a release ships a new format version, set `released` to it.
+`changes.json` is written by hand and only appended to: every digest a line type
+has had, with the decision that admitted it (`baseline`, `compatible-addition` at
+the same format version, or `new-format-version` at the next integer with its
+`readingRule`) and a reason. `status.json` is kept apart: per trail file, the
+format the code `writes` (checked against the writer constant), the last accepted
+compatibility `baseline`, and the last format `released`. A format that shipped in
+any release, a pre-release included, carries compatibility obligations, so
+`baseline <= released <= writes`. Its `releasedChanges` pins the count and digest
+of the change records already released; they must stay unchanged and in order, so
+a released record cannot be rewritten in place.
+
+`go run ./tools/audit-formats` (the `audit-formats` check) regenerates the catalog
+in memory and fails on a stale catalog, on a digest no change record names, on a
+rewritten released record, on a status the writer constants contradict, and on an
+exemplar that does not conform. After changing a persisted line, run it with
+`-write`, append the change record, and update `status.json` when the format
+version moves. When a release ships, set `released` to the format it carries and
+move `releasedChanges` to cover every record then present (the count and the
+digest the check reports for that prefix).
 
 ## Validate locally
 

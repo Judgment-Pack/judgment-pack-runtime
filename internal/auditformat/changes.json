@@ -3,10 +3,10 @@
     {
       "file": "evaluations.jsonl",
       "line": "record",
-      "sha256": "sha256:3748655634fc2b135437c83631d6739db971516d3fd44d131f988183dd69549d",
+      "sha256": "sha256:16ad4e02ceb65034370837e5aebbf674ee4764aca6e1aa443bc03ad44a4f4d9b",
       "formatVersion": "1",
       "decision": "baseline",
-      "reason": "The evaluation and graph-composite record shape as of v0.39.0, written under recordVersion 1."
+      "reason": "The evaluation and graph-composite record shape as of v0.39.0, written under recordVersion 1, with the canonical disposition members Core 0.2.0-draft, Core 0.3.0 and draft RFC 0016 define."
     },
     {
       "file": "evaluations.jsonl",
@@ -35,10 +35,10 @@
     {
       "file": "stamps.jsonl",
       "line": "stamp",
-      "sha256": "sha256:316f48ea2f46150a2e28f9583037700125d77ba606ea7c6b2e7f4f097800f5eb",
+      "sha256": "sha256:227d302ec48dc932b75b29eebebea55fac0876efe45044ae31ec7922e10a57b7",
       "formatVersion": "1",
       "decision": "baseline",
-      "reason": "The time-stamp line, released since v0.26.0."
+      "reason": "The time-stamp line, released since v0.26.0; its token is standard padded base64."
     }
   ]
 }

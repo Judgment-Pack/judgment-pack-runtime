@@ -1,5 +1,6 @@
 // Command audit-formats regenerates the audit trail's line-format catalog and
-// checks it, the committed change records and the format status (#327). Run it
+// checks it, the committed change records, the format status and the writers'
+// exemplar lines (#327). Run it
 // from the repository root. -write rewrites the generated catalog only; change
 // records and the status are written by hand.
 package main
@@ -22,7 +23,7 @@ func main() {
 }
 
 func run(dir string, write bool) int {
-	generated, writers := auditformat.Generate()
+	generated, _ := auditformat.Generate()
 	catalogPath := filepath.Join(dir, auditformat.CatalogFile)
 	if write {
 		current, _ := os.ReadFile(catalogPath)
@@ -41,7 +42,7 @@ func run(dir string, write bool) int {
 		}
 		return raw
 	}
-	problems := auditformat.Check(read(auditformat.CatalogFile), read(auditformat.ChangesFile), read(auditformat.StatusFile), generated, writers)
+	problems := auditformat.CheckFiles(read(auditformat.CatalogFile), read(auditformat.ChangesFile), read(auditformat.StatusFile))
 	for _, problem := range problems {
 		fmt.Fprintln(os.Stderr, "audit-formats:", problem)
 	}
