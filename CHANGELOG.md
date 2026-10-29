@@ -10,7 +10,7 @@ All notable changes to tagged releases are documented here.
   and supports document validation/declared inventory coverage for Base/Extended.
   Generated retained values now admit up to 524288 UTF-8 bytes; asserted values
   remain bounded at 16000 in both profiles. Historical Draft fixtures remain pinned.
-  See the [RC2 reader](docs/dialect-retained-column-rc2.md) and
+  See the [RC2 reader](https://github.com/Judgment-Pack/judgment-pack-runtime/blob/v0.39.0-alpha.2/docs/dialect-retained-column-rc2.md) and
   [release notes](docs/releases/v0.39.0-alpha.2.md).
 
 Runtime's conformance claim is stated, in full and only, in

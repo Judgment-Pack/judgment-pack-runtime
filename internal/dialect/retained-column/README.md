@@ -1,7 +1,7 @@
 # Retained-column installation state
 
-`official/` retains the exact original paths from official Spec `v0.3.0-rc.2`,
-source `bcac15b7537ce21879201b5e5dfe795496225121`. `provenance.json` records the
+`official/` retains the exact original paths from official Spec `v0.3.0`,
+source `27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`. `provenance.json` records the
 verified archive/inventory identities and each imported file's bytes and digest.
 The independently compiled provenance pin and selected tuple are in
 `retained_column_artifacts.go`; admission and release checks verify them.

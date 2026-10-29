@@ -23,9 +23,9 @@ func TestRetainedColumnInstallationGate(t *testing.T) {
 		t.Fatal("unpinned resources accepted")
 	}
 	delete(files, "retained-column/official/provenance.json")
-	selected.Version = "0.3.0-rc.2"
+	selected.Version = "0.3.0"
 	if err := verifyRetainedColumnArtifacts(files, "", retainedcolumn.Identity{}, selected); err == nil {
-		t.Fatal("uninstalled selected RC2 identity accepted")
+		t.Fatal("uninstalled selected release identity accepted")
 	}
 	installed := retainedcolumn.Identity{Version: selected.Version, Revision: selected.Revision, SchemaSHA256: selected.SchemaSHA256, CorpusSHA256: selected.CorpusSHA256}
 	selected.Revision = strings.Repeat("2", 40)
@@ -62,7 +62,7 @@ func TestRetainedColumnAdmissionRequiresInstalledIdentity(t *testing.T) {
 	}
 }
 
-func TestRetainedColumnRC2InstalledInventoryRefusals(t *testing.T) {
+func TestRetainedColumnReleaseInstalledInventoryRefusals(t *testing.T) {
 	files := fstest.MapFS{}
 	if err := fs.WalkDir(retainedColumnArtifacts, "retained-column", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -80,7 +80,7 @@ func TestRetainedColumnRC2InstalledInventoryRefusals(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"valid", "missing", "changed", "extra", "outside inventory", "pin", "unsupported"} {
+	for _, name := range []string{"valid", "missing", "changed", "extra", "outside inventory", "pin", "unsupported", "candidate"} {
 		t.Run(name, func(t *testing.T) {
 			copy := fstest.MapFS{}
 			for path, file := range files {
@@ -103,6 +103,11 @@ func TestRetainedColumnRC2InstalledInventoryRefusals(t *testing.T) {
 			case "unsupported":
 				installed.Version = "0.3.0-rc.1"
 				selected.Version = installed.Version
+			case "candidate":
+				// The v0.3.0-rc.2 tuple, selected and installed alike, is refused
+				// against the final release's installed bytes.
+				installed.Version, installed.Revision = "0.3.0-rc.2", "bcac15b7537ce21879201b5e5dfe795496225121"
+				selected.Version, selected.Revision = installed.Version, installed.Revision
 			}
 			err := verifyRetainedColumnArtifacts(copy, pin, installed, selected)
 			if (err == nil) != (name == "valid") {

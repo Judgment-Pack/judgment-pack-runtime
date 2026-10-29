@@ -179,9 +179,10 @@ above — for every input admitted under that exact contract, not merely for the
 
 ## Core 0.3.0 preparation evidence and outstanding review
 
-The implementation bundles exact Spec commit
-`65c7cf5598a0f0fc532c80a9e2215090951104ce`, with per-file hashes and an immutable
-commit provenance lock. No published Core `0.3.0` tag is represented by that pin.
+The implementation bundles the published Spec tag `v0.3.0`, commit
+`27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`, with per-file hashes and an immutable
+provenance lock. Its bytes equal those of the earlier commit pin
+`65c7cf5598a0f0fc532c80a9e2215090951104ce`; the bundle digest is unchanged.
 The implemented Core `0.3.0` reader/evaluator supports only `base`; the optional
 `extended` profile is refused as `profile-unsupported` before schema interpretation.
 

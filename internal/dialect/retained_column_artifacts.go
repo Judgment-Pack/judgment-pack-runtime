@@ -11,15 +11,15 @@ import (
 
 // A reviewed import goes below retained-column/official and requires an
 // independent provenance pin and exact supported tuple in this file. An empty
-// pin means no RC2 installation, not a placeholder RC2 capability.
+// pin means no installation, not a placeholder capability.
 //
 //go:embed all:retained-column
 var retainedColumnArtifacts embed.FS
 
-const retainedColumnProvenancePin = "sha256:a13a5c76ef3e010b31266d0fd779450ba985c41df779280a3da42c3a79acdfd4"
+const retainedColumnProvenancePin = "sha256:271bfd2b1858885a4748d8630e0cb98a3dcf3d93b015798ab4d7ad804dcb257b"
 
 var retainedColumnInstalledIdentity = retainedcolumn.Identity{
-	Version: "0.3.0-rc.2", Revision: "bcac15b7537ce21879201b5e5dfe795496225121",
+	Version: "0.3.0", Revision: "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc",
 	SchemaSHA256: "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557",
 	CorpusSHA256: "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863",
 }

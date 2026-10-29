@@ -150,7 +150,7 @@ func TestRetainedColumnEntryCLIFrameAndByteBoundaries(t *testing.T) {
 
 // Use the installed published recipes through both actual application handlers.
 // Independent maximum generated values are frame API checks, not snapshot claims.
-func TestRetainedColumnRC2CLIAndMCPRawValues(t *testing.T) {
+func TestRetainedColumnReleaseCLIAndMCPRawValues(t *testing.T) {
 	raw, err := os.ReadFile("../dialect/retained-column/official/conformance/retained-column/1/cases.json")
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestRetainedColumnRC2CLIAndMCPRawValues(t *testing.T) {
 						t.Fatal("raw frame wire preservation failed", code)
 					}
 					spec := cliReport["spec"].(map[string]any)
-					if cliReport["maturity"] != "draft" || cliReport["role"] != "document-validation" || spec["version"] != "0.3.0-rc.2" || spec["revision"] != "bcac15b7537ce21879201b5e5dfe795496225121" || spec["schemaSha256"] != "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557" || spec["corpusSha256"] != "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863" {
+					if cliReport["maturity"] != "draft" || cliReport["role"] != "document-validation" || spec["version"] != "0.3.0" || spec["revision"] != "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc" || spec["schemaSha256"] != "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557" || spec["corpusSha256"] != "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863" {
 						t.Fatal("public installed identity changed")
 					}
 				}

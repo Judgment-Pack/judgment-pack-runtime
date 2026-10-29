@@ -10,7 +10,7 @@ import (
 
 // Exercise the published bytes in this owner's document-validation role. Typed
 // conversion expectations belong to preview/preparation owners, not this reader.
-func TestRetainedColumnRC2PublishedCorpus(t *testing.T) {
+func TestRetainedColumnReleasePublishedCorpus(t *testing.T) {
 	raw, err := fs.ReadFile(retainedColumnArtifacts, "retained-column/official/conformance/retained-column/1/cases.json")
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestRetainedColumnRC2PublishedCorpus(t *testing.T) {
 	}
 }
 
-func TestRetainedColumnRC2PublishedRawValueBounds(t *testing.T) {
+func TestRetainedColumnReleasePublishedRawValueBounds(t *testing.T) {
 	raw, err := fs.ReadFile(retainedColumnArtifacts, "retained-column/official/conformance/retained-column/1/cases.json")
 	if err != nil {
 		t.Fatal(err)
@@ -191,17 +191,22 @@ func TestRetainedColumnRC2PublishedRawValueBounds(t *testing.T) {
 	}
 }
 
-func TestRetainedColumnRC2Identity(t *testing.T) {
+func TestRetainedColumnReleaseIdentity(t *testing.T) {
 	r, code := ContractRetainedColumnDraft("test", RetainedColumnDraftBase())
-	if code != 0 || r.Spec.Version != "0.3.0-rc.2" || r.Maturity != "draft" || r.Specification != fmt.Sprintf("https://github.com/Judgment-Pack/judgment-pack-spec/blob/%s/spec/retained-column.md", RetainedColumnDraftRevision) || r.Role != "document-validation" {
+	if code != 0 || r.Spec.Version != "0.3.0" || r.Spec.Revision != "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc" || r.Maturity != "draft" || r.Specification != fmt.Sprintf("https://github.com/Judgment-Pack/judgment-pack-spec/blob/%s/spec/retained-column.md", RetainedColumnDraftRevision) || r.Role != "document-validation" {
 		t.Fatal("wrong installed role identity", r)
 	}
 	if _, _, code := SelectRetainedColumnDraft("test", "retained-column/1@ade3914b0b81ef299e5b9a8d6147f37ff3f0976c", "base"); code == 0 {
-		t.Fatal("historical selector accepted as installed RC2")
+		t.Fatal("historical selector accepted as the installed release")
+	}
+	// The v0.3.0-rc.2 candidate's selector names its own source commit. The
+	// installed final reader refuses it, as the Spec's own readers now do.
+	if _, _, code := SelectRetainedColumnDraft("test", "retained-column/1@bcac15b7537ce21879201b5e5dfe795496225121", "base"); code == 0 {
+		t.Fatal("release-candidate selector accepted as the installed release")
 	}
 }
 
-func TestRetainedColumnRC2PublishedCapabilityRole(t *testing.T) {
+func TestRetainedColumnReleasePublishedCapabilityRole(t *testing.T) {
 	raw, err := fs.ReadFile(retainedColumnArtifacts, "retained-column/official/conformance/retained-column/1/capabilities.json")
 	if err != nil {
 		t.Fatal(err)
@@ -217,6 +222,9 @@ func TestRetainedColumnRC2PublishedCapabilityRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	role := table.Roles["document-validation"]
+	// The corpus files are byte-identical to the v0.3.0-rc.2 candidate's, so the
+	// table keeps the distribution label it was published with; the release
+	// identity is carried by release-identity.json and the v0.3.0 inventory.
 	if table.Contract != "retained-column/1" || table.Distribution != "v0.3.0-rc.2" || table.Maturity != "draft" || len(role) != 2 || role[0] != "documentBytes" || role[1] != "frameBytes" {
 		t.Fatal("published role table changed")
 	}

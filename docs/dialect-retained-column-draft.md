@@ -1,7 +1,7 @@
 # Historical retained-column Draft reader
 
 This page records the historical Draft experiment and its original pins. Current
-selected support is documented in [the RC2 reader](dialect-retained-column-rc2.md).
+selected support is documented in [the selected reader](dialect-retained-column.md).
 The historical selector below is no longer accepted as a selected identity.
 
 That historical Runtime had an explicit experimental entry for RFC 0029 at Spec revision

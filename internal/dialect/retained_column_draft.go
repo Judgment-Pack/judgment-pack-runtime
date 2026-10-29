@@ -1,7 +1,7 @@
 package dialect
 
 // This opt-in internal reader implements document/retained-frame structure from
-// the installed immutable RC2 leaf below. It executes no conversions.
+// the installed immutable official release leaf below. It executes no conversions.
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,7 +16,7 @@ import (
 const (
 	RetainedColumnDraftContract              = "retained-column/1"
 	RetainedColumnDraftSelector              = RetainedColumnDraftContract + "@" + RetainedColumnDraftRevision
-	RetainedColumnDraftRevision              = "bcac15b7537ce21879201b5e5dfe795496225121"
+	RetainedColumnDraftRevision              = "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc"
 	RetainedColumnDraftSchema                = "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557"
 	RetainedColumnDraftCorpus                = "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863"
 	RetainedColumnDraftDocumentBytes         = 1048576
@@ -44,7 +44,7 @@ type RetainedColumnDraftSelection struct {
 
 func RetainedColumnDraftBase() RetainedColumnDraftSelection {
 	return RetainedColumnDraftSelection{RetainedColumnDraftContract, RetainedColumnDraftIdentity{
-		"0.3.0-rc.2", RetainedColumnDraftRevision, RetainedColumnDraftSchema, RetainedColumnDraftCorpus}, "base"}
+		"0.3.0", RetainedColumnDraftRevision, RetainedColumnDraftSchema, RetainedColumnDraftCorpus}, "base"}
 }
 
 type RetainedColumnDraftLimits struct {

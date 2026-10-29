@@ -1,17 +1,18 @@
-# Selected retained-column RC2 reader
+# Selected retained-column reader
 
 Runtime installs the retained-column/1 leaf from the official immutable Spec
-`v0.3.0-rc.2` distribution at source revision
-`bcac15b7537ce21879201b5e5dfe795496225121`. Its maturity is `draft`; selected
+`v0.3.0` release at source revision
+`27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`. Its maturity is `draft`; selected
 support is limited to document validation and declared inventory coverage.
 Validation makes no preparation, source authenticity or execution claim.
 The existing dialect operations retain their default contract and limits.
 
 Select exactly
-`--draft-contract retained-column/1@bcac15b7537ce21879201b5e5dfe795496225121`
+`--draft-contract retained-column/1@27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`
 and `--draft-profile base` or `--draft-profile extended` on `dialect contract`,
 `canonicalize`, `digest`, `validate` or `check`. Both flags are required. The `draft` flag names are compatibility adapter
-spellings; their exact accepted value selects only this installed RC2 identity. Unsupported selection refuses before opening input files. A document
+spellings; their exact accepted value selects only this installed release identity. Unsupported selection, including the
+`v0.3.0-rc.2` candidate selector, refuses before opening input files. A document
 must declare the selected profile; omission means base. Extended requires explicit
 `"profile":"extended"` in a validated document. No selection is inferred from leaves,
 carrier versions or caller-supplied specification hashes.
@@ -43,8 +44,8 @@ response bounded without reducing accepted input or changing ordinary reports.
 The selected contract response reports only role `document-validation` in
 `capabilities.conversionContracts`, with fixed trusted identity:
 
-- Version label: `0.3.0-rc.2`.
-- Revision: `bcac15b7537ce21879201b5e5dfe795496225121`.
+- Version label: `0.3.0`.
+- Revision: `27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`.
 - Schema: `sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557`.
 - Corpus: `sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863`.
 
@@ -95,7 +96,12 @@ Preview arithmetic, producer/history, preparation/export/verification and capabi
 consumer cases remain their owners' work. Synthetic published fixture identities
 remain preparation-only and are never promoted into signed full-input proof.
 Historical Draft test resources remain byte-exact under their original pins.
+The schema, corpus and capability table are byte-identical to the `v0.3.0-rc.2`
+candidate's, so the published tables keep the distribution label they were
+published with; the installed release identity and the `v0.3.0` inventory carry
+the release. The installed reader refuses the candidate's release identity.
 
-Existing Runtime releases, including 0.39.0-alpha.1, gain no support from this
-source change. Stable integrated checks, CI, review and distribution gates remain
+Runtime 0.39.0-alpha.2 installed the `v0.3.0-rc.2` candidate; earlier releases,
+including 0.39.0-alpha.1, installed none. No existing release gains support from
+this source change. Stable integrated checks, CI, review and distribution gates remain
 required before a new Runtime release. No final Core conformance claim follows.

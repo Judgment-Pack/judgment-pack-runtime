@@ -1,14 +1,14 @@
 {
   "sourceRepository": "https://github.com/Judgment-Pack/judgment-pack-spec",
-  "sourceRelease": "v0.3.0-rc.2",
-  "sourceRevision": "bcac15b7537ce21879201b5e5dfe795496225121",
+  "sourceRelease": "v0.3.0",
+  "sourceRevision": "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc",
   "sourceKind": "immutable-git-ref",
   "worktreeDirty": false,
-  "sourceArchiveSha256": "sha256:0762a27d68492bcc2313872b7ae566e8b3cd65f3a45e02d596cb686259f3cb61",
-  "inventorySha256": "sha256:b4d62b3259b24dee68d926750ab45247d974004eec2bd15814f7d24c89140160",
+  "sourceArchiveSha256": "sha256:6469a866b9c0e1671de3462c1b1823a1738561f6b84e52b470382fc620530ce9",
+  "inventorySha256": "sha256:c8e489b2cabd0ee0b794a8b6a817f06f901e338348e32ec23c8c83d7c40dfe58",
   "identity": {
-    "version": "0.3.0-rc.2",
-    "revision": "bcac15b7537ce21879201b5e5dfe795496225121",
+    "version": "0.3.0",
+    "revision": "27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc",
     "schemaSha256": "sha256:0cb49f238c78391cb163a65474cc9af962df2bb1024a55c5310c2b784b2f0557",
     "corpusSha256": "sha256:17b16ff7a9b74fe4cc81eb6f6129a6aabdd9834621d9e756aa2d4c1a3f245863"
   },
@@ -45,13 +45,13 @@
     },
     {
       "path": "release-identity.json",
-      "byteLength": 186,
-      "sha256": "sha256:5b107b898fe9a1fb41f7c4ae18ec1227f06b3e9624ed98d86ea74cfbb8bcbb4e"
+      "byteLength": 141,
+      "sha256": "sha256:9432a9f5e4b32eff2b231baeb817bfab99a8e77726c9c47c25a76906d109c121"
     },
     {
-      "path": "releases/v0.3.0-rc.2.retained-column.json",
-      "byteLength": 3651,
-      "sha256": "sha256:b4d62b3259b24dee68d926750ab45247d974004eec2bd15814f7d24c89140160"
+      "path": "releases/v0.3.0.retained-column.json",
+      "byteLength": 3646,
+      "sha256": "sha256:c8e489b2cabd0ee0b794a8b6a817f06f901e338348e32ec23c8c83d7c40dfe58"
     },
     {
       "path": "schema/retained-column/1/contract.schema.json",
@@ -60,18 +60,18 @@
     },
     {
       "path": "spec/dialect.md",
-      "byteLength": 148952,
-      "sha256": "sha256:a10d6fc0f50b1cf450b2bd9156175529bed2a7d926d24567b47677076066cb5a"
+      "byteLength": 148961,
+      "sha256": "sha256:729e491a0d855a51f69e9b9e7aadc24131209c388ee29e8820c57a7a7c845d5a"
     },
     {
       "path": "spec/judgment-pack-core.md",
-      "byteLength": 67285,
-      "sha256": "sha256:0ceb66c15ce6b8268e02f319720eb40766c616423cfa08caaeea56ae8ba3d2ef"
+      "byteLength": 67317,
+      "sha256": "sha256:151d64678db709f91ab0729c2f75516b89a027e24a3e22e1788dcdf0aa6faabc"
     },
     {
       "path": "spec/retained-column.md",
-      "byteLength": 58020,
-      "sha256": "sha256:f17747d5daeba6953cef335900569c5b1cf1052b7f982c0146b6322687375b7d"
+      "byteLength": 58329,
+      "sha256": "sha256:c1c9dd34063b9056175b7740d161341a5529e9642eaead3da263cd29a0b4b5c6"
     },
     {
       "path": "tools/_retained_column.py",
@@ -125,8 +125,8 @@
     },
     {
       "path": "tools/dialect-verify-ts/src/retained.ts",
-      "byteLength": 18165,
-      "sha256": "sha256:5ae44bc9782168cdae87467a0eb9f4229382f46058ac64ef6369b1236fbe905d"
+      "byteLength": 18246,
+      "sha256": "sha256:156ca057e967e3ae36ba4c8a740ee0f41e87588826c9f55af70bd00688163302"
     },
     {
       "path": "tools/dialect-verify-ts/src/schema.ts",
@@ -155,8 +155,8 @@
     },
     {
       "path": "tools/retained_column.py",
-      "byteLength": 19582,
-      "sha256": "sha256:0598c3b31a0a4115eb4efdf2e8fccc6b75c558dfe7d09180b3acf2241e937447"
+      "byteLength": 19654,
+      "sha256": "sha256:ba3e97b1a9f4e46fff808f9ac79bc208d5b2a0a4c4f71ea0d760b259ba12bc5c"
     }
   ]
 }

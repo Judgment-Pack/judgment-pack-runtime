@@ -151,10 +151,10 @@ func (a *App) dialectOperation(operation string) *cobra.Command {
 		c.Flags().StringVar(&packPath, "pack", "", "pack file or - for standard input; required")
 	}
 	if operation == "contract" || operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
-		c.Flags().StringVar(&draftContract, "draft-contract", "", "explicit installed RC2 selector (compatibility flag spelling): "+dialect.RetainedColumnDraftSelector)
+		c.Flags().StringVar(&draftContract, "draft-contract", "", "explicit installed leaf selector (compatibility flag spelling): "+dialect.RetainedColumnDraftSelector)
 		c.Flags().StringVar(&draftProfile, "draft-profile", "", "explicit selected profile: base or extended; requires --draft-contract")
 		if operation == "validate" {
-			c.Flags().BoolVar(&retainedFrame, "retained-frame", false, "validate a standalone retained frame; requires both selected RC2 flags")
+			c.Flags().BoolVar(&retainedFrame, "retained-frame", false, "validate a standalone retained frame; requires both selected leaf flags")
 		}
 	}
 	return c
@@ -220,9 +220,9 @@ func (a *App) runRetainedColumnDraft(command, operation string, args []string, f
 			}
 		}
 	case operation == "contract":
-		_, err = fmt.Fprintf(a.out, "Selected RC2 %s · %s\nProfile: %s; role: document-validation\nOperations: contract, canonicalize, digest, validate (document or retained frame), check\nDocument limit: %d UTF-8 bytes; frame limit: %d UTF-8 bytes\nCanonicalize and digest check encoding only. Pack checks cover declared inventory.\n", selected.Contract, selected.Spec.Revision, selected.Profile, selected.Limits.DocumentBytes, selected.Limits.FrameBytes)
+		_, err = fmt.Fprintf(a.out, "Selected %s v%s · %s\nProfile: %s; role: document-validation\nOperations: contract, canonicalize, digest, validate (document or retained frame), check\nDocument limit: %d UTF-8 bytes; frame limit: %d UTF-8 bytes\nCanonicalize and digest check encoding only. Pack checks cover declared inventory.\n", selected.Contract, selected.Spec.Version, selected.Spec.Revision, selected.Profile, selected.Limits.DocumentBytes, selected.Limits.FrameBytes)
 	case operation == "validate":
-		_, err = fmt.Fprintln(a.out, "Selected RC2 checks passed: "+report.ValidationScope+".")
+		_, err = fmt.Fprintln(a.out, "Selected leaf checks passed: "+report.ValidationScope+".")
 	case operation == "digest":
 		_, err = fmt.Fprintln(a.out, report.Digest)
 	default:

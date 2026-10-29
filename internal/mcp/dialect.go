@@ -44,7 +44,7 @@ func dialectDefinition(operation string) map[string]any {
 	}
 	if operation == "contract" || operation == "canonicalize" || operation == "digest" || operation == "validate" || operation == "check" {
 		dialectDraftSchema(operation, schema, properties)
-		descriptions[operation] += fmt.Sprintf(" Explicit compatibility draftContract/draftProfile selects the installed RC2 document/frame reader; no preparation, authenticity or execution claim. The %d-byte stdio request limit includes JSON escaping and delimiter; decoded byte limits do not guarantee transport admission.", maxMessageBytes)
+		descriptions[operation] += fmt.Sprintf(" Explicit compatibility draftContract/draftProfile selects the installed leaf document/frame reader; no preparation, authenticity or execution claim. The %d-byte stdio request limit includes JSON escaping and delimiter; decoded byte limits do not guarantee transport admission.", maxMessageBytes)
 	}
 	return map[string]any{"name": name, "description": descriptions[operation], "inputSchema": schema}
 }
@@ -172,14 +172,14 @@ func dialectDraftSchema(operation string, schema, properties map[string]any) {
 	properties["draftProfile"] = map[string]any{"type": "string", "enum": []string{"base", "extended"}}
 	selectorMembers := []any{map[string]any{"required": []string{"draftContract"}}, map[string]any{"required": []string{"draftProfile"}}}
 	if operation == "validate" {
-		properties["retainedFrame"] = map[string]any{"type": "boolean", "description": "With exact installed RC2 selection, check document text as a standalone retained frame; no conversion or provenance verification."}
+		properties["retainedFrame"] = map[string]any{"type": "boolean", "description": "With exact installed leaf selection, check document text as a standalone retained frame; no conversion or provenance verification."}
 		selectorMembers = append(selectorMembers, map[string]any{"required": []string{"retainedFrame"}})
 	}
 	legacy := map[string]any{"not": map[string]any{"anyOf": selectorMembers}}
 	if operation != "contract" {
 		document := properties["document"].(map[string]any)
 		delete(document, "maxLength")
-		document["description"] = "Exact JSON text, never a path. The selected legacy/RC2 branch bounds decoded UTF-8 bytes; stdio escaping and delimiter count against the separate request envelope."
+		document["description"] = "Exact JSON text, never a path. The selected legacy/leaf branch bounds decoded UTF-8 bytes; stdio escaping and delimiter count against the separate request envelope."
 		legacy["properties"] = map[string]any{"document": map[string]any{"maxLength": dialect.MaxDocumentBytes}}
 	}
 	branches := []any{legacy}
@@ -236,11 +236,11 @@ func (s *Server) toolRetainedColumnDraft(name string, args json.RawMessage) any 
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(args, &fields) != nil || json.Unmarshal(args, &input) != nil {
-		return toolError("Expected exact installed RC2 selectors and JSON text arguments.")
+		return toolError("Expected exact installed leaf selectors and JSON text arguments.")
 	}
 	for _, key := range []string{"draftContract", "draftProfile", "retainedFrame"} {
 		if value, present := fields[key]; present && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return toolError("RC2 selection members cannot be null.")
+			return toolError("Leaf selection members cannot be null.")
 		}
 	}
 	selector, profile := "", ""
@@ -290,7 +290,7 @@ func (s *Server) toolRetainedColumnDraft(name string, args json.RawMessage) any 
 	encoder := json.NewEncoder(&text)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(output); err != nil {
-		return toolError("The selected RC2 report could not be encoded.")
+		return toolError("The selected leaf report could not be encoded.")
 	}
 	return map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": strings.TrimSuffix(text.String(), "\n")}},

@@ -37,7 +37,7 @@ func syntheticArchive(t *testing.T) ([]byte, options, fstest.MapFS) {
 	}
 	encode(retainedcolumn.InventoryPath, inv)
 	revision := strings.Repeat("1", 40)
-	encode("release-identity.json", retainedcolumn.ReleaseIdentity{ReleaseVersion: retainedcolumn.Version, Tag: retainedcolumn.Release, SpecVersion: "0.3.0", Maturity: "draft", Distribution: "release-candidate", SourceCommit: revision})
+	encode("release-identity.json", retainedcolumn.ReleaseIdentity{ReleaseVersion: retainedcolumn.Version, Tag: retainedcolumn.Release, SpecVersion: "0.3.0", Maturity: "draft", SourceCommit: revision})
 	raw := makeArchive(t, files, nil)
 	return raw, options{archivePin: retainedcolumn.Digest(raw), revision: revision, inventoryPin: retainedcolumn.Digest(files[retainedcolumn.InventoryPath].Data)}, files
 }
