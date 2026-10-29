@@ -54,6 +54,8 @@ jobs:
         run: go build -trimpath ./cmd/jpack
         env:
           CGO_ENABLED: "0"
+      - name: Check audit line formats
+        run: go run ./tools/audit-formats
 
   check:
     name: check

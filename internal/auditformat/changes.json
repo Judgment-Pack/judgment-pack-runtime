@@ -1,0 +1,44 @@
+{
+  "changes": [
+    {
+      "file": "evaluations.jsonl",
+      "line": "record",
+      "sha256": "sha256:3748655634fc2b135437c83631d6739db971516d3fd44d131f988183dd69549d",
+      "formatVersion": "1",
+      "decision": "baseline",
+      "reason": "The evaluation and graph-composite record shape as of v0.39.0, written under recordVersion 1."
+    },
+    {
+      "file": "evaluations.jsonl",
+      "line": "discontinuity",
+      "sha256": "sha256:45b453544f10842bdaa934fd3443dea52c0f5c5d8b3c1dcba860b6c6cd7d8480",
+      "formatVersion": "1",
+      "decision": "baseline",
+      "reason": "The discontinuity record audit repair appends (ADR-0047), released since v0.26.0."
+    },
+    {
+      "file": "signatures.jsonl",
+      "line": "record-signature",
+      "sha256": "sha256:f3d096d4fdebc66d951fa7592bc86336fa0c0352f30aaffefabd1a9f5cfa2582",
+      "formatVersion": "1",
+      "decision": "baseline",
+      "reason": "The record-signature sidecar line, released since v0.26.0."
+    },
+    {
+      "file": "signatures.jsonl",
+      "line": "key-rotation",
+      "sha256": "sha256:8d7d8e7c05f8fa3b067ce82ac13e9adff1a6fcc3448eb1d001f0a8459cbfb782",
+      "formatVersion": "1",
+      "decision": "baseline",
+      "reason": "The key-rotation sidecar line, released since v0.26.0."
+    },
+    {
+      "file": "stamps.jsonl",
+      "line": "stamp",
+      "sha256": "sha256:316f48ea2f46150a2e28f9583037700125d77ba606ea7c6b2e7f4f097800f5eb",
+      "formatVersion": "1",
+      "decision": "baseline",
+      "reason": "The time-stamp line, released since v0.26.0."
+    }
+  ]
+}

@@ -120,6 +120,26 @@ refuses unpinned resources, changed or missing installed bytes, extra inventory,
 unsupported identities and disagreement with the selected reader. No final Core,
 producer or preparation-verifier claim follows from this document-validation role.
 
+## Audit line formats
+
+The audit trail's persisted lines (`evaluations.jsonl` records and discontinuities,
+`signatures.jsonl` record signatures and key rotations, `stamps.jsonl` stamps) are
+fingerprinted in `internal/auditformat/`. `catalog.json` is generated: each line
+type's normalized JSON shape and its SHA-256 digest. `changes.json` is written by
+hand and only appended to: every digest a line type has had, with the decision that
+admitted it (`baseline`, `compatible-addition` at the same format version, or
+`new-format-version` at the next integer with its `readingRule`) and a reason.
+`status.json` is kept apart: per trail file, the format the code `writes` (checked
+against the writer constant), the last accepted compatibility `baseline`, and the
+last format `released`. A format that shipped in any release, a pre-release
+included, carries compatibility obligations, so `baseline <= released <= writes`.
+
+`go run ./tools/audit-formats` (the `audit-formats` check) regenerates the catalog in
+memory and fails on a stale catalog, on a digest no change record names, and on a
+status the writer constants contradict. After changing a persisted line, run it with
+`-write`, append the change record, and update `status.json` when the format version
+moves. When a release ships a new format version, set `released` to it.
+
 ## Validate locally
 
 Install the exact GoReleaser version used by the workflow, then run:
@@ -132,6 +152,7 @@ env GO111MODULE=on go test ./...
 env GO111MODULE=on go run ./cmd/jpack spec test-conformance --quiet
 env GO111MODULE=on go run ./cmd/jpack spec test-conformance --spec-version 0.2.0-draft --quiet
 env GO111MODULE=on go run ./cmd/jpack experimental evaluate-corpus
+env GO111MODULE=on go run ./tools/audit-formats
 env GO111MODULE=on go run ./tools/check-release --tag <cli-tag>
 goreleaser check
 goreleaser release --snapshot --clean

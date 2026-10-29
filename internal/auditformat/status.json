@@ -1,0 +1,8 @@
+{
+  "statusVersion": 1,
+  "files": [
+    {"file": "evaluations.jsonl", "writes": "1", "baseline": "1", "released": "1"},
+    {"file": "signatures.jsonl", "writes": "1", "baseline": "1", "released": "1"},
+    {"file": "stamps.jsonl", "writes": "1", "baseline": "1", "released": "1"}
+  ]
+}
