@@ -2,6 +2,25 @@
 
 All notable changes to tagged releases are documented here.
 
+## 0.39.0 - 2026-10-29
+
+- Move the retained-column/1 leaf and the bundled Core `0.3.0` artifacts from the
+  `v0.3.0-rc.2` candidate to the published Spec `v0.3.0` (source `27cb29bf`). The
+  selector is now `retained-column/1@27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`, and
+  the candidate selector refuses. CLI and MCP text no longer names "RC2". The reader
+  page is [docs/dialect-retained-column.md](docs/dialect-retained-column.md). Schema and
+  corpus digests are unchanged, and maturity remains `draft`.
+- Add the `audit-formats` check (#327). It fingerprints every persisted audit line
+  shape, including the declared evaluation disposition, against a format-status
+  record whose released entries are append-only. Persisted lines are unchanged.
+- Complete the milestone begun in `0.39.0-alpha.1` (MCP owner taxonomy and method
+  skills, #329) and `0.39.0-alpha.2` (selected retained-column document validation).
+  See the [release notes](docs/releases/v0.39.0.md) for the host-facing changes from
+  alpha.2.
+
+Runtime's conformance claim is stated, in full and only, in
+[CONFORMANCE.md](CONFORMANCE.md).
+
 ## 0.39.0-alpha.2 - 2026-10-27
 
 - Install and select the official retained-column/1 leaf from Spec `v0.3.0-rc.2`
