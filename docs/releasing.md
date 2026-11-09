@@ -148,12 +148,16 @@ compatibility `baseline`, and the last format `released`. A format that shipped 
 any release, a pre-release included, carries compatibility obligations, so
 `baseline <= released <= writes`. Its `releasedChanges` pins the count and digest
 of the change records already released; they must stay unchanged and in order, so
-a released record cannot be rewritten in place.
+a released record cannot be rewritten in place. The pin moves with `released`:
+each line type's first record of its file's `released` format must be inside it,
+and no record inside it may be of a later format. A compatible addition at an
+already released format version is not told apart by its version, so moving the
+pin over it is the release step below.
 
 `go run ./tools/audit-formats` (the `audit-formats` check) regenerates the catalog
 in memory and fails on a stale catalog, on a digest no change record names, on a
-rewritten released record, on a status the writer constants contradict, and on an
-exemplar that does not conform. After changing a persisted line, run it with
+rewritten released record, on a pin the released formats contradict, on a status
+the writer constants contradict, and on an exemplar that does not conform. After changing a persisted line, run it with
 `-write`, append the change record, and update `status.json` when the format
 version moves. When a release ships, set `released` to the format it carries and
 move `releasedChanges` to cover every record then present (the count and the
@@ -182,7 +186,10 @@ binary. A release build must report the tag version without the leading `v`.
 
 ## Create the release
 
-1. Move the changelog entries from `Unreleased` to the intended version and date.
+1. Move the changelog entries from `Unreleased` to the intended version and date. In
+   `internal/auditformat/status.json`, set each file's `released` to the format it
+   `writes` and move `releasedChanges` over every change record present: set the
+   count, and `go run ./tools/audit-formats` then reports the digest of all records.
 2. Commit the reviewed release source with DCO sign-off and push `main`.
 3. Create an annotated tag on that exact commit and push only that tag:
 

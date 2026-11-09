@@ -6,8 +6,9 @@ All notable changes to tagged releases are documented here.
 
 - Write the persisted evaluation disposition from `result.CanonicalDispositionShape`,
   the type the `audit-formats` check fingerprints, so a disposition member cannot be
-  written without moving the record line's digest (#342). Persisted audit lines and
-  their digests are unchanged.
+  written without moving the record line's digest (#342). The check also requires the
+  released change-record pin in `internal/auditformat/status.json` to move with each
+  file's `released` format. Persisted audit lines and their digests are unchanged.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).

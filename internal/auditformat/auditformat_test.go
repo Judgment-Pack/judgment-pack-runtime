@@ -113,9 +113,15 @@ func TestCheckDecisionsAndStatus(t *testing.T) {
 	baseline := `{"file":"trail.jsonl","line":"line","sha256":"` + v1.SHA256 + `","formatVersion":"1","decision":"baseline","reason":"first"}`
 	addition := `{"file":"trail.jsonl","line":"line","sha256":"` + v2.SHA256 + `","formatVersion":"1","decision":"compatible-addition","reason":"optional member"}`
 	newVersion := `{"file":"trail.jsonl","line":"line","sha256":"` + v2.SHA256 + `","formatVersion":"2","decision":"new-format-version","readingRule":"version 1 lines lack extra","reason":"new member"}`
-	status := func(writes, baseline, released string) string {
-		return `{"statusVersion":1,"releasedChanges":{"count":0,"sha256":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"files":[{"file":"trail.jsonl","writes":"` + writes + `","baseline":"` + baseline + `","released":"` + released + `"}]}`
+	// Each status pins the case's first record (PIN, filled in below) unless it
+	// names its own pin.
+	statusPinning := func(pin, writes, baseline, released string) string {
+		return `{"statusVersion":1,"releasedChanges":` + pin + `,"files":[{"file":"trail.jsonl","writes":"` + writes + `","baseline":"` + baseline + `","released":"` + released + `"}]}`
 	}
+	status := func(writes, baseline, released string) string {
+		return statusPinning("PIN", writes, baseline, released)
+	}
+	bothPinned := `{"count":2,"sha256":"` + pinDigest(baseline, newVersion) + `"}`
 	for _, tc := range []struct {
 		name    string
 		entry   Entry
@@ -145,15 +151,59 @@ func TestCheckDecisionsAndStatus(t *testing.T) {
 		{"released after writes", v2, baseline + "," + newVersion, status("2", "1", "3"), "2", false},
 		{"version not canonical", v1, baseline, status("01", "1", "1"), "1", false},
 		{"no status", v1, baseline, `{"statusVersion":1,"releasedChanges":{"count":0,"sha256":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"files":[]}`, "1", false},
+		// The pin moves with released (#342).
+		{"released format pinned", v2, baseline + "," + newVersion, statusPinning(bothPinned, "2", "1", "2"), "2", true},
+		{"released format outside the pin", v2, baseline + "," + newVersion, status("2", "1", "2"), "2", false},
+		{"pinned record of an unreleased format", v2, baseline + "," + newVersion, statusPinning(bothPinned, "2", "1", "1"), "2", false},
+		{"released baseline outside the pin", v1, baseline, statusPinning(`{"count":0,"sha256":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}`, "1", "1", "1"), "1", false},
+		{"addition after the pin at the released format", v2, baseline + "," + addition, status("1", "1", "1"), "1", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			generated := Catalog{CatalogVersion: 1, Normalization: Normalization, Lines: []Entry{tc.entry}}
-			problems := Check(Encode(generated), []byte(`{"changes":[`+tc.changes+`]}`), []byte(tc.status), generated, map[string]string{"trail.jsonl": tc.writer})
+			first, _, more := strings.Cut(tc.changes, "},{")
+			if more {
+				first += "}"
+			}
+			status := strings.Replace(tc.status, "PIN", `{"count":1,"sha256":"`+pinDigest(first)+`"}`, 1)
+			problems := Check(Encode(generated), []byte(`{"changes":[`+tc.changes+`]}`), []byte(status), generated, map[string]string{"trail.jsonl": tc.writer})
 			if (len(problems) == 0) != tc.ok {
 				t.Fatal(problems)
 			}
 		})
 	}
+}
+
+// The two refusals that tie the pin to released, by their exact text (#342).
+func TestReleasedPinRefusals(t *testing.T) {
+	v1 := entry("trail.jsonl", "line", reflect.TypeOf(syntheticV1{}), nil)
+	v2 := entry("trail.jsonl", "line", reflect.TypeOf(syntheticV2{}), nil)
+	baseline := `{"file":"trail.jsonl","line":"line","sha256":"` + v1.SHA256 + `","formatVersion":"1","decision":"baseline","reason":"first"}`
+	newVersion := `{"file":"trail.jsonl","line":"line","sha256":"` + v2.SHA256 + `","formatVersion":"2","decision":"new-format-version","readingRule":"version 1 lines lack extra","reason":"new member"}`
+	generated := Catalog{CatalogVersion: 1, Normalization: Normalization, Lines: []Entry{v2}}
+	changes := []byte(`{"changes":[` + baseline + "," + newVersion + `]}`)
+	for _, tc := range []struct {
+		name, pin, released, want string
+	}{
+		{"released outside the pin", `{"count":1,"sha256":"` + pinDigest(baseline) + `"}`, "2",
+			"changes.json change 2 (trail.jsonl line): admits format 2, which status.json says trail.jsonl released, but lies after the pinned released prefix (count 1); move releasedChanges over it"},
+		{"pinned but not released", `{"count":2,"sha256":"` + pinDigest(baseline, newVersion) + `"}`, "1",
+			"changes.json change 2 (trail.jsonl line): is pinned as released, but status.json says trail.jsonl released format 1; set released, or pin fewer records"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			status := `{"statusVersion":1,"releasedChanges":` + tc.pin + `,"files":[{"file":"trail.jsonl","writes":"2","baseline":"1","released":"` + tc.released + `"}]}`
+			problems := Check(Encode(generated), changes, []byte(status), generated, map[string]string{"trail.jsonl": "2"})
+			if len(problems) != 1 || problems[0].Error() != tc.want {
+				t.Fatalf("problems %q\nwant [%q]", problems, tc.want)
+			}
+		})
+	}
+}
+
+// pinDigest is a releasedChanges digest over records written as compact JSON in
+// the Change member order, computed here without PrefixDigest.
+func pinDigest(records ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(records, "\n") + "\n"))
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // Released change records are append-only: rewriting one in place, reordering
@@ -247,9 +297,9 @@ func TestCheckFilesRunsExemplars(t *testing.T) {
 	formats := []audit.LineFormat{{File: "trail.jsonl", Line: "line", Version: "1", Type: reflect.TypeOf(syntheticV1{}),
 		Exemplars: func() ([][]byte, error) { return [][]byte{[]byte(`{"kind":"k","extra":1}`)}, nil }}}
 	generated, _ := generate(formats)
-	changes := `{"changes":[{"file":"trail.jsonl","line":"line","sha256":"` + generated.Lines[0].SHA256 + `","formatVersion":"1","decision":"baseline","reason":"first"}]}`
-	status := `{"statusVersion":1,"releasedChanges":{"count":0,"sha256":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},"files":[{"file":"trail.jsonl","writes":"1","baseline":"1","released":"1"}]}`
-	problems := checkFiles(Encode(generated), []byte(changes), []byte(status), formats)
+	record := `{"file":"trail.jsonl","line":"line","sha256":"` + generated.Lines[0].SHA256 + `","formatVersion":"1","decision":"baseline","reason":"first"}`
+	status := `{"statusVersion":1,"releasedChanges":{"count":1,"sha256":"` + pinDigest(record) + `"},"files":[{"file":"trail.jsonl","writes":"1","baseline":"1","released":"1"}]}`
+	problems := checkFiles(Encode(generated), []byte(`{"changes":[`+record+`]}`), []byte(status), formats)
 	if len(problems) != 1 || !strings.Contains(problems[0].Error(), "extra") {
 		t.Fatal(problems)
 	}

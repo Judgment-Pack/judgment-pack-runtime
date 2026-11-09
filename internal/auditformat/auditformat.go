@@ -9,14 +9,16 @@
 //     the code writes, the last accepted compatibility baseline and the last
 //     format released. A format that shipped in any release, a pre-release
 //     included, carries compatibility obligations. It also pins the released
-//     prefix of change records, which stays unchanged and in order.
+//     prefix of change records, which stays unchanged and in order, holds each
+//     line type's first record of its file's released format, and holds no
+//     record of a later format.
 //
 // CheckFiles regenerates the catalog from the Go types and refuses a catalog
 // that differs, a digest no change record names, a rewritten released record,
-// a status the writer constants contradict, and an exemplar line from the
-// writers' own encoders that does not conform to its declared shape. The
-// fingerprint covers shape and declared grammars, not other value encodings or
-// spellings, such as a timestamp's.
+// a pin the released formats contradict, a status the writer constants
+// contradict, and an exemplar line from the writers' own encoders that does not
+// conform to its declared shape. The fingerprint covers shape and declared
+// grammars, not other value encodings or spellings, such as a timestamp's.
 package auditformat
 
 import (
@@ -299,6 +301,36 @@ func Check(catalogRaw, changesRaw, statusRaw []byte, generated Catalog, writers 
 	// unchanged and in order.
 	if pin := status.ReleasedChanges; pin.Count < 0 || pin.Count > len(changes.Changes) || PrefixDigest(changes.Changes, pin.Count) != pin.SHA256 {
 		fail("%s: the %d released change records pinned by %s are not unchanged and in order; append new records after them instead (all %d records present digest to %s)", ChangesFile, pin.Count, StatusFile, len(changes.Changes), PrefixDigest(changes.Changes, len(changes.Changes)))
+	} else {
+		// The pin moves with each file's released format (#342): a line type's
+		// first record of that format is inside it, and no record inside it is of
+		// a later format. A record at the released version appended after it, a
+		// compatible addition, is told apart only by the release step.
+		released := map[string]int{}
+		for _, file := range status.Files {
+			if version, err := formatVersion(file.Released); err == nil {
+				released[file.File] = version
+			}
+		}
+		admitted := map[string]bool{}
+		for i, change := range changes.Changes {
+			version, err := formatVersion(change.FormatVersion)
+			last, ok := released[change.File]
+			if err != nil || !ok {
+				continue
+			}
+			key := change.File + "\x00" + change.Line
+			where := fmt.Sprintf("%s change %d (%s %s)", ChangesFile, i+1, change.File, change.Line)
+			switch {
+			case i < pin.Count && version > last:
+				fail("%s: is pinned as released, but %s says %s released format %d; set released, or pin fewer records", where, StatusFile, change.File, last)
+			case i >= pin.Count && version == last && !admitted[key]:
+				fail("%s: admits format %d, which %s says %s released, but lies after the pinned released prefix (count %d); move releasedChanges over it", where, version, StatusFile, change.File, pin.Count)
+			}
+			if version == last {
+				admitted[key] = true
+			}
+		}
 	}
 	known := map[string]Entry{}
 	for _, line := range generated.Lines {
