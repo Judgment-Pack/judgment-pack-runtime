@@ -688,7 +688,11 @@ token is parsed and verified with the standard library alone; the guide states e
 
 **Reading a witness's statements.** A witness is a gateway run by a party other than the trail's
 operator that signs the checkpoints handed to it and chains its statements per trail (gateway
-ADR-0013; no gateway release serves them yet). `jpack audit verify --witness-key <file>` reads the
+ADR-0013). A gateway configured as a witness serves them from gateway v0.11.0 on, as the gateway's
+[SPEC.md §8](https://github.com/Judgment-Pack/judgment-pack-gateway/blob/v0.24.0/SPEC.md#8-the-checkpoint-witness)
+specifies; the specification takes the statement up in
+[RFC 0017](https://github.com/Judgment-Pack/judgment-pack-spec/blob/v0.4.0/rfcs/0017-checkpoint-witness-statement.md),
+accepted at draft maturity. `jpack audit verify --witness-key <file>` reads the
 statements you fetched from it, `--witness <file>` and the head you fetched, `--witness-head
 <file>`, under a key you trust: every statement checked under its key, the chain read from index 0,
 never late, and to the head, which makes the reading current as of your fetch; without a head it is
