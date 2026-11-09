@@ -14,11 +14,13 @@ import (
 //
 // Embedded names a json.RawMessage member the runtime builds itself, by its
 // JSON name, with the type that declares its shape; the fingerprint uses that
-// type in place of an opaque JSON value. Exemplars are lines produced by the
-// writer's own encoder, which the check holds to the declared shape and to
-// any `format` grammar a string member declares. The fingerprint covers shape
-// and those declared grammars, not every value spelling (a timestamp's, for
-// one).
+// type in place of an opaque JSON value. The record's disposition is encoded
+// from that type itself (result.CanonicalDispositionShape, #342), so its
+// writer has no member the fingerprint does not read. Exemplars are lines
+// produced by the writer's own encoder, which the check holds to the declared
+// shape and to any `format` grammar a string member declares. The fingerprint
+// covers shape and those declared grammars, not every value spelling (a
+// timestamp's, for one).
 type LineFormat struct {
 	File      string
 	Line      string

@@ -505,29 +505,15 @@ func (d Disposition) CanonicalWith(contract EvaluatorContract) ([]byte, error) {
 	if err := d.validate(); err != nil {
 		return nil, err
 	}
-	handoff := map[string]any{"state": d.Handoff.State}
-	if d.Handoff.Routes != nil {
-		routes := make([]any, len(d.Handoff.Routes))
-		for i, target := range d.Handoff.Routes {
-			routes[i] = map[string]any{"kind": target.Kind, "name": target.Name}
-		}
-		handoff["routes"] = routes
-	}
+	// The persisted members are the fields of CanonicalDispositionShape and no
+	// others (#342). Routes is written whenever it is non-nil, [] included.
+	shape := CanonicalDispositionShape{Kind: d.Kind, OutcomeID: d.OutcomeID, Reasons: sortedSet(d.Reasons), Value: d.Value}
+	shape.Handoff.State = d.Handoff.State
+	shape.Handoff.Routes = d.Handoff.Routes
 	if len(d.Handoff.TriggeredBy) > 0 {
-		handoff["triggeredBy"] = sortedSet(d.Handoff.TriggeredBy)
+		shape.Handoff.TriggeredBy = sortedSet(d.Handoff.TriggeredBy)
 	}
-	object := map[string]any{
-		"kind":    d.Kind,
-		"reasons": sortedSet(d.Reasons),
-		"handoff": handoff,
-	}
-	if d.OutcomeID != "" {
-		object["outcomeId"] = d.OutcomeID
-	}
-	if d.Value != nil {
-		object["value"] = d.Value
-	}
-	return jcs.Encode(object)
+	return encodeDeclared(shape)
 }
 
 // MarshalJSON writes the canonical form of §8.3.

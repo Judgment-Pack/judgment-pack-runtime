@@ -129,6 +129,10 @@ type's normalized JSON shape and its SHA-256 digest. A member the runtime builds
 itself as raw JSON, the record's canonical `disposition`, is fingerprinted through
 the type declaring its members (`result.CanonicalDispositionShape`), and a string
 member may declare a grammar (the stamp `token` is standard padded `base64`).
+The disposition is written from that type: `Disposition.CanonicalWith` fills it
+and encodes its declared members, refusing a field that is not an exported member
+named by a `json` tag or whose kind it does not encode, so a new disposition
+member is a new field and moves the record digest.
 Exemplar lines produced by the writers' own encoders are held to those declared
 shapes and grammars: a member the builder writes but the shape does not declare,
 a declared member no exemplar writes, or a token in another encoding fails.
