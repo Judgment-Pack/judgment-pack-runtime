@@ -129,6 +129,10 @@ type's normalized JSON shape and its SHA-256 digest. A member the runtime builds
 itself as raw JSON, the record's canonical `disposition`, is fingerprinted through
 the type declaring its members (`result.CanonicalDispositionShape`), and a string
 member may declare a grammar (the stamp `token` is standard padded `base64`).
+The disposition is written from that type: `Disposition.CanonicalWith` fills it
+and encodes its declared members, refusing a field that is not an exported member
+named by a `json` tag or whose kind it does not encode, so a new disposition
+member is a new field and moves the record digest.
 Exemplar lines produced by the writers' own encoders are held to those declared
 shapes and grammars: a member the builder writes but the shape does not declare,
 a declared member no exemplar writes, or a token in another encoding fails.
@@ -144,12 +148,16 @@ compatibility `baseline`, and the last format `released`. A format that shipped 
 any release, a pre-release included, carries compatibility obligations, so
 `baseline <= released <= writes`. Its `releasedChanges` pins the count and digest
 of the change records already released; they must stay unchanged and in order, so
-a released record cannot be rewritten in place.
+a released record cannot be rewritten in place. The pin moves with `released`:
+each line type's first record of its file's `released` format must be inside it,
+and no record inside it may be of a later format. A compatible addition at an
+already released format version is not told apart by its version, so moving the
+pin over it is the release step below.
 
 `go run ./tools/audit-formats` (the `audit-formats` check) regenerates the catalog
 in memory and fails on a stale catalog, on a digest no change record names, on a
-rewritten released record, on a status the writer constants contradict, and on an
-exemplar that does not conform. After changing a persisted line, run it with
+rewritten released record, on a pin the released formats contradict, on a status
+the writer constants contradict, and on an exemplar that does not conform. After changing a persisted line, run it with
 `-write`, append the change record, and update `status.json` when the format
 version moves. When a release ships, set `released` to the format it carries and
 move `releasedChanges` to cover every record then present (the count and the
@@ -178,7 +186,10 @@ binary. A release build must report the tag version without the leading `v`.
 
 ## Create the release
 
-1. Move the changelog entries from `Unreleased` to the intended version and date.
+1. Move the changelog entries from `Unreleased` to the intended version and date. In
+   `internal/auditformat/status.json`, set each file's `released` to the format it
+   `writes` and move `releasedChanges` over every change record present: set the
+   count, and `go run ./tools/audit-formats` then reports the digest of all records.
 2. Commit the reviewed release source with DCO sign-off and push `main`.
 3. Create an annotated tag on that exact commit and push only that tag:
 
