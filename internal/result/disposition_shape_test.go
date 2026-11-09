@@ -19,16 +19,16 @@ type declaredShape struct {
 		Present string `json:"present"`
 	} `json:"nested"`
 	NilList  []string       `json:"nilList,omitempty"`
-	NilMap   map[string]any `json:"nilMap,omitempty"`
 	Required []string       `json:"required"`
 	Text     string         `json:"text"`
 	Value    map[string]any `json:"value"`
 }
 
 // The members written are the declared ones, by their json names: an empty
-// string and a nil slice or map under omitempty are omitted, a non-nil empty
-// slice is [], a required nil slice is [], and a map[string]any is passed to
-// the canonical encoder whole. The expected bytes are written by hand.
+// string and a nil slice under omitempty are omitted, a non-nil empty slice is
+// [], a required nil slice is [], and a map[string]any as the top-level value
+// member is passed to the canonical encoder whole, or omitted under omitempty
+// when nil. The expected bytes are written by hand.
 func TestEncodeDeclaredWritesTheDeclaredMembers(t *testing.T) {
 	value := declaredShape{Empty: []string{}, Items: []declaredItem{{Name: "b"}}, Value: map[string]any{"note": "a", "flag": true}}
 	value.Nested.Present = "x"
@@ -39,6 +39,13 @@ func TestEncodeDeclaredWritesTheDeclaredMembers(t *testing.T) {
 	const want = `{"empty":[],"items":[{"name":"b"}],"nested":{"present":"x"},"required":[],"text":"","value":{"flag":true,"note":"a"}}`
 	if string(encoded) != want {
 		t.Fatalf("encoded:\n got %s\nwant %s", encoded, want)
+	}
+	nilValue := struct {
+		Kind  string         `json:"kind"`
+		Value map[string]any `json:"value,omitempty"`
+	}{Kind: "k"}
+	if encoded, err := encodeDeclared(nilValue); err != nil || string(encoded) != `{"kind":"k"}` {
+		t.Fatalf("nil value member: encoded %s, err %v", encoded, err)
 	}
 }
 
@@ -97,6 +104,23 @@ func TestEncodeDeclaredRefusesWhatItCannotDeclare(t *testing.T) {
 		{"map of strings", struct {
 			Labels map[string]string `json:"labels"`
 		}{map[string]string{"a": "b"}}, "kind map"},
+		// A map is taken only as the top-level value member (#350).
+		{"map member other than value", struct {
+			Value map[string]any `json:"value"`
+			Extra map[string]any `json:"extra"`
+		}{map[string]any{}, map[string]any{"a": "b"}}, "disposition shape: a member of kind map at extra is taken only as the top-level value member"},
+		{"nil map member other than value", struct {
+			Extra map[string]any `json:"extra,omitempty"`
+		}{}, "kind map at extra is taken only"},
+		{"map named value below the top level", struct {
+			Handoff struct {
+				Value map[string]any `json:"value,omitempty"`
+			} `json:"handoff"`
+		}{}, "kind map at handoff.value is taken only"},
+		{"map in a list", struct {
+			Items []map[string]any `json:"items"`
+		}{[]map[string]any{{"a": "b"}}}, "kind map at items[] is taken only"},
+		{"map at the top level", map[string]any{"a": "b"}, "kind map at the top level is taken only"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			encoded, err := encodeDeclared(tc.value)
