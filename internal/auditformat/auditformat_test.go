@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -193,6 +194,56 @@ func TestReleasedPinRefusals(t *testing.T) {
 			status := `{"statusVersion":1,"releasedChanges":` + tc.pin + `,"files":[{"file":"trail.jsonl","writes":"2","baseline":"1","released":"` + tc.released + `"}]}`
 			problems := Check(Encode(generated), changes, []byte(status), generated, map[string]string{"trail.jsonl": "2"})
 			if len(problems) != 1 || problems[0].Error() != tc.want {
+				t.Fatalf("problems %q\nwant [%q]", problems, tc.want)
+			}
+		})
+	}
+}
+
+// The pin is tied to each file's released format, not each line type's (#350).
+// A line type added to a released file takes its baseline at the file's
+// released version, and that record is not released yet, so it lies after the
+// pin and passes. A pin left behind after a version bump is still refused, at
+// the file's first record of the newly released version and only there.
+func TestReleasedPinAcrossLineTypes(t *testing.T) {
+	lineV1 := entry("trail.jsonl", "line", reflect.TypeOf(syntheticV1{}), nil)
+	lineV2 := entry("trail.jsonl", "line", reflect.TypeOf(syntheticV2{}), nil)
+	otherV1 := entry("trail.jsonl", "other", reflect.TypeOf(syntheticV1{}), nil)
+	otherV2 := entry("trail.jsonl", "other", reflect.TypeOf(syntheticV2{}), nil)
+	baseline := `{"file":"trail.jsonl","line":"line","sha256":"` + lineV1.SHA256 + `","formatVersion":"1","decision":"baseline","reason":"first"}`
+	otherBaseline := `{"file":"trail.jsonl","line":"other","sha256":"` + otherV1.SHA256 + `","formatVersion":"1","decision":"baseline","reason":"new line type"}`
+	newVersion := `{"file":"trail.jsonl","line":"line","sha256":"` + lineV2.SHA256 + `","formatVersion":"2","decision":"new-format-version","readingRule":"version 1 lines lack extra","reason":"new member"}`
+	otherNewVersion := `{"file":"trail.jsonl","line":"other","sha256":"` + otherV2.SHA256 + `","formatVersion":"2","decision":"new-format-version","readingRule":"version 1 lines lack extra","reason":"new member"}`
+	status := func(pin, writes, released string) []byte {
+		return []byte(`{"statusVersion":1,"releasedChanges":` + pin + `,"files":[{"file":"trail.jsonl","writes":"` + writes + `","baseline":"1","released":"` + released + `"}]}`)
+	}
+	pin := func(records ...string) string {
+		return `{"count":` + strconv.Itoa(len(records)) + `,"sha256":"` + pinDigest(records...) + `"}`
+	}
+	for _, tc := range []struct {
+		name    string
+		lines   []Entry
+		records []string
+		status  []byte
+		writer  string
+		want    string
+	}{
+		{"new line type in a released file", []Entry{lineV1, otherV1}, []string{baseline, otherBaseline},
+			status(pin(baseline), "1", "1"), "1", ""},
+		{"version bump with the pin moved", []Entry{lineV2, otherV2}, []string{baseline, otherBaseline, newVersion, otherNewVersion},
+			status(pin(baseline, otherBaseline, newVersion, otherNewVersion), "2", "2"), "2", ""},
+		{"stale pin after a version bump", []Entry{lineV2, otherV2}, []string{baseline, otherBaseline, newVersion, otherNewVersion},
+			status(pin(baseline, otherBaseline), "2", "2"), "2",
+			"changes.json change 3 (trail.jsonl line): admits format 2, which status.json says trail.jsonl released, but lies after the pinned released prefix (count 2); move releasedChanges over it"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			generated := Catalog{CatalogVersion: 1, Normalization: Normalization, Lines: tc.lines}
+			changes := []byte(`{"changes":[` + strings.Join(tc.records, ",") + `]}`)
+			problems := Check(Encode(generated), changes, tc.status, generated, map[string]string{"trail.jsonl": tc.writer})
+			switch {
+			case tc.want == "" && len(problems) != 0:
+				t.Fatal(problems)
+			case tc.want != "" && (len(problems) != 1 || problems[0].Error() != tc.want):
 				t.Fatalf("problems %q\nwant [%q]", problems, tc.want)
 			}
 		})

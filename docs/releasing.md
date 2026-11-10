@@ -149,10 +149,10 @@ any release, a pre-release included, carries compatibility obligations, so
 `baseline <= released <= writes`. Its `releasedChanges` pins the count and digest
 of the change records already released; they must stay unchanged and in order, so
 a released record cannot be rewritten in place. The pin moves with `released`:
-each line type's first record of its file's `released` format must be inside it,
-and no record inside it may be of a later format. A compatible addition at an
-already released format version is not told apart by its version, so moving the
-pin over it is the release step below.
+each file's first record of its `released` format must be inside it, and no
+record inside it may be of a later format. A compatible addition, or the baseline
+of a line type added to a file, at an already released format version is not
+told apart by its version, so moving the pin over it is the release step below.
 
 `go run ./tools/audit-formats` (the `audit-formats` check) regenerates the catalog
 in memory and fails on a stale catalog, on a digest no change record names, on a

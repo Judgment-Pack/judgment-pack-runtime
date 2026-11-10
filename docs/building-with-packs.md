@@ -1205,8 +1205,11 @@ specified in the gateway's
 [SPEC.md §8](https://github.com/Judgment-Pack/judgment-pack-gateway/blob/c916ee933dff0b72ebf7741c1ce8022487bfb807/SPEC.md#8-the-checkpoint-witness),
 and why in its
 [ADR-0013](https://github.com/Judgment-Pack/judgment-pack-gateway/blob/c916ee933dff0b72ebf7741c1ce8022487bfb807/docs/adr/0013-checkpoint-witness.md).
-No gateway release serves statements yet: they come from a witness a third party runs, once one
-does. The runtime fetches nothing. You fetch the trail's statements and its head from the witness
+A gateway configured as a witness serves them from gateway v0.11.0 on, as the gateway's
+[SPEC.md §8](https://github.com/Judgment-Pack/judgment-pack-gateway/blob/v0.24.0/SPEC.md#8-the-checkpoint-witness)
+specifies; the specification takes the statement up in
+[RFC 0017](https://github.com/Judgment-Pack/judgment-pack-spec/blob/v0.4.0/rfcs/0017-checkpoint-witness-statement.md),
+accepted at draft maturity. The runtime fetches nothing. You fetch the trail's statements and its head from the witness
 (Desk, a script, `curl`), bring the witness's public key, obtained out of band, and hand them over:
 
 ```sh

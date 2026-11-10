@@ -33,27 +33,34 @@ type CanonicalDispositionShape struct {
 
 // encodeDeclared is the RFC 8785 form of value, built from value's Go type: a struct
 // is an object of its declared members, a slice an array, a string itself, and a
-// map[string]any (the value member's pack-defined contents) is passed to the
-// canonical encoder unchanged. Every struct field must be exported, not embedded,
-// and named by a json tag whose only option is omitempty. Anything else is refused,
-// so the members written are exactly the ones the audit-formats fingerprint reads
-// from the same type.
+// map[string]any is passed to the canonical encoder unchanged. A map is taken only
+// as the top-level value member, the pack-defined contents the fingerprint reads as
+// one opaque map (#350): a map member anywhere else, nil or not, is refused, since
+// its keys would be written without the fingerprint naming them. Every struct field
+// must be exported, not embedded, and named by a json tag whose only option is
+// omitempty. Anything else is refused, so the members written are exactly the ones
+// the audit-formats fingerprint reads from the same type.
 func encodeDeclared(value any) ([]byte, error) {
-	members, err := declaredValue(reflect.ValueOf(value))
+	members, err := declaredValue(reflect.ValueOf(value), "")
 	if err != nil {
 		return nil, err
 	}
 	return jcs.Encode(members)
 }
 
-func declaredValue(value reflect.Value) (any, error) {
+// valueMember is the one path at which a map is taken: the top-level value member.
+const valueMember = "value"
+
+// declaredValue encodes value, found at path: the json names from the top level,
+// joined by ".", with "[]" for a slice's items ("" is the top level itself).
+func declaredValue(value reflect.Value, path string) (any, error) {
 	switch value.Kind() {
 	case reflect.String:
 		return value.String(), nil
 	case reflect.Slice:
 		items := make([]any, value.Len())
 		for index := range items {
-			item, err := declaredValue(value.Index(index))
+			item, err := declaredValue(value.Index(index), path+"[]")
 			if err != nil {
 				return nil, err
 			}
@@ -61,6 +68,13 @@ func declaredValue(value reflect.Value) (any, error) {
 		}
 		return items, nil
 	case reflect.Map:
+		if path != valueMember {
+			where := path
+			if where == "" {
+				where = "the top level"
+			}
+			return nil, fmt.Errorf("disposition shape: a member of kind map at %s is taken only as the top-level %s member", where, valueMember)
+		}
 		if contents, ok := value.Interface().(map[string]any); ok {
 			return contents, nil
 		}
@@ -73,12 +87,18 @@ func declaredValue(value reflect.Value) (any, error) {
 				return nil, fmt.Errorf("disposition shape: field %s of %s is not an exported member named by a json tag with only omitempty", field.Name, value.Type())
 			}
 			member := value.Field(index)
-			if options == "omitempty" && omitted(member) {
-				continue
+			memberPath := name
+			if path != "" {
+				memberPath = path + "." + name
 			}
-			encoded, err := declaredValue(member)
+			// The member is encoded before omitempty is applied, so a member the
+			// shape refuses is refused even when it is empty.
+			encoded, err := declaredValue(member, memberPath)
 			if err != nil {
 				return nil, err
+			}
+			if options == "omitempty" && omitted(member) {
+				continue
 			}
 			object[name] = encoded
 		}

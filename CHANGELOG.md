@@ -9,6 +9,14 @@ All notable changes to tagged releases are documented here.
   written without moving the record line's digest (#342). The check also requires the
   released change-record pin in `internal/auditformat/status.json` to move with each
   file's `released` format. Persisted audit lines and their digests are unchanged.
+- The `audit-formats` check ties the released change-record pin to each file's first
+  record of its released format, not each line type's (#350). A line type added to a
+  file whose format is already released is no longer refused with "move
+  releasedChanges over it"; a pin left behind after a version bump is still refused.
+- The declared disposition encoder takes a map only as the top-level `value` member
+  and refuses a map member anywhere else, empty or not, so no map's keys are written
+  outside the one place the fingerprint reads as pack-defined (#350). Persisted
+  dispositions are unchanged.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
