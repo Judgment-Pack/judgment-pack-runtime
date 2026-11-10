@@ -2,21 +2,23 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.40.0 - 2026-11-10
 
 - Write the persisted evaluation disposition from `result.CanonicalDispositionShape`,
   the type the `audit-formats` check fingerprints, so a disposition member cannot be
-  written without moving the record line's digest (#342). The check also requires the
-  released change-record pin in `internal/auditformat/status.json` to move with each
-  file's `released` format. Persisted audit lines and their digests are unchanged.
-- The `audit-formats` check ties the released change-record pin to each file's first
-  record of its released format, not each line type's (#350). A line type added to a
-  file whose format is already released is no longer refused with "move
-  releasedChanges over it"; a pin left behind after a version bump is still refused.
-- The declared disposition encoder takes a map only as the top-level `value` member
-  and refuses a map member anywhere else, empty or not, so no map's keys are written
-  outside the one place the fingerprint reads as pack-defined (#350). Persisted
-  dispositions are unchanged.
+  written without moving the record line's digest (#342, #350). The declared encoder
+  takes a map only as the top-level `value` member and refuses a map member anywhere
+  else, empty or not. The check also ties the released change-record pin in
+  `internal/auditformat/status.json` to `released`: the pin must cover each file's
+  first change record of its `released` format and may hold no record of a later
+  format. Persisted audit lines, dispositions and their digests are unchanged.
+- The README and [docs/building-with-packs.md](docs/building-with-packs.md) now say
+  that a gateway configured as a witness serves statements from gateway v0.11.0 on
+  (gateway SPEC §8; Spec RFC 0017). They had said no gateway release served them.
+- Record in this file that 0.35.0 was never published (#344).
+- CI and release workflow actions move to actions/setup-python 7.1.0 and
+  docker/login-action 4.7.0 (#345, #346). See the
+  [release notes](docs/releases/v0.40.0.md).
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
