@@ -9,6 +9,9 @@ All notable changes to tagged releases are documented here.
   can be selected by the listing while verification does not read it as a record (#367). No
   behaviour changes.
 
+Runtime's conformance claim is stated, in full and only, in
+[CONFORMANCE.md](CONFORMANCE.md).
+
 ## 0.41.0 - 2026-11-11
 
 - Package `sdk` is an experimental in-process Go API over the shared evaluator (#368,
