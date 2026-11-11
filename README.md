@@ -737,21 +737,28 @@ is refused, is not the key in force, or cannot be shown to be because the sideca
 record the decision unsigned and report one `JPS-AUDIT-UNSIGNED` warning carrying that check's
 reason, in the payload's `diagnostics` under `--format json` and over MCP and as a `warning:` line
 on standard error otherwise; the disposition, the record and the exit code are what they would have
-been, and a rehearsal, which records nothing, reports nothing (ADR-0071). Signing fails no decision
-unless the project asks: a signature that cannot be written leaves the record unsigned, as does a
-rotation written between that read and the write, and neither is warned of. Under configVersion
-`"8"`, `"requireSigning": true` in the audit member has those surfaces refuse instead, before
-evaluating and with nothing recorded, a run whose named key would not sign, for the same reason, and
-every run while no key is named (`JPS-AUDIT-SIGNING-REQUIRED`, exit 1). A declared rehearsal is not
-refused. It binds as `requireReviewed` does: not whoever chooses the configuration a run reads or
-can edit it, and in a project with a reviewed-set lock turning it off is an edit the lock records,
-so a by-id run is refused until the project locks again. `audit verify --require-signed-through`
-stays the reader's check that records were signed. `jpack audit
-key generate` writes a key and prints its public key, `jpack audit key public` prints a key's public
-key, and `jpack audit key rotate --next <seed>` hands signing over to a next key with a line the
-current key signs. `jpack audit verify --public-key <file>` checks every signature and rotation,
-reports how far they authenticate one uninterrupted prefix and how many individual records have a
-valid signature of their own, including beyond an earlier chain break, and fails on a bad signature,
+been, and a rehearsal, which records nothing, reports nothing (ADR-0071). What the write itself
+finds is said the same way, of what was written: a rotation another process wrote after that read, a
+signature that cannot be written to the sidecar, and a trail no lock can be taken on, whose records
+are written unchained, each leave the record unsigned and are reported with their own reason.
+Signing fails no decision unless the project asks. Under configVersion `"8"`,
+`"requireSigning": true` in the audit member has those surfaces refuse instead, before evaluating
+and with nothing recorded, a run whose named key would not sign, for the same reason, and every run
+while no key is named (`JPS-AUDIT-SIGNING-REQUIRED`, exit 1). At the write, under the trail's lock,
+a run whose key is no longer the key in force, or whose trail no lock can be taken on, then fails
+with nothing appended, and one whose signature cannot be written fails with its record written,
+unsigned, and a message that says so (`JPS-AUDIT-WRITE`, exit 4, no disposition). A declared
+rehearsal is not refused. It binds as `requireReviewed` does: not whoever chooses the configuration
+a run reads or can edit it, and in a project with a reviewed-set lock turning it off is an edit the
+lock records, so a by-id run is refused until the project locks again. A record whose signature
+could not be written stays in the trail, unsigned, even when the run fails for it, and
+`audit verify --require-signed-through` stays the reader's check that records were signed. `jpack
+audit key generate` writes a key and prints its public key, `jpack audit key public` prints a
+key's public key, and `jpack audit key rotate --next <seed>` hands signing over to a next key with
+a line the current key signs. `jpack audit verify --public-key <file>` checks every signature and
+rotation, reports how far they authenticate one uninterrupted prefix and how many individual
+records have a valid signature of their own, including beyond an earlier chain break, and fails
+on a bad signature,
 a signature for another record, a line naming no record, a rotation the key in force did not sign, a
 revoked key's line, or lines out of order; `--require-signed-through <sequence>` fails while the
 signatures do not reach that sequence. Revocation is the verifier's: `--revoked <file>` names keys

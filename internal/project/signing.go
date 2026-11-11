@@ -90,6 +90,16 @@ func echoedKeyPath(keyPath string) string {
 	return text[:limit] + "…"
 }
 
+// notInForce is the reason a key that loaded signs nothing: it is not the key
+// in force at the end of the signature sidecar.
+func notInForce(keyID string) *Unsigned {
+	return &Unsigned{
+		subject:     fmt.Sprintf("key %s is not the key in force in the signature sidecar", keyID),
+		consequence: "so it signs nothing and records are written unsigned",
+		reason:      "rotate to it from the key in force with jpack audit key rotate, or name the key in force",
+	}
+}
+
 // signingKeyNamer says which input named the signing key, for a reason.
 func signingKeyNamer(source string) string {
 	if source == SigningKeyFromEnvironment {
@@ -150,11 +160,7 @@ func (p *Project) signing() (*audit.Signer, *Unsigned) {
 			consequence: "so records may be written unsigned",
 		}
 	case !inForce:
-		return signer, &Unsigned{
-			subject:     fmt.Sprintf("key %s is not the key in force in the signature sidecar", signer.KeyID()),
-			consequence: "so it signs nothing and records are written unsigned",
-			reason:      "rotate to it from the key in force with jpack audit key rotate, or name the key in force",
-		}
+		return signer, notInForce(signer.KeyID())
 	}
 	return signer, nil
 }
@@ -167,11 +173,12 @@ func (p *Project) signing() (*audit.Signer, *Unsigned) {
 // when the trail is not chained, and when the configuration declares no audit
 // member, so nil means nothing to report, never that a record will be signed.
 //
-// It is read before anything is evaluated, as packs validate reads it. What
-// changes between then and the write is not seen: a rotation another process
-// writes in between, or a signature that cannot be written, still leaves the
-// record unsigned with nothing reported, and audit verify
-// --require-signed-through is the reader's check for those.
+// It is read before anything is evaluated, as packs validate reads it; what
+// the write itself finds, a rotation another process wrote in between, a
+// signature that could not be written, a trail no lock could be taken on, is
+// UnsignedAfter's. A project that sets requireSigning gets a writer that
+// requires signed records (audit.Writer.RequireSigned), which refuses or
+// reports those instead.
 func (p *Project) DecisionWriter() (*audit.Writer, *Unsigned) {
 	if p == nil || p.Config.Audit == nil {
 		return nil, nil
@@ -179,7 +186,41 @@ func (p *Project) DecisionWriter() (*audit.Writer, *Unsigned) {
 	writer := audit.NewWriter(p.root, p.Config.Audit.Dir, p.Config.Audit.Chains())
 	signer, unsigned := p.signing()
 	writer.SignWith(signer)
+	if p.RequiresSigning() {
+		writer.RequireSigned()
+	}
 	return writer, unsigned
+}
+
+// UnsignedAfter is the reason a deciding run reports once writer has written
+// its records, given the reason DecisionWriter gave before (ADR-0071 §1), so
+// the warning is true of what was written: for a writer that signs, what its
+// append found, nil when the records were signed, and before's reason, which
+// already says why, for a key that was not in force or a sidecar that could
+// not be read; for a writer that does not sign, before, unchanged. A trail no
+// lock could be taken on is said as such, whatever before said.
+func (p *Project) UnsignedAfter(writer *audit.Writer, before *Unsigned) *Unsigned {
+	if !writer.Signs() {
+		return before
+	}
+	failure := writer.SigningFailure()
+	switch {
+	case failure == nil:
+		return nil
+	case errors.Is(failure, audit.ErrTrailNotLocked):
+		return &Unsigned{
+			subject:     "no lock can be taken on the audit trail here",
+			consequence: "so records are written unchained and unsigned",
+		}
+	case before != nil:
+		return before
+	case errors.Is(failure, audit.ErrKeyNotInForce):
+		return notInForce(writer.KeyID())
+	}
+	return &Unsigned{
+		subject:     "the signature sidecar could not be written",
+		consequence: fmt.Sprintf("so key %s signed nothing and the records written are unsigned", writer.KeyID()),
+	}
 }
 
 // RequiresSigning says whether this project's audit member asks its deciding

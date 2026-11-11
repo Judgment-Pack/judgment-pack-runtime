@@ -589,7 +589,22 @@ func (w *Writer) appendSidecar(lines []byte) error {
 			lines = append([]byte(tornLineEnd), lines...)
 		}
 	}
-	return w.root.AppendSynced(w.sidecarPath(), lines)
+	return appendSidecarLines(w.root, w.sidecarPath(), lines)
+}
+
+// appendSidecarLines appends signature lines to the sidecar. It is a variable
+// so a test can stand in a write that fails (StandInSidecarWriteForTests).
+var appendSidecarLines = func(root *fssecure.Root, name string, lines []byte) error {
+	return root.AppendSynced(name, lines)
+}
+
+// StandInSidecarWriteForTests has every append to a signature sidecar fail
+// with err, for a test of a signature that cannot be written; restore puts the
+// write back.
+func StandInSidecarWriteForTests(err error) (restore func()) {
+	original := appendSidecarLines
+	appendSidecarLines = func(*fssecure.Root, string, []byte) error { return err }
+	return func() { appendSidecarLines = original }
 }
 
 // tornLineEnd ends a sidecar line a failed write left without its newline. A

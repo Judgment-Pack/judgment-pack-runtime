@@ -228,6 +228,35 @@ var ErrOversizedLine = errors.New("a line of the audit trail is too long to read
 // longer than maxLineBytes, which a later writer could not read whole.
 var ErrRecordTooLarge = errors.New("the audit record is too long for a chained trail")
 
+// The append a writer that requires signed records (RequireSigned) refuses,
+// and the one it reports, each wrapping its cause (ADR-0071 §2).
+var (
+	// ErrUnsignedRefused is an append refused because its records would not
+	// be signed: nothing is appended to the trail.
+	ErrUnsignedRefused = errors.New("the audit records would not be signed")
+	// ErrWrittenUnsigned is an append whose records were written and whose
+	// signatures were not: the records stay, unsigned.
+	ErrWrittenUnsigned = errors.New("the audit records were written unsigned")
+	// ErrTrailNotLocked is a trail no lock could be taken on, because the
+	// platform or its file system offers none: the writer appends without
+	// one, and so chains and signs nothing.
+	ErrTrailNotLocked = errors.New("no lock can be taken on the audit trail, so its records are neither chained nor signed")
+	// ErrSidecarUnreadable is a signature sidecar that could not be read to
+	// see whether the writer's key is the key in force.
+	ErrSidecarUnreadable = errors.New("the signature sidecar could not be read")
+)
+
+// The messages for those, in FailureMessage's form. None names a key, a path
+// or a value.
+const (
+	unsignedPrefix           = "Audit record could not be written: the project requires every record to be signed, and "
+	unlockedMessage          = unsignedPrefix + "no lock can be taken on the audit trail here, so no record would be chained or signed."
+	notInForceMessage        = unsignedPrefix + "the signing key is not the key in force in the signature sidecar, so the record would be unsigned."
+	sidecarUnreadableMessage = unsignedPrefix + "the signature sidecar could not be read to see whether the signing key is the key in force."
+	noSigningKeyMessage      = unsignedPrefix + "no signing key signs this trail."
+	writtenUnsignedMessage   = "Audit record was written unsigned: the project requires every record to be signed, and the record's signature could not be written to the signature sidecar."
+)
+
 // FailureMessageFor is the message a failed append is reported with:
 // FailureMessage, or what is wrong with the trail or the record when the
 // failure is one the operator must act on. The code is FailureCode either way.
@@ -239,6 +268,18 @@ func FailureMessageFor(err error) string {
 		return oversizedMessage
 	case errors.Is(err, ErrRecordTooLarge):
 		return tooLargeMessage
+	case errors.Is(err, ErrWrittenUnsigned):
+		return writtenUnsignedMessage
+	case errors.Is(err, ErrUnsignedRefused):
+		switch {
+		case errors.Is(err, ErrTrailNotLocked):
+			return unlockedMessage
+		case errors.Is(err, ErrKeyNotInForce):
+			return notInForceMessage
+		case errors.Is(err, ErrSidecarUnreadable):
+			return sidecarUnreadableMessage
+		}
+		return noSigningKeyMessage
 	}
 	return FailureMessage
 }
@@ -838,6 +879,12 @@ type Writer struct {
 	// binding is the caller's binding (ADR-0050), recorded on every record
 	// the writer appends; nil records none.
 	binding *Binding
+	// requireSigned refuses an append whose records would not be signed
+	// (ADR-0071 §2), and reports one whose signatures could not be written.
+	requireSigned bool
+	// signingFailure is why the records the last append wrote are unsigned
+	// although the writer signs; nil when they were signed (SigningFailure).
+	signingFailure error
 }
 
 // UnderLaw records which law this invocation's records were judged under
@@ -1036,6 +1083,12 @@ func (w *Writer) AppendAll(records []Record) error {
 	if err != nil {
 		return err
 	}
+	w.signingFailure = nil
+	// A writer that requires signed records and holds no key, or does not
+	// chain, could sign none: it refuses before anything is created.
+	if w.requireSigned && !w.Signs() {
+		return fmt.Errorf("%w: %w", ErrUnsignedRefused, ErrNoSigningKey)
+	}
 	if err := w.root.MakeDir(w.dir); err != nil {
 		return err
 	}
@@ -1046,13 +1099,88 @@ func (w *Writer) AppendAll(records []Record) error {
 	// A record whose signature cannot be written stays unsigned: the decision
 	// was recorded, and a sidecar the write could not reach is not a reason to
 	// report it failed (ADR-0047 §2b). jpack audit verify counts it unsigned.
+	// The writer keeps why (SigningFailure), so the run can say so. A writer
+	// that requires signed records (ADR-0071 §2) refuses instead, under the
+	// lock and before anything is appended, when no lock is held or its key
+	// is not the key in force, and reports an append whose signatures could
+	// not then be written as failed; its records stay.
 	var appended []byte
-	_, err = w.root.AppendLockedThen(name, func(state fssecure.AppendState) ([]byte, error) {
+	locked := false
+	signErr, err := w.root.AppendLockedThen(name, func(state fssecure.AppendState) ([]byte, error) {
+		locked = state.Locked
+		if w.requireSigned {
+			if err := w.signable(state); err != nil {
+				return nil, fmt.Errorf("%w: %w", ErrUnsignedRefused, err)
+			}
+		}
 		lines, err := chainedLines(prepared, unchained, state)
 		appended = lines
 		return lines, err
 	}, w.signThen(&appended))
-	return err
+	if err != nil {
+		return err
+	}
+	switch {
+	case w.Signs() && !locked:
+		w.signingFailure = ErrTrailNotLocked
+	case signErr != nil:
+		w.signingFailure = signErr
+	}
+	if w.requireSigned && w.signingFailure != nil {
+		return fmt.Errorf("%w: %w", ErrWrittenUnsigned, w.signingFailure)
+	}
+	return nil
+}
+
+// signable is why the records a writer that requires signed records is about
+// to append, under state, would not be signed, or nil: the trail must be
+// locked, so the sidecar follows it, and the writer's key must be the key in
+// force at the end of the sidecar as it stands under that lock.
+func (w *Writer) signable(state fssecure.AppendState) error {
+	if !state.Locked {
+		return ErrTrailNotLocked
+	}
+	inForce, err := w.KeyInForce()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrSidecarUnreadable, err)
+	}
+	if !inForce {
+		return ErrKeyNotInForce
+	}
+	return nil
+}
+
+// RequireSigned makes the writer refuse, before anything is appended, an
+// append whose records it would not sign: one where it holds no key, where no
+// lock can be taken on the trail, or where its key is not the key in force in
+// the sidecar under the lock, each ErrUnsignedRefused; and report an append
+// whose signatures could not then be written as ErrWrittenUnsigned, its records
+// written (ADR-0071 §2). A trail that was not there may be left created and
+// empty by a refusal, since it is opened before the lock is taken.
+func (w *Writer) RequireSigned() {
+	if w == nil {
+		return
+	}
+	w.requireSigned = true
+}
+
+// SigningFailure is why the records the writer's last append wrote are
+// unsigned although it signs: ErrTrailNotLocked, ErrKeyNotInForce, or the
+// error the sidecar's write gave. It is nil when they were signed, when the
+// writer does not sign, and before any append.
+func (w *Writer) SigningFailure() error {
+	if w == nil {
+		return nil
+	}
+	return w.signingFailure
+}
+
+// KeyID is the id of the key the writer signs with, or "" when it holds none.
+func (w *Writer) KeyID() string {
+	if w == nil || w.signer == nil {
+		return ""
+	}
+	return w.signer.KeyID()
 }
 
 // encodeLines encodes records as the trail's lines: compact JSON, one record
