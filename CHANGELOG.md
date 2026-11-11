@@ -16,6 +16,11 @@ All notable changes to tagged releases are documented here.
   document or configuration it cannot read, or one past its limit, is refused with
   exit 4 and never reported as not covered; a lock that is not the shape `packs lock`
   writes is refused as `packs verify` refuses it.
+- The reviewed-set lock reader refuses a member it does not know, including case and
+  Unicode-fold variants of the known names (`JPS-LOCK-SHAPE`, exit 1), at the root, in
+  the configuration entry and in every pack and graph entry. It applies wherever the lock
+  is read: `packs verify`, `packs covers`, and the deciding surfaces' check. The known
+  names are the ones `packs lock` has always written, so every lock it wrote still reads.
 - A deciding run whose project names a signing key that will not sign its record now
   says why (#354, ADR-0071). `experimental evaluate`, `experimental graph evaluate` and
   the MCP `experimental_evaluate` tool still decide and record, unsigned, and report one

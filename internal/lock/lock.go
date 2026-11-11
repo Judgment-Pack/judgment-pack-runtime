@@ -299,6 +299,9 @@ func Decode(lockPath string, data []byte) (*Set, *Failure) {
 			ExitCode: result.ExitUnsupported,
 		}
 	}
+	if failure := unknownMember(lockPath, root); failure != nil {
+		return nil, failure
+	}
 	var document Document
 	if err := json.Unmarshal(data, &document); err != nil {
 		return nil, shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid, "could not be decoded")
@@ -307,6 +310,89 @@ func Decode(lockPath string, data []byte) (*Set, *Failure) {
 		return nil, failure
 	}
 	return &Set{Document: document, Digest: Digest(data)}, nil
+}
+
+// The member names packs lock writes, which are the json names of Document,
+// Config and Entry. Every lock this runtime has written carries these and no
+// others.
+var (
+	documentMembers = map[string]bool{"lockVersion": true, "config": true, "packs": true, "graphs": true}
+	configMembers   = map[string]bool{"digest": true}
+	entryMembers    = map[string]bool{"path": true, "digest": true}
+)
+
+// maxShownMember bounds how much of a member name a refusal quotes.
+const maxShownMember = 64
+
+// unknownMember refuses a lock that carries a member packs lock does not write,
+// at the root, in the configuration entry or in any pack or graph entry.
+//
+// The carrier decode refuses a name given twice exactly, but encoding/json
+// then matches member names to fields without regard to case, under Unicode
+// case folding, and keeps the last match. A second spelling of a known name
+// would be decoded in place of the first, so a lock would verify against a
+// value the exact member does not hold. Only the exact names are read. The
+// first unknown name, in sorted order, is the one named, so the refusal is the
+// same on every run.
+func unknownMember(lockPath string, root map[string]any) *Failure {
+	if name, unknown := firstUnknown(root, documentMembers); unknown {
+		return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
+			fmt.Sprintf("has a member %s that packs lock does not write", shownMember(name)))
+	}
+	if config, ok := root["config"].(map[string]any); ok {
+		if name, unknown := firstUnknown(config, configMembers); unknown {
+			return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
+				fmt.Sprintf("declares the configuration with a member %s that packs lock does not write", shownMember(name)))
+		}
+	}
+	for _, set := range []struct{ member, kind string }{{"packs", "pack"}, {"graphs", "graph"}} {
+		entries, ok := root[set.member].(map[string]any)
+		if !ok {
+			continue
+		}
+		ids := make([]string, 0, len(entries))
+		for id := range entries {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			entry, ok := entries[id].(map[string]any)
+			if !ok {
+				continue
+			}
+			if name, unknown := firstUnknown(entry, entryMembers); unknown {
+				return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
+					fmt.Sprintf("declares the %s %s with a member %s that packs lock does not write", set.kind, shownMember(id), shownMember(name)))
+			}
+		}
+	}
+	return nil
+}
+
+// firstUnknown is the least member name of object, in sorted order, that is
+// not exactly one of known.
+func firstUnknown(object map[string]any, known map[string]bool) (string, bool) {
+	unknown := []string{}
+	for name := range object {
+		if !known[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) == 0 {
+		return "", false
+	}
+	sort.Strings(unknown)
+	return unknown[0], true
+}
+
+// shownMember quotes a name read from a lock for a refusal: sanitized, and cut
+// to its first maxShownMember characters with an ellipsis when it is longer.
+func shownMember(name string) string {
+	shown := display.Sanitize(name)
+	if characters := []rune(shown); len(characters) > maxShownMember {
+		shown = string(characters[:maxShownMember]) + "…"
+	}
+	return fmt.Sprintf("%q", shown)
 }
 
 // validate holds a decoded lock to the shape this runtime writes: a digest for

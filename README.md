@@ -856,7 +856,9 @@ names `document-drift` or `lock-entry-missing`, and with `--config` also `config
 `--graph` ask the same of a graph. A lock, document or configuration it cannot read is refused
 (`status: "error"`, exit 4 for a file that cannot be read or is past its limit), never reported as
 not covered; a lock that is not the shape `packs lock` writes is refused as `packs verify` refuses it
-(`JPS-LOCK-JSON` or `JPS-LOCK-SHAPE`, exit 1, `status: "error"`, not `"invalid"`). The answer is
+(`JPS-LOCK-JSON` or `JPS-LOCK-SHAPE`, exit 1, `status: "error"`, not `"invalid"`). Every reader of
+the lock, this one included, refuses a member it does not know, including case and Unicode-fold
+variants of the known names. The answer is
 about the bytes it read: a host that then runs a copy it did not check has to hold those bytes
 itself.
 

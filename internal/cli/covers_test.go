@@ -685,3 +685,66 @@ func TestPacksCoversReadsTheLockPacksLockWrites(t *testing.T) {
 		t.Fatalf("exit=%d stdout=%q", code, stdout)
 	}
 }
+
+// refusalOf is the exact operational envelope one refusal of another command
+// writes.
+func refusalOf(t *testing.T, command, status, code, message string) string {
+	t.Helper()
+	return strings.Replace(refusal(t, status, code, message), `"command":"packs covers"`, `"command":`+quoted(t, command), 1)
+}
+
+// A lock that carries a member packs lock does not write is refused by every
+// reader, here and at the deciding gate, with the same code and words. The
+// member here is a second spelling of "packs" under Unicode case folding,
+// holding an entry for bytes the exact member does not pin: read loosely, it
+// would be the entry compared.
+func TestALockMemberPacksLockDoesNotWriteIsRefusedByEveryReader(t *testing.T) {
+	const longS = "\u017f" // LATIN SMALL LETTER LONG S, which folds to "s"
+	const tail = " that packs lock does not write. It is generated: run jpack packs lock to write it again."
+	edited := coversPack + " "
+	files := coversFixture(t)
+	variant := strings.TrimSuffix(files.lockText, "}") + `,"pack` + longS + `":{"intake":{"path":"packs/intake.json","digest":"` + sha(edited) + `"}}}`
+	writeCoversFile(t, files.lock, variant)
+	writeCoversFile(t, files.pack, edited)
+	writeCoversFile(t, filepath.Join(files.dir, "project", "packs", "intake.json"), edited)
+	message := "The reviewed-set lock " + files.lock + ` has a member "pack` + longS + `"` + tail
+
+	code, stdout, stderr := runCovers(t, "--lock", files.lock, "--id", "intake", "--pack", files.pack, "--format", "json")
+	if want := refusal(t, "error", "JPS-LOCK-SHAPE", message); code != result.ExitInvalid || stderr != "" || stdout != want {
+		t.Fatalf("packs covers: exit=%d stderr=%q\n got %s\nwant %s", code, stderr, stdout, want)
+	}
+	code, stdout, stderr = runTest(t, []string{"packs", "verify", "--config", files.config, "--format", "json"}, "")
+	if want := refusalOf(t, "packs verify", "error", "JPS-LOCK-SHAPE", message); code != result.ExitInvalid || stderr != "" || stdout != want {
+		t.Fatalf("packs verify: exit=%d stderr=%q\n got %s\nwant %s", code, stderr, stdout, want)
+	}
+
+	// The deciding gate: the lock packs lock wrote, a drifted pack, and a
+	// second spelling of "packs" naming the drifted bytes. Nothing is
+	// evaluated and nothing is recorded.
+	configPath := auditProject(t)
+	mustLock(t, configPath)
+	packPath := filepath.Join(filepath.Dir(configPath), "packs", "intake-0.1.0.pack.json")
+	body, err := os.ReadFile(packPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drifted := append(body, '\n')
+	if err := os.WriteFile(packPath, drifted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(lockPath(configPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spelled := strings.TrimSuffix(string(written), "}\n") + `,"Packs":{"intake":{"path":"packs/intake-0.1.0.pack.json","digest":"` + sha(string(drifted)) + `"}}}` + "\n"
+	if err := os.WriteFile(lockPath(configPath), []byte(spelled), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	facts := writeDocument(t, "facts.json", hardFailFacts)
+	code, stdout, stderr = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--facts", facts, "--format", "json"}, "")
+	want := refusalOf(t, "experimental evaluate", "error", "JPS-LOCK-SHAPE", "The reviewed-set lock "+lockPath(configPath)+` has a member "Packs"`+tail)
+	if code != result.ExitInvalid || stderr != "" || stdout != want {
+		t.Fatalf("experimental evaluate: exit=%d stderr=%q\n got %s\nwant %s", code, stderr, stdout, want)
+	}
+	noAuditTrail(t, configPath)
+}

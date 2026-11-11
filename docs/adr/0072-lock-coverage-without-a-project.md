@@ -45,7 +45,13 @@ hosts was rejected for the first driver.
 `lock.Decode(lockPath, data)` holds the decode `lock.Open` applied: the carrier's strict JSON
 decode (one value, no duplicate member), the `lockVersion` gate before the shape, and the
 validation of every digest and path. `lock.Open` now reads the project's lock and calls it, so the
-two cannot drift. `packs covers` reads the lock named by `--lock` within `project.MaxLockBytes`
+two cannot drift. Before the shape is decoded, `lock.Decode` also refuses a member it does not
+know, at the root, in the configuration entry or in any pack or graph entry, including case and
+Unicode-fold variants of the known names (`JPS-LOCK-SHAPE`, exit 1). The carrier decode refuses
+only a name given twice exactly, and `encoding/json` matches member names without regard to case
+and keeps the last match, so such a variant would otherwise be read in place of the exact member.
+The known names are the json names of the types `packs lock` encodes, which have not changed since
+the lock was introduced, so every lock it has written still decodes. `packs covers` reads the lock named by `--lock` within `project.MaxLockBytes`
 and the document within the limit a project reads a declared one within
 (`carrier.HardMaxBytes` for a pack, `graph.MaxGraphBytes` for a graph). Each is read as one bounded
 regular file and never through a final symbolic link. The document's bytes are not parsed:

@@ -22,6 +22,7 @@ func TestDecodeIsTheReaderOpenUses(t *testing.T) {
 		"no configuration digest":      `{"lockVersion":"1","config":{}}`,
 		"an entry with no path":        `{"lockVersion":"1","config":{"digest":"` + digest + `"},"graphs":{"g":{"digest":"` + digest + `"}}}`,
 		"an entry with no digest":      `{"lockVersion":"1","config":{"digest":"` + digest + `"},"packs":{"intake":{"path":"p.json"}}}`,
+		"a member in another case":     `{"lockVersion":"1","config":{"digest":"` + digest + `"},"Config":{"digest":"` + digest + `"}}`,
 		"accepted":                     `{"lockVersion":"1","config":{"digest":"` + digest + `"},"packs":{"intake":{"path":"p.json","digest":"` + digest + `"}}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
