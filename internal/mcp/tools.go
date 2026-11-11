@@ -145,7 +145,7 @@ func toolDefinitions() []map[string]any {
 		factAdviceDefinition(), packAdviceDefinition(),
 		{
 			"name":        "experimental_evaluate",
-			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; an evaluation error reports its §8.4 error class and no disposition, and a refusal the project's configuration asks for (the reviewed-set and comparable-facts refusals below) reports its own code, no §8.4 class and no disposition. The exact pack declaration selects Core 0.2.0-draft or 0.3.0 base; extended profiles are refused before schema interpretation or facts admission. Ordered routed destinations and duplicates are retained, and routed outputs carry no singular target. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. A call may pass \"binding\", the caller's {kind, digest} commitment to material of its own, which the record carries as given beside cites, under the chain and the record signature: the runtime never interprets, verifies or recomputes the digest, the caller's own verifier checks its value, and a call that passes a binding while declaring a rehearsal, or in a project that declares no audit directory, is refused, since nothing would record it (ADR-0050). In a project with a reviewed-set lock (ADR-0019), a pack named by pack_id is held to it and a pack passed as text is a draft, and the payload's \"reviewed\" member says which (ADR-0044); a project whose jpack.json sets requireReviewed refuses, before evaluating, every call that is not a rehearsal and passes a draft or finds no lock (JPS-LOCK-REVIEW-REQUIRED). A project whose jpack.json sets requireComparableFacts refuses, before evaluating and rehearsal or not, a call in which a fact that some comparison of the pack reads is present and of a JSON type that comparison can never match -- for equals, not-equals and in a type no operand has, null included; for an ordered comparison anything but a decimal string, so a string outside the decimal grammar is refused as well as a JSON number -- naming each pointer and type and never a value; it refuses under the same code when checking the pack's comparisons would pass this evaluation's work limit, whatever the pack compares (JPS-FACTS-COMPARABLE-REQUIRED, ADR-0046). That refusal is the project's, not an evaluation error, and carries no §8.4 class. An absent fact is not refused. In a project with an audit directory, a record also names the trace's typeMismatches and unknownCauses, when there are any, and is chained to the line before it by the SHA-256 of that line's exact bytes unless the project's jpack.json says \"chain\": false (ADR-0047); a trail whose last line is incomplete refuses the call (JPS-AUDIT-WRITE) rather than chain a record after it. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
+			"description": "EXPERIMENTAL SURFACE (ADR-0007): apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document, returning the §8.3 portable disposition (kind, outcomeId, reasons, handoff) and a trace. The disposition is serialized in its RFC 8785 canonical form; an evaluation error reports its §8.4 error class and no disposition, and a refusal the project's configuration asks for (the reviewed-set, signing and comparable-facts refusals below) reports its own code, no §8.4 class and no disposition. The exact pack declaration selects Core 0.2.0-draft or 0.3.0 base; extended profiles are refused before schema interpretation or facts admission. Ordered routed destinations and duplicates are retained, and routed outputs carry no singular target. The pack arrives either as text in \"pack\" or as a project decision id in \"pack_id\", which resolves through the jpack.json convention (ADR-0012); exactly one of the two is supplied, and supplying both is refused rather than given a precedence rule. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. This is the one tool here that can write, and only where the project told it to (ADR-0018): in a project whose jpack.json declares an audit directory, each completed call appends one record to it -- the pack's identity and digest, the documents evaluated, and the disposition -- and in a project that declares none, nothing is written at all. A call declaring \"rehearsal\": true writes nothing even there and consults no reviewed set (ADR-0019) -- the standing a matrix row already has (ADR-0021), extended to one declared exploratory call (ADR-0028) -- and its payload carries \"rehearsal\": true, stating in band that this was not a decision. A call may pass \"binding\", the caller's {kind, digest} commitment to material of its own, which the record carries as given beside cites, under the chain and the record signature: the runtime never interprets, verifies or recomputes the digest, the caller's own verifier checks its value, and a call that passes a binding while declaring a rehearsal, or in a project that declares no audit directory, is refused, since nothing would record it (ADR-0050). In a project with a reviewed-set lock (ADR-0019), a pack named by pack_id is held to it and a pack passed as text is a draft, and the payload's \"reviewed\" member says which (ADR-0044); a project whose jpack.json sets requireReviewed refuses, before evaluating, every call that is not a rehearsal and passes a draft or finds no lock (JPS-LOCK-REVIEW-REQUIRED). A recorded call whose project names a signing key that will not sign its record, a key that is refused, is not the key in force, or cannot be shown to be because the signature sidecar cannot be read, as read before the call evaluates, is recorded unsigned, and its payload carries a diagnostics member with one JPS-AUDIT-UNSIGNED warning giving the reason the project's packs validate check gives; the disposition and the record are what they would have been. A project whose jpack.json audit member sets requireSigning refuses such a call instead, and every call while no signing key is named, before evaluating and with nothing recorded (JPS-AUDIT-SIGNING-REQUIRED, ADR-0071). A rehearsal is neither warned nor refused. A project whose jpack.json sets requireComparableFacts refuses, before evaluating and rehearsal or not, a call in which a fact that some comparison of the pack reads is present and of a JSON type that comparison can never match -- for equals, not-equals and in a type no operand has, null included; for an ordered comparison anything but a decimal string, so a string outside the decimal grammar is refused as well as a JSON number -- naming each pointer and type and never a value; it refuses under the same code when checking the pack's comparisons would pass this evaluation's work limit, whatever the pack compares (JPS-FACTS-COMPARABLE-REQUIRED, ADR-0046). That refusal is the project's, not an evaluation error, and carries no §8.4 class. An absent fact is not refused. In a project with an audit directory, a record also names the trace's typeMismatches and unknownCauses, when there are any, and is chained to the line before it by the SHA-256 of that line's exact bytes unless the project's jpack.json says \"chain\": false (ADR-0047); a trail whose last line is incomplete refuses the call (JPS-AUDIT-WRITE) rather than chain a record after it. This runtime's conformance claim is stated, in full and only, in the repository's CONFORMANCE.md; this description states no claim, and the payload carries a conformanceClaimReference member pointing at that file. Whatever that claim says, it is about this implementation and NOT about the pack you pass, the facts you supply, or whether acting on the returned disposition is correct, permitted, or safe (§3.5). It authorizes nothing, executes nothing, and this surface may change or be removed without compatibility promise.",
 			"inputSchema": map[string]any{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -1173,7 +1173,10 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	if packIDPresent && len(oversized) == 0 {
 		applied = []lock.Applied{lock.AppliedPack(packID, []byte(pack))}
 	}
-	auditWriter := loaded.AuditWriter()
+	// The writer comes with the reason the record it writes will be unsigned,
+	// read once, before anything is evaluated, as packs validate reads it
+	// (ADR-0071).
+	auditWriter, unsigned := loaded.DecisionWriter()
 	// A project that keeps no trail would accept the citations and record
 	// them nowhere, and the caller could believe the record cites the
 	// receipts (ADR-0051): they are refused here, for the binding's reason and
@@ -1213,6 +1216,12 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 	if !rehearsal {
 		if lockFailure := lock.RequireReviewed(loaded, reviewed, packIDPresent); lockFailure != nil {
 			return lockToolError(lockFailure)
+		}
+		// A project that requires signed records refuses a decision its named
+		// key would not sign, before anything is evaluated, so nothing is
+		// recorded (ADR-0071).
+		if failure := loaded.RequireSigning(unsigned); failure != nil {
+			return refusalToolError(failure.Code, failure.Message, failure.ExitCode)
 		}
 	}
 	auditWriter.UnderLaw(reviewed, set.Provenance())
@@ -1257,6 +1266,10 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 		EvidenceSupplied: evidenceSupplied,
 	}, cites, []byte(pack), nil); err != nil {
 		return auditToolError(err)
+	} else if unsigned != nil {
+		// Said after the record is written, so the record is the one it would
+		// have been, and only of a call that recorded one.
+		output.Diagnostics = append(output.Diagnostics, unsigned.Diagnostic())
 	}
 	return toolResult(output)
 }
@@ -1267,13 +1280,21 @@ func (s *Server) toolExperimentalEvaluate(rawArgs json.RawMessage) any {
 // parsing prose, and no disposition accompanies it: the refusal happens before
 // the evaluator is reached, so there is none to accompany it with.
 func lockToolError(failure *lock.Failure) map[string]any {
+	return refusalToolError(failure.Code, failure.Message, failure.ExitCode)
+}
+
+// refusalToolError reports a refusal the project's configuration asks for
+// before the evaluator is reached, the reviewed-set refusals above and the
+// signing refusal (ADR-0071) alike, in the operational envelope the CLI's
+// JSON output carries.
+func refusalToolError(code, message string, exitCode int) map[string]any {
 	status := "error"
-	if failure.ExitCode == result.ExitUnsupported {
+	if exitCode == result.ExitUnsupported {
 		status = "unsupported"
 	}
 	return map[string]any{
-		"content":           []map[string]any{{"type": "text", "text": failure.Message}},
-		"structuredContent": result.NewOperationalResult(evaluateCommand, status, failure.Code, failure.Message),
+		"content":           []map[string]any{{"type": "text", "text": message}},
+		"structuredContent": result.NewOperationalResult(evaluateCommand, status, code, message),
 		"isError":           true,
 	}
 }

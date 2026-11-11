@@ -542,8 +542,9 @@ semantic versioning; `"1"` is the shape without graphs, `"2"` the shape with the
 the shape that may also ask for an audit trail (ADR-0018), `"4"` the shape that may also require the
 reviewed set (ADR-0044), `"5"` the shape that may also require comparable facts (ADR-0046), `"6"`
 the shape whose audit member may also say whether its trail is chained (ADR-0047), `"7"` the shape
-whose audit member may also name the public key its signing key is expected to have, and this
-runtime reads all seven.
+whose audit member may also name the public key its signing key is expected to have, `"8"` the
+shape whose audit member may also require that a decision's record be signed (ADR-0071), and this
+runtime reads all eight.
 
 There is **no templating, no target or environment blocks, and no selection**. A templated pack was
 never the pack anyone reviewed; environments are one file per environment by convention
@@ -729,8 +730,23 @@ precedence in the same way but is read exactly as set, with nothing trimmed; the
 public key is another is refused each time records are about to be signed, so a seed put at the path
 in the key's place signs nothing, and an expected key not of that form, in either place, is refused
 as a key before any seed is read, its value never printed. In every case `packs validate` says why
-(`audit-signing-key`), and for the expected key it names neither the path nor either key. Signing
-never fails a decision: a signature that cannot be written leaves the record unsigned. `jpack audit
+(`audit-signing-key`), and for the expected key it names neither the path nor either key. A
+deciding run says the same when it decides: where the key named, as read before the run evaluates,
+is refused, is not the key in force, or cannot be shown to be because the sidecar cannot be read,
+`experimental evaluate`, `experimental graph evaluate` and the MCP `experimental_evaluate` tool
+record the decision unsigned and report one `JPS-AUDIT-UNSIGNED` warning carrying that check's
+reason, in the payload's `diagnostics` under `--format json` and over MCP and as a `warning:` line
+on standard error otherwise; the disposition, the record and the exit code are what they would have
+been, and a rehearsal, which records nothing, reports nothing (ADR-0071). Signing fails no decision
+unless the project asks: a signature that cannot be written leaves the record unsigned, as does a
+rotation written between that read and the write, and neither is warned of. Under configVersion
+`"8"`, `"requireSigning": true` in the audit member has those surfaces refuse instead, before
+evaluating and with nothing recorded, a run whose named key would not sign, for the same reason, and
+every run while no key is named (`JPS-AUDIT-SIGNING-REQUIRED`, exit 1). A declared rehearsal is not
+refused. It binds as `requireReviewed` does: not whoever chooses the configuration a run reads or
+can edit it, and in a project with a reviewed-set lock turning it off is an edit the lock records,
+so a by-id run is refused until the project locks again. `audit verify --require-signed-through`
+stays the reader's check that records were signed. `jpack audit
 key generate` writes a key and prints its public key, `jpack audit key public` prints a key's public
 key, and `jpack audit key rotate --next <seed>` hands signing over to a next key with a line the
 current key signs. `jpack audit verify --public-key <file>` checks every signature and rotation,

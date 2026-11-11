@@ -59,8 +59,9 @@ dropped. `configVersion` is a single integer as a string — `"1"` is the shape 
 the shape with them (ADR-0017), `"3"` the shape that may also ask for an audit trail
 (ADR-0018), `"4"` the shape that may also require the reviewed set (ADR-0044), `"5"` the shape
 that may also require comparable facts (ADR-0046), `"6"` the shape whose audit member may also
-say whether its trail is chained (ADR-0047), and `"7"` the shape whose audit member may also name
-the public key its signing key is expected to have; this runtime reads all seven. There is no minor
+say whether its trail is chained (ADR-0047), `"7"` the shape whose audit member may also name
+the public key its signing key is expected to have, and `"8"` the shape whose audit member may also
+require that a decision's record be signed (ADR-0071); this runtime reads all eight. There is no minor
 or patch component, because there is nothing to negotiate: a program either knows the shape or does
 not.
 
@@ -1411,13 +1412,37 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   its `sequence`, and the SHA-256 of its exact line bytes, signed. The record line itself is not
   changed. A graph run's lines are signed in their order, and a repair's discontinuity record is
   signed like any chained record.
-- **Pending, never failed.** A signature that cannot be written leaves its record unsigned and the
-  decision recorded: signing never refuses a run. So does a key that is refused or is not the key in
-  force. `audit verify` counts such a record unsigned, and a later signed record still covers it
+- **Pending, not failed.** A signature that cannot be written leaves its record unsigned and the
+  decision recorded: signing refuses no run unless the project sets `requireSigning` (below). So
+  does a key that is refused or is not the key in force. `audit verify` counts such a record unsigned, and a later signed record still covers it
   through the chain. A sidecar line a failed write left without its newline was never written, as
   a verifier reads it, and the writer reads it the same way: it decides nothing about the key in
   force, and before the next line the writer ends it with `~` and a newline, so it stays a line of
   its own that can never be read as a sidecar line, and the next line stays whole.
+- **Told when it decides.** `experimental evaluate`, `experimental graph evaluate` and the MCP
+  `experimental_evaluate` tool read the key before the run evaluates, by the rules `packs validate`
+  applies (ADR-0071). Where the key named is refused, is not the key in force, or cannot be shown to
+  be because the sidecar cannot be read, the run is still decided and recorded, unsigned, and
+  reports one warning, `JPS-AUDIT-UNSIGNED`, whose message is the `audit-signing-key` check's
+  detail, byte for byte: in the payload's `diagnostics` member under `--format json` and over MCP,
+  and as a `warning:` line on standard error otherwise. A graph run reports it once, for all its
+  records. The disposition, every other member of the payload, the record and the exit code are what
+  they would have been. A rehearsal records nothing and reports nothing, and so does a run in a
+  project that names no key or keeps a trail that is not chained. What happens after that read is not
+  seen: a rotation another process writes before the record, or a signature that cannot be written,
+  leaves the record unsigned with no warning.
+- **Refused on request.** Under configVersion `"8"`, `"requireSigning": true` in the audit member,
+  which needs a chained trail, has those surfaces refuse a run instead, before anything is evaluated
+  and with nothing recorded, for any node or the composite: a run whose named key would not sign, for
+  the warning's reason, and every run while no key is named, by `signingKey` or
+  `JPACK_SIGNING_KEY` (`JPS-AUDIT-SIGNING-REQUIRED`, exit `1`, no disposition). A declared
+  rehearsal is not refused. It binds as `requireReviewed` does: a caller that neither chooses the
+  configuration a run reads nor can edit it. Whoever can edit `jpack.json` can turn it off, which in
+  a project with a reviewed-set lock is an amendment the lock refuses until the project locks again,
+  and whoever can write the sidecar can make every decision refused, as a forged rotation stops the
+  named key signing. It is read before the run evaluates, as the warning is, so a record can still
+  end unsigned after a run it let through; `audit verify --require-signed-through` is the reader's
+  check that records were signed.
 - **Rotation.** `jpack audit key rotate --next <seed>` appends a `key-rotation` line, made with the
   key the project names and naming the next key's public key and the trail's last line: the records
   up to that line are signed with the old key, and the records after it with the next. A writer signs

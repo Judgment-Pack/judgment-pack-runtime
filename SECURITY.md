@@ -173,8 +173,17 @@ another is refused each time records are about to be signed, so a seed put at th
 place signs nothing; the refusal names neither the path, nor either key, nor the value named. A
 refused key, a key that is not the key in force, and a signature that cannot be written all leave
 the record unsigned rather
-than the decision failed; `packs validate` reports the first two, and `audit verify` counts
-unsigned records. No output, diagnostic
+than the decision failed, unless the project's audit member sets `requireSigning` (configVersion
+`"8"`, ADR-0071); `packs validate` reports the first two, a deciding run that records reports them
+too, as a `JPS-AUDIT-UNSIGNED` warning with the same reason, as read before it evaluates, and
+`audit verify` counts unsigned records. Under `requireSigning` the deciding surfaces refuse instead
+(`JPS-AUDIT-SIGNING-REQUIRED`), before evaluating and with nothing recorded, a run whose named key
+would not sign and every run while no key is named; a declared rehearsal is not refused. That is
+read before the run evaluates, so a signature that cannot be written, or a rotation written in
+between, still leaves a record unsigned, and `--require-signed-through` is the reader's check. It
+binds as `requireReviewed` does, not whoever chooses or can edit the configuration, and whoever can
+write the sidecar can make every decision refused. The warning's reason names the key's path when
+the path is what is refused, as `packs validate` does, and so carries it to an MCP client. No output, diagnostic
 or report carries key material: keys are named by `keyId`. `jpack audit verify --public-key` checks
 the signatures against keys the verifier supplies, never against the project's own configuration. It
 refuses a supplied key under which anyone could sign, in `--public-key` and in `--revoked`, and a

@@ -108,6 +108,14 @@ func ErrorDiagnostic(code, layer, instancePath, message string) Diagnostic {
 	}
 }
 
+// WarningDiagnostic is ErrorDiagnostic for something a result reports beside
+// its outcome rather than instead of one.
+func WarningDiagnostic(code, layer, instancePath, message string) Diagnostic {
+	warning := ErrorDiagnostic(code, layer, instancePath, message)
+	warning.Severity = "warning"
+	return warning
+}
+
 type Layer struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
@@ -890,6 +898,12 @@ type DraftPrototype struct {
 // version, and its MINOR bullet classes an added output field as a
 // backward-compatible change. A consumer that never read these members reads the
 // same payload it read before, so nothing broke.
+//
+// Diagnostics are warnings about the run beside its disposition, never a
+// refusal and never part of the disposition or the audit record: today one,
+// JPS-AUDIT-UNSIGNED, when the run is recorded and the signing key its project
+// names will not sign the record (ADR-0071). It is absent when there are none,
+// an additive member on the same rule as PackID.
 type Evaluation struct {
 	OutputVersion             string          `json:"outputVersion"`
 	Tool                      Tool            `json:"tool"`
@@ -911,6 +925,7 @@ type Evaluation struct {
 	Contributors              []Contributor   `json:"contributors,omitempty"`
 	Trace                     []TraceEntry    `json:"trace"`
 	Artifact                  *Artifact       `json:"artifact,omitempty"`
+	Diagnostics               []Diagnostic    `json:"diagnostics,omitempty"`
 }
 
 // Contributor identifies a rule or forcing exception that actually supplied the

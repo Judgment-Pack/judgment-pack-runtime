@@ -87,6 +87,8 @@ type GraphHandoff struct {
 // wisdom of acting on any disposition it carries. Reviewed and ReviewedSet are
 // the run's, as Evaluation's are (ADR-0044): one invocation consults the lock
 // once, for the configuration, the graph document and every node's pack.
+// Diagnostics are the run's warnings, as Evaluation's are (ADR-0071), once
+// for the whole run: its node records and its composite have one writer.
 type GraphEvaluation struct {
 	// Exact-byte provenance, independent of a reviewed set or audit record.
 	// These bare-hex SHA-256 values identify loaded bytes, not their truth.
@@ -115,6 +117,7 @@ type GraphEvaluation struct {
 	Handoffs                  []GraphHandoff        `json:"handoffs"`
 	Nodes                     []GraphNodeEvaluation `json:"nodes"`
 	Artifact                  *Artifact             `json:"artifact,omitempty"`
+	Diagnostics               []Diagnostic          `json:"diagnostics,omitempty"`
 }
 
 // GraphPlanFeed is one edge as the plan states it, before any evaluation:

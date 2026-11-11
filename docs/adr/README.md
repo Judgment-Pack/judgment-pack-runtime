@@ -143,7 +143,7 @@ authority, and following it confers no conformance status on anything.
 | [0044](0044-say-and-require-the-reviewed-set.md) | Say in the payload whether the reviewed set was applied, and let a project require it | accepted; configVersion value list and schema `$id` extended by [0046](0046-record-type-notes-and-let-a-project-refuse-incomparable-facts.md) |
 | [0045](0045-compare-two-versions-of-a-pack.md) | Compare what two versions of a pack decide for the same inputs | accepted |
 | [0046](0046-record-type-notes-and-let-a-project-refuse-incomparable-facts.md) | Keep the trace's type and unknown notes on the audit record, and let a project refuse a fact no comparison can match | accepted |
-| [0047](0047-make-a-decision-record-defensible.md) | Make a decision record defensible to someone who does not trust its operator | accepted; Selection (T3) settled by [0048](0048-refusals-and-rehearsals-outside-the-trail.md) |
+| [0047](0047-make-a-decision-record-defensible.md) | Make a decision record defensible to someone who does not trust its operator | accepted; Selection (T3) settled by [0048](0048-refusals-and-rehearsals-outside-the-trail.md); unsigned-records-never-fail-a-decision determination narrowed for projects that set `requireSigning`, and configVersion value list and schema `$id` extended, by [0071](0071-say-why-a-record-is-unsigned-and-let-a-project-require-signing.md) |
 | [0048](0048-refusals-and-rehearsals-outside-the-trail.md) | Refusals and rehearsals stay outside the trail, and the trail says so | accepted |
 | [0049](0049-bind-graph-evaluations-to-loaded-bytes.md) | Bind graph evaluations to the bytes actually loaded | accepted |
 | [0050](0050-record-a-callers-binding-digest.md) | Record a caller's binding digest on the evaluation record, as given and never interpreted | accepted |
@@ -166,3 +166,4 @@ authority, and following it confers no conformance status on anything.
 | [0068](0068-finite-domain-pack-design-advice.md) | Rehearse an explicit finite domain for optional pack-design advice | accepted |
 | [0069](0069-bound-history-reads-by-window.md) | Bound history reads by window independently of source size | accepted |
 | [0070](0070-publish-owner-taxonomy-and-method-skills.md) | Publish truthful owner taxonomy and digest-addressed method skills | accepted; effective upon required CI and introducing PR merge |
+| [0071](0071-say-why-a-record-is-unsigned-and-let-a-project-require-signing.md) | Say at decision time why a record is unsigned, and let a project require signing | proposed |
