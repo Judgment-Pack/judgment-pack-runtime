@@ -293,25 +293,7 @@ func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTarge
 // be a defect in the row as in the implementation, and neither this runtime nor
 // this function adjudicates that question.
 func (e *Engine) RunCorpus(specVersion, command string) (result.EvaluationCorpus, *Failure) {
-	if specVersion == "" {
-		specVersion = artifacts.EvaluatorDraftVersion
-	}
-	set, err := artifacts.Load(specVersion)
-	if err != nil {
-		return result.EvaluationCorpus{}, &Failure{
-			Code:     "JPS-CAPABILITY-SPEC-VERSION",
-			Message:  "The exact JPS specification version is not bundled with this runtime.",
-			ExitCode: result.ExitUnsupported,
-		}
-	}
-	if !set.HasEvaluationCorpus() {
-		return result.EvaluationCorpus{}, &Failure{
-			Code:     "JPS-CAPABILITY-EVALUATION-CORPUS",
-			Message:  fmt.Sprintf("JPS %s publishes no evaluation corpus; its Core defines no evaluator conformance class.", specVersion),
-			ExitCode: result.ExitUnsupported,
-		}
-	}
-	manifest, failure := loadCorpusManifest(set, specVersion)
+	set, manifest, failure := bundledCorpus(specVersion)
 	if failure != nil {
 		return result.EvaluationCorpus{}, failure
 	}
@@ -344,6 +326,50 @@ func (e *Engine) RunCorpus(specVersion, command string) (result.EvaluationCorpus
 		output.Cases = append(output.Cases, caseResult)
 	}
 	return output, nil
+}
+
+// CorpusSuiteVersion reports the suiteVersion of the evaluation corpus bundled
+// for one exact specification version: the value RunCorpus reports as its
+// SuiteVersion, read from the same schema-checked manifest, without running a
+// row. An empty specVersion selects the same default RunCorpus does, and a
+// version with no bundle or no corpus is refused exactly as RunCorpus refuses
+// it. It exists so a surface describing what it evaluates can name the corpus
+// version from the one place the corpus runner reads it.
+func CorpusSuiteVersion(specVersion string) (string, *Failure) {
+	_, manifest, failure := bundledCorpus(specVersion)
+	if failure != nil {
+		return "", failure
+	}
+	return manifest.SuiteVersion, nil
+}
+
+// bundledCorpus loads the artifact set and the schema-checked corpus manifest
+// for one exact specification version, refusing a version this runtime does
+// not bundle or whose Core publishes no evaluation corpus.
+func bundledCorpus(specVersion string) (*artifacts.Set, corpusManifest, *Failure) {
+	if specVersion == "" {
+		specVersion = artifacts.EvaluatorDraftVersion
+	}
+	set, err := artifacts.Load(specVersion)
+	if err != nil {
+		return nil, corpusManifest{}, &Failure{
+			Code:     "JPS-CAPABILITY-SPEC-VERSION",
+			Message:  "The exact JPS specification version is not bundled with this runtime.",
+			ExitCode: result.ExitUnsupported,
+		}
+	}
+	if !set.HasEvaluationCorpus() {
+		return nil, corpusManifest{}, &Failure{
+			Code:     "JPS-CAPABILITY-EVALUATION-CORPUS",
+			Message:  fmt.Sprintf("JPS %s publishes no evaluation corpus; its Core defines no evaluator conformance class.", specVersion),
+			ExitCode: result.ExitUnsupported,
+		}
+	}
+	manifest, failure := loadCorpusManifest(set, specVersion)
+	if failure != nil {
+		return nil, corpusManifest{}, failure
+	}
+	return set, manifest, nil
 }
 
 // loadCorpusManifest reads the bundled corpus index and holds it to its own

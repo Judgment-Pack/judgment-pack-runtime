@@ -10,8 +10,9 @@ conformance metadata, and release records. The CLI consumes reviewed immutable s
 not write to or release the specification repository.
 
 Private commercial repositories may depend on the executable and versioned output contract. The
-current Go packages are internal implementation details; a versioned in-process composition or
-plugin API remains future work. The public CLI never depends on private source, packages, services,
+Go packages other than `sdk` are internal implementation details. Package `sdk` is an experimental
+in-process API for loading and evaluating a pack (ADR-0073); a versioned composition or plugin API
+remains future work. The public CLI never depends on private source, packages, services,
 or credentials.
 
 ## Rule-overlap authoring advice
@@ -189,6 +190,7 @@ none. Graph aggregates and disposition comparison summaries do not synthesize at
 - `internal/compare` evaluates one set of inputs, a matrix admitted under its own rules whose expectations play no part, or a `packs suggest` candidates document, under two versions of a pack through `internal/evaluation` unchanged, and reports the inputs whose §8.3 canonical dispositions, handoff targets or refusals differ (ADR-0045). It opens no project, so it records nothing and consults no lock, and a difference it reports is not an expectation.
 - `internal/policy` owns the experimental offline Policy prototype and official draft document and supplied-material checks of ADR-0059 and ADR-0061; it performs no evaluation or source acquisition.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
+- `sdk` is the experimental public Go API (ADR-0073): `Load` and `Pack.Evaluate` reach the shared evaluator with the contract selection, options and limits of `experimental evaluate` outside a project, and `Describe` reports the bundled versions and the corpus version of each evaluator contract. It takes every input as bytes, and no package of this module in its import closure imports anything that reaches files, the environment or the network.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.
 

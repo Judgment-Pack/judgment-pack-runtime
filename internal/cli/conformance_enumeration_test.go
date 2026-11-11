@@ -31,6 +31,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"`experimental graph evaluate`",
 		"`experimental graph test`",
 		"`experimental compare`",
+		"`sdk.Pack.Evaluate`",
 		"`experimental_evaluate`",
 		"`experimental_test_packs`",
 		"`experimental_test_cases`",
@@ -40,14 +41,17 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 	// Which file constructs the evaluator, and how many times, is part of what
 	// is held: a bare total would still read six when one surface is removed
 	// and another added in the same change. The scan is textual and flat on
-	// purpose — both packages are flat, and a count perturbed by a comment or a
-	// moved constructor fails toward a human reading this test, never away.
+	// purpose — the three packages are flat, and a count perturbed by a comment
+	// or a moved constructor fails toward a human reading this test, never away.
+	// The public Go package sdk is scanned beside the CLI and the MCP server
+	// because it is a surface of its own (ADR-0073).
 	expectedSites := map[string]int{
 		"app.go":                               2, // experimental evaluate, experimental evaluate-corpus
 		"packs.go":                             1, // packs test
 		"graph.go":                             2, // experimental graph evaluate, experimental graph test
 		"compare.go":                           1, // experimental compare
 		filepath.Join("..", "mcp", "tools.go"): 4, // experimental_evaluate, experimental_test_packs, experimental_test_cases, experimental_test_graphs
+		filepath.Join("..", "..", "sdk", "sdk.go"): 1, // sdk.Pack.Evaluate
 	}
 	staticSites := map[string]int{
 		filepath.Join("..", "mcp", "fact_advice.go"):      1,
@@ -69,7 +73,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 	if total != len(enumerated) {
 		t.Fatalf("this test expects %d constructor sites but enumerates %d surfaces; its own two lists diverged", total, len(enumerated))
 	}
-	for _, dir := range []string{".", filepath.Join("..", "mcp")} {
+	for _, dir := range []string{".", filepath.Join("..", "mcp"), filepath.Join("..", "..", "sdk")} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			t.Fatalf("reading %s: %v", dir, err)
@@ -174,6 +178,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"jpack experimental graph evaluate": "`experimental graph evaluate`",
 		"graph test":                        "`experimental graph test`",
 		"jpack experimental compare":        "`experimental compare`",
+		"sdk.Pack.Evaluate":                 "`sdk.Pack.Evaluate`",
 	} {
 		readme[spelling] = surface
 	}
@@ -407,7 +412,7 @@ func listFault(spellings map[string]string, entries []string) string {
 }
 
 // Advisory constructors cannot hide a widened evaluation path in the static-only
-// exception or silently join the claim's ten constructor sites. As with the
+// exception or silently join the claim's eleven constructor sites. As with the
 // existing static guard, a refactor requires explicit inventory review.
 func advisorySiteFault(source, receiver string) string {
 	chain := "packadvice.Analyze(evaluation.NewEngine(" + receiver + "),"
