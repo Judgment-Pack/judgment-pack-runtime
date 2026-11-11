@@ -166,6 +166,6 @@ authority, and following it confers no conformance status on anything.
 | [0068](0068-finite-domain-pack-design-advice.md) | Rehearse an explicit finite domain for optional pack-design advice | accepted |
 | [0069](0069-bound-history-reads-by-window.md) | Bound history reads by window independently of source size | accepted |
 | [0070](0070-publish-owner-taxonomy-and-method-skills.md) | Publish truthful owner taxonomy and digest-addressed method skills | accepted; effective upon required CI and introducing PR merge |
-| [0071](0071-say-why-a-record-is-unsigned-and-let-a-project-require-signing.md) | Say at decision time why a record is unsigned, and let a project require signing | proposed |
-| [0072](0072-lock-coverage-without-a-project.md) | Answer whether a reviewed-set lock covers a document's exact bytes, without opening a project | proposed |
-| [0073](0073-in-process-go-evaluation-api.md) | Expose loading and evaluating a pack as an experimental in-process Go API | proposed |
+| [0071](0071-say-why-a-record-is-unsigned-and-let-a-project-require-signing.md) | Say at decision time why a record is unsigned, and let a project require signing | accepted |
+| [0072](0072-lock-coverage-without-a-project.md) | Answer whether a reviewed-set lock covers a document's exact bytes, without opening a project | accepted |
+| [0073](0073-in-process-go-evaluation-api.md) | Expose loading and evaluating a pack as an experimental in-process Go API | accepted |
