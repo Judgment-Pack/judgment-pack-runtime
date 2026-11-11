@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -44,6 +45,18 @@ var sharedValidator = sync.OnceValues(validation.NewEngine)
 
 // errNilContext is returned for a nil context instead of a panic.
 var errNilContext = errors.New("sdk: nil context")
+
+// ErrInternal is wrapped by every error that is a fault of this runtime
+// rather than a refusal of the caller's input: bundled specification
+// artifacts that fail their integrity check, or an evaluator result this
+// package cannot read. Test for it with errors.Is. Such an error is never a
+// *Refusal.
+var ErrInternal = errors.New("sdk: internal fault")
+
+// internalFault wraps ErrInternal with the runtime's code and message.
+func internalFault(code, message string) error {
+	return fmt.Errorf("%w: %s: %s", ErrInternal, code, display.Sanitize(message))
+}
 
 // LoadOptions are the caller's capabilities for one loaded pack.
 type LoadOptions struct {
@@ -94,7 +107,7 @@ func Load(ctx context.Context, pack []byte, options LoadOptions) (*Pack, error) 
 	}
 	validator, err := sharedValidator()
 	if err != nil {
-		return nil, integrityRefusal()
+		return nil, integrityFault()
 	}
 	// The contract selection of the CLI and the MCP server: a pack whose
 	// specVersion is missing or not an evaluator contract is evaluated under
@@ -102,7 +115,7 @@ func Load(ctx context.Context, pack []byte, options LoadOptions) (*Pack, error) 
 	contract := result.LegacyEvaluatorContract()
 	selected, failure := evaluation.SelectContract(pack)
 	if failure != nil && failure.Code != "JPS-EVALUATION-PACK-SPEC-VERSION" {
-		return nil, packRefusal(validator, pack, failure)
+		return nil, packError(validator, pack, failure)
 	}
 	if failure == nil {
 		contract = selected
@@ -113,28 +126,13 @@ func Load(ctx context.Context, pack []byte, options LoadOptions) (*Pack, error) 
 	loaded := &Pack{contract: contract, supported: slices.Clone(options.SupportedExtensions)}
 	loaded.engine = evaluation.NewEngine(validator)
 	loaded.admitted = loaded.engine.AdmitPack(pack)
-	// The pack half of the §8.2 preflight runs here, once, and is memoized by
-	// the admission under exactly the options Evaluate uses. It is replayed by
-	// asking the engine to evaluate with no facts document: the engine admits
-	// the pack completely before it reads the facts, so the refusal it returns
-	// is either the pack's own or the missing facts document's, and only the
-	// second means the pack was admitted.
-	_, probe := loaded.engine.EvaluateAdmitted(loaded.admitted, nil, nil, loaded.options(false))
-	if probe == nil {
-		return nil, &Refusal{Code: "JPS-EVALUATION-INTERNAL", Message: "The evaluator accepted an evaluation with no facts document."}
-	}
-	if !factsMissing(probe) {
-		return nil, packRefusal(validator, pack, probe)
+	// The pack half of the §8.2 preflight runs here, once, through the
+	// engine's own steps, and the admission is memoized under the options
+	// Evaluate uses, so Evaluate replays it rather than validating again.
+	if failure := loaded.admitted.PackFailure(loaded.options(false)); failure != nil {
+		return nil, packError(validator, pack, failure)
 	}
 	return loaded, nil
-}
-
-// factsMissing recognizes the engine's refusal of an empty facts document,
-// which it reports only after the pack has been admitted.
-func factsMissing(failure *evaluation.Failure) bool {
-	return failure.Code == "JPS-EVALUATION-INPUT-MISSING" &&
-		failure.Class == result.ClassMalformedInput &&
-		failure.Phase == result.PhasePreflight
 }
 
 // options are the evaluation options of "jpack experimental evaluate" run
@@ -177,12 +175,13 @@ func (p *Pack) Evaluate(ctx context.Context, facts, evidence []byte) (*Evaluatio
 	}
 	evaluated, failure := p.engine.EvaluateAdmitted(p.admitted, facts, evidence, p.options(evidence != nil))
 	if failure != nil {
-		return nil, refusal(failure)
+		return nil, failureError(failure)
 	}
 	return newEvaluation(evaluated)
 }
 
-// Evaluation is one evaluated result.
+// Evaluation is one evaluated result. Its methods are for a value returned by
+// a successful Evaluate; they are not defined on a nil or zero Evaluation.
 type Evaluation struct {
 	// SpecVersion is the specVersion the evaluated pack declares.
 	SpecVersion string
@@ -212,7 +211,9 @@ func (e *Evaluation) CanonicalDisposition() []byte {
 // "jpack experimental evaluate --format json" writes outside a project, with
 // a trailing newline. The one difference is the command member, which is
 // "sdk evaluate". The envelope's shape follows the CLI's output contract, not
-// this package's.
+// this package's. Its tool.version is the version compiled into this module,
+// which is "0.0.0-dev" unless the program set it at link time; it is not
+// Description.RuntimeVersion.
 func (e *Evaluation) JSON() ([]byte, error) {
 	var buffer bytes.Buffer
 	encoder := json.NewEncoder(&buffer)
@@ -273,11 +274,11 @@ type canonicalShape struct {
 func newEvaluation(evaluated result.Evaluation) (*Evaluation, error) {
 	canonical, err := evaluated.Disposition.Canonical()
 	if err != nil {
-		return nil, &Refusal{Code: "JPS-EVALUATION-INTERNAL", Message: "The evaluator produced a disposition that does not canonicalize."}
+		return nil, internalFault("JPS-EVALUATION-INTERNAL", "The evaluator produced a disposition that does not canonicalize.")
 	}
 	var shape canonicalShape
 	if err := json.Unmarshal(canonical, &shape); err != nil {
-		return nil, &Refusal{Code: "JPS-EVALUATION-INTERNAL", Message: "The canonical disposition could not be decoded."}
+		return nil, internalFault("JPS-EVALUATION-INTERNAL", "The canonical disposition could not be decoded.")
 	}
 	disposition := Disposition{
 		Kind:      shape.Kind,
@@ -307,12 +308,16 @@ func newEvaluation(evaluated result.Evaluation) (*Evaluation, error) {
 }
 
 // Refusal is an input the evaluator refused. It is the error Load and
-// Evaluate return for every refusal of an input; a done context and a misuse
-// of this package are plain errors.
+// Evaluate return for every refusal of the caller's input, and only for that:
+// a fault of this runtime wraps ErrInternal, a done context is ctx.Err(), and
+// a misuse of this package (a nil context, a Pack Load did not return) is a
+// plain error.
 type Refusal struct {
-	// Class is the JPS Core §8.4 error class, one of the Class constants, or
-	// empty for a refusal §8.4 does not classify (an unsupported Core profile,
-	// or bundled artifacts that failed their integrity check).
+	// Class is the JPS Core §8.4 error class, one of the Class constants. It
+	// is empty for exactly one refusal: Code "profile-unsupported", a Core
+	// 0.3.0 pack declaring a profile this evaluator does not implement, which
+	// is refused before §8.4 applies and which the CLI reports with no class
+	// either.
 	Class string
 	// Phase is PhasePreflight or PhaseEvaluation when the refusal has a phase.
 	Phase string
@@ -357,7 +362,17 @@ type Diagnostic struct {
 	Profile      string
 }
 
-func refusal(failure *evaluation.Failure) *Refusal {
+// profileUnsupported is the one refusal of the caller's input that carries
+// no §8.4 class.
+const profileUnsupported = "profile-unsupported"
+
+// failureError is the error for one engine failure: a *Refusal for a
+// refusal of the caller's input, which the engine marks with a §8.4 class or
+// as profile-unsupported, and an ErrInternal fault for any other failure.
+func failureError(failure *evaluation.Failure) error {
+	if failure.Class == "" && failure.Code != profileUnsupported {
+		return internalFault(failure.Code, failure.Message)
+	}
 	return &Refusal{
 		Class:   failure.Class,
 		Phase:   failure.Phase,
@@ -367,18 +382,19 @@ func refusal(failure *evaluation.Failure) *Refusal {
 	}
 }
 
-// packRefusal is a Load refusal, carrying the validation report of the same
-// bytes when there is one to carry: not for a pack past the byte limit, which
-// the validator refuses unread, and not when validation itself fails
+// packError is a Load error. A refusal carries the validation report of the
+// same bytes when there is one to carry: not for a pack past the byte limit,
+// which the validator refuses unread, and not when validation itself fails
 // operationally.
-func packRefusal(validator *validation.Engine, pack []byte, failure *evaluation.Failure) *Refusal {
-	refused := refusal(failure)
-	if int64(len(pack)) > carrier.HardMaxBytes {
-		return refused
+func packError(validator *validation.Engine, pack []byte, failure *evaluation.Failure) error {
+	err := failureError(failure)
+	refused, ok := err.(*Refusal)
+	if !ok || int64(len(pack)) > carrier.HardMaxBytes {
+		return err
 	}
 	report, operational := validator.Validate(pack, validation.Options{Through: "semantic", Limits: carrier.DefaultLimits()})
 	if operational != nil || report.Status == "valid" {
-		return refused
+		return err
 	}
 	refused.Diagnostics = make([]Diagnostic, 0, len(report.Diagnostics))
 	for _, diagnostic := range report.Diagnostics {
@@ -395,16 +411,19 @@ func packRefusal(validator *validation.Engine, pack []byte, failure *evaluation.
 	return refused
 }
 
-func integrityRefusal() *Refusal {
-	return &Refusal{Code: "JPS-ARTIFACT-INTEGRITY", Message: "Bundled JPS artifacts failed their integrity check."}
+func integrityFault() error {
+	return internalFault("JPS-ARTIFACT-INTEGRITY", "Bundled JPS artifacts failed their integrity check.")
 }
 
 // Description says what this runtime evaluates.
 type Description struct {
-	// RuntimeVersion is this module's version as recorded in the program's
-	// build information, or empty when the program carries none for it (a
-	// build inside this module's own source tree, or one without module
-	// information).
+	// RuntimeVersion is this module's version as the program's build
+	// information records it: the required version, or a replacement's
+	// version when the requirement is replaced by another module version. It
+	// is empty when the build records none: a build inside this module's own
+	// source tree, a replacement by a local directory, or a build without
+	// module information. It is not the tool.version member of
+	// Evaluation.JSON, which is the version compiled into the module.
 	RuntimeVersion string
 	// SpecVersions are the JPS specification versions bundled for validation.
 	SpecVersions []string
@@ -432,7 +451,7 @@ type Evaluator struct {
 func Describe() (Description, error) {
 	set, err := artifacts.Load(artifacts.DraftVersion)
 	if err != nil {
-		return Description{}, integrityRefusal()
+		return Description{}, integrityFault()
 	}
 	runtime := describe.Runtime(set, "sdk describe")
 	output := Description{
@@ -443,7 +462,8 @@ func Describe() (Description, error) {
 	for _, capability := range runtime.EvaluatorCapabilities {
 		suite, failure := evaluation.CorpusSuiteVersion(capability.SpecVersion)
 		if failure != nil {
-			return Description{}, refusal(failure)
+			// The bundle is fixed at build time, so a corpus it lacks is a fault.
+			return Description{}, internalFault(failure.Code, failure.Message)
 		}
 		output.Evaluators = append(output.Evaluators, Evaluator{
 			SpecVersion:        capability.SpecVersion,

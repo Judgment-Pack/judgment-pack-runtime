@@ -49,13 +49,14 @@ jpack experimental evaluate-corpus --spec-version 0.2.0-draft --format json
 ```
 
 The claim applies to **conforming Core-class inputs reaching this runtime's one shared evaluator**
-for that contract through the ten surfaces that reach it — `experimental evaluate`,
+for that contract through the eleven surfaces that reach it — `experimental evaluate`,
 `experimental evaluate-corpus`,
-`packs test`, `experimental graph evaluate`, `experimental graph test`, `experimental compare`, and the
+`packs test`, `experimental graph evaluate`, `experimental graph test`, `experimental compare`, the
+in-process Go API `sdk.Pack.Evaluate`, and the
 `experimental_evaluate`, `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools — and
 **not to draft-RFC prototype
 inputs**, which this class does
-not define at all and which the last exclusion below states. One evaluator sits behind all ten, so a
+not define at all and which the last exclusion below states. One evaluator sits behind all eleven, so a
 surface selects what reaches it rather than carrying a claim of its own: the project and graph
 surfaces choose which packs and inputs reach the evaluator, and the dispositions they report as
 evaluated — a row's actual disposition, a node's, a composite's echoed headline, either side of a
@@ -75,7 +76,7 @@ The two evaluator-using advisory surfaces outside that version claim are
 `experimental analyze-pack` and `experimental_analyze_pack`. Both call the shared
 finite-domain analyzer, which admits and evaluates only Core `0.3.0` base packs.
 They therefore accept no input under the `0.2.0-draft` claim above and are separate
-from its ten-surface enumeration. They run the real evaluator for optional
+from its eleven-surface enumeration. They run the real evaluator for optional
 Draft RFC 0027 authoring advice; they are not static-only comparability checks.
 Their reports do not change the recorded claim or extend its version scope.
 

@@ -25,10 +25,11 @@ nothing about Policy or Dialect profile support.
 
 For the version covered by the claim in [CONFORMANCE.md](CONFORMANCE.md), one shared
 evaluator applies the specification's §§7–8 resolution model per
-[ADR-0007](docs/adr/0007-experimental-evaluator.md), and ten surfaces reach it: `jpack experimental
+[ADR-0007](docs/adr/0007-experimental-evaluator.md), and eleven surfaces reach it: `jpack experimental
 evaluate` and `evaluate-corpus`, the project walk `jpack packs test`, the graph verbs
 `jpack experimental graph evaluate` and `graph test`, the version comparison
-`jpack experimental compare`, and the `experimental_evaluate`,
+`jpack experimental compare`, the in-process Go API `sdk.Pack.Evaluate`
+([ADR-0073](docs/adr/0073-in-process-go-evaluation-api.md)), and the `experimental_evaluate`,
 `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools. The `experimental` namespace is a **stability**
 statement: such a surface may change or be removed without compatibility promise. It is not a statement
 about conformance. That evaluator implements the evaluator conformance class Core `0.2.0-draft` adds —
@@ -270,6 +271,25 @@ authorizes nothing, and acting on it is the caller's decision.
 From here, [docs/building-with-packs.md](docs/building-with-packs.md) covers a project of several
 packs, their test matrices, and the audit trail; `jpack spec examples --spec-version 0.2.0-draft`
 lists larger starting points the evaluator accepts, from 0.24.0.
+
+### From a Go program
+
+Package [`sdk`](sdk/doc.go) runs the same evaluator in-process
+([ADR-0073](docs/adr/0073-in-process-go-evaluation-api.md)). It takes every input as bytes and
+reads no project directory, file, environment variable or network:
+
+```go
+pack, err := sdk.Load(ctx, packBytes, sdk.LoadOptions{})
+// err is a *sdk.Refusal for a pack the evaluator refuses, with its validation diagnostics.
+evaluated, err := pack.Evaluate(ctx, factsBytes, nil) // nil: no evidence document
+// err is a *sdk.Refusal with the §8.4 class and phase for an input it refuses.
+fmt.Println(evaluated.Disposition.Kind, string(evaluated.CanonicalDisposition()))
+```
+
+A loaded pack is immutable, safe for concurrent use, and never validated again. The contract,
+options and limits are those of `jpack experimental evaluate` run outside a project. The package is
+experimental and may change in any minor release before 1.0 ([VERSIONING.md](VERSIONING.md#go-api)).
+[sdk/example_test.go](sdk/example_test.go) is a runnable example.
 
 ## Build and try it locally
 
@@ -1018,9 +1038,10 @@ services, package indexes, or feature flags.
 
 Commercial capabilities should live in separate private repositories; this public repository must
 never depend on them. The current supported integration boundary is the `jpack` executable
-and its versioned JSON output. Go packages are intentionally `internal`, and there is not yet a
-stable in-process SDK or plugin API. Before commercial commands are composed into one binary, the
-public project must define and version that contract deliberately. Future commands should use
+and its versioned JSON output. Go packages other than `sdk` are intentionally `internal`. Package
+`sdk` is an experimental in-process API for loading and evaluating a pack (ADR-0073), without a
+compatibility promise before 1.0, and there is no plugin API. Before commercial commands are
+composed into one binary, the public project must define and version that contract deliberately. Future commands should use
 distinct namespaces such as `jpack cloud` or `jpack org`; they must not override
 `jpack spec` conformance semantics or auto-load during validation.
 
@@ -1385,7 +1406,7 @@ convention and adds no Core conformance claim.
 The two evaluator-using advisory surfaces outside that version claim are
 `jpack experimental analyze-pack` and `experimental_analyze_pack`. They evaluate
 only Core `0.3.0` base inputs for optional authoring advice. Their inventory is
-guarded separately from the ten surfaces serving inputs under the recorded claim
+guarded separately from the eleven surfaces serving inputs under the recorded claim
 and from static fact advice, which does not evaluate conditions.
 
 `jpack experimental analyze-pack pack.json --domain domain.json` returns optional

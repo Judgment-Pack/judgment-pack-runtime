@@ -350,3 +350,153 @@ func assertRefusal(t *testing.T, err error, want sdk.Refusal) {
 		t.Fatalf("refusal = %#v\nwant      %#v", *got, want)
 	}
 }
+
+// routedPack is a Core 0.3.0 pack that declares escalation routes and no
+// fallback: a fact other than 1 matches no rule, which the triggers turn into
+// a handoff request, and every route the reasons select is listed in the
+// pack's order.
+const routedPack = `{
+  "specVersion": "0.3.0",
+  "id": "https://example.invalid/judgment-packs/sdk-routes",
+  "version": "1.0.0",
+  "title": "Synthetic routed fixture",
+  "decision": {"intent": "Exercise routed handoff in-process.", "question": "Is the score one?"},
+  "outcomes": [{"id": "yes", "label": "Yes"}, {"id": "no", "label": "No"}],
+  "rules": [
+    {
+      "id": "score-one",
+      "description": "The score is one.",
+      "when": {"op": "fact", "path": "/score", "operator": "equals", "value": 1},
+      "outcome": "yes",
+      "onUnknown": "ignore"
+    }
+  ],
+  "escalation": {
+    "triggers": ["no-match"],
+    "routes": [
+      {"target": {"kind": "queue", "name": "Review"}},
+      {"target": {"kind": "system", "name": "Ledger"}, "triggers": ["no-match"]}
+    ]
+  }
+}`
+
+func TestACore030PackReportsItsRoutes(t *testing.T) {
+	pack := load(t, routedPack, sdk.LoadOptions{})
+	evaluated, err := pack.Evaluate(context.Background(), []byte(`{"score":2}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(evaluated.CanonicalDisposition()), `{"handoff":{"routes":[{"kind":"queue","name":"Review"},{"kind":"system","name":"Ledger"}],"state":"requested","triggeredBy":["no-match"]},"kind":"unresolved","reasons":["no-match"]}`; got != want {
+		t.Fatalf("canonical disposition = %s, want %s", got, want)
+	}
+	want := sdk.Disposition{
+		Kind:    "unresolved",
+		Reasons: []string{"no-match"},
+		Handoff: sdk.Handoff{State: "requested", TriggeredBy: []string{"no-match"}, Routes: []sdk.Target{{Kind: "queue", Name: "Review"}, {Kind: "system", Name: "Ledger"}}},
+	}
+	if !reflect.DeepEqual(evaluated.Disposition, want) {
+		t.Fatalf("disposition = %#v, want %#v", evaluated.Disposition, want)
+	}
+	if evaluated.HandoffTarget != nil || evaluated.EvaluatorSpecVersion != "0.3.0" || evaluated.SpecVersion != "0.3.0" {
+		t.Fatalf("target %#v, contract %q, pack %q", evaluated.HandoffTarget, evaluated.EvaluatorSpecVersion, evaluated.SpecVersion)
+	}
+	encoded, err := evaluated.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range []string{`"command":"sdk evaluate"`, `"evaluatorSpecVersion":"0.3.0"`, `"disposition":{"handoff":{"routes":[{"kind":"queue","name":"Review"},{"kind":"system","name":"Ledger"}],"state":"requested","triggeredBy":["no-match"]},"kind":"unresolved","reasons":["no-match"]}`} {
+		if !strings.Contains(string(encoded), member) {
+			t.Fatalf("JSON() lacks %s:\n%s", member, encoded)
+		}
+	}
+	if !strings.HasSuffix(string(encoded), "}\n") {
+		t.Fatalf("JSON() does not end in one newline: %q", encoded[len(encoded)-4:])
+	}
+
+	// An outcome selects no route, and a routed pack still says so with an
+	// empty, non-nil route list.
+	evaluated, err = pack.Evaluate(context.Background(), []byte(`{"score":1}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evaluated.Disposition.Handoff.Routes == nil || len(evaluated.Disposition.Handoff.Routes) != 0 {
+		t.Fatalf("routes of an outcome = %#v, want empty and non-nil", evaluated.Disposition.Handoff.Routes)
+	}
+	if got := string(evaluated.CanonicalDisposition()); got != `{"handoff":{"routes":[],"state":"none"},"kind":"outcome","outcomeId":"yes","reasons":[]}` {
+		t.Fatalf("canonical disposition = %s", got)
+	}
+}
+
+func TestLoadRefusesAPackBeforeItsFacts(t *testing.T) {
+	limit := 10 << 20
+	atLimit := []byte(thresholdPack + strings.Repeat(" ", limit-len(thresholdPack)))
+	if _, err := sdk.Load(context.Background(), atLimit, sdk.LoadOptions{}); err != nil {
+		t.Fatalf("a pack of exactly the byte limit: %v", err)
+	}
+	rows := []struct {
+		name string
+		pack []byte
+		want sdk.Refusal
+	}{
+		{
+			name: "one byte over the limit",
+			pack: append(atLimit, ' '),
+			want: sdk.Refusal{Class: sdk.ClassPackNotConformant, Phase: sdk.PhasePreflight, Code: "JPS-RESOURCE-INPUT-BYTE-LIMIT", Message: "The pack input exceeds the hard 10485760-byte limit."},
+		},
+		{
+			name: "an unsupported Core profile",
+			pack: []byte(strings.Replace(routedPack, `"version": "1.0.0",`, `"version": "1.0.0", "profile": "extended",`, 1)),
+			want: sdk.Refusal{Phase: sdk.PhasePreflight, Code: "profile-unsupported", Profile: "extended", Diagnostics: []sdk.Diagnostic{{Code: "profile-unsupported", Profile: "extended"}}},
+		},
+		{
+			name: "a valid pack of the validation-only version",
+			pack: []byte(strings.Replace(thresholdPack, `"0.2.0-draft"`, `"0.1.0-draft"`, 1)),
+			want: sdk.Refusal{
+				Class: sdk.ClassPackNotConformant, Phase: sdk.PhasePreflight, Code: "JPS-EVALUATION-PACK-SPEC-VERSION",
+				Message: `The pack is not evaluated because it declares specVersion "0.1.0-draft" and this evaluator applies the JPS Core 0.2.0-draft evaluator contract, whose conformance claim is stated in CONFORMANCE.md. JPS §11 makes the declared value exact: an unedited 0.1.0-draft pack is not structurally conforming to 0.2.0-draft and must be re-declared before an implementation claiming this draft evaluates it. Re-declaring is one edit — the specVersion string — and nothing else in the document changes, because §11 says 0.2.0-draft changes no part of the document format: every member, every cross-field rule, and every document-conformance verdict of §§3.1-3.3 stays the same. The 0.1.0-draft schema remains published, and spec validate still validates the pack as it stands. To REPLAY a decision this pack already made, do not re-declare it: fetch the evaluator release that made it and verify its digest first — the replay tuple, docs/building-with-packs.md "Replaying a decision: pin the tuple, not the pack".`,
+			},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			_, err := sdk.Load(context.Background(), row.pack, sdk.LoadOptions{})
+			assertRefusal(t, err, row.want)
+		})
+	}
+	_, err := sdk.Load(context.Background(), rows[1].pack, sdk.LoadOptions{})
+	if got := err.Error(); got != "sdk: profile-unsupported (extended)" {
+		t.Fatalf("Error() = %q", got)
+	}
+}
+
+// Arbitrary bytes are refused as a pack, never a panic and never an internal
+// fault, and every such refusal carries its §8.4 class.
+func TestArbitraryBytesAreRefusedAsAPack(t *testing.T) {
+	for _, input := range [][]byte{
+		nil,
+		{},
+		[]byte(" "),
+		[]byte("null"),
+		[]byte("[]"),
+		[]byte(`"0.2.0-draft"`),
+		[]byte("not JSON"),
+		[]byte("\xff\xfe{}"),
+		[]byte("\ufeff{}"),
+		[]byte(`{"specVersion":"0.2.0-draft"}{}`),
+		[]byte(`{"specVersion":"0.2.0-draft","specVersion":"0.3.0"}`),
+		[]byte(`{"specVersion":` + strings.Repeat("9", 100_000) + `}`),
+		[]byte(`{"specVersion":1e999999}`),
+		[]byte(strings.Repeat("[", 100_000) + strings.Repeat("]", 100_000)),
+		[]byte(`{"a":` + strings.Repeat(`{"a":`, 10_000) + `0` + strings.Repeat("}", 10_001)),
+		[]byte(`{"specVersion":"0.3.0","profile":7}`),
+	} {
+		_, err := sdk.Load(context.Background(), input, sdk.LoadOptions{})
+		var refusal *sdk.Refusal
+		if !errors.As(err, &refusal) || errors.Is(err, sdk.ErrInternal) {
+			t.Fatalf("%.40q: %v (%T), want a refusal", input, err, err)
+		}
+		if refusal.Class != sdk.ClassPackNotConformant || refusal.Phase != sdk.PhasePreflight {
+			t.Fatalf("%.40q: class %q phase %q", input, refusal.Class, refusal.Phase)
+		}
+	}
+}

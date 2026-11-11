@@ -4,6 +4,20 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- Package `sdk` is an experimental in-process Go API over the shared evaluator (#368,
+  ADR-0073). `sdk.Load` validates a pack from bytes and admits it once, under the contract the
+  pack declares and the caller's supported extensions; `Pack.Evaluate` takes a facts document
+  and an optional evidence document and returns the §8.3 disposition as typed values and as its
+  canonical bytes. A refusal is a `*sdk.Refusal` with the §8.4 class and phase and the CLI's code
+  and message, plus the `spec validate` diagnostics for a pack that failed validation; a fault of
+  the runtime wraps `sdk.ErrInternal`. A loaded pack is immutable, safe for concurrent use and
+  never validated again. `Evaluation.JSON` returns the `experimental evaluate --format json`
+  envelope with `command` set to `sdk evaluate`. `sdk.Describe` reports the bundled versions,
+  the evaluator contracts and the bundled evaluation corpus's `suiteVersion` for each. The package
+  reads no project, file, environment variable or network, and a started evaluation is not
+  interrupted by its context. CONFORMANCE.md and README.md name `sdk.Pack.Evaluate` among the
+  surfaces that reach the evaluator, which are now eleven.
+
 - `jpack packs covers --lock FILE --id ID --pack FILE` answers whether a reviewed-set
   lock covers a pack's exact bytes without opening a project (#364, ADR-0072):
   `--graph-id` and `--graph` ask the same of a graph. It reads the lock with the

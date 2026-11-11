@@ -194,26 +194,9 @@ func (e *Engine) EvaluateWith(pack, facts, evidence []byte, options Options) (re
 // any other input is touched, so the §8.4 precedence a per-row caller saw is
 // byte-identical.
 func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte, options Options) (result.Evaluation, *Failure) {
-	// Two drafts in one evaluation is a call this engine does not take, and it
-	// is refused as the invocation it is: before anything is decoded, validated
-	// or evaluated, and with no §8.4 class. The pack has been admitted by then,
-	// which copies it and takes its digest and reads nothing in it.
-	if failure := oneDraft(options); failure != nil {
+	admission, failure := admitted.packHalf(options)
+	if failure != nil {
 		return result.Evaluation{}, failure
-	}
-	// The limit was decided in AdmitPack, over the bytes as they were handed in;
-	// this replays it rather than re-deciding it, and additionally honours the
-	// Options report a CLI makes when its own bounded read stopped at the limit
-	// — that pack arrives *under* the limit and only the caller knows why.
-	if admitted.oversized != nil {
-		return result.Evaluation{}, copyFailure(admitted.oversized)
-	}
-	if failure := byteLimit("pack", admitted.pack, result.ClassPackNotConformant, options.oversized("pack")); failure != nil {
-		return result.Evaluation{}, failure
-	}
-	admission := admitted.admission(options)
-	if admission.failure != nil {
-		return result.Evaluation{}, copyFailure(admission.failure)
 	}
 	validated, packRoot := admission.validated, admission.packRoot
 	unsupportedExtensions := copyFailure(admission.unsupported)
@@ -296,6 +279,47 @@ func (e *Engine) EvaluateAdmitted(admitted *AdmittedPack, facts, evidence []byte
 		}
 	}
 	return evaluation, nil
+}
+
+// packHalf is the pack half of the §8.2 preflight, in its order: the
+// two-draft invocation refusal, the pack byte limit, then the memoized
+// admission — conformance and the version gate. It returns the admission when
+// the pack reaches the facts document, and the refusal otherwise, as the
+// caller's own copy.
+func (a *AdmittedPack) packHalf(options Options) (*packAdmission, *Failure) {
+	// Two drafts in one evaluation is a call this engine does not take, and it
+	// is refused as the invocation it is: before anything is decoded, validated
+	// or evaluated, and with no §8.4 class. The pack has been admitted by then,
+	// which copies it and takes its digest and reads nothing in it.
+	if failure := oneDraft(options); failure != nil {
+		return nil, failure
+	}
+	// The limit was decided in AdmitPack, over the bytes as they were handed in;
+	// this replays it rather than re-deciding it, and additionally honours the
+	// Options report a CLI makes when its own bounded read stopped at the limit
+	// — that pack arrives *under* the limit and only the caller knows why.
+	if a.oversized != nil {
+		return nil, copyFailure(a.oversized)
+	}
+	if failure := byteLimit("pack", a.pack, result.ClassPackNotConformant, options.oversized("pack")); failure != nil {
+		return nil, failure
+	}
+	admission := a.admission(options)
+	if admission.failure != nil {
+		return nil, copyFailure(admission.failure)
+	}
+	return admission, nil
+}
+
+// PackFailure is the refusal EvaluateAdmitted returns under options before it
+// reads the facts document, or nil when the pack reaches it. It runs the same
+// steps through the same memo, so a caller that asks once and then evaluates
+// under the same options admits the pack once. An unsupported required
+// extension is not reported here: §8.2 compares the extension sets after the
+// facts and evidence documents, and EvaluateAdmitted reports it there.
+func (a *AdmittedPack) PackFailure(options Options) *Failure {
+	_, failure := a.packHalf(options)
+	return failure
 }
 
 // Admits reports whether this evaluator would admit the pack itself under one

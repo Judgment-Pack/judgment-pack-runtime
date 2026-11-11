@@ -84,9 +84,9 @@ Release notes describe compatibility separately for:
 - **machine-output compatibility** — whether versioned JSON output remains usable by existing
   consumers;
 - **specification compatibility** — which exact Judgment Pack Specification versions are supported;
-  and
 - **platform compatibility** — which operating systems and architectures receive tested release
-  artifacts.
+  artifacts; and
+- **Go API compatibility** — whether the exported identifiers of package `sdk` keep their meaning.
 
 The JSON `outputVersion` is a protocol version, not the CLI release version. A change that breaks
 machine-output compatibility must deliberately increment that protocol version.
@@ -117,6 +117,17 @@ different rules, and conflating them has been a live source of error.
   counts a line of another version or shape as unreadable, signing nothing, so a later version is
   a new `sidecarVersion` beside the old one rather than a change to it. A line of the stamps file
   carries its own `stampVersion`, `"1"`, by the same rule.
+
+## Go API
+
+Package `sdk` is the one importable Go package of this module; every other package is `internal`
+(ADR-0073). Its exported identifiers, which its package documentation lists, are experimental:
+during `0.x` a minor release may change or remove any of them, and the release notes name the
+change. The module version is the release tag, and `sdk.Describe` reports it from the importing
+program's build information when that information records it. The bytes
+`Evaluation.CanonicalDisposition` returns are the JPS §8.3 portable disposition, whose form the
+specification fixes; the envelope `Evaluation.JSON` returns is CLI machine output and follows its
+`outputVersion`.
 
 ## Release artifacts
 
