@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -747,4 +749,47 @@ func TestALockMemberPacksLockDoesNotWriteIsRefusedByEveryReader(t *testing.T) {
 		t.Fatalf("experimental evaluate: exit=%d stderr=%q\n got %s\nwant %s", code, stderr, stdout, want)
 	}
 	noAuditTrail(t, configPath)
+}
+
+// A FIFO named as the lock is refused at once rather than waited on, and a
+// configuration named through a final symbolic link is refused as every other
+// file argument here is.
+func TestPacksCoversRefusesAFIFOAndALinkedConfiguration(t *testing.T) {
+	files := coversFixture(t)
+	t.Run("a FIFO as --lock", func(t *testing.T) {
+		fifo := makeFIFO(t)
+		if fifo == "" {
+			t.Skip("FIFOs are unavailable here")
+		}
+		type run struct {
+			code           int
+			stdout, stderr string
+		}
+		done := make(chan run, 1)
+		go func() {
+			var stdout, stderr bytes.Buffer
+			code := Run([]string{"packs", "covers", "--lock", fifo, "--id", "intake", "--pack", files.pack, "--format", "json"}, strings.NewReader(""), &stdout, &stderr)
+			done <- run{code, stdout.String(), stderr.String()}
+		}()
+		select {
+		case got := <-done:
+			want := refusal(t, "error", "JPS-LOCK-READ", "The reviewed-set lock "+fifo+" could not be read as one bounded regular file; nothing was compared.")
+			if got.code != result.ExitIO || got.stderr != "" || got.stdout != want {
+				t.Fatalf("exit=%d stderr=%q\n got %s\nwant %s", got.code, got.stderr, got.stdout, want)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("packs covers waited on a FIFO named as the lock")
+		}
+	})
+	t.Run("a final symbolic link as --config", func(t *testing.T) {
+		link := filepath.Join(files.dir, "project", "linked.json")
+		if err := os.Symlink(files.config, link); err != nil {
+			t.Skipf("symbolic links are unavailable here: %v", err)
+		}
+		code, stdout, stderr := runCovers(t, "--lock", files.lock, "--id", "intake", "--pack", files.pack, "--config", link, "--format", "json")
+		want := refusal(t, "error", "JPS-PROJECT-CONFIG-READ", "The --config file "+link+" could not be read as one bounded regular file; nothing was compared.")
+		if code != result.ExitIO || stderr != "" || stdout != want {
+			t.Fatalf("exit=%d stderr=%q\n got %s\nwant %s", code, stderr, stdout, want)
+		}
+	})
 }

@@ -71,6 +71,10 @@ entry when the lock has one, and the findings, each with its detail. Exit 0 mean
 covered. A refusal uses the code its class already has: 3 for an invocation, 4 for a file that
 cannot be read or is past its limit, 2 for a `lockVersion` this runtime does not read, and for a
 lock that is not the shape `packs lock` writes, the exit `packs verify` gives it, which is 1.
+Under `--config`, a configuration refusal keeps the code every `--config` command gives it: 4 for a
+file that cannot be read or is past its limit, 3 for one that is not acceptable JSON, 1 for one that
+does not satisfy its schema, and 2 for a `configVersion` this runtime does not read. Exit 2 carries
+`status: "unsupported"`; every other refusal carries `status: "error"`.
 
 There is no MCP tool. `packs lock` and `packs verify` have none,
 [ADR-0003](0003-mcp-integration-and-testing-surface.md) sets no rule that every command has one, and a caller

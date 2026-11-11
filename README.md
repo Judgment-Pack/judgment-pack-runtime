@@ -858,7 +858,11 @@ names `document-drift` or `lock-entry-missing`, and with `--config` also `config
 not covered; a lock that is not the shape `packs lock` writes is refused as `packs verify` refuses it
 (`JPS-LOCK-JSON` or `JPS-LOCK-SHAPE`, exit 1, `status: "error"`, not `"invalid"`). Every reader of
 the lock, this one included, refuses a member it does not know, including case and Unicode-fold
-variants of the known names. The answer is
+variants of the known names. A lock whose `lockVersion` this runtime does not read is refused with
+exit 2 and `status: "unsupported"`. Under `--config`, a configuration refusal keeps the code every
+`--config` command gives it: exit 4 for a file that cannot be read or is past its limit, 3 for one
+that is not acceptable JSON, 1 for one that does not satisfy its schema, and 2, with
+`status: "unsupported"`, for a `configVersion` this runtime does not read. The answer is
 about the bytes it read: a host that then runs a copy it did not check has to hold those bytes
 itself.
 
