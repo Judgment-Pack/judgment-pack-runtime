@@ -47,7 +47,8 @@ and the per-host JSON readers.
 declared `specVersion` with `evaluation.SelectContract`, as the CLI and the MCP server do. It then
 admits the pack with `AdmitPack` and runs the pack half of the §8.2 preflight once, through the
 new `AdmittedPack.PackFailure`. It runs the same step `EvaluateAdmitted` now runs for that half
-(the draft-pair check, the pack byte limit and the memoized admission), so the two cannot diverge. The admission is memoized under the options `Evaluate` uses, so `Evaluate` never
+(the draft-pair check, the pack byte limit and the memoized admission), so the two cannot
+diverge. The admission is memoized under the options `Evaluate` uses, so `Evaluate` never
 validates the pack again. A refusal at `Load` carries the engine's class, phase, code and message.
 When the pack failed validation, it also carries the diagnostics `jpack spec validate` reports for
 the same bytes.
@@ -69,8 +70,8 @@ A started validation or evaluation is not interrupted; the documented limits bou
 of the bundled evaluation corpus, from the new `evaluation.CorpusSuiteVersion`. That function reads
 the same schema-checked manifest `RunCorpus` reads.
 
-The package is an eleventh surface that reaches the evaluator. CONFORMANCE.md and README.md name it beside the CLI and MCP surfaces, and the
-enumeration test counts its constructor site.
+The package is an eleventh surface that reaches the evaluator. CONFORMANCE.md and README.md name
+it beside the CLI and MCP surfaces, and the enumeration test counts its constructor site.
 
 ### Consequences
 
