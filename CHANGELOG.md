@@ -2,6 +2,13 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- [docs/mcp-clients.md](docs/mcp-clients.md) says that the audit history listing's selection
+  is not the read verification makes of a line: a line with a duplicate or case-variant member
+  can be selected by the listing while verification does not read it as a record (#367). No
+  behaviour changes.
+
 ## 0.41.0 - 2026-11-11
 
 - Package `sdk` is an experimental in-process Go API over the shared evaluator (#368,

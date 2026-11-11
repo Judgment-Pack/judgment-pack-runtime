@@ -889,7 +889,11 @@ up to 50 matching version-1 records newest first. Empty/invalid JSON/UTF-8,
 unsupported versions and malformed typed members increment `unread`.
 Valid nonmatching records do not. Go's ordinary case folding, duplicate/null
 semantics and unpaired-surrogate replacement affect selection exactly as in
-Desk. Raw selected lines remain the original UTF-8 source text, including CR
+Desk. This selection is not the read `jpack audit verify` makes of a line:
+verification holds a line to its exact member names and refuses one with a
+duplicate member, so a line with a duplicate or case-variant member can be
+selected here while verification does not read it as a record. The listing is
+advisory; what a trail holds is what verification reports. Raw selected lines remain the original UTF-8 source text, including CR
 and whitespace; their digests exclude only LF. No source bytes are normalized.
 An unpaired escape in `raw` is a literal backslash escape inside a JSON string,
 so the projection never emits unsupported Unicode scalars as JSON members.
