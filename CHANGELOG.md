@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.41.0 - 2026-11-11
 
 - Package `sdk` is an experimental in-process Go API over the shared evaluator (#368,
   ADR-0073). `sdk.Load` validates a pack from bytes and admits it once, under the contract the
@@ -54,6 +54,8 @@ All notable changes to tagged releases are documented here.
   cannot be written fails with its record written, unsigned, and a message saying so
   (`JPS-AUDIT-WRITE`, exit 4). A declared rehearsal is not refused. Configurations under
   `"1"` to `"7"` read as before.
+- See the [release notes](docs/releases/v0.41.0.md) for what a host upgrading from
+  `v0.40.0` must know.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
