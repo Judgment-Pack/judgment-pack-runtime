@@ -66,6 +66,10 @@ the member is additive, so `outputVersion` stays `"2"`. Without `--format json` 
 `warning: <message>` on standard error. Over MCP it is in the structured content and the text. The
 disposition, every other payload member, the record and the exit code are unchanged.
 
+A reason that names the key's path names at most its first 512 bytes, cut on a character boundary
+and followed by "…". `packs validate`'s detail is the same value, so it is cut the same way, and a
+path of 512 bytes or fewer is named whole, as before.
+
 Nothing is reported for a rehearsal, a project that names no key, a project with no audit member, or
 a trail that is not chained, which no key signs (`packs validate` reports the check skipped).
 

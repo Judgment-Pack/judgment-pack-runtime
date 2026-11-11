@@ -12,7 +12,8 @@ All notable changes to tagged releases are documented here.
   `--format json` and over MCP, and as a `warning:` line on standard error otherwise.
   The disposition, the record and the exit code are unchanged, and a rehearsal reports
   nothing. The key is read before the run evaluates, so a failure after that read is
-  still not reported.
+  still not reported. A reason names at most the first 512 bytes of the key's path,
+  followed by `…`.
 - configVersion `"8"` adds the audit member's `requireSigning`. When true, those surfaces
   refuse, before evaluating and with nothing recorded, a run whose named key would not
   sign and every run while no key is named (`JPS-AUDIT-SIGNING-REQUIRED`, exit 1). A

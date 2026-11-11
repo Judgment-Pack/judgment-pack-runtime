@@ -183,7 +183,8 @@ read before the run evaluates, so a signature that cannot be written, or a rotat
 between, still leaves a record unsigned, and `--require-signed-through` is the reader's check. It
 binds as `requireReviewed` does, not whoever chooses or can edit the configuration, and whoever can
 write the sidecar can make every decision refused. The warning's reason names the key's path when
-the path is what is refused, as `packs validate` does, and so carries it to an MCP client. No output, diagnostic
+the path is what is refused, as `packs validate` does, and so carries it to an MCP client, cut to its
+first 512 bytes and an ellipsis when it is longer. No output, diagnostic
 or report carries key material: keys are named by `keyId`. `jpack audit verify --public-key` checks
 the signatures against keys the verifier supplies, never against the project's own configuration. It
 refuses a supplied key under which anyone could sign, in `--public-key` and in `--revoked`, and a

@@ -1430,7 +1430,8 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   they would have been. A rehearsal records nothing and reports nothing, and so does a run in a
   project that names no key or keeps a trail that is not chained. What happens after that read is not
   seen: a rotation another process writes before the record, or a signature that cannot be written,
-  leaves the record unsigned with no warning.
+  leaves the record unsigned with no warning. A reason that names the key's path names at most its
+  first 512 bytes, followed by `…`.
 - **Refused on request.** Under configVersion `"8"`, `"requireSigning": true` in the audit member,
   which needs a chained trail, has those surfaces refuse a run instead, before anything is evaluated
   and with nothing recorded, for any node or the composite: a run whose named key would not sign, for

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -70,6 +71,25 @@ func capitalized(text string) string {
 	return strings.ToUpper(text[:1]) + text[1:]
 }
 
+// MaxEchoedKeyPathBytes bounds the signing key's path as a reason repeats it:
+// a longer one is cut, on a character boundary, and ends with an ellipsis, so
+// a reason that reaches a client stays a sentence however long the path.
+const MaxEchoedKeyPathBytes = 512
+
+// echoedKeyPath is a signing key's path as a reason names it: sanitized, and
+// cut to MaxEchoedKeyPathBytes followed by "…" when it is longer.
+func echoedKeyPath(keyPath string) string {
+	text := display.Sanitize(keyPath)
+	if len(text) <= MaxEchoedKeyPathBytes {
+		return text
+	}
+	limit := MaxEchoedKeyPathBytes
+	for limit > 0 && !utf8.RuneStart(text[limit]) {
+		limit--
+	}
+	return text[:limit] + "…"
+}
+
 // signingKeyNamer says which input named the signing key, for a reason.
 func signingKeyNamer(source string) string {
 	if source == SigningKeyFromEnvironment {
@@ -115,7 +135,7 @@ func (p *Project) signing() (*audit.Signer, *Unsigned) {
 		}
 	case err != nil:
 		return nil, &Unsigned{
-			subject:     fmt.Sprintf("the signing key %s names, %s, is refused", named, display.Sanitize(keyPath)),
+			subject:     fmt.Sprintf("the signing key %s names, %s, is refused", named, echoedKeyPath(keyPath)),
 			consequence: "so records are written unsigned",
 			reason:      display.Sanitize(audit.KeyRefusal(err)),
 		}
