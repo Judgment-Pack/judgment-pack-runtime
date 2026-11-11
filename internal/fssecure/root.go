@@ -477,6 +477,16 @@ var (
 	unlockFile    = platformUnlock
 )
 
+// StandInNoLockForTests has every lock this package takes answer that none is
+// available, as a file system that offers none answers, for a test of a writer
+// on such a file system; restore puts the platform's lock back.
+func StandInNoLockForTests() (restore func()) {
+	exclusive, shared := lockExclusive, lockShared
+	lockExclusive = func(*os.File) error { return errNoLock }
+	lockShared = func(*os.File) error { return errNoLock }
+	return func() { lockExclusive, lockShared = exclusive, shared }
+}
+
 // SizeBetweenWrites reads an open file's size at a moment no cooperating writer
 // is writing to it: under the shared lock, which waits for any writer holding
 // the exclusive one, and releases it before returning. A writer holds that lock

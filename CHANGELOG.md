@@ -2,6 +2,31 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- A deciding run whose project names a signing key that will not sign its record now
+  says why (#354, ADR-0071). `experimental evaluate`, `experimental graph evaluate` and
+  the MCP `experimental_evaluate` tool still decide and record, unsigned, and report one
+  `JPS-AUDIT-UNSIGNED` warning whose message is the `packs validate`
+  `audit-signing-key` detail: in a new `diagnostics` member of the payload under
+  `--format json` and over MCP, and as a `warning:` line on standard error otherwise.
+  The disposition, the record and the exit code are unchanged, and a rehearsal reports
+  nothing. What the write itself finds is reported the same way, with its own reason: a
+  rotation written after the key was read, a signature that cannot be written to the
+  sidecar, and a trail no lock can be taken on. A reason names at most the first 512
+  bytes of the key's path, followed by `…`.
+- configVersion `"8"` adds the audit member's `requireSigning`. When true, those surfaces
+  refuse, before evaluating and with nothing recorded, a run whose named key would not
+  sign and every run while no key is named (`JPS-AUDIT-SIGNING-REQUIRED`, exit 1). At the
+  write, under the trail's lock, a run whose key is no longer the key in force or whose
+  trail no lock can be taken on fails with nothing appended, and a run whose signature
+  cannot be written fails with its record written, unsigned, and a message saying so
+  (`JPS-AUDIT-WRITE`, exit 4). A declared rehearsal is not refused. Configurations under
+  `"1"` to `"7"` read as before.
+
+Runtime's conformance claim is stated, in full and only, in
+[CONFORMANCE.md](CONFORMANCE.md).
+
 ## 0.40.0 - 2026-11-10
 
 - Write the persisted evaluation disposition from `result.CanonicalDispositionShape`,

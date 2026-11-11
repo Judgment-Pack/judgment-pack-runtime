@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
@@ -213,7 +214,18 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			"--rehearsal declares one run a rehearsal, as experimental evaluate --rehearsal does (ADR-0028, " +
 			"ADR-0041): the nodes evaluate identically, no record is appended for any node or for the composite, " +
 			"no reviewed set is consulted for the configuration, the graph or any node's pack, and the payload " +
-			"carries \"rehearsal\": true.",
+			"carries \"rehearsal\": true. A recorded run whose project names a signing key that will not sign " +
+			"its records, refused, not the key in force, or not shown to be because the signature sidecar " +
+			"cannot be read, as read before any node evaluates, is recorded " +
+			"unsigned and reports the reason packs validate gives as a JPS-AUDIT-UNSIGNED warning, in the " +
+			"payload's diagnostics member under --format json and on standard error otherwise, and a rotation " +
+			"written since that read, a signature that cannot be written, or a trail no lock can be taken on is " +
+			"reported the same way, with its own reason; from configVersion \"8\" the audit member's " +
+			"requireSigning refuses such a run instead, and every run while no signing key is named, before any " +
+			"node evaluates and with nothing recorded (JPS-AUDIT-SIGNING-REQUIRED, ADR-0071), and fails one whose " +
+			"write finds its key no longer in force or no lock, with nothing appended for any node or the " +
+			"composite, or cannot write its signatures, with the records written unsigned (JPS-AUDIT-WRITE); a " +
+			"rehearsal is neither warned nor refused.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			const commandName = "experimental graph evaluate"
@@ -282,8 +294,12 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			// verb does, and its payload says what it is.
 			var reviewed *bool
 			var underLaw *result.ReviewedSet
+			// The writer, and the reason the run's records will be unsigned,
+			// read once with it, before any node evaluates (ADR-0071).
+			var auditWriter *audit.Writer
+			var unsigned *project.Unsigned
 			if !rehearsal {
-				auditWriter := loaded.AuditWriter()
+				auditWriter, unsigned = loaded.DecisionWriter()
 				// One read of the reviewed set for the whole run. The configuration
 				// and the graph document are checked against it here; each node's
 				// pack is checked against the same retained revision where its bytes
@@ -301,6 +317,12 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 				}
 				if lockFailure := lock.RequireReviewed(loaded, reviewed, declared); lockFailure != nil {
 					return a.lockFailure(commandName, format, lockFailure)
+				}
+				// A project that requires signed records refuses a run its
+				// named key would not sign, before any node evaluates, so no
+				// record is appended for any node or the composite.
+				if failure := loaded.RequireSigning(unsigned); failure != nil {
+					return a.projectFailure(commandName, format, failure)
 				}
 				if reviewed != nil && *reviewed {
 					underLaw = set.Provenance()
@@ -320,6 +342,11 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			output.Rehearsal = rehearsal
 			output.Reviewed = reviewed
 			output.ReviewedSet = underLaw
+			// The run's records were written inside Evaluate, so the warning,
+			// of what was written, changes none of them.
+			if reason := loaded.UnsignedAfter(auditWriter, unsigned); reason != nil {
+				output.Diagnostics = append(output.Diagnostics, reason.Diagnostic())
+			}
 			if err := a.renderGraphEvaluation(format, output); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}

@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -140,50 +139,27 @@ func (p *Project) checkAuditDir() result.PackCheck {
 
 // checkSigningKey reports whether the named signing key signs the trail's
 // records. A key that does not leaves them unsigned rather than the decisions
-// failed, so this check is where that is said. The detail names the key by
-// keyId and never by anything read from its file.
+// failed, unless the audit member sets requireSigning (ADR-0071), so this
+// check is where that is said; a deciding run reports the same reason as a
+// warning, or as its refusal. The detail names the key by keyId and never by
+// anything read from its file.
 func (p *Project) checkSigningKey() result.PackCheck {
 	check := result.PackCheck{Name: CheckAuditSigningKey, Status: result.PackCheckPassed}
-	keyPath, source := p.SigningKeyPath()
-	named := "the audit member's signingKey"
-	if source == SigningKeyFromEnvironment {
-		named = audit.SigningKeyEnv
-	}
+	_, source := p.SigningKeyPath()
+	named := signingKeyNamer(source)
 	expected, expectedSource := p.ExpectedSigningKey()
-	expectedNamed := "the audit member's signingPublicKey"
-	if expectedSource == SigningKeyFromEnvironment {
-		expectedNamed = audit.SigningPublicKeyEnv
-	}
 	if !p.Config.Audit.Chains() {
 		check.Status = result.PackCheckSkipped
 		check.Detail = fmt.Sprintf("The trail is not chained, so the key %s names signs nothing: a signature binds a record's trail and sequence.", named)
 		return check
 	}
-	signer, err := p.SigningKey()
+	signer, unsigned := p.signing()
 	switch {
-	case errors.Is(err, audit.ErrExpectedKeyMalformed), errors.Is(err, audit.ErrKeyNotExpected):
-		// What is refused is which key it is, not where it is, so neither the
-		// path nor either key is named: the reason can be relayed as it is.
+	case unsigned != nil:
 		check.Status = result.PackCheckFailed
-		check.Detail = fmt.Sprintf("The signing key %s names is refused, so records are written unsigned: %s (%s names the expected key).", named, audit.KeyRefusal(err), expectedNamed)
-		return check
-	case err != nil:
-		check.Status = result.PackCheckFailed
-		check.Detail = fmt.Sprintf("The signing key %s names, %s, is refused, so records are written unsigned: %s.", named, display.Sanitize(keyPath), display.Sanitize(audit.KeyRefusal(err)))
-		return check
-	}
-	writer := audit.NewWriter(p.root, p.Config.Audit.Dir, true)
-	writer.SignWith(signer)
-	inForce, err := writer.KeyInForce()
-	switch {
-	case err != nil:
-		check.Status = result.PackCheckFailed
-		check.Detail = fmt.Sprintf("The signature sidecar could not be read to see whether key %s is the key in force, so records may be written unsigned.", signer.KeyID())
-	case !inForce:
-		check.Status = result.PackCheckFailed
-		check.Detail = fmt.Sprintf("Key %s is not the key in force in the signature sidecar, so it signs nothing and records are written unsigned: rotate to it from the key in force with jpack audit key rotate, or name the key in force.", signer.KeyID())
+		check.Detail = unsigned.Detail()
 	case expected != nil:
-		check.Detail = fmt.Sprintf("Chained records are signed with key %s, named by %s; it is the expected key %s names.", signer.KeyID(), named, expectedNamed)
+		check.Detail = fmt.Sprintf("Chained records are signed with key %s, named by %s; it is the expected key %s names.", signer.KeyID(), named, expectedKeyNamer(expectedSource))
 	default:
 		check.Detail = fmt.Sprintf("Chained records are signed with key %s, named by %s.", signer.KeyID(), named)
 	}

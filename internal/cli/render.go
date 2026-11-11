@@ -734,6 +734,7 @@ func (a *App) renderEvaluation(format string, output result.Evaluation) error {
 	if format == "json" {
 		return a.writeJSON(output)
 	}
+	a.printWarnings(output.Diagnostics)
 	fmt.Fprintln(a.out, "EXPERIMENTAL SURFACE evaluation (claim and scope: CONFORMANCE.md; this result authorizes nothing)")
 	if output.Rehearsal {
 		// The one line mirrors the payload's own rehearsal member: this run was
@@ -854,6 +855,15 @@ func (a *App) printReviewed(reviewed *bool, set *result.ReviewedSet) {
 	fmt.Fprintln(a.out, "reviewed set: NOT applied; this run evaluated a draft, not the law the project's lock declares")
 }
 
+// printWarnings puts a result's warnings on standard error, one line each, as
+// an operational error's message is put there: under --format json they are
+// the payload's diagnostics member and nothing else (ADR-0071).
+func (a *App) printWarnings(diagnostics []result.Diagnostic) {
+	for _, diagnostic := range diagnostics {
+		fmt.Fprintln(a.errOut, "warning:", display.Sanitize(diagnostic.Message))
+	}
+}
+
 // renderGraphEvaluation reports one graph run. The label leads for the same
 // reason every experimental label does, the composite headline echoes the
 // result node, and every requested handoff is printed before the per-node
@@ -862,6 +872,7 @@ func (a *App) renderGraphEvaluation(format string, output result.GraphEvaluation
 	if format == "json" {
 		return a.writeJSON(output)
 	}
+	a.printWarnings(output.Diagnostics)
 	fmt.Fprintf(a.out, "EXPERIMENTAL SURFACE graph evaluation: %s\n", output.Label)
 	if output.Rehearsal {
 		fmt.Fprintln(a.out, "REHEARSAL: declared not a decision; no audit record was appended and no reviewed set was consulted")

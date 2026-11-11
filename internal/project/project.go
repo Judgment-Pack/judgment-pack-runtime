@@ -74,12 +74,13 @@ const (
 	// program knows or is not. "2" added the experimental graphs member
 	// (ADR-0017), "3" the audit member (ADR-0018), "4" the requireReviewed
 	// member (ADR-0044), "5" the requireComparableFacts member (ADR-0046), "6"
-	// the audit member's chain and signingKey (ADR-0047) and "7" the audit
-	// member's signingPublicKey; the earlier shapes, without them, are still
-	// read — see SupportedConfigVersions.
-	ConfigVersion = "7"
+	// the audit member's chain and signingKey (ADR-0047), "7" the audit
+	// member's signingPublicKey and "8" its requireSigning (ADR-0071); the
+	// earlier shapes, without them, are still read — see
+	// SupportedConfigVersions.
+	ConfigVersion = "8"
 	// SchemaID is the embedded schema's own $id.
-	SchemaID = "urn:judgmentpack:runtime:jpack-config:7"
+	SchemaID = "urn:judgmentpack:runtime:jpack-config:8"
 	// MaxConfigBytes bounds one configuration document. It is an index of a
 	// project's packs, not a pack.
 	MaxConfigBytes = int64(1 << 20)
@@ -124,11 +125,12 @@ var schemaBytes []byte
 // A "1" configuration is exactly a "2" without graphs, a "2" exactly a "3"
 // without audit, a "3" exactly a "4" without requireReviewed, a "4" exactly a
 // "5" without requireComparableFacts, a "5" exactly a "6" whose audit
-// member says neither chain nor signingKey, and a "6" exactly a "7" whose
-// audit member names no signingPublicKey, so all seven are read by one schema
-// and each version gate lives in that schema's own bytes.
+// member says neither chain nor signingKey, a "6" exactly a "7" whose audit
+// member names no signingPublicKey, and a "7" exactly an "8" whose audit
+// member says no requireSigning, so all eight are read by one schema and each
+// version gate lives in that schema's own bytes.
 func SupportedConfigVersions() []string {
-	return []string{"1", "2", "3", "4", "5", "6", ConfigVersion}
+	return []string{"1", "2", "3", "4", "5", "6", "7", ConfigVersion}
 }
 
 // Schema returns the exact embedded configuration schema bytes.
@@ -230,12 +232,20 @@ type Graph struct {
 // TimestampAuthority is the address of the RFC 3161 authority jpack audit
 // stamp asks (ADR-0047 §2a, C2); nothing on the decision path asks it. It
 // needs configVersion "6" and a chained trail.
+//
+// RequireSigning makes the deciding surfaces refuse, before evaluating and
+// with nothing recorded, a decision whose record the named key would not sign,
+// and every decision while no key is named (ADR-0071 §2); a declared
+// rehearsal is not refused. Absent is false: such a record is written
+// unsigned, and the run reports why as a warning. It needs configVersion "8"
+// and a chained trail.
 type Audit struct {
 	Dir                string  `json:"dir"`
 	Chain              *bool   `json:"chain,omitempty"`
 	SigningKey         string  `json:"signingKey,omitempty"`
 	SigningPublicKey   *string `json:"signingPublicKey,omitempty"`
 	TimestampAuthority string  `json:"timestampAuthority,omitempty"`
+	RequireSigning     bool    `json:"requireSigning,omitempty"`
 }
 
 // Chains says whether this audit member asks for a chained trail: yes unless it
@@ -249,7 +259,8 @@ func (a *Audit) Chains() bool {
 // than a silently ignored intention. Graphs exists only from configVersion
 // "2", Audit only from "3", RequireReviewed only from "4",
 // RequireComparableFacts only from "5", Audit's Chain and SigningKey only
-// from "6" and Audit's SigningPublicKey only under "7" — the
+// from "6", Audit's SigningPublicKey only from "7" and Audit's
+// RequireSigning only under "8" — the
 // schema's own version gates hold that, each stated once in its bytes. Audit is a pointer because a
 // single-object member has no other way to tell "declared, with defaults"
 // from "absent"; a map member gets that distinction for free.
@@ -1104,7 +1115,9 @@ func (p *Project) WriteLock(contents []byte) error {
 // A chained trail is signed when a signing key is named and can be used
 // (ADR-0047 §2b). A key that cannot be, refused, unreadable or not the
 // expected key, leaves the records unsigned rather than the decisions failed;
-// packs validate reports why, as the audit-signing-key check.
+// packs validate reports why, as the audit-signing-key check. A deciding
+// surface takes its writer from DecisionWriter instead, which also says why
+// (ADR-0071).
 func (p *Project) AuditWriter() *audit.Writer {
 	if p == nil || p.Config.Audit == nil {
 		return nil
