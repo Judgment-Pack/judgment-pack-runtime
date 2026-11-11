@@ -80,7 +80,7 @@ func TestBothCorporaThroughThePublicAPI(t *testing.T) {
 				evaluated, err := loaded.Evaluate(context.Background(), row.Facts, evidence)
 				if row.ExpectedErrorClass != "" {
 					refusal, ok := err.(*Refusal)
-					if !ok || refusal.Class != row.ExpectedErrorClass || (row.ExpectedErrorPhase != "" && refusal.Phase != row.ExpectedErrorPhase) {
+					if !ok || reported.Status != "passed" || refusal.Class != row.ExpectedErrorClass || (row.ExpectedErrorPhase != "" && refusal.Phase != row.ExpectedErrorPhase) {
 						t.Fatalf("%s: %v, want class %s", row.ID, err, row.ExpectedErrorClass)
 					}
 					continue

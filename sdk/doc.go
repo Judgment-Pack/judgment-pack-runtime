@@ -40,7 +40,7 @@
 // Load and Pack.Evaluate return one of three kinds of error:
 //
 //   - a *Refusal, for a refusal of the caller's input, carrying the JPS Core
-//     §8.4 class and phase (empty only for a "profile-unsupported" pack) and
+//     §8.4 class and phase (the class is empty only for a "profile-unsupported" pack) and
 //     the code and message the CLI reports;
 //   - an error wrapping ErrInternal, for a fault of this runtime, such as
 //     bundled artifacts that fail their integrity check; it is never a

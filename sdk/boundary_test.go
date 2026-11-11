@@ -232,7 +232,9 @@ func TestNoWorkingDirectoryOrEnvironmentIsConsulted(t *testing.T) {
 	}
 	child := exec.Command(executable, "-test.run=^$")
 	child.Dir = dir
-	child.Env = []string{ambientChild + "=1", "JPACK_CONFIG=" + broken}
+	// GOCOVERDIR is for the test binary alone, which warns on stderr without it
+	// when built with -cover; the runtime reads none of these.
+	child.Env = []string{ambientChild + "=1", "JPACK_CONFIG=" + broken, "GOCOVERDIR=" + t.TempDir()}
 	output, err := child.CombinedOutput()
 	if err != nil {
 		t.Fatalf("child: %v\n%s", err, output)

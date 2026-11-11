@@ -81,8 +81,8 @@ it beside the CLI and MCP surfaces, and the enumeration test counts its construc
 - Good, because no package of this module in the package's import closure imports anything that
   reaches files, the environment or the network, and the only third-party packages in it are the
   schema validator's, whose schema loading the validation package keeps offline. Tests hold this:
-  one reads the import closure from source, and one evaluates from a child process with an empty
-  environment and an unreadable project file in its working directory.
+  one reads the import closure from source, and one evaluates from a child process whose
+  environment names an unreadable project file, with that file in its working directory.
 - Bad, because the API is a new public surface: changing it is a release-note item, and from 1.0 a
   compatibility promise.
 - Bad, because `Evaluation.JSON` reports the module's compiled-in tool version, which an importing
