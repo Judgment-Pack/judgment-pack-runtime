@@ -1,14 +1,17 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/graph"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -53,7 +56,8 @@ func (a *App) packsCommand() *cobra.Command {
 	// --config is registered on the seven subcommands that read a configuration
 	// rather than on this one as a persistent flag. packs schema prints an
 	// embedded artifact and touches no configuration; a flag inherited into its
-	// help would promise an effect it does not have.
+	// help would promise an effect it does not have. packs covers registers a
+	// --config of its own that selects no project and has its own usage line.
 	packs.AddCommand(
 		a.packsListCommand(),
 		a.packsValidateCommand(),
@@ -61,6 +65,7 @@ func (a *App) packsCommand() *cobra.Command {
 		a.packsSuggestCommand(),
 		a.packsLockCommand(),
 		a.packsVerifyCommand(),
+		a.packsCoversCommand(),
 		a.packsLintCommand(),
 		a.packsSchemaCommand(),
 	)
@@ -421,6 +426,202 @@ func (a *App) packsVerifyCommand() *cobra.Command {
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	return command
+}
+
+// packsCoversCommand answers whether a reviewed-set lock covers one pack's or
+// one graph's exact bytes, with no project opened (ADR-0072). It is the
+// question a host asks that froze a pack outside the project and must hold it
+// to the project's reviewed set without becoming a second reader of the lock.
+//
+// It is its own verb rather than a form of packs verify because the two take
+// different inputs and answer different questions. packs verify selects a
+// project (--config, then $JPACK_CONFIG, then ./jpack.json), finds the lock by
+// convention beside it, and re-reads every declared document. This command
+// selects nothing: the lock and the document are named files, and --config,
+// when given, is one more file to compare and never a project to open. One
+// verb whose --config meant either thing, depending on whether --pack was
+// also given, would open a project for an invocation that forgot one flag.
+func (a *App) packsCoversCommand() *cobra.Command {
+	format := "human"
+	lockPath := ""
+	id := ""
+	packPath := ""
+	graphID := ""
+	graphPath := ""
+	configPath := ""
+	command := &cobra.Command{
+		Use:   "covers",
+		Short: "Check that a reviewed-set lock covers one pack's or graph's exact bytes, without opening a project",
+		Long: "Answer whether a reviewed-set lock (ADR-0019) covers one document's exact bytes, without opening a " +
+			"project (ADR-0072): --lock names the lock file, --id the pack's decision id in it and --pack the file " +
+			"holding the pack's bytes, or --graph-id and --graph for a graph. The lock is decoded by the reader every " +
+			"deciding surface uses, within the same byte limit, and the SHA-256 of the bytes read is compared with " +
+			"the lock's entry for the id. lock-entry-missing is reported when the lock has no entry for the id, and " +
+			"document-drift when the bytes differ from the entry's digest. No configuration is looked for: neither " +
+			"$JPACK_CONFIG nor ./jpack.json is read. With --config, that one file is loaded as every --config command " +
+			"loads it, nothing it declares is read, and the report also names config-drift when its bytes are not the " +
+			"configuration the lock pins, path-mismatch when the path it declares for the id is not the path the " +
+			"entry records, and locked-but-undeclared when it does not declare the id. These are the names, and " +
+			"where the condition is the same the words, packs verify reports. Nothing is evaluated, written or " +
+			"recorded. Every file is read as one bounded regular file, never through a final symbolic link, and a " +
+			"file that cannot be read is refused rather than reported as not covered. Exit 0 when the lock covers the " +
+			"bytes and 1 when it does not. A lock or configuration that is not the shape its reader accepts is " +
+			"refused with the code packs verify and every --config command give it, which for a malformed lock is " +
+			"also 1, so the payload's status says which: invalid with findings, or error with a diagnostic.",
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			const commandName = "packs covers"
+			if err := validateFormat(format); err != nil {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			invocation := func(message string) error {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-COVERS", message)
+			}
+			if lockPath == "" {
+				return invocation("--lock names the reviewed-set lock to compare against, and is required.")
+			}
+			// One document per run, named by its id in the reviewed set and by
+			// the file holding its bytes. A flag of the other kind beside it is
+			// refused rather than ignored: a run that quietly dropped --graph
+			// would answer a question the caller did not ask.
+			kind, documentID, documentPath, documentFlag, limit := "", "", "", "", int64(0)
+			switch {
+			case id != "" && graphID != "":
+				return invocation("--id names a pack and --graph-id a graph; name one document per run.")
+			case id != "" && graphPath != "":
+				return invocation("--graph goes with --graph-id; a pack's bytes are given with --pack.")
+			case graphID != "" && packPath != "":
+				return invocation("--pack goes with --id; a graph's bytes are given with --graph.")
+			case id != "" && packPath != "":
+				kind, documentID, documentPath, documentFlag, limit = "pack", id, packPath, "--pack", carrier.HardMaxBytes
+			case graphID != "" && graphPath != "":
+				kind, documentID, documentPath, documentFlag, limit = "graph", graphID, graphPath, "--graph", graph.MaxGraphBytes
+			default:
+				return invocation("Name the document to check: --id and --pack for a pack, or --graph-id and --graph for a graph.")
+			}
+			for _, input := range []struct{ flag, value string }{{"--lock", lockPath}, {documentFlag, documentPath}, {"--config", configPath}} {
+				if input.value == "" {
+					continue
+				}
+				if input.value == "-" {
+					return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT",
+						input.flag+" takes a file path, not -: packs covers reads no standard input.")
+				}
+				if strings.Contains(input.value, "://") || fssecure.IsRemotePath(input.value) {
+					return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT",
+						"URL and remote filesystem inputs are not supported for "+input.flag+"; use a local file.")
+				}
+			}
+			// The lock is read within the bound the project reader applies and
+			// decoded by the same function, so a lock a project would refuse is
+			// refused here in the same words.
+			lockBytes, err := a.readInput(lockPath, project.MaxLockBytes, "the --lock file")
+			if errors.Is(err, fssecure.ErrTooLarge) {
+				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-LOCK-BYTE-LIMIT",
+					fmt.Sprintf("The reviewed-set lock %s exceeds the %d-byte limit every reader of this file applies; nothing was compared.",
+						display.Sanitize(lockPath), project.MaxLockBytes))
+			}
+			if err != nil {
+				return a.operational(commandName, format, result.ExitIO, "JPS-LOCK-READ",
+					fmt.Sprintf("The reviewed-set lock %s could not be read as one bounded regular file; nothing was compared.", display.Sanitize(lockPath)))
+			}
+			set, lockFailure := lock.Decode(lockPath, lockBytes)
+			if lockFailure != nil {
+				return a.lockFailure(commandName, format, lockFailure)
+			}
+			// A document that cannot be read is a refusal and never a finding:
+			// not covered is a statement about bytes, and there are none.
+			documentBytes, err := a.readInput(documentPath, limit, "the "+documentFlag+" file")
+			if errors.Is(err, fssecure.ErrTooLarge) {
+				return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-INPUT-BYTE-LIMIT",
+					fmt.Sprintf("The %s file %s exceeds the %d-byte limit a project reads a declared %s within; nothing was compared.",
+						documentFlag, display.Sanitize(documentPath), limit, kind))
+			}
+			if err != nil {
+				return a.operational(commandName, format, result.ExitIO, "JPS-INPUT-READ",
+					fmt.Sprintf("The %s file %s could not be read as one bounded regular file; nothing was compared.", documentFlag, display.Sanitize(documentPath)))
+			}
+			// --config is loaded as the file it names and nothing else: never
+			// through Locate, so neither $JPACK_CONFIG nor ./jpack.json is
+			// consulted, and nothing the configuration declares is read.
+			var loaded *project.Project
+			if configPath != "" {
+				opened, failure := project.Load(configPath)
+				if failure != nil {
+					if failure.Code == "JPS-PROJECT-CONFIG-READ" {
+						// The project reader's sentence steers at $JPACK_CONFIG,
+						// which this command never reads.
+						failure.Message = fmt.Sprintf("The --config file %s could not be read as one bounded regular file; nothing was compared.", display.Sanitize(configPath))
+					}
+					return a.projectFailure(commandName, format, failure)
+				}
+				defer opened.Close()
+				loaded = opened
+			}
+			subject := lock.AppliedPack(documentID, documentBytes)
+			if kind == "graph" {
+				subject = lock.AppliedGraph(documentID, lock.Digest(documentBytes))
+			}
+			output := coverageReport(lockPath, configPath, set, subject, lock.Covers(set.Document, subject, loaded), commandName)
+			if err := a.renderPackLockCoverage(format, output); err != nil {
+				return &handledExit{code: result.ExitIO}
+			}
+			code := result.ExitSuccess
+			if output.Status != "valid" {
+				code = result.ExitInvalid
+			}
+			return &handledExit{code: code}
+		},
+	}
+	command.Flags().StringVar(&format, "format", format, "output format: human or json")
+	command.Flags().StringVar(&lockPath, "lock", lockPath, "path to the reviewed-set lock to compare against (required)")
+	command.Flags().StringVar(&id, "id", id, "the pack's decision id in the reviewed set; requires --pack")
+	command.Flags().StringVar(&packPath, "pack", packPath, "path to the file holding the pack's exact bytes; requires --id")
+	command.Flags().StringVar(&graphID, "graph-id", graphID, "the graph's id in the reviewed set, instead of --id; requires --graph")
+	command.Flags().StringVar(&graphPath, "graph", graphPath, "path to the file holding the graph document's exact bytes; requires --graph-id")
+	command.Flags().StringVar(&configPath, "config", configPath, "path to a jpack.json to compare as well; it selects no project, and $JPACK_CONFIG and ./jpack.json are never read")
+	return command
+}
+
+// coverageReport composes the payload packs covers writes. The findings are
+// the lock package's, in its order, and any one of them makes the status
+// invalid.
+func coverageReport(lockPath, configPath string, set *lock.Set, subject lock.Applied, checks []lock.Check, command string) result.PackLockCoverage {
+	output := result.PackLockCoverage{
+		OutputVersion: result.OutputVersion,
+		Tool:          result.CurrentTool(),
+		Command:       command,
+		Status:        "valid",
+		Kind:          result.ProjectKind,
+		LockPath:      lockPath,
+		LockDigest:    set.Digest,
+		LockVersion:   set.Document.LockVersion,
+		ConfigDigest:  set.Document.Config.Digest,
+		ConfigPath:    configPath,
+		ID:            subject.ID,
+		Findings:      []result.LockFinding{},
+	}
+	entries := set.Document.Packs
+	if subject.Kind == "graph" {
+		entries = set.Document.Graphs
+		output.GraphDigest = subject.Digest
+	} else {
+		output.PackDigest = subject.Digest
+	}
+	if entry, ok := entries[subject.ID]; ok {
+		output.Entry = &result.LockedID{Kind: subject.Kind, ID: subject.ID, Path: entry.Path, Digest: entry.Digest}
+	}
+	for _, check := range checks {
+		output.Findings = append(output.Findings, result.LockFinding{
+			Name:   check.Name,
+			Kind:   check.Kind,
+			ID:     check.ID,
+			Path:   check.Path,
+			Detail: check.Detail,
+		})
+		output.Status = "invalid"
+	}
+	return output
 }
 
 // lockReport composes the payload packs lock writes: the reviewed set as it was

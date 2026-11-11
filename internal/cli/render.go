@@ -531,6 +531,50 @@ func (a *App) renderPackLockVerification(format string, output result.PackLockVe
 	return nil
 }
 
+// renderPackLockCoverage reports whether one lock covers one document's bytes.
+// Both digests are printed either way, so a reader comparing the two by eye
+// does not have to run anything else to see them.
+func (a *App) renderPackLockCoverage(format string, output result.PackLockCoverage) error {
+	if format == "json" {
+		return a.writeJSON(output)
+	}
+	kind, digest := "pack", output.PackDigest
+	if output.GraphDigest != "" {
+		kind, digest = "graph", output.GraphDigest
+	}
+	if output.Status == "valid" {
+		fmt.Fprintf(a.out, "covered: the reviewed set's entry for the %s %s pins these exact bytes\n", kind, display.Sanitize(output.ID))
+	} else {
+		fmt.Fprintf(a.out, "invalid: the reviewed set does not cover these bytes of the %s %s (%d difference(s))\n",
+			kind, display.Sanitize(output.ID), len(output.Findings))
+	}
+	fmt.Fprintf(a.out, "- bytes: %s\n", display.Sanitize(digest))
+	if output.Entry != nil {
+		fmt.Fprintf(a.out, "- entry: %s (%s)\n", display.Sanitize(output.Entry.Digest), display.Sanitize(output.Entry.Path))
+	}
+	line := fmt.Sprintf("- configuration: %s, as the lock pins it", display.Sanitize(output.ConfigDigest))
+	if output.ConfigPath != "" {
+		line += fmt.Sprintf(", compared with %s", display.Sanitize(output.ConfigPath))
+	}
+	fmt.Fprintln(a.out, line)
+	for _, finding := range output.Findings {
+		subject := display.Sanitize(finding.Path)
+		if finding.ID != "" {
+			subject = display.Sanitize(finding.ID)
+			if finding.Path != "" {
+				subject += " (" + display.Sanitize(finding.Path) + ")"
+			}
+		}
+		fmt.Fprintf(a.out, "- %s: %s — %s\n", display.Sanitize(finding.Name), subject, display.Sanitize(finding.Detail))
+	}
+	if output.Status != "valid" {
+		fmt.Fprintln(a.out, "Run jpack packs lock to declare the amendment, or restore the reviewed bytes.")
+	}
+	fmt.Fprintf(a.out, "%s (lockVersion %s, %s) · %s\n", display.Sanitize(output.LockPath), display.Sanitize(output.LockVersion),
+		display.Sanitize(output.LockDigest), display.Sanitize(output.Kind))
+	return nil
+}
+
 // renderPackTest reports one project matrix run. The label leads the output for
 // the same reason the corpus label does: a reader who sees only a pass count
 // must not read anything about this runtime's conformance into it.

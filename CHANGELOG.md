@@ -4,6 +4,18 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- `jpack packs covers --lock FILE --id ID --pack FILE` answers whether a reviewed-set
+  lock covers a pack's exact bytes without opening a project (#364, ADR-0072):
+  `--graph-id` and `--graph` ask the same of a graph. It reads the lock with the
+  decoder and 1 MiB bound every reader of the file applies (`lock.Decode`, which
+  `lock.Open` now calls), compares the SHA-256 of the file's bytes with the lock's
+  entry, and exits 0 when they agree and 1 with `document-drift` or
+  `lock-entry-missing` when they do not. With `--config` it also names `config-drift`,
+  `path-mismatch` and `locked-but-undeclared` for that id, in `packs verify`'s words.
+  It evaluates, writes and records nothing, and never reads standard input. A lock,
+  document or configuration it cannot read, or one past its limit, is refused with
+  exit 4 and never reported as not covered; a lock that is not the shape `packs lock`
+  writes is refused as `packs verify` refuses it.
 - A deciding run whose project names a signing key that will not sign its record now
   says why (#354, ADR-0071). `experimental evaluate`, `experimental graph evaluate` and
   the MCP `experimental_evaluate` tool still decide and record, unsigned, and report one

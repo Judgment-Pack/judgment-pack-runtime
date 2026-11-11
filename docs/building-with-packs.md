@@ -510,6 +510,21 @@ The file's *presence* is the whole of the opt-in. No `configVersion` moves, noth
 points at it — a configuration that named its own lock could rename it — and a project without one
 behaves exactly as it did before this existed.
 
+A host that runs a pack outside the project, from a copy it took earlier, asks the lock about that
+copy instead of the tree ([ADR-0072](adr/0072-lock-coverage-without-a-project.md)):
+
+```bash
+jpack packs covers --lock jpack.lock.json --id intake --pack frozen-intake.json
+```
+
+It opens no project. It reads the lock with the same decoder and byte limit as every other reader
+of it, hashes the file's exact bytes, and exits `0` when the lock's entry for `intake` pins them and
+`1` with `document-drift` or `lock-entry-missing` when it does not. With `--config jpack.json` it
+also names `config-drift`, `path-mismatch` and `locked-but-undeclared` for that one id, as
+`packs verify` would. `--graph-id` with `--graph` asks the same of a graph. A file it cannot read,
+or a lock that is not the shape `packs lock` writes, is a refusal with `status: "error"`, never a
+"not covered".
+
 ### Gate it in CI
 
 ```bash
