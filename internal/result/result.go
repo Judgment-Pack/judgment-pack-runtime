@@ -1356,6 +1356,35 @@ type LockFinding struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// PackLockCoverage is one packs covers report: whether one reviewed-set lock
+// covers one pack's or one graph's exact bytes, with no project opened
+// (ADR-0072).
+//
+// LockDigest names the exact lock bytes compared against, as an audit record's
+// reviewedSet does, and ConfigDigest is the configuration digest that lock
+// pins, not a digest of any file this run read. ConfigPath is present when
+// --config named a configuration to compare as well. PackDigest or
+// GraphDigest, never both, is the SHA-256 of the bytes read, and Entry is the
+// lock's entry for the id when it has one. Findings use the names packs
+// verify reports.
+type PackLockCoverage struct {
+	OutputVersion string        `json:"outputVersion"`
+	Tool          Tool          `json:"tool"`
+	Command       string        `json:"command"`
+	Status        string        `json:"status"`
+	Kind          string        `json:"kind"`
+	LockPath      string        `json:"lockPath"`
+	LockDigest    string        `json:"lockDigest"`
+	LockVersion   string        `json:"lockVersion"`
+	ConfigDigest  string        `json:"configDigest"`
+	ConfigPath    string        `json:"configPath,omitempty"`
+	ID            string        `json:"id"`
+	PackDigest    string        `json:"packDigest,omitempty"`
+	GraphDigest   string        `json:"graphDigest,omitempty"`
+	Entry         *LockedID     `json:"entry,omitempty"`
+	Findings      []LockFinding `json:"findings"`
+}
+
 // PackTestEntry is one pack's matrix run. Rows reuse the corpus row type,
 // because a project matrix row is compared exactly as a corpus row is: the RFC
 // 8785 canonical disposition byte for byte, or the expected §8.4 error class and

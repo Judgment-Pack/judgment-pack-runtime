@@ -100,6 +100,7 @@ jpack packs test [--id X] [--require-matrix]   (EXPERIMENTAL SURFACE; claim: CON
 jpack packs suggest [--id X] [--base ROW] [--write F|-] [--max N] [--include-hugs]   (candidate row INPUTS, never rows; ADR-0024)
 jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
 jpack packs verify      (check the project against that reviewed set)
+jpack packs covers --lock F (--id X --pack F | --graph-id X --graph F) [--config F]   (does the lock's entry pin these exact bytes? opens no project; ADR-0072)
 jpack packs lint [--producers M]   (every consulted pointer has a producer; ADR-0022)
 jpack packs schema
 jpack mcp
@@ -837,6 +838,33 @@ run reads nor can edit it or its lock, such as an agent limited to the tools of 
 someone else launched. It cannot bind whoever chooses the configuration (`--config`, `JPACK_CONFIG`, the working
 directory) or can edit `jpack.json` or the lock, and turning it off is itself an edit the lock
 records, so a by-id run is refused until the project locks again.
+
+**Bytes a host already holds.** A host that copied a pack out of a project, a runner that froze it
+before a run for instance, can ask whether the reviewed set covers those exact bytes without opening
+the project:
+
+```bash
+jpack packs covers --lock jpack.lock.json --id intake --pack frozen.json --format json
+```
+
+It reads the lock as the project reader does (the same decoder and its 1 MiB bound), takes the
+SHA-256 of the file's exact bytes, and compares it with the lock's entry for that id
+([ADR-0072](docs/adr/0072-lock-coverage-without-a-project.md)). It evaluates nothing, reads no
+`jpack.json` unless `--config` names one, and writes and records nothing. Exit 0 is covered; exit 1
+names `document-drift` or `lock-entry-missing`, and with `--config` also `config-drift`,
+`path-mismatch` and `locked-but-undeclared` for that id, in `packs verify`'s words. `--graph-id` and
+`--graph` ask the same of a graph. A lock, document or configuration it cannot read is refused
+(`status: "error"`, exit 4 for a file that cannot be read or is past its limit), never reported as
+not covered; a lock that is not the shape `packs lock` writes is refused as `packs verify` refuses it
+(`JPS-LOCK-JSON` or `JPS-LOCK-SHAPE`, exit 1, `status: "error"`, not `"invalid"`). Every reader of
+the lock, this one included, refuses a member it does not know, including case and Unicode-fold
+variants of the known names. A lock whose `lockVersion` this runtime does not read is refused with
+exit 2 and `status: "unsupported"`. Under `--config`, a configuration refusal keeps the code every
+`--config` command gives it: exit 4 for a file that cannot be read or is past its limit, 3 for one
+that is not acceptable JSON, 1 for one that does not satisfy its schema, and 2, with
+`status: "unsupported"`, for a `configVersion` this runtime does not read. The answer is
+about the bytes it read: a host that then runs a copy it did not check has to hold those bytes
+itself.
 
 **What it is not.** It is not a wall. Anything that can edit a pack can run `packs lock` again, and
 this runtime cannot tell that from an author amending policy on purpose — they are the same act.

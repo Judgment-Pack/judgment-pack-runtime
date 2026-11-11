@@ -167,3 +167,4 @@ authority, and following it confers no conformance status on anything.
 | [0069](0069-bound-history-reads-by-window.md) | Bound history reads by window independently of source size | accepted |
 | [0070](0070-publish-owner-taxonomy-and-method-skills.md) | Publish truthful owner taxonomy and digest-addressed method skills | accepted; effective upon required CI and introducing PR merge |
 | [0071](0071-say-why-a-record-is-unsigned-and-let-a-project-require-signing.md) | Say at decision time why a record is unsigned, and let a project require signing | proposed |
+| [0072](0072-lock-coverage-without-a-project.md) | Answer whether a reviewed-set lock covers a document's exact bytes, without opening a project | proposed |

@@ -262,47 +262,146 @@ func Open(loaded *project.Project) (*Set, *Failure) {
 			ExitCode: result.ExitIO,
 		}
 	}
+	return Decode(loaded.LockPath(), data)
+}
+
+// Decode holds one lock's exact bytes to the shape this runtime writes and
+// returns the reviewed set they declare. lockPath names the file in a
+// refusal and is never opened.
+//
+// It is the one reader of the format. Open hands it the bytes read through a
+// project's own handle; packs covers hands it the bytes of a lock an operator
+// named, read within the same project.MaxLockBytes bound, so a lock a project
+// would refuse is refused there in the same words, and no caller outside this
+// package parses the file itself.
+func Decode(lockPath string, data []byte) (*Set, *Failure) {
 	decoded, carrierFailure := carrier.Decode(data, carrier.DefaultLimits())
 	if carrierFailure != nil {
-		return nil, shapeFailure(loaded, "JPS-LOCK-JSON", result.ExitInvalid,
+		return nil, shapeFailure(lockPath, "JPS-LOCK-JSON", result.ExitInvalid,
 			fmt.Sprintf("is not acceptable JSON: %s", display.Sanitize(carrierFailure.Diagnostic.Message)))
 	}
 	root, ok := decoded.(map[string]any)
 	if !ok {
-		return nil, shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid, "must be a JSON object")
+		return nil, shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid, "must be a JSON object")
 	}
 	raw, present := root["lockVersion"]
 	if !present {
-		return nil, shapeFailure(loaded, "JPS-LOCK-VERSION", result.ExitInvalid, "declares no lockVersion")
+		return nil, shapeFailure(lockPath, "JPS-LOCK-VERSION", result.ExitInvalid, "declares no lockVersion")
 	}
 	declared, ok := raw.(string)
 	if !ok {
-		return nil, shapeFailure(loaded, "JPS-LOCK-VERSION", result.ExitInvalid, "declares a lockVersion that is not a string")
+		return nil, shapeFailure(lockPath, "JPS-LOCK-VERSION", result.ExitInvalid, "declares a lockVersion that is not a string")
 	}
 	if declared != Version {
 		return nil, &Failure{
 			Code:     "JPS-LOCK-VERSION",
-			Message:  fmt.Sprintf("The reviewed-set lock %s declares lockVersion %q, which this runtime does not read. It reads: %s.", display.Sanitize(loaded.LockPath()), display.Sanitize(declared), Version),
+			Message:  fmt.Sprintf("The reviewed-set lock %s declares lockVersion %q, which this runtime does not read. It reads: %s.", display.Sanitize(lockPath), display.Sanitize(declared), Version),
 			ExitCode: result.ExitUnsupported,
 		}
 	}
+	if failure := unknownMember(lockPath, root); failure != nil {
+		return nil, failure
+	}
 	var document Document
 	if err := json.Unmarshal(data, &document); err != nil {
-		return nil, shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid, "could not be decoded")
+		return nil, shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid, "could not be decoded")
 	}
-	if failure := validate(loaded, document); failure != nil {
+	if failure := validate(lockPath, document); failure != nil {
 		return nil, failure
 	}
 	return &Set{Document: document, Digest: Digest(data)}, nil
+}
+
+// The member names packs lock writes, which are the json names of Document,
+// Config and Entry. Every lock this runtime has written carries these and no
+// others.
+var (
+	documentMembers = map[string]bool{"lockVersion": true, "config": true, "packs": true, "graphs": true}
+	configMembers   = map[string]bool{"digest": true}
+	entryMembers    = map[string]bool{"path": true, "digest": true}
+)
+
+// maxShownMember bounds how much of a member name a refusal quotes.
+const maxShownMember = 64
+
+// unknownMember refuses a lock that carries a member packs lock does not write,
+// at the root, in the configuration entry or in any pack or graph entry.
+//
+// The carrier decode refuses a name given twice exactly, but encoding/json
+// then matches member names to fields without regard to case, under Unicode
+// case folding, and keeps the last match. A second spelling of a known name
+// would be decoded in place of the first, so a lock would verify against a
+// value the exact member does not hold. Only the exact names are read. The
+// first unknown name, in sorted order, is the one named, so the refusal is the
+// same on every run.
+func unknownMember(lockPath string, root map[string]any) *Failure {
+	if name, unknown := firstUnknown(root, documentMembers); unknown {
+		return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
+			fmt.Sprintf("has a member %s that packs lock does not write", shownMember(name)))
+	}
+	if config, ok := root["config"].(map[string]any); ok {
+		if name, unknown := firstUnknown(config, configMembers); unknown {
+			return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
+				fmt.Sprintf("declares the configuration with a member %s that packs lock does not write", shownMember(name)))
+		}
+	}
+	for _, set := range []struct{ member, kind string }{{"packs", "pack"}, {"graphs", "graph"}} {
+		entries, ok := root[set.member].(map[string]any)
+		if !ok {
+			continue
+		}
+		ids := make([]string, 0, len(entries))
+		for id := range entries {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			entry, ok := entries[id].(map[string]any)
+			if !ok {
+				continue
+			}
+			if name, unknown := firstUnknown(entry, entryMembers); unknown {
+				return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
+					fmt.Sprintf("declares the %s %s with a member %s that packs lock does not write", set.kind, shownMember(id), shownMember(name)))
+			}
+		}
+	}
+	return nil
+}
+
+// firstUnknown is the least member name of object, in sorted order, that is
+// not exactly one of known.
+func firstUnknown(object map[string]any, known map[string]bool) (string, bool) {
+	unknown := []string{}
+	for name := range object {
+		if !known[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) == 0 {
+		return "", false
+	}
+	sort.Strings(unknown)
+	return unknown[0], true
+}
+
+// shownMember quotes a name read from a lock for a refusal: sanitized, and cut
+// to its first maxShownMember characters with an ellipsis when it is longer.
+func shownMember(name string) string {
+	shown := display.Sanitize(name)
+	if characters := []rune(shown); len(characters) > maxShownMember {
+		shown = string(characters[:maxShownMember]) + "…"
+	}
+	return fmt.Sprintf("%q", shown)
 }
 
 // validate holds a decoded lock to the shape this runtime writes: a digest for
 // the configuration, and a path and a digest for every entry, each digest in
 // the one form Digest produces. A lock that fails this was not written by
 // packs lock, and comparing against it would be comparing against a guess.
-func validate(loaded *project.Project, document Document) *Failure {
+func validate(lockPath string, document Document) *Failure {
 	if !validDigest(document.Config.Digest) {
-		return shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid,
+		return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
 			"declares no usable digest for the configuration")
 	}
 	for _, set := range []struct {
@@ -317,11 +416,11 @@ func validate(loaded *project.Project, document Document) *Failure {
 		for _, id := range ids {
 			entry := set.entries[id]
 			if entry.Path == "" {
-				return shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid,
+				return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
 					fmt.Sprintf("declares the %s %q with no path", set.kind, display.Sanitize(id)))
 			}
 			if !validDigest(entry.Digest) {
-				return shapeFailure(loaded, "JPS-LOCK-SHAPE", result.ExitInvalid,
+				return shapeFailure(lockPath, "JPS-LOCK-SHAPE", result.ExitInvalid,
 					fmt.Sprintf("declares the %s %q with no usable digest", set.kind, display.Sanitize(id)))
 			}
 		}
@@ -350,10 +449,10 @@ func validDigest(digest string) bool {
 
 // shapeFailure is one sentence about a generated file that is not the shape its
 // generator writes, always ending in the command that writes it again.
-func shapeFailure(loaded *project.Project, code string, exitCode int, detail string) *Failure {
+func shapeFailure(lockPath string, code string, exitCode int, detail string) *Failure {
 	return &Failure{
 		Code:     code,
-		Message:  fmt.Sprintf("The reviewed-set lock %s %s. It is generated: run jpack packs lock to write it again.", display.Sanitize(loaded.LockPath()), detail),
+		Message:  fmt.Sprintf("The reviewed-set lock %s %s. It is generated: run jpack packs lock to write it again.", display.Sanitize(lockPath), detail),
 		ExitCode: exitCode,
 	}
 }
@@ -388,7 +487,7 @@ func Verify(loaded *project.Project, document Document) []Check {
 		checks = append(checks, Check{
 			Name:   CheckConfigDrift,
 			Path:   loaded.ConfigPath,
-			Detail: "The configuration's own bytes differ from the reviewed set. Adding, removing, or re-pointing a declared pack is an amendment.",
+			Detail: configDriftDetail,
 		})
 	}
 	// One digest per distinct file per run. A configuration may point many
@@ -428,7 +527,7 @@ func verifySet(loaded *project.Project, locked map[string]Entry, declared []stri
 				Kind:   kind,
 				ID:     id,
 				Path:   path,
-				Detail: fmt.Sprintf("The configuration declares this %s and the reviewed set does not name it.", kind),
+				Detail: entryMissingDetail(kind),
 			})
 		}
 		if err != nil {
@@ -453,7 +552,7 @@ func verifySet(loaded *project.Project, locked map[string]Entry, declared []stri
 				Kind:   kind,
 				ID:     id,
 				Path:   path,
-				Detail: fmt.Sprintf("The %s document's bytes differ from the reviewed set.", kind),
+				Detail: documentDriftDetail(kind),
 			})
 		}
 	}
@@ -470,7 +569,7 @@ func verifySet(loaded *project.Project, locked map[string]Entry, declared []stri
 			Kind:   kind,
 			ID:     id,
 			Path:   locked[id].Path,
-			Detail: fmt.Sprintf("The reviewed set names this %s and the configuration no longer declares it.", kind),
+			Detail: undeclaredDetail(kind),
 		})
 	}
 	return checks
@@ -521,6 +620,78 @@ func findDeclared(loaded *project.Project, kind, id string) (string, bool) {
 	}
 	entry, ok := loaded.Entry(id)
 	return entry.Path, ok
+}
+
+// The details of the findings Verify, VerifyDeciding and Covers share. Each is
+// stated once, so a condition two commands report reads the same in both.
+const configDriftDetail = "The configuration's own bytes differ from the reviewed set. Adding, removing, or re-pointing a declared pack is an amendment."
+
+func entryMissingDetail(kind string) string {
+	return fmt.Sprintf("The configuration declares this %s and the reviewed set does not name it.", kind)
+}
+
+func documentDriftDetail(kind string) string {
+	return fmt.Sprintf("The %s document's bytes differ from the reviewed set.", kind)
+}
+
+func undeclaredDetail(kind string) string {
+	return fmt.Sprintf("The reviewed set names this %s and the configuration no longer declares it.", kind)
+}
+
+// Covers answers whether one reviewed set covers one document's exact bytes,
+// with no project opened: the question packs covers asks for a caller that
+// holds a pack and a project's lock outside the project (ADR-0072).
+//
+// subject names the document by its kind, its id in the reviewed set, and the
+// digest of the bytes the caller read, never a path to read again, for the
+// reason Applied gives. With loaded nil the bytes are compared with the entry
+// and nothing else is asked. With a loaded configuration, three questions
+// Verify asks of a project are asked of that configuration and that one id:
+// whether the configuration's bytes are the ones the lock pins, whether the
+// path it declares for the id is the one the entry records, and whether it
+// declares the id at all. Nothing the configuration declares is read.
+//
+// Findings carry Verify's names, and Verify's wording wherever the condition
+// is Verify's, in Verify's order: the configuration, then the entry, then an
+// entry the configuration does not declare. A document can be wrong in more
+// than one way, and each way is its own finding. An id the reviewed set has no
+// entry for gets that one finding, because there is no digest to compare the
+// bytes with.
+func Covers(document Document, subject Applied, loaded *project.Project) []Check {
+	checks := []Check{}
+	locked := document.Packs
+	if subject.Kind == "graph" {
+		locked = document.Graphs
+	}
+	entry, inLock := locked[subject.ID]
+	declaredPath, declared := "", false
+	if loaded != nil {
+		if document.Config.Digest != loaded.ConfigDigest {
+			checks = append(checks, Check{Name: CheckConfigDrift, Path: loaded.ConfigPath, Detail: configDriftDetail})
+		}
+		declaredPath, declared = findDeclared(loaded, subject.Kind, subject.ID)
+	}
+	if !inLock {
+		detail := fmt.Sprintf("The reviewed set does not name this %s.", subject.Kind)
+		if declared {
+			detail = entryMissingDetail(subject.Kind)
+		}
+		return append(checks, Check{Name: CheckLockEntryMissing, Kind: subject.Kind, ID: subject.ID, Path: declaredPath, Detail: detail})
+	}
+	path := entry.Path
+	if declared {
+		path = declaredPath
+		if check, wrong := pathMismatch(subject.Kind, subject.ID, declaredPath, entry); wrong {
+			checks = append(checks, check)
+		}
+	}
+	if subject.Digest != entry.Digest {
+		checks = append(checks, Check{Name: CheckDocumentDrift, Kind: subject.Kind, ID: subject.ID, Path: path, Detail: documentDriftDetail(subject.Kind)})
+	}
+	if loaded != nil && !declared {
+		checks = append(checks, Check{Name: CheckUndeclaredInConfig, Kind: subject.Kind, ID: subject.ID, Path: entry.Path, Detail: undeclaredDetail(subject.Kind)})
+	}
+	return checks
 }
 
 // Applied is one declared document an evaluation is about to apply, named by
@@ -616,7 +787,7 @@ func verifyApplied(loaded *project.Project, document Document, applied Applied) 
 			Kind:   applied.Kind,
 			ID:     applied.ID,
 			Path:   path,
-			Detail: fmt.Sprintf("The configuration declares this %s and the reviewed set does not name it.", applied.Kind),
+			Detail: entryMissingDetail(applied.Kind),
 		}}
 	}
 	checks := []Check{}
@@ -632,7 +803,7 @@ func verifyApplied(loaded *project.Project, document Document, applied Applied) 
 			Kind:   applied.Kind,
 			ID:     applied.ID,
 			Path:   path,
-			Detail: fmt.Sprintf("The %s document's bytes differ from the reviewed set.", applied.Kind),
+			Detail: documentDriftDetail(applied.Kind),
 		})
 	}
 	return checks
