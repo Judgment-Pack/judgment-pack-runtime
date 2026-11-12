@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"golang.org/x/text/unicode/bidi"
 
@@ -34,7 +36,8 @@ import (
 // (matched). A value-set entry's value is written the same way. An
 // annotation's key and strings, which an annotation filter matches on, and the
 // filter a filtered view states, are written so that none can reorder the
-// text around it or read like another (annotationText, ADR-0078). No line
+// text around it, join the syntax before it, or read like another
+// (annotationText, ADR-0078). No line
 // begins with pack
 // text: each follows a heading marker, a list marker and label, or a table
 // pipe.
@@ -208,7 +211,8 @@ func (m *markdownWriter) annotations(depth int, annotations []Annotation) {
 //     (a right-to-left letter, an Arabic letter, an Arabic digit), which can
 //     reorder the text beside it on its line, is written only in ASCII, as
 //     (ASCII only `...`): the line then holds no such character, so nothing
-//     can reorder it, in a renderer or in a terminal;
+//     can reorder it, in a renderer or in a terminal; so is a string that
+//     begins with a mark, which would join the syntax written before it;
 //   - any other string is written escaped, followed by its ASCII form when it
 //     holds a code point outside printable ASCII or two adjacent spaces, the
 //     run a renderer collapses to one; in that form every space of such a run
@@ -220,7 +224,7 @@ func (m *markdownWriter) annotations(depth int, annotations []Annotation) {
 // characters that need it out of the line, not by adding isolates.
 func annotationText(value string) string {
 	text, _ := canonicalText(value)
-	if affectsDirection(value) {
+	if affectsDirection(value) || joinsPrecedingText(value) {
 		return "(ASCII only " + asciiSpan(text, true) + ")"
 	}
 	if needsASCII(text) || strings.Contains(value, "  ") {
@@ -245,6 +249,19 @@ func affectsDirection(value string) bool {
 		}
 	}
 	return false
+}
+
+// joinsPrecedingText reports whether value begins with a mark (general
+// category M: a nonspacing, spacing or enclosing mark). A renderer combines a
+// mark with the character before it, and before an annotation string that
+// character is the view's own syntax: the space after a colon, a list
+// marker or "is". Written as itself, the mark would sit on that syntax and
+// the string would read as if it began without it. A mark inside the string
+// combines with the string's own text and is written as before. The category
+// follows the Unicode tables of the Go toolchain.
+func joinsPrecedingText(value string) bool {
+	first, size := utf8.DecodeRuneInString(value)
+	return size > 0 && unicode.Is(unicode.M, first)
 }
 
 func (m *markdownWriter) target(depth int, label string, target Target) {

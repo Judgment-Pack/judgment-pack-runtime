@@ -71,6 +71,13 @@ view lists, and each criterion key and value the filtered view states:
   line. No other class an annotation string or a criterion may hold does: every explicit format
   character (the marks, embeddings, overrides and isolates) is refused there (§9.2), and the
   remaining weak and neutral classes resolve to the line's direction.
+- So is a string whose first character is a mark (general category M: nonspacing, spacing or
+  enclosing). A renderer combines a mark with the character before it, which here is the view's
+  own syntax (the space after a colon, a list marker or `is`); written as itself, the mark would
+  sit on that syntax, and the string would read as if it began without it. A mark later in the
+  string combines with the string's own text and is written as in the next case. The category
+  follows the Go toolchain's Unicode tables. §9.2 already refuses the joiners and selectors a
+  string could begin with to the same effect (U+034F, the variation selectors, U+200C and U+200D).
 - Otherwise, if it holds a code point outside printable ASCII or two adjacent spaces, it is
   written escaped, then `` (ASCII `"..."`) ``, where every space next to another space is also
   written `\u0020`.
@@ -115,6 +122,17 @@ of such a pack is written with different bytes: it is not written at all.
   with `0.3.0` views, whose bytes this decision keeps.
 - Look-alikes within printable ASCII (`l` and `1`, `O` and `0`) are a font matter and are not
   marked.
+- A string of printable ASCII that imitates the wrapper, such as one that reads
+  ``(ASCII only `"x"`)``, is written escaped, as every such string is: its backticks are written
+  `` \` ``, so a renderer shows them as literal backticks, where the view's own wrapper opens a code
+  span, set in code type, and shows none. Those literal backticks are the only mark of the
+  difference in a rendered view; in the Markdown source the escaping backslashes show it.
+- A string that reads as a web address or an e-mail address may be turned into a link by a renderer
+  that links such text without link syntax (an extended autolink, as GitHub Flavored Markdown
+  defines it). The view escapes every ASCII punctuation character, which breaks such text up in
+  some renderers and not in others; it is not written to prevent the link and is not relied on.
+  The link text is still the string, the view writes no link syntax of its own for annotation
+  text, and inside the ASCII form's code span no renderer links it.
 - The messages of the filter's refusals (ADR-0076) quote a criterion in ASCII already; a terminal
   shows a run of spaces in them as it is.
 - Revisit when the specification states a display form for a Markdown consumer, or a surface that

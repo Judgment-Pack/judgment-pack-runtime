@@ -580,7 +580,9 @@ hold a code point outside printable ASCII or two adjacent spaces, because a filt
 in that form each space of a run is written `\u0020`, so the run survives a renderer that collapses
 it. Text that holds a right-to-left letter, an Arabic letter or an Arabic digit (bidirectional
 class R, AL or AN) is written only in ASCII, as `` (ASCII only `"\u05d0"`) ``, so it cannot reorder
-the text of its line ([ADR-0078](adr/0078-keep-annotation-text-from-reordering-its-line.md)).
+the text of its line, and so is text that begins with a mark (general category M, such as a
+combining accent), which would otherwise join the syntax written before it
+([ADR-0078](adr/0078-keep-annotation-text-from-reordering-its-line.md)).
 Other display data, such as a description, is not isolated this way. Under any other
 `specVersion` neither member is admitted: a root `valueSets` member is refused as a member the Core
 object does not name (`JPS-STRUCTURE-UNKNOWN-MEMBER`), and an `org.judgmentpack.annotations`

@@ -316,7 +316,7 @@ whose annotations match every criterion, as a `view.FilteredView` that says it i
 carries its own `filteredViewVersion`
 ([ADR-0075](docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md),
 [ADR-0077](docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md)). Its Markdown writes
-annotation text that could reorder its line only in ASCII
+annotation text that could reorder its line, or join the syntax before it, only in ASCII
 ([ADR-0078](docs/adr/0078-keep-annotation-text-from-reordering-its-line.md)).
 
 ## Build and try it locally

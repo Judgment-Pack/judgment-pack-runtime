@@ -97,8 +97,9 @@ func recovered(t *testing.T, line string) string {
 // get is written here by hand. A key is printable ASCII by the key grammar.
 //
 // D1 and issue #380 (ADR-0078): a string whose characters can reorder the
-// text beside it (bidirectional class R, AL or AN) is written only in ASCII,
-// so its line holds none of them; and a string holding a run of spaces, which
+// text beside it (bidirectional class R, AL or AN), or which begins with a
+// mark that would join the syntax before it, is written only in ASCII, so its
+// line holds none of them; and a string holding a run of spaces, which
 // a renderer collapses, gets its ASCII form with each space of the run
 // written \u0020, so it never renders like the string with one space.
 func TestAnnotationStringsAreShownSoEveryCodePointCanBeRecovered(t *testing.T) {
@@ -118,6 +119,11 @@ func TestAnnotationStringsAreShownSoEveryCodePointCanBeRecovered(t *testing.T) {
 		{"a run of three spaces", "a   b", "a  b", "a   b (ASCII `\"a\\u0020\\u0020\\u0020b\"`)"},
 		{"a run of spaces beside a letter outside ASCII", "caf\u00e9  bar", "caf\u00e9 bar", "caf\u00e9  bar (ASCII `\"caf\\u00e9\\u0020\\u0020bar\"`)"},
 		{"single spaces between runs", "a b  c", "a b c", "a b  c (ASCII `\"a b\\u0020\\u0020c\"`)"},
+		{"a leading nonspacing mark", "\u0301x", "x", "(ASCII only `\"\\u0301x\"`)"},
+		{"a leading spacing mark", "\u0903x", "x", "(ASCII only `\"\\u0903x\"`)"},
+		{"a leading enclosing mark", "\u20ddx", "x", "(ASCII only `\"\\u20ddx\"`)"},
+		{"a leading mark beyond the Basic Multilingual Plane", "\U0001d165x", "x", "(ASCII only `\"\\ud834\\udd65x\"`)"},
+		{"a mark alone", "\u0301", "y", "(ASCII only `\"\\u0301\"`)"},
 		{"a European digit after a letter", "tier 2", "tier  2", "tier 2"},
 		{"beyond the Basic Multilingual Plane", "go\U0001f680", "go", "go\U0001f680 (ASCII `\"go\\ud83d\\ude80\"`)"},
 		{"an admitted format character", "a\ufffbb", "ab", "a`U+FFFB`b (ASCII `\"a\\ufffbb\"`)"},

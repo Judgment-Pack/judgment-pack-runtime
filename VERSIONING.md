@@ -148,7 +148,8 @@ toolchain the runtime is built with, through `internal/display`; an update of th
 which can move a newly assigned format character into that set, does not move `viewVersion`. The `packs describe` JSON envelope follows `outputVersion`; the view's bytes ride in it
 as a string and follow `viewVersion`. Describing the value sets and annotations of Core `0.5.0`
 left `viewVersion` at `"1"`, because no pack an earlier release could describe holds them; the
-same holds for ADR-0078, which writes annotation text that could reorder its line only in ASCII.
+same holds for ADR-0078, which writes annotation text that could reorder its line, or join the
+syntax before it, only in ASCII.
 Runtime 0.43.0 described packs under the staged selector `0.4.0-draft`; this runtime refuses them
 rather than describing them with other bytes.
 

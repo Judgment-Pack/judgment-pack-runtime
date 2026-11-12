@@ -47,7 +47,8 @@ All notable changes to tagged releases are documented here.
   `0.2.0-draft` and `0.3.0`.
 - **Annotation text can no longer reorder its line in the Markdown views** (#380, ADR-0078). An
   annotation key or string, or a filter criterion, that holds a right-to-left or Arabic-number
-  character (bidirectional class R, AL or AN) is written only in its ASCII form,
+  character (bidirectional class R, AL or AN), or that begins with a mark (general category M),
+  which would join the syntax before it, is written only in its ASCII form,
   `` (ASCII only `"..."`) ``; one that holds two adjacent spaces gets its ASCII form, with each space of
   the run written `\u0020`, so an HTML renderer cannot collapse it. The classes come from
   `golang.org/x/text/unicode/bidi`, part of the `golang.org/x/text` module the schema validator
