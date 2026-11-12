@@ -1,7 +1,9 @@
 package view_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -9,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -304,11 +307,17 @@ func TestTheMarkdownShowsEveryLeafInItsSection(t *testing.T) {
 	}
 }
 
-// The Markdown of a fixture, written by hand from the documented layout and
-// the fixture itself, not recorded from a run: the expectation of record for
-// one pack that holds every member of its specification version.
+// handWritten names the fixtures whose Markdown and canonical JSON are
+// written by hand under testdata/expected, from the documented layout and
+// the fixture itself, never recorded from a run: one pack holding every
+// member of each admitted specification version, and the adversarial
+// strings. Only each digest is computed, with sha256sum over the fixture.
+var handWritten = []string{"0.2.0-draft/every-member", "0.3.0/every-member", "0.3.0/adversarial-strings"}
+
+// The Markdown of each hand-written fixture is its expectation, line for
+// line.
 func TestHandWrittenMarkdown(t *testing.T) {
-	for _, name := range []string{"0.3.0/every-member"} {
+	for _, name := range handWritten {
 		want, err := os.ReadFile(filepath.Join("testdata", "expected", filepath.FromSlash(name)+".md"))
 		if err != nil {
 			t.Fatal(err)
@@ -331,6 +340,66 @@ func TestHandWrittenMarkdown(t *testing.T) {
 			if have != expected {
 				t.Fatalf("%s line %d:\n got %q\nwant %q", name, index+1, have, expected)
 			}
+		}
+	}
+}
+
+// The canonical JSON of each hand-written fixture is its expectation, byte
+// for byte. The expectation is written indented, for review, and in ASCII:
+// encoding/json's Compact removes only the whitespace between tokens, and
+// the view's code points from U+007F up are written as JSON escapes before
+// the comparison. That rewrite hides nothing, because the view's own escapes
+// are first held to the ones RFC 8785 writes, none of which is for a code
+// point from U+007F up.
+func TestHandWrittenCanonicalJSON(t *testing.T) {
+	for _, name := range handWritten {
+		written, err := os.ReadFile(filepath.Join("testdata", "expected", filepath.FromSlash(name)+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want bytes.Buffer
+		if err := json.Compact(&want, written); err != nil {
+			t.Fatalf("%s: the expectation is not JSON: %v", name, err)
+		}
+		pack, err := os.ReadFile(filepath.Join("testdata", "packs", filepath.FromSlash(name)+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, view := mustView(t, pack)
+		got := view.JSON()
+		for index := 0; index < len(got); index++ {
+			if got[index] != '\\' {
+				continue
+			}
+			if index+1 < len(got) && strings.IndexByte(`"\\bfnrt`, got[index+1]) >= 0 {
+				index++
+				continue
+			}
+			if index+5 < len(got) && got[index+1] == 'u' && string(got[index+2:index+4]) == "00" && (got[index+4] == '0' || got[index+4] == '1') {
+				index += 5
+				continue
+			}
+			t.Fatalf("%s: the view writes an escape RFC 8785 does not, at byte %d: %q", name, index, got[index:min(index+6, len(got))])
+		}
+		var ascii strings.Builder
+		for _, character := range string(got) {
+			switch {
+			case character < 0x7f:
+				ascii.WriteRune(character)
+			case character > 0xffff:
+				high, low := utf16.EncodeRune(character)
+				fmt.Fprintf(&ascii, `\u%04x\u%04x`, high, low)
+			default:
+				fmt.Fprintf(&ascii, `\u%04x`, character)
+			}
+		}
+		if ascii.String() != want.String() {
+			have, expected := ascii.String(), want.String()
+			at := 0
+			for at < len(have) && at < len(expected) && have[at] == expected[at] {
+				at++
+			}
+			t.Fatalf("%s: the canonical JSON differs at byte %d:\n got %q\nwant %q", name, at, have[max(0, at-40):min(len(have), at+40)], expected[max(0, at-40):min(len(expected), at+40)])
 		}
 	}
 }
