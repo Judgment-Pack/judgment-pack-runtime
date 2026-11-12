@@ -292,8 +292,11 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	// contracts and admission/evaluation statuses retain their existing behavior.
 	// Under the staged draft selector it reads the evaluation form, where a
 	// value-set reference is its set's values (draft §3.3.1).
+	// There, a pair where either condition as written names a value set gets no
+	// rewrite, since one built from the form would drop the reference.
 	if artifacts.HasCore030Rules(selectedVersion) {
 		advised := root
+		var written map[string]any
 		if artifacts.IsStaged(selectedVersion) {
 			form, err := evalform.Of(root)
 			if err != nil {
@@ -301,9 +304,9 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 				// reference above. A form that cannot be built is never advised on.
 				return output, &OperationalFailure{Code: "JPS-INTERNAL-EVALUATION-FORM", Message: "The evaluation form of a semantically conforming pack could not be built.", ExitCode: result.ExitInternal}
 			}
-			advised = form
+			advised, written = form, root
 		}
-		output.Diagnostics, output.DiagnosticsTruncated = ruleOverlapDiagnosticsWithLimits(advised, options.Limits)
+		output.Diagnostics, output.DiagnosticsTruncated = ruleOverlapAdvice(advised, written, options.Limits)
 	}
 	return output, nil
 }

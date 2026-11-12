@@ -159,3 +159,71 @@ func TestRulesOverlapChargesGeneratedDecimalSpellingBytes(t *testing.T) {
 		t.Fatal("generated decimal bytes bypassed the analysis budget")
 	}
 }
+
+// Under the staged draft selector the advice reads the evaluation form, so a
+// rewrite built there inlines a set's values. A pair where either condition as
+// written names a value set gets no rewrite; any other pair gets one as before.
+func TestRulesOverlapStagedValueSetReferenceOffersNoRewrite(t *testing.T) {
+	engine, err := NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := func(inWhen, eqWhen, valueSets string) []byte {
+		return []byte(`{
+  "specVersion": "0.4.0-draft",
+  "id": "https://example.com/packs/staged-overlap",
+  "version": "1.0.0",
+  "title": "Overlapping tiers",
+  "decision": {"intent": "Assign a tier", "question": "Which tier applies?"},
+  "outcomes": [{"id": "standard", "label": "Standard"}, {"id": "premium", "label": "Premium"}],
+  "rules": [
+    {"id": "r-in", "description": "Listed tiers", "outcome": "standard", "onUnknown": "escalate", "when": ` + inWhen + `},
+    {"id": "r-eq", "description": "Gold tier", "outcome": "premium", "onUnknown": "escalate", "when": ` + eqWhen + `}
+  ]` + valueSets + `
+}`)
+	}
+	const tiers = `,
+  "valueSets": [{"id": "tiers", "entries": [{"value": "gold"}, {"value": "silver"}]}]`
+	const inReference = `{"op": "fact", "path": "/tier", "operator": "in", "valueSet": "tiers"}`
+	const inInline = `{"op": "fact", "path": "/tier", "operator": "in", "value": ["gold", "silver"]}`
+	const equalsGold = `{"op": "fact", "path": "/tier", "operator": "equals", "value": "gold"}`
+	const head = `Rules "r-in" (standard) and "r-eq" (premium): overlap exact. Core §8 records conflict; the disposition is unresolved. `
+	const noRewrite = "No exclusive rewrite is suggested because a condition names a value set."
+	const rewrite = `{"ruleId":"r-in","when":{"conditions":[{"op":"fact","operator":"in","path":"/tier","value":["gold","silver"]},{"condition":{"op":"fact","operator":"equals","path":"/tier","value":"gold"},"op":"not"}],"op":"all"}}`
+
+	for _, tc := range []struct {
+		name, message, rewrite, unavailable string
+		pack                                []byte
+	}{
+		{"reference in the first rule", head + noRewrite, "", noRewrite, pack(inReference, equalsGold, tiers)},
+		{"reference nested in the second rule", head + noRewrite, "", noRewrite, pack(equalsGold, `{"op": "any", "conditions": [`+inReference+`]}`, tiers)},
+		{"no reference", head + "Suggested exclusive rewrite: " + rewrite, rewrite, "", pack(inInline, equalsGold, "")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, failure := engine.Validate(tc.pack, Options{})
+			if failure != nil || got.Status != "valid" || len(got.Diagnostics) != 1 {
+				t.Fatalf("%+v %v", got, failure)
+			}
+			d := got.Diagnostics[0]
+			if d.Code != "JPS-RULES-OVERLAP" || d.Layer != "advisory" || d.Severity != "warning" || d.InstancePath != "/rules/0/when" || d.Certainty != "exact" {
+				t.Fatalf("advisory changed: %+v", d)
+			}
+			if d.Message != tc.message {
+				t.Fatalf("message:\n got %s\nwant %s", d.Message, tc.message)
+			}
+			if d.RewriteUnavailable != tc.unavailable {
+				t.Fatalf("rewriteUnavailable: %q", d.RewriteUnavailable)
+			}
+			if tc.rewrite == "" {
+				if d.SuggestedRewrite != nil {
+					t.Fatalf("rewrite offered over a value-set reference: %+v", d.SuggestedRewrite)
+				}
+				return
+			}
+			encoded, _ := json.Marshal(d.SuggestedRewrite)
+			if string(encoded) != tc.rewrite {
+				t.Fatalf("rewrite: %s", encoded)
+			}
+		})
+	}
+}

@@ -618,12 +618,52 @@ func runStaged(source, destination, sourceRef, selector string, replace bool) er
 	if err != nil {
 		return err
 	}
+	if err := refuseIgnoredStagedSources(sourceRoot, files); err != nil {
+		return err
+	}
 	provenance.Stage = stagedStage
 	lock, err := materialize(files, destinationRoot, selector, provenance, replace)
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Imported staged JPS %s from %s (%d files, %s)\n", selector, provenance.BaseCommit, len(files), lock.BundleDigest.Value)
+	return nil
+}
+
+// stagedReadDirectories are the checkout directories, relative to its root,
+// that a staged import lists or takes files from.
+var stagedReadDirectories = []string{"schema/staged", "conformance/staged", "conformance/evaluation/staged", "examples/staged"}
+
+// refuseIgnoredStagedSources refuses a staged import when git reports an
+// ignored path under a directory the import reads, or at a file it takes. A
+// clean status says nothing about ignored files: they are not in the commit
+// the lock names, yet a directory listing or a read would import them as if
+// they were.
+func refuseIgnoredStagedSources(sourceRoot string, files []importFile) error {
+	output, err := exec.Command("git", "-C", sourceRoot, "status", "--porcelain", "--ignored", "--untracked-files=all", "-z").Output()
+	if err != nil {
+		return fmt.Errorf("inspect ignored source files: %w", err)
+	}
+	read := append([]string(nil), stagedReadDirectories...)
+	for _, file := range files {
+		relative, err := filepath.Rel(sourceRoot, file.sourcePath)
+		if err != nil {
+			return err
+		}
+		read = append(read, filepath.ToSlash(relative))
+	}
+	for _, entry := range strings.Split(string(output), "\x00") {
+		ignored, isIgnored := strings.CutPrefix(entry, "!! ")
+		if !isIgnored {
+			continue
+		}
+		ignored = strings.TrimSuffix(ignored, "/")
+		for _, prefix := range read {
+			if ignored == prefix || strings.HasPrefix(ignored, prefix+"/") || strings.HasPrefix(prefix, ignored+"/") {
+				return fmt.Errorf("staged imports refuse a git-ignored source file, which the commit does not carry: %s", ignored)
+			}
+		}
+	}
 	return nil
 }
 

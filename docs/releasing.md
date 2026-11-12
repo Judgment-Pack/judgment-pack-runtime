@@ -73,8 +73,10 @@ env GO111MODULE=on go run ./tools/sync-spec-artifacts \
 ```
 
 A staged import takes only a full commit digest (never a tag or a branch) and refuses
-`--allow-dirty`. Its lock records `stage: staged-unreleased`. `--replace` replaces only a staged
-bundle of the same selector; a released bundle or any other directory is refused and left as it is.
+`--allow-dirty`, and it refuses, naming it, a git-ignored file under any of those directories or
+at a file it takes, since the commit does not carry it. Its lock records
+`stage: staged-unreleased`. `--replace` replaces only a staged bundle of the same selector; a
+released bundle or any other directory is refused and left as it is.
 After a refresh, run the staged corpus tests (`internal/conformance`, `internal/evaluation`) and
 review any case they name.
 

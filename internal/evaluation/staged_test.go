@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
 // The staged draft selector (EXPERIMENTAL) is evaluated as its evaluation form.
@@ -319,5 +321,80 @@ func TestReleasedRowsCarryOverToTheStagedSelector(t *testing.T) {
 		if outcome.Status != "passed" {
 			t.Errorf("%s does not carry over: %s (expected %s, actual %s)", item.ID, outcome.Detail, outcome.Expected, outcome.Actual)
 		}
+	}
+}
+
+// The value-set members belong to the staged draft selector only. Under 0.3.0
+// the schema closes the root and the fact condition, so a root valueSets and a
+// valueSet on a fact in condition are unknown members (and a reference with no
+// value also misses the required value), and admission refuses the pack as not
+// conformant. The codes are read from the 0.3.0 schema and the validator's
+// mapping of it, not from a run.
+func TestReleasedPackRefusesValueSetMembers(t *testing.T) {
+	engine := newTestEngine(t)
+	pack := func(root, when string) string {
+		return `{"specVersion":"0.3.0","id":"https://example.com/packs/released","version":"1.0.0","title":"Released",` +
+			`"decision":{"intent":"Review","question":"Review?"},` +
+			`"outcomes":[{"id":"accept","label":"Accept"},{"id":"refer","label":"Refer"}],` +
+			`"rules":[{"id":"tiered","description":"Tiered","when":` + when + `,"outcome":"accept","onUnknown":"ignore"}]` + root + `}`
+	}
+	const inline = `{"op":"fact","path":"/request/tier","operator":"in","value":["tier-1","tier-2"]}`
+	const sets = `,"valueSets":[{"id":"tiers","entries":[{"value":"tier-1"},{"value":"tier-2"}]}]`
+	const unknown = "Member is not allowed in this Core object."
+	const required = "Required member is missing."
+	if !engine.AdmitPack([]byte(pack("", inline))).AdmitsWith(Options{SpecVersion: artifacts.CoreVersion}) {
+		t.Fatal("the inline pack, without value-set members, must be admitted under 0.3.0")
+	}
+	type diagnostic struct{ code, path, message string }
+	for _, tc := range []struct {
+		name, pack string
+		want       []diagnostic
+	}{
+		{"root valueSets", pack(sets, inline), []diagnostic{
+			{"JPS-STRUCTURE-UNKNOWN-MEMBER", "/valueSets", unknown}}},
+		{"valueSet beside a value", pack("", `{"op":"fact","path":"/request/tier","operator":"in","valueSet":"tiers","value":["tier-1"]}`), []diagnostic{
+			{"JPS-STRUCTURE-UNKNOWN-MEMBER", "/rules/0/when/valueSet", unknown}}},
+		{"valueSet without a value", pack("", `{"op":"fact","path":"/request/tier","operator":"in","valueSet":"tiers"}`), []diagnostic{
+			{"JPS-STRUCTURE-REQUIRED-MEMBER", "/rules/0/when/value", required},
+			{"JPS-STRUCTURE-UNKNOWN-MEMBER", "/rules/0/when/valueSet", unknown}}},
+		{"both", pack(sets, `{"op":"fact","path":"/request/tier","operator":"in","valueSet":"tiers"}`), []diagnostic{
+			{"JPS-STRUCTURE-REQUIRED-MEMBER", "/rules/0/when/value", required},
+			{"JPS-STRUCTURE-UNKNOWN-MEMBER", "/rules/0/when/valueSet", unknown},
+			{"JPS-STRUCTURE-UNKNOWN-MEMBER", "/valueSets", unknown}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			options := Options{SpecVersion: artifacts.CoreVersion}
+			admitted := engine.AdmitPack([]byte(tc.pack))
+			if admitted.AdmitsWith(options) {
+				t.Fatal("a 0.3.0 pack carrying a value-set member was admitted")
+			}
+			// The admission's own validation call, whose report the refusal
+			// below names the first diagnostic of.
+			validated, operational := engine.validator.Validate([]byte(tc.pack), validation.Options{Through: "semantic", Limits: carrier.DefaultLimits()})
+			if operational != nil {
+				t.Fatal(operational)
+			}
+			if validated.SpecVersion != artifacts.CoreVersion || validated.Status != "invalid" {
+				t.Fatalf("validated as %s/%s", validated.SpecVersion, validated.Status)
+			}
+			if len(validated.Diagnostics) != len(tc.want) {
+				t.Fatalf("diagnostics: %+v", validated.Diagnostics)
+			}
+			for i, want := range tc.want {
+				got := validated.Diagnostics[i]
+				if got.Code != want.code || got.Layer != "structural" || got.Severity != "error" || got.InstancePath != want.path || got.Message != want.message {
+					t.Fatalf("diagnostic %d: %+v", i, got)
+				}
+			}
+			_, failure := engine.EvaluateWith([]byte(tc.pack), []byte(`{"request":{"tier":"tier-1"}}`), nil, options)
+			if failure == nil {
+				t.Fatal("evaluated")
+			}
+			first := tc.want[0]
+			message := `The pack is not evaluated because its document conformance status is "invalid"; evaluation requires a fully conformant pack. Run spec validate for the complete report. First diagnostic: ` + first.code + " at " + first.path + ": " + first.message
+			if failure.Code != "JPS-EVALUATION-PACK-NOT-CONFORMANT" || failure.Class != result.ClassPackNotConformant || failure.Phase != result.PhasePreflight || failure.Message != message {
+				t.Fatalf("got %s/%s/%s %q", failure.Code, failure.Class, failure.Phase, failure.Message)
+			}
+		})
 	}
 }

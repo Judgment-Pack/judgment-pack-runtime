@@ -213,3 +213,73 @@ func TestStagedReplaceRefreshesOnlyAStagedBundleOfTheSameSelector(t *testing.T) 
 		})
 	}
 }
+
+// A git-ignored file is not in the commit the lock names, and a clean status
+// does not report it, yet a directory the staged import lists would import it.
+// Any ignored path under a directory the import reads refuses the import, and
+// the destination is left as it was.
+func TestStagedImportRefusesAGitIgnoredSourceFile(t *testing.T) {
+	for _, tc := range []struct{ name, ignore, file, body string }{
+		{"an ignored example", "examples/staged/local-*.json\n", "examples/staged/local-extra.json", `{"specVersion":"9.9.0-draft"}`},
+		{"an ignored row pack", "conformance/evaluation/staged/rows-9/packs/scratch/\n", "conformance/evaluation/staged/rows-9/packs/scratch/p.json", `{"pack":"scratch"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source, _ := stagedCheckout(t)
+			if err := os.WriteFile(filepath.Join(source, ".gitignore"), []byte(tc.ignore), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			git(t, source, "add", ".gitignore")
+			git(t, source, "commit", "-q", "-m", "ignore")
+			out, err := exec.Command("git", "-C", source, "rev-parse", "HEAD").Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			commit := strings.TrimSpace(string(out))
+
+			parent := t.TempDir()
+			existing := filepath.Join(parent, "9.9.0-draft")
+			if err := dispatch(source, existing, commit, "9.9.0-draft", false, false); err != nil {
+				t.Fatalf("import before the ignored file exists: %v", err)
+			}
+			lockBefore, err := os.ReadFile(filepath.Join(existing, "lock.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			full := filepath.Join(source, filepath.FromSlash(tc.file))
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte(tc.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			status, err := exec.Command("git", "-C", source, "status", "--porcelain").Output()
+			if err != nil || len(status) != 0 {
+				t.Fatalf("the ignored file must leave the worktree clean: %q %v", status, err)
+			}
+
+			fresh := filepath.Join(t.TempDir(), "9.9.0-draft")
+			err = dispatch(source, fresh, commit, "9.9.0-draft", false, false)
+			want := "staged imports refuse a git-ignored source file, which the commit does not carry: " + tc.file
+			if err == nil || err.Error() != want {
+				t.Fatalf("got %v, want %q", err, want)
+			}
+			if _, err := os.Stat(fresh); !errors.Is(err, os.ErrNotExist) {
+				t.Fatal("a refused import must create no destination")
+			}
+
+			err = dispatch(source, existing, commit, "9.9.0-draft", false, true)
+			if err == nil || err.Error() != want {
+				t.Fatalf("--replace: got %v, want %q", err, want)
+			}
+			lockAfter, err := os.ReadFile(filepath.Join(existing, "lock.json"))
+			if err != nil || string(lockAfter) != string(lockBefore) {
+				t.Fatalf("the refused --replace changed the bundle's lock: %v", err)
+			}
+			if err := verifyMaterialized(existing, readLock(t, existing)); err != nil {
+				t.Fatalf("the refused --replace changed the bundle: %v", err)
+			}
+			assertNoStagingResidue(t, parent)
+		})
+	}
+}
