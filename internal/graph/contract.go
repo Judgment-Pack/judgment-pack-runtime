@@ -45,10 +45,14 @@ func selectNodeContract(data []byte, oversized []string) (result.EvaluatorContra
 		// Graphs do not read Core 0.5.0: the graph prototype (Draft RFC 0002)
 		// is written against Core 0.3.0, and a graph report is not designed
 		// over annotations or value sets.
-		return result.EvaluatorContract{}, evaluation.SurfaceSpecVersionUnsupported("Graph evaluation", contract.Version())
+		return result.EvaluatorContract{}, evaluation.SurfaceSpecVersionUnsupported("Graph evaluation", contract.Version(), graphReadable)
 	}
 	return contract, failure
 }
+
+// graphReadable lists the Core versions a graph reads: the evaluator
+// contracts other than Core 0.5.0's.
+var graphReadable = []string{result.EvaluatorSpecVersion, "0.3.0"}
 
 func mixedContractFailure() *evaluation.Failure {
 	return &evaluation.Failure{Code: "JPS-GRAPH-MIXED-CONTRACT", Message: "A graph requires one exact evaluator contract across all participating packs.", ExitCode: result.ExitUnsupported}

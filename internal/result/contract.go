@@ -3,6 +3,7 @@ package result
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // EvaluatorContract explicitly identifies the Core grammar and ceilings applied
@@ -72,9 +73,14 @@ func (c EvaluatorContract) Validate() error {
 const SurfaceSpecVersionUnsupportedCode = "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED"
 
 // SurfaceSpecVersionUnsupportedMessage is the one sentence every such refusal
-// carries; surface names the refusing surface and version the declared one.
-func SurfaceSpecVersionUnsupportedMessage(surface, version string) string {
-	return fmt.Sprintf("%s does not read packs declaring specVersion %s; it reads Core 0.2.0-draft and 0.3.0 packs.", surface, strconv.QuoteToASCII(version))
+// carries; surface names the refusing surface, version the declared one, and
+// readable the Core versions that surface does read, in order (at least one).
+func SurfaceSpecVersionUnsupportedMessage(surface, version string, readable []string) string {
+	list := readable[len(readable)-1]
+	if len(readable) > 1 {
+		list = strings.Join(readable[:len(readable)-1], ", ") + " and " + list
+	}
+	return fmt.Sprintf("%s does not read packs declaring specVersion %s; it reads Core %s packs.", surface, strconv.QuoteToASCII(version), list)
 }
 
 // RetiredSelectorNote is the sentence a refusal of a pack or a request naming

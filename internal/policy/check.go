@@ -2,11 +2,13 @@ package policy
 
 import (
 	"encoding/json"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jpscanon"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -270,7 +272,7 @@ func checkAdoption(doc map[string]any, materials materialSet, engine *validation
 		return problem("JPS-POLICY-CONSUMER-STRUCTURE", "/consumer", "The exact retained consumer does not satisfy a bundled Core structural schema."), code
 	}
 	if result.HasCore050Rules(checked.SpecVersion) {
-		return problem(result.SurfaceSpecVersionUnsupportedCode, "/consumer/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The policy check", checked.SpecVersion)), result.ExitUnsupported
+		return problem(result.SurfaceSpecVersionUnsupportedCode, "/consumer/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The policy check", checked.SpecVersion, readableConsumerVersions())), result.ExitUnsupported
 	}
 	rules, err := unique(array(consumer["rules"]), "/consumer/rules", "consumer rule")
 	if err != nil {
@@ -402,4 +404,11 @@ func checkAdoption(doc map[string]any, materials materialSet, engine *validation
 		}
 	}
 	return nil, result.ExitSuccess
+}
+
+// readableConsumerVersions lists the Core versions the policy check reads a
+// consumer under: every version structural validation admits but Core 0.5.0,
+// which it refuses.
+func readableConsumerVersions() []string {
+	return slices.DeleteFunc(artifacts.SupportedVersions(), result.HasCore050Rules)
 }

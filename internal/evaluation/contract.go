@@ -66,12 +66,13 @@ func declaredSpecVersionWith(version string, contract result.EvaluatorContract) 
 // reads a pack's conditions or layout some other way, or rests on a companion
 // the specification pins to Core 0.3.0, refuses it here, explicitly, rather
 // than reading members it was not written for. surface names the refusing
-// surface in the message, and version is the declared specVersion.
-func SurfaceSpecVersionUnsupported(surface, version string) *Failure {
+// surface in the message, version is the declared specVersion, and readable
+// lists the Core versions the surface does read.
+func SurfaceSpecVersionUnsupported(surface, version string, readable []string) *Failure {
 	return &Failure{
 		Code:     result.SurfaceSpecVersionUnsupportedCode,
 		Phase:    result.PhasePreflight,
-		Message:  result.SurfaceSpecVersionUnsupportedMessage(surface, version),
+		Message:  result.SurfaceSpecVersionUnsupportedMessage(surface, version, readable),
 		ExitCode: result.ExitUnsupported,
 	}
 }

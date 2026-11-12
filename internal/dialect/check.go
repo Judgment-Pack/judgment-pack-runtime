@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
@@ -85,7 +86,7 @@ func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engi
 		return refused(r, "JPS-DIALECT-PACK-INVALID", "", "Pack validation did not pass; no mapping coverage was checked.", code)
 	}
 	if result.HasCore050Rules(checked.SpecVersion) {
-		return refused(r, result.SurfaceSpecVersionUnsupportedCode, "/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The dialect check", checked.SpecVersion), result.ExitUnsupported)
+		return refused(r, result.SurfaceSpecVersionUnsupportedCode, "/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The dialect check", checked.SpecVersion, readableVersions()), result.ExitUnsupported)
 	}
 	inventory, err := project.InspectDocument(pack)
 	if err != nil {
@@ -256,4 +257,10 @@ func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engi
 		return r, result.ExitInvalid
 	}
 	return r, result.ExitSuccess
+}
+
+// readableVersions lists the Core versions the dialect check reads: every
+// version pack validation admits but Core 0.5.0, which it refuses.
+func readableVersions() []string {
+	return slices.DeleteFunc(artifacts.SupportedVersions(), result.HasCore050Rules)
 }

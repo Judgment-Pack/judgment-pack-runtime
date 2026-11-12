@@ -757,7 +757,7 @@ func TestCore050ConsumerIsRefused(t *testing.T) {
 	f.retainConsumer(t, pack)
 	r, c := Check("check", mustJSON(t, f.adoption), f.wire(t), engine(t))
 	requireRefusal(t, r, c, result.ExitUnsupported)
-	if len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || r.Diagnostics[0].InstancePath != "/consumer/specVersion" || r.Diagnostics[0].Message != `The policy check does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs.` {
+	if len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || r.Diagnostics[0].InstancePath != "/consumer/specVersion" || r.Diagnostics[0].Message != `The policy check does not read packs declaring specVersion "0.5.0"; it reads Core 0.1.0-draft, 0.2.0-draft and 0.3.0 packs.` {
 		t.Fatalf("0.5.0 consumer: %+v", r.Diagnostics)
 	}
 }
