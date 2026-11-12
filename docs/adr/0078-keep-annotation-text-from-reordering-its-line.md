@@ -49,7 +49,7 @@ Material-decision impact: public-surface.
 
 Chosen option: (b), because it is the only one that holds in every renderer and in a terminal: a
 line that holds no right-to-left or Arabic-number character cannot be reordered by one, and a code
-point written as ` ` cannot be collapsed.
+point written as `\u0020` cannot be collapsed.
 
 - (a) depends on the renderer: CommonMark passes `<bdi>` through as raw HTML, but renderers that
   strip or escape raw HTML show nothing or the tag as text, and a terminal shows the tag and does
@@ -66,14 +66,14 @@ view lists, and each criterion key and value the filtered view states:
 
 - If the string holds a character whose bidirectional class (UAX #9) is R, AL or AN, it is written
   only in ASCII: `(ASCII only `"..."`)`, the canonical JSON string with every code point outside
-  printable ASCII as a `\u` escape and the backtick as ```. These are the classes that resolve
+  printable ASCII as a `\u` escape and the backtick as `\u0060`. These are the classes that resolve
   to a right-to-left level, or move the neutral characters beside them there, in a left-to-right
   line. No other class an annotation string or a criterion may hold does: every explicit format
   character (the marks, embeddings, overrides and isolates) is refused there (§9.2), and the
   remaining weak and neutral classes resolve to the line's direction.
 - Otherwise, if it holds a code point outside printable ASCII or two adjacent spaces, it is
   written escaped, then ` (ASCII `"..."`)`, where every space next to another space is also
-  written ` `.
+  written `\u0020`.
 - Otherwise it is written escaped only, as before.
 
 The ASCII form still decodes, as a JSON string, to the exact text, so D2 holds as before. The
