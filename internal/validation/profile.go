@@ -3,6 +3,7 @@ package validation
 import (
 	"slices"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -14,7 +15,9 @@ func NegotiateProfile(data []byte, limits carrier.Limits, supported []string) (m
 	if failure != nil {
 		return nil, nil, failure
 	}
-	if root["specVersion"] != "0.3.0" {
+	// Core 0.3.0 declares profiles, and so does the staged draft selector,
+	// which keeps 0.3.0's profile rule: base only.
+	if version, _ := root["specVersion"].(string); !artifacts.HasCore030Rules(version) {
 		return root, nil, nil
 	}
 	profile := "base"

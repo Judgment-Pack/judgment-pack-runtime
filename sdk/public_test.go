@@ -325,12 +325,13 @@ func TestDescribeNamesTheBundledContractsAndCorpora(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"0.1.0-draft", "0.2.0-draft", "0.3.0"}; !reflect.DeepEqual(description.SpecVersions, want) {
+	if want := []string{"0.1.0-draft", "0.2.0-draft", "0.3.0", "0.4.0-draft"}; !reflect.DeepEqual(description.SpecVersions, want) {
 		t.Fatalf("spec versions = %v, want %v", description.SpecVersions, want)
 	}
 	want := []sdk.Evaluator{
 		{SpecVersion: "0.2.0-draft", CorpusSuiteVersion: "0.2.0-draft"},
 		{SpecVersion: "0.3.0", Profiles: []string{"base"}, CorpusSuiteVersion: "0.3.0"},
+		{SpecVersion: "0.4.0-draft", Profiles: []string{"base"}, Stage: "staged-unreleased"},
 	}
 	if !reflect.DeepEqual(description.Evaluators, want) {
 		t.Fatalf("evaluators = %#v, want %#v", description.Evaluators, want)

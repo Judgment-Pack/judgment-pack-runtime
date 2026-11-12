@@ -13,6 +13,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -904,12 +905,24 @@ func joinCapped(values []string, limit int) string {
 // second time — with the same carrier rules the pack got everywhere else. A
 // document that does not decode yields nil, which derives no probes; every
 // caller has already refused such a pack before deriving coverage from it.
+//
+// A pack declaring the staged draft selector (EXPERIMENTAL) yields its
+// evaluation form, the document the evaluator reads, so coverage is derived
+// from the conditions that are evaluated; one with no evaluation form (an
+// unresolved value-set reference, which admission refuses) yields nil.
 func PackRoot(data []byte) map[string]any {
 	document, failure := carrier.Decode(data, carrier.DefaultLimits())
 	if failure != nil {
 		return nil
 	}
 	root, _ := document.(map[string]any)
+	if version, _ := root["specVersion"].(string); root != nil && result.IsStagedDraft(version) {
+		form, err := evalform.Of(root)
+		if err != nil {
+			return nil
+		}
+		return form
+	}
 	return root
 }
 

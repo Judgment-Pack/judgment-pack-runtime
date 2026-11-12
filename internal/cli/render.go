@@ -220,7 +220,7 @@ func (a *App) renderExamples(format string, output result.Examples) error {
 // evaluated as it stands. A document declaring another version is refused by the
 // evaluator (§11), and the one edit it needs is its specVersion.
 func (a *App) renderExampleEvaluatorNote(specVersion, evaluatorSpecVersion string) {
-	if specVersion == evaluatorSpecVersion || specVersion == "0.3.0" {
+	if specVersion == evaluatorSpecVersion || result.HasCore030Rules(specVersion) {
 		fmt.Fprintf(a.out, "the evaluator admits %s: a pack made from this set needs no re-declaration\n", display.Sanitize(specVersion))
 		return
 	}
@@ -272,6 +272,16 @@ func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorp
 		}
 		if item.ExpectedErrorClass != "" || item.ActualErrorClass != "" {
 			fmt.Fprintf(a.out, "  expected class: %s / actual class: %s\n", display.Sanitize(item.ExpectedErrorClass), display.Sanitize(item.ActualErrorClass))
+		}
+	}
+	// Staged rows only: a held row is reported, never run, and never counted
+	// as passed.
+	if output.Summary.Held > 0 {
+		fmt.Fprintf(a.out, "held: %d staged row(s) not run\n", output.Summary.Held)
+		for _, item := range output.Cases {
+			if item.Status == "held" {
+				fmt.Fprintf(a.out, "- %s [%s] held: %s\n", display.Sanitize(item.ID), display.Sanitize(item.SpecSection), display.Sanitize(item.Detail))
+			}
 		}
 	}
 	fmt.Fprintf(a.out, "JPS %s · corpus %s (%s, %s) · %s\n",
@@ -927,7 +937,7 @@ func (a *App) renderGraphEvaluation(format string, output result.GraphEvaluation
 	for _, handoff := range output.Handoffs {
 		target := "no declared destination"
 		if handoff.Target != nil {
-			if output.EvaluatorSpecVersion == "0.3.0" {
+			if result.HasCore030Rules(output.EvaluatorSpecVersion) {
 				rendered, err := handoff.Target.Rendered()
 				if err != nil {
 					target = "unavailable"

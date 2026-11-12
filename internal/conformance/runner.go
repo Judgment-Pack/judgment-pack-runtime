@@ -54,6 +54,9 @@ type Runner struct {
 }
 
 type suiteSource struct {
+	// staged marks the staged draft selector's bundled cases: no suiteVersion,
+	// a status of "staged", and reader profiles a base reader skips.
+	staged          bool
 	manifestBytes   []byte
 	schemaBytes     []byte
 	coreSchemaBytes []byte
@@ -82,14 +85,26 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		if requestedVersion == "" {
 			requestedVersion = artifacts.DraftVersion
 		}
-		source, failure = bundledSource(requestedVersion)
+		if artifacts.IsStaged(requestedVersion) {
+			source, failure = stagedSource(requestedVersion)
+		} else {
+			source, failure = bundledSource(requestedVersion)
+		}
 	} else {
+		if artifacts.IsStaged(requestedVersion) {
+			return result.Suite{}, invocationFailure("JPS-SUITE-STAGED", "The staged draft selector runs only its bundled staged cases; a local suite cannot select it.")
+		}
 		source, failure = localSource(suiteArgument, requestedVersion)
 	}
 	if failure != nil {
 		return result.Suite{}, failure
 	}
-	manifest, failure := validateManifest(source.manifestBytes, source.schemaBytes, source.coreSchemaBytes)
+	var manifest Manifest
+	if source.staged {
+		manifest, failure = validateStagedManifest(source.manifestBytes, source.schemaBytes, source.coreSchemaBytes)
+	} else {
+		manifest, failure = validateManifest(source.manifestBytes, source.schemaBytes, source.coreSchemaBytes)
+	}
 	if failure != nil {
 		return result.Suite{}, failure
 	}
@@ -110,6 +125,9 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		Cases:                 []result.Case{},
 		Diagnostics:           []result.Diagnostic{},
 	}
+	if source.staged {
+		output.SuiteStatus = "staged"
+	}
 	remainingDiagnostics := MaxResultDiagnostics
 	remainingDiagnosticBytes := MaxResultDiagnosticBytes
 	for _, manifestCase := range manifest.Cases {
@@ -127,6 +145,24 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		})
 		if operational != nil {
 			return result.Suite{}, operational
+		}
+		if source.staged {
+			if profile := declaredProfile(fixture); profile != "" && profile != "base" {
+				// readerProfiles: a case whose fixture declares another profile is
+				// run by a reader supporting it. This reader implements base only,
+				// so the case is not checked; what is checked is that the reader
+				// refuses the fixture's profile rather than reading it as base.
+				caseResult := skippedProfileCase(manifestCase.ID, manifestCase.ExpectedResult, profile, actual)
+				if caseResult.Status == "mismatch" {
+					output.Status = "mismatch"
+					output.Summary.Mismatched++
+				} else {
+					output.Summary.Skipped++
+				}
+				output.Summary.Total++
+				output.Cases = append(output.Cases, caseResult)
+				continue
+			}
 		}
 		normative, advice := splitAdvice(actual.Diagnostics, strict)
 		actual.Diagnostics = append(append([]result.Diagnostic{}, normative...), advice...)
@@ -385,8 +421,18 @@ func validateManifest(manifestBytes, schemaBytes, coreSchemaBytes []byte) (Manif
 	if err := json.Unmarshal(encoded, &manifest); err != nil {
 		return Manifest{}, internalFailure("JPS-SUITE-MANIFEST", "Suite manifest could not be decoded internally.")
 	}
+	if failure := checkCases(manifest); failure != nil {
+		return Manifest{}, failure
+	}
+	return manifest, nil
+}
+
+// checkCases applies the case rules every suite is held to: a case count
+// within limits, unique ids and paths, safe paths, and category, layer, result
+// and diagnostic agreeing.
+func checkCases(manifest Manifest) *validation.OperationalFailure {
 	if len(manifest.Cases) == 0 || len(manifest.Cases) > MaxSuiteCases {
-		return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Suite case count is outside supported limits.")
+		return invocationFailure("JPS-SUITE-MANIFEST", "Suite case count is outside supported limits.")
 	}
 	seenIDs := map[string]bool{}
 	seenPaths := map[string]bool{}
@@ -396,36 +442,36 @@ func validateManifest(manifestBytes, schemaBytes, coreSchemaBytes []byte) (Manif
 				Rules []result.OverlapRule `json:"rules"`
 			}
 			if json.Unmarshal(manifestCase.ExpectedAdvisories, &advice) != nil {
-				return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Invalid advisory expectations.")
+				return invocationFailure("JPS-SUITE-MANIFEST", "Invalid advisory expectations.")
 			}
 			for _, d := range advice {
 				if len(d.Rules) != 2 || d.Rules[0].ID == d.Rules[1].ID {
-					return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "An overlap advisory requires two distinct rule ids.")
+					return invocationFailure("JPS-SUITE-MANIFEST", "An overlap advisory requires two distinct rule ids.")
 				}
 			}
 		}
 		if seenIDs[manifestCase.ID] || seenPaths[manifestCase.Path] {
-			return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Suite case IDs and paths must be unique.")
+			return invocationFailure("JPS-SUITE-MANIFEST", "Suite case IDs and paths must be unique.")
 		}
 		seenIDs[manifestCase.ID] = true
 		seenPaths[manifestCase.Path] = true
 		if err := validateCasePath(manifestCase.Path); err != nil {
-			return Manifest{}, invocationFailure("JPS-SUITE-FIXTURE-PATH", "Suite contains an unsafe fixture path.")
+			return invocationFailure("JPS-SUITE-FIXTURE-PATH", "Suite contains an unsafe fixture path.")
 		}
 		category := strings.SplitN(manifestCase.Path, "/", 2)[0]
 		if category == "valid" || category == "advisory" {
 			if manifestCase.Layer != "semantic" || manifestCase.ExpectedResult != "valid" || manifestCase.ExpectedDiagnostic != nil {
-				return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Valid-category cases must be semantic valid cases without an expected diagnostic.")
+				return invocationFailure("JPS-SUITE-MANIFEST", "Valid-category cases must be semantic valid cases without an expected diagnostic.")
 			}
-		} else if manifest.SpecVersion == artifacts.CoreVersion && category == "carrier" && manifestCase.ExpectedResult == "valid" {
+		} else if artifacts.HasCore030Rules(manifest.SpecVersion) && category == "carrier" && manifestCase.ExpectedResult == "valid" {
 			if manifestCase.Layer != "carrier" || manifestCase.ExpectedDiagnostic != nil {
-				return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Positive carrier cases must use the carrier layer without an expected diagnostic.")
+				return invocationFailure("JPS-SUITE-MANIFEST", "Positive carrier cases must use the carrier layer without an expected diagnostic.")
 			}
 		} else if manifestCase.Layer != category || manifestCase.ExpectedResult == "valid" || manifestCase.ExpectedDiagnostic == nil {
-			return Manifest{}, invocationFailure("JPS-SUITE-MANIFEST", "Negative case category, layer, result, and diagnostic must agree.")
+			return invocationFailure("JPS-SUITE-MANIFEST", "Negative case category, layer, result, and diagnostic must agree.")
 		}
 	}
-	return manifest, nil
+	return nil
 }
 
 // strayDiagnostics returns the reported diagnostics other than the expected one.

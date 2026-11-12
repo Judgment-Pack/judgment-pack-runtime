@@ -254,7 +254,7 @@ func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report
 	}
 	for _, row := range matrix.Cases {
 		outcome := evaluator.RunCaseAdmittedWith(admitted, row, declaredTarget, command, evaluation.Options{SpecVersion: contract.Version()})
-		if contract.Version() == "0.3.0" {
+		if contract.Core030Rules() {
 			run.dispositions += len(outcome.Expected) + len(outcome.Actual)
 			if run.dispositions > p.dispositionBudget() {
 				return report, &Failure{Code: "JPS-RESOURCE-MATRIX-DISPOSITIONS", Message: "The exact canonical dispositions exceed the Core 0.3 test report byte budget; select fewer cases or packs. No partial report is returned.", ExitCode: result.ExitIO}

@@ -1,6 +1,7 @@
 package dialect
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/project"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
 
@@ -233,5 +235,26 @@ func TestCoverageOutputLimitStopsRepeatedAncestorOmissions(t *testing.T) {
 	r, code := Check("test", mapping(nil, nil, omitted, nil), raw, engine)
 	if code != 2 || r.Diagnostics[0].Code != "JPS-DIALECT-COVERAGE-OUTPUT-LIMIT" || r.Compatibility != nil || r.Document != "" || r.Digest != "" {
 		t.Fatal(code, r)
+	}
+}
+
+// The dialect check does not read the staged draft selector (EXPERIMENTAL): a
+// pack declaring it is refused explicitly once it validates, and no mapping
+// coverage is reported for it.
+func TestStagedDraftPackIsRefused(t *testing.T) {
+	raw, err := os.ReadFile("../artifacts/jps/0.3.0/cases/valid/minimal-literal.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := bytes.Replace(raw, []byte(`"specVersion": "0.3.0"`), []byte(`"specVersion": "0.4.0-draft"`), 1)
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := draftDocument("text")
+	d["case"].(map[string]any)["evidence"] = []any{}
+	r, code := CheckRetainedColumnDraft("test", draftJSON(t, d), pack, engine, RetainedColumnDraftBase())
+	if code != result.ExitUnsupported || len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != result.StagedDraftUnsupportedCode || r.Compatibility != nil || r.PackValidation == nil || r.PackValidation.Status != "valid" {
+		t.Fatalf("staged pack: code %d %+v", code, r)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -104,12 +105,12 @@ func TestExampleReturnsBytesAndRejectsUnknownNames(t *testing.T) {
 	}
 }
 
-// All three exact versions load independently and verify against their own
+// All four exact versions load independently and verify against their own
 // locks. Only versions with an indexed evaluation corpus expose that corpus.
 func TestEveryBundledVersionLoads(t *testing.T) {
 	versions := SupportedVersions()
-	if len(versions) != 3 || versions[0] != DraftVersion || versions[1] != EvaluatorDraftVersion || versions[2] != CoreVersion {
-		t.Fatalf("SupportedVersions = %v, want %v", versions, []string{DraftVersion, EvaluatorDraftVersion, CoreVersion})
+	if !slices.Equal(versions, []string{DraftVersion, EvaluatorDraftVersion, CoreVersion, StagedDraftVersion}) {
+		t.Fatalf("SupportedVersions = %v, want %v", versions, []string{DraftVersion, EvaluatorDraftVersion, CoreVersion, StagedDraftVersion})
 	}
 	for _, version := range versions {
 		set, err := Load(version)
@@ -320,5 +321,69 @@ func TestCore030ExactProvenanceAndCompleteIndexedFixtures(t *testing.T) {
 	}
 	if len(indexed) != 0 {
 		t.Fatalf("indexed fixtures missing from hash inventory: %v", indexed)
+	}
+}
+
+// The staged draft selector's bundle is labelled staged in its lock, from an
+// exact commit, and only that version may carry the label; its staged
+// rows and example are readable, and it publishes no evaluation corpus.
+func TestStagedBundleIsLabelledAndReadable(t *testing.T) {
+	for _, version := range SupportedVersions() {
+		set, err := Load(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if set.Staged() != IsStaged(version) || (set.Lock().Source.Stage == StagedStage) != IsStaged(version) {
+			t.Fatalf("%s: staged=%v stage=%q", version, set.Staged(), set.Lock().Source.Stage)
+		}
+	}
+	set, err := Load(StagedDraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := set.Lock().Source
+	if source.Kind != "immutable-git-ref" || source.Ref != source.BaseCommit || len(source.Ref) != 40 || source.WorktreeDirty {
+		t.Fatalf("staged source must be one exact clean commit: %+v", source)
+	}
+	if set.HasEvaluationCorpus() || !set.HasStagedEvaluationRows() {
+		t.Fatalf("corpus=%v rows=%v", set.HasEvaluationCorpus(), set.HasStagedEvaluationRows())
+	}
+	if rows, err := set.StagedEvaluationRows(); err != nil || len(rows) == 0 {
+		t.Fatalf("rows: %v", err)
+	}
+	names := set.StagedExamples()
+	if len(names) == 0 {
+		t.Fatal("no staged example")
+	}
+	for _, name := range names {
+		if data, err := set.StagedExample(name); err != nil || len(data) == 0 {
+			t.Fatalf("example %s: %v", name, err)
+		}
+	}
+	if _, err := set.StagedExample("../lock.json"); err == nil {
+		t.Fatal("a staged example name must not build a path")
+	}
+}
+
+// A lock's stage must agree with its version: a released version cannot be
+// labelled staged, and the staged version cannot drop its label.
+func TestLockStageMustMatchVersion(t *testing.T) {
+	for _, tc := range []struct {
+		version, stage string
+		ok             bool
+	}{
+		{CoreVersion, "", true},
+		{CoreVersion, StagedStage, false},
+		{StagedDraftVersion, StagedStage, true},
+		{StagedDraftVersion, "", false},
+		{StagedDraftVersion, "released", false},
+	} {
+		err := checkStage(tc.version, LockSource{Kind: "immutable-git-ref", Ref: strings.Repeat("a", 40), BaseCommit: strings.Repeat("a", 40), Stage: tc.stage})
+		if (err == nil) != tc.ok {
+			t.Errorf("%s stage %q: %v", tc.version, tc.stage, err)
+		}
+	}
+	if err := checkStage(StagedDraftVersion, LockSource{Kind: "immutable-git-ref", Ref: "main", BaseCommit: strings.Repeat("a", 40), Stage: StagedStage}); err == nil {
+		t.Error("a staged lock naming a branch was accepted")
 	}
 }

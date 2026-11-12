@@ -388,7 +388,7 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 	// unsupported profiles outrank it, while legacy empty-row behavior stays.
 	if len(rows.Cases) == 0 {
 		failure := emptyRowsFailure()
-		if selectionFailure == nil && contract.Version() == "0.3.0" {
+		if selectionFailure == nil && contract.Core030Rules() {
 			failure.SpecVersion = contract.Version()
 		}
 		return result.GraphTest{}, failure
@@ -405,7 +405,7 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 		return result.GraphTest{}, mixedContractFailure()
 	}
 	options.contract = contract
-	if contract.Version() == "0.3.0" && (options.ReportBudget <= 0 || options.ReportBudget > int(MaxEvaluationReportBytes)) {
+	if contract.Core030Rules() && (options.ReportBudget <= 0 || options.ReportBudget > int(MaxEvaluationReportBytes)) {
 		options.ReportBudget = int(MaxEvaluationReportBytes)
 	}
 	output := result.GraphTest{

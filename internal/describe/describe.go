@@ -29,6 +29,7 @@ func Runtime(set *artifacts.Set, command string) result.Version {
 		EvaluatorCapabilities: []result.EvaluatorCapability{
 			{SpecVersion: result.EvaluatorSpecVersion},
 			{SpecVersion: artifacts.CoreVersion, SupportedProfiles: []string{"base"}},
+			{SpecVersion: artifacts.StagedDraftVersion, SupportedProfiles: []string{"base"}, Stage: artifacts.StagedStage},
 		},
 		ArtifactProvenance: bundledProvenance(set),
 	}
@@ -163,8 +164,8 @@ func stringFrom(value any) string {
 
 // Default validation-only examples retain their existing evaluator guidance.
 func exampleEvaluatorVersion(set *artifacts.Set) string {
-	if set.Lock().SpecVersion == artifacts.CoreVersion {
-		return artifacts.CoreVersion
+	if version := set.Lock().SpecVersion; artifacts.HasCore030Rules(version) {
+		return version
 	}
 	return result.EvaluatorSpecVersion
 }

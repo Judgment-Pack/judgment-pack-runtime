@@ -11,7 +11,9 @@
 // without compatibility promise, which is what "experimental" names here.
 //
 // Options selects an exact evaluator version: the default remains 0.2.0-draft;
-// Core 0.3.0 is explicit and supports only the base profile. A pack must declare
+// Core 0.3.0 is explicit and supports only the base profile, and so does the
+// staged draft selector 0.4.0-draft (EXPERIMENTAL), whose evaluation form is a
+// Core 0.3.0 pack. A pack must declare
 // the selected version before its §§7–8 semantics are applied. Every successful
 // payload names that applied version beside the pack's declared version.
 //
@@ -50,6 +52,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 )
@@ -577,6 +580,22 @@ func (e *Engine) conformance(pack []byte, options Options) (result.Validation, m
 	packRoot, ok := document.(map[string]any)
 	if !ok {
 		return result.Validation{}, nil, nil, &Failure{Code: "JPS-EVALUATION-INTERNAL", Message: "The validated pack did not decode to a JSON object.", ExitCode: result.ExitInternal}
+	}
+	if result.IsStagedDraft(validated.SpecVersion) {
+		// The staged draft selector is evaluated as its evaluation form EF(P)
+		// (RFC 0031): annotations and the value sets removed, and each value-set
+		// reference expanded in place, once, here at admission. Every row of
+		// this admission reads that form, so the trace of an expanded condition
+		// is its inline twin's. The digest and the pack identity stay over the
+		// exact bytes of P: the digest is taken over the admitted copy of those
+		// bytes, and EF keeps id and version as they are.
+		form, err := evalform.Of(packRoot)
+		if err != nil {
+			// Unreachable after the semantic layer, which refuses every
+			// unresolved reference; refused as the non-conformance it is.
+			return result.Validation{}, nil, nil, &Failure{Class: result.ClassPackNotConformant, Phase: result.PhasePreflight, Code: "JPS-SEMANTIC-UNRESOLVED-VALUE-SET", Message: display.Sanitize(err.Error()), ExitCode: result.ExitInvalid}
+		}
+		packRoot = form
 	}
 	return validated, packRoot, unsupportedRequiredExtension(validated), nil
 }
