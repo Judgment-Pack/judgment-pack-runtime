@@ -2,10 +2,10 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.43.0 - 2026-11-12
 
 - The staged draft selector `0.4.0-draft` is admitted EXPERIMENTALLY, with the `base` profile
-  only (#376, ADR-0075, proposed). It is the selector a specification commit stages for Draft RFC
+  only (#376, ADR-0075). It is the selector a specification commit stages for Draft RFC
   0031: annotations under the reserved extension `org.judgmentpack.annotations`, and root
   `valueSets` that a fact `in` condition names with `valueSet`. The bundle is vendored from
   specification commit `4cae6a34058883955cf3b00a4c9672e2c8ad7975`, and its lock says
