@@ -604,10 +604,11 @@ view:` and the title, a sentence saying it is not the pack, the identity, the fi
 `Outcomes matched: N of M` and `Rules matched: N of M`; each match follows under a heading that
 gives its position, such as `Rule 3 of 5`, written as the view writes it. A criterion that no
 annotation could hold — a key outside the schema's pattern, an empty value, a value longer than 256
-characters or holding a character an annotation string may not hold, a repeated criterion — is
-refused, and so is a pack under any other `specVersion`, rather than shown with nothing matched,
-because it cannot carry annotations; the CLI reports both as `JPS-INVOCATION-FILTER` and describes
-nothing.
+characters, holding a character an annotation string may not hold (a control, a line or paragraph
+separator, a bidirectional format character or an invisible one) or beginning or ending with white
+space, a repeated criterion — is refused, and so is a pack under any other `specVersion`, rather
+than shown with nothing matched, because it cannot carry annotations; the CLI reports both as
+`JPS-INVOCATION-FILTER` and describes nothing.
 
 The view is held by hand. The Markdown and canonical JSON under `sdk/view/testdata/expected`, for
 one every-member pack of each admitted specification version, for the adversarial-strings fixture

@@ -268,6 +268,13 @@ func TestPacksDescribeFilterRefusals(t *testing.T) {
 		{staged, "--filter", "category"},
 		{staged, "--filter", "category="},
 		{staged, "--filter", "category=a", "--filter", "category=a"},
+		// The draft's character rules: an isolate, a zero-width space, a tag
+		// character, and white space at either end.
+		{staged, "--filter", "category=thre\u2066shold"},
+		{staged, "--filter", "category=threshold\u200b"},
+		{staged, "--filter", "category=threshold\U000e0020"},
+		{staged, "--filter", "category= threshold"},
+		{staged, "--filter", "category=threshold\u00a0"},
 		{core, "--filter", "category=threshold"},
 	} {
 		full := append([]string{"packs", "describe"}, args...)

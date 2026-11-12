@@ -4,7 +4,7 @@
 - Version: 2\.0\.0
 - Spec version: 0\.4\.0\-draft
 - Profile: base
-- Digest: sha256:f7f57155e699d219147488090a0cb20678f8351ccca409af4e55105e5042d920
+- Digest: sha256:e163016dd5e9e3c1cffd7c3e758ed4f1838a7937db816a7c103973e3f7c4adf4
 - View version: 1
 - Description: Invented content for the pack view tests\; it authorizes nothing\.
 
@@ -123,7 +123,7 @@
   - Entry 2: \"café\" (ASCII `"caf\u00e9"`)
     - Extensions:
       - org\.judgmentpack\.annotations:
-        - label: Café `U+2067`menu`U+2069` (ASCII `"Caf\u00e9 \u2067menu\u2069"`)
+        - label: Café `U+FFF9`menu`U+FFFB` (ASCII `"Caf\u00e9 \ufff9menu\ufffb"`)
   - Entry 3: \{\"unit\"\:1\.50\}
 
 ### Value set 2: unused

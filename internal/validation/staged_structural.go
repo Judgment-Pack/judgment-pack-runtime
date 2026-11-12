@@ -59,7 +59,7 @@ func collectStagedStructural(validationError *jsonschema.ValidationError, locati
 	case *kind.Not:
 		switch {
 		case annotations >= 0 && annotations < len(location):
-			add("JPS-STRUCTURE-NOT", location, "Annotation string must not contain a control character, a line or paragraph separator, or a bidirectional formatting character.")
+			add("JPS-STRUCTURE-NOT", location, "Annotation string must not contain a control character, a line or paragraph separator, a bidirectional format character or an invisible character, and must not begin or end with white space.")
 			return true
 		case conditionPosition(location):
 			// The only not in a condition shape is the value-set reference rule:

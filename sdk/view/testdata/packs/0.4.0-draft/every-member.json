@@ -119,7 +119,7 @@
           "description": "Paper and pens.",
           "extensions": { "org.judgmentpack.annotations": { "code": "S1", "owners": ["office"] } }
         },
-        { "value": "caf\u00e9", "extensions": { "org.judgmentpack.annotations": { "label": "Caf\u00e9 \u2067menu\u2069" } } },
+        { "value": "caf\u00e9", "extensions": { "org.judgmentpack.annotations": { "label": "Caf\u00e9 \ufff9menu\ufffb" } } },
         { "value": { "unit": 1.50 } }
       ]
     },

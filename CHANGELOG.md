@@ -2,6 +2,21 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- The staged draft selector `0.4.0-draft` is re-vendored from specification commit
+  `c867b35f5bc06b3c00bad7bfc5c9426a70fa12b4`, the revision of the draft that the first review of
+  RFC 0031 made (#379; EXPERIMENTAL, base profile only, no conformance claim). An annotation string
+  now also refuses every bidirectional format character (U+061C, U+200E, U+200F and U+2066–U+2069,
+  beside the embeddings and overrides), the invisible and default-ignorable characters the draft
+  lists (the tag characters among them), and white space at its start or end, so a staged pack
+  the previous bundle admitted with one of them is refused (`JPS-STRUCTURE-NOT`). A filter
+  criterion that holds one is refused the same way (`JPS-INVOCATION-FILTER` in the CLI), and the
+  refusal names the code point by its `U+` number. The staged run has 208 document cases, of
+  which the 18 written for the `extended` profile are refused as unsupported and skipped, and 82
+  evaluation rows, with the row `annotations-supported-extension-set` still held. `0.2.0-draft`
+  and `0.3.0` behaviour and outputs are unchanged.
+
 ## 0.43.0 - 2026-11-12
 
 - The staged draft selector `0.4.0-draft` is admitted EXPERIMENTALLY, with the `base` profile
