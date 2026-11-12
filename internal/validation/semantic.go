@@ -7,18 +7,29 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 var idCollections = []string{"outcomes", "rules", "evidenceRequirements", "sources", "exceptions"}
 var extensionNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9-]*)+$`)
 
-func semanticDiagnostics(root map[string]any) ([]result.Diagnostic, bool) {
+// semanticDiagnostics applies §3.3. staged adds the staged draft selector's two
+// conditions: value-set ids are unique within valueSets, and every valueSet
+// member of a fact condition names a declared set, in every condition position.
+func semanticDiagnostics(root map[string]any, staged bool) ([]result.Diagnostic, bool) {
 	diagnostics := newDiagnosticCollector()
-	for _, collection := range idCollections {
+	collections := idCollections
+	if staged {
+		collections = append(slices.Clone(idCollections), "valueSets")
+	}
+	for _, collection := range collections {
 		if !duplicateIDDiagnostics(root, collection, diagnostics) {
 			return diagnostics.sorted(), diagnostics.truncated
 		}
+	}
+	if staged && !valueSetReferenceDiagnostics(root, diagnostics) {
+		return diagnostics.sorted(), diagnostics.truncated
 	}
 
 	outcomes := idSet(root, "outcomes")
@@ -97,6 +108,63 @@ func semanticDiagnostics(root map[string]any) ([]result.Diagnostic, bool) {
 		}
 	}
 	return diagnostics.sorted(), diagnostics.truncated
+}
+
+// valueSetReferenceDiagnostics reports each valueSet member that names no
+// declared set, in the root applicability, each rule's when and each
+// exception's when, under all, any and not. Identifiers are collection-local:
+// only valueSets is consulted, so an id held by an outcome names no set.
+func valueSetReferenceDiagnostics(root map[string]any, diagnostics *diagnosticCollector) bool {
+	sets := idSet(root, "valueSets")
+	visit := func(location []string, condition map[string]any) bool {
+		reference, carries := condition["valueSet"]
+		if !carries {
+			return true
+		}
+		id, _ := reference.(string)
+		if sets[id] {
+			return true
+		}
+		return diagnostics.add(result.ErrorDiagnostic(
+			"JPS-SEMANTIC-UNRESOLVED-VALUE-SET", "semantic",
+			carrier.Pointer(appendLocation(location, "valueSet")),
+			unresolvedMessage("value set", id, sets)))
+	}
+	if applicability, ok := root["applicability"]; ok {
+		if !walkFactConditions(applicability, []string{"applicability"}, visit) {
+			return false
+		}
+	}
+	for _, collection := range []string{"rules", "exceptions"} {
+		for _, indexed := range indexedObjects(root[collection]) {
+			if !walkFactConditions(indexed.object["when"], []string{collection, fmt.Sprint(indexed.index), "when"}, visit) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// walkFactConditions visits every fact condition in one condition position,
+// under all, any and not, with its location.
+func walkFactConditions(value any, location []string, visit func([]string, map[string]any) bool) bool {
+	condition, ok := value.(map[string]any)
+	if !ok {
+		return true
+	}
+	switch stringValue(condition["op"]) {
+	case "fact":
+		return visit(location, condition)
+	case "all", "any":
+		for index, child := range list(condition["conditions"]) {
+			if !walkFactConditions(child, appendLocation(location, "conditions", fmt.Sprint(index)), visit) {
+				return false
+			}
+		}
+	case "not":
+		return walkFactConditions(condition["condition"], appendLocation(location, "condition"), visit)
+	}
+	return true
 }
 
 func duplicateIDDiagnostics(root map[string]any, collection string, diagnostics *diagnosticCollector) bool {
@@ -212,20 +280,27 @@ func coreExtensionNames(root map[string]any) map[string]bool {
 	return names
 }
 
-func extensionNameDiagnostics(root map[string]any, diagnostics *diagnosticCollector) {
-	if !collectExtensionSlotDiagnostics(root, nil, diagnostics) {
+// extensionNameDiagnostics refuses an extension name outside the allowed
+// reverse-domain namespace, and every org.judgmentpack. name, in every Core
+// extensions object. Under the staged draft selector one specification-defined
+// name is admitted (draft §9.2): the annotations extension, in the root's, each
+// outcome's and each rule's extensions object, and nowhere else. A value-set
+// entry's extensions object is closed by the schema and is not walked here.
+func extensionNameDiagnostics(root map[string]any, diagnostics *diagnosticCollector, staged bool) {
+	if !collectExtensionSlotDiagnostics(root, nil, diagnostics, staged) {
 		return
 	}
 	for _, singleton := range []string{"decision", "escalation", "metadata"} {
 		if object, ok := root[singleton].(map[string]any); ok {
-			if !collectExtensionSlotDiagnostics(object, []string{singleton}, diagnostics) {
+			if !collectExtensionSlotDiagnostics(object, []string{singleton}, diagnostics, false) {
 				return
 			}
 		}
 	}
 	for _, collection := range []string{"evidenceRequirements", "sources", "outcomes", "rules", "exceptions"} {
+		annotated := staged && (collection == "outcomes" || collection == "rules")
 		for _, indexed := range indexedObjects(root[collection]) {
-			if !collectExtensionSlotDiagnostics(indexed.object, []string{collection, fmt.Sprint(indexed.index)}, diagnostics) {
+			if !collectExtensionSlotDiagnostics(indexed.object, []string{collection, fmt.Sprint(indexed.index)}, diagnostics, annotated) {
 				return
 			}
 		}
@@ -247,7 +322,9 @@ func extensionNameDiagnostics(root map[string]any, diagnostics *diagnosticCollec
 	}
 }
 
-func collectExtensionSlotDiagnostics(object map[string]any, location []string, diagnostics *diagnosticCollector) bool {
+// collectExtensionSlotDiagnostics checks one extensions object's names.
+// annotated admits the annotations extension in it.
+func collectExtensionSlotDiagnostics(object map[string]any, location []string, diagnostics *diagnosticCollector, annotated bool) bool {
 	extensions, ok := object["extensions"].(map[string]any)
 	if !ok {
 		return true
@@ -258,6 +335,9 @@ func collectExtensionSlotDiagnostics(object map[string]any, location []string, d
 	}
 	slices.Sort(names)
 	for _, name := range names {
+		if annotated && name == evalform.AnnotationsName {
+			continue
+		}
 		if !validExtensionName(name) {
 			if !diagnostics.add(result.ErrorDiagnostic(
 				"JPS-STRUCTURE-EXTENSION-NAME",

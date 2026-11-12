@@ -52,6 +52,13 @@ Bundled specification artifacts are pinned to an immutable upstream tag or exact
 verified byte-for-byte at runtime and during release checks. Updating those artifacts does not
 rewrite an existing CLI release.
 
+The staged draft selector `0.4.0-draft` (Draft RFC 0031, ADR-0075) is EXPERIMENTAL. Its files come
+from a specification commit's staged directories, which no specification release carries, pinned to
+a full commit digest and labelled `stage: staged-unreleased` in the lock; its evaluator entry in
+runtime discovery carries the same `stage`. The specification may rename or change the selector,
+its schema and its cases, and a later runtime release follows it with no compatibility promise:
+a pack that declares `0.4.0-draft` may be refused, or evaluated differently, by the next release.
+
 Document support and evaluator support are reported separately. The additive
 `evaluatorCapabilities` entries name exact Core contracts; `supportedProfiles` on
 the `0.3.0` entry lists only `base` and makes no profile promise for other formats.
@@ -139,7 +146,16 @@ version. This is stricter than the rule for `outputVersion`, because a reader of
 its bytes. Which characters the Markdown writes as code points follows the Unicode tables of the Go
 toolchain the runtime is built with, through `internal/display`; an update of those tables alone,
 which can move a newly assigned format character into that set, does not move `viewVersion`. The `packs describe` JSON envelope follows `outputVersion`; the view's bytes ride in it
-as a string and follow `viewVersion`.
+as a string and follow `viewVersion`. Describing the value sets and annotations of the staged draft
+selector `0.4.0-draft` left `viewVersion` at `"1"`, because no pack an earlier release could
+describe holds them.
+
+The filtered view (`sdk.Pack.FilteredView`, `view.FilteredView`, and `jpack packs describe
+--filter`, ADR-0075) carries its own `filteredViewVersion`, `"1"`, in its JSON and in its
+Markdown, and no `viewVersion`, so a reader of views never takes it for the pack. It moves by the
+rule `viewVersion` moves by. Its bytes ride in the `packs describe --filter` JSON envelope's
+`filteredView` member as a string. It is EXPERIMENTAL, and exists only for the staged draft
+selector.
 
 ## Release artifacts
 

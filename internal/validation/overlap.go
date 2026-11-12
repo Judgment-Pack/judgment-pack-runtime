@@ -94,6 +94,19 @@ func ruleOverlapDiagnostics(root map[string]any) ([]result.Diagnostic, bool) {
 }
 
 func ruleOverlapDiagnosticsWithLimits(root map[string]any, limits carrier.Limits) ([]result.Diagnostic, bool) {
+	return ruleOverlapAdvice(root, nil, limits)
+}
+
+// overlapValueSetReference is the reason a staged pack's overlap carries no
+// rewrite: a rewrite built from the evaluation form inlines a set's values, so
+// applying it would silently drop the reference the author wrote.
+const overlapValueSetReference = "No exclusive rewrite is suggested because a condition names a value set."
+
+// ruleOverlapAdvice reads root's conditions. written is nil, or, under the
+// staged draft selector, the pack as written when root is its evaluation form:
+// a pair where either rule's condition as written names a value set is then
+// advised on without a rewrite.
+func ruleOverlapAdvice(root, written map[string]any, limits carrier.Limits) ([]result.Diagnostic, bool) {
 	collector := newDiagnosticCollector()
 	budget := &overlapBudget{overlapWorkLimit}
 	remainingOutput := overlapOutputLimit
@@ -104,6 +117,10 @@ func ruleOverlapDiagnosticsWithLimits(root map[string]any, limits carrier.Limits
 	}
 	if len(outcomes) < 2 {
 		return []result.Diagnostic{}, false
+	}
+	var writtenRules []map[string]any
+	if written != nil {
+		writtenRules = objectList(written["rules"])
 	}
 	formulas := make([]overlapFormula, len(rules))
 	for i, rule := range rules {
@@ -134,9 +151,11 @@ func ruleOverlapDiagnosticsWithLimits(root map[string]any, limits carrier.Limits
 					d.Certainty = "exact"
 				}
 			}
-			d.SuggestedRewrite = boundedExclusiveRewrite(root, exclusiveRewrite(a, b), limits, budget)
 			suggestion := ""
-			if d.SuggestedRewrite != nil {
+			if written != nil && (namesValueSet(writtenRules, i) || namesValueSet(writtenRules, j)) {
+				d.RewriteUnavailable = overlapValueSetReference
+				suggestion = overlapValueSetReference
+			} else if d.SuggestedRewrite = boundedExclusiveRewrite(root, exclusiveRewrite(a, b), limits, budget); d.SuggestedRewrite != nil {
 				rewrite, _ := json.Marshal(d.SuggestedRewrite)
 				suggestion = "Suggested exclusive rewrite: " + string(rewrite)
 			} else {
@@ -158,6 +177,38 @@ func ruleOverlapDiagnosticsWithLimits(root map[string]any, limits carrier.Limits
 		return []result.Diagnostic{}, collector.truncated
 	}
 	return collector.sorted(), collector.truncated
+}
+
+// namesValueSet reports whether the condition of rules[index], as written,
+// holds a fact condition carrying valueSet in a condition position. An index
+// outside rules, which an evaluation form of the same pack never yields, counts
+// as naming one so that no rewrite is offered from a form it cannot be matched to.
+func namesValueSet(rules []map[string]any, index int) bool {
+	if index >= len(rules) {
+		return true
+	}
+	return conditionNamesValueSet(rules[index]["when"])
+}
+
+func conditionNamesValueSet(condition any) bool {
+	object, ok := condition.(map[string]any)
+	if !ok {
+		return false
+	}
+	switch object["op"] {
+	case "fact":
+		_, carries := object["valueSet"]
+		return carries
+	case "all", "any":
+		for _, child := range list(object["conditions"]) {
+			if conditionNamesValueSet(child) {
+				return true
+			}
+		}
+	case "not":
+		return conditionNamesValueSet(object["condition"])
+	}
+	return false
 }
 
 func overlapPair(a, b overlapFormula, budget *overlapBudget) (possible, exact bool, witness any, path string) {

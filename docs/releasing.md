@@ -56,6 +56,30 @@ the retained prototype or historical candidate trees or the Core locks. Policy
 source schema IDs stay distinct from derived Runtime editing schema IDs. See
 [ADR-0061](adr/0061-adopt-official-policy-draft-resources.md) for compatibility.
 
+### Refresh a staged draft selector (EXPERIMENTAL)
+
+A staged draft selector such as `0.4.0-draft` comes from a specification commit's staged
+directories (`schema/staged/`, `conformance/staged/`, `conformance/evaluation/staged/` and
+`examples/staged/`), which no specification release carries. From a clean checkout at the exact
+commit, one command imports it, or re-imports it over the existing staged bundle of the same
+selector:
+
+```bash
+env GO111MODULE=on go run ./tools/sync-spec-artifacts \
+  --staged 0.4.0-draft --replace \
+  --source ../judgment-pack-spec \
+  --source-ref <full-commit-digest> \
+  --destination ./internal/artifacts/jps/0.4.0-draft
+```
+
+A staged import takes only a full commit digest (never a tag or a branch) and refuses
+`--allow-dirty`, and it refuses, naming it, a git-ignored file under any of those directories or
+at a file it takes, since the commit does not carry it. Its lock records
+`stage: staged-unreleased`. `--replace` replaces only a staged bundle of the same selector; a
+released bundle or any other directory is refused and left as it is.
+After a refresh, run the staged corpus tests (`internal/conformance`, `internal/evaluation`) and
+review any case they name.
+
 ## Refresh the selected retained-column leaf import
 
 The current opt-in CLI/MCP reader selects the installed official `v0.3.0`

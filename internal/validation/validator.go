@@ -13,6 +13,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/uriformat"
 )
@@ -138,9 +139,11 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	}
 	output := result.NewValidation(options.Through)
 	if options.Through != "carrier" {
-		_, diagnostic, scanFailure := NegotiateProfile(data, options.Limits, options.SupportedProfiles)
+		scanned, diagnostic, scanFailure := NegotiateProfile(data, options.Limits, options.SupportedProfiles)
 		if scanFailure == nil && diagnostic != nil {
-			output.SpecVersion = "0.3.0"
+			// The declared version is one that declares profiles (0.3.0, or the
+			// staged draft selector), and it is the one reported.
+			output.SpecVersion, _ = scanned["specVersion"].(string)
 			output.Layers = append(output.Layers, result.Layer{Name: "carrier", Status: "passed"})
 			if diagnostic.Code == "profile-unsupported" {
 				output.Status = "unsupported"
@@ -219,12 +222,12 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	if schemaErr != nil {
 		var validationError *jsonschema.ValidationError
 		if errors.As(schemaErr, &validationError) {
-			collectStructural(validationError, structuralCollector, selectedVersion == artifacts.CoreVersion)
+			collectStructural(validationError, structuralCollector, structuralRules{core030: artifacts.HasCore030Rules(selectedVersion), staged: artifacts.IsStaged(selectedVersion)})
 		} else {
 			structuralCollector.addError("JPS-STRUCTURE-SCHEMA", "structural", "", "Structural validation failed.")
 		}
 	}
-	extensionNameDiagnostics(root, structuralCollector)
+	extensionNameDiagnostics(root, structuralCollector, artifacts.IsStaged(selectedVersion))
 	exceptionShapeDiagnostics(root, structuralCollector)
 	if schemaErr != nil && len(structuralCollector.items) == 0 {
 		structuralCollector.addError("JPS-STRUCTURE-SCHEMA", "structural", "", "Structural validation failed.")
@@ -254,7 +257,7 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	output.Extensions.Supported = supported
 	output.Extensions.Unsupported = unsupported
 
-	semantic, semanticTruncated := semanticDiagnostics(root)
+	semantic, semanticTruncated := semanticDiagnostics(root, artifacts.IsStaged(selectedVersion))
 	if len(semantic) > 0 {
 		output.Status = "invalid"
 		output.Layers = append(output.Layers, result.Layer{Name: "semantic", Status: "failed"})
@@ -287,8 +290,23 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	output.Status = "valid"
 	// Core 0.3.0 introduces this recommended, non-normative check. Earlier
 	// contracts and admission/evaluation statuses retain their existing behavior.
-	if selectedVersion == artifacts.CoreVersion {
-		output.Diagnostics, output.DiagnosticsTruncated = ruleOverlapDiagnosticsWithLimits(root, options.Limits)
+	// Under the staged draft selector it reads the evaluation form, where a
+	// value-set reference is its set's values (draft §3.3.1).
+	// There, a pair where either condition as written names a value set gets no
+	// rewrite, since one built from the form would drop the reference.
+	if artifacts.HasCore030Rules(selectedVersion) {
+		advised := root
+		var written map[string]any
+		if artifacts.IsStaged(selectedVersion) {
+			form, err := evalform.Of(root)
+			if err != nil {
+				// Unreachable: the semantic layer refused every unresolved
+				// reference above. A form that cannot be built is never advised on.
+				return output, &OperationalFailure{Code: "JPS-INTERNAL-EVALUATION-FORM", Message: "The evaluation form of a semantically conforming pack could not be built.", ExitCode: result.ExitInternal}
+			}
+			advised, written = form, root
+		}
+		output.Diagnostics, output.DiagnosticsTruncated = ruleOverlapAdvice(advised, written, options.Limits)
 	}
 	return output, nil
 }
@@ -300,7 +318,16 @@ func structuralBootstrapFailure(output result.Validation, location, code, messag
 	return output
 }
 
-func collectStructural(validationError *jsonschema.ValidationError, diagnostics *diagnosticCollector, core030 bool) {
+// structuralRules selects the version-specific structural code mappings: core030
+// for Core 0.3.0's route constraints, which the staged draft keeps, and staged
+// for the draft's annotation and value-set constraints.
+type structuralRules struct {
+	core030 bool
+	staged  bool
+}
+
+func collectStructural(validationError *jsonschema.ValidationError, diagnostics *diagnosticCollector, rules structuralRules) {
+	core030 := rules.core030
 	if diagnostics.full() {
 		diagnostics.truncated = true
 		return
@@ -329,6 +356,9 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 				return
 			}
 		}
+	}
+	if rules.staged && collectStagedStructural(validationError, location, diagnostics, func(cause *jsonschema.ValidationError) { collectStructural(cause, diagnostics, rules) }) {
+		return
 	}
 	handled := false
 
@@ -411,7 +441,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 			return
 		}
 		for _, cause := range relevantCauses {
-			collectStructural(cause, diagnostics, core030)
+			collectStructural(cause, diagnostics, rules)
 		}
 		return
 	case *kind.Not, *kind.AllOf:
@@ -430,7 +460,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		add("JPS-STRUCTURE-SCHEMA", location, "Value does not satisfy a structural constraint.")
 	}
 	for _, cause := range validationError.Causes {
-		collectStructural(cause, diagnostics, core030)
+		collectStructural(cause, diagnostics, rules)
 	}
 }
 

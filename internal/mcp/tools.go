@@ -944,7 +944,7 @@ func (s *Server) toolExperimentalTestGraphs(rawArgs json.RawMessage) any {
 		// Audit and LawCheck are deliberately left nil; see the doc comment.
 	})
 	if graphFailure != nil {
-		if graphFailure.Code == "profile-unsupported" || graphFailure.SpecVersion == "0.3.0" {
+		if graphFailure.Code == "profile-unsupported" || result.HasCore030Rules(graphFailure.SpecVersion) {
 			return evaluationToolError(testGraphsCommand, graphFailure)
 		}
 		return toolError(graphFailure.Message)

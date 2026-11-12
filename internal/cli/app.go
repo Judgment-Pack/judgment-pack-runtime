@@ -133,7 +133,7 @@ func (a *App) rootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "jpack",
 		Short:         "Judgment Pack Specification tooling",
-		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental evaluation commands evaluate under the exact pack-selected Core 0.2.0-draft or 0.3.0 base contract, on a surface that may change without notice. Experimental offline Policy prototype tools check supplied documents and retained materials without evaluation. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; no help text, payload, or other file states it, and this one does not either. No command authorizes anything.",
+		Long:          "Judgment Pack Specification tooling. The spec commands validate JPS documents; they do not evaluate decisions or authorize actions. The experimental evaluation commands evaluate under the exact pack-selected Core 0.2.0-draft or 0.3.0 base contract and, except graph evaluation, read a pack under the staged draft selector 0.4.0-draft EXPERIMENTALLY, on a surface that may change without notice. Experimental offline Policy prototype tools check supplied documents and retained materials without evaluation. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; no help text, payload, or other file states it, and this one does not either. No command authorizes anything.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Version:       result.CLIVersion,

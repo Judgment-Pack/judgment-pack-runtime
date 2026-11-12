@@ -26,10 +26,12 @@ func standaloneContract(raw json.RawMessage) (result.EvaluatorContract, bool, st
 	if *selected == "" {
 		return contract, true, "Supply spec_version as an exact supported Core version string."
 	}
-	if err := contract.Validate(); err != nil {
+	// The staged draft selector is admitted only with its pack, whose
+	// evaluation form is read; a standalone contract does not name it.
+	if err := contract.Validate(); err != nil || contract.Staged() {
 		return contract, true, "Supported spec_version values are 0.2.0-draft and 0.3.0."
 	}
-	if *selected == "0.3.0" {
+	if contract.Core030Rules() {
 		contract.Profile = "base"
 	}
 	return contract, true, ""

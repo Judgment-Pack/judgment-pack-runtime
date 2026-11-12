@@ -40,7 +40,13 @@ func selectNodeContract(data []byte, oversized []string) (result.EvaluatorContra
 	if len(oversized) > 0 {
 		return result.EvaluatorContract{}, &evaluation.Failure{Class: result.ClassPackNotConformant, Phase: result.PhasePreflight, Code: "JPS-RESOURCE-INPUT-BYTE-LIMIT", Message: fmt.Sprintf("The pack input exceeds the hard %d-byte limit.", carrier.HardMaxBytes), ExitCode: result.ExitIO}
 	}
-	return evaluation.SelectContract(data)
+	contract, failure := evaluation.SelectContract(data)
+	if failure == nil && contract.Staged() {
+		// Graphs do not read the staged draft selector (EXPERIMENTAL): a graph
+		// report is not designed over annotations or value sets.
+		return result.EvaluatorContract{}, evaluation.StagedDraftUnsupported("Graph evaluation")
+	}
+	return contract, failure
 }
 
 func mixedContractFailure() *evaluation.Failure {

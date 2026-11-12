@@ -10,7 +10,7 @@ import (
 
 func (o Options) contract() result.EvaluatorContract {
 	c := result.EvaluatorContract{SpecVersion: o.SpecVersion}
-	if c.Version() == "0.3.0" {
+	if c.Core030Rules() {
 		c.Profile = "base"
 	}
 	return c
@@ -38,7 +38,7 @@ func SelectContract(pack []byte) (result.EvaluatorContract, *Failure) {
 		return result.EvaluatorContract{}, &Failure{Code: "JPS-EVALUATION-PACK-SPEC-VERSION", Class: result.ClassPackNotConformant, Phase: result.PhasePreflight, Message: "The pack must declare an exact supported evaluator specVersion.", ExitCode: result.ExitInvalid}
 	}
 	contract := result.EvaluatorContract{SpecVersion: version}
-	if version == "0.3.0" {
+	if contract.Core030Rules() {
 		contract.Profile = "base"
 	}
 	if err := contract.Validate(); err != nil {
@@ -58,4 +58,19 @@ func declaredSpecVersionWith(version string, contract result.EvaluatorContract) 
 		return nil
 	}
 	return &Failure{Class: result.ClassPackNotConformant, Phase: result.PhasePreflight, Code: "JPS-EVALUATION-PACK-SPEC-VERSION", Message: fmt.Sprintf("The pack declares specVersion %q; this operation applies Core %s.", version, contract.Version()), ExitCode: result.ExitInvalid}
+}
+
+// StagedDraftUnsupported refuses a pack declaring the staged draft selector on
+// a surface that does not read it. The selector is admitted EXPERIMENTALLY by
+// the surfaces that evaluate through this engine's admission, which reads the
+// pack's evaluation form; a surface that reads a pack's conditions or layout
+// some other way refuses it here, explicitly, rather than reading members it
+// was not written for. surface names the refusing surface in the message.
+func StagedDraftUnsupported(surface string) *Failure {
+	return &Failure{
+		Code:     result.StagedDraftUnsupportedCode,
+		Phase:    result.PhasePreflight,
+		Message:  result.StagedDraftUnsupportedMessage(surface),
+		ExitCode: result.ExitUnsupported,
+	}
 }

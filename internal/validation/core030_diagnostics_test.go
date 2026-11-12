@@ -22,7 +22,7 @@ func TestCore030RouteDiagnosticsDoNotChangeLegacyMappings(t *testing.T) {
 		t.Run(item.name, func(t *testing.T) {
 			for _, core030 := range []bool{false, true} {
 				collector := newDiagnosticCollector()
-				collectStructural(item.failure, collector, core030)
+				collectStructural(item.failure, collector, structuralRules{core030: core030})
 				want := item.legacyCode
 				if core030 {
 					want = item.coreCode

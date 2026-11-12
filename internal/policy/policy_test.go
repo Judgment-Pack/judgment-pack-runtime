@@ -747,3 +747,17 @@ func TestMultiplePoliciesAndSameIdentityVersions(t *testing.T) {
 		t.Fatalf("same identity/different versions bypassed local refusal %+v", r)
 	}
 }
+
+// The policy check does not read the staged draft selector (EXPERIMENTAL): a
+// consumer declaring it is refused explicitly, naming the selector, rather
+// than having its rules read as a released pack's.
+func TestStagedDraftConsumerIsRefused(t *testing.T) {
+	f := loadFixture(t, "refunds")
+	pack := bytes.Replace(f.raw["consumer-pack.json"], []byte(`"specVersion": "0.2.0-draft"`), []byte(`"specVersion": "0.4.0-draft"`), 1)
+	f.retainConsumer(t, pack)
+	r, c := Check("check", mustJSON(t, f.adoption), f.wire(t), engine(t))
+	requireRefusal(t, r, c, result.ExitUnsupported)
+	if len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != result.StagedDraftUnsupportedCode || r.Diagnostics[0].InstancePath != "/consumer/specVersion" {
+		t.Fatalf("staged consumer: %+v", r.Diagnostics)
+	}
+}

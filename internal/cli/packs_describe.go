@@ -11,6 +11,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk"
+	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,7 @@ import (
 // view. It loads the pack and never evaluates it.
 func (a *App) packsDescribeCommand() *cobra.Command {
 	format := "markdown"
+	var filters []string
 	command := &cobra.Command{
 		Use:   "describe <pack-or->",
 		Short: "Describe one pack, every member as written, in Markdown or canonical JSON (EXPERIMENTAL)",
@@ -38,7 +40,15 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 			"digest of the exact bytes read. It reads no jpack.json and takes no --config: the pack is one local " +
 			"file or standard input. A pack the loader refuses is reported with the loader's code, and nothing is " +
 			"described. The view, its format and this command are EXPERIMENTAL: each may change or be removed " +
-			"without a compatibility promise, and the view's own viewVersion says which format a reader holds.",
+			"without a compatibility promise, and the view's own viewVersion says which format a reader holds. " +
+			"--filter key=value, which may be repeated, writes a filtered view instead (EXPERIMENTAL): only the " +
+			"outcomes and rules whose annotations match every criterion, a key with that string or with a list that " +
+			"holds it, compared by exact code point. It states the filter, how many outcomes and rules matched of " +
+			"how many, the position of each in the pack, and the pack's full identity, and it is not the pack: its " +
+			"JSON carries filteredViewVersion and no pack member, and --format json puts it in the envelope's " +
+			"filteredView member. Annotations exist only under the staged draft selector 0.4.0-draft, which the " +
+			"specification may rename or change; --filter on a pack under any other specVersion is refused, as is " +
+			"a criterion no annotation could hold.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			const commandName = "packs describe"
@@ -47,6 +57,14 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 			}
 			if args[0] != "-" && (strings.Contains(args[0], "://") || fssecure.IsRemotePath(args[0])) {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL inputs are not supported; use one local file or standard input.")
+			}
+			criteria := make([]view.Criterion, 0, len(filters))
+			for _, text := range filters {
+				criterion, err := view.ParseCriterion(text)
+				if err != nil {
+					return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FILTER", "--filter: "+err.Error())
+				}
+				criteria = append(criteria, criterion)
 			}
 			data, err := a.readPack(args[0], carrier.HardMaxBytes)
 			if errors.Is(err, fssecure.ErrTooLarge) {
@@ -59,7 +77,10 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 			if err != nil {
 				return a.describeRefusal(commandName, format, err)
 			}
-			view, err := loaded.View()
+			if len(filters) > 0 {
+				return a.describeFiltered(commandName, format, loaded, criteria)
+			}
+			described, err := loaded.View()
 			if err != nil {
 				return a.operational(commandName, format, result.ExitInternal, "JPS-DESCRIBE-INTERNAL", "The pack was admitted but could not be described; this is a fault of this runtime: "+err.Error())
 			}
@@ -69,20 +90,49 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 					Tool:          result.CurrentTool(),
 					Command:       commandName,
 					Status:        "described",
-					View:          string(view.JSON()),
+					View:          string(described.JSON()),
 				}); err != nil {
 					return &handledExit{code: result.ExitIO}
 				}
 				return nil
 			}
-			if _, err := a.out.Write(view.Markdown()); err != nil {
+			if _, err := a.out.Write(described.Markdown()); err != nil {
 				return &handledExit{code: result.ExitIO}
 			}
 			return nil
 		},
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: markdown or json")
+	command.Flags().StringArrayVar(&filters, "filter", nil, "show only the outcomes and rules whose annotations match key=value; repeat to require every criterion (0.4.0-draft, EXPERIMENTAL)")
 	return command
+}
+
+// describeFiltered writes the filtered view of one loaded pack: the bytes
+// sdk.Pack.FilteredView returns, and nothing else.
+func (a *App) describeFiltered(commandName, format string, loaded *sdk.Pack, criteria []view.Criterion) error {
+	filtered, err := loaded.FilteredView(criteria)
+	if errors.Is(err, view.ErrFilterCriterion) || errors.Is(err, view.ErrFilterSelector) {
+		return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-FILTER", "--filter: "+err.Error()+"; nothing was described.")
+	}
+	if err != nil {
+		return a.operational(commandName, format, result.ExitInternal, "JPS-DESCRIBE-INTERNAL", "The pack was admitted but could not be described; this is a fault of this runtime: "+err.Error())
+	}
+	if format == "json" {
+		if err := a.writeJSON(result.PackFilteredDescription{
+			OutputVersion: result.OutputVersion,
+			Tool:          result.CurrentTool(),
+			Command:       commandName,
+			Status:        "filtered",
+			FilteredView:  string(filtered.JSON()),
+		}); err != nil {
+			return &handledExit{code: result.ExitIO}
+		}
+		return nil
+	}
+	if _, err := a.out.Write(filtered.Markdown()); err != nil {
+		return &handledExit{code: result.ExitIO}
+	}
+	return nil
 }
 
 // describeRefusal reports a pack sdk.Load refused. A profile this runtime

@@ -10,13 +10,15 @@ package evaluation
 // of this pack: a caller reads it and never modifies it. Its values are the
 // carrier's: objects are map[string]any, arrays []any, numbers json.Number
 // holding the literal token as written, and strings, booleans and nil as
-// themselves.
+// themselves. It is the document as written, never the evaluation form a
+// staged draft selector is evaluated as: its annotations and value sets are
+// there, and its references are not expanded.
 func (a *AdmittedPack) Document(options Options) (map[string]any, *Failure) {
 	admission, failure := a.packHalf(options)
 	if failure != nil {
 		return nil, failure
 	}
-	return admission.packRoot, nil
+	return admission.document, nil
 }
 
 // Digest is the SHA-256 of the private copy of the pack AdmitPack took: the

@@ -215,6 +215,21 @@ claim. Historical prototype Policy compatibility remains explicitly scoped.
 This section makes no partial or qualified conformance claim. The recorded
 `0.2.0-draft` claim above remains as recorded.
 
+## Staged draft selector `0.4.0-draft` (EXPERIMENTAL)
+
+The runtime admits `specVersion` `0.4.0-draft` experimentally, with the `base` profile only. It is
+the selector a specification commit stages for Draft RFC 0031: annotations under the reserved
+extension `org.judgmentpack.annotations`, and root `valueSets` that fact `in` conditions reference.
+The bundle in `internal/artifacts/jps/0.4.0-draft` is vendored from that unreleased commit; its lock
+records the full commit and `stage` `staged-unreleased`, and no specification release carries it.
+The specification may rename or change the selector, its schema and its cases before any release,
+and this runtime follows without a compatibility promise.
+
+Runs of the staged document cases and the staged evaluation rows report `staged` as their status and
+no suite version. They are implementation experience, not corpus results and not evidence for any
+claim; this section makes no partial or qualified conformance claim. The recorded `0.2.0-draft`
+claim above remains as recorded.
+
 ## Corroboration, which is not the claim's basis
 
 §3.4.1 forbids claiming this class on the strength of agreement with another implementation in place

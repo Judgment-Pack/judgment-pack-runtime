@@ -16,6 +16,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk"
+	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
 )
 
 // describeInputs are the packs the drift test describes: the SDK's view
@@ -188,6 +189,107 @@ func TestPacksDescribeRefusals(t *testing.T) {
 		}
 		if code != result.ExitInvocation || json.Unmarshal([]byte(stdout), &envelope) != nil || envelope.Command != "packs describe" || envelope.Status != "error" {
 			t.Fatalf("%v: exit=%d stdout=%q", args, code, stdout)
+		}
+	}
+}
+
+// --filter writes the SDK's filtered view bytes and nothing else, in
+// Markdown and as the filteredView member of the JSON envelope, never a view
+// member; the flag repeats, each use one criterion that every match must
+// meet, and a comma is part of a value, never a separator.
+func TestPacksDescribeFilterWritesTheSDKBytes(t *testing.T) {
+	set, err := artifacts.Load(artifacts.StagedDraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, err := set.StagedExample("expense-approval-annotated.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := sdk.Load(context.Background(), pack, sdk.LoadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeFixture(t, pack)
+	for _, test := range []struct {
+		flags    []string
+		criteria []view.Criterion
+		rules    int
+	}{
+		{[]string{"--filter", "category=threshold"}, []view.Criterion{{Key: "category", Value: "threshold"}}, 2},
+		{[]string{"--filter", "category=threshold", "--filter", "review-cycle=monthly"}, []view.Criterion{{Key: "category", Value: "threshold"}, {Key: "review-cycle", Value: "monthly"}}, 1},
+		{[]string{"--filter", "category=threshold,policy"}, []view.Criterion{{Key: "category", Value: "threshold,policy"}}, 0},
+	} {
+		filtered, err := loaded.FilteredView(test.criteria)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(filtered.Rules) != test.rules {
+			t.Fatalf("%v: %d rules matched, want %d", test.flags, len(filtered.Rules), test.rules)
+		}
+		args := append([]string{"packs", "describe", path}, test.flags...)
+		code, stdout, stderr := runTest(t, args, "")
+		if code != 0 || stderr != "" || stdout != string(filtered.Markdown()) {
+			t.Fatalf("%v: exit=%d stderr=%q; the Markdown is not the SDK's:\n%s", args, code, stderr, stdout)
+		}
+		code, stdout, stderr = runTest(t, append(args, "--format", "json"), "")
+		if code != 0 || stderr != "" {
+			t.Fatalf("%v: exit=%d stderr=%q", args, code, stderr)
+		}
+		var envelope result.PackFilteredDescription
+		decoder := json.NewDecoder(strings.NewReader(stdout))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&envelope); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if envelope.FilteredView != string(filtered.JSON()) || envelope.Status != "filtered" || envelope.Command != "packs describe" || envelope.OutputVersion != result.OutputVersion {
+			t.Fatalf("%v: envelope %s", args, stdout)
+		}
+	}
+}
+
+// A --filter criterion no annotation could hold, and --filter on a pack whose
+// specVersion defines no annotations, are refused as an invocation the
+// command cannot carry out, with nothing described, in each format.
+func TestPacksDescribeFilterRefusals(t *testing.T) {
+	set, err := artifacts.Load(artifacts.StagedDraftVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, err := set.StagedExample("expense-approval-annotated.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := writeFixture(t, pack)
+	// viewlessPack with a second outcome, which Core 0.3.0 requires.
+	core := writeFixture(t, []byte(strings.Replace(viewlessPack, `[{"id": "yes", "label": "Yes"}]`, `[{"id": "yes", "label": "Yes"}, {"id": "no", "label": "No"}]`, 1)))
+	for _, args := range [][]string{
+		{staged, "--filter", "Category=threshold"},
+		{staged, "--filter", "category"},
+		{staged, "--filter", "category="},
+		{staged, "--filter", "category=a", "--filter", "category=a"},
+		{core, "--filter", "category=threshold"},
+	} {
+		full := append([]string{"packs", "describe"}, args...)
+		code, stdout, stderr := runTest(t, append(append([]string{}, full...), "--format", "json"), "")
+		var envelope struct {
+			Status       string  `json:"status"`
+			View         *string `json:"view"`
+			FilteredView *string `json:"filteredView"`
+			Diagnostics  []struct {
+				Code string `json:"code"`
+			} `json:"diagnostics"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+			t.Fatalf("%v: %v %q", args, err, stdout)
+		}
+		if code != result.ExitInvocation || stderr != "" || envelope.Status != "error" || envelope.View != nil || envelope.FilteredView != nil ||
+			len(envelope.Diagnostics) != 1 || envelope.Diagnostics[0].Code != "JPS-INVOCATION-FILTER" {
+			t.Fatalf("%v: exit=%d stdout=%s stderr=%q", args, code, stdout, stderr)
+		}
+		code, stdout, stderr = runTest(t, full, "")
+		if code != result.ExitInvocation || stdout != "" || !strings.HasPrefix(stderr, "error: --filter: ") {
+			t.Fatalf("%v markdown: exit=%d stdout=%q stderr=%q", args, code, stdout, stderr)
 		}
 	}
 }

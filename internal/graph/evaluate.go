@@ -419,7 +419,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			Contributors:  evaluated.Contributors,
 			Trace:         evaluated.Trace,
 		}
-		if contract.Version() == "0.3.0" {
+		if contract.Core030Rules() {
 			components := []any{node, graphHandoffs(node)}
 			if node.Node == doc.Result {
 				components = append(components, node.Disposition)
@@ -497,7 +497,7 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 			Provenance:   set.Lock().Source.Kind,
 		}
 	}
-	if contract.Version() == "0.3.0" {
+	if contract.Core030Rules() {
 		encoded, err := json.Marshal(output)
 		if err != nil {
 			return result.GraphEvaluation{}, reportEncodingFailure(doc.ID)

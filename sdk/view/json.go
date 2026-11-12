@@ -8,6 +8,8 @@ import (
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 )
 
 // The view's canonical JSON is RFC 8785 in everything but numbers: object
@@ -197,28 +199,16 @@ func (v PackView) documentValue() (map[string]any, error) {
 	}
 	outcomes := make([]any, 0, len(v.Outcomes))
 	for _, outcome := range v.Outcomes {
-		item := map[string]any{"id": outcome.ID, "label": outcome.Label}
-		putString(item, "description", outcome.Description)
-		outcomes = append(outcomes, withExtensions(item, outcome.Extensions))
+		outcomes = append(outcomes, outcomeValue(outcome))
 	}
 	document["outcomes"] = outcomes
 	rules := make([]any, 0, len(v.Rules))
 	for _, rule := range v.Rules {
-		when, err := conditionValue(rule.When)
+		item, err := ruleValue(rule)
 		if err != nil {
 			return nil, err
 		}
-		item := map[string]any{
-			"id":          rule.ID,
-			"description": rule.Description,
-			"when":        when,
-			"outcome":     rule.Outcome,
-			"onUnknown":   rule.OnUnknown,
-		}
-		putStrings(item, "evidenceRequirementRefs", rule.EvidenceRequirementRefs)
-		putStrings(item, "sourceRefs", rule.SourceRefs)
-		putString(item, "rationale", rule.Rationale)
-		rules = append(rules, withExtensions(item, rule.Extensions))
+		rules = append(rules, item)
 	}
 	document["rules"] = rules
 	if v.Exceptions != nil {
@@ -241,6 +231,21 @@ func (v PackView) documentValue() (map[string]any, error) {
 			items = append(items, withExtensions(item, exception.Extensions))
 		}
 		document["exceptions"] = items
+	}
+	if v.ValueSets != nil {
+		items := make([]any, 0, len(v.ValueSets))
+		for _, set := range v.ValueSets {
+			entries := make([]any, 0, len(set.Entries))
+			for _, entry := range set.Entries {
+				item := map[string]any{"value": rawJSON(entry.Value)}
+				putString(item, "description", entry.Description)
+				entries = append(entries, withAnnotatedExtensions(item, entry.Extensions, entry.Annotations))
+			}
+			item := map[string]any{"id": set.ID, "entries": entries}
+			putString(item, "description", set.Description)
+			items = append(items, item)
+		}
+		document["valueSets"] = items
 	}
 	putString(document, "fallbackOutcome", v.FallbackOutcome)
 	if v.Escalation != nil {
@@ -278,7 +283,33 @@ func (v PackView) documentValue() (map[string]any, error) {
 		}
 		document["metadata"] = withExtensions(metadata, v.Metadata.Extensions)
 	}
-	return withExtensions(document, v.Extensions), nil
+	return withAnnotatedExtensions(document, v.Extensions, v.Annotations), nil
+}
+
+// outcomeValue rebuilds one member of outcomes from its typed form.
+func outcomeValue(outcome Outcome) map[string]any {
+	item := map[string]any{"id": outcome.ID, "label": outcome.Label}
+	putString(item, "description", outcome.Description)
+	return withAnnotatedExtensions(item, outcome.Extensions, outcome.Annotations)
+}
+
+// ruleValue rebuilds one member of rules from its typed form.
+func ruleValue(rule Rule) (map[string]any, error) {
+	when, err := conditionValue(rule.When)
+	if err != nil {
+		return nil, err
+	}
+	item := map[string]any{
+		"id":          rule.ID,
+		"description": rule.Description,
+		"when":        when,
+		"outcome":     rule.Outcome,
+		"onUnknown":   rule.OnUnknown,
+	}
+	putStrings(item, "evidenceRequirementRefs", rule.EvidenceRequirementRefs)
+	putStrings(item, "sourceRefs", rule.SourceRefs)
+	putString(item, "rationale", rule.Rationale)
+	return withAnnotatedExtensions(item, rule.Extensions, rule.Annotations), nil
 }
 
 // conditionValue rebuilds one condition node from its typed form.
@@ -309,7 +340,14 @@ func conditionValue(condition Condition) (map[string]any, error) {
 	case "fact":
 		node["path"] = condition.Path
 		node["operator"] = condition.Operator
-		node["value"] = rawJSON(condition.Value)
+		// A value is written unless the condition references a value set and
+		// has none, so every condition of a released version is unchanged.
+		if condition.Value != "" || condition.ValueSet == "" {
+			node["value"] = rawJSON(condition.Value)
+		}
+		if condition.ValueSet != "" {
+			node["valueSet"] = condition.ValueSet
+		}
 	case "evidence-present":
 		node["evidenceRequirement"] = condition.EvidenceRequirement
 	default:
@@ -354,5 +392,34 @@ func withExtensions(object map[string]any, extensions []Extension) map[string]an
 		members[extension.Name] = rawJSON(extension.Value)
 	}
 	object["extensions"] = members
+	return object
+}
+
+// withAnnotatedExtensions sets the extensions member with its annotations
+// member written from the typed annotations: absent exactly when both are
+// nil, and holding the annotations member exactly when they are not.
+func withAnnotatedExtensions(object map[string]any, extensions []Extension, annotations []Annotation) map[string]any {
+	object = withExtensions(object, extensions)
+	if annotations == nil {
+		return object
+	}
+	members, _ := object["extensions"].(map[string]any)
+	if members == nil {
+		members = map[string]any{}
+		object["extensions"] = members
+	}
+	typed := make(map[string]any, len(annotations))
+	for _, annotation := range annotations {
+		if annotation.List == nil {
+			typed[annotation.Key] = annotation.Value
+			continue
+		}
+		items := make([]any, 0, len(annotation.List))
+		for _, item := range annotation.List {
+			items = append(items, item)
+		}
+		typed[annotation.Key] = items
+	}
+	members[evalform.AnnotationsName] = typed
 	return object
 }

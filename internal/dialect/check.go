@@ -84,6 +84,9 @@ func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engi
 		}
 		return refused(r, "JPS-DIALECT-PACK-INVALID", "", "Pack validation did not pass; no mapping coverage was checked.", code)
 	}
+	if result.IsStagedDraft(checked.SpecVersion) {
+		return refused(r, result.StagedDraftUnsupportedCode, "/specVersion", result.StagedDraftUnsupportedMessage("The dialect check"), result.ExitUnsupported)
+	}
 	inventory, err := project.InspectDocument(pack)
 	if err != nil {
 		return refused(r, "JPS-DIALECT-PACK-INVENTORY", "", "The pack inventory could not be read.", result.ExitInvalid)

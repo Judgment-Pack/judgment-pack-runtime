@@ -293,6 +293,13 @@ func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTarge
 // be a defect in the row as in the implementation, and neither this runtime nor
 // this function adjudicates that question.
 func (e *Engine) RunCorpus(specVersion, command string) (result.EvaluationCorpus, *Failure) {
+	// The staged draft selector (EXPERIMENTAL) has no corpus; its bundle
+	// carries staged rows, which run under the same comparison.
+	if result.IsStagedDraft(specVersion) {
+		if set, err := artifacts.Load(specVersion); err == nil && set.HasStagedEvaluationRows() {
+			return e.runStagedRows(set, command)
+		}
+	}
 	set, manifest, failure := bundledCorpus(specVersion)
 	if failure != nil {
 		return result.EvaluationCorpus{}, failure
@@ -862,7 +869,7 @@ func exactDispositionMembersWith(raw json.RawMessage, contract result.EvaluatorC
 		return nil
 	}
 	members := []string{"state", "triggeredBy"}
-	if contract.Version() == "0.3.0" {
+	if contract.Core030Rules() {
 		members = append(members, "routes")
 	}
 	if err := memberSpellings(handoff, members, "the disposition's handoff member"); err != nil {

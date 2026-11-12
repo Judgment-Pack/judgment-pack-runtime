@@ -67,7 +67,7 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 		}
 		contract, contractSelected = selectedContract, true
 	}
-	if contract.Version() == "0.3.0" && (options.ReportBudget <= 0 || options.ReportBudget > int(MaxEvaluationReportBytes)) {
+	if contract.Core030Rules() && (options.ReportBudget <= 0 || options.ReportBudget > int(MaxEvaluationReportBytes)) {
 		options.ReportBudget = int(MaxEvaluationReportBytes)
 	}
 	output := result.GraphSuite{
@@ -130,7 +130,7 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 	// Core 0.3's retained-report cap includes the suite envelope around the
 	// entries charged above. Check the complete serialization before exposing
 	// a result; the legacy contract keeps its existing entry-only accounting.
-	if contract.Version() == "0.3.0" {
+	if contract.Core030Rules() {
 		encoded, err := json.Marshal(output)
 		if err != nil {
 			failure := reportEncodingFailure("project graph suite")

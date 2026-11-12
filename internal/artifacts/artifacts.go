@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
 // DraftVersion is the specification version every surface selects when a caller
@@ -21,11 +23,32 @@ import (
 // (§3.4.1); bundling it changes no default. It is also the exact version the claim
 // in CONFORMANCE.md is made against. CoreVersion is separately selected; bundling
 // it does not inherit an evaluation or whole-surface conformance claim.
+//
+// StagedDraftVersion is EXPERIMENTAL: a working selector the specification
+// stages for RFC 0031 (annotations and value sets) and no release carries. Its
+// bundle is imported from an exact specification commit and its lock says
+// "staged-unreleased". It is Core 0.3.0 plus those two features, selected only
+// by a pack that declares it, and the specification may rename or change it.
+// No conformance claim is made for it.
 const (
 	DraftVersion          = "0.1.0-draft"
 	EvaluatorDraftVersion = "0.2.0-draft"
 	CoreVersion           = "0.3.0"
+	StagedDraftVersion    = result.StagedDraftSpecVersion
 )
+
+// StagedStage is the lock.source.stage value of a staged bundle.
+const StagedStage = "staged-unreleased"
+
+// HasCore030Rules reports whether a specification version carries Core
+// 0.3.0's document and evaluator rules: profiles, routed handoffs, and the
+// retained-report budgets. Core 0.3.0 does, and so does the staged draft
+// selector, which is 0.3.0 plus annotations and value sets. The predicate is
+// result.HasCore030Rules, stated once; this is its name for bundle readers.
+func HasCore030Rules(version string) bool { return result.HasCore030Rules(version) }
+
+// IsStaged reports whether a version is a staged draft selector.
+func IsStaged(version string) bool { return result.IsStagedDraft(version) }
 
 // evaluationManifestPath is the bundled evaluation corpus's index, relative to
 // one artifact set's root.
@@ -48,6 +71,9 @@ type LockSource struct {
 	BaseCommit    string `json:"baseCommit"`
 	Ref           string `json:"ref,omitempty"`
 	WorktreeDirty bool   `json:"worktreeDirty"`
+	// Stage is "staged-unreleased" for a staged draft selector's bundle and
+	// absent for every released one.
+	Stage string `json:"stage,omitempty"`
 }
 
 type Digest struct {
@@ -76,7 +102,7 @@ func (e *UnsupportedVersionError) Error() string {
 }
 
 func SupportedVersions() []string {
-	return []string{DraftVersion, EvaluatorDraftVersion, CoreVersion}
+	return []string{DraftVersion, EvaluatorDraftVersion, CoreVersion, StagedDraftVersion}
 }
 
 func Load(version string) (*Set, error) {
@@ -95,11 +121,40 @@ func Load(version string) (*Set, error) {
 	if lock.FormatVersion != 1 || lock.SpecVersion != version {
 		return nil, errors.New("embedded artifact lock is incompatible")
 	}
+	if err := checkStage(version, lock.Source); err != nil {
+		return nil, err
+	}
 	set := &Set{root: root, lock: lock, files: map[string]FileLock{}}
 	if err := set.verify(); err != nil {
 		return nil, err
 	}
 	return set, nil
+}
+
+// checkStage holds a lock's stage to its version. A staged bundle must say so,
+// and only a staged selector's may: a staged source can never present as a
+// released one, nor a released one as staged. A staged source is one exact,
+// clean commit, named by its full object id.
+func checkStage(version string, source LockSource) error {
+	if IsStaged(version) != (source.Stage == StagedStage) || (source.Stage != "" && source.Stage != StagedStage) {
+		return errors.New("embedded artifact lock does not state the stage its version requires")
+	}
+	if IsStaged(version) && (source.Kind != "immutable-git-ref" || source.Ref != source.BaseCommit || !fullObjectID(source.Ref) || source.WorktreeDirty) {
+		return errors.New("a staged artifact lock must record one exact clean commit")
+	}
+	return nil
+}
+
+func fullObjectID(ref string) bool {
+	if len(ref) != 40 && len(ref) != 64 {
+		return false
+	}
+	for _, r := range ref {
+		if !strings.ContainsRune("0123456789abcdef", r) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Set) Lock() Lock {
@@ -158,6 +213,47 @@ func (s *Set) EvaluationPack(relative string) ([]byte, error) {
 		return nil, fmt.Errorf("not an evaluation-corpus pack path: %s", relative)
 	}
 	return s.Read(path.Join("evaluation", "packs", name))
+}
+
+// Staged reports whether this set is a staged draft selector's bundle.
+func (s *Set) Staged() bool {
+	return s.lock.Source.Stage == StagedStage
+}
+
+// stagedRowsPath is the staged evaluation-row index of a staged bundle.
+const stagedRowsPath = "evaluation/cases.json"
+
+// HasStagedEvaluationRows reports whether this set bundles staged evaluation
+// rows, which are in no corpus.
+func (s *Set) HasStagedEvaluationRows() bool {
+	_, recorded := s.files[stagedRowsPath]
+	return recorded
+}
+
+// StagedEvaluationRows returns the staged evaluation-row index bytes.
+func (s *Set) StagedEvaluationRows() ([]byte, error) {
+	return s.Read(stagedRowsPath)
+}
+
+// StagedExamples lists the staged example packs a staged bundle carries, by
+// file name, sorted.
+func (s *Set) StagedExamples() []string {
+	names := []string{}
+	for relative := range s.files {
+		if name, ok := strings.CutPrefix(relative, "example/"); ok && !strings.ContainsRune(name, '/') {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// StagedExample returns one staged example pack by file name.
+func (s *Set) StagedExample(name string) ([]byte, error) {
+	if name == "" || strings.ContainsRune(name, '/') {
+		return nil, fmt.Errorf("not a staged example name: %s", name)
+	}
+	return s.Read(path.Join("example", name))
 }
 
 func (s *Set) File(relative string) (FileLock, bool) {

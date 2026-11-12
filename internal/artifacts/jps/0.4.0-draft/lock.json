@@ -1,0 +1,908 @@
+{
+  "formatVersion": 1,
+  "specVersion": "0.4.0-draft",
+  "source": {
+    "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
+    "kind": "immutable-git-ref",
+    "baseCommit": "4cae6a34058883955cf3b00a4c9672e2c8ad7975",
+    "ref": "4cae6a34058883955cf3b00a4c9672e2c8ad7975",
+    "worktreeDirty": false,
+    "stage": "staged-unreleased"
+  },
+  "bundleDigest": {
+    "algorithm": "sha256-length-prefixed-v1",
+    "value": "475e729329a3b9135951e5c1ac41f49a343bea044c9d59ce87ff76650bc07669"
+  },
+  "files": [
+    {
+      "path": "cases/carrier/annotations-duplicate-key.json",
+      "bytes": 834,
+      "sha256": "eaf682c1785cd88c09fa76ce389a77470b1603158c4914474c3073f3a2ab4c34"
+    },
+    {
+      "path": "cases/semantic/duplicate-value-set-id.json",
+      "bytes": 1079,
+      "sha256": "9ee08bc8eb79930acb2b6527d23e416b271e48df9f4936e5df21bf5c1e376420"
+    },
+    {
+      "path": "cases/semantic/required-extension-in-entry-value.json",
+      "bytes": 1175,
+      "sha256": "95322652fe1629a4a86219df1ab5bb50386f81630589199facac314d32f05df2"
+    },
+    {
+      "path": "cases/semantic/required-extension-in-operand.json",
+      "bytes": 1039,
+      "sha256": "da3b109b169df213eefd508308f8130790c24a02ec859a52192f5e8eeed4c94e"
+    },
+    {
+      "path": "cases/semantic/unresolved-value-set-applicability.json",
+      "bytes": 1119,
+      "sha256": "b9490f3fc9de440563750918bea8a79be06508268163636d6652fb0f1de0bff7"
+    },
+    {
+      "path": "cases/semantic/unresolved-value-set-empty-value-sets.json",
+      "bytes": 817,
+      "sha256": "51ddd72abbbaed22927d9efe5686fa5d67044685436a917028f60c4208fca0d1"
+    },
+    {
+      "path": "cases/semantic/unresolved-value-set-exception.json",
+      "bytes": 1302,
+      "sha256": "372044753bbb82fd9388aee579418a457aeda726b46c34ce5d3440c0dcaca5a0"
+    },
+    {
+      "path": "cases/semantic/unresolved-value-set-nested.json",
+      "bytes": 1155,
+      "sha256": "c11b370a351643b23c7f7032947f90e9e6083d692466a5628ee518d678e1c986"
+    },
+    {
+      "path": "cases/semantic/unresolved-value-set-no-value-sets.json",
+      "bytes": 801,
+      "sha256": "ef69ce4f244a8c5c5874923b20795dfb6babac5516e98e8ca387579e23e1840e"
+    },
+    {
+      "path": "cases/semantic/unresolved-value-set-outcome-id.json",
+      "bytes": 976,
+      "sha256": "170cc7a1f21d2a02c63f906447a0624509716f4f425824fae326874fa1dc55fa"
+    },
+    {
+      "path": "cases/semantic/unresolved-value-set-rule.json",
+      "bytes": 966,
+      "sha256": "0b80fdd805840ce5a38adca2c42d4499559828524bf05fe7f0c7cf3d6aaf0742"
+    },
+    {
+      "path": "cases/structural/annotations-bidi-u202a.json",
+      "bytes": 806,
+      "sha256": "9f487a7625e025289d43dc133597da290ea24204448431b0f2b4bd9fb184212e"
+    },
+    {
+      "path": "cases/structural/annotations-bidi-u202b.json",
+      "bytes": 806,
+      "sha256": "d9b688e888c6a0f2c6a5944a5f4d7505032bbbf599d2dd409c48fcff21ed2d31"
+    },
+    {
+      "path": "cases/structural/annotations-bidi-u202c.json",
+      "bytes": 806,
+      "sha256": "52e1e110e6e7634f156749302a84d04dbbd0b4a2a97151d4b4748c2c4da62565"
+    },
+    {
+      "path": "cases/structural/annotations-bidi-u202d.json",
+      "bytes": 806,
+      "sha256": "492d6a0550022f8d294b9228c38e15e5a33a11c8987213c5f22baeb98485c16a"
+    },
+    {
+      "path": "cases/structural/annotations-bidi-u202e.json",
+      "bytes": 806,
+      "sha256": "e38e5dc90ed91c9feb1127b6a391d3356362c47ef1814fec82ecf6d027c3d74e"
+    },
+    {
+      "path": "cases/structural/annotations-control-del.json",
+      "bytes": 807,
+      "sha256": "509b84b4c682319fc584b5aacc5e5ed34fea219c394c8a0a85d380663f6eb4e5"
+    },
+    {
+      "path": "cases/structural/annotations-control-esc.json",
+      "bytes": 807,
+      "sha256": "f5d0c906163f8dd507559a18160f4d508aa61e0f0527925c31d3801d8830328b"
+    },
+    {
+      "path": "cases/structural/annotations-control-lf.json",
+      "bytes": 802,
+      "sha256": "c7b43a535a7d73b5023997ef49448db70a42b69dd719aab95b417c3451a80be1"
+    },
+    {
+      "path": "cases/structural/annotations-control-nul.json",
+      "bytes": 807,
+      "sha256": "e4d160d388c9d66d441f3d66b36288b4399769985e858dcb6e87bf9ae91ad3f8"
+    },
+    {
+      "path": "cases/structural/annotations-control-tab.json",
+      "bytes": 803,
+      "sha256": "d6a5dfe7476a4f425970790492ef352bad1342e8f462a44054694917aad8e774"
+    },
+    {
+      "path": "cases/structural/annotations-control-u0085.json",
+      "bytes": 809,
+      "sha256": "8e7631d768da34a3934172f4d9f1ab962293521c6ca3883f3b7287c297362e0f"
+    },
+    {
+      "path": "cases/structural/annotations-control-u009b.json",
+      "bytes": 809,
+      "sha256": "add0b5ce5b36e8ec6a71b4ecb197c45cee3500d557423e7546e6e94ab237cdbc"
+    },
+    {
+      "path": "cases/structural/annotations-control-u2028.json",
+      "bytes": 809,
+      "sha256": "45ef5c4e831e0bd75ca5ebe1320c99d365eb87e71766007fc3088ae938c37a93"
+    },
+    {
+      "path": "cases/structural/annotations-control-u2029.json",
+      "bytes": 809,
+      "sha256": "0c395a0916a9c413d2ce62e65797c1569bc76013fdec3e376336ef869e137f28"
+    },
+    {
+      "path": "cases/structural/annotations-duplicate-string.json",
+      "bytes": 854,
+      "sha256": "5619fd109527b84833baef0749344456fd23004da9d55914dfd92d62b560fca8"
+    },
+    {
+      "path": "cases/structural/annotations-empty-list.json",
+      "bytes": 794,
+      "sha256": "a94e8d285b6b98596b8f8d800395433ded3775ece5c566fd6946d16fc6f4e5ac"
+    },
+    {
+      "path": "cases/structural/annotations-empty-object-entry.json",
+      "bytes": 1056,
+      "sha256": "0387fa85d36176d69cb3f0f377ed213dbbc765dc3652168ed81e41f5fdc10721"
+    },
+    {
+      "path": "cases/structural/annotations-empty-object-outcome.json",
+      "bytes": 770,
+      "sha256": "b8032e270cde16e4c3fc57af98bb3552fb176abd1d99c9df0235c72fd7f28191"
+    },
+    {
+      "path": "cases/structural/annotations-empty-object-root.json",
+      "bytes": 755,
+      "sha256": "d9a8f1441cd1e4523deaae148680695c4ce207887e84f8bb88874f8164e17414"
+    },
+    {
+      "path": "cases/structural/annotations-empty-object.json",
+      "bytes": 762,
+      "sha256": "6574571662ed012e4e2b0bcc2496b042732811510ccb541742a9916647d63456"
+    },
+    {
+      "path": "cases/structural/annotations-empty-string.json",
+      "bytes": 796,
+      "sha256": "eb14b884f6fca0876bfe54e64b9dd670f2ccc308a7df7222bf0951f1f0f9702e"
+    },
+    {
+      "path": "cases/structural/annotations-in-decision.json",
+      "bytes": 813,
+      "sha256": "6dd819afd0e7994b907332b2ad29aa7e15a1b6c8307481d4a0215348c1bc6e01"
+    },
+    {
+      "path": "cases/structural/annotations-in-escalation.json",
+      "bytes": 878,
+      "sha256": "5232e3e0870caa330ac604c9f638759541f2f72b18cd16a2292c316293d37686"
+    },
+    {
+      "path": "cases/structural/annotations-in-evidence-requirement.json",
+      "bytes": 972,
+      "sha256": "2809741e3b788106ab247cb6a34247efa570324aec6251c9768b9c749cd3eab3"
+    },
+    {
+      "path": "cases/structural/annotations-in-exception.json",
+      "bytes": 1057,
+      "sha256": "008fa2fbbbbcf1e6de0603bdbc72b656c81710d39beecc8733b0ee8883348dfe"
+    },
+    {
+      "path": "cases/structural/annotations-in-metadata.json",
+      "bytes": 833,
+      "sha256": "4da34d4e7ae694e55ef7c1b97c28bbc5be74f2ba5818f9e5d1ece49833dd4f9f"
+    },
+    {
+      "path": "cases/structural/annotations-in-source.json",
+      "bytes": 1004,
+      "sha256": "3fc8743131929ed05e01ba6571350c9cf2ef50a690903ef8f10c653ee31fd678"
+    },
+    {
+      "path": "cases/structural/annotations-key-grammar-double-hyphen.json",
+      "bytes": 813,
+      "sha256": "b4c93c671123b13d453e4cf9f57e55b9cf401b02ca414f2cf17ccd461a8316b4"
+    },
+    {
+      "path": "cases/structural/annotations-key-grammar-empty.json",
+      "bytes": 799,
+      "sha256": "5b387f97e88d79b016e83a22eb946995654ca249dc42a40358d1098559189082"
+    },
+    {
+      "path": "cases/structural/annotations-key-grammar-leading-digit.json",
+      "bytes": 812,
+      "sha256": "2d52cc1b9a4d32965aa601b5e9ca6bbb1aab6af0bf458315bcfdcedf320e4087"
+    },
+    {
+      "path": "cases/structural/annotations-key-grammar-leading-hyphen.json",
+      "bytes": 813,
+      "sha256": "1dc1991357ed768f592139e91dbfe4ba430494939caecdec5cee516d2dc0309b"
+    },
+    {
+      "path": "cases/structural/annotations-key-grammar-trailing-hyphen.json",
+      "bytes": 814,
+      "sha256": "d652f49b5e0d82260b66fef78c7931c6277c41dfdec3f731c364b92d3fd1919c"
+    },
+    {
+      "path": "cases/structural/annotations-key-grammar-underscore.json",
+      "bytes": 810,
+      "sha256": "de9ccb2dd02071d217d83b4ee567f2718f650a234c190652a267c93910f5add8"
+    },
+    {
+      "path": "cases/structural/annotations-key-grammar-upper.json",
+      "bytes": 803,
+      "sha256": "b295b51325543ff29462c6c155d1879110f848ca6ae2c99f3e59e87d358e033f"
+    },
+    {
+      "path": "cases/structural/annotations-key-too-long.json",
+      "bytes": 859,
+      "sha256": "9e461c37d4c329a3fbe6088ecb29e55eeea73c7e8a17fe5b32291ce28c3cb21b"
+    },
+    {
+      "path": "cases/structural/annotations-key-trailing-lf.json",
+      "bytes": 803,
+      "sha256": "7a8e2873c68875102e487f09c32747ee29974e7dde4cc1bc1c1f4a83096c282a"
+    },
+    {
+      "path": "cases/structural/annotations-list-item-number.json",
+      "bytes": 825,
+      "sha256": "4970af6d295cb0112c1d569f53d215220f18e91fd1c493d508f7d7d2d35942af"
+    },
+    {
+      "path": "cases/structural/annotations-not-object.json",
+      "bytes": 766,
+      "sha256": "1d812e576bf371fbfec2528383bfbae0d26ec41bf72c3c20e1bb73dab204b07e"
+    },
+    {
+      "path": "cases/structural/annotations-required.json",
+      "bytes": 888,
+      "sha256": "f5f5f238c930c6406446e337e0d2df61aeceaaff6de7db968c66f6358ed7b994"
+    },
+    {
+      "path": "cases/structural/annotations-string-too-long.json",
+      "bytes": 1056,
+      "sha256": "1f830bd6e567ad4696cda840f3184557953d15817e99e1b208df1d57c3e98dc7"
+    },
+    {
+      "path": "cases/structural/annotations-too-many-keys.json",
+      "bytes": 1281,
+      "sha256": "85599b56063b523197978661f964ef7c92070620368093fdedbba376b93542b3"
+    },
+    {
+      "path": "cases/structural/annotations-too-many-strings.json",
+      "bytes": 1218,
+      "sha256": "b5ab34f592e299f619e118d3503a49ca2c04803a7eafa93960802746fdd24f78"
+    },
+    {
+      "path": "cases/structural/annotations-trailing-lf-list.json",
+      "bytes": 856,
+      "sha256": "fa7048606c642eca312c22780709264b5c453209bd1b9204c3f29e7f8bd68c5a"
+    },
+    {
+      "path": "cases/structural/annotations-trailing-lf-value.json",
+      "bytes": 809,
+      "sha256": "cfaa1bf3c51760e80b73fa9c33868f6c970cbee1d072f827baca752f5dfbf286"
+    },
+    {
+      "path": "cases/structural/annotations-value-boolean.json",
+      "bytes": 799,
+      "sha256": "1ebf37057cbd022f1822b2d5f4bcb7483460481d5409c081ca7aac9024a6c407"
+    },
+    {
+      "path": "cases/structural/annotations-value-nested-list.json",
+      "bytes": 863,
+      "sha256": "4cf10a63611bc4427e426fec942e15b06829f201a5f1d9d1d7cb40c267b11f59"
+    },
+    {
+      "path": "cases/structural/annotations-value-null.json",
+      "bytes": 796,
+      "sha256": "ab38c7533e561d29f712d88ae82c3182b308ef69131cfb3ce438e9245076e04b"
+    },
+    {
+      "path": "cases/structural/annotations-value-number.json",
+      "bytes": 795,
+      "sha256": "df7902f8d09e51336b8ffc6da9c688cd8eaf27511543ee3704a0c20ef8f1df0b"
+    },
+    {
+      "path": "cases/structural/annotations-value-object.json",
+      "bytes": 837,
+      "sha256": "0a20cab9c982dc1419ca8217ad8026b17a05b6bb0648d54f06ced71f96ca8928"
+    },
+    {
+      "path": "cases/structural/fact-without-operand.json",
+      "bytes": 922,
+      "sha256": "7cf720375eb41c16aa996023b442c3a3c850bdad851a6c0d054ec8a5605d01ec"
+    },
+    {
+      "path": "cases/structural/profile-annotation-key-characters-base-over-base.json",
+      "bytes": 903,
+      "sha256": "14913b6930885601a9bf2848e3b3b2c18ac37e64194e079c8ffe066533cafda6"
+    },
+    {
+      "path": "cases/structural/profile-annotation-key-characters-extended-over-extended.json",
+      "bytes": 972,
+      "sha256": "743509b363d325844150ac67e2730e37ea1bf8597d17cff77d319dc9138e1ae8"
+    },
+    {
+      "path": "cases/structural/profile-annotation-keys-base-over-base.json",
+      "bytes": 1331,
+      "sha256": "fba5360ab37437e09a93b6b4c361468755dba47c3ef8f4d64f6dbdcbefee52b0"
+    },
+    {
+      "path": "cases/structural/profile-annotation-keys-extended-over-extended.json",
+      "bytes": 1831,
+      "sha256": "9f0f33f334ade5066e634c9a972f7a2a4f8fc436d1e1bcf4b7026fb759f88c34"
+    },
+    {
+      "path": "cases/structural/profile-annotation-string-characters-base-over-base.json",
+      "bytes": 1101,
+      "sha256": "1cc2ba4daa6c540076fdde148048966d03d1eb8cafe34b40e9f7118888d37ed7"
+    },
+    {
+      "path": "cases/structural/profile-annotation-string-characters-extended-over-extended.json",
+      "bytes": 1361,
+      "sha256": "930e1003af72ddaa67f3f9e5ee4b1503020ed1fb61727bdf549f14a86d46bbae"
+    },
+    {
+      "path": "cases/structural/profile-annotation-strings-base-over-base.json",
+      "bytes": 1268,
+      "sha256": "63a2b15501a23701824c3370e632f5f8a7abd83dd657ad8791ec967fb1b3167b"
+    },
+    {
+      "path": "cases/structural/profile-annotation-strings-extended-over-extended.json",
+      "bytes": 1672,
+      "sha256": "57fc6fa12762b885bbcd61159c9f931716d05717acddf291b86d996cbda0dcba"
+    },
+    {
+      "path": "cases/structural/profile-value-set-entries-base-over-base.json",
+      "bytes": 23361,
+      "sha256": "90c6245e9852c91468d87d04868d5407614151abc719fbda00a9656efc7b38a4"
+    },
+    {
+      "path": "cases/structural/profile-value-set-entries-extended-over-extended.json",
+      "bytes": 45919,
+      "sha256": "357ce695461b9b5a7d9e497dd78350786a36f57bc859648d1070a0182a77faff"
+    },
+    {
+      "path": "cases/structural/profile-value-sets-base-over-base.json",
+      "bytes": 7702,
+      "sha256": "5bbef461891e3be35aa17dca4a15c61dc29bcf81933e0ca1bf53153b9799e02c"
+    },
+    {
+      "path": "cases/structural/profile-value-sets-extended-over-extended.json",
+      "bytes": 14455,
+      "sha256": "d80a68e197f453707b2217287aaa2a92235d96e1596fb041cece96315e3e5756"
+    },
+    {
+      "path": "cases/structural/reserved-name-in-annotated-position.json",
+      "bytes": 822,
+      "sha256": "42de26d38d4254dc1e64a60c573520799b6ddae7b18fa4eda85fbecf28d06e1e"
+    },
+    {
+      "path": "cases/structural/value-set-bad-id.json",
+      "bytes": 956,
+      "sha256": "5c3f1a10ef692d8164f2bc39b84fd075647d35430373b91c5b41a92bb37fc017"
+    },
+    {
+      "path": "cases/structural/value-set-entries-empty.json",
+      "bytes": 859,
+      "sha256": "c5756cbd2175456e3a69f3de24ebc96abc73bac673f86eb3a15afc1c926da794"
+    },
+    {
+      "path": "cases/structural/value-set-entry-extension-reserved.json",
+      "bytes": 1127,
+      "sha256": "42fd30e171edff84999d472ff635eceb4be1f8af8c44ca807eaf318f1327a846"
+    },
+    {
+      "path": "cases/structural/value-set-entry-extension-vendor-alone.json",
+      "bytes": 1124,
+      "sha256": "6f00cf026ab2454e8f9213c3183cc7aaeca55f1659e3ca3730a639ecb221d709"
+    },
+    {
+      "path": "cases/structural/value-set-entry-extension-vendor-beside.json",
+      "bytes": 1221,
+      "sha256": "fcbf40b3ff463132cedf65e57035d7f048cd52b89786a69c9bc3faaa36a1b91c"
+    },
+    {
+      "path": "cases/structural/value-set-entry-reference.json",
+      "bytes": 1002,
+      "sha256": "9254403dafa1a71e02668b3ea4e7589bcca10906f6d809c0f03c3fea9466ad2a"
+    },
+    {
+      "path": "cases/structural/value-set-entry-unknown-member.json",
+      "bytes": 998,
+      "sha256": "d7147c319119ec5a6296dc6e003a77d2a6090456ace4eb2d860916c1c5cad921"
+    },
+    {
+      "path": "cases/structural/value-set-extensions-annotations.json",
+      "bytes": 1097,
+      "sha256": "0b11ffe5c65b59dc31220c1a613ad00c886d3bbe6e035183c98e003cc946620a"
+    },
+    {
+      "path": "cases/structural/value-set-extensions-vendor.json",
+      "bytes": 1071,
+      "sha256": "31b29822312e710cc578f8b44a3b58a77148d50eb78defd9361d6a12fdb585fa"
+    },
+    {
+      "path": "cases/structural/value-set-missing-entries.json",
+      "bytes": 840,
+      "sha256": "9907bafdaa5002ea35c3d37f609a76d54787518efec5a4593fbc5fbe5d83a9e9"
+    },
+    {
+      "path": "cases/structural/value-set-missing-id.json",
+      "bytes": 930,
+      "sha256": "fb876361a5e83bdf2ce1e030daedf27b78f1407fe039ee11ca94d45deeb571f9"
+    },
+    {
+      "path": "cases/structural/value-set-missing-value.json",
+      "bytes": 978,
+      "sha256": "de3a8909aa3b5f1eaca40cf33ccdd68474b2056ecee1ada1039127165a0c5dc4"
+    },
+    {
+      "path": "cases/structural/value-set-reference-and-value.json",
+      "bytes": 1018,
+      "sha256": "621dcee27ff7bb4682156f787f6e1e578d52d9cdb2489bda7d1b8e26e3e9c46e"
+    },
+    {
+      "path": "cases/structural/value-set-reference-bad-id.json",
+      "bytes": 957,
+      "sha256": "c3b095e5224950959be6b332765b5f9d8bf78082a848abc0a4ac164f8885ea8d"
+    },
+    {
+      "path": "cases/structural/value-set-reference-in-value.json",
+      "bytes": 999,
+      "sha256": "1a57042991bbdd3b8d899e09138da9b10fd48786054330c19c54ea3243b3f02e"
+    },
+    {
+      "path": "cases/structural/value-set-reference-operator-equals.json",
+      "bytes": 979,
+      "sha256": "18e8e674407bf6efec3d5be06b33a46a113dbacf4996a3b47e5e612ff8bba6c7"
+    },
+    {
+      "path": "cases/structural/value-set-reference-operator-greater-than.json",
+      "bytes": 991,
+      "sha256": "5d3d366dd7908865c181d9e1d34a90b3ab11f143dda1f0595d49eab8827bbd92"
+    },
+    {
+      "path": "cases/structural/value-set-reference-operator-not-equals.json",
+      "bytes": 987,
+      "sha256": "f7f8a4ff0e27ea4027117d619746dcb42e42d605fab9231bd562dce8bb52fb46"
+    },
+    {
+      "path": "cases/structural/value-set-too-many-entries.json",
+      "bytes": 23330,
+      "sha256": "ba238969dedb123dcf2b877d2b415bfe72ed8618c85130c3c3510c60c4288dfb"
+    },
+    {
+      "path": "cases/structural/value-set-unknown-member.json",
+      "bytes": 988,
+      "sha256": "e07ec563128609d033d00aedf08a3eb386fd09daec3e1a756027f4149f06f539"
+    },
+    {
+      "path": "cases/structural/value-sets-identical.json",
+      "bytes": 1127,
+      "sha256": "7abb94de96a6bc3e9c11cd59f00f14bddb7a8b2eb4c9a5694dfaed5b795d7256"
+    },
+    {
+      "path": "cases/structural/value-sets-too-many.json",
+      "bytes": 7605,
+      "sha256": "10be1a7ef209afd5183ae9659de017bac9231cf2577d970e2901fda3feee00dd"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-duplicate-value-descriptions.json",
+      "bytes": 990,
+      "sha256": "271702ab5a87f4ab4af4f55381a46293acda4decb6c49c54721bb142d8a76519"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-duplicate-value-integer-and-exponent.json",
+      "bytes": 955,
+      "sha256": "01695e52c353ddeda20a9e54b1ea5d395694b9f1ae35687acc231e8a3263c8e3"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-duplicate-value-integer-and-fraction.json",
+      "bytes": 954,
+      "sha256": "d403d4a85d6d422c2fc295d55f8644e890f0dc3b5d3dd8c98c2ad4f7a9fce94a"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-duplicate-value-member-order.json",
+      "bytes": 978,
+      "sha256": "46d1d88a4e2abb35e91ea23de8f4ebdd555c94fb945813211c2cb74a20a816ec"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-duplicate-value-nested-arrays.json",
+      "bytes": 963,
+      "sha256": "77b6a3db0dd62d8b28fdd638473dd90f45993a1830356e8e2ddadcc560660087"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-duplicate-value-string.json",
+      "bytes": 952,
+      "sha256": "a2458dec52553b93fe2754316091db51e2308688ce413f65cd36171585d25c06"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-duplicate-value-zero-and-negative-zero.json",
+      "bytes": 955,
+      "sha256": "54dc82f037111b514ed45598c5b28da039a9396f81374fabbe9f7f25d44c2ddc"
+    },
+    {
+      "path": "cases/valid/advisory-value-set-unreferenced.json",
+      "bytes": 900,
+      "sha256": "2c9af1320c95c68d2cd43f7e278c6e200b151db2ec649d39699009469358c1b9"
+    },
+    {
+      "path": "cases/valid/annotations-at-ceilings.json",
+      "bytes": 71885,
+      "sha256": "f25378ea3d061cef5d1e4c5f5aca1d9cc47ac4137ce278bc53e5e960ba07b778"
+    },
+    {
+      "path": "cases/valid/annotations-display-hostile.json",
+      "bytes": 1178,
+      "sha256": "00d3391936e955f745e48785ae8e2952d46fe890412084397527b08cbc01f7bf"
+    },
+    {
+      "path": "cases/valid/annotations-empty-extensions.json",
+      "bytes": 834,
+      "sha256": "3821d27c0a7ba5d19c1a41fbe977919501ef8156b36202a16a76bab21f177299"
+    },
+    {
+      "path": "cases/valid/annotations-nfc-nfd.json",
+      "bytes": 855,
+      "sha256": "71aabc69c732e12d156ce8ce717be1d14ff24f1c5ac50d41416d1a1193afa428"
+    },
+    {
+      "path": "cases/valid/annotations-non-bmp.json",
+      "bytes": 3877,
+      "sha256": "f8f9928fa39991f04d298c499d3c74f58177ad190d0d5004d676920d1492e8a9"
+    },
+    {
+      "path": "cases/valid/annotations-one-element-list.json",
+      "bytes": 1175,
+      "sha256": "3c9fe2f1cd24b112058be091bc03ec3df97c4672c0e8c04edcb83c8f7757e456"
+    },
+    {
+      "path": "cases/valid/annotations-positions.json",
+      "bytes": 1738,
+      "sha256": "a4d0df3ebe498ea4dd590d552276457f88bfbeffc4e1d8d744370d9a94f8c282"
+    },
+    {
+      "path": "cases/valid/annotations-required-vendor-beside.json",
+      "bytes": 1007,
+      "sha256": "d0956dfee326d4787a4b3f77020d06efeda886dca829c00366516e78b89f40f3"
+    },
+    {
+      "path": "cases/valid/annotations-value-set-entry.json",
+      "bytes": 1622,
+      "sha256": "625dfb5523f8ec8e347f03f548e4ffc6a8c219f51a0604a055e87f1107f88089"
+    },
+    {
+      "path": "cases/valid/expense-approval-annotated.json",
+      "bytes": 6739,
+      "sha256": "0dacc1d58069a389f7a8e3d963d689814a7f81e1d6b30175ecf875a6d40569c9"
+    },
+    {
+      "path": "cases/valid/extensions-member-in-data.json",
+      "bytes": 1526,
+      "sha256": "093659235d9c239fdc6ee5e368df6c850be81446abfa34d20d95b3ed3d130b4b"
+    },
+    {
+      "path": "cases/valid/profile-annotation-key-characters-base-over-extended.json",
+      "bytes": 907,
+      "sha256": "357e17dc51709471adbe6226460adcf1a6bbb80ade5014693eaa06982d5fd0f5"
+    },
+    {
+      "path": "cases/valid/profile-annotation-key-characters-extended-at-extended.json",
+      "bytes": 971,
+      "sha256": "0cdbcd833959cb83a3ebe45bc61d5ea357b745ca66b4e8f87f02644aa98edfb1"
+    },
+    {
+      "path": "cases/valid/profile-annotation-keys-base-over-extended.json",
+      "bytes": 1335,
+      "sha256": "a79e1c5f62a1c2c21b74cd96a271341f82a2a3ace98b359efaf7c68c2b0fd5ac"
+    },
+    {
+      "path": "cases/valid/profile-annotation-keys-extended-at-extended.json",
+      "bytes": 1800,
+      "sha256": "c61f3191e6f3a26c5af6143f26caae5b881cfbf4ea1466756e9646bb000fbb60"
+    },
+    {
+      "path": "cases/valid/profile-annotation-string-characters-base-over-extended.json",
+      "bytes": 1105,
+      "sha256": "0e2f45cd771b5797b8db054e5176dd66f70c3e60af462769fd26c0f8b8157a5c"
+    },
+    {
+      "path": "cases/valid/profile-annotation-string-characters-extended-at-extended.json",
+      "bytes": 1360,
+      "sha256": "7dbec46b4664167e0d6a3c1e2e009176d526901cb1ed8e71d5f0c402cef3fc7b"
+    },
+    {
+      "path": "cases/valid/profile-annotation-strings-base-over-extended.json",
+      "bytes": 1272,
+      "sha256": "1c3d85dc15890e177c597f83678094c6d03bc2183ca08acf49a3013d34b64f42"
+    },
+    {
+      "path": "cases/valid/profile-annotation-strings-extended-at-extended.json",
+      "bytes": 1647,
+      "sha256": "eebacef4c38f3f4d7b825b5021934b99811303e9851907e3658ce55515bbea1a"
+    },
+    {
+      "path": "cases/valid/profile-value-set-entries-base-at-base.json",
+      "bytes": 23317,
+      "sha256": "65ec6568a7d47db588284f9a27c31bfd9c73df5d02d0908b00a834d9982accce"
+    },
+    {
+      "path": "cases/valid/profile-value-set-entries-base-over-extended.json",
+      "bytes": 23365,
+      "sha256": "d5b582c9f98d2b657f645161b503214996f81691de8fcc80310b57e5750bd890"
+    },
+    {
+      "path": "cases/valid/profile-value-set-entries-extended-at-extended.json",
+      "bytes": 45874,
+      "sha256": "aad45caf09d2b8c24c6c082c52d67a3d60c727d7f7e144c48538c522e15bd9fa"
+    },
+    {
+      "path": "cases/valid/profile-value-sets-base-at-base.json",
+      "bytes": 7597,
+      "sha256": "8b2a54b379f2016c7a5efaed7bccacf0101694d46be797f47570be24868ecddd"
+    },
+    {
+      "path": "cases/valid/profile-value-sets-base-over-extended.json",
+      "bytes": 7706,
+      "sha256": "abe5e69f806bf9e44d4dce0a87615f3219951fed81049f2f3cf1e0d1ba5b8000"
+    },
+    {
+      "path": "cases/valid/profile-value-sets-extended-at-extended.json",
+      "bytes": 14349,
+      "sha256": "baef52a817448672769edec4d8c97e232a428dd31c744f1631fb3ff699a5ad77"
+    },
+    {
+      "path": "cases/valid/value-set-array-order.json",
+      "bytes": 937,
+      "sha256": "04ce86dcd8231cb509010d50c98ebfbf8914561d0215423d3c4ec75a222be2e3"
+    },
+    {
+      "path": "cases/valid/value-set-decimal-strings.json",
+      "bytes": 940,
+      "sha256": "e4bcf99afb17288194ce48719e0cfec6ddc9f27842ea513c21440047937dea56"
+    },
+    {
+      "path": "cases/valid/value-set-id-shared-with-outcome.json",
+      "bytes": 918,
+      "sha256": "a20ab84c9932cdff4c907882830a11fe846d9fb578d191ec9be4b3b7bd586aaf"
+    },
+    {
+      "path": "cases/valid/value-set-large-integers.json",
+      "bytes": 960,
+      "sha256": "003ec8f6cfbf491be823e8940814d5556fecadb585cf9cf4ffe2666efb2b8d6e"
+    },
+    {
+      "path": "cases/valid/value-set-literal-object-entry.json",
+      "bytes": 988,
+      "sha256": "457e34fa72d72142eb68a05d09f8eca9f34ca0ae202357109eec9f2e03be1441"
+    },
+    {
+      "path": "cases/valid/value-set-mixed-types.json",
+      "bytes": 1202,
+      "sha256": "5de875ab537ec5062d7e8f56c6b3fab301f77650cc80ba5008aa714c36ff8eae"
+    },
+    {
+      "path": "cases/valid/value-set-nfc-nfd.json",
+      "bytes": 938,
+      "sha256": "47e1ddc26539834f154cc950396a50ab1a63c840c80cb73febcb24feef8ab0c4"
+    },
+    {
+      "path": "cases/valid/value-set-shared.json",
+      "bytes": 1337,
+      "sha256": "70dfdaf5628cb0d73a033cfbbaa779fdc3d3f16fd8985925ce1e542c8db972f7"
+    },
+    {
+      "path": "cases/valid/value-set-unrepresentable-numbers.json",
+      "bytes": 948,
+      "sha256": "54da1e106a14ba7798f5b0594470a6ebc6042a36d010150c4f3966e6c64e4598"
+    },
+    {
+      "path": "cases/valid/value-sets-empty.json",
+      "bytes": 707,
+      "sha256": "e8792f0e1816ae1674769d751fe0a1348fc39467ad5263a6f8e7b9585eb392dc"
+    },
+    {
+      "path": "evaluation/cases.json",
+      "bytes": 54862,
+      "sha256": "819cba5f9f127cf8d950913d9bd09019f8e20e5511b74b1e4b7737fcae24015c"
+    },
+    {
+      "path": "evaluation/manifest.schema.json",
+      "bytes": 8106,
+      "sha256": "930d4c4e22ddc54f29c35090d6c979ad4e798c939509a7d6fac325c0dfd783da"
+    },
+    {
+      "path": "evaluation/packs/inert-annotated.json",
+      "bytes": 2070,
+      "sha256": "51df2443bcf44387a55a9075dda8639152d0dd6b4e4bb89d2c8f9349b972742d"
+    },
+    {
+      "path": "evaluation/packs/inert-baseline.json",
+      "bytes": 1399,
+      "sha256": "944101ac182c12c896b4aca5b73de3327a600155009714fd938f59a99f4d52a6"
+    },
+    {
+      "path": "evaluation/packs/inert-changed.json",
+      "bytes": 1918,
+      "sha256": "841d39b84b0d67b90be9628b27d9aa923b4d853253405bc1364ba1daff18e1da"
+    },
+    {
+      "path": "evaluation/packs/inert-mimic.json",
+      "bytes": 1991,
+      "sha256": "2f1b4c98474a399e16d29f4e7db296e00b876277616d2cb73b19e5d030239abb"
+    },
+    {
+      "path": "evaluation/packs/malformed-tab.json",
+      "bytes": 1521,
+      "sha256": "4f82f0736fb19039b16bd333fe86a8fabef2ae642972e9420c53b95ae08c7807"
+    },
+    {
+      "path": "evaluation/packs/malformed-too-many-keys.json",
+      "bytes": 1991,
+      "sha256": "7a2e6d3812f4786d9b43e1e6d2b5b93425be9ae538ff2b5d976429838b58cba6"
+    },
+    {
+      "path": "evaluation/packs/required-vendor-annotated.json",
+      "bytes": 1689,
+      "sha256": "183ea1386ed7952dde159b9b202c2461f95ed5cff9d571893ddb31ef48d86f24"
+    },
+    {
+      "path": "evaluation/packs/required-vendor-baseline.json",
+      "bytes": 1605,
+      "sha256": "cf17c9a9a6c9199a8356d0a248eee0e443c958acca25ccc41443febc4e6f3d86"
+    },
+    {
+      "path": "evaluation/packs/value-set-applicability-inline.json",
+      "bytes": 980,
+      "sha256": "6ab281938c03bcd32ab00180bb2ca5166fe847964eafce516ce2930cfb2c1670"
+    },
+    {
+      "path": "evaluation/packs/value-set-applicability.json",
+      "bytes": 1145,
+      "sha256": "e7043d828ef07a1d969b6ad64016df520ed08a5679a656ba6a6478cfa2f2beab"
+    },
+    {
+      "path": "evaluation/packs/value-set-diverged-copies.json",
+      "bytes": 1469,
+      "sha256": "c9a04b764ab6ebb7304dc5fdf26df085eeea2cd70e031f33314c84d8ceb549be"
+    },
+    {
+      "path": "evaluation/packs/value-set-empty-collection.json",
+      "bytes": 982,
+      "sha256": "a47719aed007efb8b7619efb9ea68c24e864c574e33a64b7f0063ee828a32b6e"
+    },
+    {
+      "path": "evaluation/packs/value-set-equality.json",
+      "bytes": 1356,
+      "sha256": "2cabac7dc24bb7ca4ec21016ecd248f8c1009f273c2cceec6823c24c438a1381"
+    },
+    {
+      "path": "evaluation/packs/value-set-exception-inline.json",
+      "bytes": 1216,
+      "sha256": "3619554c61e7f16a76ea2d85404fff0b965d62fff813af3fef1700ad0431bfd2"
+    },
+    {
+      "path": "evaluation/packs/value-set-exception.json",
+      "bytes": 1365,
+      "sha256": "8c72de559533dad5ead24e813f156694871b6a7a3a31028752000b3bcc8c3647"
+    },
+    {
+      "path": "evaluation/packs/value-set-inline.json",
+      "bytes": 963,
+      "sha256": "9c47b7dd7a1f3c694075cfca7b74944c82ee191eaf4089ccbb834b538e06e6bb"
+    },
+    {
+      "path": "evaluation/packs/value-set-literal-annotations.json",
+      "bytes": 1065,
+      "sha256": "dbb71dac960a86a4967f761273eb9ec5367d428dcad6b9075ab8c1c3c5620d6f"
+    },
+    {
+      "path": "evaluation/packs/value-set-reference-annotated.json",
+      "bytes": 1632,
+      "sha256": "6e92372fac941a9559c583084202c3799f5539818678eab02904e9f351155e02"
+    },
+    {
+      "path": "evaluation/packs/value-set-reference-changed.json",
+      "bytes": 1538,
+      "sha256": "dd3a2bc50e5c05da307bdbd7159ddf20ecbf75266594d3d24c8732e17c809559"
+    },
+    {
+      "path": "evaluation/packs/value-set-reference.json",
+      "bytes": 1149,
+      "sha256": "a0ea017933029f55a71a757e45278351dad4b50211bf84d7a955486132c48872"
+    },
+    {
+      "path": "evaluation/packs/value-set-repeated-inline.json",
+      "bytes": 963,
+      "sha256": "37b4c577e102d4182a7886f2cfdf011bbfed44738f11b2344291c37a79c44858"
+    },
+    {
+      "path": "evaluation/packs/value-set-repeated.json",
+      "bytes": 1191,
+      "sha256": "788b58df18061aa74fee39d8ebc61278081436c2b978c3aefd3cb9431a65a903"
+    },
+    {
+      "path": "evaluation/packs/value-set-shared.json",
+      "bytes": 1628,
+      "sha256": "a5b2a3d9eb0aa4cf821333caba21945aeb61d08dbb1f6882810dd82012748e6e"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-all-inline.json",
+      "bytes": 1236,
+      "sha256": "f55d75c022a01947a85105af34e2b19e6e738bb23691b5ca3bc27be6c09bb9e6"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-all.json",
+      "bytes": 1406,
+      "sha256": "2aaa1438419f5674ad4cbcbb9831bb6d901eee1b8961fac5e275b2c2d193b5d0"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-any-inline.json",
+      "bytes": 1237,
+      "sha256": "36ad764c31abcd9fdc729ac6ee4ff0044364df26051abbccf05653e7c7be181a"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-any.json",
+      "bytes": 1407,
+      "sha256": "3cbd5aecf11630a599c634f7947abc30243af7582110952cd0c7234d204a0c81"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-not-inline.json",
+      "bytes": 1009,
+      "sha256": "db437652e1ffb32a7964908096033941cfdf29322aabfff97d71566be885d82a"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-not.json",
+      "bytes": 1152,
+      "sha256": "fc47bfcf759336ae094e447fa9a19b8f06431d1db05acace8e1de3950a3ce3b1"
+    },
+    {
+      "path": "evaluation/packs/value-set-unreferenced.json",
+      "bytes": 1203,
+      "sha256": "26e861bf1d2c785a980f1ec9976a585a8d973c07795edf04cd9223ceccb9e6d3"
+    },
+    {
+      "path": "evaluation/packs/value-set-unresolved-outcome-id.json",
+      "bytes": 1141,
+      "sha256": "dc6e625e84969eac46d7a1a6729cfd2540d4046304e644fdeed34f0d2a655ca5"
+    },
+    {
+      "path": "evaluation/packs/value-set-unresolved.json",
+      "bytes": 1148,
+      "sha256": "bde9f6ce1140abb6c9d946da52ff2953ad8d7b55162424bf710c19b517a29402"
+    },
+    {
+      "path": "evaluation/packs/vendor-optional.json",
+      "bytes": 1506,
+      "sha256": "9be7dc59a1e1bfe7cf40c2d72931b179b80cdc95df0fad1b5916e91851f7852a"
+    },
+    {
+      "path": "example/expense-approval-annotated.json",
+      "bytes": 6739,
+      "sha256": "0dacc1d58069a389f7a8e3d963d689814a7f81e1d6b30175ecf875a6d40569c9"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 61306,
+      "sha256": "973b505b4e7815d72642b5c1742702c8f906c8de4c182e06ef9db970faef593a"
+    },
+    {
+      "path": "manifest.schema.json",
+      "bytes": 9074,
+      "sha256": "3d14efea2186a0d630c5d980c683bca8b4d4576dbf7213ed6cc37e8199016fdf"
+    },
+    {
+      "path": "schema.json",
+      "bytes": 27203,
+      "sha256": "f51a1eccc5aeb5b0a88b7b39b789b75f46297d309edfff061c17f6f4c24d7bee"
+    }
+  ]
+}

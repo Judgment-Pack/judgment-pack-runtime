@@ -7,21 +7,31 @@ import (
 	"unicode/utf16"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 )
 
 // The Markdown rendering of a view, view version 1. The layout is fixed and
 // plain: a title heading, an identity list, then one section per member in
 // the order a reviewer reads a pack — decision, applicability, outcomes,
-// rules, exceptions, fallback outcome, escalation, evidence requirements,
-// sources, metadata, extensions. A section the document has no member for is
-// left out; a member that is present and empty says *empty*.
+// rules, exceptions, value sets, fallback outcome, escalation, evidence
+// requirements, sources, metadata, extensions. A section the document has no
+// member for is left out; a member that is present and empty says *empty*.
+//
+// The staged draft selector's members (EXPERIMENTAL) take the same rules: a
+// value set is a subsection of "Value sets" with its entries in document
+// order; a condition that references a set names it ("value set <id>") and is
+// never expanded; and an annotations member is written in its place among
+// the extensions, typed, one item per key, a string after the key and a list
+// as nested items, so a one-element list never reads as a string.
 //
 // Every string taken from the pack passes through escapeMarkdown, and only
 // the renderer's own words are written unescaped. A string in a position the
 // evaluator matches on — a fact's path, the strings and member names of a
 // fact's value, an extension's name and the strings and member names of its
 // value — is also written in ASCII beside it when it holds anything else
-// (matched). No line begins with pack
+// (matched). A value-set entry's value, and an annotation's key and strings,
+// which an annotation filter matches on, are written the same way. No line
+// begins with pack
 // text: each follows a heading marker, a list marker and label, or a table
 // pipe.
 
@@ -129,22 +139,70 @@ func (m *markdownWriter) list(depth int, label string, values []string) {
 // extensions writes one labelled extensions object, or nothing when it is
 // absent.
 func (m *markdownWriter) extensions(depth int, extensions []Extension) {
-	if extensions == nil {
+	m.annotatedExtensions(depth, extensions, nil)
+}
+
+// annotatedExtensions writes one labelled extensions object with its typed
+// annotations member, or nothing when it is absent.
+func (m *markdownWriter) annotatedExtensions(depth int, extensions []Extension, annotations []Annotation) {
+	if extensions == nil && annotations == nil {
 		return
 	}
-	if len(extensions) == 0 {
+	if len(extensions) == 0 && annotations == nil {
 		m.line(depth, "- Extensions: *empty*")
 		return
 	}
 	m.line(depth, "- Extensions:")
-	m.extensionItems(depth+1, extensions)
+	m.extensionItems(depth+1, extensions, annotations)
 }
 
-func (m *markdownWriter) extensionItems(depth int, extensions []Extension) {
+// extensionItems writes the members of an extensions object in canonical
+// order, the typed annotations member, when there is one, in its place.
+func (m *markdownWriter) extensionItems(depth int, extensions []Extension, annotations []Annotation) {
+	pending := annotations != nil
 	for _, extension := range extensions {
+		if pending && compareUTF16(evalform.AnnotationsName, extension.Name) < 0 {
+			m.annotations(depth, annotations)
+			pending = false
+		}
 		name, _ := canonicalText(extension.Name)
 		m.line(depth, "- "+escapeMarkdown(extension.Name)+asciiForm(name)+": "+matched(extension.Value))
 	}
+	if pending {
+		m.annotations(depth, annotations)
+	}
+}
+
+// annotations writes an annotations member: its name, then one item per key.
+func (m *markdownWriter) annotations(depth int, annotations []Annotation) {
+	label := "- " + escapeMarkdown(evalform.AnnotationsName) + ":"
+	if len(annotations) == 0 {
+		m.line(depth, label+" *empty*")
+		return
+	}
+	m.line(depth, label)
+	for _, annotation := range annotations {
+		key := "- " + annotationText(annotation.Key) + ":"
+		switch {
+		case annotation.List == nil:
+			m.line(depth+1, key+" "+annotationText(annotation.Value))
+		case len(annotation.List) == 0:
+			m.line(depth+1, key+" *empty*")
+		default:
+			m.line(depth+1, key)
+			for _, item := range annotation.List {
+				m.line(depth+2, "- "+annotationText(item))
+			}
+		}
+	}
+}
+
+// annotationText writes an annotation key or string escaped, with its ASCII
+// form beside it when it holds anything outside printable ASCII, so two
+// strings an annotation filter tells apart never read alike.
+func annotationText(value string) string {
+	text, _ := canonicalText(value)
+	return escapeMarkdown(value) + asciiForm(text)
 }
 
 func (m *markdownWriter) target(depth int, label string, target Target) {
@@ -176,7 +234,14 @@ func (m *markdownWriter) condition(depth int, condition Condition) {
 		}
 	case "fact":
 		path, _ := canonicalText(condition.Path)
-		m.line(depth, "- fact "+matched(path)+" "+escapeMarkdown(condition.Operator)+" "+matched(condition.Value))
+		text := "- fact " + matched(path) + " " + escapeMarkdown(condition.Operator)
+		if condition.Value != "" || condition.ValueSet == "" {
+			text += " " + matched(condition.Value)
+		}
+		if condition.ValueSet != "" {
+			text += " value set " + escapeMarkdown(condition.ValueSet)
+		}
+		m.line(depth, text)
 	case "evidence-present":
 		m.line(depth, "- evidence present "+escapeMarkdown(condition.EvidenceRequirement))
 	}
@@ -242,6 +307,19 @@ func needsASCII(text string) bool {
 	return false
 }
 
+// rule writes the members of one rule, under the heading the caller wrote.
+func (m *markdownWriter) rule(rule Rule) {
+	m.field(0, "Description", rule.Description)
+	m.field(0, "Outcome", rule.Outcome)
+	m.field(0, "On unknown", rule.OnUnknown)
+	m.list(0, "Evidence requirement refs", rule.EvidenceRequirementRefs)
+	m.list(0, "Source refs", rule.SourceRefs)
+	m.field(0, "Rationale", rule.Rationale)
+	m.annotatedExtensions(0, rule.Extensions, rule.Annotations)
+	m.line(0, "- When:")
+	m.condition(1, rule.When)
+}
+
 func (m *markdownWriter) empty() {
 	m.line(0, "*empty*")
 }
@@ -280,15 +358,15 @@ func renderMarkdown(view PackView) []byte {
 		m.line(0, "| "+escapeMarkdown(outcome.ID)+" | "+escapeMarkdown(outcome.Label)+" |"+description+" |")
 	}
 	for index, outcome := range view.Outcomes {
-		if outcome.Extensions == nil {
+		if outcome.Extensions == nil && outcome.Annotations == nil {
 			continue
 		}
 		m.section(3, "Extensions of outcome "+strconv.Itoa(index+1)+": "+escapeMarkdown(outcome.ID))
-		if len(outcome.Extensions) == 0 {
+		if len(outcome.Extensions) == 0 && outcome.Annotations == nil {
 			m.empty()
 			continue
 		}
-		m.extensionItems(0, outcome.Extensions)
+		m.extensionItems(0, outcome.Extensions, outcome.Annotations)
 	}
 
 	m.section(2, "Rules")
@@ -297,15 +375,7 @@ func renderMarkdown(view PackView) []byte {
 	}
 	for index, rule := range view.Rules {
 		m.section(3, "Rule "+strconv.Itoa(index+1)+": "+escapeMarkdown(rule.ID))
-		m.field(0, "Description", rule.Description)
-		m.field(0, "Outcome", rule.Outcome)
-		m.field(0, "On unknown", rule.OnUnknown)
-		m.list(0, "Evidence requirement refs", rule.EvidenceRequirementRefs)
-		m.list(0, "Source refs", rule.SourceRefs)
-		m.field(0, "Rationale", rule.Rationale)
-		m.extensions(0, rule.Extensions)
-		m.line(0, "- When:")
-		m.condition(1, rule.When)
+		m.rule(rule)
 	}
 
 	if view.Exceptions != nil {
@@ -324,6 +394,27 @@ func renderMarkdown(view PackView) []byte {
 			m.extensions(0, exception.Extensions)
 			m.line(0, "- When:")
 			m.condition(1, exception.When)
+		}
+	}
+
+	if view.ValueSets != nil {
+		m.section(2, "Value sets")
+		if len(view.ValueSets) == 0 {
+			m.empty()
+		}
+		for index, set := range view.ValueSets {
+			m.section(3, "Value set "+strconv.Itoa(index+1)+": "+escapeMarkdown(set.ID))
+			m.field(0, "Description", set.Description)
+			if len(set.Entries) == 0 {
+				m.line(0, "- Entries: *empty*")
+				continue
+			}
+			m.line(0, "- Entries:")
+			for entryIndex, entry := range set.Entries {
+				m.line(1, "- Entry "+strconv.Itoa(entryIndex+1)+": "+matched(entry.Value))
+				m.field(2, "Description", entry.Description)
+				m.annotatedExtensions(2, entry.Extensions, entry.Annotations)
+			}
 		}
 	}
 
@@ -419,12 +510,12 @@ func renderMarkdown(view PackView) []byte {
 		m.extensions(0, metadata.Extensions)
 	}
 
-	if view.Extensions != nil {
+	if view.Extensions != nil || view.Annotations != nil {
 		m.section(2, "Extensions")
-		if len(view.Extensions) == 0 {
+		if len(view.Extensions) == 0 && view.Annotations == nil {
 			m.empty()
 		}
-		m.extensionItems(0, view.Extensions)
+		m.extensionItems(0, view.Extensions, view.Annotations)
 	}
 	return []byte(m.builder.String())
 }

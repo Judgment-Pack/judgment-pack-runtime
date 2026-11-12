@@ -192,7 +192,10 @@ type Case struct {
 }
 
 type SuiteSummary struct {
-	Skipped    int `json:"skipped,omitempty"`
+	Skipped int `json:"skipped,omitempty"`
+	// Held counts staged rows the released case schema cannot state, reported
+	// and never run (staged draft selector only; omitted otherwise).
+	Held       int `json:"held,omitempty"`
 	Total      int `json:"total"`
 	Passed     int `json:"passed"`
 	Mismatched int `json:"mismatched"`
@@ -205,20 +208,23 @@ type AdvisorySummary struct {
 }
 
 type Suite struct {
-	Advisories            *AdvisorySummary `json:"advisories,omitempty"`
-	OutputVersion         string           `json:"outputVersion"`
-	Tool                  Tool             `json:"tool"`
-	Command               string           `json:"command"`
-	Status                string           `json:"status"`
-	SpecVersion           string           `json:"specVersion"`
-	SuiteVersion          string           `json:"suiteVersion"`
-	CorpusDigest          string           `json:"corpusDigest"`
-	CorpusDigestAlgorithm string           `json:"corpusDigestAlgorithm"`
-	Provenance            string           `json:"provenance"`
-	Summary               SuiteSummary     `json:"summary"`
-	Cases                 []Case           `json:"cases"`
-	Diagnostics           []Diagnostic     `json:"diagnostics"`
-	DiagnosticsTruncated  bool             `json:"diagnosticsTruncated"`
+	Advisories    *AdvisorySummary `json:"advisories,omitempty"`
+	OutputVersion string           `json:"outputVersion"`
+	Tool          Tool             `json:"tool"`
+	Command       string           `json:"command"`
+	Status        string           `json:"status"`
+	SpecVersion   string           `json:"specVersion"`
+	SuiteVersion  string           `json:"suiteVersion"`
+	// SuiteStatus is "staged" for the staged draft selector's bundled cases,
+	// which are in no corpus and carry no suiteVersion; absent otherwise.
+	SuiteStatus           string       `json:"suiteStatus,omitempty"`
+	CorpusDigest          string       `json:"corpusDigest"`
+	CorpusDigestAlgorithm string       `json:"corpusDigestAlgorithm"`
+	Provenance            string       `json:"provenance"`
+	Summary               SuiteSummary `json:"summary"`
+	Cases                 []Case       `json:"cases"`
+	Diagnostics           []Diagnostic `json:"diagnostics"`
+	DiagnosticsTruncated  bool         `json:"diagnosticsTruncated"`
 }
 
 type Schema struct {
@@ -237,6 +243,10 @@ type Schema struct {
 type EvaluatorCapability struct {
 	SpecVersion       string   `json:"specVersion"`
 	SupportedProfiles []string `json:"supportedProfiles,omitempty"`
+	// Stage is "staged-unreleased" for the staged draft selector, admitted
+	// EXPERIMENTALLY from an unreleased specification commit; omitted for a
+	// released or published draft version.
+	Stage string `json:"stage,omitempty"`
 }
 
 type Version struct {
@@ -565,11 +575,11 @@ func (d Disposition) validate() error {
 	if err := d.Contract.Validate(); err != nil {
 		return err
 	}
-	if d.Contract.Version() == "0.3.0" && d.Value != nil {
+	if d.Contract.Core030Rules() && d.Value != nil {
 		return errors.New("§8.3: Core 0.3 admits no value member")
 	}
 	if d.Handoff.Routes != nil {
-		if d.Contract.Version() != "0.3.0" {
+		if !d.Contract.Core030Rules() {
 			return errors.New("§8.3: routes is not admitted by this evaluator contract")
 		}
 		if len(d.Handoff.Routes) > 8 {
@@ -634,7 +644,7 @@ func (d Disposition) validate() error {
 	// packs can retain that reason but select no route (§8.1), in which case
 	// state is none and triggeredBy is absent. Legacy and target-only packs
 	// preserve the unconditional direct-request invariant.
-	if !(d.Contract.Version() == "0.3.0" && d.Handoff.Routes != nil && d.Handoff.State == "none") && slices.Contains(reasons, ReasonExceptionEscalation) != slices.Contains(d.Handoff.TriggeredBy, ReasonExceptionEscalation) {
+	if !(d.Contract.Core030Rules() && d.Handoff.Routes != nil && d.Handoff.State == "none") && slices.Contains(reasons, ReasonExceptionEscalation) != slices.Contains(d.Handoff.TriggeredBy, ReasonExceptionEscalation) {
 		return errors.New("§8.3: a retained \"exception-escalation\" reason is a direct request, so handoff.state must be \"requested\" and handoff.triggeredBy must name it (§8.1)")
 	}
 	return d.validateValue()
@@ -1397,6 +1407,19 @@ type PackDescription struct {
 	Command       string `json:"command"`
 	Status        string `json:"status"`
 	View          string `json:"view"`
+}
+
+// PackFilteredDescription is one packs describe --filter report in JSON: the
+// filtered view of one admitted pack, which is experimental and is not the
+// pack. FilteredView holds the exact bytes of the filtered view's canonical
+// JSON as a string, as PackDescription's View does; its own
+// filteredViewVersion moves independently of OutputVersion.
+type PackFilteredDescription struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	FilteredView  string `json:"filteredView"`
 }
 
 // PackTestEntry is one pack's matrix run. Rows reuse the corpus row type,
