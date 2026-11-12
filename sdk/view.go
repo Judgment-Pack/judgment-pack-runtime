@@ -59,6 +59,43 @@ func (p *Pack) View() (view.PackView, error) {
 	return described, nil
 }
 
+// FilteredView returns the outcomes and rules of the admitted document whose
+// annotations match every one of criteria, with the filter, the counts and
+// the pack's full identity (EXPERIMENTAL). It is not the pack, and both its
+// encodings say so. It is taken from a view built afresh from the document
+// Load admitted, as View builds it, never from a PackView a caller holds.
+//
+// Annotations exist only under the staged draft selector 0.4.0-draft, which
+// may be renamed or changed by the specification. A criterion no annotation
+// could match is refused with an error wrapping view.ErrFilterCriterion, and
+// a pack under any other specVersion with one wrapping
+// view.ErrFilterSelector; neither is a *Refusal, because the pack was
+// admitted. Any other error wraps ErrInternal, as View's do.
+func (p *Pack) FilteredView(criteria []view.Criterion) (view.FilteredView, error) {
+	described, err := p.View()
+	if err != nil {
+		return view.FilteredView{}, err
+	}
+	if viewhook.Filter == nil {
+		return view.FilteredView{}, internalFault(viewFaultCode, "The view filter is not initialised.")
+	}
+	filtered, err := viewhook.Filter(described, criteria)
+	if errors.Is(err, view.ErrFilterCriterion) || errors.Is(err, view.ErrFilterSelector) {
+		return view.FilteredView{}, err
+	}
+	if err != nil {
+		return view.FilteredView{}, internalFault(viewFaultCode, err.Error())
+	}
+	result, ok := filtered.(view.FilteredView)
+	if !ok {
+		return view.FilteredView{}, internalFault(viewFaultCode, "The view filter returned no filtered view.")
+	}
+	if Identity(result.Identity) != p.identity {
+		return view.FilteredView{}, internalFault(viewFaultCode, "The filtered view's identity is not the identity Load read from the same document.")
+	}
+	return result, nil
+}
+
 // Identity returns the identity Load read from the admitted document and the
 // digest of the bytes it was given. Experimental.
 func (p *Pack) Identity() Identity {

@@ -199,28 +199,16 @@ func (v PackView) documentValue() (map[string]any, error) {
 	}
 	outcomes := make([]any, 0, len(v.Outcomes))
 	for _, outcome := range v.Outcomes {
-		item := map[string]any{"id": outcome.ID, "label": outcome.Label}
-		putString(item, "description", outcome.Description)
-		outcomes = append(outcomes, withAnnotatedExtensions(item, outcome.Extensions, outcome.Annotations))
+		outcomes = append(outcomes, outcomeValue(outcome))
 	}
 	document["outcomes"] = outcomes
 	rules := make([]any, 0, len(v.Rules))
 	for _, rule := range v.Rules {
-		when, err := conditionValue(rule.When)
+		item, err := ruleValue(rule)
 		if err != nil {
 			return nil, err
 		}
-		item := map[string]any{
-			"id":          rule.ID,
-			"description": rule.Description,
-			"when":        when,
-			"outcome":     rule.Outcome,
-			"onUnknown":   rule.OnUnknown,
-		}
-		putStrings(item, "evidenceRequirementRefs", rule.EvidenceRequirementRefs)
-		putStrings(item, "sourceRefs", rule.SourceRefs)
-		putString(item, "rationale", rule.Rationale)
-		rules = append(rules, withAnnotatedExtensions(item, rule.Extensions, rule.Annotations))
+		rules = append(rules, item)
 	}
 	document["rules"] = rules
 	if v.Exceptions != nil {
@@ -296,6 +284,32 @@ func (v PackView) documentValue() (map[string]any, error) {
 		document["metadata"] = withExtensions(metadata, v.Metadata.Extensions)
 	}
 	return withAnnotatedExtensions(document, v.Extensions, v.Annotations), nil
+}
+
+// outcomeValue rebuilds one member of outcomes from its typed form.
+func outcomeValue(outcome Outcome) map[string]any {
+	item := map[string]any{"id": outcome.ID, "label": outcome.Label}
+	putString(item, "description", outcome.Description)
+	return withAnnotatedExtensions(item, outcome.Extensions, outcome.Annotations)
+}
+
+// ruleValue rebuilds one member of rules from its typed form.
+func ruleValue(rule Rule) (map[string]any, error) {
+	when, err := conditionValue(rule.When)
+	if err != nil {
+		return nil, err
+	}
+	item := map[string]any{
+		"id":          rule.ID,
+		"description": rule.Description,
+		"when":        when,
+		"outcome":     rule.Outcome,
+		"onUnknown":   rule.OnUnknown,
+	}
+	putStrings(item, "evidenceRequirementRefs", rule.EvidenceRequirementRefs)
+	putStrings(item, "sourceRefs", rule.SourceRefs)
+	putString(item, "rationale", rule.Rationale)
+	return withAnnotatedExtensions(item, rule.Extensions, rule.Annotations), nil
 }
 
 // conditionValue rebuilds one condition node from its typed form.

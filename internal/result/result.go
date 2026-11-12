@@ -1409,6 +1409,19 @@ type PackDescription struct {
 	View          string `json:"view"`
 }
 
+// PackFilteredDescription is one packs describe --filter report in JSON: the
+// filtered view of one admitted pack, which is experimental and is not the
+// pack. FilteredView holds the exact bytes of the filtered view's canonical
+// JSON as a string, as PackDescription's View does; its own
+// filteredViewVersion moves independently of OutputVersion.
+type PackFilteredDescription struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	FilteredView  string `json:"filteredView"`
+}
+
 // PackTestEntry is one pack's matrix run. Rows reuse the corpus row type,
 // because a project matrix row is compared exactly as a corpus row is: the RFC
 // 8785 canonical disposition byte for byte, or the expected §8.4 error class and

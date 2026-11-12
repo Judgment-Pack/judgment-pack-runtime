@@ -938,4 +938,15 @@ func init() {
 		}
 		return built, ""
 	}
+	viewhook.Filter = func(built any, criteria any) (any, error) {
+		described, ok := built.(PackView)
+		if !ok || described.json == nil {
+			return nil, &fault{message: "The filter was given no view that View built."}
+		}
+		given, ok := criteria.([]Criterion)
+		if !ok {
+			return nil, &fault{message: "The filter was given no criteria."}
+		}
+		return filter(described, given)
+	}
 }

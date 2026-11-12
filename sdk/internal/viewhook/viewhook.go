@@ -9,3 +9,10 @@ package viewhook
 // a construct the view cannot represent it returns nil and the message saying
 // so.
 var Build func(root map[string]any, digest string) (view any, fault string)
+
+// Filter is set by package view when it is initialised and called by
+// sdk.Pack.FilteredView. It filters a view.PackView, which Build returned, by
+// a []view.Criterion, both passed as any for the same reason, and returns a
+// view.FilteredView as any, or the error that refuses the criteria or the
+// pack.
+var Filter func(view any, criteria any) (filtered any, err error)

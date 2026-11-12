@@ -307,6 +307,19 @@ func needsASCII(text string) bool {
 	return false
 }
 
+// rule writes the members of one rule, under the heading the caller wrote.
+func (m *markdownWriter) rule(rule Rule) {
+	m.field(0, "Description", rule.Description)
+	m.field(0, "Outcome", rule.Outcome)
+	m.field(0, "On unknown", rule.OnUnknown)
+	m.list(0, "Evidence requirement refs", rule.EvidenceRequirementRefs)
+	m.list(0, "Source refs", rule.SourceRefs)
+	m.field(0, "Rationale", rule.Rationale)
+	m.annotatedExtensions(0, rule.Extensions, rule.Annotations)
+	m.line(0, "- When:")
+	m.condition(1, rule.When)
+}
+
 func (m *markdownWriter) empty() {
 	m.line(0, "*empty*")
 }
@@ -362,15 +375,7 @@ func renderMarkdown(view PackView) []byte {
 	}
 	for index, rule := range view.Rules {
 		m.section(3, "Rule "+strconv.Itoa(index+1)+": "+escapeMarkdown(rule.ID))
-		m.field(0, "Description", rule.Description)
-		m.field(0, "Outcome", rule.Outcome)
-		m.field(0, "On unknown", rule.OnUnknown)
-		m.list(0, "Evidence requirement refs", rule.EvidenceRequirementRefs)
-		m.list(0, "Source refs", rule.SourceRefs)
-		m.field(0, "Rationale", rule.Rationale)
-		m.annotatedExtensions(0, rule.Extensions, rule.Annotations)
-		m.line(0, "- When:")
-		m.condition(1, rule.When)
+		m.rule(rule)
 	}
 
 	if view.Exceptions != nil {
