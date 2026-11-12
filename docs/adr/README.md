@@ -170,4 +170,4 @@ authority, and following it confers no conformance status on anything.
 | [0072](0072-lock-coverage-without-a-project.md) | Answer whether a reviewed-set lock covers a document's exact bytes, without opening a project | accepted |
 | [0073](0073-in-process-go-evaluation-api.md) | Expose loading and evaluating a pack as an experimental in-process Go API | accepted |
 | [0074](0074-describe-a-loaded-pack.md) | Describe a loaded pack, every member as written, through the Go API and jpack packs describe | accepted |
-| [0075](0075-admit-the-staged-draft-selector-0-4-0-draft.md) | Admit the staged draft selector 0.4.0-draft experimentally: evaluate its evaluation form, and show and filter its annotations | proposed |
+| [0075](0075-admit-the-staged-draft-selector-0-4-0-draft.md) | Admit the staged draft selector 0.4.0-draft experimentally: evaluate its evaluation form, and show and filter its annotations | accepted |
