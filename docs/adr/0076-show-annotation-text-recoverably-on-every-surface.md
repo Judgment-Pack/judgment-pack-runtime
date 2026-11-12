@@ -45,7 +45,9 @@ a character outside ASCII.
 - **JSON** (`PackView.JSON`, `FilteredView.JSON`, and the `packs describe` envelope that carries
   them as strings). Each key and string is its exact code points in UTF-8, which a JSON reader
   recovers exactly. The JSON is data for a program, not a display: a consumer that displays a key
-  or value read from it lists it, and D1 and D2 bind that consumer.
+  or value read from it lists it, and D1 and D2 bind that consumer. This is this runtime's reading: the staged text
+  speaks of a consumer that lists values or states a filter and does not say whether a machine
+  interchange form is such a statement. The reading has been raised with the specification.
 - **Markdown** (both views, which `packs describe` writes unchanged). Unchanged. Annotation text is
   escaped, a control, format character or separator written as its `U+` number in place
   (ADR-0074), and the text is written again in ASCII beside it whenever it holds a code point

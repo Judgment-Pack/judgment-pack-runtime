@@ -15,7 +15,9 @@ All notable changes to tagged releases are documented here.
   refusal names the code point by its `U+` number. The staged run has 208 document cases, of
   which the 18 written for the `extended` profile are refused as unsupported and skipped, and 82
   evaluation rows, with the row `annotations-supported-extension-set` still held. `0.2.0-draft`
-  and `0.3.0` behaviour and outputs are unchanged.
+  and `0.3.0` behaviour and outputs are unchanged, with one exception: a `--filter` criterion is
+  checked before the pack's selector, so a criterion the revised rules refuse is now refused as a
+  criterion on a pack under any selector, where it was refused before for the selector.
 - The draft's display rule for annotations is met on every surface that lists annotation keys or
   values or states a filter, and recorded in ADR-0076 (#379; EXPERIMENTAL). The Markdown of the
   view and the filtered view already wrote such text in ASCII beside it and is unchanged; the JSON
