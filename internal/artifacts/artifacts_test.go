@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -444,6 +446,35 @@ func TestNoBundleStatesAStage(t *testing.T) {
 	for _, stage := range []string{"staged-unreleased", "released", "x"} {
 		if err := checkStage(LockSource{Kind: "immutable-git-ref", Ref: full, BaseCommit: full, Stage: stage}); err == nil {
 			t.Errorf("a lock stating stage %q was accepted", stage)
+		}
+	}
+
+	// The lock Load reads goes through the same check: each bundled lock,
+	// given a stage, is refused, with the message Load reports, and as it is
+	// it decodes to the lock Load returns.
+	for _, version := range SupportedVersions() {
+		lockBytes, err := embedded.ReadFile(path.Join("jps", version, "lock.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		set, err := Load(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if lock, err := decodeLock(lockBytes, version); err != nil || !reflect.DeepEqual(lock, set.Lock()) {
+			t.Fatalf("%s: the bundled lock decodes to %+v (%v)", version, lock, err)
+		}
+		var raw map[string]any
+		if err := json.Unmarshal(lockBytes, &raw); err != nil {
+			t.Fatal(err)
+		}
+		raw["source"].(map[string]any)["stage"] = "staged-unreleased"
+		staged, err := json.Marshal(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := decodeLock(staged, version); err == nil || err.Error() != "embedded artifact lock states a stage; this runtime embeds released versions only" {
+			t.Errorf("%s: a lock stating a stage decoded (%v)", version, err)
 		}
 	}
 }

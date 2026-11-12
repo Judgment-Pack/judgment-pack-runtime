@@ -107,14 +107,8 @@ func Load(version string) (*Set, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read embedded artifact lock: %w", err)
 	}
-	var lock Lock
-	if err := json.Unmarshal(lockBytes, &lock); err != nil {
-		return nil, fmt.Errorf("decode embedded artifact lock: %w", err)
-	}
-	if lock.FormatVersion != 1 || lock.SpecVersion != version {
-		return nil, errors.New("embedded artifact lock is incompatible")
-	}
-	if err := checkStage(lock.Source); err != nil {
+	lock, err := decodeLock(lockBytes, version)
+	if err != nil {
 		return nil, err
 	}
 	set := &Set{root: root, lock: lock, files: map[string]FileLock{}}
@@ -128,6 +122,23 @@ func Load(version string) (*Set, error) {
 // embeds is a specification release, imported from its tag; a bundle the
 // import tool took from a commit's staged directories says so in its lock,
 // and is never read as a released version.
+// decodeLock reads the lock of the bundle for version, as Load does before it
+// verifies a single file: one of the lock format this runtime reads, for that
+// version, from a release.
+func decodeLock(lockBytes []byte, version string) (Lock, error) {
+	var lock Lock
+	if err := json.Unmarshal(lockBytes, &lock); err != nil {
+		return Lock{}, fmt.Errorf("decode embedded artifact lock: %w", err)
+	}
+	if lock.FormatVersion != 1 || lock.SpecVersion != version {
+		return Lock{}, errors.New("embedded artifact lock is incompatible")
+	}
+	if err := checkStage(lock.Source); err != nil {
+		return Lock{}, err
+	}
+	return lock, nil
+}
+
 func checkStage(source LockSource) error {
 	if source.Stage != "" {
 		return errors.New("embedded artifact lock states a stage; this runtime embeds released versions only")
