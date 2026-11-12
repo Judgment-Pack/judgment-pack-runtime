@@ -760,7 +760,7 @@ func (a *App) testConformanceCommand() *cobra.Command {
 			"By default a case passes when its expected diagnostic is among those reported; extra detail is allowed.\n" +
 			"With --strict a case also fails when a diagnostic is reported that its manifest entry does not expect,\n" +
 			"and the failure names each stray diagnostic. The corpus's single-defect rule (one defect per fixture)\n" +
-			"is only checked under --strict. Exact Core 0.3.0 rule overlap also fails strict mode;\n" +
+			"is only checked under --strict. Exact rule overlap in a Core 0.3.0 or later pack also fails strict mode;\n" +
 			"not-excluded overlap remains a warning and document conformance is unchanged.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
