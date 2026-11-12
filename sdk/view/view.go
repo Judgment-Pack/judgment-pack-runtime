@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/internal/viewhook"
 )
 
@@ -20,7 +22,9 @@ import (
 // whenever the bytes View gives for a pack an earlier view version could
 // describe would change, in either encoding; it does not move when View
 // learns to describe packs it refused before, such as those of a newly
-// admitted specification version. Experimental, like the rest of the view.
+// admitted specification version: the value sets and annotations of the
+// staged draft selector 0.4.0-draft are members no earlier pack holds, so
+// describing them left it at "1". Experimental, like the rest of the view.
 const ViewVersion = "1"
 
 // Identity is what names the viewed pack: the id, version and specVersion
@@ -73,11 +77,21 @@ type PackView struct {
 	Outcomes             []Outcome
 	Rules                []Rule
 	Exceptions           []Exception
-	FallbackOutcome      string
-	Escalation           *Escalation
-	Metadata             *Metadata
-	// Extensions is the document's top-level extensions member.
+	// ValueSets is the document's valueSets member, which only the staged
+	// draft selector 0.4.0-draft defines (EXPERIMENTAL).
+	ValueSets       []ValueSet
+	FallbackOutcome string
+	Escalation      *Escalation
+	Metadata        *Metadata
+	// Extensions is the document's top-level extensions member, without its
+	// annotations member, which Annotations carries typed. It is non-nil
+	// exactly when the document has an extensions member, so an extensions
+	// object that holds only annotations is a non-nil empty slice.
 	Extensions []Extension
+	// Annotations is the annotations member of the document's top-level
+	// extensions object (org.judgmentpack.annotations, staged draft selector
+	// 0.4.0-draft only, EXPERIMENTAL), or nil when it has none.
+	Annotations []Annotation
 
 	json     []byte
 	markdown []byte
@@ -151,6 +165,9 @@ type Outcome struct {
 	Label       string
 	Description string
 	Extensions  []Extension
+	// Annotations is the annotations member of the outcome's extensions, as
+	// for PackView.Annotations.
+	Annotations []Annotation
 }
 
 // Rule is one member of rules, in document order.
@@ -164,6 +181,9 @@ type Rule struct {
 	SourceRefs              []string
 	Rationale               string
 	Extensions              []Extension
+	// Annotations is the annotations member of the rule's extensions, as for
+	// PackView.Annotations.
+	Annotations []Annotation
 }
 
 // Exception is one member of exceptions, in document order.
@@ -221,7 +241,10 @@ type Review struct {
 //   - "all" and "any": Conditions, in document order;
 //   - "not": Condition;
 //   - "fact": Path (a JSON pointer, which may be the empty string), Operator
-//     and Value, the canonical JSON of the comparison value;
+//     and Value, the canonical JSON of the comparison value; or, under the
+//     staged draft selector 0.4.0-draft, ValueSet in place of Value: the id
+//     of the value set the condition references, as written and never
+//     expanded;
 //   - "evidence-present": EvidenceRequirement.
 type Condition struct {
 	Op                  string
@@ -230,7 +253,39 @@ type Condition struct {
 	Condition           *Condition
 	Path                string
 	Operator            string
+	ValueSet            string
 	EvidenceRequirement string
+}
+
+// ValueSet is one member of valueSets (staged draft selector 0.4.0-draft,
+// EXPERIMENTAL): its id, its description, and its entries in document order.
+type ValueSet struct {
+	ID          string
+	Description string
+	Entries     []ValueSetEntry
+}
+
+// ValueSetEntry is one entry of a value set: its value as canonical JSON,
+// with numbers exactly as written, its description, and its extensions
+// member, which may hold only annotations. Extensions is non-nil exactly when
+// the entry has an extensions member.
+type ValueSetEntry struct {
+	Value       string
+	Description string
+	Extensions  []Extension
+	Annotations []Annotation
+}
+
+// Annotation is one member of an annotations object (staged draft selector
+// 0.4.0-draft, EXPERIMENTAL). Its value is one string or a list of strings,
+// and the view keeps the two apart: Value is the string, and empty for a
+// list, which the schema never allows a string annotation to be; List is the
+// list in document order, and nil for a string. An annotations slice is
+// ordered by the UTF-16 code units of the keys, the canonical member order.
+type Annotation struct {
+	Key   string
+	Value string
+	List  []string
 }
 
 // Extension is one member of an extensions object: its name, and its value as
@@ -420,6 +475,61 @@ func (o *viewObject) strings(name string, required bool) []string {
 // extensions reads the object's extensions member. Its values are the
 // author's, carried as canonical JSON.
 func (o *viewObject) extensions() []Extension {
+	return o.extensionMembers("")
+}
+
+// annotatedExtensions reads the extensions member of an object that may hold
+// annotations under the staged draft selector (the root, an outcome, a rule
+// and a value-set entry): its annotations member as typed Annotations, and
+// every other member as an Extension. Under every other version no
+// annotations member exists, and every member is an Extension.
+func (o *viewObject) annotatedExtensions() ([]Extension, []Annotation) {
+	if !result.IsStagedDraft(o.reader.version) {
+		return o.extensions(), nil
+	}
+	extensions := o.extensionMembers(evalform.AnnotationsName)
+	members, _ := o.members["extensions"].(map[string]any)
+	value, present := members[evalform.AnnotationsName]
+	if !present {
+		return extensions, nil
+	}
+	return extensions, o.reader.annotations(value, o.at("extensions").member(evalform.AnnotationsName))
+}
+
+// annotations reads one annotations object, its members in canonical order.
+func (r *viewReader) annotations(value any, pointer *location) []Annotation {
+	members, ok := value.(map[string]any)
+	if !ok {
+		r.fail(pointer, "expected an object")
+		return nil
+	}
+	keys := make([]string, 0, len(members))
+	for key := range members {
+		keys = append(keys, key)
+	}
+	slices.SortFunc(keys, compareUTF16)
+	annotations := make([]Annotation, 0, len(keys))
+	for _, key := range keys {
+		at := pointer.member(key)
+		switch typed := members[key].(type) {
+		case string:
+			annotations = append(annotations, Annotation{Key: key, Value: r.text(typed, at, false)})
+		case []any:
+			list := make([]string, 0, len(typed))
+			for index, item := range typed {
+				list = append(list, r.text(item, at.item(index), false))
+			}
+			annotations = append(annotations, Annotation{Key: key, List: list})
+		default:
+			r.fail(at, "an annotation value must be a string or a list of strings")
+		}
+	}
+	return annotations
+}
+
+// extensionMembers reads the extensions member, leaving out the member named
+// typed, which the caller reads as a typed field; "" leaves out nothing.
+func (o *viewObject) extensionMembers(typed string) []Extension {
 	value, present := o.take("extensions")
 	if !present {
 		return nil
@@ -436,6 +546,9 @@ func (o *viewObject) extensions() []Extension {
 	slices.SortFunc(names, compareUTF16)
 	extensions := make([]Extension, 0, len(names))
 	for _, name := range names {
+		if typed != "" && name == typed {
+			continue
+		}
 		encoded, err := canonicalText(members[name])
 		if err != nil {
 			o.reader.fail(o.at("extensions").member(name), err.Error())
@@ -462,9 +575,13 @@ func (o *viewObject) done() {
 
 // The specVersions whose documents this view reads. Each is a version Load
 // admits; a document of another version is refused before any member is read.
+// The staged draft selector is read with Core 0.3.0's members
+// (result.HasCore030Rules) and its own value sets and annotations
+// (result.IsStagedDraft); it is EXPERIMENTAL and may be renamed or changed.
 const (
-	viewDraftVersion = "0.2.0-draft"
-	viewCoreVersion  = "0.3.0"
+	viewDraftVersion  = "0.2.0-draft"
+	viewCoreVersion   = "0.3.0"
+	viewStagedVersion = result.StagedDraftSpecVersion
 )
 
 // buildView reads an admitted root, member by member, into a PackView.
@@ -474,13 +591,13 @@ func buildView(root map[string]any) (PackView, error) {
 	view := PackView{}
 	view.Identity.SpecVersion = o.requiredString("specVersion")
 	r.version = view.Identity.SpecVersion
-	if r.version != viewDraftVersion && r.version != viewCoreVersion {
+	if r.version != viewDraftVersion && !result.HasCore030Rules(r.version) {
 		r.fail(o.at("specVersion"), "a specification version this view does not describe")
 		return PackView{}, r.err
 	}
 	view.Identity.ID = o.requiredString("id")
 	view.Identity.Version = o.requiredString("version")
-	if r.version == viewCoreVersion {
+	if result.HasCore030Rules(r.version) {
 		view.Identity.Profile = o.optionalString("profile")
 	}
 	view.Title = o.requiredString("title")
@@ -518,6 +635,14 @@ func buildView(root map[string]any) (PackView, error) {
 			view.Exceptions = append(view.Exceptions, r.exception(item, indexed(o.at("exceptions"), index)))
 		}
 	}
+	if result.IsStagedDraft(r.version) {
+		if items := o.array("valueSets", false); items != nil {
+			view.ValueSets = make([]ValueSet, 0, len(items))
+			for index, item := range items {
+				view.ValueSets = append(view.ValueSets, r.valueSet(item, indexed(o.at("valueSets"), index)))
+			}
+		}
+	}
 	view.FallbackOutcome = o.optionalString("fallbackOutcome")
 	if value, present := o.take("escalation"); present {
 		view.Escalation = r.escalation(value, o.at("escalation"))
@@ -525,12 +650,32 @@ func buildView(root map[string]any) (PackView, error) {
 	if value, present := o.take("metadata"); present {
 		view.Metadata = r.metadata(value, o.at("metadata"))
 	}
-	view.Extensions = o.extensions()
+	view.Extensions, view.Annotations = o.annotatedExtensions()
 	o.done()
 	if r.err != nil {
 		return PackView{}, r.err
 	}
 	return view, nil
+}
+
+// valueSet reads one value set and its entries, in document order.
+func (r *viewReader) valueSet(value any, pointer *location) ValueSet {
+	o := r.object(value, pointer)
+	set := ValueSet{ID: o.requiredString("id"), Description: o.optionalString("description")}
+	entries := o.array("entries", true)
+	set.Entries = make([]ValueSetEntry, 0, len(entries))
+	for index, item := range entries {
+		entry := r.object(item, indexed(o.at("entries"), index))
+		read := ValueSetEntry{
+			Value:       r.canonicalMember(entry.required("value"), entry.at("value")),
+			Description: entry.optionalString("description"),
+		}
+		read.Extensions, read.Annotations = entry.annotatedExtensions()
+		entry.done()
+		set.Entries = append(set.Entries, read)
+	}
+	o.done()
+	return set
 }
 
 func indexed(pointer *location, index int) *location {
@@ -589,8 +734,8 @@ func (r *viewReader) outcome(value any, pointer *location) Outcome {
 		ID:          o.requiredString("id"),
 		Label:       o.requiredString("label"),
 		Description: o.optionalString("description"),
-		Extensions:  o.extensions(),
 	}
+	outcome.Extensions, outcome.Annotations = o.annotatedExtensions()
 	o.done()
 	return outcome
 }
@@ -606,8 +751,8 @@ func (r *viewReader) rule(value any, pointer *location) Rule {
 		EvidenceRequirementRefs: o.strings("evidenceRequirementRefs", false),
 		SourceRefs:              o.strings("sourceRefs", false),
 		Rationale:               o.optionalString("rationale"),
-		Extensions:              o.extensions(),
 	}
+	rule.Extensions, rule.Annotations = o.annotatedExtensions()
 	o.done()
 	return rule
 }
@@ -638,7 +783,8 @@ func (r *viewReader) target(value any, pointer *location) Target {
 
 // escalation reads the escalation member. Under 0.2.0-draft the target is
 // required and routes do not exist, so a routes member is left unread and
-// refused by done; under 0.3.0 either may be present.
+// refused by done; under 0.3.0 and the staged draft selector either may be
+// present.
 func (r *viewReader) escalation(value any, pointer *location) *Escalation {
 	o := r.object(value, pointer)
 	escalation := &Escalation{Triggers: o.strings("triggers", true)}
@@ -649,7 +795,7 @@ func (r *viewReader) escalation(value any, pointer *location) *Escalation {
 		r.fail(o.at("target"), "a required member is missing")
 	}
 	escalation.Message = o.optionalString("message")
-	if r.version == viewCoreVersion {
+	if result.HasCore030Rules(r.version) {
 		if items := o.array("routes", false); items != nil {
 			escalation.Routes = make([]Route, 0, len(items))
 			for index, item := range items {
@@ -695,8 +841,9 @@ func (r *viewReader) metadata(value any, pointer *location) *Metadata {
 }
 
 // condition reads one condition node. The shapes are the JPS Core condition
-// grammar's, the same under both versions this view reads; an op outside it is
-// refused rather than carried as a node of no known shape.
+// grammar's, the same under every version this view reads but for the staged
+// draft selector's valueSet reference; an op outside it is refused rather than
+// carried as a node of no known shape.
 func (r *viewReader) condition(value any, pointer *location) Condition {
 	o := r.object(value, pointer)
 	condition := Condition{Op: o.requiredString("op")}
@@ -726,7 +873,24 @@ func (r *viewReader) condition(value any, pointer *location) Condition {
 			condition.Path = r.text(path, o.at("path"), true)
 		}
 		condition.Operator = o.requiredString("operator")
-		condition.Value = r.canonicalMember(o.required("value"), o.at("value"))
+		if !result.IsStagedDraft(r.version) {
+			condition.Value = r.canonicalMember(o.required("value"), o.at("value"))
+			break
+		}
+		// Under the staged draft selector a fact condition carries value or a
+		// valueSet reference, which the view shows as the set's id and never
+		// expands: the view is the document, not its evaluation form.
+		value, hasValue := o.take("value")
+		reference, hasReference := o.take("valueSet")
+		if hasValue {
+			condition.Value = r.canonicalMember(value, o.at("value"))
+		}
+		if hasReference {
+			condition.ValueSet = r.text(reference, o.at("valueSet"), false)
+		}
+		if !hasValue && !hasReference {
+			r.fail(o.at("value"), "a required member is missing")
+		}
 	case "evidence-present":
 		condition.EvidenceRequirement = o.requiredString("evidenceRequirement")
 	default:

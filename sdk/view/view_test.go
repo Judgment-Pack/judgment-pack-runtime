@@ -32,14 +32,19 @@ type viewInput struct {
 	pack    []byte
 }
 
-// viewVersions are the specification versions Load admits.
-var viewVersions = []string{artifacts.EvaluatorDraftVersion, artifacts.CoreVersion}
+// viewVersions are the specification versions Load admits, the staged draft
+// selector (EXPERIMENTAL) included.
+var viewVersions = []string{artifacts.EvaluatorDraftVersion, artifacts.CoreVersion, artifacts.StagedDraftVersion}
 
 // viewInputs is every pack the view is held to: the purpose-built fixtures
-// under testdata/packs, every conformance case of both admitted versions
+// under testdata/packs, every conformance case of each admitted version
 // that Load admits — the valid cases, and the one whose only finding is an
 // unsupported required extension, which Load admits and Evaluate refuses —
-// and every pack of both evaluation corpora.
+// and every pack of each evaluation corpus. For the staged draft selector
+// the cases are its staged document cases, less those written for the
+// extended profile, which Load refuses; the packs are those its staged
+// evaluation rows and its held row name; and its staged examples are inputs
+// too.
 func viewInputs(t *testing.T) []viewInput {
 	t.Helper()
 	var inputs []viewInput
@@ -60,30 +65,50 @@ func viewInputs(t *testing.T) []viewInput {
 			t.Fatal(err)
 		}
 		for _, row := range conformanceCases(t, set) {
-			if !row.admitted() {
-				continue
-			}
 			data, err := set.Case(row.Path)
 			if err != nil {
 				t.Fatal(err)
 			}
+			if !row.admitted(data) {
+				continue
+			}
 			inputs = append(inputs, viewInput{name: path.Join(version, "cases", strings.TrimSuffix(row.Path, ".json")), version: version, pack: data})
 		}
-		manifestBytes, err := set.EvaluationManifest()
-		if err != nil {
-			t.Fatal(err)
+		type row struct {
+			Pack               string `json:"pack"`
+			ExpectedErrorClass string `json:"expectedErrorClass"`
 		}
 		var manifest struct {
-			Cases []struct {
-				Pack string `json:"pack"`
-			} `json:"cases"`
+			Cases     []row `json:"cases"`
+			HeldCases []struct {
+				Case row `json:"case"`
+			} `json:"heldCases"`
+		}
+		manifestBytes, err := set.EvaluationManifest()
+		if set.Staged() {
+			manifestBytes, err = set.StagedEvaluationRows()
+			for _, name := range set.StagedExamples() {
+				data, err := set.StagedExample(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				inputs = append(inputs, viewInput{name: path.Join(version, "example", strings.TrimSuffix(name, ".json")), version: version, pack: data})
+			}
+		}
+		if err != nil {
+			t.Fatal(err)
 		}
 		if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 			t.Fatal(err)
 		}
+		for _, held := range manifest.HeldCases {
+			manifest.Cases = append(manifest.Cases, held.Case)
+		}
 		seen := map[string]bool{}
 		for _, row := range manifest.Cases {
-			if seen[row.Pack] {
+			// A staged row may expect its pack refused as not conformant;
+			// Load refuses that pack, so it has no view.
+			if seen[row.Pack] || row.ExpectedErrorClass == "pack-not-conformant" {
 				continue
 			}
 			seen[row.Pack] = true
@@ -108,8 +133,16 @@ type conformanceCase struct {
 
 // admitted reports whether Load admits the case's pack without supported
 // extensions: a valid document, or one whose only finding is a required
-// extension the caller does not support.
-func (c conformanceCase) admitted() bool {
+// extension the caller does not support, unless the document declares the
+// extended profile, which Load refuses as unimplemented (the staged cases
+// carry valid documents written for it).
+func (c conformanceCase) admitted(data []byte) bool {
+	var declared struct {
+		Profile string `json:"profile"`
+	}
+	if json.Unmarshal(data, &declared) == nil && declared.Profile == "extended" {
+		return false
+	}
 	return c.ExpectedResult == "valid" || (c.ExpectedResult == "unsupported" && c.ExpectedDiagnostic.Code == "JPS-CAPABILITY-REQUIRED-EXTENSION")
 }
 
@@ -232,12 +265,12 @@ func TestRefusedCasesAreNotViewed(t *testing.T) {
 		}
 		refused, crossVersion := 0, 0
 		for _, row := range conformanceCases(t, set) {
-			if row.admitted() {
-				continue
-			}
 			data, err := set.Case(row.Path)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if row.admitted(data) {
+				continue
 			}
 			// A case that declares another version is invalid under this
 			// set's schema and is judged by Load under the version it

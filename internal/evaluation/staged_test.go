@@ -146,6 +146,49 @@ func TestStagedPackIdentityIsItsExactBytes(t *testing.T) {
 	}
 }
 
+// Document is the pack as written, never its evaluation form: the value sets,
+// the references and the annotations are there, so a reader such as the pack
+// view shows what the author wrote. The expected members are written here by
+// hand from stagedPackText.
+func TestStagedDocumentIsTheDocumentAsWritten(t *testing.T) {
+	engine := newTestEngine(t)
+	admitted := engine.AdmitPack([]byte(stagedPackText("")))
+	document, failure := admitted.Document(Options{SpecVersion: artifacts.StagedDraftVersion})
+	if failure != nil {
+		t.Fatal(failure)
+	}
+	sets, ok := document["valueSets"].([]any)
+	if !ok || len(sets) != 3 {
+		t.Fatalf("the document's value sets are %#v", document["valueSets"])
+	}
+	applicability := document["applicability"].(map[string]any)
+	if applicability["valueSet"] != "kinds" {
+		t.Fatalf("the applicability is %#v", applicability)
+	}
+	if _, expanded := applicability["value"]; expanded {
+		t.Fatalf("the document holds an expanded reference: %#v", applicability)
+	}
+	extensions := document["extensions"].(map[string]any)
+	if _, kept := extensions["org.judgmentpack.annotations"]; !kept {
+		t.Fatalf("the document lost its annotations: %#v", extensions)
+	}
+	// The same admission still evaluates as the inline twin does.
+	twin := engine.AdmitPack([]byte(inlineTwinText(artifacts.StagedDraftVersion)))
+	for _, facts := range stagedFacts {
+		evaluated, failure := engine.EvaluateAdmitted(admitted, []byte(facts), nil, Options{SpecVersion: artifacts.StagedDraftVersion})
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		inline, failure := engine.EvaluateAdmitted(twin, []byte(facts), nil, Options{SpecVersion: artifacts.StagedDraftVersion})
+		if failure != nil {
+			t.Fatal(failure)
+		}
+		if evaluationShape(t, evaluated) != evaluationShape(t, inline) {
+			t.Fatalf("after Document, %s evaluates otherwise than its inline twin", facts)
+		}
+	}
+}
+
 func TestStagedPackRefusals(t *testing.T) {
 	engine := newTestEngine(t)
 	base := stagedPackText("")

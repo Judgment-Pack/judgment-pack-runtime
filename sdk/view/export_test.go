@@ -10,6 +10,7 @@ var (
 )
 
 const (
-	ViewDraftVersion = viewDraftVersion
-	ViewCoreVersion  = viewCoreVersion
+	ViewDraftVersion  = viewDraftVersion
+	ViewCoreVersion   = viewCoreVersion
+	ViewStagedVersion = viewStagedVersion
 )

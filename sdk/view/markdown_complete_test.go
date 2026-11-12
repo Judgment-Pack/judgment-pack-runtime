@@ -29,6 +29,7 @@ var markdownSections = map[string]string{
 	"outcomes":             "## Outcomes",
 	"rules":                "## Rules",
 	"exceptions":           "## Exceptions",
+	"valueSets":            "## Value sets",
 	"fallbackOutcome":      "## Fallback outcome",
 	"escalation":           "## Escalation",
 	"evidenceRequirements": "## Evidence requirements",
@@ -76,19 +77,28 @@ var markdownLabels = map[string]string{
 	"source.extensions": "- Extensions:", "source.id": "### Source 1: ", "source.locator": "- Locator:",
 	"source.locator.kind": "  - Kind: ", "source.locator.value": "  - Value: ", "source.publishedAt": "- Published at: ",
 	"source.publisher": "- Publisher: ", "source.rights": "- Rights: ", "source.title": "- Title: ",
+	// The staged draft selector's members (EXPERIMENTAL).
+	"pack.valueSets": "## Value sets", "valueSet.id": "### Value set 1: ", "valueSet.description": "- Description: ",
+	"valueSet.entries": "- Entries:", "valueSetEntry.value": "  - Entry 1: ", "valueSetEntry.description": "    - Description: ",
+	"valueSetEntry.extensions": "    - Extensions:", "condition{fact}.valueSet": " value set ",
+	"annotatedExtensions.org.judgmentpack.annotations": "- org\\.judgmentpack\\.annotations:",
+	"entryExtensions.org.judgmentpack.annotations":     "      - org\\.judgmentpack\\.annotations:",
 }
 
 // labelSection is the top-level member whose section holds a member key's
-// label; "" means anywhere, for a condition, which several sections hold.
+// label; "" means anywhere, for a condition and for an extensions object that
+// may hold annotations, which several sections hold.
 func labelSection(key string) string {
 	prefix, _, _ := strings.Cut(key, ".")
 	switch {
 	case prefix == "pack":
 		return strings.TrimPrefix(key, "pack.")
-	case strings.HasPrefix(prefix, "condition{"):
+	case strings.HasPrefix(prefix, "condition{"), prefix == "annotatedExtensions", prefix == "entryExtensions":
 		return ""
 	case prefix == "evidenceRequirement", prefix == "rule", prefix == "exception", prefix == "outcome", prefix == "source":
 		return prefix + "s"
+	case prefix == "valueSet", prefix == "valueSetEntry":
+		return "valueSets"
 	}
 	return prefix
 }
@@ -296,7 +306,7 @@ func TestTheMarkdownShowsEveryLeafInItsSection(t *testing.T) {
 			for key := range present.present {
 				label := markdownLabels[key]
 				section, ok := sectionOf(markdown, markdownSections[labelSection(key)])
-				if labelSection(key) == "" && strings.HasPrefix(key, "condition{") {
+				if labelSection(key) == "" {
 					section, ok = markdown, true
 				}
 				if !ok || !strings.Contains(section, label) {
@@ -310,9 +320,33 @@ func TestTheMarkdownShowsEveryLeafInItsSection(t *testing.T) {
 // handWritten names the fixtures whose Markdown and canonical JSON are
 // written by hand under testdata/expected, from the documented layout and
 // the fixture itself, never recorded from a run: one pack holding every
-// member of each admitted specification version, and the adversarial
-// strings. Only each digest is computed, with sha256sum over the fixture.
-var handWritten = []string{"0.2.0-draft/every-member", "0.3.0/every-member", "0.3.0/adversarial-strings"}
+// member of each admitted specification version, the adversarial strings,
+// and the staged example of the staged draft selector, read from the bundle.
+// Only each digest is computed, with sha256sum over the fixture.
+var handWritten = []string{"0.2.0-draft/every-member", "0.3.0/every-member", "0.3.0/adversarial-strings", "0.4.0-draft/every-member", "0.4.0-draft/example/expense-approval-annotated"}
+
+// handWrittenPack reads a hand-written expectation's pack: a fixture under
+// testdata/packs, or, for a name under <version>/example/, the staged example
+// the bundle of that version carries.
+func handWrittenPack(t *testing.T, name string) []byte {
+	t.Helper()
+	if version, example, ok := strings.Cut(name, "/example/"); ok {
+		set, err := artifacts.Load(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := set.StagedExample(example + ".json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	data, err := os.ReadFile(filepath.Join("testdata", "packs", filepath.FromSlash(name)+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
 
 // The Markdown of each hand-written fixture is its expectation, line for
 // line.
@@ -322,11 +356,7 @@ func TestHandWrittenMarkdown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pack, err := os.ReadFile(filepath.Join("testdata", "packs", filepath.FromSlash(name)+".json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, view := mustView(t, pack)
+		_, view := mustView(t, handWrittenPack(t, name))
 		got := strings.Split(string(view.Markdown()), "\n")
 		lines := strings.Split(string(want), "\n")
 		for index := range max(len(got), len(lines)) {
@@ -361,11 +391,7 @@ func TestHandWrittenCanonicalJSON(t *testing.T) {
 		if err := json.Compact(&want, written); err != nil {
 			t.Fatalf("%s: the expectation is not JSON: %v", name, err)
 		}
-		pack, err := os.ReadFile(filepath.Join("testdata", "packs", filepath.FromSlash(name)+".json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, view := mustView(t, pack)
+		_, view := mustView(t, handWrittenPack(t, name))
 		got := view.JSON()
 		for index := 0; index < len(got); index++ {
 			if got[index] != '\\' {
