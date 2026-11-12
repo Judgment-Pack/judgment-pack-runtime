@@ -2,6 +2,7 @@ package view_test
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -253,5 +254,112 @@ func TestTheViewRefusesWhatItCannotRepresent(t *testing.T) {
 				t.Fatalf("a partial view came back: %+v", view)
 			}
 		})
+	}
+}
+
+// A string in a position the evaluator matches on is written in ASCII beside
+// its escaped text whenever it holds a code point outside printable ASCII, so
+// strings that render alike (a blank filler, an invisible mark, another
+// space, a decomposed letter, a look-alike) never read alike in ASCII. Each
+// class is written here by hand, with the ASCII form it must get; a
+// pure-ASCII string gets none.
+func TestMatchedStringsAreWrittenInASCIIToo(t *testing.T) {
+	render := func(path, value string, extensions []pv.Extension) []string {
+		t.Helper()
+		view := pv.PackView{
+			Title:      "T",
+			Decision:   pv.Decision{Intent: "I", Question: "Q"},
+			Outcomes:   []pv.Outcome{{ID: "yes", Label: "Yes"}},
+			Rules:      []pv.Rule{{ID: "r", Description: "D", When: pv.Condition{Op: "fact", Path: path, Operator: "in", Value: value}, Outcome: "yes", OnUnknown: "ignore"}},
+			Extensions: extensions,
+		}
+		var lines []string
+		for _, line := range strings.Split(string(pv.RenderMarkdown(view)), "\n") {
+			if strings.HasPrefix(line, "  - fact ") || strings.HasPrefix(line, "- com") {
+				lines = append(lines, line)
+			}
+		}
+		return lines
+	}
+	asciiOnly := func(line string) string {
+		return strings.Map(func(character rune) rune {
+			if character > 0x7e {
+				return -1
+			}
+			return character
+		}, line)
+	}
+
+	// Pure ASCII, quotes and backslashes included: exactly as escapeMarkdown
+	// writes it, and nothing beside it.
+	if got, want := render(`/a"b\c`, `["x",1.50,{"k":true}]`, nil), []string{
+		`  - fact \"\/a\\\"b\\\\c\" in \[\"x\"\,1\.50\,\{\"k\"\:true\}\]`,
+	}; !slices.Equal(got, want) {
+		t.Fatalf("a pure-ASCII fact:\n got %q\nwant %q", got, want)
+	}
+
+	seen := map[string]string{asciiOnly(render("/amount", `"x"`, nil)[0]): "plain"}
+	for _, test := range []struct {
+		name, suffix, ascii string
+	}{
+		{"Hangul filler", "\u3164", `\u3164`},
+		{"Hangul choseong filler", "\u115f", `\u115f`},
+		{"Hangul jungseong filler", "\u1160", `\u1160`},
+		{"halfwidth Hangul filler", "\uffa0", `\uffa0`},
+		{"Braille blank", "\u2800", `\u2800`},
+		{"combining grapheme joiner", "\u034f", `\u034f`},
+		{"variation selector", "\ufe0f", `\ufe0f`},
+		{"zero-width space", "\u200b", `\u200b`},
+		{"en quad", "\u2000", `\u2000`},
+		{"hair space", "\u200a", `\u200a`},
+		{"ideographic space", "\u3000", `\u3000`},
+		{"no-break space", "\u00a0", `\u00a0`},
+		{"a combining acute accent", "e\u0301", `e\u0301`},
+		{"a precomposed e acute", "\u00e9", `\u00e9`},
+		{"a Cyrillic a", "\u0430", `\u0430`},
+		{"beyond the Basic Multilingual Plane", "\U0001f600", `\ud83d\ude00`},
+		{"delete", "\u007f", `\u007f`},
+		{"a line feed", "\n", `\n`},
+		{"a backtick", "`\u3164", `\u0060\u3164`},
+	} {
+		lines := render("/amount"+test.suffix, `"x"`, nil)
+		if len(lines) != 1 || !strings.HasSuffix(lines[0], " (ASCII `\"/amount"+test.ascii+"\"`) in \\\"x\\\"") {
+			t.Errorf("%s: %q, want the ASCII form \"/amount%s\"", test.name, lines, test.ascii)
+			continue
+		}
+		if strings.Count(lines[0], "`")-strings.Count(lines[0], "\\`") != 2+2*strings.Count(lines[0], "`U+") {
+			t.Errorf("%s: a backtick of the string reached the line: %q", test.name, lines[0])
+		}
+		if other, ok := seen[asciiOnly(lines[0])]; ok {
+			t.Errorf("%s reads like %s in ASCII: %q", test.name, other, lines[0])
+		}
+		seen[asciiOnly(lines[0])] = test.name
+	}
+
+	// Every string and member name inside a fact's value, at any depth.
+	for _, test := range []struct{ value, ascii string }{
+		{`["a","b` + "\u3164" + `"]`, `["a","b\u3164"]`},
+		{`{"k` + "\u3164" + `":1}`, `{"k\u3164":1}`},
+		{`[{"k":["` + "e\u0301" + `"]},2]`, `[{"k":["e\u0301"]},2]`},
+	} {
+		lines := render("/a", test.value, nil)
+		if len(lines) != 1 || !strings.HasSuffix(lines[0], " (ASCII `"+test.ascii+"`)") || strings.Count(lines[0], "(ASCII") != 1 {
+			t.Errorf("the value %s: %q, want only the value's ASCII form %s", test.value, lines, test.ascii)
+		}
+	}
+
+	// An extension's name and the strings and names in its value.
+	lines := render("/a", `"x"`, []pv.Extension{
+		{Name: "com.example.plain", Value: `{"k":"v"}`},
+		{Name: "com.example.x" + "\u3164", Value: `1`},
+		{Name: "com.example.y", Value: `{"k` + "\u3164" + `":"v` + "\u0430" + `"}`},
+	})
+	want := []string{
+		`- com\.example\.plain: \{\"k\"\:\"v\"\}`,
+		"- com\\.example\\.x\u3164 (ASCII `\"com.example.x\\u3164\"`): 1",
+		"- com\\.example\\.y: \\{\\\"k\u3164\\\"\\:\\\"v\u0430\\\"\\} (ASCII `{\"k\\u3164\":\"v\\u0430\"}`)",
+	}
+	if len(lines) == 0 || !slices.Equal(lines[1:], want) {
+		t.Fatalf("extensions:\n got %q\nwant %q", lines, want)
 	}
 }

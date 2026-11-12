@@ -80,6 +80,16 @@ becomes `&#32;`; everything else is itself. `internal/display` exports the set i
 that are significant where they stand, is chosen because it is provable without reasoning about
 position: no pack character can begin any construct.
 
+A string the evaluator matches on — a fact's path, the strings and member names of a fact's value,
+an extension's name and the strings and member names of its value — is also written, when it holds
+any code point outside U+0020 to U+007E, as its canonical JSON in ASCII in a code span beside the
+escaped text: each such code point as `\uXXXX` (a surrogate pair beyond U+FFFF), the backtick as
+`\u0060`. Two matched strings that render alike, such as `/amount` and `/amount` followed by a
+Hangul filler, then read differently; pure-ASCII strings are written as before. Free text is not
+marked, so look-alikes and NFC/NFD differences in a title, description, label, rationale or citation
+are not detected. The canonical JSON is unchanged and writes such characters as themselves; a tool
+comparing matched strings compares the JSON.
+
 **Format versioning.** Both encodings carry `viewVersion`. It moves when the bytes for a pack an
 earlier view version could describe would change; describing packs of a newly admitted version
 does not move it (VERSIONING.md).

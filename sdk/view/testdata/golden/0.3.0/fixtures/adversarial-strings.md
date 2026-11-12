@@ -12,7 +12,7 @@
 - Intent: &#32;&#32;leading and trailing spaces&#32;&#32;
 - Question: Bidi `U+202E`desrever`U+202C` and isolates `U+2066`left`U+2069` and marks `U+200E U+200F U+061C`\, a joiner `U+200D`\, a tab`U+0009`and controls `U+0000 U+001B`\[31m`U+007F U+0085`
 - Extensions:
-  - com\.example\.order: \{\"a\"\:\"ascii\"\,\"é\"\:\"accent\"\,\"😀\"\:\"emoji\"\,\"ﬁ\"\:\"ligature\"\}
+  - com\.example\.order: \{\"a\"\:\"ascii\"\,\"é\"\:\"accent\"\,\"😀\"\:\"emoji\"\,\"ﬁ\"\:\"ligature\"\} (ASCII `{"a":"ascii","\u00e9":"accent","\ud83d\ude00":"emoji","\ufb01":"ligature"}`)
 
 ## Outcomes
 
@@ -32,7 +32,7 @@
 - When:
   - all of:
     - fact \"\" equals \{\"whole\"\:\"document\"\,\"\|\"\:\"\`\"\}
-    - fact \"\/a\~1b\/\~0c\/é𝔘\" in \[\"x\|y\"\,\"\`z\`\"\,\"\<b\>\"\,1\,false\,null\]
+    - fact \"\/a\~1b\/\~0c\/é𝔘\" (ASCII `"/a~1b/~0c/\u00e9\ud835\udd18"`) in \[\"x\|y\"\,\"\`z\`\"\,\"\<b\>\"\,1\,false\,null\]
     - fact \"\/\" not\-equals \"\]\(https\:\/\/example\.invalid\)\"
 
 ## Fallback outcome
@@ -79,4 +79,4 @@
 ## Extensions
 
 - com\.example\.html: \"\<div onclick\=\\\"x\\\"\>a\<\/div\>\"
-- com\.example\.nested: \{\"deep\"\:\{\"deeper\"\:\[\"`U+202E`\"\,\"\\n\"\,\"\\\\\"\,\"\\\"quoted\\\"\"\]\}\}
+- com\.example\.nested: \{\"deep\"\:\{\"deeper\"\:\[\"`U+202E`\"\,\"\\n\"\,\"\\\\\"\,\"\\\"quoted\\\"\"\]\}\} (ASCII `{"deep":{"deeper":["\u202e","\n","\\","\"quoted\""]}}`)

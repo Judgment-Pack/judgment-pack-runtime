@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 )
@@ -16,7 +17,11 @@ import (
 // left out; a member that is present and empty says *empty*.
 //
 // Every string taken from the pack passes through escapeMarkdown, and only
-// the renderer's own words are written unescaped. No line begins with pack
+// the renderer's own words are written unescaped. A string in a position the
+// evaluator matches on — a fact's path, the strings and member names of a
+// fact's value, an extension's name and the strings and member names of its
+// value — is also written in ASCII beside it when it holds anything else
+// (matched). No line begins with pack
 // text: each follows a heading marker, a list marker and label, or a table
 // pipe.
 
@@ -135,7 +140,8 @@ func (m *markdownWriter) extensions(depth int, extensions []Extension) {
 
 func (m *markdownWriter) extensionItems(depth int, extensions []Extension) {
 	for _, extension := range extensions {
-		m.line(depth, "- "+escapeMarkdown(extension.Name)+": "+escapeMarkdown(extension.Value))
+		name, _ := canonicalText(extension.Name)
+		m.line(depth, "- "+escapeMarkdown(extension.Name)+asciiForm(name)+": "+matched(extension.Value))
 	}
 }
 
@@ -168,10 +174,70 @@ func (m *markdownWriter) condition(depth int, condition Condition) {
 		}
 	case "fact":
 		path, _ := canonicalText(condition.Path)
-		m.line(depth, "- fact "+escapeMarkdown(path)+" "+escapeMarkdown(condition.Operator)+" "+escapeMarkdown(condition.Value))
+		m.line(depth, "- fact "+matched(path)+" "+escapeMarkdown(condition.Operator)+" "+matched(condition.Value))
 	case "evidence-present":
 		m.line(depth, "- evidence present "+escapeMarkdown(condition.EvidenceRequirement))
 	}
+}
+
+// matched writes the canonical JSON text of a value from a position the
+// evaluator matches on as escapeMarkdown writes it, followed by its ASCII
+// form when it has one (asciiForm).
+func matched(text string) string {
+	return escapeMarkdown(text) + asciiForm(text)
+}
+
+// asciiForm is empty for a canonical JSON text whose strings and member
+// names hold only printable ASCII, U+0020 to U+007E. For any other it is the
+// text again, in a code span, with every code point outside that range
+// written as a JSON \u escape — a surrogate pair beyond the Basic
+// Multilingual Plane — and the backtick as \u0060. The span then holds only
+// printable ASCII and no backtick, so its content cannot end it, and it
+// decodes to the same value; two such values that differ in any code point
+// differ in ASCII, though they render alike — a blank Hangul filler, a
+// combining mark, a decomposed letter or a look-alike from another script.
+func asciiForm(text string) string {
+	if !needsASCII(text) {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString(" (ASCII `")
+	for _, character := range text {
+		switch {
+		case character == '`':
+			builder.WriteString(`\u0060`)
+		case character >= 0x20 && character <= 0x7e:
+			builder.WriteRune(character)
+		case character > 0xffff:
+			high, low := utf16.EncodeRune(character)
+			fmt.Fprintf(&builder, `\u%04x\u%04x`, high, low)
+		default:
+			fmt.Fprintf(&builder, `\u%04x`, character)
+		}
+	}
+	builder.WriteString("`)")
+	return builder.String()
+}
+
+// needsASCII reports whether a canonical JSON text holds, in a string or a
+// member name, a code point outside printable ASCII: one written as itself,
+// or a control character, which the canonical form writes as an escape. The
+// only other escapes it writes are \\ and \".
+func needsASCII(text string) bool {
+	for index := 0; index < len(text); index++ {
+		character := text[index]
+		if character < 0x20 || character > 0x7e {
+			return true
+		}
+		if character == '\\' {
+			if index+1 < len(text) && (text[index+1] == '\\' || text[index+1] == '"') {
+				index++
+				continue
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func (m *markdownWriter) empty() {

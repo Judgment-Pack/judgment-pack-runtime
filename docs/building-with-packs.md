@@ -532,6 +532,21 @@ rendered document:
   a line break;
 - every other character is written as itself.
 
+A string in a position the evaluator matches on — a fact's path, every string and member name
+inside a fact's value, an extension's name, and every string and member name inside an extension's
+value — is also written in ASCII when it holds any code point outside U+0020 to U+007E. Beside the
+escaped text, in a code span, comes its canonical JSON with each such code point written as a JSON
+`\uXXXX` escape (two, a surrogate pair, beyond U+FFFF) and a backtick as `\u0060`, for example
+`` (ASCII `"/amount\u3164"`) ``. The span then holds only printable ASCII and no backtick, so
+nothing in it can end it. Two matched strings that render alike — a Hangul or Braille blank, an
+invisible combining mark or variation selector, a space other than U+0020, a decomposed letter
+beside a precomposed one, a letter of another script that looks like a Latin one — differ in their
+ASCII forms; a pure-ASCII string has none and renders as before. The marking stops there: free text
+— the title, descriptions, labels, a rationale, a citation, an id — is not marked, so a look-alike or
+an NFC/NFD difference in it is not detected. The canonical JSON is unchanged and writes such
+characters as themselves, as RFC 8785 does; a tool that compares matched strings should compare
+the JSON, not the Markdown.
+
 No line of the rendering begins with pack text: each follows a heading marker, a list marker and
 label, or a table pipe. The escaping makes the source harder to read than the rendering. It does
 not stop a host that posts the Markdown, such as a code-review comment, from linking `@` mentions,

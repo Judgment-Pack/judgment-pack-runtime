@@ -6,6 +6,7 @@ var (
 	CanonicalText  = canonicalText
 	EscapeMarkdown = escapeMarkdown
 	BuildView      = buildView
+	RenderMarkdown = renderMarkdown
 )
 
 const (
