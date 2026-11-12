@@ -1,4 +1,4 @@
-package sdk
+package view_test
 
 import (
 	"bytes"
@@ -20,22 +20,25 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/artifacts"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/lock"
+	"github.com/Judgment-Pack/judgment-pack-runtime/sdk"
+	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/internal/viewhook"
+	pv "github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
 )
 
 // updateViewGoldens is the one way the view goldens under
-// testdata/view/golden are written:
+// testdata/golden are written:
 //
-//	go test ./sdk -run TestViewGoldens -update-view-goldens
+//	go test ./sdk/view -run TestViewGoldens -update-view-goldens
 //
 // A golden is never edited by hand. It is read, in review, as the record of
 // what the view says about one pack; the hand-written expectations in this
 // file and in view_markdown_test.go are what hold the view to the format
 // docs/building-with-packs.md describes.
-var updateViewGoldens = flag.Bool("update-view-goldens", false, "rewrite the pack view goldens under testdata/view/golden")
+var updateViewGoldens = flag.Bool("update-view-goldens", false, "rewrite the pack view goldens under testdata/golden")
 
 // viewInput is one pack the view must describe.
 type viewInput struct {
-	// name is the input's place under testdata/view/golden, without an
+	// name is the input's place under testdata/golden, without an
 	// extension: version, then fixtures, cases or evaluation, then the file.
 	name    string
 	version string
@@ -46,7 +49,7 @@ type viewInput struct {
 var viewVersions = []string{artifacts.EvaluatorDraftVersion, artifacts.CoreVersion}
 
 // viewInputs is every pack the view is held to: the purpose-built fixtures
-// under testdata/view/packs, every conformance case of both admitted versions
+// under testdata/packs, every conformance case of both admitted versions
 // that Load admits — the valid cases, and the one whose only finding is an
 // unsupported required extension, which Load admits and Evaluate refuses —
 // and every pack of both evaluation corpora.
@@ -54,7 +57,7 @@ func viewInputs(t *testing.T) []viewInput {
 	t.Helper()
 	var inputs []viewInput
 	for _, version := range viewVersions {
-		fixtures, err := filepath.Glob(filepath.Join("testdata", "view", "packs", version, "*.json"))
+		fixtures, err := filepath.Glob(filepath.Join("testdata", "packs", version, "*.json"))
 		if err != nil || len(fixtures) == 0 {
 			t.Fatalf("no view fixtures for %s: %v", version, err)
 		}
@@ -141,9 +144,9 @@ func conformanceCases(t *testing.T, set *artifacts.Set) []conformanceCase {
 	return manifest.Cases
 }
 
-func mustView(t *testing.T, pack []byte) (*Pack, PackView) {
+func mustView(t *testing.T, pack []byte) (*sdk.Pack, pv.PackView) {
 	t.Helper()
-	loaded, err := Load(context.Background(), pack, LoadOptions{})
+	loaded, err := sdk.Load(context.Background(), pack, sdk.LoadOptions{})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -171,7 +174,7 @@ func TestEveryAdmittedPackViewsFaithfullyAndStably(t *testing.T) {
 			if failure != nil {
 				t.Fatalf("carrier.Decode: %+v", failure)
 			}
-			document, err := canonicalText(root)
+			document, err := pv.CanonicalText(root)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,22 +192,26 @@ func TestEveryAdmittedPackViewsFaithfullyAndStably(t *testing.T) {
 			if err := decoder.Decode(&decoded); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(decoded.Pack, root) || decoded.ViewVersion != ViewVersion || decoded.Digest != loaded.Identity().Digest {
+			if !reflect.DeepEqual(decoded.Pack, root) || decoded.ViewVersion != pv.ViewVersion || decoded.Digest != loaded.Identity().Digest {
 				t.Fatalf("the view's JSON does not decode to the document")
 			}
-			if view.Identity != loaded.Identity() || view.Identity.SpecVersion != input.version {
+			if sdk.Identity(view.Identity) != loaded.Identity() || view.Identity.SpecVersion != input.version {
 				t.Fatalf("view identity %+v, pack identity %+v", view.Identity, loaded.Identity())
 			}
 
-			admittedRoot, documentFailure := loaded.admitted.Document(loaded.options(false))
-			if documentFailure != nil {
-				t.Fatal(documentFailure)
-			}
-			before, err := canonicalText(admittedRoot)
-			if err != nil {
-				t.Fatal(err)
+			// The builder is handed the admission's own root, which every
+			// evaluation of the pack shares; it is read before and after one
+			// build, as the builder saw it.
+			var before, after string
+			previous := viewhook.Build
+			viewhook.Build = func(root map[string]any, digest string) (any, string) {
+				before, _ = pv.CanonicalText(root)
+				built, fault := previous(root, digest)
+				after, _ = pv.CanonicalText(root)
+				return built, fault
 			}
 			again, err := loaded.View()
+			viewhook.Build = previous
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -215,11 +222,7 @@ func TestEveryAdmittedPackViewsFaithfullyAndStably(t *testing.T) {
 			if !bytes.Equal(reloaded.JSON(), view.JSON()) || !bytes.Equal(reloaded.Markdown(), view.Markdown()) {
 				t.Fatal("the view of a second Load of the same bytes differs")
 			}
-			after, err := canonicalText(admittedRoot)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if after != before {
+			if before == "" || after != before {
 				t.Fatal("building the view changed the admitted document")
 			}
 			// The returned bytes are the caller's own.
@@ -243,7 +246,7 @@ func TestViewGoldens(t *testing.T) {
 			extension string
 			bytes     []byte
 		}{{".json", view.JSON()}, {".md", view.Markdown()}} {
-			golden := filepath.Join("testdata", "view", "golden", filepath.FromSlash(input.name)+encoding.extension)
+			golden := filepath.Join("testdata", "golden", filepath.FromSlash(input.name)+encoding.extension)
 			expected[filepath.ToSlash(golden)] = true
 			if *updateViewGoldens {
 				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
@@ -265,7 +268,7 @@ func TestViewGoldens(t *testing.T) {
 	}
 	// A golden whose input is gone is reported, never left to drift.
 	var present []string
-	err := filepath.WalkDir(filepath.Join("testdata", "view", "golden"), func(name string, entry os.DirEntry, err error) error {
+	err := filepath.WalkDir(filepath.Join("testdata", "golden"), func(name string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -312,8 +315,8 @@ func TestRefusedCasesAreNotViewed(t *testing.T) {
 				crossVersion++
 				continue
 			}
-			loaded, err := Load(context.Background(), data, LoadOptions{})
-			var refusal *Refusal
+			loaded, err := sdk.Load(context.Background(), data, sdk.LoadOptions{})
+			var refusal *sdk.Refusal
 			if !errors.As(err, &refusal) || loaded != nil {
 				t.Fatalf("%s %s: Load = %v, %v; want a refusal", version, row.ID, loaded, err)
 			}
@@ -331,16 +334,16 @@ func TestRefusedCasesAreNotViewed(t *testing.T) {
 func TestTheDigestIsOverTheExactBytes(t *testing.T) {
 	pack := []byte(viewMinimalPack)
 	withNewline := append(slices.Clone(pack), '\n')
-	first, err := Load(context.Background(), pack, LoadOptions{})
+	first, err := sdk.Load(context.Background(), pack, sdk.LoadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Load(context.Background(), withNewline, LoadOptions{})
+	second, err := sdk.Load(context.Background(), withNewline, sdk.LoadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, check := range []struct {
-		loaded *Pack
+		loaded *sdk.Pack
 		bytes  []byte
 	}{{first, pack}, {second, withNewline}} {
 		sum := sha256.Sum256(check.bytes)
@@ -426,7 +429,7 @@ func TestOneViewByHand(t *testing.T) {
 
 func fixture(t *testing.T, version, name string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "view", "packs", version, name+".json"))
+	data, err := os.ReadFile(filepath.Join("testdata", "packs", version, name+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +482,7 @@ func TestAbsentStaysAbsentAndEmptyStaysEmpty(t *testing.T) {
 		empty.Extensions == nil || len(empty.Extensions) != 0 || empty.Outcomes[1].Extensions != nil {
 		t.Fatalf("present empty members are not kept: %+v", empty)
 	}
-	if empty.Metadata == nil || !reflect.DeepEqual(*empty.Metadata, Metadata{}) {
+	if empty.Metadata == nil || !reflect.DeepEqual(*empty.Metadata, pv.Metadata{}) {
 		t.Fatalf("an empty metadata object is %+v", empty.Metadata)
 	}
 	json := string(empty.JSON())

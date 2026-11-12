@@ -294,7 +294,8 @@ experimental and may change in any minor release before 1.0 ([VERSIONING.md](VER
 
 `pack.Identity()` names the loaded pack: its id, version, specVersion, stated profile, and the
 `sha256:` digest of the exact bytes given. `pack.View()` describes the whole document without
-evaluating it ([ADR-0074](docs/adr/0074-describe-a-loaded-pack.md)): every member as typed data, in
+evaluating it ([ADR-0074](docs/adr/0074-describe-a-loaded-pack.md)), as a `view.PackView` of package
+`sdk/view`: every member as typed data, in
 document order and as written, with a canonical JSON encoding (`view.JSON()`) and a Markdown
 rendering for a reviewer (`view.Markdown()`). `jpack packs describe` writes the same bytes. The
 view is experimental and carries its own `viewVersion`.

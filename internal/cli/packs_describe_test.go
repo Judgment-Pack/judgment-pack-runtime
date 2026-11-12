@@ -23,7 +23,7 @@ import (
 func describeInputs(t *testing.T) map[string][]byte {
 	t.Helper()
 	inputs := map[string][]byte{}
-	fixtures, err := filepath.Glob(filepath.Join("..", "..", "sdk", "testdata", "view", "packs", "*", "*.json"))
+	fixtures, err := filepath.Glob(filepath.Join("..", "..", "sdk", "view", "testdata", "packs", "*", "*.json"))
 	if err != nil || len(fixtures) == 0 {
 		t.Fatalf("no view fixtures: %v", err)
 	}

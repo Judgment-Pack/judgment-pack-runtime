@@ -52,7 +52,7 @@ func ExamplePack_View() {
 		return
 	}
 	fmt.Println(view.Identity.ID, view.Identity.Version, view.Identity.SpecVersion)
-	fmt.Println(strings.HasPrefix(view.Identity.Digest, "sha256:"), view.Identity == pack.Identity())
+	fmt.Println(strings.HasPrefix(view.Identity.Digest, "sha256:"), sdk.Identity(view.Identity) == pack.Identity())
 	for _, rule := range view.Rules {
 		fmt.Println(rule.ID, rule.When.Op, rule.When.Path, rule.When.Operator, rule.When.Value, rule.Outcome)
 	}

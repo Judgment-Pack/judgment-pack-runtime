@@ -484,8 +484,8 @@ a JSON file that its own author flips is a decoration.
 
 **Read the whole pack, as written.** `jpack packs describe` writes one pack for a reviewer to read
 (EXPERIMENTAL; [ADR-0074](adr/0074-describe-a-loaded-pack.md)). It loads the pack the way the Go
-API's `sdk.Load` does, evaluates nothing and opens no project; its bytes are those of
-`sdk.Pack.View`:
+API's `sdk.Load` does, evaluates nothing and opens no project; its bytes are those of the
+`view.PackView` that `sdk.Pack.View` returns:
 
 ```bash
 jpack packs describe packs/intake.json                 # Markdown, for a pull request or a review
@@ -537,9 +537,9 @@ label, or a table pipe. The escaping makes the source harder to read than the re
 not stop a host that posts the Markdown, such as a code-review comment, from linking `@` mentions,
 `#` references or bare URLs it finds in rendered text.
 
-The view's goldens are under `sdk/testdata/view/golden`, one JSON and one Markdown file per
+The view's goldens are under `sdk/view/testdata/golden`, one JSON and one Markdown file per
 bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits. They
-are written only by `go test ./sdk -run TestViewGoldens -update-view-goldens` and read in review,
+are written only by `go test ./sdk/view -run TestViewGoldens -update-view-goldens` and read in review,
 never edited by hand; the tests beside them hold the format above by hand.
 
 ### Declare the reviewed set

@@ -34,4 +34,4 @@ internal/dialect/retained-column/official/** -text
 
 # The view goldens are compared byte for byte with what the view writes, and
 # the view fixtures are pack documents whose exact bytes are digested.
-sdk/testdata/** -text
+sdk/view/testdata/** -text

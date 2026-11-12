@@ -1,14 +1,14 @@
-package sdk
+package view_test
 
 import (
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
+	pv "github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
 )
 
 // The escaping rule, one class at a time, written by hand from the rule
@@ -44,8 +44,8 @@ func TestEscapeMarkdownByClass(t *testing.T) {
 		{"non-breaking space", "\u00a0a\u00a0", "\u00a0a\u00a0"},
 		{"letters outside ASCII", "caf\u00e9 \U0001F600 \ufb01", "caf\u00e9 \U0001F600 \ufb01"},
 	} {
-		if got := escapeMarkdown(test.input); got != test.want {
-			t.Errorf("%s: escapeMarkdown(%q) = %q, want %q", test.class, test.input, got, test.want)
+		if got := pv.EscapeMarkdown(test.input); got != test.want {
+			t.Errorf("%s: pv.EscapeMarkdown(%q) = %q, want %q", test.class, test.input, got, test.want)
 		}
 	}
 	// Every ASCII character, by hand-stated class: a punctuation character
@@ -56,7 +56,7 @@ func TestEscapeMarkdownByClass(t *testing.T) {
 		if strings.ContainsRune(punctuation, character) {
 			want = `\` + want
 		}
-		if got := escapeMarkdown("a" + string(character) + "a"); got != "a"+want+"a" {
+		if got := pv.EscapeMarkdown("a" + string(character) + "a"); got != "a"+want+"a" {
 			t.Errorf("escapeMarkdown of %q = %q, want %q", character, got, "a"+want+"a")
 		}
 	}
@@ -150,7 +150,7 @@ func TestTheCanonicalWriterIsJCSOnItsValueSpace(t *testing.T) {
 		if err != nil {
 			t.Fatalf("value %d: jcs: %v", index, err)
 		}
-		got, err := canonicalText(value)
+		got, err := pv.CanonicalText(value)
 		if err != nil {
 			t.Fatalf("value %d: %v", index, err)
 		}
@@ -169,19 +169,19 @@ func TestTheCanonicalWriterIsJCSOnItsValueSpace(t *testing.T) {
 		{json.Number("1E+2"), "1E+2"},
 		{[]any{json.Number("1.0"), nil}, "[1.0,null]"},
 	} {
-		if got, err := canonicalText(test.value); err != nil || got != test.want {
-			t.Errorf("canonicalText(%#v) = %q, %v; want %q", test.value, got, err, test.want)
+		if got, err := pv.CanonicalText(test.value); err != nil || got != test.want {
+			t.Errorf("pv.CanonicalText(%#v) = %q, %v; want %q", test.value, got, err, test.want)
 		}
 	}
 	for _, refused := range []any{json.Number(""), json.Number("1,2"), json.Number("[1]"), json.Number("x"), 1.5, "\xff", map[string]any{"\xff": "x"}} {
-		if _, err := canonicalText(refused); err == nil {
-			t.Errorf("canonicalText(%#v) was not refused", refused)
+		if _, err := pv.CanonicalText(refused); err == nil {
+			t.Errorf("pv.CanonicalText(%#v) was not refused", refused)
 		}
 	}
 }
 
 // The builder refuses, with an error wrapping ErrInternal and never a partial
-// view or a *Refusal, any admitted root it cannot represent: one the schema
+// view or a *sdk.Refusal, any admitted root it cannot represent: one the schema
 // would refuse, which Load never admits, stands in for a construct a later
 // schema could add. The error names the first such construct, the same way on
 // every call.
@@ -189,14 +189,14 @@ func TestTheViewRefusesWhatItCannotRepresent(t *testing.T) {
 	base := func(t *testing.T, version string) map[string]any {
 		t.Helper()
 		text := viewMinimalPack
-		if version != viewCoreVersion {
+		if version != pv.ViewCoreVersion {
 			text = strings.Replace(text, `"specVersion": "0.3.0"`, `"specVersion": "`+version+`"`, 1)
 		}
 		root, failure := carrier.Decode([]byte(text), carrier.DefaultLimits())
 		if failure != nil {
 			t.Fatal(failure)
 		}
-		if _, err := buildView(root.(map[string]any)); err != nil {
+		if _, err := pv.BuildView(root.(map[string]any)); err != nil {
 			t.Fatalf("the unedited root does not view: %v", err)
 		}
 		return root.(map[string]any)
@@ -208,68 +208,50 @@ func TestTheViewRefusesWhatItCannotRepresent(t *testing.T) {
 		edit    func(root map[string]any)
 		pointer string
 	}{
-		{"an unknown member", viewCoreVersion, func(root map[string]any) { root["owner"] = "x" }, "/owner"},
-		{"the first of two unknown members", viewCoreVersion, func(root map[string]any) { root["zz"] = "x"; root["aa"] = "x" }, "/aa"},
-		{"an unknown member of a rule", viewCoreVersion, func(root map[string]any) { rule(root)["owner"] = "x" }, "/rules/0/owner"},
-		{"a pointer-escaped member name", viewCoreVersion, func(root map[string]any) { rule(root)["a/b~c"] = "x" }, "/rules/0/a~1b~0c"},
-		{"an unknown condition op", viewCoreVersion, func(root map[string]any) { rule(root)["when"] = map[string]any{"op": "xor"} }, "/rules/0/when/op"},
-		{"a literal that is not a Boolean", viewCoreVersion, func(root map[string]any) { rule(root)["when"].(map[string]any)["value"] = "true" }, "/rules/0/when/value"},
-		{"a present empty optional string", viewCoreVersion, func(root map[string]any) { root["description"] = "" }, "/description"},
-		{"a string of the wrong type", viewCoreVersion, func(root map[string]any) { root["title"] = json.Number("7") }, "/title"},
-		{"a missing required member", viewCoreVersion, func(root map[string]any) { delete(root, "outcomes") }, "/outcomes"},
-		{"a null where a Boolean is required", viewCoreVersion, func(root map[string]any) {
+		{"an unknown member", pv.ViewCoreVersion, func(root map[string]any) { root["owner"] = "x" }, "/owner"},
+		{"the first of two unknown members", pv.ViewCoreVersion, func(root map[string]any) { root["zz"] = "x"; root["aa"] = "x" }, "/aa"},
+		{"an unknown member of a rule", pv.ViewCoreVersion, func(root map[string]any) { rule(root)["owner"] = "x" }, "/rules/0/owner"},
+		{"a pointer-escaped member name", pv.ViewCoreVersion, func(root map[string]any) { rule(root)["a/b~c"] = "x" }, "/rules/0/a~1b~0c"},
+		{"an unknown condition op", pv.ViewCoreVersion, func(root map[string]any) { rule(root)["when"] = map[string]any{"op": "xor"} }, "/rules/0/when/op"},
+		{"a literal that is not a Boolean", pv.ViewCoreVersion, func(root map[string]any) { rule(root)["when"].(map[string]any)["value"] = "true" }, "/rules/0/when/value"},
+		{"a present empty optional string", pv.ViewCoreVersion, func(root map[string]any) { root["description"] = "" }, "/description"},
+		{"a string of the wrong type", pv.ViewCoreVersion, func(root map[string]any) { root["title"] = json.Number("7") }, "/title"},
+		{"a missing required member", pv.ViewCoreVersion, func(root map[string]any) { delete(root, "outcomes") }, "/outcomes"},
+		{"a null where a Boolean is required", pv.ViewCoreVersion, func(root map[string]any) {
 			root["evidenceRequirements"] = []any{map[string]any{"id": "e", "description": "E.", "required": nil}}
 		}, "/evidenceRequirements/0/required"},
-		{"a missing Boolean", viewCoreVersion, func(root map[string]any) {
+		{"a missing Boolean", pv.ViewCoreVersion, func(root map[string]any) {
 			root["evidenceRequirements"] = []any{map[string]any{"id": "e", "description": "E."}}
 		}, "/evidenceRequirements/0/required"},
-		{"an array of the wrong type", viewCoreVersion, func(root map[string]any) { root["sources"] = map[string]any{} }, "/sources"},
-		{"an extension value outside the JSON data model", viewCoreVersion, func(root map[string]any) {
+		{"an array of the wrong type", pv.ViewCoreVersion, func(root map[string]any) { root["sources"] = map[string]any{} }, "/sources"},
+		{"an extension value outside the JSON data model", pv.ViewCoreVersion, func(root map[string]any) {
 			root["extensions"] = map[string]any{"com.example.x": 1.5}
 		}, "/extensions/com.example.x"},
-		{"a profile in a 0.2.0-draft document", viewDraftVersion, func(root map[string]any) { root["profile"] = "base" }, "/profile"},
-		{"routes in a 0.2.0-draft escalation", viewDraftVersion, func(root map[string]any) {
+		{"a profile in a 0.2.0-draft document", pv.ViewDraftVersion, func(root map[string]any) { root["profile"] = "base" }, "/profile"},
+		{"routes in a 0.2.0-draft escalation", pv.ViewDraftVersion, func(root map[string]any) {
 			root["escalation"] = map[string]any{"triggers": []any{"unknown"}, "target": map[string]any{"kind": "queue", "name": "Q"}, "routes": []any{}}
 		}, "/escalation/routes"},
-		{"a 0.2.0-draft escalation without a target", viewDraftVersion, func(root map[string]any) {
+		{"a 0.2.0-draft escalation without a target", pv.ViewDraftVersion, func(root map[string]any) {
 			root["escalation"] = map[string]any{"triggers": []any{"unknown"}}
 		}, "/escalation/target"},
-		{"a specification version the view does not read", viewCoreVersion, func(root map[string]any) { root["specVersion"] = "0.1.0-draft" }, "/specVersion"},
+		{"a specification version the view does not read", pv.ViewCoreVersion, func(root map[string]any) { root["specVersion"] = "0.1.0-draft" }, "/specVersion"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := base(t, test.version)
 			test.edit(root)
-			view, err := buildView(root)
+			view, err := pv.BuildView(root)
 			if err == nil {
 				t.Fatalf("the edited root viewed: %+v", view)
 			}
-			var refusal *Refusal
-			if !errors.Is(err, ErrInternal) || errors.As(err, &refusal) {
-				t.Fatalf("the error %v does not wrap ErrInternal, or is a refusal", err)
-			}
-			if !strings.Contains(err.Error(), viewFaultCode+": ") || !strings.Contains(err.Error(), " at "+test.pointer+" ") {
+			if !strings.HasPrefix(err.Error(), "The admitted pack holds a construct at "+test.pointer+" ") {
 				t.Fatalf("the error %q does not name %s", err, test.pointer)
 			}
-			if _, again := buildView(root); again == nil || again.Error() != err.Error() {
+			if _, again := pv.BuildView(root); again == nil || again.Error() != err.Error() {
 				t.Fatalf("a second call said %v", again)
 			}
-			if view.Rules != nil || view.Identity != (Identity{}) {
+			if view.Rules != nil || view.Identity != (pv.Identity{}) {
 				t.Fatalf("a partial view came back: %+v", view)
 			}
 		})
-	}
-}
-
-// View and Identity on a Pack Load did not return say so and never panic.
-func TestViewOfAPackLoadDidNotReturn(t *testing.T) {
-	var none *Pack
-	if _, err := none.View(); err == nil || errors.Is(err, ErrInternal) {
-		t.Fatalf("View on a nil Pack: %v", err)
-	}
-	if _, err := (&Pack{}).View(); err == nil || errors.Is(err, ErrInternal) {
-		t.Fatalf("View on a zero Pack: %v", err)
-	}
-	if none.Identity() != (Identity{}) || (&Pack{}).Identity() != (Identity{}) {
-		t.Fatal("Identity of a Pack Load did not return is not zero")
 	}
 }

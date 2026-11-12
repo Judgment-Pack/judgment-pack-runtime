@@ -28,12 +28,8 @@
 //   - Disposition, Handoff and Target;
 //   - Refusal, with Refusal.Error, Diagnostic, and ErrInternal;
 //   - Describe, Description and Evaluator;
-//   - Pack.Identity and Identity; Pack.View, PackView with PackView.JSON and
-//     PackView.Markdown, and ViewVersion;
-//   - the view's member types Decision, EvidenceRequirement, Source,
-//     Locator, Citation, Outcome, Rule, Exception, Escalation, Route,
-//     Metadata, Review, Condition and Extension (an escalation's target is
-//     the Target a handoff carries);
+//   - Pack.Identity and Identity, and Pack.View, which returns the
+//     view.PackView of package sdk/view;
 //   - the constants ClassPackNotConformant, ClassMalformedInput,
 //     ClassUnsupportedRequiredExtension, ClassResourceExhaustion,
 //     PhasePreflight and PhaseEvaluation.
@@ -41,14 +37,17 @@
 // The bytes CanonicalDisposition returns are the §8.3 portable disposition,
 // whose form the specification fixes. The envelope Evaluation.JSON returns
 // follows the CLI's machine-output contract and its outputVersion. The bytes
-// PackView.JSON and PackView.Markdown return carry their own view version,
-// ViewVersion, which VERSIONING.md says when to move.
+// view.PackView.JSON and view.PackView.Markdown return carry their own view
+// version, view.ViewVersion, which VERSIONING.md says when to move.
 //
 // # Describing a pack
 //
-// Pack.View returns the whole of the document Load admitted as typed data,
-// with a canonical JSON encoding and a Markdown rendering for review; "jpack
-// packs describe" writes the same bytes. The view is faithful: every member
+// Pack.View returns the whole of the document Load admitted as typed data, a
+// view.PackView, with a canonical JSON encoding and a Markdown rendering for
+// review; "jpack packs describe" writes the same bytes. Package sdk/view
+// holds the view's types — PackView, its member types and its own Target —
+// so that their names do not occupy this package, and only Pack.View builds
+// one. The view is faithful: every member
 // is carried, nothing is inferred or summarised, an absent member stays
 // absent and a present empty one stays empty, arrays keep document order,
 // and numbers and decimal strings are carried exactly as written. It is

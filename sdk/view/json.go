@@ -1,4 +1,4 @@
-package sdk
+package view
 
 import (
 	"encoding/json"
@@ -145,7 +145,7 @@ func encodeViewJSON(view PackView) ([]byte, error) {
 		"viewVersion": ViewVersion,
 	})
 	if err != nil {
-		return nil, internalFault(viewFaultCode, "The view does not encode: "+err.Error()+".")
+		return nil, &fault{message: "The view does not encode: " + err.Error() + "."}
 	}
 	return []byte(encoded), nil
 }
@@ -299,7 +299,7 @@ func conditionValue(condition Condition) (map[string]any, error) {
 		node["conditions"] = items
 	case "not":
 		if condition.Condition == nil {
-			return nil, internalFault(viewFaultCode, "A not condition of the view holds no condition.")
+			return nil, &fault{message: "A not condition of the view holds no condition."}
 		}
 		inner, err := conditionValue(*condition.Condition)
 		if err != nil {
@@ -313,7 +313,7 @@ func conditionValue(condition Condition) (map[string]any, error) {
 	case "evidence-present":
 		node["evidenceRequirement"] = condition.EvidenceRequirement
 	default:
-		return nil, internalFault(viewFaultCode, "A condition of the view has an op it does not describe.")
+		return nil, &fault{message: "A condition of the view has an op it does not describe."}
 	}
 	return node, nil
 }

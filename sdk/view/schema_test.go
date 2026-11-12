@@ -1,4 +1,4 @@
-package sdk
+package view_test
 
 import (
 	"bytes"

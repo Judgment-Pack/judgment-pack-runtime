@@ -32,15 +32,15 @@ Material-decision impact: public-surface.
 
 ## Considered options
 
-- A typed view in package `sdk` — `Pack.Identity`, and `Pack.View` returning a `PackView` with
-  canonical `JSON` and `Markdown` — read from the root the admission already decoded, with `jpack
-  packs describe` writing its bytes.
+- A typed view — `sdk.Pack.Identity`, and `sdk.Pack.View` returning a `view.PackView` of package
+  `sdk/view` with canonical `JSON` and `Markdown` — read from the root the admission already
+  decoded, with `jpack packs describe` writing its bytes.
 - Re-encode the admitted document and leave typing to the caller.
 - A CLI-only rendering in `internal/cli`.
 
 ## Decision outcome
 
-Chosen option: the typed view in package `sdk`, because a typed view that refuses what it cannot
+Chosen option: the typed view, because a typed view that refuses what it cannot
 represent is the only one of the three that can be held complete against the schema, and putting it
 in `sdk` gives the CLI and a Go program one source of the bytes. Re-encoding alone would type
 nothing and would carry a member the view does not understand without anyone noticing; a CLI-only
@@ -114,16 +114,21 @@ Annotations and value sets wait for the specification's decision on them (spec #
   host that posts it from linking `@` mentions, `#` references or bare URLs in rendered text.
 - Bad, because the canonical JSON writes bidirectional controls and line separators as themselves,
   as RFC 8785 does; a reader that shows the JSON raw needs the same care as with the pack itself.
-- Bad, because the exported view type names (`Rule`, `Source`, `Metadata` and others) occupy
-  package `sdk`'s namespace, and the exit code of a refusal is derived from its code rather than
-  carried.
+- Neutral, because the view's types live in their own package, `sdk/view`, so their generic names
+  (`Rule`, `Source`, `Metadata` and others) do not occupy package `sdk`'s namespace, and an
+  escalation's target is the view's own `view.Target`, not the handoff's `sdk.Target`. Only
+  `sdk.Pack.View` builds a `PackView`, through an internal package of `sdk`, so no caller can make
+  one whose cached bytes disagree with its fields. Bad, because a caller now imports two packages
+  to name the view's types.
+- Bad, because the exit code of a refusal is derived from its code rather than carried.
 - Revisit when spec #301 settles annotations or value sets, when a new specification version adds
   members, or when a caller needs the view of a pack `Load` refuses.
 
 ## More information
 
-- `sdk/view.go`, `sdk/view_json.go`, `sdk/view_markdown.go`; the goldens under
-  `sdk/testdata/view/golden`, written only by `-update-view-goldens`.
+- `sdk/view.go` (`Pack.View`, `Pack.Identity`), `sdk/view/view.go`, `sdk/view/json.go`,
+  `sdk/view/markdown.go`; the goldens under `sdk/view/testdata/golden`, written only by
+  `-update-view-goldens`.
 - `internal/cli/packs_describe.go`; docs/building-with-packs.md "Review" states the format and the
   escaping rule.
 - [ADR-0073](0073-in-process-go-evaluation-api.md), the Go API this extends.
