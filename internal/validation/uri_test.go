@@ -32,16 +32,6 @@ func TestCoreURIGrammarAllDocumentVersions(t *testing.T) {
 			t.Fatal(err)
 		}
 		original, err := set.Case("valid/minimal-literal.json")
-		if artifacts.IsStaged(version) {
-			// The staged cases carry no minimal pack; the released 0.3.0
-			// one carries over with its selector bytes replaced.
-			released, loadErr := artifacts.Load(artifacts.CoreVersion)
-			if loadErr != nil {
-				t.Fatal(loadErr)
-			}
-			original, err = released.Case("valid/minimal-literal.json")
-			original = bytes.Replace(original, []byte(`"specVersion": "0.3.0"`), []byte(`"specVersion": "0.4.0-draft"`), 1)
-		}
 		if err != nil {
 			t.Fatal(err)
 		}

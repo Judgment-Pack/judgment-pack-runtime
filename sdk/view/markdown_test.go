@@ -245,22 +245,22 @@ func TestTheViewRefusesWhatItCannotRepresent(t *testing.T) {
 		{"annotations in a 0.3.0 document are an ordinary extension", pv.ViewCoreVersion, func(root map[string]any) {
 			root["extensions"] = map[string]any{"org.judgmentpack.annotations": map[string]any{"k": 1.5}}
 		}, "/extensions/org.judgmentpack.annotations"},
-		{"an annotation value that is neither a string nor a list", pv.ViewStagedVersion, func(root map[string]any) {
+		{"an annotation value that is neither a string nor a list", pv.ViewCore050Version, func(root map[string]any) {
 			root["extensions"] = map[string]any{"org.judgmentpack.annotations": map[string]any{"k": json.Number("1")}}
 		}, "/extensions/org.judgmentpack.annotations/k"},
-		{"an annotation list holding a non-string", pv.ViewStagedVersion, func(root map[string]any) {
+		{"an annotation list holding a non-string", pv.ViewCore050Version, func(root map[string]any) {
 			root["extensions"] = map[string]any{"org.judgmentpack.annotations": map[string]any{"k": []any{"a", true}}}
 		}, "/extensions/org.judgmentpack.annotations/k/1"},
-		{"annotations that are not an object", pv.ViewStagedVersion, func(root map[string]any) {
+		{"annotations that are not an object", pv.ViewCore050Version, func(root map[string]any) {
 			rule(root)["extensions"] = map[string]any{"org.judgmentpack.annotations": []any{}}
 		}, "/rules/0/extensions/org.judgmentpack.annotations"},
-		{"a staged fact with neither a value nor a value set", pv.ViewStagedVersion, func(root map[string]any) {
+		{"a 0.5.0 fact with neither a value nor a value set", pv.ViewCore050Version, func(root map[string]any) {
 			rule(root)["when"] = map[string]any{"op": "fact", "path": "/a", "operator": "in"}
 		}, "/rules/0/when/value"},
-		{"an unknown member of a value set", pv.ViewStagedVersion, func(root map[string]any) {
+		{"an unknown member of a value set", pv.ViewCore050Version, func(root map[string]any) {
 			root["valueSets"] = []any{map[string]any{"id": "s", "entries": []any{map[string]any{"value": "a"}}, "owner": "x"}}
 		}, "/valueSets/0/owner"},
-		{"a value-set entry without a value", pv.ViewStagedVersion, func(root map[string]any) {
+		{"a value-set entry without a value", pv.ViewCore050Version, func(root map[string]any) {
 			root["valueSets"] = []any{map[string]any{"id": "s", "entries": []any{map[string]any{"description": "D."}}}}
 		}, "/valueSets/0/entries/0/value"},
 	} {

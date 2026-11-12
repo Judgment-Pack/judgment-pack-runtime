@@ -203,7 +203,7 @@ func buildTestPack(args map[string]string) string {
 	b.WriteString("author intended. The evaluator's surface is experimental and may change; its conformance\n")
 	b.WriteString("claim is stated, in full and only, in CONFORMANCE.md, and whatever it says there says\n")
 	b.WriteString("nothing about whether this pack decides well. The exact pack declaration selects Core\n")
-	b.WriteString("0.2.0-draft or 0.3.0 base; unsupported extended profiles are refused.\n\n")
+	b.WriteString("0.2.0-draft, 0.3.0 base or 0.5.0 base; unsupported extended profiles are refused.\n\n")
 	if pack := strings.TrimSpace(args["pack"]); pack != "" {
 		writeFencedBlock(&b, "The pack under test:", pack)
 	}

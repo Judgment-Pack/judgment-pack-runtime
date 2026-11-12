@@ -563,9 +563,9 @@ that posts the view on a forge should attach the Markdown as a file, or put it i
 block whose fence is longer than any run of backticks in the Markdown; inside it nothing is
 rendered or linked.
 
-**Annotations and value sets (EXPERIMENTAL).** A pack under the staged draft selector
-`0.4.0-draft` (Draft RFC 0031, [ADR-0075](adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md)),
-which the specification may rename or change, can label its root, its outcomes, its rules and its
+**Annotations and value sets (EXPERIMENTAL).** A Core `0.5.0` pack (RFC 0031,
+[ADR-0075](adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md),
+[ADR-0077](adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md)) can label its root, its outcomes, its rules and its
 value-set entries with annotations under `org.judgmentpack.annotations`, and can declare root
 `valueSets` that a fact `in` condition names with `valueSet` instead of an inline list. The view
 shows the document as written, never its evaluation form: in the canonical JSON both are members
@@ -576,9 +576,18 @@ value), its description and its extensions. An annotations member is written in 
 the extensions it belongs to, by name, then one item per key: `key: value` for a string, and the
 key with one nested item per value for a list, so a one-element list never reads as a string. An
 annotation's key and text are escaped like every pack string and written in ASCII beside when they
-hold a code point outside printable ASCII, because a filter matches on them. Under any other
-`specVersion` a `valueSets` member is not read and an `org.judgmentpack.annotations` member is an
-ordinary extension; describing these members left the view version at `1`.
+hold a code point outside printable ASCII or two adjacent spaces, because a filter matches on them;
+in that form each space of a run is written `\u0020`, so the run survives a renderer that collapses
+it. Text that holds a right-to-left letter, an Arabic letter or an Arabic digit (bidirectional
+class R, AL or AN) is written only in ASCII, as `` (ASCII only `"\u05d0"`) ``, so it cannot reorder
+the text of its line, and so is text that begins with a mark (general category M, such as a
+combining accent), which would otherwise join the syntax written before it
+([ADR-0078](adr/0078-keep-annotation-text-from-reordering-its-line.md)).
+Other display data, such as a description, is not isolated this way. Under any other
+`specVersion` neither member is admitted: a root `valueSets` member is refused as a member the Core
+object does not name (`JPS-STRUCTURE-UNKNOWN-MEMBER`), and an `org.judgmentpack.annotations`
+extension is refused as a reserved extension name (`JPS-STRUCTURE-EXTENSION-NAME`), so such a pack
+is never described. Describing these members left the view version at `1`.
 
 **Filter by annotation (EXPERIMENTAL).** `--filter key=value`, which repeats, shows only the outcomes
 and rules whose annotations match every criterion; `sdk.Pack.FilteredView` returns the same
@@ -610,19 +619,20 @@ space, a repeated criterion — is refused, and so is a pack under any other `sp
 than shown with nothing matched, because it cannot carry annotations; the CLI reports both as
 `JPS-INVOCATION-FILTER` and describes nothing.
 
-**Annotation text can be read back (EXPERIMENTAL).** The draft requires that wherever a consumer
+**Annotation text can be read back (EXPERIMENTAL).** Core `0.5.0` §9.2 requires that wherever a consumer
 lists annotation keys or values, or states a filter, every character outside printable ASCII can be
 recovered from what it shows ([ADR-0076](adr/0076-show-annotation-text-recoverably-on-every-surface.md)).
-In the Markdown, annotation text and each criterion of a filter are written in ASCII beside, as
-above, so a criterion reads as the annotation it was picked from. A refused criterion's message
+In the Markdown, annotation text and each criterion of a filter are written in ASCII beside, or
+only in ASCII when they could reorder their line, as above, so a criterion reads as the annotation
+it was picked from. A refused criterion's message
 names a refused character by its `U+` number and quotes a refused key in ASCII, and so does the
 validator's message for a refused annotation key. The canonical JSON writes each key and string as
-its exact code points, as data: a tool that displays annotations from it is bound by the draft's
-display rules itself.
+its exact code points, as data: a tool that displays annotations from it is bound by the display
+rules of §9.2 itself.
 
 The view is held by hand. The Markdown and canonical JSON under `sdk/view/testdata/expected`, for
 one every-member pack of each admitted specification version, for the adversarial-strings fixture
-and for the staged example, are written from the format above and the fixture, never recorded from
+and for the annotated example of Core `0.5.0`, are written from the format above and the fixture, never recorded from
 a run. The filtered view's expectations are written by hand in its tests. Over every
 bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits, a
 check derived from the input document finds every string and number of the document in its

@@ -626,7 +626,7 @@ func TestExpectationToolIsAdvertisedAsItBehaves(t *testing.T) {
 	}
 	properties := schema["properties"].(map[string]any)
 	version := properties["spec_version"].(map[string]any)
-	if enum := version["enum"].([]string); len(enum) != 2 || enum[0] != expectationSpec || enum[1] != "0.3.0" {
+	if enum := version["enum"].([]string); len(enum) != 3 || enum[0] != "0.2.0-draft" || enum[1] != "0.3.0" || enum[2] != "0.5.0" {
 		t.Fatal(version)
 	}
 	expectations := properties["expectations"].(map[string]any)

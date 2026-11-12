@@ -380,6 +380,9 @@ func Test(loaded *project.Project, engine *evaluation.Engine, doc Document, grap
 			ExitCode: result.ExitInvalid,
 		}
 	}
+	if refusal := Core050NodeRefusal(loaded, doc, "Graph testing"); refusal != nil {
+		return result.GraphTest{}, refusal
+	}
 	contract, selectionFailure := SelectContract(loaded, doc)
 	if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
 		return result.GraphTest{}, selectionFailure

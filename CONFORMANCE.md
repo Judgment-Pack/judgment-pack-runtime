@@ -215,20 +215,42 @@ claim. Historical prototype Policy compatibility remains explicitly scoped.
 This section makes no partial or qualified conformance claim. The recorded
 `0.2.0-draft` claim above remains as recorded.
 
-## Staged draft selector `0.4.0-draft` (EXPERIMENTAL)
+## Core 0.5.0 preparation evidence
 
-The runtime admits `specVersion` `0.4.0-draft` experimentally, with the `base` profile only. It is
-the selector a specification commit stages for Draft RFC 0031: annotations under the reserved
-extension `org.judgmentpack.annotations`, and root `valueSets` that fact `in` conditions reference.
-The bundle in `internal/artifacts/jps/0.4.0-draft` is vendored from that unreleased commit; its lock
-records the full commit and `stage` `staged-unreleased`, and no specification release carries it.
-The specification may rename or change the selector, its schema and its cases before any release,
-and this runtime follows without a compatibility promise.
+The implementation bundles the published Spec tag `v0.5.0`, commit
+`171d4c21d4b13e03ee20e1adb6fc5cc6b182cfae`, with per-file hashes and an immutable provenance lock
+(420 files). The implemented Core `0.5.0` reader/evaluator supports only `base`; the optional
+`extended` profile is refused as `profile-unsupported` before schema interpretation. A `0.5.0` pack
+is evaluated, and checked by every surface but the pack view, as its evaluation form (§8.5). The
+document limits of §10 are measured on the pack as presented, which holds each value set once; the
+evaluation form is not measured again, and it shares the sets' values rather than copying them.
+Evaluation work is charged on the evaluation form, so a set is charged at each reference to it, as
+an inline operand is. The
+staged selector `0.4.0-draft` that runtime 0.43.0 admitted is retired: the specification released
+its text as `0.5.0`, and a pack declaring `0.4.0-draft` or `0.4.0` is refused as an unsupported
+version. See [ADR-0077](docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md).
 
-Runs of the staged document cases and the staged evaluation rows report `staged` as their status and
-no suite version. They are implementation experience, not corpus results and not evidence for any
-claim; this section makes no partial or qualified conformance claim. The recorded `0.2.0-draft`
-claim above remains as recorded.
+The document manifest has 374 entries. Plain mode checks 356 and passes all 356; the 18 others
+are fixtures that declare the `extended` profile and are reported skipped, with the profile
+refusal. The five optional `expectedAdvisories` assertions match in both modes. Strict mode passes
+355 of the 356 checked rows: as in `0.3.0`, the authored exact-overlap row
+(`advisory-rules-overlap-exact`) is rejected by the recommended authoring gate, while its normative
+`actualStatus` remains `valid`. This is not a normative conformance failure. The one case that
+lists `expectedDiagnostics` passes only when every listed (code, pointer) pair is reported; the
+line-terminator refusals beside the version, local identifier, decimal operand and extension-name
+patterns are reported once, under the code of the definition's own pattern. The corpus digest is
+`sha256-length-prefixed-v1:9325ecefa7cef60dee81f4a00a24d225e6ee331265c4d818b8d8735443c9e812`.
+
+The separately named evaluation corpus contains 103 rows, whose manifest states its status as draft
+and seed; all 103 match under the explicit Core `0.5.0` contract, including the row for the
+supported extension set. The corpus runner does not check the manifest's `pairs` and
+`ownEvaluationForm` statements; each row is run on its own. Every graph command that reads node
+packs, the dialect and policy checks and pack-design analysis refuse a `0.5.0` pack, because the documents they implement
+are written against Core `0.3.0`. These results are implementation evidence, not an exhaustive
+check of the version's requirements.
+
+This section makes no partial or qualified conformance claim. The recorded `0.2.0-draft` claim
+above remains as recorded.
 
 ## Corroboration, which is not the claim's basis
 

@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
+
+	"golang.org/x/text/unicode/bidi"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
@@ -17,7 +21,7 @@ import (
 // requirements, sources, metadata, extensions. A section the document has no
 // member for is left out; a member that is present and empty says *empty*.
 //
-// The staged draft selector's members (EXPERIMENTAL) take the same rules: a
+// Core 0.5.0's members take the same rules: a
 // value set is a subsection of "Value sets" with its entries in document
 // order; a condition that references a set names it ("value set <id>") and is
 // never expanded; and an annotations member is written in its place among
@@ -29,8 +33,11 @@ import (
 // evaluator matches on — a fact's path, the strings and member names of a
 // fact's value, an extension's name and the strings and member names of its
 // value — is also written in ASCII beside it when it holds anything else
-// (matched). A value-set entry's value, and an annotation's key and strings,
-// which an annotation filter matches on, are written the same way. No line
+// (matched). A value-set entry's value is written the same way. An
+// annotation's key and strings, which an annotation filter matches on, and the
+// filter a filtered view states, are written so that none can reorder the
+// text around it, join the syntax before it, or read like another
+// (annotationText, ADR-0078). No line
 // begins with pack
 // text: each follows a heading marker, a list marker and label, or a table
 // pipe.
@@ -197,12 +204,64 @@ func (m *markdownWriter) annotations(depth int, annotations []Annotation) {
 	}
 }
 
-// annotationText writes an annotation key or string escaped, with its ASCII
-// form beside it when it holds anything outside printable ASCII, so two
-// strings an annotation filter tells apart never read alike.
+// annotationText writes an annotation key or string, as the view lists it and
+// as a filtered view states a filter (Core 0.5.0 §9.2, D1 and D2; ADR-0078):
+//
+//   - a string holding a character whose bidirectional class is R, AL or AN
+//     (a right-to-left letter, an Arabic letter, an Arabic digit), which can
+//     reorder the text beside it on its line, is written only in ASCII, as
+//     (ASCII only `...`): the line then holds no such character, so nothing
+//     can reorder it, in a renderer or in a terminal; so is a string that
+//     begins with a mark, which would join the syntax written before it;
+//   - any other string is written escaped, followed by its ASCII form when it
+//     holds a code point outside printable ASCII or two adjacent spaces, the
+//     run a renderer collapses to one; in that form every space of such a run
+//     is written \u0020, so the run survives any renderer;
+//   - a string of printable ASCII with no such run is written escaped only.
+//
+// Two strings an annotation filter tells apart therefore never read alike, and
+// the Markdown holds no raw format character: isolation is by leaving the
+// characters that need it out of the line, not by adding isolates.
 func annotationText(value string) string {
 	text, _ := canonicalText(value)
-	return escapeMarkdown(value) + asciiForm(text)
+	if affectsDirection(value) || joinsPrecedingText(value) {
+		return "(ASCII only " + asciiSpan(text, true) + ")"
+	}
+	if needsASCII(text) || strings.Contains(value, "  ") {
+		return escapeMarkdown(value) + " (ASCII " + asciiSpan(text, true) + ")"
+	}
+	return escapeMarkdown(value)
+}
+
+// affectsDirection reports whether value holds a character whose
+// bidirectional class (UAX #9) is R, AL or AN: the classes that resolve to a
+// right-to-left level, or move the neutral characters beside them there, in a
+// left-to-right line. No other class an annotation string or a filter may hold
+// does: every explicit format character is refused there (§9.2), and the
+// remaining weak and neutral classes resolve to the line's own direction. The
+// classes follow the tables of golang.org/x/text/unicode/bidi.
+func affectsDirection(value string) bool {
+	for _, character := range value {
+		properties, _ := bidi.LookupRune(character)
+		switch properties.Class() {
+		case bidi.R, bidi.AL, bidi.AN:
+			return true
+		}
+	}
+	return false
+}
+
+// joinsPrecedingText reports whether value begins with a mark (general
+// category M: a nonspacing, spacing or enclosing mark). A renderer combines a
+// mark with the character before it, and before an annotation string that
+// character is the view's own syntax: the space after a colon, a list
+// marker or "is". Written as itself, the mark would sit on that syntax and
+// the string would read as if it began without it. A mark inside the string
+// combines with the string's own text and is written as before. The category
+// follows the Unicode tables of the Go toolchain.
+func joinsPrecedingText(value string) bool {
+	first, size := utf8.DecodeRuneInString(value)
+	return size > 0 && unicode.Is(unicode.M, first)
 }
 
 func (m *markdownWriter) target(depth int, label string, target Target) {
@@ -267,12 +326,23 @@ func asciiForm(text string) string {
 	if !needsASCII(text) {
 		return ""
 	}
+	return " (ASCII " + asciiSpan(text, false) + ")"
+}
+
+// asciiSpan writes a canonical JSON text as the code span asciiForm describes.
+// With spaceRuns, every space next to another space is written \u0020 too,
+// so a run of spaces stays a run in a renderer that collapses one; the span
+// still decodes to the same value.
+func asciiSpan(text string, spaceRuns bool) string {
+	runes := []rune(text)
 	var builder strings.Builder
-	builder.WriteString(" (ASCII `")
-	for _, character := range text {
+	builder.WriteByte('`')
+	for index, character := range runes {
 		switch {
 		case character == '`':
 			builder.WriteString(`\u0060`)
+		case character == ' ' && spaceRuns && ((index > 0 && runes[index-1] == ' ') || (index+1 < len(runes) && runes[index+1] == ' ')):
+			builder.WriteString(`\u0020`)
 		case character >= 0x20 && character <= 0x7e:
 			builder.WriteRune(character)
 		case character > 0xffff:
@@ -282,7 +352,7 @@ func asciiForm(text string) string {
 			fmt.Fprintf(&builder, `\u%04x`, character)
 		}
 	}
-	builder.WriteString("`)")
+	builder.WriteByte('`')
 	return builder.String()
 }
 

@@ -14,13 +14,13 @@ import (
 var idCollections = []string{"outcomes", "rules", "evidenceRequirements", "sources", "exceptions"}
 var extensionNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9-]*)+$`)
 
-// semanticDiagnostics applies §3.3. staged adds the staged draft selector's two
-// conditions: value-set ids are unique within valueSets, and every valueSet
-// member of a fact condition names a declared set, in every condition position.
-func semanticDiagnostics(root map[string]any, staged bool) ([]result.Diagnostic, bool) {
+// semanticDiagnostics applies §3.3. core050 adds Core 0.5.0's two conditions:
+// value-set ids are unique within valueSets, and every valueSet member of a
+// fact condition names a declared set, in every condition position.
+func semanticDiagnostics(root map[string]any, core050 bool) ([]result.Diagnostic, bool) {
 	diagnostics := newDiagnosticCollector()
 	collections := idCollections
-	if staged {
+	if core050 {
 		collections = append(slices.Clone(idCollections), "valueSets")
 	}
 	for _, collection := range collections {
@@ -28,7 +28,7 @@ func semanticDiagnostics(root map[string]any, staged bool) ([]result.Diagnostic,
 			return diagnostics.sorted(), diagnostics.truncated
 		}
 	}
-	if staged && !valueSetReferenceDiagnostics(root, diagnostics) {
+	if core050 && !valueSetReferenceDiagnostics(root, diagnostics) {
 		return diagnostics.sorted(), diagnostics.truncated
 	}
 
@@ -282,12 +282,12 @@ func coreExtensionNames(root map[string]any) map[string]bool {
 
 // extensionNameDiagnostics refuses an extension name outside the allowed
 // reverse-domain namespace, and every org.judgmentpack. name, in every Core
-// extensions object. Under the staged draft selector one specification-defined
-// name is admitted (draft §9.2): the annotations extension, in the root's, each
+// extensions object. Under Core 0.5.0 one specification-defined name is
+// admitted (Core §9.2): the annotations extension, in the root's, each
 // outcome's and each rule's extensions object, and nowhere else. A value-set
 // entry's extensions object is closed by the schema and is not walked here.
-func extensionNameDiagnostics(root map[string]any, diagnostics *diagnosticCollector, staged bool) {
-	if !collectExtensionSlotDiagnostics(root, nil, diagnostics, staged) {
+func extensionNameDiagnostics(root map[string]any, diagnostics *diagnosticCollector, core050 bool) {
+	if !collectExtensionSlotDiagnostics(root, nil, diagnostics, core050) {
 		return
 	}
 	for _, singleton := range []string{"decision", "escalation", "metadata"} {
@@ -298,7 +298,7 @@ func extensionNameDiagnostics(root map[string]any, diagnostics *diagnosticCollec
 		}
 	}
 	for _, collection := range []string{"evidenceRequirements", "sources", "outcomes", "rules", "exceptions"} {
-		annotated := staged && (collection == "outcomes" || collection == "rules")
+		annotated := core050 && (collection == "outcomes" || collection == "rules")
 		for _, indexed := range indexedObjects(root[collection]) {
 			if !collectExtensionSlotDiagnostics(indexed.object, []string{collection, fmt.Sprint(indexed.index)}, diagnostics, annotated) {
 				return

@@ -962,6 +962,12 @@ func TestConformanceHelpNamesExactDefaultVersion(t *testing.T) {
 	if code != 0 || stderr != "" || !strings.Contains(stdout, artifacts.DraftVersion) {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
+	// The strict overlap gate runs for every version with the Core 0.3.0
+	// rules, 0.5.0 among them, and the help says so rather than naming 0.3.0
+	// alone.
+	if !strings.Contains(stdout, "Exact rule overlap in a Core 0.3.0 or later pack also fails strict mode;\nnot-excluded overlap remains a warning") {
+		t.Fatalf("help %q", stdout)
+	}
 }
 
 // A copy of the bundled corpus whose structural/missing-decision.json carries a

@@ -22,8 +22,9 @@ import (
 // for the one permitted claim and not exhaustive evidence of it. The claim is
 // stated, in full and only, in CONFORMANCE.md (ADR-0011); every payload here
 // carries a reference to that file and restates nothing of it
-// (result.EvaluationClaimReference, result.EvaluationCorpusLabel). A passing run is
-// that evidence; it is not the claim.
+// (result.EvaluationClaimReference, result.EvaluationCorpusLabelFor). A passing
+// run under the claim's specVersion is that evidence; it is not the claim. A run
+// under any other specVersion is labeled as outside the claim's version scope.
 
 // corpusManifest is the case carrier of the bundled evaluation corpus. facts,
 // evidenceAvailability, and expectedDisposition are kept as raw bytes: the
@@ -293,13 +294,6 @@ func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTarge
 // be a defect in the row as in the implementation, and neither this runtime nor
 // this function adjudicates that question.
 func (e *Engine) RunCorpus(specVersion, command string) (result.EvaluationCorpus, *Failure) {
-	// The staged draft selector (EXPERIMENTAL) has no corpus; its bundle
-	// carries staged rows, which run under the same comparison.
-	if result.IsStagedDraft(specVersion) {
-		if set, err := artifacts.Load(specVersion); err == nil && set.HasStagedEvaluationRows() {
-			return e.runStagedRows(set, command)
-		}
-	}
 	set, manifest, failure := bundledCorpus(specVersion)
 	if failure != nil {
 		return result.EvaluationCorpus{}, failure
@@ -312,7 +306,7 @@ func (e *Engine) RunCorpus(specVersion, command string) (result.EvaluationCorpus
 		Status:                    "passed",
 		Experimental:              true,
 		ConformanceClaimReference: result.EvaluationClaimReference,
-		Label:                     result.EvaluationCorpusLabel,
+		Label:                     result.EvaluationCorpusLabelFor(manifest.SpecVersion),
 		SpecVersion:               manifest.SpecVersion,
 		SuiteVersion:              manifest.SuiteVersion,
 		CorpusStatus:              manifest.Status,
@@ -361,7 +355,7 @@ func bundledCorpus(specVersion string) (*artifacts.Set, corpusManifest, *Failure
 	if err != nil {
 		return nil, corpusManifest{}, &Failure{
 			Code:     "JPS-CAPABILITY-SPEC-VERSION",
-			Message:  "The exact JPS specification version is not bundled with this runtime.",
+			Message:  result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this runtime.", specVersion),
 			ExitCode: result.ExitUnsupported,
 		}
 	}

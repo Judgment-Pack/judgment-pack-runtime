@@ -31,7 +31,7 @@
 //   - Pack.Identity and Identity, and Pack.View, which returns the
 //     view.PackView of package sdk/view;
 //   - Pack.FilteredView, which returns the view.FilteredView of package
-//     sdk/view (staged draft selector 0.4.0-draft only);
+//     sdk/view (Core 0.5.0 only);
 //   - the constants ClassPackNotConformant, ClassMalformedInput,
 //     ClassUnsupportedRequiredExtension, ClassResourceExhaustion,
 //     PhasePreflight and PhaseEvaluation.
@@ -62,14 +62,15 @@
 // the Markdown layout and the escaping rule every pack string passes
 // through.
 //
-// For a pack under the staged draft selector 0.4.0-draft, which the
-// specification may rename or change, the view shows the document's value
-// sets and annotations, and Pack.FilteredView returns only the outcomes and
+// For a pack under Core 0.5.0, the view shows the document's value sets and
+// annotations, and Pack.FilteredView returns only the outcomes and
 // rules whose annotations match every criterion given, compared by exact
 // code point, as a view.FilteredView that says it is not the pack, states
 // the filter and the counts, and carries its own filteredViewVersion;
 // "jpack packs describe --filter" writes the same bytes
-// (docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md).
+// (docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md, which
+// docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md carries
+// over to the released version).
 //
 // # Errors
 //

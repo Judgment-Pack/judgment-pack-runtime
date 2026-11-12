@@ -141,8 +141,8 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	if options.Through != "carrier" {
 		scanned, diagnostic, scanFailure := NegotiateProfile(data, options.Limits, options.SupportedProfiles)
 		if scanFailure == nil && diagnostic != nil {
-			// The declared version is one that declares profiles (0.3.0, or the
-			// staged draft selector), and it is the one reported.
+			// The declared version is one that declares profiles (0.3.0 or
+			// 0.5.0), and it is the one reported.
 			output.SpecVersion, _ = scanned["specVersion"].(string)
 			output.Layers = append(output.Layers, result.Layer{Name: "carrier", Status: "passed"})
 			if diagnostic.Code == "profile-unsupported" {
@@ -195,7 +195,7 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	if !setOK {
 		output.Status = "unsupported"
 		output.Diagnostics = []result.Diagnostic{
-			result.ErrorDiagnostic("JPS-CAPABILITY-SPEC-VERSION", "capability", "/specVersion", "The exact JPS specification version is not bundled with this CLI."),
+			result.ErrorDiagnostic("JPS-CAPABILITY-SPEC-VERSION", "capability", "/specVersion", result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this CLI.", selectedVersion)),
 		}
 		return output, nil
 	}
@@ -222,12 +222,12 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	if schemaErr != nil {
 		var validationError *jsonschema.ValidationError
 		if errors.As(schemaErr, &validationError) {
-			collectStructural(validationError, structuralCollector, structuralRules{core030: artifacts.HasCore030Rules(selectedVersion), staged: artifacts.IsStaged(selectedVersion)})
+			collectStructural(validationError, structuralCollector, structuralRules{core030: artifacts.HasCore030Rules(selectedVersion), core050: artifacts.HasCore050Rules(selectedVersion), document: value})
 		} else {
 			structuralCollector.addError("JPS-STRUCTURE-SCHEMA", "structural", "", "Structural validation failed.")
 		}
 	}
-	extensionNameDiagnostics(root, structuralCollector, artifacts.IsStaged(selectedVersion))
+	extensionNameDiagnostics(root, structuralCollector, artifacts.HasCore050Rules(selectedVersion))
 	exceptionShapeDiagnostics(root, structuralCollector)
 	if schemaErr != nil && len(structuralCollector.items) == 0 {
 		structuralCollector.addError("JPS-STRUCTURE-SCHEMA", "structural", "", "Structural validation failed.")
@@ -257,7 +257,7 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	output.Extensions.Supported = supported
 	output.Extensions.Unsupported = unsupported
 
-	semantic, semanticTruncated := semanticDiagnostics(root, artifacts.IsStaged(selectedVersion))
+	semantic, semanticTruncated := semanticDiagnostics(root, artifacts.HasCore050Rules(selectedVersion))
 	if len(semantic) > 0 {
 		output.Status = "invalid"
 		output.Layers = append(output.Layers, result.Layer{Name: "semantic", Status: "failed"})
@@ -290,14 +290,14 @@ func (e *Engine) Validate(data []byte, options Options) (result.Validation, *Ope
 	output.Status = "valid"
 	// Core 0.3.0 introduces this recommended, non-normative check. Earlier
 	// contracts and admission/evaluation statuses retain their existing behavior.
-	// Under the staged draft selector it reads the evaluation form, where a
-	// value-set reference is its set's values (draft §3.3.1).
+	// Under Core 0.5.0 it reads the evaluation form, where a value-set
+	// reference is its set's values (Core §3.3.1).
 	// There, a pair where either condition as written names a value set gets no
 	// rewrite, since one built from the form would drop the reference.
 	if artifacts.HasCore030Rules(selectedVersion) {
 		advised := root
 		var written map[string]any
-		if artifacts.IsStaged(selectedVersion) {
+		if artifacts.HasCore050Rules(selectedVersion) {
 			form, err := evalform.Of(root)
 			if err != nil {
 				// Unreachable: the semantic layer refused every unresolved
@@ -319,11 +319,14 @@ func structuralBootstrapFailure(output result.Validation, location, code, messag
 }
 
 // structuralRules selects the version-specific structural code mappings: core030
-// for Core 0.3.0's route constraints, which the staged draft keeps, and staged
-// for the draft's annotation and value-set constraints.
+// for Core 0.3.0's route constraints, which 0.5.0 keeps, and core050 for
+// 0.5.0's annotation, value-set and line-terminator constraints. document is
+// the decoded document the failures are about, which the 0.5.0 mappings read a
+// refused string from.
 type structuralRules struct {
-	core030 bool
-	staged  bool
+	core030  bool
+	core050  bool
+	document any
 }
 
 func collectStructural(validationError *jsonschema.ValidationError, diagnostics *diagnosticCollector, rules structuralRules) {
@@ -332,7 +335,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		diagnostics.truncated = true
 		return
 	}
-	location := append([]string(nil), validationError.InstanceLocation...)
+	location := reportedLocation(validationError)
 	add := func(code string, parts []string, message string) bool {
 		return diagnostics.addError(code, "structural", carrier.Pointer(parts), message)
 	}
@@ -357,7 +360,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 			}
 		}
 	}
-	if rules.staged && collectStagedStructural(validationError, location, diagnostics, func(cause *jsonschema.ValidationError) { collectStructural(cause, diagnostics, rules) }) {
+	if rules.core050 && collectCore050Structural(validationError, location, rules.document, diagnostics, func(cause *jsonschema.ValidationError) { collectStructural(cause, diagnostics, rules) }) {
 		return
 	}
 	handled := false
@@ -462,6 +465,23 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 	for _, cause := range validationError.Causes {
 		collectStructural(cause, diagnostics, rules)
 	}
+}
+
+// reportedLocation returns a copy of the instance location the engine reports
+// for one failure, or nil when the engine gives none that can be read. For a
+// propertyNames or a contentSchema failure the engine stores its live path
+// buffer instead of a copy, and a member visited after the failure, in map
+// order, overwrites that buffer: the location such a failure carries can name
+// another member of the document, differently on each run. It is never read.
+// The causes of a propertyNames failure carry locations of their own (the name
+// as a standalone value), and the Core-aware name checks report each refused
+// extension name at the name itself.
+func reportedLocation(validationError *jsonschema.ValidationError) []string {
+	switch validationError.ErrorKind.(type) {
+	case *kind.PropertyNames, *kind.ContentSchema:
+		return nil
+	}
+	return append([]string(nil), validationError.InstanceLocation...)
 }
 
 func patternCode(pattern string) string {

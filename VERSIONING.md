@@ -52,16 +52,16 @@ Bundled specification artifacts are pinned to an immutable upstream tag or exact
 verified byte-for-byte at runtime and during release checks. Updating those artifacts does not
 rewrite an existing CLI release.
 
-The staged draft selector `0.4.0-draft` (Draft RFC 0031, ADR-0075) is EXPERIMENTAL. Its files come
-from a specification commit's staged directories, which no specification release carries, pinned to
-a full commit digest and labelled `stage: staged-unreleased` in the lock; its evaluator entry in
-runtime discovery carries the same `stage`. The specification may rename or change the selector,
-its schema and its cases, and a later runtime release follows it with no compatibility promise:
-a pack that declares `0.4.0-draft` may be refused, or evaluated differently, by the next release.
+The staged draft selector `0.4.0-draft`, which runtime 0.43.0 admitted EXPERIMENTALLY (ADR-0075),
+was released by the specification as Core `0.5.0` (RFC 0031) and is removed (ADR-0077): a pack,
+suite or corpus run that names `0.4.0-draft` or `0.4.0` is refused as an unsupported version, and
+the refusal says that the draft was released as `0.5.0`. A pack moves by changing its `specVersion`
+to `"0.5.0"` (Core §11). Every bundle this runtime embeds is a released version; a lock that states
+a `stage` is refused at load, and runtime discovery carries no `stage`.
 
 Document support and evaluator support are reported separately. The additive
 `evaluatorCapabilities` entries name exact Core contracts; `supportedProfiles` on
-the `0.3.0` entry lists only `base` and makes no profile promise for other formats.
+the `0.3.0` and `0.5.0` entries list only `base` and make no profile promise for other formats.
 Legacy authoring defaults remain `0.2.0-draft`; explicit standalone `spec_version`
 selects the new contract, while pack-aware operations use the exact associated pack.
 Matrix carrier versions `1`–`3` are unchanged: the explicit contract selects the
@@ -146,16 +146,19 @@ version. This is stricter than the rule for `outputVersion`, because a reader of
 its bytes. Which characters the Markdown writes as code points follows the Unicode tables of the Go
 toolchain the runtime is built with, through `internal/display`; an update of those tables alone,
 which can move a newly assigned format character into that set, does not move `viewVersion`. The `packs describe` JSON envelope follows `outputVersion`; the view's bytes ride in it
-as a string and follow `viewVersion`. Describing the value sets and annotations of the staged draft
-selector `0.4.0-draft` left `viewVersion` at `"1"`, because no pack an earlier release could
-describe holds them.
+as a string and follow `viewVersion`. Describing the value sets and annotations of Core `0.5.0`
+left `viewVersion` at `"1"`, because no pack an earlier release could describe holds them; the
+same holds for ADR-0078, which writes annotation text that could reorder its line, or join the
+syntax before it, only in ASCII.
+Runtime 0.43.0 described packs under the staged selector `0.4.0-draft`; this runtime refuses them
+rather than describing them with other bytes.
 
 The filtered view (`sdk.Pack.FilteredView`, `view.FilteredView`, and `jpack packs describe
 --filter`, ADR-0075) carries its own `filteredViewVersion`, `"1"`, in its JSON and in its
 Markdown, and no `viewVersion`, so a reader of views never takes it for the pack. It moves by the
 rule `viewVersion` moves by. Its bytes ride in the `packs describe --filter` JSON envelope's
-`filteredView` member as a string. It is EXPERIMENTAL, and exists only for the staged draft
-selector.
+`filteredView` member as a string. It is EXPERIMENTAL, and exists only for Core `0.5.0`, the one
+version that defines annotations.
 
 ## Release artifacts
 

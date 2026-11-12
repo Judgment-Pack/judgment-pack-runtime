@@ -1,0 +1,12 @@
+{
+  "specVersion": "0.5.0",
+  "id": "https://example.invalid/judgment-packs/view-core050-empty-value-sets",
+  "version": "1.0.0",
+  "title": "An empty valueSets member",
+  "decision": { "intent": "Hold an empty valueSets member empty.", "question": "Does empty stay empty?" },
+  "outcomes": [{ "id": "yes", "label": "Yes" }, { "id": "no", "label": "No" }],
+  "rules": [
+    { "id": "always", "description": "Always yes.", "when": { "op": "literal", "value": true }, "outcome": "yes", "onUnknown": "ignore" }
+  ],
+  "valueSets": []
+}

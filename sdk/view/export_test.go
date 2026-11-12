@@ -5,12 +5,13 @@ package view
 var (
 	CanonicalText  = canonicalText
 	EscapeMarkdown = escapeMarkdown
+	AnnotationText = annotationText
 	BuildView      = buildView
 	RenderMarkdown = renderMarkdown
 )
 
 const (
-	ViewDraftVersion  = viewDraftVersion
-	ViewCoreVersion   = viewCoreVersion
-	ViewStagedVersion = viewStagedVersion
+	ViewDraftVersion   = viewDraftVersion
+	ViewCoreVersion    = viewCoreVersion
+	ViewCore050Version = viewCore050Version
 )

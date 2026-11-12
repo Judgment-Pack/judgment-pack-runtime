@@ -107,9 +107,11 @@ func (a *App) graphValidateCommand() *cobra.Command {
 			"itself, no two edges feed the same fact pointer or the same evidence requirement of one node, no fact " +
 			"pointer sits inside another edge's fact pointer for the same node, no fact pointer is deeper than the " +
 			"documented injection depth, every node's pack is a decision id the project's jpack.json declares, and " +
-			"the edges form a directed acyclic graph. One kind of pack read then happens, and only one: each pack " +
-			"an evidence feed targets is read to check that it declares the requirement id the edge names; no " +
-			"other pack is opened, and no pack is validated -- spec validate and packs validate are what report " +
+			"the edges form a directed acyclic graph. Two kinds of pack read happen, and only two: every node's " +
+			"pack is read for the Core version it declares, and a graph with a Core 0.5.0 node is refused whole " +
+			"(JPS-SURFACE-SPEC-VERSION-UNSUPPORTED, exit 2), because no graph command reads one; and each pack " +
+			"an evidence feed targets is read to check that it declares the requirement id the edge names. No " +
+			"pack is validated -- spec validate and packs validate are what report " +
 			"that. Every finding is reported, not the first one. It evaluates nothing. With no argument it walks " +
 			"the project instead: every graph the configuration declares (configVersion 2, ADR-0017), or the one " +
 			"--id selects, each held to the same checks plus its declared rows path staying inside the project; a " +
@@ -148,6 +150,9 @@ func (a *App) graphValidateCommand() *cobra.Command {
 				return failure
 			}
 			defer loaded.Close()
+			if refusal := graph.Core050NodeRefusal(loaded, document, "Graph validation"); refusal != nil {
+				return a.evaluationFailure(commandName, format, refusal)
+			}
 			output := result.GraphValidation{
 				OutputVersion: result.OutputVersion,
 				Tool:          result.CurrentTool(),
@@ -257,6 +262,9 @@ func (a *App) graphEvaluateCommand() *cobra.Command {
 			// them. A rehearsal records nothing anywhere and keeps its rule.
 			if _, keepsTrail := loaded.TrailName(); len(cites) > 0 && !keepsTrail && !rehearsal {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-CITES", citesNoTrailMessage)
+			}
+			if refusal := graph.Core050NodeRefusal(loaded, document, "Graph evaluation"); refusal != nil {
+				return a.evaluationFailure(commandName, format, refusal)
 			}
 			if _, profileFailure := graph.SelectContract(loaded, document); profileFailure != nil && profileFailure.Code == "profile-unsupported" {
 				return a.evaluationFailure(commandName, format, profileFailure)
@@ -370,7 +378,9 @@ func (a *App) graphExplainCommand() *cobra.Command {
 		Short: "Print one graph's evaluation plan without evaluating anything",
 		Long: "Print one graph's evaluation plan: the deterministic node order, each node's resolved pack with the " +
 			"document's own identity echoed beside the project's decision id, and every feed each node would " +
-			"receive before it runs. Pack documents are read only for that identity echo -- a document that cannot " +
+			"receive before it runs. A graph with a Core 0.5.0 node has no plan and is refused " +
+			"(JPS-SURFACE-SPEC-VERSION-UNSUPPORTED, exit 2), as every graph command that reads node packs refuses it. " +
+			"Pack documents are otherwise read only for that identity echo -- a document that cannot " +
 			"be read is reported on its step rather than failing the plan -- and nothing is evaluated: no condition " +
 			"is interpreted, no disposition is produced, and the plan authorizes nothing. A graph whose own " +
 			"graph-level checks fail -- its nodes, edges, result, and acyclicity -- has no plan; run experimental " +
@@ -497,6 +507,9 @@ func (a *App) graphTestCommand() *cobra.Command {
 				return failure
 			}
 			defer loaded.Close()
+			if refusal := graph.Core050NodeRefusal(loaded, document, "Graph testing"); refusal != nil {
+				return a.evaluationFailure(commandName, format, refusal)
+			}
 			if _, profileFailure := graph.SelectContract(loaded, document); profileFailure != nil && profileFailure.Code == "profile-unsupported" {
 				return a.evaluationFailure(commandName, format, profileFailure)
 			}

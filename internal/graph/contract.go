@@ -2,6 +2,8 @@ package graph
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -41,13 +43,47 @@ func selectNodeContract(data []byte, oversized []string) (result.EvaluatorContra
 		return result.EvaluatorContract{}, &evaluation.Failure{Class: result.ClassPackNotConformant, Phase: result.PhasePreflight, Code: "JPS-RESOURCE-INPUT-BYTE-LIMIT", Message: fmt.Sprintf("The pack input exceeds the hard %d-byte limit.", carrier.HardMaxBytes), ExitCode: result.ExitIO}
 	}
 	contract, failure := evaluation.SelectContract(data)
-	if failure == nil && contract.Staged() {
-		// Graphs do not read the staged draft selector (EXPERIMENTAL): a graph
-		// report is not designed over annotations or value sets.
-		return result.EvaluatorContract{}, evaluation.StagedDraftUnsupported("Graph evaluation")
+	if failure == nil && contract.Core050Rules() {
+		// Graphs do not read Core 0.5.0: the graph prototype (Draft RFC 0002)
+		// is written against Core 0.3.0, and a graph report is not designed
+		// over annotations or value sets.
+		return result.EvaluatorContract{}, evaluation.SurfaceSpecVersionUnsupported("Graph evaluation", contract.Version(), graphReadable)
 	}
 	return contract, failure
 }
+
+// Core050NodeRefusal refuses a graph one of whose node packs declares Core
+// 0.5.0. No graph surface reads one: the graph prototype (Draft RFC 0002) is
+// written against Core 0.3.0, and a graph report is not designed over
+// annotations or value sets. Every surface that reads node packs (validate,
+// explain, test and evaluate) asks it first, so a graph is refused whole, at
+// the top, rather than planned, or tested row by row, under a contract it
+// does not have. Every node's pack is read, in node-name order, whatever
+// another node's read gives; a pack that is not declared, cannot be read, is
+// oversized or selects no contract is left to the surface's own report of it,
+// so a graph without a 0.5.0 node is never refused here. surface names the
+// refusing surface in the message.
+func Core050NodeRefusal(loaded *project.Project, doc Document, surface string) *evaluation.Failure {
+	for _, node := range slices.Sorted(maps.Keys(doc.Nodes)) {
+		pack := doc.Nodes[node].Pack
+		entry, declared := loaded.Entry(pack)
+		if !declared {
+			continue
+		}
+		data, oversized, failure := readNodePack(loaded, node, pack, entry)
+		if failure != nil || len(oversized) > 0 {
+			continue
+		}
+		if contract, failure := evaluation.SelectContract(data); failure == nil && contract.Core050Rules() {
+			return nodeFailure(node, pack, evaluation.SurfaceSpecVersionUnsupported(surface, contract.Version(), graphReadable))
+		}
+	}
+	return nil
+}
+
+// graphReadable lists the Core versions a graph reads: the evaluator
+// contracts other than Core 0.5.0's.
+var graphReadable = []string{result.EvaluatorSpecVersion, "0.3.0"}
 
 func mixedContractFailure() *evaluation.Failure {
 	return &evaluation.Failure{Code: "JPS-GRAPH-MIXED-CONTRACT", Message: "A graph requires one exact evaluator contract across all participating packs.", ExitCode: result.ExitUnsupported}

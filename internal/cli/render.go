@@ -180,21 +180,12 @@ func (a *App) renderSuite(format string, output result.Suite) error {
 	if output.Advisories != nil {
 		fmt.Fprintf(a.out, "optional advisory assertions: %d/%d matched; outside normative conformance\n", output.Advisories.Passed, output.Advisories.Total)
 	}
-	fmt.Fprintf(a.out, "JPS %s · suite %s · %s\n", display.Sanitize(output.SpecVersion), display.Sanitize(suiteLabel(output.SuiteVersion)), display.Sanitize(output.Provenance))
+	fmt.Fprintf(a.out, "JPS %s · suite %s · %s\n", display.Sanitize(output.SpecVersion), display.Sanitize(output.SuiteVersion), display.Sanitize(output.Provenance))
 	fmt.Fprintf(a.out, "corpus: %s:%s\n", output.CorpusDigestAlgorithm, output.CorpusDigest)
 	if output.DiagnosticsTruncated {
 		fmt.Fprintln(a.out, "diagnostics: truncated at the suite output limit")
 	}
 	return nil
-}
-
-// suiteLabel names a run's suite in human output. A staged selector's run has
-// no suite version, and is labeled staged rather than left blank.
-func suiteLabel(version string) string {
-	if version == "" {
-		return "staged"
-	}
-	return version
 }
 
 func (a *App) renderSchema(format string, output result.Schema) error {
@@ -283,18 +274,8 @@ func (a *App) renderEvaluationCorpus(format string, output result.EvaluationCorp
 			fmt.Fprintf(a.out, "  expected class: %s / actual class: %s\n", display.Sanitize(item.ExpectedErrorClass), display.Sanitize(item.ActualErrorClass))
 		}
 	}
-	// Staged rows only: a held row is reported, never run, and never counted
-	// as passed.
-	if output.Summary.Held > 0 {
-		fmt.Fprintf(a.out, "held: %d staged row(s) not run\n", output.Summary.Held)
-		for _, item := range output.Cases {
-			if item.Status == "held" {
-				fmt.Fprintf(a.out, "- %s [%s] held: %s\n", display.Sanitize(item.ID), display.Sanitize(item.SpecSection), display.Sanitize(item.Detail))
-			}
-		}
-	}
 	fmt.Fprintf(a.out, "JPS %s · corpus %s (%s, %s) · %s\n",
-		display.Sanitize(output.SpecVersion), display.Sanitize(suiteLabel(output.SuiteVersion)),
+		display.Sanitize(output.SpecVersion), display.Sanitize(output.SuiteVersion),
 		display.Sanitize(output.CorpusStatus), display.Sanitize(output.CorpusLabel), display.Sanitize(output.Provenance))
 	fmt.Fprintln(a.out, "A mismatching row decides nothing by itself: a divergence is as likely to be a defect in the row as in this implementation.")
 	return nil

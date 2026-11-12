@@ -198,11 +198,11 @@ func TestPacksDescribeRefusals(t *testing.T) {
 // member; the flag repeats, each use one criterion that every match must
 // meet, and a comma is part of a value, never a separator.
 func TestPacksDescribeFilterWritesTheSDKBytes(t *testing.T) {
-	set, err := artifacts.Load(artifacts.StagedDraftVersion)
+	set, err := artifacts.Load(artifacts.Core050Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack, err := set.StagedExample("expense-approval-annotated.json")
+	pack, _, err := set.Example("expense-approval-annotated")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,29 +252,29 @@ func TestPacksDescribeFilterWritesTheSDKBytes(t *testing.T) {
 // specVersion defines no annotations, are refused as an invocation the
 // command cannot carry out, with nothing described, in each format.
 func TestPacksDescribeFilterRefusals(t *testing.T) {
-	set, err := artifacts.Load(artifacts.StagedDraftVersion)
+	set, err := artifacts.Load(artifacts.Core050Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pack, err := set.StagedExample("expense-approval-annotated.json")
+	pack, _, err := set.Example("expense-approval-annotated")
 	if err != nil {
 		t.Fatal(err)
 	}
-	staged := writeFixture(t, pack)
+	annotated := writeFixture(t, pack)
 	// viewlessPack with a second outcome, which Core 0.3.0 requires.
 	core := writeFixture(t, []byte(strings.Replace(viewlessPack, `[{"id": "yes", "label": "Yes"}]`, `[{"id": "yes", "label": "Yes"}, {"id": "no", "label": "No"}]`, 1)))
 	for _, args := range [][]string{
-		{staged, "--filter", "Category=threshold"},
-		{staged, "--filter", "category"},
-		{staged, "--filter", "category="},
-		{staged, "--filter", "category=a", "--filter", "category=a"},
+		{annotated, "--filter", "Category=threshold"},
+		{annotated, "--filter", "category"},
+		{annotated, "--filter", "category="},
+		{annotated, "--filter", "category=a", "--filter", "category=a"},
 		// The draft's character rules: an isolate, a zero-width space, a tag
 		// character, and white space at either end.
-		{staged, "--filter", "category=thre\u2066shold"},
-		{staged, "--filter", "category=threshold\u200b"},
-		{staged, "--filter", "category=threshold\U000e0020"},
-		{staged, "--filter", "category= threshold"},
-		{staged, "--filter", "category=threshold\u00a0"},
+		{annotated, "--filter", "category=thre\u2066shold"},
+		{annotated, "--filter", "category=threshold\u200b"},
+		{annotated, "--filter", "category=threshold\U000e0020"},
+		{annotated, "--filter", "category= threshold"},
+		{annotated, "--filter", "category=threshold\u00a0"},
 		{core, "--filter", "category=threshold"},
 	} {
 		full := append([]string{"packs", "describe"}, args...)
@@ -309,7 +309,7 @@ func TestPacksDescribeFilterRefusals(t *testing.T) {
 // nothing was described.
 func TestPacksDescribeFilterShowsEveryCodePointRecoverably(t *testing.T) {
 	path := writeFixture(t, []byte(`{
-  "specVersion": "0.4.0-draft",
+  "specVersion": "0.5.0",
   "id": "https://example.invalid/judgment-packs/look-alike",
   "version": "0.1.0",
   "title": "Look-alike",

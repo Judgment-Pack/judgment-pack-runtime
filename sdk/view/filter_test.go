@@ -16,7 +16,7 @@ import (
 // rules, with a string, a list, a key that differs only in case, and a value
 // written once composed (U+00E9) and once decomposed (e, U+0301).
 const filterPack = `{
-  "specVersion": "0.4.0-draft",
+  "specVersion": "0.5.0",
   "id": "https://example.com/packs/filtered",
   "version": "1.0.0",
   "title": "Filtered *pack*",
@@ -87,7 +87,7 @@ func TestOneFilteredViewByHand(t *testing.T) {
 		`"outcomes":{"count":3,"matched":[{"outcome":{"extensions":{"org.judgmentpack.annotations":{"team":"intake","tier":["one"]}},"id":"accept","label":"Accept"},"pointer":"/outcomes/0"}]},` +
 		`"rules":{"count":5,"matched":[{"pointer":"/rules/0","rule":{"description":"A","extensions":{"org.judgmentpack.annotations":{"team":"intake","tier":"one"}},` +
 		`"id":"a","onUnknown":"ignore","outcome":"accept","when":{"op":"fact","operator":"equals","path":"/x","value":"1"}}}]},` +
-		`"specVersion":"0.4.0-draft","title":"Filtered *pack*","version":"1.0.0"}`
+		`"specVersion":"0.5.0","title":"Filtered *pack*","version":"1.0.0"}`
 	if got := string(filtered.JSON()); got != wantJSON {
 		t.Fatalf("JSON:\n got %s\nwant %s", got, wantJSON)
 	}
@@ -97,7 +97,7 @@ func TestOneFilteredViewByHand(t *testing.T) {
 		"\n" +
 		"- Id: https\\:\\/\\/example\\.com\\/packs\\/filtered\n" +
 		"- Version: 1\\.0\\.0\n" +
-		"- Spec version: 0\\.4\\.0\\-draft\n" +
+		"- Spec version: 0\\.5\\.0\n" +
 		"- Digest: " + digest + "\n" +
 		"- Filtered view version: 1\n" +
 		"- Filter, every criterion matching:\n" +
@@ -234,7 +234,7 @@ func TestTheFilterIsEscapedAndWrittenInASCIIToo(t *testing.T) {
 // shown with nothing matched. Neither is a *sdk.Refusal or an ErrInternal, and
 // neither returns a filtered view.
 func TestTheFilterRefusesWhatItCannotMatch(t *testing.T) {
-	staged := loadFilterPack(t, filterPack)
+	annotated := loadFilterPack(t, filterPack)
 	core := loadFilterPack(t, viewMinimalPack)
 	draft := loadFilterPack(t, strings.Replace(viewMinimalPack, `"specVersion": "0.3.0"`, `"specVersion": "0.2.0-draft"`, 1))
 	for _, test := range []struct {
@@ -243,23 +243,23 @@ func TestTheFilterRefusesWhatItCannotMatch(t *testing.T) {
 		criteria []pv.Criterion
 		want     error
 	}{
-		{"no criterion", staged, nil, pv.ErrFilterCriterion},
-		{"an empty key", staged, []pv.Criterion{{Key: "", Value: "x"}}, pv.ErrFilterCriterion},
-		{"an upper-case key", staged, []pv.Criterion{{Key: "Team", Value: "x"}}, pv.ErrFilterCriterion},
-		{"a key over 64 characters", staged, []pv.Criterion{{Key: strings.Repeat("a", 65), Value: "x"}}, pv.ErrFilterCriterion},
-		{"an empty value", staged, []pv.Criterion{{Key: "team", Value: ""}}, pv.ErrFilterCriterion},
-		{"a value over 256 characters", staged, []pv.Criterion{{Key: "team", Value: strings.Repeat("\u00e9", 257)}}, pv.ErrFilterCriterion},
-		{"a value that is not UTF-8", staged, []pv.Criterion{{Key: "team", Value: "a\xffb"}}, pv.ErrFilterCriterion},
-		{"a value with a control character", staged, []pv.Criterion{{Key: "team", Value: "a\u0007b"}}, pv.ErrFilterCriterion},
-		{"a value with a line separator", staged, []pv.Criterion{{Key: "team", Value: "a\u2028b"}}, pv.ErrFilterCriterion},
-		{"a value with a bidi mark", staged, []pv.Criterion{{Key: "team", Value: "a\u200fb"}}, pv.ErrFilterCriterion},
-		{"a value with an isolate", staged, []pv.Criterion{{Key: "team", Value: "a\u2067b"}}, pv.ErrFilterCriterion},
-		{"a value with a zero-width space", staged, []pv.Criterion{{Key: "team", Value: "intake\u200b"}}, pv.ErrFilterCriterion},
-		{"a value with a tag character", staged, []pv.Criterion{{Key: "team", Value: "intake\U000e0041"}}, pv.ErrFilterCriterion},
-		{"a value that ends in a space", staged, []pv.Criterion{{Key: "team", Value: "intake "}}, pv.ErrFilterCriterion},
-		{"a value that begins with a no-break space", staged, []pv.Criterion{{Key: "team", Value: "\u00a0intake"}}, pv.ErrFilterCriterion},
-		{"a value of white space only", staged, []pv.Criterion{{Key: "team", Value: "\u3000"}}, pv.ErrFilterCriterion},
-		{"a repeated criterion", staged, []pv.Criterion{{Key: "team", Value: "x"}, {Key: "team", Value: "x"}}, pv.ErrFilterCriterion},
+		{"no criterion", annotated, nil, pv.ErrFilterCriterion},
+		{"an empty key", annotated, []pv.Criterion{{Key: "", Value: "x"}}, pv.ErrFilterCriterion},
+		{"an upper-case key", annotated, []pv.Criterion{{Key: "Team", Value: "x"}}, pv.ErrFilterCriterion},
+		{"a key over 64 characters", annotated, []pv.Criterion{{Key: strings.Repeat("a", 65), Value: "x"}}, pv.ErrFilterCriterion},
+		{"an empty value", annotated, []pv.Criterion{{Key: "team", Value: ""}}, pv.ErrFilterCriterion},
+		{"a value over 256 characters", annotated, []pv.Criterion{{Key: "team", Value: strings.Repeat("\u00e9", 257)}}, pv.ErrFilterCriterion},
+		{"a value that is not UTF-8", annotated, []pv.Criterion{{Key: "team", Value: "a\xffb"}}, pv.ErrFilterCriterion},
+		{"a value with a control character", annotated, []pv.Criterion{{Key: "team", Value: "a\u0007b"}}, pv.ErrFilterCriterion},
+		{"a value with a line separator", annotated, []pv.Criterion{{Key: "team", Value: "a\u2028b"}}, pv.ErrFilterCriterion},
+		{"a value with a bidi mark", annotated, []pv.Criterion{{Key: "team", Value: "a\u200fb"}}, pv.ErrFilterCriterion},
+		{"a value with an isolate", annotated, []pv.Criterion{{Key: "team", Value: "a\u2067b"}}, pv.ErrFilterCriterion},
+		{"a value with a zero-width space", annotated, []pv.Criterion{{Key: "team", Value: "intake\u200b"}}, pv.ErrFilterCriterion},
+		{"a value with a tag character", annotated, []pv.Criterion{{Key: "team", Value: "intake\U000e0041"}}, pv.ErrFilterCriterion},
+		{"a value that ends in a space", annotated, []pv.Criterion{{Key: "team", Value: "intake "}}, pv.ErrFilterCriterion},
+		{"a value that begins with a no-break space", annotated, []pv.Criterion{{Key: "team", Value: "\u00a0intake"}}, pv.ErrFilterCriterion},
+		{"a value of white space only", annotated, []pv.Criterion{{Key: "team", Value: "\u3000"}}, pv.ErrFilterCriterion},
+		{"a repeated criterion", annotated, []pv.Criterion{{Key: "team", Value: "x"}, {Key: "team", Value: "x"}}, pv.ErrFilterCriterion},
 		{"a bad criterion on a 0.3.0 pack", core, []pv.Criterion{{Key: "Team", Value: "x"}}, pv.ErrFilterCriterion},
 		{"a 0.3.0 pack", core, []pv.Criterion{{Key: "team", Value: "intake"}}, pv.ErrFilterSelector},
 		{"a 0.2.0-draft pack", draft, []pv.Criterion{{Key: "team", Value: "intake"}}, pv.ErrFilterSelector},
@@ -300,7 +300,7 @@ func TestParseCriterion(t *testing.T) {
 	}
 }
 
-// The criterion check mirrors the staged schema's annotation key and string:
+// The criterion check mirrors the Core 0.5.0 schema's annotation key and string:
 // for each key and value written here, a criterion is accepted exactly when a
 // pack holding that annotation is admitted.
 func TestTheCriterionCheckIsTheSchemas(t *testing.T) {
@@ -326,7 +326,7 @@ func TestTheCriterionCheckIsTheSchemas(t *testing.T) {
 	}
 }
 
-// draftRefused and draftWhiteSpace are copied by hand from the staged draft's
+// draftRefused and draftWhiteSpace are copied by hand from the Core 0.5.0
 // text (§9.2, "Annotation strings"): the code points no annotation string may
 // hold, and the white-space characters it may not begin or end with.
 var (
@@ -355,7 +355,7 @@ func inDraftList(list [][2]rune, character rune) bool {
 // refuse, at both ends of every range: each end of each refused range, and
 // the code point on either side of it, inside a string; and each white-space
 // range's ends and neighbours at the start, at the end, inside and alone. The
-// expectation is the draft's lists above; the staged schema, through a pack
+// expectation is the text's lists above; the released schema, through a pack
 // that carries the same string, must agree with it too.
 func TestTheCriterionCheckIsTheDrafts(t *testing.T) {
 	type value struct {

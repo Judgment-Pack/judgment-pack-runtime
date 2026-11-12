@@ -58,18 +58,18 @@ source schema IDs stay distinct from derived Runtime editing schema IDs. See
 
 ### Refresh a staged draft selector (EXPERIMENTAL)
 
-A staged draft selector such as `0.4.0-draft` comes from a specification commit's staged
-directories (`schema/staged/`, `conformance/staged/`, `conformance/evaluation/staged/` and
+A staged draft selector (runtime 0.43.0 carried `0.4.0-draft`, since released as Core `0.5.0`)
+comes from a specification commit's staged directories (`schema/staged/`, `conformance/staged/`, `conformance/evaluation/staged/` and
 `examples/staged/`), which no specification release carries. From a clean checkout at the exact
 commit, one command imports it, or re-imports it over the existing staged bundle of the same
 selector:
 
 ```bash
 env GO111MODULE=on go run ./tools/sync-spec-artifacts \
-  --staged 0.4.0-draft --replace \
+  --staged <selector> --replace \
   --source ../judgment-pack-spec \
   --source-ref <full-commit-digest> \
-  --destination ./internal/artifacts/jps/0.4.0-draft
+  --destination ./internal/artifacts/jps/<selector>
 ```
 
 A staged import takes only a full commit digest (never a tag or a branch) and refuses
@@ -77,8 +77,10 @@ A staged import takes only a full commit digest (never a tag or a branch) and re
 at a file it takes, since the commit does not carry it. Its lock records
 `stage: staged-unreleased`. `--replace` replaces only a staged bundle of the same selector; a
 released bundle or any other directory is refused and left as it is.
-After a refresh, run the staged corpus tests (`internal/conformance`, `internal/evaluation`) and
-review any case they name.
+This runtime embeds released versions only: `internal/artifacts` refuses, at load, a bundle whose
+lock states a `stage`, and the staged admission code of runtime 0.43.0 (suite status, held rows,
+staged examples) was removed with `0.4.0-draft` (ADR-0077). Admitting a staged selector again needs
+that admission back, under its own decision record, before such a bundle can be embedded.
 
 ## Refresh the selected retained-column leaf import
 

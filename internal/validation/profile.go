@@ -15,8 +15,8 @@ func NegotiateProfile(data []byte, limits carrier.Limits, supported []string) (m
 	if failure != nil {
 		return nil, nil, failure
 	}
-	// Core 0.3.0 declares profiles, and so does the staged draft selector,
-	// which keeps 0.3.0's profile rule: base only.
+	// Core 0.3.0 declares profiles, and so does Core 0.5.0, which keeps
+	// 0.3.0's profile rule: base only.
 	if version, _ := root["specVersion"].(string); !artifacts.HasCore030Rules(version) {
 		return root, nil, nil
 	}

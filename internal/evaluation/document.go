@@ -10,9 +10,9 @@ package evaluation
 // of this pack: a caller reads it and never modifies it. Its values are the
 // carrier's: objects are map[string]any, arrays []any, numbers json.Number
 // holding the literal token as written, and strings, booleans and nil as
-// themselves. It is the document as written, never the evaluation form a
-// staged draft selector is evaluated as: its annotations and value sets are
-// there, and its references are not expanded.
+// themselves. It is the document as written, never the evaluation form a Core
+// 0.5.0 pack is evaluated as: its annotations and value sets are there, and
+// its references are not expanded.
 func (a *AdmittedPack) Document(options Options) (map[string]any, *Failure) {
 	admission, failure := a.packHalf(options)
 	if failure != nil {
