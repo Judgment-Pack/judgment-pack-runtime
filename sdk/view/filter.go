@@ -62,9 +62,45 @@ func ParseCriterion(text string) (Criterion, error) {
 // characters; a test holds the two equal on the cases it names.
 var annotationKey = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
 
+// codePoints is a list of inclusive code point ranges.
+type codePoints [][2]rune
+
+func (ranges codePoints) holds(character rune) bool {
+	for _, span := range ranges {
+		if character >= span[0] && character <= span[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// annotationRefused is the staged draft's refused class for an annotation
+// string (§9.2; the staged schema's $defs/annotationString, not): the
+// controls, the line and paragraph separators, every bidirectional format
+// character and every other invisible, default-ignorable character, none of
+// which an annotation string may hold anywhere. The draft makes the list, not
+// a Unicode property, the rule, so it is written out here and does not follow
+// the Go toolchain's Unicode tables.
+var annotationRefused = codePoints{
+	{0x0000, 0x001f}, {0x007f, 0x009f}, {0x00ad, 0x00ad}, {0x034f, 0x034f}, {0x061c, 0x061c},
+	{0x115f, 0x1160}, {0x17b4, 0x17b5}, {0x180b, 0x180f}, {0x200b, 0x200f}, {0x2028, 0x202e},
+	{0x2060, 0x206f}, {0x3164, 0x3164}, {0xfe00, 0xfe0f}, {0xfeff, 0xfeff}, {0xffa0, 0xffa0},
+	{0xfff0, 0xfff8}, {0x1bca0, 0x1bca3}, {0x1d173, 0x1d17a}, {0xe0000, 0xe0fff},
+}
+
+// annotationWhiteSpace is the staged draft's list of white-space characters
+// (§9.2, the Unicode White_Space property written out), which an annotation
+// string may not begin or end with; those the refused class does not hold
+// are admitted between two other characters.
+var annotationWhiteSpace = codePoints{
+	{0x0009, 0x000d}, {0x0020, 0x0020}, {0x0085, 0x0085}, {0x00a0, 0x00a0}, {0x1680, 0x1680},
+	{0x2000, 0x200a}, {0x2028, 0x2029}, {0x202f, 0x202f}, {0x205f, 0x205f}, {0x3000, 0x3000},
+}
+
 // check refuses a criterion whose key or value no annotation the staged
 // schema admits could hold, so a criterion that could never match is an
-// error and never an empty filtered view.
+// error and never an empty filtered view. Each message names a refused code
+// point by its U+ number, never as itself.
 func (c Criterion) check() error {
 	if len(c.Key) > 64 || !annotationKey.MatchString(c.Key) {
 		return fmt.Errorf("%w: the key %s is not an annotation key, which is lower-case letters and digits in hyphen-separated words, starting with a letter, at most 64 characters", ErrFilterCriterion, strconv.QuoteToASCII(c.Key))
@@ -72,14 +108,20 @@ func (c Criterion) check() error {
 	if !utf8.ValidString(c.Value) {
 		return fmt.Errorf("%w: the value for %s is not UTF-8", ErrFilterCriterion, c.Key)
 	}
-	count := utf8.RuneCountInString(c.Value)
-	if count < 1 || count > 256 {
+	characters := []rune(c.Value)
+	if len(characters) < 1 || len(characters) > 256 {
 		return fmt.Errorf("%w: the value for %s must have 1 to 256 characters, as an annotation string does", ErrFilterCriterion, c.Key)
 	}
-	for _, character := range c.Value {
-		if character <= 0x1f || (character >= 0x7f && character <= 0x9f) || (character >= 0x2028 && character <= 0x202e) {
+	for _, character := range characters {
+		if annotationRefused.holds(character) {
 			return fmt.Errorf("%w: the value for %s holds U+%04X, which no annotation string may hold", ErrFilterCriterion, c.Key, character)
 		}
+	}
+	if first := characters[0]; annotationWhiteSpace.holds(first) {
+		return fmt.Errorf("%w: the value for %s begins with U+%04X, white space, which no annotation string may begin or end with", ErrFilterCriterion, c.Key, first)
+	}
+	if last := characters[len(characters)-1]; annotationWhiteSpace.holds(last) {
+		return fmt.Errorf("%w: the value for %s ends with U+%04X, white space, which no annotation string may begin or end with", ErrFilterCriterion, c.Key, last)
 	}
 	return nil
 }

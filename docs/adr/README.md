@@ -171,3 +171,4 @@ authority, and following it confers no conformance status on anything.
 | [0073](0073-in-process-go-evaluation-api.md) | Expose loading and evaluating a pack as an experimental in-process Go API | accepted |
 | [0074](0074-describe-a-loaded-pack.md) | Describe a loaded pack, every member as written, through the Go API and jpack packs describe | accepted |
 | [0075](0075-admit-the-staged-draft-selector-0-4-0-draft.md) | Admit the staged draft selector 0.4.0-draft experimentally: evaluate its evaluation form, and show and filter its annotations | accepted |
+| [0076](0076-show-annotation-text-recoverably-on-every-surface.md) | Show every annotation character outside printable ASCII recoverably: exact in the JSON, in ASCII in the Markdown and the messages | proposed |

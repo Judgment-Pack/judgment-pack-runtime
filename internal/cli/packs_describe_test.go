@@ -268,6 +268,13 @@ func TestPacksDescribeFilterRefusals(t *testing.T) {
 		{staged, "--filter", "category"},
 		{staged, "--filter", "category="},
 		{staged, "--filter", "category=a", "--filter", "category=a"},
+		// The draft's character rules: an isolate, a zero-width space, a tag
+		// character, and white space at either end.
+		{staged, "--filter", "category=thre\u2066shold"},
+		{staged, "--filter", "category=threshold\u200b"},
+		{staged, "--filter", "category=threshold\U000e0020"},
+		{staged, "--filter", "category= threshold"},
+		{staged, "--filter", "category=threshold\u00a0"},
 		{core, "--filter", "category=threshold"},
 	} {
 		full := append([]string{"packs", "describe"}, args...)
@@ -290,6 +297,67 @@ func TestPacksDescribeFilterRefusals(t *testing.T) {
 		code, stdout, stderr = runTest(t, full, "")
 		if code != result.ExitInvocation || stdout != "" || !strings.HasPrefix(stderr, "error: --filter: ") {
 			t.Fatalf("%v markdown: exit=%d stdout=%q stderr=%q", args, code, stdout, stderr)
+		}
+	}
+}
+
+// D2 through the CLI: the Markdown states a criterion holding a look-alike in
+// ASCII beside it, the JSON envelope's filtered view carries it exactly, and a
+// refused criterion's message names a refused character by its U+ number and
+// a refused key in ASCII, in both formats, each written here by hand. A
+// criterion is refused before the pack is read, so no message says that
+// nothing was described.
+func TestPacksDescribeFilterShowsEveryCodePointRecoverably(t *testing.T) {
+	path := writeFixture(t, []byte(`{
+  "specVersion": "0.4.0-draft",
+  "id": "https://example.invalid/judgment-packs/look-alike",
+  "version": "0.1.0",
+  "title": "Look-alike",
+  "decision": {"intent": "Test the filter's display.", "question": "Which label?"},
+  "outcomes": [{"id": "yes", "label": "Yes"}, {"id": "no", "label": "No"}],
+  "rules": [
+    {"id": "a", "description": "A", "when": {"op": "literal", "value": true}, "outcome": "yes", "onUnknown": "ignore", "extensions": {"org.judgmentpack.annotations": {"label": "c\u0430fe"}}},
+    {"id": "b", "description": "B", "when": {"op": "literal", "value": true}, "outcome": "no", "onUnknown": "ignore", "extensions": {"org.judgmentpack.annotations": {"label": "cafe"}}}
+  ]
+}`))
+	args := []string{"packs", "describe", path, "--filter", "label=c\u0430fe"}
+	code, stdout, stderr := runTest(t, args, "")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "\n- Filter, every criterion matching:\n  - label is c\u0430fe (ASCII `\"c\\u0430fe\"`)\n- Outcomes matched: 0 of 2\n- Rules matched: 1 of 2\n") {
+		t.Fatalf("exit=%d stderr=%q stdout:\n%s", code, stderr, stdout)
+	}
+	code, stdout, stderr = runTest(t, append(args, "--format", "json"), "")
+	var envelope result.PackFilteredDescription
+	if err := json.Unmarshal([]byte(stdout), &envelope); code != 0 || stderr != "" || err != nil {
+		t.Fatalf("exit=%d stderr=%q %v %s", code, stderr, err, stdout)
+	}
+	var filtered struct {
+		Filter struct {
+			Criteria []struct{ Key, Value string }
+		}
+	}
+	if err := json.Unmarshal([]byte(envelope.FilteredView), &filtered); err != nil || len(filtered.Filter.Criteria) != 1 ||
+		filtered.Filter.Criteria[0].Key != "label" || filtered.Filter.Criteria[0].Value != "c\u0430fe" {
+		t.Fatalf("the filtered view states %+v (%v)", filtered.Filter.Criteria, err)
+	}
+
+	const refused = "--filter: view: invalid filter criterion: "
+	for _, test := range []struct{ filter, message string }{
+		{"label=cafe\u200b", refused + "the value for label holds U+200B, which no annotation string may hold"},
+		{"label=cafe\u00a0", refused + "the value for label ends with U+00A0, white space, which no annotation string may begin or end with"},
+		{"l\u0430bel=cafe", refused + "the key \"l\\u0430bel\" is not an annotation key, which is lower-case letters and digits in hyphen-separated words, starting with a letter, at most 64 characters"},
+	} {
+		args := []string{"packs", "describe", path, "--filter", test.filter}
+		code, stdout, stderr := runTest(t, args, "")
+		if code != result.ExitInvocation || stdout != "" || stderr != "error: "+test.message+"\n" {
+			t.Errorf("%q: exit=%d stdout=%q stderr=%q", test.filter, code, stdout, stderr)
+		}
+		code, stdout, _ = runTest(t, append(args, "--format", "json"), "")
+		var failure struct {
+			Diagnostics []struct{ Code, Message string }
+		}
+		if err := json.Unmarshal([]byte(stdout), &failure); err != nil || code != result.ExitInvocation || len(failure.Diagnostics) != 1 ||
+			failure.Diagnostics[0].Code != "JPS-INVOCATION-FILTER" || failure.Diagnostics[0].Message != test.message {
+			t.Errorf("%q: exit=%d %v %s", test.filter, code, err, stdout)
 		}
 	}
 }

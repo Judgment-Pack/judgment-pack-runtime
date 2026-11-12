@@ -170,7 +170,7 @@ func TestFilterMatchesEveryCriterionByExactCodePoint(t *testing.T) {
 		{[]string{"label=Caf\u00e9"}, nil, []string{"c"}, []int{2}},
 		{[]string{"label=Cafe\u0301"}, nil, []string{"d"}, []int{3}},
 		{[]string{"label=Cafe"}, nil, nil, nil},
-		{[]string{"team=intake "}, nil, nil, nil},
+		{[]string{"team=in take"}, nil, nil, nil},
 		{[]string{"team=intak"}, nil, nil, nil},
 		{[]string{"owner=intake"}, nil, nil, nil},
 	} {
@@ -198,12 +198,14 @@ func TestFilterMatchesEveryCriterionByExactCodePoint(t *testing.T) {
 
 // A criterion and the value it is compared with are escaped as every pack
 // string is, and a criterion holding a code point outside printable ASCII is
-// written in ASCII beside it, so a bidi control or a look-alike in the filter
-// is visible. Every line opens with the renderer's own text.
+// written in ASCII beside it, so a format character or a look-alike in the
+// filter is visible. U+FFF9 is a format character that annotation strings
+// admit, because it is not default-ignorable. Every line opens with the
+// renderer's own text.
 func TestTheFilterIsEscapedAndWrittenInASCIIToo(t *testing.T) {
-	pack := strings.Replace(filterPack, `{"team": "intake", "tier": "one"}`, `{"team": "intake", "note": "<b>*x*</b> a\u2067b"}`, 1)
+	pack := strings.Replace(filterPack, `{"team": "intake", "tier": "one"}`, `{"team": "intake", "note": "<b>*x*</b> a\ufff9b"}`, 1)
 	loaded := loadFilterPack(t, pack)
-	filtered, err := loaded.FilteredView(criteria(t, "note=<b>*x*</b> a\u2067b"))
+	filtered, err := loaded.FilteredView(criteria(t, "note=<b>*x*</b> a\ufff9b"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +213,7 @@ func TestTheFilterIsEscapedAndWrittenInASCIIToo(t *testing.T) {
 		t.Fatalf("matched %q", rules)
 	}
 	markdown := string(filtered.Markdown())
-	want := "  - note is \\<b\\>\\*x\\*\\<\\/b\\> a`U+2067`b (ASCII `\"<b>*x*</b> a\\u2067b\"`)\n"
+	want := "  - note is \\<b\\>\\*x\\*\\<\\/b\\> a`U+FFF9`b (ASCII `\"<b>*x*</b> a\\ufff9b\"`)\n"
 	if !strings.Contains(markdown, want) {
 		t.Fatalf("the criterion is not written as %q:\n%s", want, markdown)
 	}
@@ -250,6 +252,13 @@ func TestTheFilterRefusesWhatItCannotMatch(t *testing.T) {
 		{"a value that is not UTF-8", staged, []pv.Criterion{{Key: "team", Value: "a\xffb"}}, pv.ErrFilterCriterion},
 		{"a value with a control character", staged, []pv.Criterion{{Key: "team", Value: "a\u0007b"}}, pv.ErrFilterCriterion},
 		{"a value with a line separator", staged, []pv.Criterion{{Key: "team", Value: "a\u2028b"}}, pv.ErrFilterCriterion},
+		{"a value with a bidi mark", staged, []pv.Criterion{{Key: "team", Value: "a\u200fb"}}, pv.ErrFilterCriterion},
+		{"a value with an isolate", staged, []pv.Criterion{{Key: "team", Value: "a\u2067b"}}, pv.ErrFilterCriterion},
+		{"a value with a zero-width space", staged, []pv.Criterion{{Key: "team", Value: "intake\u200b"}}, pv.ErrFilterCriterion},
+		{"a value with a tag character", staged, []pv.Criterion{{Key: "team", Value: "intake\U000e0041"}}, pv.ErrFilterCriterion},
+		{"a value that ends in a space", staged, []pv.Criterion{{Key: "team", Value: "intake "}}, pv.ErrFilterCriterion},
+		{"a value that begins with a no-break space", staged, []pv.Criterion{{Key: "team", Value: "\u00a0intake"}}, pv.ErrFilterCriterion},
+		{"a value of white space only", staged, []pv.Criterion{{Key: "team", Value: "\u3000"}}, pv.ErrFilterCriterion},
 		{"a repeated criterion", staged, []pv.Criterion{{Key: "team", Value: "x"}, {Key: "team", Value: "x"}}, pv.ErrFilterCriterion},
 		{"a bad criterion on a 0.3.0 pack", core, []pv.Criterion{{Key: "Team", Value: "x"}}, pv.ErrFilterCriterion},
 		{"a 0.3.0 pack", core, []pv.Criterion{{Key: "team", Value: "intake"}}, pv.ErrFilterSelector},
@@ -314,5 +323,94 @@ func TestTheCriterionCheckIsTheSchemas(t *testing.T) {
 	}
 	for _, value := range values {
 		check("team", value)
+	}
+}
+
+// draftRefused and draftWhiteSpace are copied by hand from the staged draft's
+// text (§9.2, "Annotation strings"): the code points no annotation string may
+// hold, and the white-space characters it may not begin or end with.
+var (
+	draftRefused = [][2]rune{
+		{0x0000, 0x001f}, {0x007f, 0x009f}, {0x00ad, 0x00ad}, {0x034f, 0x034f}, {0x061c, 0x061c},
+		{0x115f, 0x1160}, {0x17b4, 0x17b5}, {0x180b, 0x180f}, {0x200b, 0x200f}, {0x2028, 0x202e},
+		{0x2060, 0x206f}, {0x3164, 0x3164}, {0xfe00, 0xfe0f}, {0xfeff, 0xfeff}, {0xffa0, 0xffa0},
+		{0xfff0, 0xfff8}, {0x1bca0, 0x1bca3}, {0x1d173, 0x1d17a}, {0xe0000, 0xe0fff},
+	}
+	draftWhiteSpace = [][2]rune{
+		{0x0009, 0x000d}, {0x0020, 0x0020}, {0x0085, 0x0085}, {0x00a0, 0x00a0}, {0x1680, 0x1680},
+		{0x2000, 0x200a}, {0x2028, 0x2029}, {0x202f, 0x202f}, {0x205f, 0x205f}, {0x3000, 0x3000},
+	}
+)
+
+func inDraftList(list [][2]rune, character rune) bool {
+	for _, span := range list {
+		if character >= span[0] && character <= span[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// The criterion check refuses exactly the strings the draft's character rules
+// refuse, at both ends of every range: each end of each refused range, and
+// the code point on either side of it, inside a string; and each white-space
+// range's ends and neighbours at the start, at the end, inside and alone. The
+// expectation is the draft's lists above; the staged schema, through a pack
+// that carries the same string, must agree with it too.
+func TestTheCriterionCheckIsTheDrafts(t *testing.T) {
+	type value struct {
+		text     string
+		admitted bool
+	}
+	var values []value
+	for _, span := range draftRefused {
+		for _, character := range []rune{span[0] - 1, span[0], span[1], span[1] + 1} {
+			if character < 0 {
+				continue
+			}
+			values = append(values, value{"a" + string(character) + "b", !inDraftList(draftRefused, character)})
+		}
+	}
+	for _, span := range draftWhiteSpace {
+		for _, character := range []rune{span[0] - 1, span[0], span[1], span[1] + 1} {
+			refused, white := inDraftList(draftRefused, character), inDraftList(draftWhiteSpace, character)
+			values = append(values,
+				value{string(character) + "a", !refused && !white},
+				value{"a" + string(character), !refused && !white},
+				value{"a" + string(character) + "b", !refused},
+				value{string(character), !refused && !white})
+		}
+	}
+	for _, test := range values {
+		_, criterionErr := pv.ParseCriterion("team=" + test.text)
+		if (criterionErr == nil) != test.admitted {
+			t.Errorf("value %q: the criterion check says %v, want admitted=%v", test.text, criterionErr, test.admitted)
+		}
+		encoded, _ := json.Marshal(test.text)
+		pack := strings.Replace(filterPack, `"extensions": {"org.judgmentpack.annotations": {"team": "intake"}},`,
+			`"extensions": {"org.judgmentpack.annotations": {"team": `+string(encoded)+`}},`, 1)
+		if _, loadErr := sdk.Load(context.Background(), []byte(pack), sdk.LoadOptions{}); (loadErr == nil) != test.admitted {
+			t.Errorf("value %q: the pack's load says %v, want admitted=%v", test.text, loadErr, test.admitted)
+		}
+	}
+}
+
+// Each refusal of a criterion's value names the code point by its U+ number,
+// never as itself, and the first refused one wins over white space at an
+// end.
+func TestTheCriterionRefusalsNameTheCodePoint(t *testing.T) {
+	for _, test := range []struct{ text, want string }{
+		{"team=intake\u200b", "view: invalid filter criterion: the value for team holds U+200B, which no annotation string may hold"},
+		{"team=a\U000e0041", "view: invalid filter criterion: the value for team holds U+E0041, which no annotation string may hold"},
+		{"team= \u200dx", "view: invalid filter criterion: the value for team holds U+200D, which no annotation string may hold"},
+		{"team=\u00a0intake", "view: invalid filter criterion: the value for team begins with U+00A0, white space, which no annotation string may begin or end with"},
+		{"team=intake\u3000", "view: invalid filter criterion: the value for team ends with U+3000, white space, which no annotation string may begin or end with"},
+		{"team= ", "view: invalid filter criterion: the value for team begins with U+0020, white space, which no annotation string may begin or end with"},
+		{"t\u0430am=x", "view: invalid filter criterion: the key \"t\\u0430am\" is not an annotation key, which is lower-case letters and digits in hyphen-separated words, starting with a letter, at most 64 characters"},
+	} {
+		_, err := pv.ParseCriterion(test.text)
+		if err == nil || err.Error() != test.want || !errors.Is(err, pv.ErrFilterCriterion) {
+			t.Errorf("%q: got %v\nwant %s", test.text, err, test.want)
+		}
 	}
 }

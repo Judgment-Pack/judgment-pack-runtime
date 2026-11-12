@@ -2,6 +2,34 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- The staged draft selector `0.4.0-draft` is re-vendored from specification commit
+  `c867b35f5bc06b3c00bad7bfc5c9426a70fa12b4`, the revision of the draft that the first review of
+  RFC 0031 made (#379; EXPERIMENTAL, base profile only). An annotation string
+  now also refuses every bidirectional format character (U+061C, U+200E, U+200F and U+2066–U+2069,
+  beside the embeddings and overrides), the invisible and default-ignorable characters the draft
+  lists (the tag characters among them), and white space at its start or end, so a staged pack
+  the previous bundle admitted with one of them is refused (`JPS-STRUCTURE-NOT`). A filter
+  criterion that holds one is refused the same way (`JPS-INVOCATION-FILTER` in the CLI), and the
+  refusal names the code point by its `U+` number. The staged run has 208 document cases, of
+  which the 18 written for the `extended` profile are refused as unsupported and skipped, and 82
+  evaluation rows, with the row `annotations-supported-extension-set` still held. `0.2.0-draft`
+  and `0.3.0` behaviour and outputs are unchanged, with one exception: a `--filter` criterion is
+  checked before the pack's selector, so a criterion the revised rules refuse is now refused as a
+  criterion on a pack under any selector, where it was refused before for the selector.
+- The draft's display rule for annotations is met on every surface that lists annotation keys or
+  values or states a filter, and recorded in ADR-0076 (#379; EXPERIMENTAL). The Markdown of the
+  view and the filtered view already wrote such text in ASCII beside it and is unchanged; the JSON
+  carries the exact code points, as data; the filter's refusals already name a key in ASCII and a
+  character by its `U+` number. The staged validator's message for a refused annotation key
+  (`JPS-STRUCTURE-LOCAL-ID`) now quotes the key in ASCII, so a look-alike letter in it, such as a
+  Cyrillic `a`, reads as `\u0430`. No byte of a view or a filtered view changes, so `viewVersion`
+  and `filteredViewVersion` stay `"1"`.
+
+Runtime's conformance claim is stated, in full and only, in
+[CONFORMANCE.md](CONFORMANCE.md).
+
 ## 0.43.0 - 2026-11-12
 
 - The staged draft selector `0.4.0-draft` is admitted EXPERIMENTALLY, with the `base` profile

@@ -26,6 +26,11 @@ var stagedStrictFindings = map[string]string{
 	// recommended overlap check reports as an exact overlap (advice, outside
 	// conformance), as it does for one released 0.3.0 case.
 	"valid-annotations-one-element-list": "JPS-RULES-OVERLAP /rules/0/when",
+	// The condition carries value and valueSet with operator equals, so the
+	// reference rule fails at the condition and again at its operator, inside
+	// the condition's oneOf; the case's own focus says a validator may report
+	// the second, but its manifest entry names only the first.
+	"structural-value-set-reference-and-value-operator-equals": "JPS-STRUCTURE-VALUE-SET-REFERENCE /rules/0/when/operator",
 }
 
 func stagedManifest(t *testing.T) Manifest {
