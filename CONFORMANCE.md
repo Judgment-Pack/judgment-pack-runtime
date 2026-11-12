@@ -222,6 +222,10 @@ The implementation bundles the published Spec tag `v0.5.0`, commit
 (420 files). The implemented Core `0.5.0` reader/evaluator supports only `base`; the optional
 `extended` profile is refused as `profile-unsupported` before schema interpretation. A `0.5.0` pack
 is evaluated, and checked by every surface but the pack view, as its evaluation form (§8.5). The
+document limits of §10 are measured on the pack as presented, which holds each value set once; the
+evaluation form is not measured again, and it shares the sets' values rather than copying them.
+Evaluation work is charged on the evaluation form, so a set is charged at each reference to it, as
+an inline operand is. The
 staged selector `0.4.0-draft` that runtime 0.43.0 admitted is retired: the specification released
 its text as `0.5.0`, and a pack declaring `0.4.0-draft` or `0.4.0` is refused as an unsupported
 version. See [ADR-0077](docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md).
