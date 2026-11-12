@@ -55,12 +55,18 @@ All notable changes to tagged releases are documented here.
   already brings in; `go.mod` now lists that module as a direct requirement, and no module is added.
   The JSON is unchanged, and `viewVersion` and `filteredViewVersion` stay `"1"`: only a `0.5.0` pack
   carries annotations, and no earlier release described one.
-- `0.1.0-draft`, `0.2.0-draft` and `0.3.0` behaviour and outputs are unchanged, with two exceptions
-  in `packs describe --filter`. A criterion is checked before the pack's selector, so a criterion
-  the display rules refuse is refused as a criterion on a pack under any selector, where 0.43.0
-  refused it for the selector. The selector refusal (`ErrFilterSelector`) now says that only Core
-  `0.5.0` defines annotations, where it named the staged selector. `packs describe --help` and the
-  MCP tool descriptions name `0.5.0` in place of the staged selector.
+- `0.1.0-draft`, `0.2.0-draft` and `0.3.0` behaviour and outputs are unchanged, with three
+  exceptions. Two are in `packs describe --filter`. A criterion is checked before the pack's
+  selector, so a criterion the display rules refuse is refused as a criterion on a pack under any
+  selector, where 0.43.0 refused it for the selector. The selector refusal (`ErrFilterSelector`)
+  now says that only Core `0.5.0` defines annotations, where it named the staged selector. The
+  third is the `label` of an `experimental evaluate-corpus` run, and the first line of its human
+  report: under any `specVersion` but `0.2.0-draft`, the version the claim in CONFORMANCE.md
+  attaches to, it reads "corpus results under a specVersion outside the version scope of the
+  claim in CONFORMANCE.md", where every run was labeled "corpus results, the required evidence for
+  the claim in CONFORMANCE.md". A `0.3.0` or `0.5.0` run's results are not evidence for that
+  claim. `packs describe --help` and the MCP tool descriptions name `0.5.0` in place of the staged
+  selector.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).

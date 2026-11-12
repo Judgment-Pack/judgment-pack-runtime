@@ -959,13 +959,29 @@ type ReviewedSet struct {
 	ConfigDigest string `json:"configDigest"`
 }
 
-// EvaluationCorpusLabel labels every evaluation-corpus run this runtime reports.
-// A run is results, and the claim those results are evidence for is one document
-// with one scope: §3.4.1 makes corpus results required evidence for the claim and
-// not exhaustive evidence of it, so a passing run neither is the claim nor
+// EvaluationCorpusLabel labels an evaluation-corpus run under the specVersion
+// of the claim in CONFORMANCE.md, EvaluatorSpecVersion. A run is results, and
+// the claim those results are evidence for is one document with one scope:
+// §3.4.1 makes corpus results required evidence for the claim and not
+// exhaustive evidence of it, so a passing run neither is the claim nor
 // exhausts it. The label points at the claim rather than denying one, which is
 // what it did before ADR-0011.
 const EvaluationCorpusLabel = "corpus results, the required evidence for the claim in CONFORMANCE.md"
+
+// EvaluationCorpusOutsideScopeLabel labels a run under any other specVersion.
+// A claim attaches to one exact version and is not inherited (§3.4.1, §11), so
+// the results of such a run are not evidence for the recorded claim; the label
+// says that the run's version is outside the claim's version scope and where
+// that scope is stated, and points at the claim rather than denying one.
+const EvaluationCorpusOutsideScopeLabel = "corpus results under a specVersion outside the version scope of the claim in CONFORMANCE.md"
+
+// EvaluationCorpusLabelFor is the label of a run under specVersion.
+func EvaluationCorpusLabelFor(specVersion string) string {
+	if specVersion == EvaluatorSpecVersion {
+		return EvaluationCorpusLabel
+	}
+	return EvaluationCorpusOutsideScopeLabel
+}
 
 // EvaluationCorpusCase is one evaluation-corpus row's result. Expected and
 // actual are the RFC 8785 canonical dispositions compared byte for byte — both

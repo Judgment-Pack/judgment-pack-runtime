@@ -33,3 +33,18 @@ func TestHumanSummaryLineNamesTheSuite(t *testing.T) {
 		})
 	}
 }
+
+// The human corpus report of a run under 0.3.0 or 0.5.0 opens by saying that
+// the run's specVersion is outside the version scope of the claim in
+// CONFORMANCE.md, and does not call its results evidence for that claim.
+func TestHumanCorpusReportOutsideTheClaimsVersionScope(t *testing.T) {
+	for _, version := range []string{"0.3.0", "0.5.0"} {
+		code, stdout, stderr := runTest(t, []string{"experimental", "evaluate-corpus", "--spec-version", version}, "")
+		if code != result.ExitSuccess || stderr != "" {
+			t.Fatalf("%s: exit=%d stderr=%q", version, code, stderr)
+		}
+		if !strings.HasPrefix(stdout, "EXPERIMENTAL SURFACE evaluation corpus: corpus results under a specVersion outside the version scope of the claim in CONFORMANCE.md\n") || strings.Contains(stdout, "required evidence") {
+			t.Fatalf("%s:\n%s", version, stdout)
+		}
+	}
+}
