@@ -3,6 +3,8 @@ package view_test
 import (
 	"encoding/json"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -297,6 +299,37 @@ func TestTheMarkdownShowsEveryLeafInItsSection(t *testing.T) {
 				if !ok || !strings.Contains(section, label) {
 					t.Errorf("%s: %s is present and its label %q is not shown where it belongs", input.name, key, label)
 				}
+			}
+		}
+	}
+}
+
+// The Markdown of a fixture, written by hand from the documented layout and
+// the fixture itself, not recorded from a run: the expectation of record for
+// one pack that holds every member of its specification version.
+func TestHandWrittenMarkdown(t *testing.T) {
+	for _, name := range []string{"0.3.0/every-member"} {
+		want, err := os.ReadFile(filepath.Join("testdata", "expected", filepath.FromSlash(name)+".md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pack, err := os.ReadFile(filepath.Join("testdata", "packs", filepath.FromSlash(name)+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, view := mustView(t, pack)
+		got := strings.Split(string(view.Markdown()), "\n")
+		lines := strings.Split(string(want), "\n")
+		for index := range max(len(got), len(lines)) {
+			var have, expected string
+			if index < len(got) {
+				have = got[index]
+			}
+			if index < len(lines) {
+				expected = lines[index]
+			}
+			if have != expected {
+				t.Fatalf("%s line %d:\n got %q\nwant %q", name, index+1, have, expected)
 			}
 		}
 	}
