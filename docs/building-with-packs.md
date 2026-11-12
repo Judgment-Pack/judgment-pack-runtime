@@ -610,6 +610,16 @@ space, a repeated criterion — is refused, and so is a pack under any other `sp
 than shown with nothing matched, because it cannot carry annotations; the CLI reports both as
 `JPS-INVOCATION-FILTER` and describes nothing.
 
+**Annotation text can be read back (EXPERIMENTAL).** The draft requires that wherever a consumer
+lists annotation keys or values, or states a filter, every character outside printable ASCII can be
+recovered from what it shows ([ADR-0076](adr/0076-show-annotation-text-recoverably-on-every-surface.md)).
+In the Markdown, annotation text and each criterion of a filter are written in ASCII beside, as
+above, so a criterion reads as the annotation it was picked from. A refused criterion's message
+names a refused character by its `U+` number and quotes a refused key in ASCII, and so does the
+validator's message for a refused annotation key. The canonical JSON writes each key and string as
+its exact code points, as data: a tool that displays annotations from it is bound by the draft's
+display rules itself.
+
 The view is held by hand. The Markdown and canonical JSON under `sdk/view/testdata/expected`, for
 one every-member pack of each admitted specification version, for the adversarial-strings fixture
 and for the staged example, are written from the format above and the fixture, never recorded from

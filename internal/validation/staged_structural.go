@@ -3,6 +3,7 @@ package validation
 import (
 	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
@@ -87,7 +88,9 @@ func annotationKeyDiagnostics(validationError *jsonschema.ValidationError, key [
 	for _, cause := range validationError.Causes {
 		switch typed := cause.ErrorKind.(type) {
 		case *kind.Pattern, *kind.Not:
-			add("JPS-STRUCTURE-LOCAL-ID", key, fmt.Sprintf("Annotation key %q has an invalid shape; use lowercase words joined by single hyphens, for example %q.", name, "review-tier"))
+			// The key is quoted in ASCII, so a look-alike or an invisible
+			// character in it can be told apart in the message (D2).
+			add("JPS-STRUCTURE-LOCAL-ID", key, fmt.Sprintf("Annotation key %s has an invalid shape; use lowercase words joined by single hyphens, for example %q.", strconv.QuoteToASCII(name), "review-tier"))
 		case *kind.MaxLength:
 			add("JPS-STRUCTURE-MAX-LENGTH", key, fmt.Sprintf("Annotation key has %d characters; at most %d are allowed by the selected profile.", typed.Got, typed.Want))
 		default:

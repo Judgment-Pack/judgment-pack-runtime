@@ -16,6 +16,14 @@ All notable changes to tagged releases are documented here.
   which the 18 written for the `extended` profile are refused as unsupported and skipped, and 82
   evaluation rows, with the row `annotations-supported-extension-set` still held. `0.2.0-draft`
   and `0.3.0` behaviour and outputs are unchanged.
+- The draft's display rule for annotations is met on every surface that lists annotation keys or
+  values or states a filter, and recorded in ADR-0076 (#379; EXPERIMENTAL). The Markdown of the
+  view and the filtered view already wrote such text in ASCII beside it and is unchanged; the JSON
+  carries the exact code points, as data; the filter's refusals already name a key in ASCII and a
+  character by its `U+` number. The staged validator's message for a refused annotation key
+  (`JPS-STRUCTURE-LOCAL-ID`) now quotes the key in ASCII, so a look-alike letter in it, such as a
+  Cyrillic `a`, reads as `\u0430`. No byte of a view or a filtered view changes, so `viewVersion`
+  and `filteredViewVersion` stay `"1"`.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
