@@ -6,7 +6,7 @@ All notable changes to tagged releases are documented here.
 
 - The staged draft selector `0.4.0-draft` is re-vendored from specification commit
   `c867b35f5bc06b3c00bad7bfc5c9426a70fa12b4`, the revision of the draft that the first review of
-  RFC 0031 made (#379; EXPERIMENTAL, base profile only, no conformance claim). An annotation string
+  RFC 0031 made (#379; EXPERIMENTAL, base profile only). An annotation string
   now also refuses every bidirectional format character (U+061C, U+200E, U+200F and U+2066–U+2069,
   beside the embeddings and overrides), the invisible and default-ignorable characters the draft
   lists (the tag characters among them), and white space at its start or end, so a staged pack
@@ -16,6 +16,9 @@ All notable changes to tagged releases are documented here.
   which the 18 written for the `extended` profile are refused as unsupported and skipped, and 82
   evaluation rows, with the row `annotations-supported-extension-set` still held. `0.2.0-draft`
   and `0.3.0` behaviour and outputs are unchanged.
+
+Runtime's conformance claim is stated, in full and only, in
+[CONFORMANCE.md](CONFORMANCE.md).
 
 ## 0.43.0 - 2026-11-12
 
