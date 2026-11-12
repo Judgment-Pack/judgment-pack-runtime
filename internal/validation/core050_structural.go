@@ -22,8 +22,9 @@ import (
 // keyword and the instance location only, never on the schema's identifier.
 //
 // The engine reports a propertyNames failure at an unreliable instance location
-// (and its causes at none), so an annotation key is reported from the failure
-// at the annotations object that holds it: recurse handles every other cause.
+// (and its causes at none), so location is nil for one (reportedLocation) and an
+// annotation key is reported from the failure at the annotations object that
+// holds it: recurse handles every other cause.
 func collectCore050Structural(validationError *jsonschema.ValidationError, location []string, document any, diagnostics *diagnosticCollector, recurse func(*jsonschema.ValidationError)) bool {
 	add := func(code string, parts []string, message string) {
 		diagnostics.addError(code, "structural", carrier.Pointer(parts), message)

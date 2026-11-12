@@ -335,7 +335,7 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 		diagnostics.truncated = true
 		return
 	}
-	location := append([]string(nil), validationError.InstanceLocation...)
+	location := reportedLocation(validationError)
 	add := func(code string, parts []string, message string) bool {
 		return diagnostics.addError(code, "structural", carrier.Pointer(parts), message)
 	}
@@ -465,6 +465,23 @@ func collectStructural(validationError *jsonschema.ValidationError, diagnostics 
 	for _, cause := range validationError.Causes {
 		collectStructural(cause, diagnostics, rules)
 	}
+}
+
+// reportedLocation returns a copy of the instance location the engine reports
+// for one failure, or nil when the engine gives none that can be read. For a
+// propertyNames or a contentSchema failure the engine stores its live path
+// buffer instead of a copy, and a member visited after the failure, in map
+// order, overwrites that buffer: the location such a failure carries can name
+// another member of the document, differently on each run. It is never read.
+// The causes of a propertyNames failure carry locations of their own (the name
+// as a standalone value), and the Core-aware name checks report each refused
+// extension name at the name itself.
+func reportedLocation(validationError *jsonschema.ValidationError) []string {
+	switch validationError.ErrorKind.(type) {
+	case *kind.PropertyNames, *kind.ContentSchema:
+		return nil
+	}
+	return append([]string(nil), validationError.InstanceLocation...)
 }
 
 func patternCode(pattern string) string {
