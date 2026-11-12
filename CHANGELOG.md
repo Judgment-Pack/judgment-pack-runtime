@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.42.0 - 2026-11-12
 
 - [docs/mcp-clients.md](docs/mcp-clients.md) says that the audit history listing's selection
   is not the read verification makes of a line: a line with a duplicate or case-variant member
@@ -19,6 +19,8 @@ All notable changes to tagged releases are documented here.
   pack or standard input, reads no project configuration and evaluates nothing; a pack the loader
   refuses is reported with the loader's code. docs/building-with-packs.md "Review" states the
   format, the escaping and what escaping does not stop.
+- See the [release notes](docs/releases/v0.42.0.md) for what a host upgrading from `v0.41.0`
+  needs to know.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
