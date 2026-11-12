@@ -27,8 +27,11 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 			"document, every member carried and nothing inferred, summarised or evaluated. An absent member is left " +
 			"out and a present empty one is shown empty, rules keep the order the document gives them, and numbers " +
 			"and decimal strings are shown exactly as written. --format markdown, the default, writes the Markdown " +
-			"rendering a reviewer reads, in which every string taken from the pack is escaped so that it cannot add " +
-			"a heading, a table cell, a link, raw HTML or a control character. --format json writes the standard " +
+			"rendering a reviewer reads, in which every string taken from the pack is escaped so that no Markdown " +
+			"syntax in it can add a heading, a table cell, a link, raw HTML or a control character. Escaping does " +
+			"not stop a GitHub-flavoured renderer from linking an email address, or a forge from linking mentions, " +
+			"issue references and commit ids: to post the Markdown on a forge, attach it as a file or put it inside " +
+			"a fenced code block whose fence is longer than any run of backticks in it. --format json writes the standard " +
 			"envelope, whose view member is a string holding the exact bytes of the view's canonical JSON; decode " +
 			"that string, for example with jq -j .view, to get them. The same pack bytes give the same view bytes. " +
 			"The view carries the pack's id, version, specVersion, its profile when it states one, and the sha256 " +

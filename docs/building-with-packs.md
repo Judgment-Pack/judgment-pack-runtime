@@ -517,9 +517,9 @@ true`, `all of:`, `any of:`, `not:`, `fact <path> <operator> <value>` with the p
 canonical JSON, or `evidence present <id>` — with its operands nested two spaces deeper. An
 extensions member is listed by name, each value as canonical JSON.
 
-Every string taken from the pack is escaped by one rule, so that no pack text can add a heading, a
-list item, a table cell, a link, an image, emphasis, a code span, raw HTML or an entity to the
-rendered document:
+Every string taken from the pack is escaped by one rule, so that no Markdown syntax in pack text
+can add a heading, a list item, a table cell, a link, an image, emphasis, a code span, raw HTML or
+an entity to the rendered document:
 
 - every ASCII punctuation character is written with a backslash before it, which CommonMark
   renders as the character itself;
@@ -548,9 +548,16 @@ characters as themselves, as RFC 8785 does; a tool that compares matched strings
 the JSON, not the Markdown.
 
 No line of the rendering begins with pack text: each follows a heading marker, a list marker and
-label, or a table pipe. The escaping makes the source harder to read than the rendering. It does
-not stop a host that posts the Markdown, such as a code-review comment, from linking `@` mentions,
-`#` references or bare URLs it finds in rendered text.
+label, or a table pipe. The escaping makes the source harder to read than the rendering.
+
+Escaping does not stop every link. A GitHub-flavoured renderer links an email address it finds in
+text even when every punctuation character of it is escaped, so a pack string `ops@example.com`,
+written `ops\@example\.com`, can still render as a `mailto:` link. A forge that shows the Markdown,
+in a pull request or a code-review comment, also links `@` mentions, `#` and cross-repository
+references and commit ids it finds in the rendered text, and a mention notifies its owner. A caller
+that posts the view on a forge should attach the Markdown as a file, or put it inside a fenced code
+block whose fence is longer than any run of backticks in the Markdown; inside it nothing is
+rendered or linked.
 
 The view's goldens are under `sdk/view/testdata/golden`, one JSON and one Markdown file per
 bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits. They

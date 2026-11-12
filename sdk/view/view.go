@@ -94,7 +94,8 @@ func (v PackView) JSON() []byte {
 // Markdown returns the view rendered as a plain Markdown document, ending in
 // one newline. The layout is the one docs/building-with-packs.md describes
 // for this view version, and every string taken from the pack is escaped so
-// that it cannot add structure to the rendered document. The caller owns the
+// that no Markdown syntax in it can add structure to the rendered document;
+// the document says what a renderer or forge may still link. The caller owns the
 // returned slice. Experimental.
 func (v PackView) Markdown() []byte {
 	return bytes.Clone(v.markdown)

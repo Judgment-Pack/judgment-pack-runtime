@@ -24,8 +24,8 @@ Material-decision impact: public-surface.
   and numbers and decimal strings stay exactly as written.
 - Deterministic: the same pack bytes give the same view bytes, in each encoding, so a reader can
   compare them.
-- Safe to render: no pack string can add structure to the Markdown a reviewer reads, and the rule
-  that ensures it is stated once and tested class by class.
+- Safe to render: no Markdown syntax in a pack string can add structure to the Markdown a reviewer
+  reads, and the rule that ensures it is stated once and tested class by class.
 - One reader: the CLI writes the SDK's bytes, so a Go program and a shell see the same view.
 - No new surface reaching the evaluator, no new dependency, and nothing outside the package's
   existing import closure.
@@ -120,8 +120,11 @@ Annotations and value sets wait for the specification's decision on them (spec #
   tested, and a host can compare two views' bytes.
 - Good, because the schema-derived completeness test makes a member a later schema adds fail until
   a fixture holds it and the view carries it.
-- Bad, because the Markdown source is hard to read raw (`over\-limit`), and escaping does not stop a
-  host that posts it from linking `@` mentions, `#` references or bare URLs in rendered text.
+- Bad, because the Markdown source is hard to read raw (`over\-limit`), and escaping does not stop
+  every link: a GitHub-flavoured renderer still links an email address in pack text, and a forge
+  that shows the Markdown links mentions, references and commit ids in it. A caller posting the
+  view on a forge attaches it as a file or puts it in a fenced code block longer than any backtick
+  run in it.
 - Bad, because the canonical JSON writes bidirectional controls and line separators as themselves,
   as RFC 8785 does; a reader that shows the JSON raw needs the same care as with the pack itself.
 - Neutral, because the view's types live in their own package, `sdk/view`, so their generic names

@@ -31,7 +31,9 @@ import (
 //   - every ASCII punctuation character is written with a backslash before it,
 //     which CommonMark renders as the character itself, so no character of the
 //     string can open emphasis, a code span, a link, raw HTML, an entity, a
-//     table cell or any block;
+//     table cell or any block (a GitHub-flavoured renderer still links an
+//     email address, and a forge mentions and references; see
+//     docs/building-with-packs.md, "Review");
 //   - each run of characters internal/display replaces (controls, format
 //     characters including the bidi overrides and isolates, and line and
 //     paragraph separators) is written as a code span naming each code point,

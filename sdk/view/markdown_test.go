@@ -29,6 +29,8 @@ func TestEscapeMarkdownByClass(t *testing.T) {
 		{"link close and open", "](", `\]\(`},
 		{"emphasis and strike", "*a* _b_ ~c~", `\*a\* \_b\_ \~c\~`},
 		{"entity", "&amp;", `\&amp\;`},
+		{"an email address, which a GitHub-flavoured renderer may still link", "ops@example.com", `ops\@example\.com`},
+		{"a mention, a reference and a cross-repository reference", "@owner #12 org/repo#3", `\@owner \#12 org\/repo\#3`},
 		{"backslash", `a\b`, `a\\b`},
 		{"newline", "a\nb", "a`U+000A`b"},
 		{"carriage return and newline", "a\r\nb", "a`U+000D U+000A`b"},
