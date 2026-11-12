@@ -582,8 +582,10 @@ it. Text that holds a right-to-left letter, an Arabic letter or an Arabic digit 
 class R, AL or AN) is written only in ASCII, as `` (ASCII only `"\u05d0"`) ``, so it cannot reorder
 the text of its line ([ADR-0078](adr/0078-keep-annotation-text-from-reordering-its-line.md)).
 Other display data, such as a description, is not isolated this way. Under any other
-`specVersion` a `valueSets` member is not read and an `org.judgmentpack.annotations` member is an
-ordinary extension; describing these members left the view version at `1`.
+`specVersion` neither member is admitted: a root `valueSets` member is refused as a member the Core
+object does not name (`JPS-STRUCTURE-UNKNOWN-MEMBER`), and an `org.judgmentpack.annotations`
+extension is refused as a reserved extension name (`JPS-STRUCTURE-EXTENSION-NAME`), so such a pack
+is never described. Describing these members left the view version at `1`.
 
 **Filter by annotation (EXPERIMENTAL).** `--filter key=value`, which repeats, shows only the outcomes
 and rules whose annotations match every criterion; `sdk.Pack.FilteredView` returns the same

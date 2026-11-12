@@ -61,7 +61,7 @@ a `stage` is refused at load, and runtime discovery carries no `stage`.
 
 Document support and evaluator support are reported separately. The additive
 `evaluatorCapabilities` entries name exact Core contracts; `supportedProfiles` on
-the `0.3.0` and `0.5.0` entries list only `base` and makes no profile promise for other formats.
+the `0.3.0` and `0.5.0` entries list only `base` and make no profile promise for other formats.
 Legacy authoring defaults remain `0.2.0-draft`; explicit standalone `spec_version`
 selects the new contract, while pack-aware operations use the exact associated pack.
 Matrix carrier versions `1`–`3` are unchanged: the explicit contract selects the
