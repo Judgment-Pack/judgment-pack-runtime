@@ -17,7 +17,7 @@ import (
 // requirements, sources, metadata, extensions. A section the document has no
 // member for is left out; a member that is present and empty says *empty*.
 //
-// The staged draft selector's members (EXPERIMENTAL) take the same rules: a
+// Core 0.5.0's members take the same rules: a
 // value set is a subsection of "Value sets" with its entries in document
 // order; a condition that references a set names it ("value set <id>") and is
 // never expanded; and an annotations member is written in its place among

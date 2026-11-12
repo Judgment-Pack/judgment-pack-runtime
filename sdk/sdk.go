@@ -459,13 +459,8 @@ type Evaluator struct {
 	// Profiles are the Core profiles supported under it, if it defines any.
 	Profiles []string
 	// CorpusSuiteVersion is the suiteVersion of the evaluation corpus bundled
-	// for SpecVersion, as "jpack experimental evaluate-corpus" reports it. It
-	// is empty for a staged selector, which bundles staged rows and no corpus.
+	// for SpecVersion, as "jpack experimental evaluate-corpus" reports it.
 	CorpusSuiteVersion string
-	// Stage is "staged-unreleased" for the staged draft selector, admitted
-	// EXPERIMENTALLY from an unreleased specification commit with no claim;
-	// it is empty for every other contract.
-	Stage string
 }
 
 // Describe reports the bundled specification versions and evaluator
@@ -483,14 +478,6 @@ func Describe() (Description, error) {
 		ConformanceClaimReference: result.EvaluationClaimReference,
 	}
 	for _, capability := range runtime.EvaluatorCapabilities {
-		if capability.Stage != "" {
-			output.Evaluators = append(output.Evaluators, Evaluator{
-				SpecVersion: capability.SpecVersion,
-				Profiles:    slices.Clone(capability.SupportedProfiles),
-				Stage:       capability.Stage,
-			})
-			continue
-		}
 		suite, failure := evaluation.CorpusSuiteVersion(capability.SpecVersion)
 		if failure != nil {
 			// The bundle is fixed at build time, so a corpus it lacks is a fault.

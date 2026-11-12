@@ -21,13 +21,13 @@ import (
 const FilteredViewVersion = "1"
 
 // ErrFilterCriterion is wrapped by the error for a criterion no annotation
-// could match: a key or value the staged schema does not allow, a repeated
+// could match: a key or value the Core 0.5.0 schema does not allow, a repeated
 // criterion, or no criterion at all. Experimental.
 var ErrFilterCriterion = errors.New("view: invalid filter criterion")
 
 // ErrFilterSelector is wrapped by the error for a filter on a pack whose
-// specVersion defines no annotations: only the staged draft selector
-// 0.4.0-draft does. Such a pack is refused rather than shown with no match,
+// specVersion defines no annotations: only Core 0.5.0 does. Such a pack is
+// refused rather than shown with no match,
 // because a pack that cannot carry annotations has nothing to match, and an
 // org.judgmentpack.annotations member under another selector is an ordinary
 // extension, not annotations. Experimental.
@@ -57,7 +57,7 @@ func ParseCriterion(text string) (Criterion, error) {
 	return criterion, nil
 }
 
-// annotationKey is the staged schema's pattern for an annotation key
+// annotationKey is the Core 0.5.0 schema's pattern for an annotation key
 // ($defs/annotations, propertyNames), which also allows at most 64
 // characters; a test holds the two equal on the cases it names.
 var annotationKey = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
@@ -74,11 +74,11 @@ func (ranges codePoints) holds(character rune) bool {
 	return false
 }
 
-// annotationRefused is the staged draft's refused class for an annotation
-// string (§9.2; the staged schema's $defs/annotationString, not): the
+// annotationRefused is Core 0.5.0's refused class for an annotation string
+// (§9.2; the schema's $defs/annotationString, not): the
 // controls, the line and paragraph separators, every bidirectional format
 // character and every other invisible, default-ignorable character, none of
-// which an annotation string may hold anywhere. The draft makes the list, not
+// which an annotation string may hold anywhere. Core makes the list, not
 // a Unicode property, the rule, so it is written out here and does not follow
 // the Go toolchain's Unicode tables.
 var annotationRefused = codePoints{
@@ -88,7 +88,7 @@ var annotationRefused = codePoints{
 	{0xfff0, 0xfff8}, {0x1bca0, 0x1bca3}, {0x1d173, 0x1d17a}, {0xe0000, 0xe0fff},
 }
 
-// annotationWhiteSpace is the staged draft's list of white-space characters
+// annotationWhiteSpace is Core 0.5.0's list of white-space characters
 // (§9.2, the Unicode White_Space property written out), which an annotation
 // string may not begin or end with; those the refused class does not hold
 // are admitted between two other characters.
@@ -97,7 +97,7 @@ var annotationWhiteSpace = codePoints{
 	{0x2000, 0x200a}, {0x2028, 0x2029}, {0x202f, 0x202f}, {0x205f, 0x205f}, {0x3000, 0x3000},
 }
 
-// check refuses a criterion whose key or value no annotation the staged
+// check refuses a criterion whose key or value no annotation the Core 0.5.0
 // schema admits could hold, so a criterion that could never match is an
 // error and never an empty filtered view. Each message names a refused code
 // point by its U+ number, never as itself.
@@ -228,8 +228,8 @@ func filter(view PackView, criteria []Criterion) (FilteredView, error) {
 			return FilteredView{}, fmt.Errorf("%w: %s=%s is given twice", ErrFilterCriterion, ordered[index].Key, strconv.QuoteToASCII(ordered[index].Value))
 		}
 	}
-	if !result.IsStagedDraft(view.Identity.SpecVersion) {
-		return FilteredView{}, fmt.Errorf("%w: it is %s, and only the staged draft selector %s (EXPERIMENTAL) defines annotations", ErrFilterSelector, strconv.QuoteToASCII(view.Identity.SpecVersion), result.StagedDraftSpecVersion)
+	if !result.HasCore050Rules(view.Identity.SpecVersion) {
+		return FilteredView{}, fmt.Errorf("%w: it is %s, and only Core %s defines annotations", ErrFilterSelector, strconv.QuoteToASCII(view.Identity.SpecVersion), result.Core050SpecVersion)
 	}
 	matchesAll := func(annotations []Annotation) bool {
 		for _, criterion := range ordered {

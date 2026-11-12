@@ -77,7 +77,7 @@ var markdownLabels = map[string]string{
 	"source.extensions": "- Extensions:", "source.id": "### Source 1: ", "source.locator": "- Locator:",
 	"source.locator.kind": "  - Kind: ", "source.locator.value": "  - Value: ", "source.publishedAt": "- Published at: ",
 	"source.publisher": "- Publisher: ", "source.rights": "- Rights: ", "source.title": "- Title: ",
-	// The staged draft selector's members (EXPERIMENTAL).
+	// The members Core 0.5.0 adds.
 	"pack.valueSets": "## Value sets", "valueSet.id": "### Value set 1: ", "valueSet.description": "- Description: ",
 	"valueSet.entries": "- Entries:", "valueSetEntry.value": "  - Entry 1: ", "valueSetEntry.description": "    - Description: ",
 	"valueSetEntry.extensions": "    - Extensions:", "condition{fact}.valueSet": " value set ",
@@ -321,13 +321,13 @@ func TestTheMarkdownShowsEveryLeafInItsSection(t *testing.T) {
 // written by hand under testdata/expected, from the documented layout and
 // the fixture itself, never recorded from a run: one pack holding every
 // member of each admitted specification version, the adversarial strings,
-// and the staged example of the staged draft selector, read from the bundle.
+// and the annotated example of Core 0.5.0, read from the bundle.
 // Only each digest is computed, with sha256sum over the fixture.
-var handWritten = []string{"0.2.0-draft/every-member", "0.3.0/every-member", "0.3.0/adversarial-strings", "0.4.0-draft/every-member", "0.4.0-draft/example/expense-approval-annotated"}
+var handWritten = []string{"0.2.0-draft/every-member", "0.3.0/every-member", "0.3.0/adversarial-strings", "0.5.0/every-member", "0.5.0/example/expense-approval-annotated"}
 
 // handWrittenPack reads a hand-written expectation's pack: a fixture under
-// testdata/packs, or, for a name under <version>/example/, the staged example
-// the bundle of that version carries.
+// testdata/packs, or, for a name under <version>/example/, the example the
+// bundle of that version carries.
 func handWrittenPack(t *testing.T, name string) []byte {
 	t.Helper()
 	if version, example, ok := strings.Cut(name, "/example/"); ok {
@@ -335,7 +335,7 @@ func handWrittenPack(t *testing.T, name string) []byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := set.StagedExample(example + ".json")
+		data, _, err := set.Example(example)
 		if err != nil {
 			t.Fatal(err)
 		}

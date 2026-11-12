@@ -1,0 +1,158 @@
+{
+  "profile": "base",
+  "specVersion": "0.5.0",
+  "id": "https://example.invalid/judgment-packs/view-every-member",
+  "version": "2.0.0",
+  "title": "Every member of a Core 0.5.0 pack",
+  "description": "Invented content for the pack view tests; it authorizes nothing.",
+  "decision": {
+    "intent": "Carry every member the schema allows at least once.",
+    "question": "Does the view carry every member?",
+    "extensions": { "com.example.decision-note": { "b": 2, "a": [1, "1", true, null] } }
+  },
+  "applicability": {
+    "op": "any",
+    "conditions": [
+      { "op": "fact", "path": "/request/kind", "operator": "equals", "value": "purchase" },
+      { "op": "fact", "path": "/request/kind", "operator": "equals", "value": "lease" }
+    ]
+  },
+  "evidenceRequirements": [
+    {
+      "id": "receipt",
+      "description": "A receipt for the purchase.",
+      "required": true,
+      "kind": "document",
+      "extensions": { "com.example.retention": "seven-years" }
+    },
+    { "id": "site-visit", "description": "A site visit record.", "required": false, "kind": "attestation" }
+  ],
+  "sources": [
+    {
+      "id": "policy",
+      "title": "Purchasing policy",
+      "publisher": "Finance",
+      "publishedAt": "2026-01-15",
+      "locator": { "kind": "repository", "value": "policies/purchasing" },
+      "citation": { "location": "Section 4.2", "excerpt": "Purchases over the limit need approval." },
+      "rights": "Internal use only.",
+      "extensions": { "com.example.source-owner": "finance" }
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "approve",
+      "label": "Approve",
+      "description": "The purchase may proceed.",
+      "extensions": {
+        "com.example.colour": "green",
+        "org.judgmentpack.annotations": { "tier": "green" }
+      }
+    },
+    { "id": "refer", "label": "Refer", "extensions": { "org.judgmentpack.annotations": { "tier": "amber" } } },
+    { "id": "decline", "label": "Decline" }
+  ],
+  "rules": [
+    {
+      "id": "over-limit",
+      "description": "An amount over the limit with a receipt is referred.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          { "op": "fact", "path": "/request/amount", "operator": "greater-than-or-equal", "value": "1000.00" },
+          { "op": "evidence-present", "evidenceRequirement": "receipt" },
+          { "op": "not", "condition": { "op": "literal", "value": false } }
+        ]
+      },
+      "outcome": "refer",
+      "onUnknown": "escalate",
+      "evidenceRequirementRefs": ["receipt", "site-visit"],
+      "sourceRefs": ["policy"],
+      "rationale": "Section 4.2 sets the limit.",
+      "extensions": {
+        "com.example.rule-owner": { "team": "finance", "since": 2024 },
+        "org.judgmentpack.annotations": { "category": ["limits", "approval"], "review-cycle": "monthly" }
+      }
+    },
+    {
+      "id": "small",
+      "description": "A small purchase is approved.",
+      "when": { "op": "fact", "path": "/request/category", "operator": "in", "valueSet": "small-categories" },
+      "outcome": "approve",
+      "onUnknown": "ignore"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "auditor-hold",
+      "description": "An auditor hold declines.",
+      "when": { "op": "fact", "path": "/request/hold", "operator": "not-equals", "value": false },
+      "effect": "force-outcome",
+      "outcome": "decline",
+      "onUnknown": "escalate",
+      "sourceRefs": ["policy"],
+      "extensions": { "com.example.exception-note": "audit" }
+    },
+    {
+      "id": "trusted-vendor",
+      "description": "A trusted vendor skips the limit rule.",
+      "when": { "op": "fact", "path": "/vendor/trusted", "operator": "equals", "value": true },
+      "effect": "suppress-rule",
+      "targetRule": "over-limit",
+      "onUnknown": "ignore"
+    },
+    {
+      "id": "new-vendor",
+      "description": "A new vendor escalates.",
+      "when": { "op": "fact", "path": "/vendor/tier", "operator": "in", "value": ["new", 0, false, null] },
+      "effect": "escalate",
+      "onUnknown": "ignore"
+    }
+  ],
+  "valueSets": [
+    {
+      "id": "small-categories",
+      "description": "Categories a small purchase may be in.",
+      "entries": [
+        {
+          "value": "stationery",
+          "description": "Paper and pens.",
+          "extensions": { "org.judgmentpack.annotations": { "code": "S1", "owners": ["office"] } }
+        },
+        { "value": "caf\u00e9", "extensions": { "org.judgmentpack.annotations": { "label": "Caf\u00e9 \ufff9menu\ufffb" } } },
+        { "value": { "unit": 1.50 } }
+      ]
+    },
+    { "id": "unused", "entries": [{ "value": 0 }] }
+  ],
+  "fallbackOutcome": "decline",
+  "escalation": {
+    "triggers": ["unknown", "conflict", "no-match"],
+    "message": "Review the purchase by hand.",
+    "routes": [
+      { "target": { "kind": "queue", "name": "Purchasing queue" }, "triggers": ["unknown", "no-match"] },
+      { "target": { "kind": "system", "name": "Conflict resolver" } }
+    ],
+    "extensions": { "com.example.sla": { "hours": 24 } }
+  },
+  "metadata": {
+    "authors": ["Purchasing team", "Finance team"],
+    "createdAt": "2026-02-01T09:30:00Z",
+    "license": "CC-BY-4.0",
+    "requiredExtensions": ["com.example.rule-owner"],
+    "reviews": [
+      {
+        "reviewer": "Controller",
+        "reviewedAt": "2026-02-02T10:00:00Z",
+        "disposition": "approved",
+        "note": "Limits match the policy."
+      },
+      { "reviewer": "Auditor", "reviewedAt": "2026-02-03T11:00:00Z", "disposition": "rejected" }
+    ],
+    "extensions": { "com.example.metadata-note": "draft" }
+  },
+  "extensions": {
+    "com.example.top-level": { "z": 1, "y": [2, 3] },
+    "org.judgmentpack.annotations": { "domain": "purchasing", "tags": ["limits"] }
+  }
+}

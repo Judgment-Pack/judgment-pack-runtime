@@ -65,8 +65,7 @@ func (p *Pack) View() (view.PackView, error) {
 // encodings say so. It is taken from a view built afresh from the document
 // Load admitted, as View builds it, never from a PackView a caller holds.
 //
-// Annotations exist only under the staged draft selector 0.4.0-draft, which
-// may be renamed or changed by the specification. A criterion no annotation
+// Annotations exist only under Core 0.5.0. A criterion no annotation
 // could match is refused with an error wrapping view.ErrFilterCriterion, and
 // a pack under any other specVersion with one wrapping
 // view.ErrFilterSelector; neither is a *Refusal, because the pack was

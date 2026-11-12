@@ -97,13 +97,13 @@ func ruleOverlapDiagnosticsWithLimits(root map[string]any, limits carrier.Limits
 	return ruleOverlapAdvice(root, nil, limits)
 }
 
-// overlapValueSetReference is the reason a staged pack's overlap carries no
+// overlapValueSetReference is the reason a 0.5.0 pack's overlap carries no
 // rewrite: a rewrite built from the evaluation form inlines a set's values, so
 // applying it would silently drop the reference the author wrote.
 const overlapValueSetReference = "No exclusive rewrite is suggested because a condition names a value set."
 
-// ruleOverlapAdvice reads root's conditions. written is nil, or, under the
-// staged draft selector, the pack as written when root is its evaluation form:
+// ruleOverlapAdvice reads root's conditions. written is nil, or, under Core
+// 0.5.0, the pack as written when root is its evaluation form:
 // a pair where either rule's condition as written names a value set is then
 // advised on without a rewrite.
 func ruleOverlapAdvice(root, written map[string]any, limits carrier.Limits) ([]result.Diagnostic, bool) {

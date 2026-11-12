@@ -177,25 +177,26 @@ type ExpectedDiagnostic struct {
 }
 
 type Case struct {
-	AdvisoryStatus       string              `json:"advisoryStatus,omitempty"`
-	SkipReason           string              `json:"skipReason,omitempty"`
-	ID                   string              `json:"id"`
-	ExpectedStatus       string              `json:"expectedStatus"`
-	ActualStatus         string              `json:"actualStatus"`
-	Status               string              `json:"status"`
-	ExpectedDiagnostic   *ExpectedDiagnostic `json:"expectedDiagnostic"`
-	ActualDiagnostics    []Diagnostic        `json:"actualDiagnostics"`
-	DiagnosticsTruncated bool                `json:"diagnosticsTruncated"`
+	AdvisoryStatus     string              `json:"advisoryStatus,omitempty"`
+	SkipReason         string              `json:"skipReason,omitempty"`
+	ID                 string              `json:"id"`
+	ExpectedStatus     string              `json:"expectedStatus"`
+	ActualStatus       string              `json:"actualStatus"`
+	Status             string              `json:"status"`
+	ExpectedDiagnostic *ExpectedDiagnostic `json:"expectedDiagnostic"`
+	// ExpectedDiagnostics is every finding a case gives where its manifest
+	// entry lists more than one (0.5.0 onward), ExpectedDiagnostic first;
+	// omitted otherwise.
+	ExpectedDiagnostics  []ExpectedDiagnostic `json:"expectedDiagnostics,omitempty"`
+	ActualDiagnostics    []Diagnostic         `json:"actualDiagnostics"`
+	DiagnosticsTruncated bool                 `json:"diagnosticsTruncated"`
 	// StrayDiagnostics lists, under --strict only, the reported diagnostics the
 	// case's manifest entry does not expect.
 	StrayDiagnostics []Diagnostic `json:"strayDiagnostics,omitempty"`
 }
 
 type SuiteSummary struct {
-	Skipped int `json:"skipped,omitempty"`
-	// Held counts staged rows the released case schema cannot state, reported
-	// and never run (staged draft selector only; omitted otherwise).
-	Held       int `json:"held,omitempty"`
+	Skipped    int `json:"skipped,omitempty"`
 	Total      int `json:"total"`
 	Passed     int `json:"passed"`
 	Mismatched int `json:"mismatched"`
@@ -208,23 +209,20 @@ type AdvisorySummary struct {
 }
 
 type Suite struct {
-	Advisories    *AdvisorySummary `json:"advisories,omitempty"`
-	OutputVersion string           `json:"outputVersion"`
-	Tool          Tool             `json:"tool"`
-	Command       string           `json:"command"`
-	Status        string           `json:"status"`
-	SpecVersion   string           `json:"specVersion"`
-	SuiteVersion  string           `json:"suiteVersion"`
-	// SuiteStatus is "staged" for the staged draft selector's bundled cases,
-	// which are in no corpus and carry no suiteVersion; absent otherwise.
-	SuiteStatus           string       `json:"suiteStatus,omitempty"`
-	CorpusDigest          string       `json:"corpusDigest"`
-	CorpusDigestAlgorithm string       `json:"corpusDigestAlgorithm"`
-	Provenance            string       `json:"provenance"`
-	Summary               SuiteSummary `json:"summary"`
-	Cases                 []Case       `json:"cases"`
-	Diagnostics           []Diagnostic `json:"diagnostics"`
-	DiagnosticsTruncated  bool         `json:"diagnosticsTruncated"`
+	Advisories            *AdvisorySummary `json:"advisories,omitempty"`
+	OutputVersion         string           `json:"outputVersion"`
+	Tool                  Tool             `json:"tool"`
+	Command               string           `json:"command"`
+	Status                string           `json:"status"`
+	SpecVersion           string           `json:"specVersion"`
+	SuiteVersion          string           `json:"suiteVersion"`
+	CorpusDigest          string           `json:"corpusDigest"`
+	CorpusDigestAlgorithm string           `json:"corpusDigestAlgorithm"`
+	Provenance            string           `json:"provenance"`
+	Summary               SuiteSummary     `json:"summary"`
+	Cases                 []Case           `json:"cases"`
+	Diagnostics           []Diagnostic     `json:"diagnostics"`
+	DiagnosticsTruncated  bool             `json:"diagnosticsTruncated"`
 }
 
 type Schema struct {
@@ -243,10 +241,6 @@ type Schema struct {
 type EvaluatorCapability struct {
 	SpecVersion       string   `json:"specVersion"`
 	SupportedProfiles []string `json:"supportedProfiles,omitempty"`
-	// Stage is "staged-unreleased" for the staged draft selector, admitted
-	// EXPERIMENTALLY from an unreleased specification commit; omitted for a
-	// released or published draft version.
-	Stage string `json:"stage,omitempty"`
 }
 
 type Version struct {

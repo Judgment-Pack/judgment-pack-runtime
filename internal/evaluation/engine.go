@@ -11,9 +11,8 @@
 // without compatibility promise, which is what "experimental" names here.
 //
 // Options selects an exact evaluator version: the default remains 0.2.0-draft;
-// Core 0.3.0 is explicit and supports only the base profile, and so does the
-// staged draft selector 0.4.0-draft (EXPERIMENTAL), whose evaluation form is a
-// Core 0.3.0 pack. A pack must declare
+// Core 0.3.0 is explicit and supports only the base profile, and so does Core
+// 0.5.0, whose evaluation form is a Core 0.3.0 pack. A pack must declare
 // the selected version before its §§7–8 semantics are applied. Every successful
 // payload names that applied version beside the pack's declared version.
 //
@@ -45,6 +44,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -399,7 +399,7 @@ const maxAdmissions = 64
 type packAdmission struct {
 	validated result.Validation
 	// document is the decoded admitted document P, and packRoot the root
-	// evaluation reads: P itself, or EF(P) for the staged draft selector.
+	// evaluation reads: P itself, or EF(P) under Core 0.5.0.
 	document    map[string]any
 	packRoot    map[string]any
 	unsupported *Failure
@@ -591,8 +591,8 @@ func (e *Engine) conformance(pack []byte, options Options) (result.Validation, m
 	return validated, packRoot, unsupportedRequiredExtension(validated), nil
 }
 
-// evaluationForm is the root every evaluation of an admitted pack reads. For
-// the staged draft selector it is the evaluation form EF(P) (RFC 0031):
+// evaluationForm is the root every evaluation of an admitted pack reads. Under
+// Core 0.5.0 it is the evaluation form EF(P) (Core §8.5):
 // annotations and the value sets removed, and each value-set reference
 // expanded in place, computed once, at admission. Every row of the admission
 // reads that form, so the trace of an expanded condition is its inline twin's.
@@ -600,7 +600,7 @@ func (e *Engine) conformance(pack []byte, options Options) (result.Validation, m
 // is taken over the admitted copy of those bytes, and EF keeps id and version
 // as they are. Every other version is evaluated as the document it is.
 func evaluationForm(validated result.Validation, document map[string]any) (map[string]any, *Failure) {
-	if !result.IsStagedDraft(validated.SpecVersion) {
+	if !result.HasCore050Rules(validated.SpecVersion) {
 		return document, nil
 	}
 	form, err := evalform.Of(document)
@@ -662,6 +662,17 @@ func packNotConformant(validated result.Validation) *Failure {
 func declaredSpecVersion(specVersion string) *Failure {
 	if specVersion == result.EvaluatorSpecVersion {
 		return nil
+	}
+	if note := result.RetiredSelectorNote(specVersion); note != "" {
+		// 0.4.0-draft and 0.4.0 are not versions to re-declare from: the one
+		// edit that moves such a pack is to 0.5.0, which this runtime reads.
+		return &Failure{
+			Class:    result.ClassPackNotConformant,
+			Phase:    result.PhasePreflight,
+			Code:     "JPS-EVALUATION-PACK-SPEC-VERSION",
+			Message:  fmt.Sprintf("The pack is not evaluated because it declares specVersion %s, which this runtime does not read. %s", strconv.QuoteToASCII(specVersion), note),
+			ExitCode: result.ExitInvalid,
+		}
 	}
 	return &Failure{
 		Class: result.ClassPackNotConformant,

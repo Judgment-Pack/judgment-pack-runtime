@@ -8,7 +8,7 @@ import (
 	pv "github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
 )
 
-// displayPack is a staged pack written by hand around two annotation strings:
+// displayPack is a Core 0.5.0 pack written by hand around two annotation strings:
 // rule a carries value, and rule b a list that holds twin.
 func displayPack(t *testing.T, value, twin string) string {
 	t.Helper()
@@ -20,7 +20,7 @@ func displayPack(t *testing.T, value, twin string) string {
 		return string(encoded)
 	}
 	return `{
-  "specVersion": "0.4.0-draft",
+  "specVersion": "0.5.0",
   "id": "https://example.com/packs/display",
   "version": "1.0.0",
   "title": "Display",
@@ -61,7 +61,7 @@ func recovered(t *testing.T, line string) string {
 	return value
 }
 
-// D2 (RFC 0031 section 8, the staged draft section 9.2): wherever annotation values are
+// D2 (RFC 0031 section 8, Core 0.5.0 section 9.2): wherever annotation values are
 // listed or a filter is stated, every character outside printable ASCII is
 // shown so that the reader can recover each code point. In the Markdown the
 // view's annotation line, the filtered view's statement of the filter and its

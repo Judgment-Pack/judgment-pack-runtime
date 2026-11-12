@@ -269,8 +269,8 @@ func checkAdoption(doc map[string]any, materials materialSet, engine *validation
 		}
 		return problem("JPS-POLICY-CONSUMER-STRUCTURE", "/consumer", "The exact retained consumer does not satisfy a bundled Core structural schema."), code
 	}
-	if result.IsStagedDraft(checked.SpecVersion) {
-		return problem(result.StagedDraftUnsupportedCode, "/consumer/specVersion", result.StagedDraftUnsupportedMessage("The policy check")), result.ExitUnsupported
+	if result.HasCore050Rules(checked.SpecVersion) {
+		return problem(result.SurfaceSpecVersionUnsupportedCode, "/consumer/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The policy check", checked.SpecVersion)), result.ExitUnsupported
 	}
 	rules, err := unique(array(consumer["rules"]), "/consumer/rules", "consumer rule")
 	if err != nil {

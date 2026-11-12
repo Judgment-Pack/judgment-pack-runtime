@@ -41,10 +41,11 @@ func selectNodeContract(data []byte, oversized []string) (result.EvaluatorContra
 		return result.EvaluatorContract{}, &evaluation.Failure{Class: result.ClassPackNotConformant, Phase: result.PhasePreflight, Code: "JPS-RESOURCE-INPUT-BYTE-LIMIT", Message: fmt.Sprintf("The pack input exceeds the hard %d-byte limit.", carrier.HardMaxBytes), ExitCode: result.ExitIO}
 	}
 	contract, failure := evaluation.SelectContract(data)
-	if failure == nil && contract.Staged() {
-		// Graphs do not read the staged draft selector (EXPERIMENTAL): a graph
-		// report is not designed over annotations or value sets.
-		return result.EvaluatorContract{}, evaluation.StagedDraftUnsupported("Graph evaluation")
+	if failure == nil && contract.Core050Rules() {
+		// Graphs do not read Core 0.5.0: the graph prototype (Draft RFC 0002)
+		// is written against Core 0.3.0, and a graph report is not designed
+		// over annotations or value sets.
+		return result.EvaluatorContract{}, evaluation.SurfaceSpecVersionUnsupported("Graph evaluation", contract.Version())
 	}
 	return contract, failure
 }

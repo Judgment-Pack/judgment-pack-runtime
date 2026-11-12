@@ -539,7 +539,7 @@ type stagedEvaluationRows struct {
 // one step; anything else at the destination is refused.
 func runStaged(source, destination, sourceRef, selector string, replace bool) error {
 	if !stagedSelectorPattern.MatchString(selector) {
-		return fmt.Errorf("--staged must name a draft selector such as 0.4.0-draft, not %q", selector)
+		return fmt.Errorf("--staged must name a draft selector such as 9.9.0-draft, not %q", selector)
 	}
 	if !fullCommitPattern.MatchString(sourceRef) {
 		return errors.New("--staged requires --source-ref to be the full commit digest the staged artifacts are taken from")

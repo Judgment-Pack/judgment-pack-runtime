@@ -35,18 +35,26 @@ var casePathPattern = regexp.MustCompile(`^(?:advisory|carrier|structural|semant
 type Manifest struct {
 	SuiteVersion string `json:"suiteVersion"`
 	SpecVersion  string `json:"specVersion"`
-	Cases        []struct {
-		ID                  string          `json:"id"`
-		Path                string          `json:"path"`
-		Layer               string          `json:"layer"`
-		ExpectedResult      string          `json:"expectedResult"`
-		SupportedExtensions []string        `json:"supportedExtensions"`
-		ExpectedAdvisories  json.RawMessage `json:"expectedAdvisories"`
-		ExpectedDiagnostic  *struct {
-			Code string `json:"code"`
-			Path string `json:"path"`
-		} `json:"expectedDiagnostic"`
+	// ReaderProfiles names the ceiling profiles the cases run under (Core
+	// 0.5.0 §4.1); a manifest of an earlier version has none.
+	ReaderProfiles []string `json:"readerProfiles"`
+	Cases          []struct {
+		ID                  string              `json:"id"`
+		Path                string              `json:"path"`
+		Layer               string              `json:"layer"`
+		ExpectedResult      string              `json:"expectedResult"`
+		SupportedExtensions []string            `json:"supportedExtensions"`
+		ExpectedAdvisories  json.RawMessage     `json:"expectedAdvisories"`
+		ExpectedDiagnostic  *manifestDiagnostic `json:"expectedDiagnostic"`
+		// ExpectedDiagnostics is every finding of a case that gives more than
+		// one, with ExpectedDiagnostic its first item (0.5.0 onward).
+		ExpectedDiagnostics []manifestDiagnostic `json:"expectedDiagnostics"`
 	} `json:"cases"`
+}
+
+type manifestDiagnostic struct {
+	Code string `json:"code"`
+	Path string `json:"path"`
 }
 
 type Runner struct {
@@ -54,9 +62,6 @@ type Runner struct {
 }
 
 type suiteSource struct {
-	// staged marks the staged draft selector's bundled cases: no suiteVersion,
-	// a status of "staged", and reader profiles a base reader skips.
-	staged          bool
 	manifestBytes   []byte
 	schemaBytes     []byte
 	coreSchemaBytes []byte
@@ -85,26 +90,14 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		if requestedVersion == "" {
 			requestedVersion = artifacts.DraftVersion
 		}
-		if artifacts.IsStaged(requestedVersion) {
-			source, failure = stagedSource(requestedVersion)
-		} else {
-			source, failure = bundledSource(requestedVersion)
-		}
+		source, failure = bundledSource(requestedVersion)
 	} else {
-		if artifacts.IsStaged(requestedVersion) {
-			return result.Suite{}, invocationFailure("JPS-SUITE-STAGED", "The staged draft selector runs only its bundled staged cases; a local suite cannot select it.")
-		}
 		source, failure = localSource(suiteArgument, requestedVersion)
 	}
 	if failure != nil {
 		return result.Suite{}, failure
 	}
-	var manifest Manifest
-	if source.staged {
-		manifest, failure = validateStagedManifest(source.manifestBytes, source.schemaBytes, source.coreSchemaBytes)
-	} else {
-		manifest, failure = validateManifest(source.manifestBytes, source.schemaBytes, source.coreSchemaBytes)
-	}
+	manifest, failure := validateManifest(source.manifestBytes, source.schemaBytes, source.coreSchemaBytes)
 	if failure != nil {
 		return result.Suite{}, failure
 	}
@@ -125,9 +118,6 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		Cases:                 []result.Case{},
 		Diagnostics:           []result.Diagnostic{},
 	}
-	if source.staged {
-		output.SuiteStatus = "staged"
-	}
 	remainingDiagnostics := MaxResultDiagnostics
 	remainingDiagnosticBytes := MaxResultDiagnosticBytes
 	for _, manifestCase := range manifest.Cases {
@@ -146,7 +136,7 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		if operational != nil {
 			return result.Suite{}, operational
 		}
-		if source.staged {
+		if len(manifest.ReaderProfiles) > 0 {
 			if profile := declaredProfile(fixture); profile != "" && profile != "base" {
 				// readerProfiles: a case whose fixture declares another profile is
 				// run by a reader supporting it. This reader implements base only,
@@ -179,7 +169,11 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 				Path: manifestCase.ExpectedDiagnostic.Path,
 			}
 		}
-		matches := actual.Status == manifestCase.ExpectedResult && expectedDiagnosticPresent(caseResult.ExpectedDiagnostic, normative)
+		expected := expectedFindings(caseResult.ExpectedDiagnostic, manifestCase.ExpectedDiagnostics)
+		if len(manifestCase.ExpectedDiagnostics) > 0 {
+			caseResult.ExpectedDiagnostics = expected
+		}
+		matches := actual.Status == manifestCase.ExpectedResult && expectedFindingsPresent(expected, normative)
 		if manifestCase.ExpectedAdvisories != nil {
 			if output.Advisories == nil {
 				output.Advisories = &result.AdvisorySummary{}
@@ -203,7 +197,7 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 				}
 			}
 			// Computed before truncation, so a stray diagnostic is never cut away.
-			caseResult.StrayDiagnostics = strayDiagnostics(caseResult.ExpectedDiagnostic, normative)
+			caseResult.StrayDiagnostics = strayDiagnostics(expected, normative)
 			if len(caseResult.StrayDiagnostics) > 0 {
 				matches = false
 			}
@@ -250,7 +244,7 @@ func bundledSource(version string) (suiteSource, *validation.OperationalFailure)
 		var unsupported *artifacts.UnsupportedVersionError
 		if errors.As(err, &unsupported) {
 			return suiteSource{}, &validation.OperationalFailure{
-				Code: "JPS-CAPABILITY-SPEC-VERSION", Message: "The exact JPS specification version is not bundled with this CLI.", ExitCode: result.ExitUnsupported,
+				Code: "JPS-CAPABILITY-SPEC-VERSION", Message: result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this CLI.", version), ExitCode: result.ExitUnsupported,
 			}
 		}
 		return suiteSource{}, internalFailure("JPS-ARTIFACT-INTEGRITY", "Bundled artifacts failed their integrity check.")
@@ -333,7 +327,7 @@ func localSource(argument, requestedVersion string) (suiteSource, *validation.Op
 	}
 	set, err := artifacts.Load(version)
 	if err != nil {
-		return suiteSource{}, &validation.OperationalFailure{Code: "JPS-CAPABILITY-SPEC-VERSION", Message: "Suite targets a JPS version not bundled with this CLI.", ExitCode: result.ExitUnsupported}
+		return suiteSource{}, &validation.OperationalFailure{Code: "JPS-CAPABILITY-SPEC-VERSION", Message: result.WithRetiredSelectorNote("Suite targets a JPS version not bundled with this CLI.", version), ExitCode: result.ExitUnsupported}
 	}
 	bundledSchema, err := set.ManifestSchema()
 	if err != nil || sha256.Sum256(schemaBytes) != sha256.Sum256(bundledSchema) {
@@ -455,6 +449,9 @@ func checkCases(manifest Manifest) *validation.OperationalFailure {
 		}
 		seenIDs[manifestCase.ID] = true
 		seenPaths[manifestCase.Path] = true
+		if len(manifestCase.ExpectedDiagnostics) > 0 && (manifestCase.ExpectedDiagnostic == nil || manifestCase.ExpectedDiagnostics[0] != *manifestCase.ExpectedDiagnostic) {
+			return invocationFailure("JPS-SUITE-MANIFEST", "A case's expectedDiagnostics must begin with its expectedDiagnostic.")
+		}
 		if err := validateCasePath(manifestCase.Path); err != nil {
 			return invocationFailure("JPS-SUITE-FIXTURE-PATH", "Suite contains an unsafe fixture path.")
 		}
@@ -474,11 +471,30 @@ func checkCases(manifest Manifest) *validation.OperationalFailure {
 	return nil
 }
 
-// strayDiagnostics returns the reported diagnostics other than the expected one.
-func strayDiagnostics(expected *result.ExpectedDiagnostic, actual []result.Diagnostic) []result.Diagnostic {
+// expectedFindings is a case's expected (code, pointer) findings: its
+// expectedDiagnostics where it lists more than one, otherwise its one
+// expectedDiagnostic, and none for a valid case.
+func expectedFindings(primary *result.ExpectedDiagnostic, listed []manifestDiagnostic) []result.ExpectedDiagnostic {
+	if len(listed) > 0 {
+		findings := make([]result.ExpectedDiagnostic, 0, len(listed))
+		for _, item := range listed {
+			findings = append(findings, result.ExpectedDiagnostic{Code: item.Code, Path: item.Path})
+		}
+		return findings
+	}
+	if primary == nil {
+		return nil
+	}
+	return []result.ExpectedDiagnostic{*primary}
+}
+
+// strayDiagnostics returns the reported diagnostics that are none of the
+// expected findings. Findings compare as (code, pointer) pairs, so a finding
+// reported twice at one pointer is one finding.
+func strayDiagnostics(expected []result.ExpectedDiagnostic, actual []result.Diagnostic) []result.Diagnostic {
 	var stray []result.Diagnostic
 	for _, diagnostic := range actual {
-		if expected != nil && diagnostic.Code == expected.Code && diagnostic.InstancePath == expected.Path {
+		if findingExpected(expected, diagnostic) {
 			continue
 		}
 		stray = append(stray, diagnostic)
@@ -486,16 +502,35 @@ func strayDiagnostics(expected *result.ExpectedDiagnostic, actual []result.Diagn
 	return stray
 }
 
-func expectedDiagnosticPresent(expected *result.ExpectedDiagnostic, actual []result.Diagnostic) bool {
-	if expected == nil {
-		return len(actual) == 0
-	}
-	for _, diagnostic := range actual {
-		if diagnostic.Code == expected.Code && diagnostic.InstancePath == expected.Path {
+func findingExpected(expected []result.ExpectedDiagnostic, diagnostic result.Diagnostic) bool {
+	for _, item := range expected {
+		if diagnostic.Code == item.Code && diagnostic.InstancePath == item.Path {
 			return true
 		}
 	}
 	return false
+}
+
+// expectedFindingsPresent reports whether every expected finding is among the
+// reported ones; a valid case expects none and passes only when none is
+// reported.
+func expectedFindingsPresent(expected []result.ExpectedDiagnostic, actual []result.Diagnostic) bool {
+	if len(expected) == 0 {
+		return len(actual) == 0
+	}
+	for _, item := range expected {
+		found := false
+		for _, diagnostic := range actual {
+			if diagnostic.Code == item.Code && diagnostic.InstancePath == item.Path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func resolveSuiteRoot(argument string) (string, string, error) {

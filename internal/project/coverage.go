@@ -906,7 +906,7 @@ func joinCapped(values []string, limit int) string {
 // document that does not decode yields nil, which derives no probes; every
 // caller has already refused such a pack before deriving coverage from it.
 //
-// A pack declaring the staged draft selector (EXPERIMENTAL) yields its
+// A pack declaring Core 0.5.0 yields its
 // evaluation form, the document the evaluator reads, so coverage is derived
 // from the conditions that are evaluated; one with no evaluation form (an
 // unresolved value-set reference, which admission refuses) yields nil.
@@ -916,7 +916,7 @@ func PackRoot(data []byte) map[string]any {
 		return nil
 	}
 	root, _ := document.(map[string]any)
-	if version, _ := root["specVersion"].(string); root != nil && result.IsStagedDraft(version) {
+	if version, _ := root["specVersion"].(string); root != nil && result.HasCore050Rules(version) {
 		form, err := evalform.Of(root)
 		if err != nil {
 			return nil

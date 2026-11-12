@@ -29,7 +29,7 @@ func Runtime(set *artifacts.Set, command string) result.Version {
 		EvaluatorCapabilities: []result.EvaluatorCapability{
 			{SpecVersion: result.EvaluatorSpecVersion},
 			{SpecVersion: artifacts.CoreVersion, SupportedProfiles: []string{"base"}},
-			{SpecVersion: artifacts.StagedDraftVersion, SupportedProfiles: []string{"base"}, Stage: artifacts.StagedStage},
+			{SpecVersion: artifacts.Core050Version, SupportedProfiles: []string{"base"}},
 		},
 		ArtifactProvenance: bundledProvenance(set),
 	}

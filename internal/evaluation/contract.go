@@ -60,17 +60,18 @@ func declaredSpecVersionWith(version string, contract result.EvaluatorContract) 
 	return &Failure{Class: result.ClassPackNotConformant, Phase: result.PhasePreflight, Code: "JPS-EVALUATION-PACK-SPEC-VERSION", Message: fmt.Sprintf("The pack declares specVersion %q; this operation applies Core %s.", version, contract.Version()), ExitCode: result.ExitInvalid}
 }
 
-// StagedDraftUnsupported refuses a pack declaring the staged draft selector on
-// a surface that does not read it. The selector is admitted EXPERIMENTALLY by
-// the surfaces that evaluate through this engine's admission, which reads the
-// pack's evaluation form; a surface that reads a pack's conditions or layout
-// some other way refuses it here, explicitly, rather than reading members it
-// was not written for. surface names the refusing surface in the message.
-func StagedDraftUnsupported(surface string) *Failure {
+// SurfaceSpecVersionUnsupported refuses a pack declaring Core 0.5.0 on a
+// surface that does not read it. The surfaces that evaluate through this
+// engine's admission read a 0.5.0 pack's evaluation form; a surface that
+// reads a pack's conditions or layout some other way, or rests on a companion
+// the specification pins to Core 0.3.0, refuses it here, explicitly, rather
+// than reading members it was not written for. surface names the refusing
+// surface in the message, and version is the declared specVersion.
+func SurfaceSpecVersionUnsupported(surface, version string) *Failure {
 	return &Failure{
-		Code:     result.StagedDraftUnsupportedCode,
+		Code:     result.SurfaceSpecVersionUnsupportedCode,
 		Phase:    result.PhasePreflight,
-		Message:  result.StagedDraftUnsupportedMessage(surface),
+		Message:  result.SurfaceSpecVersionUnsupportedMessage(surface, version),
 		ExitCode: result.ExitUnsupported,
 	}
 }

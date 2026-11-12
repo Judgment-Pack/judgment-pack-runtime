@@ -2,10 +2,10 @@
 // returns: the whole document as typed data, with a canonical JSON encoding
 // and a Markdown rendering for review (ADR-0074). Only package sdk builds a
 // PackView; a PackView made any other way is the zero value or a copy of one
-// View returned. For a pack under the staged draft selector 0.4.0-draft, the
-// view carries its value sets and annotations, and FilteredView, which only
-// sdk.Pack.FilteredView builds, is its outcomes and rules filtered by
-// annotation (ADR-0075). Everything in this package is experimental.
+// View returned. For a pack under Core 0.5.0, the view carries its value sets
+// and annotations, and FilteredView, which only sdk.Pack.FilteredView builds,
+// is its outcomes and rules filtered by annotation (ADR-0075, ADR-0077).
+// Everything in this package is experimental.
 package view
 
 import (
@@ -25,9 +25,9 @@ import (
 // whenever the bytes View gives for a pack an earlier view version could
 // describe would change, in either encoding; it does not move when View
 // learns to describe packs it refused before, such as those of a newly
-// admitted specification version: the value sets and annotations of the
-// staged draft selector 0.4.0-draft are members no earlier pack holds, so
-// describing them left it at "1". Experimental, like the rest of the view.
+// admitted specification version: the value sets and annotations of Core
+// 0.5.0 are members no earlier pack holds, so describing them left it at "1".
+// Experimental, like the rest of the view.
 const ViewVersion = "1"
 
 // Identity is what names the viewed pack: the id, version and specVersion
@@ -80,8 +80,8 @@ type PackView struct {
 	Outcomes             []Outcome
 	Rules                []Rule
 	Exceptions           []Exception
-	// ValueSets is the document's valueSets member, which only the staged
-	// draft selector 0.4.0-draft defines (EXPERIMENTAL).
+	// ValueSets is the document's valueSets member, which only Core 0.5.0
+	// defines.
 	ValueSets       []ValueSet
 	FallbackOutcome string
 	Escalation      *Escalation
@@ -92,8 +92,8 @@ type PackView struct {
 	// object that holds only annotations is a non-nil empty slice.
 	Extensions []Extension
 	// Annotations is the annotations member of the document's top-level
-	// extensions object (org.judgmentpack.annotations, staged draft selector
-	// 0.4.0-draft only, EXPERIMENTAL), or nil when it has none.
+	// extensions object (org.judgmentpack.annotations, Core 0.5.0 only), or
+	// nil when it has none.
 	Annotations []Annotation
 
 	json     []byte
@@ -244,8 +244,8 @@ type Review struct {
 //   - "all" and "any": Conditions, in document order;
 //   - "not": Condition;
 //   - "fact": Path (a JSON pointer, which may be the empty string), Operator
-//     and Value, the canonical JSON of the comparison value; or, under the
-//     staged draft selector 0.4.0-draft, ValueSet in place of Value: the id
+//     and Value, the canonical JSON of the comparison value; or, under Core
+//     0.5.0, ValueSet in place of Value: the id
 //     of the value set the condition references, as written and never
 //     expanded;
 //   - "evidence-present": EvidenceRequirement.
@@ -260,8 +260,8 @@ type Condition struct {
 	EvidenceRequirement string
 }
 
-// ValueSet is one member of valueSets (staged draft selector 0.4.0-draft,
-// EXPERIMENTAL): its id, its description, and its entries in document order.
+// ValueSet is one member of valueSets (Core 0.5.0): its id, its description,
+// and its entries in document order.
 type ValueSet struct {
 	ID          string
 	Description string
@@ -279,8 +279,8 @@ type ValueSetEntry struct {
 	Annotations []Annotation
 }
 
-// Annotation is one member of an annotations object (staged draft selector
-// 0.4.0-draft, EXPERIMENTAL). Its value is one string or a list of strings,
+// Annotation is one member of an annotations object (Core 0.5.0). Its value
+// is one string or a list of strings,
 // and the view keeps the two apart: Value is the string, and empty for a
 // list, which the schema never allows a string annotation to be; List is the
 // list in document order, and nil for a string. An annotations slice is
@@ -482,12 +482,12 @@ func (o *viewObject) extensions() []Extension {
 }
 
 // annotatedExtensions reads the extensions member of an object that may hold
-// annotations under the staged draft selector (the root, an outcome, a rule
+// annotations under Core 0.5.0 (the root, an outcome, a rule
 // and a value-set entry): its annotations member as typed Annotations, and
 // every other member as an Extension. Under every other version no
 // annotations member exists, and every member is an Extension.
 func (o *viewObject) annotatedExtensions() ([]Extension, []Annotation) {
-	if !result.IsStagedDraft(o.reader.version) {
+	if !result.HasCore050Rules(o.reader.version) {
 		return o.extensions(), nil
 	}
 	extensions := o.extensionMembers(evalform.AnnotationsName)
@@ -578,13 +578,12 @@ func (o *viewObject) done() {
 
 // The specVersions whose documents this view reads. Each is a version Load
 // admits; a document of another version is refused before any member is read.
-// The staged draft selector is read with Core 0.3.0's members
-// (result.HasCore030Rules) and its own value sets and annotations
-// (result.IsStagedDraft); it is EXPERIMENTAL and may be renamed or changed.
+// Core 0.5.0 is read with Core 0.3.0's members (result.HasCore030Rules) and
+// its own value sets and annotations (result.HasCore050Rules).
 const (
-	viewDraftVersion  = "0.2.0-draft"
-	viewCoreVersion   = "0.3.0"
-	viewStagedVersion = result.StagedDraftSpecVersion
+	viewDraftVersion   = "0.2.0-draft"
+	viewCoreVersion    = "0.3.0"
+	viewCore050Version = result.Core050SpecVersion
 )
 
 // buildView reads an admitted root, member by member, into a PackView.
@@ -638,7 +637,7 @@ func buildView(root map[string]any) (PackView, error) {
 			view.Exceptions = append(view.Exceptions, r.exception(item, indexed(o.at("exceptions"), index)))
 		}
 	}
-	if result.IsStagedDraft(r.version) {
+	if result.HasCore050Rules(r.version) {
 		if items := o.array("valueSets", false); items != nil {
 			view.ValueSets = make([]ValueSet, 0, len(items))
 			for index, item := range items {
@@ -786,8 +785,7 @@ func (r *viewReader) target(value any, pointer *location) Target {
 
 // escalation reads the escalation member. Under 0.2.0-draft the target is
 // required and routes do not exist, so a routes member is left unread and
-// refused by done; under 0.3.0 and the staged draft selector either may be
-// present.
+// refused by done; under 0.3.0 and 0.5.0 either may be present.
 func (r *viewReader) escalation(value any, pointer *location) *Escalation {
 	o := r.object(value, pointer)
 	escalation := &Escalation{Triggers: o.strings("triggers", true)}
@@ -844,8 +842,8 @@ func (r *viewReader) metadata(value any, pointer *location) *Metadata {
 }
 
 // condition reads one condition node. The shapes are the JPS Core condition
-// grammar's, the same under every version this view reads but for the staged
-// draft selector's valueSet reference; an op outside it is refused rather than
+// grammar's, the same under every version this view reads but for Core
+// 0.5.0's valueSet reference; an op outside it is refused rather than
 // carried as a node of no known shape.
 func (r *viewReader) condition(value any, pointer *location) Condition {
 	o := r.object(value, pointer)
@@ -876,11 +874,11 @@ func (r *viewReader) condition(value any, pointer *location) Condition {
 			condition.Path = r.text(path, o.at("path"), true)
 		}
 		condition.Operator = o.requiredString("operator")
-		if !result.IsStagedDraft(r.version) {
+		if !result.HasCore050Rules(r.version) {
 			condition.Value = r.canonicalMember(o.required("value"), o.at("value"))
 			break
 		}
-		// Under the staged draft selector a fact condition carries value or a
+		// Under Core 0.5.0 a fact condition carries value or a
 		// valueSet reference, which the view shows as the set's id and never
 		// expands: the view is the document, not its evaluation form.
 		value, hasValue := o.take("value")

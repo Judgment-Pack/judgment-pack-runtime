@@ -1,5 +1,5 @@
-// Package evalform computes the evaluation form EF(P) of a pack declaring the
-// staged draft selector 0.4.0-draft (EXPERIMENTAL; draft §8.5, RFC 0031).
+// Package evalform computes the evaluation form EF(P) of a pack declaring Core
+// 0.5.0 (Core §8.5, RFC 0031).
 //
 // EF(P) is P with three changes and no others: every fact condition in a
 // condition position that carries valueSet instead carries value, the array of

@@ -160,18 +160,18 @@ func TestRulesOverlapChargesGeneratedDecimalSpellingBytes(t *testing.T) {
 	}
 }
 
-// Under the staged draft selector the advice reads the evaluation form, so a
+// Under Core 0.5.0 the advice reads the evaluation form, so a
 // rewrite built there inlines a set's values. A pair where either condition as
 // written names a value set gets no rewrite; any other pair gets one as before.
-func TestRulesOverlapStagedValueSetReferenceOffersNoRewrite(t *testing.T) {
+func TestRulesOverlapCore050ValueSetReferenceOffersNoRewrite(t *testing.T) {
 	engine, err := NewEngine()
 	if err != nil {
 		t.Fatal(err)
 	}
 	pack := func(inWhen, eqWhen, valueSets string) []byte {
 		return []byte(`{
-  "specVersion": "0.4.0-draft",
-  "id": "https://example.com/packs/staged-overlap",
+  "specVersion": "0.5.0",
+  "id": "https://example.com/packs/core050-overlap",
   "version": "1.0.0",
   "title": "Overlapping tiers",
   "decision": {"intent": "Assign a tier", "question": "Which tier applies?"},

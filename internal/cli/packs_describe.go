@@ -46,9 +46,8 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 			"holds it, compared by exact code point. It states the filter, how many outcomes and rules matched of " +
 			"how many, the position of each in the pack, and the pack's full identity, and it is not the pack: its " +
 			"JSON carries filteredViewVersion and no pack member, and --format json puts it in the envelope's " +
-			"filteredView member. Annotations exist only under the staged draft selector 0.4.0-draft, which the " +
-			"specification may rename or change; --filter on a pack under any other specVersion is refused, as is " +
-			"a criterion no annotation could hold.",
+			"filteredView member. Annotations exist only under Core 0.5.0; --filter on a pack under any other " +
+			"specVersion is refused, as is a criterion no annotation could hold.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			const commandName = "packs describe"
@@ -103,7 +102,7 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&format, "format", format, "output format: markdown or json")
-	command.Flags().StringArrayVar(&filters, "filter", nil, "show only the outcomes and rules whose annotations match key=value; repeat to require every criterion (0.4.0-draft, EXPERIMENTAL)")
+	command.Flags().StringArrayVar(&filters, "filter", nil, "show only the outcomes and rules whose annotations match key=value; repeat to require every criterion (Core 0.5.0, EXPERIMENTAL)")
 	return command
 }
 

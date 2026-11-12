@@ -323,6 +323,11 @@ func TestPackAdviceRefusals(t *testing.T) {
 			t.Fatal(r, f)
 		}
 	}
+	// Draft RFC 0027 is written against Core 0.3.0: a pack declaring 0.5.0,
+	// though valid there, is refused rather than analyzed as if it were 0.3.0.
+	if r, f := Analyze(e, []byte(strings.Replace(string(p), `"specVersion":"0.3.0"`, `"specVersion":"0.5.0"`, 1)), valid, DefaultOptions()); r != nil || f == nil || f.Code != "pack-unsupported" {
+		t.Fatal("0.5.0 pack:", r, f)
+	}
 	over := pack()
 	rs := []any{}
 	for i := 0; i < 257; i++ {

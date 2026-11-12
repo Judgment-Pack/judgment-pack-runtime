@@ -186,7 +186,7 @@ func TestEvaluatorCapabilitiesAreExactAndProfileScoped(t *testing.T) {
 	want := []result.EvaluatorCapability{
 		{SpecVersion: "0.2.0-draft"},
 		{SpecVersion: "0.3.0", SupportedProfiles: []string{"base"}},
-		{SpecVersion: "0.4.0-draft", SupportedProfiles: []string{"base"}, Stage: "staged-unreleased"},
+		{SpecVersion: "0.5.0", SupportedProfiles: []string{"base"}},
 	}
 	if !reflect.DeepEqual(actual.EvaluatorCapabilities, want) {
 		t.Fatalf("capabilities: %+v", actual.EvaluatorCapabilities)
@@ -200,7 +200,7 @@ func TestExamplesReportApplicableEvaluatorContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := result.EvaluatorSpecVersion
-		if version == artifacts.CoreVersion || version == artifacts.StagedDraftVersion {
+		if version == artifacts.CoreVersion || version == artifacts.Core050Version {
 			want = version
 		}
 		catalog, err := Examples(set, "spec examples")

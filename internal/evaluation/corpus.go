@@ -293,13 +293,6 @@ func reportedHandoffTarget(produced *result.HandoffTarget, declared HandoffTarge
 // be a defect in the row as in the implementation, and neither this runtime nor
 // this function adjudicates that question.
 func (e *Engine) RunCorpus(specVersion, command string) (result.EvaluationCorpus, *Failure) {
-	// The staged draft selector (EXPERIMENTAL) has no corpus; its bundle
-	// carries staged rows, which run under the same comparison.
-	if result.IsStagedDraft(specVersion) {
-		if set, err := artifacts.Load(specVersion); err == nil && set.HasStagedEvaluationRows() {
-			return e.runStagedRows(set, command)
-		}
-	}
 	set, manifest, failure := bundledCorpus(specVersion)
 	if failure != nil {
 		return result.EvaluationCorpus{}, failure
@@ -361,7 +354,7 @@ func bundledCorpus(specVersion string) (*artifacts.Set, corpusManifest, *Failure
 	if err != nil {
 		return nil, corpusManifest{}, &Failure{
 			Code:     "JPS-CAPABILITY-SPEC-VERSION",
-			Message:  "The exact JPS specification version is not bundled with this runtime.",
+			Message:  result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this runtime.", specVersion),
 			ExitCode: result.ExitUnsupported,
 		}
 	}
