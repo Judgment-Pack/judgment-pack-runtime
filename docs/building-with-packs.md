@@ -562,7 +562,9 @@ rendered or linked.
 The view's goldens are under `sdk/view/testdata/golden`, one JSON and one Markdown file per
 bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits. They
 are written only by `go test ./sdk/view -run TestViewGoldens -update-view-goldens` and read in review,
-never edited by hand; the tests beside them hold the format above by hand.
+never edited by hand. They are regression files, not the expectation of record: the tests beside
+them hold the format above by hand, and a check derived from each input document, not from a
+rendering, finds every string and number of the document in its section of the Markdown.
 
 ### Declare the reviewed set
 
