@@ -7,13 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"flag"
 	"os"
 	"path"
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -25,21 +23,10 @@ import (
 	pv "github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
 )
 
-// updateViewGoldens is the one way the view goldens under
-// testdata/golden are written:
-//
-//	go test ./sdk/view -run TestViewGoldens -update-view-goldens
-//
-// A golden is never edited by hand. It is read, in review, as the record of
-// what the view says about one pack; the hand-written expectations in this
-// file and in view_markdown_test.go are what hold the view to the format
-// docs/building-with-packs.md describes.
-var updateViewGoldens = flag.Bool("update-view-goldens", false, "rewrite the pack view goldens under testdata/golden")
-
 // viewInput is one pack the view must describe.
 type viewInput struct {
-	// name is the input's place under testdata/golden, without an
-	// extension: version, then fixtures, cases or evaluation, then the file.
+	// name names the input in a failure: version, then fixtures, cases or
+	// evaluation, then the file, without an extension.
 	name    string
 	version string
 	pack    []byte
@@ -232,59 +219,6 @@ func TestEveryAdmittedPackViewsFaithfullyAndStably(t *testing.T) {
 				t.Fatal("editing returned bytes changed the view")
 			}
 		})
-	}
-}
-
-// The view of every input is held to its golden, byte for byte, in both
-// encodings. The goldens are written only by -update-view-goldens.
-func TestViewGoldens(t *testing.T) {
-	inputs := viewInputs(t)
-	expected := map[string]bool{}
-	for _, input := range inputs {
-		_, view := mustView(t, input.pack)
-		for _, encoding := range []struct {
-			extension string
-			bytes     []byte
-		}{{".json", view.JSON()}, {".md", view.Markdown()}} {
-			golden := filepath.Join("testdata", "golden", filepath.FromSlash(input.name)+encoding.extension)
-			expected[filepath.ToSlash(golden)] = true
-			if *updateViewGoldens {
-				if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(golden, encoding.bytes, 0o644); err != nil {
-					t.Fatal(err)
-				}
-				continue
-			}
-			want, err := os.ReadFile(golden)
-			if err != nil {
-				t.Fatalf("%s: %v (write the goldens with -update-view-goldens)", input.name, err)
-			}
-			if !bytes.Equal(encoding.bytes, want) {
-				t.Errorf("%s: the view differs from %s", input.name, golden)
-			}
-		}
-	}
-	// A golden whose input is gone is reported, never left to drift.
-	var present []string
-	err := filepath.WalkDir(filepath.Join("testdata", "golden"), func(name string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !entry.IsDir() {
-			present = append(present, filepath.ToSlash(name))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(present)
-	for _, name := range present {
-		if !expected[name] {
-			t.Errorf("%s is a golden no input produces", name)
-		}
 	}
 }
 

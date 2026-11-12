@@ -247,7 +247,7 @@ func loadSchema(t *testing.T, version string) map[string]any {
 // escaped form, every array keeps document order there, and every member the
 // schema walk finds present has its label. A renderer that drops a field, an
 // array element or a nested object fails here for every pack that holds it,
-// whatever the goldens say.
+// whether or not a hand-written expectation covers that pack.
 func TestTheMarkdownShowsEveryLeafInItsSection(t *testing.T) {
 	inputs := viewInputs(t)
 	for _, version := range viewVersions {

@@ -563,12 +563,13 @@ that posts the view on a forge should attach the Markdown as a file, or put it i
 block whose fence is longer than any run of backticks in the Markdown; inside it nothing is
 rendered or linked.
 
-The view's goldens are under `sdk/view/testdata/golden`, one JSON and one Markdown file per
-bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits. They
-are written only by `go test ./sdk/view -run TestViewGoldens -update-view-goldens` and read in review,
-never edited by hand. They are regression files, not the expectation of record: the tests beside
-them hold the format above by hand, and a check derived from each input document, not from a
-rendering, finds every string and number of the document in its section of the Markdown.
+The view is held by hand. The Markdown and canonical JSON under `sdk/view/testdata/expected`, for
+one every-member pack of each admitted specification version and for the adversarial-strings
+fixture, are written from the format above and the fixture, never recorded from a run. Over every
+bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits, a
+check derived from the input document finds every string and number of the document in its
+section of the Markdown, in document order, and the schema walk holds the canonical JSON to every
+member of the document.
 
 ### Declare the reviewed set
 

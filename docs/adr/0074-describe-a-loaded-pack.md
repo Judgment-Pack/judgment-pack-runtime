@@ -135,23 +135,25 @@ Annotations and value sets wait for the specification's decision on them (spec #
   one whose cached bytes disagree with its fields. Bad, because a caller now imports two packages
   to name the view's types.
 - Bad, because the exit code of a refusal is derived from its code rather than carried.
-- Neutral, because the goldens under `sdk/view/testdata/golden` are regression files that
-  `-update-view-goldens` generates, not the expectation of record. What holds the view right is
-  written by hand: the pack fixtures under `sdk/view/testdata/packs`, the format and escaping
-  tests, and a Markdown completeness check derived from each input document rather than from any
-  rendering, which finds every string and number of each top-level member in that member's section
+- Good, because what holds the view to its format is written by hand or derived from the input
+  document, never recorded from a run: the pack fixtures under `sdk/view/testdata/packs`; the
+  Markdown and canonical JSON under `sdk/view/testdata/expected`, written by hand for one
+  every-member pack of each admitted specification version and for the adversarial-strings
+  fixture; the format and escaping tests; the schema walk, which holds the canonical JSON of every
+  input to every member of its document; and a Markdown completeness check derived from each input
+  document, which finds every string and number of each top-level member in that member's section
   in escaped form, every array in document order, and the label of every member the schema walk
-  finds present. The goldens show a reviewer every byte a change moves, across every bundled case
-  and corpus pack, which no hand-written file could cover; since no golden decides whether the view
-  is right, keeping them is within the intent of the rule that fixtures are written by hand.
+  finds present. Generated goldens over every input were considered and not kept, because the
+  repository's fixtures are written by hand and never recorded from a run of the code under test.
+- Bad, because a byte change that only a pack outside the hand-written expectations shows, and
+  that drops or reorders nothing, is caught only by the format tests written by hand.
 - Revisit when spec #301 settles annotations or value sets, when a new specification version adds
   members, or when a caller needs the view of a pack `Load` refuses.
 
 ## More information
 
 - `sdk/view.go` (`Pack.View`, `Pack.Identity`), `sdk/view/view.go`, `sdk/view/json.go`,
-  `sdk/view/markdown.go`; the goldens under `sdk/view/testdata/golden`, written only by
-  `-update-view-goldens`.
+  `sdk/view/markdown.go`; the hand-written expectations under `sdk/view/testdata/expected`.
 - `internal/cli/packs_describe.go`; docs/building-with-packs.md "Review" states the format and the
   escaping rule.
 - [ADR-0073](0073-in-process-go-evaluation-api.md), the Go API this extends.
