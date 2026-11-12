@@ -388,7 +388,7 @@ func (s *Server) toolGetSchema(rawArgs json.RawMessage) any {
 	}
 	set, err := artifacts.Load(version)
 	if err != nil {
-		return toolError("The exact JPS specification version is not bundled with this runtime.")
+		return toolError(result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this runtime.", version))
 	}
 	schemaBytes, err := set.Schema()
 	if err != nil {
@@ -483,7 +483,7 @@ func loadExampleSet(specVersion string) (*artifacts.Set, any) {
 	if err != nil {
 		var unsupported *artifacts.UnsupportedVersionError
 		if errors.As(err, &unsupported) {
-			return nil, toolError("The exact JPS specification version is not bundled with this runtime.")
+			return nil, toolError(result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this runtime.", specVersion))
 		}
 		return nil, toolError("The bundled artifact metadata is unavailable.")
 	}

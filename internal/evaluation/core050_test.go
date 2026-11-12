@@ -303,13 +303,20 @@ func TestCore050EvaluationCorpusRuns(t *testing.T) {
 // draft became rather than suggesting a re-declaration to 0.2.0-draft.
 func TestRetiredSelectorPackIsRefused(t *testing.T) {
 	engine := newTestEngine(t)
+	notes := map[string]string{
+		"0.4.0-draft": "The staged draft selector 0.4.0-draft was never released: its text was released as Core 0.5.0, and a pack written to it moves up by changing its specVersion to \"0.5.0\" (Core \u00a711).",
+		"0.4.0":       "No specVersion 0.4.0 exists: the staged draft selector 0.4.0-draft was released as Core 0.5.0 (Core \u00a711).",
+	}
 	for _, version := range []string{"0.4.0-draft", "0.4.0"} {
 		pack := strings.Replace(core050PackText(""), `"specVersion":"0.5.0"`, `"specVersion":"`+version+`"`, 1)
 		// Admission validates first, and validation reports the version as
 		// unbundled (JPS-CAPABILITY-SPEC-VERSION), as for any version this
-		// runtime does not bundle.
+		// runtime does not bundle: the refusal is pack-not-conformant, with
+		// the capability finding as its first diagnostic, and exits as
+		// unsupported.
 		_, failure := engine.EvaluateWith([]byte(pack), []byte(core050Facts[0]), nil, Options{})
-		if failure == nil || failure.Code != "JPS-EVALUATION-PACK-NOT-CONFORMANT" || failure.Class != result.ClassPackNotConformant || !strings.Contains(failure.Message, "JPS-CAPABILITY-SPEC-VERSION") || !strings.Contains(failure.Message, "released as Core 0.5.0") {
+		want := "The pack is not evaluated because its document conformance status is \"unsupported\"; evaluation requires a fully conformant pack. Run spec validate for the complete report. First diagnostic: JPS-CAPABILITY-SPEC-VERSION at /specVersion: The exact JPS specification version is not bundled with this CLI. " + notes[version]
+		if failure == nil || failure.Code != "JPS-EVALUATION-PACK-NOT-CONFORMANT" || failure.Class != result.ClassPackNotConformant || failure.ExitCode != result.ExitUnsupported || failure.Message != want {
 			t.Fatalf("%s: %+v", version, failure)
 		}
 		// Contract selection reads the declaration alone.

@@ -815,7 +815,7 @@ func (a *App) schemaCommand() *cobra.Command {
 			}
 			set, err := artifacts.Load(args[0])
 			if err != nil {
-				return a.operational("spec schema", format, result.ExitUnsupported, "JPS-CAPABILITY-SPEC-VERSION", "The exact JPS specification version is not bundled with this CLI.")
+				return a.operational("spec schema", format, result.ExitUnsupported, "JPS-CAPABILITY-SPEC-VERSION", result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this CLI.", args[0]))
 			}
 			schemaBytes, err := set.Schema()
 			if err != nil {
@@ -872,7 +872,7 @@ func (a *App) examplesCommand() *cobra.Command {
 			if err != nil {
 				var unsupported *artifacts.UnsupportedVersionError
 				if errors.As(err, &unsupported) {
-					return a.operational("spec examples", format, result.ExitUnsupported, "JPS-CAPABILITY-SPEC-VERSION", "The exact JPS specification version is not bundled with this CLI.")
+					return a.operational("spec examples", format, result.ExitUnsupported, "JPS-CAPABILITY-SPEC-VERSION", result.WithRetiredSelectorNote("The exact JPS specification version is not bundled with this CLI.", specVersion))
 				}
 				return a.operational("spec examples", format, result.ExitInternal, "JPS-ARTIFACT-INTEGRITY", "Bundled artifact metadata is unavailable.")
 			}

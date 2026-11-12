@@ -19,14 +19,21 @@ All notable changes to tagged releases are documented here.
   selector moves. The run's results are recorded in CONFORMANCE.md, "Core 0.5.0 preparation
   evidence".
 - **The staged selector `0.4.0-draft` is retired**, because the specification released its text
-  as `0.5.0` (ADR-0077). Its bundle is removed, and a pack, suite or corpus run naming
-  `0.4.0-draft` or `0.4.0` is refused as an unsupported version (`JPS-CAPABILITY-SPEC-VERSION`),
-  with a note that the draft was released as `0.5.0` and that a pack moves by changing its
-  `specVersion`. A specification lock that states a `stage` is refused at load. The EXPERIMENTAL
-  members that only the staged selector used are removed: `sdk.Evaluator.Stage` and the `stage`
-  member of the runtime description, and the suite `suiteStatus` and `held` members of a
-  conformance or corpus run. `tools/sync-spec-artifacts --staged` stays as a generic import
-  (docs/releasing.md).
+  as `0.5.0` (ADR-0077). Its bundle is removed, and runtime discovery no longer lists it. A pack,
+  suite or corpus run naming `0.4.0-draft` or `0.4.0` is refused as an unsupported version
+  (`JPS-CAPABILITY-SPEC-VERSION`, exit 2), and so is a request for that version's schema or
+  examples (`spec schema`, `spec examples --spec-version`, and the MCP `get_schema`,
+  `list_examples` and `get_example` tools); each refusal adds a note that the draft was released
+  as `0.5.0` and that a pack moves by changing its `specVersion`. On the evaluate surfaces such a
+  pack is refused as `JPS-EVALUATION-PACK-NOT-CONFORMANT` (exit 2), whose first diagnostic is
+  `JPS-CAPABILITY-SPEC-VERSION` with the same note. A local suite naming the staged selector, which
+  0.43.0 refused with `JPS-SUITE-STAGED` (exit 3), is refused as any version this runtime does not
+  bundle, and that code is removed. A specification lock that states a `stage` is refused at load.
+  The EXPERIMENTAL members and labels that only the staged selector used are removed:
+  `sdk.Evaluator.Stage` and the `stage` member of the runtime description's evaluator entries;
+  the `suiteStatus` member, the summary's `held` count and the `held` case status of a conformance
+  or corpus run; and, in human output, the `suite staged` label and the `held:` lines.
+  `tools/sync-spec-artifacts --staged` stays as a generic import (docs/releasing.md).
 - The refusal code `JPS-STAGED-DRAFT-UNSUPPORTED` is renamed `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`.
   Every graph command that reads node packs (`experimental graph validate`, `explain`, `test` and
   `evaluate`, and the MCP `experimental_test_graphs` tool) refuses a graph with a `0.5.0` node with
