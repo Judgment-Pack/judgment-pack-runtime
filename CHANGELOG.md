@@ -10,19 +10,24 @@ All notable changes to tagged releases are documented here.
   `valueSets` that a fact `in` condition names with `valueSet`. The bundle is vendored from
   specification commit `4cae6a34058883955cf3b00a4c9672e2c8ad7975`, and its lock says
   `stage: staged-unreleased`; no specification release carries it, and the specification may rename
-  or change the selector. Validation, `spec test-conformance`, the evaluator and every surface that
-  reaches it other than graph evaluation, `evaluate-corpus`, the project walk, fact advice, matrix validation, coverage, the
-  examples and the view admit it; graph evaluation, the dialect check and the policy check refuse it
-  with `JPS-STAGED-DRAFT-UNSUPPORTED`. A pack is evaluated as its evaluation form (annotations
-  removed, each reference replaced by the named set's values, `valueSets` dropped), made once at
-  admission; an unknown set id is `JPS-SEMANTIC-UNRESOLVED-VALUE-SET`. Identity and digest stay
-  over the exact bytes. Runs of the staged cases and rows report `staged` and no suite version,
+  or change the selector. Validation, `spec test-conformance` and the evaluator admit it, and so
+  does every surface that reaches the evaluator except graph evaluation: `evaluate-corpus`, the
+  project walk, fact advice, matrix validation, coverage, the examples and the view. Graph
+  evaluation, the dialect check and the policy check refuse it with
+  `JPS-STAGED-DRAFT-UNSUPPORTED`; pack-design analysis keeps its `pack-unsupported` refusal, and an
+  MCP tool's standalone `spec_version` keeps refusing it. A pack is evaluated as its evaluation
+  form (annotations removed, each reference replaced by the named set's values, `valueSets`
+  dropped), made once at admission; an unknown set id is `JPS-SEMANTIC-UNRESOLVED-VALUE-SET`.
+  `JPS-RULES-OVERLAP` advice reads the same form, but offers no exclusive rewrite for a pair where
+  either condition names a value set, since the rewrite would drop the reference. Identity and
+  digest stay over the exact bytes. Runs of the staged cases and rows report `staged` and no suite version,
   and one row is reported as held, with the specification's reason. Runtime discovery lists the
   selector, and its evaluator entry carries `stage: "staged-unreleased"`. `0.2.0-draft` and `0.3.0`
   behaviour and outputs are unchanged.
 - `tools/sync-spec-artifacts --staged <selector>` imports a staged selector from a full commit
-  digest of a clean checkout, and `--replace` refreshes only a staged bundle of the same selector
-  (docs/releasing.md, "Refresh a staged draft selector").
+  digest of a clean checkout, refusing a git-ignored file under a directory it reads, and
+  `--replace` refreshes only a staged bundle of the same selector (docs/releasing.md, "Refresh a
+  staged draft selector").
 - The pack view (`sdk.Pack.View`, `jpack packs describe`) shows a `0.4.0-draft` pack's value sets
   and annotations as typed fields, in both encodings; a reference is shown as the set's id and
   never expanded, and a one-element annotation list stays a list (EXPERIMENTAL). `viewVersion`

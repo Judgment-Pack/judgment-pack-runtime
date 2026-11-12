@@ -60,13 +60,14 @@ leaves authors with nothing to try, and a flag would let the same bytes mean two
 - **Admission.** `tools/sync-spec-artifacts --staged 0.4.0-draft` imports the staged schema,
   document cases, evaluation rows and example from a full commit digest of a clean checkout, never
   a tag or a branch; the lock records the commit and `stage: staged-unreleased`. The selector is
-  admitted with the `base` profile by validation, `spec test-conformance`, the evaluator and every
-  surface that reaches it other than graph evaluation, `evaluate-corpus`, the project walk, fact advice, matrix validation,
-  coverage, the examples and the view. Graph evaluation, the dialect check and the policy check
-  refuse it with `JPS-STAGED-DRAFT-UNSUPPORTED`; pack-design analysis, which evaluates only Core
-  `0.3.0` inputs, and an MCP tool's standalone `spec_version`, which names a contract without a
-  pack, keep their existing refusals. "Behaves as `0.3.0`" is one predicate,
-  `result.HasCore030Rules`, so no site compares a version string by itself.
+  admitted with the `base` profile by validation, `spec test-conformance` and the evaluator, and by
+  every surface that reaches the evaluator except graph evaluation: `evaluate-corpus`, the project
+  walk, fact advice, matrix validation, coverage, the examples and the view. Graph evaluation, the
+  dialect check and the policy check refuse it with `JPS-STAGED-DRAFT-UNSUPPORTED`; pack-design
+  analysis, which evaluates only Core `0.3.0` inputs, and an MCP tool's standalone
+  `spec_version`, which names a contract without a pack, keep their existing refusals. "Behaves as
+  `0.3.0`" is one predicate, `result.HasCore030Rules`, so no site compares a version string by
+  itself.
 - **Evaluation form.** It is computed once, at admission, from the validated document: annotations
   removed, each reference replaced in place by the named set's entry values, `valueSets` dropped.
   An unknown set id is `JPS-SEMANTIC-UNRESOLVED-VALUE-SET` and `pack-not-conformant`. The evaluator
