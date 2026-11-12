@@ -1,7 +1,8 @@
 // Package sdk is the public, in-process Go API over the judgment-pack
 // runtime: it lets a Go program load a pack and evaluate it with the same
-// shared evaluator the jpack CLI and MCP server use, without invoking the
-// binary or opening a project directory.
+// shared evaluator the jpack CLI and MCP server use, and describe the loaded
+// pack for review, without invoking the binary or opening a project
+// directory.
 //
 // It is a thin layer. Load and Pack.Evaluate select the evaluator contract,
 // run the §8.2 preflight and the §§7–8 evaluation, and apply the §10 limits
@@ -27,13 +28,38 @@
 //   - Disposition, Handoff and Target;
 //   - Refusal, with Refusal.Error, Diagnostic, and ErrInternal;
 //   - Describe, Description and Evaluator;
+//   - Pack.Identity and Identity; Pack.View, PackView with PackView.JSON and
+//     PackView.Markdown, and ViewVersion;
+//   - the view's member types Decision, EvidenceRequirement, Source,
+//     Locator, Citation, Outcome, Rule, Exception, Escalation, Route,
+//     Metadata, Review, Condition and Extension (an escalation's target is
+//     the Target a handoff carries);
 //   - the constants ClassPackNotConformant, ClassMalformedInput,
 //     ClassUnsupportedRequiredExtension, ClassResourceExhaustion,
 //     PhasePreflight and PhaseEvaluation.
 //
 // The bytes CanonicalDisposition returns are the §8.3 portable disposition,
 // whose form the specification fixes. The envelope Evaluation.JSON returns
-// follows the CLI's machine-output contract and its outputVersion.
+// follows the CLI's machine-output contract and its outputVersion. The bytes
+// PackView.JSON and PackView.Markdown return carry their own view version,
+// ViewVersion, which VERSIONING.md says when to move.
+//
+// # Describing a pack
+//
+// Pack.View returns the whole of the document Load admitted as typed data,
+// with a canonical JSON encoding and a Markdown rendering for review; "jpack
+// packs describe" writes the same bytes. The view is faithful: every member
+// is carried, nothing is inferred or summarised, an absent member stays
+// absent and a present empty one stays empty, arrays keep document order,
+// and numbers and decimal strings are carried exactly as written. It is
+// deterministic: the same pack bytes give the same view bytes. It reads the
+// admitted document only, never evaluates and changes nothing.
+//
+// The view does not explain an evaluation, cover a test matrix or summarise
+// across rules; docs/adr/0074-describe-a-loaded-pack.md records what it
+// leaves out and why. docs/building-with-packs.md states the JSON members,
+// the Markdown layout and the escaping rule every pack string passes
+// through.
 //
 // # Errors
 //
@@ -50,6 +76,11 @@
 // A nil context, or a Pack that Load did not return, is a plain error of none
 // of these kinds. The methods of Evaluation are for a value a successful
 // Evaluate returned.
+//
+// Pack.View refuses nothing Load admitted. Its only errors are a plain error
+// for a Pack that Load did not return, and an error wrapping ErrInternal for
+// an admitted construct the view cannot represent, which is a fault of this
+// runtime; it never returns a partial view.
 //
 // # Context
 //

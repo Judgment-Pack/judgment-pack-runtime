@@ -104,6 +104,7 @@ jpack packs verify      (check the project against that reviewed set)
 jpack packs covers --lock F (--id X --pack F | --graph-id X --graph F) [--config F]   (does the lock's entry pin these exact bytes? opens no project; ADR-0072)
 jpack packs lint [--producers M]   (every consulted pointer has a producer; ADR-0022)
 jpack packs schema
+jpack packs describe <pack-or-> [--format markdown|json]   (EXPERIMENTAL; the whole pack as written, for review; opens no project; ADR-0074)
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
@@ -290,6 +291,13 @@ A loaded pack is immutable, safe for concurrent use, and never validated again. 
 options and limits are those of `jpack experimental evaluate` run outside a project. The package is
 experimental and may change in any minor release before 1.0 ([VERSIONING.md](VERSIONING.md#go-api)).
 [sdk/example_test.go](sdk/example_test.go) is a runnable example.
+
+`pack.Identity()` names the loaded pack: its id, version, specVersion, stated profile, and the
+`sha256:` digest of the exact bytes given. `pack.View()` describes the whole document without
+evaluating it ([ADR-0074](docs/adr/0074-describe-a-loaded-pack.md)): every member as typed data, in
+document order and as written, with a canonical JSON encoding (`view.JSON()`) and a Markdown
+rendering for a reviewer (`view.Markdown()`). `jpack packs describe` writes the same bytes. The
+view is experimental and carries its own `viewVersion`.
 
 ## Build and try it locally
 

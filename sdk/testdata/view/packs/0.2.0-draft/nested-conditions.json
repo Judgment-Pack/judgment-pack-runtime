@@ -1,0 +1,79 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/view-nested-conditions",
+  "version": "0.1.0",
+  "title": "Nested conditions",
+  "decision": {
+    "intent": "Nest every compound condition inside every other.",
+    "question": "Does the view keep the tree and the order of every operand?"
+  },
+  "evidenceRequirements": [
+    { "id": "ticket", "description": "A ticket.", "required": false }
+  ],
+  "outcomes": [
+    { "id": "first", "label": "First" },
+    { "id": "second", "label": "Second" },
+    { "id": "third", "label": "Third" }
+  ],
+  "rules": [
+    {
+      "id": "zeta",
+      "description": "Declared first although its id sorts last.",
+      "when": {
+        "op": "not",
+        "condition": {
+          "op": "not",
+          "condition": {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "not",
+                    "condition": {
+                      "op": "all",
+                      "conditions": [
+                        { "op": "fact", "path": "/z", "operator": "equals", "value": "last" },
+                        { "op": "fact", "path": "/a", "operator": "equals", "value": "first" }
+                      ]
+                    }
+                  },
+                  { "op": "evidence-present", "evidenceRequirement": "ticket" }
+                ]
+              },
+              { "op": "literal", "value": true },
+              {
+                "op": "any",
+                "conditions": [
+                  { "op": "literal", "value": false },
+                  { "op": "fact", "path": "/m", "operator": "in", "value": [3, 2, 1] }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "outcome": "first",
+      "onUnknown": "escalate"
+    },
+    {
+      "id": "alpha",
+      "description": "Declared second although its id sorts first.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "second",
+      "onUnknown": "ignore"
+    },
+    {
+      "id": "mu",
+      "description": "Declared third.",
+      "when": { "op": "literal", "value": false },
+      "outcome": "third",
+      "onUnknown": "ignore"
+    }
+  ],
+  "escalation": {
+    "triggers": ["unknown", "conflict"],
+    "target": { "kind": "queue", "name": "Nesting review" }
+  }
+}

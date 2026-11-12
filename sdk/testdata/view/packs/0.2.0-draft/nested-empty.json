@@ -1,0 +1,57 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/view-nested-empty",
+  "version": "0.1.0",
+  "title": "Empty members inside members",
+  "decision": {
+    "intent": "Hold the optional arrays and objects of nested members present and empty.",
+    "question": "Does the view keep a nested empty member apart from an absent one?"
+  },
+  "evidenceRequirements": [
+    { "id": "ticket", "description": "A ticket.", "required": false, "extensions": {} }
+  ],
+  "sources": [
+    {
+      "id": "handbook",
+      "title": "Handbook",
+      "locator": { "kind": "other", "value": "The shelf by the door" },
+      "extensions": {}
+    }
+  ],
+  "outcomes": [
+    { "id": "yes", "label": "Yes" },
+    { "id": "no", "label": "No" }
+  ],
+  "rules": [
+    {
+      "id": "ticketed",
+      "description": "A ticket means yes.",
+      "when": { "op": "evidence-present", "evidenceRequirement": "ticket" },
+      "outcome": "yes",
+      "onUnknown": "ignore",
+      "sourceRefs": ["handbook"]
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "never",
+      "description": "Never applies.",
+      "when": { "op": "literal", "value": false },
+      "effect": "escalate",
+      "onUnknown": "ignore",
+      "sourceRefs": [],
+      "extensions": {}
+    }
+  ],
+  "fallbackOutcome": "no",
+  "escalation": {
+    "triggers": ["unknown"],
+    "target": { "kind": "queue", "name": "Review" },
+    "extensions": {}
+  },
+  "metadata": {
+    "requiredExtensions": [],
+    "reviews": [],
+    "extensions": {}
+  }
+}

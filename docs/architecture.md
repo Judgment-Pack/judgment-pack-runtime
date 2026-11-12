@@ -11,9 +11,9 @@ not write to or release the specification repository.
 
 Private commercial repositories may depend on the executable and versioned output contract. The
 Go packages other than `sdk` are internal implementation details. Package `sdk` is an experimental
-in-process API for loading and evaluating a pack (ADR-0073); a versioned composition or plugin API
-remains future work. The public CLI never depends on private source, packages, services,
-or credentials.
+in-process API for loading, evaluating and describing a pack (ADR-0073, ADR-0074); a versioned
+composition or plugin API remains future work. The public CLI never depends on private source,
+packages, services, or credentials.
 
 ## Rule-overlap authoring advice
 
@@ -190,7 +190,7 @@ none. Graph aggregates and disposition comparison summaries do not synthesize at
 - `internal/compare` evaluates one set of inputs, a matrix admitted under its own rules whose expectations play no part, or a `packs suggest` candidates document, under two versions of a pack through `internal/evaluation` unchanged, and reports the inputs whose §8.3 canonical dispositions, handoff targets or refusals differ (ADR-0045). It opens no project, so it records nothing and consults no lock, and a difference it reports is not an expectation.
 - `internal/policy` owns the experimental offline Policy prototype and official draft document and supplied-material checks of ADR-0059 and ADR-0061; it performs no evaluation or source acquisition.
 - `internal/cli` owns commands, streams, and human/JSON rendering.
-- `sdk` is the experimental public Go API (ADR-0073): `Load` and `Pack.Evaluate` reach the shared evaluator with the contract selection, options and limits of `experimental evaluate` outside a project, and `Describe` reports the bundled versions and the corpus version of each evaluator contract. It takes every input as bytes, and no package of this module in its import closure imports anything that reaches files, the environment or the network.
+- `sdk` is the experimental public Go API (ADR-0073): `Load` and `Pack.Evaluate` reach the shared evaluator with the contract selection, options and limits of `experimental evaluate` outside a project, and `Describe` reports the bundled versions and the corpus version of each evaluator contract. `Pack.Identity` and `Pack.View` describe the document `Load` admitted without evaluating it (ADR-0074): the whole document as typed data, in document order and as written, with a canonical JSON encoding and a Markdown rendering whose every pack string is escaped by one stated rule; `jpack packs describe` writes those bytes and is the one CLI command that imports `sdk`. It takes every input as bytes, and no package of this module in its import closure imports anything that reaches files, the environment or the network.
 - `internal/mcp` adapts the offline core onto Model Context Protocol tools over stdio.
 - `tools/sync-spec-artifacts` is an explicit maintainer-only snapshot importer.
 

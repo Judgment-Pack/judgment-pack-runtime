@@ -1,0 +1,358 @@
+package sdk
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
+)
+
+// The view's canonical JSON is RFC 8785 in everything but numbers: object
+// members ordered by the UTF-16 code units of their names, the RFC's minimal
+// string escapes, no whitespace. A number is written as the literal token the
+// carrier decoder kept, because a pack's numbers are compared and reviewed as
+// written — 1.50 is not 1.5 to a reader of the view — and the RFC's number
+// form would rewrite them. Null, which the RFC writes as null, is written so.
+// internal/jcs implements the same rules over the disposition's value space
+// and refuses numbers and null; a test holds this writer to it on that space.
+
+// rawJSON is JSON text already in canonical form, written verbatim.
+type rawJSON string
+
+// canonicalText returns the canonical JSON text of one decoded value.
+func canonicalText(value any) (string, error) {
+	var builder strings.Builder
+	if err := writeCanonical(&builder, value); err != nil {
+		return "", err
+	}
+	return builder.String(), nil
+}
+
+func writeCanonical(builder *strings.Builder, value any) error {
+	switch typed := value.(type) {
+	case nil:
+		builder.WriteString("null")
+	case bool:
+		if typed {
+			builder.WriteString("true")
+		} else {
+			builder.WriteString("false")
+		}
+	case string:
+		return writeCanonicalString(builder, typed)
+	case json.Number:
+		token := string(typed)
+		if token == "" || !strings.ContainsRune("-0123456789", rune(token[0])) || !json.Valid([]byte(token)) {
+			return errors.New("a number that is not a JSON number token")
+		}
+		builder.WriteString(token)
+	case rawJSON:
+		builder.WriteString(string(typed))
+	case []any:
+		builder.WriteByte('[')
+		for index, item := range typed {
+			if index > 0 {
+				builder.WriteByte(',')
+			}
+			if err := writeCanonical(builder, item); err != nil {
+				return err
+			}
+		}
+		builder.WriteByte(']')
+	case map[string]any:
+		names := make([]string, 0, len(typed))
+		for name := range typed {
+			names = append(names, name)
+		}
+		slices.SortFunc(names, compareUTF16)
+		builder.WriteByte('{')
+		for index, name := range names {
+			if index > 0 {
+				builder.WriteByte(',')
+			}
+			if err := writeCanonicalString(builder, name); err != nil {
+				return err
+			}
+			builder.WriteByte(':')
+			if err := writeCanonical(builder, typed[name]); err != nil {
+				return err
+			}
+		}
+		builder.WriteByte('}')
+	default:
+		return fmt.Errorf("a value of type %T, outside the JSON data model", value)
+	}
+	return nil
+}
+
+// writeCanonicalString writes one string with RFC 8785's escapes: the two
+// mandatory ones, the five short forms, and \u00xx for every other control
+// character below U+0020. Every other code point is written as itself.
+func writeCanonicalString(builder *strings.Builder, value string) error {
+	if !utf8.ValidString(value) {
+		return errors.New("a string that is not valid UTF-8")
+	}
+	builder.WriteByte('"')
+	for _, character := range value {
+		switch character {
+		case '"':
+			builder.WriteString(`\"`)
+		case '\\':
+			builder.WriteString(`\\`)
+		case '\b':
+			builder.WriteString(`\b`)
+		case '\t':
+			builder.WriteString(`\t`)
+		case '\n':
+			builder.WriteString(`\n`)
+		case '\f':
+			builder.WriteString(`\f`)
+		case '\r':
+			builder.WriteString(`\r`)
+		default:
+			if character < 0x20 {
+				fmt.Fprintf(builder, `\u%04x`, character)
+				continue
+			}
+			builder.WriteRune(character)
+		}
+	}
+	builder.WriteByte('"')
+	return nil
+}
+
+// compareUTF16 orders two member names by their UTF-16 code units, as RFC
+// 8785 orders them; that is not the UTF-8 byte order for a name holding a
+// code point outside the Basic Multilingual Plane.
+func compareUTF16(left, right string) int {
+	return slices.Compare(utf16.Encode([]rune(left)), utf16.Encode([]rune(right)))
+}
+
+// encodeViewJSON writes the view's canonical JSON from its typed fields, so
+// the bytes say exactly what the typed view says and nothing the root held
+// that the view did not carry.
+func encodeViewJSON(view PackView) ([]byte, error) {
+	document, err := view.documentValue()
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := canonicalText(map[string]any{
+		"digest":      view.Identity.Digest,
+		"pack":        document,
+		"viewVersion": ViewVersion,
+	})
+	if err != nil {
+		return nil, internalFault(viewFaultCode, "The view does not encode: "+err.Error()+".")
+	}
+	return []byte(encoded), nil
+}
+
+// documentValue rebuilds the document's JSON value from the typed view.
+func (v PackView) documentValue() (map[string]any, error) {
+	document := map[string]any{
+		"specVersion": v.Identity.SpecVersion,
+		"id":          v.Identity.ID,
+		"version":     v.Identity.Version,
+		"title":       v.Title,
+		"decision":    withExtensions(map[string]any{"intent": v.Decision.Intent, "question": v.Decision.Question}, v.Decision.Extensions),
+	}
+	putString(document, "profile", v.Identity.Profile)
+	putString(document, "description", v.Description)
+	if v.Applicability != nil {
+		applicability, err := conditionValue(*v.Applicability)
+		if err != nil {
+			return nil, err
+		}
+		document["applicability"] = applicability
+	}
+	if v.EvidenceRequirements != nil {
+		items := make([]any, 0, len(v.EvidenceRequirements))
+		for _, requirement := range v.EvidenceRequirements {
+			item := map[string]any{"id": requirement.ID, "description": requirement.Description, "required": requirement.Required}
+			putString(item, "kind", requirement.Kind)
+			items = append(items, withExtensions(item, requirement.Extensions))
+		}
+		document["evidenceRequirements"] = items
+	}
+	if v.Sources != nil {
+		items := make([]any, 0, len(v.Sources))
+		for _, source := range v.Sources {
+			item := map[string]any{
+				"id":      source.ID,
+				"title":   source.Title,
+				"locator": map[string]any{"kind": source.Locator.Kind, "value": source.Locator.Value},
+			}
+			putString(item, "publisher", source.Publisher)
+			putString(item, "publishedAt", source.PublishedAt)
+			if source.Citation != nil {
+				item["citation"] = map[string]any{"location": source.Citation.Location, "excerpt": source.Citation.Excerpt}
+			}
+			putString(item, "rights", source.Rights)
+			items = append(items, withExtensions(item, source.Extensions))
+		}
+		document["sources"] = items
+	}
+	outcomes := make([]any, 0, len(v.Outcomes))
+	for _, outcome := range v.Outcomes {
+		item := map[string]any{"id": outcome.ID, "label": outcome.Label}
+		putString(item, "description", outcome.Description)
+		outcomes = append(outcomes, withExtensions(item, outcome.Extensions))
+	}
+	document["outcomes"] = outcomes
+	rules := make([]any, 0, len(v.Rules))
+	for _, rule := range v.Rules {
+		when, err := conditionValue(rule.When)
+		if err != nil {
+			return nil, err
+		}
+		item := map[string]any{
+			"id":          rule.ID,
+			"description": rule.Description,
+			"when":        when,
+			"outcome":     rule.Outcome,
+			"onUnknown":   rule.OnUnknown,
+		}
+		putStrings(item, "evidenceRequirementRefs", rule.EvidenceRequirementRefs)
+		putStrings(item, "sourceRefs", rule.SourceRefs)
+		putString(item, "rationale", rule.Rationale)
+		rules = append(rules, withExtensions(item, rule.Extensions))
+	}
+	document["rules"] = rules
+	if v.Exceptions != nil {
+		items := make([]any, 0, len(v.Exceptions))
+		for _, exception := range v.Exceptions {
+			when, err := conditionValue(exception.When)
+			if err != nil {
+				return nil, err
+			}
+			item := map[string]any{
+				"id":          exception.ID,
+				"description": exception.Description,
+				"when":        when,
+				"effect":      exception.Effect,
+				"onUnknown":   exception.OnUnknown,
+			}
+			putString(item, "targetRule", exception.TargetRule)
+			putString(item, "outcome", exception.Outcome)
+			putStrings(item, "sourceRefs", exception.SourceRefs)
+			items = append(items, withExtensions(item, exception.Extensions))
+		}
+		document["exceptions"] = items
+	}
+	putString(document, "fallbackOutcome", v.FallbackOutcome)
+	if v.Escalation != nil {
+		escalation := map[string]any{}
+		putStrings(escalation, "triggers", v.Escalation.Triggers)
+		if v.Escalation.Target != nil {
+			escalation["target"] = targetValue(*v.Escalation.Target)
+		}
+		putString(escalation, "message", v.Escalation.Message)
+		if v.Escalation.Routes != nil {
+			routes := make([]any, 0, len(v.Escalation.Routes))
+			for _, route := range v.Escalation.Routes {
+				item := map[string]any{"target": targetValue(route.Target)}
+				putStrings(item, "triggers", route.Triggers)
+				routes = append(routes, item)
+			}
+			escalation["routes"] = routes
+		}
+		document["escalation"] = withExtensions(escalation, v.Escalation.Extensions)
+	}
+	if v.Metadata != nil {
+		metadata := map[string]any{}
+		putStrings(metadata, "authors", v.Metadata.Authors)
+		putString(metadata, "createdAt", v.Metadata.CreatedAt)
+		putString(metadata, "license", v.Metadata.License)
+		putStrings(metadata, "requiredExtensions", v.Metadata.RequiredExtensions)
+		if v.Metadata.Reviews != nil {
+			reviews := make([]any, 0, len(v.Metadata.Reviews))
+			for _, review := range v.Metadata.Reviews {
+				item := map[string]any{"reviewer": review.Reviewer, "reviewedAt": review.ReviewedAt, "disposition": review.Disposition}
+				putString(item, "note", review.Note)
+				reviews = append(reviews, item)
+			}
+			metadata["reviews"] = reviews
+		}
+		document["metadata"] = withExtensions(metadata, v.Metadata.Extensions)
+	}
+	return withExtensions(document, v.Extensions), nil
+}
+
+// conditionValue rebuilds one condition node from its typed form.
+func conditionValue(condition Condition) (map[string]any, error) {
+	node := map[string]any{"op": condition.Op}
+	switch condition.Op {
+	case "literal":
+		node["value"] = rawJSON(condition.Value)
+	case "all", "any":
+		items := make([]any, 0, len(condition.Conditions))
+		for _, child := range condition.Conditions {
+			item, err := conditionValue(child)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		node["conditions"] = items
+	case "not":
+		if condition.Condition == nil {
+			return nil, internalFault(viewFaultCode, "A not condition of the view holds no condition.")
+		}
+		inner, err := conditionValue(*condition.Condition)
+		if err != nil {
+			return nil, err
+		}
+		node["condition"] = inner
+	case "fact":
+		node["path"] = condition.Path
+		node["operator"] = condition.Operator
+		node["value"] = rawJSON(condition.Value)
+	case "evidence-present":
+		node["evidenceRequirement"] = condition.EvidenceRequirement
+	default:
+		return nil, internalFault(viewFaultCode, "A condition of the view has an op it does not describe.")
+	}
+	return node, nil
+}
+
+func targetValue(target Target) map[string]any {
+	return map[string]any{"kind": target.Kind, "name": target.Name}
+}
+
+// putString sets an optional string member, absent when the view's string is
+// empty.
+func putString(object map[string]any, name, value string) {
+	if value != "" {
+		object[name] = value
+	}
+}
+
+// putStrings sets an optional array of strings, absent exactly when the
+// view's slice is nil.
+func putStrings(object map[string]any, name string, values []string) {
+	if values == nil {
+		return
+	}
+	items := make([]any, 0, len(values))
+	for _, value := range values {
+		items = append(items, value)
+	}
+	object[name] = items
+}
+
+// withExtensions sets the extensions member, absent exactly when the view's
+// slice is nil.
+func withExtensions(object map[string]any, extensions []Extension) map[string]any {
+	if extensions == nil {
+		return object
+	}
+	members := make(map[string]any, len(extensions))
+	for _, extension := range extensions {
+		members[extension.Name] = rawJSON(extension.Value)
+	}
+	object["extensions"] = members
+	return object
+}

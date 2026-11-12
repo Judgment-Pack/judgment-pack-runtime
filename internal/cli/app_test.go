@@ -112,6 +112,9 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// for the phrase scans like its siblings.
 		{args: []string{"packs", "lint", "--help"}},
 		{args: []string{"packs", "schema", "--help"}},
+		// packs describe (ADR-0074) loads one pack and writes its view; it
+		// evaluates nothing and is inventoried for the phrase scans.
+		{args: []string{"packs", "describe", "--help"}},
 		// The audit trail's commands (ADR-0047). None evaluates; they are
 		// inventoried for the phrase scans, which is where a stray claim
 		// about what a chain or a checkpoint shows would otherwise hide.
@@ -616,6 +619,7 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 		"cli packs verify --help",
 		"cli packs covers --help",
 		"cli packs lint --help",
+		"cli packs describe --help",
 		"mcp tools/list list_packs",
 		"mcp tools/list get_pack",
 		"mcp tools/list experimental_test_packs",

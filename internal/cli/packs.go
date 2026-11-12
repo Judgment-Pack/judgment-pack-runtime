@@ -55,9 +55,10 @@ func (a *App) packsCommand() *cobra.Command {
 	}
 	// --config is registered on the seven subcommands that read a configuration
 	// rather than on this one as a persistent flag. packs schema prints an
-	// embedded artifact and touches no configuration; a flag inherited into its
-	// help would promise an effect it does not have. packs covers registers a
-	// --config of its own that selects no project and has its own usage line.
+	// embedded artifact and packs describe reads one pack document; neither
+	// touches a configuration, and a flag inherited into its help would promise
+	// an effect it does not have. packs covers registers a --config of its own
+	// that selects no project and has its own usage line.
 	packs.AddCommand(
 		a.packsListCommand(),
 		a.packsValidateCommand(),
@@ -68,6 +69,7 @@ func (a *App) packsCommand() *cobra.Command {
 		a.packsCoversCommand(),
 		a.packsLintCommand(),
 		a.packsSchemaCommand(),
+		a.packsDescribeCommand(),
 	)
 	return packs
 }

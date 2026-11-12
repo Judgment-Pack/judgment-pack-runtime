@@ -1,0 +1,32 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/view-absent-and-empty",
+  "version": "0.1.0",
+  "title": "Present but empty members",
+  "decision": {
+    "intent": "Hold every optional array and object present and empty.",
+    "question": "Does the view keep empty apart from absent?",
+    "extensions": {}
+  },
+  "evidenceRequirements": [],
+  "sources": [],
+  "outcomes": [
+    { "id": "yes", "label": "Yes", "extensions": {} },
+    { "id": "no", "label": "No" }
+  ],
+  "rules": [
+    {
+      "id": "always",
+      "description": "Always yes.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "yes",
+      "onUnknown": "ignore",
+      "evidenceRequirementRefs": [],
+      "sourceRefs": [],
+      "extensions": {}
+    }
+  ],
+  "exceptions": [],
+  "metadata": {},
+  "extensions": {}
+}

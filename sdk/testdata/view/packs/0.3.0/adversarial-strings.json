@@ -1,0 +1,66 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.invalid/judgment-packs/view-adversarial-strings?q=a%7Cb&r=_x_#frag",
+  "version": "0.1.0",
+  "title": "# Heading | with pipe `tick` <script>alert(1)</script> [link](https://example.invalid) **bold** _em_ ~~strike~~ $x$ &amp; \\ end",
+  "description": "Line one\n## Injected heading\n| a | b |\n|---|---|\n- injected item\r\n> quote\u2028separator\u2029paragraph",
+  "decision": {
+    "intent": "  leading and trailing spaces  ",
+    "question": "Bidi \u202edesrever\u202c and isolates \u2066left\u2069 and marks \u200e\u200f\u061c, a joiner \u200d, a tab\tand controls \u0000\u001b[31m\u007f\u0085",
+    "extensions": {
+      "com.example.order": { "\ufb01": "ligature", "\ud83d\ude00": "emoji", "a": "ascii", "\u00e9": "accent" }
+    }
+  },
+  "evidenceRequirements": [
+    {
+      "id": "proof",
+      "description": "![image](https://example.invalid/x.png) and <img src=x onerror=alert(1)> and [ref]: https://example.invalid",
+      "required": true
+    }
+  ],
+  "sources": [
+    {
+      "id": "source",
+      "title": "1. Looks like a list",
+      "publisher": "+ also a list",
+      "locator": { "kind": "path", "value": "docs/a b/c|d.md" },
+      "citation": { "location": "    four spaces of indent", "excerpt": "```\nfenced\n```" },
+      "rights": "*** --- ___"
+    }
+  ],
+  "outcomes": [
+    { "id": "pass", "label": "Pass | fail", "description": "A cell | with | pipes and a trailing backslash \\" },
+    { "id": "fail", "label": "Fail\n| injected | row |" }
+  ],
+  "rules": [
+    {
+      "id": "pointers",
+      "description": "Paths that need escaping: ~0 and ~1, the empty pointer, and non-ASCII names.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          { "op": "fact", "path": "", "operator": "equals", "value": { "whole": "document", "|": "`" } },
+          { "op": "fact", "path": "/a~1b/~0c/\u00e9\ud835\udd18", "operator": "in", "value": ["x|y", "`z`", "<b>", 1, false, null] },
+          { "op": "fact", "path": "/", "operator": "not-equals", "value": "](https://example.invalid)" }
+        ]
+      },
+      "outcome": "pass",
+      "onUnknown": "ignore",
+      "rationale": "A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. A long rationale. The end."
+    }
+  ],
+  "fallbackOutcome": "fail",
+  "escalation": {
+    "triggers": ["unknown"],
+    "target": { "kind": "human-role", "name": "<script>alert('name')</script>" },
+    "message": "@someone #123 :smile: https://example.invalid/path?x=1&y=2 www.example.invalid"
+  },
+  "metadata": {
+    "authors": ["Author with | pipe", "Author with `tick`"],
+    "license": "&copy; &#169; &#xA9;"
+  },
+  "extensions": {
+    "com.example.html": "<div onclick=\"x\">a</div>",
+    "com.example.nested": { "deep": { "deeper": ["\u202e", "\n", "\\", "\"quoted\""] } }
+  }
+}

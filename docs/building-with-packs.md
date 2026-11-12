@@ -482,6 +482,66 @@ branch protection says so — the review, the reviewers, and the audit trail are
 control's, which already does this properly and is already what your auditor asks for. A boolean in
 a JSON file that its own author flips is a decoration.
 
+**Read the whole pack, as written.** `jpack packs describe` writes one pack for a reviewer to read
+(EXPERIMENTAL; [ADR-0074](adr/0074-describe-a-loaded-pack.md)). It loads the pack the way the Go
+API's `sdk.Load` does, evaluates nothing and opens no project; its bytes are those of
+`sdk.Pack.View`:
+
+```bash
+jpack packs describe packs/intake.json                 # Markdown, for a pull request or a review
+jpack packs describe packs/intake.json --format json   # the envelope; its view member holds the canonical JSON
+jpack packs describe packs/intake.json --format json | jq -j .view   # the canonical JSON bytes themselves
+```
+
+The view is faithful: every member of the document is carried and nothing is inferred, an absent
+member is left out and a present empty one is shown as empty, rules, exceptions and every operand
+keep document order, and numbers and decimal strings are shown exactly as written — `1.50` stays
+`1.50`. It is deterministic: the same pack bytes give the same view bytes. It does not explain an
+evaluation, cover a matrix or summarise across rules. A pack the loader refuses is refused with
+its code, and nothing is described.
+
+The canonical JSON, view version `1`, is one object with three members and no trailing newline:
+`digest` (`sha256:` and the hex SHA-256 of the exact bytes read), `pack` (the document, member for
+member) and `viewVersion`. Object members are ordered by the UTF-16 code units of their names and
+strings carry the RFC 8785 escapes; a number is written as the literal token the document holds,
+not in RFC 8785's number form, which would rewrite `1.50` as `1.5`.
+
+The Markdown, view version `1`, is a title heading and a list of the pack's id, version, spec
+version, profile when the pack states one, digest, view version and description, then one section
+per member in the order a reviewer reads a pack: Decision, Applicability, Outcomes (a table of id,
+label and description, then each outcome's extensions), Rules (one heading per rule, numbered in
+document order, with its condition as a nested list), Exceptions, Fallback outcome, Escalation,
+Evidence requirements, Sources, Metadata and Extensions. A section the pack has no member for is
+left out; a member that is present and empty reads `*empty*`. A condition is a list item — `literal
+true`, `all of:`, `any of:`, `not:`, `fact <path> <operator> <value>` with the path and the value as
+canonical JSON, or `evidence present <id>` — with its operands nested two spaces deeper. An
+extensions member is listed by name, each value as canonical JSON.
+
+Every string taken from the pack is escaped by one rule, so that no pack text can add a heading, a
+list item, a table cell, a link, an image, emphasis, a code span, raw HTML or an entity to the
+rendered document:
+
+- every ASCII punctuation character is written with a backslash before it, which CommonMark
+  renders as the character itself;
+- each run of characters that `internal/display` replaces in terminal output — control
+  characters, format characters including the bidirectional overrides and isolates, and the line
+  and paragraph separators — is written as one code span naming each code point, such as
+  `` `U+202E` `` or `` `U+000D U+000A` ``, so a newline cannot start a line and a bidirectional
+  control cannot reorder what a reviewer sees;
+- a space at either end of the string is written as `&#32;`, so it is neither trimmed nor read as
+  a line break;
+- every other character is written as itself.
+
+No line of the rendering begins with pack text: each follows a heading marker, a list marker and
+label, or a table pipe. The escaping makes the source harder to read than the rendering. It does
+not stop a host that posts the Markdown, such as a code-review comment, from linking `@` mentions,
+`#` references or bare URLs it finds in rendered text.
+
+The view's goldens are under `sdk/testdata/view/golden`, one JSON and one Markdown file per
+bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits. They
+are written only by `go test ./sdk -run TestViewGoldens -update-view-goldens` and read in review,
+never edited by hand; the tests beside them hold the format above by hand.
+
 ### Declare the reviewed set
 
 One command, run whenever the law changes on purpose:
