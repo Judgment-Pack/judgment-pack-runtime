@@ -577,3 +577,22 @@ func TestExtensionValuesAreCanonicalJSON(t *testing.T) {
 		t.Fatalf("extension names %v", names)
 	}
 }
+
+// The zero PackView has no encodings, and a copy of a view shares its slices
+// with the original while neither copy's cached encodings follow an edit.
+func TestTheZeroViewAndCopiesOfAView(t *testing.T) {
+	var zero pv.PackView
+	if zero.JSON() != nil || zero.Markdown() != nil {
+		t.Fatalf("the zero PackView has encodings: %q %q", zero.JSON(), zero.Markdown())
+	}
+	_, view := mustView(t, []byte(viewMinimalPack))
+	before, beforeMarkdown := view.JSON(), view.Markdown()
+	copied := view
+	copied.Rules[0].ID = "edited"
+	if view.Rules[0].ID != "edited" {
+		t.Fatal("a copy of a PackView does not share its slices")
+	}
+	if !bytes.Equal(view.JSON(), before) || !bytes.Equal(copied.JSON(), before) || !bytes.Equal(copied.Markdown(), beforeMarkdown) {
+		t.Fatal("an encoding followed an edit of the fields")
+	}
+}

@@ -136,7 +136,9 @@ version could describe would change, in either encoding: a member renamed, reord
 differently, a change to the escaping rule, a heading or label reworded. It does not move when the
 view learns to describe packs it refused before, such as those of a newly admitted specification
 version. This is stricter than the rule for `outputVersion`, because a reader of the view compares
-its bytes. The `packs describe` JSON envelope follows `outputVersion`; the view's bytes ride in it
+its bytes. Which characters the Markdown writes as code points follows the Unicode tables of the Go
+toolchain the runtime is built with, through `internal/display`; an update of those tables alone,
+which can move a newly assigned format character into that set, does not move `viewVersion`. The `packs describe` JSON envelope follows `outputVersion`; the view's bytes ride in it
 as a string and follow `viewVersion`.
 
 ## Release artifacts

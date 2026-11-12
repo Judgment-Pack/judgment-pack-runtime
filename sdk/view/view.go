@@ -56,7 +56,11 @@ type Identity struct {
 //
 // A PackView is the caller's own copy. JSON and Markdown return the encodings
 // of the view as View built it; changing the fields of the value afterwards
-// does not change them.
+// does not change them. A copy of a PackView shares its slices and pointers
+// with the original, so an edit through one is seen through the other, while
+// neither copy's encodings follow it. The zero PackView, and any PackView
+// sdk.Pack.View did not return, has no encodings: JSON and Markdown return
+// nil.
 type PackView struct {
 	Identity    Identity
 	Title       string

@@ -498,7 +498,11 @@ member is left out and a present empty one is shown as empty, rules, exceptions 
 keep document order, and numbers and decimal strings are shown exactly as written — `1.50` stays
 `1.50`. It is deterministic: the same pack bytes give the same view bytes. It does not explain an
 evaluation, cover a matrix or summarise across rules. A pack the loader refuses is refused with
-its code, and nothing is described.
+its code, and nothing is described. Describing is not evaluating: a pack whose
+`metadata.requiredExtensions` names an extension this runtime cannot evaluate is admitted and
+described in full, and `experimental evaluate` refuses the same pack. An absent `profile` is shown
+as absent, never as the schema's default; the evaluator applies that default whether or not the
+view shows it.
 
 The canonical JSON, view version `1`, is one object with three members and no trailing newline:
 `digest` (`sha256:` and the hex SHA-256 of the exact bytes read), `pack` (the document, member for

@@ -92,7 +92,8 @@ comparing matched strings compares the JSON.
 
 **Format versioning.** Both encodings carry `viewVersion`. It moves when the bytes for a pack an
 earlier view version could describe would change; describing packs of a newly admitted version
-does not move it (VERSIONING.md).
+does not move it (VERSIONING.md). The set of characters written as code points follows the Go
+toolchain's Unicode tables through `internal/display`; a table update alone does not move it.
 
 **The command.** `jpack packs describe <pack-or-> [--format markdown|json]` reads one local file
 or standard input, within the hard byte limit, calls `sdk.Load` with no supported extensions and
