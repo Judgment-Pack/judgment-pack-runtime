@@ -1,6 +1,8 @@
 package conformance
 
 import (
+	"slices"
+
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -20,6 +22,16 @@ func declaredProfile(fixture []byte) string {
 	}
 	profile, _ := root["profile"].(string)
 	return profile
+}
+
+// readerProfileCase reports whether a case is run by a reader of another
+// profile: its fixture declares, as a string, a profile the manifest's
+// readerProfiles define and that is not base, the one this reader implements.
+// A fixture declaring a profile no reader runs (a value outside the profile
+// enum, or one the manifest does not list) is an ordinary case: its expected
+// finding, a refusal of the declaration, is checked like any other.
+func readerProfileCase(profile string, readerProfiles []string) bool {
+	return profile != "" && profile != "base" && slices.Contains(readerProfiles, profile)
 }
 
 // skippedProfileCase reports a case written for a reader profile this

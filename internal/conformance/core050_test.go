@@ -351,3 +351,66 @@ func TestReleasedCasesCarryOverTo050(t *testing.T) {
 		t.Fatalf("only %d of %d released fixtures declared the 0.3.0 selector bytes; the replacement is not exercised", carried, len(manifest.Cases))
 	}
 }
+
+// A local 0.5.0 suite whose case fixture declares a profile outside the
+// profile enum expects the declaration's refusal, and that case is checked,
+// not routed to the reader-profile skip: only a profile the manifest's
+// readerProfiles define, other than base, is a case for another reader. The
+// case beside it, declaring extended, is still skipped. Case paths resolve at
+// the suite root.
+func TestALocalCaseDeclaringAnUndefinedProfileIsChecked(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := artifacts.Load(artifacts.Core050Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := set.Manifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaBytes, err := set.ManifestSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["cases"] = []any{
+		map[string]any{"id": "structural-profile-undefined", "path": "structural/profile-undefined.json", "layer": "structural", "expectedResult": "invalid", "expectedDiagnostic": map[string]any{"code": "JPS-STRUCTURE-ENUM", "path": "/profile"}, "focus": "a profile outside the profile enum", "specSection": "§4.1"},
+		map[string]any{"id": "valid-profile-extended", "path": "valid/profile-extended.json", "layer": "semantic", "expectedResult": "valid", "expectedDiagnostic": nil, "focus": "a pack under the extended profile", "specSection": "§4.1"},
+	}
+	edited, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const pack = `{"specVersion":"0.5.0","profile":%q,"id":"https://example.com/packs/profile","version":"1.0.0","title":"Profile","decision":{"intent":"Route","question":"Route?"},"outcomes":[{"id":"accept","label":"Accept"},{"id":"refer","label":"Refer"}],"rules":[{"id":"a","description":"A","when":{"op":"literal","value":true},"outcome":"accept","onUnknown":"ignore"}]}`
+	root := t.TempDir()
+	for relative, data := range map[string][]byte{
+		"manifest.json":                     edited,
+		"manifest.schema.json":              schemaBytes,
+		"structural/profile-undefined.json": []byte(fmt.Sprintf(pack, "nonsense")),
+		"valid/profile-extended.json":       []byte(fmt.Sprintf(pack, "extended")),
+	} {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	suite, failure := NewRunner(engine).RunWithOptions(root, "", false)
+	if failure != nil {
+		t.Fatalf("local suite refused: %+v", failure)
+	}
+	if suite.Status != "valid" || suite.Summary.Total != 2 || suite.Summary.Passed != 1 || suite.Summary.Skipped != 1 || suite.Summary.Mismatched != 0 {
+		t.Fatalf("summary %+v, cases %+v", suite.Summary, suite.Cases)
+	}
+	if suite.Cases[0].ID != "structural-profile-undefined" || suite.Cases[0].Status != "passed" || suite.Cases[1].Status != "skipped" {
+		t.Fatalf("cases %+v", suite.Cases)
+	}
+}

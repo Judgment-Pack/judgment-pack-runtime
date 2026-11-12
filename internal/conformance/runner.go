@@ -136,23 +136,21 @@ func (r *Runner) RunWithOptions(suiteArgument, requestedVersion string, strict b
 		if operational != nil {
 			return result.Suite{}, operational
 		}
-		if len(manifest.ReaderProfiles) > 0 {
-			if profile := declaredProfile(fixture); profile != "" && profile != "base" {
-				// readerProfiles: a case whose fixture declares another profile is
-				// run by a reader supporting it. This reader implements base only,
-				// so the case is not checked; what is checked is that the reader
-				// refuses the fixture's profile rather than reading it as base.
-				caseResult := skippedProfileCase(manifestCase.ID, manifestCase.ExpectedResult, profile, actual)
-				if caseResult.Status == "mismatch" {
-					output.Status = "mismatch"
-					output.Summary.Mismatched++
-				} else {
-					output.Summary.Skipped++
-				}
-				output.Summary.Total++
-				output.Cases = append(output.Cases, caseResult)
-				continue
+		if profile := declaredProfile(fixture); readerProfileCase(profile, manifest.ReaderProfiles) {
+			// readerProfiles: a case whose fixture declares another profile is
+			// run by a reader supporting it. This reader implements base only,
+			// so the case is not checked; what is checked is that the reader
+			// refuses the fixture's profile rather than reading it as base.
+			caseResult := skippedProfileCase(manifestCase.ID, manifestCase.ExpectedResult, profile, actual)
+			if caseResult.Status == "mismatch" {
+				output.Status = "mismatch"
+				output.Summary.Mismatched++
+			} else {
+				output.Summary.Skipped++
 			}
+			output.Summary.Total++
+			output.Cases = append(output.Cases, caseResult)
+			continue
 		}
 		normative, advice := splitAdvice(actual.Diagnostics, strict)
 		actual.Diagnostics = append(append([]result.Diagnostic{}, normative...), advice...)
