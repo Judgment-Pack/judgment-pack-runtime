@@ -4,14 +4,14 @@
   "source": {
     "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
     "kind": "immutable-git-ref",
-    "baseCommit": "72c004197742391c0a72307c4d71b854b0d102b1",
-    "ref": "72c004197742391c0a72307c4d71b854b0d102b1",
+    "baseCommit": "4cae6a34058883955cf3b00a4c9672e2c8ad7975",
+    "ref": "4cae6a34058883955cf3b00a4c9672e2c8ad7975",
     "worktreeDirty": false,
     "stage": "staged-unreleased"
   },
   "bundleDigest": {
     "algorithm": "sha256-length-prefixed-v1",
-    "value": "8ebf1dd2499675787682370d8122f9d4a035235a3554e605d00e58befd963689"
+    "value": "475e729329a3b9135951e5c1ac41f49a343bea044c9d59ce87ff76650bc07669"
   },
   "files": [
     {
@@ -150,6 +150,21 @@
       "sha256": "a94e8d285b6b98596b8f8d800395433ded3775ece5c566fd6946d16fc6f4e5ac"
     },
     {
+      "path": "cases/structural/annotations-empty-object-entry.json",
+      "bytes": 1056,
+      "sha256": "0387fa85d36176d69cb3f0f377ed213dbbc765dc3652168ed81e41f5fdc10721"
+    },
+    {
+      "path": "cases/structural/annotations-empty-object-outcome.json",
+      "bytes": 770,
+      "sha256": "b8032e270cde16e4c3fc57af98bb3552fb176abd1d99c9df0235c72fd7f28191"
+    },
+    {
+      "path": "cases/structural/annotations-empty-object-root.json",
+      "bytes": 755,
+      "sha256": "d9a8f1441cd1e4523deaae148680695c4ce207887e84f8bb88874f8164e17414"
+    },
+    {
       "path": "cases/structural/annotations-empty-object.json",
       "bytes": 762,
       "sha256": "6574571662ed012e4e2b0bcc2496b042732811510ccb541742a9916647d63456"
@@ -233,6 +248,11 @@
       "path": "cases/structural/annotations-key-trailing-lf.json",
       "bytes": 803,
       "sha256": "7a8e2873c68875102e487f09c32747ee29974e7dde4cc1bc1c1f4a83096c282a"
+    },
+    {
+      "path": "cases/structural/annotations-list-item-number.json",
+      "bytes": 825,
+      "sha256": "4970af6d295cb0112c1d569f53d215220f18e91fd1c493d508f7d7d2d35942af"
     },
     {
       "path": "cases/structural/annotations-not-object.json",
@@ -536,8 +556,8 @@
     },
     {
       "path": "cases/valid/annotations-non-bmp.json",
-      "bytes": 1829,
-      "sha256": "212e0dcd088ec7e2e0b11780df35d3b73c4024d4cc889bdd76ea2b074ecff29d"
+      "bytes": 3877,
+      "sha256": "f8f9928fa39991f04d298c499d3c74f58177ad190d0d5004d676920d1492e8a9"
     },
     {
       "path": "cases/valid/annotations-one-element-list.json",
@@ -565,9 +585,19 @@
       "sha256": "0dacc1d58069a389f7a8e3d963d689814a7f81e1d6b30175ecf875a6d40569c9"
     },
     {
+      "path": "cases/valid/extensions-member-in-data.json",
+      "bytes": 1526,
+      "sha256": "093659235d9c239fdc6ee5e368df6c850be81446abfa34d20d95b3ed3d130b4b"
+    },
+    {
       "path": "cases/valid/profile-annotation-key-characters-base-over-extended.json",
       "bytes": 907,
       "sha256": "357e17dc51709471adbe6226460adcf1a6bbb80ade5014693eaa06982d5fd0f5"
+    },
+    {
+      "path": "cases/valid/profile-annotation-key-characters-extended-at-extended.json",
+      "bytes": 971,
+      "sha256": "0cdbcd833959cb83a3ebe45bc61d5ea357b745ca66b4e8f87f02644aa98edfb1"
     },
     {
       "path": "cases/valid/profile-annotation-keys-base-over-extended.json",
@@ -575,9 +605,19 @@
       "sha256": "a79e1c5f62a1c2c21b74cd96a271341f82a2a3ace98b359efaf7c68c2b0fd5ac"
     },
     {
+      "path": "cases/valid/profile-annotation-keys-extended-at-extended.json",
+      "bytes": 1800,
+      "sha256": "c61f3191e6f3a26c5af6143f26caae5b881cfbf4ea1466756e9646bb000fbb60"
+    },
+    {
       "path": "cases/valid/profile-annotation-string-characters-base-over-extended.json",
       "bytes": 1105,
       "sha256": "0e2f45cd771b5797b8db054e5176dd66f70c3e60af462769fd26c0f8b8157a5c"
+    },
+    {
+      "path": "cases/valid/profile-annotation-string-characters-extended-at-extended.json",
+      "bytes": 1360,
+      "sha256": "7dbec46b4664167e0d6a3c1e2e009176d526901cb1ed8e71d5f0c402cef3fc7b"
     },
     {
       "path": "cases/valid/profile-annotation-strings-base-over-extended.json",
@@ -585,14 +625,39 @@
       "sha256": "1c3d85dc15890e177c597f83678094c6d03bc2183ca08acf49a3013d34b64f42"
     },
     {
+      "path": "cases/valid/profile-annotation-strings-extended-at-extended.json",
+      "bytes": 1647,
+      "sha256": "eebacef4c38f3f4d7b825b5021934b99811303e9851907e3658ce55515bbea1a"
+    },
+    {
+      "path": "cases/valid/profile-value-set-entries-base-at-base.json",
+      "bytes": 23317,
+      "sha256": "65ec6568a7d47db588284f9a27c31bfd9c73df5d02d0908b00a834d9982accce"
+    },
+    {
       "path": "cases/valid/profile-value-set-entries-base-over-extended.json",
       "bytes": 23365,
       "sha256": "d5b582c9f98d2b657f645161b503214996f81691de8fcc80310b57e5750bd890"
     },
     {
+      "path": "cases/valid/profile-value-set-entries-extended-at-extended.json",
+      "bytes": 45874,
+      "sha256": "aad45caf09d2b8c24c6c082c52d67a3d60c727d7f7e144c48538c522e15bd9fa"
+    },
+    {
+      "path": "cases/valid/profile-value-sets-base-at-base.json",
+      "bytes": 7597,
+      "sha256": "8b2a54b379f2016c7a5efaed7bccacf0101694d46be797f47570be24868ecddd"
+    },
+    {
       "path": "cases/valid/profile-value-sets-base-over-extended.json",
       "bytes": 7706,
       "sha256": "abe5e69f806bf9e44d4dce0a87615f3219951fed81049f2f3cf1e0d1ba5b8000"
+    },
+    {
+      "path": "cases/valid/profile-value-sets-extended-at-extended.json",
+      "bytes": 14349,
+      "sha256": "baef52a817448672769edec4d8c97e232a428dd31c744f1631fb3ff699a5ad77"
     },
     {
       "path": "cases/valid/value-set-array-order.json",
@@ -646,8 +711,8 @@
     },
     {
       "path": "evaluation/cases.json",
-      "bytes": 48880,
-      "sha256": "e1ae38a65f9201800cf64dba72e1b3c131aafee031eff1ad217eadcc2951d7eb"
+      "bytes": 54862,
+      "sha256": "819cba5f9f127cf8d950913d9bd09019f8e20e5511b74b1e4b7737fcae24015c"
     },
     {
       "path": "evaluation/manifest.schema.json",
@@ -710,6 +775,11 @@
       "sha256": "c9a04b764ab6ebb7304dc5fdf26df085eeea2cd70e031f33314c84d8ceb549be"
     },
     {
+      "path": "evaluation/packs/value-set-empty-collection.json",
+      "bytes": 982,
+      "sha256": "a47719aed007efb8b7619efb9ea68c24e864c574e33a64b7f0063ee828a32b6e"
+    },
+    {
       "path": "evaluation/packs/value-set-equality.json",
       "bytes": 1356,
       "sha256": "2cabac7dc24bb7ca4ec21016ecd248f8c1009f273c2cceec6823c24c438a1381"
@@ -765,6 +835,26 @@
       "sha256": "a5b2a3d9eb0aa4cf821333caba21945aeb61d08dbb1f6882810dd82012748e6e"
     },
     {
+      "path": "evaluation/packs/value-set-under-all-inline.json",
+      "bytes": 1236,
+      "sha256": "f55d75c022a01947a85105af34e2b19e6e738bb23691b5ca3bc27be6c09bb9e6"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-all.json",
+      "bytes": 1406,
+      "sha256": "2aaa1438419f5674ad4cbcbb9831bb6d901eee1b8961fac5e275b2c2d193b5d0"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-any-inline.json",
+      "bytes": 1237,
+      "sha256": "36ad764c31abcd9fdc729ac6ee4ff0044364df26051abbccf05653e7c7be181a"
+    },
+    {
+      "path": "evaluation/packs/value-set-under-any.json",
+      "bytes": 1407,
+      "sha256": "3cbd5aecf11630a599c634f7947abc30243af7582110952cd0c7234d204a0c81"
+    },
+    {
       "path": "evaluation/packs/value-set-under-not-inline.json",
       "bytes": 1009,
       "sha256": "db437652e1ffb32a7964908096033941cfdf29322aabfff97d71566be885d82a"
@@ -801,8 +891,8 @@
     },
     {
       "path": "manifest.json",
-      "bytes": 55868,
-      "sha256": "187a9f9b43f00bb0d9e49ed996fb47db02d54e3a7b756809ad665dabbbab74f8"
+      "bytes": 61306,
+      "sha256": "973b505b4e7815d72642b5c1742702c8f906c8de4c182e06ef9db970faef593a"
     },
     {
       "path": "manifest.schema.json",
@@ -811,8 +901,8 @@
     },
     {
       "path": "schema.json",
-      "bytes": 27177,
-      "sha256": "12f826b30ebc7de5f9e083e88400a3b92ea6c7309fa9040872df1ea6c849b2d7"
+      "bytes": 27203,
+      "sha256": "f51a1eccc5aeb5b0a88b7b39b789b75f46297d309edfff061c17f6f4c24d7bee"
     }
   ]
 }
