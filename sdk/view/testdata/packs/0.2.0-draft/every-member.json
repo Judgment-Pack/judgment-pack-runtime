@@ -1,0 +1,154 @@
+{
+  "specVersion": "0.2.0-draft",
+  "id": "https://example.invalid/judgment-packs/view-every-member",
+  "version": "1.2.3",
+  "title": "Every member of a Core 0.2.0-draft pack",
+  "description": "Invented content for the pack view tests; it authorizes nothing.",
+  "decision": {
+    "intent": "Carry every member the schema allows at least once.",
+    "question": "Does the view carry every member?",
+    "extensions": {
+      "com.example.decision-note": { "b": 2, "a": [1, "1", true, null] }
+    }
+  },
+  "applicability": {
+    "op": "fact",
+    "path": "/request/kind",
+    "operator": "equals",
+    "value": "purchase"
+  },
+  "evidenceRequirements": [
+    {
+      "id": "receipt",
+      "description": "A receipt for the purchase.",
+      "required": true,
+      "kind": "document",
+      "extensions": { "com.example.retention": "seven-years" }
+    },
+    {
+      "id": "manager-note",
+      "description": "A note from the manager.",
+      "required": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "policy",
+      "title": "Purchasing policy",
+      "publisher": "Finance",
+      "publishedAt": "2026-01-15",
+      "locator": { "kind": "uri", "value": "https://example.invalid/policy" },
+      "citation": { "location": "Section 4.2", "excerpt": "Purchases over the limit need approval." },
+      "rights": "Internal use only.",
+      "extensions": { "com.example.source-owner": "finance" }
+    },
+    {
+      "id": "handbook",
+      "title": "Handbook",
+      "locator": { "kind": "other", "value": "Shelf 3" }
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "approve",
+      "label": "Approve",
+      "description": "The purchase may proceed.",
+      "extensions": { "com.example.colour": "green" }
+    },
+    { "id": "refer", "label": "Refer" },
+    { "id": "decline", "label": "Decline", "description": "The purchase may not proceed." }
+  ],
+  "rules": [
+    {
+      "id": "over-limit",
+      "description": "An amount over the limit with a receipt is referred.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          { "op": "fact", "path": "/request/amount", "operator": "greater-than", "value": "1000.00" },
+          { "op": "evidence-present", "evidenceRequirement": "receipt" },
+          {
+            "op": "not",
+            "condition": {
+              "op": "fact",
+              "path": "/request/region",
+              "operator": "in",
+              "value": ["eu", 7, true, null, { "zone": "x" }, ["nested"]]
+            }
+          }
+        ]
+      },
+      "outcome": "refer",
+      "onUnknown": "escalate",
+      "evidenceRequirementRefs": ["receipt"],
+      "sourceRefs": ["policy"],
+      "rationale": "Section 4.2 sets the limit.",
+      "extensions": { "com.example.rule-owner": { "team": "finance", "since": 2024 } }
+    },
+    {
+      "id": "small-or-local",
+      "description": "A small purchase or a local one is approved.",
+      "when": {
+        "op": "any",
+        "conditions": [
+          { "op": "fact", "path": "/request/amount", "operator": "less-than-or-equal", "value": "50" },
+          { "op": "fact", "path": "/request/local", "operator": "equals", "value": true },
+          { "op": "literal", "value": false }
+        ]
+      },
+      "outcome": "approve",
+      "onUnknown": "ignore"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "auditor-hold",
+      "description": "An auditor hold declines.",
+      "when": { "op": "fact", "path": "/request/hold", "operator": "not-equals", "value": null },
+      "effect": "force-outcome",
+      "outcome": "decline",
+      "onUnknown": "escalate",
+      "sourceRefs": ["handbook"],
+      "extensions": { "com.example.exception-note": "audit" }
+    },
+    {
+      "id": "trusted-vendor",
+      "description": "A trusted vendor skips the limit rule.",
+      "when": { "op": "fact", "path": "/vendor/trusted", "operator": "equals", "value": true },
+      "effect": "suppress-rule",
+      "targetRule": "over-limit",
+      "onUnknown": "ignore"
+    },
+    {
+      "id": "new-vendor",
+      "description": "A new vendor escalates.",
+      "when": { "op": "fact", "path": "/vendor/age-days", "operator": "less-than", "value": "30" },
+      "effect": "escalate",
+      "onUnknown": "ignore"
+    }
+  ],
+  "fallbackOutcome": "decline",
+  "escalation": {
+    "triggers": ["unknown", "conflict", "missing-required-evidence", "no-match", "not-applicable"],
+    "target": { "kind": "human-role", "name": "Purchasing reviewer" },
+    "message": "Review the purchase by hand.",
+    "extensions": { "com.example.sla": { "hours": 24 } }
+  },
+  "metadata": {
+    "authors": ["Purchasing team"],
+    "createdAt": "2026-02-01T09:30:00Z",
+    "license": "CC-BY-4.0",
+    "requiredExtensions": ["com.example.rule-owner"],
+    "reviews": [
+      {
+        "reviewer": "Controller",
+        "reviewedAt": "2026-02-02T10:00:00Z",
+        "disposition": "approved",
+        "note": "Limits match the policy."
+      },
+      { "reviewer": "Auditor", "reviewedAt": "2026-02-03T11:00:00Z", "disposition": "changes-requested" }
+    ],
+    "extensions": { "com.example.metadata-note": "draft" }
+  },
+  "extensions": { "com.example.top-level": { "z": 1, "y": [2, 3] } }
+}

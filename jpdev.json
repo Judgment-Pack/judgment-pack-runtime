@@ -21,7 +21,7 @@
                  "go-vet", "go-test", "conformance", "build"]
     },
     {
-      "paths": ["internal/*/testdata/**"],
+      "paths": ["internal/*/testdata/**", "sdk/view/testdata/**"],
       "checks": ["local-paths", "agent-docs", "diff-check", "go-test"]
     },
     {

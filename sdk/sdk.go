@@ -3,6 +3,7 @@ package sdk
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,6 +78,8 @@ type Pack struct {
 	contract result.EvaluatorContract
 	// supported is Load's own copy of LoadOptions.SupportedExtensions.
 	supported []string
+	// identity is read once, by Load, from the admitted document.
+	identity Identity
 }
 
 // Load validates pack to full document conformance and admits it for
@@ -93,6 +96,10 @@ type Pack struct {
 // the same bytes when the pack failed validation. A pack that requires an
 // extension outside options.SupportedExtensions is not refused here; Evaluate
 // refuses it.
+//
+// Load also reads the admitted pack's Identity — its id, version,
+// specVersion and stated profile, and the digest of the exact bytes given —
+// which Pack.Identity returns and Pack.View carries.
 //
 // ctx is checked on entry and again before validation starts. A validation
 // that has started runs to completion, bounded by the documented limits; it
@@ -129,9 +136,20 @@ func Load(ctx context.Context, pack []byte, options LoadOptions) (*Pack, error) 
 	// The pack half of the §8.2 preflight runs here, once, through the
 	// engine's own steps, and the admission is memoized under the options
 	// Evaluate uses, so Evaluate replays it rather than validating again.
-	if failure := loaded.admitted.PackFailure(loaded.options(false)); failure != nil {
+	// Document is PackFailure that also hands back the admitted root.
+	root, failure := loaded.admitted.Document(loaded.options(false))
+	if failure != nil {
 		return nil, packError(validator, pack, failure)
 	}
+	// The digest is the admission's, taken over its private copy of the
+	// bytes, so a caller editing its slice after Load cannot change what the
+	// digest names.
+	digest := loaded.admitted.Digest()
+	identity, err := readIdentity(root, "sha256:"+hex.EncodeToString(digest[:]))
+	if err != nil {
+		return nil, err
+	}
+	loaded.identity = identity
 	return loaded, nil
 }
 

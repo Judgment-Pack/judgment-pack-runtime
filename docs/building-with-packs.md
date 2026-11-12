@@ -482,6 +482,95 @@ branch protection says so — the review, the reviewers, and the audit trail are
 control's, which already does this properly and is already what your auditor asks for. A boolean in
 a JSON file that its own author flips is a decoration.
 
+**Read the whole pack, as written.** `jpack packs describe` writes one pack for a reviewer to read
+(EXPERIMENTAL; [ADR-0074](adr/0074-describe-a-loaded-pack.md)). It loads the pack the way the Go
+API's `sdk.Load` does, evaluates nothing and opens no project; its bytes are those of the
+`view.PackView` that `sdk.Pack.View` returns:
+
+```bash
+jpack packs describe packs/intake.json                 # Markdown, for a pull request or a review
+jpack packs describe packs/intake.json --format json   # the envelope; its view member holds the canonical JSON
+jpack packs describe packs/intake.json --format json | jq -j .view   # the canonical JSON bytes themselves
+```
+
+The view is faithful: every member of the document is carried and nothing is inferred, an absent
+member is left out and a present empty one is shown as empty, rules, exceptions and every operand
+keep document order, and numbers and decimal strings are shown exactly as written — `1.50` stays
+`1.50`. It is deterministic: the same pack bytes give the same view bytes. It does not explain an
+evaluation, cover a matrix or summarise across rules. A pack the loader refuses is refused with
+its code, and nothing is described. Describing is not evaluating: a pack whose
+`metadata.requiredExtensions` names an extension this runtime cannot evaluate is admitted and
+described in full, and `experimental evaluate` refuses the same pack. An absent `profile` is shown
+as absent, never as the schema's default; the evaluator applies that default whether or not the
+view shows it.
+
+The canonical JSON, view version `1`, is one object with three members and no trailing newline:
+`digest` (`sha256:` and the hex SHA-256 of the exact bytes read), `pack` (the document, member for
+member) and `viewVersion`. Object members are ordered by the UTF-16 code units of their names and
+strings carry the RFC 8785 escapes; a number is written as the literal token the document holds,
+not in RFC 8785's number form, which would rewrite `1.50` as `1.5`.
+
+The Markdown, view version `1`, is a title heading and a list of the pack's id, version, spec
+version, profile when the pack states one, digest, view version and description, then one section
+per member in the order a reviewer reads a pack: Decision, Applicability, Outcomes (a table of id,
+label and description, then each outcome's extensions), Rules (one heading per rule, numbered in
+document order, with its condition as a nested list), Exceptions, Fallback outcome, Escalation,
+Evidence requirements, Sources, Metadata and Extensions. A section the pack has no member for is
+left out; a member that is present and empty reads `*empty*`. A condition is a list item — `literal
+true`, `all of:`, `any of:`, `not:`, `fact <path> <operator> <value>` with the path and the value as
+canonical JSON, or `evidence present <id>` — with its operands nested two spaces deeper. An
+extensions member is listed by name, each value as canonical JSON.
+
+Every string taken from the pack is escaped by one rule, so that no Markdown syntax in pack text
+can add a heading, a list item, a table cell, a link, an image, emphasis, a code span, raw HTML or
+an entity to the rendered document:
+
+- every ASCII punctuation character is written with a backslash before it, which CommonMark
+  renders as the character itself;
+- each run of characters that `internal/display` replaces in terminal output — control
+  characters, format characters including the bidirectional overrides and isolates, and the line
+  and paragraph separators — is written as one code span naming each code point, such as
+  `` `U+202E` `` or `` `U+000D U+000A` ``, so a newline cannot start a line and a bidirectional
+  control cannot reorder what a reviewer sees;
+- a space at either end of the string is written as `&#32;`, so it is neither trimmed nor read as
+  a line break;
+- every other character is written as itself.
+
+A string in a position the evaluator matches on — a fact's path, every string and member name
+inside a fact's value, an extension's name, and every string and member name inside an extension's
+value — is also written in ASCII when it holds any code point outside U+0020 to U+007E. Beside the
+escaped text, in a code span, comes its canonical JSON with each such code point written as a JSON
+`\uXXXX` escape (two, a surrogate pair, beyond U+FFFF) and a backtick as `\u0060`, for example
+`` (ASCII `"/amount\u3164"`) ``. The span then holds only printable ASCII and no backtick, so
+nothing in it can end it. Two matched strings that render alike — a Hangul or Braille blank, an
+invisible combining mark or variation selector, a space other than U+0020, a decomposed letter
+beside a precomposed one, a letter of another script that looks like a Latin one — differ in their
+ASCII forms; a pure-ASCII string has none and renders as before. The marking stops there: free text
+— the title, descriptions, labels, a rationale, a citation, an id — is not marked, so a look-alike or
+an NFC/NFD difference in it is not detected. The canonical JSON is unchanged and writes such
+characters as themselves, as RFC 8785 does; a tool that compares matched strings should compare
+the JSON, not the Markdown.
+
+No line of the rendering begins with pack text: each follows a heading marker, a list marker and
+label, or a table pipe. The escaping makes the source harder to read than the rendering.
+
+Escaping does not stop every link. A GitHub-flavoured renderer links an email address it finds in
+text even when every punctuation character of it is escaped, so a pack string `ops@example.com`,
+written `ops\@example\.com`, can still render as a `mailto:` link. A forge that shows the Markdown,
+in a pull request or a code-review comment, also links `@` mentions, `#` and cross-repository
+references and commit ids it finds in the rendered text, and a mention notifies its owner. A caller
+that posts the view on a forge should attach the Markdown as a file, or put it inside a fenced code
+block whose fence is longer than any run of backticks in the Markdown; inside it nothing is
+rendered or linked.
+
+The view is held by hand. The Markdown and canonical JSON under `sdk/view/testdata/expected`, for
+one every-member pack of each admitted specification version and for the adversarial-strings
+fixture, are written from the format above and the fixture, never recorded from a run. Over every
+bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits, a
+check derived from the input document finds every string and number of the document in its
+section of the Markdown, in document order, and the schema walk holds the canonical JSON to every
+member of the document.
+
 ### Declare the reviewed set
 
 One command, run whenever the law changes on purpose:

@@ -1385,6 +1385,20 @@ type PackLockCoverage struct {
 	Findings      []LockFinding `json:"findings"`
 }
 
+// PackDescription is one packs describe report in JSON: the view of one
+// admitted pack, which is experimental. View holds the exact bytes of the
+// view's canonical JSON as a string, so the outer encoding, indented or not,
+// cannot change them; a reader decodes the string to get those bytes back.
+// The view carries its own viewVersion, which moves independently of
+// OutputVersion.
+type PackDescription struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	View          string `json:"view"`
+}
+
 // PackTestEntry is one pack's matrix run. Rows reuse the corpus row type,
 // because a project matrix row is compared exactly as a corpus row is: the RFC
 // 8785 canonical disposition byte for byte, or the expected §8.4 error class and

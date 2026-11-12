@@ -8,6 +8,17 @@ All notable changes to tagged releases are documented here.
   is not the read verification makes of a line: a line with a duplicate or case-variant member
   can be selected by the listing while verification does not read it as a record (#367). No
   behaviour changes.
+- `sdk.Pack.View` returns the whole of an admitted pack as a `view.PackView` of the new package
+  `sdk/view`, with its canonical JSON and its Markdown rendering, and `sdk.Pack.Identity` returns
+  the pack's id, version, specVersion, stated profile and the sha256 digest of the bytes loaded
+  (#372, ADR-0074; EXPERIMENTAL). The view carries every member as written, an absent member
+  absent and numbers exactly as written; it never evaluates. Both encodings carry `viewVersion`
+  `"1"` (VERSIONING.md). The Markdown escapes every pack string, and writes a string the
+  evaluator matches on in ASCII beside it when it holds a character outside printable ASCII.
+  `jpack packs describe <pack-or-> [--format markdown|json]` writes the same bytes for one local
+  pack or standard input, reads no project configuration and evaluates nothing; a pack the loader
+  refuses is reported with the loader's code. docs/building-with-packs.md "Review" states the
+  format, the escaping and what escaping does not stop.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).

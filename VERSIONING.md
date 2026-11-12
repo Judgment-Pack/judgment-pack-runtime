@@ -129,6 +129,18 @@ program's build information when that information records it. The bytes
 specification fixes; the envelope `Evaluation.JSON` returns is CLI machine output and follows its
 `outputVersion`.
 
+The pack view (`sdk.Pack.View` and package `sdk/view`, and `jpack packs describe`, ADR-0074)
+carries its own `viewVersion`,
+`"1"`, in its JSON and in its Markdown. It moves when the bytes View gives for a pack an earlier view
+version could describe would change, in either encoding: a member renamed, reordered or rendered
+differently, a change to the escaping rule, a heading or label reworded. It does not move when the
+view learns to describe packs it refused before, such as those of a newly admitted specification
+version. This is stricter than the rule for `outputVersion`, because a reader of the view compares
+its bytes. Which characters the Markdown writes as code points follows the Unicode tables of the Go
+toolchain the runtime is built with, through `internal/display`; an update of those tables alone,
+which can move a newly assigned format character into that set, does not move `viewVersion`. The `packs describe` JSON envelope follows `outputVersion`; the view's bytes ride in it
+as a string and follow `viewVersion`.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:

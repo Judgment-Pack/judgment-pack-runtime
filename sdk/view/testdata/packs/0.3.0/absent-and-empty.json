@@ -1,0 +1,50 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.invalid/judgment-packs/view-absent-and-empty",
+  "version": "0.1.0",
+  "title": "Present but empty members",
+  "decision": {
+    "intent": "Hold the optional arrays and objects present and empty.",
+    "question": "Does the view keep empty apart from absent?",
+    "extensions": {}
+  },
+  "evidenceRequirements": [],
+  "sources": [],
+  "outcomes": [
+    { "id": "yes", "label": "Yes", "extensions": {} },
+    { "id": "no", "label": "No" }
+  ],
+  "rules": [
+    {
+      "id": "always",
+      "description": "Always yes.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "yes",
+      "onUnknown": "ignore",
+      "evidenceRequirementRefs": [],
+      "sourceRefs": []
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "never",
+      "description": "Never applies.",
+      "when": { "op": "literal", "value": false },
+      "effect": "escalate",
+      "onUnknown": "ignore",
+      "sourceRefs": [],
+      "extensions": {}
+    }
+  ],
+  "escalation": {
+    "triggers": ["unknown"],
+    "routes": [{ "target": { "kind": "queue", "name": "Review" } }],
+    "extensions": {}
+  },
+  "metadata": {
+    "requiredExtensions": [],
+    "reviews": [],
+    "extensions": {}
+  },
+  "extensions": {}
+}

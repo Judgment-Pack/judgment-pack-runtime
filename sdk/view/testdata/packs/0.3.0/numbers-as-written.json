@@ -1,0 +1,46 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.invalid/judgment-packs/view-numbers-as-written",
+  "version": "0.1.0",
+  "title": "Numbers and decimal strings as written",
+  "decision": {
+    "intent": "Hold numbers in several spellings of the same value.",
+    "question": "Does the view keep each number's spelling?"
+  },
+  "outcomes": [
+    { "id": "match", "label": "Match" },
+    { "id": "other", "label": "Other" }
+  ],
+  "rules": [
+    {
+      "id": "spellings",
+      "description": "Each comparison value is written its own way.",
+      "when": {
+        "op": "any",
+        "conditions": [
+          { "op": "fact", "path": "/a", "operator": "equals", "value": 1.50 },
+          { "op": "fact", "path": "/b", "operator": "equals", "value": 1e2 },
+          { "op": "fact", "path": "/c", "operator": "equals", "value": 1E+2 },
+          { "op": "fact", "path": "/d", "operator": "equals", "value": -0 },
+          { "op": "fact", "path": "/e", "operator": "equals", "value": 0.000 },
+          { "op": "fact", "path": "/f", "operator": "equals", "value": 123456789012345678901234567890 },
+          { "op": "fact", "path": "/g", "operator": "not-equals", "value": -1.5e-10 },
+          { "op": "fact", "path": "/h", "operator": "in", "value": [1.0, "1.0", 1, "1"] },
+          { "op": "fact", "path": "/i", "operator": "greater-than", "value": "1000.50" },
+          { "op": "fact", "path": "/j", "operator": "less-than", "value": "-0.0" },
+          { "op": "fact", "path": "/k", "operator": "greater-than-or-equal", "value": "0.10" },
+          { "op": "fact", "path": "/l", "operator": "equals", "value": "1.50" }
+        ]
+      },
+      "outcome": "match",
+      "onUnknown": "escalate",
+      "extensions": { "com.example.weights": { "low": 2.500, "high": 1E-3 } }
+    }
+  ],
+  "fallbackOutcome": "other",
+  "escalation": {
+    "triggers": ["unknown"],
+    "target": { "kind": "queue", "name": "Number review" },
+    "message": "A spelling could not be compared."
+  }
+}
