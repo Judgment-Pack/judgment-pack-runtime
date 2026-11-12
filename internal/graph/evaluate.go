@@ -180,6 +180,9 @@ func Evaluate(loaded *project.Project, engine *evaluation.Engine, doc Document, 
 	// Structural graph admission above is needed to identify the participating
 	// packs safely. Other selection refusals keep their legacy position after
 	// graph invocation checks; unsupported profiles must precede those checks.
+	if refusal := Core050NodeRefusal(loaded, doc, "Graph evaluation"); refusal != nil {
+		return result.GraphEvaluation{}, refusal
+	}
 	contract, selectionFailure := SelectContract(loaded, doc)
 	if selectionFailure != nil && selectionFailure.Code == "profile-unsupported" {
 		return result.GraphEvaluation{}, selectionFailure

@@ -55,6 +55,9 @@ func TestProject(loaded *project.Project, engine *evaluation.Engine, id string, 
 		if detail != "" || len(document.Structural(loaded)) > 0 {
 			continue
 		}
+		if refusal := Core050NodeRefusal(loaded, document, "Graph testing"); refusal != nil {
+			return result.GraphSuite{}, refusal
+		}
 		selectedContract, failure := SelectContract(loaded, document)
 		if failure != nil {
 			if failure.Code == "profile-unsupported" || failure.Code == "JPS-GRAPH-MIXED-CONTRACT" {
@@ -216,6 +219,14 @@ func ValidateProject(loaded *project.Project, id, command string) (result.GraphV
 	selected, selectionFailure := loaded.GraphSelection(id)
 	if selectionFailure != nil {
 		return result.GraphValidationSuite{}, projectFailure(selectionFailure)
+	}
+	for _, graphID := range selected {
+		entry, _ := loaded.GraphEntry(graphID)
+		if document, detail := loadEntryDocument(loaded, entry); detail == "" {
+			if refusal := Core050NodeRefusal(loaded, document, "Graph validation"); refusal != nil {
+				return result.GraphValidationSuite{}, refusal
+			}
+		}
 	}
 	output := result.GraphValidationSuite{
 		OutputVersion: result.OutputVersion,

@@ -54,8 +54,11 @@ that still read it would read a pack the specification says no reader admits.
   surface but the view evaluates or checks a `0.5.0` pack as its evaluation form (§8.5); the view
   shows the document as written. The `extended` profile stays unsupported: its 18 document cases are
   reported skipped, with the profile refusal.
-- **Refused.** Graph evaluation, the dialect check and the policy check refuse a `0.5.0` pack with
-  `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED` (renamed from `JPS-STAGED-DRAFT-UNSUPPORTED`, which named a
+- **Refused.** Every graph command that reads node packs (graph validate, explain, test and
+  evaluate, and the MCP graph-test tool) refuses a graph with a `0.5.0` node whole, before anything
+  else it reads; graph list and the MCP graph inventory and get-graph tools read no node pack and
+  list such a graph as declared. The dialect check and the policy check refuse a `0.5.0` pack. All of
+  them use `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED` (renamed from `JPS-STAGED-DRAFT-UNSUPPORTED`, which named a
   selector that no longer exists), and pack-design analysis with `pack-unsupported`: the graph
   prototype (Draft RFC 0002), the dialect and policy companions and Draft RFC 0027 are written
   against `0.3.0`.

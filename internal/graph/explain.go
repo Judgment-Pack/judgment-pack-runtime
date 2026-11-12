@@ -35,6 +35,9 @@ func Plan(loaded *project.Project, doc Document, graphPath, command string) (res
 			ExitCode: result.ExitInvalid,
 		}
 	}
+	if refusal := Core050NodeRefusal(loaded, doc, "Graph planning"); refusal != nil {
+		return result.GraphPlan{}, refusal
+	}
 	order, _ := doc.Order()
 	steps := make([]result.GraphPlanStep, 0, len(order))
 	for index, nodeID := range order {

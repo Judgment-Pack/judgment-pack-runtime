@@ -28,8 +28,14 @@ All notable changes to tagged releases are documented here.
   conformance or corpus run. `tools/sync-spec-artifacts --staged` stays as a generic import
   (docs/releasing.md).
 - The refusal code `JPS-STAGED-DRAFT-UNSUPPORTED` is renamed `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`.
-  Graph evaluation, the dialect check and the policy check refuse a `0.5.0` pack with it, and
-  pack-design analysis keeps its `pack-unsupported` refusal: the documents they implement are
+  Every graph command that reads node packs (`experimental graph validate`, `explain`, `test` and
+  `evaluate`, and the MCP `experimental_test_graphs` tool) refuses a graph with a `0.5.0` node with
+  it, whole and before anything else it reads (exit 2), where runtime 0.43.0 refused a graph with a
+  node under the staged selector only on `graph evaluate` and ran `graph test` rows for it under
+  the `0.2.0-draft` header; `graph list`
+  and the MCP graph inventory and get-graph tools read no node pack and list the graph. The dialect
+  check and the policy check refuse a `0.5.0` pack with it, and name every version they read.
+  Pack-design analysis keeps its `pack-unsupported` refusal: the documents they implement are
   written against Core `0.3.0`. The MCP standalone contract's `spec_version` admits `0.5.0` beside
   `0.2.0-draft` and `0.3.0`.
 - **Annotation text can no longer reorder its line in the Markdown views** (#380, ADR-0078). An
