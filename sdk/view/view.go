@@ -2,7 +2,10 @@
 // returns: the whole document as typed data, with a canonical JSON encoding
 // and a Markdown rendering for review (ADR-0074). Only package sdk builds a
 // PackView; a PackView made any other way is the zero value or a copy of one
-// View returned. Everything in this package is experimental.
+// View returned. For a pack under the staged draft selector 0.4.0-draft, the
+// view carries its value sets and annotations, and FilteredView, which only
+// sdk.Pack.FilteredView builds, is its outcomes and rules filtered by
+// annotation (ADR-0075). Everything in this package is experimental.
 package view
 
 import (
