@@ -383,7 +383,22 @@ func TestLockStageMustMatchVersion(t *testing.T) {
 			t.Errorf("%s stage %q: %v", tc.version, tc.stage, err)
 		}
 	}
-	if err := checkStage(StagedDraftVersion, LockSource{Kind: "immutable-git-ref", Ref: "main", BaseCommit: strings.Repeat("a", 40), Stage: StagedStage}); err == nil {
-		t.Error("a staged lock naming a branch was accepted")
+	// A staged lock records one exact, clean commit: each way of falling short
+	// of that is refused on its own.
+	full, other := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, tc := range []struct {
+		name   string
+		source LockSource
+	}{
+		{"a branch", LockSource{Kind: "immutable-git-ref", Ref: "main", BaseCommit: full}},
+		{"a short commit", LockSource{Kind: "immutable-git-ref", Ref: full[:12], BaseCommit: full[:12]}},
+		{"a ref that is not its base commit", LockSource{Kind: "immutable-git-ref", Ref: other, BaseCommit: full}},
+		{"a dirty worktree", LockSource{Kind: "immutable-git-ref", Ref: full, BaseCommit: full, WorktreeDirty: true}},
+		{"a local snapshot", LockSource{Kind: "unreleased-local-snapshot", Ref: full, BaseCommit: full}},
+	} {
+		tc.source.Stage = StagedStage
+		if err := checkStage(StagedDraftVersion, tc.source); err == nil {
+			t.Errorf("a staged lock naming %s was accepted", tc.name)
+		}
 	}
 }
