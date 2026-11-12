@@ -16,15 +16,17 @@ it names are required evidence for such a claim and are not exhaustive evidence 
 
 The runtime **validates documents**. It does not fetch a source, authorize an action, or establish
 truth, organizational authority, safety, or operational fitness. It bundles `0.1.0-draft`,
-`0.2.0-draft`, and Core `0.3.0`, and validates a document against its exact declaration.
-It also admits, EXPERIMENTALLY and with the `base` profile only, the staged draft selector
-`0.4.0-draft` of Draft RFC 0031 (annotations and value sets), vendored from an unreleased
-specification commit; the specification may rename or change it, and no claim covers it
-([ADR-0075](docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md)).
+`0.2.0-draft`, Core `0.3.0` and Core `0.5.0`, and validates a document against its exact
+declaration. Core `0.5.0` (RFC 0031: annotations and value sets) is imported from the published Spec
+tag `v0.5.0`, commit `171d4c21d4b13e03ee20e1adb6fc5cc6b182cfae`, and is read with the `base` profile
+only; no claim covers it ([ADR-0077](docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md)).
+The staged draft selector `0.4.0-draft`, which an earlier runtime admitted experimentally, was
+released as `0.5.0` and is no longer bundled: a pack declaring `0.4.0-draft` or `0.4.0` is refused
+as an unsupported version, with a note that it moves by changing its `specVersion` to `0.5.0`.
 Core `0.3.0` resources are imported from the published Spec tag `v0.3.0`, commit
 `27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`. Core `0.3.0` support is base-only. Runtime discovery reports
 `evaluatorCapabilities` separately from document `supportedSpecVersions`, with
-`supportedProfiles: ["base"]` scoped to the Core `0.3.0` evaluator entry. This says
+`supportedProfiles: ["base"]` scoped to the Core `0.3.0` and `0.5.0` evaluator entries. This says
 nothing about Policy or Dialect profile support.
 
 For the version covered by the claim in [CONFORMANCE.md](CONFORMANCE.md), one shared
@@ -43,12 +45,12 @@ error classes and their fixed precedence, and the §10 limits — per
 [ADR-0011](docs/adr/0011-first-evaluator-conformance-claim.md).
 
 Pack-aware operations select the evaluator contract from the exact pack's
-`specVersion`: `0.2.0-draft` or `0.3.0`, or, experimentally, the staged `0.4.0-draft`, whose packs
-are evaluated as their evaluation form (annotations removed, value-set references expanded).
-Graph evaluation, the dialect check and the policy check refuse the staged selector with
-`JPS-STAGED-DRAFT-UNSUPPORTED`. Internal legacy entry points and standalone
-authoring tools retain their `0.2.0-draft` default; standalone tools accept explicit
-`spec_version: "0.3.0"`. Selection never infers a version from a `routes` member.
+`specVersion`: `0.2.0-draft`, `0.3.0` or `0.5.0`, whose packs are evaluated as their evaluation
+form (Core §8.5: annotations removed, value-set references expanded). Graph evaluation, the dialect
+check and the policy check refuse a `0.5.0` pack with `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, and
+pack-design analysis with `pack-unsupported`, because their companions are written against `0.3.0`.
+Internal legacy entry points and standalone authoring tools retain their `0.2.0-draft` default;
+standalone tools accept explicit `spec_version: "0.3.0"` or `"0.5.0"`. Selection never infers a version from a `routes` member.
 See [ADR-0063](docs/adr/0063-explicit-core-030-contracts.md) for the compatibility decisions.
 
 **This runtime's conformance claim is stated, in full and only, in
@@ -112,7 +114,7 @@ jpack packs covers --lock F (--id X --pack F | --graph-id X --graph F) [--config
 jpack packs lint [--producers M]   (every consulted pointer has a producer; ADR-0022)
 jpack packs schema
 jpack packs describe <pack-or-> [--format markdown|json]   (EXPERIMENTAL; the whole pack as written, for review; opens no project; ADR-0074)
-jpack packs describe <pack-or-> --filter key=value ...    (EXPERIMENTAL; only the outcomes and rules of a 0.4.0-draft pack whose annotations match; ADR-0075)
+jpack packs describe <pack-or-> --filter key=value ...    (EXPERIMENTAL; only the outcomes and rules of a 0.5.0 pack whose annotations match; ADR-0075)
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
@@ -306,11 +308,14 @@ evaluating it ([ADR-0074](docs/adr/0074-describe-a-loaded-pack.md)), as a `view.
 `sdk/view`: every member as typed data, in
 document order and as written, with a canonical JSON encoding (`view.JSON()`) and a Markdown
 rendering for a reviewer (`view.Markdown()`). `jpack packs describe` writes the same bytes. The
-view is experimental and carries its own `viewVersion`. For a pack under the staged draft selector
-`0.4.0-draft`, the view shows its value sets and annotations, and `pack.FilteredView(criteria)`
-returns only the outcomes and rules whose annotations match every criterion, as a
-`view.FilteredView` that says it is not the pack and carries its own `filteredViewVersion`
-([ADR-0075](docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md)).
+view is experimental and carries its own `viewVersion`. For a Core `0.5.0` pack, the view shows its
+value sets and annotations, and `pack.FilteredView(criteria)` returns only the outcomes and rules
+whose annotations match every criterion, as a `view.FilteredView` that says it is not the pack and
+carries its own `filteredViewVersion`
+([ADR-0075](docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md),
+[ADR-0077](docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md)). Its Markdown writes
+annotation text that could reorder its line only in ASCII
+([ADR-0078](docs/adr/0078-keep-annotation-text-from-reordering-its-line.md)).
 
 ## Build and try it locally
 
@@ -1017,10 +1022,11 @@ Each lock records the source repository, exact commit/ref and source state, plus
 metadata for every imported file — 50 for `0.1.0-draft`, and 56 for `0.2.0-draft`, whose bundle adds
 the evaluation corpus of §3.4.1 (its manifest, that manifest's schema, and the four pack fixtures its
 rows name). The release gate checks every bundle: a development snapshot remains visibly labelled
-`unreleased-local-snapshot` and cannot pass it. The staged draft selector's lock,
-[`internal/artifacts/jps/0.4.0-draft/lock.json`](internal/artifacts/jps/0.4.0-draft/lock.json),
-records the exact specification commit its staged files were imported from and `stage:
-staged-unreleased`; a staged import takes only a full commit digest of a clean checkout
+`unreleased-local-snapshot` and cannot pass it. The Core `0.3.0` and `0.5.0` locks,
+[`internal/artifacts/jps/0.3.0/lock.json`](internal/artifacts/jps/0.3.0/lock.json) and
+[`internal/artifacts/jps/0.5.0/lock.json`](internal/artifacts/jps/0.5.0/lock.json), record the
+published tags `v0.3.0` and `v0.5.0`. A bundle whose lock states a `stage` (one a staged import
+wrote) is refused when the runtime loads it: this runtime embeds released versions only
 ([docs/releasing.md](docs/releasing.md#refresh-a-staged-draft-selector-experimental)).
 
 > **Provenance note.** The `0.2.0-draft` bundle is pinned to the specification tag `v0.2.0-draft`.

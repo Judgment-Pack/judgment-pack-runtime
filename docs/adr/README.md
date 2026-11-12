@@ -170,6 +170,7 @@ authority, and following it confers no conformance status on anything.
 | [0072](0072-lock-coverage-without-a-project.md) | Answer whether a reviewed-set lock covers a document's exact bytes, without opening a project | accepted |
 | [0073](0073-in-process-go-evaluation-api.md) | Expose loading and evaluating a pack as an experimental in-process Go API | accepted |
 | [0074](0074-describe-a-loaded-pack.md) | Describe a loaded pack, every member as written, through the Go API and jpack packs describe | accepted |
-| [0075](0075-admit-the-staged-draft-selector-0-4-0-draft.md) | Admit the staged draft selector 0.4.0-draft experimentally: evaluate its evaluation form, and show and filter its annotations | accepted |
+| [0075](0075-admit-the-staged-draft-selector-0-4-0-draft.md) | Admit the staged draft selector 0.4.0-draft experimentally: evaluate its evaluation form, and show and filter its annotations | superseded by [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) |
 | [0076](0076-show-annotation-text-recoverably-on-every-surface.md) | Show every annotation character outside printable ASCII recoverably: exact in the JSON, in ASCII in the Markdown and the messages | proposed |
+| [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) | Admit Core 0.5.0, base profile, and retire the staged selector 0.4.0-draft | proposed |
 | [0078](0078-keep-annotation-text-from-reordering-its-line.md) | Keep annotation text from reordering its line, and keep a run of spaces visible, in the Markdown views | proposed |

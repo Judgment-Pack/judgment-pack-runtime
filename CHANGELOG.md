@@ -4,28 +4,49 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
-- The staged draft selector `0.4.0-draft` is re-vendored from specification commit
-  `c867b35f5bc06b3c00bad7bfc5c9426a70fa12b4`, the revision of the draft that the first review of
-  RFC 0031 made (#379; EXPERIMENTAL, base profile only). An annotation string
-  now also refuses every bidirectional format character (U+061C, U+200E, U+200F and U+2066–U+2069,
-  beside the embeddings and overrides), the invisible and default-ignorable characters the draft
-  lists (the tag characters among them), and white space at its start or end, so a staged pack
-  the previous bundle admitted with one of them is refused (`JPS-STRUCTURE-NOT`). A filter
-  criterion that holds one is refused the same way (`JPS-INVOCATION-FILTER` in the CLI), and the
-  refusal names the code point by its `U+` number. The staged run has 208 document cases, of
-  which the 18 written for the `extended` profile are refused as unsupported and skipped, and 82
-  evaluation rows, with the row `annotations-supported-extension-set` still held. `0.2.0-draft`
-  and `0.3.0` behaviour and outputs are unchanged, with one exception: a `--filter` criterion is
-  checked before the pack's selector, so a criterion the revised rules refuse is now refused as a
-  criterion on a pack under any selector, where it was refused before for the selector.
-- The draft's display rule for annotations is met on every surface that lists annotation keys or
-  values or states a filter, and recorded in ADR-0076 (#379; EXPERIMENTAL). The Markdown of the
-  view and the filtered view already wrote such text in ASCII beside it and is unchanged; the JSON
-  carries the exact code points, as data; the filter's refusals already name a key in ASCII and a
-  character by its `U+` number. The staged validator's message for a refused annotation key
-  (`JPS-STRUCTURE-LOCAL-ID`) now quotes the key in ASCII, so a look-alike letter in it, such as a
-  Cyrillic `a`, reads as `\u0430`. No byte of a view or a filtered view changes, so `viewVersion`
-  and `filteredViewVersion` stay `"1"`.
+- **Core `0.5.0` is admitted, with the `base` profile only** (#382, ADR-0077), from the published
+  Spec tag `v0.5.0`, commit `171d4c21d4b13e03ee20e1adb6fc5cc6b182cfae`. Validation,
+  `spec test-conformance`, the evaluator and `evaluate-corpus`, `compare`, the project walk and
+  coverage, fact advice and matrix validation, examples, the pack view and the filtered view, and
+  the MCP tools that reach them, read a `0.5.0` pack; every one but the view checks or evaluates it
+  as its evaluation form (§8.5). The released rules are taken up: a line terminator in a pack
+  version, local identifier, decimal operand or extension name is refused once, under the code of
+  that definition's pattern; a case's `expectedDiagnostics` must all be reported, as (code, pointer)
+  pairs; `readerProfiles` decides which cases a `base` reader skips; and the evaluation row for the
+  supported extension set, which the staged rows held, runs. The `extended` profile stays
+  unsupported. The display rules of §9.2 hold as ADR-0076 recorded them for the staged draft. The
+  evaluation manifest's `pairs` and `ownEvaluationForm` statements are not checked. No default
+  selector moves. The run's results are recorded in CONFORMANCE.md, "Core 0.5.0 preparation
+  evidence".
+- **The staged selector `0.4.0-draft` is retired**, because the specification released its text
+  as `0.5.0` (ADR-0077). Its bundle is removed, and a pack, suite or corpus run naming
+  `0.4.0-draft` or `0.4.0` is refused as an unsupported version (`JPS-CAPABILITY-SPEC-VERSION`),
+  with a note that the draft was released as `0.5.0` and that a pack moves by changing its
+  `specVersion`. A specification lock that states a `stage` is refused at load. The EXPERIMENTAL
+  members that only the staged selector used are removed: `sdk.Evaluator.Stage` and the `stage`
+  member of the runtime description, and the suite `suiteStatus` and `held` members of a
+  conformance or corpus run. `tools/sync-spec-artifacts --staged` stays as a generic import
+  (docs/releasing.md).
+- The refusal code `JPS-STAGED-DRAFT-UNSUPPORTED` is renamed `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`.
+  Graph evaluation, the dialect check and the policy check refuse a `0.5.0` pack with it, and
+  pack-design analysis keeps its `pack-unsupported` refusal: the documents they implement are
+  written against Core `0.3.0`. The MCP standalone contract's `spec_version` admits `0.5.0` beside
+  `0.2.0-draft` and `0.3.0`.
+- **Annotation text can no longer reorder its line in the Markdown views** (#380, ADR-0078). An
+  annotation key or string, or a filter criterion, that holds a right-to-left or Arabic-number
+  character (bidirectional class R, AL or AN) is written only in its ASCII form,
+  `` (ASCII only `"..."`) ``; one that holds two adjacent spaces gets its ASCII form, with each space of
+  the run written `\u0020`, so an HTML renderer cannot collapse it. The classes come from
+  `golang.org/x/text/unicode/bidi`, part of the `golang.org/x/text` module the schema validator
+  already brings in; `go.mod` now lists that module as a direct requirement, and no module is added.
+  The JSON is unchanged, and `viewVersion` and `filteredViewVersion` stay `"1"`: only a `0.5.0` pack
+  carries annotations, and no earlier release described one.
+- `0.1.0-draft`, `0.2.0-draft` and `0.3.0` behaviour and outputs are unchanged, with two exceptions
+  in `packs describe --filter`. A criterion is checked before the pack's selector, so a criterion
+  the display rules refuse is refused as a criterion on a pack under any selector, where 0.43.0
+  refused it for the selector. The selector refusal (`ErrFilterSelector`) now says that only Core
+  `0.5.0` defines annotations, where it named the staged selector. `packs describe --help` and the
+  MCP tool descriptions name `0.5.0` in place of the staged selector.
 
 Runtime's conformance claim is stated, in full and only, in
 [CONFORMANCE.md](CONFORMANCE.md).
