@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.44.0 - 2026-11-12
 
 - **Core `0.5.0` is admitted, with the `base` profile only** (#382, ADR-0077), from the published
   Spec tag `v0.5.0`, commit `171d4c21d4b13e03ee20e1adb6fc5cc6b182cfae`. Validation,
