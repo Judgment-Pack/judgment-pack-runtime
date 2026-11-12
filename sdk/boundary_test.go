@@ -70,7 +70,10 @@ func ambientImport(path string) bool {
 // command: no package of this module in it imports a standard-library
 // package that reaches files, the environment, processes or the network, and
 // the third-party packages in it are exactly the schema validator's, whose
-// schema loading the validation package holds offline.
+// schema loading the validation package holds offline, and the bidirectional
+// class table the view reads (golang.org/x/text/unicode/bidi, ADR-0078): a
+// package of Unicode tables from a module the validator already brings into
+// the closure, which reaches no files, environment, process or network.
 func TestTheImportClosureReachesNoAmbientIO(t *testing.T) {
 	root := moduleRoot(t)
 	visited := map[string]bool{}
@@ -103,7 +106,7 @@ func TestTheImportClosureReachesNoAmbientIO(t *testing.T) {
 		thirdParty = append(thirdParty, path)
 	}
 	slices.Sort(thirdParty)
-	want := []string{"github.com/dlclark/regexp2", "github.com/santhosh-tekuri/jsonschema/v6", "github.com/santhosh-tekuri/jsonschema/v6/kind"}
+	want := []string{"github.com/dlclark/regexp2", "github.com/santhosh-tekuri/jsonschema/v6", "github.com/santhosh-tekuri/jsonschema/v6/kind", "golang.org/x/text/unicode/bidi"}
 	if !slices.Equal(thirdParty, want) {
 		t.Errorf("third-party packages in the closure = %v, want %v", thirdParty, want)
 	}

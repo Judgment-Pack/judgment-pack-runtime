@@ -5,6 +5,7 @@ package view
 var (
 	CanonicalText  = canonicalText
 	EscapeMarkdown = escapeMarkdown
+	AnnotationText = annotationText
 	BuildView      = buildView
 	RenderMarkdown = renderMarkdown
 )

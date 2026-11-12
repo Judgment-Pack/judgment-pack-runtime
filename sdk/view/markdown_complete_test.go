@@ -132,7 +132,9 @@ func leafForms(t *testing.T, leaf any) []string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return []string{pv.EscapeMarkdown(value), pv.EscapeMarkdown(text)}
+		// An annotation string that can reorder its line is shown only in
+		// ASCII (ADR-0078); the hand-written display tests pin that form.
+		return []string{pv.EscapeMarkdown(value), pv.EscapeMarkdown(text), pv.AnnotationText(value)}
 	case json.Number:
 		return []string{pv.EscapeMarkdown(value.String())}
 	}

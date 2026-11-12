@@ -576,7 +576,12 @@ value), its description and its extensions. An annotations member is written in 
 the extensions it belongs to, by name, then one item per key: `key: value` for a string, and the
 key with one nested item per value for a list, so a one-element list never reads as a string. An
 annotation's key and text are escaped like every pack string and written in ASCII beside when they
-hold a code point outside printable ASCII, because a filter matches on them. Under any other
+hold a code point outside printable ASCII or two adjacent spaces, because a filter matches on them;
+in that form each space of a run is written `\u0020`, so the run survives a renderer that collapses
+it. Text that holds a right-to-left letter, an Arabic letter or an Arabic digit (bidirectional
+class R, AL or AN) is written only in ASCII, as `` (ASCII only `"\u05d0"`) ``, so it cannot reorder
+the text of its line ([ADR-0078](adr/0078-keep-annotation-text-from-reordering-its-line.md)).
+Other display data, such as a description, is not isolated this way. Under any other
 `specVersion` a `valueSets` member is not read and an `org.judgmentpack.annotations` member is an
 ordinary extension; describing these members left the view version at `1`.
 
@@ -613,8 +618,9 @@ than shown with nothing matched, because it cannot carry annotations; the CLI re
 **Annotation text can be read back (EXPERIMENTAL).** The draft requires that wherever a consumer
 lists annotation keys or values, or states a filter, every character outside printable ASCII can be
 recovered from what it shows ([ADR-0076](adr/0076-show-annotation-text-recoverably-on-every-surface.md)).
-In the Markdown, annotation text and each criterion of a filter are written in ASCII beside, as
-above, so a criterion reads as the annotation it was picked from. A refused criterion's message
+In the Markdown, annotation text and each criterion of a filter are written in ASCII beside, or
+only in ASCII when they could reorder their line, as above, so a criterion reads as the annotation
+it was picked from. A refused criterion's message
 names a refused character by its `U+` number and quotes a refused key in ASCII, and so does the
 validator's message for a refused annotation key. The canonical JSON writes each key and string as
 its exact code points, as data: a tool that displays annotations from it is bound by the draft's
