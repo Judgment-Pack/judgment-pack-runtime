@@ -37,7 +37,11 @@ func (a *App) packsDescribeCommand() *cobra.Command {
 			"envelope, whose view member is a string holding the exact bytes of the view's canonical JSON; decode " +
 			"that string, for example with jq -j .view, to get them. The same pack bytes give the same view bytes. " +
 			"The view carries the pack's id, version, specVersion, its profile when it states one, and the sha256 " +
-			"digest of the exact bytes read. It reads no jpack.json and takes no --config: the pack is one local " +
+			"digest of the exact bytes read. For a pack under Core 0.5.0 it also lists, beside the document and not " +
+			"in it, each outcome's severity under annotation vocabulary 1.0.0 and the outcomes ordered by it, most " +
+			"severe first: the level where the outcome states exactly one of low, medium, high and critical, and " +
+			"none where it states no severity or a value that is not a level; no level is ever defaulted (ADR-0088). " +
+			"It reads no jpack.json and takes no --config: the pack is one local " +
 			"file or standard input. A pack the loader refuses is reported with the loader's code, and nothing is " +
 			"described. The view, its format and this command are EXPERIMENTAL: each may change or be removed " +
 			"without a compatibility promise, and the view's own viewVersion says which format a reader holds. " +

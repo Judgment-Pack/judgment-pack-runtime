@@ -63,8 +63,11 @@ var markdownLabels = map[string]string{
 	"metadata.license": "- License: ", "metadata.requiredExtensions": "- Required extensions:", "metadata.reviews": "- Reviews:",
 	"metadata.reviews.disposition": "    - Disposition: ", "metadata.reviews.note": "    - Note: ",
 	"metadata.reviews.reviewedAt": "    - Reviewed at: ", "metadata.reviews.reviewer": "    - Reviewer: ",
-	"outcome.description": "| Id | Label | Description |", "outcome.extensions": "### Extensions of outcome ",
-	"outcome.id": "| Id | Label | Description |", "outcome.label": "| Id | Label | Description |",
+	// The outcomes table of a Core 0.5.0 view has a Severity column between
+	// Label and Description (ADR-0088), so these are the parts both headers
+	// share.
+	"outcome.description": " | Description |", "outcome.extensions": "### Extensions of outcome ",
+	"outcome.id": "| Id | Label | ", "outcome.label": "| Id | Label | ",
 	"pack.applicability": "## Applicability", "pack.decision": "## Decision", "pack.description": "- Description: ",
 	"pack.escalation": "## Escalation", "pack.evidenceRequirements": "## Evidence requirements", "pack.exceptions": "## Exceptions",
 	"pack.extensions": "## Extensions", "pack.fallbackOutcome": "## Fallback outcome", "pack.id": "- Id: ",
@@ -323,9 +326,10 @@ func TestTheMarkdownShowsEveryLeafInItsSection(t *testing.T) {
 // written by hand under testdata/expected, from the documented layout and
 // the fixture itself, never recorded from a run: one pack holding every
 // member of each admitted specification version, the adversarial strings,
-// and the annotated example of Core 0.5.0, read from the bundle.
+// the outcome severities of a Core 0.5.0 pack (ADR-0088), and the annotated
+// example of Core 0.5.0, read from the bundle.
 // Only each digest is computed, with sha256sum over the fixture.
-var handWritten = []string{"0.2.0-draft/every-member", "0.3.0/every-member", "0.3.0/adversarial-strings", "0.5.0/every-member", "0.5.0/example/expense-approval-annotated"}
+var handWritten = []string{"0.2.0-draft/every-member", "0.3.0/every-member", "0.3.0/adversarial-strings", "0.5.0/every-member", "0.5.0/severity", "0.5.0/example/expense-approval-annotated"}
 
 // handWrittenPack reads a hand-written expectation's pack: a fixture under
 // testdata/packs, or, for a name under <version>/example/, the example the

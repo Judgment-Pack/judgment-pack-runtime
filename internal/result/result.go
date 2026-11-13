@@ -1254,6 +1254,26 @@ type PackValidationEntry struct {
 	// AdvisoriesTruncated is true when the advice stopped at the validation
 	// output limit, as spec validate's diagnosticsTruncated says.
 	AdvisoriesTruncated bool `json:"advisoriesTruncated,omitempty"`
+	// Vocabulary is the annotation-vocabulary check's own report for the
+	// pack's bytes (ADR-0088), present whenever they were read. Its findings
+	// and advisories are the vocabulary's, never spec validate's, so
+	// Advisories above stays exactly what spec validate reports.
+	Vocabulary *VocabularyReport `json:"vocabulary,omitempty"`
+}
+
+// VocabularyReport is one annotation-vocabulary check (ADR-0088): the
+// vocabulary and version applied, the result (pass, refused or not-checked),
+// and when not checked, the reason (spec-version, core-refused with the Core
+// layer, or profile-unsupported). Findings are its refusals, one per refused
+// outcome; Advisories are its identifier advisories. Both are always arrays.
+type VocabularyReport struct {
+	Vocabulary string       `json:"vocabulary"`
+	Version    string       `json:"version"`
+	Result     string       `json:"result"`
+	Reason     string       `json:"reason,omitempty"`
+	CoreLayer  string       `json:"coreLayer,omitempty"`
+	Findings   []Diagnostic `json:"findings"`
+	Advisories []Diagnostic `json:"advisories"`
 }
 
 // PackValidation is one packs validate report.

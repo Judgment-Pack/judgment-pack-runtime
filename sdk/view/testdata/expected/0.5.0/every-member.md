@@ -5,7 +5,7 @@
 - Spec version: 0\.5\.0
 - Profile: base
 - Digest: sha256:ea2e851d11926b00e942ae3be6be3d286b4acb79fd007e8a47453678f8255f1d
-- View version: 1
+- View version: 2
 - Description: Invented content for the pack view tests\; it authorizes nothing\.
 
 ## Decision
@@ -23,11 +23,14 @@
 
 ## Outcomes
 
-| Id | Label | Description |
-| --- | --- | --- |
-| approve | Approve | The purchase may proceed\. |
-| refer | Refer | |
-| decline | Decline | |
+| Id | Label | Severity | Description |
+| --- | --- | --- | --- |
+| approve | Approve | | The purchase may proceed\. |
+| refer | Refer | | |
+| decline | Decline | | |
+
+- By severity, most severe first, as the author states it (annotation vocabulary 1.0.0): *none*
+- With no severity level, none stated or a value that is not a level, in document order: approve, refer, decline
 
 ### Extensions of outcome 1: approve
 

@@ -67,6 +67,38 @@ All notable changes to tagged releases are documented here.
   disposition, are outside what it compares. `packs diff` evaluates nothing and compare evaluates
   as before, so the conformance claim in CONFORMANCE.md is unchanged. MCP exposes neither, as
   ADR-0045 §6 leaves compare without a tool.
+- **`jpack packs validate` holds each outcome's severity to the Spec's annotation vocabulary
+  `1.0.0`** (#405, ADR-0088). A seventh named check, `annotation-vocabulary`, reads the `severity`
+  annotation of each outcome of a Core `0.5.0` pack and matches it to `low`, `medium`, `high` or
+  `critical` by exact code point. Every list is refused, a one-element list included, and the key on
+  a rule or on the root is not read. Each refused outcome is one `JPS-VOCABULARY-SEVERITY-VALUE`
+  error naming the outcome and the value, and it fails the pack (exit `1`) though Core admits it, so
+  a pack that passed `packs validate` before can fail it now. The check runs after Core: a pack
+  under another `specVersion`, a pack Core refuses (which keeps Core's diagnostic and no other) and
+  a pack of the extended profile are reported `skipped`, with the reason (`spec-version`,
+  `core-refused`, `profile-unsupported`). The entry's new `vocabulary` member states the vocabulary,
+  the version applied, the result, the reason, the findings and the advisories; it is additive, so
+  `outputVersion` is unchanged. The `JPS-VOCABULARY-SEVERITY-IDENTIFIER` advice, for an outcome such
+  as `refer-high` whose severity is `low`, is printed as an `advice:` line and fails a pack only
+  under `--fail-on-advisory`. `spec validate` does not apply the vocabulary, and its output is
+  unchanged byte for byte.
+- **`sdk.Pack.CheckVocabulary`** returns the same check as an `sdk.VocabularyReport`, with
+  `sdk.VocabularyVersion` (`"1.0.0"`) and the codes as constants (EXPERIMENTAL).
+- **The view lists each outcome's severity** (EXPERIMENTAL). For a Core `0.5.0` pack,
+  `view.Outcome.Severity` and `view.PackView.SeverityOrder`, a `severity` member beside `pack` in the
+  JSON, and a Severity column and two lines after the outcomes table in the Markdown give each
+  outcome's level and the outcomes most severe first, one level in document order, with those
+  without a level apart, in document order. An outcome whose severity is not exactly a level shows
+  none, and none is supplied. `viewVersion` moves to `"2"` for every view; a view of a Core `0.3.0`
+  or `0.2.0-draft` pack changes in its version line alone. The filtered view and `packs diff` are
+  unchanged, and keep their versions.
+- The Spec's rows for the vocabulary, vendored from Spec release `v0.5.2` with their digests, run
+  as tests: 31 of the 32 give the result their row states, `profile-extended` is not run because
+  this runtime reads the base profile only, and the packs of the inertness pair decide alike. This
+  runtime is the companion's second reader, written by the same maintainer as the Spec, and not an
+  independent implementation of it. Evaluation is unchanged, so the conformance claim in
+  CONFORMANCE.md is unchanged. MCP is unchanged: no MCP tool applies the vocabulary or returns the
+  view.
 
 ## 0.45.0 - 2026-11-13
 

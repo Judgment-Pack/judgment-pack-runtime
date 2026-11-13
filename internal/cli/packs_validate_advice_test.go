@@ -89,7 +89,21 @@ func TestPacksValidateReportsRuleOverlapAdvice(t *testing.T) {
 			}
 		}
 	}
-	if byID["plain"] != nil || byID["clean"] != nil || strings.Count(stdout, `"advisories"`) != 2 {
+	// The vocabulary's report carries its own advisories array; the entry's
+	// advisories member is spec validate's alone (ADR-0088).
+	var members struct {
+		Packs []map[string]json.RawMessage `json:"packs"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &members); err != nil {
+		t.Fatal(err)
+	}
+	carried := 0
+	for _, entry := range members.Packs {
+		if _, present := entry["advisories"]; present {
+			carried++
+		}
+	}
+	if byID["plain"] != nil || byID["clean"] != nil || carried != 2 {
 		t.Fatalf("a pack that draws no advice carries no member: %s", stdout)
 	}
 

@@ -183,3 +183,4 @@ authority, and following it confers no conformance status on anything.
 | [0085](0085-evaluate-a-batch-of-fact-documents-in-one-run.md) | Evaluate a batch of fact documents in one run | accepted |
 | [0086](0086-compare-two-pack-documents-member-by-member.md) | Compare two pack documents member by member, annotations included, and three-way | accepted |
 | [0087](0087-a-caller-keyed-digest-on-the-decision-record.md) | Name the facts on a decision record by a digest the caller keys, in a second form, and publish the canonical text | proposed |
+| [0088](0088-check-the-outcome-severity-vocabulary.md) | Check each outcome's severity against the Spec's annotation vocabulary in packs validate, and list it in the view | proposed |

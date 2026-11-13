@@ -1,0 +1,29 @@
+{
+  "specVersion": "0.5.0",
+  "id": "https://example.invalid/judgment-packs/view-severity",
+  "version": "1.0.0",
+  "title": "Outcome severity",
+  "decision": { "intent": "List the severity of each outcome.", "question": "Which outcome is the most severe?" },
+  "outcomes": [
+    { "id": "note", "label": "Note", "extensions": { "org.judgmentpack.annotations": { "severity": "low" } } },
+    { "id": "refer", "label": "Refer", "description": "A reviewer decides.", "extensions": { "org.judgmentpack.annotations": { "severity": "high" } } },
+    { "id": "unstated", "label": "Unstated" },
+    { "id": "wrong-case", "label": "Wrong case", "extensions": { "org.judgmentpack.annotations": { "severity": "High" } } },
+    { "id": "hold", "label": "Hold", "extensions": { "org.judgmentpack.annotations": { "tier": "amber", "severity": "high" } } },
+    { "id": "listed", "label": "Listed", "extensions": { "org.judgmentpack.annotations": { "severity": ["critical"] } } },
+    { "id": "look-alike", "label": "Look-alike", "extensions": { "org.judgmentpack.annotations": { "severity": "crit\u0456cal" } } },
+    { "id": "stop", "label": "Stop", "extensions": { "org.judgmentpack.annotations": { "severity": "critical" } } },
+    { "id": "check", "label": "Check", "extensions": { "com.example.colour": "blue", "org.judgmentpack.annotations": { "severity": "medium" } } }
+  ],
+  "rules": [
+    {
+      "id": "always",
+      "description": "Always refer.",
+      "when": { "op": "literal", "value": true },
+      "outcome": "refer",
+      "onUnknown": "escalate",
+      "extensions": { "org.judgmentpack.annotations": { "severity": "critical" } }
+    }
+  ],
+  "extensions": { "org.judgmentpack.annotations": { "severity": "low" } }
+}

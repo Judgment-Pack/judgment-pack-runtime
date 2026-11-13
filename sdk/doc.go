@@ -51,6 +51,11 @@
 //   - Diff and ThreeWayDiff, which return the view.Diff and view.ThreeWayDiff
 //     of package sdk/view, with that package's DiffVersion,
 //     ThreeWayDiffVersion and ErrDiffSpecVersion;
+//   - Pack.CheckVocabulary and VocabularyReport, the check of the Spec's
+//     annotation vocabulary (Core 0.5.0 only), with the constants
+//     VocabularyVersion, VocabularyPass, VocabularyRefused,
+//     VocabularyNotChecked, VocabularyReasonSpecVersion,
+//     CodeVocabularySeverityValue and CodeVocabularySeverityIdentifier;
 //   - package sdk/packsig: Verify and Load, which check a pack's detached
 //     signature against an expected key, Load before sdk.Load reads any rule,
 //     with Signature, Refusal and Refusal.Error, SignatureVersion,
@@ -99,6 +104,32 @@
 // (docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md, which
 // docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md carries
 // over to the released version).
+//
+// The view of a Core 0.5.0 pack also lists each outcome's severity under
+// annotation vocabulary 1.0.0, as view.Outcome.Severity and
+// view.PackView.SeverityOrder: the level where the outcome's severity
+// annotation is exactly one of low, medium, high and critical, nothing where
+// it states none or a value that is not a level, and the outcomes most
+// severe first, one level in document order, then those without a level in
+// document order. The JSON carries it in a severity member beside the
+// document, never inside it, and the Markdown in a Severity column of the
+// outcomes table and two lines after it. The level is the author's
+// statement, shown as written; no level is defaulted, numbered or derived
+// for the pack, a rule or a disposition. A view under another specVersion
+// lists none (docs/adr/0088-check-the-outcome-severity-vocabulary.md).
+//
+// # Checking the annotation vocabulary
+//
+// Pack.CheckVocabulary holds a Core 0.5.0 pack's outcome severities to the
+// Spec's annotation vocabulary, version VocabularyVersion: an outcome's
+// severity annotation, where it states one, is one of low, medium, high and
+// critical, matched exactly, and never a list. It reports one finding per
+// outcome that breaks this, and an advisory where an outcome's identifier
+// ends with another level; a pack under another specVersion is reported not
+// checked. Its refusal is the vocabulary's, not Core's: Load admitted the
+// pack and Evaluate evaluates it, the severity no part of the evaluation
+// form. "jpack packs validate" reports the same check as annotation-vocabulary
+// (docs/adr/0088-check-the-outcome-severity-vocabulary.md).
 //
 // # Comparing two packs
 //
