@@ -1144,7 +1144,17 @@ a graph run that is what marks the run finished — the `graph-composite` line c
 its nodes' lines, so node lines whose id has no composite belong to a run that did not complete, and
 a trailing line that is not whole JSON is a write that did not complete. A line whose `kind` is
 `discontinuity` records a repair, not a decision, and the line before it is the damage it names.
-Read a trail by that rule rather than by assuming every line is a decision.
+Read a trail by that rule rather than by assuming every line is a decision. A batch of
+`experimental evaluate --batch` (ADR-0085) is one invocation: its records share one `run` id, each
+one complete decision of the kind a single run writes, and other writers' records can fall between
+its chunks of up to 256. The batch names that id on every output line and, before its first
+record, on standard error. Its output is a lower bound: after it exits 4 or is interrupted, the
+trail may hold up to one chunk of its records that the output did not report as recorded, whole or
+ending in an incomplete line. Before running such items again, repair the trail if `audit verify`
+reports an incomplete last line, then take the records carrying the batch's `run` id in sequence
+order. They are the batch's items that produced an evaluation, in input order, each with the
+item's facts and evidence in its `inputs`. Match the ones beyond the items reported with exit 0 to
+the items after those, in order, and run again only the items no record matches.
 
 ### The chain
 
@@ -1617,8 +1627,9 @@ jpack audit key generate /var/lib/jpack/decisions.seed > decisions.pub   # a new
   configVersion `"7"` and only for a chained trail; the `JPACK_SIGNING_PUBLIC_KEY` environment
   variable, when set and not empty, names it instead, exactly as set (nothing is trimmed, so
   whitespace, alone or around a key, is a malformed key rather than none), and is process-wide in
-  the same way. Each time
-  records are about to be signed, once for every evaluation or graph run that records, the seed at
+  the same way. Once for
+  every run that records, before its records are signed (an evaluation, a graph run, or a batch of
+  evaluations, which reads it once for all its records), the seed at
   the path is read and its public key compared with the expected one: a seed whose public key is
   another is refused and signs nothing, so a seed put at the path in the key's place, between two
   evaluations or before a fresh trail's first record, signs no record. An expected key that is not

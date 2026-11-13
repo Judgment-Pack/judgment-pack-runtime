@@ -52,6 +52,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
@@ -119,6 +123,22 @@ const (
 
 //go:embed jpack.schema.json
 var schemaBytes []byte
+
+// configSchema is the configuration schema, compiled once per process. Its
+// bytes are embedded and cannot change while the process runs, and a compiled
+// schema is only read, so every Load validates against the same compilation;
+// compiling it on each Load was most of what a resident server spent on one
+// evaluation (#357). A schema that does not compile fails every Load, as it
+// did.
+var configSchema = sync.OnceValues(compileConfigSchema)
+
+// configSchemaCompilations counts compileConfigSchema's runs, for a test.
+var configSchemaCompilations atomic.Int64
+
+func compileConfigSchema() (*jsonschema.Schema, error) {
+	configSchemaCompilations.Add(1)
+	return validation.CompileSchema(schemaBytes, SchemaID)
+}
 
 // SupportedConfigVersions names every configVersion this runtime accepts, so a
 // refusal can say what would have been accepted instead of only what was not.
@@ -503,7 +523,7 @@ func loadThrough(root *fssecure.Root, configPath, configName string) (*Project, 
 	if failure := declaredConfigVersion(configPath, documentRoot); failure != nil {
 		return nil, failure
 	}
-	compiled, err := validation.CompileSchema(schemaBytes, SchemaID)
+	compiled, err := configSchema()
 	if err != nil {
 		return nil, &Failure{
 			Code:     "JPS-ARTIFACT-PROJECT-SCHEMA",
