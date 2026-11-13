@@ -21,6 +21,10 @@ internal/dialect/testdata/** -text
 # The annotation-vocabulary rows have exact upstream checksums.
 internal/vocabulary/testdata/** -text
 
+# The analysis fixtures are read as exact bytes: a report carries the digest
+# of its pack, and a golden report holds that digest.
+internal/packadvice/testdata/core050/** -text
+
 # Pinned policy prototype files have exact upstream checksums.
 internal/policy/prototype/** -text
 

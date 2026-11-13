@@ -429,11 +429,19 @@ func advisorySiteFault(source, receiver string) string {
 func advisoryContractFault(source string) string {
 	// Exact spellings intentionally force review if the version gate or selected
 	// evaluator contract is refactored; support cannot expand by updating only a
-	// surface's constructor exemption.
-	gate := `if failure != nil || contract.Version() != "0.3.0" {`
-	selected := `evalOptions := evaluation.Options{SpecVersion: "0.3.0",`
-	if strings.Count(source, gate) != 1 || strings.Count(source, selected) != 1 {
-		return "inventoried advisory analyzer must gate and select only Core 0.3.0"
+	// surface's constructor exemption. The analyzer reads Core 0.3.0 and Core
+	// 0.5.0 (ADR-0089), selects the evaluator contract the gate admitted, and
+	// reads the pack only through the admission's evaluation form: never its
+	// bytes decoded a second time, and never a lowering of its own.
+	gate := `if failure != nil || contract.Version() != "0.3.0" && contract.Version() != "0.5.0" {`
+	version := `version := contract.Version()`
+	selected := `evalOptions := evaluation.Options{SpecVersion: version,`
+	form := `admitted.EvaluationForm(evalOptions)`
+	if strings.Count(source, gate) != 1 || strings.Count(source, version) != 1 || strings.Count(source, selected) != 1 {
+		return "inventoried advisory analyzer must gate and select only Core 0.3.0 and Core 0.5.0"
+	}
+	if strings.Count(source, form) != 1 || strings.Contains(source, "carrier.Decode(packBytes") || strings.Contains(source, "evalform.") {
+		return "inventoried advisory analyzer must read the pack only as the admission's evaluation form"
 	}
 	if strings.Count(source, ".EvaluateAdmitted(") != 1 || strings.Count(source, ".Evaluate") != 1 || strings.Contains(source, "evaluation.NewEngine(") {
 		return "inventoried advisory analyzer must retain its one admitted evaluation path"
@@ -465,18 +473,24 @@ func TestAdvisoryInventoryGuardsRejectChangedScope(t *testing.T) {
 			}
 		})
 	}
-	contract := `if failure != nil || contract.Version() != "0.3.0" { return nil, Refuse("pack-unsupported") }
-    evalOptions := evaluation.Options{SpecVersion: "0.3.0", Command:"advice"}
+	contract := `if failure != nil || contract.Version() != "0.3.0" && contract.Version() != "0.5.0" { return nil, Refuse("pack-unsupported") }
+    version := contract.Version()
+    evalOptions := evaluation.Options{SpecVersion: version, Command:"advice"}
+    root, refused := admitted.EvaluationForm(evalOptions)
     engine.EvaluateAdmitted(admitted,facts,evidence,evalOptions)`
 	for _, row := range []struct {
 		name, source string
 		valid        bool
 	}{
-		{"explicit Core 0.3 only", contract, true},
+		{"explicit Core 0.3 and 0.5 only", contract, true},
 		{"older admitted version", strings.Replace(contract, `contract.Version() != "0.3.0"`, `contract.Version() != "0.2.0-draft"`, 1), false},
-		{"older evaluator selection", strings.Replace(contract, `SpecVersion: "0.3.0"`, `SpecVersion: "0.2.0-draft"`, 1), false},
-		{"missing version gate", strings.Replace(contract, `if failure != nil || contract.Version() != "0.3.0" {`, `if failure != nil {`, 1), false},
+		{"another admitted version", strings.Replace(contract, `contract.Version() != "0.5.0"`, `contract.Version() != "0.6.0"`, 1), false},
+		{"fixed evaluator selection", strings.Replace(contract, `SpecVersion: version`, `SpecVersion: "0.2.0-draft"`, 1), false},
+		{"missing version gate", strings.Replace(contract, `if failure != nil || contract.Version() != "0.3.0" && contract.Version() != "0.5.0" {`, `if failure != nil {`, 1), false},
 		{"second evaluation path", contract + `; engine.EvaluateWith(pack,facts,evidence,options)`, false},
+		{"pack bytes decoded again", contract + `; carrier.Decode(packBytes, carrier.DefaultLimits())`, false},
+		{"own lowering", contract + `; evalform.Of(root)`, false},
+		{"evaluation form not read", strings.Replace(contract, `admitted.EvaluationForm(evalOptions)`, `admitted.Document(evalOptions)`, 1), false},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			if got := advisoryContractFault(row.source); (got == "") != row.valid {

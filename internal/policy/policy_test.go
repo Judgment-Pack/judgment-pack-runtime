@@ -750,14 +750,16 @@ func TestMultiplePoliciesAndSameIdentityVersions(t *testing.T) {
 
 // The policy check does not read Core 0.5.0: the policy companion is pinned to
 // Core 0.3.0, so a consumer declaring 0.5.0 is refused explicitly, naming the
-// version, rather than having its rules read as a 0.3.0 pack's.
+// version, rather than having its rules read as a 0.3.0 pack's. The code is
+// the one it always had; the message also names what reads the adoption and
+// the pack meanwhile (ADR-0089).
 func TestCore050ConsumerIsRefused(t *testing.T) {
 	f := loadFixture(t, "refunds")
 	pack := bytes.Replace(f.raw["consumer-pack.json"], []byte(`"specVersion": "0.2.0-draft"`), []byte(`"specVersion": "0.5.0"`), 1)
 	f.retainConsumer(t, pack)
 	r, c := Check("check", mustJSON(t, f.adoption), f.wire(t), engine(t))
 	requireRefusal(t, r, c, result.ExitUnsupported)
-	if len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || r.Diagnostics[0].InstancePath != "/consumer/specVersion" || r.Diagnostics[0].Message != `The policy check does not read packs declaring specVersion "0.5.0"; it reads Core 0.1.0-draft, 0.2.0-draft and 0.3.0 packs.` {
+	if len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || r.Diagnostics[0].InstancePath != "/consumer/specVersion" || r.Diagnostics[0].Message != `The policy check does not read packs declaring specVersion "0.5.0"; it reads Core 0.1.0-draft, 0.2.0-draft and 0.3.0 packs. Meanwhile, experimental policy validate checks the adoption without reading its consumer, and spec validate checks the consumer pack; CONFORMANCE.md states what the policy check waits for.` {
 		t.Fatalf("0.5.0 consumer: %+v", r.Diagnostics)
 	}
 }

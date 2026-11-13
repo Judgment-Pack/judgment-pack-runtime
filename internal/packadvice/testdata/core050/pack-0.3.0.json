@@ -1,0 +1,55 @@
+{
+  "specVersion": "0.3.0",
+  "id": "https://example.com/packs/advice-core050",
+  "version": "1.0.0",
+  "title": "Pack-design analysis over an evaluation form",
+  "decision": {
+    "intent": "Route a synthetic request.",
+    "question": "Accept or refer the request?"
+  },
+  "applicability": {"op": "fact", "path": "/kind", "operator": "in", "value": ["intake", "renewal"]},
+  "outcomes": [
+    {"id": "accept", "label": "Accept"},
+    {"id": "refer", "label": "Refer"}
+  ],
+  "rules": [
+    {
+      "id": "tiered",
+      "description": "A listed tier is accepted.",
+      "when": {"op": "fact", "path": "/tier", "operator": "in", "value": ["gold", "silver"]},
+      "outcome": "accept",
+      "onUnknown": "ignore",
+      "extensions": {"com.example.note": {"text": "kept"}}
+    },
+    {
+      "id": "gold",
+      "description": "Gold is accepted.",
+      "when": {"op": "fact", "path": "/tier", "operator": "equals", "value": "gold"},
+      "outcome": "accept",
+      "onUnknown": "ignore"
+    },
+    {
+      "id": "contradiction",
+      "description": "A listed tier that is not listed.",
+      "when": {
+        "op": "all",
+        "conditions": [
+          {"op": "fact", "path": "/tier", "operator": "in", "value": ["gold", "silver"]},
+          {"op": "not", "condition": {"op": "fact", "path": "/tier", "operator": "in", "value": ["gold", "silver"]}}
+        ]
+      },
+      "outcome": "refer",
+      "onUnknown": "ignore"
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "blocked",
+      "description": "A listed region escalates.",
+      "when": {"op": "any", "conditions": [{"op": "fact", "path": "/region", "operator": "in", "value": ["us"]}]},
+      "effect": "escalate",
+      "onUnknown": "ignore"
+    }
+  ],
+  "fallbackOutcome": "refer"
+}
