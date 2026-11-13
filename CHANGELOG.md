@@ -62,6 +62,8 @@ All notable changes to tagged releases are documented here.
   is whatever version the build records, which may be a pseudo-version or carry `+dirty`, and is
   empty only when the build records none; the `sdk/record` package doc now says a struct literal
   has a nil `JSON` and an empty `Digest`. No behavior changes.
+- The member-name ordering behind the pack view's and the decision record's canonical JSON no
+  longer allocates per comparison. The order, and so every byte written, is unchanged.
 - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.44.0 - 2026-11-12
