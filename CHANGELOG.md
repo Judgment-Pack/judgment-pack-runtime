@@ -2,6 +2,14 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- The documentation of `sdk.Load` now names every specVersion it evaluates: `0.2.0-draft`, and
+  `0.3.0` or `0.5.0` with the base profile. It did not name `0.5.0`, which `Load` has accepted
+  since 0.44.0.
+- No evaluation, no CLI or MCP output and no audit-trail record changes. The conformance claim in
+  CONFORMANCE.md is unchanged.
+
 ## 0.44.0 - 2026-11-12
 
 - **Core `0.5.0` is admitted, with the `base` profile only** (#382, ADR-0077), from the published

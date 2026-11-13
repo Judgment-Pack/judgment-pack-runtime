@@ -87,8 +87,8 @@ type Pack struct {
 // network. pack is copied; the caller may reuse its slice afterwards.
 //
 // The evaluator contract is the one the pack declares (specVersion
-// "0.2.0-draft", or "0.3.0" with the base profile), selected exactly as
-// "jpack experimental evaluate" selects it outside a project.
+// "0.2.0-draft", or "0.3.0" or "0.5.0" with the base profile), selected
+// exactly as "jpack experimental evaluate" selects it outside a project.
 //
 // A pack the evaluator would refuse before reading the facts document is
 // refused here with a *Refusal: the same class, phase, code and message the
