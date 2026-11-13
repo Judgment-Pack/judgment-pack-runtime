@@ -19,6 +19,27 @@ All notable changes to tagged releases are documented here.
   exit; the message gains one sentence: `experimental evaluate` and `packs test` for a node pack,
   `experimental policy validate` and `spec validate` for a policy consumer. CONFORMANCE.md states,
   dated, what each waits for. The dialect check's message is unchanged.
+- **`jpack experimental check-published` checks, over a git repository's own tags, that no
+  published pack or dialect document changed its bytes under the same id and version** (#404,
+  ADR-0090; EXPERIMENTAL). It reads every tag selected by `--tags` (default every tag, annotated
+  and lightweight) and HEAD, in the order of the commit graph, takes each document's identity
+  (kind, `id`, `version`) from the document and not its path, and reports each identity whose
+  bytes at a later tag or at HEAD are not the bytes the first tag holding it published, with both
+  SHA-256 digests, refs and paths; two documents under one identity in that tag are a finding too.
+  A document that does not read at a tag, or a submodule the selection reaches, is reported as
+  unreadable, never skipped, and the run is then incomplete; a tree entry is read as git reads its
+  mode, and a mode spelled as git never writes it is reported besides. `--manifest` checks against a manifest pinning each identity by digest and
+  first tag (`manifestVersion` `"1"`, a closed input), and `--write-manifest` writes one, in
+  deterministic bytes, by rename, replacing only a manifest; it keeps every given entry as it is,
+  and writes no new entry for an identity whose bytes have a finding, which it reports as
+  withheld. A shallow clone is refused without a
+  manifest and stated as shallow with one; a partial clone is refused. It exits 0 when valid, 1
+  with a finding, with something unread, or when no tag was read and no manifest pin given, 3 for
+  a usage error and 4 when the repository cannot be read, or when its trees name more than one run
+  reads, 1,000,000 directories or 1 GiB of tree objects (`JPS-RESOURCE-TREE-WALK-LIMIT`).
+  It runs `git` from `PATH` with hooks, pagers, fsmonitor, replace refs, credential helpers and
+  every transport turned off, and writes nothing into the repository. It evaluates nothing, so the
+  conformance claim in CONFORMANCE.md is unchanged. `docs/published-identities.md` describes it.
 - **A decision record whose facts and evidence are named by digests the caller keys** (#400,
   ADR-0087; EXPERIMENTAL). `sdk.Pack.EvaluateWithKeyedRecord` takes a `record.KeyedDigests`: the
   label `hmac-sha256`, the one algorithm a record names, a key identifier of 1 to 128 characters
