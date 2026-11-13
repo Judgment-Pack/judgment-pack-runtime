@@ -14,7 +14,9 @@
 //
 // Draft-RFC prototype options, work-budget overrides, project features
 // (configuration, reviewed-set locks, audit records, signing) and the
-// validation-only and test surfaces are not offered here.
+// validation-only and test surfaces are not offered here. The decision record
+// Pack.EvaluateWithRecord returns is not an audit record: it is written
+// nowhere and is the caller's to keep.
 //
 // # Stability
 //
@@ -32,6 +34,13 @@
 //     view.PackView of package sdk/view;
 //   - Pack.FilteredView, which returns the view.FilteredView of package
 //     sdk/view (Core 0.5.0 only);
+//   - Pack.EvaluateWithRecord, which returns the record.DecisionRecord of
+//     package sdk/record, and that package's DecisionRecord, with
+//     DecisionRecord.JSON and DecisionRecord.Digest, Pack, Evaluator,
+//     Binding, RecordVersion, MaxBindingNames, MaxBindingNameLength and
+//     ErrBinding;
+//   - Evaluation.OutcomeAnnotations, which returns view.Annotation values of
+//     package sdk/view (Core 0.5.0 only);
 //   - the constants ClassPackNotConformant, ClassMalformedInput,
 //     ClassUnsupportedRequiredExtension, ClassResourceExhaustion,
 //     PhasePreflight and PhaseEvaluation.
@@ -40,7 +49,10 @@
 // whose form the specification fixes. The envelope Evaluation.JSON returns
 // follows the CLI's machine-output contract and its outputVersion. The bytes
 // view.PackView.JSON and view.PackView.Markdown return carry their own view
-// version, view.ViewVersion, which VERSIONING.md says when to move.
+// version, view.ViewVersion, which VERSIONING.md says when to move. The bytes
+// record.DecisionRecord.JSON returns carry their own record version,
+// record.RecordVersion, which package sdk/record and VERSIONING.md say when to
+// move.
 //
 // # Describing a pack
 //
@@ -72,6 +84,29 @@
 // docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md carries
 // over to the released version).
 //
+// # Recording an evaluation
+//
+// Pack.EvaluateWithRecord evaluates exactly as Pack.Evaluate does and
+// returns, beside the Evaluation, a record.DecisionRecord: the pack's id,
+// version, specVersion and digest; a digest of the facts and of the evidence
+// documents as evaluated, over their canonical JSON text in the form of the
+// view's JSON; the §8.3 disposition; this runtime's version and the
+// evaluator contract applied; recordVersion; and, when the caller gives one,
+// a binding of the caller's own names to "sha256:" digests, carried as given.
+// The record is one canonical JSON text with its own digest. It holds no
+// time, no random value and nothing read from outside its inputs, so the same
+// inputs under the same runtime version give the same bytes. It is written
+// nowhere, is not an audit-trail entry, is unsigned, and names the facts and
+// evidence by digest only; the binding is the caller's assertion and is never
+// compared with anything. docs/adr/0079-a-decision-record-for-an-evaluation.md
+// records what the record says and what it does not, and package sdk/record
+// states its members.
+//
+// Evaluation.OutcomeAnnotations returns the annotations of the outcome a
+// disposition chose, as Pack.View carries them on that outcome, so a caller
+// acting on the outcome need not read the view itself. The disposition, the
+// record and Evaluation.JSON do not carry them.
+//
 // # Errors
 //
 // Load and Pack.Evaluate return one of three kinds of error:
@@ -88,6 +123,14 @@
 // of these kinds. The methods of Evaluation are for a value a successful
 // Evaluate returned.
 //
+// Pack.EvaluateWithRecord returns the errors Pack.Evaluate returns for the
+// same inputs, an error wrapping ErrInternal for a record this runtime cannot
+// build, and, before anything is evaluated, an error wrapping
+// record.ErrBinding for a binding not of the shape record.Binding states,
+// which is not a *Refusal: the binding is not an input of the evaluator.
+// Evaluation.OutcomeAnnotations returns a plain error for an Evaluation that
+// Evaluate did not return, and otherwise only Pack.View's errors.
+//
 // Pack.View refuses nothing Load admitted. Its only errors are a plain error
 // for a Pack that Load did not return, and an error wrapping ErrInternal for
 // an admitted construct the view cannot represent, which is a fault of this
@@ -99,7 +142,7 @@
 // # Context
 //
 // Load checks its context on entry and again before validation starts;
-// Pack.Evaluate checks it on entry. A validation or evaluation that has
+// Pack.Evaluate and Pack.EvaluateWithRecord check it on entry. A validation or evaluation that has
 // started is not interrupted: it runs to completion, bounded by the
 // documented limits. A done context is returned as ctx.Err() and never as a
 // Refusal.
