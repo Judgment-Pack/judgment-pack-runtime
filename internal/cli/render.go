@@ -430,6 +430,14 @@ func (a *App) renderPackValidation(format string, output result.PackValidation) 
 			}
 			fmt.Fprintln(a.out, line)
 		}
+		// Advice, printed as spec validate prints it beside a valid verdict
+		// (ADR-0081). It is not a check and moves no status.
+		for _, diagnostic := range pack.Advisories {
+			fmt.Fprintf(a.out, "  advice: %s %s %s: %s\n", display.Sanitize(diagnostic.Severity), display.Sanitize(diagnostic.Code), display.Sanitize(diagnostic.InstancePath), display.Sanitize(diagnostic.Message))
+		}
+		if pack.AdvisoriesTruncated {
+			fmt.Fprintln(a.out, "  advice: truncated at the validation output limit")
+		}
 	}
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	return nil
@@ -594,10 +602,38 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 		// false for a project that configures none.
 		fmt.Fprintln(a.out, "skipped: no matrix row ran, because no selected pack declares a matrix (or no pack was selected)")
 	default:
-		fmt.Fprintf(a.out, "mismatch: %d/%d matrix rows did not match their expectation\n", output.Summary.Mismatched, output.Summary.Total)
+		fmt.Fprintf(a.out, "mismatch: %d/%d matrix rows did not match their expectation", output.Summary.Mismatched, output.Summary.Total)
+		// Only a run that asked for a coverage requirement has unmet ones,
+		// so a run without one prints the line it always printed (ADR-0080).
+		unmet := 0
+		for _, pack := range output.Packs {
+			if len(pack.UnmetRequirements) > 0 {
+				unmet++
+			}
+		}
+		switch unmet {
+		case 0:
+		case 1:
+			fmt.Fprint(a.out, ", and 1 pack did not meet a coverage requirement this run asked for")
+		default:
+			fmt.Fprintf(a.out, ", and %d packs did not meet a coverage requirement this run asked for", unmet)
+		}
+		fmt.Fprintln(a.out)
+	}
+	// Printed only when the caller asked for a coverage requirement, so a run
+	// without one prints what it always printed (ADR-0080).
+	if output.MinCoverage != nil {
+		fmt.Fprintf(a.out, "required: at least %d%% of each tested pack's derived probes witnessed by a row\n", *output.MinCoverage)
+	}
+	if output.RequireBoundaries {
+		fmt.Fprintln(a.out, "required: every derived boundary probe of each tested pack witnessed by a row")
 	}
 	for _, pack := range output.Packs {
-		fmt.Fprintf(a.out, "- %s [%s]: %d/%d\n", display.Sanitize(pack.ID), display.Sanitize(pack.Status), pack.Summary.Passed, pack.Summary.Total)
+		fmt.Fprintf(a.out, "- %s [%s]: %d/%d", display.Sanitize(pack.ID), display.Sanitize(pack.Status), pack.Summary.Passed, pack.Summary.Total)
+		if len(pack.UnmetRequirements) > 0 {
+			fmt.Fprintf(a.out, " (unmet: %s)", strings.Join(pack.UnmetRequirements, ", "))
+		}
+		fmt.Fprintln(a.out)
 		if pack.Detail != "" {
 			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(pack.Detail))
 		}
@@ -735,8 +771,8 @@ func unreadablePacks(output result.PackSuggestion) int {
 // renderCoverage prints one coverage block: the count line always states that
 // probes were derived; only missing probes get a detail line, as only
 // mismatching rows do. Coverage moves no status and no exit code (ADR-0014;
-// ADR-0016 for graph rows) — the exit code is rows-only on every surface that
-// calls this.
+// ADR-0016 for graph rows) unless a packs test caller asked for a coverage
+// requirement (ADR-0080); this block prints the same either way.
 func (a *App) renderCoverage(indent string, probes []result.MatrixProbe) {
 	if len(probes) == 0 {
 		return

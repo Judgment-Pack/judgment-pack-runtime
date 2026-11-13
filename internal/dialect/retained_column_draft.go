@@ -228,7 +228,7 @@ func CheckRetainedColumnDraft(command string, data, pack []byte, engine *validat
 		return r, code
 	}
 	r.ValidationScope = "experimental-retained-column-" + r.Profile + "-document-and-declared-pack-inventory"
-	r.Report, code = checkDeclaredInventory(r.Report, document, pack, engine)
+	r.Report, code = checkDeclaredInventory(r.Report, document, pack, engine, retainedDraftReadableVersions())
 	return r, code
 }
 

@@ -245,8 +245,8 @@ The separately named evaluation corpus contains 103 rows, whose manifest states 
 and seed; all 103 match under the explicit Core `0.5.0` contract, including the row for the
 supported extension set. The corpus runner does not check the manifest's `pairs` and
 `ownEvaluationForm` statements; each row is run on its own. Every graph command that reads node
-packs, the dialect and policy checks and pack-design analysis refuse a `0.5.0` pack, because the documents they implement
-are written against Core `0.3.0`. These results are implementation evidence, not an exhaustive
+packs, the policy check, the dialect check's retained-column draft contract and pack-design analysis refuse a `0.5.0`
+pack, because the documents they implement are written against Core `0.3.0`; the dialect check itself reads one. These results are implementation evidence, not an exhaustive
 check of the version's requirements.
 
 This section makes no partial or qualified conformance claim. The recorded `0.2.0-draft` claim

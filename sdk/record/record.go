@@ -1,10 +1,12 @@
 // Package record is the decision record that sdk.Pack.EvaluateWithRecord
 // returns beside one evaluation: what was evaluated, under which evaluator,
 // and what it decided, as one canonical JSON text and that text's digest
-// (ADR-0079). This runtime writes the record nowhere. Only package sdk builds
-// a DecisionRecord; a DecisionRecord made any other way is the zero value or
-// a copy of one that EvaluateWithRecord returned. Everything in this package
-// is experimental.
+// (ADR-0079). This runtime writes the record nowhere. Only package sdk
+// computes a DecisionRecord's JSON and Digest, from its fields as they are
+// when EvaluateWithRecord returns it. A DecisionRecord made any other way, the
+// zero value or a struct literal, has a nil JSON and an empty Digest whatever
+// its exported fields hold, and changing a field of a returned record changes
+// neither. Everything in this package is experimental.
 //
 // # What a record says
 //
@@ -148,10 +150,11 @@ type Pack struct {
 // Evaluator names the evaluator that decided. Experimental.
 type Evaluator struct {
 	// RuntimeVersion is this module's version, sdk.Description.RuntimeVersion:
-	// the version the program's build information records for the module. It
-	// is empty, and the record has no runtimeVersion member, when the build
-	// records none, as for a build inside this module's own source tree or
-	// with the module replaced by a local directory.
+	// whatever version the program's build information records for the
+	// module, which may be a release tag or a pseudo-version, and may carry a
+	// +dirty suffix for a build from a modified source tree. It is empty, and
+	// the record has no runtimeVersion member, when the build records none,
+	// for example with the module replaced by a local directory.
 	RuntimeVersion string
 	// SpecVersion is the JPS Core evaluator contract applied, as
 	// sdk.Evaluation.EvaluatorSpecVersion names it.

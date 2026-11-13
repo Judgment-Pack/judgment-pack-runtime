@@ -1245,6 +1245,15 @@ type PackValidationEntry struct {
 	Path   string      `json:"path"`
 	Status string      `json:"status"`
 	Checks []PackCheck `json:"checks"`
+	// Advisories are the diagnostics spec validate reports beside a valid
+	// verdict for the same pack bytes: the non-normative JPS-RULES-OVERLAP
+	// warnings of Core 0.3.0 and 0.5.0 (ADR-0066, ADR-0081), carried as spec
+	// validate carries them. Advice moves no Status and no exit code. Absent
+	// when the document check did not pass or the pack draws no advice.
+	Advisories []Diagnostic `json:"advisories,omitempty"`
+	// AdvisoriesTruncated is true when the advice stopped at the validation
+	// output limit, as spec validate's diagnosticsTruncated says.
+	AdvisoriesTruncated bool `json:"advisoriesTruncated,omitempty"`
 }
 
 // PackValidation is one packs validate report.
@@ -1267,6 +1276,10 @@ type PackValidation struct {
 	Summary       PackCounts            `json:"summary"`
 	Checks        []PackCheck           `json:"checks,omitempty"`
 	Packs         []PackValidationEntry `json:"packs"`
+	// FailOnAdvisory is true exactly when the caller asked that a pack that
+	// draws advice fail the run (ADR-0081); each pack's checks then end with
+	// the advisories check. Absent otherwise.
+	FailOnAdvisory bool `json:"failOnAdvisory,omitempty"`
 }
 
 // LintCounts is one packs lint summary. Unlike PackCounts it carries a
@@ -1442,8 +1455,9 @@ type PackFilteredDescription struct {
 // describes it — and the pack's declarations derive at least one probe.
 // Mismatched rows are included, because it reads what the rows document —
 // their expectations, and their authored facts — which exist whether or not
-// they held. It never moves Status — a missing probe is a fact about what the
-// rows state, not a failed row (ADR-0014, ADR-0023).
+// they held. It moves no Status by default — a missing probe is a fact about
+// what the rows state, not a failed row (ADR-0014, ADR-0023) — and moves it
+// only under a requirement the caller asked for (ADR-0080; UnmetRequirements).
 // An additive member, so outputVersion stays "2" by the same two
 // VERSIONING.md rules ADR-0012 cites.
 // Origins counts the rows by the origin each declares, so a suite whose rows
@@ -1469,7 +1483,20 @@ type PackTestEntry struct {
 	Origins     []OriginCount          `json:"origins,omitempty"`
 	Profile     *MatrixProfile         `json:"profile,omitempty"`
 	Detail      string                 `json:"detail,omitempty"`
+	// UnmetRequirements names, in a fixed order, each coverage requirement
+	// the caller asked for that this entry does not meet:
+	// RequirementMinCoverage and RequirementBoundaries (ADR-0080). An entry
+	// that misses one is a mismatch and its Detail says why. Absent when no
+	// such requirement was asked for or every one asked for was met.
+	UnmetRequirements []string `json:"unmetRequirements,omitempty"`
 }
+
+// The coverage requirements a packs test run can be asked to hold each
+// pack's coverage to (ADR-0080), named as the options that ask for them.
+const (
+	RequirementMinCoverage = "min-coverage"
+	RequirementBoundaries  = "require-boundaries"
+)
 
 // MatrixProfile reads one pack's matrix against the history its rows came
 // from (ADR-0034): the statuses the run assigned, grouped by the origin each
@@ -1569,6 +1596,15 @@ type PackTest struct {
 	RequireMatrix bool            `json:"requireMatrix,omitempty"`
 	Summary       SuiteSummary    `json:"summary"`
 	Packs         []PackTestEntry `json:"packs"`
+	// MinCoverage is the percentage of derived probes the caller required a
+	// row to witness in each pack with a matrix, present exactly when the
+	// caller asked (ADR-0080), so a stored report says which rule it was
+	// judged under.
+	MinCoverage *int `json:"minCoverage,omitempty"`
+	// RequireBoundaries is true exactly when the caller required every
+	// derived boundary probe of each pack with a matrix to be witnessed by a
+	// row (ADR-0080). Absent otherwise.
+	RequireBoundaries bool `json:"requireBoundaries,omitempty"`
 }
 
 // PackSuggestionLabel labels every packs suggest report with what the run
