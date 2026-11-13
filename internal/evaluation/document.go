@@ -25,7 +25,10 @@ func (a *AdmittedPack) Document(options Options) (map[string]any, *Failure) {
 // under options: the evaluation form EF(P) a Core 0.5.0 pack is evaluated as
 // (Core §8.5), made once at admission, and the decoded document itself for
 // every other version. It is the same value the evaluator walks, not a second
-// lowering, and like Document it is shared and only read.
+// lowering, and like Document it is shared and only read: it is not a copy,
+// but the root memoised on the admission, so a caller that wrote to it would
+// change every later evaluation of the same admitted pack. No caller writes to
+// it.
 //
 // It answers only for a pack an evaluation under options would go on to
 // evaluate: a pack refused at any step of the preflight that concerns the pack

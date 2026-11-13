@@ -44,11 +44,14 @@ func Refuse(code string) *Refusal {
 // Draft RFC 0027 gives an inadmissible pack. A Core 0.5.0 pack's refusal also
 // names the Core §8.4 class, the code evaluation reports for it and, for a
 // pack that is not conformant, the code of Core's first diagnostic -- for a
-// fault in an annotation, a value set or a reference as for any other (§8.5)
-// -- so a pack moved to 0.5.0 is not left with a bare refusal. All three are
-// this runtime's fixed identifiers, never pack text: the diagnostic code is
-// kept only when it is one. A Core 0.3.0 pack's refusal is the message it
-// always had.
+// structural or semantic fault in an annotation, a value set or a reference
+// as for any other (§8.5) -- so a pack moved to 0.5.0 is not left with a bare
+// refusal. All three are this runtime's fixed identifiers, never pack text:
+// the diagnostic code is kept only when it is one. A Core 0.3.0 pack's refusal
+// is the message it always had. A fault the carrier refuses (bytes that do
+// not decode, a duplicate member name, an annotation's included, or a lone
+// surrogate) never reaches here: contract selection fails first and reads no
+// selector, so Analyze gives the bare refusal whatever the pack declares.
 func refusePack(version string, failure *evaluation.Failure) *Refusal {
 	refusal := Refuse("pack-unsupported")
 	if !result.HasCore050Rules(version) || failure.Class == "" {

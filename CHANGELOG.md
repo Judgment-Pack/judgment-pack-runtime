@@ -28,7 +28,9 @@ All notable changes to tagged releases are documented here.
   part. The report keeps Draft RFC 0027 format 1; `targetSpecVersion` is the pack's own
   `0.5.0`, `packDigest` binds its exact bytes and the findings are those of the pack's inline
   `0.3.0` twin. A `0.5.0` pack evaluation refuses is still refused with `pack-unsupported`, and
-  the message now names the Core class, evaluation's code and Core's first diagnostic code. A
+  the message now names the Core class, evaluation's code and Core's first diagnostic code, except
+  for bytes the carrier refuses, from which no selector is read. A value set no condition
+  references, or a value repeated in a set, is not reported, as format 1 has no finding for it. A
   `0.3.0` pack's report and refusals are byte-identical to before. Analysis is outside the version
   scope that CONFORMANCE.md records, which does not change.
 - **The graph commands and the policy check name what reads a Core `0.5.0` pack meanwhile**
