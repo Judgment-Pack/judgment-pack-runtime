@@ -823,6 +823,9 @@ func (a *App) packsTestCommand() *cobra.Command {
 	requireMatrix := false
 	minCoverage := 0
 	requireBoundaries := false
+	strength := false
+	failOnSurvivor := false
+	maxVariants := project.DefaultMaxVariants
 	command := &cobra.Command{
 		Use:   "test",
 		Short: "EXPERIMENTAL SURFACE: run each pack's instance matrix through the evaluator",
@@ -857,7 +860,23 @@ func (a *App) packsTestCommand() *cobra.Command {
 			"requireBoundaries as asked (ADR-0080). Neither option touches a pack with no matrix. Each pack selects its exact Core 0.2.0-draft, 0.3.0 base or 0.5.0 base contract; one run refuses mixed contracts. Core 0.3 routed assertions use complete handoff.routes, and expectedHandoffTarget is incompatible with routed packs. A Core 0.3 run refuses atomically if the retained exact expected and actual canonical disposition text exceeds 10 MiB. Exit " +
 			"0 when every row matched its expectation, 1 when any did not, 1 when no row ran, and 1 under " +
 			"--require-matrix when a selected pack declares no matrix, and 1 under --min-coverage or " +
-			"--require-boundaries when a pack does not meet it.",
+			"--require-boundaries when a pack does not meet it. " +
+			"With --strength, the run also measures each tested pack's test strength, an EXPERIMENTAL option " +
+			"(ADR-0084): it derives variants of the pack in memory, each one small change to the pack's own " +
+			"declarations (a comparison bound moved one unit, an operator reversed, one member of an all or any " +
+			"dropped, an outcome swapped, an onUnknown changed, and on Core 0.5.0 one entry of a referenced value set " +
+			"removed), runs the pack's own matrix against each, and reports each variant as noticed, when some row's " +
+			"result differs from its expectation, or survived, when no row's does. A change that leaves no pack this " +
+			"runtime admits is counted not derivable and never reported as a survivor. A survivor is either a gap in " +
+			"the matrix or a variant that behaves exactly as the pack does; this command cannot tell which, and the " +
+			"result proves nothing about the pack. Variants run only for a pack all of whose rows matched. Nothing is " +
+			"written beside the pack. Each pack may derive at most --max-variants changes (default 1000); every " +
+			"selected pack is counted first, and a pack that derives more refuses the whole run before any variant of " +
+			"any pack runs. The payload carries a strength member per " +
+			"pack and for the run, present only under --strength. By default it informs and moves no status; with " +
+			"--fail-on-survivor, a pack whose matrix ran fails the run when a variant survives or none could run, " +
+			"named fail-on-survivor in unmetRequirements, and the command exits 1. --fail-on-survivor and " +
+			"--max-variants are refused without --strength.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := validateFormat(format); err != nil {
@@ -869,6 +888,15 @@ func (a *App) packsTestCommand() *cobra.Command {
 				options.MinCoverage = &level
 			}
 			if failure := project.CheckMinCoverage(options.MinCoverage); failure != nil {
+				return a.projectFailure("packs test", format, failure)
+			}
+			if !strength && (failOnSurvivor || cmd.Flags().Changed("max-variants")) {
+				return a.operational("packs test", format, result.ExitInvocation, "JPS-INVOCATION-STRENGTH-OPTION", "--fail-on-survivor and --max-variants apply to a test-strength run; add --strength.")
+			}
+			if strength {
+				options.Strength = &project.StrengthOptions{MaxVariants: maxVariants, FailOnSurvivor: failOnSurvivor}
+			}
+			if failure := project.CheckStrength(options.Strength); failure != nil {
 				return a.projectFailure("packs test", format, failure)
 			}
 			loaded, failure := a.loadProject(configPath, "packs test", format)
@@ -896,6 +924,9 @@ func (a *App) packsTestCommand() *cobra.Command {
 	command.Flags().BoolVar(&requireMatrix, "require-matrix", requireMatrix, "fail the run when a selected pack declares no matrix, instead of reporting it skipped (ADR-0042)")
 	command.Flags().IntVar(&minCoverage, "min-coverage", minCoverage, "fail the run when a pack whose matrix ran has fewer than this percentage (0 to 100) of its derived probes witnessed by a row (ADR-0080)")
 	command.Flags().BoolVar(&requireBoundaries, "require-boundaries", requireBoundaries, "fail the run when a pack whose matrix ran has a derived boundary probe no row witnesses (ADR-0080)")
+	command.Flags().BoolVar(&strength, "strength", strength, "EXPERIMENTAL: also run variants of each tested pack against its matrix and report the variants no row notices (ADR-0084)")
+	command.Flags().BoolVar(&failOnSurvivor, "fail-on-survivor", failOnSurvivor, "with --strength, fail a pack whose matrix ran when any variant survives or none could run (ADR-0084)")
+	command.Flags().IntVar(&maxVariants, "max-variants", maxVariants, "with --strength, the most changes one pack may derive before the run is refused (ADR-0084)")
 	return command
 }
 

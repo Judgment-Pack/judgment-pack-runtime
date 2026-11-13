@@ -93,6 +93,13 @@ type TestOptions struct {
 	// (ADR-0080). A pack that compares nothing in order derives none and
 	// meets it.
 	RequireBoundaries bool
+	// Strength, when not nil, also runs the EXPERIMENTAL test-strength
+	// variants of ADR-0084 for each pack whose matrix ran: changes derived
+	// from the pack's own declarations, each run against that pack's rows.
+	// By default it informs and moves no status; FailOnSurvivor makes a
+	// pack with a surviving variant, or with none run, fail the run. A pack
+	// with no matrix is untouched, as RequireMatrix leaves it.
+	Strength *StrengthOptions
 }
 
 // CheckMinCoverage refuses a required coverage outside 0 to 100, and accepts
@@ -107,6 +114,9 @@ func CheckMinCoverage(level *int) *Failure {
 // TestWith is Test with options.
 func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, options TestOptions) (result.PackTest, *Failure) {
 	if failure := CheckMinCoverage(options.MinCoverage); failure != nil {
+		return result.PackTest{}, failure
+	}
+	if failure := CheckStrength(options.Strength); failure != nil {
 		return result.PackTest{}, failure
 	}
 	selected, failure := p.selection(id)
@@ -130,6 +140,9 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 		MinCoverage:               options.MinCoverage,
 		RequireBoundaries:         options.RequireBoundaries,
 	}
+	if options.Strength != nil {
+		output.Strength = &result.StrengthRun{Label: result.StrengthLabel, MaxVariants: options.Strength.MaxVariants, FailOnSurvivor: options.Strength.FailOnSurvivor}
+	}
 	// The aggregate handoff-target budget is one counter for the whole run, not
 	// one per pack: what it bounds is what the report retains, and a report is
 	// one document however many packs contributed to it (ADR-0025).
@@ -147,8 +160,14 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 			// Existing per-pack mismatch behavior handles unreadable packs.
 			continue
 		}
-		if _, failure := run.selectPackContract(pack); failure != nil {
+		contract, failure := run.selectPackContract(pack)
+		if failure != nil {
 			return result.PackTest{}, failure
+		}
+		if options.Strength != nil {
+			if failure := countVariants(packID, pack, contract, *options.Strength); failure != nil {
+				return result.PackTest{}, failure
+			}
 		}
 	}
 	for _, packID := range selected {
@@ -159,6 +178,21 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 		if options.RequireMatrix && p.Config.Packs[packID].Matrix == "" {
 			entry.Status = "mismatch"
 			entry.Detail = "The entry declares no matrix, and this run requires every selected pack to have one, so the pack has not passed."
+		}
+		if output.Strength != nil {
+			// A pack that never reached its rows -- no matrix, or a pack or
+			// matrix that would not load -- ran no variant either, and says so.
+			if entry.Strength == nil {
+				detail := "The pack's own matrix did not run, so no variant ran."
+				if p.Config.Packs[packID].Matrix == "" {
+					detail = "The entry declares no matrix, so no variant ran."
+				}
+				entry.Strength = skippedStrength(detail)
+			}
+			output.Strength.Summary.Derived += entry.Strength.Counts.Derived
+			output.Strength.Summary.Noticed += entry.Strength.Counts.Noticed
+			output.Strength.Summary.Survived += entry.Strength.Counts.Survived
+			output.Strength.Summary.NotDerivable += entry.Strength.Counts.NotDerivable
 		}
 		output.Summary.Total += entry.Summary.Total
 		output.Summary.Passed += entry.Summary.Passed
@@ -284,15 +318,11 @@ func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report
 		declaredTarget = evaluator.PackHandoffTarget(pack)
 	}
 	for _, row := range matrix.Cases {
-		outcome := evaluator.RunCaseAdmittedWith(admitted, row, declaredTarget, command, evaluation.Options{SpecVersion: contract.Version()})
+		outcome := judgeRow(evaluator, admitted, row, declaredTarget, command, contract, routed)
 		if contract.Core030Rules() {
 			run.dispositions += len(outcome.Expected) + len(outcome.Actual)
 			if run.dispositions > p.dispositionBudget() {
 				return report, &Failure{Code: "JPS-RESOURCE-MATRIX-DISPOSITIONS", Message: "The exact canonical dispositions exceed the Core 0.3 test report byte budget; select fewer cases or packs. No partial report is returned.", ExitCode: result.ExitIO}
-			}
-			if row.ExpectedHandoffTarget != nil && routed {
-				outcome.Status = "mismatch"
-				outcome.Detail = "expectedHandoffTarget is incompatible with a routed escalation; assert the complete disposition handoff.routes instead."
 			}
 		}
 		// The row's citations, as the values it declared (ADR-0034): parsed
@@ -355,7 +385,37 @@ func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report
 		return report, failure
 	}
 	report.Profile = profile
+	// The test-strength run reads what the rows above already established --
+	// whether every one held, and whether any reaches §8 -- and runs only when
+	// the caller asked for it, after everything a run without it reports
+	// (ADR-0084).
+	if run.options.Strength != nil {
+		strength, failure := strengthOf(evaluator, strengthTarget{
+			id: id, pack: pack, matrix: matrix, contract: contract, command: command,
+			rows: report.Summary.Total, mismatched: report.Summary.Mismatched, admitted: withCoverage,
+		}, *run.options.Strength)
+		if failure != nil {
+			return report, failure
+		}
+		report.Strength = strength
+		holdToSurvivors(&report, *run.options.Strength)
+	}
 	return report, nil
+}
+
+// judgeRow judges one matrix row against an admitted pack: the corpus
+// comparison, then the one Core 0.3 refusal a project row adds -- an
+// expectedHandoffTarget against a routed escalation is a mismatch (ADR-0025).
+// The pack's own rows and every test-strength variant (ADR-0084) are judged
+// by this one function, so a variant is noticed exactly when packs test would
+// have reported the row it ran as a mismatch.
+func judgeRow(evaluator *evaluation.Engine, admitted *evaluation.AdmittedPack, row evaluation.MatrixCase, declaredTarget evaluation.HandoffTargetRendering, command string, contract result.EvaluatorContract, routed bool) result.EvaluationCorpusCase {
+	outcome := evaluator.RunCaseAdmittedWith(admitted, row, declaredTarget, command, evaluation.Options{SpecVersion: contract.Version()})
+	if contract.Core030Rules() && row.ExpectedHandoffTarget != nil && routed {
+		outcome.Status = "mismatch"
+		outcome.Detail = "expectedHandoffTarget is incompatible with a routed escalation; assert the complete disposition handoff.routes instead."
+	}
+	return outcome
 }
 
 // plural is one when n is 1 and many otherwise.
