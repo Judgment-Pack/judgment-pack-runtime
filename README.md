@@ -319,6 +319,18 @@ carries its own `filteredViewVersion`
 annotation text that could reorder its line, or join the syntax before it, only in ASCII
 ([ADR-0078](docs/adr/0078-keep-annotation-text-from-reordering-its-line.md)).
 
+`pack.EvaluateWithRecord(ctx, facts, evidence, binding)` evaluates as `Evaluate` does and also
+returns a `record.DecisionRecord` of package `sdk/record`
+([ADR-0079](docs/adr/0079-a-decision-record-for-an-evaluation.md)): the pack's identity, digests of
+the facts and evidence documents as evaluated, the disposition, the runtime and evaluator contract,
+and the caller's optional binding of names to `sha256:` digests, as one canonical JSON text
+(`JSON()`) with its own digest (`Digest()`). It holds no time and no random value, so the same
+inputs under the same runtime version give the same bytes. Nothing is written: the record is not
+an audit-trail entry, it is unsigned, its binding is the caller's assertion, and it names the
+facts and evidence by digest only. `evaluated.OutcomeAnnotations()` returns the chosen outcome's
+annotations, as the view carries them. Both are experimental, and the record carries its own
+`recordVersion`.
+
 ## Build and try it locally
 
 Go 1.24 or newer is required to build from source: `internal/fssecure` binds every project file

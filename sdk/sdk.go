@@ -18,6 +18,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
 )
 
 // The four JPS Core §8.4 error classes a Refusal can carry, and the two
@@ -80,6 +81,10 @@ type Pack struct {
 	supported []string
 	// identity is read once, by Load, from the admitted document.
 	identity Identity
+	// annotations is each outcome's annotations, read once, from a view of
+	// the admitted document, the first time Evaluation.OutcomeAnnotations is
+	// called on an evaluation of this pack.
+	annotations func() (map[string][]view.Annotation, error)
 }
 
 // Load validates pack to full document conformance and admits it for
@@ -87,8 +92,8 @@ type Pack struct {
 // network. pack is copied; the caller may reuse its slice afterwards.
 //
 // The evaluator contract is the one the pack declares (specVersion
-// "0.2.0-draft", or "0.3.0" with the base profile), selected exactly as
-// "jpack experimental evaluate" selects it outside a project.
+// "0.2.0-draft", or "0.3.0" or "0.5.0" with the base profile), selected
+// exactly as "jpack experimental evaluate" selects it outside a project.
 //
 // A pack the evaluator would refuse before reading the facts document is
 // refused here with a *Refusal: the same class, phase, code and message the
@@ -150,6 +155,7 @@ func Load(ctx context.Context, pack []byte, options LoadOptions) (*Pack, error) 
 		return nil, err
 	}
 	loaded.identity = identity
+	loaded.annotations = sync.OnceValues(loaded.outcomeAnnotations)
 	return loaded, nil
 }
 
@@ -195,7 +201,12 @@ func (p *Pack) Evaluate(ctx context.Context, facts, evidence []byte) (*Evaluatio
 	if failure != nil {
 		return nil, failureError(failure)
 	}
-	return newEvaluation(evaluated)
+	output, err := newEvaluation(evaluated)
+	if err != nil {
+		return nil, err
+	}
+	output.pack = p
+	return output, nil
 }
 
 // Evaluation is one evaluated result. Its methods are for a value returned by
@@ -216,6 +227,8 @@ type Evaluation struct {
 
 	canonical []byte
 	envelope  result.Evaluation
+	// pack is the Pack whose Evaluate returned this evaluation.
+	pack *Pack
 }
 
 // CanonicalDisposition returns the §8.3 portable disposition in its RFC 8785

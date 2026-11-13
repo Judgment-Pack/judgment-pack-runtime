@@ -115,14 +115,16 @@ func TestTheImportClosureReachesNoAmbientIO(t *testing.T) {
 	}
 }
 
-// No exported identifier of package sdk or of package sdk/view names a type
+// No exported identifier of package sdk, sdk/view or sdk/record names a type
 // from an internal package: an exported function's parameters and results, an
 // exported type's definition, and an exported field of an exported struct all
 // use only these packages' types and the standard library's.
 func TestTheExportedAPINamesNoInternalType(t *testing.T) {
 	_, files := parsePackage(t, filepath.Join(moduleRoot(t), "sdk"))
 	_, viewFiles := parsePackage(t, filepath.Join(moduleRoot(t), "sdk", "view"))
+	_, recordFiles := parsePackage(t, filepath.Join(moduleRoot(t), "sdk", "record"))
 	files = append(files, viewFiles...)
+	files = append(files, recordFiles...)
 	checked := 0
 	for _, file := range files {
 		internal := map[string]bool{}
