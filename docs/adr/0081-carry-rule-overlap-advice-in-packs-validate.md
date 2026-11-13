@@ -51,8 +51,12 @@ Chosen option: **A**.
 4. **Failing on advice, by request.** `--fail-on-advisory` is option B behind a per-run opt-in, the
    pattern of [ADR-0042](0042-let-packs-test-require-a-matrix.md). With it, every selected pack's
    checks end with a seventh check, `advisories`: `failed` when the pack draws any advice (the
-   entry is then `invalid` and the run exits 1), `passed` when it draws none, and `skipped` when the
-   document check did not pass, because advice is computed only for a valid document. The payload
+   entry is then `invalid` and the run exits 1), `passed` when it draws none, and `skipped` when no
+   advice was computed: the document check did not pass, or the pack declares a Core version before
+   `0.3.0`, for which ADR-0066 defines no advice. **Any advice fails, of either certainty.** This
+   differs from `spec test-conformance --strict` (ADR-0066), which fails an `exact` overlap and
+   keeps `not-excluded` a warning. Issue #389 asks for any advisory to fail; a gate that chose the
+   option is told about every overlap the analysis could not rule out. The payload
    carries `failOnAdvisory: true` exactly then. Without the option there is no seventh check and no
    member, so the default is as item 2 states. The option is on the CLI only, as ADR-0080's are.
 5. **Bounds.** Each pack's advice is bounded by ADR-0066's limits; a run's advice is therefore
@@ -65,6 +69,11 @@ Chosen option: **A**.
 - Bad, because advice is non-normative and can name an overlap the author intends; a gate run with
   `--fail-on-advisory` then fails until the rules are rewritten. The caller who chose the option owns
   that.
+- Bad, because a `not-excluded` advisory fails the run too, though it says only that the analysis
+  could not rule an overlap out within its budget, not that one exists, and it carries no rewrite.
+  For rules meant to be disjoint, the author rewrites the conditions so the exclusion is exact (for
+  example, one shared comparison with complementary bounds), or gates that pack in a separate
+  `--id` run without the option.
 - Revisit if the semantic layer reports advice of another kind: it would appear here unchanged, and
   this record would need to say whether that is wanted.
 

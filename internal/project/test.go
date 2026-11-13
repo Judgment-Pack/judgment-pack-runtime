@@ -77,9 +77,10 @@ type TestOptions struct {
 	// RequireMatrix makes a declared pack with no matrix fail the run instead
 	// of being skipped (ADR-0042). It is the caller's opt-in, per run: the
 	// default stays skipped, because a project may declare a pack before it
-	// has written its rows, and ADR-0014's rule that nothing derived gates is
-	// untouched — a missing matrix is a declared pack that nothing checks, not a
-	// probe the pack's content derived.
+	// has written its rows. It gates nothing derived: a missing matrix is a
+	// declared pack that nothing checks, not a probe the pack's content
+	// derived. Derived coverage gates a run only through MinCoverage and
+	// RequireBoundaries (ADR-0080).
 	RequireMatrix bool
 	// MinCoverage, when not nil, is a percentage from 0 to 100: each pack
 	// whose matrix ran must have at least that share of its derived probes
@@ -357,6 +358,14 @@ func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report
 	return report, nil
 }
 
+// plural is one when n is 1 and many otherwise.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
 // holdToRequirements fails one entry whose matrix ran on each coverage
 // requirement the caller asked for and the entry does not meet (ADR-0080).
 // measured is whether coverage was derived for the pack; groups is how many
@@ -382,10 +391,10 @@ func (run *matrixRun) holdToRequirements(report *result.PackTestEntry, measured 
 		switch {
 		case !measured:
 			unmet = append(unmet, result.RequirementBoundaries)
-			details = append(details, fmt.Sprintf("This run requires every derived boundary probe to be witnessed by a row, and no coverage was derived for this pack, so its %d boundaries were not checked.", groups))
+			details = append(details, fmt.Sprintf("This run requires every derived boundary probe to be witnessed by a row, and no coverage was derived for this pack, so its %d %s not checked.", groups, plural(groups, "boundary was", "boundaries were")))
 		case missing > 0:
 			unmet = append(unmet, result.RequirementBoundaries)
-			details = append(details, fmt.Sprintf("This run requires every derived boundary probe to be witnessed by a row, and %d of %d are not.", missing, len(boundaries)))
+			details = append(details, fmt.Sprintf("This run requires every derived boundary probe to be witnessed by a row, and %d of %d %s not.", missing, len(boundaries), plural(missing, "is", "are")))
 		}
 	}
 	if len(unmet) == 0 {

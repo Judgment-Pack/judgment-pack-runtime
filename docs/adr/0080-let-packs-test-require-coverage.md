@@ -47,8 +47,10 @@ Material-decision impact: public-surface.
 
 Chosen option: **A**.
 
-1. **The declarations.** `--min-coverage N` with N a whole number from 0 to 100; any other value is
-   refused with `JPS-INVOCATION-MIN-COVERAGE`, exit 3, before the project is read.
+1. **The declarations.** `--min-coverage N` with N a whole number from 0 to 100. A whole number
+   outside that range is refused with `JPS-INVOCATION-MIN-COVERAGE`, exit 3, before the project is
+   read; a value that is not a whole number is refused by flag parsing with
+   `JPS-INVOCATION-ARGUMENTS`, exit 3.
    `--require-boundaries` is a boolean. Omitting either is the default.
 2. **The level.** It is read over the same count the report prints, `covered/probes` across both
    probe families: a pack meets N when `covered × 100 ≥ N × probes`. A pack for which no coverage

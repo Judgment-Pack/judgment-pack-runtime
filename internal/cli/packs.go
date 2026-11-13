@@ -775,7 +775,10 @@ func (a *App) packsValidateCommand() *cobra.Command {
 			"non-normative JPS-RULES-OVERLAP warnings of Core 0.3.0 and 0.5.0 -- is carried as the entry's " +
 			"advisories, and moves no status and no exit code (ADR-0081), unless --fail-on-advisory is given: then " +
 			"every selected pack's checks end with an advisories check, failed for a pack that draws any advice, " +
-			"and the payload carries failOnAdvisory: true. It " +
+			"and the payload carries failOnAdvisory: true. Any advice fails, a not-excluded advisory included -- one " +
+			"that says only that the analysis could not rule an overlap out within its budget -- unlike spec " +
+			"test-conformance --strict, which fails only an exact overlap; for rules meant to be disjoint, rewrite " +
+			"the conditions so the exclusion is exact, or gate that pack in a separate --id run without the option. It " +
 			"evaluates nothing and runs no row: that is packs test. Exit 0 when every check passed, 1 when any " +
 			"failed.",
 		Args: cobra.NoArgs,
@@ -805,7 +808,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&id, "id", id, "check one declared pack by its decision id instead of all of them")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
-	command.Flags().BoolVar(&failOnAdvisory, "fail-on-advisory", failOnAdvisory, "fail a pack that draws any advice, such as JPS-RULES-OVERLAP (ADR-0081)")
+	command.Flags().BoolVar(&failOnAdvisory, "fail-on-advisory", failOnAdvisory, "fail a pack that draws any JPS-RULES-OVERLAP advice, a not-excluded one included (unlike spec test-conformance --strict, which fails only an exact overlap; ADR-0081)")
 	return command
 }
 

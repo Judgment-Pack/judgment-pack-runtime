@@ -11,9 +11,14 @@ import (
 )
 
 // overlapProject declares the bundled exact-overlap advisory case of each
-// Core version that has the advice, and a pack that draws none.
+// Core version that has the advice, a 0.3.0 pack that draws none, and a
+// 0.2.0-draft pack, a version for which no advice is computed.
 func overlapProject(t *testing.T) (string, map[string]string) {
 	t.Helper()
+	clean, err := os.ReadFile(filepath.Join("..", "artifacts", "jps", "0.3.0", "cases", "valid", "minimal-literal.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	packs := map[string]string{}
 	for _, version := range []string{"0.3.0", "0.5.0"} {
 		data, err := os.ReadFile(filepath.Join("..", "artifacts", "jps", version, "cases", "advisory", "rules-overlap-exact.json"))
@@ -25,11 +30,13 @@ func overlapProject(t *testing.T) (string, map[string]string) {
 	config := writeProjectFixture(t, `{"configVersion":"1","packs":{
 	  "core-three":{"path":"packs/core-three.json"},
 	  "core-five":{"path":"packs/core-five.json"},
-	  "plain":{"path":"packs/plain.json"}
+	  "plain":{"path":"packs/plain.json"},
+	  "clean":{"path":"packs/clean.json"}
 	}}`, map[string]string{
 		"packs/core-three.json": packs["0.3.0"],
 		"packs/core-five.json":  packs["0.5.0"],
 		"packs/plain.json":      evaluatorPack(t),
+		"packs/clean.json":      string(clean),
 	})
 	return config, packs
 }
@@ -82,7 +89,7 @@ func TestPacksValidateReportsRuleOverlapAdvice(t *testing.T) {
 			}
 		}
 	}
-	if byID["plain"] != nil || strings.Count(stdout, `"advisories"`) != 2 {
+	if byID["plain"] != nil || byID["clean"] != nil || strings.Count(stdout, `"advisories"`) != 2 {
 		t.Fatalf("a pack that draws no advice carries no member: %s", stdout)
 	}
 
@@ -93,8 +100,9 @@ func TestPacksValidateReportsRuleOverlapAdvice(t *testing.T) {
 }
 
 // --fail-on-advisory appends the advisories check to every selected pack:
-// failed for a pack that draws advice, which fails the run, passed for one
-// that draws none, and skipped for one whose document check did not pass.
+// failed for a pack that draws advice, which fails the run, passed for a
+// 0.3.0 pack that draws none, and skipped for one no advice was computed for:
+// a 0.2.0-draft pack, or one whose document check did not pass.
 // Without it there is no such check and no member (ADR-0081).
 func TestFailOnAdvisoryFailsAPackThatDrawsAdvice(t *testing.T) {
 	config, _ := overlapProject(t)
@@ -104,14 +112,24 @@ func TestFailOnAdvisoryFailsAPackThatDrawsAdvice(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code != result.ExitInvalid || stderr != "" || report.Status != "invalid" || !report.FailOnAdvisory ||
-		report.Summary.Failed != 2 || report.Summary.Passed != 1 || !strings.Contains(stdout, `"failOnAdvisory":true`) {
+		report.Summary.Failed != 2 || report.Summary.Passed != 2 || !strings.Contains(stdout, `"failOnAdvisory":true`) {
 		t.Fatalf("advice fails the run under the option: exit=%d stderr=%q %s", code, stderr, stdout)
 	}
 	for _, entry := range report.Packs {
 		last := entry.Checks[len(entry.Checks)-1]
 		want, status := result.PackCheckFailed, "invalid"
-		if entry.ID == "plain" {
+		switch entry.ID {
+		case "clean":
 			want, status = result.PackCheckPassed, "valid"
+		case "plain":
+			want, status = result.PackCheckSkipped, "valid"
+			if !strings.Contains(last.Detail, "Core 0.3.0 and 0.5.0 packs only") {
+				t.Fatalf("the skip says why: %+v", last)
+			}
+		default:
+			if last.Detail != "The pack draws 1 advisory, and this run fails on any." {
+				t.Fatalf("%s: the detail counts the advice: %q", entry.ID, last.Detail)
+			}
 		}
 		if last.Name != "advisories" || last.Status != want || entry.Status != status {
 			t.Fatalf("%s: the advisories check ends the checks: %+v", entry.ID, entry)

@@ -945,7 +945,11 @@ backwards.
 
 `packs validate` reports six named checks per pack — path containment, document validation, the
 `expectedVersion` pin, the filename cross-check, the hint keys, and matrix well-formedness — each as
-`passed`, `failed`, or `skipped`, plus a seventh, `advisories`, only under `--fail-on-advisory`. `packs test` runs each pack's instance matrix through the experimental
+`passed`, `failed`, or `skipped`, plus a seventh, `advisories`, only under `--fail-on-advisory`.
+That option fails a pack on any `JPS-RULES-OVERLAP` advice, a `not-excluded` one included: unlike
+`spec test-conformance --strict`, which fails only an exact overlap, it also fails a pack whose
+analysis could not rule an overlap out within its budget. For rules meant to be disjoint, rewrite the
+conditions so the exclusion is exact, or gate that pack in a separate `--id` run without the option. `packs test` runs each pack's instance matrix through the experimental
 evaluator and compares every row the way the bundled evaluation corpus is compared: the RFC 8785
 canonical §8.3 disposition byte for byte, or the expected §8.4 error class and phase, plus the one
 optional per-row assertion about the escalation target §8.3 keeps *outside* the disposition

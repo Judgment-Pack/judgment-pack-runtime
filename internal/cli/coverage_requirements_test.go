@@ -77,7 +77,7 @@ func TestRequireBoundariesFailsOnAnUnwitnessedBoundaryOnly(t *testing.T) {
 	entry := report.Packs[0]
 	if code != result.ExitInvalid || report.Status != "mismatch" || entry.Status != "mismatch" || !report.RequireBoundaries ||
 		!slices.Equal(entry.UnmetRequirements, []string{result.RequirementBoundaries}) ||
-		!strings.Contains(entry.Detail, "1 of 1 are not") || !strings.Contains(stdout, `"requireBoundaries":true`) || strings.Contains(stdout, "minCoverage") {
+		!strings.Contains(entry.Detail, "1 of 1 is not") || !strings.Contains(stdout, `"requireBoundaries":true`) || strings.Contains(stdout, "minCoverage") {
 		t.Fatalf("an unwitnessed boundary fails the run: exit=%d %s", code, stdout)
 	}
 	code, report, _ = runPackTest(t, greenSuiteWithUnwitnessedBoundary(t, atThresholdRow), "--require-boundaries")
@@ -108,7 +108,9 @@ func TestCoverageRequirementsTogether(t *testing.T) {
 	if code != result.ExitInvalid || stderr != "" ||
 		!strings.Contains(stdout, "required: at least 90% of each tested pack's derived probes witnessed by a row") ||
 		!strings.Contains(stdout, "required: every derived boundary probe of each tested pack witnessed by a row") ||
-		!strings.Contains(stdout, "detail: This run requires at least 90%") {
+		!strings.Contains(stdout, "detail: This run requires at least 90%") ||
+		!strings.Contains(stdout, ", and 1 pack did not meet a coverage requirement this run asked for\n") ||
+		!strings.Contains(stdout, "[mismatch]: 2/2 (unmet: min-coverage, require-boundaries)\n") {
 		t.Fatalf("exit=%d stderr=%q\n%s", code, stderr, stdout)
 	}
 }
@@ -124,7 +126,13 @@ func TestCoverageRequirementsAbsentChangeNothing(t *testing.T) {
 		t.Fatalf("exit=%d %s", code, stdout)
 	}
 	code, human, _ := runTest(t, []string{"packs", "test", "--config", config}, "")
-	if code != result.ExitSuccess || strings.Contains(human, "required:") {
+	if code != result.ExitSuccess || strings.Contains(human, "required:") || strings.Contains(human, "unmet") || strings.Contains(human, "coverage requirement") {
+		t.Fatalf("exit=%d %s", code, human)
+	}
+	// A mismatch the coverage options did not cause prints its headline as
+	// before: --require-matrix fails the pack with no matrix.
+	code, human, _ = runTest(t, []string{"packs", "test", "--config", twoPackProject(t), "--require-matrix"}, "")
+	if code != result.ExitInvalid || !strings.Contains(human, "mismatch: 0/") || strings.Contains(human, "coverage requirement") || strings.Contains(human, "unmet") {
 		t.Fatalf("exit=%d %s", code, human)
 	}
 	code, report, _ := runPackTest(t, twoPackProject(t), "--min-coverage", "0", "--require-boundaries")

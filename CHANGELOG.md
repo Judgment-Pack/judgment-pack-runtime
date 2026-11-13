@@ -48,23 +48,29 @@ All notable changes to tagged releases are documented here.
   Advice moves no status and no exit code. A pack that draws none carries no member.
 - **`packs validate --fail-on-advisory`** (#389, ADR-0081). With the option, every selected pack's
   checks end with a seventh check, `advisories`: `failed` for a pack that draws any advice, so the
-  entry is `invalid` and the run exits 1; `passed` for one that draws none; `skipped` when the
-  document check did not pass. The payload then carries `failOnAdvisory: true`. Without the option
-  the output and the exit code are unchanged.
+  entry is `invalid` and the run exits 1; `passed` for one that draws none; `skipped` when no advice
+  was computed (the document check did not pass, or the pack declares a Core version before
+  `0.3.0`). The payload then carries `failOnAdvisory: true`. A `not-excluded` advisory (`certainty: "not-excluded"`), which says the analysis could not rule an overlap out within its budget rather than that one exists, also fails the run, unlike `spec test-conformance --strict`, which fails only an exact overlap (ADR-0066). For a
+  `not-excluded` advisory on rules meant to be disjoint, rewrite the conditions so the exclusion is
+  exact (for example, one shared comparison with complementary bounds), or gate that pack in a
+  separate `--id` run without the option. Without the option the output and the exit code are unchanged.
 - **`dialect check` reads Core `0.5.0` packs** (#390, ADR-0082). The CLI command and the MCP
   `dialect_check` tool now report coverage for a valid pack declaring `specVersion` `0.5.0`, where
   they refused it with `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`. A fact condition that names a value
   set is read like any other; annotations add no pointer. The check still names the Core versions
   it reads, so a version validation admits later stays refused until it is added, and a pack
   declaring an unknown version is refused by validation as before (`JPS-DIALECT-PACK-INVALID`,
-  exit 2). The policy check, the graph commands and pack-design analysis still refuse `0.5.0`.
+  exit 2). The retained-column draft contract (`--draft-contract`) is unchanged and still refuses a
+  `0.5.0` pack, as do the policy check, the graph commands and pack-design analysis.
 - Documentation: the `RuntimeVersion` docs of `sdk.Description` and `record.Evaluator` now say it
   is whatever version the build records, which may be a pseudo-version or carry `+dirty`, and is
   empty only when the build records none; the `sdk/record` package doc now says a struct literal
   has a nil `JSON` and an empty `Digest`. No behavior changes.
 - The member-name ordering behind the pack view's and the decision record's canonical JSON no
   longer allocates per comparison. The order, and so every byte written, is unchanged.
-- The conformance claim in CONFORMANCE.md is unchanged.
+- The conformance claim is unchanged. One descriptive sentence in CONFORMANCE.md, which listed the
+  dialect check among the surfaces that refuse a `0.5.0` pack, was corrected to say the dialect
+  check reads one and its retained-column draft contract still refuses it.
 
 ## 0.44.0 - 2026-11-12
 

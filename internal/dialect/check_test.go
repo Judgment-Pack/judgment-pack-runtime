@@ -286,6 +286,28 @@ func TestUnknownSpecVersionPackIsStillRefused(t *testing.T) {
 	}
 }
 
+// The retained-column draft path is unchanged by ADR-0082: its leaf bundles
+// Core 0.3.0 text, so a valid 0.5.0 pack is refused there exactly as before,
+// with no mapping coverage.
+func TestRetainedColumnDraftStillRefusesCore050(t *testing.T) {
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"minimal-literal.json", "annotations-value-set-entry.json"} {
+		pack, err := os.ReadFile("../artifacts/jps/0.5.0/cases/valid/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := draftDocument("text")
+		d["case"].(map[string]any)["evidence"] = []any{}
+		r, code := CheckRetainedColumnDraft("test", draftJSON(t, d), pack, engine, RetainedColumnDraftBase())
+		if code != result.ExitUnsupported || len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || r.Diagnostics[0].InstancePath != "/specVersion" || r.Diagnostics[0].Message != `The dialect check does not read packs declaring specVersion "0.5.0"; it reads Core 0.1.0-draft, 0.2.0-draft and 0.3.0 packs.` || r.Compatibility != nil || r.PackValidation == nil || r.PackValidation.Status != "valid" {
+			t.Fatalf("%s on the draft path: code %d %+v", name, code, r)
+		}
+	}
+}
+
 // The check reads the Core versions it names and no other: a version
 // validation came to admit later is refused until the list names it.
 func TestDialectCheckReadsNamedVersionsOnly(t *testing.T) {

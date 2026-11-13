@@ -602,7 +602,23 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 		// false for a project that configures none.
 		fmt.Fprintln(a.out, "skipped: no matrix row ran, because no selected pack declares a matrix (or no pack was selected)")
 	default:
-		fmt.Fprintf(a.out, "mismatch: %d/%d matrix rows did not match their expectation\n", output.Summary.Mismatched, output.Summary.Total)
+		fmt.Fprintf(a.out, "mismatch: %d/%d matrix rows did not match their expectation", output.Summary.Mismatched, output.Summary.Total)
+		// Only a run that asked for a coverage requirement has unmet ones,
+		// so a run without one prints the line it always printed (ADR-0080).
+		unmet := 0
+		for _, pack := range output.Packs {
+			if len(pack.UnmetRequirements) > 0 {
+				unmet++
+			}
+		}
+		switch unmet {
+		case 0:
+		case 1:
+			fmt.Fprint(a.out, ", and 1 pack did not meet a coverage requirement this run asked for")
+		default:
+			fmt.Fprintf(a.out, ", and %d packs did not meet a coverage requirement this run asked for", unmet)
+		}
+		fmt.Fprintln(a.out)
 	}
 	// Printed only when the caller asked for a coverage requirement, so a run
 	// without one prints what it always printed (ADR-0080).
@@ -613,7 +629,11 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 		fmt.Fprintln(a.out, "required: every derived boundary probe of each tested pack witnessed by a row")
 	}
 	for _, pack := range output.Packs {
-		fmt.Fprintf(a.out, "- %s [%s]: %d/%d\n", display.Sanitize(pack.ID), display.Sanitize(pack.Status), pack.Summary.Passed, pack.Summary.Total)
+		fmt.Fprintf(a.out, "- %s [%s]: %d/%d", display.Sanitize(pack.ID), display.Sanitize(pack.Status), pack.Summary.Passed, pack.Summary.Total)
+		if len(pack.UnmetRequirements) > 0 {
+			fmt.Fprintf(a.out, " (unmet: %s)", strings.Join(pack.UnmetRequirements, ", "))
+		}
+		fmt.Fprintln(a.out)
 		if pack.Detail != "" {
 			fmt.Fprintf(a.out, "  detail: %s\n", display.Sanitize(pack.Detail))
 		}

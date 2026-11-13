@@ -67,11 +67,12 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 		return r, code
 	}
 	r.ValidationScope = "version-" + strconv.Itoa(r.DialectVersion) + "-document-and-declared-pack-inventory"
-	return checkDeclaredInventory(r, document, pack, engine)
+	return checkDeclaredInventory(r, document, pack, engine, readableVersions())
 }
 
-// Both document readers reach the same pack validation and bounded inventory walk.
-func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engine *validation.Engine) (Report, int) {
+// Both document readers reach the same pack validation and bounded inventory
+// walk; each names the Core versions it reads.
+func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engine *validation.Engine, readable []string) (Report, int) {
 	code := result.ExitSuccess
 	checked, failure := engine.Validate(pack, validation.Options{})
 	r.PackValidation = &checked
@@ -85,8 +86,8 @@ func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engi
 		}
 		return refused(r, "JPS-DIALECT-PACK-INVALID", "", "Pack validation did not pass; no mapping coverage was checked.", code)
 	}
-	if !readsVersion(checked.SpecVersion) {
-		return refused(r, result.SurfaceSpecVersionUnsupportedCode, "/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The dialect check", checked.SpecVersion, readableVersions()), result.ExitUnsupported)
+	if !slices.Contains(readable, checked.SpecVersion) {
+		return refused(r, result.SurfaceSpecVersionUnsupportedCode, "/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The dialect check", checked.SpecVersion, readable), result.ExitUnsupported)
 	}
 	inventory, err := project.InspectDocument(pack)
 	if err != nil {
@@ -270,3 +271,10 @@ func readableVersions() []string {
 
 // readsVersion reports whether the dialect check reads a pack declaring version.
 func readsVersion(version string) bool { return slices.Contains(readableVersions(), version) }
+
+// retainedDraftReadableVersions lists the Core versions the retained-column
+// draft check reads. Its leaf bundles Core 0.3.0 text, so it does not read
+// 0.5.0 and refuses such a pack as before ADR-0082.
+func retainedDraftReadableVersions() []string {
+	return []string{artifacts.DraftVersion, artifacts.EvaluatorDraftVersion, artifacts.CoreVersion}
+}

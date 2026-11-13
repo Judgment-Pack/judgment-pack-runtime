@@ -57,6 +57,10 @@ Chosen option: **A**.
    `0.4.0-draft` or any other unknown version fails validation as `unsupported` and is refused with
    `JPS-DIALECT-PACK-INVALID`, exit 2, with no coverage. The dialect document, its schema and its
    versions are unchanged.
+4. **The retained-column draft contract is unchanged.** `dialect check --draft-contract` reads the
+   pack through the same inventory walk, but its leaf bundles Core `0.3.0` text, so it keeps its own
+   list (`0.1.0-draft`, `0.2.0-draft`, `0.3.0`) and refuses a `0.5.0` pack exactly as before, with
+   `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, exit 2, and no coverage.
 
 This supersedes ADR-0077's "the dialect check ... refuse[s] a `0.5.0` pack" for the dialect check
 only. The policy check's refusal, the graph commands' refusal and pack-design analysis's refusal
@@ -72,5 +76,7 @@ stand as ADR-0077 records them.
 
 ## More information
 
-Issue #390. Implementation: `readableVersions` and `readsVersion` in `internal/dialect/check.go`.
+Issue #390. Implementation: `readableVersions`, `readsVersion` and
+`retainedDraftReadableVersions` in `internal/dialect/check.go`, passed to the shared
+`checkDeclaredInventory`.
 ADR-0020 (the inventory walk), ADR-0052 (the dialect check), ADR-0077 (Core `0.5.0`).
