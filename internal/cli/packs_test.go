@@ -169,7 +169,7 @@ func TestPacksValidateReportsEveryCheckAndExitsOnTheVerdict(t *testing.T) {
 			t.Fatalf("no check may fail on a good project: %+v", check)
 		}
 	}
-	want := []string{"path-inside-root", "document-validation", "expected-version", "filename", "hint-keys", "matrix"}
+	want := []string{"path-inside-root", "document-validation", "expected-version", "filename", "hint-keys", "matrix", "annotation-vocabulary"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("checks = %v, want %v", names, want)
 	}

@@ -767,7 +767,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 		Long: "Check one project's jpack.json and the files it points at. The configuration itself is held to " +
 			"the embedded schema printed by packs schema and to a configVersion this runtime accepts; a " +
 			"configuration that fails either is refused before a single pack is read. Each declared pack is then " +
-			"checked in six named steps, and every step is reported with its status so a reader can tell a check " +
+			"checked in seven named steps, and every step is reported with its status so a reader can tell a check " +
 			"that passed from one that was never asked for: the declared path resolves inside the configuration's " +
 			"own directory, lexically and when resolved against the handle held open on that directory; the pack document " +
 			"validates through the semantic layer, exactly as spec validate reports it; an expectedVersion pin, " +
@@ -776,11 +776,18 @@ func (a *App) packsValidateCommand() *cobra.Command {
 			"the document's version -- a filename outside the convention is not a defect and is skipped, and one " +
 			"inside it is held to it; every hint key names something the pack document has -- an evidence hint a " +
 			"declared evidence-requirement id, a fact hint a pointer some condition reads -- because a hint this " +
-			"runtime never resolves is instructions an agent follows; and a declared matrix loads as rows. Beside a " +
+			"runtime never resolves is instructions an agent follows; a declared matrix loads as rows; and, for a " +
+			"Core 0.5.0 pack, each outcome's severity annotation, where it states one, is a level of the Spec's " +
+			"annotation vocabulary 1.0.0 -- low, medium, high or critical, matched exactly, never a list -- which " +
+			"fails the pack though Core admits it, and which is skipped, with the reason, for another specVersion, " +
+			"a pack Core refuses, or a profile this runtime does not read (annotation-vocabulary, ADR-0088); spec " +
+			"validate does not apply it. The entry's vocabulary member states the version applied, the result and " +
+			"each finding, and carries the vocabulary's JPS-VOCABULARY-SEVERITY-IDENTIFIER advice. Beside a " +
 			"pack whose document check passed, the advice spec validate reports for the same bytes -- the " +
 			"non-normative JPS-RULES-OVERLAP warnings of Core 0.3.0 and 0.5.0 -- is carried as the entry's " +
 			"advisories, and moves no status and no exit code (ADR-0081), unless --fail-on-advisory is given: then " +
 			"every selected pack's checks end with an advisories check, failed for a pack that draws any advice, " +
+			"the vocabulary's included, " +
 			"and the payload carries failOnAdvisory: true. Any advice fails, a not-excluded advisory included -- one " +
 			"that says only that the analysis could not rule an overlap out within its budget -- unlike spec " +
 			"test-conformance --strict, which fails only an exact overlap; for rules meant to be disjoint, rewrite " +
@@ -814,7 +821,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&id, "id", id, "check one declared pack by its decision id instead of all of them")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
-	command.Flags().BoolVar(&failOnAdvisory, "fail-on-advisory", failOnAdvisory, "fail a pack that draws any JPS-RULES-OVERLAP advice, a not-excluded one included (unlike spec test-conformance --strict, which fails only an exact overlap; ADR-0081)")
+	command.Flags().BoolVar(&failOnAdvisory, "fail-on-advisory", failOnAdvisory, "fail a pack that draws any JPS-RULES-OVERLAP advice, a not-excluded one included (unlike spec test-conformance --strict, which fails only an exact overlap; ADR-0081), or any JPS-VOCABULARY-SEVERITY-IDENTIFIER advice (ADR-0088)")
 	return command
 }
 

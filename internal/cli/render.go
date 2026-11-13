@@ -449,6 +449,16 @@ func (a *App) renderPackValidation(format string, output result.PackValidation) 
 		if pack.AdvisoriesTruncated {
 			fmt.Fprintln(a.out, "  advice: truncated at the validation output limit")
 		}
+		// The annotation vocabulary's own findings and advice (ADR-0088),
+		// after spec validate's, each naming the vocabulary.
+		if vocabulary := pack.Vocabulary; vocabulary != nil {
+			for _, diagnostic := range vocabulary.Findings {
+				fmt.Fprintf(a.out, "  %s %s: %s %s %s: %s\n", display.Sanitize(vocabulary.Vocabulary), display.Sanitize(vocabulary.Version), display.Sanitize(diagnostic.Severity), display.Sanitize(diagnostic.Code), display.Sanitize(diagnostic.InstancePath), display.Sanitize(diagnostic.Message))
+			}
+			for _, diagnostic := range vocabulary.Advisories {
+				fmt.Fprintf(a.out, "  advice: %s %s %s: %s\n", display.Sanitize(diagnostic.Severity), display.Sanitize(diagnostic.Code), display.Sanitize(diagnostic.InstancePath), display.Sanitize(diagnostic.Message))
+			}
+		}
 	}
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	return nil

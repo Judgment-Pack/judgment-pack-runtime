@@ -18,6 +18,9 @@ internal/cli/testdata/*.golden.* -text
 # Pinned dialect contract and independent vectors have exact upstream checksums.
 internal/dialect/testdata/** -text
 
+# The annotation-vocabulary rows have exact upstream checksums.
+internal/vocabulary/testdata/** -text
+
 # Pinned policy prototype files have exact upstream checksums.
 internal/policy/prototype/** -text
 
