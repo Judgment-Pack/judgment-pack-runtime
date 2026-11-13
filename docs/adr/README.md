@@ -172,7 +172,7 @@ authority, and following it confers no conformance status on anything.
 | [0074](0074-describe-a-loaded-pack.md) | Describe a loaded pack, every member as written, through the Go API and jpack packs describe | accepted |
 | [0075](0075-admit-the-staged-draft-selector-0-4-0-draft.md) | Admit the staged draft selector 0.4.0-draft experimentally: evaluate its evaluation form, and show and filter its annotations | superseded by [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) |
 | [0076](0076-show-annotation-text-recoverably-on-every-surface.md) | Show every annotation character outside printable ASCII recoverably: exact in the JSON, in ASCII in the Markdown and the messages | accepted |
-| [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) | Admit Core 0.5.0, base profile, and retire the staged selector 0.4.0-draft | accepted; its dialect-check refusal superseded by [0082](0082-let-the-dialect-check-read-core-0-5-0-packs.md) |
+| [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) | Admit Core 0.5.0, base profile, and retire the staged selector 0.4.0-draft | accepted; its dialect-check refusal superseded by [0082](0082-let-the-dialect-check-read-core-0-5-0-packs.md), its pack-design analysis refusal by [0089](0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md) |
 | [0078](0078-keep-annotation-text-from-reordering-its-line.md) | Keep annotation text from reordering its line, and keep a run of spaces visible, in the Markdown views | accepted |
 | [0079](0079-a-decision-record-for-an-evaluation.md) | Return a canonical decision record for one evaluation from the Go API, written nowhere | accepted |
 | [0080](0080-let-packs-test-require-coverage.md) | Let a packs test run require a coverage level and witnessed boundaries | accepted |
@@ -184,3 +184,4 @@ authority, and following it confers no conformance status on anything.
 | [0086](0086-compare-two-pack-documents-member-by-member.md) | Compare two pack documents member by member, annotations included, and three-way | accepted |
 | [0087](0087-a-caller-keyed-digest-on-the-decision-record.md) | Name the facts on a decision record by a digest the caller keys, in a second form, and publish the canonical text | proposed |
 | [0088](0088-check-the-outcome-severity-vocabulary.md) | Check each outcome's severity against the Spec's annotation vocabulary in packs validate, and list it in the view | proposed |
+| [0089](0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md) | Analyse a Core 0.5.0 pack as its evaluation form | proposed |

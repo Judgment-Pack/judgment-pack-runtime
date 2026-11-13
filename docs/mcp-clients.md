@@ -81,7 +81,7 @@ destructive/openWorld. This metadata grants no execution approval.
 | `experimental_evaluate` | EXPERIMENTAL SURFACE (ADR-0007): the §§7–8 resolution model; claim and scope in [`CONFORMANCE.md`](../CONFORMANCE.md) |
 | `experimental_get_test_matrix_contract` | EXPERIMENTAL: discover the project matrix version, closed members, types and authoring rules without reading a project |
 | `experimental_validate_test_matrix` | EXPERIMENTAL: validate matrix carrier and disposition-local constraints; optional exact pack text adds ordered per-case fact-type advice; no evaluation or writes |
-| `experimental_analyze_pack` | EXPERIMENTAL: optional Draft RFC 0027 pack-design advice over an explicit finite domain; actual Core 0.3.0 rehearsals, bounded proof scope, no writes or new conformance/strict/publication gate; [contract and limits](../README.md#experimental-finite-domain-pack-design-advice) |
+| `experimental_analyze_pack` | EXPERIMENTAL: optional Draft RFC 0027 pack-design advice over an explicit finite domain; actual Core 0.3.0 rehearsals, and Core 0.5.0 as its evaluation form, bounded proof scope, no writes or new conformance/strict/publication gate; [contract and limits](../README.md#experimental-finite-domain-pack-design-advice) |
 | `experimental_check_fact_types` | EXPERIMENTAL: static fact-type advice from exact pack and facts JSON text, without test expectations, evaluation or writes |
 | `experimental_validate_expectations` | EXPERIMENTAL SURFACE (ADR-0035): validate proposed dispositions under an explicit Core contract before authoring admission; no project or evaluation |
 | `experimental_test_cases` | EXPERIMENTAL SURFACE: rehearse an exact `pack` JSON string against a `matrix` JSON string, with the same matrix admission, canonical comparison and coverage as `packs test`; reads no project files and appends no audit record |
@@ -100,8 +100,8 @@ through the same evaluator and comparison its own CLI counterpart uses, `packs t
 project walk; and `experimental_test_cases`, which runs a supplied matrix against supplied pack
 text through the evaluator and comparison `packs test` uses, and reads no project file (ADR-0036).
 A separate evaluator-using advisory tool, `experimental_analyze_pack`, rehearses
-only Core `0.3.0` base inputs over a declared finite domain for optional Draft
-RFC 0027 advice. Its scope is recorded separately in
+only Core `0.3.0` base inputs, and Core `0.5.0` base inputs as their evaluation form, over a
+declared finite domain for optional Draft RFC 0027 advice. Its scope is recorded separately in
 [CONFORMANCE.md](../CONFORMANCE.md#evaluator-using-advisory-surfaces-outside-the-claims-version-scope);
 it reads no project configuration and writes no audit record.
 The three matrix tools report
@@ -113,7 +113,7 @@ carry a
 member pointing at [`CONFORMANCE.md`](../CONFORMANCE.md), where the conformance claim is stated in full
 and only; no tool description, and no line of this document, states any part of it. Whatever that claim
 says, it is about this implementation and not about the pack, the facts, or the wisdom of acting on a
-disposition (JPS §3.5). Pack-aware tools select the exact `0.2.0-draft`, base-only Core `0.3.0` or base-only Core `0.5.0` contract from the associated pack declaration (ADR-0077). A `0.5.0` pack is evaluated as its evaluation form (Core §8.5), annotations removed and value-set references expanded; graph evaluation (`experimental_test_graphs`) and `experimental_policy_check` refuse it with `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED` (`dialect_check` reads it, ADR-0082), and `experimental_analyze_pack` keeps its Core `0.3.0`-only refusal. A standalone `spec_version` may name `0.2.0-draft`, `0.3.0` or `0.5.0`; `0.4.0-draft` and `0.4.0` are refused, with a note that the draft was released as `0.5.0`.
+disposition (JPS §3.5). Pack-aware tools select the exact `0.2.0-draft`, base-only Core `0.3.0` or base-only Core `0.5.0` contract from the associated pack declaration (ADR-0077). A `0.5.0` pack is evaluated as its evaluation form (Core §8.5), annotations removed and value-set references expanded; graph evaluation (`experimental_test_graphs`) and `experimental_policy_check` refuse it with `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, the message naming what reads it meanwhile (`dialect_check` reads it, ADR-0082), and `experimental_analyze_pack` analyses its evaluation form, naming `0.5.0` in the report (ADR-0089). A standalone `spec_version` may name `0.2.0-draft`, `0.3.0` or `0.5.0`; `0.4.0-draft` and `0.4.0` are refused, with a note that the draft was released as `0.5.0`.
 
 On the wire, one request is one line of valid UTF-8 JSON, bounded at 16 MiB. A line that is not
 valid UTF-8, or that carries an unpaired surrogate escape (`\ud800`–`\udfff` without its pair)

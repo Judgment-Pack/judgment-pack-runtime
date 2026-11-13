@@ -25,7 +25,7 @@ func TestCore050NodePackIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, failure := selectNodeContract(pack, nil)
-	if failure == nil || failure.Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || failure.ExitCode != result.ExitUnsupported || failure.Message != `Graph evaluation does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs.` {
+	if failure == nil || failure.Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || failure.ExitCode != result.ExitUnsupported || failure.Message != `Graph evaluation does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs. Meanwhile, experimental evaluate and packs test read a Core 0.5.0 pack on its own, as its evaluation form; CONFORMANCE.md states what graphs wait for.` {
 		t.Fatalf("0.5.0 node pack: %+v", failure)
 	}
 }
@@ -58,7 +58,7 @@ func core050GraphProject(t *testing.T, first string) (*project.Project, Document
 // pack cannot be read, named before it, all yield to it. Each message names
 // the node, the pack and the surface, by hand.
 func TestEveryGraphSurfaceRefusesACore050Node(t *testing.T) {
-	const reads = ` does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs.`
+	const reads = ` does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs. Meanwhile, experimental evaluate and packs test read a Core 0.5.0 pack on its own, as its evaluation form; CONFORMANCE.md states what graphs wait for.`
 	for _, first := range []struct{ name, pack string }{
 		{"beside a Core 0.3.0 node", coreGraphPack("0.3.0", graphRoutes, "")},
 		{"after a node whose pack cannot be read", ""},
