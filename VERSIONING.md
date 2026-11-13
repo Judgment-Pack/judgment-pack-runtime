@@ -129,7 +129,12 @@ different rules, and conflating them has been a live source of error.
   signature sidecar carries its own `sidecarVersion`, `"1"`, and its shape is exact: a reader
   counts a line of another version or shape as unreadable, signing nothing, so a later version is
   a new `sidecarVersion` beside the old one rather than a change to it. A line of the stamps file
-  carries its own `stampVersion`, `"1"`, by the same rule.
+  carries its own `stampVersion`, `"1"`, by the same rule. A revalidation baseline carries its own
+  `baselineVersion`, `"1"`, and is a closed input to `jpack experimental revalidate --baseline`
+  (ADR-0091), which also reads a `packs test` report of `outputVersion` `"2"` as a closed input:
+  a member that report does not carry is refused there, although a consumer of the report ignores
+  it, so a member added to the `packs test` report has to be added to that reader in the same
+  change.
 
 ## Go API
 

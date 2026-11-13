@@ -31,10 +31,10 @@ nothing about Policy or Dialect profile support.
 
 For the version covered by the claim in [CONFORMANCE.md](CONFORMANCE.md), one shared
 evaluator applies the specification's §§7–8 resolution model per
-[ADR-0007](docs/adr/0007-experimental-evaluator.md), and eleven surfaces reach it: `jpack experimental
+[ADR-0007](docs/adr/0007-experimental-evaluator.md), and twelve surfaces reach it: `jpack experimental
 evaluate` and `evaluate-corpus`, the project walk `jpack packs test`, the graph verbs
 `jpack experimental graph evaluate` and `graph test`, the version comparison
-`jpack experimental compare`, the in-process Go API `sdk.Pack.Evaluate`
+`jpack experimental compare`, the pin revalidation `jpack experimental revalidate`, the in-process Go API `sdk.Pack.Evaluate`
 ([ADR-0073](docs/adr/0073-in-process-go-evaluation-api.md)), and the `experimental_evaluate`,
 `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools. The `experimental` namespace is a **stability**
 statement: such a surface may change or be removed without compatibility promise. It is not a statement
@@ -133,6 +133,8 @@ jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the 
 jpack experimental compare <old-pack> <new-pack> --inputs <file>   (EXPERIMENTAL SURFACE; the inputs two versions decide differently; ADR-0045)
 jpack experimental compare <old-pack> <new-pack> --inputs <file> --structural   (EXPERIMENTAL; adds the packs diff comparison; ADR-0086)
 jpack experimental check-published [--repo DIR] [--tags G] [--include G] [--manifest F] [--write-manifest F] [--strict]   (EXPERIMENTAL; no published pack or dialect changed its bytes under one id and version, over the repository's git tags; ADR-0090)
+jpack experimental revalidate --write <file-or->   (EXPERIMENTAL SURFACE; a baseline of the project's matrix results, before moving a pin; ADR-0091)
+jpack experimental revalidate --baseline <file> [--baseline <file>]   (EXPERIMENTAL SURFACE; this runtime's results compared with a baseline or a packs test report; ADR-0091)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
 jpack experimental graph evaluate <graph-or-> [--inputs <file-or->] [--rehearsal]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
@@ -1494,8 +1496,9 @@ literals such as `foo://[v1.a]/` are accepted. Both `v` and `V`, IPv6, valid per
 escapes, query/fragment punctuation and generic digit-only ports are preserved.
 Malformed escapes, final LF and scoped IPv6 are refused. This checks generic
 syntax without resolving a URI or granting trust. Exact spelling and stored
-identities are preserved. Update Runtime pins deliberately and revalidate original
-bytes; no IDs, records or jobs migrate automatically. Official Policy uses the
+identities are preserved. Update Runtime pins deliberately, after the check that
+[Revalidating before moving a Runtime pin](docs/revalidating-a-runtime-pin.md)
+describes; no IDs, records or jobs migrate automatically. Official Policy uses the
 shared corrected assertion. Historical prototype Policy `0.0.2`, including its
 retained Core consumers, keeps its old assertion through a scoped compatibility
 path. [ADR-0064](docs/adr/0064-share-uri-component-grammar.md) records the acceptance
@@ -1528,7 +1531,7 @@ The two evaluator-using advisory surfaces outside that version claim are
 `jpack experimental analyze-pack` and `experimental_analyze_pack`. They evaluate
 only Core `0.3.0` base inputs, and Core `0.5.0` base inputs as their evaluation form, for
 optional authoring advice. Their inventory is
-guarded separately from the eleven surfaces serving inputs under the recorded claim
+guarded separately from the twelve surfaces serving inputs under the recorded claim
 and from static fact advice, which does not evaluate conditions.
 
 `jpack experimental analyze-pack pack.json --domain domain.json` returns optional
