@@ -25,6 +25,10 @@ internal/vocabulary/testdata/** -text
 # of its pack, and a golden report holds that digest.
 internal/packadvice/testdata/core050/** -text
 
+# The revalidation fixture is a hand-written packs test report read as exact
+# bytes, as a baseline is.
+internal/baseline/testdata/** -text
+
 # Pinned policy prototype files have exact upstream checksums.
 internal/policy/prototype/** -text
 

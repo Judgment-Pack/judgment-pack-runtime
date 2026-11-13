@@ -31,6 +31,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"`experimental graph evaluate`",
 		"`experimental graph test`",
 		"`experimental compare`",
+		"`experimental revalidate`",
 		"`sdk.Pack.Evaluate`",
 		"`experimental_evaluate`",
 		"`experimental_test_packs`",
@@ -50,6 +51,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"packs.go":                             1, // packs test
 		"graph.go":                             2, // experimental graph evaluate, experimental graph test
 		"compare.go":                           1, // experimental compare
+		"revalidate.go":                        1, // experimental revalidate
 		filepath.Join("..", "mcp", "tools.go"): 4, // experimental_evaluate, experimental_test_packs, experimental_test_cases, experimental_test_graphs
 		filepath.Join("..", "..", "sdk", "sdk.go"): 1, // sdk.Pack.Evaluate
 	}
@@ -178,6 +180,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		"jpack experimental graph evaluate": "`experimental graph evaluate`",
 		"graph test":                        "`experimental graph test`",
 		"jpack experimental compare":        "`experimental compare`",
+		"jpack experimental revalidate":     "`experimental revalidate`",
 		"sdk.Pack.Evaluate":                 "`sdk.Pack.Evaluate`",
 	} {
 		readme[spelling] = surface
@@ -412,7 +415,7 @@ func listFault(spellings map[string]string, entries []string) string {
 }
 
 // Advisory constructors cannot hide a widened evaluation path in the static-only
-// exception or silently join the claim's eleven constructor sites. As with the
+// exception or silently join the claim's twelve constructor sites. As with the
 // existing static guard, a refactor requires explicit inventory review.
 func advisorySiteFault(source, receiver string) string {
 	chain := "packadvice.Analyze(evaluation.NewEngine(" + receiver + "),"
