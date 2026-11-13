@@ -272,7 +272,7 @@ func checkAdoption(doc map[string]any, materials materialSet, engine *validation
 		return problem("JPS-POLICY-CONSUMER-STRUCTURE", "/consumer", "The exact retained consumer does not satisfy a bundled Core structural schema."), code
 	}
 	if result.HasCore050Rules(checked.SpecVersion) {
-		return problem(result.SurfaceSpecVersionUnsupportedCode, "/consumer/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The policy check", checked.SpecVersion, readableConsumerVersions())), result.ExitUnsupported
+		return problem(result.SurfaceSpecVersionUnsupportedCode, "/consumer/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The policy check", checked.SpecVersion, readableConsumerVersions())+" "+core050ConsumerMeanwhile), result.ExitUnsupported
 	}
 	rules, err := unique(array(consumer["rules"]), "/consumer/rules", "consumer rule")
 	if err != nil {
@@ -405,6 +405,12 @@ func checkAdoption(doc map[string]any, materials materialSet, engine *validation
 	}
 	return nil, result.ExitSuccess
 }
+
+// core050ConsumerMeanwhile is what the policy check's refusal of a Core 0.5.0
+// consumer points to: the checks that read the adoption and the pack without
+// this one, and where this runtime states what the policy check waits for
+// (ADR-0089).
+const core050ConsumerMeanwhile = "Meanwhile, experimental policy validate checks the adoption without reading its consumer, and spec validate checks the consumer pack; CONFORMANCE.md states what the policy check waits for."
 
 // readableConsumerVersions lists the Core versions the policy check reads a
 // consumer under: every version structural validation admits but Core 0.5.0,

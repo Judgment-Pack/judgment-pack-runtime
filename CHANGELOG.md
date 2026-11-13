@@ -14,6 +14,11 @@ All notable changes to tagged releases are documented here.
   the message now names the Core class, evaluation's code and Core's first diagnostic code. A
   `0.3.0` pack's report and refusals are byte-identical to before. Analysis is outside the version
   scope that CONFORMANCE.md records, which does not change.
+- **The graph commands and the policy check name what reads a Core `0.5.0` pack meanwhile**
+  (#401, ADR-0089). They still refuse one with `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED` and the same
+  exit; the message gains one sentence: `experimental evaluate` and `packs test` for a node pack,
+  `experimental policy validate` and `spec validate` for a policy consumer. CONFORMANCE.md states,
+  dated, what each waits for. The dialect check's message is unchanged.
 - **A decision record whose facts and evidence are named by digests the caller keys** (#400,
   ADR-0087; EXPERIMENTAL). `sdk.Pack.EvaluateWithKeyedRecord` takes a `record.KeyedDigests`: the
   label `hmac-sha256`, the one algorithm a record names, a key identifier of 1 to 128 characters

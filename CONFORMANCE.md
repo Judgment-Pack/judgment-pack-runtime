@@ -251,6 +251,25 @@ pack, because the documents they implement are written against Core `0.3.0`; the
 and pack-design analysis reads one as its evaluation form. These results are implementation evidence, not an exhaustive
 check of the version's requirements.
 
+What the graph commands and the policy check wait for, as stated on 2026-11-13. Both keep their
+refusal of a `0.5.0` pack, with its code `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED` and its exit, and
+the refusal's message names what reads such a pack meanwhile
+([ADR-0089](docs/adr/0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md)).
+
+- **Graphs.** The graph prototype is Draft RFC 0002, which names no Core version for a node pack;
+  this runtime came to read `0.3.0` node packs by its own decision (ADR-0063), and no
+  specification issue proposes reading `0.5.0` ones. Reading them waits for this runtime's decision
+  on how a graph plan, test and report treat annotations and value sets, and is not in this
+  release. Meanwhile `experimental evaluate` and `packs test` read a `0.5.0` node pack on its own,
+  as its evaluation form.
+- **The policy check.** Policy companion 1.0.0 §4 consumes one exact retained Core `0.2.0-draft`
+  pack, and the prototype `0.0.2` reads its consumer under the bundled Core schemas, with rules,
+  exceptions, applicability and fallback as its consumer elements and no value-set element. A
+  `0.5.0` consumer waits for a companion format that admits one and says whether a value set is a
+  coverage target. The next companion format is Spec issue #244, which does not yet say whether it
+  admits a `0.5.0` consumer. Meanwhile `experimental policy validate` checks the adoption without
+  reading its consumer, and `spec validate` checks the consumer pack.
+
 This section makes no partial or qualified conformance claim. The recorded `0.2.0-draft` claim
 above remains as recorded.
 

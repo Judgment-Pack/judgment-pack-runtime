@@ -50,7 +50,8 @@ form (Core §8.5: annotations removed, value-set references expanded). Every gra
 reads node packs (`experimental graph validate`, `explain`, `test` and `evaluate`, and the MCP
 `experimental_test_graphs` tool) and the policy check refuse a `0.5.0` pack with
 `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, a graph whole, because their companions are written
-against `0.3.0`. Pack-design analysis reads a `0.5.0` pack as its evaluation form, as evaluation
+against `0.3.0`; the message names what reads such a pack meanwhile, and CONFORMANCE.md states
+what each waits for. Pack-design analysis reads a `0.5.0` pack as its evaluation form, as evaluation
 does ([ADR-0089](docs/adr/0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md)). The dialect check reads a
 `0.5.0` pack's fact and evidence inventory, value sets included ([ADR-0082](docs/adr/0082-let-the-dialect-check-read-core-0-5-0-packs.md)).
 Internal legacy entry points and standalone authoring tools retain their `0.2.0-draft` default;

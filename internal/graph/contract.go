@@ -47,7 +47,7 @@ func selectNodeContract(data []byte, oversized []string) (result.EvaluatorContra
 		// Graphs do not read Core 0.5.0: the graph prototype (Draft RFC 0002)
 		// is written against Core 0.3.0, and a graph report is not designed
 		// over annotations or value sets.
-		return result.EvaluatorContract{}, evaluation.SurfaceSpecVersionUnsupported("Graph evaluation", contract.Version(), graphReadable)
+		return result.EvaluatorContract{}, core050Refusal("Graph evaluation", contract.Version())
 	}
 	return contract, failure
 }
@@ -75,7 +75,7 @@ func Core050NodeRefusal(loaded *project.Project, doc Document, surface string) *
 			continue
 		}
 		if contract, failure := evaluation.SelectContract(data); failure == nil && contract.Core050Rules() {
-			return nodeFailure(node, pack, evaluation.SurfaceSpecVersionUnsupported(surface, contract.Version(), graphReadable))
+			return nodeFailure(node, pack, core050Refusal(surface, contract.Version()))
 		}
 	}
 	return nil
@@ -84,6 +84,20 @@ func Core050NodeRefusal(loaded *project.Project, doc Document, surface string) *
 // graphReadable lists the Core versions a graph reads: the evaluator
 // contracts other than Core 0.5.0's.
 var graphReadable = []string{result.EvaluatorSpecVersion, "0.3.0"}
+
+// core050Meanwhile is what a graph's Core 0.5.0 refusal points to: the
+// surfaces that read such a pack on its own, and where this runtime states
+// what graphs wait for (ADR-0089).
+const core050Meanwhile = "Meanwhile, experimental evaluate and packs test read a Core 0.5.0 pack on its own, as its evaluation form; CONFORMANCE.md states what graphs wait for."
+
+// core050Refusal is the refusal of a Core 0.5.0 node pack: the shared surface
+// refusal, its code and exit unchanged, and the message followed by
+// core050Meanwhile.
+func core050Refusal(surface, version string) *evaluation.Failure {
+	failure := evaluation.SurfaceSpecVersionUnsupported(surface, version, graphReadable)
+	failure.Message += " " + core050Meanwhile
+	return failure
+}
 
 func mixedContractFailure() *evaluation.Failure {
 	return &evaluation.Failure{Code: "JPS-GRAPH-MIXED-CONTRACT", Message: "A graph requires one exact evaluator contract across all participating packs.", ExitCode: result.ExitUnsupported}

@@ -90,8 +90,22 @@ Chosen option: **A**.
    JPS-SEMANTIC-UNRESOLVED-VALUE-SET`. All three are this runtime's fixed identifiers, never pack
    text. A `0.3.0` pack's refusal keeps the message it had, so its bytes do not change.
 
+6. **Graphs and the policy check keep their refusal.** Neither change is as small or as plainly
+   allowed as the analysis. Draft RFC 0002 names no Core version for a node pack and no
+   specification issue proposes reading a `0.5.0` one, so reading one is this runtime's own
+   decision across graph validate, explain, test and evaluate, the mixed-contract rule and the
+   graph reports. Policy companion 1.0.0 §4 consumes a Core `0.2.0-draft` pack, and whether a
+   value set is a coverage target is undecided; the next companion format is Spec issue #244. The
+   code (`JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`) and the exit stay. The message gains one sentence
+   naming what reads such a pack meanwhile: for graphs, `experimental evaluate` and `packs test`,
+   which read a `0.5.0` pack on its own as its evaluation form; for the policy check,
+   `experimental policy validate`, which checks the adoption without reading its consumer, and
+   `spec validate`, which checks the pack. The sentence is the graph's and the policy check's own;
+   the shared message helper, and so the dialect check's message, is unchanged. CONFORMANCE.md
+   states, dated, what each waits for.
+
 This supersedes ADR-0077's refusal of a `0.5.0` pack for pack-design analysis only. The graph
-commands' and the policy check's refusals stand.
+commands' and the policy check's refusals stand, with the added sentence.
 
 ### Consequences
 
@@ -109,7 +123,8 @@ commands' and the policy check's refusals stand.
 ## More information
 
 Issue #401. Implementation: `Analyze` and `refusePack` in `internal/packadvice/analyze.go`;
-`AdmittedPack.EvaluationForm` in `internal/evaluation/document.go`. Tests:
+`AdmittedPack.EvaluationForm` in `internal/evaluation/document.go`; `core050Refusal` in
+`internal/graph/contract.go` and `core050ConsumerMeanwhile` in `internal/policy/check.go`. Tests:
 `internal/packadvice/core050_test.go` over the hand-written fixtures in
 `internal/packadvice/testdata/core050`, `TestEvaluationForm*` in `internal/evaluation`, the CLI
 golden `internal/cli/testdata/analyze_pack_core030.golden.json` and the MCP parity test. The
