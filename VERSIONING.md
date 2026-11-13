@@ -169,15 +169,22 @@ specification version. Their bytes ride in the `packs diff` JSON envelope's `dif
 `threeWayDiff` member, and in the `experimental compare --structural` payload's `structural`
 member, as a string. Both are EXPERIMENTAL.
 
-The decision record (`sdk.Pack.EvaluateWithRecord` and package `sdk/record`, ADR-0079) carries its
-own `recordVersion`, `"1.0.0"`, in its JSON. It is not the audit trail record's `recordVersion`,
+The decision record (`sdk.Pack.EvaluateWithRecord`, `sdk.Pack.EvaluateWithKeyedRecord` and package
+`sdk/record`, ADR-0079, ADR-0087) carries its own `recordVersion` in its JSON: `"1.0.0"` for the
+plain form, which names the facts and evidence documents by their SHA-256, and `"2.0.0"` for the
+keyed form, which names them by digests the caller keys and removes `factsDigest` and
+`evidenceDigest`. The major part names the form, each form's version moves by the rule below, and
+`record.Read` admits only the versions it knows, never reading one form as the other. It is not the audit trail record's `recordVersion`,
 `"1"`, and the two move independently. Its major part moves when a member is removed or renamed,
 or a member's value is taken over other bytes or written in another form, so that a reader of the
 earlier form would misread it; its minor part when a member is added, which such a reader can pass
 over; its patch part when the bytes change in any other way, every member and its meaning kept. It
 does not move when the runtime learns to record evaluations it refused before, such as those of a
 newly admitted specification version, or when the runtime version the record carries changes,
-which changes the record's bytes and digest by design. The record is EXPERIMENTAL.
+which changes the record's bytes and digest by design. The canonical text `record.CanonicalFacts`
+and `record.CanonicalEvidence` return, which [docs/decision-records.md](docs/decision-records.md)
+states, is part of both forms: a change to it is a change to the bytes a digest is taken over, so a
+major change of both. The record is EXPERIMENTAL.
 
 A pack signature document (`jpack packs sign`, `jpack packs verify-signature` and package
 `sdk/packsig`, ADR-0083) carries its own `signatureVersion`, `"1.0.0"`, which names both the

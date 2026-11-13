@@ -354,6 +354,17 @@ facts and evidence by digest only. `evaluated.OutcomeAnnotations()` returns the 
 annotations, as the view carries them. Both are experimental, and the record carries its own
 `recordVersion`.
 
+Where a digest of the facts must not be guessable from candidate facts,
+`pack.EvaluateWithKeyedRecord(ctx, facts, evidence, binding, keyed)` writes the record's keyed form
+([ADR-0087](docs/adr/0087-a-caller-keyed-digest-on-the-decision-record.md)): the caller computes an
+HMAC-SHA-256 with a key of its own over the texts `record.CanonicalFacts` and
+`record.CanonicalEvidence` return, and the record carries those digests, the algorithm's label and
+the caller's key identifier, never the key, at `recordVersion` `"2.0.0"`, with no `factsDigest` or
+`evidenceDigest`. `record.Read` reads either form, and `CheckDocuments` compares documents with a
+record, reporting a keyed record checked without the caller's key function as
+`not-checkable-without-key`. [docs/decision-records.md](docs/decision-records.md) states both forms
+and the canonical text, with vectors.
+
 Package `sdk/packsig` refuses a pack before any rule is read unless the key the caller expects
 signed its exact bytes ([Pack signatures](docs/pack-signatures.md),
 [ADR-0083](docs/adr/0083-sign-a-pack-file-and-check-the-signature-before-use.md)):

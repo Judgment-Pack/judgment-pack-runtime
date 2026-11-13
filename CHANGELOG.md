@@ -4,6 +4,27 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A decision record whose facts and evidence are named by digests the caller keys** (#400,
+  ADR-0087; EXPERIMENTAL). `sdk.Pack.EvaluateWithKeyedRecord` takes a `record.KeyedDigests`: the
+  label `hmac-sha256`, the one algorithm a record names, a key identifier of 1 to 128 characters
+  from `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_`, `-`, `:` and `/`, and the caller's two 32-byte
+  digests, which it computes with its own key; this runtime never receives the key. The record's
+  keyed form has `keyedDigests` (`algorithm`, `evidence`, `facts`, `keyId`) and no `factsDigest` or
+  `evidenceDigest`, at `recordVersion` `"2.0.0"`. Malformed keyed digests are refused before
+  anything is evaluated (`record.ErrKeyedDigests`), and a keyed or binding digest that is the plain
+  SHA-256 of either document after it; neither is a `*Refusal`. `EvaluateWithRecord` writes the
+  plain form, `"1.0.0"`, with the bytes it wrote before.
+- **`record.CanonicalFacts` and `record.CanonicalEvidence`** return the canonical text a record's
+  document digests are taken over. `docs/decision-records.md` states that form (member order,
+  escapes, numbers written as their tokens, the refusals, and where it is and is not RFC 8785), with
+  vectors a test reads from the page, and lists every member of each form that follows from the
+  facts.
+- **`record.Read` and `DecisionRecord.CheckDocuments`** read a record of either form from its exact
+  bytes, refusing any other member set or version (`record.ErrRecord`), and compare documents with
+  it: `match`, `mismatch`, or, for a keyed record checked without the caller's
+  `record.KeyedDigestFunc`, `not-checkable-without-key`. The keyed form evaluates through
+  `Pack.Evaluate` as the plain one does, so the conformance claim in CONFORMANCE.md is unchanged.
+  The CLI and MCP do not build records and are unchanged.
 - **`jpack packs diff` compares two pack documents member by member, annotations included, or
   two with their common base** (#402, ADR-0086; EXPERIMENTAL). It loads each pack as `sdk.Load`
   admits it and evaluates nothing. It reports the pack's own members and the evidence requirements,
