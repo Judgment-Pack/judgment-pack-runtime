@@ -17,8 +17,8 @@
 // validation-only and test surfaces are not offered here. Package sdk/packsig
 // checks a pack's detached signature against the key a caller expects before
 // Load, and signs nothing. The decision record
-// Pack.EvaluateWithRecord returns is not an audit record: it is written
-// nowhere and is the caller's to keep.
+// Pack.EvaluateWithRecord or Pack.EvaluateWithKeyedRecord returns is not an
+// audit record: it is written nowhere and is the caller's to keep.
 //
 // # Stability
 //
@@ -36,11 +36,16 @@
 //     view.PackView of package sdk/view;
 //   - Pack.FilteredView, which returns the view.FilteredView of package
 //     sdk/view (Core 0.5.0 only);
-//   - Pack.EvaluateWithRecord, which returns the record.DecisionRecord of
-//     package sdk/record, and that package's DecisionRecord, with
-//     DecisionRecord.JSON and DecisionRecord.Digest, Pack, Evaluator,
-//     Binding, RecordVersion, MaxBindingNames, MaxBindingNameLength and
-//     ErrBinding;
+//   - Pack.EvaluateWithRecord and Pack.EvaluateWithKeyedRecord, which return
+//     the record.DecisionRecord of package sdk/record, and that package's
+//     DecisionRecord, with DecisionRecord.JSON, DecisionRecord.Digest,
+//     DecisionRecord.Form and DecisionRecord.CheckDocuments, Pack, Evaluator,
+//     Binding, RecordVersion, KeyedRecordVersion, Form, FormPlain, FormKeyed,
+//     KeyedDigests, HMACSHA256, MaxKeyIDLength, MaxBindingNames,
+//     MaxBindingNameLength, ErrBinding and ErrKeyedDigests; CanonicalFacts,
+//     CanonicalEvidence and ErrDocument; Read and ErrRecord; KeyedDigestFunc,
+//     DocumentCheck, Outcome, Match, Mismatch, NotCheckableWithoutKey and
+//     ErrKeyedDigestFunc;
 //   - Evaluation.OutcomeAnnotations, which returns view.Annotation values of
 //     package sdk/view (Core 0.5.0 only);
 //   - Diff and ThreeWayDiff, which return the view.Diff and view.ThreeWayDiff
@@ -62,8 +67,8 @@
 // bytes view.Diff and view.ThreeWayDiff return carry view.DiffVersion and
 // view.ThreeWayDiffVersion, which move by the same rule. The bytes
 // record.DecisionRecord.JSON returns carry their own record version,
-// record.RecordVersion, which package sdk/record and VERSIONING.md say when to
-// move.
+// record.RecordVersion for the plain form and record.KeyedRecordVersion for
+// the keyed one, which package sdk/record and VERSIONING.md say when to move.
 //
 // # Describing a pack
 //
@@ -129,6 +134,22 @@
 // records what the record says and what it does not, and package sdk/record
 // states its members.
 //
+// Pack.EvaluateWithKeyedRecord writes the record's keyed form, which names the
+// facts and evidence documents not by their SHA-256 but by digests the caller
+// computes with a key of its own over the texts record.CanonicalFacts and
+// record.CanonicalEvidence return, so that a reader without the key cannot
+// test candidate facts against the record's document digests. The
+// disposition still says what the pack decided, so a reader holding the
+// pack can evaluate a candidate and compare dispositions;
+// docs/decision-records.md lists what in each form follows from the facts.
+// The record carries the algorithm's label and the caller's key identifier,
+// never the key, which this runtime never receives. record.Read reads a record of either form, and
+// DecisionRecord.CheckDocuments compares documents with it, reporting a keyed
+// record checked without the caller's key function as not checkable.
+// docs/decision-records.md states both forms, the canonical text with its
+// vectors, and what in each form follows from the facts;
+// docs/adr/0087-a-caller-keyed-digest-on-the-decision-record.md records why.
+//
 // Evaluation.OutcomeAnnotations returns the annotations of the outcome a
 // disposition chose, as Pack.View carries them on that outcome, so a caller
 // acting on the outcome need not read the view itself. The disposition, the
@@ -155,6 +176,13 @@
 // build, and, before anything is evaluated, an error wrapping
 // record.ErrBinding for a binding not of the shape record.Binding states,
 // which is not a *Refusal: the binding is not an input of the evaluator.
+// Pack.EvaluateWithKeyedRecord returns the same, and also, before anything is
+// evaluated, an error wrapping record.ErrKeyedDigests for keyed digests not
+// of the shape record.KeyedDigests states, and, after the evaluation and
+// without it, one wrapping record.ErrKeyedDigests or record.ErrBinding for a
+// keyed or binding digest that is the plain SHA-256 of the facts or evidence
+// document or the digest of the plain record of the same evaluation, or a
+// key identifier that holds one; none is a *Refusal.
 // Evaluation.OutcomeAnnotations returns a plain error for an Evaluation that
 // Evaluate did not return, and otherwise only Pack.View's errors.
 //
@@ -172,7 +200,8 @@
 // # Context
 //
 // Load checks its context on entry and again before validation starts;
-// Pack.Evaluate and Pack.EvaluateWithRecord check it on entry. A validation or evaluation that has
+// Pack.Evaluate, Pack.EvaluateWithRecord and Pack.EvaluateWithKeyedRecord
+// check it on entry. A validation or evaluation that has
 // started is not interrupted: it runs to completion, bounded by the
 // documented limits. A done context is returned as ctx.Err() and never as a
 // Refusal.
