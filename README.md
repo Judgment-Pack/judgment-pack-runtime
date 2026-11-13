@@ -123,6 +123,7 @@ jpack packs verify-signature <pack-file> --public-key F [--signature F]   (EXPER
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
+jpack experimental evaluate <pack-or-> | --pack-id X --batch <file-or-> --format json [--max-items N]   (EXPERIMENTAL; JSON Lines of facts documents, one result line each; ADR-0085)
 jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
 jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PROTOTYPE; a pack that declares values is not an input the class defines)
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
@@ -283,6 +284,20 @@ Releases up to 0.23.1 print the last trace line without the bracket naming the m
 Both runs exit 0: producing a disposition is success, whichever it is. `--format json` gives the
 same result as a payload, with the disposition in its canonical form. A disposition is data. It
 authorizes nothing, and acting on it is the caller's decision.
+
+Many facts documents against one pack go in one run with `--batch`, JSON Lines with one
+`{"facts": …}` object a line (an optional `"id"` string is echoed back, an optional `"evidence"`
+document is used as `--evidence` is), and each is answered by one line whose `result` is what the
+single run above writes under `--format json` for it
+([ADR-0085](docs/adr/0085-evaluate-a-batch-of-fact-documents-in-one-run.md)):
+
+```console
+$ printf '%s\n' '{"id":"a","facts":{"expense":{"amount":"120"}}}' '{"id":"b","facts":{"expense":{}}}' > batch.jsonl
+$ jpack experimental evaluate pack.json --batch batch.jsonl --format json
+```
+
+In a project that keeps an audit trail each decision is recorded as a single run records it, a
+chunk of up to 256 at a time, and no result is written before its record is synced.
 
 From here, [docs/building-with-packs.md](docs/building-with-packs.md) covers a project of several
 packs, their test matrices, and the audit trail; `jpack spec examples --spec-version 0.2.0-draft`

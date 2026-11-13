@@ -44,13 +44,10 @@ func (a *App) operational(command, format string, exitCode int, code, message st
 	return &handledExit{code: exitCode}
 }
 
-// evaluationFailure reports one refused evaluation. When the refusal is an
-// evaluation error of JPS Core §8.4 it names the class and the phase in band —
-// as the evaluationError member in JSON, on its own line in human output — with
-// this runtime's finer diagnostic code beside them as the detail §8.4 admits. A
-// refusal §8.4 does not classify is reported as any other operational error.
-// No disposition accompanies either.
-func (a *App) evaluationFailure(command, format string, failure *evaluation.Failure, contracts ...result.EvaluatorContract) error {
+// evaluationFailureEnvelope is the JSON value evaluationFailure writes for a
+// refused evaluation under --format json, and the result a batch carries for a
+// refused item (ADR-0085).
+func evaluationFailureEnvelope(command string, failure *evaluation.Failure, contracts ...result.EvaluatorContract) any {
 	contract := result.LegacyEvaluatorContract()
 	if len(contracts) > 0 {
 		contract = contracts[0]
@@ -61,13 +58,33 @@ func (a *App) evaluationFailure(command, format string, failure *evaluation.Fail
 		}
 	}
 	if failure.Code == "profile-unsupported" {
-		if format == "json" {
-			if err := a.writeJSON(result.NewProfileUnsupported(command, failure.Profile)); err != nil {
-				return &handledExit{code: result.ExitIO}
-			}
-		} else {
-			fmt.Fprintf(a.out, "unsupported: profile-unsupported (%s)\n", display.Sanitize(failure.Profile))
+		return result.NewProfileUnsupported(command, failure.Profile)
+	}
+	status := "error"
+	if failure.ExitCode == result.ExitUnsupported {
+		status = "unsupported"
+	}
+	if failure.Class == "" {
+		return result.NewOperationalResult(command, status, failure.Code, failure.Message)
+	}
+	return result.NewEvaluationErrorWith(command, status, failure.Class, failure.Phase, failure.Code, failure.Message, contract)
+}
+
+// evaluationFailure reports one refused evaluation. When the refusal is an
+// evaluation error of JPS Core §8.4 it names the class and the phase in band —
+// as the evaluationError member in JSON, on its own line in human output — with
+// this runtime's finer diagnostic code beside them as the detail §8.4 admits. A
+// refusal §8.4 does not classify is reported as any other operational error.
+// No disposition accompanies either.
+func (a *App) evaluationFailure(command, format string, failure *evaluation.Failure, contracts ...result.EvaluatorContract) error {
+	if format == "json" {
+		if err := a.writeJSON(evaluationFailureEnvelope(command, failure, contracts...)); err != nil {
+			return &handledExit{code: result.ExitIO}
 		}
+		return &handledExit{code: failure.ExitCode}
+	}
+	if failure.Code == "profile-unsupported" {
+		fmt.Fprintf(a.out, "unsupported: profile-unsupported (%s)\n", display.Sanitize(failure.Profile))
 		return &handledExit{code: failure.ExitCode}
 	}
 	if failure.Class == "" {
@@ -76,12 +93,6 @@ func (a *App) evaluationFailure(command, format string, failure *evaluation.Fail
 	status := "error"
 	if failure.ExitCode == result.ExitUnsupported {
 		status = "unsupported"
-	}
-	if format == "json" {
-		if err := a.writeJSON(result.NewEvaluationErrorWith(command, status, failure.Class, failure.Phase, failure.Code, failure.Message, contract)); err != nil {
-			return &handledExit{code: result.ExitIO}
-		}
-		return &handledExit{code: failure.ExitCode}
 	}
 	stream := a.errOut
 	if status == "unsupported" {

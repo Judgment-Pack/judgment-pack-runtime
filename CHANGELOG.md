@@ -4,6 +4,32 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`experimental evaluate --batch` evaluates many facts documents against one pack in one run**
+  (#357, ADR-0085; EXPERIMENTAL). The batch is JSON Lines, a file or `-`, each line one object
+  `{"facts": …}` with an optional `"id"` string echoed back and an optional `"evidence"` document.
+  The project, the pack, the reviewed set and the signing requirement are read and applied once,
+  the pack is admitted once, and each item is answered by one line `{"line", "id", "exitCode",
+  "result"}` in input order, whose `result` is exactly what a single `--format json` run writes for
+  that item and whose `exitCode` is the code it exits with. An item refused does not stop the
+  others; a line not of an item's shape is `JPS-INVOCATION-BATCH-ITEM` (exit 3). Records are one per
+  decision, exactly as a single run writes them, sharing one `run` id, appended 256 items (or 32
+  MiB of input) at a time under one hold of the trail's lock, with the trail, its directory and
+  the signature sidecar synced before any of that chunk's results is written; a chunk whose append
+  fails reports each of its evaluations as `JPS-AUDIT-WRITE` and stops the batch, and a batch ended
+  between chunks leaves a trail `audit verify` reports valid, holding a prefix of the batch. The
+  batch exits 0 when every item produced a disposition, 1 when the input was read to its end and an
+  item was refused, and otherwise with the stopping line's code: `--max-items N` (default 100000)
+  exceeded (`JPS-RESOURCE-BATCH-ITEMS`, exit 4), a line over 20 MiB and 64 KiB
+  (`JPS-RESOURCE-BATCH-LINE-BYTE-LIMIT`, exit 4, refused for its own line without stopping the
+  batch), an unreadable input (`JPS-INPUT-READ`, exit 4) or a record that could not be written.
+  `--batch` is refused with `--facts`, `--evidence`, `--cites`, `--binding`, `--pretty` or a
+  format other than `json` (`JPS-INVOCATION-BATCH`, exit 3), and `--max-items` without `--batch`
+  or below 1 (`JPS-INVOCATION-MAX-ITEMS`, exit 3). Measured on one machine against a signed chained
+  trail, about 1700 decisions a second in one batch, against about 13 a second at one process per
+  decision. A single run's output, exit codes and records are unchanged. No MCP tool or SDK method
+  is added. It is an option on `experimental evaluate` rather than a new command so that the
+  evaluator is reached through a surface already named: the conformance claim in CONFORMANCE.md is
+  unchanged.
 - **`packs test --strength` reports the variants of a pack its matrix does not notice** (#392,
   ADR-0084; EXPERIMENTAL). For each tested pack all of whose rows matched, the run derives variants
   in memory, each one small change to the pack's own declarations (`bound-moved`,

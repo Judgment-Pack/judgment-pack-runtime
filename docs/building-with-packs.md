@@ -1144,7 +1144,10 @@ a graph run that is what marks the run finished — the `graph-composite` line c
 its nodes' lines, so node lines whose id has no composite belong to a run that did not complete, and
 a trailing line that is not whole JSON is a write that did not complete. A line whose `kind` is
 `discontinuity` records a repair, not a decision, and the line before it is the damage it names.
-Read a trail by that rule rather than by assuming every line is a decision.
+Read a trail by that rule rather than by assuming every line is a decision. A batch of
+`experimental evaluate --batch` (ADR-0085) is one invocation: its records share one `run` id, each
+one complete decision of the kind a single run writes, and other writers' records can fall between
+its chunks of up to 256.
 
 ### The chain
 

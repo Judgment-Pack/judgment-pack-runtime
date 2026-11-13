@@ -46,6 +46,8 @@
 // Every record carries a run id: one value per invocation, shared by every
 // record that invocation writes, so a single evaluation's record and a whole
 // graph run's records are equally attributable to the run that produced them.
+// A batch of experimental evaluate (ADR-0085) is one invocation too: its
+// records share one run id, and each is a complete decision of its own.
 // The run id is what makes a graph run's commit visible. A graph run's node
 // records are composed as each node completes but held, and appended together
 // with the composite in one write, so:
@@ -951,6 +953,14 @@ func newRun() string {
 // when the evaluation it describes finished, rather than when the line is
 // written — a held record's own time is when its node ran.
 func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, cites []Citation, pack []byte, graph *Graph) (Record, error) {
+	return EvaluationRecordFor(evaluated, inputs, cites, Digest(pack), graph)
+}
+
+// EvaluationRecordFor is EvaluationRecord for a caller that has the pack's
+// digest, Digest of its exact bytes, rather than the bytes: a batch evaluates
+// one pack many times and takes its digest once (ADR-0085). The record is the
+// one EvaluationRecord composes from the bytes that digest names.
+func EvaluationRecordFor(evaluated result.Evaluation, inputs Inputs, cites []Citation, packDigest string, graph *Graph) (Record, error) {
 	disposition, err := evaluated.Disposition.Canonical()
 	if err != nil {
 		return Record{}, err
@@ -969,7 +979,7 @@ func EvaluationRecord(evaluated result.Evaluation, inputs Inputs, cites []Citati
 			ID:          evaluated.PackID,
 			Version:     evaluated.PackVersion,
 			SpecVersion: evaluated.SpecVersion,
-			Digest:      Digest(pack),
+			Digest:      packDigest,
 		},
 		Graph:          graph,
 		Inputs:         &inputs,
