@@ -870,8 +870,9 @@ func (a *App) packsTestCommand() *cobra.Command {
 			"runtime admits is counted not derivable and never reported as a survivor. A survivor is either a gap in " +
 			"the matrix or a variant that behaves exactly as the pack does; this command cannot tell which, and the " +
 			"result proves nothing about the pack. Variants run only for a pack all of whose rows matched. Nothing is " +
-			"written beside the pack. Each pack may derive at most --max-variants changes (default 1000); a pack that " +
-			"derives more refuses the whole run before any variant runs. The payload carries a strength member per " +
+			"written beside the pack. Each pack may derive at most --max-variants changes (default 1000); every " +
+			"selected pack is counted first, and a pack that derives more refuses the whole run before any variant of " +
+			"any pack runs. The payload carries a strength member per " +
 			"pack and for the run, present only under --strength. By default it informs and moves no status; with " +
 			"--fail-on-survivor, a pack whose matrix ran fails the run when a variant survives or none could run, " +
 			"named fail-on-survivor in unmetRequirements, and the command exits 1. --fail-on-survivor and " +

@@ -160,8 +160,14 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 			// Existing per-pack mismatch behavior handles unreadable packs.
 			continue
 		}
-		if _, failure := run.selectPackContract(pack); failure != nil {
+		contract, failure := run.selectPackContract(pack)
+		if failure != nil {
 			return result.PackTest{}, failure
+		}
+		if options.Strength != nil {
+			if failure := countVariants(packID, pack, contract, *options.Strength); failure != nil {
+				return result.PackTest{}, failure
+			}
 		}
 	}
 	for _, packID := range selected {

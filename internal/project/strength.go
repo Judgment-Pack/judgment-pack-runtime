@@ -2,6 +2,8 @@ package project
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -111,9 +113,12 @@ func deriveVariants(document map[string]any, valueSets bool, limit int) ([]stren
 			if !ok {
 				continue
 			}
+			if d.over {
+				break
+			}
 			id, _ := entry["id"].(string)
 			declaration := fmt.Sprintf("%s %q", noun, capRendered(id))
-			prefix := member + "/" + capRendered(id)
+			prefix := member + "/" + idPart(id)
 			at := func(name string) []any { return []any{member, index, name} }
 			d.conditions(entry["when"], at("when"), prefix+"/when", declaration)
 			if member == "rules" || entry["effect"] == "force-outcome" {
@@ -137,7 +142,7 @@ func deriveVariants(document map[string]any, valueSets bool, limit int) ([]stren
 // authored-document path and as the readable pointer an id is built from.
 func (d *variantDeriver) conditions(node any, path []any, pointer, declaration string) {
 	condition, ok := node.(map[string]any)
-	if !ok {
+	if !ok || d.over {
 		return
 	}
 	switch op, _ := condition["op"].(string); op {
@@ -147,11 +152,15 @@ func (d *variantDeriver) conditions(node any, path []any, pointer, declaration s
 		for index, child := range children {
 			encoded[index] = canonicalText(child)
 		}
+		repeats := counted(encoded)
 		for index, child := range children {
+			if d.over {
+				return
+			}
 			childPointer := fmt.Sprintf("%s/conditions/%d", pointer, index)
 			// Removing a member another member repeats byte for byte changes
 			// nothing the evaluator can see, so it is not derived (ADR-0084).
-			if !repeated(encoded, index) {
+			if repeats[encoded[index]] == 1 {
 				removed := index
 				d.add(strengthVariant{
 					report: result.StrengthVariant{
@@ -182,9 +191,9 @@ func (d *variantDeriver) conditions(node any, path []any, pointer, declaration s
 
 func droppedHint(op string) string {
 	if op == "all" {
-		return "a row on which this member alone is false while the rest of the all holds would notice it"
+		return "a row on which this member alone is false while the rest of the all holds may notice it"
 	}
-	return "a row on which this member alone holds would notice it"
+	return "a row on which this member alone holds may notice it"
 }
 
 // fact derives a fact condition's moved bounds and reversed operators.
@@ -228,7 +237,7 @@ func (d *variantDeriver) fact(condition map[string]any, path []any, pointer, dec
 				}
 				d.add(strengthVariant{
 					report: result.StrengthVariant{
-						ID:          pointer + ":" + result.VariantBoundMoved + ":" + capRendered(text),
+						ID:          pointer + ":" + result.VariantBoundMoved + ":" + idPart(text),
 						Kind:        result.VariantBoundMoved,
 						Declaration: declaration,
 						Change:      fmt.Sprintf("%s → %s %s", subject, operator, renderOperand(text)),
@@ -241,10 +250,10 @@ func (d *variantDeriver) fact(condition map[string]any, path []any, pointer, dec
 		}
 	}
 	for index, reversed := range reversals {
-		hint := "any row that reaches this comparison would notice it"
+		hint := "any row that reaches this comparison may notice it"
 		if index == 0 && evaluation.OrderedOperator(operator) {
 			literal, _ := value.(string)
-			hint = fmt.Sprintf("a row that places %s at %s and reaches this comparison would notice it", capRendered(factPath), capRendered(literal))
+			hint = fmt.Sprintf("a row that places %s at %s and reaches this comparison may notice it", capRendered(factPath), capRendered(literal))
 			if number, decimal := evaluation.DecimalValue(literal); decimal {
 				if bound, ok := d.bounds[factPath+"\x00"+number.RatString()]; ok {
 					hint += " (the boundary:" + capRendered(factPath) + ":" + capRendered(bound.literal) + " probe)"
@@ -274,7 +283,7 @@ func boundHint(factPath, operator string, old, moved *big.Rat, probeLiteral stri
 		at = old
 	}
 	text, _ := evaluation.DecimalString(at)
-	hint := fmt.Sprintf("a row that places %s at %s and reaches this comparison would notice it", capRendered(factPath), capRendered(text))
+	hint := fmt.Sprintf("a row that places %s at %s and reaches this comparison may notice it", capRendered(factPath), capRendered(text))
 	if at == old && probeLiteral != "" {
 		hint += " (the boundary:" + capRendered(factPath) + ":" + capRendered(probeLiteral) + " probe)"
 	}
@@ -303,9 +312,9 @@ func (d *variantDeriver) outcome(node any, path []any, pointer, declaration, mem
 	if !ok {
 		return
 	}
-	hint := "a row whose expected outcome comes from this " + strings.SplitN(declaration, " ", 2)[0] + " would notice it"
+	hint := "a row whose expected outcome comes from this " + strings.SplitN(declaration, " ", 2)[0] + " may notice it"
 	if member == "fallbackOutcome" {
-		hint = "a row that reaches the fallback outcome would notice it"
+		hint = "a row that reaches the fallback outcome may notice it"
 	}
 	for _, other := range d.outcomes {
 		if other == current {
@@ -314,7 +323,7 @@ func (d *variantDeriver) outcome(node any, path []any, pointer, declaration, mem
 		to := other
 		d.add(strengthVariant{
 			report: result.StrengthVariant{
-				ID:          pointer + ":" + result.VariantOutcomeSwapped + ":" + capRendered(other),
+				ID:          pointer + ":" + result.VariantOutcomeSwapped + ":" + idPart(other),
 				Kind:        result.VariantOutcomeSwapped,
 				Declaration: declaration,
 				Change:      fmt.Sprintf("%s %q → %q", member, capRendered(current), capRendered(other)),
@@ -342,7 +351,7 @@ func (d *variantDeriver) onUnknown(node any, path []any, pointer, declaration st
 			Kind:        result.VariantOnUnknownChanged,
 			Declaration: declaration,
 			Change:      fmt.Sprintf("onUnknown %q → %q", current, other),
-			Hint:        "a row that leaves a fact this " + strings.SplitN(declaration, " ", 2)[0] + " reads unknown would notice it",
+			Hint:        "a row that leaves a fact this " + strings.SplitN(declaration, " ", 2)[0] + " reads unknown may notice it",
 		},
 		path: path,
 		edit: func(any) (any, bool) { return other, true },
@@ -370,23 +379,27 @@ func (d *variantDeriver) valueSets(document map[string]any) {
 			object, _ := entry.(map[string]any)
 			values[at] = canonicalText(object["value"])
 		}
+		repeats := counted(values)
 		rendered := make([]string, len(readers))
 		for at, reader := range readers {
 			rendered[at] = capRendered(reader)
 		}
 		for at := range entries {
-			if repeated(values, at) {
+			if d.over {
+				return
+			}
+			if repeats[values[at]] > 1 {
 				continue
 			}
 			removed := at
 			value := capRendered(values[at])
 			d.add(strengthVariant{
 				report: result.StrengthVariant{
-					ID:          "valueSets/" + capRendered(id) + "/entries:" + result.VariantValueSetEntryRemoved + ":" + value,
+					ID:          "valueSets/" + idPart(id) + "/entries:" + result.VariantValueSetEntryRemoved + ":" + idPart(values[at]),
 					Kind:        result.VariantValueSetEntryRemoved,
 					Declaration: fmt.Sprintf("value set %q", capRendered(id)),
 					Change:      fmt.Sprintf("removes entry %s from value set %q", value, capRendered(id)),
-					Hint:        fmt.Sprintf("a row that places %s at %s and reaches a condition reading this set would notice it", joinCapped(slices.Compact(rendered), boundarySiteCap), value),
+					Hint:        fmt.Sprintf("a row that places %s at %s and reaches a condition reading this set may notice it", joinCapped(slices.Compact(rendered), boundarySiteCap), value),
 				},
 				path: []any{"valueSets", index, "entries"},
 				edit: func(node any) (any, bool) {
@@ -468,13 +481,30 @@ func canonicalText(value any) string {
 	return strings.TrimSuffix(rendered.String(), "\n")
 }
 
-func repeated(values []string, index int) bool {
-	for at, value := range values {
-		if at != index && value == values[index] {
-			return true
-		}
+// counted is how many times each text occurs, so a repeat is found in one
+// pass over an array however wide it is.
+func counted(values []string) map[string]int {
+	counts := make(map[string]int, len(values))
+	for _, value := range values {
+		counts[value]++
 	}
-	return false
+	return counts
+}
+
+// idPart renders one authored text for a variant id. The display sanitizer
+// maps every character it replaces to one character, so two texts that
+// differ only there would render alike; whenever it changed the text, the
+// rendering carries a short digest of the exact text, after a "#" no
+// canonical JSON text or schema-pinned id ends in. A text the sanitizer
+// leaves alone renders exactly as capRendered renders it, and a long one
+// already ends in that function's digest of the exact text.
+func idPart(text string) string {
+	rendered := capRendered(text)
+	if display.Sanitize(text) == text {
+		return rendered
+	}
+	digest := sha256.Sum256([]byte(text))
+	return rendered + "#" + hex.EncodeToString(digest[:])[:boundaryDigestHex]
 }
 
 func appendPath(path []any, steps ...any) []any {
@@ -548,6 +578,28 @@ type strengthTarget struct {
 	admitted         bool
 }
 
+// countVariants holds one pack to the ceiling. TestWith calls it for every
+// selected pack with a matrix before any pack's rows run, so a run that one
+// pack would take past the ceiling is refused before any variant of any pack
+// runs (ADR-0084). The derivation stops one past the ceiling and keeps
+// nothing. A pack that does not decode is left to its own run to report.
+func countVariants(id string, pack []byte, contract result.EvaluatorContract, options StrengthOptions) *Failure {
+	decoded, failure := carrier.Decode(pack, carrier.DefaultLimits())
+	document, ok := decoded.(map[string]any)
+	if failure != nil || !ok {
+		return nil
+	}
+	if _, over := deriveVariants(document, contract.Core050Rules(), options.MaxVariants); over {
+		return &Failure{
+			Code: "JPS-RESOURCE-STRENGTH-VARIANTS",
+			Message: fmt.Sprintf("Pack %q derives more than %d variants, the --max-variants ceiling of this run; raise --max-variants or select one pack with --id. Every selected pack is counted before any variant runs, so no variant ran, and no partial report is returned, because a report cut short looks exactly like a complete one.",
+				display.Sanitize(id), options.MaxVariants),
+			ExitCode: result.ExitInvocation,
+		}
+	}
+	return nil
+}
+
 func skippedStrength(detail string) *result.PackStrength {
 	return &result.PackStrength{Status: result.StrengthSkipped, Variants: []result.StrengthVariant{}, Detail: detail}
 }
@@ -574,9 +626,13 @@ func strengthOf(evaluator *evaluation.Engine, target strengthTarget, options Str
 	}
 	variants, over := deriveVariants(document, target.contract.Core050Rules(), options.MaxVariants)
 	if over {
+		// countVariants held this pack to the ceiling before any variant of
+		// the run ran. The pack is read again for its rows, so passing the
+		// ceiling here means its bytes changed during the run: still the
+		// ceiling's refusal, and the message does not claim no variant ran.
 		return nil, &Failure{
 			Code: "JPS-RESOURCE-STRENGTH-VARIANTS",
-			Message: fmt.Sprintf("Pack %q derives more than %d variants, the --max-variants ceiling of this run; raise --max-variants or select one pack with --id. No variant ran and no partial report is returned, because a report cut short looks exactly like a complete one.",
+			Message: fmt.Sprintf("Pack %q derives more than %d variants, the --max-variants ceiling of this run, although it was counted under the ceiling before the run, so the pack changed while the run read it. No partial report is returned.",
 				display.Sanitize(target.id), options.MaxVariants),
 			ExitCode: result.ExitInvocation,
 		}

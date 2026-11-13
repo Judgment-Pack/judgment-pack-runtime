@@ -1601,7 +1601,7 @@ type PackStrength struct {
 // same variant on every run over an unchanged pack. Change is the change in
 // the pack's own words, old then new; NoticedBy is the first row, in matrix
 // order, whose result differed from its expectation; Hint is a cheap
-// description of a row that would notice the variant, read off the pack.
+// description of a row that may notice the variant, read off the pack.
 type StrengthVariant struct {
 	ID          string `json:"id"`
 	Kind        string `json:"kind"`

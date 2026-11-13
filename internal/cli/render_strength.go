@@ -9,7 +9,7 @@ import (
 
 // renderStrength prints one pack's test-strength run (ADR-0084): its counts,
 // then each survivor with the change in the pack's own words and the hint of
-// a row that would notice it. Noticed and not-derivable variants are counted
+// a row that may notice it. Noticed and not-derivable variants are counted
 // here and listed only in the JSON payload; a survivor is the line a reader
 // acts on. Nothing here prints a row's facts.
 func (a *App) renderStrength(indent string, strength *result.PackStrength) {

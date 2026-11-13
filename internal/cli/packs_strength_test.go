@@ -105,7 +105,7 @@ func TestStrengthReportsTheVariantsAMissingBoundaryRowLetsSurvive(t *testing.T) 
 	moved := entry.Strength.Variants[4]
 	if moved.Kind != result.VariantBoundMoved || moved.Declaration != `rule "expense-threshold"` ||
 		moved.Change != `/expense/amount greater-than-or-equal "5000" → greater-than-or-equal "5001"` ||
-		moved.Hint != "a row that places /expense/amount at 5000 and reaches this comparison would notice it (the boundary:/expense/amount:5000 probe)" {
+		moved.Hint != "a row that places /expense/amount at 5000 and reaches this comparison may notice it (the boundary:/expense/amount:5000 probe)" {
 		t.Fatalf("survivor = %+v", moved)
 	}
 	if !strings.Contains(stdout, `"strength":`) {
@@ -121,7 +121,7 @@ func TestStrengthReportsTheVariantsAMissingBoundaryRowLetsSurvive(t *testing.T) 
 		"this run cannot tell which, and its result proves nothing about the pack\n",
 		"  strength: 7 variants derived, 5 noticed, 2 survived; 0 changes not derivable\n",
 		`    survived rules/expense-threshold/when:bound-moved:5001 (rule "expense-threshold"): /expense/amount greater-than-or-equal "5000" → greater-than-or-equal "5001"` + "\n",
-		"      hint: a row that places /expense/amount at 5000 and reaches this comparison would notice it (the boundary:/expense/amount:5000 probe)\n",
+		"      hint: a row that places /expense/amount at 5000 and reaches this comparison may notice it (the boundary:/expense/amount:5000 probe)\n",
 		`    survived rules/expense-threshold/when:operator-reversed:greater-than (rule "expense-threshold"): /expense/amount greater-than-or-equal "5000" → greater-than "5000"` + "\n",
 	} {
 		if !strings.Contains(text, line) {
@@ -254,8 +254,57 @@ func TestStrengthRemovesValueSetEntriesOnCore050(t *testing.T) {
 	})
 	survivor := report.Packs[0].Strength.Variants[2]
 	if survivor.Change != `removes entry "tier-1" from value set "priority-tiers"` ||
-		survivor.Hint != `a row that places /request/tier at "tier-1" and reaches a condition reading this set would notice it` {
+		survivor.Hint != `a row that places /request/tier at "tier-1" and reaches a condition reading this set may notice it` {
 		t.Fatalf("survivor = %+v", survivor)
+	}
+}
+
+// variantIDsOf lists the ids of one kind, in report order.
+func variantIDsOf(strength *result.PackStrength, kind string) []string {
+	ids := []string{}
+	if strength == nil {
+		return ids
+	}
+	for _, variant := range strength.Variants {
+		if variant.Kind == kind {
+			ids = append(ids, variant.ID)
+		}
+	}
+	return ids
+}
+
+// Removing a member another member of the same all repeats exactly, or an
+// entry whose value another entry of the same set repeats, changes nothing
+// the evaluator can see, so neither is derived; the unrepeated ones are.
+func TestStrengthDerivesNoRemovalOfARepeatedMemberOrEntry(t *testing.T) {
+	comparison := `{"op":"fact","path":"/expense/amount","operator":"greater-than-or-equal","value":"5000"}`
+	pack := strings.Replace(strengthPack, `"when":`+comparison,
+		`"when":{"op":"all","conditions":[`+comparison+`,`+comparison+`,{"op":"literal","value":true}]}`, 1)
+	config := strengthProject(t, true)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(config), "packs", "expense-0.1.0.pack.json"), []byte(pack), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, report, _ := runPackTest(t, config, "--strength")
+	if code != result.ExitSuccess || len(report.Packs) != 1 {
+		t.Fatalf("exit=%d %+v", code, report)
+	}
+	if got := variantIDsOf(report.Packs[0].Strength, result.VariantConditionDropped); !slices.Equal(got, []string{"rules/expense-threshold/when/conditions/2:condition-dropped"}) {
+		t.Fatalf("condition-dropped = %v", got)
+	}
+
+	tiers := strings.Replace(strengthValueSetPack, `{"value":"tier-2"}`, `{"value":"tier-2"},{"value":"tier-2"}`, 1)
+	config = writeProjectFixture(t, `{"configVersion":"1","packs":{"tiers":{"path":"p.json","matrix":"m.json"}}}`, map[string]string{
+		"p.json": tiers,
+		"m.json": `{"matrixVersion":"1","cases":[
+		  {"id":"match","facts":{"request":{"tier":"tier-2"}},"expectedDisposition":{"kind":"outcome","outcomeId":"accept","reasons":[],"handoff":{"state":"none"}}}]}`,
+	})
+	code, report, _ = runPackTest(t, config, "--strength")
+	if code != result.ExitSuccess || len(report.Packs) != 1 {
+		t.Fatalf("value set: exit=%d %+v", code, report)
+	}
+	prefix := "valueSets/priority-tiers/entries:" + result.VariantValueSetEntryRemoved + ":"
+	if got := variantIDsOf(report.Packs[0].Strength, result.VariantValueSetEntryRemoved); !slices.Equal(got, []string{prefix + `"tier-1"`, prefix + `"tier-3"`}) {
+		t.Fatalf("value-set-entry-removed = %v", got)
 	}
 }
 
@@ -387,4 +436,68 @@ func hashTree(t *testing.T, root string) []string {
 		t.Fatal(err)
 	}
 	return listing
+}
+
+// The display sanitizer maps every character it replaces to one character,
+// so two entries that differ only in such a character must still give two
+// ids. A rendering the sanitizer changed carries a digest of the exact
+// value; one it leaves alone is unchanged.
+func TestStrengthIdsStayDistinctWhenSanitizingMergesTwoValues(t *testing.T) {
+	pack := strings.Replace(strengthValueSetPack, `"entries":[{"value":"tier-1"},{"value":"tier-2"},{"value":"tier-3"}]`,
+		"\"entries\":[{\"value\":\"a\u0085\"},{\"value\":\"a\u0086\"},{\"value\":\"zz\"}]", 1)
+	config := writeProjectFixture(t, `{"configVersion":"1","packs":{"tiers":{"path":"p.json","matrix":"m.json"}}}`, map[string]string{
+		"p.json": pack,
+		"m.json": `{"matrixVersion":"1","cases":[{"id":"match","facts":{"request":{"tier":"zz"}},"expectedDisposition":{"kind":"outcome","outcomeId":"accept","reasons":[],"handoff":{"state":"none"}}}]}`,
+	})
+	code, report, stdout := runPackTest(t, config, "--strength")
+	if code != result.ExitSuccess {
+		t.Fatalf("exit=%d %s", code, stdout)
+	}
+	digest := func(text string) string {
+		sum := sha256.Sum256([]byte(text))
+		return hex.EncodeToString(sum[:])[:16]
+	}
+	const prefix = "valueSets/priority-tiers/entries:value-set-entry-removed:"
+	want := []string{
+		prefix + `"a?"#` + digest("\"a\u0085\""),
+		prefix + `"a?"#` + digest("\"a\u0086\""),
+		prefix + `"zz"`,
+	}
+	slices.Sort(want)
+	var got []string
+	for _, variant := range report.Packs[0].Strength.Variants {
+		if variant.Kind == result.VariantValueSetEntryRemoved {
+			got = append(got, variant.ID)
+		}
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ids:\n got %q\nwant %q", got, want)
+	}
+}
+
+// Every selected pack is counted before any variant runs: a second pack over
+// the ceiling refuses the run as the first one would, never after the first
+// pack's variants ran.
+func TestStrengthCeilingCountsEveryPackBeforeAnyVariantRuns(t *testing.T) {
+	wider := strings.Replace(strengthPack,
+		`"when":{"op":"fact","path":"/expense/amount","operator":"greater-than-or-equal","value":"5000"}`,
+		`"when":{"op":"all","conditions":[{"op":"fact","path":"/expense/amount","operator":"greater-than-or-equal","value":"5000"}]}`, 1)
+	matrix := `{"matrixVersion":"1","cases":[
+	  {"id":"under","facts":{"expense":{"amount":"4999"}},"expectedDisposition":` + strengthAutoApprove + `},
+	  {"id":"at","facts":{"expense":{"amount":"5000"}},"expectedDisposition":` + strengthReview + `},
+	  {"id":"unknown","facts":{"expense":{}},"expectedDisposition":` + strengthUnknown + `}]}`
+	config := writeProjectFixture(t, `{"configVersion":"1","packs":{"a":{"path":"a.json","matrix":"m.json"},"b":{"path":"b.json","matrix":"m.json"}}}`, map[string]string{
+		"a.json": strengthPack,
+		"b.json": wider,
+		"m.json": matrix,
+	})
+	code, stdout, _ := runTest(t, []string{"packs", "test", "--config", config, "--format", "json", "--strength", "--max-variants", "7"}, "")
+	// Pack "a" alone fits the ceiling and runs first; only the count made
+	// before any pack runs can say that no variant ran.
+	if code != result.ExitInvocation || !strings.Contains(stdout, "JPS-RESOURCE-STRENGTH-VARIANTS") || !strings.Contains(stdout, `derives more than 7 variants`) || !strings.Contains(stdout, `\"b\"`) || !strings.Contains(stdout, "so no variant ran") {
+		t.Fatalf("exit=%d %s", code, stdout)
+	}
+	if code, report, _ := runPackTest(t, config, "--strength", "--max-variants", "8"); code != result.ExitSuccess || report.Strength.Summary.Derived != 14 || report.Strength.Summary.NotDerivable != 1 {
+		t.Fatalf("at the ceiling: exit=%d %+v", code, report.Strength)
+	}
 }

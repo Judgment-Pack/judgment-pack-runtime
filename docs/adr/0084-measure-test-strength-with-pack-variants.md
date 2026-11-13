@@ -59,7 +59,12 @@ already in the enumeration, and every byte and exit code of a run without `--str
    - `value-set-entry-removed`: on Core `0.5.0` only, one entry removed from a value set some
      condition references.
    Conditions are reached through applicability, each rule's and exception's `when`, and only the
-   `all`, `any` and `not` doors the coverage walk opens.
+   `all`, `any` and `not` doors the coverage walk opens. Each kind visits only its own sites:
+   `bound-moved` an ordered `fact` comparison whose literal is a decimal, `operator-reversed` a
+   `fact` comparison with an ordered, `equals` or `not-equals` operator, `condition-dropped` each
+   member of an `all` or `any`, and `value-set-entry-removed` each entry of a referenced set; so an
+   `in` over a literal array, a `literal` condition and an `evidence-present` condition are changed
+   only by being dropped from an enclosing `all` or `any`, and not at all where none encloses them.
 2. **Equivalence.** A change the evaluator provably cannot see is not derived: removing a member of
    an `all` or `any` that another member of the same array repeats byte for byte (in sorted-member
    JSON), and removing a value-set entry whose value another entry of the same set repeats. No other
@@ -81,12 +86,21 @@ already in the enumeration, and every byte and exit code of a run without `--str
    never from a position in the variant list: `rules/expense-threshold/when:bound-moved:5001`,
    `rules/r/when/conditions/1:condition-dropped`, `fallbackOutcome:outcome-swapped:review`,
    `valueSets/tiers/entries:value-set-entry-removed:"gold"`. Authored text in an id goes through the
-   boundary probe's 128-byte rendering. Variants are sorted by id; two variants sharing an id is an
-   internal failure.
+   boundary probe's 128-byte rendering; when that rendering replaces a character, `#` and the first
+   16 hex digits of the text's SHA-256 follow it, so two values that render alike keep distinct ids
+   and a value the rendering leaves alone keeps its plain id. Variants are sorted by id; two
+   variants sharing an id is an internal failure. An id is stable only as far as its parts are: a
+   condition's pointer is positional, so reordering the members of an `all` or `any` renames the
+   variants of the members that moved, and a moved bound's new value is stepped at the finest
+   precision the pack authors that value in at that fact path, so writing `"5000.00"` at another
+   comparison on the path renames `…:bound-moved:5001` to `…:bound-moved:5000.01`.
 7. **Ceiling.** `--max-variants N` (default 1000, at least 1) bounds the changes one pack may derive,
-   admitted or not. A pack that derives more refuses the whole run with
-   `JPS-RESOURCE-STRENGTH-VARIANTS`, exit 3, naming the ceiling, before any variant runs; nothing is
-   truncated. A value below 1 is refused with `JPS-INVOCATION-MAX-VARIANTS`, exit 3. The worst case
+   admitted or not. Every selected pack with a matrix is counted before any pack's rows run, even
+   one whose variants would later be skipped, and each count stops once the ceiling is passed. A
+   pack that derives more refuses the whole run with `JPS-RESOURCE-STRENGTH-VARIANTS`, exit 3,
+   naming the ceiling, so no variant of any pack has run; nothing is truncated. A pack whose bytes
+   change during the run and pass the ceiling when read for its variants is refused with the same
+   code, without the claim that no variant ran. A value below 1 is refused with `JPS-INVOCATION-MAX-VARIANTS`, exit 3. The worst case
    is one admission per change and N × rows row evaluations per pack, one variant at a time, with no
    parallelism. The change count is linear in conditions, value-set entries and declarations except
    for outcome swaps, which are declarations × outcomes, so the ceiling is required.
@@ -113,8 +127,9 @@ already in the enumeration, and every byte and exit code of a run without `--str
   row that would catch each survivor described.
 - Good, because a variant is judged by exactly the code that judges the pack, so "noticed" means
   `packs test` would have reported that row as a mismatch.
-- Bad, because a survivor can be an equivalent variant (moving a bound on a fact that only ever
-  holds whole thousands), which only the policy owner can rule out; the label says so on every run.
+- Bad, because a survivor can be an equivalent variant (moving `greater-than-or-equal "5000"` to
+  `"5001"` on a fact that only ever holds whole multiples of 10000), which only the policy owner
+  can rule out; the label says so on every run.
 - Bad, because a large pack under a large matrix is slow: the worst case is stated, and the
   ceiling refuses rather than running a part.
 - Revisit if MCP callers ask for the same run, or if a second constructor site for it is wanted, which

@@ -14,9 +14,10 @@ All notable changes to tagged releases are documented here.
   behaves exactly as the pack does; the command cannot tell which, and the result proves nothing
   about the pack. Ids are built from the location and the change, variants are sorted by id, and
   the output is the same bytes on every run; the text output prints each survivor with a hint of a
-  row that would notice it. Nothing is written beside the pack. `--max-variants N` (default 1000)
-  bounds the changes per pack: a pack that derives more refuses the whole run before any variant
-  runs (`JPS-RESOURCE-STRENGTH-VARIANTS`, exit 3), and a value below 1 is refused
+  row that may notice it. Nothing is written beside the pack. `--max-variants N` (default 1000)
+  bounds the changes per pack: every selected pack is counted first, and a pack that derives more
+  refuses the whole run before any variant of any pack runs (`JPS-RESOURCE-STRENGTH-VARIANTS`,
+  exit 3), and a value below 1 is refused
   (`JPS-INVOCATION-MAX-VARIANTS`, exit 3). By default the run informs and moves no exit code;
   `--fail-on-survivor` fails a pack whose matrix ran when a variant survives or none could run,
   named `fail-on-survivor` in `unmetRequirements`, and the run exits 1. Both options are refused
