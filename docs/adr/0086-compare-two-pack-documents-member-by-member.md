@@ -50,8 +50,9 @@ meaning at all, and compare's bytes stay as they are whichever is chosen. The co
   three-way, the two packs given being first and second. `experimental compare --structural` puts the
   two-way bytes in the payload's `structural` member, as a string, and the text after the human
   report; without the option the payload has no such member. Compare's help and the guide now say
-  that annotations, and every member that never reaches a disposition, are outside what it compares.
-  There is no MCP tool, as ADR-0045 §6 has none for compare.
+  that annotations, and every member that never reaches a disposition, are outside what it compares;
+  its output does not say so, because its bytes stay as they were. There is no MCP tool, as ADR-0045
+  §6 has none for compare.
 - **specVersions and ids.** Packs of two specVersions are refused (`view.ErrDiffSpecVersion`;
   `JPS-DIFF-MIXED-SPEC-VERSION`, exit 2, in the CLI), because the members a document may hold depend
   on its version: a cross-version comparison would report value sets or routes as added for a reason
@@ -65,11 +66,16 @@ meaning at all, and compare's bytes stay as they are whichever is chosen. The co
   compared the same way, relative to the document.
 - **Annotations.** At the pack, on each outcome and rule, and on each value-set entry, under Core
   0.5.0, each key is compared as one value, a string or a list, with no key treated apart. An
-  extensions object that holds only annotations is not a vendor member of its own, so a member's first
-  annotation, or its last, is reported once, as an annotation. Under a version with no annotations
-  or no value sets, the `annotations` and `valueSets` members are absent, not empty.
+  extensions object that holds only annotations is the empty object it is without them: against
+  `"extensions": {}` it is the same object, and against an absent one it is read as absent, so a
+  member's first annotation, or its last, is reported once, as an annotation. An empty object against
+  an absent one is reported, at `/extensions`. Under a version with no annotations or no value sets,
+  the `annotations` and `valueSets` members are absent, not empty.
 - **Order.** Collection order is reported in an `order` member, apart from content, over the members
-  present in every version: Core §4 keeps it for authoring and display. Every other array keeps its
+  both of the last two versions hold (old and new; first and second), each version listing those of
+  them it holds: Core §4 keeps it for authoring and display. Two versions' orders differ when they put
+  the members both hold in different orders, so a member both descendants add at different places is
+  an order conflict, though the base never held it. Every other array keeps its
   order, escalation routes, the conditions of `all` and `any` and an annotation list's strings among
   them: arrays of one length are compared position by position, and arrays of two lengths are
   reported whole. `escalation.triggers` and a route's `triggers` are sets (Core §6.7), and their order
@@ -77,8 +83,9 @@ meaning at all, and compare's bytes stay as they are whichever is chosen. The co
 - **Three-way.** For each member, annotation, order and array presence that differs anywhere, the
   status is `first` or `second` when only that descendant differs from the base, `both` when both
   differ from it alike, and `conflict` when they differ from it and from each other. The walk descends
-  where all three are objects, or all three arrays of one length; elsewhere it reports at that point.
-  Nothing is merged.
+  where all three are objects, or all three arrays of one length; elsewhere it reports at that point,
+  comparing the values whole with every set inside them, at any depth, read as a set. Nothing is
+  merged.
 - **Formats.** Canonical JSON as the view writes it (numbers as written), with `diffVersion` or
   `threeWayDiffVersion` `"1"`, moving by the rule of `viewVersion`. The text writes every string taken
   from a pack, ids and pointers with characters outside a plain set among them, as JSON in printable
@@ -94,6 +101,11 @@ meaning at all, and compare's bytes stay as they are whichever is chosen. The co
   of one base reports it as a conflict; the report does not treat identity members apart.
 - Bad, because an entry keyed by occurrence pairs repeated values by document order, so removing the
   first of two equal entries reads as the first changed and the second removed.
+- Bad, because an extensions object absent in one version and empty in another, beside a vendor
+  member the other version holds, are not told apart: each vendor member is reported by name, under
+  `/extensions/<name>`, whether the object went or stayed empty. Reporting the object as well would
+  report one change twice, and three-way would call two descendants that both dropped the member a
+  conflict when one of them kept the object for its annotations.
 - Revisit when a reader needs the comparison of packs of two specVersions, or a merge.
 
 ## More information

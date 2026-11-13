@@ -142,15 +142,20 @@ const (
 // node is one value of a compared member, as a tree. written is its canonical
 // JSON text in document order, the text a report shows; same is the text two
 // nodes are compared by, which is written but for a set, whose items it
-// sorts, so that a set's order is never a difference.
+// sorts, and for every object and array holding a set at any depth, whose
+// same is built from its children's, so that a set's order is never a
+// difference, whether the set is reached by descending or compared inside a
+// value reported whole. annotationsOnly marks an extensions object that held
+// annotations and nothing else, read as an empty one (vendorExtensions).
 type node struct {
-	kind       nodeKind
-	members    map[string]*node
-	names      []string
-	items      []*node
-	extensions bool
-	written    string
-	same       string
+	kind            nodeKind
+	members         map[string]*node
+	names           []string
+	items           []*node
+	extensions      bool
+	annotationsOnly bool
+	written         string
+	same            string
 }
 
 // setPositions are the arrays of a pack's own members that Core §6.7 makes
@@ -168,8 +173,9 @@ func treeOf(value any, pointer string, sets *regexp.Regexp, extensions bool) (*n
 			object.names = append(object.names, name)
 		}
 		slices.SortFunc(object.names, compareUTF16)
-		var text strings.Builder
+		var text, same strings.Builder
 		text.WriteByte('{')
+		same.WriteByte('{')
 		for index, name := range object.names {
 			child, err := treeOf(typed[name], pointer+"/"+pointerEscaper.Replace(name), sets, name == "extensions")
 			if err != nil {
@@ -182,12 +188,15 @@ func treeOf(value any, pointer string, sets *regexp.Regexp, extensions bool) (*n
 			}
 			if index > 0 {
 				text.WriteByte(',')
+				same.WriteByte(',')
 			}
 			text.WriteString(encoded + ":" + child.written)
+			same.WriteString(encoded + ":" + child.same)
 		}
 		text.WriteByte('}')
+		same.WriteByte('}')
 		object.written = text.String()
-		object.same = object.written
+		object.same = same.String()
 		return object, nil
 	case []any:
 		array := &node{kind: arrayNode}
@@ -290,8 +299,10 @@ type itemChange struct {
 	entries     *collectionChange
 }
 
-// orderChange is the order, in each version, of the collection members
-// present in every version, reported when it is not the same in all.
+// orderChange is the order, in each version, of the collection members both
+// of the last two versions hold (old and new; first and second), each version
+// listing those of them it holds, reported when two versions put the members
+// both hold in different orders.
 type orderChange struct {
 	orders [][]itemKey
 	word   string
@@ -354,16 +365,20 @@ type comparison struct {
 	conflicts   int
 }
 
-// vendorExtensions is the extensions a member tree holds: the vendor members
-// only, annotations being compared by key apart from them. An extensions
-// object that holds annotations and nothing else is left out, as if absent,
+// vendorExtensions marks the extensions member of a carrier's tree, built
+// from the carrier without its annotations, when the carrier's extensions
+// object held annotations and nothing else. The tree holds that object as
+// the empty one it is without them, so against "extensions": {} it is the
+// same object; walk reads it as absent against an absent one (descendable),
 // so the first annotation added to a member, or the last removed, is
 // reported once, as annotations.
-func vendorExtensions(extensions []Extension, annotations []Annotation) []Extension {
-	if len(extensions) == 0 && annotations != nil {
-		return nil
+func vendorExtensions(tree *node, extensions []Extension, annotations []Annotation) {
+	if len(extensions) != 0 || annotations == nil {
+		return
 	}
-	return extensions
+	if held := tree.members["extensions"]; held != nil && held.kind == objectNode {
+		held.annotationsOnly = true
+	}
 }
 
 func annotationTexts(annotations []Annotation) (map[string]string, error) {
@@ -421,10 +436,7 @@ func read(v PackView) (document, error) {
 	annotated := result.HasCore050Rules(v.Identity.SpecVersion)
 	doc := document{identity: v.Identity, annotated: annotated, collections: map[string]*collection{}}
 	bare := v
-	bare.Extensions, bare.Annotations = v.Extensions, nil
-	if annotated {
-		bare.Extensions = vendorExtensions(v.Extensions, v.Annotations)
-	}
+	bare.Annotations = nil
 	members, err := bare.documentValue()
 	if err != nil {
 		return document{}, err
@@ -436,6 +448,7 @@ func read(v PackView) (document, error) {
 		return document{}, err
 	}
 	if annotated {
+		vendorExtensions(doc.tree, v.Extensions, v.Annotations)
 		if doc.annotations, err = annotationTexts(v.Annotations); err != nil {
 			return document{}, err
 		}
@@ -468,13 +481,11 @@ func read(v PackView) (document, error) {
 	for _, outcome := range v.Outcomes {
 		stripped := outcome
 		stripped.Annotations = nil
-		if annotated {
-			stripped.Extensions = vendorExtensions(outcome.Extensions, outcome.Annotations)
-		}
 		read, err := newItem(id(outcome.ID), outcomeValue(outcome), outcomeValue(stripped))
 		if err != nil {
 			return document{}, err
 		}
+		vendorExtensions(read.tree, outcome.Extensions, outcome.Annotations)
 		if err := read.annotate(outcome.Annotations, annotated); err != nil {
 			return document{}, err
 		}
@@ -486,9 +497,6 @@ func read(v PackView) (document, error) {
 	for _, rule := range v.Rules {
 		stripped := rule
 		stripped.Annotations = nil
-		if annotated {
-			stripped.Extensions = vendorExtensions(rule.Extensions, rule.Annotations)
-		}
 		full, err := ruleValue(rule)
 		if err != nil {
 			return document{}, err
@@ -501,6 +509,7 @@ func read(v PackView) (document, error) {
 		if err != nil {
 			return document{}, err
 		}
+		vendorExtensions(read.tree, rule.Extensions, rule.Annotations)
 		if err := read.annotate(rule.Annotations, annotated); err != nil {
 			return document{}, err
 		}
@@ -537,11 +546,11 @@ func read(v PackView) (document, error) {
 				seen[entry.Value]++
 				stripped := entry
 				stripped.Annotations = nil
-				stripped.Extensions = vendorExtensions(entry.Extensions, entry.Annotations)
 				readEntry, err := newItem(itemKey{text: entry.Value, occurrence: seen[entry.Value], entry: true}, entryValue(entry), entryValue(stripped))
 				if err != nil {
 					return document{}, err
 				}
+				vendorExtensions(readEntry.tree, entry.Extensions, entry.Annotations)
 				if err := readEntry.annotate(entry.Annotations, true); err != nil {
 					return document{}, err
 				}
@@ -603,7 +612,8 @@ func nodesAbsent(values []*node) []bool {
 // every version; anything else that differs is reported whole. An extensions
 // object absent from some versions is read there as an empty one when every
 // version that has it holds a member, so each vendor member is reported by
-// name.
+// name, or held only annotations, so that their coming or going is reported
+// once, as annotations.
 func (c *comparison) walk(pointer string, values []*node, out *[]memberChange) {
 	same := func(left, right int) bool { return sameNode(values[left], values[right]) }
 	if allSame(len(values), same) {
@@ -644,7 +654,9 @@ func (c *comparison) walk(pointer string, values []*node, out *[]memberChange) {
 
 // descendable returns the objects to descend into, or nil: the values when
 // every one is an object, and an extensions object read as empty where it is
-// absent when every version that has it holds a member.
+// absent when every version that has it holds a member or held only
+// annotations. An extensions object that is empty in the document, against
+// an absent one, is reported whole: that object came or went.
 func descendable(values []*node) []*node {
 	objects := make([]*node, len(values))
 	missing := false
@@ -666,7 +678,7 @@ func descendable(values []*node) []*node {
 			objects[index] = &node{kind: objectNode, members: map[string]*node{}, extensions: true, written: "{}", same: "{}"}
 			continue
 		}
-		if !value.extensions || len(value.names) == 0 {
+		if !value.extensions || (len(value.names) == 0 && !value.annotationsOnly) {
 			return nil
 		}
 	}
@@ -750,7 +762,6 @@ func (c *comparison) compareCollection(sides []*collection) *collectionChange {
 		}
 	}
 	slices.SortFunc(keys, compareKeys)
-	common := map[itemKey]bool{}
 	for _, key := range keys {
 		members := make([]*item, len(sides))
 		missing := false
@@ -777,7 +788,6 @@ func (c *comparison) compareCollection(sides []*collection) *collectionChange {
 			change.items = append(change.items, itemChange{key: key, whole: whole, word: c.word(absent, same)})
 			continue
 		}
-		common[key] = true
 		reported := itemChange{key: key, word: changeChanged, annotated: members[0].annotated, members: []memberChange{}}
 		trees := make([]*node, len(sides))
 		for index, member := range members {
@@ -802,20 +812,48 @@ func (c *comparison) compareCollection(sides []*collection) *collectionChange {
 			change.items = append(change.items, reported)
 		}
 	}
+	// The order is read over the members the last two versions both hold, so
+	// that a member both descendants add, at different places, is an order
+	// difference between them. Two versions' orders are the same when they
+	// put the members both hold in one order; that relation is checked for
+	// every pair, since a base that lacks a member says nothing of its place.
 	orders := make([][]itemKey, len(sides))
 	for index, side := range sides {
 		orders[index] = []itemKey{}
 		for _, member := range side.items {
-			if common[member.key] {
+			if byKey[len(sides)-2][member.key] != nil && byKey[len(sides)-1][member.key] != nil {
 				orders[index] = append(orders[index], member.key)
 			}
 		}
 	}
-	sameOrder := func(left, right int) bool { return slices.Equal(orders[left], orders[right]) }
-	if !allSame(len(sides), sameOrder) {
+	held := func(order []itemKey, side int) []itemKey {
+		kept := []itemKey{}
+		for _, key := range order {
+			if byKey[side][key] != nil {
+				kept = append(kept, key)
+			}
+		}
+		return kept
+	}
+	sameOrder := func(left, right int) bool {
+		return slices.Equal(held(orders[left], right), held(orders[right], left))
+	}
+	if !everyPairSame(len(sides), sameOrder) {
 		change.order = &orderChange{orders: orders, word: c.word(make([]bool, len(sides)), sameOrder)}
 	}
 	return change
+}
+
+// everyPairSame reports whether same holds for every two versions.
+func everyPairSame(count int, same func(int, int) bool) bool {
+	for left := 0; left < count; left++ {
+		for right := left + 1; right < count; right++ {
+			if !same(left, right) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // compare is the comparison of two or three views of one specVersion.

@@ -550,7 +550,8 @@ member, and their absence does not establish that the ids match.
 Compare reports dispositions and handoff targets and nothing else. Annotations, and every other
 member that never reaches a disposition, are outside what it compares: a revision that only changes
 an outcome's annotations, or moves a threshold where no input falls between the old and new values,
-reports `0 differ`. To see those changes, add `--structural`. With that option the JSON payload gets
+reports `0 differ`. Compare's output does not say so, so that its bytes stay as they were; its help
+and this guide do. To see those changes, add `--structural`. With that option the JSON payload gets
 a `structural` member, a string holding the same bytes as the `diff` member `packs diff --format
 json` writes for the same two packs (next section), and the human output appends that comparison's
 text. Without the option, the output is
@@ -586,16 +587,20 @@ and its old and new values. Numbers are compared as written, so `1.50` and `1.5`
 **Annotations.** Under Core 0.5.0, annotations are compared at the pack, on each outcome and rule,
 and on each value-set entry. Each key is compared as one value, a string or a list, with no key
 treated apart from any other. They appear in an `annotations` member beside `members`, never as
-pointers into `extensions`. An extensions object that holds only annotations is not reported as a
-member of its own, so adding a member's first annotation is reported once, as an annotation. Under a
-specVersion without annotations or value sets, the `annotations` and `valueSets` members are absent
-from the output, not empty.
+pointers into `extensions`. An extensions object that holds only annotations counts as the empty
+object it is without them. Against `"extensions": {}` it is the same object. Against an absent one,
+adding a member's first annotation, or removing its last, is reported once, as an annotation. An
+empty object against an absent one is reported at `/extensions`. Beside a vendor member, an
+extensions object that is absent in one version is not told apart from one that is empty: either
+way each vendor member is reported by name, under `/extensions/<name>`. Under a specVersion without
+annotations or value sets, the `annotations` and `valueSets` members are absent from the output,
+not empty.
 
 **Which orders count.**
 
 | Array | Order |
 | --- | --- |
-| the members of each keyed collection, and the entries of each value set | reported apart from content, in an `order` member over the members present in both versions (Core §4 keeps collection order for display; it has no evaluation meaning) |
+| the members of each keyed collection, and the entries of each value set | reported apart from content, in an `order` member over the members present in both versions, or three-way in both first and second (Core §4 keeps collection order for display; it has no evaluation meaning) |
 | `escalation.routes` | reported (Core §6.7 makes routes ordered) |
 | the strings of an annotation list | reported (Core §5: part of the bytes) |
 | every other array, the conditions of `all` and `any` among them | reported: Core does not make them sets, though reordering the conditions of `all` or `any` changes no result |
@@ -603,7 +608,11 @@ from the output, not empty.
 | object members, an annotations object's keys among them | ignored |
 
 Two arrays of one length are compared position by position. Two arrays of different lengths are
-reported whole.
+reported whole, and a set inside a value reported whole is still compared as a set.
+
+Three-way, the order is read over the members both first and second hold, and each version lists
+those of them it holds. A rule both descendants add, at different places, is an order `conflict`,
+although the base never held it.
 
 **Absent is not empty.** An optional collection that is absent and one that is an empty array hold
 the same members, but they are different documents. When one version has the array and the other

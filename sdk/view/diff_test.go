@@ -487,3 +487,140 @@ func TestTheTextIsPrintableASCII(t *testing.T) {
 		t.Fatalf("%s", text)
 	}
 }
+
+// A set is a set inside a value reported whole too: a descendant that only
+// reorders escalation triggers, or a route's, has not changed what holds
+// them, so when the other descendant removes the escalation, or a route,
+// only the other changed it.
+func TestASetInsideAWholeValueIsStillASet(t *testing.T) {
+	escalation := func(triggers string) expense {
+		return expense{escalation: `{"triggers":` + triggers + `,"target":{"kind":"queue","name":"q"}}`}
+	}
+	base, reordered := escalation(`["unknown","no-match"]`), escalation(`["no-match","unknown"]`)
+	if compared := twoWay(t, base, reordered); compared.Differs {
+		t.Fatalf("a set's order was reported:\n%s", compared.Text())
+	}
+	compared := threeWay(t, base, reordered, expense{})
+	members := encoded(t, decoded(t, compared.JSON())["pack"].(map[string]any)["members"])
+	if want := `[{"base":{"target":{"kind":"queue","name":"q"},"triggers":["unknown","no-match"]},"first":{"target":{"kind":"queue","name":"q"},"triggers":["no-match","unknown"]},"pointer":"/escalation","status":"second"}]`; members != want || compared.Conflicts != 0 {
+		t.Fatalf("escalation removed by second\ngot:  %s (conflicts %d)\nwant: %s", members, compared.Conflicts, want)
+	}
+	routed := func(queueTriggers string, routes int) expense {
+		all := []string{`{"target":{"kind":"queue","name":"Review"},"triggers":` + queueTriggers + `}`, `{"target":{"kind":"human-role","name":"Oversight"}}`}
+		return expense{escalation: `{"triggers":["unknown","conflict","no-match"],"routes":[` + strings.Join(all[:routes], ",") + `]}`}
+	}
+	compared = threeWay(t, routed(`["unknown","conflict"]`, 2), routed(`["conflict","unknown"]`, 2), routed(`["unknown","conflict"]`, 1))
+	changes := decoded(t, compared.JSON())["pack"].(map[string]any)["members"].([]any)
+	if len(changes) != 1 || changes[0].(map[string]any)["pointer"] != "/escalation/routes" || changes[0].(map[string]any)["status"] != "second" || compared.Conflicts != 0 {
+		t.Fatalf("route removed by second: %s (conflicts %d)", encoded(t, changes), compared.Conflicts)
+	}
+}
+
+// pointers lists every member pointer a comparison reports, at any depth.
+func pointers(value any) []string {
+	found := []string{}
+	switch typed := value.(type) {
+	case map[string]any:
+		if pointer, ok := typed["pointer"].(string); ok {
+			found = append(found, pointer)
+		}
+		for _, member := range typed {
+			found = append(found, pointers(member)...)
+		}
+	case []any:
+		for _, item := range typed {
+			found = append(found, pointers(item)...)
+		}
+	}
+	return found
+}
+
+// An extensions object that holds only annotations is the empty object it is
+// without them, at each position that carries annotations: against
+// "extensions": {} it is the same object, both ways and three-way, and
+// against an absent one its coming or going is reported once, as the
+// annotation. An empty object against an absent one is still a change.
+func TestAnExtensionsObjectHoldingOnlyAnnotations(t *testing.T) {
+	entry := func(extensions string) expense {
+		written := `{"value":"EUR"}`
+		if extensions != "" {
+			written = `{"value":"EUR","extensions":` + extensions + `}`
+		}
+		return expense{extraRules: currencyRule, valueSets: `[{"id":"currencies","entries":[` + written + `]}]`}
+	}
+	annotated := `{"org.judgmentpack.annotations":{"k":"v"}}`
+	for _, position := range []struct {
+		name string
+		with func(string) expense
+	}{
+		{"outcome", func(extensions string) expense { return expense{declineExtensions: extensions} }},
+		{"rule", func(extensions string) expense { return expense{ruleExtensions: extensions} }},
+		{"pack", func(extensions string) expense { return expense{rootExtensions: extensions} }},
+		{"entry", entry},
+	} {
+		t.Run(position.name, func(t *testing.T) {
+			for _, row := range []struct {
+				name          string
+				older, newer  string
+				pointers, say string
+			}{
+				{"empty to annotated", "{}", annotated, "", `annotation "k" added: "v"`},
+				{"annotated to empty", annotated, "{}", "", `annotation "k" removed: "v"`},
+				{"absent to annotated", "", annotated, "", `annotation "k" added: "v"`},
+				{"annotated to absent", annotated, "", "", `annotation "k" removed: "v"`},
+				{"absent to empty", "", "{}", "/extensions", "/extensions added: {}"},
+				{"empty to absent", "{}", "", "/extensions", "/extensions removed: {}"},
+			} {
+				compared := twoWay(t, position.with(row.older), position.with(row.newer))
+				if got := strings.Join(pointers(decoded(t, compared.JSON())), ","); got != row.pointers || !strings.Contains(string(compared.Text()), row.say+"\n") {
+					t.Fatalf("%s: pointers %q, want %q\n%s", row.name, got, row.pointers, compared.Text())
+				}
+			}
+			compared := threeWay(t, position.with("{}"), position.with(annotated), position.with("{}"))
+			if got := pointers(decoded(t, compared.JSON())); len(got) != 0 || compared.Conflicts != 0 || !strings.Contains(string(compared.Text()), `annotation "k" first: base absent, first "v", second absent`+"\n") {
+				t.Fatalf("three-way: pointers %q, conflicts %d\n%s", got, compared.Conflicts, compared.Text())
+			}
+		})
+	}
+}
+
+const mealRule = `{"id":"meal","description":"Meals are approved.","when":{"op":"fact","path":"/expense/kind","operator":"equals","value":"meal"},"outcome":"approve","onUnknown":"ignore"}`
+
+// The three-way order is read over the members both descendants hold, so a
+// rule both add, at different places, is an order conflict, as the two-way
+// comparison of the descendants says it is an order change; where they add
+// it at one place, or only one adds it, there is no order difference.
+func TestThreeWayOrderAmongAddedMembers(t *testing.T) {
+	base := expense{extraRules: travelRule}
+	last, middle := expense{extraRules: travelRule + "," + mealRule}, expense{extraRules: mealRule + "," + travelRule}
+	if got := encoded(t, decoded(t, twoWay(t, last, middle).JSON())["rules"].(map[string]any)["order"]); got != `{"new":["over-limit","meal","travel"],"old":["over-limit","travel","meal"]}` {
+		t.Fatalf("two-way order: %s", got)
+	}
+	compared := threeWay(t, base, last, middle)
+	rules := decoded(t, compared.JSON())["rules"].(map[string]any)
+	if got, want := encoded(t, rules["order"]), `{"base":["over-limit","travel"],"first":["over-limit","travel","meal"],"second":["over-limit","meal","travel"],"status":"conflict"}`; got != want || compared.Conflicts != 1 {
+		t.Fatalf("three-way order\ngot:  %s (conflicts %d)\nwant: %s", got, compared.Conflicts, want)
+	}
+	if got := encoded(t, rules["changes"]); !strings.Contains(got, `"id":"meal"`) || !strings.Contains(got, `"status":"both"`) {
+		t.Fatalf("changes: %s", got)
+	}
+	if !strings.Contains(string(compared.Text()), `  rules order conflict: base ["over-limit","travel"], first ["over-limit","travel","meal"], second ["over-limit","meal","travel"]`+"\n") {
+		t.Fatalf("%s", compared.Text())
+	}
+	for _, row := range []struct {
+		name          string
+		first, second expense
+	}{
+		{"both at one place", middle, middle},
+		{"only first adds", last, base},
+		{"only second adds", base, middle},
+	} {
+		if order, present := decoded(t, threeWay(t, base, row.first, row.second).JSON())["rules"].(map[string]any)["order"]; present {
+			t.Fatalf("%s: an order difference was reported: %v", row.name, order)
+		}
+	}
+	moved := expense{extraRules: mealRule + "," + travelRule}
+	if got := encoded(t, decoded(t, threeWay(t, expense{extraRules: travelRule + "," + mealRule}, moved, moved).JSON())["rules"].(map[string]any)["order"]); !strings.Contains(got, `"status":"both"`) {
+		t.Fatalf("both moved: %s", got)
+	}
+}
