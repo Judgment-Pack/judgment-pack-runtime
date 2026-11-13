@@ -95,6 +95,11 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"experimental", "graph", "explain", "--help"}},
 		{args: []string{"experimental", "graph", "test", "--help"}, mustReference: true},
 		{args: []string{"experimental", "graph", "schema", "--help"}},
+		// experimental check-published (ADR-0090) compares the bytes git
+		// tags hold and evaluates nothing; it is inventoried for the phrase
+		// scans, which is where a stray claim about what a tag shows would
+		// hide.
+		{args: []string{"experimental", "check-published", "--help"}},
 		{args: []string{"mcp", "--help"}, mustReference: true},
 		// The project convention (ADR-0012). Only the two that speak about the
 		// evaluator have to say where the claim is stated.

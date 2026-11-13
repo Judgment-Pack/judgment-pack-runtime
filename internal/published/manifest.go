@@ -3,6 +3,7 @@ package published
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -13,6 +14,10 @@ import (
 // The manifest is a closed input: a reader refuses a member it does not know,
 // so adding one moves this version.
 const ManifestVersion = "1"
+
+// ErrManifestVersion is a manifest that declares a manifestVersion this
+// runtime does not read: a later format, not a damaged one.
+var ErrManifestVersion = errors.New("the manifest declares a manifestVersion this runtime does not read")
 
 // MaxManifestBytes bounds a manifest, read or written: the hard input limit.
 // A manifest that would encode past it is not written, because no run could
@@ -93,8 +98,12 @@ func ReadManifest(data []byte) (*Manifest, error) {
 	if !ok || !exactMembers(root, "manifestVersion", "documents") {
 		return nil, fmt.Errorf("the manifest must be an object with exactly the members manifestVersion and documents")
 	}
-	if root["manifestVersion"] != ManifestVersion {
-		return nil, fmt.Errorf("the manifest's manifestVersion must be %q", ManifestVersion)
+	declared, isString := root["manifestVersion"].(string)
+	if !isString {
+		return nil, fmt.Errorf("the manifest's manifestVersion must be a string")
+	}
+	if declared != ManifestVersion {
+		return nil, fmt.Errorf("%w (it reads %q)", ErrManifestVersion, ManifestVersion)
 	}
 	documents, ok := root["documents"].([]any)
 	if !ok {

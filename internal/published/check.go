@@ -118,12 +118,15 @@ type UnreadTag struct {
 
 // Report is one run's result.
 type Report struct {
-	Status     string
-	Head       string
-	Shallow    bool
-	TagsTotal  int
-	TagsRead   int
-	UnreadTags []UnreadTag
+	Status    string
+	Head      string
+	Shallow   bool
+	TagsTotal int
+	TagsRead  int
+	// UnreadTags are the matching tags that name no readable commit;
+	// UnreadTagCount is exact when the list is capped.
+	UnreadTags     []UnreadTag
+	UnreadTagCount int
 	// Identities is the number of identities a tag published.
 	Identities int
 	// Documents is the number of distinct document blobs read; OtherFiles
@@ -136,9 +139,12 @@ type Report struct {
 	Unreadable      []Unreadable
 	UnreadableCount int
 	// With a manifest: the identities a tag published that it does not pin,
-	// and, in a shallow repository, those it pins that nothing held answers.
-	New     []ManifestEntry
-	NotHeld []ManifestEntry
+	// and, in a shallow repository, those it pins that no tag held answers;
+	// the counts are exact when the lists are capped.
+	New          []ManifestEntry
+	NewCount     int
+	NotHeld      []ManifestEntry
+	NotHeldCount int
 	// Manifest is what --write-manifest writes: the given manifest's entries
 	// and every identity a tag published that it does not pin.
 	Manifest Manifest
@@ -152,6 +158,11 @@ type Options struct {
 	Selection Selection
 	Manifest  *Manifest
 	Strict    bool
+	// Writing says the caller will write the run's manifest. A shallow
+	// repository is then refused before anything is read: it cannot name the
+	// first tag, or the first bytes, of an identity whose history it lacks,
+	// so a manifest written from it could pin changed bytes.
+	Writing bool
 }
 
 // Failure is a run that could not be completed: nothing it found is reported.
@@ -203,6 +214,9 @@ func Check(options Options) (*Report, *Failure) {
 	if failure != nil {
 		return nil, failure
 	}
+	if shallow && options.Writing {
+		return nil, fail(FailureShallow, "The repository is a shallow clone: it cannot say which tag first published an identity, or with which bytes, so no manifest is written from it. Write the manifest from a clone with the full history and tags; nothing was read or written.")
+	}
 	if shallow && options.Manifest == nil {
 		return nil, fail(FailureShallow, "The repository is a shallow clone: tags and history it does not hold cannot be read, so no result could be backed. Fetch the full history and tags, or check against a manifest with --manifest; nothing was reported.")
 	}
@@ -247,6 +261,8 @@ func Check(options Options) (*Report, *Failure) {
 		snapshots = append(snapshots, snapshot{ref: tag.ref, commit: commit, tree: tree, tag: true})
 	}
 	report.TagsRead = len(snapshots)
+	report.UnreadTagCount = len(report.UnreadTags)
+	report.UnreadTags = capped(report.UnreadTags)
 	if failure := g.order(snapshots); failure != nil {
 		return nil, failure
 	}
@@ -273,7 +289,7 @@ func Check(options Options) (*Report, *Failure) {
 	switch {
 	case report.FindingCount > 0:
 		report.Status = StatusInvalid
-	case report.UnreadableCount > 0 || len(report.UnreadTags) > 0:
+	case report.UnreadableCount > 0 || report.UnreadTagCount > 0:
 		report.Status = StatusIncomplete
 	default:
 		report.Status = StatusValid
@@ -810,6 +826,7 @@ func (w *walker) findings(report *Report, options Options) {
 	report.Manifest = written
 	report.FindingCount = len(findings)
 	report.Findings = capped(findings)
+	report.NewCount, report.NotHeldCount = len(report.New), len(report.NotHeld)
 	report.New = capped(report.New)
 	report.NotHeld = capped(report.NotHeld)
 }

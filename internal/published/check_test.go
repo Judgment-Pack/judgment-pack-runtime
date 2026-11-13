@@ -3,6 +3,7 @@ package published
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -360,6 +361,12 @@ func TestAShallowCloneIsStatedAndNeverClean(t *testing.T) {
 	if !report.Shallow || report.Status != StatusValid || len(report.NotHeld) != 1 || report.NotHeld[0].ID != "old" {
 		t.Fatalf("unexpected report: %#v", report)
 	}
+	// A manifest is never written from a shallow clone, with or without one
+	// given: it could pin bytes a tag it lacks published otherwise.
+	options.Writing = true
+	if _, failure := Check(options); failure == nil || failure.Code != FailureShallow {
+		t.Fatalf("writing a manifest from a shallow clone must be refused: %#v", failure)
+	}
 }
 
 func TestTheManifestRoundTripsAndCatchesTamperingAndVanishing(t *testing.T) {
@@ -449,9 +456,16 @@ func TestTheManifestReaderRefusesWhatItWouldNotWrite(t *testing.T) {
 		"entry member":      `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `}`, `, "path": "p"}`, 1) + `]}`,
 		"twice":             `{"manifestVersion": "1", "documents": [` + entry + `, ` + entry + `]}`,
 	} {
-		if _, err := ReadManifest([]byte(document)); err == nil {
+		_, err := ReadManifest([]byte(document))
+		if err == nil {
 			t.Errorf("%s: the manifest must be refused", name)
 		}
+		if errors.Is(err, ErrManifestVersion) != (name == "other version") {
+			t.Errorf("%s: only another manifestVersion is a version refusal: %v", name, err)
+		}
+	}
+	if _, err := ReadManifest([]byte(`{"manifestVersion": 1, "documents": []}`)); err == nil || errors.Is(err, ErrManifestVersion) {
+		t.Errorf("a manifestVersion that is not a string is damage, not another version: %v", err)
 	}
 }
 
