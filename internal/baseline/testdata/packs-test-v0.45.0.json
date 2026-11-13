@@ -1,0 +1,81 @@
+{
+  "outputVersion": "2",
+  "tool": {
+    "name": "jpack",
+    "version": "0.45.0"
+  },
+  "command": "packs test",
+  "status": "passed",
+  "experimental": true,
+  "evaluatorSpecVersion": "0.2.0-draft",
+  "conformanceClaimReference": "CONFORMANCE.md",
+  "label": "project matrix results: rows a project wrote about its own packs, run through the experimental evaluator; that evaluator's conformance claim is stated, in full and only, in CONFORMANCE.md",
+  "kind": "non-normative-runtime-convention",
+  "configPath": "jpack.json",
+  "configVersion": "1",
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "mismatched": 0
+  },
+  "packs": [
+    {
+      "id": "intake",
+      "packId": "https://example.invalid/judgment-packs/data-request-intake-triage",
+      "packVersion": "0.1.0",
+      "path": "packs/intake-0.1.0.pack.json",
+      "matrixPath": "packs/intake.matrix.json",
+      "status": "passed",
+      "summary": {
+        "total": 2,
+        "passed": 2,
+        "mismatched": 0
+      },
+      "rows": [
+        {
+          "id": "hard-fail",
+          "origin": "",
+          "specSection": "",
+          "packId": "https://example.invalid/judgment-packs/data-request-intake-triage",
+          "packVersion": "0.1.0",
+          "status": "passed",
+          "expected": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"decline-redirect\",\"reasons\":[]}",
+          "actual": "{\"handoff\":{\"state\":\"none\"},\"kind\":\"outcome\",\"outcomeId\":\"decline-redirect\",\"reasons\":[]}"
+        },
+        {
+          "id": "undeclared-key",
+          "origin": "",
+          "specSection": "",
+          "status": "passed",
+          "expected": "",
+          "actual": "",
+          "expectedErrorClass": "malformed-input",
+          "actualErrorClass": "malformed-input",
+          "expectedErrorPhase": "preflight",
+          "actualErrorPhase": "preflight"
+        }
+      ],
+      "coverage": [
+        {
+          "probe": "outcome:proceed",
+          "status": "missing",
+          "detail": "No row expects an outcome disposition naming \"proceed\"."
+        }
+      ]
+    },
+    {
+      "id": "unmatrixed",
+      "packId": "",
+      "packVersion": "",
+      "path": "packs/unmatrixed.pack.json",
+      "status": "skipped",
+      "summary": {
+        "total": 0,
+        "passed": 0,
+        "mismatched": 0
+      },
+      "rows": [],
+      "detail": "The entry declares no matrix, so no row ran for this pack."
+    }
+  ]
+}
