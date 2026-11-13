@@ -53,7 +53,8 @@ All notable changes to tagged releases are documented here.
   and writes no new entry for an identity whose bytes have a finding, which it reports as
   withheld. A shallow clone is refused without a
   manifest and stated as shallow with one; a partial clone is refused. It exits 0 when valid, 1
-  with a finding, with something unread, or when no tag was read and no manifest pin given, 3 for
+  with a finding, with something unread, when no tag was read and no manifest pin given, or when
+  tags were read and no document was read at any of them or at HEAD, 3 for
   a usage error and 4 when the repository cannot be read, or when its trees name more than one run
   reads, 1,000,000 directories or 1 GiB of tree objects (`JPS-RESOURCE-TREE-WALK-LIMIT`).
   It runs `git` from `PATH` with hooks, pagers, fsmonitor, replace refs, credential helpers and

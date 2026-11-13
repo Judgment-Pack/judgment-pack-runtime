@@ -152,6 +152,10 @@ type Report struct {
 	// so nothing published was there to check against; the run is then
 	// incomplete, never valid.
 	NothingPublished bool
+	// NothingRead says tags were read but no pack or dialect document was
+	// found at any of them or at HEAD, as when --include selects nothing:
+	// there was nothing to check, and the run is incomplete, never valid.
+	NothingRead bool
 	// Identities is the number of identities a tag published.
 	Identities int
 	// Documents is the number of distinct document blobs read; OtherFiles
@@ -326,10 +330,14 @@ func Check(options Options) (*Report, *Failure) {
 	// With no tag read and no pin given, nothing published was there to
 	// compare HEAD with: a run that checked nothing is not clean.
 	report.NothingPublished = report.TagsRead == 0 && (options.Manifest == nil || len(options.Manifest.Documents) == 0)
+	// With tags read and no document found anywhere, the selection read
+	// nothing a tag could have published: a run that checked nothing is not
+	// clean either.
+	report.NothingRead = report.TagsRead > 0 && report.Documents == 0
 	switch {
 	case report.FindingCount > 0:
 		report.Status = StatusInvalid
-	case report.UnreadableCount > 0 || report.UnreadTagCount > 0 || report.NothingPublished:
+	case report.UnreadableCount > 0 || report.UnreadTagCount > 0 || report.NothingPublished || report.NothingRead:
 		report.Status = StatusIncomplete
 	default:
 		report.Status = StatusValid

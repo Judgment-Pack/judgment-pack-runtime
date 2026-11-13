@@ -78,7 +78,11 @@ jpack experimental check-published [--repo DIR] [--tags GLOB]... [--include GLOB
   that keeps test fixtures, examples or schemas beside its published documents should name the
   directories that hold what it publishes, for example `--include 'packs/**/*.json'
   --include 'dialects/**/*.json'`: a fixture that reuses one identity for two documents is a
-  `duplicate` finding like any other.
+  `duplicate` finding like any other. A pattern matches a file's whole path, so `--exclude
+  testdata` excludes nothing below a directory `testdata`; write `--exclude 'testdata/**'`. A run
+  that reads tags but no pack or dialect document at any of them or at HEAD, as a wrong
+  `--include` does, has checked nothing: it is incomplete, never valid, and, when nothing else
+  went unread, the first line of the text output says that no document was read.
 
 In a pattern, `*` matches within one slash-separated segment, `**` as a whole segment matches any
 number of segments, and `?` and `[...]` are as in Go's `path.Match`. Patterns match paths from the
@@ -128,7 +132,7 @@ encoder writes it.
 | --- | --- | --- |
 | `valid` | 0 | Every identity keeps its published bytes and every selected tag and file was read. |
 | `invalid` | 1 | At least one finding. |
-| `incomplete` | 1 | No finding, and a selected tag or file could not be read, or no tag was read and no manifest pin was given, so nothing published was checked. |
+| `incomplete` | 1 | No finding, and a selected tag or file could not be read, or no tag was read and no manifest pin was given, so nothing published was checked, or tags were read and no document was read at any of them or at HEAD. |
 | `error` | 1 | The `--manifest` file is not a manifest this runtime reads (`JPS-PUBLISHED-MANIFEST`). |
 | `unsupported` | 2 | The `--manifest` file declares a later `manifestVersion`. |
 | `error` | 3 | A usage error: a pattern, `--strict` without `--manifest`, a `--write-manifest` target that is not a manifest. |
