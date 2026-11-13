@@ -57,8 +57,10 @@ func (a *App) packsCommand() *cobra.Command {
 	// rather than on this one as a persistent flag. packs schema prints an
 	// embedded artifact and packs describe reads one pack document; neither
 	// touches a configuration, and a flag inherited into its help would promise
-	// an effect it does not have. packs covers registers a --config of its own
-	// that selects no project and has its own usage line.
+	// an effect it does not have, and neither do packs sign and packs
+	// verify-signature, which read one pack file, its signature and a key
+	// (ADR-0083). packs covers registers a --config of its own that selects no
+	// project and has its own usage line.
 	packs.AddCommand(
 		a.packsListCommand(),
 		a.packsValidateCommand(),
@@ -70,6 +72,8 @@ func (a *App) packsCommand() *cobra.Command {
 		a.packsLintCommand(),
 		a.packsSchemaCommand(),
 		a.packsDescribeCommand(),
+		a.packsSignCommand(),
+		a.packsVerifySignatureCommand(),
 	)
 	return packs
 }

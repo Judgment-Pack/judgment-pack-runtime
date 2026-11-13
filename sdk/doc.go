@@ -14,7 +14,9 @@
 //
 // Draft-RFC prototype options, work-budget overrides, project features
 // (configuration, reviewed-set locks, audit records, signing) and the
-// validation-only and test surfaces are not offered here. The decision record
+// validation-only and test surfaces are not offered here. Package sdk/packsig
+// checks a pack's detached signature against the key a caller expects before
+// Load, and signs nothing. The decision record
 // Pack.EvaluateWithRecord returns is not an audit record: it is written
 // nowhere and is the caller's to keep.
 //
@@ -41,6 +43,10 @@
 //     ErrBinding;
 //   - Evaluation.OutcomeAnnotations, which returns view.Annotation values of
 //     package sdk/view (Core 0.5.0 only);
+//   - package sdk/packsig: Verify and Load, which check a pack's detached
+//     signature against an expected key, Load before sdk.Load reads any rule,
+//     with Signature, Refusal and Refusal.Error, SignatureVersion,
+//     Algorithm, FileSuffix, MaxSignatureBytes and the Code constants;
 //   - the constants ClassPackNotConformant, ClassMalformedInput,
 //     ClassUnsupportedRequiredExtension, ClassResourceExhaustion,
 //     PhasePreflight and PhaseEvaluation.

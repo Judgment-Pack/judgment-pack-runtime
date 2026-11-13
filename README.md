@@ -118,6 +118,8 @@ jpack packs lint [--producers M]   (every consulted pointer has a producer; ADR-
 jpack packs schema
 jpack packs describe <pack-or-> [--format markdown|json]   (EXPERIMENTAL; the whole pack as written, for review; opens no project; ADR-0074)
 jpack packs describe <pack-or-> --filter key=value ...    (EXPERIMENTAL; only the outcomes and rules of a 0.5.0 pack whose annotations match; ADR-0075)
+jpack packs sign <pack-file> --key <seed-file> [--public-key F] [--output F]   (EXPERIMENTAL; a detached signature over the file's exact bytes; opens no project; ADR-0083)
+jpack packs verify-signature <pack-file> --public-key F [--signature F]   (EXPERIMENTAL; the signature checked against the key you expect, before the pack is read; ADR-0083)
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
@@ -331,6 +333,14 @@ an audit-trail entry, it is unsigned, its binding is the caller's assertion, and
 facts and evidence by digest only. `evaluated.OutcomeAnnotations()` returns the chosen outcome's
 annotations, as the view carries them. Both are experimental, and the record carries its own
 `recordVersion`.
+
+Package `sdk/packsig` refuses a pack before any rule is read unless the key the caller expects
+signed its exact bytes ([Pack signatures](docs/pack-signatures.md),
+[ADR-0083](docs/adr/0083-sign-a-pack-file-and-check-the-signature-before-use.md)):
+`packsig.Load(ctx, packBytes, signatureBytes, expectedKey, sdk.LoadOptions{})` checks the
+signature document `jpack packs sign` wrote and loads the same bytes it checked. An accepted
+signature establishes only that these bytes were signed by the holder of that key; it is
+experimental, like the rest of the Go API.
 
 ## Build and try it locally
 

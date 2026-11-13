@@ -18,7 +18,9 @@ import (
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/edkey"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/packsig"
 )
 
 // The signature sidecar (ADR-0047 §2b). Beside a chained trail, a writer that
@@ -207,8 +209,17 @@ func (s *Signer) KeyID() string { return KeyID(s.public) }
 // KeyID is a public key's id in the gateway's form: the first 32 lowercase
 // hexadecimal characters of the SHA-256 of its 32 raw bytes.
 func KeyID(public ed25519.PublicKey) string {
-	sum := sha256.Sum256(public)
-	return hex.EncodeToString(sum[:])[:32]
+	return edkey.ID(public)
+}
+
+// SignPack is the pack signature document, its newline included, by which s
+// signs the pack whose file bytes are pack (ADR-0083): Ed25519 over
+// packsig.Message of their SHA-256, never over the bytes themselves, so the
+// signature is one of a pack and of nothing else. The signer offers no way to
+// sign other bytes than the messages of its three kinds.
+func (s *Signer) SignPack(pack []byte) []byte {
+	digest := sha256.Sum256(pack)
+	return packsig.Encode(s.public, digest, ed25519.Sign(s.private, packsig.Message(digest)))
 }
 
 // NewSignerFromSeed is a signer for a 32-byte seed.
