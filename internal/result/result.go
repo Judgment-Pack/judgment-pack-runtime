@@ -1245,6 +1245,15 @@ type PackValidationEntry struct {
 	Path   string      `json:"path"`
 	Status string      `json:"status"`
 	Checks []PackCheck `json:"checks"`
+	// Advisories are the diagnostics spec validate reports beside a valid
+	// verdict for the same pack bytes: the non-normative JPS-RULES-OVERLAP
+	// warnings of Core 0.3.0 and 0.5.0 (ADR-0066, ADR-0081), carried as spec
+	// validate carries them. Advice moves no Status and no exit code. Absent
+	// when the document check did not pass or the pack draws no advice.
+	Advisories []Diagnostic `json:"advisories,omitempty"`
+	// AdvisoriesTruncated is true when the advice stopped at the validation
+	// output limit, as spec validate's diagnosticsTruncated says.
+	AdvisoriesTruncated bool `json:"advisoriesTruncated,omitempty"`
 }
 
 // PackValidation is one packs validate report.

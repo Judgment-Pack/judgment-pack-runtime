@@ -430,6 +430,14 @@ func (a *App) renderPackValidation(format string, output result.PackValidation) 
 			}
 			fmt.Fprintln(a.out, line)
 		}
+		// Advice, printed as spec validate prints it beside a valid verdict
+		// (ADR-0081). It is not a check and moves no status.
+		for _, diagnostic := range pack.Advisories {
+			fmt.Fprintf(a.out, "  advice: %s %s %s: %s\n", display.Sanitize(diagnostic.Severity), display.Sanitize(diagnostic.Code), display.Sanitize(diagnostic.InstancePath), display.Sanitize(diagnostic.Message))
+		}
+		if pack.AdvisoriesTruncated {
+			fmt.Fprintln(a.out, "  advice: truncated at the validation output limit")
+		}
 	}
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	return nil

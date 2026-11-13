@@ -769,7 +769,10 @@ func (a *App) packsValidateCommand() *cobra.Command {
 			"the document's version -- a filename outside the convention is not a defect and is skipped, and one " +
 			"inside it is held to it; every hint key names something the pack document has -- an evidence hint a " +
 			"declared evidence-requirement id, a fact hint a pointer some condition reads -- because a hint this " +
-			"runtime never resolves is instructions an agent follows; and a declared matrix loads as rows. It " +
+			"runtime never resolves is instructions an agent follows; and a declared matrix loads as rows. Beside a " +
+			"pack whose document check passed, the advice spec validate reports for the same bytes -- the " +
+			"non-normative JPS-RULES-OVERLAP warnings of Core 0.3.0 and 0.5.0 -- is carried as the entry's " +
+			"advisories, and moves no status and no exit code (ADR-0081). It " +
 			"evaluates nothing and runs no row: that is packs test. Exit 0 when every check passed, 1 when any " +
 			"failed.",
 		Args: cobra.NoArgs,

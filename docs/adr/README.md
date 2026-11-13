@@ -176,3 +176,4 @@ authority, and following it confers no conformance status on anything.
 | [0078](0078-keep-annotation-text-from-reordering-its-line.md) | Keep annotation text from reordering its line, and keep a run of spaces visible, in the Markdown views | accepted |
 | [0079](0079-a-decision-record-for-an-evaluation.md) | Return a canonical decision record for one evaluation from the Go API, written nowhere | proposed |
 | [0080](0080-let-packs-test-require-coverage.md) | Let a packs test run require a coverage level and witnessed boundaries | proposed |
+| [0081](0081-carry-rule-overlap-advice-in-packs-validate.md) | Carry the rule-overlap advice of spec validate in packs validate | proposed |

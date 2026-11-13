@@ -214,6 +214,13 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 		add(CheckDocument, result.PackCheckFailed, display.Sanitize(operational.Message))
 	case validated.Status == "valid":
 		add(CheckDocument, result.PackCheckPassed, "")
+		// What spec validate reports beside a valid verdict for these bytes
+		// is advice, carried beside the checks and moving no status
+		// (ADR-0081).
+		if len(validated.Diagnostics) > 0 {
+			report.Advisories = validated.Diagnostics
+			report.AdvisoriesTruncated = validated.DiagnosticsTruncated
+		}
 	default:
 		add(CheckDocument, result.PackCheckFailed, documentDetail(validated))
 	}

@@ -694,7 +694,11 @@ jpack packs validate && jpack packs lint && jpack packs test && jpack packs veri
 resolves inside the configuration's directory; the document validates through the semantic layer;
 an `expectedVersion` pin equals the document's `version`; the filename, when it follows the
 convention, agrees with both; every hint key names something the document has; and a declared matrix
-loads as rows. `packs test` then runs every row. Both exit `1` on any failure. Every check is
+loads as rows. Beside a pack whose document validates, `packs validate` also carries, as the entry's
+`advisories`, the advice `spec validate` reports for the same bytes — the non-normative
+`JPS-RULES-OVERLAP` warnings for two rules that can both match with different outcomes, under Core
+`0.3.0` and `0.5.0` — and prints each as an `advice:` line; advice is not a check and moves no exit
+code (ADR-0081). `packs test` then runs every row. Both exit `1` on any failure. Every check is
 reported with its status — `passed`, `failed`, or `skipped` — so you can tell a check that passed
 from one the configuration never asked for.
 

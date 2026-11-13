@@ -40,6 +40,12 @@ All notable changes to tagged releases are documented here.
   human output a `required:` line per option. Neither option touches a pack with no matrix. A
   level outside 0 to 100 is refused with `JPS-INVOCATION-MIN-COVERAGE`, exit 3. Without the options
   the output and the exit code are unchanged.
+- **`packs validate` reports the rule-overlap advice `spec validate` reports** (#389, ADR-0081). A
+  pack entry whose document check passed carries, as the new member `advisories`, the diagnostics
+  `spec validate` reports beside a valid verdict for the same bytes (the `JPS-RULES-OVERLAP`
+  warnings of Core `0.3.0` and `0.5.0`, member for member), and `advisoriesTruncated` when they
+  stopped at the output limit; the human output prints each as an `advice:` line under its pack.
+  Advice moves no status and no exit code. A pack that draws none carries no member.
 - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.44.0 - 2026-11-12
