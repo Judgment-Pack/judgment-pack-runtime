@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.45.0 - 2026-11-13
 
 - **`experimental evaluate --batch` evaluates many facts documents against one pack in one run**
   (#357, ADR-0085; EXPERIMENTAL). The batch is JSON Lines, a file or `-`, each line one object

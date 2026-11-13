@@ -174,10 +174,10 @@ authority, and following it confers no conformance status on anything.
 | [0076](0076-show-annotation-text-recoverably-on-every-surface.md) | Show every annotation character outside printable ASCII recoverably: exact in the JSON, in ASCII in the Markdown and the messages | accepted |
 | [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) | Admit Core 0.5.0, base profile, and retire the staged selector 0.4.0-draft | accepted; its dialect-check refusal superseded by [0082](0082-let-the-dialect-check-read-core-0-5-0-packs.md) |
 | [0078](0078-keep-annotation-text-from-reordering-its-line.md) | Keep annotation text from reordering its line, and keep a run of spaces visible, in the Markdown views | accepted |
-| [0079](0079-a-decision-record-for-an-evaluation.md) | Return a canonical decision record for one evaluation from the Go API, written nowhere | proposed |
-| [0080](0080-let-packs-test-require-coverage.md) | Let a packs test run require a coverage level and witnessed boundaries | proposed |
-| [0081](0081-carry-rule-overlap-advice-in-packs-validate.md) | Carry the rule-overlap advice of spec validate in packs validate | proposed |
-| [0082](0082-let-the-dialect-check-read-core-0-5-0-packs.md) | Let the dialect check read Core 0.5.0 packs | proposed |
-| [0083](0083-sign-a-pack-file-and-check-the-signature-before-use.md) | Sign a pack file's bytes, and check the signature against an expected key before the pack is used | proposed |
-| [0084](0084-measure-test-strength-with-pack-variants.md) | Measure a matrix's test strength with variants of its pack | proposed |
-| [0085](0085-evaluate-a-batch-of-fact-documents-in-one-run.md) | Evaluate a batch of fact documents in one run | proposed |
+| [0079](0079-a-decision-record-for-an-evaluation.md) | Return a canonical decision record for one evaluation from the Go API, written nowhere | accepted |
+| [0080](0080-let-packs-test-require-coverage.md) | Let a packs test run require a coverage level and witnessed boundaries | accepted |
+| [0081](0081-carry-rule-overlap-advice-in-packs-validate.md) | Carry the rule-overlap advice of spec validate in packs validate | accepted |
+| [0082](0082-let-the-dialect-check-read-core-0-5-0-packs.md) | Let the dialect check read Core 0.5.0 packs | accepted |
+| [0083](0083-sign-a-pack-file-and-check-the-signature-before-use.md) | Sign a pack file's bytes, and check the signature against an expected key before the pack is used | accepted |
+| [0084](0084-measure-test-strength-with-pack-variants.md) | Measure a matrix's test strength with variants of its pack | accepted |
+| [0085](0085-evaluate-a-batch-of-fact-documents-in-one-run.md) | Evaluate a batch of fact documents in one run | accepted |
