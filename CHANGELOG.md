@@ -143,8 +143,10 @@ All notable changes to tagged releases are documented here.
   outcome's level and the outcomes most severe first, one level in document order, with those
   without a level apart, in document order. An outcome whose severity is not exactly a level shows
   none, and none is supplied. `viewVersion` moves to `"2"` for every view; a view of a Core `0.3.0`
-  or `0.2.0-draft` pack changes in its version line alone. The filtered view and `packs diff` are
-  unchanged, and keep their versions.
+  or `0.2.0-draft` pack changes in its version line alone. A consumer that accepts only
+  `viewVersion` `"1"` therefore refuses every view, those of packs under other selectors included,
+  though their only change is that line. The filtered view and `packs diff` are unchanged, and keep
+  their versions.
 - The Spec's rows for the vocabulary, vendored from Spec release `v0.5.2` with their digests, run
   as tests: 31 of the 32 give the result their row states, `profile-extended` is not run because
   this runtime reads the base profile only, and the packs of the inertness pair decide alike. This
