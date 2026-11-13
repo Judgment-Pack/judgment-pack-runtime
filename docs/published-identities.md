@@ -118,7 +118,7 @@ encoder writes it.
 | `error` | 1 | The `--manifest` file is not a manifest this runtime reads (`JPS-PUBLISHED-MANIFEST`). |
 | `unsupported` | 2 | The `--manifest` file declares a later `manifestVersion`. |
 | `error` | 3 | A usage error: a pattern, `--strict` without `--manifest`, a `--write-manifest` target that is not a manifest. |
-| `error` | 4 | The repository could not be read, and nothing is reported (`JPS-PUBLISHED-*`, below). |
+| `error` | 4 | The repository could not be read, and nothing is reported (`JPS-PUBLISHED-*`, below), or the `--manifest` file could not be read (`JPS-INPUT-READ`, `JPS-RESOURCE-INPUT-BYTE-LIMIT`) or the manifest written. |
 
 | Code | Meaning |
 | --- | --- |

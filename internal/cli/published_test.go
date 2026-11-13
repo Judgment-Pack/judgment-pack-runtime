@@ -245,6 +245,9 @@ func TestCheckPublishedRefusalsAndTheirExitStatuses(t *testing.T) {
 		{"unknown flag", []string{"--repo", repo.Dir, "--unknown"}, 3, "JPS-INVOCATION-ARGUMENTS"},
 		{"damaged manifest", []string{"--repo", repo.Dir, "--manifest", manifest(`{"manifestVersion": "1"}`)}, 1, "JPS-PUBLISHED-MANIFEST"},
 		{"later manifest", []string{"--repo", repo.Dir, "--manifest", manifest(`{"manifestVersion": "2", "documents": []}`)}, 2, "JPS-PUBLISHED-MANIFEST-VERSION"},
+		{"empty manifest", []string{"--repo", repo.Dir, "--manifest", manifest("")}, 1, "JPS-PUBLISHED-MANIFEST"},
+		{"missing manifest", []string{"--repo", repo.Dir, "--manifest", filepath.Join(t.TempDir(), "absent.json")}, 4, "JPS-INPUT-READ"},
+		{"oversized manifest", []string{"--repo", repo.Dir, "--manifest", manifest(strings.Repeat(" ", int(published.MaxManifestBytes)+1))}, 4, "JPS-RESOURCE-INPUT-BYTE-LIMIT"},
 		{"no repository", []string{"--repo", t.TempDir()}, 4, "JPS-PUBLISHED-REPOSITORY"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
