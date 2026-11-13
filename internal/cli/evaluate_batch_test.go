@@ -86,10 +86,28 @@ func strippedRecord(record map[string]any) map[string]any {
 	return stripped
 }
 
+// escapedU is s with each %u made a JSON escape's backslash and u.
+func escapedU(s string) string { return strings.ReplaceAll(s, "%u", "\\"+"u") }
+
 // The items the identity test runs: dispositions, every kind of refusal the
-// engine gives a facts or an evidence document, and the facts byte limit.
+// engine gives a facts or an evidence document, the facts byte limit, nesting
+// deeper than a JSON decoder's own limit, and values that are not JSON, which
+// the engine refuses for a batch exactly as for a file.
 func identityItems() []testBatchItem {
+	nested := func(depth int) string {
+		return `{"request":` + strings.Repeat("[", depth) + strings.Repeat("]", depth) + `}`
+	}
 	return []testBatchItem{
+		{id: "quotes and brackets in strings", facts: `{"request":{"type":"a\"}]{[\\","completeness":"complete"}}`},
+		{id: "nested past a decoder's depth", facts: nested(10001)},
+		{facts: nested(30000), evidence: presentEvidence},
+		{id: "not JSON", facts: `NaN`},
+		{facts: "{\"request\":{\"type\":\"a\tb\"}}"},
+		{facts: `[}`},
+		{facts: hardFailFacts, evidence: `{"intake-form":present}`},
+		// A backslash, then u and four digits: an id of that text, which
+		// escapes nothing.
+		{id: escapedU("%ud800"), facts: hardFailFacts},
 		{id: "decided", facts: hardFailFacts, evidence: presentEvidence},
 		{facts: hardFailFacts},
 		{id: "partial", facts: `{"request":{"type":"data-access"}}`},
@@ -164,18 +182,31 @@ func TestBatchResultsAreSingleEvaluateResults(t *testing.T) {
 				return append([]string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--format", "json"}, c.extra...)
 			}
 			code, stdout, stderr := runTest(t, append(args(batchProject), "--batch", batch), "")
-			if code != result.ExitInvalid || stderr != "" {
-				t.Fatalf("batch: exit=%d stderr=%q", code, stderr)
+			lines := decodedBatch(t, stdout)
+			if len(lines) != len(items) {
+				t.Fatalf("%d lines for %d items", len(lines), len(items))
+			}
+			// A batch that records names its run on every line, and on
+			// standard error before its first record; one that records
+			// nothing names none.
+			run := lines[0].Run
+			wantErr := ""
+			if c.recording {
+				wantErr = fmt.Sprintf(batchRunNote, run)
+			}
+			if code != result.ExitInvalid || stderr != wantErr || (run != "") != c.recording {
+				t.Fatalf("batch: exit=%d run=%q stderr=%q", code, run, stderr)
+			}
+			for _, line := range lines {
+				if line.Run != run {
+					t.Fatalf("line %d names run %q, line 1 %q", line.Line, line.Run, run)
+				}
 			}
 			if strings.Contains(stdout, `"JPS-AUDIT-UNSIGNED"`) != c.warns {
 				t.Fatalf("the unsigned warning: want %v", c.warns)
 			}
 			if strings.Contains(stdout, `"reviewed":true,"reviewedSet":`) != c.reviewed {
 				t.Fatalf("the reviewed set on the payload: want %v", c.reviewed)
-			}
-			lines := decodedBatch(t, stdout)
-			if len(lines) != len(items) {
-				t.Fatalf("%d lines for %d items", len(lines), len(items))
 			}
 			recorded := 0
 			for index, item := range items {
@@ -204,17 +235,15 @@ func TestBatchResultsAreSingleEvaluateResults(t *testing.T) {
 			if recorded == 0 || len(batchRecords) != recorded || len(singleRecords) != recorded {
 				t.Fatalf("records: batch %d, single %d, want %d", len(batchRecords), len(singleRecords), recorded)
 			}
-			runs := map[any]bool{}
 			for index := range batchRecords {
-				runs[batchRecords[index]["run"]] = true
+				if batchRecords[index]["run"] != run {
+					t.Fatalf("record %d carries run %v, the batch's lines %q", index+1, batchRecords[index]["run"], run)
+				}
 				got, _ := json.Marshal(strippedRecord(batchRecords[index]))
 				want, _ := json.Marshal(strippedRecord(singleRecords[index]))
 				if !bytes.Equal(got, want) {
 					t.Fatalf("record %d:\n got %s\nwant %s", index+1, first(string(got), 800), first(string(want), 800))
 				}
-			}
-			if len(runs) != 1 {
-				t.Fatalf("a batch's records share one run id: %v", runs)
 			}
 			for _, configPath := range []string{batchProject, singleProject} {
 				if code, report := verification(t, "--config", configPath); code != 0 || report.Status != "valid" {
@@ -239,7 +268,7 @@ func TestBatchExitCodes(t *testing.T) {
 	t.Run("every item decided", func(t *testing.T) {
 		configPath := auditProject(t)
 		code, lines, stderr := run(t, configPath, batchLines([]testBatchItem{decided, decided, decided}))
-		if code != result.ExitSuccess || stderr != "" || len(lines) != 3 || len(auditRecords(t, configPath)) != 3 {
+		if code != result.ExitSuccess || len(lines) != 3 || stderr != fmt.Sprintf(batchRunNote, lines[0].Run) || len(auditRecords(t, configPath)) != 3 {
 			t.Fatalf("exit=%d lines=%d stderr=%q", code, len(lines), stderr)
 		}
 	})
@@ -272,8 +301,9 @@ func TestBatchExitCodes(t *testing.T) {
 			lines[2].Line != 3 || lines[2].ExitCode != result.ExitIO || !strings.Contains(string(lines[2].Result), `"JPS-RESOURCE-BATCH-ITEMS"`) {
 			t.Fatalf("exit=%d %+v", code, lines)
 		}
-		if records := auditRecords(t, configPath); len(records) != 2 {
-			t.Fatalf("the items before the ceiling are recorded: %d", len(records))
+		// The stopping line names the run the records carry.
+		if records := auditRecords(t, configPath); len(records) != 2 || lines[2].Run == "" || records[1]["run"] != lines[2].Run {
+			t.Fatalf("the items before the ceiling are recorded, under the stop line's run %q: %d", lines[2].Run, len(records))
 		}
 		code, lines, _ = run(t, configPath, batchLines([]testBatchItem{decided, decided}), "--max-items", "2")
 		if code != result.ExitSuccess || len(lines) != 2 {
@@ -305,8 +335,25 @@ func TestBatchItemShapeIsHeld(t *testing.T) {
 		`{"facts":{}} {"facts":{}}`,
 		`{"facts":{}}x`,
 		`{"facts":{}`,
-		`{"facts":NaN}`,
 		`{"facts":{},"evidence":{},"evidence":{}}`,
+		// A name is spelled as written, escapes undecoded.
+		escapedU(`{"%u0066acts":{}}`),
+		escapedU(`{"facts":{},"evidenc%u0065":{}}`),
+		// An escaped half of a surrogate pair is not a character of an id.
+		escapedU(`{"facts":{},"id":"%ud800"}`),
+		escapedU(`{"facts":{},"id":"%udc00"}`),
+		escapedU(`{"facts":{},"id":"x%ud800%u0041"}`),
+		escapedU(`{"facts":{},"id":"%ud83d"}`),
+		// Lines whose object cannot be delimited.
+		`{"facts":{},}`,
+		`{,"facts":{}}`,
+		`{"facts":}`,
+		`{"facts" {}}`,
+		`{"facts":{}"id":"x"}`,
+		`{"facts":"open}`,
+		`{"facts":{"a":[1}`,
+		`{"facts`,
+		`{"facts":{}]`,
 	}
 	input := ""
 	for _, line := range refused {
@@ -334,14 +381,24 @@ func TestBatchItemShapeIsHeld(t *testing.T) {
 	if lines := decodedBatch(t, stdout); code != result.ExitSuccess || len(lines) != 1 || lines[0].ID == nil || len(*lines[0].ID) != MaxBatchIDBytes {
 		t.Fatalf("an id at the bound: exit=%d %s", code, stdout)
 	}
+	// An escaped surrogate pair is the one character it escapes, and other
+	// escapes are decoded, in the id echoed.
+	code, stdout, _ = runTest(t, []string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--format", "json", "--batch", "-"},
+		escapedU(`{"facts":{},"id":"a%ud83d%ude00%u0062"}`)+"\n")
+	if lines := decodedBatch(t, stdout); code != result.ExitSuccess || len(lines) != 1 || lines[0].ID == nil || *lines[0].ID != "a\U0001F600b" {
+		t.Fatalf("an escaped pair: exit=%d %s", code, stdout)
+	}
 }
 
-// generatedLine is a reader of one line of n bytes, {"facts":"aaa…"} and a
-// newline, made as it is read rather than held.
-func generatedLine(n int64) io.Reader {
+// generatedLine is a reader of one line of n bytes, {"facts":"aaa…"}, and a
+// newline when newline is true, made as it is read rather than held.
+func generatedLine(n int64, newline bool) io.Reader {
 	head, tail := `{"facts":"`, `"}`
-	body := n - int64(len(head)+len(tail))
-	return io.MultiReader(strings.NewReader(head), io.LimitReader(repeatedByte('a'), body), strings.NewReader(tail+"\n"))
+	if newline {
+		tail += "\n"
+	}
+	body := n - int64(len(head)+len(`"}`))
+	return io.MultiReader(strings.NewReader(head), io.LimitReader(repeatedByte('a'), body), strings.NewReader(tail))
 }
 
 type repeatedByte byte
@@ -355,21 +412,42 @@ func (b repeatedByte) Read(p []byte) (int, error) {
 
 // A line at the bound is read and its facts are the engine's to refuse at
 // their byte limit; a line one byte longer is refused unread, for its own
-// line, and the batch goes on.
+// line, and the batch goes on. The newline that ends a line is not counted,
+// so a last line without one is bounded at the same length.
 func TestBatchLineIsBounded(t *testing.T) {
 	configPath := auditProject(t)
 	decided := testBatchItem{facts: hardFailFacts}.line() + "\n"
-	input := io.MultiReader(strings.NewReader(decided), generatedLine(maxBatchLineBytes), generatedLine(maxBatchLineBytes+1), strings.NewReader(decided))
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--format", "json", "--batch", "-"}, input, &stdout, &stderr)
-	lines := decodedBatch(t, stdout.String())
-	if code != result.ExitInvalid || len(lines) != 4 {
-		t.Fatalf("exit=%d lines=%d stderr=%q", code, len(lines), stderr.String())
+	run := func(t *testing.T, input io.Reader) []batchLine {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		code := Run([]string{"experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--format", "json", "--batch", "-"}, input, &stdout, &stderr)
+		lines := decodedBatch(t, stdout.String())
+		if code != result.ExitInvalid || len(lines) < 2 || lines[0].ExitCode != 0 {
+			t.Fatalf("exit=%d lines=%d stderr=%q", code, len(lines), stderr.String())
+		}
+		return lines
 	}
-	if lines[0].ExitCode != 0 || lines[3].ExitCode != 0 ||
-		lines[1].ExitCode != result.ExitIO || !strings.Contains(string(lines[1].Result), `"JPS-RESOURCE-INPUT-BYTE-LIMIT"`) ||
-		lines[2].ExitCode != result.ExitIO || !strings.Contains(string(lines[2].Result), `"`+batchLineCode+`"`) {
-		t.Fatalf("lines: %d %s / %d %s", lines[1].ExitCode, first(string(lines[1].Result), 300), lines[2].ExitCode, first(string(lines[2].Result), 300))
+	refusedFor := func(t *testing.T, line batchLine, code string) {
+		t.Helper()
+		if line.ExitCode != result.ExitIO || !strings.Contains(string(line.Result), `"`+code+`"`) {
+			t.Fatalf("line %d: want %s, got %d %s", line.Line, code, line.ExitCode, first(string(line.Result), 300))
+		}
+	}
+	lines := run(t, io.MultiReader(strings.NewReader(decided), generatedLine(maxBatchLineBytes, true), generatedLine(maxBatchLineBytes+1, true), strings.NewReader(decided)))
+	if len(lines) != 4 || lines[3].ExitCode != 0 {
+		t.Fatalf("lines %+v", lines)
+	}
+	refusedFor(t, lines[1], "JPS-RESOURCE-INPUT-BYTE-LIMIT")
+	refusedFor(t, lines[2], batchLineCode)
+	for _, c := range []struct {
+		length int64
+		code   string
+	}{{maxBatchLineBytes, "JPS-RESOURCE-INPUT-BYTE-LIMIT"}, {maxBatchLineBytes + 1, batchLineCode}} {
+		lines := run(t, io.MultiReader(strings.NewReader(decided), generatedLine(c.length, false)))
+		if len(lines) != 2 {
+			t.Fatalf("a last line of %d bytes without a newline: %+v", c.length, lines)
+		}
+		refusedFor(t, lines[1], c.code)
 	}
 }
 
@@ -433,9 +511,31 @@ func TestBatchRefusesAPackOnce(t *testing.T) {
 	noAuditTrail(t, configPath)
 }
 
+// unconfirmedResult is the result a batch reports for an evaluation whose
+// chunk's append failed: the envelope a single run reports for the failure,
+// its message opened by the sentence that says the record is not confirmed.
+func unconfirmedResult(t *testing.T, single string) string {
+	t.Helper()
+	var envelope result.OperationalError
+	if err := json.Unmarshal([]byte(single), &envelope); err != nil || len(envelope.Diagnostics) != 1 {
+		t.Fatalf("a single run's refusal: %v %q", err, single)
+	}
+	var same bytes.Buffer
+	if err := writeJSON(&same, envelope, false); err != nil || same.String() != single+"\n" {
+		t.Fatalf("the envelope re-encodes as it was: %v %q", err, same.String())
+	}
+	envelope.Diagnostics[0].Message = batchUnconfirmed + envelope.Diagnostics[0].Message
+	var encoded bytes.Buffer
+	if err := writeJSON(&encoded, envelope, false); err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSuffix(encoded.String(), "\n")
+}
+
 // No result is written before its record is durable. A trail whose last line
 // is incomplete takes no append; every evaluation in the chunk is then
-// reported with the refusal a single run gives on that trail, an item
+// reported with the code a single run gives on that trail and its message,
+// opened by the sentence that says the record is not confirmed, an item
 // refused before it keeps its own refusal, the batch stops after the chunk,
 // and the trail is as it was.
 func TestBatchReportsNothingItCouldNotRecord(t *testing.T) {
@@ -459,15 +559,19 @@ func TestBatchReportsNothingItCouldNotRecord(t *testing.T) {
 			if code != result.ExitIO || len(lines) != reported {
 				t.Fatalf("exit=%d lines=%d, want %d", code, len(lines), reported)
 			}
+			unconfirmed := unconfirmedResult(t, strings.TrimSuffix(want, "\n"))
 			for index, line := range lines {
+				if line.Run == "" || line.Run != lines[0].Run {
+					t.Fatalf("item %d: run %q", index+1, line.Run)
+				}
 				if index == 1 {
 					if line.ExitCode == 0 || strings.Contains(string(line.Result), audit.FailureCode) {
 						t.Fatalf("the refused item keeps its refusal: %+v %s", line, line.Result)
 					}
 					continue
 				}
-				if line.ExitCode != wantCode || string(line.Result)+"\n" != want {
-					t.Fatalf("item %d: exit=%d %s", index+1, line.ExitCode, first(string(line.Result), 300))
+				if line.ExitCode != wantCode || string(line.Result) != unconfirmed {
+					t.Fatalf("item %d: exit=%d %s", index+1, line.ExitCode, first(string(line.Result), 600))
 				}
 			}
 			if readFile(t, trail) != before {
@@ -548,13 +652,16 @@ func recordedItems(t *testing.T, configPath string) []struct {
 	return out
 }
 
-// A batch ended while it waits for input, after some chunks were recorded
-// and one more item was read, leaves a trail that verifies and holds exactly
-// the items reported, the prefix of the batch, in order; the item read and
-// not yet recorded is neither recorded nor reported.
+// A batch ended between chunks, while it waits for input after some chunks
+// were recorded and one more item was read, leaves a trail that verifies and
+// holds exactly the items reported, the prefix of the batch, in order, under
+// the run standard error and every line named; the item read and not yet
+// recorded is neither recorded nor reported.
 func TestABatchEndedLeavesAPrefix(t *testing.T) {
 	configPath := auditProject(t)
 	command := batchHelper(t, 2, "experimental", "evaluate", "--pack-id", "intake", "--config", configPath, "--format", "json", "--batch", "-")
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -575,15 +682,18 @@ func TestABatchEndedLeavesAPrefix(t *testing.T) {
 	}()
 	reader := bufio.NewReader(stdout)
 	reported := 0
+	written := ""
 	for number := 1; number <= 5; number++ {
 		if _, err := io.WriteString(stdin, testBatchItem{facts: numberedFacts(number)}.line()+"\n"); err != nil {
 			t.Fatal(err)
 		}
 		if number%2 == 0 {
 			for range 2 {
-				if _, err := reader.ReadString('\n'); err != nil {
+				line, err := reader.ReadString('\n')
+				if err != nil {
 					t.Fatalf("a recorded chunk is reported: %v", err)
 				}
+				written += line
 				reported++
 			}
 		}
@@ -604,9 +714,13 @@ func TestABatchEndedLeavesAPrefix(t *testing.T) {
 	if len(items) != 4 {
 		t.Fatalf("records %+v", items)
 	}
+	run := decodedBatch(t, written)[0].Run
+	if stderr.String() != fmt.Sprintf(batchRunNote, run) {
+		t.Fatalf("stderr=%q, line run %q", stderr.String(), run)
+	}
 	for index, item := range items {
-		if item.item != index+1 {
-			t.Fatalf("the trail holds the batch's prefix in order: %+v", items)
+		if item.item != index+1 || item.run != run {
+			t.Fatalf("the trail holds the batch's prefix in order, under run %q: %+v", run, items)
 		}
 	}
 	if code, report := verification(t, "--config", configPath); code != 0 || report.Status != "valid" {

@@ -973,3 +973,26 @@ func TestEvaluationRecordForIsEvaluationRecord(t *testing.T) {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
 }
+
+// A writer's Run is the run id of every record it appends, known before the
+// first of them is, and the nil writer's is empty.
+func TestWriterRunIsItsRecordsRun(t *testing.T) {
+	writer, root := writerAt(t, "audit")
+	run := writer.Run()
+	if len(run) != 16 {
+		t.Fatalf("run %q", run)
+	}
+	for range 2 {
+		if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, record := range decodeLines(t, root, "audit") {
+		if record["run"] != run {
+			t.Fatalf("record run %v, writer run %q", record["run"], run)
+		}
+	}
+	if (*Writer)(nil).Run() != "" {
+		t.Fatal("the nil writer has no run")
+	}
+}

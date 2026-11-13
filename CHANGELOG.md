@@ -8,20 +8,33 @@ All notable changes to tagged releases are documented here.
   (#357, ADR-0085; EXPERIMENTAL). The batch is JSON Lines, a file or `-`, each line one object
   `{"facts": …}` with an optional `"id"` string echoed back and an optional `"evidence"` document.
   The project, the pack, the reviewed set and the signing requirement are read and applied once,
-  the pack is admitted once, and each item is answered by one line `{"line", "id", "exitCode",
-  "result"}` in input order, whose `result` is exactly what a single `--format json` run writes for
-  that item and whose `exitCode` is the code it exits with. An item refused does not stop the
-  others; a line not of an item's shape is `JPS-INVOCATION-BATCH-ITEM` (exit 3). Records are one per
-  decision, exactly as a single run writes them, sharing one `run` id, appended 256 items (or 32
-  MiB of input) at a time under one hold of the trail's lock, with the trail, its directory and
-  the signature sidecar synced before any of that chunk's results is written; a chunk whose append
-  fails reports each of its evaluations as `JPS-AUDIT-WRITE` and stops the batch, and a batch ended
-  between chunks leaves a trail `audit verify` reports valid, holding a prefix of the batch. The
-  batch exits 0 when every item produced a disposition, 1 when the input was read to its end and an
-  item was refused, and 4 when it stopped: `--max-items N` (default 100000) exceeded
-  (`JPS-RESOURCE-BATCH-ITEMS`), an unreadable input (`JPS-INPUT-READ`) or a record that could not
-  be written. A line over 20 MiB and 64 KiB is refused for its own line
-  (`JPS-RESOURCE-BATCH-LINE-BYTE-LIMIT`, exit 4) without stopping the batch.
+  the pack is admitted once, and each item is answered by one line `{"line", "id", "run",
+  "exitCode", "result"}` in input order, whose `result` is exactly what a single `--format json` run
+  writes for that item and whose `exitCode` is the code it exits with. An item refused does not
+  stop the others. The `facts` and `evidence` values are located without being decoded and reach
+  the engine as their exact bytes, so each document's refusals, the byte and depth limits and a
+  value that is not JSON included, are a single run's for the same bytes; a line whose object
+  cannot be delimited, a member name written with escapes, or an `id` with an escaped lone
+  surrogate is `JPS-INVOCATION-BATCH-ITEM` (exit 3). Records are one per decision, exactly as a
+  single run writes them, sharing one `run` id, appended 256 items (or 32 MiB of input) at a time
+  under one hold of the trail's lock, with the trail, its directory and the signature sidecar
+  synced before any of that chunk's results is written. The output is a lower bound: every
+  evaluation it reports with exit 0 is recorded, but a chunk whose append fails may have been
+  written in whole or in part, so each of its evaluations is reported as `JPS-AUDIT-WRITE` with a
+  message saying its record is not confirmed, and the batch stops; and a batch ended by a kill may
+  leave the next chunk's records in the trail, whole or ending in an incomplete line. After exit 4
+  or an interruption the trail may therefore hold up to one chunk of records the output did not
+  report as recorded. Every line of a batch that records carries its `run` id, and standard error
+  names it before the first record is appended, so before running items again a caller repairs the
+  trail if needed, lists the records of that run, and matches them in order, by the facts and
+  evidence each carries, to the items after the last reported one (ADR-0085 §8). The batch exits 0
+  when every item produced a disposition, 1 when the input was read to its end and an item was
+  refused, and 4 when it stopped: `--max-items N` (default 100000) exceeded
+  (`JPS-RESOURCE-BATCH-ITEMS`), an unreadable input (`JPS-INPUT-READ`), an append that failed, or
+  output that could not be written. A line over 20 MiB and 64 KiB, not counting its newline, is
+  refused for its own line (`JPS-RESOURCE-BATCH-LINE-BYTE-LIMIT`, exit 4) without stopping the
+  batch. The signing key is read once for a batch, as for a single run, and the configuration
+  schema's `signingPublicKey` text now says once per run.
   `--batch` is refused with `--facts`, `--evidence`, `--cites`, `--binding`, `--pretty` or a
   format other than `json` (`JPS-INVOCATION-BATCH`, exit 3), and `--max-items` without `--batch`
   or below 1 (`JPS-INVOCATION-MAX-ITEMS`, exit 3). Measured on one machine against a signed chained

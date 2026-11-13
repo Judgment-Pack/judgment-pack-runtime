@@ -1185,6 +1185,17 @@ func (w *Writer) SigningFailure() error {
 	return w.signingFailure
 }
 
+// Run is the run id every record the writer appends carries, or "" for the
+// nil writer, which appends none. A batch (ADR-0085) names it on its output,
+// so a caller can find the batch's records in the trail, those its output did
+// not report included.
+func (w *Writer) Run() string {
+	if w == nil {
+		return ""
+	}
+	return w.run
+}
+
 // KeyID is the id of the key the writer signs with, or "" when it holds none.
 func (w *Writer) KeyID() string {
 	if w == nil || w.signer == nil {

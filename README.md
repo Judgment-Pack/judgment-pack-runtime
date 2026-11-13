@@ -297,7 +297,10 @@ $ jpack experimental evaluate pack.json --batch batch.jsonl --format json
 ```
 
 In a project that keeps an audit trail each decision is recorded as a single run records it, a
-chunk of up to 256 at a time, and no result is written before its record is synced.
+chunk of up to 256 at a time, and no result is written before its record is synced. The output is
+a lower bound: after exit 4 or an interruption the trail may hold up to one more chunk of records
+than the output reported, under the `run` id every line carries; ADR-0085 §8 says how to match
+them to items before running any again.
 
 From here, [docs/building-with-packs.md](docs/building-with-packs.md) covers a project of several
 packs, their test matrices, and the audit trail; `jpack spec examples --spec-version 0.2.0-draft`

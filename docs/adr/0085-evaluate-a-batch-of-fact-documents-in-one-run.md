@@ -28,8 +28,8 @@ Material-decision impact: public-surface.
 - The trail is exactly what single runs would leave: one record per decision, of the kind and shape
   a single run writes, so `audit verify` and every reader take it unchanged. No new record kind.
 - No result is reported for a decision whose record is not durable.
-- An interrupted batch leaves a trail that `audit verify` reports valid and that holds a prefix of
-  the batch.
+- An interrupted batch leaves a trail holding a prefix of the batch's records, every reported one
+  among them, and a caller can tell which of its items those records are.
 - Inputs are read as a stream, and every limit has a stable code.
 - The conformance claim and its eleven-surface enumeration in CONFORMANCE.md stay as they are.
 - A single run's output, exit codes and records do not change.
@@ -68,26 +68,37 @@ place in the same order, and the engine then evaluates each item against the pac
    the one consulted at the start, as a single run consults it once; every record names the
    revision it was judged under.
 3. **Items.** The batch is JSON Lines. Each line that ends in a newline, and a last line that does
-   not, is one item: one JSON object of exactly `facts` (required), `id` (optional, a string of
-   well-formed UTF-8, 1 to 256 bytes) and `evidence` (optional; present means supplied, as
-   `--evidence` does), each once and spelled exactly. The `facts` and `evidence` values go to the
-   engine as their exact bytes, so their every refusal, the byte limit
-   (`JPS-RESOURCE-INPUT-BYTE-LIMIT`) included, is the one a single run gives for the same bytes in a
-   file. A line that is not of that shape, a blank one included, is refused on its own as
-   `JPS-INVOCATION-BATCH-ITEM`, exit 3, in a sentence that repeats nothing from the line. The JSON
-   grammar locates the values, so a value that is not JSON at all (`NaN`) makes the line a shape
-   refusal rather than the carrier refusal a file would get.
+   not, is one item: one JSON object of exactly `facts` (required), `id` (optional) and `evidence`
+   (optional; present means supplied, as `--evidence` does), each once. A member name is compared
+   as written, escapes undecoded, so `"\u0066acts"` is not `facts`. The `id` is a string of
+   well-formed UTF-8, 1 to 256 bytes once decoded, whose every escape names a Unicode character:
+   an escaped half of a surrogate pair without its other half is refused, not echoed as U+FFFD.
+   The `facts` and `evidence` values are located, not decoded: a string runs to its closing quote,
+   an object or an array to the bracket that closes the last one open, of either kind, and
+   anything else to the next whitespace or structural character. The bytes so located go to the
+   engine as they are, so their every refusal, the byte limit (`JPS-RESOURCE-INPUT-BYTE-LIMIT`)
+   and the depth limit (`JPS-RESOURCE-DEPTH-LIMIT`, at any depth, deeper than a JSON decoder's own
+   limit included) among them, and the refusal of a value that is not JSON (`NaN`, a string with a
+   raw control character, `[}`), is the one a single run gives for the same bytes in a file. A line
+   that is not of that shape, one whose object cannot be delimited or a blank one included, is
+   refused on its own as `JPS-INVOCATION-BATCH-ITEM`, exit 3, in a sentence that repeats nothing
+   from the line.
 4. **Results.** One line per item, in input order:
-   `{"line": N, "id": "…", "exitCode": E, "result": R}`, where `R` is exactly what `experimental
-   evaluate --format json` writes for that item run alone (without its newline) and `E` is the code
-   that run exits with; `id` is echoed when the line was an item that carried one. A refused item
-   does not stop the others. There is no fail-fast option.
+   `{"line": N, "id": "…", "run": "…", "exitCode": E, "result": R}`, where `R` is exactly what
+   `experimental evaluate --format json` writes for that item run alone (without its newline) and
+   `E` is the code that run exits with; `id` is echoed when the line was an item that carried one;
+   `run` is on every line of a batch that records, the stop line included, and is the run id
+   every record of the batch carries (§9); a batch that records nothing, a rehearsal or a project
+   keeping no trail, has no `run`. Before it appends its first record, a batch that records also
+   writes `note: the records of this batch carry run <id>` to standard error, so the id is known
+   even when the batch ends before it writes a line. A refused item does not stop the others.
+   There is no fail-fast option.
 5. **Exit code.** 0 when every item produced a disposition (an empty batch too); 1 when the input
    was read to its end and some item was refused; 4 when the batch stopped, the stop being the last
    thing it reports: more items than `--max-items` (a last line `JPS-RESOURCE-BATCH-ITEMS`, exit 4,
    after the items before it), an input that could not be read (a last line `JPS-INPUT-READ`, exit
-   4), a chunk whose records could not be written (`JPS-AUDIT-WRITE`, exit 4, on each of its
-   evaluations, the last chunk reported), or output that could not be written.
+   4), a chunk whose append failed (`JPS-AUDIT-WRITE`, exit 4, on each of its evaluations, reported
+   as not confirmed, §7; the last chunk reported), or output that could not be written.
 6. **Chunks and the lock.** Records are composed as each item is evaluated and appended a chunk at
    a time with the existing `audit.Writer.AppendAll`: one hold of the trail's exclusive lock, one
    write of the chunk's chained lines, the trail file synced and then its directory, then every
@@ -97,24 +108,47 @@ place in the same order, and the engine then evaluates each item against the pac
    records can fall between chunks. A rehearsal, or a project keeping no trail, writes each result
    as soon as it exists.
 7. **Durability.** No result of a chunk is written before `AppendAll` for that chunk has returned,
-   which is after the syncs above. An append that fails reports every evaluation of the chunk with
-   the refusal a single run reports (`JPS-AUDIT-WRITE`, exit 4), keeps the refusals of the chunk's
-   refused items, and stops the batch; the trail is then what `AppendAll` left, as for a single run.
-   The `JPS-AUDIT-UNSIGNED` warning a single run adds is added to each evaluation of a chunk,
-   decided from that chunk's append.
-8. **Crash.** A batch ended between chunks leaves a trail that `audit verify` reports valid, holding
-   exactly the chunks already reported: a prefix of the batch, in order. One ended during a chunk's
-   write can leave an incomplete last line, as a single run can, which `audit repair` handles; the
-   chunk's results were not reported.
+   which is after the syncs above, so every evaluation the output reports, exit 0, has a durable
+   record. The output is a lower bound, not the trail's whole account of the batch. An append can
+   fail after writing some or all of the chunk's lines: a write that fails partway, a sync that
+   fails, a signature sidecar that cannot be written. So an append that fails reports every
+   evaluation of the chunk with the code a single run reports (`JPS-AUDIT-WRITE`, exit 4) and a
+   message that opens by saying the item's record is not confirmed written, that the trail may hold
+   all of the chunk's records, the first of them, or none, under the batch's run id, and then says
+   what the append reported. It keeps the refusals of the chunk's refused items and stops the
+   batch. The trail is then what `AppendAll` left, as for a single run, but a single run's exposure
+   is one record and a batch's is a chunk. The `JPS-AUDIT-UNSIGNED` warning a single run adds is
+   added to each evaluation of a chunk, decided from that chunk's append.
+8. **Crash.** A batch ended (killed, or its machine stopped) leaves a trail holding the chunks it
+   reported and possibly the next chunk too: appended and synced but not yet reported, or partly
+   written and ending in an incomplete line, which `audit repair` handles. So after exit 4 or an
+   interruption the trail may hold up to one chunk of whole records the output did not report as
+   recorded, unsigned when that chunk's signatures were not written. Those records are found by
+   the batch's run id, which every line and the standard-error note name (§4). Before items are run
+   again, a caller:
+   - repairs the trail if `audit verify` reports an incomplete last line;
+   - lists the trail's records carrying the run id. In sequence order they are the records of the
+     batch's items that produced an evaluation, in input order. A record carries no line number or
+     id, but its `inputs` member carries the item's facts and evidence documents, as JSON values;
+   - matches the records beyond those of the items reported with exit 0 to the items after them in
+     input order. After a failed append those are the items reported as not confirmed, first to
+     last. After an interruption they are the unreported items, each record paired with the next
+     unreported item whose facts and evidence it carries;
+   - runs again only the items no record matches.
+   A batch ended between chunks, while it waits for input, leaves exactly the chunks reported.
 9. **Records.** Each record is the one a single run writes for the item, of kind `evaluation` and
    surface `experimental evaluate`, differing only in what a run, its moment and the chain assign:
    `run`, `at`, `trail`, `sequence`, `previous`. A batch is one invocation, so its records share one
-   run id, as a graph run's do; none of them is a graph record, so the graph reader rule does not
-   apply to them. The pack digest is taken once (`audit.EvaluationRecordFor`).
+   run id, as a graph run's do, and the output names it (§4); none of them is a graph record, so
+   the graph reader rule does not apply to them. The pack digest is taken once
+   (`audit.EvaluationRecordFor`). The signing key is read once for the batch, as for a single run,
+   by the writer made at the start; whether it is the key in force is checked under the lock at
+   each chunk's append. The schema's text for `signingPublicKey` says so.
 10. **Limits.** `--max-items` defaults to 100000; the line one past it is refused and stops the
     batch, after the items before it are recorded and reported. A line is bounded at twice the
     documents' byte limit plus 64 KiB, 20 MiB and 64 KiB in all, so a facts and an evidence document
-    each at the limit fit; a longer line is read to its end without being held and refused for its
+    each at the limit fit. The newline that ends a line is not counted, and a last line without one
+    has the same bound. A longer line is read to its end without being held and refused for its
     own line (`JPS-RESOURCE-BATCH-LINE-BYTE-LIMIT`, exit 4). The input is read a line at a time and
     what a chunk holds is bounded by the chunk.
 11. **MCP and the SDK.** No MCP batch tool: a tool constructing the evaluator would be a twelfth
@@ -171,6 +205,11 @@ chained trail: one run per decision 33.6 ms before the fixes of 12 and 23.8 ms a
   the project's law and one lock hold per 256 records, and the results and the trail are the ones
   single runs would give.
 - Good, because a crash or a failed append never leaves a reported result without a durable record.
+- Bad, because the converse does not hold: after a failed append or an interruption the trail can
+  hold up to one chunk of records the output did not report as recorded, which a caller finds by
+  the run id and matches by order and inputs (§8) before running items again. Truncating a failed
+  append back to the trail's size under the lock would narrow this for a failed write; it would not
+  for a kill, and it is not done here.
 - Bad, because the results of a chunk wait for the chunk: a caller streaming items sees results in
   groups of up to 256 when the batch records.
 - Bad, because a batch holds the trail's lock for one chunk's write and syncs at a time, so other
