@@ -286,6 +286,20 @@ func TestCheckPublishedWritesNoManifestFromAShallowClone(t *testing.T) {
 	if _, err := os.Lstat(target); !os.IsNotExist(err) {
 		t.Fatalf("nothing may be written from a shallow clone: %v", err)
 	}
+	// Checked against a manifest a full clone wrote, the shallow clone is
+	// read, and still no manifest is written from it.
+	full := filepath.Join(t.TempDir(), "full.json")
+	checkPublishedJSON(t, 0, "--repo", source.Dir, "--write-manifest", full)
+	if envelope := checkPublishedJSON(t, 0, "--repo", clone.Dir, "--manifest", full); !envelope.Repository.Shallow {
+		t.Fatalf("a shallow clone is said to be one: %#v", envelope)
+	}
+	envelope = checkPublishedJSON(t, 4, "--repo", clone.Dir, "--manifest", full, "--write-manifest", target)
+	if envelope.Diagnostics[0].Code != published.FailureShallow {
+		t.Fatalf("unexpected envelope: %#v", envelope)
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Fatalf("nothing may be written from a shallow clone: %v", err)
+	}
 	code, _, stderr := runTest(t, []string{"experimental", "check-published", "--repo", clone.Dir}, "")
 	if code != 4 || !strings.Contains(stderr, "shallow clone") {
 		t.Fatalf("exit %d: %s", code, stderr)

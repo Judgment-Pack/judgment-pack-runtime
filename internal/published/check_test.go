@@ -138,6 +138,13 @@ func TestAVersionBumpedWithTheChangePasses(t *testing.T) {
 	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid || report.Identities != 2 {
 		t.Fatalf("unexpected report: %#v", report)
 	}
+	// HEAD never publishes: a version bumped only at HEAD is no published
+	// identity and enters no manifest until a tag holds it.
+	unreleased := history(t, []string{"v1"}, []map[string]string{{"packs/expense.json": packA}}, map[string]string{"packs/expense.json": packNext})
+	report := run(t, defaultOptions(unreleased.Dir))
+	if report.Status != StatusValid || report.Identities != 1 || len(report.Manifest.Documents) != 1 || report.Manifest.Documents[0].Version != "1.0.0" {
+		t.Fatalf("unexpected report: %#v", report)
+	}
 }
 
 func TestADialectDocumentIsCheckedLikeAPack(t *testing.T) {
@@ -236,10 +243,12 @@ func TestOptionLikeTagNamesAndOddPathsAreData(t *testing.T) {
 }
 
 // planted writes a script that creates marker when run, and returns its path.
+// It reads nothing and fails at once, so a git that ran it (an ssh command
+// for a fetch among them) stops instead of waiting on it.
 func planted(t *testing.T, dir, name, marker string) string {
 	t.Helper()
 	script := filepath.Join(dir, name)
-	body := "#!/bin/sh\n: > '" + filepath.ToSlash(marker) + "'\ncat >/dev/null 2>&1\nexit 0\n"
+	body := "#!/bin/sh\n: > '" + filepath.ToSlash(marker) + "'\nexit 1\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -312,6 +321,26 @@ func TestAPartialCloneIsRefusedAndNothingIsFetched(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("reading the repository started a fetch")
+	}
+
+	// Below the refusal, the reader itself starts no fetch for a blob the
+	// repository lacks: the lazy fetch is turned off, and every transport
+	// is refused besides.
+	g, err := openGit(repo.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects, err := g.openObjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer objects.close()
+	found, _, err := objects.read(missing, MaxObjectBytes)
+	if err != nil || !found.missing {
+		t.Fatalf("a blob the repository lacks is missing: %#v %v", found, err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("reading a missing blob started a fetch")
 	}
 }
 
