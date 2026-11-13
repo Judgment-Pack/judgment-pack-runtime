@@ -950,3 +950,49 @@ func TestCitationsAreRecordedAsGivenOnEveryRecordOfARun(t *testing.T) {
 		}
 	}
 }
+
+// A record composed from the pack's digest is the record composed from the
+// pack's bytes (ADR-0085): a batch takes the digest once, and every record it
+// writes is the one a single evaluation writes.
+func TestEvaluationRecordForIsEvaluationRecord(t *testing.T) {
+	pack := []byte(`{"id":"a","version":"1"}`)
+	inputs := Inputs{Facts: []byte(`{"n":1}`), Evidence: []byte(`{"e":"present"}`), EvidenceSupplied: true}
+	cites := []Citation{{SessionID: "s", CallIndex: 1, Signature: "x"}}
+	fromBytes, err := EvaluationRecord(evaluated(), inputs, cites, pack, &Graph{ID: "g", Node: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromDigest, err := EvaluationRecordFor(evaluated(), inputs, cites, Digest(pack), &Graph{ID: "g", Node: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromDigest.At = fromBytes.At
+	got, _ := json.Marshal(fromDigest)
+	want, _ := json.Marshal(fromBytes)
+	if !bytes.Equal(got, want) || fromBytes.Pack.Digest != Digest(pack) {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// A writer's Run is the run id of every record it appends, known before the
+// first of them is, and the nil writer's is empty.
+func TestWriterRunIsItsRecordsRun(t *testing.T) {
+	writer, root := writerAt(t, "audit")
+	run := writer.Run()
+	if len(run) != 16 {
+		t.Fatalf("run %q", run)
+	}
+	for range 2 {
+		if err := writer.Evaluation(evaluated(), Inputs{Facts: []byte(`{}`)}, nil, []byte(`{}`), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, record := range decodeLines(t, root, "audit") {
+		if record["run"] != run {
+			t.Fatalf("record run %v, writer run %q", record["run"], run)
+		}
+	}
+	if (*Writer)(nil).Run() != "" {
+		t.Fatal("the nil writer has no run")
+	}
+}
