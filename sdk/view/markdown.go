@@ -14,7 +14,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 )
 
-// The Markdown rendering of a view, view version 1. The layout is fixed and
+// The Markdown rendering of a view, view version 2. The layout is fixed and
 // plain: a title heading, an identity list, then one section per member in
 // the order a reviewer reads a pack — decision, applicability, outcomes,
 // rules, exceptions, value sets, fallback outcome, escalation, evidence
@@ -26,7 +26,11 @@ import (
 // order; a condition that references a set names it ("value set <id>") and is
 // never expanded; and an annotations member is written in its place among
 // the extensions, typed, one item per key, a string after the key and a list
-// as nested items, so a one-element list never reads as a string.
+// as nested items, so a one-element list never reads as a string. The
+// outcomes table has a Severity column, between Label and Description, that
+// holds each outcome's level or is empty, and two lines after it give the
+// order by level, most severe first, and the outcomes without one, in
+// document order (ADR-0088).
 //
 // Every string taken from the pack passes through escapeMarkdown, and only
 // the renderer's own words are written unescaped. A string in a position the
@@ -390,11 +394,44 @@ func (m *markdownWriter) rule(rule Rule) {
 	m.condition(1, rule.When)
 }
 
+// cell is one optional table cell's text after its opening pipe: a space and
+// the escaped string, or nothing, so an empty cell reads "| |".
+func cell(value string) string {
+	if value == "" {
+		return ""
+	}
+	return " " + escapeMarkdown(value)
+}
+
+// severityOutcomes writes a Core 0.5.0 pack's outcomes table, with each
+// outcome's level in its Severity column, empty where it has none, and then
+// the outcomes' order by level (spec/annotation-vocabulary.md §4).
+func (m *markdownWriter) severityOutcomes(view PackView) {
+	m.line(0, "| Id | Label | Severity | Description |")
+	m.line(0, "| --- | --- | --- | --- |")
+	for _, outcome := range view.Outcomes {
+		m.line(0, "| "+escapeMarkdown(outcome.ID)+" | "+escapeMarkdown(outcome.Label)+" |"+cell(outcome.Severity)+" |"+cell(outcome.Description)+" |")
+	}
+	m.builder.WriteByte('\n')
+	ids := func(values []string) string {
+		if len(values) == 0 {
+			return "*none*"
+		}
+		escaped := make([]string, 0, len(values))
+		for _, value := range values {
+			escaped = append(escaped, escapeMarkdown(value))
+		}
+		return strings.Join(escaped, ", ")
+	}
+	m.line(0, "- By severity, most severe first, as the author states it (annotation vocabulary "+view.SeverityOrder.VocabularyVersion+"): "+ids(view.SeverityOrder.MostSevereFirst))
+	m.line(0, "- With no severity level, none stated or a value that is not a level, in document order: "+ids(view.SeverityOrder.Unranked))
+}
+
 func (m *markdownWriter) empty() {
 	m.line(0, "*empty*")
 }
 
-// renderMarkdown renders a view, view version 1.
+// renderMarkdown renders a view, view version 2.
 func renderMarkdown(view PackView) []byte {
 	m := &markdownWriter{}
 	m.line(0, "# "+escapeMarkdown(view.Title))
@@ -418,14 +455,14 @@ func renderMarkdown(view PackView) []byte {
 	}
 
 	m.section(2, "Outcomes")
-	m.line(0, "| Id | Label | Description |")
-	m.line(0, "| --- | --- | --- |")
-	for _, outcome := range view.Outcomes {
-		description := ""
-		if outcome.Description != "" {
-			description = " " + escapeMarkdown(outcome.Description)
+	if view.SeverityOrder != nil {
+		m.severityOutcomes(view)
+	} else {
+		m.line(0, "| Id | Label | Description |")
+		m.line(0, "| --- | --- | --- |")
+		for _, outcome := range view.Outcomes {
+			m.line(0, "| "+escapeMarkdown(outcome.ID)+" | "+escapeMarkdown(outcome.Label)+" |"+cell(outcome.Description)+" |")
 		}
-		m.line(0, "| "+escapeMarkdown(outcome.ID)+" | "+escapeMarkdown(outcome.Label)+" |"+description+" |")
 	}
 	for index, outcome := range view.Outcomes {
 		if outcome.Extensions == nil && outcome.Annotations == nil {

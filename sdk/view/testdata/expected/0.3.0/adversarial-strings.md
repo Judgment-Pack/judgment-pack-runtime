@@ -4,7 +4,7 @@
 - Version: 0\.1\.0
 - Spec version: 0\.3\.0
 - Digest: sha256:bd8eb141687a4cd386aef4cb592001283a445ea1da016f25c6ade629023c02e8
-- View version: 1
+- View version: 2
 - Description: Line one`U+000A`\#\# Injected heading`U+000A`\| a \| b \|`U+000A`\|\-\-\-\|\-\-\-\|`U+000A`\- injected item`U+000D U+000A`\> quote`U+2028`separator`U+2029`paragraph
 
 ## Decision

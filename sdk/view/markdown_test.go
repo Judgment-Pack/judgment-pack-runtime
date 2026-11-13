@@ -71,8 +71,9 @@ var renderedLinePrefixes = []string{"# ", "## ", "### ", "- ", "| ", "*empty*"}
 
 // Every line of every rendering opens with the renderer's own text, the
 // rendering holds no character internal/display replaces other than its own
-// line feeds, and every table row has exactly the four pipes of its three
-// cells once escaped pipes are set aside.
+// line feeds, and every table row has exactly the pipes of its table's header
+// once escaped pipes are set aside: four for three cells, and five for the
+// outcomes table of a Core 0.5.0 view, whose header names the Severity column.
 func TestEveryMarkdownLineOpensWithTheRenderersText(t *testing.T) {
 	for _, input := range viewInputs(t) {
 		_, view := mustView(t, input.pack)
@@ -85,7 +86,11 @@ func TestEveryMarkdownLineOpensWithTheRenderersText(t *testing.T) {
 				t.Errorf("%s: the rendering holds %U", input.name, character)
 			}
 		}
+		header := 0
 		for number, line := range strings.Split(strings.TrimSuffix(markdown, "\n"), "\n") {
+			if !strings.HasPrefix(line, "| ") {
+				header = 0
+			}
 			if line == "" {
 				continue
 			}
@@ -101,8 +106,15 @@ func TestEveryMarkdownLineOpensWithTheRenderersText(t *testing.T) {
 				t.Errorf("%s:%d: the line opens with no renderer text: %q", input.name, number+1, line)
 			}
 			if strings.HasPrefix(line, "| ") {
-				if cells := strings.Count(strings.ReplaceAll(line, `\|`, ""), "|"); cells != 4 {
-					t.Errorf("%s:%d: a table row with %d pipes: %q", input.name, number+1, cells, line)
+				cells := strings.Count(strings.ReplaceAll(line, `\|`, ""), "|")
+				if header == 0 {
+					header = 4
+					if strings.HasPrefix(line, "| Id | Label | Severity | Description |") && input.version == "0.5.0" {
+						header = 5
+					}
+				}
+				if cells != header {
+					t.Errorf("%s:%d: a table row with %d pipes where its header has %d: %q", input.name, number+1, cells, header, line)
 				}
 			}
 		}

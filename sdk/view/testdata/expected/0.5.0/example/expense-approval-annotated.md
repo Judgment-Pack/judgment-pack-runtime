@@ -4,7 +4,7 @@
 - Version: 0\.2\.0
 - Spec version: 0\.5\.0
 - Digest: sha256:020b26519078c33a6a6bf796c12bfd60406c89da3622e5ba436cff87868b0db9
-- View version: 1
+- View version: 2
 - Description: Research example for deciding whether an employee expense may be automatically approved\.
 
 ## Decision
@@ -18,11 +18,14 @@
 
 ## Outcomes
 
-| Id | Label | Description |
-| --- | --- | --- |
-| approve | Approve | The evidence and declared rules support automatic approval\. |
-| manual\-review | Manual review | An accountable finance reviewer must decide\. |
-| reject | Reject | The expense falls in a prohibited category\. |
+| Id | Label | Severity | Description |
+| --- | --- | --- | --- |
+| approve | Approve | | The evidence and declared rules support automatic approval\. |
+| manual\-review | Manual review | | An accountable finance reviewer must decide\. |
+| reject | Reject | | The expense falls in a prohibited category\. |
+
+- By severity, most severe first, as the author states it (annotation vocabulary 1.0.0): *none*
+- With no severity level, none stated or a value that is not a level, in document order: approve, manual\-review, reject
 
 ### Extensions of outcome 1: approve
 

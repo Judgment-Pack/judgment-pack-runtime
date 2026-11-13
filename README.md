@@ -340,7 +340,12 @@ carries its own `filteredViewVersion`
 ([ADR-0075](docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md),
 [ADR-0077](docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md)). Its Markdown writes
 annotation text that could reorder its line, or join the syntax before it, only in ASCII
-([ADR-0078](docs/adr/0078-keep-annotation-text-from-reordering-its-line.md)).
+([ADR-0078](docs/adr/0078-keep-annotation-text-from-reordering-its-line.md)). The view of a Core
+`0.5.0` pack also lists each outcome's severity under the Spec's annotation vocabulary `1.0.0`, in
+a `severity` member beside the document and a Severity column, and orders the outcomes by it, most
+severe first; an outcome whose severity is not exactly a level has none, and no level is supplied.
+`pack.CheckVocabulary()` applies the check `packs validate` applies
+([ADR-0088](docs/adr/0088-check-the-outcome-severity-vocabulary.md)).
 
 `pack.EvaluateWithRecord(ctx, facts, evidence, binding)` evaluates as `Evaluate` does and also
 returns a `record.DecisionRecord` of package `sdk/record`
@@ -987,10 +992,19 @@ on purpose, and you commit its output with the change it pins. Running it immedi
 `packs verify` would make the verification vacuous, which is the one way to hold this convention
 backwards.
 
-`packs validate` reports six named checks per pack — path containment, document validation, the
-`expectedVersion` pin, the filename cross-check, the hint keys, and matrix well-formedness — each as
-`passed`, `failed`, or `skipped`, plus a seventh, `advisories`, only under `--fail-on-advisory`.
-That option fails a pack on any `JPS-RULES-OVERLAP` advice, a `not-excluded` one included: unlike
+`packs validate` reports seven named checks per pack — path containment, document validation, the
+`expectedVersion` pin, the filename cross-check, the hint keys, matrix well-formedness, and the
+annotation vocabulary — each as `passed`, `failed`, or `skipped`, plus an eighth, `advisories`, only
+under `--fail-on-advisory`. The `annotation-vocabulary` check holds each outcome's `severity`
+annotation in a Core `0.5.0` pack to the Spec's annotation vocabulary `1.0.0`: `low`, `medium`,
+`high` or `critical`, matched exactly, never a list. A pack Core admits fails it with one
+`JPS-VOCABULARY-SEVERITY-VALUE` per refused outcome; it is skipped, with the reason, for another
+`specVersion`, a pack Core refuses or a profile this runtime does not read, and the entry's
+`vocabulary` member states the version applied
+([ADR-0088](docs/adr/0088-check-the-outcome-severity-vocabulary.md)). `spec validate` does not
+apply it and is unchanged.
+`--fail-on-advisory` fails a pack on any `JPS-RULES-OVERLAP` advice, a `not-excluded` one included, and on
+the vocabulary's `JPS-VOCABULARY-SEVERITY-IDENTIFIER` advice: unlike
 `spec test-conformance --strict`, which fails only an exact overlap, it also fails a pack whose
 analysis could not rule an overlap out within its budget. For rules meant to be disjoint, rewrite the
 conditions so the exclusion is exact, or gate that pack in a separate `--id` run without the option. `packs test` runs each pack's instance matrix through the experimental
