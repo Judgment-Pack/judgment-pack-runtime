@@ -122,22 +122,48 @@ place in the same order, and the engine then evaluates each item against the pac
     method: `sdk.Load` admits a pack once and `Pack.Evaluate` writes nothing, so a batch there is a
     loop.
 
+12. **The rehearsal in a resident server.** A CPU profile of the MCP server's
+    `experimental_evaluate` rehearsal, called in-process, put its time in: compiling the
+    configuration schema on every project load (`internal/project/project.go`, `Load`), about 47%;
+    admitting the pack again on every call (`internal/mcp/tools.go`, `EvaluateWith`), about 25%;
+    verifying the embedded bundle, a SHA-256 of every bundled file, on every evaluation
+    (`internal/evaluation/engine.go`, `artifacts.Load`), about 11%; reading the signing key for a
+    run that records nothing (`internal/mcp/tools.go`, `DecisionWriter`), about 5%; and the
+    garbage collector, which the rest drives, about 20%. The first and the third are fixed here:
+    the schema is compiled once per process and each bundle verified once per process. Both are
+    embedded in the binary and cannot change while it runs, so the outcome of the first
+    compilation or verification, a refusal included, is the outcome of every later one, and each
+    `artifacts.Load` still hands out a Set of the caller's own. The second and the fourth are in
+    the MCP surface and are left as follow-ups: a server holding admissions across calls needs a
+    stated identity and eviction rule for the packs it keeps, and a rehearsal needs no writer.
+    A recorded decision in the server is dominated by the trail's four syncs, about 10 ms of it;
+    that is the durability rule, and a batch is how it is shared.
+
 ### Measurements
 
-Measured on one machine, the issue's pack and facts, a chained
-trail signed by a key in force, each item a decision recorded and signed:
+Measured on one machine, the issue's pack and facts, a chained trail signed by a key in force,
+each item a decision recorded and signed, by the CLI (one process per run):
 
-| run | decisions a second | each |
-|---|---|---|
-| one process per decision, before | 13 to 15 | 68 to 77 ms |
-| one process per decision, after | 13 | 80 ms |
-| one batch of 5000, after | 1730 | 0.58 ms |
-| one process per rehearsal, before | 23 | 43 ms |
-| one batch of 5000 rehearsals, after | 2224 | 0.45 ms |
+| run | before | with the batch | with the batch and the fixes of 12 |
+|---|---|---|---|
+| one process per decision | 13 to 15 a second, 68 to 77 ms | 13 a second, 80 ms | 14 a second, 72 ms |
+| one batch of 5000 decisions | | 1730 a second, 0.58 ms | 5390 a second, 0.19 ms |
+| one process per rehearsal | 20 to 23 a second, 43 to 50 ms | | 24 a second, 42 ms |
+| one batch of 20000 rehearsals | | 2224 a second, 0.45 ms (5000) | 25800 a second, 0.04 ms |
 
 The trail the batches wrote was reported valid by `audit verify --public-key`, every record signed.
-`BenchmarkEvaluateDecisions` in `internal/cli` measures the same comparison in one process on an
-unsigned chained trail: 33.6 ms a decision for one run per decision, 0.52 ms in one batch.
+In one process, the MCP server's `experimental_evaluate` call:
+
+| call | before | after the fixes of 12 |
+|---|---|---|
+| rehearsal | 3.7 ms | 1.2 ms |
+| recorded decision | 14.7 ms | 12.1 ms |
+| project load | 1.9 ms | 0.045 ms |
+| evaluation of an admitted pack | 0.39 ms | 0.016 ms |
+
+`BenchmarkEvaluateDecisions` in `internal/cli` measures the CLI in one process on an unsigned
+chained trail: one run per decision 33.6 ms before the fixes of 12 and 23.8 ms after; one batch
+0.52 ms a decision before them and 0.11 ms after.
 
 ### Consequences
 
@@ -149,13 +175,18 @@ unsigned chained trail: 33.6 ms a decision for one run per decision, 0.52 ms in 
   groups of up to 256 when the batch records.
 - Bad, because a batch holds the trail's lock for one chunk's write and syncs at a time, so other
   writers wait for up to a chunk's worth of writing rather than one record's.
+- Good, because every surface that loads a project or evaluates stops recompiling and re-hashing
+  what is embedded in it.
 - Revisit if MCP callers ask for a batch, which would change the claim's enumeration, or if a
-  caller needs citations or a binding per item.
+  caller needs citations or a binding per item; and when the MCP surface takes up the follow-ups
+  of 12.
 
 ## More information
 
 Issue #357. Implementation: `internal/cli/evaluate_batch.go` (the reader, the item shape, chunks,
 results), the flags and the branch in `internal/cli/app.go`, `evaluationFailureEnvelope` in
-`internal/cli/render.go`, and `audit.EvaluationRecordFor` in `internal/audit/audit.go`. ADR-0018
+`internal/cli/render.go`, and `audit.EvaluationRecordFor` in `internal/audit/audit.go`; the fixes of
+12 are `configSchema` in `internal/project/project.go` and `verifiedSets` in
+`internal/artifacts/artifacts.go`. ADR-0018
 (the trail), ADR-0028 (rehearsals), ADR-0044 (the reviewed set on the payload), ADR-0047 and
 ADR-0071 (signing), ADR-0084 (an option instead of a new surface).

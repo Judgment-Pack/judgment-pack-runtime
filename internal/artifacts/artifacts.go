@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
@@ -98,7 +100,42 @@ func SupportedVersions() []string {
 	return []string{DraftVersion, EvaluatorDraftVersion, CoreVersion, Core050Version}
 }
 
+// verifiedSets holds each supported version's bundle, decoded and verified
+// once per process. The bundle is embedded and cannot change while the
+// process runs, so the outcome of the first verification, a refusal included,
+// is the outcome of every later one; verifying it again on every Load was a
+// tenth of what a resident server spent on one evaluation (#357).
+var verifiedSets = func() map[string]func() (*Set, error) {
+	sets := map[string]func() (*Set, error){}
+	for _, version := range SupportedVersions() {
+		sets[version] = sync.OnceValues(func() (*Set, error) { return load(version) })
+	}
+	return sets
+}()
+
+// verifications counts load's runs, for a test.
+var verifications atomic.Int64
+
+// Load returns the embedded bundle of one supported version, verified: every
+// file's size and SHA-256 against the bundle's lock, and the bundle digest.
+// Each Set returned is the caller's own: its lock's file list is a copy, so
+// nothing a caller does to one changes another.
 func Load(version string) (*Set, error) {
+	verified, ok := verifiedSets[version]
+	if !ok {
+		return nil, &UnsupportedVersionError{Version: version}
+	}
+	set, err := verified()
+	if err != nil {
+		return nil, err
+	}
+	own := *set
+	own.lock.Files = slices.Clone(set.lock.Files)
+	return &own, nil
+}
+
+func load(version string) (*Set, error) {
+	verifications.Add(1)
 	if !slices.Contains(SupportedVersions(), version) {
 		return nil, &UnsupportedVersionError{Version: version}
 	}

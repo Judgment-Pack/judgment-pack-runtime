@@ -25,11 +25,19 @@ All notable changes to tagged releases are documented here.
   `--batch` is refused with `--facts`, `--evidence`, `--cites`, `--binding`, `--pretty` or a
   format other than `json` (`JPS-INVOCATION-BATCH`, exit 3), and `--max-items` without `--batch`
   or below 1 (`JPS-INVOCATION-MAX-ITEMS`, exit 3). Measured on one machine against a signed chained
-  trail, about 1700 decisions a second in one batch, against about 13 a second at one process per
-  decision. A single run's output, exit codes and records are unchanged. No MCP tool or SDK method
+  trail, about 5000 decisions a second in one batch, with the change below, against about 13 a
+  second at one process per decision. A single run's output, exit codes and records are unchanged. No MCP tool or SDK method
   is added. It is an option on `experimental evaluate` rather than a new command so that the
   evaluator is reached through a surface already named: the conformance claim in CONFORMANCE.md is
   unchanged.
+- **A project load no longer compiles the configuration schema, and an evaluation no longer
+  re-hashes the bundled artifacts, every time** (#357, ADR-0085). Both are embedded in the binary,
+  so each is now compiled or verified once per process, a refusal included, and every later load
+  or evaluation uses that outcome. Measured on one machine, a resident MCP server's
+  `experimental_evaluate` rehearsal fell from about 3.7 ms to about 1.2 ms, and a batch decision
+  from about 0.58 ms to about 0.19 ms. No output, record or exit code changes; the conformance claim
+  in CONFORMANCE.md is unchanged. Re-admitting the pack on every MCP call and reading the signing
+  key for an MCP rehearsal remain, as stated in ADR-0085.
 - **`packs test --strength` reports the variants of a pack its matrix does not notice** (#392,
   ADR-0084; EXPERIMENTAL). For each tested pack all of whose rows matched, the run derives variants
   in memory, each one small change to the pack's own declarations (`bound-moved`,
