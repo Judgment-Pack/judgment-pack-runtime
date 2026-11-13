@@ -138,7 +138,8 @@ Exit 4 rather than `incomplete`: the walk stops partway through one tag's tree, 
 was not read could be given, and a run that reads part of the tags is not a result. Memory holds a
 32-byte SHA-256 of each (path, tree id) key, one digest and identity per distinct blob, and per
 identity the first place of each distinct digest; contents are held one object at a time, at most
-10 MiB, and a larger object is read past. Lists are capped at 1000 items with exact counts.
+10 MiB, and a larger object is read past. Lists are capped at 1000 items with exact counts, and
+the unreadable entries, which a tree can hold one per 24 bytes, are capped as they are found.
 
 ### Consequences
 

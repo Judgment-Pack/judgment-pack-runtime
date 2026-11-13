@@ -990,6 +990,20 @@ func TestTreeBytesAreBoundedHoweverFewTheEntries(t *testing.T) {
 	}
 }
 
+func TestTheUnreadableListIsCappedAsItIsCollected(t *testing.T) {
+	repo := gitfixture.New(t)
+	entries := []gitfixture.Entry{}
+	for index := 0; index < MaxListed+500; index++ {
+		entries = append(entries, gitfixture.Entry{Mode: "160000", Kind: "commit", ID: strings.Repeat("1", 40), Name: "m" + strconv.Itoa(10000+index) + ".json"})
+	}
+	tagged(repo, repo.TreeOf(entries...))
+	report := run(t, defaultOptions(repo.Dir))
+	if report.Status != StatusIncomplete || report.UnreadableCount != MaxListed+500 || len(report.Unreadable) != MaxListed ||
+		report.Unreadable[0].Path != "m10000.json" || report.Unreadable[MaxListed-1].Path != "m"+strconv.Itoa(10000+MaxListed-1)+".json" {
+		t.Fatalf("want the first %d of %d, in walk order: count %d, listed %d", MaxListed, MaxListed+500, report.UnreadableCount, len(report.Unreadable))
+	}
+}
+
 func TestADocumentOverTheReadLimitIsUnreadable(t *testing.T) {
 	large := `{"specVersion":"0.5.0","id":"big","version":"1.0.0","pad":"` + strings.Repeat("x", int(MaxObjectBytes)) + `"}`
 	repo := history(t, []string{"v1"}, []map[string]string{{"big.json": large}}, nil)

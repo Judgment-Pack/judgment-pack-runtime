@@ -320,8 +320,8 @@ func Check(options Options) (*Report, *Failure) {
 		}
 	}
 	report.Documents, report.OtherFiles = w.documents, w.other
-	report.UnreadableCount = len(w.unreadable)
-	report.Unreadable = capped(w.unreadable)
+	report.UnreadableCount = w.unreadableCount
+	report.Unreadable = w.unreadable
 	w.findings(report, options)
 	// With no tag read and no pin given, nothing published was there to
 	// compare HEAD with: a run that checked nothing is not clean.
@@ -555,9 +555,12 @@ type walker struct {
 	visited    map[[sha256.Size]byte]struct{}
 	blobs      map[string]*blobInfo
 	identities map[Identity]*identityRecord
-	unreadable []Unreadable
-	documents  int
-	other      int
+	// unreadable holds the first MaxListed unreadable entries;
+	// unreadableCount counts them all.
+	unreadable      []Unreadable
+	unreadableCount int
+	documents       int
+	other           int
 	// treeBytes counts the tree bytes read, against maxTreeBytes; visited
 	// counts the directories, against maxDirectories.
 	treeBytes int64
@@ -741,8 +744,15 @@ func displayDir(path string) string {
 	return path
 }
 
+// unread counts one unreadable entry and keeps the first MaxListed, the ones
+// a report lists: a tree can hold one unreadable entry per 24 bytes, under
+// as many paths as the walk's bounds allow, so keeping every one would hold
+// more than the report ever shows.
 func (w *walker) unread(index int, path, digest, reason string) {
-	w.unreadable = append(w.unreadable, Unreadable{Ref: w.snapshots[index].ref, Path: path, Digest: digest, Reason: reason})
+	w.unreadableCount++
+	if len(w.unreadable) < MaxListed {
+		w.unreadable = append(w.unreadable, Unreadable{Ref: w.snapshots[index].ref, Path: path, Digest: digest, Reason: reason})
+	}
 }
 
 // readTree reads one tree object and parses its entries.

@@ -255,7 +255,8 @@ Memory holds, per run, a SHA-256 of each pair of path and tree id already read (
 whatever the path's length), one digest and identity per distinct selected blob (not its bytes),
 and, per identity, the first place each of its distinct digests was found. Object contents are held
 one object at a time, each at most 10 MiB; a larger object is read past without being kept. Every
-list a report carries holds at most 1000 items. Over this runtime's own history, 55 tags and about
+list a report carries holds at most 1000 items, and the unreadable files are counted past that
+without being kept. Over this runtime's own history, 55 tags and about
 900 distinct documents, a run reads about 800 directories and takes under a second and about 30 MB
 of memory.
 
