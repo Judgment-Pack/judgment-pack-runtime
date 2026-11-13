@@ -163,6 +163,8 @@ func (a *App) experimentalCommand() *cobra.Command {
 		},
 	}
 	experimental.AddCommand(a.evaluateCommand(), a.evaluateCorpusCommand(), a.graphCommand(), a.compareCommand(), a.policyCommand(), a.analyzePackCommand())
+	// Reads a git repository's tags, not a project or a pack (ADR-0090).
+	experimental.AddCommand(a.checkPublishedCommand())
 	return experimental
 }
 
@@ -1142,6 +1144,8 @@ func requestedCommand(args []string) string {
 						}
 					}
 					return "experimental graph"
+				case "check-published":
+					return checkPublishedCommandName
 				}
 			}
 			return "experimental"

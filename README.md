@@ -132,6 +132,7 @@ jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PRO
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 jpack experimental compare <old-pack> <new-pack> --inputs <file>   (EXPERIMENTAL SURFACE; the inputs two versions decide differently; ADR-0045)
 jpack experimental compare <old-pack> <new-pack> --inputs <file> --structural   (EXPERIMENTAL; adds the packs diff comparison; ADR-0086)
+jpack experimental check-published [--repo DIR] [--tags G] [--include G] [--manifest F] [--write-manifest F] [--strict]   (EXPERIMENTAL; no published pack or dialect changed its bytes under one id and version, over the repository's git tags; ADR-0090)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
 jpack experimental graph evaluate <graph-or-> [--inputs <file-or->] [--rehearsal]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
@@ -1046,6 +1047,12 @@ CLI's `experimental graph list` (ADR-0029). With no configuration,
 [docs/building-with-packs.md](docs/building-with-packs.md) is the builder's guide: the packs-as-code
 lifecycle, the three-owner model (the application selects, the agent gathers and never invents, the
 pack judges), hints in practice, and the data-sufficiency-as-another-pack pattern.
+
+`jpack experimental check-published` reads a repository's own git tags and reports each pack or
+dialect document whose bytes changed under an `id` and `version` a tag already published, with both
+digests and both tags; it can write and check a manifest that pins each one, for a shallow clone
+([Published identities](docs/published-identities.md),
+[ADR-0090](docs/adr/0090-check-published-identities-over-a-repositorys-tags.md)).
 
 ## Process contract
 
