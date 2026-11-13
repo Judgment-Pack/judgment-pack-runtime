@@ -82,6 +82,9 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"experimental", "evaluate", "--help"}, mustReference: true},
 		{args: []string{"experimental", "evaluate-corpus", "--help"}, mustReference: true},
 		{args: []string{"experimental", "analyze-pack", "--help"}, mustReference: true},
+		// experimental compare evaluates under two packs and says where the
+		// claim is stated; its --structural option adds packs diff's comparison.
+		{args: []string{"experimental", "compare", "--help"}, mustReference: true},
 		// The graph surface (ADR-0015). The group and its evaluate verb speak
 		// about the evaluator, so they say where the claim is stated; the other
 		// verbs evaluate nothing and are inventoried for the phrase scans.
@@ -115,6 +118,11 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// packs describe (ADR-0074) loads one pack and writes its view; it
 		// evaluates nothing and is inventoried for the phrase scans.
 		{args: []string{"packs", "describe", "--help"}},
+		// packs diff (ADR-0086) loads two or three packs and compares their
+		// documents; it evaluates nothing and is inventoried for the phrase
+		// scans, which is where a stray claim about what a comparison shows
+		// would hide.
+		{args: []string{"packs", "diff", "--help"}},
 		// The pack signature commands (ADR-0083) sign and check bytes and
 		// evaluate nothing; they are inventoried for the phrase scans, which
 		// is where a stray claim about what a signature shows would hide.
@@ -625,6 +633,7 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 		"cli packs covers --help",
 		"cli packs lint --help",
 		"cli packs describe --help",
+		"cli packs diff --help",
 		"mcp tools/list list_packs",
 		"mcp tools/list get_pack",
 		"mcp tools/list experimental_test_packs",

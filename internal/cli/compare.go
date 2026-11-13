@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/compare"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -20,6 +21,7 @@ func (a *App) compareCommand() *cobra.Command {
 	format := "human"
 	inputsPath := ""
 	supported := []string{}
+	withStructure := false
 	command := &cobra.Command{
 		Use:   "compare <old-pack> <new-pack>",
 		Short: "EXPERIMENTAL SURFACE: evaluate one set of inputs under two versions of a pack and list the inputs they decide differently",
@@ -32,6 +34,8 @@ func (a *App) compareCommand() *cobra.Command {
 			"Two packs whose ids differ are two decisions rather than two versions of one: they are compared all the same, and when both ids were read and differ, the human output's first line and the payload's \"differentDecisions\" member say so. " +
 			"An id is read from an evaluation that succeeds, so when no input is evaluated, or every evaluation under one pack is refused, neither appears, and their absence does not establish that the ids match. " +
 			"A difference says the two versions decide an input differently and nothing about which is right: it is not an expectation, and nothing here is a decision. " +
+			"Only the dispositions and handoff targets are compared, so annotations, and every other member that never reaches a disposition, are outside what it compares: two packs that differ only in an annotation, or in a threshold no input falls between, compare as the same on every input. " +
+			"--structural adds the structural comparison packs diff writes (ADR-0086), member by member and annotations included, beside the behavioural one: in the payload's structural member, a string holding the exact bytes of its canonical JSON, and after the human report; without it the output is unchanged. With --structural both packs must load, and a pack the loader refuses makes the whole run refused, with the loader's code. " +
 			"The command opens no project, so it appends no audit record and consults no reviewed set, and its payload carries \"rehearsal\": true (ADR-0028). " +
 			"It exits 0 whenever the comparison ran, however many inputs differ; a run whose differences would pass 16 MiB of compact JSON is refused rather than truncated, and the rendered report is bounded by that and proportional to it. " +
 			"Both packs must select one exact Core contract, 0.2.0-draft, 0.3.0 base or 0.5.0 base; a mixed-contract comparison is refused. Ordered routes and duplicate destinations participate in canonical comparison. " +
@@ -96,8 +100,30 @@ func (a *App) compareCommand() *cobra.Command {
 			if err != nil {
 				return a.operational(commandName, format, result.ExitIO, "JPS-COMPARE-REPORT", "The comparison's report could not be composed.")
 			}
+			var structure []byte
+			if withStructure {
+				documents := make([][]byte, 0, len(sides))
+				for index, side := range sides {
+					if side.Oversized {
+						name := [2]string{"old pack", "new pack"}[index]
+						return a.operational(commandName, format, result.ExitIO, "JPS-RESOURCE-INPUT-BYTE-LIMIT", fmt.Sprintf("The %s exceeds the hard %d-byte limit, so it has no structural comparison; nothing was reported.", name, carrier.HardMaxBytes))
+					}
+					documents = append(documents, side.Pack)
+				}
+				compared, err := a.structuralComparison(commandName, format, documents, []string{"old pack", "new pack"})
+				if err != nil {
+					return err
+				}
+				comparison.Structural = string(compared.json)
+				structure = compared.text
+			}
 			if err := a.renderComparison(format, comparison); err != nil {
 				return &handledExit{code: result.ExitIO}
+			}
+			if structure != nil && format != "json" {
+				if _, err := a.out.Write(structure); err != nil {
+					return &handledExit{code: result.ExitIO}
+				}
 			}
 			return nil
 		},
@@ -105,6 +131,7 @@ func (a *App) compareCommand() *cobra.Command {
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&inputsPath, "inputs", inputsPath, "the inputs: a matrix (its expectations play no part) or a packs suggest candidates document, a file path")
 	command.Flags().StringArrayVar(&supported, "supported-extension", supported, "extension name this consumer supports, joined to each input's own (repeatable)")
+	command.Flags().BoolVar(&withStructure, "structural", false, "add the structural comparison of the two packs (packs diff), member by member and annotations included, beside the behavioural one")
 	return command
 }
 

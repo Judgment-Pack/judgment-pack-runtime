@@ -1445,6 +1445,31 @@ type PackFilteredDescription struct {
 	FilteredView  string `json:"filteredView"`
 }
 
+// PackDiff is one packs diff report in JSON: the structural comparison of two
+// admitted packs, which is experimental (ADR-0086). Diff holds the exact bytes
+// of the comparison's canonical JSON as a string, as PackDescription's View
+// does; its own diffVersion moves independently of OutputVersion.
+type PackDiff struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	Diff          string `json:"diff"`
+}
+
+// PackThreeWayDiff is one packs diff --base report in JSON: the three-way
+// structural comparison of two admitted packs with their common base, which
+// is experimental (ADR-0086). ThreeWayDiff holds the exact bytes of its
+// canonical JSON as a string; its own threeWayDiffVersion moves independently
+// of OutputVersion.
+type PackThreeWayDiff struct {
+	OutputVersion string `json:"outputVersion"`
+	Tool          Tool   `json:"tool"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	ThreeWayDiff  string `json:"threeWayDiff"`
+}
+
 // PackSignature is one packs sign report in JSON: the signature document it
 // wrote, by path, and what that document names (ADR-0083).
 type PackSignature struct {

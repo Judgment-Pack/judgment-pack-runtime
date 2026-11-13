@@ -118,6 +118,7 @@ jpack packs lint [--producers M]   (every consulted pointer has a producer; ADR-
 jpack packs schema
 jpack packs describe <pack-or-> [--format markdown|json]   (EXPERIMENTAL; the whole pack as written, for review; opens no project; ADR-0074)
 jpack packs describe <pack-or-> --filter key=value ...    (EXPERIMENTAL; only the outcomes and rules of a 0.5.0 pack whose annotations match; ADR-0075)
+jpack packs diff <old-pack> <new-pack> [--base <pack>] [--format human|json]   (EXPERIMENTAL; what two documents say differently, annotations included, or three-way; nothing is evaluated; ADR-0086)
 jpack packs sign <pack-file> --key <seed-file> [--public-key F] [--output F]   (EXPERIMENTAL; a detached signature over the file's exact bytes; opens no project; ADR-0083)
 jpack packs verify-signature <pack-file> --public-key F [--signature F]   (EXPERIMENTAL; the signature checked against the key you expect, before the pack is read; ADR-0083)
 jpack mcp
@@ -128,6 +129,7 @@ jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOT
 jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PROTOTYPE; a pack that declares values is not an input the class defines)
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
 jpack experimental compare <old-pack> <new-pack> --inputs <file>   (EXPERIMENTAL SURFACE; the inputs two versions decide differently; ADR-0045)
+jpack experimental compare <old-pack> <new-pack> --inputs <file> --structural   (EXPERIMENTAL; adds the packs diff comparison; ADR-0086)
 jpack experimental graph list   (EXPERIMENTAL: the configured graphs, resolved; ADR-0029)
 jpack experimental graph validate <graph-or->   (EXPERIMENTAL composition prototype; spec RFC 0002, Draft; ADR-0015)
 jpack experimental graph evaluate <graph-or-> [--inputs <file-or->] [--rehearsal]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
