@@ -58,6 +58,10 @@ All notable changes to tagged releases are documented here.
   it reads, so a version validation admits later stays refused until it is added, and a pack
   declaring an unknown version is refused by validation as before (`JPS-DIALECT-PACK-INVALID`,
   exit 2). The policy check, the graph commands and pack-design analysis still refuse `0.5.0`.
+- Documentation: the `RuntimeVersion` docs of `sdk.Description` and `record.Evaluator` now say it
+  is whatever version the build records, which may be a pseudo-version or carry `+dirty`, and is
+  empty only when the build records none; the `sdk/record` package doc now says a struct literal
+  has a nil `JSON` and an empty `Digest`. No behavior changes.
 - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.44.0 - 2026-11-12

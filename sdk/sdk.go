@@ -450,11 +450,14 @@ func integrityFault() error {
 type Description struct {
 	// RuntimeVersion is this module's version as the program's build
 	// information records it: the required version, or a replacement's
-	// version when the requirement is replaced by another module version. It
-	// is empty when the build records none: a build inside this module's own
-	// source tree, a replacement by a local directory, or a build without
-	// module information. It is not the tool.version member of
-	// Evaluation.JSON, which is the version compiled into the module.
+	// version when the requirement is replaced by another module version.
+	// For a build inside this module's own source tree it is what the Go
+	// toolchain stamped, which may be a release tag, a pseudo-version, or a
+	// version with a +dirty suffix. It is empty when the build records none,
+	// for example a replacement by a local directory, a build the toolchain
+	// marked (devel), or a build without module information. It is not the
+	// tool.version member of Evaluation.JSON, which is the version compiled
+	// into the module.
 	RuntimeVersion string
 	// SpecVersions are the JPS specification versions bundled for validation.
 	SpecVersions []string
