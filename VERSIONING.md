@@ -169,15 +169,31 @@ specification version. Their bytes ride in the `packs diff` JSON envelope's `dif
 `threeWayDiff` member, and in the `experimental compare --structural` payload's `structural`
 member, as a string. Both are EXPERIMENTAL.
 
-The decision record (`sdk.Pack.EvaluateWithRecord` and package `sdk/record`, ADR-0079) carries its
-own `recordVersion`, `"1.0.0"`, in its JSON. It is not the audit trail record's `recordVersion`,
-`"1"`, and the two move independently. Its major part moves when a member is removed or renamed,
-or a member's value is taken over other bytes or written in another form, so that a reader of the
-earlier form would misread it; its minor part when a member is added, which such a reader can pass
-over; its patch part when the bytes change in any other way, every member and its meaning kept. It
-does not move when the runtime learns to record evaluations it refused before, such as those of a
-newly admitted specification version, or when the runtime version the record carries changes,
-which changes the record's bytes and digest by design. The record is EXPERIMENTAL.
+The decision record (`sdk.Pack.EvaluateWithRecord`, `sdk.Pack.EvaluateWithKeyedRecord` and package
+`sdk/record`, ADR-0079, ADR-0087) carries its own `recordVersion` in its JSON: `"1.0.0"` for the
+plain form, which names the facts and evidence documents by their SHA-256, and `"2.0.0"` for the
+keyed form, which names them by digests the caller keys and removes `factsDigest` and
+`evidenceDigest`. It is not the audit trail record's `recordVersion`, `"1"`, and the two move
+independently.
+
+The major part of a record's version names its form, by a table: 1 is the plain form and 2 the
+keyed form. Within a major, the minor part moves when a member is added that a reader of the
+earlier bytes can pass over, and the patch part when the bytes change in any other way, every
+member and its meaning kept. A change a reader of the earlier bytes would misread (a member removed
+or renamed, a member's value taken over other bytes or written in another form, or a value such a
+reader must refuse, such as a new keyed-digest algorithm label) takes the next major number not
+yet in the table, never the next number of the form it changes, and the table gains a row naming
+the form that number is; the keyed form took 2 so. The canonical text `record.CanonicalFacts` and
+`record.CanonicalEvidence` return, which [docs/decision-records.md](docs/decision-records.md#versions)
+states with the table, is part of both forms: a change to it changes the bytes every document
+digest is taken over, so each form it reaches takes a new major number of its own. A reader
+decides the form by the table and the members together and refuses a record where they disagree;
+`record.Read` admits only the versions it knows, never reading one form as the other, and refuses
+a record naming an evaluator contract it does not know. The version does not move when the runtime
+learns to record evaluations it refused before, such as those of a newly admitted specification
+version (a reader that does not know that contract refuses such a record), or when the runtime
+version the record carries changes, which changes the record's bytes and digest by design. The
+record is EXPERIMENTAL.
 
 A pack signature document (`jpack packs sign`, `jpack packs verify-signature` and package
 `sdk/packsig`, ADR-0083) carries its own `signatureVersion`, `"1.0.0"`, which names both the
