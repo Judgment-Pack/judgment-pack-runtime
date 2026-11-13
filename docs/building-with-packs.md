@@ -295,6 +295,65 @@ whose rows witness fewer than N percent of its derived probes, and `--require-bo
 with a boundary no row witnesses (ADR-0080). A covered matrix is one that probes every derivable behavior; whether the rows are *right* is
 still yours to judge against the policy text (ADR-0014, ADR-0023).
 
+### Test strength
+
+Coverage says which behaviors some row states; it does not say whether the rows would notice the
+pack being slightly wrong. `jpack packs test --strength` (EXPERIMENTAL) asks that directly. For each
+tested pack all of whose rows matched, it derives **variants** in memory, each one small change to
+the pack's own declarations, and runs the pack's own matrix against each:
+
+| Kind | The change |
+| --- | --- |
+| `bound-moved` | an ordered comparison's literal moved one unit down and one unit up, at the finest precision the pack authors that value in at that pointer (at most 10^-6) |
+| `operator-reversed` | an ordered operator to its strict or non-strict twin and to its complement; `equals` and `not-equals` to each other |
+| `condition-dropped` | one member removed from an `all` or an `any` |
+| `outcome-swapped` | a rule's outcome, a `force-outcome` exception's outcome or the `fallbackOutcome`, to each other declared outcome |
+| `on-unknown-changed` | a rule's or exception's `onUnknown` to the other value |
+| `value-set-entry-removed` | Core `0.5.0` only: one entry removed from a value set some condition references |
+
+A variant is **noticed** when some row's result differs from its expectation (`noticedBy` names
+the first such row, in matrix order) and **survived** when every row still matches. A change whose
+result is not a pack this runtime admits under the same `specVersion` — dropping the only member of
+an `all`, removing the only entry of a set — is counted **not derivable** and is never reported as a
+survivor. A change the evaluator provably cannot see is not derived at all: removing a member or a
+value-set entry that another one of the same array repeats exactly. No other equivalence is
+detected.
+
+**A survivor is either a gap in the matrix or a variant that behaves exactly as the pack does, and
+the command cannot tell which. The result proves nothing about the pack or the policy.** Moving
+`greater-than-or-equal "5000"` to `"5001"` survives a matrix with rows at 4999 and 5001 and none at
+5000. That is a gap if an amount from 5000 up to 5001 can reach the pack; if every amount it is given
+is a whole multiple of 10000, no input tells the two bounds apart and the variant is equivalent.
+Which of these holds, only the policy owner knows. The text output prints each survivor with the change in the pack's own words
+and a hint of a row that would notice it — for a moved bound, the value at which the two bounds
+disagree and, when that is the literal, its `boundary:` probe:
+
+```text
+  strength: 7 variants derived, 5 noticed, 2 survived; 0 changes not derivable
+    survived rules/expense-threshold/when:bound-moved:5001 (rule "expense-threshold"): /expense/amount greater-than-or-equal "5000" → greater-than-or-equal "5001"
+      hint: a row that places /expense/amount at 5000 and reaches this comparison would notice it (the boundary:/expense/amount:5000 probe)
+```
+
+Each id is built from where the change is and what it is (`<declaration>/<pointer>:<kind>[:<new
+value>]`), the variants are sorted by id, and two runs over an unchanged project print the same
+bytes. The JSON payload lists every variant under each pack's `strength` member, with the counts
+(`derived`, which is noticed plus survived, and `notDerivable`), and sums them under the run's
+`strength` member. Both members appear only under `--strength`. Nothing is written beside the pack.
+
+Variants run only for a pack whose matrix ran, has a row, all of whose rows matched, and which the
+evaluator admits for some row's capability set; otherwise the pack's `strength` is `skipped` with the
+reason. The work is one admission per change and at most one matrix run per variant, one variant at
+a time. `--max-variants N` (default 1000) bounds the changes one pack may derive; a pack that
+derives more refuses the whole run before any variant runs (`JPS-RESOURCE-STRENGTH-VARIANTS`, exit
+`3`), so the worst case is N admissions and N × rows row evaluations per pack. Outcome swaps grow as
+declarations × outcomes, which is why the ceiling exists.
+
+By default the run informs and moves no exit code. `--fail-on-survivor` makes a pack whose matrix
+ran fail when a variant survives or none could run, named `fail-on-survivor` in
+`unmetRequirements`, and the run exits `1`. A pack with no matrix is untouched;
+`--require-matrix` is what fails one. `--fail-on-survivor` and `--max-variants` are refused without
+`--strength` (ADR-0084). The option is on the CLI only.
+
 ### Let the pack suggest the inputs
 
 Coverage names the gap; `jpack packs suggest` offers the inputs that would close it, derived from

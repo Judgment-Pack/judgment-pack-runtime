@@ -109,7 +109,7 @@ jpack spec schema <spec-version>
 jpack spec examples [name] [--spec-version V]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
 jpack packs validate [--id X] [--fail-on-advisory]
-jpack packs test [--id X] [--require-matrix] [--min-coverage N] [--require-boundaries]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack packs test [--id X] [--require-matrix] [--min-coverage N] [--require-boundaries] [--strength [--fail-on-survivor] [--max-variants N]]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack packs suggest [--id X] [--base ROW] [--write F|-] [--max N] [--include-hugs]   (candidate row INPUTS, never rows; ADR-0024)
 jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
 jpack packs verify      (check the project against that reviewed set)
@@ -975,7 +975,9 @@ removing any target assertion and any citations. Both commands exit `1` on any f
 matrix is reported *skipped* rather than passed by default (with `packs test --require-matrix` it is
 reported *mismatch* instead; ADR-0042), the coverage report moves no exit code unless
 `packs test --min-coverage N` or `--require-boundaries` asks it to (a pack under the level, or with a boundary
-no row witnesses, is then reported *mismatch*; ADR-0080), and a `packs test` run in which no row ran at all is reported
+no row witnesses, is then reported *mismatch*; ADR-0080), `packs test --strength` also runs variants of each
+tested pack and reports the ones no row notices, moving no exit code unless `--fail-on-survivor` asks it to
+(see [docs/building-with-packs.md](docs/building-with-packs.md#test-strength); ADR-0084), and a `packs test` run in which no row ran at all is reported
 *skipped* and exits `1` unless a mismatch was found: a green gate over zero rows would say a project
 was tested when nothing was. A new project may start with an empty `packs` object: inventory and structural
 validation accept it, while `packs test` remains skipped with exit `1`. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no

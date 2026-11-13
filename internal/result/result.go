@@ -1523,6 +1523,10 @@ type PackTestEntry struct {
 	// that misses one is a mismatch and its Detail says why. Absent when no
 	// such requirement was asked for or every one asked for was met.
 	UnmetRequirements []string `json:"unmetRequirements,omitempty"`
+	// Strength is this pack's test-strength run (ADR-0084), present exactly
+	// when the caller asked for one with --strength. Absent otherwise, so a
+	// run that did not ask reads byte for byte as it did before.
+	Strength *PackStrength `json:"strength,omitempty"`
 }
 
 // The coverage requirements a packs test run can be asked to hold each
@@ -1531,6 +1535,83 @@ const (
 	RequirementMinCoverage = "min-coverage"
 	RequirementBoundaries  = "require-boundaries"
 )
+
+// RequirementNoSurvivor is the requirement --fail-on-survivor asks a packs
+// test run to hold each pack whose matrix ran to: that every variant its
+// test-strength run derives is noticed by some row (ADR-0084). It follows the
+// coverage requirements in UnmetRequirements.
+const RequirementNoSurvivor = "fail-on-survivor"
+
+// StrengthLabel labels every test-strength run with what it measured and
+// what it did not. A variant no row notices is one of two things the run has
+// no way to tell apart, so the label says both and claims neither.
+const StrengthLabel = "variants of each pack derived by one small change to its own declarations, each run against that pack's own matrix: a variant no row notices is either a gap in the matrix or a change that behaves exactly as the pack does, this run cannot tell which, and its result proves nothing about the pack or the policy it states"
+
+// The variant kinds a test-strength run derives (ADR-0084).
+const (
+	VariantBoundMoved           = "bound-moved"
+	VariantOperatorReversed     = "operator-reversed"
+	VariantConditionDropped     = "condition-dropped"
+	VariantOutcomeSwapped       = "outcome-swapped"
+	VariantOnUnknownChanged     = "on-unknown-changed"
+	VariantValueSetEntryRemoved = "value-set-entry-removed"
+)
+
+// The statuses of one variant, and of one pack's test-strength run.
+const (
+	VariantNoticed      = "noticed"
+	VariantSurvived     = "survived"
+	VariantNotDerivable = "not-derivable"
+	StrengthRan         = "ran"
+	StrengthSkipped     = "skipped"
+)
+
+// StrengthRun is the run-level record of a test-strength run: the label, the
+// ceiling the caller ran it under, whether survivors fail the run, and the
+// counts summed over every pack.
+type StrengthRun struct {
+	Label          string         `json:"label"`
+	MaxVariants    int            `json:"maxVariants"`
+	FailOnSurvivor bool           `json:"failOnSurvivor,omitempty"`
+	Summary        StrengthCounts `json:"summary"`
+}
+
+// StrengthCounts counts one test-strength run. Derived counts the variants
+// that are packs this runtime admits and so ran, and is Noticed plus
+// Survived; NotDerivable counts the changes whose result was not such a pack
+// and which therefore ran nothing.
+type StrengthCounts struct {
+	Derived      int `json:"derived"`
+	Noticed      int `json:"noticed"`
+	Survived     int `json:"survived"`
+	NotDerivable int `json:"notDerivable"`
+}
+
+// PackStrength is one pack's test-strength run: whether it ran, its counts,
+// and every variant it derived, sorted by id. Detail says why it did not run.
+type PackStrength struct {
+	Status   string            `json:"status"`
+	Counts   StrengthCounts    `json:"counts"`
+	Variants []StrengthVariant `json:"variants"`
+	Detail   string            `json:"detail,omitempty"`
+}
+
+// StrengthVariant is one derived variant. ID is built from where the change
+// is and what it is, never from a position in this list, so it names the
+// same variant on every run over an unchanged pack. Change is the change in
+// the pack's own words, old then new; NoticedBy is the first row, in matrix
+// order, whose result differed from its expectation; Hint is a cheap
+// description of a row that would notice the variant, read off the pack.
+type StrengthVariant struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	Declaration string `json:"declaration"`
+	Change      string `json:"change"`
+	Status      string `json:"status"`
+	NoticedBy   string `json:"noticedBy,omitempty"`
+	Hint        string `json:"hint,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+}
 
 // MatrixProfile reads one pack's matrix against the history its rows came
 // from (ADR-0034): the statuses the run assigned, grouped by the origin each
@@ -1639,6 +1720,9 @@ type PackTest struct {
 	// derived boundary probe of each pack with a matrix to be witnessed by a
 	// row (ADR-0080). Absent otherwise.
 	RequireBoundaries bool `json:"requireBoundaries,omitempty"`
+	// Strength is present exactly when the caller asked for a test-strength
+	// run (ADR-0084). Absent otherwise.
+	Strength *StrengthRun `json:"strength,omitempty"`
 }
 
 // PackSuggestionLabel labels every packs suggest report with what the run

@@ -4,6 +4,26 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`packs test --strength` reports the variants of a pack its matrix does not notice** (#392,
+  ADR-0084; EXPERIMENTAL). For each tested pack all of whose rows matched, the run derives variants
+  in memory, each one small change to the pack's own declarations (`bound-moved`,
+  `operator-reversed`, `condition-dropped`, `outcome-swapped`, `on-unknown-changed`, and on Core
+  `0.5.0` `value-set-entry-removed`), runs the pack's own matrix against each, and reports each as
+  `noticed` (with the first row that noticed it), `survived`, or `not-derivable` when the change
+  leaves no pack this runtime admits. A survivor is either a gap in the matrix or a variant that
+  behaves exactly as the pack does; the command cannot tell which, and the result proves nothing
+  about the pack. Ids are built from the location and the change, variants are sorted by id, and
+  the output is the same bytes on every run; the text output prints each survivor with a hint of a
+  row that would notice it. Nothing is written beside the pack. `--max-variants N` (default 1000)
+  bounds the changes per pack: a pack that derives more refuses the whole run before any variant
+  runs (`JPS-RESOURCE-STRENGTH-VARIANTS`, exit 3), and a value below 1 is refused
+  (`JPS-INVOCATION-MAX-VARIANTS`, exit 3). By default the run informs and moves no exit code;
+  `--fail-on-survivor` fails a pack whose matrix ran when a variant survives or none could run,
+  named `fail-on-survivor` in `unmetRequirements`, and the run exits 1. Both options are refused
+  without `--strength` (`JPS-INVOCATION-STRENGTH-OPTION`, exit 3). The payload carries a `strength`
+  member per pack and for the run only under `--strength`; without it the output and the exit code
+  are unchanged. It is an option on `packs test` rather than a new command so that the evaluator is
+  reached through a surface already named: the conformance claim in CONFORMANCE.md is unchanged.
 - **A pack file can be signed, and its signature checked against the key a reader expects before
   the pack is used** (#391, ADR-0083; EXPERIMENTAL). `jpack packs sign <pack-file> --key
   <seed-file>` writes `<pack-file>.sig.json`, a detached signature over the file's exact bytes,
