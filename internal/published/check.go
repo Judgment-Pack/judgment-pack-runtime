@@ -964,9 +964,9 @@ func (w *walker) findings(report *Report, options Options) {
 			findings = append(findings, Finding{Code: CodeNotInManifest, Identity: identity, Published: w.location(first)})
 		}
 		if changed {
-			// Two digests under one identity: which came first can turn on
-			// commit dates, which committers set (order), so no order
-			// decides which of them a manifest pins.
+			// Two digests under one identity. Between tags no ancestry
+			// relates, which came first turns on commit dates, which
+			// committers set, so the run pins neither.
 			report.Withheld = append(report.Withheld, identity)
 			continue
 		}
