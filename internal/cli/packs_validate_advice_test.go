@@ -91,3 +91,48 @@ func TestPacksValidateReportsRuleOverlapAdvice(t *testing.T) {
 		t.Fatalf("the human surface prints the advice per pack: exit=%d\n%s", code, human)
 	}
 }
+
+// --fail-on-advisory appends the advisories check to every selected pack:
+// failed for a pack that draws advice, which fails the run, passed for one
+// that draws none, and skipped for one whose document check did not pass.
+// Without it there is no such check and no member (ADR-0081).
+func TestFailOnAdvisoryFailsAPackThatDrawsAdvice(t *testing.T) {
+	config, _ := overlapProject(t)
+	code, stdout, stderr := runTest(t, []string{"packs", "validate", "--config", config, "--format", "json", "--fail-on-advisory"}, "")
+	var report result.PackValidation
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatal(err)
+	}
+	if code != result.ExitInvalid || stderr != "" || report.Status != "invalid" || !report.FailOnAdvisory ||
+		report.Summary.Failed != 2 || report.Summary.Passed != 1 || !strings.Contains(stdout, `"failOnAdvisory":true`) {
+		t.Fatalf("advice fails the run under the option: exit=%d stderr=%q %s", code, stderr, stdout)
+	}
+	for _, entry := range report.Packs {
+		last := entry.Checks[len(entry.Checks)-1]
+		want, status := result.PackCheckFailed, "invalid"
+		if entry.ID == "plain" {
+			want, status = result.PackCheckPassed, "valid"
+		}
+		if last.Name != "advisories" || last.Status != want || entry.Status != status {
+			t.Fatalf("%s: the advisories check ends the checks: %+v", entry.ID, entry)
+		}
+	}
+
+	// A pack whose document check fails gets the check skipped, not passed.
+	broken := writeProjectFixture(t, `{"configVersion":"1","packs":{"broken":{"path":"packs/broken.json"}}}`,
+		map[string]string{"packs/broken.json": `{"specVersion":"0.3.0"}`})
+	_, stdout, _ = runTest(t, []string{"packs", "validate", "--config", broken, "--format", "json", "--fail-on-advisory"}, "")
+	report = result.PackValidation{}
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatal(err)
+	}
+	checks := report.Packs[0].Checks
+	if last := checks[len(checks)-1]; last.Name != "advisories" || last.Status != result.PackCheckSkipped {
+		t.Fatalf("an invalid document's advice check is skipped: %+v", checks)
+	}
+
+	code, stdout, _ = runTest(t, []string{"packs", "validate", "--config", config, "--format", "json"}, "")
+	if code != result.ExitSuccess || strings.Contains(stdout, `"advisories","status"`) || strings.Contains(stdout, `"name":"advisories"`) || strings.Contains(stdout, "failOnAdvisory") {
+		t.Fatalf("without the option there is no advisories check: exit=%d %s", code, stdout)
+	}
+}

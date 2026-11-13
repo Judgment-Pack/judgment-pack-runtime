@@ -46,6 +46,11 @@ All notable changes to tagged releases are documented here.
   warnings of Core `0.3.0` and `0.5.0`, member for member), and `advisoriesTruncated` when they
   stopped at the output limit; the human output prints each as an `advice:` line under its pack.
   Advice moves no status and no exit code. A pack that draws none carries no member.
+- **`packs validate --fail-on-advisory`** (#389, ADR-0081). With the option, every selected pack's
+  checks end with a seventh check, `advisories`: `failed` for a pack that draws any advice, so the
+  entry is `invalid` and the run exits 1; `passed` for one that draws none; `skipped` when the
+  document check did not pass. The payload then carries `failOnAdvisory: true`. Without the option
+  the output and the exit code are unchanged.
 - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.44.0 - 2026-11-12

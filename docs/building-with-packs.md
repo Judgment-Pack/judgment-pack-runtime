@@ -698,7 +698,8 @@ loads as rows. Beside a pack whose document validates, `packs validate` also car
 `advisories`, the advice `spec validate` reports for the same bytes — the non-normative
 `JPS-RULES-OVERLAP` warnings for two rules that can both match with different outcomes, under Core
 `0.3.0` and `0.5.0` — and prints each as an `advice:` line; advice is not a check and moves no exit
-code (ADR-0081). `packs test` then runs every row. Both exit `1` on any failure. Every check is
+code (ADR-0081). A gate that wants advice to fail the run adds `--fail-on-advisory`: each pack's
+checks then end with an `advisories` check, failed for a pack that draws any advice. `packs test` then runs every row. Both exit `1` on any failure. Every check is
 reported with its status — `passed`, `failed`, or `skipped` — so you can tell a check that passed
 from one the configuration never asked for.
 

@@ -33,6 +33,10 @@ const (
 	// one seed, the expected key when one is named, and the key in force in
 	// the signature sidecar. It is reported only when a key is named.
 	CheckAuditSigningKey = "audit-signing-key"
+	// CheckAdvisories is reported only when the caller asked that advice
+	// fail the run (ValidateOptions.FailOnAdvisory, ADR-0081), after every
+	// other check of the pack.
+	CheckAdvisories = "advisories"
 )
 
 // documentChecks are the checks that read the pack document, in order. They are
@@ -64,19 +68,35 @@ var filenameConvention = regexp.MustCompile(`^([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-((
 // typo in a CI invocation that silently checks nothing is the failure mode this
 // command exists to prevent.
 func (p *Project) Validate(engine *validation.Engine, id, command string) (result.PackValidation, *Failure) {
+	return p.ValidateWith(engine, id, command, ValidateOptions{})
+}
+
+// ValidateOptions are a packs validate run's caller-chosen options.
+type ValidateOptions struct {
+	// FailOnAdvisory makes a pack that draws any advice fail the run: the
+	// advisories check is appended to every selected pack's checks, failed
+	// for a pack with advice, passed for one without and skipped for one
+	// whose document check did not pass (ADR-0081). The default reports
+	// advice and moves no status.
+	FailOnAdvisory bool
+}
+
+// ValidateWith is Validate with options.
+func (p *Project) ValidateWith(engine *validation.Engine, id, command string, options ValidateOptions) (result.PackValidation, *Failure) {
 	selected, failure := p.selection(id)
 	if failure != nil {
 		return result.PackValidation{}, failure
 	}
 	output := result.PackValidation{
-		OutputVersion: result.OutputVersion,
-		Tool:          result.CurrentTool(),
-		Command:       command,
-		Status:        "valid",
-		Kind:          result.ProjectKind,
-		ConfigPath:    p.ConfigPath,
-		ConfigVersion: p.Config.ConfigVersion,
-		Packs:         make([]result.PackValidationEntry, 0, len(selected)),
+		OutputVersion:  result.OutputVersion,
+		Tool:           result.CurrentTool(),
+		Command:        command,
+		Status:         "valid",
+		Kind:           result.ProjectKind,
+		ConfigPath:     p.ConfigPath,
+		ConfigVersion:  p.Config.ConfigVersion,
+		Packs:          make([]result.PackValidationEntry, 0, len(selected)),
+		FailOnAdvisory: options.FailOnAdvisory,
 	}
 	// The configuration's own declared path, checked before any pack is: an
 	// audit directory that leaves the project would otherwise be a report of
@@ -97,6 +117,9 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 	}
 	for _, packID := range selected {
 		entry := p.validatePack(engine, packID, p.Config.Packs[packID])
+		if options.FailOnAdvisory {
+			holdToAdvice(&entry)
+		}
 		output.Summary.Total++
 		if entry.Status == "valid" {
 			output.Summary.Passed++
@@ -107,6 +130,29 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 		output.Packs = append(output.Packs, entry)
 	}
 	return output, nil
+}
+
+// holdToAdvice appends the advisories check to one entry: failed when the
+// pack draws advice, passed when it draws none, and skipped when its document
+// check did not pass, since advice is computed only for a valid document.
+func holdToAdvice(entry *result.PackValidationEntry) {
+	check := result.PackCheck{Name: CheckAdvisories, Status: result.PackCheckPassed}
+	documentPassed := slices.ContainsFunc(entry.Checks, func(c result.PackCheck) bool {
+		return c.Name == CheckDocument && c.Status == result.PackCheckPassed
+	})
+	switch {
+	case !documentPassed:
+		check.Status = result.PackCheckSkipped
+		check.Detail = "The document check did not pass, so no advice was computed."
+	case len(entry.Advisories) > 0:
+		check.Status = result.PackCheckFailed
+		check.Detail = fmt.Sprintf("The pack draws %d advisories, and this run fails on any.", len(entry.Advisories))
+		if entry.AdvisoriesTruncated {
+			check.Detail = fmt.Sprintf("The pack draws at least %d advisories, and this run fails on any.", len(entry.Advisories))
+		}
+		entry.Status = "invalid"
+	}
+	entry.Checks = append(entry.Checks, check)
 }
 
 // checkAuditDir reports whether the declared audit directory stays inside the

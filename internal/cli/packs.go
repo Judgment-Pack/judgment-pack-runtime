@@ -754,6 +754,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 	format := "human"
 	id := ""
 	configPath := ""
+	failOnAdvisory := false
 	command := &cobra.Command{
 		Use:   "validate",
 		Short: "Check the project configuration and every pack it declares",
@@ -772,7 +773,9 @@ func (a *App) packsValidateCommand() *cobra.Command {
 			"runtime never resolves is instructions an agent follows; and a declared matrix loads as rows. Beside a " +
 			"pack whose document check passed, the advice spec validate reports for the same bytes -- the " +
 			"non-normative JPS-RULES-OVERLAP warnings of Core 0.3.0 and 0.5.0 -- is carried as the entry's " +
-			"advisories, and moves no status and no exit code (ADR-0081). It " +
+			"advisories, and moves no status and no exit code (ADR-0081), unless --fail-on-advisory is given: then " +
+			"every selected pack's checks end with an advisories check, failed for a pack that draws any advice, " +
+			"and the payload carries failOnAdvisory: true. It " +
 			"evaluates nothing and runs no row: that is packs test. Exit 0 when every check passed, 1 when any " +
 			"failed.",
 		Args: cobra.NoArgs,
@@ -785,7 +788,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 				return failure
 			}
 			defer loaded.Close()
-			output, projectFailure := loaded.Validate(a.engine, id, "packs validate")
+			output, projectFailure := loaded.ValidateWith(a.engine, id, "packs validate", project.ValidateOptions{FailOnAdvisory: failOnAdvisory})
 			if projectFailure != nil {
 				return a.projectFailure("packs validate", format, projectFailure)
 			}
@@ -802,6 +805,7 @@ func (a *App) packsValidateCommand() *cobra.Command {
 	command.Flags().StringVar(&format, "format", format, "output format: human or json")
 	command.Flags().StringVar(&id, "id", id, "check one declared pack by its decision id instead of all of them")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().BoolVar(&failOnAdvisory, "fail-on-advisory", failOnAdvisory, "fail a pack that draws any advice, such as JPS-RULES-OVERLAP (ADR-0081)")
 	return command
 }
 

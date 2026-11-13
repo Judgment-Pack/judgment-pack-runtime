@@ -107,7 +107,7 @@ jpack spec test-conformance [suite] [--strict]
 jpack spec schema <spec-version>
 jpack spec examples [name] [--spec-version V]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
-jpack packs validate [--id X]
+jpack packs validate [--id X] [--fail-on-advisory]
 jpack packs test [--id X] [--require-matrix] [--min-coverage N] [--require-boundaries]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack packs suggest [--id X] [--base ROW] [--write F|-] [--max N] [--include-hugs]   (candidate row INPUTS, never rows; ADR-0024)
 jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
@@ -944,7 +944,7 @@ backwards.
 
 `packs validate` reports six named checks per pack — path containment, document validation, the
 `expectedVersion` pin, the filename cross-check, the hint keys, and matrix well-formedness — each as
-`passed`, `failed`, or `skipped`. `packs test` runs each pack's instance matrix through the experimental
+`passed`, `failed`, or `skipped`, plus a seventh, `advisories`, only under `--fail-on-advisory`. `packs test` runs each pack's instance matrix through the experimental
 evaluator and compares every row the way the bundled evaluation corpus is compared: the RFC 8785
 canonical §8.3 disposition byte for byte, or the expected §8.4 error class and phase, plus the one
 optional per-row assertion about the escalation target §8.3 keeps *outside* the disposition

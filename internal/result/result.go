@@ -1276,6 +1276,10 @@ type PackValidation struct {
 	Summary       PackCounts            `json:"summary"`
 	Checks        []PackCheck           `json:"checks,omitempty"`
 	Packs         []PackValidationEntry `json:"packs"`
+	// FailOnAdvisory is true exactly when the caller asked that a pack that
+	// draws advice fail the run (ADR-0081); each pack's checks then end with
+	// the advisories check. Absent otherwise.
+	FailOnAdvisory bool `json:"failOnAdvisory,omitempty"`
 }
 
 // LintCounts is one packs lint summary. Unlike PackCounts it carries a

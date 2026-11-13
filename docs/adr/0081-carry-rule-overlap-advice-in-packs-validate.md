@@ -28,8 +28,9 @@ Material-decision impact: public-surface.
 
 - **A. An `advisories` member on each pack entry**, holding the diagnostics `spec validate` reports
   beside a valid verdict, with `advisoriesTruncated` beside it.
-- **B. A seventh named check** reporting the advice as `passed` or `failed`. A check that fails moves
-  the entry to `invalid`, which would change the exit code of every project whose packs draw advice.
+- **B. A seventh named check** reporting the advice as `passed` or `failed`, always. A check that
+  fails moves the entry to `invalid`, which would change the exit code of every project whose packs
+  draw advice.
 - **C. Advice in the document check's detail text.** A sentence cannot carry the advice's witness
   facts and suggested rewrite, which are what make it actionable.
 
@@ -47,13 +48,23 @@ Chosen option: **A**.
    additive output under VERSIONING.md's MINOR rule, and `outputVersion` stays `"2"`.
 3. **Human output.** Each piece of advice is printed under its pack as an `advice:` line, in the
    form `spec validate` prints it.
-4. **Bounds.** Each pack's advice is bounded by ADR-0066's limits; a run's advice is therefore
+4. **Failing on advice, by request.** `--fail-on-advisory` is option B behind a per-run opt-in, the
+   pattern of [ADR-0042](0042-let-packs-test-require-a-matrix.md). With it, every selected pack's
+   checks end with a seventh check, `advisories`: `failed` when the pack draws any advice (the
+   entry is then `invalid` and the run exits 1), `passed` when it draws none, and `skipped` when the
+   document check did not pass, because advice is computed only for a valid document. The payload
+   carries `failOnAdvisory: true` exactly then. Without the option there is no seventh check and no
+   member, so the default is as item 2 states. The option is on the CLI only, as ADR-0080's are.
+5. **Bounds.** Each pack's advice is bounded by ADR-0066's limits; a run's advice is therefore
    bounded by those limits times the number of selected packs, as its checks are.
 
 ### Consequences
 
 - Good, because the gate a project runs shows the same advice the author's own validation shows.
 - Bad, because a project with many overlapping packs gets a longer report; `--id` selects one pack.
+- Bad, because advice is non-normative and can name an overlap the author intends; a gate run with
+  `--fail-on-advisory` then fails until the rules are rewritten. The caller who chose the option owns
+  that.
 - Revisit if the semantic layer reports advice of another kind: it would appear here unchanged, and
   this record would need to say whether that is wanted.
 
@@ -61,4 +72,5 @@ Chosen option: **A**.
 
 Issue #389. Implementation: `validatePack` in `internal/project/validate.go`,
 `PackValidationEntry.Advisories` in `internal/result/result.go`, the human rendering in
-`internal/cli/render.go`. ADR-0066 (the advice), ADR-0012 (the project convention).
+`internal/cli/render.go`; the option is `ValidateOptions.FailOnAdvisory` and `holdToAdvice` in
+`internal/project/validate.go`. ADR-0066 (the advice), ADR-0012 (the project convention).
