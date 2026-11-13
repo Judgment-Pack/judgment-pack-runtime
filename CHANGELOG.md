@@ -35,7 +35,8 @@ All notable changes to tagged releases are documented here.
   withheld. A shallow clone is refused without a
   manifest and stated as shallow with one; a partial clone is refused. It exits 0 when valid, 1
   with a finding, with something unread, or when no tag was read and no manifest pin given, 3 for
-  a usage error and 4 when the repository cannot be read.
+  a usage error and 4 when the repository cannot be read, or when its trees name more than one run
+  reads, 1,000,000 directories or 1 GiB of tree objects (`JPS-RESOURCE-TREE-WALK-LIMIT`).
   It runs `git` from `PATH` with hooks, pagers, fsmonitor, replace refs, credential helpers and
   every transport turned off, and writes nothing into the repository. It evaluates nothing, so the
   conformance claim in CONFORMANCE.md is unchanged. `docs/published-identities.md` describes it.

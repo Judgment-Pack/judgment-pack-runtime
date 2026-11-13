@@ -132,7 +132,7 @@ encoder writes it.
 | `error` | 1 | The `--manifest` file is not a manifest this runtime reads (`JPS-PUBLISHED-MANIFEST`). |
 | `unsupported` | 2 | The `--manifest` file declares a later `manifestVersion`. |
 | `error` | 3 | A usage error: a pattern, `--strict` without `--manifest`, a `--write-manifest` target that is not a manifest. |
-| `error` | 4 | The repository could not be read, and nothing is reported (`JPS-PUBLISHED-*`, below), or the `--manifest` file could not be read (`JPS-INPUT-READ`, `JPS-RESOURCE-INPUT-BYTE-LIMIT`) or the manifest written. |
+| `error` | 4 | The repository could not be read, or its trees name more than one run reads, and nothing is reported (`JPS-PUBLISHED-*` and `JPS-RESOURCE-TREE-WALK-LIMIT`, below), or the `--manifest` file could not be read (`JPS-INPUT-READ`, `JPS-RESOURCE-INPUT-BYTE-LIMIT`) or the manifest written. |
 
 | Code | Meaning |
 | --- | --- |
@@ -142,6 +142,7 @@ encoder writes it.
 | `JPS-PUBLISHED-PARTIAL-CLONE` | A partial clone: a repository with a promisor remote. |
 | `JPS-PUBLISHED-HEAD` | HEAD names no readable commit. |
 | `JPS-PUBLISHED-READ` | git stopped answering while objects were read. |
+| `JPS-RESOURCE-TREE-WALK-LIMIT` | The selected tags and HEAD name more directories, or more tree bytes, than one run reads (Cost, below). |
 | `JPS-PUBLISHED-WRITE` | The manifest could not be written. |
 
 ## The manifest
@@ -239,12 +240,24 @@ One `git cat-file --batch` process answers every object read. A run reads:
 - each selected blob once, by object id, however many tags and paths hold it, hashed and decoded
   once.
 
-Memory holds, per run, the pairs of path and tree id already read, one digest and identity per
-distinct selected blob (not its bytes), and, per identity, the first place each of its distinct
-digests was found. Object contents are held one object at a time, each at most 10 MiB; a larger
-object is read past without being kept. Every list a report carries holds at most 1000 items. Over
-this runtime's own history, 55 tags and about 900 distinct documents, a run takes under a second
-and about 30 MB of memory.
+A directory is read once per path, not once per tree id, because what is selected depends on the
+path. So a tree that holds one directory under two names doubles what is read at each level, and a
+few small objects can name more directories than any run could read. A run therefore reads at most
+**1,000,000 directories**, distinct by path and tree id, and at most **1 GiB of tree objects**,
+an object over 10 MiB that is read past included; a tree entry takes at least 24 bytes, so that
+bounds the entries examined too. A run that would go past either bound ends with
+`JPS-RESOURCE-TREE-WALK-LIMIT`, exit 4, and reports nothing: a part of the tags read is not a
+result. Narrow the paths with `--include`, which keeps the walk out of directories no pattern can
+reach below, or the tags with `--tags`. Each directory read is one request to git, about 0.1 ms on
+a loaded development machine, so the directory bound stands for a few minutes of reading at most.
+
+Memory holds, per run, a SHA-256 of each pair of path and tree id already read (32 bytes each,
+whatever the path's length), one digest and identity per distinct selected blob (not its bytes),
+and, per identity, the first place each of its distinct digests was found. Object contents are held
+one object at a time, each at most 10 MiB; a larger object is read past without being kept. Every
+list a report carries holds at most 1000 items. Over this runtime's own history, 55 tags and about
+900 distinct documents, a run reads about 800 directories and takes under a second and about 30 MB
+of memory.
 
 ## In CI
 

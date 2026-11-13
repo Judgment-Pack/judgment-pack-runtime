@@ -66,7 +66,8 @@ func (a *App) checkPublishedCommand() *cobra.Command {
 			"member. It exits 0 when every identity keeps its bytes and everything selected was read, 1 when there is a " +
 			"finding (status invalid), or something selected could not be read, or no tag was read and no manifest pin was " +
 			"given, so nothing published was checked (status incomplete), 3 for a usage error, and " +
-			"4 when the repository could not be read, with nothing reported. The check, its output and this command are " +
+			"4 when the repository could not be read, or its trees name more than one run reads (1,000,000 directories, " +
+			"distinct by path and tree, or 1 GiB of tree objects), with nothing reported. The check, its output and this command are " +
 			"EXPERIMENTAL: each may change or be removed without a compatibility promise.",
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {

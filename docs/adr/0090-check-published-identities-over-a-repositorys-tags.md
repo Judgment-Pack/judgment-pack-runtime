@@ -86,7 +86,8 @@ something selected unreadable, or no tag read and no manifest pin given) exit 1,
 could not read everything, or had nothing published to compare HEAD with, never passes: a clone
 fetched without tags, or a `--tags` pattern that matches none, is not a clean result. A usage error
 exits 3. A repository that cannot be read (no git, not a repository, a shallow clone without a
-manifest, a partial clone, an unreadable HEAD, git failing mid-run) exits 4 with nothing reported.
+manifest, a partial clone, an unreadable HEAD, git failing mid-run, trees that name more than the
+walk's bounds) exits 4 with nothing reported.
 
 **The manifest** (`manifestVersion` `"1"`) pins each identity to its digest and first tag in
 deterministic bytes. It is a closed input: a reader refuses any member it does not know, so adding
@@ -129,9 +130,15 @@ above.
 **Bounds.** One `cat-file --batch` process answers every read. A directory is read once per
 distinct (path, tree id), so a tag costs what changed since the tags before it; a directory no
 include pattern can reach below is not read. A selected blob is read, hashed and decoded once by
-object id. Memory holds those keys, one digest and identity per distinct blob, and per identity the
-first place of each distinct digest; contents are held one object at a time, at most 10 MiB, and a
-larger object is read past. Lists are capped at 1000 items with exact counts.
+object id. Since the key holds the path, a tree that holds one subtree under two names doubles the
+reads at each level, so a run reads at most 1,000,000 directories and 1 GiB of tree objects (an
+object read past included; an entry takes at least 24 bytes, so this bounds the entries too), and a
+run that would go past either ends with `JPS-RESOURCE-TREE-WALK-LIMIT`, exit 4, nothing reported.
+Exit 4 rather than `incomplete`: the walk stops partway through one tag's tree, so no list of what
+was not read could be given, and a run that reads part of the tags is not a result. Memory holds a
+32-byte SHA-256 of each (path, tree id) key, one digest and identity per distinct blob, and per
+identity the first place of each distinct digest; contents are held one object at a time, at most
+10 MiB, and a larger object is read past. Lists are capped at 1000 items with exact counts.
 
 ### Consequences
 

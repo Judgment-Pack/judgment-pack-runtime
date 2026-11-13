@@ -911,6 +911,85 @@ func TestEachBlobIsReadOnceHoweverOftenItIsHeld(t *testing.T) {
 	}
 }
 
+// lowerBounds sets the walk's bounds for one test.
+func lowerBounds(t *testing.T, directories int, treeBytes int64) {
+	savedDirectories, savedBytes := maxDirectories, maxTreeBytes
+	maxDirectories, maxTreeBytes = directories, treeBytes
+	t.Cleanup(func() { maxDirectories, maxTreeBytes = savedDirectories, savedBytes })
+}
+
+// doubling writes a tree that holds the one below it twice, depth times over,
+// above leaf: 2^depth paths reach leaf.
+func doubling(repo *gitfixture.Repo, leaf string, depth int) string {
+	tree := leaf
+	for level := 0; level < depth; level++ {
+		tree = repo.TreeOf(gitfixture.Entry{Mode: "40000", Kind: "tree", ID: tree, Name: "a"}, gitfixture.Entry{Mode: "40000", Kind: "tree", ID: tree, Name: "b"})
+	}
+	return tree
+}
+
+func tagged(repo *gitfixture.Repo, tree string) {
+	commit := repo.Commit(tree)
+	repo.Tag("v1", commit)
+	repo.Head(commit)
+}
+
+func TestATreeThatNamesMoreDirectoriesThanTheBoundEndsTheRun(t *testing.T) {
+	repo := gitfixture.New(t)
+	// Eleven trees name 2^11 - 1 = 2047 directories, distinct by path; HEAD
+	// is the tag's commit, so it adds none.
+	tagged(repo, doubling(repo, repo.TreeOf(), 10))
+	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid || report.TagsRead != 1 {
+		t.Fatalf("under the default bounds the run reads it: %#v", report)
+	}
+	lowerBounds(t, 2047, maxTreeBytes)
+	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid {
+		t.Fatalf("a bound of exactly the directories read is not passed: %#v", report)
+	}
+	lowerBounds(t, 2046, maxTreeBytes)
+	report, failure := Check(defaultOptions(repo.Dir))
+	if failure == nil || failure.Code != FailureTreeLimit || report != nil || !strings.Contains(failure.Message, "2046 directories") {
+		t.Fatalf("one directory past the bound must end the run with nothing reported: %#v %#v", failure, report)
+	}
+	// A narrower --include reads fewer directories.
+	options := defaultOptions(repo.Dir)
+	only, _ := CompileGlob("a/a/a/a/a/a/a/a/a/a/*.json")
+	options.Selection.Include = []Glob{only}
+	if report := run(t, options); report.Status != StatusValid {
+		t.Fatalf("a narrower selection fits the bound: %#v", report)
+	}
+}
+
+func TestTreeBytesAreBoundedHoweverFewTheEntries(t *testing.T) {
+	repo := gitfixture.New(t)
+	// One entry with a 100,000-byte name, under 2^4 paths: few directories,
+	// 1.6 MB of tree read.
+	leaf := repo.RawTree(gitfixture.Entry{Mode: "100644", Name: strings.Repeat("n", 100_000), ID: repo.Blob("x")})
+	tagged(repo, doubling(repo, leaf, 4))
+	lowerBounds(t, maxDirectories, 2<<20)
+	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid {
+		t.Fatalf("under the bound the run reads it: %#v", report)
+	}
+	lowerBounds(t, maxDirectories, 1<<20)
+	if _, failure := Check(defaultOptions(repo.Dir)); failure == nil || failure.Code != FailureTreeLimit {
+		t.Fatalf("tree bytes past the bound must end the run: %#v", failure)
+	}
+
+	// A tree over the object limit is read past, not read, and its bytes
+	// count all the same.
+	large := gitfixture.New(t)
+	huge := large.RawTree(gitfixture.Entry{Mode: "100644", Name: strings.Repeat("n", int(MaxObjectBytes)), ID: large.Blob("x")})
+	tagged(large, doubling(large, huge, 1))
+	lowerBounds(t, maxDirectories, 2*MaxObjectBytes+1<<20)
+	if report := run(t, defaultOptions(large.Dir)); report.Status != StatusIncomplete || report.UnreadableCount != 2 {
+		t.Fatalf("an oversized tree is unreadable at each path: %#v", report)
+	}
+	lowerBounds(t, maxDirectories, MaxObjectBytes+1<<20)
+	if _, failure := Check(defaultOptions(large.Dir)); failure == nil || failure.Code != FailureTreeLimit {
+		t.Fatalf("the bytes of a tree read past count: %#v", failure)
+	}
+}
+
 func TestADocumentOverTheReadLimitIsUnreadable(t *testing.T) {
 	large := `{"specVersion":"0.5.0","id":"big","version":"1.0.0","pad":"` + strings.Repeat("x", int(MaxObjectBytes)) + `"}`
 	repo := history(t, []string{"v1"}, []map[string]string{{"big.json": large}}, nil)

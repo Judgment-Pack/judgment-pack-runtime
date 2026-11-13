@@ -7,6 +7,7 @@ package published
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -74,6 +75,26 @@ const MaxObjectBytes = carrier.HardMaxBytes
 
 // maxPathBytes bounds one path in a tree.
 const maxPathBytes = 4096
+
+// The walk's bounds, per run. A directory is read once for each distinct path
+// and tree id, so a tree that holds one subtree under two names doubles the
+// directories to read at each level, and a handful of small objects can name
+// more than any run could read. A run that would go past either bound ends
+// with FailureTreeLimit and reports nothing. They are variables so that tests
+// can lower them.
+var (
+	// maxDirectories bounds the distinct (path, tree id) pairs a run reads,
+	// each one request to git, counted when the walk queues it; so it
+	// bounds the keys the walk keeps, and the directories waiting to be
+	// read, too.
+	maxDirectories = 1_000_000
+	// maxTreeBytes bounds the bytes of tree objects a run reads from git, an
+	// object over MaxObjectBytes, which is read past, included. One entry
+	// can be as long as its object, so the directory count alone does not
+	// bound the bytes; and every entry takes at least 24 bytes, so this
+	// bounds the entries examined.
+	maxTreeBytes int64 = 1 << 30
+)
 
 // MaxListed bounds each list a report carries; the counts are exact.
 const MaxListed = 1000
@@ -196,6 +217,7 @@ const (
 	FailurePartial     = "JPS-PUBLISHED-PARTIAL-CLONE"
 	FailureHead        = "JPS-PUBLISHED-HEAD"
 	FailureReadFailure = "JPS-PUBLISHED-READ"
+	FailureTreeLimit   = "JPS-RESOURCE-TREE-WALK-LIMIT"
 )
 
 type snapshot struct {
@@ -284,12 +306,16 @@ func Check(options Options) (*Report, *Failure) {
 		hashBytes:  hashBytes,
 		selection:  options.Selection,
 		snapshots:  snapshots,
-		visited:    map[string]struct{}{},
+		visited:    map[[sha256.Size]byte]struct{}{},
 		blobs:      map[string]*blobInfo{},
 		identities: map[Identity]*identityRecord{},
 	}
 	for index := range snapshots {
 		if err := w.walk(index); err != nil {
+			var limit *Failure
+			if errors.As(err, &limit) {
+				return nil, limit
+			}
 			return nil, fail(FailureReadFailure, "%s", err.Error())
 		}
 	}
@@ -520,16 +546,21 @@ type identityRecord struct {
 }
 
 type walker struct {
-	objects    *objects
-	hashBytes  int
-	selection  Selection
-	snapshots  []snapshot
-	visited    map[string]struct{}
+	objects   *objects
+	hashBytes int
+	selection Selection
+	snapshots []snapshot
+	// visited holds the SHA-256 of each path and tree id read, a fixed size
+	// however long the path.
+	visited    map[[sha256.Size]byte]struct{}
 	blobs      map[string]*blobInfo
 	identities map[Identity]*identityRecord
 	unreadable []Unreadable
 	documents  int
 	other      int
+	// treeBytes counts the tree bytes read, against maxTreeBytes; visited
+	// counts the directories, against maxDirectories.
+	treeBytes int64
 }
 
 type directory struct {
@@ -613,18 +644,19 @@ func modeText(mode string) string {
 // selected path, and a submodule (or a mode git reads as one) the selection
 // selects or reaches below, is reported as unreadable, never skipped.
 func (w *walker) walk(index int) error {
-	stack := []directory{{path: "", tree: w.snapshots[index].tree}}
+	stack := []directory{}
+	if err := w.queue(&stack, directory{path: "", tree: w.snapshots[index].tree}); err != nil {
+		return err
+	}
 	for len(stack) > 0 {
 		current := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		key := current.path + "\x00" + current.tree
-		if _, seen := w.visited[key]; seen {
-			continue
-		}
-		w.visited[key] = struct{}{}
 		entries, problem, err := w.readTree(current.tree)
 		if err != nil {
 			return err
+		}
+		if w.treeBytes > maxTreeBytes {
+			return w.overLimit()
 		}
 		if problem != "" {
 			w.unread(index, displayDir(current.path), "", problem)
@@ -674,10 +706,32 @@ func (w *walker) walk(index int) error {
 			}
 		}
 		for position := len(subdirectories) - 1; position >= 0; position-- {
-			stack = append(stack, subdirectories[position])
+			if err := w.queue(&stack, subdirectories[position]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// queue puts a directory on the stack unless it was read, or queued, before
+// at the same path with the same tree id, and counts it against
+// maxDirectories.
+func (w *walker) queue(stack *[]directory, next directory) error {
+	key := sha256.Sum256([]byte(next.path + "\x00" + next.tree))
+	if _, seen := w.visited[key]; seen {
+		return nil
+	}
+	if len(w.visited) >= maxDirectories {
+		return w.overLimit()
+	}
+	w.visited[key] = struct{}{}
+	*stack = append(*stack, next)
+	return nil
+}
+
+func (w *walker) overLimit() *Failure {
+	return fail(FailureTreeLimit, "The selected tags and HEAD hold more than one run reads: over %d directories, distinct by path and tree, or %d bytes of tree objects, at the paths the selection reaches. A directory is read once for each path that holds it, so a tree that holds one directory under many names is read under each. Narrow the paths with --include or the tags with --tags; nothing was reported.", maxDirectories, maxTreeBytes)
 }
 
 func displayDir(path string) string {
@@ -694,6 +748,7 @@ func (w *walker) unread(index int, path, digest, reason string) {
 // readTree reads one tree object and parses its entries.
 func (w *walker) readTree(id string) ([]treeEntry, string, error) {
 	found, content, err := w.objects.read(id, MaxObjectBytes)
+	w.treeBytes += found.size
 	if errors.Is(err, errObjectTooLarge) {
 		return nil, fmt.Sprintf("its tree object is larger than %d bytes; not read", MaxObjectBytes), nil
 	}
