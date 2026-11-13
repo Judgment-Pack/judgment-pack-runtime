@@ -180,3 +180,4 @@ authority, and following it confers no conformance status on anything.
 | [0082](0082-let-the-dialect-check-read-core-0-5-0-packs.md) | Let the dialect check read Core 0.5.0 packs | proposed |
 | [0083](0083-sign-a-pack-file-and-check-the-signature-before-use.md) | Sign a pack file's bytes, and check the signature against an expected key before the pack is used | proposed |
 | [0084](0084-measure-test-strength-with-pack-variants.md) | Measure a matrix's test strength with variants of its pack | proposed |
+| [0085](0085-evaluate-a-batch-of-fact-documents-in-one-run.md) | Evaluate a batch of fact documents in one run | proposed |

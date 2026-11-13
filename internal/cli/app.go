@@ -215,12 +215,14 @@ func (a *App) evaluateCommand() *cobra.Command {
 	citesPath := ""
 	bindingPath := ""
 	configPath := ""
+	batchPath := ""
+	maxItems := DefaultBatchMaxItems
 	command := &cobra.Command{
 		Use:   "evaluate <pack-or->",
 		Short: "EXPERIMENTAL SURFACE: apply the JPS §§7-8 resolution model to one pack",
-		Long:  "Apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all, including a reached §10 evaluation-work limit (resource-exhaustion, evaluation phase). The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The exact pack declaration selects the Core 0.2.0-draft, Core 0.3.0 base or Core 0.5.0 base contract; extended profiles are refused before schema interpretation or facts admission. Core 0.3 routed handoffs retain exact destination order and duplicates; the output reports no singular target for them. The payload names the pack's specVersion and the contract's evaluatorSpecVersion. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim, and one run of this command is a result rather than the claim or evidence about anything beyond that run -- no result is an authorization, an executed action, or any statement about whether the pack, the facts, or acting on the disposition is correct (§3.5). Producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version, is not an input the claimed class defines, and every evaluation payload produced this way says so in band. With --rfc0016-outcome-values the value declarations of the specification's RFC 0016 (Draft) are admitted as a prototype under the same terms: the disposition of an outcome that declares values carries them in a value member that is the draft's and not §8.3's, and an outcome with a declared value that does not resolve is not produced -- the result is unresolved with reason unknown. One evaluation runs under one draft, so the two flags are mutually exclusive. The pack may also be named by --pack-id, which resolves one decision id through a project's jpack.json (ADR-0012, a convention of this runtime and not of the specification); it is mutually exclusive with the pack argument, because a command with two sources for one input has an order of precedence nobody asked for. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. The project's configuration is consulted on every run, however the pack was named, because whether an evaluation is recorded is that configuration's to say: from configVersion \"3\" an audit member declares a directory, and each completed evaluation then appends one record to it (ADR-0018) -- unless the run declares itself a rehearsal with --rehearsal, which appends nothing and consults no reviewed set (ADR-0028). A refused evaluation records nothing, a record that cannot be written refuses the run rather than reporting a disposition nothing kept, and a project that declares no audit member has nothing written for it. A recorded run whose project names a signing key that will not sign its record, a key that is refused, is not the key in force, or cannot be shown to be because the signature sidecar cannot be read, as read before the run evaluates, is recorded unsigned and reports the reason packs validate's audit-signing-key check gives as a JPS-AUDIT-UNSIGNED warning: in the payload's diagnostics member under --format json, on standard error otherwise; the disposition, the record and the exit code are what they would have been, and a rotation written since that read, a signature that cannot be written, or a trail no lock can be taken on is reported the same way, with its own reason. From configVersion \"8\" the audit member's requireSigning refuses such a run instead, and every run while no signing key is named, before evaluating and with nothing recorded (JPS-AUDIT-SIGNING-REQUIRED, ADR-0071), and fails one whose write finds its key no longer in force or no lock, with nothing appended, or cannot write its signature, with the record written unsigned (JPS-AUDIT-WRITE); a rehearsal is neither warned nor refused.",
+		Long:  "Apply the JPS Core §§7-8 resolution model to one conformant pack and one facts document. Inputs are admitted in the order §8.2 fixes -- pack, facts, evidence, required extensions -- before any rule is interpreted, and a refused evaluation reports its §8.4 error class with no disposition at all, including a reached §10 evaluation-work limit (resource-exhaustion, evaluation phase). The result is the §8.3 portable disposition, written under --format json (without --pretty, which re-indents it) in its RFC 8785 canonical form. The exact pack declaration selects the Core 0.2.0-draft, Core 0.3.0 base or Core 0.5.0 base contract; extended profiles are refused before schema interpretation or facts admission. Core 0.3 routed handoffs retain exact destination order and duplicates; the output reports no singular target for them. The payload names the pack's specVersion and the contract's evaluatorSpecVersion. This runtime's conformance claim is stated, in full and only, in CONFORMANCE.md; this text states no claim, and one run of this command is a result rather than the claim or evidence about anything beyond that run -- no result is an authorization, an executed action, or any statement about whether the pack, the facts, or acting on the disposition is correct (§3.5). Producing any disposition exits 0. With --rfc0008-quantifiers the condition grammar of the specification's RFC 0008 (Draft) is admitted as a prototype; such a pack is not valid under any published JPS version, is not an input the claimed class defines, and every evaluation payload produced this way says so in band. With --rfc0016-outcome-values the value declarations of the specification's RFC 0016 (Draft) are admitted as a prototype under the same terms: the disposition of an outcome that declares values carries them in a value member that is the draft's and not §8.3's, and an outcome with a declared value that does not resolve is not produced -- the result is unresolved with reason unknown. One evaluation runs under one draft, so the two flags are mutually exclusive. The pack may also be named by --pack-id, which resolves one decision id through a project's jpack.json (ADR-0012, a convention of this runtime and not of the specification); it is mutually exclusive with the pack argument, because a command with two sources for one input has an order of precedence nobody asked for. Every payload echoes the evaluated pack's own id and version as packId and packVersion, read off the document that was evaluated. The project's configuration is consulted on every run, however the pack was named, because whether an evaluation is recorded is that configuration's to say: from configVersion \"3\" an audit member declares a directory, and each completed evaluation then appends one record to it (ADR-0018) -- unless the run declares itself a rehearsal with --rehearsal, which appends nothing and consults no reviewed set (ADR-0028). A refused evaluation records nothing, a record that cannot be written refuses the run rather than reporting a disposition nothing kept, and a project that declares no audit member has nothing written for it. A recorded run whose project names a signing key that will not sign its record, a key that is refused, is not the key in force, or cannot be shown to be because the signature sidecar cannot be read, as read before the run evaluates, is recorded unsigned and reports the reason packs validate's audit-signing-key check gives as a JPS-AUDIT-UNSIGNED warning: in the payload's diagnostics member under --format json, on standard error otherwise; the disposition, the record and the exit code are what they would have been, and a rotation written since that read, a signature that cannot be written, or a trail no lock can be taken on is reported the same way, with its own reason. From configVersion \"8\" the audit member's requireSigning refuses such a run instead, and every run while no signing key is named, before evaluating and with nothing recorded (JPS-AUDIT-SIGNING-REQUIRED, ADR-0071), and fails one whose write finds its key no longer in force or no lock, with nothing appended, or cannot write its signature, with the record written unsigned (JPS-AUDIT-WRITE); a rehearsal is neither warned nor refused. EXPERIMENTAL: with --batch, a file path or - names a batch, JSON Lines of items, each one object {\"facts\": <facts document>} with an optional \"id\" string echoed back and an optional \"evidence\" document; every item is evaluated against the one pack, admitted once, and answered by one line {\"line\", \"id\", \"run\", \"exitCode\", \"result\"}, in input order, whose result is exactly what this command writes under --format json for that item run alone and whose exitCode is the code that run exits with (ADR-0085). An item refused does not stop the others. Records are appended a chunk of items at a time, under one hold of the trail's lock, one record per evaluation exactly as a single run writes it, and no item's result is written before its record is synced. The output is a lower bound: an append that fails may have written some or all of its chunk, so each of the chunk's evaluations is reported as JPS-AUDIT-WRITE, its record not confirmed, and the batch stops; after exit 4 or an interruption the trail may hold up to one chunk of records the output did not report as recorded. Every line of a batch that records carries in run the run id its records carry, and standard error names it before the first record is appended, so those records can be found and matched to items, in order and by the facts and evidence each carries, before any item is run again (ADR-0085 §8). A batch exits 0 when every item produced a disposition, 1 when the input was read to its end and an item was refused, and 4 when it stopped: at more items than --max-items (JPS-RESOURCE-BATCH-ITEMS), at an input that could not be read, or at a record or a result that could not be written.",
 		Args:  cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(invoked *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
 			}
@@ -247,7 +249,25 @@ func (a *App) evaluateCommand() *cobra.Command {
 			// input this command does not take, never became an evaluation — and
 			// a broken configuration must not answer in place of the mistake the
 			// caller actually made.
-			if factsPath == "" {
+			// A batch (ADR-0085) takes its facts and evidence per item, one
+			// result per line, so the inputs and the renderings a single run
+			// takes beside it are refused rather than applied to every item.
+			if invoked.Flags().Changed("max-items") && batchPath == "" {
+				return a.operational("experimental evaluate", format, result.ExitInvocation, maxItemsCode, "--max-items bounds a batch and is taken only with --batch.")
+			}
+			if batchPath != "" {
+				if invocation := batchInvocation(format, a.pretty, factsPath, evidencePath, citesPath, bindingPath, maxItems); invocation != "" {
+					code := batchInvocationCode
+					if maxItems < 1 {
+						code = maxItemsCode
+					}
+					return a.operational("experimental evaluate", format, result.ExitInvocation, code, invocation)
+				}
+				if packArgument == "-" && batchPath == "-" {
+					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The pack and the batch cannot both be standard input.")
+				}
+			}
+			if factsPath == "" && batchPath == "" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-FACTS", "--facts is required: one JSON facts document (a file path, or - for standard input).")
 			}
 			if packArgument == "-" && factsPath == "-" {
@@ -256,7 +276,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 			if evidencePath == "-" {
 				return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-STDIN", "The evidence document cannot be standard input; pass a file path.")
 			}
-			for _, input := range []string{packArgument, factsPath, evidencePath} {
+			for _, input := range []string{packArgument, factsPath, evidencePath, batchPath} {
 				if input != "" && input != "-" && (strings.Contains(input, "://") || fssecure.IsRemotePath(input)) {
 					return a.operational("experimental evaluate", format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "URL and remote filesystem inputs are not supported; use local files or standard input.")
 				}
@@ -364,15 +384,30 @@ func (a *App) evaluateCommand() *cobra.Command {
 					contract = selected
 				}
 			}
-			facts, factsOversized, err := a.readEvaluationInput(factsPath)
-			if err != nil {
-				return a.evaluateReadFailure(format, "facts")
+			// A batch's input is opened where the facts document is read,
+			// and read a line at a time as it is evaluated.
+			var batchInput io.Reader
+			var facts, evidence []byte
+			if batchPath != "" {
+				input, closeInput, err := a.openBatch(batchPath)
+				if err != nil {
+					return a.evaluateReadFailure(format, "batch")
+				}
+				defer closeInput()
+				batchInput = input
+			} else {
+				var factsOversized bool
+				var err error
+				facts, factsOversized, err = a.readEvaluationInput(factsPath)
+				if err != nil {
+					return a.evaluateReadFailure(format, "facts")
+				}
+				if factsOversized {
+					oversized = append(oversized, "facts")
+				}
 			}
-			if factsOversized {
-				oversized = append(oversized, "facts")
-			}
-			var evidence []byte
 			if evidencePath != "" {
+				var err error
 				evidenceOversized := false
 				evidence, evidenceOversized, err = a.readEvaluationInput(evidencePath)
 				if err != nil {
@@ -428,7 +463,7 @@ func (a *App) evaluateCommand() *cobra.Command {
 			}
 			auditWriter.UnderLaw(reviewed, set.Provenance())
 			evaluator := evaluation.NewEngine(a.engine)
-			output, failure := evaluator.EvaluateWith(pack, facts, evidence, evaluation.Options{
+			options := evaluation.Options{
 				SpecVersion:          contract.Version(),
 				Command:              "experimental evaluate",
 				SupportedExtensions:  supported,
@@ -443,7 +478,23 @@ func (a *App) evaluateCommand() *cobra.Command {
 				// comparison reading it can match, rehearsal or not: a
 				// rehearsal's answer is read too (ADR-0046).
 				RequireComparableFacts: loaded.RequiresComparableFacts(),
-			})
+			}
+			if batchPath != "" {
+				return a.runBatch(batchRun{
+					evaluator: evaluator,
+					pack:      pack,
+					contract:  contract,
+					options:   options,
+					rehearsal: rehearsal,
+					loaded:    loaded,
+					writer:    auditWriter,
+					unsigned:  unsigned,
+					reviewed:  reviewed,
+					set:       set,
+					maxItems:  maxItems,
+				}, batchInput)
+			}
+			output, failure := evaluator.EvaluateWith(pack, facts, evidence, options)
 			if failure != nil {
 				return a.evaluationFailure("experimental evaluate", format, failure, contract)
 			}
@@ -493,7 +544,30 @@ func (a *App) evaluateCommand() *cobra.Command {
 	command.Flags().StringVar(&bindingPath, "binding", bindingPath, "optional binding document, a file path: exactly {\"kind\": string, \"digest\": \"sha256:<64 lowercase hex>\"}, the caller's commitment to material of its own, kind naming its scheme in 1 to 128 characters of a-z, 0-9, dot, underscore, slash and hyphen (ADR-0050). Held to that shape and recorded as given on the audit record, under the chain and the record signature; the runtime never interprets, verifies or recomputes the digest, and the evaluation does not depend on it -- the caller's own verifier checks its value. Not taken with --rehearsal, or in a project whose configuration declares no audit directory, since either records nothing")
 	command.Flags().StringVar(&packID, "pack-id", packID, "decision id of a pack declared in the project's jpack.json; mutually exclusive with the pack argument")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
+	command.Flags().StringVar(&batchPath, "batch", batchPath, "EXPERIMENTAL: evaluate a batch instead of one facts document: JSON Lines, a file path or - for standard input, each line one object {\"facts\": <facts document>, \"id\": <optional string>, \"evidence\": <optional evidence document>}, answered by one JSON line per item in input order, each naming the run id the batch's records carry when it records; after exit 4 or an interruption the trail may hold up to one chunk of records beyond those reported (ADR-0085 §8). Requires --format json; not taken with --facts, --evidence, --cites, --binding or --pretty")
+	command.Flags().IntVar(&maxItems, "max-items", maxItems, "with --batch: the most items a batch reads; one more is refused with JPS-RESOURCE-BATCH-ITEMS and stops the batch")
 	return command
+}
+
+// batchInvocation is the sentence that refuses a batch invocation before the
+// filesystem is consulted, or "" when it is one this command takes. A batch
+// writes JSON Lines, which neither human output nor --pretty's indentation is,
+// and takes its facts and evidence per item; the citations and the binding are
+// one decision's, and a batch records many (ADR-0085).
+func batchInvocation(format string, pretty bool, factsPath, evidencePath, citesPath, bindingPath string, maxItems int) string {
+	switch {
+	case maxItems < 1:
+		return "--max-items must be at least 1."
+	case format != "json":
+		return "--batch writes one JSON line per item and requires --format json."
+	case pretty:
+		return "--batch writes one JSON line per item, which --pretty would indent across lines; it is not taken with --pretty."
+	case factsPath != "" || evidencePath != "":
+		return "--batch takes each item's facts and evidence documents on its line, and is not taken with --facts or --evidence."
+	case citesPath != "" || bindingPath != "":
+		return "--batch records many decisions, and --cites and --binding are one decision's; they are not taken with --batch."
+	}
+	return ""
 }
 
 // bindingRehearsalMessage refuses a binding on a rehearsal, and
