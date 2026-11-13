@@ -22,9 +22,12 @@ var gitProgram = "git"
 // configuration can name programs (a hook path, an fsmonitor command, a
 // pager, an ssh command a lazy fetch would run) and can substitute objects
 // (replace refs). None of the read-only plumbing this package runs executes
-// a hook, the fsmonitor or a pager, so the first three are defence in depth;
-// protocol.allow=never is what stops any fetch, and --no-replace-objects is
-// what keeps a replace ref from showing other bytes under an object id.
+// a hook, the fsmonitor or a pager, so the first three are defence in depth,
+// and so is protocol.allow=never, which the repository's own
+// protocol.<name>.allow overrides; what stops a fetch is the partial-clone
+// refusal and, below it, the environment (childEnvironment).
+// --no-replace-objects is what keeps a replace ref from showing other bytes
+// under an object id.
 //
 // --no-optional-locks keeps git from taking the optional index lock, so a
 // read never writes; --literal-pathspecs makes any pathspec literal, although
@@ -49,11 +52,24 @@ func safetyOptions() []string {
 // with every GIT_* variable removed, so an inherited GIT_DIR, object
 // directory, replace-ref base, configuration parameter or ssh command cannot
 // redirect or extend what is read, and with the variables that refuse a lazy
-// fetch, a credential prompt and the optional locks added. HOME and PATH are
-// kept, so the user's own global configuration (safe.directory among it)
-// still applies.
+// fetch, a transport, a credential prompt and the optional locks added. HOME
+// and PATH are kept, so the user's own global and system configuration
+// (safe.directory among it, which git reads from no other scope) still
+// applies; a setting there that could start a program is overridden by a
+// safety option or by this environment.
+//
+// Two of these stop a fetch, each for the versions of git it covers. From
+// git 2.45, GIT_NO_LAZY_FETCH means no missing object is fetched at all.
+// Before it, GIT_ALLOW_PROTOCOL does: it overrides every protocol.allow and
+// protocol.<name>.allow in every configuration, so no transport is allowed
+// but one named "_". No built-in transport has that name; a remote helper
+// could be given it (remote.<name>.vcs), but git looks the helper up on PATH,
+// and an alias, which a repository could define, cannot have that name
+// before git 2.54. An empty or a word-like name would not do: git would run
+// the alias "remote-none" a repository defines for a remote whose vcs is
+// "none".
 func childEnvironment(parent []string) []string {
-	environment := make([]string, 0, len(parent)+4)
+	environment := make([]string, 0, len(parent)+5)
 	for _, entry := range parent {
 		name, _, _ := strings.Cut(entry, "=")
 		if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
@@ -62,6 +78,7 @@ func childEnvironment(parent []string) []string {
 		environment = append(environment, entry)
 	}
 	return append(environment,
+		"GIT_ALLOW_PROTOCOL=_",
 		"GIT_NO_LAZY_FETCH=1",
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_OPTIONAL_LOCKS=0",

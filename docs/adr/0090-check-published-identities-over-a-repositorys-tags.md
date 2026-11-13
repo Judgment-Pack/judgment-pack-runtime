@@ -91,15 +91,29 @@ manifest is written from a shallow clone.
 **Git.** Every invocation carries `--no-pager --no-replace-objects --no-optional-locks
 --literal-pathspecs`, `-c core.fsmonitor=false`, `-c core.hooksPath=` the null device,
 `-c protocol.allow=never`, `-c credential.helper=`, `-c gc.auto=0`, `-c maintenance.auto=false` and
-an explicit `--git-dir`; every inherited `GIT_*` variable is removed and `GIT_NO_LAZY_FETCH`,
-`GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0` and `GIT_NO_REPLACE_OBJECTS` are set. No tag name
-and no path in the repository is an argument: tags are named by object id, and only object ids go
-over standard input. The subcommands are `rev-parse`, `config --get-regexp`, `for-each-ref`,
-`rev-list --stdin` and `cat-file --batch`; none applies filters or attributes, runs a hook, or
-pages. Several of the options are defence in depth for exactly that reason, and their removal is
-not observable through these subcommands; they are kept so that a later subcommand cannot quietly
-widen what runs. A partial clone is refused outright, since a missing blob would otherwise be a
-fetch refused twice over. `safe.directory` is left to git.
+an explicit `--git-dir`; every inherited `GIT_*` variable is removed and `GIT_ALLOW_PROTOCOL=_`,
+`GIT_NO_LAZY_FETCH`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0` and `GIT_NO_REPLACE_OBJECTS`
+are set. No tag name and no path in the repository is an argument: tags are named by object id, and
+only object ids go over standard input. The subcommands are `rev-parse`, `config --get-regexp`,
+`for-each-ref`, `rev-list --stdin` and `cat-file --batch`; none applies filters or attributes, runs
+a hook, or pages. Several of the options are defence in depth for exactly that reason, and their
+removal is not observable through these subcommands; they are kept so that a later subcommand
+cannot quietly widen what runs.
+
+**Fetching.** A partial clone, a repository whose configuration makes a remote a promisor (by
+`extensions.partialclone`, a true `remote.<name>.promisor`, or any
+`remote.<name>.partialclonefilter`, as git's own promisor-remote code reads it), is refused
+outright. Below that refusal the environment stops a fetch, and `-c protocol.allow=never` does
+not: a repository's own `protocol.<name>.allow` overrides it. From git 2.45, `GIT_NO_LAZY_FETCH`
+fetches no missing object at all. On every version, `GIT_ALLOW_PROTOCOL` overrides every
+`protocol.*.allow` setting and allows only a transport named `_`: no built-in transport has the
+name, a remote helper given it is looked up on `PATH`, and before git 2.54, the release that let an
+alias name hold other characters, no alias a repository defines can have it. A word such as `none`
+would not do: git runs the repository's alias `remote-none` for a remote whose `vcs` is `none`.
+The two variables overlap on every version from 2.45 to 2.53, and each alone covers the rest.
+`safe.directory` is left to git, and so is the user's global and system configuration, the scopes
+git reads it from; what in them could start a program is overridden by the options and variables
+above.
 
 **Bounds.** One `cat-file --batch` process answers every read. A directory is read once per
 distinct (path, tree id), so a tag costs what changed since the tags before it; a directory no

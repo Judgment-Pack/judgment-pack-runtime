@@ -336,12 +336,16 @@ func (g *git) shallow() (bool, *Failure) {
 }
 
 // refusePromisor refuses a partial clone: a repository with a promisor
-// remote may lack blobs, and reading one would make git fetch it. The fetch
-// is refused twice over anyway (protocol.allow=never, GIT_NO_LAZY_FETCH), so
-// such a repository would report blobs as missing; it is refused here instead,
-// with the reason, rather than reported as unreadable document by document.
+// remote may lack objects, and reading one would make git fetch it. A remote
+// is a promisor to git (promisor-remote.c) when extensions.partialclone
+// names it, when its promisor setting is true, or when it has a
+// partialclonefilter setting, whatever its value; config reads every scope
+// git reads, includes among them. The fetch is refused below this anyway
+// (childEnvironment), so such a repository would report objects as missing;
+// it is refused here instead, with the reason, rather than reported as
+// unreadable document by document.
 func (g *git) refusePromisor() *Failure {
-	command := g.command([]string{"config", "--get-regexp", `^(extensions\.partialclone|remote\..+\.promisor)$`})
+	command := g.command([]string{"config", "--get-regexp", `^(extensions\.partialclone|remote\..+\.(promisor|partialclonefilter))$`})
 	var stdout bytes.Buffer
 	var stderr boundedBuffer
 	command.Stdout = &stdout
@@ -358,7 +362,7 @@ func (g *git) refusePromisor() *Failure {
 		if key == "" {
 			continue
 		}
-		if key == "extensions.partialclone" || !isFalse(value) {
+		if !strings.HasSuffix(key, ".promisor") || !isFalse(value) {
 			return fail(FailurePartial, "The repository is a partial clone (%s): blobs it does not hold would have to be fetched, and this command fetches nothing. Check a full clone; nothing was read.", key)
 		}
 	}

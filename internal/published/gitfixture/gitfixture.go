@@ -55,6 +55,8 @@ func New(t testing.TB) *Repo {
 	)
 	r := &Repo{t: t, Dir: t.TempDir(), env: environment}
 	r.Git("", "-c", "init.defaultBranch=main", "init", "-q")
+	// A git older than init.defaultBranch (2.28) names another branch.
+	r.Git("", "symbolic-ref", "HEAD", "refs/heads/main")
 	r.Git("", "config", "commit.gpgSign", "false")
 	r.Git("", "config", "tag.gpgSign", "false")
 	return r

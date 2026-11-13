@@ -176,8 +176,10 @@ because a shallow clone cannot tell a vanished identity from one it did not fetc
 written from a shallow clone: it cannot say which tag first published an identity, or with which
 bytes.
 
-A partial clone (one with a promisor remote) is refused: reading a blob it lacks would mean
-fetching it, and this command fetches nothing.
+A partial clone is refused (`JPS-PUBLISHED-PARTIAL-CLONE`): a repository whose configuration, in
+any scope git reads, makes a remote a promisor, by `extensions.partialclone`, a true
+`remote.<name>.promisor`, or a `remote.<name>.partialclonefilter` of any value. Reading an object it
+lacks would mean fetching it, and this command fetches nothing.
 
 ## How git is run
 
@@ -192,17 +194,29 @@ it does not trust:
   `--no-optional-locks`, `--no-replace-objects` and `--literal-pathspecs`, with an explicit
   `--git-dir`;
 - every inherited `GIT_*` variable is removed, so none can redirect the read to another object
-  store, and `GIT_NO_LAZY_FETCH=1`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0` and
-  `GIT_NO_REPLACE_OBJECTS=1` are set;
+  store, and `GIT_ALLOW_PROTOCOL=_`, `GIT_NO_LAZY_FETCH=1`, `GIT_TERMINAL_PROMPT=0`,
+  `GIT_OPTIONAL_LOCKS=0` and `GIT_NO_REPLACE_OBJECTS=1` are set;
 - no tag name and no path in the repository is ever one of git's arguments: tags are named to git
   by object id, what goes to git's standard input is object ids alone, and the one path given, the
   repository's directory, is given as an absolute path;
-- git's checks of the repository's owner (`safe.directory`) are left as they are.
+- git's checks of the repository's owner (`safe.directory`) are left as they are, and so are the
+  user's global and system configuration, the only scopes git reads `safe.directory` from; what
+  in them could start a program is overridden by the options and variables above.
+
+Nothing is fetched. A partial clone is refused before any object is read (above). Below that
+refusal, what stops a fetch is the environment, not `-c protocol.allow=never`, which a repository's
+own `protocol.<name>.allow` setting overrides. From git 2.45, `GIT_NO_LAZY_FETCH=1` means git fetches
+no missing object at all. On every version, `GIT_ALLOW_PROTOCOL` overrides every `protocol.allow`
+and `protocol.<name>.allow` setting in every scope and allows one transport, named `_`, which no
+built-in transport is. A remote helper could be given that name (`remote.<name>.vcs`), but git
+looks the helper up on `PATH`, and before git 2.54 no alias, which a repository could define, can
+have it; an ordinary name such as `none` would have git run a repository's alias `remote-none`.
 
 The tests plant hooks, an fsmonitor, pagers, an `ssh` command, an external diff, a credential
 helper and an alternate-refs command in a repository's configuration, and check that none of them
-runs; they also check, file by file with digests, `.git` included, that a run writes nothing into
-the repository. The only file the command writes is the one `--write-manifest` names.
+runs; they show a lazy fetch through a planted `ssh` command start in a repository that allows the
+transport itself, and check that each of the two variables alone stops it; and they check, file by
+file with digests, `.git` included, that a run writes nothing into the repository. The only file the command writes is the one `--write-manifest` names.
 
 ## Cost
 

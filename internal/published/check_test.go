@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -437,6 +438,164 @@ func TestAPartialCloneIsRefusedAndNothingIsFetched(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("reading a missing blob started a fetch")
+	}
+}
+
+// withoutVariables returns environment without the variables named.
+func withoutVariables(environment []string, names ...string) []string {
+	kept := []string{}
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		drop := false
+		for _, unwanted := range names {
+			drop = drop || name == unwanted
+		}
+		if !drop {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
+}
+
+// gitAtLeast reports whether the git the tests run is at least major.minor.
+func gitAtLeast(t *testing.T, repo *gitfixture.Repo, major, minor int) bool {
+	t.Helper()
+	text := strings.TrimPrefix(repo.Git("", "--version"), "git version ")
+	fields := strings.SplitN(text, ".", 3)
+	if len(fields) < 2 {
+		t.Fatalf("cannot read the git version %q", text)
+	}
+	gotMajor, errMajor := strconv.Atoi(fields[0])
+	gotMinor, errMinor := strconv.Atoi(strings.TrimFunc(fields[1], func(r rune) bool { return r < '0' || r > '9' }))
+	if errMajor != nil || errMinor != nil {
+		t.Fatalf("cannot read the git version %q", text)
+	}
+	return gotMajor > major || gotMajor == major && gotMinor >= minor
+}
+
+// A repository's own protocol.<name>.allow overrides the -c protocol.allow=never
+// every invocation carries, so the environment is what refuses a fetch below
+// the partial-clone refusal: GIT_ALLOW_PROTOCOL on every git, and, from git
+// 2.45, GIT_NO_LAZY_FETCH. Each is shown to hold alone, after the fetch is
+// shown to start with both removed.
+func TestTheEnvironmentRefusesAFetchTheRepositoryAllows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the planted script is a POSIX shell script")
+	}
+	repo := gitfixture.New(t)
+	missing := strings.Repeat("ab", 20)
+	marker := filepath.Join(t.TempDir(), "fetched")
+	command := planted(t, t.TempDir(), "ssh", marker)
+	for _, setting := range [][2]string{
+		{"remote.origin.url", "ssh://example.invalid/repository"},
+		{"remote.origin.promisor", "true"},
+		{"protocol.ssh.allow", "always"},
+		{"core.sshCommand", command},
+	} {
+		repo.Git("", "config", setting[0], setting[1])
+	}
+	fetches := func(environment []string) bool {
+		t.Helper()
+		g, err := openGit(repo.Dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g.environment = environment
+		objects, err := g.openObjects()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The blob is missing either way; a git before 2.26 or so stops
+		// when the fetch fails, so only the marker is asked.
+		_, _, _ = objects.read(missing, MaxObjectBytes)
+		objects.close()
+		_, err = os.Stat(marker)
+		_ = os.Remove(marker)
+		return err == nil
+	}
+	full := childEnvironment(os.Environ())
+	if !fetches(withoutVariables(full, "GIT_ALLOW_PROTOCOL", "GIT_NO_LAZY_FETCH")) {
+		t.Skip("this git started no fetch with both refusals removed, so neither can be shown to work here")
+	}
+	if fetches(withoutVariables(full, "GIT_NO_LAZY_FETCH")) {
+		t.Fatal("GIT_ALLOW_PROTOCOL alone must refuse a transport the repository's configuration allows")
+	}
+	if fetches(withoutVariables(full, "GIT_ALLOW_PROTOCOL")) && gitAtLeast(t, repo, 2, 45) {
+		t.Fatal("from git 2.45, GIT_NO_LAZY_FETCH alone must stop the fetch")
+	}
+	if fetches(full) {
+		t.Fatal("the environment every invocation gets must start no fetch")
+	}
+}
+
+// The one transport GIT_ALLOW_PROTOCOL allows has a name no built-in
+// transport has, and that no alias can have before git 2.54, whose names are
+// letters, digits and hyphens: with a name like "none", a repository whose
+// remote has vcs = none would have git run the repository's alias
+// remote-none, where GIT_NO_LAZY_FETCH is not honoured.
+func TestTheTransportGitIsAllowedHasNoNameARepositoryCanGive(t *testing.T) {
+	allowed := ""
+	for _, entry := range childEnvironment(nil) {
+		if value, ok := strings.CutPrefix(entry, "GIT_ALLOW_PROTOCOL="); ok {
+			allowed = value
+		}
+	}
+	if allowed == "" || strings.Contains(allowed, ":") {
+		t.Fatalf("GIT_ALLOW_PROTOCOL must name exactly one transport: %q", allowed)
+	}
+	if strings.Trim(allowed, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-") == "" {
+		t.Fatalf("the transport GIT_ALLOW_PROTOCOL allows has a name an alias can have: %q", allowed)
+	}
+	for _, builtin := range []string{"file", "git", "ssh", "http", "https", "ftp", "ftps", "ext", "fd"} {
+		if allowed == builtin {
+			t.Fatalf("GIT_ALLOW_PROTOCOL allows the built-in transport %s", builtin)
+		}
+	}
+}
+
+// Each setting that makes a remote a promisor to git is refused before
+// anything is read: a true promisor setting, a partialclonefilter setting
+// alone, and extensions.partialclone. A promisor setting that is false makes
+// none. Each row is then shown to make a plain git fetch, or not, as it says;
+// that comes last because the fetch writes settings of its own.
+func TestEveryPromisorSettingIsRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the planted script is a POSIX shell script")
+	}
+	for _, row := range []struct {
+		key, value string
+		refused    bool
+	}{
+		{"remote.origin.promisor", "true", true},
+		{"remote.origin.partialclonefilter", "blob:none", true},
+		{"extensions.partialclone", "origin", true},
+		{"remote.origin.promisor", "false", false},
+	} {
+		t.Run(row.key+"="+row.value, func(t *testing.T) {
+			repo := gitfixture.New(t)
+			missing := strings.Repeat("ab", 20)
+			commit := repo.Commit(repo.TreeOf(gitfixture.Entry{Mode: "100644", Kind: "blob", ID: missing, Name: "expense.json"}))
+			repo.Tag("v1", commit)
+			repo.Head(commit)
+			marker := filepath.Join(t.TempDir(), "fetched")
+			repo.Git("", "config", "remote.origin.url", "ssh://example.invalid/repository")
+			repo.Git("", "config", "core.sshCommand", planted(t, t.TempDir(), "ssh", marker))
+			repo.Git("", "config", row.key, row.value)
+			report, failure := Check(defaultOptions(repo.Dir))
+			if row.refused && (failure == nil || failure.Code != FailurePartial || !strings.Contains(failure.Message, row.key)) {
+				t.Fatalf("a promisor must be refused: %#v", failure)
+			}
+			if !row.refused && (failure != nil || report.Status != StatusIncomplete || !strings.Contains(report.Unreadable[0].Reason, "not in this repository")) {
+				t.Fatalf("no promisor: the repository is read and the blob it lacks is unreadable: %#v %#v", failure, report)
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatal("the check started a fetch")
+			}
+			_ = repo.Try("cat-file", "-e", missing)
+			if _, err := os.Stat(marker); (err == nil) != row.refused {
+				t.Skipf("to this git the setting does not make what the row says (fetched: %v)", err == nil)
+			}
+		})
 	}
 }
 
