@@ -2,6 +2,7 @@ package sdk_test
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -132,4 +133,62 @@ func ExamplePack_EvaluateWithRecord() {
 	// follow-up call, write
 	// team intake
 	// true
+}
+
+// Take a decision record whose facts and evidence are named by keyed
+// digests the caller computes with its own key, over the canonical texts
+// package sdk/record returns, so that a reader without the key cannot test
+// candidate facts against the record. The record carries the algorithm's
+// label and the key identifier, never the key. A reader holding the key
+// checks the documents; one without it learns that they cannot be checked.
+// The keyed record is experimental.
+func ExamplePack_EvaluateWithKeyedRecord() {
+	ctx := context.Background()
+	pack, err := sdk.Load(ctx, []byte(annotatedPack), sdk.LoadOptions{})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	key := []byte("a synthetic key, kept by the caller")
+	keyedDigest := func(algorithm, keyID string, canonical []byte) ([]byte, error) {
+		if algorithm != record.HMACSHA256 || keyID != "k-2f9c" {
+			return nil, errors.New("no key for that identifier")
+		}
+		mac := hmac.New(sha256.New, key)
+		mac.Write(canonical)
+		return mac.Sum(nil), nil
+	}
+	facts := []byte(`{ "amount": "1250" }`)
+	canonicalFacts, err := record.CanonicalFacts(facts)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	canonicalEvidence, _ := record.CanonicalEvidence(nil) // omitted: {}
+	factsDigest, _ := keyedDigest(record.HMACSHA256, "k-2f9c", canonicalFacts)
+	evidenceDigest, _ := keyedDigest(record.HMACSHA256, "k-2f9c", canonicalEvidence)
+
+	_, decided, err := pack.EvaluateWithKeyedRecord(ctx, facts, nil, nil, record.KeyedDigests{
+		Algorithm: record.HMACSHA256, KeyID: "k-2f9c", Facts: factsDigest, Evidence: evidenceDigest,
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(canonicalFacts), decided.Form(), decided.FactsDigest == "")
+	fmt.Println(strings.Contains(string(decided.JSON()), `"keyedDigests":{"algorithm":"hmac-sha256",`))
+
+	stored, err := record.Read(decided.JSON())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	withKey, _ := stored.CheckDocuments(facts, nil, keyedDigest)
+	withoutKey, _ := stored.CheckDocuments(facts, nil, nil)
+	otherFacts, _ := stored.CheckDocuments([]byte(`{"amount":"1251"}`), nil, keyedDigest)
+	fmt.Println(withKey.Facts, withoutKey.Facts, otherFacts.Facts)
+	// Output:
+	// {"amount":"1250"} keyed true
+	// true
+	// match not-checkable-without-key mismatch
 }
