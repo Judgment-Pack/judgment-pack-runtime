@@ -120,6 +120,19 @@ func TestCheckPublishedAnUnreadableDocumentIsIncompleteNotClean(t *testing.T) {
 	}
 }
 
+func TestCheckPublishedReadingNoTagIsIncomplete(t *testing.T) {
+	repo := gitfixture.New(t)
+	repo.Head(repo.Snapshot(map[string]string{"expense.json": publishedPackA}))
+	if envelope := checkPublishedJSON(t, 1, "--repo", repo.Dir); envelope.Status != "incomplete" || envelope.Tags.Read != 0 || envelope.UnreadableCount != 0 {
+		t.Fatalf("unexpected envelope: %#v", envelope)
+	}
+	tagged := taggedHistory(t, []string{"v1"}, map[string]string{"expense.json": publishedPackA})
+	code, stdout, _ := runTest(t, []string{"experimental", "check-published", "--repo", tagged.Dir, "--tags", "release-*"}, "")
+	if code != 1 || !strings.HasPrefix(stdout, "incomplete: no tag was read, of 1 in the repository, and no manifest pin was given, so nothing published was checked\n") {
+		t.Fatalf("exit %d: %s", code, stdout)
+	}
+}
+
 func TestCheckPublishedHumanOutputQuotesEveryRepositoryName(t *testing.T) {
 	repo := gitfixture.New(t)
 	odd := "pack\x1b[31m\nname.json"

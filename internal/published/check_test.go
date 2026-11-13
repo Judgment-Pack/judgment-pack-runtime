@@ -644,8 +644,7 @@ func TestAnInheritedGitEnvironmentDoesNotRedirectTheRead(t *testing.T) {
 func TestAShallowCloneIsStatedAndNeverClean(t *testing.T) {
 	source := history(t, []string{"v1", "v2"}, []map[string]string{{"expense.json": packA}, {"expense.json": packA, "two.json": packNext}}, nil)
 	clone := gitfixture.New(t)
-	clone.Git("", "-c", "protocol.file.allow=always", "fetch", "-q", "--update-head-ok", "--depth", "1", "file://"+filepath.ToSlash(source.Dir), "+refs/heads/main:refs/heads/main")
-	clone.Git("", "update-ref", "refs/tags/v2", clone.Git("", "rev-parse", "refs/heads/main"))
+	clone.Git("", "-c", "protocol.file.allow=always", "fetch", "-q", "--no-tags", "--update-head-ok", "--depth", "1", "file://"+filepath.ToSlash(source.Dir), "+refs/heads/main:refs/heads/main")
 	_, failure := Check(defaultOptions(clone.Dir))
 	if failure == nil || failure.Code != FailureShallow {
 		t.Fatalf("a shallow clone without a manifest must be refused: %#v", failure)
@@ -653,7 +652,13 @@ func TestAShallowCloneIsStatedAndNeverClean(t *testing.T) {
 	full := run(t, defaultOptions(source.Dir))
 	options := defaultOptions(clone.Dir)
 	options.Manifest = &full.Manifest
+	// Fetched without tags, HEAD alone is compared with the pins.
 	report := run(t, options)
+	if !report.Shallow || report.Status != StatusValid || report.TagsRead != 0 || report.NothingPublished || len(report.NotHeld) != 2 {
+		t.Fatalf("a shallow clone without tags is checked at HEAD against its manifest: %#v", report)
+	}
+	clone.Git("", "update-ref", "refs/tags/v2", clone.Git("", "rev-parse", "refs/heads/main"))
+	report = run(t, options)
 	if !report.Shallow || report.Status != StatusValid || len(report.NotHeld) != 0 {
 		t.Fatalf("a shallow clone checked against its manifest is stated as shallow: %#v", report)
 	}
@@ -879,6 +884,35 @@ func TestTagPatternsAndTagsThatNameNoCommit(t *testing.T) {
 	options.Tags = nil
 	if report := run(t, options); report.FindingCount != 1 {
 		t.Fatalf("every tag counts when no pattern is given: %#v", report)
+	}
+}
+
+// A run that read no tag and was given no pin had nothing published to
+// compare HEAD with: a repository with no tag, as a clone fetched without
+// tags is, and a tag pattern that matches none, are incomplete, never valid.
+// A manifest's pins are something to compare with; an empty manifest is not.
+func TestARunThatReadNoTagIsIncomplete(t *testing.T) {
+	untagged := gitfixture.New(t)
+	untagged.Head(untagged.Snapshot(map[string]string{"expense.json": packA}))
+	report := run(t, defaultOptions(untagged.Dir))
+	if report.Status != StatusIncomplete || !report.NothingPublished || report.TagsTotal != 0 || report.UnreadableCount != 0 {
+		t.Fatalf("a repository with no tag is incomplete: %#v", report)
+	}
+
+	tagged := history(t, []string{"v1"}, []map[string]string{{"expense.json": packA}}, nil)
+	options := defaultOptions(tagged.Dir)
+	none, _ := CompileGlob("release-*")
+	options.Tags = []Glob{none}
+	if report := run(t, options); report.Status != StatusIncomplete || !report.NothingPublished || report.TagsTotal != 1 || report.TagsRead != 0 {
+		t.Fatalf("a tag pattern that matches no tag is incomplete: %#v", report)
+	}
+	options.Manifest = &Manifest{ManifestVersion: ManifestVersion, Documents: []ManifestEntry{}}
+	if report := run(t, options); report.Status != StatusIncomplete || !report.NothingPublished {
+		t.Fatalf("an empty manifest pins nothing to compare with: %#v", report)
+	}
+	options.Manifest = &run(t, defaultOptions(tagged.Dir)).Manifest
+	if report := run(t, options); report.Status != StatusInvalid || report.NothingPublished || report.Findings[0].Code != CodeVanished {
+		t.Fatalf("a pin no tag read answers has vanished: %#v", report)
 	}
 }
 

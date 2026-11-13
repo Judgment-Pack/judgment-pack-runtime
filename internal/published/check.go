@@ -127,6 +127,10 @@ type Report struct {
 	// UnreadTagCount is exact when the list is capped.
 	UnreadTags     []UnreadTag
 	UnreadTagCount int
+	// NothingPublished says no tag was read and no manifest pin was given,
+	// so nothing published was there to check against; the run is then
+	// incomplete, never valid.
+	NothingPublished bool
 	// Identities is the number of identities a tag published.
 	Identities int
 	// Documents is the number of distinct document blobs read; OtherFiles
@@ -286,10 +290,13 @@ func Check(options Options) (*Report, *Failure) {
 	report.UnreadableCount = len(w.unreadable)
 	report.Unreadable = capped(w.unreadable)
 	w.findings(report, options)
+	// With no tag read and no pin given, nothing published was there to
+	// compare HEAD with: a run that checked nothing is not clean.
+	report.NothingPublished = report.TagsRead == 0 && (options.Manifest == nil || len(options.Manifest.Documents) == 0)
 	switch {
 	case report.FindingCount > 0:
 		report.Status = StatusInvalid
-	case report.UnreadableCount > 0 || report.UnreadTagCount > 0:
+	case report.UnreadableCount > 0 || report.UnreadTagCount > 0 || report.NothingPublished:
 		report.Status = StatusIncomplete
 	default:
 		report.Status = StatusValid

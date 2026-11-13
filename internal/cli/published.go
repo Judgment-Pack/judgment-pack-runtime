@@ -62,7 +62,8 @@ func (a *App) checkPublishedCommand() *cobra.Command {
 			"changes are not read. --format human writes a short text in which every name taken from the repository is " +
 			"written as a JSON string in printable ASCII (a name that is not UTF-8, as Go quotes it); --format json writes the standard envelope with a publishedCheckVersion " +
 			"member. It exits 0 when every identity keeps its bytes and everything selected was read, 1 when there is a " +
-			"finding (status invalid) or something selected could not be read (status incomplete), 3 for a usage error, and " +
+			"finding (status invalid), or something selected could not be read, or no tag was read and no manifest pin was " +
+			"given, so nothing published was checked (status incomplete), 3 for a usage error, and " +
 			"4 when the repository could not be read, with nothing reported. The check, its output and this command are " +
 			"EXPERIMENTAL: each may change or be removed without a compatibility promise.",
 		Args: cobra.NoArgs,
@@ -329,14 +330,18 @@ func (a *App) renderPublishedCheck(format string, report *published.Report, opti
 	var out strings.Builder
 	switch report.Status {
 	case published.StatusValid:
-		if report.TagsRead == 0 && report.UnreadTagCount == 0 {
-			fmt.Fprintf(&out, "valid: no tag was selected, of %d in the repository, so no identity was published to check\n", report.TagsTotal)
+		if report.TagsRead == 0 {
+			fmt.Fprintf(&out, "valid: no tag was read, of %d in the repository, and HEAD keeps the bytes the manifest pins\n", report.TagsTotal)
 			break
 		}
 		fmt.Fprintf(&out, "valid: %d published identities keep the bytes their first tag published, at every later tag read and at HEAD\n", report.Identities)
 	case published.StatusInvalid:
 		fmt.Fprintf(&out, "invalid: %d finding(s)\n", report.FindingCount)
 	default:
+		if report.NothingPublished {
+			fmt.Fprintf(&out, "incomplete: no tag was read, of %d in the repository, and no manifest pin was given, so nothing published was checked\n", report.TagsTotal)
+			break
+		}
 		fmt.Fprintf(&out, "incomplete: no finding, and %d selected document(s) and %d tag(s) could not be read\n", report.UnreadableCount, report.UnreadTagCount)
 	}
 	history := "full history"

@@ -71,7 +71,9 @@ jpack experimental check-published [--repo DIR] [--tags GLOB]... [--include GLOB
 - `--repo` names a directory in the repository; the default is the current directory.
 - `--tags` selects tags by name, without `refs/tags/` (repeatable). The default is every tag,
   annotated and lightweight. A tag that names no commit (a tag of a tree or a blob) is reported as
-  not read, and the result is incomplete.
+  not read, and the result is incomplete. A run that reads no tag at all, in a clone fetched
+  without tags or with a pattern that matches none, has nothing published to compare HEAD with:
+  without a manifest that pins an identity it is incomplete, never valid.
 - `--include` and `--exclude` select paths (repeatable). The default is `**/*.json`. A repository
   that keeps test fixtures, examples or schemas beside its published documents should name the
   directories that hold what it publishes, for example `--include 'packs/**/*.json'
@@ -122,7 +124,7 @@ encoder writes it.
 | --- | --- | --- |
 | `valid` | 0 | Every identity keeps its published bytes and every selected tag and file was read. |
 | `invalid` | 1 | At least one finding. |
-| `incomplete` | 1 | No finding, and a selected tag or file could not be read. |
+| `incomplete` | 1 | No finding, and a selected tag or file could not be read, or no tag was read and no manifest pin was given, so nothing published was checked. |
 | `error` | 1 | The `--manifest` file is not a manifest this runtime reads (`JPS-PUBLISHED-MANIFEST`). |
 | `unsupported` | 2 | The `--manifest` file declares a later `manifestVersion`. |
 | `error` | 3 | A usage error: a pattern, `--strict` without `--manifest`, a `--write-manifest` target that is not a manifest. |
