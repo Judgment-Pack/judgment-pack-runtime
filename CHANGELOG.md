@@ -4,6 +4,30 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A pack file can be signed, and its signature checked against the key a reader expects before
+  the pack is used** (#391, ADR-0083; EXPERIMENTAL). `jpack packs sign <pack-file> --key
+  <seed-file>` writes `<pack-file>.sig.json`, a detached signature over the file's exact bytes,
+  the bytes its `sha256:` digest is over: one JSON object of `signatureVersion` `"1.0.0"`,
+  `algorithm` `"ed25519"`, the full `publicKey`, the `packDigest` and the `signature`, in lowercase
+  hexadecimal. What the key signs is a domain-separated message naming the document's version and
+  the pack's digest, which no audit-trail record, key rotation or witness signature can stand in
+  for, and the reverse. The seed is held exactly as a trail's signing key is (`audit.LoadSigner`:
+  the same file checks, and `--public-key` as the expected-key guard); only a file `spec validate`
+  reports valid, of any bundled spec version, is signed; an existing document is never replaced.
+  `jpack packs verify-signature <pack-file> --public-key <file>` requires the expected key, and
+  without one refuses to run and says why; there is no mode that trusts the key the document
+  carries. It reads the pack once, checks the signature before parsing it and then validates the
+  same bytes, reporting both results. The document is read strictly, with one code per refusal
+  (`JPS-PACK-SIGNATURE-*`: too large, malformed, a duplicate, unknown or missing member, version,
+  algorithm, public key, digest or signature form, an unexpected key, a digest mismatch, an
+  invalid signature, a missing document, an unreadable or symbolically linked one). Package
+  `sdk/packsig` (`Verify`, `Load`) applies the same check in Go and loads the bytes it checked. A
+  valid signature establishes only that these bytes were signed by the holder of that key: not
+  that the pack is correct, tested, current or approved, nor when it was signed; key distribution
+  and revocation are the reader's ([docs/pack-signatures.md](docs/pack-signatures.md)). The
+  public-key checks move, unchanged, from `internal/audit` to `internal/edkey`. The pack format,
+  the pack digest, lock files, the audit trail and the conformance claim in CONFORMANCE.md are
+  unchanged. No MCP tool is added.
 - **The Go API returns a decision record for one evaluation** (#387, ADR-0079; EXPERIMENTAL).
   `sdk.Pack.EvaluateWithRecord` evaluates exactly as `Pack.Evaluate` does and returns, beside the
   evaluation, a `record.DecisionRecord` of the new package `sdk/record`: the pack's id, version,

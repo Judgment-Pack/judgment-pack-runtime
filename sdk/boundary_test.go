@@ -66,8 +66,9 @@ func ambientImport(path string) bool {
 	return strings.HasPrefix(path, "os/") || strings.HasPrefix(path, "net/") || strings.HasPrefix(path, "syscall/")
 }
 
-// The import closure of package sdk is read from source, without the go
-// command: no package of this module in it imports a standard-library
+// The import closure of package sdk, and of package sdk/packsig, which
+// imports sdk and so is not in sdk's own closure, is read from source, without
+// the go command: no package of this module in it imports a standard-library
 // package that reaches files, the environment, processes or the network, and
 // the third-party packages in it are exactly the schema validator's, whose
 // schema loading the validation package holds offline, and the bidirectional
@@ -78,7 +79,7 @@ func TestTheImportClosureReachesNoAmbientIO(t *testing.T) {
 	root := moduleRoot(t)
 	visited := map[string]bool{}
 	third := map[string]bool{}
-	queue := []string{modulePath + "/sdk"}
+	queue := []string{modulePath + "/sdk", modulePath + "/sdk/packsig"}
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
@@ -113,9 +114,12 @@ func TestTheImportClosureReachesNoAmbientIO(t *testing.T) {
 	if !visited[modulePath+"/internal/evaluation"] {
 		t.Error("the closure walk did not reach the shared evaluator; the walk is broken")
 	}
+	if !visited[modulePath+"/internal/packsig"] || !visited[modulePath+"/internal/edkey"] {
+		t.Error("the closure walk did not reach the pack-signature check; the walk is broken")
+	}
 }
 
-// No exported identifier of package sdk, sdk/view or sdk/record names a type
+// No exported identifier of package sdk, sdk/view, sdk/record or sdk/packsig names a type
 // from an internal package: an exported function's parameters and results, an
 // exported type's definition, and an exported field of an exported struct all
 // use only these packages' types and the standard library's.
@@ -123,8 +127,10 @@ func TestTheExportedAPINamesNoInternalType(t *testing.T) {
 	_, files := parsePackage(t, filepath.Join(moduleRoot(t), "sdk"))
 	_, viewFiles := parsePackage(t, filepath.Join(moduleRoot(t), "sdk", "view"))
 	_, recordFiles := parsePackage(t, filepath.Join(moduleRoot(t), "sdk", "record"))
+	_, packsigFiles := parsePackage(t, filepath.Join(moduleRoot(t), "sdk", "packsig"))
 	files = append(files, viewFiles...)
 	files = append(files, recordFiles...)
+	files = append(files, packsigFiles...)
 	checked := 0
 	for _, file := range files {
 		internal := map[string]bool{}

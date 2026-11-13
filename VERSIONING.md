@@ -170,6 +170,14 @@ does not move when the runtime learns to record evaluations it refused before, s
 newly admitted specification version, or when the runtime version the record carries changes,
 which changes the record's bytes and digest by design. The record is EXPERIMENTAL.
 
+A pack signature document (`jpack packs sign`, `jpack packs verify-signature` and package
+`sdk/packsig`, ADR-0083) carries its own `signatureVersion`, `"1.0.0"`, which names both the
+document's form and the message its signature is over. It moves by the rule the decision record's
+`recordVersion` moves by, and a reader admits only the version it knows: a document of another
+`signatureVersion` is refused (`JPS-PACK-SIGNATURE-VERSION`), never read as the one it knows. A
+change of the message's domain prefix is a major change. The document, the commands and the
+package are EXPERIMENTAL; the pack, its digest and lock files do not change with them.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:
