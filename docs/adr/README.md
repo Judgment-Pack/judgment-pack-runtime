@@ -174,3 +174,4 @@ authority, and following it confers no conformance status on anything.
 | [0076](0076-show-annotation-text-recoverably-on-every-surface.md) | Show every annotation character outside printable ASCII recoverably: exact in the JSON, in ASCII in the Markdown and the messages | accepted |
 | [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) | Admit Core 0.5.0, base profile, and retire the staged selector 0.4.0-draft | accepted |
 | [0078](0078-keep-annotation-text-from-reordering-its-line.md) | Keep annotation text from reordering its line, and keep a run of spaces visible, in the Markdown views | accepted |
+| [0079](0079-a-decision-record-for-an-evaluation.md) | Return a canonical decision record for one evaluation from the Go API, written nowhere | proposed |
