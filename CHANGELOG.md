@@ -2,6 +2,43 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`jpack packs diff` compares two pack documents member by member, annotations included, or
+  two with their common base** (#402, ADR-0086; EXPERIMENTAL). It loads each pack as `sdk.Load`
+  admits it and evaluates nothing. It reports the pack's own members and the evidence requirements,
+  sources, outcomes, rules, exceptions, value sets and their entries, each added, removed or
+  changed, keyed by id (an entry by its value, and by its occurrence when a set repeats it), with
+  old and new values for every member that changed. A threshold that moved is reported whether or
+  not any input falls between the two values. Under Core 0.5.0, annotations are compared by key at
+  the pack, on each outcome and rule and on each value-set entry, with no key treated apart from any
+  other. Under a specVersion without them, the `annotations` and `valueSets` members are absent, not
+  empty. The order of a collection's members is reported apart from their content. Escalation
+  routes, annotation lists and every other array keep their order; `escalation.triggers` and route
+  `triggers`, which Core §6.7 makes sets, and object member order are never a difference.
+  `docs/building-with-packs.md` lists which orders are reported. An absent collection and an empty
+  one are told apart by `present`. Packs of two specVersions are refused
+  (`JPS-DIFF-MIXED-SPEC-VERSION`, exit 2). Packs whose ids differ are compared, the payload carries
+  `"differentDecisions": true`, and the text says so on its first line. `--base <pack>` makes it
+  three-way: each member, annotation and order that differs anywhere carries a status, `first`,
+  `second`, `both` or `conflict`, and nothing is merged. `--format json` writes the standard
+  envelope, whose `diff` (or `threeWayDiff`) member is a string holding the comparison's canonical
+  JSON, `diffVersion` (or `threeWayDiffVersion`) `"1"`. `--format human` writes a short text in which
+  every pack string is JSON in printable ASCII. Each pack is a local file, never standard input. A
+  pack the loader refuses is reported with the loader's code, and one over the hard byte limit with
+  `JPS-RESOURCE-INPUT-BYTE-LIMIT` (exit 4).
+- **The Go API's `sdk.Diff` and `sdk.ThreeWayDiff`** return the same comparison as `view.Diff` and
+  `view.ThreeWayDiff`, with `view.DiffVersion`, `view.ThreeWayDiffVersion` and
+  `view.ErrDiffSpecVersion` (EXPERIMENTAL). Only package `sdk` builds them, from views built afresh
+  from the admitted documents.
+- **`experimental compare --structural`** adds that two-way comparison to compare's output: the
+  JSON payload's new `structural` member is a string holding its bytes, and the human output
+  appends its text. Without the option, compare's output is unchanged byte for byte. Compare's help
+  and `docs/building-with-packs.md` now say that annotations, and every member that never reaches a
+  disposition, are outside what it compares. `packs diff` evaluates nothing and compare evaluates
+  as before, so the conformance claim in CONFORMANCE.md is unchanged. MCP exposes neither, as
+  ADR-0045 §6 leaves compare without a tool.
+
 ## 0.45.0 - 2026-11-13
 
 - **`experimental evaluate --batch` evaluates many facts documents against one pack in one run**
