@@ -2,6 +2,7 @@ package project
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -18,6 +19,9 @@ type matrixRun struct {
 	targets      int
 	dispositions int
 	contract     result.EvaluatorContract
+	// options are the caller's; the coverage requirements in them are held
+	// per pack, after that pack's rows ran (ADR-0080).
+	options TestOptions
 }
 
 func (p *Project) dispositionBudget() int {
@@ -54,8 +58,9 @@ func (p *Project) dispositionBudget() int {
 // of ADR-0014 and ADR-0023: the probe classes the pack's own declarations
 // derive, and which of them some row states — a disposition probe through what
 // a row expects, a comparison boundary through what a row's facts place at the
-// literal. Coverage informs and never gates — it moves no status and no exit
-// code.
+// literal. By default coverage informs and never gates — it moves no status
+// and no exit code. Only a requirement the caller asks for in TestOptions
+// makes it gate (ADR-0080).
 //
 // Beside that, an entry whose matrix loaded carries the origins its rows
 // declare, counted (ADR-0024). It is a measurement of how a suite's inputs were
@@ -76,10 +81,33 @@ type TestOptions struct {
 	// untouched — a missing matrix is a declared pack that nothing checks, not a
 	// probe the pack's content derived.
 	RequireMatrix bool
+	// MinCoverage, when not nil, is a percentage from 0 to 100: each pack
+	// whose matrix ran must have at least that share of its derived probes
+	// witnessed by a row, or it fails the run (ADR-0080). A pack for which no
+	// coverage was derived has no share to measure and does not meet it. A
+	// pack with no matrix is untouched; RequireMatrix is what fails one.
+	MinCoverage *int
+	// RequireBoundaries makes each pack whose matrix ran fail the run when a
+	// boundary probe its comparisons derive is witnessed by no row
+	// (ADR-0080). A pack that compares nothing in order derives none and
+	// meets it.
+	RequireBoundaries bool
+}
+
+// CheckMinCoverage refuses a required coverage outside 0 to 100, and accepts
+// nil, which asks for none.
+func CheckMinCoverage(level *int) *Failure {
+	if level != nil && (*level < 0 || *level > 100) {
+		return &Failure{Code: "JPS-INVOCATION-MIN-COVERAGE", Message: "--min-coverage must be a whole percentage from 0 to 100.", ExitCode: result.ExitInvocation}
+	}
+	return nil
 }
 
 // TestWith is Test with options.
 func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, options TestOptions) (result.PackTest, *Failure) {
+	if failure := CheckMinCoverage(options.MinCoverage); failure != nil {
+		return result.PackTest{}, failure
+	}
 	selected, failure := p.selection(id)
 	if failure != nil {
 		return result.PackTest{}, failure
@@ -98,6 +126,8 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 		ConfigVersion:             p.Config.ConfigVersion,
 		RequireMatrix:             options.RequireMatrix,
 		Packs:                     make([]result.PackTestEntry, 0, len(selected)),
+		MinCoverage:               options.MinCoverage,
+		RequireBoundaries:         options.RequireBoundaries,
 	}
 	// The aggregate handoff-target budget is one counter for the whole run, not
 	// one per pack: what it bounds is what the report retains, and a report is
@@ -105,7 +135,7 @@ func (p *Project) TestWith(evaluator *evaluation.Engine, id, command string, opt
 	// Negotiate every participating pack before any matrix acquisition or row.
 	// Like graph preflight, this retains no pack buffers; each execution read
 	// must still agree with the selected contract. Packs without matrices skip.
-	run := &matrixRun{}
+	run := &matrixRun{options: options}
 	for _, packID := range selected {
 		entry := p.Config.Packs[packID]
 		if entry.Matrix == "" {
@@ -307,9 +337,14 @@ func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report
 	// is read one time however many origins its matrix declares.
 	set, groups := derivePackProbes(root, Reach{}), boundaryGroups(comparisonSites(root))
 	withCoverage := admitsForSomeRowWith(admitted, matrix, contract)
+	var boundaries []result.MatrixProbe
 	if withCoverage {
-		report.Coverage = coverageFor(set, groups, matrix)
+		// coverageFor, with the boundary probes kept apart for the
+		// boundary requirement: the same probes in the same order.
+		boundaries = boundaryProbesFor(groups, matrix)
+		report.Coverage = append(set.probes(matrixWitnesses(matrix)), boundaries...)
 	}
+	run.holdToRequirements(&report, withCoverage, len(groups), boundaries)
 	// The profile reads what this run already produced -- the rows' statuses,
 	// the same derivation -- against the origins the rows declare, and moves
 	// no status (ADR-0034). Coverage by origin is derived exactly when the
@@ -320,6 +355,48 @@ func (p *Project) testLoadedPack(evaluator *evaluation.Engine, id string, report
 	}
 	report.Profile = profile
 	return report, nil
+}
+
+// holdToRequirements fails one entry whose matrix ran on each coverage
+// requirement the caller asked for and the entry does not meet (ADR-0080).
+// measured is whether coverage was derived for the pack; groups is how many
+// boundaries its comparisons derive, and boundaries their probes when
+// measured. An unmet requirement makes the entry a mismatch, names the
+// requirement in UnmetRequirements and says why in Detail; a met one, or one
+// not asked for, changes nothing.
+func (run *matrixRun) holdToRequirements(report *result.PackTestEntry, measured bool, groups int, boundaries []result.MatrixProbe) {
+	var unmet, details []string
+	if level := run.options.MinCoverage; level != nil {
+		covered, total := coveredIn(report.Coverage), len(report.Coverage)
+		switch {
+		case !measured || total == 0:
+			unmet = append(unmet, result.RequirementMinCoverage)
+			details = append(details, fmt.Sprintf("This run requires at least %d%% of the derived probes to be witnessed by a row, and no coverage was derived for this pack, so the level is not met.", *level))
+		case covered*100 < *level*total:
+			unmet = append(unmet, result.RequirementMinCoverage)
+			details = append(details, fmt.Sprintf("This run requires at least %d%% of the derived probes to be witnessed by a row, and %d/%d are, so the level is not met.", *level, covered, total))
+		}
+	}
+	if run.options.RequireBoundaries && groups > 0 {
+		missing := len(boundaries) - coveredIn(boundaries)
+		switch {
+		case !measured:
+			unmet = append(unmet, result.RequirementBoundaries)
+			details = append(details, fmt.Sprintf("This run requires every derived boundary probe to be witnessed by a row, and no coverage was derived for this pack, so its %d boundaries were not checked.", groups))
+		case missing > 0:
+			unmet = append(unmet, result.RequirementBoundaries)
+			details = append(details, fmt.Sprintf("This run requires every derived boundary probe to be witnessed by a row, and %d of %d are not.", missing, len(boundaries)))
+		}
+	}
+	if len(unmet) == 0 {
+		return
+	}
+	report.Status = "mismatch"
+	report.UnmetRequirements = unmet
+	if report.Detail != "" {
+		details = append([]string{report.Detail}, details...)
+	}
+	report.Detail = strings.Join(details, " ")
 }
 
 // rowCitations is a row's citations as values, or nil for a row that cites

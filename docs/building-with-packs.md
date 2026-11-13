@@ -289,8 +289,10 @@ What it does not catch: a threshold written at the wrong
 *number*, or a comparison reading the wrong pointer — both are questions about what the policy says,
 not about which input distinguishes two encodings.
 
-Coverage informs and never gates: a missing probe is a fact about what your rows state, not a failed
-row. A covered matrix is one that probes every derivable behavior; whether the rows are *right* is
+By default coverage informs and never gates: a missing probe is a fact about what your rows state,
+not a failed row. A gate that wants more asks for it on `packs test`: `--min-coverage N` fails a pack
+whose rows witness fewer than N percent of its derived probes, and `--require-boundaries` fails one
+with a boundary no row witnesses (ADR-0080). A covered matrix is one that probes every derivable behavior; whether the rows are *right* is
 still yours to judge against the policy text (ADR-0014, ADR-0023).
 
 ### Let the pack suggest the inputs
@@ -701,8 +703,15 @@ row ran at all is reported `skipped` and exits `1` unless a mismatch was found, 
 matrices anywhere cannot get a green gate for a suite that tested nothing. A run where other packs' rows passed still exits `0` beside a
 pack with no matrix. To make the gate fail on such a pack, run `packs test --require-matrix`
 (`require_matrix: true` over MCP): the pack is then reported `mismatch` and the run exits `1`
-(ADR-0042). The coverage report never moves the exit code: a green gate
+(ADR-0042). By default the coverage report never moves the exit code: a green gate
 with missing probes is a passing suite that has not probed everything, and the report says which.
+`packs test --min-coverage N` makes a pack whose rows witness fewer than N percent of its derived
+probes fail the run, and `--require-boundaries` one with a derived boundary probe no row witnesses;
+a pack for which no coverage was derived meets neither. The failing entry is `mismatch`, names the
+requirement in `unmetRequirements` and says why in its `detail`, and the payload carries
+`minCoverage` and `requireBoundaries` as asked. Neither option touches a pack with no matrix
+(ADR-0080). A level near 100 can ask for a row no facts can produce — two rules that exclude each
+other on purpose still derive a `conflict` probe — so choose it against the pack, not as a default.
 
 `packs verify` is there so a pull request that changes a pack and forgets `packs lock` fails the
 gate rather than merging an undeclared amendment. Drop it from the line if the project keeps no

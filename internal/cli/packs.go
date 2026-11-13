@@ -807,6 +807,8 @@ func (a *App) packsTestCommand() *cobra.Command {
 	id := ""
 	configPath := ""
 	requireMatrix := false
+	minCoverage := 0
+	requireBoundaries := false
 	command := &cobra.Command{
 		Use:   "test",
 		Short: "EXPERIMENTAL SURFACE: run each pack's instance matrix through the evaluator",
@@ -832,20 +834,35 @@ func (a *App) packsTestCommand() *cobra.Command {
 			"run in which no row ran at all is reported skipped rather than passed unless a mismatch was found: a " +
 			"green gate over zero rows would say a project was tested when nothing was. With --require-matrix, a " +
 			"selected pack that declares no matrix is reported mismatch and fails the run (ADR-0042), and the " +
-			"payload carries requireMatrix: true. Each pack selects its exact Core 0.2.0-draft, 0.3.0 base or 0.5.0 base contract; one run refuses mixed contracts. Core 0.3 routed assertions use complete handoff.routes, and expectedHandoffTarget is incompatible with routed packs. A Core 0.3 run refuses atomically if the retained exact expected and actual canonical disposition text exceeds 10 MiB. Exit " +
+			"payload carries requireMatrix: true. The coverage report informs by default and moves no status. With " +
+			"--min-coverage N, a pack whose matrix ran fails the run unless at least N percent (a whole number from 0 " +
+			"to 100) of its derived probes are witnessed by a row; a pack for which no coverage was derived does not " +
+			"meet any level. With --require-boundaries, a pack whose matrix ran fails the run when a derived boundary " +
+			"probe is witnessed by no row. A pack that fails either is reported mismatch, its entry names the " +
+			"requirement in unmetRequirements and its detail says why, and the payload carries minCoverage and " +
+			"requireBoundaries as asked (ADR-0080). Neither option touches a pack with no matrix. Each pack selects its exact Core 0.2.0-draft, 0.3.0 base or 0.5.0 base contract; one run refuses mixed contracts. Core 0.3 routed assertions use complete handoff.routes, and expectedHandoffTarget is incompatible with routed packs. A Core 0.3 run refuses atomically if the retained exact expected and actual canonical disposition text exceeds 10 MiB. Exit " +
 			"0 when every row matched its expectation, 1 when any did not, 1 when no row ran, and 1 under " +
-			"--require-matrix when a selected pack declares no matrix.",
+			"--require-matrix when a selected pack declares no matrix, and 1 under --min-coverage or " +
+			"--require-boundaries when a pack does not meet it.",
 		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := validateFormat(format); err != nil {
 				return a.operational("packs test", format, result.ExitInvocation, "JPS-INVOCATION-FORMAT", err.Error())
+			}
+			options := project.TestOptions{RequireMatrix: requireMatrix, RequireBoundaries: requireBoundaries}
+			if cmd.Flags().Changed("min-coverage") {
+				level := minCoverage
+				options.MinCoverage = &level
+			}
+			if failure := project.CheckMinCoverage(options.MinCoverage); failure != nil {
+				return a.projectFailure("packs test", format, failure)
 			}
 			loaded, failure := a.loadProject(configPath, "packs test", format)
 			if failure != nil {
 				return failure
 			}
 			defer loaded.Close()
-			output, projectFailure := loaded.TestWith(evaluation.NewEngine(a.engine), id, "packs test", project.TestOptions{RequireMatrix: requireMatrix})
+			output, projectFailure := loaded.TestWith(evaluation.NewEngine(a.engine), id, "packs test", options)
 			if projectFailure != nil {
 				return a.projectFailure("packs test", format, projectFailure)
 			}
@@ -863,6 +880,8 @@ func (a *App) packsTestCommand() *cobra.Command {
 	command.Flags().StringVar(&id, "id", id, "run one declared pack's matrix by its decision id instead of all of them")
 	command.Flags().StringVar(&configPath, "config", configPath, configFlagUsage)
 	command.Flags().BoolVar(&requireMatrix, "require-matrix", requireMatrix, "fail the run when a selected pack declares no matrix, instead of reporting it skipped (ADR-0042)")
+	command.Flags().IntVar(&minCoverage, "min-coverage", minCoverage, "fail the run when a pack whose matrix ran has fewer than this percentage (0 to 100) of its derived probes witnessed by a row (ADR-0080)")
+	command.Flags().BoolVar(&requireBoundaries, "require-boundaries", requireBoundaries, "fail the run when a pack whose matrix ran has a derived boundary probe no row witnesses (ADR-0080)")
 	return command
 }
 

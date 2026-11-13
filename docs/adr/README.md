@@ -110,7 +110,7 @@ authority, and following it confers no conformance status on anything.
 | [0011](0011-first-evaluator-conformance-claim.md)        | Supply the §10 evaluation limits and make the first §3.4.1 evaluator-conformance claim | accepted |
 | [0012](0012-jpack-project-convention.md)                 | Adopt a `jpack.json` project convention in the runtime, deliberately outside the spec (configVersion value list superseded by 0017) | accepted; nothing-writes determination partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
 | [0013](0013-oci-image-and-mcp-registry-distribution.md)  | Distribute the released binary as an OCI image and publish it to the MCP registry | accepted |
-| [0014](0014-matrix-coverage-report.md)                   | Report derived matrix coverage in `packs test`, and never gate on it            | accepted; two witness clauses narrowed and three derivation universals generalized by [0023](0023-boundary-probes-for-ordered-comparisons.md) |
+| [0014](0014-matrix-coverage-report.md)                   | Report derived matrix coverage in `packs test`, and never gate on it            | accepted; two witness clauses narrowed and three derivation universals generalized by [0023](0023-boundary-probes-for-ordered-comparisons.md); never-gates determination partially superseded, for a run that asks for a coverage requirement, by [0080](0080-let-packs-test-require-coverage.md) |
 | [0015](0015-experimental-graph-surface.md)               | Prototype pack composition as an experimental graph surface (jpack.json determination partially superseded by 0017) | accepted |
 | [0016](0016-graph-rows-coverage-report.md)               | Report derived coverage in `experimental graph test`, and never gate on it      | accepted |
 | [0017](0017-declare-graphs-in-the-project-configuration.md) | Declare graphs in the project configuration, and walk them like matrices     | accepted; configVersion value list and schema `$id` partially superseded by [0018](0018-opt-in-evaluation-audit-trail.md) |
@@ -119,7 +119,7 @@ authority, and following it confers no conformance status on anything.
 | [0020](0020-report-consulted-fact-pointers.md)           | Report the fact pointers a pack's conditions read, on the inventory row        | accepted; its "a trace entry carries no pointer" determination superseded for unknown causes and cross-type comparisons by [0040](0040-say-what-left-a-result-unknown.md) |
 | [0021](0021-run-the-declared-matrix-over-mcp.md)         | Run the declared matrix over MCP, and keep the rehearsal outside the record    | accepted |
 | [0022](0022-producer-lint.md)                            | Lint every consulted pointer against a producer declaration                    | accepted |
-| [0023](0023-boundary-probes-for-ordered-comparisons.md)  | Derive a boundary probe for every ordered comparison, witnessed by a row's facts | accepted |
+| [0023](0023-boundary-probes-for-ordered-comparisons.md)  | Derive a boundary probe for every ordered comparison, witnessed by a row's facts | accepted; option C's refusal partially superseded, for a run that asks for `--require-boundaries`, by [0080](0080-let-packs-test-require-coverage.md) |
 | [0024](0024-suggest-candidate-row-inputs.md)             | Derive candidate test-row inputs from a pack's own literals, and never their expectations | accepted |
 | [0025](0025-assert-the-handoff-target-in-the-matrix.md)  | Let a matrix row assert the handoff target, because no disposition can carry it | accepted; graph-surface-untouched determination partially superseded, and its deferral discharged, by [0032](0032-let-a-graph-row-assert-the-handoff-target.md) |
 | [0026](0026-run-the-declared-graph-matrix-over-mcp.md)  | Run the declared graph matrix over MCP, and stop a runaway matrix early | accepted |
@@ -175,3 +175,4 @@ authority, and following it confers no conformance status on anything.
 | [0077](0077-admit-core-0-5-0-and-retire-the-staged-selector.md) | Admit Core 0.5.0, base profile, and retire the staged selector 0.4.0-draft | accepted |
 | [0078](0078-keep-annotation-text-from-reordering-its-line.md) | Keep annotation text from reordering its line, and keep a run of spaces visible, in the Markdown views | accepted |
 | [0079](0079-a-decision-record-for-an-evaluation.md) | Return a canonical decision record for one evaluation from the Go API, written nowhere | proposed |
+| [0080](0080-let-packs-test-require-coverage.md) | Let a packs test run require a coverage level and witnessed boundaries | proposed |

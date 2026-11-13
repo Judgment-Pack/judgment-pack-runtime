@@ -28,8 +28,19 @@ All notable changes to tagged releases are documented here.
 - The documentation of `sdk.Load` now names every specVersion it evaluates: `0.2.0-draft`, and
   `0.3.0` or `0.5.0` with the base profile. It did not name `0.5.0`, which `Load` has accepted
   since 0.44.0.
-- No evaluation, no CLI or MCP output and no audit-trail record changes. The conformance claim in
-  CONFORMANCE.md is unchanged.
+- The decision record changes no evaluation, no CLI or MCP output and no audit-trail record.
+- **`packs test` can require a coverage level and witnessed boundaries** (#388, ADR-0080;
+  EXPERIMENTAL SURFACE). `--min-coverage N` (a whole percentage from 0 to 100) fails a pack whose
+  matrix ran unless at least N percent of its derived probes are witnessed by a row, over the same
+  count the coverage report prints; a pack for which no coverage was derived meets no level.
+  `--require-boundaries` fails a pack whose matrix ran when a derived boundary probe is witnessed by
+  no row. A failing pack is reported `mismatch`, its entry names the requirement in the new member
+  `unmetRequirements` (`min-coverage`, `require-boundaries`) and its `detail` says why, and the run
+  exits 1. The payload carries `minCoverage` and `requireBoundaries` exactly when asked, and the
+  human output a `required:` line per option. Neither option touches a pack with no matrix. A
+  level outside 0 to 100 is refused with `JPS-INVOCATION-MIN-COVERAGE`, exit 3. Without the options
+  the output and the exit code are unchanged.
+- The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.44.0 - 2026-11-12
 
