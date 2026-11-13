@@ -1445,6 +1445,40 @@ type PackFilteredDescription struct {
 	FilteredView  string `json:"filteredView"`
 }
 
+// PackSignature is one packs sign report in JSON: the signature document it
+// wrote, by path, and what that document names (ADR-0083).
+type PackSignature struct {
+	OutputVersion    string `json:"outputVersion"`
+	Tool             Tool   `json:"tool"`
+	Command          string `json:"command"`
+	Status           string `json:"status"`
+	Signature        string `json:"signature"`
+	SignatureVersion string `json:"signatureVersion"`
+	PackDigest       string `json:"packDigest"`
+	PublicKey        string `json:"publicKey"`
+	KeyID            string `json:"keyId"`
+}
+
+// PackSignatureCheck is one packs verify-signature report in JSON, written
+// once the signature was accepted (ADR-0083): what the signature document
+// names, and the pack's validation status for the same bytes, checked after
+// the signature. Status is "valid" when that status is valid, else
+// "pack-invalid" or "pack-unsupported". A refused signature is an
+// operational error instead, and the pack is not read as a document.
+type PackSignatureCheck struct {
+	OutputVersion    string `json:"outputVersion"`
+	Tool             Tool   `json:"tool"`
+	Command          string `json:"command"`
+	Status           string `json:"status"`
+	Signature        string `json:"signature"`
+	SignatureVersion string `json:"signatureVersion"`
+	PackDigest       string `json:"packDigest"`
+	PublicKey        string `json:"publicKey"`
+	KeyID            string `json:"keyId"`
+	PackStatus       string `json:"packStatus"`
+	SpecVersion      string `json:"specVersion,omitempty"`
+}
+
 // PackTestEntry is one pack's matrix run. Rows reuse the corpus row type,
 // because a project matrix row is compared exactly as a corpus row is: the RFC
 // 8785 canonical disposition byte for byte, or the expected §8.4 error class and
