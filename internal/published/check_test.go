@@ -599,6 +599,27 @@ func TestEveryPromisorSettingIsRefused(t *testing.T) {
 	}
 }
 
+// The user's global configuration is read as git reads it, from HOME: the
+// child keeps HOME, so safe.directory, which git reads from no repository,
+// still applies, and a promisor setting there, which makes the repository a
+// partial clone to git, is refused like one in the repository. The test
+// writes only into the fixture's own home, which HOME names.
+func TestTheUsersGlobalConfigurationIsReadAsGitReadsIt(t *testing.T) {
+	repo := history(t, []string{"v1"}, []map[string]string{{"expense.json": packA}}, nil)
+	if os.Getenv("HOME") != repo.Home {
+		t.Fatal("the fixture must isolate HOME before anything is written there")
+	}
+	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid {
+		t.Fatalf("unexpected report: %#v", report)
+	}
+	if err := os.WriteFile(filepath.Join(repo.Home, ".gitconfig"), []byte("[remote \"origin\"]\n\tpromisor = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, failure := Check(defaultOptions(repo.Dir)); failure == nil || failure.Code != FailurePartial || !strings.Contains(failure.Message, "remote.origin.promisor") {
+		t.Fatalf("a promisor in the global configuration must be refused: %#v", failure)
+	}
+}
+
 func TestReplaceRefsDoNotSubstituteBytes(t *testing.T) {
 	repo := history(t, []string{"v1", "v2"}, []map[string]string{{"expense.json": packA}, {"expense.json": packB}}, nil)
 	repo.Git("", "replace", repo.Blob(packB), repo.Blob(packA))
@@ -888,6 +909,7 @@ func TestMissingGitIsAnOperationalFailure(t *testing.T) {
 
 func TestADirectoryOutsideAnyRepositoryIsRefused(t *testing.T) {
 	gitfixture.Require(t)
+	gitfixture.Isolate(t)
 	_, failure := Check(defaultOptions(t.TempDir()))
 	if failure == nil || failure.Code != FailureRepository {
 		t.Fatalf("want %s, got %#v", FailureRepository, failure)

@@ -21,7 +21,10 @@ import (
 type Repo struct {
 	t   testing.TB
 	Dir string
-	env []string
+	// Home is the empty directory HOME and XDG_CONFIG_HOME name for the
+	// rest of the test (Isolate).
+	Home string
+	env  []string
 }
 
 // Require skips the test when no git program is installed.
@@ -32,11 +35,25 @@ func Require(t testing.TB) {
 	}
 }
 
-// New creates an empty repository whose HEAD names refs/heads/main.
+// Isolate points HOME and XDG_CONFIG_HOME at a new empty directory for the
+// rest of the test, and returns it. The package under test keeps HOME for
+// the git it starts, so the user's global configuration applies to it; a
+// test isolates itself so that the configuration of whoever runs the tests
+// does not. It cannot be used in a parallel test.
+func Isolate(t testing.TB) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	return home
+}
+
+// New creates an empty repository whose HEAD names refs/heads/main, and
+// isolates the test from the user's git configuration (Isolate).
 func New(t testing.TB) *Repo {
 	t.Helper()
 	Require(t)
-	home := t.TempDir()
+	home := Isolate(t)
 	environment := []string{}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
@@ -53,7 +70,7 @@ func New(t testing.TB) *Repo {
 		"GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid", "GIT_AUTHOR_DATE=2026-01-01T00:00:00Z",
 		"GIT_COMMITTER_NAME=fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid", "GIT_COMMITTER_DATE=2026-01-01T00:00:00Z",
 	)
-	r := &Repo{t: t, Dir: t.TempDir(), env: environment}
+	r := &Repo{t: t, Dir: t.TempDir(), Home: home, env: environment}
 	r.Git("", "-c", "init.defaultBranch=main", "init", "-q")
 	// A git older than init.defaultBranch (2.28) names another branch.
 	r.Git("", "symbolic-ref", "HEAD", "refs/heads/main")
