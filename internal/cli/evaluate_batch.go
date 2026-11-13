@@ -103,10 +103,9 @@ type pendingResult struct {
 // runBatch evaluates every item of the batch input against the admitted
 // pack and writes one result line per item, in input order. Its exit code is
 // 0 when every item produced a disposition, 1 when the input was read to its
-// end and some item was refused, and otherwise the code of the failure that
-// stopped the batch, which is the last line's: the item ceiling (4), an input
-// that could not be read (4), a record that could not be written (4), or
-// output that could not be written (4).
+// end and some item was refused, and 4 when the batch stopped: at the item
+// ceiling, at an input that could not be read, at a chunk whose records could
+// not be written, or at output that could not be written.
 func (a *App) runBatch(run batchRun, input io.Reader) error {
 	command := "experimental evaluate"
 	admitted := run.evaluator.AdmitPack(run.pack)
@@ -167,6 +166,9 @@ func (a *App) runBatch(run batchRun, input io.Reader) error {
 		if err := out.Flush(); err != nil {
 			return result.ExitIO, true
 		}
+		// Nothing a written chunk held stays reachable from the next one.
+		clear(pending)
+		clear(records)
 		pending, records, pendingBytes = pending[:0], records[:0], 0
 		return stop, stop != 0
 	}

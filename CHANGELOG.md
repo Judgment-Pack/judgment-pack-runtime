@@ -18,10 +18,10 @@ All notable changes to tagged releases are documented here.
   fails reports each of its evaluations as `JPS-AUDIT-WRITE` and stops the batch, and a batch ended
   between chunks leaves a trail `audit verify` reports valid, holding a prefix of the batch. The
   batch exits 0 when every item produced a disposition, 1 when the input was read to its end and an
-  item was refused, and otherwise with the stopping line's code: `--max-items N` (default 100000)
-  exceeded (`JPS-RESOURCE-BATCH-ITEMS`, exit 4), a line over 20 MiB and 64 KiB
-  (`JPS-RESOURCE-BATCH-LINE-BYTE-LIMIT`, exit 4, refused for its own line without stopping the
-  batch), an unreadable input (`JPS-INPUT-READ`, exit 4) or a record that could not be written.
+  item was refused, and 4 when it stopped: `--max-items N` (default 100000) exceeded
+  (`JPS-RESOURCE-BATCH-ITEMS`), an unreadable input (`JPS-INPUT-READ`) or a record that could not
+  be written. A line over 20 MiB and 64 KiB is refused for its own line
+  (`JPS-RESOURCE-BATCH-LINE-BYTE-LIMIT`, exit 4) without stopping the batch.
   `--batch` is refused with `--facts`, `--evidence`, `--cites`, `--binding`, `--pretty` or a
   format other than `json` (`JPS-INVOCATION-BATCH`, exit 3), and `--max-items` without `--batch`
   or below 1 (`JPS-INVOCATION-MAX-ITEMS`, exit 3). Measured on one machine against a signed chained

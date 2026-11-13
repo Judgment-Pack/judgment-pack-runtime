@@ -83,11 +83,11 @@ place in the same order, and the engine then evaluates each item against the pac
    that run exits with; `id` is echoed when the line was an item that carried one. A refused item
    does not stop the others. There is no fail-fast option.
 5. **Exit code.** 0 when every item produced a disposition (an empty batch too); 1 when the input
-   was read to its end and some item was refused; otherwise the code of the last line, the one that
-   stopped the batch: more items than `--max-items` (`JPS-RESOURCE-BATCH-ITEMS`, exit 4), an input
-   that could not be read (`JPS-INPUT-READ`, exit 4), a chunk whose records could not be written
-   (`JPS-AUDIT-WRITE`, exit 4, on each of its evaluations), or output that could not be written
-   (exit 4).
+   was read to its end and some item was refused; 4 when the batch stopped, the stop being the last
+   thing it reports: more items than `--max-items` (a last line `JPS-RESOURCE-BATCH-ITEMS`, exit 4,
+   after the items before it), an input that could not be read (a last line `JPS-INPUT-READ`, exit
+   4), a chunk whose records could not be written (`JPS-AUDIT-WRITE`, exit 4, on each of its
+   evaluations, the last chunk reported), or output that could not be written.
 6. **Chunks and the lock.** Records are composed as each item is evaluated and appended a chunk at
    a time with the existing `audit.Writer.AppendAll`: one hold of the trail's exclusive lock, one
    write of the chunk's chained lines, the trail file synced and then its directory, then every
