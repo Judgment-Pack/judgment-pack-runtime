@@ -45,7 +45,9 @@ func (a *App) checkPublishedCommand() *cobra.Command {
 			"refs (a tag or HEAD) and both paths; two documents under one identity in the tag that first published it are a " +
 			"finding too. A selected file that cannot be read as a document at some tag -- not JSON this runtime accepts, " +
 			"larger than the read limit every pack read applies, a symbolic link, or a document whose id or version is not a " +
-			"non-empty string -- is reported as unreadable at that tag, never skipped, and hides no finding. Tags are ordered " +
+			"non-empty string -- is reported as unreadable at that tag, never skipped, and hides no finding; so is a submodule " +
+			"the selection reaches, which is not entered. Tree entries are read as git reads them, by the file type their mode " +
+			"names; a mode spelled otherwise than git writes it is reported besides. Tags are ordered " +
 			"by the commit graph, an ancestor before its descendants, never by name. --tags <glob> selects tags by name " +
 			"(repeatable; default every tag; * matches within one slash-separated segment and ** across segments); " +
 			"--include and --exclude <glob> select paths (default **/*.json). --manifest <file> checks against a manifest " +

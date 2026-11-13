@@ -49,8 +49,16 @@ at HEAD is no finding.
 A selected file that cannot be read as a document at some tag is reported as **unreadable** at
 that tag, with the reason, and is never skipped: JSON this runtime does not accept, a file larger
 than the 10 MiB limit every pack read applies, a symbolic link, or a pack or dialect document whose
-`id` or `version` is not a non-empty string. An unreadable file hides no finding. A submodule is
-not entered.
+`id` or `version` is not a non-empty string. An unreadable file hides no finding.
+
+Tree entries are read as git reads them, by the file type their mode names, never by how the mode
+is spelled. A submodule is not entered: a submodule at a path the selection selects or reaches
+below is reported as unreadable, and so is an entry whose mode git reads as a submodule; exclude
+such a path with `--exclude 'path/**'`. A directory or file whose mode is spelled otherwise than
+git writes it (`040000` or `40755` for `40000`, say) is entered or read as git reads it, and is
+reported as well, since a reader that went by the spelling would not see it as git does. A tree
+git could not parse, one with an entry whose mode is not octal digits among them, is unreadable
+whole.
 
 ## Selecting tags and paths
 

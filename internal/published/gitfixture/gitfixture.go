@@ -8,6 +8,7 @@ package gitfixture
 
 import (
 	"bytes"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,16 +64,36 @@ func New(t testing.TB) *Repo {
 // without the final line feed; a failure fails the test.
 func (r *Repo) Git(stdin string, arguments ...string) string {
 	r.t.Helper()
+	return r.gitWith(nil, stdin, arguments...)
+}
+
+func (r *Repo) gitWith(extra []string, stdin string, arguments ...string) string {
+	r.t.Helper()
+	output, stderr, err := r.run(extra, stdin, arguments...)
+	if err != nil {
+		r.t.Fatalf("git %q: %v: %s", arguments, err, stderr)
+	}
+	return output
+}
+
+func (r *Repo) run(extra []string, stdin string, arguments ...string) (string, string, error) {
 	command := exec.Command("git", append([]string{"-C", r.Dir}, arguments...)...)
-	command.Env = r.env
+	command.Env = append(append([]string(nil), r.env...), extra...)
 	command.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		r.t.Fatalf("git %q: %v: %s", arguments, err, stderr.String())
-	}
-	return strings.TrimSuffix(stdout.String(), "\n")
+	err := command.Run()
+	return strings.TrimSuffix(stdout.String(), "\n"), stderr.String(), err
+}
+
+// Try runs one git command in the repository, with the fixture's own
+// environment and none of the hardening the package under test applies, and
+// returns its error without failing the test: a test runs it to show that
+// what it planted acts on a plain git.
+func (r *Repo) Try(arguments ...string) error {
+	_, _, err := r.run(nil, "", arguments...)
+	return err
 }
 
 // Blob writes one blob and returns its id.
@@ -133,14 +154,39 @@ func (r *Repo) TreeOf(entries ...Entry) string {
 	return r.Git(input.String(), "mktree", "-z", "--missing")
 }
 
+// RawTree writes one tree object byte for byte from entries -- each mode as
+// written, each id as its raw bytes, in the order given -- with hash-object
+// --literally, which checks nothing, so a mode spelled as git never writes
+// it can be built. Kind is ignored.
+func (r *Repo) RawTree(entries ...Entry) string {
+	r.t.Helper()
+	var content strings.Builder
+	for _, e := range entries {
+		id, err := hex.DecodeString(e.ID)
+		if err != nil {
+			r.t.Fatalf("entry %q: %v", e.Name, err)
+		}
+		content.WriteString(e.Mode + " " + e.Name + "\x00")
+		content.Write(id)
+	}
+	return r.Git(content.String(), "hash-object", "-t", "tree", "--literally", "-w", "--stdin")
+}
+
 // Commit writes a commit of tree with the given parents and returns its id.
 func (r *Repo) Commit(tree string, parents ...string) string {
+	r.t.Helper()
+	return r.CommitAt("2026-01-01T00:00:00Z", tree, parents...)
+}
+
+// CommitAt writes a commit of tree with the given parents, authored and
+// committed at date, and returns its id.
+func (r *Repo) CommitAt(date, tree string, parents ...string) string {
 	r.t.Helper()
 	arguments := []string{"commit-tree", tree, "-m", "fixture"}
 	for _, parent := range parents {
 		arguments = append(arguments, "-p", parent)
 	}
-	return r.Git("", arguments...)
+	return r.gitWith([]string{"GIT_AUTHOR_DATE=" + date, "GIT_COMMITTER_DATE=" + date}, "", arguments...)
 }
 
 // Snapshot writes a commit holding files, with the given parents.

@@ -521,14 +521,79 @@ type directory struct {
 
 type treeEntry struct {
 	mode string
+	kind entryKind
 	name string
 	id   string
+}
+
+// entryKind is what a tree entry is to git: the file type its mode names,
+// read as git reads it.
+type entryKind int
+
+const (
+	// entryOther is a mode of no type git writes. git reads it as a
+	// submodule (canon_mode), and so enters it no more than one.
+	entryOther entryKind = iota
+	entryDirectory
+	entryFile
+	entryLink
+	entrySubmodule
+)
+
+// parseMode reads a tree entry's mode as git's tree walk does: one or more
+// octal digits, accumulated in an unsigned 32-bit value that wraps. git
+// classifies the value by its file-type bits alone, never by the spelling,
+// so 040000 and 40755 are directories to it as 40000 is.
+func parseMode(text string) (entryKind, bool) {
+	if text == "" {
+		return entryOther, false
+	}
+	var mode uint32
+	for index := 0; index < len(text); index++ {
+		c := text[index]
+		if c < '0' || c > '7' {
+			return entryOther, false
+		}
+		mode = mode<<3 + uint32(c-'0')
+	}
+	switch mode & 0o170000 {
+	case 0o040000:
+		return entryDirectory, true
+	case 0o100000:
+		return entryFile, true
+	case 0o120000:
+		return entryLink, true
+	case 0o160000:
+		return entrySubmodule, true
+	}
+	return entryOther, true
+}
+
+// canonicalModes are the spellings git writes, and 100664, which early
+// versions of git wrote and git fsck still accepts.
+var canonicalModes = map[string]bool{"40000": true, "100644": true, "100755": true, "100664": true, "120000": true, "160000": true}
+
+// modeText is a mode as a reason quotes it: octal digits only, as read, and
+// shortened when long.
+func modeText(mode string) string {
+	if len(mode) > 16 {
+		return mode[:16] + "... (" + fmt.Sprint(len(mode)) + " digits)"
+	}
+	return mode
 }
 
 // walk reads one snapshot's tree. A directory already read at the same path
 // with the same tree id, in this or an earlier snapshot, is not read again:
 // every document under it was already found there, at an earlier or equal
 // place in the order, so it adds nothing a finding needs.
+//
+// An entry is classified as git classifies it, by the file type its mode
+// names. A directory the selection reaches below is entered and a selected
+// file is read, whatever the spelling of the mode; a mode spelled otherwise
+// than git writes it is reported as well, since a reader that compares the
+// spelling would not see the entry as git does. A symbolic link at a
+// selected path, and a submodule (or a mode git reads as one) the selection
+// selects or reaches below, is reported as unreadable, never skipped.
 func (w *walker) walk(index int) error {
 	stack := []directory{{path: "", tree: w.snapshots[index].tree}}
 	for len(stack) > 0 {
@@ -553,39 +618,41 @@ func (w *walker) walk(index int) error {
 			if current.path != "" {
 				full = current.path + "/" + entry.name
 			}
+			selected := w.selection.selects(full)
+			reached := entry.kind != entryFile && entry.kind != entryLink && w.selection.descends(full)
+			if !selected && !reached {
+				continue
+			}
 			if entry.name == "" || entry.name == "." || entry.name == ".." || strings.Contains(entry.name, "/") {
-				if w.selection.selects(full) || (entry.mode == "40000" && w.selection.descends(full)) {
-					w.unread(index, full, "", "its tree entry has a name git does not admit; not read")
-				}
+				w.unread(index, full, "", "its tree entry has a name git does not admit; not read")
 				continue
 			}
 			if len(full) > maxPathBytes {
-				if w.selection.selects(full) || (entry.mode == "40000" && w.selection.descends(full)) {
-					w.unread(index, full[:maxPathBytes], "", fmt.Sprintf("its path is longer than %d bytes; not read", maxPathBytes))
-				}
+				w.unread(index, full[:maxPathBytes], "", fmt.Sprintf("its path is longer than %d bytes; not read", maxPathBytes))
 				continue
 			}
-			switch entry.mode {
-			case "40000":
-				if w.selection.descends(full) {
-					subdirectories = append(subdirectories, directory{path: full, tree: entry.id})
+			switch entry.kind {
+			case entryDirectory:
+				if !reached {
+					continue
 				}
-			case "160000":
-				// A submodule is another repository's commit; it is not entered.
-			case "100644", "100755", "100664":
-				if w.selection.selects(full) {
-					if err := w.document(index, full, entry.id); err != nil {
-						return err
-					}
+				if !canonicalModes[entry.mode] {
+					w.unread(index, full, "", "its tree entry mode is written "+modeText(entry.mode)+", which git does not write; it was read as git reads it, as a directory")
 				}
-			case "120000":
-				if w.selection.selects(full) {
-					w.unread(index, full, "", "it is a symbolic link, not a regular file; not read")
+				subdirectories = append(subdirectories, directory{path: full, tree: entry.id})
+			case entryFile:
+				if !canonicalModes[entry.mode] {
+					w.unread(index, full, "", "its tree entry mode is written "+modeText(entry.mode)+", which git does not write; it was read as git reads it, as a regular file")
 				}
+				if err := w.document(index, full, entry.id); err != nil {
+					return err
+				}
+			case entryLink:
+				w.unread(index, full, "", "it is a symbolic link, not a regular file; not read")
+			case entrySubmodule:
+				w.unread(index, full, "", "it is a submodule, a commit of another repository; not entered")
 			default:
-				if w.selection.selects(full) {
-					w.unread(index, full, "", "its tree entry mode "+entry.mode+" is not a file mode; not read")
-				}
+				w.unread(index, full, "", "its tree entry mode "+modeText(entry.mode)+" names no file, directory, link or submodule; git reads it as a submodule, and it is not entered")
 			}
 		}
 		for position := len(subdirectories) - 1; position >= 0; position-- {
@@ -628,6 +695,12 @@ func (w *walker) readTree(id string) ([]treeEntry, string, error) {
 			return nil, "its tree object cannot be parsed; not read", nil
 		}
 		mode := string(content[:space])
+		kind, ok := parseMode(mode)
+		if !ok {
+			// git refuses the whole tree too: a malformed mode in a tree
+			// entry.
+			return nil, "its tree object has an entry whose mode is not octal digits; not read", nil
+		}
 		content = content[space+1:]
 		end := bytes.IndexByte(content, 0)
 		if end < 0 || len(content)-end-1 < w.hashBytes {
@@ -635,7 +708,7 @@ func (w *walker) readTree(id string) ([]treeEntry, string, error) {
 		}
 		name := string(content[:end])
 		content = content[end+1:]
-		entries = append(entries, treeEntry{mode: mode, name: name, id: hex.EncodeToString(content[:w.hashBytes])})
+		entries = append(entries, treeEntry{mode: mode, kind: kind, name: name, id: hex.EncodeToString(content[:w.hashBytes])})
 		content = content[w.hashBytes:]
 	}
 	return entries, "", nil

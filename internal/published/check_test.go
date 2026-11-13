@@ -242,6 +242,102 @@ func TestOptionLikeTagNamesAndOddPathsAreData(t *testing.T) {
 	}
 }
 
+// git reads a tree entry's mode by its file-type bits, not its spelling: a
+// directory written 040000 or 40755 is a directory to git as 40000 is, so it
+// is entered, and its spelling, which git never writes, is reported.
+func TestADirectoryIsEnteredHoweverItsModeIsWritten(t *testing.T) {
+	for _, row := range []struct {
+		mode      string
+		canonical bool
+	}{{"40000", true}, {"040000", false}, {"40755", false}} {
+		t.Run(row.mode, func(t *testing.T) {
+			repo := gitfixture.New(t)
+			commit := func(pack string, parents ...string) string {
+				below := repo.Tree(map[string]string{"expense.json": pack})
+				return repo.Commit(repo.RawTree(gitfixture.Entry{Mode: row.mode, ID: below, Name: "packs"}), parents...)
+			}
+			first := commit(packA)
+			second := commit(packB, first)
+			repo.Tag("v1", first)
+			repo.Head(first)
+			report := run(t, defaultOptions(repo.Dir))
+			if report.Identities != 1 || report.Documents != 1 {
+				t.Fatalf("the directory must be entered: %#v", report)
+			}
+			wantStatus, wantUnread := StatusValid, 0
+			if !row.canonical {
+				wantStatus, wantUnread = StatusIncomplete, 1
+			}
+			if report.Status != wantStatus || report.UnreadableCount != wantUnread {
+				t.Fatalf("want %s with %d unreadable, got %#v", wantStatus, wantUnread, report)
+			}
+			if !row.canonical && (report.Unreadable[0].Path != "packs" || !strings.Contains(report.Unreadable[0].Reason, "written "+row.mode+", which git does not write")) {
+				t.Fatalf("unexpected unreadable: %#v", report.Unreadable)
+			}
+
+			repo.Tag("v2", second)
+			repo.Head(second)
+			finding := onlyFinding(t, run(t, defaultOptions(repo.Dir)))
+			if finding.Code != CodeChanged || finding.Published.Path != "packs/expense.json" || finding.Found.Ref != "refs/tags/v2" || finding.Found.Digest != digestOf(packB) {
+				t.Fatalf("a change below the directory must be found: %#v found %#v", finding, finding.Found)
+			}
+		})
+	}
+}
+
+// Every other entry the selection reaches is read as git reads it or
+// reported: a file whose mode is written otherwise is read and reported, a
+// symbolic link at a selected path, a submodule and a mode git reads as one
+// are reported, and a tree with a mode that is not octal is unreadable whole.
+func TestEveryEntryTheSelectionReachesIsReadOrReported(t *testing.T) {
+	repo := gitfixture.New(t)
+	blob := repo.Blob(packA)
+	root := repo.RawTree(
+		gitfixture.Entry{Mode: "120000", ID: repo.Blob("not selected"), Name: "README"},
+		gitfixture.Entry{Mode: "0100644", ID: blob, Name: "a.json"},
+		gitfixture.Entry{Mode: "120000", ID: repo.Blob("a.json"), Name: "link.json"},
+		gitfixture.Entry{Mode: "160000", ID: strings.Repeat("cd", 20), Name: "module"},
+		gitfixture.Entry{Mode: "60644", ID: blob, Name: "odd.json"},
+	)
+	commit := repo.Commit(root)
+	repo.Tag("v1", commit)
+	repo.Head(commit)
+	report := run(t, defaultOptions(repo.Dir))
+	if report.Status != StatusIncomplete || report.Identities != 1 || report.Documents != 1 {
+		t.Fatalf("a.json must be read and the run incomplete: %#v", report)
+	}
+	want := map[string]string{
+		"a.json":    "written 0100644, which git does not write; it was read as git reads it, as a regular file",
+		"link.json": "symbolic link",
+		"module":    "it is a submodule",
+		"odd.json":  "mode 60644 names no file, directory, link or submodule",
+	}
+	if report.UnreadableCount != len(want) {
+		t.Fatalf("want %d unreadable, got %#v", len(want), report.Unreadable)
+	}
+	for _, unreadable := range report.Unreadable {
+		if reason, ok := want[unreadable.Path]; !ok || !strings.Contains(unreadable.Reason, reason) || unreadable.Ref != "refs/tags/v1" {
+			t.Fatalf("unexpected unreadable: %#v", unreadable)
+		}
+	}
+	// A submodule the selection excludes is not reached.
+	options := defaultOptions(repo.Dir)
+	exclude, _ := CompileGlob("module/**")
+	options.Selection.Exclude = []Glob{exclude}
+	if report := run(t, options); report.UnreadableCount != len(want)-1 {
+		t.Fatalf("an excluded submodule is not reported: %#v", report.Unreadable)
+	}
+
+	malformed := gitfixture.New(t)
+	commit = malformed.Commit(malformed.RawTree(gitfixture.Entry{Mode: "1o0644", ID: malformed.Blob(packA), Name: "a.json"}))
+	malformed.Tag("v1", commit)
+	malformed.Head(commit)
+	report = run(t, defaultOptions(malformed.Dir))
+	if report.Status != StatusIncomplete || report.UnreadableCount != 1 || report.Unreadable[0].Path != "." || !strings.Contains(report.Unreadable[0].Reason, "not octal digits") {
+		t.Fatalf("a tree git cannot parse is unreadable: %#v", report)
+	}
+}
+
 // planted writes a script that creates marker when run, and returns its path.
 // It reads nothing and fails at once, so a git that ran it (an ssh command
 // for a fetch among them) stops instead of waiting on it.

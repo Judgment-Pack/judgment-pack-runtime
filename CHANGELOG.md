@@ -26,8 +26,9 @@ All notable changes to tagged releases are documented here.
   (kind, `id`, `version`) from the document and not its path, and reports each identity whose
   bytes at a later tag or at HEAD are not the bytes the first tag holding it published, with both
   SHA-256 digests, refs and paths; two documents under one identity in that tag are a finding too.
-  A document that does not read at a tag is reported as unreadable, never skipped, and the run is
-  then incomplete. `--manifest` checks against a manifest pinning each identity by digest and
+  A document that does not read at a tag, or a submodule the selection reaches, is reported as
+  unreadable, never skipped, and the run is then incomplete; a tree entry is read as git reads its
+  mode, and a mode spelled as git never writes it is reported besides. `--manifest` checks against a manifest pinning each identity by digest and
   first tag (`manifestVersion` `"1"`, a closed input), and `--write-manifest` writes one, in
   deterministic bytes, by rename, replacing only a manifest. A shallow clone is refused without a
   manifest and stated as shallow with one; a partial clone is refused. It exits 0 when valid, 1

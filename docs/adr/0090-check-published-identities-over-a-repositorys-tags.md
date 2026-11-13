@@ -55,7 +55,10 @@ reads documents a client names, and this one starts a program over a repository.
 read further. The identity is the kind and the document's own `id` and `version`. A document that
 does not decode under the carrier limits every pack read applies, is larger than the 10 MiB hard
 limit, is a symbolic link, or declares no non-empty string `id` or `version` is reported as
-unreadable at that tag and never skipped.
+unreadable at that tag and never skipped. A tree entry is classified as git classifies it, by the
+file-type bits of its mode, so a directory whose mode is spelled `040000` is entered as `40000`
+is; a spelling git never writes is reported besides, and a submodule, or a mode git reads as one,
+that the selection reaches is reported, not passed over.
 
 **Bytes, not canonical content.** The check compares the SHA-256 of exact bytes, the digest locks
 already use. A pack has no canonical form in the specification, and the issue asks for bytes. For a
