@@ -704,16 +704,18 @@ described in full, and `experimental evaluate` refuses the same pack. An absent 
 as absent, never as the schema's default; the evaluator applies that default whether or not the
 view shows it.
 
-The canonical JSON, view version `1`, is one object with three members and no trailing newline:
+The canonical JSON, view version `2`, is one object with three members and no trailing newline:
 `digest` (`sha256:` and the hex SHA-256 of the exact bytes read), `pack` (the document, member for
-member) and `viewVersion`. Object members are ordered by the UTF-16 code units of their names and
+member) and `viewVersion`; the view of a Core `0.5.0` pack has a fourth, `severity`, after `pack`
+(below). Object members are ordered by the UTF-16 code units of their names and
 strings carry the RFC 8785 escapes; a number is written as the literal token the document holds,
 not in RFC 8785's number form, which would rewrite `1.50` as `1.5`.
 
-The Markdown, view version `1`, is a title heading and a list of the pack's id, version, spec
+The Markdown, view version `2`, is a title heading and a list of the pack's id, version, spec
 version, profile when the pack states one, digest, view version and description, then one section
 per member in the order a reviewer reads a pack: Decision, Applicability, Outcomes (a table of id,
-label and description, then each outcome's extensions), Rules (one heading per rule, numbered in
+label and description, with a Severity column for a Core `0.5.0` pack, then each outcome's
+extensions), Rules (one heading per rule, numbered in
 document order, with its condition as a nested list), Exceptions, Fallback outcome, Escalation,
 Evidence requirements, Sources, Metadata and Extensions. A section the pack has no member for is
 left out; a member that is present and empty reads `*empty*`. A condition is a list item — `literal
@@ -789,6 +791,26 @@ object does not name (`JPS-STRUCTURE-UNKNOWN-MEMBER`), and an `org.judgmentpack.
 extension is refused as a reserved extension name (`JPS-STRUCTURE-EXTENSION-NAME`), so such a pack
 is never described. Describing these members left the view version at `1`.
 
+**Outcome severity (EXPERIMENTAL).** The view of a Core `0.5.0` pack lists each outcome's severity
+under the Spec's annotation vocabulary `1.0.0` (`spec/annotation-vocabulary.md`,
+[ADR-0088](adr/0088-check-the-outcome-severity-vocabulary.md)). An outcome's level is the value of
+its `severity` annotation when that is exactly `low`, `medium`, `high` or `critical`; an outcome
+that states no severity, or a value that is not a level — `"High"`, `["high"]`, a look-alike
+letter — has none, and none is supplied. The value as written is still listed among the outcome's
+extensions. The JSON's `severity` member holds `outcomes` (each outcome's `id`, and its `severity`
+when it has a level, in document order), `mostSevereFirst` (the ids of the outcomes with a level,
+`critical` first, those of one level in document order), `unranked` (the others, in document order)
+and `vocabularyVersion` (`"1.0.0"`). It sits beside `pack`, so `pack` stays the document. In the
+Markdown, the outcomes table reads `| Id | Label | Severity | Description |`, the Severity cell
+holding the level or nothing, and two lines follow it: `- By severity, most severe first, as the
+author states it (annotation vocabulary 1.0.0):` and `- With no severity level, none stated or a
+value that is not a level, in document order:`, each with the ids, or `*none*`. The level is the
+author's statement: the view writes no number for it, and derives no severity for a rule, the pack
+or a disposition. A view of a pack under another `specVersion` has no `severity` member and the
+three-column table. Listing it moved the view version to `2`, for every view; a view of a Core
+`0.3.0` or `0.2.0-draft` pack changed in its version line alone. The filtered view and `packs diff`
+are unchanged, and `packs diff` reports a severity change as it reports any annotation change.
+
 **Filter by annotation (EXPERIMENTAL).** `--filter key=value`, which repeats, shows only the outcomes
 and rules whose annotations match every criterion; `sdk.Pack.FilteredView` returns the same
 `view.FilteredView`:
@@ -831,8 +853,8 @@ its exact code points, as data: a tool that displays annotations from it is boun
 rules of §9.2 itself.
 
 The view is held by hand. The Markdown and canonical JSON under `sdk/view/testdata/expected`, for
-one every-member pack of each admitted specification version, for the adversarial-strings fixture
-and for the annotated example of Core `0.5.0`, are written from the format above and the fixture, never recorded from
+one every-member pack of each admitted specification version, for the adversarial-strings fixture,
+for the outcome-severity fixture and for the annotated example of Core `0.5.0`, are written from the format above and the fixture, never recorded from
 a run. The filtered view's expectations are written by hand in its tests. Over every
 bundled conformance case, evaluation-corpus pack and purpose-built fixture the loader admits, a
 check derived from the input document finds every string and number of the document in its
@@ -888,17 +910,44 @@ or a lock that is not the shape `packs lock` writes, is a refusal with `status: 
 jpack packs validate && jpack packs lint && jpack packs test && jpack packs verify
 ```
 
-`packs validate` checks the configuration and, per pack, six named steps: the declared path
+`packs validate` checks the configuration and, per pack, seven named steps: the declared path
 resolves inside the configuration's directory; the document validates through the semantic layer;
 an `expectedVersion` pin equals the document's `version`; the filename, when it follows the
-convention, agrees with both; every hint key names something the document has; and a declared matrix
-loads as rows. Beside a pack whose document validates, `packs validate` also carries, as the entry's
+convention, agrees with both; every hint key names something the document has; a declared matrix
+loads as rows; and, for a Core `0.5.0` pack, each outcome's severity is a level of the Spec's
+annotation vocabulary (`annotation-vocabulary`).
+
+The last step applies annotation vocabulary `1.0.0`, the one this binary carries
+([ADR-0088](adr/0088-check-the-outcome-severity-vocabulary.md)). It reads only
+`/outcomes/<i>/extensions/org.judgmentpack.annotations/severity`, never the key on a rule, the root
+or a value-set entry, and matches `low`, `medium`, `high` and `critical` by exact code point; a
+list is refused, a one-element list included. Each outcome whose value is not a level is one
+`JPS-VOCABULARY-SEVERITY-VALUE` error at its pointer, naming the outcome and the value, and the
+check fails, so the pack fails and the run exits `1`, though Core admits the pack. It runs after
+Core: for a pack under another `specVersion` (`spec-version`), a pack Core refuses (`core-refused`,
+where the document check carries Core's diagnostic and the vocabulary adds none) and a profile this
+runtime does not read (`profile-unsupported`), the check is `skipped` and says why. A pack whose
+only Core finding is a required extension this runtime does not support is checked. The JSON entry's
+`vocabulary` member states the vocabulary, its `version`, the `result` (`pass`, `refused` or
+`not-checked`), the `reason` and Core's layer when not checked, and the `findings` and
+`advisories`; the human output prints each finding as an `annotation-vocabulary 1.0.0:` line. The
+vocabulary's advice, `JPS-VOCABULARY-SEVERITY-IDENTIFIER`, is a warning at `/outcomes/<i>/id` for
+an outcome whose severity is a level while the last hyphen-separated segment of its id (the whole
+id, without a hyphen) is another level, such as `refer-high` at `low`; it is printed as an
+`advice:` line and moves no exit code unless `--fail-on-advisory` is given. `spec validate` does
+not apply the vocabulary, and its output is unchanged. Under `internal/vocabulary/testdata`, the
+Spec's rows for this vocabulary run as tests: 31 of the 32, each with the result its row states, and
+the inertness pair, whose packs decide alike; `profile-extended` is not run, because this runtime
+reads the base profile only. This runtime is the companion's second reader, written by the same
+maintainer as the Spec, so it is not an independent implementation of it.
+
+Beside a pack whose document validates, `packs validate` also carries, as the entry's
 `advisories`, the advice `spec validate` reports for the same bytes — the non-normative
 `JPS-RULES-OVERLAP` warnings for two rules that can both match with different outcomes, under Core
 `0.3.0` and `0.5.0` — and prints each as an `advice:` line; advice is not a check and moves no exit
 code (ADR-0081). A gate that wants advice to fail the run adds `--fail-on-advisory`: each pack's
-checks then end with an `advisories` check, failed for a pack that draws any advice, a
-`not-excluded` advisory included (unlike `spec test-conformance --strict`, which fails only an exact
+checks then end with an `advisories` check, failed for a pack that draws any advice, the
+vocabulary's included, a `not-excluded` advisory included (unlike `spec test-conformance --strict`, which fails only an exact
 overlap). For rules meant to be disjoint, rewrite the conditions so the exclusion is exact, or gate
 that pack in a separate `--id` run without the option. `packs test` then runs every row. Both exit `1` on any failure. Every check is
 reported with its status — `passed`, `failed`, or `skipped` — so you can tell a check that passed

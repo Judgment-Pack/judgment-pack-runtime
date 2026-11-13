@@ -1,0 +1,147 @@
+{
+  "repository": "https://github.com/Judgment-Pack/judgment-pack-spec",
+  "release": "v0.5.2",
+  "revision": "561b2a7245cf6ee13cb5be78da9c7a89f9adcdef",
+  "files": {
+    "1.0.0/manifest.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/manifest.json",
+      "sha256": "f03b9b0e6cbebfd99b66f2ce2165b7e494790dd27fd88c90a06b8c9fbdef57bc"
+    },
+    "1.0.0/packs/core-empty-list.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/core-empty-list.json",
+      "sha256": "cf6b7c694924a060750fd9478f8ce14153e8fc7cbc212e599e5e6ba28657053f"
+    },
+    "1.0.0/packs/core-empty-string.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/core-empty-string.json",
+      "sha256": "b46762ef8e47e5408ea73a49465207744c49f962e40a797b51395178a964b342"
+    },
+    "1.0.0/packs/core-number.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/core-number.json",
+      "sha256": "abce8b53dcf4573ed6ba437a00598fb7171440aa20bd95bff194b6e74b8db752"
+    },
+    "1.0.0/packs/core-trailing-space.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/core-trailing-space.json",
+      "sha256": "2e1e5f03eff51b0961b9465b1ce4c50b3478f12f09e664068e01f9da7cc77db5"
+    },
+    "1.0.0/packs/each-level.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/each-level.json",
+      "sha256": "df417977b3d363c8509f70f906d746523294bfbfd4b8f9bd0294784d92999c96"
+    },
+    "1.0.0/packs/entry-position.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/entry-position.json",
+      "sha256": "05cef75be7fc799b2196f94d7684e9e9fcaa3dbacd428e6fdea8890554bfa3d5"
+    },
+    "1.0.0/packs/identifier-agrees.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/identifier-agrees.json",
+      "sha256": "ffb9ec43cda7b7d2eb06cadf648e17a76d98cdd050230463dc18f80ce4603159"
+    },
+    "1.0.0/packs/identifier-contains.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/identifier-contains.json",
+      "sha256": "fbd789784ff21dce7cf863c2c57e86e57dc5af7112cbd8dac8e865ef487109ae"
+    },
+    "1.0.0/packs/identifier-disagrees.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/identifier-disagrees.json",
+      "sha256": "4b92318e5e19fb2f1d1b95c11c350dce106bb7e688d47fe231c0678768595986"
+    },
+    "1.0.0/packs/identifier-no-severity.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/identifier-no-severity.json",
+      "sha256": "fac076ad94d4c11d594a1c8be461b1d3e1fd3fbe76a792e882943d6948fd9a2a"
+    },
+    "1.0.0/packs/identifier-not-last.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/identifier-not-last.json",
+      "sha256": "9692ee3e907608cd2431fd7daaac3aa4ef9152bf0659b4c9f795630ddf150136"
+    },
+    "1.0.0/packs/identifier-refused-value.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/identifier-refused-value.json",
+      "sha256": "2653f6238fe6f61251423b77a0fb4ad4906a504c1d997c570a6d6a7cf15364f2"
+    },
+    "1.0.0/packs/identifier-whole.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/identifier-whole.json",
+      "sha256": "664b9080d4b16d3a3e3691fb49b895c021e7b40aa5bee360c9f5ffdd6f5dc5b5"
+    },
+    "1.0.0/packs/inert-baseline.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/inert-baseline.json",
+      "sha256": "7cd457eb2dd0070f1d5b05cd238d61048fdd8234b74feabb716e4ffa0722b87a"
+    },
+    "1.0.0/packs/inert-levels.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/inert-levels.json",
+      "sha256": "60858ea171c3606c22a6194a22be10a02084e0cb01032f0f926ad71f53624463"
+    },
+    "1.0.0/packs/inert-refused.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/inert-refused.json",
+      "sha256": "9d6b9be0e34a9baf24eab58dfcf032c25208e1a7129e20bae27ed820128b4a05"
+    },
+    "1.0.0/packs/informational-value.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/informational-value.json",
+      "sha256": "9440b2b443e0d7cd482b60db4f3e3852b991c76a798445ca96ec9a2355c2a3e3"
+    },
+    "1.0.0/packs/list-one.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/list-one.json",
+      "sha256": "f1b14fdc85d6a72b0bbcdd02d26f8564c3cf9c11eaaa90b302adb35488c71919"
+    },
+    "1.0.0/packs/list-two.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/list-two.json",
+      "sha256": "ca572a4ed7ad92d0865a2307b9ea5def0adfe033ef43ad642d5be9d1a1988534"
+    },
+    "1.0.0/packs/look-alike.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/look-alike.json",
+      "sha256": "260d319575856a7fff25af02b31fc1f73d7558ed6a731f2c47b172f7def962fd"
+    },
+    "1.0.0/packs/no-severity.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/no-severity.json",
+      "sha256": "9b9be3d110db067f19d4c89fb5793dd5f1cfe6ed9e1879dda64da0b6ef592972"
+    },
+    "1.0.0/packs/none-value.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/none-value.json",
+      "sha256": "0dd0ded7a54cb75b94f57ac0d3b03e5dd3e9f3ea5e74a19cc11f16b54d9982bd"
+    },
+    "1.0.0/packs/other-keys.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/other-keys.json",
+      "sha256": "7dd651876073c4cc0a8c2f99660704b98a320b00e440256981f782d183955e09"
+    },
+    "1.0.0/packs/profile-extended.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/profile-extended.json",
+      "sha256": "a57e980d8a17585aa03d65c4a96aa6570f8f349beaa21699e1cb049f41ff04d7"
+    },
+    "1.0.0/packs/root-position.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/root-position.json",
+      "sha256": "68fa43d5a672702e314222223865d98af8e829fab7c95ca740dc92a06bbd8e26"
+    },
+    "1.0.0/packs/rule-position.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/rule-position.json",
+      "sha256": "16331833100354a41a3a2a5cad6e4e6ac5f608275abd5c77a804e832aa7e18a7"
+    },
+    "1.0.0/packs/selector-earlier.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/selector-earlier.json",
+      "sha256": "210d1efe7ec443d17d36f453866f4a6ccabf3c4cb98f1f77c842c76f7f2a3693"
+    },
+    "1.0.0/packs/selector-later.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/selector-later.json",
+      "sha256": "a28482bdf3fbbfae84cbf128a4dd2335d1d7622d44919d48865c3d04a478202d"
+    },
+    "1.0.0/packs/some-outcomes.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/some-outcomes.json",
+      "sha256": "5631e0f15e9805b9dae39f8bd84244beddd1e35fe77de2ee61b3345e436f4d37"
+    },
+    "1.0.0/packs/unknown-value.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/unknown-value.json",
+      "sha256": "9cc5b97fd3ab43ae20648b9201de18def3aaaefb2184203b69dd7b419eec5641"
+    },
+    "1.0.0/packs/unsupported-extension.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/unsupported-extension.json",
+      "sha256": "7c24653dbb9d6cc0b88a00a5331cac4e525497ed6642aa8782c9e73392369716"
+    },
+    "1.0.0/packs/wrong-case.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/packs/wrong-case.json",
+      "sha256": "8a5e757c559069e7e9f80a3fa2b7a98fb4a74beaf4e9e199c1d7dcbd69918e90"
+    },
+    "1.0.0/vocabulary.json": {
+      "upstream": "conformance/annotation-vocabulary/1.0.0/vocabulary.json",
+      "sha256": "be35a002c31e4e15645e490f232a865a7f80110fca43ae28a3bd62a18a264f3b"
+    },
+    "LICENSE": {
+      "upstream": "LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  }
+}

@@ -5,6 +5,8 @@
 // View returned. For a pack under Core 0.5.0, the view carries its value sets
 // and annotations, and FilteredView, which only sdk.Pack.FilteredView builds,
 // is its outcomes and rules filtered by annotation (ADR-0075, ADR-0077).
+// The view of a Core 0.5.0 pack lists each outcome's severity under
+// annotation vocabulary 1.0.0 and orders the outcomes by it (ADR-0088).
 // Diff and ThreeWayDiff, which only sdk.Diff and sdk.ThreeWayDiff build, are
 // the structural comparison of two packs of one specVersion, or of two with
 // their common base (ADR-0086). Everything in this package is experimental.
@@ -19,6 +21,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evalform"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/vocabulary"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/internal/viewhook"
 )
 
@@ -29,8 +32,11 @@ import (
 // learns to describe packs it refused before, such as those of a newly
 // admitted specification version: the value sets and annotations of Core
 // 0.5.0 are members no earlier pack holds, so describing them left it at "1".
+// Listing each outcome's severity in a Core 0.5.0 view (ADR-0088) changed the
+// bytes of every view of such a pack, so it moved to "2"; a view of a pack
+// under another specVersion holds what it held, its version apart.
 // Experimental, like the rest of the view.
-const ViewVersion = "1"
+const ViewVersion = "2"
 
 // Identity is what names the viewed pack: the id, version and specVersion
 // members of the document, its profile member when the document states one,
@@ -97,6 +103,10 @@ type PackView struct {
 	// extensions object (org.judgmentpack.annotations, Core 0.5.0 only), or
 	// nil when it has none.
 	Annotations []Annotation
+	// SeverityOrder orders the outcomes by their Severity, for a pack under
+	// Core 0.5.0, and is nil for any other. It is the view's, read from the
+	// outcomes' annotations, and not a member of the document.
+	SeverityOrder *SeverityOrder
 
 	json     []byte
 	markdown []byte
@@ -173,6 +183,33 @@ type Outcome struct {
 	// Annotations is the annotations member of the outcome's extensions, as
 	// for PackView.Annotations.
 	Annotations []Annotation
+	// Severity is the outcome's level under the Spec's annotation vocabulary
+	// (Core 0.5.0 only): the value of its severity annotation when that is
+	// one of low, medium, high and critical, matched exactly, and empty when
+	// the outcome states no severity or states a value that is not a level,
+	// which is never mapped onto one. It is the author's statement, read
+	// from Annotations and never from the identifier, and not a member of
+	// the document: Annotations carries the value as written.
+	Severity string
+}
+
+// SeverityOrder is the outcomes of a Core 0.5.0 pack ordered by severity,
+// under the levels and order of annotation vocabulary VocabularyVersion
+// (spec/annotation-vocabulary.md §4). The ranked outcomes come first, most
+// severe first, those of one level in document order; then the unranked
+// ones, with no severity stated or a value that is not a level, in document
+// order. No level is a number, and no severity is derived for the pack, a
+// rule or a disposition. Experimental.
+type SeverityOrder struct {
+	// VocabularyVersion is the vocabulary version whose levels are applied,
+	// "1.0.0".
+	VocabularyVersion string
+	// MostSevereFirst is the id of each outcome that has a Severity, most
+	// severe first; empty, not nil, when none has one.
+	MostSevereFirst []string
+	// Unranked is the id of each outcome with no Severity, in document
+	// order; empty, not nil, when every outcome has one.
+	Unranked []string
 }
 
 // Rule is one member of rules, in document order.
@@ -646,6 +683,7 @@ func buildView(root map[string]any) (PackView, error) {
 				view.ValueSets = append(view.ValueSets, r.valueSet(item, indexed(o.at("valueSets"), index)))
 			}
 		}
+		view.SeverityOrder = orderBySeverity(view.Outcomes)
 	}
 	view.FallbackOutcome = o.optionalString("fallbackOutcome")
 	if value, present := o.take("escalation"); present {
@@ -909,6 +947,31 @@ func (r *viewReader) canonicalMember(value any, pointer *location) string {
 		r.fail(pointer, err.Error())
 	}
 	return encoded
+}
+
+// orderBySeverity sets each outcome's Severity from its annotations and
+// returns the outcomes' order by it (ADR-0088).
+func orderBySeverity(outcomes []Outcome) *SeverityOrder {
+	order := &SeverityOrder{VocabularyVersion: vocabulary.Version, MostSevereFirst: []string{}, Unranked: []string{}}
+	ranked := make([][]string, len(vocabulary.Levels()))
+	for index := range outcomes {
+		outcome := &outcomes[index]
+		for _, annotation := range outcome.Annotations {
+			if annotation.Key == vocabulary.Key && annotation.List == nil && vocabulary.IsLevel(annotation.Value) {
+				outcome.Severity = annotation.Value
+			}
+		}
+		rank, ok := vocabulary.Rank(outcome.Severity)
+		if !ok {
+			order.Unranked = append(order.Unranked, outcome.ID)
+			continue
+		}
+		ranked[rank] = append(ranked[rank], outcome.ID)
+	}
+	for rank := len(ranked) - 1; rank >= 0; rank-- {
+		order.MostSevereFirst = append(order.MostSevereFirst, ranked[rank]...)
+	}
+	return order
 }
 
 // fault is an admitted construct the view cannot represent, or a view that

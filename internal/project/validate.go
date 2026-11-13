@@ -14,6 +14,7 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/validation"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/vocabulary"
 )
 
 // The named checks packs validate applies, in the order it applies them.
@@ -24,6 +25,11 @@ const (
 	CheckFilename       = "filename"
 	CheckHintKeys       = "hint-keys"
 	CheckMatrix         = "matrix"
+	// CheckVocabulary holds each outcome's severity annotation to the Spec's
+	// annotation vocabulary (ADR-0088): a Core 0.5.0 pack Core admits, and
+	// one whose required extensions this runtime does not support, is
+	// checked; any other pack is reported not checked, with the reason.
+	CheckVocabulary = "annotation-vocabulary"
 	// CheckAuditDirInsideRoot is the one check that is about the configuration
 	// itself rather than about a pack: the audit directory is the only declared
 	// path no pack entry owns (ADR-0018).
@@ -41,7 +47,7 @@ const (
 
 // documentChecks are the checks that read the pack document, in order. They are
 // named once so the branches that cannot run them skip exactly the same set.
-var documentChecks = []string{CheckDocument, CheckExpectedVer, CheckFilename, CheckHintKeys, CheckMatrix}
+var documentChecks = []string{CheckDocument, CheckExpectedVer, CheckFilename, CheckHintKeys, CheckMatrix, CheckVocabulary}
 
 // filenameConvention recognizes the optional <decision-id>-<semver>.pack.json
 // filename.
@@ -133,30 +139,38 @@ func (p *Project) ValidateWith(engine *validation.Engine, id, command string, op
 }
 
 // holdToAdvice appends the advisories check to one entry: failed when the
-// pack draws advice of any certainty, passed when it draws none, and skipped
-// when no advice was computed for it: its document check did not pass, or it
+// pack draws advice of any certainty, spec validate's or the annotation
+// vocabulary's (ADR-0088), passed when it draws none, and skipped when no
+// advice was computed for it: its document check did not pass, or it
 // declares a Core version the advice is not defined for (advised false).
+// The vocabulary's advice is computed for a pack whose required extensions
+// this runtime does not support, whose document check fails, so advice is
+// looked for first.
 func holdToAdvice(entry *result.PackValidationEntry, advised bool) {
 	check := result.PackCheck{Name: CheckAdvisories, Status: result.PackCheckPassed}
 	documentPassed := slices.ContainsFunc(entry.Checks, func(c result.PackCheck) bool {
 		return c.Name == CheckDocument && c.Status == result.PackCheckPassed
 	})
+	drawn := len(entry.Advisories)
+	if entry.Vocabulary != nil {
+		drawn += len(entry.Vocabulary.Advisories)
+	}
 	switch {
-	case !documentPassed:
-		check.Status = result.PackCheckSkipped
-		check.Detail = "The document check did not pass, so no advice was computed."
-	case len(entry.Advisories) > 0:
+	case drawn > 0:
 		check.Status = result.PackCheckFailed
 		noun := "advisories"
-		if len(entry.Advisories) == 1 {
+		if drawn == 1 {
 			noun = "advisory"
 		}
 		bound := ""
 		if entry.AdvisoriesTruncated {
 			bound = "at least "
 		}
-		check.Detail = fmt.Sprintf("The pack draws %s%d %s, and this run fails on any.", bound, len(entry.Advisories), noun)
+		check.Detail = fmt.Sprintf("The pack draws %s%d %s, and this run fails on any.", bound, drawn, noun)
 		entry.Status = "invalid"
+	case !documentPassed:
+		check.Status = result.PackCheckSkipped
+		check.Detail = "The document check did not pass, so no advice was computed."
 	case !advised:
 		check.Status = result.PackCheckSkipped
 		check.Detail = "Rule-overlap advice is computed for Core 0.3.0 and 0.5.0 packs only, so none was computed for this one."
@@ -264,9 +278,15 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 			add(name, result.PackCheckSkipped, "The pack document could not be read, so this check had nothing to compare against.")
 		}
 		p.checkMatrix(entry, add)
+		add(CheckVocabulary, result.PackCheckSkipped, "The pack document could not be read, so this check had nothing to read.")
 		return report, advised
 	}
 	validated, operational := engine.Validate(data, validation.Options{Through: "semantic", Limits: carrier.DefaultLimits()})
+	// The vocabulary check reads Core's result for these same bytes.
+	core := &validated
+	if operational != nil {
+		core = nil
+	}
 	switch {
 	case operational != nil:
 		add(CheckDocument, result.PackCheckFailed, display.Sanitize(operational.Message))
@@ -293,6 +313,7 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 			add(name, result.PackCheckSkipped, "The pack document did not decode, so its own identity members could not be read.")
 		}
 		p.checkMatrix(entry, add)
+		checkVocabulary(&report, data, core, add)
 		return report, advised
 	}
 
@@ -310,7 +331,45 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 	p.checkFilename(id, entry, found, add)
 	checkHintKeys(entry, found, add)
 	p.checkMatrix(entry, add)
+	checkVocabulary(&report, data, core, add)
 	return report, advised
+}
+
+// checkVocabulary applies the Spec's annotation vocabulary to the bytes Core
+// validated (ADR-0088) and carries its report on the entry. Its refusal is a
+// failed check, so the entry is invalid and the run exits 1, as for any other
+// failed check; it is not a Core result, and the document check says what
+// Core said. Not checking is skipped, with the reason. Its advisories are
+// carried in the report and fail the run only under --fail-on-advisory.
+func checkVocabulary(report *result.PackValidationEntry, data []byte, core *result.Validation, add func(name, status, detail string)) {
+	checked := vocabulary.Check(data, core, carrier.DefaultLimits())
+	report.Vocabulary = &checked
+	applied := "annotation vocabulary " + checked.Version
+	switch checked.Result {
+	case vocabulary.ResultPass:
+		add(CheckVocabulary, result.PackCheckPassed, fmt.Sprintf("Checked against %s: every outcome severity the pack states is a level (%s).", applied, strings.Join(vocabulary.Levels(), ", ")))
+	case vocabulary.ResultRefused:
+		noun := "outcomes state a severity"
+		if len(checked.Findings) == 1 {
+			noun = "outcome states a severity"
+		}
+		add(CheckVocabulary, result.PackCheckFailed, fmt.Sprintf("Checked against %s: %d %s that is not a level (%s), matched exactly. The refusal is the vocabulary's, not Core's: a severity takes no part in evaluation.", applied, len(checked.Findings), noun, strings.Join(vocabulary.Levels(), ", ")))
+	default:
+		add(CheckVocabulary, result.PackCheckSkipped, notCheckedDetail(checked, applied))
+	}
+}
+
+// notCheckedDetail says which of the three reasons kept the vocabulary from
+// being applied.
+func notCheckedDetail(checked result.VocabularyReport, applied string) string {
+	switch checked.Reason {
+	case vocabulary.ReasonSpecVersion:
+		return fmt.Sprintf("The pack declares a specVersion other than %s, the one %s applies to, so it was not applied (spec-version).", vocabulary.SpecVersion, applied)
+	case vocabulary.ReasonProfileUnsupported:
+		return fmt.Sprintf("The pack declares a profile this runtime does not read, so Core conformance cannot be established and %s was not applied (profile-unsupported).", applied)
+	default:
+		return fmt.Sprintf("Core refused the pack at the %s layer, which the document check reports, so %s was not applied (core-refused).", checked.CoreLayer, applied)
+	}
 }
 
 // checkHintKeys holds a configuration's hint keys to the pack document.

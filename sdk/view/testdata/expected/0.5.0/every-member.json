@@ -150,5 +150,11 @@
     ],
     "version": "2.0.0"
   },
-  "viewVersion": "1"
+  "severity": {
+    "mostSevereFirst": [],
+    "outcomes": [{"id": "approve"}, {"id": "refer"}, {"id": "decline"}],
+    "unranked": ["approve", "refer", "decline"],
+    "vocabularyVersion": "1.0.0"
+  },
+  "viewVersion": "2"
 }

@@ -57,5 +57,5 @@
     "title": "# Heading | with pipe `tick` <script>alert(1)</script> [link](https://example.invalid) **bold** _em_ ~~strike~~ $x$ &amp; \\ end",
     "version": "0.1.0"
   },
-  "viewVersion": "1"
+  "viewVersion": "2"
 }

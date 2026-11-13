@@ -5,7 +5,7 @@
 - Spec version: 0\.3\.0
 - Profile: base
 - Digest: sha256:65819957bb310af53a9f7862a8f7b9bd2ac1531a9e5218dff2448bc4ce26e0bc
-- View version: 1
+- View version: 2
 - Description: Invented content for the pack view tests\; it authorizes nothing\.
 
 ## Decision

@@ -1,0 +1,58 @@
+{
+  "digest": "sha256:6195f92041acdf096bde001c120bbfa42c44239f89bf7ba60b1e789315508b59",
+  "pack": {
+    "decision": {"intent": "List the severity of each outcome.", "question": "Which outcome is the most severe?"},
+    "extensions": {"org.judgmentpack.annotations": {"severity": "low"}},
+    "id": "https://example.invalid/judgment-packs/view-severity",
+    "outcomes": [
+      {"extensions": {"org.judgmentpack.annotations": {"severity": "low"}}, "id": "note", "label": "Note"},
+      {
+        "description": "A reviewer decides.",
+        "extensions": {"org.judgmentpack.annotations": {"severity": "high"}},
+        "id": "refer",
+        "label": "Refer"
+      },
+      {"id": "unstated", "label": "Unstated"},
+      {"extensions": {"org.judgmentpack.annotations": {"severity": "High"}}, "id": "wrong-case", "label": "Wrong case"},
+      {"extensions": {"org.judgmentpack.annotations": {"severity": "high", "tier": "amber"}}, "id": "hold", "label": "Hold"},
+      {"extensions": {"org.judgmentpack.annotations": {"severity": ["critical"]}}, "id": "listed", "label": "Listed"},
+      {"extensions": {"org.judgmentpack.annotations": {"severity": "crit\u0456cal"}}, "id": "look-alike", "label": "Look-alike"},
+      {"extensions": {"org.judgmentpack.annotations": {"severity": "critical"}}, "id": "stop", "label": "Stop"},
+      {
+        "extensions": {"com.example.colour": "blue", "org.judgmentpack.annotations": {"severity": "medium"}},
+        "id": "check",
+        "label": "Check"
+      }
+    ],
+    "rules": [
+      {
+        "description": "Always refer.",
+        "extensions": {"org.judgmentpack.annotations": {"severity": "critical"}},
+        "id": "always",
+        "onUnknown": "escalate",
+        "outcome": "refer",
+        "when": {"op": "literal", "value": true}
+      }
+    ],
+    "specVersion": "0.5.0",
+    "title": "Outcome severity",
+    "version": "1.0.0"
+  },
+  "severity": {
+    "mostSevereFirst": ["stop", "refer", "hold", "check", "note"],
+    "outcomes": [
+      {"id": "note", "severity": "low"},
+      {"id": "refer", "severity": "high"},
+      {"id": "unstated"},
+      {"id": "wrong-case"},
+      {"id": "hold", "severity": "high"},
+      {"id": "listed"},
+      {"id": "look-alike"},
+      {"id": "stop", "severity": "critical"},
+      {"id": "check", "severity": "medium"}
+    ],
+    "unranked": ["unstated", "wrong-case", "listed", "look-alike"],
+    "vocabularyVersion": "1.0.0"
+  },
+  "viewVersion": "2"
+}

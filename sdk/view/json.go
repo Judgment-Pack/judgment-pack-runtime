@@ -33,21 +33,43 @@ func compareUTF16(left, right string) int {
 
 // encodeViewJSON writes the view's canonical JSON from its typed fields, so
 // the bytes say exactly what the typed view says and nothing the root held
-// that the view did not carry.
+// that the view did not carry. The pack member is the document; the severity
+// member, for a Core 0.5.0 pack, is the view's own reading of it, beside it.
 func encodeViewJSON(view PackView) ([]byte, error) {
 	document, err := view.documentValue()
 	if err != nil {
 		return nil, err
 	}
-	encoded, err := canonicalText(map[string]any{
+	members := map[string]any{
 		"digest":      view.Identity.Digest,
 		"pack":        document,
 		"viewVersion": ViewVersion,
-	})
+	}
+	if view.SeverityOrder != nil {
+		members["severity"] = view.severityValue()
+	}
+	encoded, err := canonicalText(members)
 	if err != nil {
 		return nil, &fault{message: "The view does not encode: " + err.Error() + "."}
 	}
 	return []byte(encoded), nil
+}
+
+// severityValue is the severity member: each outcome's id and level in
+// document order, the level absent where the outcome has none, then the
+// order by level, most severe first, the unranked outcomes apart, and the
+// vocabulary version applied (ADR-0088).
+func (v PackView) severityValue() map[string]any {
+	outcomes := make([]any, 0, len(v.Outcomes))
+	for _, outcome := range v.Outcomes {
+		item := map[string]any{"id": outcome.ID}
+		putString(item, "severity", outcome.Severity)
+		outcomes = append(outcomes, item)
+	}
+	value := map[string]any{"outcomes": outcomes, "vocabularyVersion": v.SeverityOrder.VocabularyVersion}
+	putStrings(value, "mostSevereFirst", v.SeverityOrder.MostSevereFirst)
+	putStrings(value, "unranked", v.SeverityOrder.Unranked)
+	return value
 }
 
 // documentValue rebuilds the document's JSON value from the typed view.

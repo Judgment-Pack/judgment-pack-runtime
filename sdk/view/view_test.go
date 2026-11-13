@@ -185,7 +185,7 @@ func TestEveryAdmittedPackViewsFaithfullyAndStably(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := `{"digest":"` + loaded.Identity().Digest + `","pack":` + document + `,"viewVersion":"1"}`
+			want := `{"digest":"` + loaded.Identity().Digest + `","pack":` + document + severityMember(t, input.version, root) + `,"viewVersion":"2"}`
 			if got := string(view.JSON()); got != want {
 				t.Fatalf("the view is not the document:\n got %s\nwant %s", got, want)
 			}
@@ -240,6 +240,45 @@ func TestEveryAdmittedPackViewsFaithfullyAndStably(t *testing.T) {
 			}
 		})
 	}
+}
+
+// severityMember is the severity member of the view of a pack under the given
+// version, built here from the decoded document on its own and not by the
+// view's code (spec/annotation-vocabulary.md §4, ADR-0088): for Core 0.5.0,
+// each outcome's id in document order with its severity only when that is
+// exactly one of the four level strings, the ids of those outcomes most
+// severe first and in document order within a level, the other ids in
+// document order, and the vocabulary version; for any other version, none.
+func severityMember(t *testing.T, version string, decoded any) string {
+	t.Helper()
+	if version != artifacts.Core050Version {
+		return ""
+	}
+	descending := []string{"critical", "high", "medium", "low"}
+	byLevel := map[string][]any{}
+	outcomes, unranked := []any{}, []any{}
+	for _, item := range decoded.(map[string]any)["outcomes"].([]any) {
+		outcome := item.(map[string]any)
+		entry := map[string]any{"id": outcome["id"]}
+		extensions, _ := outcome["extensions"].(map[string]any)
+		annotations, _ := extensions["org.judgmentpack.annotations"].(map[string]any)
+		if level, ok := annotations["severity"].(string); ok && slices.Contains(descending, level) {
+			entry["severity"] = level
+			byLevel[level] = append(byLevel[level], outcome["id"])
+		} else {
+			unranked = append(unranked, outcome["id"])
+		}
+		outcomes = append(outcomes, entry)
+	}
+	ranked := []any{}
+	for _, level := range descending {
+		ranked = append(ranked, byLevel[level]...)
+	}
+	text, err := pv.CanonicalText(map[string]any{"mostSevereFirst": ranked, "outcomes": outcomes, "unranked": unranked, "vocabularyVersion": "1.0.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return `,"severity":` + text
 }
 
 // Every conformance case Load refuses is refused, never viewed: the view is
@@ -343,7 +382,7 @@ func TestOneViewByHand(t *testing.T) {
 	wantJSON := `{"digest":"` + digest + `","pack":{"decision":{"intent":"Test the view.","question":"Is it minimal?"},` +
 		`"id":"https://example.invalid/judgment-packs/view-minimal","outcomes":[{"id":"yes","label":"Yes"},{"id":"no","label":"No"}],` +
 		`"rules":[{"description":"Always yes.","id":"always","onUnknown":"ignore","outcome":"yes","when":{"op":"literal","value":true}}],` +
-		`"specVersion":"0.3.0","title":"Minimal","version":"0.1.0"},"viewVersion":"1"}`
+		`"specVersion":"0.3.0","title":"Minimal","version":"0.1.0"},"viewVersion":"2"}`
 	if got := string(view.JSON()); got != wantJSON {
 		t.Fatalf("JSON:\n got %s\nwant %s", got, wantJSON)
 	}
@@ -353,7 +392,7 @@ func TestOneViewByHand(t *testing.T) {
 		"- Version: 0\\.1\\.0\n" +
 		"- Spec version: 0\\.3\\.0\n" +
 		"- Digest: " + digest + "\n" +
-		"- View version: 1\n" +
+		"- View version: 2\n" +
 		"\n" +
 		"## Decision\n" +
 		"\n" +

@@ -133,5 +133,11 @@
     ],
     "version": "0.2.0"
   },
-  "viewVersion": "1"
+  "severity": {
+    "mostSevereFirst": [],
+    "outcomes": [{"id": "approve"}, {"id": "manual-review"}, {"id": "reject"}],
+    "unranked": ["approve", "manual-review", "reject"],
+    "vocabularyVersion": "1.0.0"
+  },
+  "viewVersion": "2"
 }
