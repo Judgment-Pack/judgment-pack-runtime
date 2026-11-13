@@ -382,7 +382,7 @@ func decodeReport(root map[string]any) (Source, error) {
 		}
 		if len(rows) == 0 {
 			detail, _ := entry["detail"].(string)
-			return Source{}, fmt.Errorf("the report shows that the matrix of the pack %s did not run under the runtime that wrote it (%s), so it holds no result to compare; make the matrix run under that runtime and take the report again", shown(pack.ID), display.Sanitize(detail))
+			return Source{}, fmt.Errorf("the report shows that the matrix of the pack %s did not run under the runtime that wrote it (its detail: %s), so it holds no result to compare; make the matrix run under that runtime and take the report again", shown(pack.ID), shown(detail))
 		}
 		pack.Rows = rows
 		source.Packs = append(source.Packs, pack)
@@ -548,7 +548,8 @@ func validDigest(digest string) bool {
 	return true
 }
 
-// maxShown bounds how much of a name read from a baseline a refusal quotes.
+// maxShown bounds how much of a name or other text read from a baseline a
+// refusal quotes.
 const maxShown = 64
 
 func shown(name string) string {

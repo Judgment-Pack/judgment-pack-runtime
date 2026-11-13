@@ -1496,9 +1496,10 @@ literals such as `foo://[v1.a]/` are accepted. Both `v` and `V`, IPv6, valid per
 escapes, query/fragment punctuation and generic digit-only ports are preserved.
 Malformed escapes, final LF and scoped IPv6 are refused. This checks generic
 syntax without resolving a URI or granting trust. Exact spelling and stored
-identities are preserved. Update Runtime pins deliberately, after the check that
-[Revalidating before moving a Runtime pin](docs/revalidating-a-runtime-pin.md)
-describes; no IDs, records or jobs migrate automatically. Official Policy uses the
+identities are preserved. Update Runtime pins deliberately and revalidate original
+bytes: [Revalidating before moving a Runtime pin](docs/revalidating-a-runtime-pin.md)
+describes the check of the project's matrix results, and packs without a matrix, records, audit
+trails and graphs are not part of it; no IDs, records or jobs migrate automatically. Official Policy uses the
 shared corrected assertion. Historical prototype Policy `0.0.2`, including its
 retained Core consumers, keeps its old assertion through a scoped compatibility
 path. [ADR-0064](docs/adr/0064-share-uri-component-grammar.md) records the acceptance

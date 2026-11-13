@@ -390,6 +390,7 @@ func TestDecodeRefusesMalformedBaselines(t *testing.T) {
 		{"a row twice", replace(goodBaseline, `{"id":"approve","status":"passed","disposition":"{}"}`, `{"id":"approve","status":"passed"},{"id":"approve","status":"passed"}`), `row "approve" appears more than once`},
 		{"a report of another command", replace(goodReport, `"command":"packs test"`, `"command":"validate"`), "not of packs test"},
 		{"an unknown report member", replace(goodReport, `"status":"passed","evaluatorSpecVersion"`, `"status":"passed","verdict":"x","evaluatorSpecVersion"`), `member "verdict" at its root`},
+		{"an unknown report pack member", replace(goodReport, `"matrixPath":"m.json",`, `"matrixPath":"m.json","verdict":"x",`), `member "verdict" in pack 0`},
 		{"an unknown report row member", replace(goodReport, `"actual":"{}"`, `"actual":"{}","disposition":"{}"`), `member "disposition" in row 0`},
 		{"a report row with no actual", replace(goodReport, `,"actual":"{}"`, ``), "has no actual"},
 		{"a report whose matrix did not run", replace(goodReport, `[{"id":"approve","status":"passed","actual":"{}"}]`, `[]`), "did not run under the runtime that wrote it"},
@@ -416,6 +417,23 @@ func TestDecodeRefusesMalformedBaselines(t *testing.T) {
 	}
 	if _, err := Decode([]byte(goodReport)); err != nil {
 		t.Fatalf("the unmodified report must be admitted: %v", err)
+	}
+}
+
+// A refusal quotes a report's detail as it quotes a name, through the 64-rune
+// form, however long the detail is.
+func TestARefusalQuotesAReportDetailBounded(t *testing.T) {
+	long := strings.Repeat("x", 5007)
+	document := strings.Replace(goodReport, `"rows":[{"id":"approve","status":"passed","actual":"{}"}]`, `"detail":"matrix failed to load: `+long+`","rows":[]`, 1)
+	if document == goodReport {
+		t.Fatal("the fixture has no rows to replace")
+	}
+	_, err := Decode([]byte(document))
+	if err == nil || !strings.Contains(err.Error(), `did not run under the runtime that wrote it (its detail: "matrix failed to load: xxx`) {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), long[:maxShown]) || len(err.Error()) > 512 {
+		t.Fatalf("the refusal quotes %d bytes: %v", len(err.Error()), err)
 	}
 }
 
