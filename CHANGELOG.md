@@ -13,7 +13,8 @@ All notable changes to tagged releases are documented here.
   the pack's digest, which no audit-trail record, key rotation or witness signature can stand in
   for, and the reverse. The seed is held exactly as a trail's signing key is (`audit.LoadSigner`:
   the same file checks, and `--public-key` as the expected-key guard); only a file `spec validate`
-  reports valid, of any bundled spec version, is signed; an existing document is never replaced.
+  reports valid, of any bundled spec version, is signed; an existing document is never replaced,
+  and `--output -` is refused.
   `jpack packs verify-signature <pack-file> --public-key <file>` requires the expected key, and
   without one refuses to run and says why; there is no mode that trusts the key the document
   carries. It reads the pack once, checks the signature before parsing it and then validates the

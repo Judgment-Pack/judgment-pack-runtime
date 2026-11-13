@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/packsig"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 )
 
@@ -49,6 +52,46 @@ func signatureCode(t *testing.T, stdout string) string {
 	return payload.Diagnostics[0].Code
 }
 
+// testPackKey signs a pack as packs sign does, with crypto/ed25519 and the
+// document's own encoding, and holds its public key in a file as audit key
+// public writes one. Checking a signature needs no seed file, so the
+// verify-signature tests run where no seed file can sign, Windows included.
+type testPackKey struct {
+	private ed25519.PrivateKey
+	file    string
+}
+
+func newTestPackKey(t *testing.T, seed byte) testPackKey {
+	t.Helper()
+	private := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{seed}, ed25519.SeedSize))
+	key := testPackKey{private: private}
+	key.file = writeDocument(t, "key.pub", key.publicHex()+"\n")
+	return key
+}
+
+func (k testPackKey) publicHex() string {
+	return hex.EncodeToString(k.private.Public().(ed25519.PublicKey))
+}
+
+func (k testPackKey) sign(pack []byte) string {
+	digest := sha256.Sum256(pack)
+	return string(packsig.Encode(k.private.Public().(ed25519.PublicKey), digest, ed25519.Sign(k.private, packsig.Message(digest))))
+}
+
+// placeSigned writes a pack with these bytes and this signature document
+// beside it, as <pack>.sig.json, and returns the pack's path.
+func placeSigned(t *testing.T, pack []byte, signature string) string {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "pack.json")
+	if err := os.WriteFile(target, pack, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target+".sig.json", []byte(signature), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return target
+}
+
 // A pack of every bundled spec version is signed and its signature accepted
 // against the key it was signed with, and the document is the convention's.
 func TestPacksSignAndVerifySignatureOnEverySpecVersion(t *testing.T) {
@@ -67,14 +110,29 @@ func TestPacksSignAndVerifySignatureOnEverySpecVersion(t *testing.T) {
 				!strings.HasSuffix(document, `","signatureVersion":"1.0.0"}`+"\n") {
 				t.Fatalf("document = %s", document)
 			}
-			code, stdout, stderr = runTest(t, []string{"packs", "verify-signature", pack, "--public-key", publicKey}, "")
+			if code, stdout, stderr := runTest(t, []string{"packs", "verify-signature", pack, "--public-key", publicKey}, ""); code != 0 || stderr != "" {
+				t.Fatalf("verify: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+		})
+	}
+}
+
+// A signature over a pack of every bundled spec version is accepted against
+// the expected key, and the pack is then validated and reported.
+func TestPacksVerifySignatureOnEverySpecVersion(t *testing.T) {
+	key := newTestPackKey(t, 1)
+	for _, version := range []string{"0.1.0-draft", "0.2.0-draft", "0.3.0", "0.5.0"} {
+		t.Run(version, func(t *testing.T) {
+			_, data := specPack(t, version)
+			pack := placeSigned(t, data, key.sign(data))
+			code, stdout, stderr := runTest(t, []string{"packs", "verify-signature", pack, "--public-key", key.file}, "")
 			if code != 0 || stderr != "" || !strings.Contains(stdout, "signature: accepted: ") || !strings.Contains(stdout, "pack: valid (specVersion "+version+")") {
 				t.Fatalf("verify: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 			}
-			code, stdout, _ = runTest(t, []string{"packs", "verify-signature", pack, "--public-key", publicKey, "--format", "json"}, "")
+			code, stdout, _ = runTest(t, []string{"packs", "verify-signature", pack, "--public-key", key.file, "--format", "json"}, "")
 			var report result.PackSignatureCheck
 			if err := json.Unmarshal([]byte(stdout), &report); err != nil || code != 0 || report.Status != "valid" || report.PackStatus != "valid" ||
-				report.PackDigest != sha256Text(data) || report.PublicKey != public || len(report.KeyID) != 32 || report.SpecVersion != version ||
+				report.PackDigest != sha256Text(data) || report.PublicKey != key.publicHex() || len(report.KeyID) != 32 || report.SpecVersion != version ||
 				report.SignatureVersion != "1.0.0" || report.Command != "packs verify-signature" {
 				t.Fatalf("verify json: exit=%d %s %v", code, stdout, err)
 			}
@@ -107,52 +165,29 @@ func TestPacksSignJSONAndAnotherPlace(t *testing.T) {
 // read as a document: the refusal is the signature's even for bytes that are
 // not a pack.
 func TestPacksVerifySignatureRefusals(t *testing.T) {
-	skipWhereKeysCannotSign(t)
-	seed, publicKey := generatedKey(t)
-	otherSeed, otherPublic := generatedKey(t)
-	signed, data := specPack(t, "0.5.0")
-	if code, stdout, stderr := runTest(t, []string{"packs", "sign", signed, "--key", seed}, ""); code != 0 {
-		t.Fatalf("sign: %d %s %s", code, stdout, stderr)
-	}
-	document := readFile(t, signed+".sig.json")
-	otherPack, _ := specPack(t, "0.3.0")
-	if code, _, _ := runTest(t, []string{"packs", "sign", otherPack, "--key", seed}, ""); code != 0 {
-		t.Fatal("sign the other pack")
-	}
-	byOtherKey, _ := specPack(t, "0.5.0")
-	if code, _, _ := runTest(t, []string{"packs", "sign", byOtherKey, "--key", otherSeed}, ""); code != 0 {
-		t.Fatal("sign with the other key")
-	}
-	// place writes a pack with these bytes and this signature document
-	// beside it, and returns the pack's path.
-	place := func(t *testing.T, pack []byte, signature string) string {
-		t.Helper()
-		target := filepath.Join(t.TempDir(), "pack.json")
-		if err := os.WriteFile(target, pack, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(target+".sig.json", []byte(signature), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return target
-	}
+	key := newTestPackKey(t, 1)
+	other := newTestPackKey(t, 2)
+	_, data := specPack(t, "0.5.0")
+	document := key.sign(data)
+	signed := placeSigned(t, data, document)
+	_, otherData := specPack(t, "0.3.0")
 	cases := []struct {
 		name, pack, publicKey, code string
 		exit                        int
 	}{
-		{"changed bytes", place(t, append(append([]byte{}, data...), ' '), document), publicKey, "JPS-PACK-SIGNATURE-DIGEST-MISMATCH", result.ExitInvalid},
-		{"changed into bytes that are no pack", place(t, []byte("not a pack"), document), publicKey, "JPS-PACK-SIGNATURE-DIGEST-MISMATCH", result.ExitInvalid},
-		{"verified against another key", signed, otherPublic, "JPS-PACK-SIGNATURE-UNEXPECTED-KEY", result.ExitInvalid},
-		{"signed by another key", byOtherKey, publicKey, "JPS-PACK-SIGNATURE-UNEXPECTED-KEY", result.ExitInvalid},
-		{"another key's signature claiming this key", place(t, data, strings.Replace(readFile(t, byOtherKey+".sig.json"), strings.TrimSpace(readFile(t, otherPublic)), strings.TrimSpace(readFile(t, publicKey)), 1)), publicKey, "JPS-PACK-SIGNATURE-INVALID", result.ExitInvalid},
-		{"another pack's signature moved beside this one", place(t, data, readFile(t, otherPack+".sig.json")), publicKey, "JPS-PACK-SIGNATURE-DIGEST-MISMATCH", result.ExitInvalid},
-		{"a truncated document", place(t, data, document[:len(document)/2]), publicKey, "JPS-PACK-SIGNATURE-MALFORMED", result.ExitInvalid},
-		{"an empty document", place(t, data, ""), publicKey, "JPS-PACK-SIGNATURE-MALFORMED", result.ExitInvalid},
-		{"a malformed document", place(t, data, "signature: "+document), publicKey, "JPS-PACK-SIGNATURE-MALFORMED", result.ExitInvalid},
-		{"a document with a member twice", place(t, data, strings.Replace(document, `{"algorithm":"ed25519",`, `{"algorithm":"ed25519","algorithm":"ed25519",`, 1)), publicKey, "JPS-PACK-SIGNATURE-DUPLICATE-MEMBER", result.ExitInvalid},
-		{"a document with another member", place(t, data, strings.Replace(document, `{"algorithm"`, `{"note":"x","algorithm"`, 1)), publicKey, "JPS-PACK-SIGNATURE-UNKNOWN-MEMBER", result.ExitInvalid},
-		{"an oversized document", place(t, data, document+strings.Repeat(" ", 4096)), publicKey, "JPS-PACK-SIGNATURE-TOO-LARGE", result.ExitInvalid},
-		{"no document", func() string { p, _ := specPack(t, "0.5.0"); return p }(), publicKey, "JPS-PACK-SIGNATURE-MISSING", result.ExitInvalid},
+		{"changed bytes", placeSigned(t, append(append([]byte{}, data...), ' '), document), key.file, "JPS-PACK-SIGNATURE-DIGEST-MISMATCH", result.ExitInvalid},
+		{"changed into bytes that are no pack", placeSigned(t, []byte("not a pack"), document), key.file, "JPS-PACK-SIGNATURE-DIGEST-MISMATCH", result.ExitInvalid},
+		{"verified against another key", signed, other.file, "JPS-PACK-SIGNATURE-UNEXPECTED-KEY", result.ExitInvalid},
+		{"signed by another key", placeSigned(t, data, other.sign(data)), key.file, "JPS-PACK-SIGNATURE-UNEXPECTED-KEY", result.ExitInvalid},
+		{"another key's signature claiming this key", placeSigned(t, data, strings.Replace(other.sign(data), other.publicHex(), key.publicHex(), 1)), key.file, "JPS-PACK-SIGNATURE-INVALID", result.ExitInvalid},
+		{"another pack's signature moved beside this one", placeSigned(t, data, key.sign(otherData)), key.file, "JPS-PACK-SIGNATURE-DIGEST-MISMATCH", result.ExitInvalid},
+		{"a truncated document", placeSigned(t, data, document[:len(document)/2]), key.file, "JPS-PACK-SIGNATURE-MALFORMED", result.ExitInvalid},
+		{"an empty document", placeSigned(t, data, ""), key.file, "JPS-PACK-SIGNATURE-MALFORMED", result.ExitInvalid},
+		{"a malformed document", placeSigned(t, data, "signature: "+document), key.file, "JPS-PACK-SIGNATURE-MALFORMED", result.ExitInvalid},
+		{"a document with a member twice", placeSigned(t, data, strings.Replace(document, `{"algorithm":"ed25519",`, `{"algorithm":"ed25519","algorithm":"ed25519",`, 1)), key.file, "JPS-PACK-SIGNATURE-DUPLICATE-MEMBER", result.ExitInvalid},
+		{"a document with another member", placeSigned(t, data, strings.Replace(document, `{"algorithm"`, `{"note":"x","algorithm"`, 1)), key.file, "JPS-PACK-SIGNATURE-UNKNOWN-MEMBER", result.ExitInvalid},
+		{"an oversized document", placeSigned(t, data, document+strings.Repeat(" ", 4096)), key.file, "JPS-PACK-SIGNATURE-TOO-LARGE", result.ExitInvalid},
+		{"no document", func() string { p, _ := specPack(t, "0.5.0"); return p }(), key.file, "JPS-PACK-SIGNATURE-MISSING", result.ExitInvalid},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -168,14 +203,14 @@ func TestPacksVerifySignatureRefusals(t *testing.T) {
 	}
 
 	t.Run("a symbolic link to the document", func(t *testing.T) {
-		linked := place(t, data, "")
+		linked := placeSigned(t, data, "")
 		if err := os.Remove(linked + ".sig.json"); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(signed+".sig.json", linked+".sig.json"); err != nil {
 			t.Skip("no symbolic links here:", err)
 		}
-		code, stdout, _ := runTest(t, []string{"packs", "verify-signature", linked, "--public-key", publicKey, "--format", "json"}, "")
+		code, stdout, _ := runTest(t, []string{"packs", "verify-signature", linked, "--public-key", key.file, "--format", "json"}, "")
 		if code != result.ExitIO || signatureCode(t, stdout) != "JPS-PACK-SIGNATURE-READ" {
 			t.Fatalf("exit=%d %s", code, stdout)
 		}
@@ -197,8 +232,14 @@ func TestPacksVerifySignatureRefusals(t *testing.T) {
 			t.Fatalf("exit=%d %s", code, stdout)
 		}
 	})
+	t.Run("an expected key in capitals, with white space around it", func(t *testing.T) {
+		capitals := writeDocument(t, "key.pub", "  "+strings.ToUpper(key.publicHex())+"\r\n\n")
+		if code, stdout, _ := runTest(t, []string{"packs", "verify-signature", signed, "--public-key", capitals}, ""); code != 0 {
+			t.Fatalf("exit=%d %s", code, stdout)
+		}
+	})
 	t.Run("the pack as standard input", func(t *testing.T) {
-		code, stdout, _ := runTest(t, []string{"packs", "verify-signature", "-", "--public-key", publicKey, "--signature", signed + ".sig.json", "--format", "json"}, string(data))
+		code, stdout, _ := runTest(t, []string{"packs", "verify-signature", "-", "--public-key", key.file, "--signature", signed + ".sig.json", "--format", "json"}, string(data))
 		if code != result.ExitInvocation || signatureCode(t, stdout) != "JPS-INVOCATION-INPUT" {
 			t.Fatalf("exit=%d %s", code, stdout)
 		}
@@ -208,29 +249,75 @@ func TestPacksVerifySignatureRefusals(t *testing.T) {
 // An accepted signature is reported even when the bytes it is over then fail
 // validation: the signature is checked first, and the pack after it.
 func TestPacksVerifySignatureReportsTheSignatureOfAnInvalidPack(t *testing.T) {
-	skipWhereKeysCannotSign(t)
-	seed, publicKey := generatedKey(t)
-	signer, err := audit.LoadSigner(seed, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := newTestPackKey(t, 1)
 	invalid := []byte(`{"specVersion":"0.5.0"}`)
-	pack := filepath.Join(t.TempDir(), "pack.json")
-	if err := os.WriteFile(pack, invalid, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(pack+".sig.json", signer.SignPack(invalid), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, stdout, _ := runTest(t, []string{"packs", "verify-signature", pack, "--public-key", publicKey, "--format", "json"}, "")
+	pack := placeSigned(t, invalid, key.sign(invalid))
+	code, stdout, _ := runTest(t, []string{"packs", "verify-signature", pack, "--public-key", key.file, "--format", "json"}, "")
 	var report result.PackSignatureCheck
 	if err := json.Unmarshal([]byte(stdout), &report); err != nil || code != result.ExitInvalid || report.Status != "pack-invalid" ||
-		report.PackStatus != "invalid" || report.PackDigest != sha256Text(invalid) || report.PublicKey != signer.PublicKey() {
+		report.PackStatus != "invalid" || report.PackDigest != sha256Text(invalid) || report.PublicKey != key.publicHex() {
 		t.Fatalf("exit=%d %s %v", code, stdout, err)
 	}
-	code, stdout, _ = runTest(t, []string{"packs", "verify-signature", pack, "--public-key", publicKey}, "")
+	code, stdout, _ = runTest(t, []string{"packs", "verify-signature", pack, "--public-key", key.file}, "")
 	if code != result.ExitInvalid || !strings.Contains(stdout, "signature: accepted: ") || !strings.Contains(stdout, "pack: invalid (specVersion 0.5.0); jpack spec validate reports why") {
 		t.Fatalf("human: exit=%d %q", code, stdout)
+	}
+}
+
+// Exit 1 is shared by a refused signature, no signature document and an
+// accepted signature over an invalid pack; the JSON output tells each apart:
+// an error with the refusal's code, an error with JPS-PACK-SIGNATURE-MISSING,
+// and a report whose status is pack-invalid.
+func TestPacksVerifySignatureJSONTellsApartTheOutcomesOfExitOne(t *testing.T) {
+	key := newTestPackKey(t, 1)
+	_, data := specPack(t, "0.5.0")
+	invalid := []byte(`{"specVersion":"0.5.0"}`)
+	unsigned, _ := specPack(t, "0.5.0")
+	outcomes := map[string]string{}
+	for name, pack := range map[string]string{
+		"refused":      placeSigned(t, append(append([]byte{}, data...), '\n'), key.sign(data)),
+		"unsigned":     unsigned,
+		"pack-invalid": placeSigned(t, invalid, key.sign(invalid)),
+	} {
+		code, stdout, _ := runTest(t, []string{"packs", "verify-signature", pack, "--public-key", key.file, "--format", "json"}, "")
+		if code != result.ExitInvalid {
+			t.Fatalf("%s: exit=%d %s", name, code, stdout)
+		}
+		var report struct {
+			Status      string            `json:"status"`
+			Diagnostics []json.RawMessage `json:"diagnostics"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+			t.Fatalf("%s: %v %s", name, err, stdout)
+		}
+		if code := signatureCode(t, stdout); code != "" {
+			outcomes[name] = "error " + code
+		} else {
+			outcomes[name] = "report " + report.Status
+		}
+	}
+	want := map[string]string{
+		"refused":      "error JPS-PACK-SIGNATURE-DIGEST-MISMATCH",
+		"unsigned":     "error JPS-PACK-SIGNATURE-MISSING",
+		"pack-invalid": "report pack-invalid",
+	}
+	for name, outcome := range want {
+		if outcomes[name] != outcome {
+			t.Fatalf("%s: %q, want %q (all: %v)", name, outcomes[name], outcome, outcomes)
+		}
+	}
+}
+
+// --output names a file: - is refused, before any key is read, and no file
+// named - is written.
+func TestPacksSignRefusesStandardOutput(t *testing.T) {
+	pack, _ := specPack(t, "0.5.0")
+	code, stdout, _ := runTest(t, []string{"packs", "sign", pack, "--key", filepath.Join(t.TempDir(), "absent.seed"), "--output", "-", "--format", "json"}, "")
+	if code != result.ExitInvocation || signatureCode(t, stdout) != "JPS-INVOCATION-INPUT" {
+		t.Fatalf("exit=%d %s", code, stdout)
+	}
+	if _, err := os.Lstat("-"); !os.IsNotExist(err) {
+		t.Fatalf("a file named - was written: %v", err)
 	}
 }
 
@@ -319,8 +406,6 @@ func TestPacksSignRefusals(t *testing.T) {
 // Each command reads the pack once: the file replaced between its two checks
 // changes neither what sign signs nor what verify-signature validates.
 func TestPackSignatureCommandsReadThePackOnce(t *testing.T) {
-	skipWhereKeysCannotSign(t)
-	seed, publicKey := generatedKey(t)
 	replaceWith := func(t *testing.T, pack string, data []byte) {
 		t.Helper()
 		previous := betweenPackChecks
@@ -332,6 +417,8 @@ func TestPackSignatureCommandsReadThePackOnce(t *testing.T) {
 		t.Cleanup(func() { betweenPackChecks = previous })
 	}
 	t.Run("sign", func(t *testing.T) {
+		skipWhereKeysCannotSign(t)
+		seed, _ := generatedKey(t)
 		pack, data := specPack(t, "0.5.0")
 		_, other := specPack(t, "0.3.0")
 		replaceWith(t, pack, other)
@@ -343,12 +430,11 @@ func TestPackSignatureCommandsReadThePackOnce(t *testing.T) {
 		}
 	})
 	t.Run("verify-signature", func(t *testing.T) {
-		pack, _ := specPack(t, "0.5.0")
-		if code, _, _ := runTest(t, []string{"packs", "sign", pack, "--key", seed}, ""); code != 0 {
-			t.Fatal("sign")
-		}
+		key := newTestPackKey(t, 1)
+		_, data := specPack(t, "0.5.0")
+		pack := placeSigned(t, data, key.sign(data))
 		replaceWith(t, pack, []byte("not a pack"))
-		code, stdout, _ := runTest(t, []string{"packs", "verify-signature", pack, "--public-key", publicKey, "--format", "json"}, "")
+		code, stdout, _ := runTest(t, []string{"packs", "verify-signature", pack, "--public-key", key.file, "--format", "json"}, "")
 		var report result.PackSignatureCheck
 		if err := json.Unmarshal([]byte(stdout), &report); err != nil || code != 0 || report.PackStatus != "valid" {
 			t.Fatalf("the pack validated is not the pack checked: exit=%d %s %v", code, stdout, err)

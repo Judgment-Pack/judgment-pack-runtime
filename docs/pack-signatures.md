@@ -60,8 +60,10 @@ None of those is a pack signature, and a pack signature is none of those, even w
 makes both.
 
 **How a reader is told which key to expect.** By naming it, every time: `--public-key <file>` on the
-command line (a file holding the key in lowercase hexadecimal, as `audit key public` writes it), or
-the `expected` argument in Go. There is no default and no mode that trusts the key the document
+command line (a file holding the key's 64 hexadecimal characters, as `audit key public` writes
+it; upper or lower case and white space around the key are accepted, as `audit verify
+--public-key` accepts them, because the key is compared as its 32 decoded bytes), or the
+`expected` argument in Go. There is no default and no mode that trusts the key the document
 carries. Without an expected key, `packs verify-signature` refuses to run and says why.
 
 ## Signing
@@ -70,13 +72,14 @@ carries. Without an expected key, `packs verify-signature` refuses to run and sa
 jpack packs sign expense.json --key /secure/path/pack-signing.seed --public-key pack-signing.pub
 ```
 
-The seed file is held exactly as an audit trail's signing key is: an absolute path with no
-symbolic link on it, one regular file with one name, owned by the user running the command and
-readable by no one else, in directories others cannot write. Every key is refused on Windows, where
+The seed file is held exactly as an audit trail's signing key is: its path, made absolute first,
+has no symbolic link on it, and it is one regular file with one name, owned by the user running
+the command and readable by no one else, in directories others cannot write. Every key is refused on Windows, where
 those checks cannot be made. `jpack audit key generate` makes such a file. `--public-key` is
 optional here: when given, a seed whose public key is another is refused before anything is
 signed, so a file swapped in at the seed's path signs nothing. The environment variables that select
-a project's audit key are not read.
+a project's audit key are not read. `--output` names a file; `--output -` is refused, since the
+document is not written to standard output.
 
 The pack must validate as `jpack spec validate` validates it, for any spec version the runtime
 bundles; a file that does not is not signed. An existing signature document is never replaced.
@@ -89,7 +92,10 @@ jpack packs verify-signature expense.json --public-key pack-signing.pub
 
 The command reads the pack once and checks the signature against those bytes **before** reading
 them as a pack. If the signature is refused, the run exits 1 with the refusal's code and the pack
-is never parsed. If it is accepted, the same bytes are validated and both results are reported:
+is never parsed. If it is accepted, the same bytes are validated and both results are reported. Exit 1 is shared by a
+refused signature, no signature document and an accepted signature over an invalid pack; with
+`--format json` the first two are an error whose `code` is the refusal's code (`JPS-PACK-SIGNATURE-MISSING`
+for no document), and the third is a report whose `status` is `pack-invalid`:
 
 ```text
 signature: accepted: expense.json.sig.json names key <id> (public key <hex>), the expected key, over sha256:<hex>
@@ -108,7 +114,7 @@ reports the same as one JSON object.
 | `JPS-PACK-SIGNATURE-MISSING` | 1 | there is no signature document: the pack is unsigned |
 | `JPS-PACK-SIGNATURE-READ` | 4 | the document could not be read, or is a symbolic link |
 | `JPS-PACK-SIGNATURE-TOO-LARGE` | 1 | the document is over 4096 bytes |
-| `JPS-PACK-SIGNATURE-MALFORMED` | 1 | the document is not one JSON object, or holds a backslash escape |
+| `JPS-PACK-SIGNATURE-MALFORMED` | 1 | the document is not one JSON object, is not UTF-8, or holds a backslash escape |
 | `JPS-PACK-SIGNATURE-DUPLICATE-MEMBER` | 1 | a member is given twice |
 | `JPS-PACK-SIGNATURE-VERSION` | 1 | `signatureVersion` is not `1.0.0` |
 | `JPS-PACK-SIGNATURE-UNKNOWN-MEMBER` | 1 | a member `1.0.0` does not define |
@@ -121,7 +127,7 @@ reports the same as one JSON object.
 | `JPS-PACK-SIGNATURE-DIGEST-MISMATCH` | 1 | the pack's bytes are not the bytes the document names: changed, or another pack's signature |
 | `JPS-PACK-SIGNATURE-INVALID` | 1 | the signature does not hold under the expected key |
 
-A value of its form is lowercase hexadecimal of the exact length; an uppercase letter, a base64
+In the document, a value of its form is lowercase hexadecimal of the exact length; an uppercase letter, a base64
 spelling or another length is refused. White space between the document's tokens is admitted.
 
 `packs sign` adds `JPS-AUDIT-KEY-REFUSED` (exit 1, the seed is refused as the audit commands

@@ -95,6 +95,8 @@ func TestParseRefusesEveryDocumentNotOfItsForm(t *testing.T) {
 		{"an array", "[" + strings.TrimSuffix(vectorDocument, "\n") + "]", CodeMalformed},
 		{"a string", `"` + vectorSignature + `"`, CodeMalformed},
 		{"an escaped member name", replace(`"algorithm"`, `"\u0061lgorithm"`), CodeMalformed},
+		{"a member name that is not UTF-8", replace(closing, closing[:len(closing)-1]+`,"`+"\xff"+`":"a"}`), CodeMalformed},
+		{"two member names that are not UTF-8", replace(closing, closing[:len(closing)-1]+`,"`+"\xff"+`":"a","`+"\xfe"+`":"b"}`), CodeMalformed},
 		{"an escaped value", replace(`"ed25519"`, `"ed2551\u0039"`), CodeMalformed},
 		{"a member twice", replace(closing, `"signatureVersion":"1.0.0","algorithm":"ed25519"}`), CodeDuplicateMember},
 		{"a member twice, the same value", replace(closing, closing[:len(closing)-1]+`,"signatureVersion":"1.0.0"}`), CodeDuplicateMember},

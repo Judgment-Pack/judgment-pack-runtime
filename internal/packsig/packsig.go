@@ -17,6 +17,7 @@
 // members in code-point order with no white space and a final newline. Parse
 // admits white space between tokens and refuses everything else that is not
 // that object: more than MaxBytes, a text that is not one JSON object, a
+// text that is not UTF-8 (so no two member names decode to one), a
 // backslash anywhere (no member name or value needs an escape), a member
 // given twice, a member it does not define, a member missing, and a value not
 // of its exact form. Each refusal has its own code.
@@ -40,6 +41,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"regexp"
+	"unicode/utf8"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/edkey"
 )
@@ -70,8 +72,8 @@ const (
 	CodeExpectedKey = "JPS-PACK-SIGNATURE-EXPECTED-KEY"
 	// CodeTooLarge is a document of more than MaxBytes.
 	CodeTooLarge = "JPS-PACK-SIGNATURE-TOO-LARGE"
-	// CodeMalformed is a document that is not one JSON object, or that holds
-	// a backslash.
+	// CodeMalformed is a document that is not one JSON object, that is not
+	// UTF-8, or that holds a backslash.
 	CodeMalformed = "JPS-PACK-SIGNATURE-MALFORMED"
 	// CodeDuplicateMember is a member given more than once.
 	CodeDuplicateMember = "JPS-PACK-SIGNATURE-DUPLICATE-MEMBER"
@@ -165,6 +167,9 @@ func Parse(data []byte) (Document, *Refusal) {
 	}
 	if !json.Valid(data) {
 		return Document{}, refuse(CodeMalformed, "The signature document is not one JSON text; it may be truncated.")
+	}
+	if !utf8.Valid(data) {
+		return Document{}, refuse(CodeMalformed, "The signature document is not UTF-8.")
 	}
 	if bytes.IndexByte(data, '\\') >= 0 {
 		return Document{}, refuse(CodeMalformed, "The signature document holds a backslash; no member name or value of a signature document is written with an escape.")

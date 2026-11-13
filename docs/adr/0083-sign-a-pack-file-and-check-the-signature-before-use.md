@@ -72,8 +72,8 @@ is a message of another. A test signs each kind with one key and presents it as 
 directions, including a pack whose bytes are exactly a record message.
 
 **Reading a document.** Strict, with one code per failure: more than 4096 bytes
-(`JPS-PACK-SIGNATURE-TOO-LARGE`); not one JSON object, or holding a backslash, since no name or
-value needs an escape (`-MALFORMED`); a member twice (`-DUPLICATE-MEMBER`); a `signatureVersion`
+(`JPS-PACK-SIGNATURE-TOO-LARGE`); not one JSON object, not UTF-8 (so no two member names decode
+to one), or holding a backslash, since no name or value needs an escape (`-MALFORMED`); a member twice (`-DUPLICATE-MEMBER`); a `signatureVersion`
 other than `1.0.0`, checked before the other members so a later version is named as such
 (`-VERSION`); a member not defined (`-UNKNOWN-MEMBER`); a member missing (`-MISSING-MEMBER`); an
 algorithm other than `ed25519` (`-ALGORITHM`); a public key not of its form, or not one a verifier
@@ -91,12 +91,15 @@ reason. The check is in `internal/packsig`, which reaches no file, environment o
 the one check the CLI and the Go API apply.
 
 **`jpack packs sign <pack-file> --key <seed-file> [--public-key <file>] [--output <file>]`.** The
-seed is opened by `audit.LoadSigner`, so it is refused exactly as a trail's signing key is
-(`JPS-AUDIT-KEY-REFUSED`: a relative or symbolically linked path, a file that is not one regular
-file with one name, one others can read, one not owned by the user running the command, a directory
-on its path others can write, and every key on Windows). `--public-key` is the expected-key guard
-of `audit key public`: a seed whose public key is not that key is refused before anything is
-signed. The `JPACK_SIGNING_KEY` and `JPACK_SIGNING_PUBLIC_KEY` environment variables, which select a
+`--key` path is made absolute, as the audit key commands make theirs, and the seed is opened by
+`audit.LoadSigner`, so it is refused exactly as a trail's signing key is (`JPS-AUDIT-KEY-REFUSED`:
+a symbolic link anywhere on the path, a file that is not one regular file with one name, one others
+can read, one not owned by the user running the command, a directory on its path others can write,
+and every key on Windows). `--public-key` is the expected-key guard a trail's signing key has
+through the audit member's `signingPublicKey` or `JPACK_SIGNING_PUBLIC_KEY`, the `expected`
+argument of `audit.LoadSigner`: a seed whose public key is not that key is refused before anything
+is signed. `--output -` is refused (`JPS-INVOCATION-INPUT`): the document is written to a file,
+not to standard output. The `JPACK_SIGNING_KEY` and `JPACK_SIGNING_PUBLIC_KEY` environment variables, which select a
 project's trail key, are not read: a pack is signed with the seed the command names. The pack is
 read once and validated with `spec validate`'s engine through the semantic stage; a file that does
 not validate is refused (`JPS-PACK-SIGNATURE-PACK-NOT-VALID`, exit 1, or 2 for a version this
@@ -113,8 +116,12 @@ read once; the signature is checked against those bytes **before** they are pars
 exits 1 with the pack never read as a document. Only an accepted signature lets the same bytes be
 validated, and the result reports both: the accepted signature, and the pack's validation status
 and `specVersion`. Status `valid` exits 0; `pack-invalid` exits 1 and `pack-unsupported` exits 2,
-the exits `spec validate` gives, with the signature still reported as accepted. Validation, not
-`sdk.Load`, is what this command applies, so it reads every bundled spec version.
+the exits `spec validate` gives, with the signature still reported as accepted. Exit 1 is thus
+shared by a refused signature, no signature document and an accepted signature over an invalid
+pack; the exit codes follow the repository's convention, and `--format json` tells the three apart:
+an error whose code is the refusal's, an error whose code is `JPS-PACK-SIGNATURE-MISSING`, and a
+report whose `status` is `pack-invalid`. Validation, not `sdk.Load`, is what this command applies,
+so it reads every bundled spec version.
 
 **`sdk/packsig`.** `Verify(pack, signature []byte, expected ed25519.PublicKey) (Signature, error)`
 and `Load(ctx, pack, signature []byte, expected, sdk.LoadOptions) (*sdk.Pack, Signature, error)`.

@@ -39,7 +39,7 @@ func (a *App) packsSignCommand() *cobra.Command {
 	outputPath := ""
 	command := &cobra.Command{
 		Use:   "sign <pack-file>",
-		Short: "Write a detached signature over one pack file's exact bytes",
+		Short: "Write a detached signature over one pack file's exact bytes (EXPERIMENTAL)",
 		Long: "Sign the exact bytes of <pack-file> with the Ed25519 seed in --key <seed-file> and write the signature document beside it, as <pack-file>.sig.json, or to --output <file> (ADR-0083). " +
 			"The signature is over the bytes the pack's sha256 digest is over, the digest a reviewed-set lock pins: no canonical form of a pack is introduced, so a pack re-indented or re-encoded is other bytes and needs a signature of its own. " +
 			"What is signed is a fixed context string and the document's version with that digest, never the bare bytes, so the signature is one of a pack and of nothing else: an audit trail's record signature made with the same key is not one, and the reverse. " +
@@ -47,8 +47,9 @@ func (a *App) packsSignCommand() *cobra.Command {
 			"The seed is held to the rules a trail's signing key is held to (jpack audit key generate writes one): named by its real path, with no symbolic link anywhere in it; one regular file with one name; on unix owned by the user the runtime runs as and readable by nobody else, in directories owned by root or by that user that nobody else can write unless their sticky bit is set. On Windows a key's privacy cannot be checked, so no key signs there. No project is opened, so the rule that keeps a trail's key outside its project does not apply. " +
 			"--public-key <file>, the public key the seed is expected to have (64 hexadecimal characters; jpack audit key public prints it), refuses a seed whose public key is another before anything is signed, so whatever was put at the seed's path signs nothing. The environment variables that name a trail's key are not read: a pack's signing key need not be the trail's. " +
 			"Only a pack this runtime validates is signed, as jpack spec validate reports it, whatever specVersion it declares among those bundled; any other file is refused and nothing is written. " +
-			"A signature document is never written over anything: to sign again, remove the old one first. " +
-			"A valid signature shows that whoever held the key signed these bytes. It says nothing about whether the pack is correct, tested, reviewed or current, and nothing about when it was signed; jpack packs verify-signature checks one against a key the verifier names.",
+			"A signature document is never written over anything: to sign again, remove the old one first; --output names a file, and - (standard output) is refused. " +
+			"A valid signature shows that whoever held the key signed these bytes. It says nothing about whether the pack is correct, tested, reviewed or current, and nothing about when it was signed; jpack packs verify-signature checks one against a key the verifier names. " +
+			"This command and the signature document's format are EXPERIMENTAL: each may change or be removed without a compatibility promise, and the document's own signatureVersion says which format a reader holds.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
@@ -60,6 +61,9 @@ func (a *App) packsSignCommand() *cobra.Command {
 			}
 			if keyPath == "" {
 				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-PACK-SIGNATURE", "--key <seed-file> names the key to sign with.")
+			}
+			if outputPath == "-" {
+				return a.operational(commandName, format, result.ExitInvocation, "JPS-INVOCATION-INPUT", "--output names the file the signature document is written to; it is not written to standard output, so nothing was signed.")
 			}
 			var expected *string
 			if publicKeyPath != "" {
@@ -140,7 +144,7 @@ func (a *App) packsVerifySignatureCommand() *cobra.Command {
 	signaturePath := ""
 	command := &cobra.Command{
 		Use:   "verify-signature <pack-file>",
-		Short: "Check a pack file's detached signature against the key you expect",
+		Short: "Check a pack file's detached signature against the key you expect (EXPERIMENTAL)",
 		Long: "Check the signature document <pack-file>.sig.json, or --signature <file>, against the exact bytes of <pack-file> and the public key in --public-key <file> (ADR-0083). " +
 			"--public-key is required: a signature is checked only against a key the verifier names (64 hexadecimal characters; jpack audit key public prints it), and the key a signature document carries is never trusted on its own, so a document naming another key is refused whether or not its signature holds under that key. " +
 			"The signature is checked before the pack is read as a document, and the pack's bytes are read once: the bytes checked are the bytes then validated. " +
@@ -148,7 +152,9 @@ func (a *App) packsVerifySignatureCommand() *cobra.Command {
 			"It is then refused when it names another key (JPS-PACK-SIGNATURE-UNEXPECTED-KEY), when its packDigest is not the sha256 digest of the pack's bytes, which changed or are another pack's (JPS-PACK-SIGNATURE-DIGEST-MISMATCH), and when its signature does not hold under the expected key over those bytes (JPS-PACK-SIGNATURE-INVALID). " +
 			"No document at the path is JPS-PACK-SIGNATURE-MISSING, and one that cannot be read as one regular file named by its own path, a symbolic link included, is JPS-PACK-SIGNATURE-READ. " +
 			"Once the signature is accepted the pack is validated as jpack spec validate validates it, and the report gives both: exit 0 when the pack is valid, 1 when it is invalid and 2 when it is unsupported. Any refusal of the signature exits 1 (4 when the document cannot be read), and the pack is then not read as a document. " +
-			"An accepted signature shows that whoever held the expected key signed these bytes. It says nothing about whether the pack is correct, tested, reviewed or current, nothing about when it was signed, and nothing after the key is copied: which key to expect, and when to stop expecting it, are the verifier's.",
+			"Exit 1 is shared by a refused signature, no signature document and an accepted signature over an invalid pack; --format json tells them apart: the first two are an error whose code is the refusal's JPS-PACK-SIGNATURE code (JPS-PACK-SIGNATURE-MISSING for no document), and the third is a report whose status is pack-invalid. " +
+			"An accepted signature shows that whoever held the expected key signed these bytes. It says nothing about whether the pack is correct, tested, reviewed or current, nothing about when it was signed, and nothing after the key is copied: which key to expect, and when to stop expecting it, are the verifier's. " +
+			"This command and the signature document's format are EXPERIMENTAL: each may change or be removed without a compatibility promise, and the document's own signatureVersion says which format a reader holds.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := validateFormat(format); err != nil {
