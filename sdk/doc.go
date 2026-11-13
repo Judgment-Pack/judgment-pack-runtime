@@ -105,6 +105,19 @@
 // docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md carries
 // over to the released version).
 //
+// The view of a Core 0.5.0 pack also lists each outcome's severity under
+// annotation vocabulary 1.0.0, as view.Outcome.Severity and
+// view.PackView.SeverityOrder: the level where the outcome's severity
+// annotation is exactly one of low, medium, high and critical, nothing where
+// it states none or a value that is not a level, and the outcomes most
+// severe first, one level in document order, then those without a level in
+// document order. The JSON carries it in a severity member beside the
+// document, never inside it, and the Markdown in a Severity column of the
+// outcomes table and two lines after it. The level is the author's
+// statement, shown as written; no level is defaulted, numbered or derived
+// for the pack, a rule or a disposition. A view under another specVersion
+// lists none (docs/adr/0088-check-the-outcome-severity-vocabulary.md).
+//
 // # Checking the annotation vocabulary
 //
 // Pack.CheckVocabulary holds a Core 0.5.0 pack's outcome severities to the
