@@ -605,10 +605,13 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 		fmt.Fprintf(a.out, "mismatch: %d/%d matrix rows did not match their expectation", output.Summary.Mismatched, output.Summary.Total)
 		// Only a run that asked for a coverage requirement has unmet ones,
 		// so a run without one prints the line it always printed (ADR-0080).
-		unmet := 0
+		unmet, survived := 0, 0
 		for _, pack := range output.Packs {
-			if len(pack.UnmetRequirements) > 0 {
+			if slices.Contains(pack.UnmetRequirements, result.RequirementMinCoverage) || slices.Contains(pack.UnmetRequirements, result.RequirementBoundaries) {
 				unmet++
+			}
+			if slices.Contains(pack.UnmetRequirements, result.RequirementNoSurvivor) {
+				survived++
 			}
 		}
 		switch unmet {
@@ -618,7 +621,24 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 		default:
 			fmt.Fprintf(a.out, ", and %d packs did not meet a coverage requirement this run asked for", unmet)
 		}
+		// Only a run under --fail-on-survivor can fail a pack on its
+		// variants, so a run without it prints what it always printed
+		// (ADR-0084).
+		switch survived {
+		case 0:
+		case 1:
+			fmt.Fprint(a.out, ", and 1 pack had a surviving variant, or none that ran, under --fail-on-survivor")
+		default:
+			fmt.Fprintf(a.out, ", and %d packs had a surviving variant, or none that ran, under --fail-on-survivor", survived)
+		}
 		fmt.Fprintln(a.out)
+	}
+	if strength := output.Strength; strength != nil {
+		fmt.Fprintf(a.out, "EXPERIMENTAL test strength: %s across the tested packs (at most %d changes per pack)\n", strengthCountsLine(strength.Summary), strength.MaxVariants)
+		fmt.Fprintln(a.out, "  a survivor is either a gap in the matrix or a variant that behaves exactly as the pack does; this run cannot tell which, and its result proves nothing about the pack")
+		if strength.FailOnSurvivor {
+			fmt.Fprintln(a.out, "required: no variant of a tested pack survives")
+		}
 	}
 	// Printed only when the caller asked for a coverage requirement, so a run
 	// without one prints what it always printed (ADR-0080).
@@ -660,6 +680,7 @@ func (a *App) renderPackTest(format string, output result.PackTest) error {
 		}
 		a.renderCoverage("  ", pack.Coverage)
 		a.renderOrigins("  ", pack.Summary.Total, pack.Origins)
+		a.renderStrength("  ", pack.Strength)
 	}
 	fmt.Fprintf(a.out, "%s (configVersion %s) · %s\n", display.Sanitize(output.ConfigPath), display.Sanitize(output.ConfigVersion), display.Sanitize(output.Kind))
 	fmt.Fprintln(a.out, "A mismatching row is a statement about the pack and the row, not about this runtime.")
