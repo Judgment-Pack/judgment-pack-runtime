@@ -1,0 +1,5 @@
+EXPERIMENTAL SURFACE pack comparison: an experimental rehearsal of two pack documents over one set of inputs; a difference says the two versions decide an input differently, not which is right, and nothing here is a decision or an expectation
+REHEARSAL: not a decision; no audit record was appended and no reviewed set was consulted
+old: https://example.invalid/judgment-packs/expense-approval 1.0.0 · old.json · sha256:34eea65125c3020ae67868debc22fc93c74a5c32c08dd3558d076447bc1702e9
+new: https://example.invalid/judgment-packs/expense-approval 1.1.0 · new.json · sha256:689d742ccacae9dbb3569ede296dcbb92db076e09ffccfddb6e1c421d8ebfae2
+inputs: 2 from a matrix (its expectations play no part); 0 differ, 2 the same; 0 of the 2 unresolved under both versions

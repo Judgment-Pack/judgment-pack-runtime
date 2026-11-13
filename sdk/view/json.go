@@ -71,27 +71,14 @@ func (v PackView) documentValue() (map[string]any, error) {
 	if v.EvidenceRequirements != nil {
 		items := make([]any, 0, len(v.EvidenceRequirements))
 		for _, requirement := range v.EvidenceRequirements {
-			item := map[string]any{"id": requirement.ID, "description": requirement.Description, "required": requirement.Required}
-			putString(item, "kind", requirement.Kind)
-			items = append(items, withExtensions(item, requirement.Extensions))
+			items = append(items, evidenceRequirementValue(requirement))
 		}
 		document["evidenceRequirements"] = items
 	}
 	if v.Sources != nil {
 		items := make([]any, 0, len(v.Sources))
 		for _, source := range v.Sources {
-			item := map[string]any{
-				"id":      source.ID,
-				"title":   source.Title,
-				"locator": map[string]any{"kind": source.Locator.Kind, "value": source.Locator.Value},
-			}
-			putString(item, "publisher", source.Publisher)
-			putString(item, "publishedAt", source.PublishedAt)
-			if source.Citation != nil {
-				item["citation"] = map[string]any{"location": source.Citation.Location, "excerpt": source.Citation.Excerpt}
-			}
-			putString(item, "rights", source.Rights)
-			items = append(items, withExtensions(item, source.Extensions))
+			items = append(items, sourceValue(source))
 		}
 		document["sources"] = items
 	}
@@ -112,36 +99,18 @@ func (v PackView) documentValue() (map[string]any, error) {
 	if v.Exceptions != nil {
 		items := make([]any, 0, len(v.Exceptions))
 		for _, exception := range v.Exceptions {
-			when, err := conditionValue(exception.When)
+			item, err := exceptionValue(exception)
 			if err != nil {
 				return nil, err
 			}
-			item := map[string]any{
-				"id":          exception.ID,
-				"description": exception.Description,
-				"when":        when,
-				"effect":      exception.Effect,
-				"onUnknown":   exception.OnUnknown,
-			}
-			putString(item, "targetRule", exception.TargetRule)
-			putString(item, "outcome", exception.Outcome)
-			putStrings(item, "sourceRefs", exception.SourceRefs)
-			items = append(items, withExtensions(item, exception.Extensions))
+			items = append(items, item)
 		}
 		document["exceptions"] = items
 	}
 	if v.ValueSets != nil {
 		items := make([]any, 0, len(v.ValueSets))
 		for _, set := range v.ValueSets {
-			entries := make([]any, 0, len(set.Entries))
-			for _, entry := range set.Entries {
-				item := map[string]any{"value": rawJSON(entry.Value)}
-				putString(item, "description", entry.Description)
-				entries = append(entries, withAnnotatedExtensions(item, entry.Extensions, entry.Annotations))
-			}
-			item := map[string]any{"id": set.ID, "entries": entries}
-			putString(item, "description", set.Description)
-			items = append(items, item)
+			items = append(items, valueSetValue(set))
 		}
 		document["valueSets"] = items
 	}
@@ -182,6 +151,68 @@ func (v PackView) documentValue() (map[string]any, error) {
 		document["metadata"] = withExtensions(metadata, v.Metadata.Extensions)
 	}
 	return withAnnotatedExtensions(document, v.Extensions, v.Annotations), nil
+}
+
+// evidenceRequirementValue rebuilds one member of evidenceRequirements from
+// its typed form.
+func evidenceRequirementValue(requirement EvidenceRequirement) map[string]any {
+	item := map[string]any{"id": requirement.ID, "description": requirement.Description, "required": requirement.Required}
+	putString(item, "kind", requirement.Kind)
+	return withExtensions(item, requirement.Extensions)
+}
+
+// sourceValue rebuilds one member of sources from its typed form.
+func sourceValue(source Source) map[string]any {
+	item := map[string]any{
+		"id":      source.ID,
+		"title":   source.Title,
+		"locator": map[string]any{"kind": source.Locator.Kind, "value": source.Locator.Value},
+	}
+	putString(item, "publisher", source.Publisher)
+	putString(item, "publishedAt", source.PublishedAt)
+	if source.Citation != nil {
+		item["citation"] = map[string]any{"location": source.Citation.Location, "excerpt": source.Citation.Excerpt}
+	}
+	putString(item, "rights", source.Rights)
+	return withExtensions(item, source.Extensions)
+}
+
+// exceptionValue rebuilds one member of exceptions from its typed form.
+func exceptionValue(exception Exception) (map[string]any, error) {
+	when, err := conditionValue(exception.When)
+	if err != nil {
+		return nil, err
+	}
+	item := map[string]any{
+		"id":          exception.ID,
+		"description": exception.Description,
+		"when":        when,
+		"effect":      exception.Effect,
+		"onUnknown":   exception.OnUnknown,
+	}
+	putString(item, "targetRule", exception.TargetRule)
+	putString(item, "outcome", exception.Outcome)
+	putStrings(item, "sourceRefs", exception.SourceRefs)
+	return withExtensions(item, exception.Extensions), nil
+}
+
+// valueSetValue rebuilds one member of valueSets, its entries in document
+// order, from its typed form.
+func valueSetValue(set ValueSet) map[string]any {
+	entries := make([]any, 0, len(set.Entries))
+	for _, entry := range set.Entries {
+		entries = append(entries, entryValue(entry))
+	}
+	item := map[string]any{"id": set.ID, "entries": entries}
+	putString(item, "description", set.Description)
+	return item
+}
+
+// entryValue rebuilds one entry of a value set from its typed form.
+func entryValue(entry ValueSetEntry) map[string]any {
+	item := map[string]any{"value": rawJSON(entry.Value)}
+	putString(item, "description", entry.Description)
+	return withAnnotatedExtensions(item, entry.Extensions, entry.Annotations)
 }
 
 // outcomeValue rebuilds one member of outcomes from its typed form.

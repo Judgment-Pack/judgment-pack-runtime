@@ -478,10 +478,13 @@ func TestDescribeExitsAsTheEvaluatorRefuses(t *testing.T) {
 	}
 }
 
-// packs describe is the one CLI file that reaches package sdk, and it loads
-// and views a pack and never evaluates one: it is not a surface that reaches
-// the evaluator, which TestConformanceClaimNamesEverySurfaceReachingTheEvaluator
-// counts by constructor site, and it constructs none of its own.
+// packs describe and packs diff are the CLI files that reach package sdk, and
+// they load, view and compare packs and never evaluate one: neither is a
+// surface that reaches the evaluator, which
+// TestConformanceClaimNamesEverySurfaceReachingTheEvaluator counts by
+// constructor site, and neither constructs one of its own. experimental
+// compare --structural reaches sdk through packs diff's function, so compare.go,
+// which constructs the evaluator, does not import sdk.
 func TestPacksDescribeLoadsAndNeverEvaluates(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -501,20 +504,27 @@ func TestPacksDescribeLoadsAndNeverEvaluates(t *testing.T) {
 			importers = append(importers, name)
 		}
 	}
-	if strings.Join(importers, ",") != "packs_describe.go" {
+	if strings.Join(importers, ",") != "packs_describe.go,packs_diff.go" {
 		t.Fatalf("the CLI files importing package sdk are %v", importers)
 	}
-	source, err := os.ReadFile("packs_describe.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
-	if strings.Count(text, "sdk.Load(") != 1 || strings.Count(text, ".View()") != 1 {
-		t.Fatal("packs describe no longer loads and views through package sdk exactly once")
-	}
-	for _, deciding := range []string{".Evaluate(", ".RunCase", ".RunCorpus", "evaluation.NewEngine(", "a.engine"} {
-		if strings.Contains(text, deciding) {
-			t.Fatalf("packs describe adds %s; review the claim scope in CONFORMANCE.md", deciding)
+	for name, calls := range map[string][]string{
+		"packs_describe.go": {"sdk.Load(", ".View()"},
+		"packs_diff.go":     {"sdk.Load(", "sdk.Diff(", "sdk.ThreeWayDiff("},
+	} {
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(source)
+		for _, call := range calls {
+			if strings.Count(text, call) != 1 {
+				t.Fatalf("%s no longer calls %s through package sdk exactly once", name, call)
+			}
+		}
+		for _, deciding := range []string{".Evaluate(", ".RunCase", ".RunCorpus", "evaluation.NewEngine(", "a.engine"} {
+			if strings.Contains(text, deciding) {
+				t.Fatalf("%s adds %s; review the claim scope in CONFORMANCE.md", name, deciding)
+			}
 		}
 	}
 }

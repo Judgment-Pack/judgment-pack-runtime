@@ -547,6 +547,133 @@ An id is read from an evaluation that succeeds, so when no input is evaluated (a
 document) or every evaluation under one pack is refused, there is neither the warning nor the
 member, and their absence does not establish that the ids match.
 
+Compare reports dispositions and handoff targets and nothing else. Annotations, and every other
+member that never reaches a disposition, are outside what it compares: a revision that only changes
+an outcome's annotations, or moves a threshold where no input falls between the old and new values,
+reports `0 differ`. Compare's output does not say so, so that its bytes stay as they were; its help
+and this guide do. To see those changes, add `--structural`. With that option the JSON payload gets
+a `structural` member, a string holding the same bytes as the `diff` member `packs diff --format
+json` writes for the same two packs (next section), and the human output appends that comparison's
+text. Without the option, the output is
+the same as before, byte for byte. With it, both packs must load, so a pack the loader refuses makes
+the whole run refused, with the loader's code.
+
+### Compare the documents, member by member
+
+`jpack packs diff` compares two pack documents as written (EXPERIMENTAL;
+[ADR-0086](adr/0086-compare-two-pack-documents-member-by-member.md)). It loads each pack the way
+the Go API's `sdk.Load` does, evaluates nothing, needs no inputs and opens no project. Its bytes are
+those of the `view.Diff` that `sdk.Diff` returns:
+
+```bash
+jpack packs diff expense-before.json packs/expense.json                  # short text
+jpack packs diff expense-before.json packs/expense.json --format json    # the envelope; "diff" holds the JSON
+jpack packs diff --base expense-base.json mine.json theirs.json          # three-way
+```
+
+A structural difference says what the documents say differently. It does not say that any input
+is decided differently; compare shows that.
+
+**What is compared.** The pack's own members (everything outside the keyed collections: `id`,
+`version`, `title`, `decision`, `applicability`, `fallbackOutcome`, `escalation`, `metadata`, vendor
+extensions and the rest) are compared by JSON Pointer from the document root. Each keyed collection
+is compared by key: `evidenceRequirements`, `sources`, `outcomes`, `rules`, `exceptions` and
+`valueSets` by `id`, and the entries of a value set by their value. When a set repeats a value
+(Core §6.9), each entry holding it is keyed by its occurrence among them, in document order. A member
+present in one version only is reported added or removed, whole, as the view writes it. A member
+present in both is reported changed, with each member that differs under a pointer relative to it
+and its old and new values. Numbers are compared as written, so `1.50` and `1.5` differ.
+
+**Annotations.** Under Core 0.5.0, annotations are compared at the pack, on each outcome and rule,
+and on each value-set entry. Each key is compared as one value, a string or a list, with no key
+treated apart from any other. They appear in an `annotations` member beside `members`, never as
+pointers into `extensions`. An extensions object that holds only annotations counts as the empty
+object it is without them. Against `"extensions": {}` it is the same object. Against an absent one,
+adding a member's first annotation, or removing its last, is reported once, as an annotation. An
+empty object against an absent one is reported at `/extensions`. Beside a vendor member, an
+extensions object that is absent in one version is not told apart from one that is empty: either
+way each vendor member is reported by name, under `/extensions/<name>`. Under a specVersion without
+annotations or value sets, the `annotations` and `valueSets` members are absent from the output,
+not empty.
+
+**Which orders count.**
+
+| Array | Order |
+| --- | --- |
+| the members of each keyed collection, and the entries of each value set | reported apart from content, in an `order` member over the members present in both versions, or three-way in both first and second (Core §4 keeps collection order for display; it has no evaluation meaning) |
+| `escalation.routes` | reported (Core §6.7 makes routes ordered) |
+| the strings of an annotation list | reported (Core §5: part of the bytes) |
+| every other array, the conditions of `all` and `any` among them | reported: Core does not make them sets, though reordering the conditions of `all` or `any` changes no result |
+| `escalation.triggers` and a route's `triggers` | ignored (Core §6.7 makes them sets) |
+| object members, an annotations object's keys among them | ignored |
+
+Two arrays of one length are compared position by position. Two arrays of different lengths are
+reported whole, and a set inside a value reported whole is still compared as a set.
+
+Three-way, the order is read over the members both first and second hold, and each version lists
+those of them it holds. A rule both descendants add, at different places, is an order `conflict`,
+although the base never held it.
+
+**Absent is not empty.** An optional collection that is absent and one that is an empty array hold
+the same members, but they are different documents. When one version has the array and the other
+does not, the collection carries `"present": {"old": …, "new": …}`.
+
+**Different ids and specVersions.** Two packs whose ids differ are compared anyway. The id is
+reported as a changed pack member, the JSON carries `"differentDecisions": true`, and the text says
+`DIFFERENT DECISIONS` on its first line. Two packs of different specVersions are refused with
+`JPS-DIFF-MIXED-SPEC-VERSION` (exit 2). Which members a document may hold depends on its version, so
+a cross-version comparison would report value sets as added for a reason that is the version, not
+the document.
+
+**The JSON form** (`diffVersion` `"1"`) is canonical JSON. These are its members:
+
+- `diffVersion`, `differs`, and `differentDecisions` (only when `true`);
+- `old` and `new`: each pack's `id`, `version`, `specVersion`, `digest` and, when declared,
+  `profile`;
+- `pack`: `members` and, under 0.5.0, `annotations`;
+- one member per collection, each `{"changes": […]}`, with `order` and `present` when they differ.
+
+A changed member is `{"pointer", "change", "old", "new"}`, where `change` is `added`, `removed` or
+`changed` and an absent side is left out. An annotation is the same object with `key` in place of
+`pointer`. A collection change carries `id`, or `value` and `occurrence` (above 1) for an entry. It
+is either whole (`change` with `old` or `new`), or `"change": "changed"` with `members`, and also
+`annotations` on an outcome, rule or entry and `entries` on a value set. The same pack bytes give the
+same output bytes.
+
+**Three-way.** `--base <pack>` compares the two packs given, first and second, with their common
+base (`sdk.ThreeWayDiff`). Its JSON carries `threeWayDiffVersion` `"1"` and a `conflicts` count in
+place of `diffVersion`, and `base`, `first` and `second` in place of `old` and `new`. Each member,
+annotation, order and presence that differs anywhere carries a `status` in place of `change`, with
+its value in each version under `base`, `first` and `second`. A collection member present in all
+three carries no status of its own; its `members`, `annotations` and `entries` carry them:
+
+- `first`: only first changed it from the base;
+- `second`: only second changed it;
+- `both`: both changed it the same way;
+- `conflict`: both changed it, differently.
+
+The text ends with the count of conflicts. Nothing is merged. Every new version differs from its
+base in `version`, so a three-way comparison of two releases of one base usually reports `/version`
+as a conflict.
+
+**The text** opens with a header line and one identity line per pack, then one section per part
+that differs: `pack:`, `outcomes:` and so on. It writes every string taken from a pack (ids,
+values, annotation keys, and any pointer holding a character other than a letter, a digit or one of
+`._~-`) as JSON in printable ASCII, as the annotation surfaces do ([ADR-0076](adr/0076-show-annotation-text-recoverably-on-every-surface.md)).
+When nothing differs, it ends with `no structural differences`.
+
+```text
+outcomes:
+  "decline" changed:
+    annotation "severity" changed: "medium" -> "high"
+rules:
+  "over-limit" changed:
+    /when/value changed: "5000" -> "4000"
+```
+
+The command reads no `jpack.json`, takes each pack as a local file and never from standard input,
+reports a pack the loader refuses with the loader's code, and exits 0 whenever the comparison ran.
+
 ### Review
 
 **Approval is the pull request.** There is no approval state in the file, no `approved: true`, and

@@ -59,7 +59,8 @@ func (a *App) packsCommand() *cobra.Command {
 	// touches a configuration, and a flag inherited into its help would promise
 	// an effect it does not have, and neither do packs sign and packs
 	// verify-signature, which read one pack file, its signature and a key
-	// (ADR-0083). packs covers registers a --config of its own that selects no
+	// (ADR-0083), nor packs diff, which reads two or three pack files
+	// (ADR-0086). packs covers registers a --config of its own that selects no
 	// project and has its own usage line.
 	packs.AddCommand(
 		a.packsListCommand(),
@@ -72,6 +73,7 @@ func (a *App) packsCommand() *cobra.Command {
 		a.packsLintCommand(),
 		a.packsSchemaCommand(),
 		a.packsDescribeCommand(),
+		a.packsDiffCommand(),
 		a.packsSignCommand(),
 		a.packsVerifySignatureCommand(),
 	)

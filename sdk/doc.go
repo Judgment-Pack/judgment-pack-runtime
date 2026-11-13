@@ -43,6 +43,9 @@
 //     ErrBinding;
 //   - Evaluation.OutcomeAnnotations, which returns view.Annotation values of
 //     package sdk/view (Core 0.5.0 only);
+//   - Diff and ThreeWayDiff, which return the view.Diff and view.ThreeWayDiff
+//     of package sdk/view, with that package's DiffVersion,
+//     ThreeWayDiffVersion and ErrDiffSpecVersion;
 //   - package sdk/packsig: Verify and Load, which check a pack's detached
 //     signature against an expected key, Load before sdk.Load reads any rule,
 //     with Signature, Refusal and Refusal.Error, SignatureVersion,
@@ -55,7 +58,9 @@
 // whose form the specification fixes. The envelope Evaluation.JSON returns
 // follows the CLI's machine-output contract and its outputVersion. The bytes
 // view.PackView.JSON and view.PackView.Markdown return carry their own view
-// version, view.ViewVersion, which VERSIONING.md says when to move. The bytes
+// version, view.ViewVersion, which VERSIONING.md says when to move, and the
+// bytes view.Diff and view.ThreeWayDiff return carry view.DiffVersion and
+// view.ThreeWayDiffVersion, which move by the same rule. The bytes
 // record.DecisionRecord.JSON returns carry their own record version,
 // record.RecordVersion, which package sdk/record and VERSIONING.md say when to
 // move.
@@ -89,6 +94,22 @@
 // (docs/adr/0075-admit-the-staged-draft-selector-0-4-0-draft.md, which
 // docs/adr/0077-admit-core-0-5-0-and-retire-the-staged-selector.md carries
 // over to the released version).
+//
+// # Comparing two packs
+//
+// Diff compares two loaded packs of one specVersion, structurally: what the
+// newer document says differently from the older, member by member, keyed
+// by id, with old and new values, the annotations of Core 0.5.0 included at
+// every position that carries them; "jpack packs diff" writes the same bytes.
+// ThreeWayDiff compares two packs with their common base and says, for each
+// member that differs anywhere, whether only the first changed it, only the
+// second, both alike, or both differently, which is a conflict; it merges
+// nothing. Both read views built afresh from the documents Load admitted and
+// never evaluate: a structural difference says the documents differ, not
+// that they decide an input differently.
+// docs/adr/0086-compare-two-pack-documents-member-by-member.md records the
+// choices, and docs/building-with-packs.md states the JSON members, which
+// orders are reported and which are not.
 //
 // # Recording an evaluation
 //
@@ -143,7 +164,10 @@
 // runtime; it never returns a partial view. Pack.FilteredView returns, in
 // addition, an error wrapping view.ErrFilterCriterion for a criterion no
 // annotation could hold, and one wrapping view.ErrFilterSelector for a pack
-// whose specVersion defines no annotations; neither is a *Refusal.
+// whose specVersion defines no annotations; neither is a *Refusal. Diff and
+// ThreeWayDiff return Pack.View's errors, and one wrapping
+// view.ErrDiffSpecVersion for packs whose specVersions differ, which is not a
+// *Refusal either.
 //
 // # Context
 //

@@ -18,6 +18,11 @@ const ComparisonLabel = "pack comparison: an experimental rehearsal of two pack 
 // comparison still runs, because comparing two decisions may be deliberate,
 // and the member is omitted otherwise, both when the ids are the same and when
 // either was never read.
+//
+// Structural is present only when the run asked for it (--structural,
+// ADR-0086): a string holding the exact bytes of the two packs' structural
+// comparison, the canonical JSON packs diff writes, which carries its own
+// diffVersion. Without it the payload is the one this type always wrote.
 type PackComparison struct {
 	OutputVersion             string            `json:"outputVersion"`
 	Tool                      Tool              `json:"tool"`
@@ -33,6 +38,7 @@ type PackComparison struct {
 	DifferentDecisions        bool              `json:"differentDecisions,omitempty"`
 	Inputs                    ComparedInputs    `json:"inputs"`
 	Differences               []InputDifference `json:"differences"`
+	Structural                string            `json:"structural,omitempty"`
 }
 
 // ComparedPack names one of the two documents: the path it was read from, its
