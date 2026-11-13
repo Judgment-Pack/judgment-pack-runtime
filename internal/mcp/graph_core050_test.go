@@ -27,7 +27,7 @@ func TestExperimentalTestGraphsRefusesACore050Node(t *testing.T) {
 	}
 	t.Setenv(project.ConfigEnv, filepath.Join(root, project.DefaultConfigName))
 	outcome := runServer(t, toolCall(t, 1, "experimental_test_graphs", nil))[0]["result"].(map[string]any)
-	const want = `Node "b" (pack "q"): Graph testing does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs.`
+	const want = `Node "b" (pack "q"): Graph testing does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs. Meanwhile, experimental evaluate and packs test read a Core 0.5.0 pack on its own, as its evaluation form; CONFORMANCE.md states what graphs wait for.`
 	if outcome["isError"] != true || toolText(t, outcome) != want {
 		t.Fatalf("outcome %#v", outcome)
 	}

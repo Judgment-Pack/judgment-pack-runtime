@@ -74,15 +74,16 @@ implementation's limit is outside the portable claim in the first place.
 
 The two evaluator-using advisory surfaces outside that version claim are
 `experimental analyze-pack` and `experimental_analyze_pack`. Both call the shared
-finite-domain analyzer, which admits and evaluates only Core `0.3.0` base packs.
-They therefore accept no input under the `0.2.0-draft` claim above and are separate
+finite-domain analyzer, which admits and evaluates only Core `0.3.0` base packs and
+Core `0.5.0` base packs, the latter as their evaluation form (Core §8.5), the root the
+evaluator's own admission makes. They therefore accept no input under the `0.2.0-draft` claim above and are separate
 from its eleven-surface enumeration. They run the real evaluator for optional
 Draft RFC 0027 authoring advice; they are not static-only comparability checks.
 Their reports do not change the recorded claim or extend its version scope.
 
 `internal/cli/conformance_enumeration_test.go` inventories these two constructor
-sites separately, holds their direct analyzer wiring and explicit Core `0.3.0`
-selection, and continues to reject unaccounted evaluator constructors. Static
+sites separately, holds their direct analyzer wiring, explicit Core `0.3.0` and `0.5.0`
+selection and the analyzer's single read of the admission's evaluation form, and continues to reject unaccounted evaluator constructors. Static
 fact-advice constructor sites retain their independent admission/comparability
 only guard. Moving or adding a surface, rewiring advice to another evaluation
 path, or widening the analyzer's supported contract requires reviewing both this
@@ -245,9 +246,29 @@ The separately named evaluation corpus contains 103 rows, whose manifest states 
 and seed; all 103 match under the explicit Core `0.5.0` contract, including the row for the
 supported extension set. The corpus runner does not check the manifest's `pairs` and
 `ownEvaluationForm` statements; each row is run on its own. Every graph command that reads node
-packs, the policy check, the dialect check's retained-column draft contract and pack-design analysis refuse a `0.5.0`
-pack, because the documents they implement are written against Core `0.3.0`; the dialect check itself reads one. These results are implementation evidence, not an exhaustive
+packs, the policy check and the dialect check's retained-column draft contract refuse a `0.5.0`
+pack, because the documents they implement are written against Core `0.3.0`; the dialect check itself reads one,
+and pack-design analysis reads one as its evaluation form. These results are implementation evidence, not an exhaustive
 check of the version's requirements.
+
+What the graph commands and the policy check wait for, as stated on 2026-11-13. Both keep their
+refusal of a `0.5.0` pack, with its code `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED` and its exit, and
+the refusal's message names what reads such a pack meanwhile
+([ADR-0089](docs/adr/0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md)).
+
+- **Graphs.** The graph prototype is Draft RFC 0002, which names no Core version for a node pack;
+  this runtime came to read `0.3.0` node packs by its own decision (ADR-0063), and no
+  specification issue proposes reading `0.5.0` ones. Reading them waits for this runtime's decision
+  on how a graph plan, test and report treat annotations and value sets, and is not in this
+  release. Meanwhile `experimental evaluate` and `packs test` read a `0.5.0` node pack on its own,
+  as its evaluation form.
+- **The policy check.** Policy companion 1.0.0 §4 consumes one exact retained Core `0.2.0-draft`
+  pack, and the prototype `0.0.2` reads its consumer under the bundled Core schemas, with rules,
+  exceptions, applicability and fallback as its consumer elements and no value-set element. A
+  `0.5.0` consumer waits for a companion format that admits one and says whether a value set is a
+  coverage target. The next companion format is Spec issue #244, which does not yet say whether it
+  admits a `0.5.0` consumer. Meanwhile `experimental policy validate` checks the adoption without
+  reading its consumer, and `spec validate` checks the consumer pack.
 
 This section makes no partial or qualified conformance claim. The recorded `0.2.0-draft` claim
 above remains as recorded.

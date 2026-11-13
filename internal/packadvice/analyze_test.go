@@ -323,10 +323,21 @@ func TestPackAdviceRefusals(t *testing.T) {
 			t.Fatal(r, f)
 		}
 	}
-	// Draft RFC 0027 is written against Core 0.3.0: a pack declaring 0.5.0,
-	// though valid there, is refused rather than analyzed as if it were 0.3.0.
-	if r, f := Analyze(e, []byte(strings.Replace(string(p), `"specVersion":"0.3.0"`, `"specVersion":"0.5.0"`, 1)), valid, DefaultOptions()); r != nil || f == nil || f.Code != "pack-unsupported" {
+	// A pack declaring Core 0.5.0 is analysed as its evaluation form, and the
+	// report names 0.5.0 (core050_test.go); a later version is refused.
+	if r, f := Analyze(e, []byte(strings.Replace(string(p), `"specVersion":"0.3.0"`, `"specVersion":"0.5.0"`, 1)), valid, DefaultOptions()); f != nil || r["targetSpecVersion"] != "0.5.0" {
 		t.Fatal("0.5.0 pack:", r, f)
+	}
+	if r, f := Analyze(e, []byte(strings.Replace(string(p), `"specVersion":"0.3.0"`, `"specVersion":"0.6.0"`, 1)), valid, DefaultOptions()); r != nil || f == nil || f.Code != "pack-unsupported" {
+		t.Fatal("0.6.0 pack:", r, f)
+	}
+	// An earlier contract the evaluator selects and admits is refused by name.
+	older := []byte(strings.Replace(string(p), `"specVersion":"0.3.0"`, `"specVersion":"0.2.0-draft"`, 1))
+	if contract, failure := evaluation.SelectContract(older); failure != nil || !e.AdmitsWith(older, evaluation.Options{SpecVersion: contract.Version()}) {
+		t.Fatal("the 0.2.0-draft pack is not one the evaluator admits", failure)
+	}
+	if r, f := Analyze(e, older, valid, DefaultOptions()); r != nil || f == nil || *f != *Refuse("pack-unsupported") {
+		t.Fatal("0.2.0-draft pack:", r, f)
 	}
 	over := pack()
 	rs := []any{}

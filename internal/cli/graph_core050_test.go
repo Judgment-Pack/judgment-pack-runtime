@@ -24,7 +24,7 @@ func TestGraphCommandsRefuseACore050Node(t *testing.T) {
 	root := filepath.Dir(configPath)
 	graphPath := filepath.Join(root, "graph.json")
 	missing := filepath.Join(root, "missing.json")
-	const reads = ` does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs.`
+	const reads = ` does not read packs declaring specVersion "0.5.0"; it reads Core 0.2.0-draft and 0.3.0 packs. Meanwhile, experimental evaluate and packs test read a Core 0.5.0 pack on its own, as its evaluation form; CONFORMANCE.md states what graphs wait for.`
 	for _, command := range []struct {
 		args    []string
 		surface string
