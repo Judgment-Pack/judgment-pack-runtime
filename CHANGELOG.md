@@ -4,6 +4,27 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **The Go API returns a decision record for one evaluation** (#387, ADR-0079; EXPERIMENTAL).
+  `sdk.Pack.EvaluateWithRecord` evaluates exactly as `Pack.Evaluate` does and returns, beside the
+  evaluation, a `record.DecisionRecord` of the new package `sdk/record`: the pack's id, version,
+  specVersion and digest; the `sha256:` digest of the facts document and of the evidence document
+  as evaluated, over their canonical JSON text in the form of the pack view's JSON, so white space,
+  member order and string escapes do not move it and a number's literal does (an omitted evidence
+  document is digested as `{}`, as §8.2 evaluates it); the §8.3 disposition as
+  `CanonicalDisposition` returns it; the runtime version and the evaluator contract applied; the
+  caller's optional binding, at most 16 names of the audit binding's kind grammar, each mapped to
+  a `sha256:` digest and carried as given; and `recordVersion` `"1.0.0"`. The record is one
+  canonical JSON text (`JSON()`) with its own digest (`Digest()`), and holds no time and no random
+  value, so the same inputs under the same runtime version give the same bytes. It is written
+  nowhere: it is not an audit-trail entry, it is unsigned, its binding is the caller's assertion,
+  and it names the facts and evidence by digest only. A binding not of its shape is refused, before
+  anything is evaluated, with an error wrapping `record.ErrBinding`, which is not a `*sdk.Refusal`.
+- `sdk.Evaluation.OutcomeAnnotations` returns the annotations of the outcome a disposition chose,
+  as `Pack.View` carries them on that outcome (Core `0.5.0`; EXPERIMENTAL), so a caller acting on
+  the outcome need not read the view. The disposition, the record and `Evaluation.JSON` do not
+  carry them; #355 covers that.
+- The pack view's canonical JSON writer moves, unchanged, to an internal package the record shares;
+  the view's bytes and `viewVersion` are unchanged.
 - The documentation of `sdk.Load` now names every specVersion it evaluates: `0.2.0-draft`, and
   `0.3.0` or `0.5.0` with the base profile. It did not name `0.5.0`, which `Load` has accepted
   since 0.44.0.

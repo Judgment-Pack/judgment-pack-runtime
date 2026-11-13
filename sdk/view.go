@@ -3,6 +3,7 @@ package sdk
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/internal/viewhook"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/view"
@@ -93,6 +94,57 @@ func (p *Pack) FilteredView(criteria []view.Criterion) (view.FilteredView, error
 		return view.FilteredView{}, internalFault(viewFaultCode, "The filtered view's identity is not the identity Load read from the same document.")
 	}
 	return result, nil
+}
+
+// OutcomeAnnotations returns the annotations of the outcome the disposition
+// chose, as Pack.View carries them on that outcome: the annotations member of
+// its extensions, ordered by key, each a string or a list (Core 0.5.0 only).
+// It is nil when the disposition is not an outcome, when the outcome has no
+// annotations member, and for a pack under any specVersion that defines no
+// annotations. They are read from the document Load admitted, never from the
+// pack's bytes again: from a view of it built once per Pack, the first time
+// any of the pack's evaluations is asked, and the caller owns the returned
+// slice. The disposition and the decision record do not carry them, and
+// Evaluation.JSON is unchanged. An error wraps ErrInternal, as View's do, or
+// is a plain error for an Evaluation that Evaluate did not return.
+// Experimental.
+func (e *Evaluation) OutcomeAnnotations() ([]view.Annotation, error) {
+	if e == nil || e.pack == nil || e.pack.annotations == nil {
+		return nil, errors.New("sdk: OutcomeAnnotations on an Evaluation that Evaluate did not return")
+	}
+	if e.Disposition.Kind != "outcome" {
+		return nil, nil
+	}
+	table, err := e.pack.annotations()
+	if err != nil {
+		return nil, err
+	}
+	annotations, present := table[e.Disposition.OutcomeID]
+	if !present {
+		return nil, nil
+	}
+	copied := make([]view.Annotation, 0, len(annotations))
+	for _, annotation := range annotations {
+		copied = append(copied, view.Annotation{Key: annotation.Key, Value: annotation.Value, List: slices.Clone(annotation.List)})
+	}
+	return copied, nil
+}
+
+// outcomeAnnotations reads each outcome's annotations from a view of the
+// admitted document, keyed by outcome id; an outcome with no annotations
+// member has no entry.
+func (p *Pack) outcomeAnnotations() (map[string][]view.Annotation, error) {
+	described, err := p.View()
+	if err != nil {
+		return nil, err
+	}
+	table := map[string][]view.Annotation{}
+	for _, outcome := range described.Outcomes {
+		if outcome.Annotations != nil {
+			table[outcome.ID] = outcome.Annotations
+		}
+	}
+	return table, nil
 }
 
 // Identity returns the identity Load read from the admitted document and the

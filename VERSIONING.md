@@ -160,6 +160,16 @@ rule `viewVersion` moves by. Its bytes ride in the `packs describe --filter` JSO
 `filteredView` member as a string. It is EXPERIMENTAL, and exists only for Core `0.5.0`, the one
 version that defines annotations.
 
+The decision record (`sdk.Pack.EvaluateWithRecord` and package `sdk/record`, ADR-0079) carries its
+own `recordVersion`, `"1.0.0"`, in its JSON. It is not the audit trail record's `recordVersion`,
+`"1"`, and the two move independently. Its major part moves when a member is removed or renamed,
+or a member's value is taken over other bytes or written in another form, so that a reader of the
+earlier form would misread it; its minor part when a member is added, which such a reader can pass
+over; its patch part when the bytes change in any other way, every member and its meaning kept. It
+does not move when the runtime learns to record evaluations it refused before, such as those of a
+newly admitted specification version, or when the runtime version the record carries changes,
+which changes the record's bytes and digest by design. The record is EXPERIMENTAL.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:
