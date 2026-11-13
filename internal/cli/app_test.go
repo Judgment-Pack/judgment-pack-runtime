@@ -115,6 +115,11 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// packs describe (ADR-0074) loads one pack and writes its view; it
 		// evaluates nothing and is inventoried for the phrase scans.
 		{args: []string{"packs", "describe", "--help"}},
+		// The pack signature commands (ADR-0083) sign and check bytes and
+		// evaluate nothing; they are inventoried for the phrase scans, which
+		// is where a stray claim about what a signature shows would hide.
+		{args: []string{"packs", "sign", "--help"}},
+		{args: []string{"packs", "verify-signature", "--help"}},
 		// The audit trail's commands (ADR-0047). None evaluates; they are
 		// inventoried for the phrase scans, which is where a stray claim
 		// about what a chain or a checkpoint shows would otherwise hide.
