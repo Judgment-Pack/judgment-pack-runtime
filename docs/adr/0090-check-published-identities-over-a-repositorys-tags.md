@@ -68,9 +68,13 @@ dialect documents gets a finding per document, and bumps the version or keeps th
 
 **Order.** Tags are ordered by `git rev-list --topo-order`, oldest first: an ancestor always comes
 before its descendants, tags of one commit in name order. Version strings are not consulted, since
-a tag's name need not be a version, nor tag dates, which their writer sets. The order chooses only
-which place a finding names as published: any two digests under one identity among the selected
-tags are a finding in every order. HEAD comes last and never publishes.
+a tag's name need not be a version, nor tag dates, which their writer sets. Whether there is a
+finding never depends on the order: any two digests under one identity among the selected tags are
+a finding in every order. The order chooses the reference, the place a finding names as published,
+and the first tag a new manifest entry names. Between tags no ancestry relates, such as the heads of
+two maintenance lines, git's walk falls back to commit dates, which committers set, so the order
+cannot say which of two digests came first: an identity with a `changed` or `duplicate` finding
+enters no manifest a run writes. HEAD comes last and never publishes.
 
 **Findings.** Per identity, the reference is the manifest's pin when there is one, else the first
 tag holding the identity; each other digest is one finding, at the first place found: `changed`,
@@ -87,8 +91,13 @@ manifest, a partial clone, an unreadable HEAD, git failing mid-run) exits 4 with
 **The manifest** (`manifestVersion` `"1"`) pins each identity to its digest and first tag in
 deterministic bytes. It is a closed input: a reader refuses any member it does not know, so adding
 one moves the version. A run writes it by rename, keeping every given entry as it was, so a run
-never moves a pin to the bytes it found, and replaces only a file that holds a manifest. No
-manifest is written from a shallow clone.
+never moves a pin to the bytes it found, and replaces only a file that holds a manifest. A new
+identity is written only when its bytes have no finding; one that has a finding is reported as
+withheld, and its pin is left to whoever knows which bytes were released. A `not-in-manifest`
+finding does not withhold: it says the given manifest lacks the entry, not that the bytes moved,
+and under `--strict` it is raised for every new identity, so a run with `--strict
+--write-manifest` would otherwise write no new entry at all. No manifest is written from a shallow
+clone.
 
 **Git.** Every invocation carries `--no-pager --no-replace-objects --no-optional-locks
 --literal-pathspecs`, `-c core.fsmonitor=false`, `-c core.hooksPath=` the null device,

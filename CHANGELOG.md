@@ -30,7 +30,9 @@ All notable changes to tagged releases are documented here.
   unreadable, never skipped, and the run is then incomplete; a tree entry is read as git reads its
   mode, and a mode spelled as git never writes it is reported besides. `--manifest` checks against a manifest pinning each identity by digest and
   first tag (`manifestVersion` `"1"`, a closed input), and `--write-manifest` writes one, in
-  deterministic bytes, by rename, replacing only a manifest. A shallow clone is refused without a
+  deterministic bytes, by rename, replacing only a manifest; it keeps every given entry as it is,
+  and writes no new entry for an identity whose bytes have a finding, which it reports as
+  withheld. A shallow clone is refused without a
   manifest and stated as shallow with one; a partial clone is refused. It exits 0 when valid, 1
   with a finding, with something unread, or when no tag was read and no manifest pin given, 3 for
   a usage error and 4 when the repository cannot be read.

@@ -63,8 +63,11 @@ type publishedEnvelope struct {
 	UnreadableCount int                    `json:"unreadableCount"`
 	Unreadable      []published.Unreadable `json:"unreadable"`
 	Manifest        *struct {
-		NewCount  int    `json:"newCount"`
-		WrittenTo string `json:"writtenTo"`
+		NewCount      int                  `json:"newCount"`
+		WithheldCount int                  `json:"withheldCount"`
+		Withheld      []published.Identity `json:"withheld"`
+		Entries       int                  `json:"entries"`
+		WrittenTo     string               `json:"writtenTo"`
 	} `json:"manifest"`
 	Diagnostics []struct {
 		Code string `json:"code"`
@@ -206,6 +209,27 @@ func TestCheckPublishedWritesTheManifestAndChecksAgainstIt(t *testing.T) {
 	}
 	if envelope := checkPublishedJSON(t, 1, "--repo", repo.Dir, "--manifest", empty, "--strict"); envelope.Findings[0].Code != "not-in-manifest" {
 		t.Fatalf("unexpected envelope: %#v", envelope)
+	}
+}
+
+func TestCheckPublishedWritesNoPinForAnIdentityWithAFinding(t *testing.T) {
+	repo := taggedHistory(t, []string{"v1", "v2"}, map[string]string{"expense.json": publishedPackA}, map[string]string{"expense.json": publishedPackB})
+	target := filepath.Join(t.TempDir(), "published.json")
+	envelope := checkPublishedJSON(t, 1, "--repo", repo.Dir, "--write-manifest", target)
+	if envelope.FindingCount != 1 || envelope.Manifest == nil || envelope.Manifest.WithheldCount != 1 || len(envelope.Manifest.Withheld) != 1 ||
+		envelope.Manifest.Withheld[0] != (published.Identity{Kind: "pack", ID: "expense", Version: "1.0.0"}) || envelope.Manifest.Entries != 0 {
+		t.Fatalf("unexpected envelope: %#v", envelope.Manifest)
+	}
+	if written, _ := os.ReadFile(target); string(written) != "{\n  \"manifestVersion\": \"1\",\n  \"documents\": []\n}\n" {
+		t.Fatalf("the changed identity must not be pinned:\n%s", written)
+	}
+	code, stdout, _ := runTest(t, []string{"experimental", "check-published", "--repo", repo.Dir, "--write-manifest", target}, "")
+	if code != 1 || !strings.Contains(stdout, "withheld from the manifest: 1 identit(ies)") || !strings.Contains(stdout, "- withheld: pack \"expense\" version \"1.0.0\"\n") {
+		t.Fatalf("exit %d: %s", code, stdout)
+	}
+	clean := taggedHistory(t, []string{"v1"}, map[string]string{"expense.json": publishedPackA})
+	if envelope := checkPublishedJSON(t, 0, "--repo", clean.Dir, "--write-manifest", target); envelope.Manifest.WithheldCount != 0 || envelope.Manifest.Withheld == nil {
+		t.Fatalf("nothing withheld is an empty list: %#v", envelope.Manifest)
 	}
 }
 

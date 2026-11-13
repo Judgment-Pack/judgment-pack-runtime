@@ -143,14 +143,21 @@ type Report struct {
 	Unreadable      []Unreadable
 	UnreadableCount int
 	// With a manifest: the identities a tag published that it does not pin,
-	// and, in a shallow repository, those it pins that no tag held answers;
-	// the counts are exact when the lists are capped.
+	// with no finding, and, in a shallow repository, those it pins that no
+	// tag held answers; the counts are exact when the lists are capped.
 	New          []ManifestEntry
 	NewCount     int
 	NotHeld      []ManifestEntry
 	NotHeldCount int
+	// Withheld are the identities a tag published that no given entry pins
+	// and that have a changed or duplicate finding: Manifest does not pin
+	// them, since which of their digests came first can turn on commit
+	// dates. The count is exact when the list is capped.
+	Withheld      []Identity
+	WithheldCount int
 	// Manifest is what --write-manifest writes: the given manifest's entries
-	// and every identity a tag published that it does not pin.
+	// as they are, and every identity a tag published that they do not pin,
+	// but those Withheld.
 	Manifest Manifest
 }
 
@@ -826,7 +833,9 @@ func (w *walker) firstTag(o occurrence) string {
 // findings compares every identity with the bytes it was published with: the
 // manifest's digest when the manifest pins it, otherwise the first tag that
 // holds it. Each other digest found is one finding, at the first place it
-// was found.
+// was found. It also makes the run's manifest: the given entries as they
+// are, and a new entry for each published identity they do not pin and that
+// has no finding of its bytes.
 func (w *walker) findings(report *Report, options Options) {
 	identities := make([]Identity, 0, len(w.identities))
 	for identity := range w.identities {
@@ -859,10 +868,12 @@ func (w *walker) findings(report *Report, options Options) {
 		default:
 			continue
 		}
+		changed := false
 		for _, seen := range record.digests {
 			if seen.digest == reference.Digest {
 				continue
 			}
+			changed = true
 			code := CodeChanged
 			if isPinned {
 				code = CodeDiffersFromManifest
@@ -884,13 +895,20 @@ func (w *walker) findings(report *Report, options Options) {
 			continue
 		}
 		first := record.digests[0]
+		if options.Manifest != nil && options.Strict {
+			findings = append(findings, Finding{Code: CodeNotInManifest, Identity: identity, Published: w.location(first)})
+		}
+		if changed {
+			// Two digests under one identity: which came first can turn on
+			// commit dates, which committers set (order), so no order
+			// decides which of them a manifest pins.
+			report.Withheld = append(report.Withheld, identity)
+			continue
+		}
 		newEntry := ManifestEntry{Kind: identity.Kind, ID: identity.ID, Version: identity.Version, Digest: first.digest, FirstTag: w.firstTag(first)}
 		written.Documents = append(written.Documents, newEntry)
 		if options.Manifest != nil {
 			report.New = append(report.New, newEntry)
-			if options.Strict {
-				findings = append(findings, Finding{Code: CodeNotInManifest, Identity: identity, Published: w.location(first)})
-			}
 		}
 	}
 	if options.Manifest != nil {
@@ -910,9 +928,10 @@ func (w *walker) findings(report *Report, options Options) {
 	report.Manifest = written
 	report.FindingCount = len(findings)
 	report.Findings = capped(findings)
-	report.NewCount, report.NotHeldCount = len(report.New), len(report.NotHeld)
+	report.NewCount, report.NotHeldCount, report.WithheldCount = len(report.New), len(report.NotHeld), len(report.Withheld)
 	report.New = capped(report.New)
 	report.NotHeld = capped(report.NotHeld)
+	report.Withheld = capped(report.Withheld)
 }
 
 func sortIdentities(identities []Identity) {

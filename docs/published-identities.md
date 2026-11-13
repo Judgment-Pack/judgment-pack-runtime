@@ -91,9 +91,13 @@ ancestor always comes before a tag on its descendant, and tags of one commit com
 Version strings and tag dates are not consulted: a tag's name need not be a version, and its date
 is whatever its writer set.
 
-The order decides only which place a finding names as published and which as found. Whatever the
-order, two digests under one identity among the selected tags are a finding. Two tags no ancestry
-relates, such as the heads of two maintenance lines, come in the order git's walk gives them.
+Whether there is a finding never depends on the order: two digests under one identity among the
+selected tags are a finding in every order. The order decides which place a finding names as
+published and which as found, and which tag a new manifest entry names as its first. Two tags no
+ancestry relates, such as the heads of two maintenance lines, come in the order git's walk gives
+them, which goes by commit dates, and a commit's date is whatever its committer set. So the order
+cannot say which of two digests was published first, and an identity with a `changed` or
+`duplicate` finding is pinned by no manifest a run writes (below).
 
 ## Output and exit status
 
@@ -114,7 +118,7 @@ hexadecimal digits.
 | `documents`, `otherFiles` | Distinct blobs read as documents, and as other JSON files. |
 | `findingCount`, `findings` | Each finding: `code`, `kind`, `id`, `version`, `published` and, but for `vanished` and `not-in-manifest`, `found`. A place is `source` (`tag`, `head` or `manifest`), `ref`, `path` and `digest`. |
 | `unreadableCount`, `unreadable` | Each `ref`, `path`, `digest` when the bytes were read, and `reason`. |
-| `manifest` | With `--manifest` or `--write-manifest`: `checked`, `strict`, `newCount` and `new`, `notHeldCount` and `notHeld`, `entries`, and `writtenTo`. |
+| `manifest` | With `--manifest` or `--write-manifest`: `checked`, `strict`, `newCount` and `new`, `notHeldCount` and `notHeld`, `withheldCount` and `withheld` (each `kind`, `id` and `version`), `entries`, and `writtenTo`. |
 | `listLimit` | Each list holds at most this many items, 1000; every count is exact. |
 
 In JSON, a path that is not UTF-8 is written with each such byte replaced by U+FFFD, as Go's
@@ -154,17 +158,21 @@ A manifest pins every published identity to the digest of the bytes its first ta
 ```
 
 `--write-manifest FILE` writes the manifest of the run: the entries of the `--manifest` given, as
-they are, and every identity a tag published that it does not pin, at its first tag's bytes. The
-entries are sorted by kind, `id` and `version`, one per line, so the same entries always give the
-same bytes. A run never moves a pin to the bytes it found: a manifest checked and written back in
-one run keeps every entry it had, a changed one included, and the finding is reported. The file is
+they are, and every identity a tag published that it does not pin, at its first tag's bytes, but
+one with a `changed` or `duplicate` finding. Such an identity is listed under `withheld` and no
+entry is written for it: which of its digests came first can turn on commit dates (above), so a
+pin for it is left to whoever knows which bytes were released. The entries are sorted by kind,
+`id` and `version`, one per line, so the same entries always give the same bytes. A run never moves
+a pin to the bytes it found: a manifest checked and written back in one run keeps every entry it
+had, a changed one included, and the finding is reported. The file is
 written whole or not at all, by rename, and only over a file that holds a manifest this runtime
 reads; any other file, or a symbolic link, is left as it is and the run is refused before the
 repository is read.
 
 `--manifest FILE` checks against a manifest in the same run. An identity whose bytes differ from its
 pin, and a pinned identity no tag holds, are findings. An identity the manifest does not pin is
-listed as new and is not a finding, unless `--strict` is given. The manifest is read strictly: an
+listed as new, or as withheld when its bytes have a finding, and is not itself a finding unless
+`--strict` is given. The manifest is read strictly: an
 unknown or duplicate member, another `manifestVersion`, a digest not of the form `sha256:` and
 sixty-four lowercase hexadecimal digits, or two entries for one identity are refused.
 

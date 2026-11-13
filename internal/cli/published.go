@@ -53,8 +53,10 @@ func (a *App) checkPublishedCommand() *cobra.Command {
 			"--include and --exclude <glob> select paths (default **/*.json). --manifest <file> checks against a manifest " +
 			"pinning each identity by digest and first tag: other bytes under a pinned identity are a finding, as is a pinned " +
 			"identity no selected tag holds; an identity the manifest does not pin is listed as new, and is a finding only " +
-			"with --strict. --write-manifest <file> writes the manifest of this run, the given manifest's entries and every " +
-			"new identity at its first tag's bytes, as deterministic bytes, replacing only a file that holds a manifest. A " +
+			"with --strict. --write-manifest <file> writes the manifest of this run, the given manifest's entries as they " +
+			"are and every new identity at its first tag's bytes, as deterministic bytes, replacing only a file that holds a " +
+			"manifest; a new identity with a changed or duplicate finding is withheld, pinned by no written manifest, since " +
+			"which of its bytes came first can turn on commit dates. A " +
 			"shallow clone is said to be one: without --manifest it is refused, since tags and history it lacks cannot be " +
 			"read, and no manifest is written from it; a partial clone is refused. git must be on PATH; it is run with hooks, " +
 			"pagers, fsmonitor, replace refs, credential helpers and every transport refused, against an explicit git " +
@@ -284,14 +286,16 @@ type publishedTags struct {
 }
 
 type publishedManifest struct {
-	Checked      string                    `json:"checked,omitempty"`
-	Strict       bool                      `json:"strict"`
-	NewCount     int                       `json:"newCount"`
-	New          []published.ManifestEntry `json:"new"`
-	NotHeldCount int                       `json:"notHeldCount"`
-	NotHeld      []published.ManifestEntry `json:"notHeld"`
-	Entries      int                       `json:"entries"`
-	WrittenTo    string                    `json:"writtenTo,omitempty"`
+	Checked       string                    `json:"checked,omitempty"`
+	Strict        bool                      `json:"strict"`
+	NewCount      int                       `json:"newCount"`
+	New           []published.ManifestEntry `json:"new"`
+	NotHeldCount  int                       `json:"notHeldCount"`
+	NotHeld       []published.ManifestEntry `json:"notHeld"`
+	WithheldCount int                       `json:"withheldCount"`
+	Withheld      []published.Identity      `json:"withheld"`
+	Entries       int                       `json:"entries"`
+	WrittenTo     string                    `json:"writtenTo,omitempty"`
 }
 
 func nonNil[T any](list []T) []T {
@@ -308,6 +312,7 @@ func (a *App) renderPublishedCheck(format string, report *published.Report, opti
 			Checked: manifestPath, Strict: options.Strict,
 			NewCount: report.NewCount, New: nonNil(report.New),
 			NotHeldCount: report.NotHeldCount, NotHeld: nonNil(report.NotHeld),
+			WithheldCount: report.WithheldCount, Withheld: nonNil(report.Withheld),
 			Entries: len(report.Manifest.Documents),
 		}
 		if target != nil {
@@ -385,6 +390,13 @@ func (a *App) renderPublishedCheck(format string, report *published.Report, opti
 		}
 		if manifest.WrittenTo != "" {
 			fmt.Fprintf(&out, "manifest written: %s, %d entries\n", q(manifest.WrittenTo), manifest.Entries)
+		}
+		if report.WithheldCount > 0 {
+			fmt.Fprintf(&out, "withheld from the manifest: %d identit(ies) no given entry pins, with a finding of their bytes; which bytes came first can turn on commit dates, so no pin is written for them\n", report.WithheldCount)
+			for _, identity := range report.Withheld {
+				fmt.Fprintf(&out, "- withheld: %s %s version %s\n", identity.Kind, q(identity.ID), q(identity.Version))
+			}
+			more(&out, report.WithheldCount, len(report.Withheld), "withheld identit(ies)")
 		}
 	}
 	_, err := a.out.Write([]byte(out.String()))

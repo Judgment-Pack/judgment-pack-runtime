@@ -748,6 +748,74 @@ func TestTheManifestRoundTripsAndCatchesTamperingAndVanishing(t *testing.T) {
 	}
 }
 
+// pins reports whether manifest has an entry for identity.
+func pins(manifest Manifest, identity Identity) bool {
+	for _, entry := range manifest.Documents {
+		if entry.identity() == identity {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAnIdentityWithAFindingEntersNoWrittenManifest(t *testing.T) {
+	// Two maintenance lines from one base: v1.0.0 committed later with
+	// bytes A, v1.0.0-hotfix committed earlier with bytes B. No ancestry
+	// orders them, so commit dates do, and a pin for either would be a
+	// committer's choice.
+	repo := gitfixture.New(t)
+	base := repo.CommitAt("2026-01-01T00:00:00Z", repo.Tree(map[string]string{"README": "base"}))
+	release := repo.CommitAt("2026-03-01T00:00:00Z", repo.Tree(map[string]string{"packs/expense.json": packA, "packs/next.json": packNext}), base)
+	hotfix := repo.CommitAt("2026-02-01T00:00:00Z", repo.Tree(map[string]string{"packs/expense.json": packB, "packs/next.json": packNext}), base)
+	repo.Tag("v1.0.0", release)
+	repo.Tag("v1.0.0-hotfix", hotfix)
+	repo.Head(release)
+	expense := Identity{Kind: KindPack, ID: "expense", Version: "1.0.0"}
+	next := Identity{Kind: KindPack, ID: "expense", Version: "1.1.0"}
+
+	report := run(t, defaultOptions(repo.Dir))
+	finding := onlyFinding(t, report)
+	if finding.Code != CodeChanged || finding.Identity != expense || finding.Published.Ref != "refs/tags/v1.0.0-hotfix" || finding.Found == nil || finding.Found.Ref != "refs/tags/v1.0.0" {
+		t.Fatalf("the earlier committed line is the reference: %#v found %#v", finding, finding.Found)
+	}
+	if pins(report.Manifest, expense) {
+		t.Fatalf("an identity with a finding must not be pinned: %s", EncodeManifest(report.Manifest))
+	}
+	if report.WithheldCount != 1 || len(report.Withheld) != 1 || report.Withheld[0] != expense {
+		t.Fatalf("the identity must be reported as withheld: %d %#v", report.WithheldCount, report.Withheld)
+	}
+	if len(report.Manifest.Documents) != 1 || report.Manifest.Documents[0].identity() != next || report.Manifest.Documents[0].Digest != digestOf(packNext) {
+		t.Fatalf("an identity without a finding is still written: %s", EncodeManifest(report.Manifest))
+	}
+
+	// With a manifest that does not pin it, the identity is withheld, not
+	// new, and --strict does not withhold an identity with no finding.
+	options := defaultOptions(repo.Dir)
+	options.Manifest = &Manifest{ManifestVersion: ManifestVersion, Documents: []ManifestEntry{}}
+	options.Strict = true
+	report = run(t, options)
+	if pins(report.Manifest, expense) || report.WithheldCount != 1 || report.NewCount != 1 || report.New[0].identity() != next || !pins(report.Manifest, next) {
+		t.Fatalf("unexpected manifest: new %#v withheld %#v written %s", report.New, report.Withheld, EncodeManifest(report.Manifest))
+	}
+
+	// A given pin stays as it is, whatever was found; nothing is withheld.
+	given := ManifestEntry{Kind: KindPack, ID: "expense", Version: "1.0.0", Digest: digestOf(packA), FirstTag: "v1.0.0"}
+	options.Manifest = &Manifest{ManifestVersion: ManifestVersion, Documents: []ManifestEntry{given}}
+	options.Strict = false
+	report = run(t, options)
+	finding = onlyFinding(t, report)
+	if finding.Code != CodeDiffersFromManifest || report.WithheldCount != 0 || len(report.Manifest.Documents) != 2 || report.Manifest.Documents[0] != given {
+		t.Fatalf("the given pin must stay verbatim: %#v %s", finding, EncodeManifest(report.Manifest))
+	}
+
+	// One tag holding two documents under one identity is withheld too.
+	duplicate := history(t, []string{"v1"}, []map[string]string{{"a/expense.json": packA, "b/expense.json": packB}}, nil)
+	report = run(t, defaultOptions(duplicate.Dir))
+	if finding := onlyFinding(t, report); finding.Code != CodeDuplicate || pins(report.Manifest, expense) || report.WithheldCount != 1 {
+		t.Fatalf("a duplicate is withheld: %#v %s", finding, EncodeManifest(report.Manifest))
+	}
+}
+
 func TestTheManifestReaderRefusesWhatItWouldNotWrite(t *testing.T) {
 	entry := `{"kind": "pack", "id": "expense", "version": "1.0.0", "digest": "` + digestOf(packA) + `", "firstTag": "v1"}`
 	if _, err := ReadManifest([]byte(`{"manifestVersion": "1", "documents": [` + entry + `]}`)); err != nil {
