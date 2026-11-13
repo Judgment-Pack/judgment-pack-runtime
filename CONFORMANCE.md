@@ -49,19 +49,20 @@ jpack experimental evaluate-corpus --spec-version 0.2.0-draft --format json
 ```
 
 The claim applies to **conforming Core-class inputs reaching this runtime's one shared evaluator**
-for that contract through the eleven surfaces that reach it — `experimental evaluate`,
+for that contract through the twelve surfaces that reach it — `experimental evaluate`,
 `experimental evaluate-corpus`,
-`packs test`, `experimental graph evaluate`, `experimental graph test`, `experimental compare`, the
-in-process Go API `sdk.Pack.Evaluate`, and the
+`packs test`, `experimental graph evaluate`, `experimental graph test`, `experimental compare`,
+`experimental revalidate`, the in-process Go API `sdk.Pack.Evaluate`, and the
 `experimental_evaluate`, `experimental_test_packs`, `experimental_test_cases` and `experimental_test_graphs` MCP tools — and
 **not to draft-RFC prototype
 inputs**, which this class does
-not define at all and which the last exclusion below states. One evaluator sits behind all eleven, so a
+not define at all and which the last exclusion below states. One evaluator sits behind all twelve, so a
 surface selects what reaches it rather than carrying a claim of its own: the project and graph
 surfaces choose which packs and inputs reach the evaluator, and the dispositions they report as
 evaluated — a row's actual disposition, a node's, a composite's echoed headline, either side of a
 comparison — are that evaluator's; a row's expected disposition is the project's own authored expectation, which no
-evaluator produced. Inputs covered by this claim declare `specVersion` `0.2.0-draft`. The runtime also
+evaluator produced, and a revalidation's baseline is what the runtime that took it gave, which may be another
+version of this runtime; only the results that revalidation compares it with are this evaluator's. Inputs covered by this claim declare `specVersion` `0.2.0-draft`. The runtime also
 implements an explicitly selected Core `0.3.0` contract; implementation support
 and the version scope of this claim are separate facts. The `experimental` namespace
 names the **stability** of that surface — it may change or be removed without a compatibility promise —
@@ -77,7 +78,7 @@ The two evaluator-using advisory surfaces outside that version claim are
 finite-domain analyzer, which admits and evaluates only Core `0.3.0` base packs and
 Core `0.5.0` base packs, the latter as their evaluation form (Core §8.5), the root the
 evaluator's own admission makes. They therefore accept no input under the `0.2.0-draft` claim above and are separate
-from its eleven-surface enumeration. They run the real evaluator for optional
+from its twelve-surface enumeration. They run the real evaluator for optional
 Draft RFC 0027 authoring advice; they are not static-only comparability checks.
 Their reports do not change the recorded claim or extend its version scope.
 

@@ -4,6 +4,23 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Revalidate a project's matrix results before moving a Runtime pin** (#403, ADR-0091;
+  EXPERIMENTAL). `jpack experimental revalidate --write FILE` runs every declared pack that has a
+  matrix, each on its own and by the code `packs test` runs, and writes a baseline
+  (`baselineVersion` `"1"`): per pack its `packId`, `packVersion`, the `specVersion` it selected
+  and the `sha256:` digests of the exact pack and matrix bytes, and per row its status and actual
+  disposition, error class and phase, and handoff target. `--baseline FILE`, under another runtime
+  version, runs the same matrices and compares by pack id and row id: a row is the same exactly
+  when the RFC 8785 canonical form of `{id, status, disposition, errorClass, errorPhase,
+  handoffTarget}` is the same bytes. Each difference is a finding, and the command exits 0 with
+  none and 1 with any. `--baseline` also reads a `packs test --format json` report, which v0.45.0
+  already writes, comparing its rows and reporting its bytes as not recorded; reports taken one
+  pack at a time with `--id` may be given together. A baseline is a closed input, refused whole
+  before any row runs. The procedure, exit codes and a CI recipe are in
+  `docs/revalidating-a-runtime-pin.md`, and the README points there. The command runs the
+  evaluator, so CONFORMANCE.md now enumerates twelve surfaces; its claim is unchanged, and a
+  baseline is what the runtime that took it gave. No record is written, and no existing output
+  changes.
 - **Pack-design analysis reads a Core `0.5.0` pack as its evaluation form** (#401, ADR-0089;
   EXPERIMENTAL). `jpack experimental analyze-pack` and `experimental_analyze_pack` analyse a
   base-profile `0.5.0` pack as Core §8.5's evaluation form, the one root evaluation reads: a

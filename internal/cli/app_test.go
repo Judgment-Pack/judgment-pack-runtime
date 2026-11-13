@@ -85,6 +85,10 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// experimental compare evaluates under two packs and says where the
 		// claim is stated; its --structural option adds packs diff's comparison.
 		{args: []string{"experimental", "compare", "--help"}, mustReference: true},
+		// experimental revalidate (ADR-0091) runs the project's matrices and
+		// compares their results with a baseline, so it says where the claim
+		// is stated.
+		{args: []string{"experimental", "revalidate", "--help"}, mustReference: true},
 		// The graph surface (ADR-0015). The group and its evaluate verb speak
 		// about the evaluator, so they say where the claim is stated; the other
 		// verbs evaluate nothing and are inventoried for the phrase scans.
@@ -627,6 +631,7 @@ func TestEveryClaimSurfaceIsReferenceOnly(t *testing.T) {
 	for _, required := range []string{
 		"cli packs --help",
 		"cli experimental analyze-pack --help",
+		"cli experimental revalidate --help",
 		"mcp tools/list experimental_analyze_pack",
 		"cli packs list --help",
 		"cli experimental graph list --help",
