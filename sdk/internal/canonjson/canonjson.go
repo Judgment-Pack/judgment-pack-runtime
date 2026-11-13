@@ -14,12 +14,12 @@
 package canonjson
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
-	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -134,7 +134,26 @@ func writeCanonicalString(builder *strings.Builder, value string) error {
 
 // CompareUTF16 orders two member names by their UTF-16 code units, as RFC
 // 8785 orders them; that is not the UTF-8 byte order for a name holding a
-// code point outside the Basic Multilingual Plane.
+// code point outside the Basic Multilingual Plane. It decodes as []rune does,
+// an invalid byte as U+FFFD, and allocates nothing.
 func CompareUTF16(left, right string) int {
-	return slices.Compare(utf16.Encode([]rune(left)), utf16.Encode([]rune(right)))
+	for left != "" && right != "" {
+		l, lsize := utf8.DecodeRuneInString(left)
+		r, rsize := utf8.DecodeRuneInString(right)
+		if l != r {
+			return cmp.Compare(unitOrder(l), unitOrder(r))
+		}
+		left, right = left[lsize:], right[rsize:]
+	}
+	return cmp.Compare(len(left), len(right))
+}
+
+// unitOrder keys a code point by where its first UTF-16 unit sorts: a
+// supplementary code point leads with a surrogate, above U+D7FF and below
+// U+E000, so U+E000 to U+FFFF are moved above every supplementary one.
+func unitOrder(c rune) rune {
+	if c >= 0xE000 && c <= 0xFFFF {
+		return c + 0x200000
+	}
+	return c
 }

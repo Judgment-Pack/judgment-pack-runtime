@@ -67,11 +67,12 @@ func Check(command string, data, pack []byte, engine *validation.Engine) (Report
 		return r, code
 	}
 	r.ValidationScope = "version-" + strconv.Itoa(r.DialectVersion) + "-document-and-declared-pack-inventory"
-	return checkDeclaredInventory(r, document, pack, engine)
+	return checkDeclaredInventory(r, document, pack, engine, readableVersions())
 }
 
-// Both document readers reach the same pack validation and bounded inventory walk.
-func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engine *validation.Engine) (Report, int) {
+// Both document readers reach the same pack validation and bounded inventory
+// walk; each names the Core versions it reads.
+func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engine *validation.Engine, readable []string) (Report, int) {
 	code := result.ExitSuccess
 	checked, failure := engine.Validate(pack, validation.Options{})
 	r.PackValidation = &checked
@@ -85,8 +86,8 @@ func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engi
 		}
 		return refused(r, "JPS-DIALECT-PACK-INVALID", "", "Pack validation did not pass; no mapping coverage was checked.", code)
 	}
-	if result.HasCore050Rules(checked.SpecVersion) {
-		return refused(r, result.SurfaceSpecVersionUnsupportedCode, "/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The dialect check", checked.SpecVersion, readableVersions()), result.ExitUnsupported)
+	if !slices.Contains(readable, checked.SpecVersion) {
+		return refused(r, result.SurfaceSpecVersionUnsupportedCode, "/specVersion", result.SurfaceSpecVersionUnsupportedMessage("The dialect check", checked.SpecVersion, readable), result.ExitUnsupported)
 	}
 	inventory, err := project.InspectDocument(pack)
 	if err != nil {
@@ -259,8 +260,21 @@ func checkDeclaredInventory(r Report, document *documentCheck, pack []byte, engi
 	return r, result.ExitSuccess
 }
 
-// readableVersions lists the Core versions the dialect check reads: every
-// version pack validation admits but Core 0.5.0, which it refuses.
+// readableVersions lists, by name, the Core versions the dialect check reads.
+// A version pack validation comes to admit later is refused here until it is
+// read against the inventory walk and named in this list (ADR-0082). Core
+// 0.5.0 is read: its annotations hold only strings, so they add no pointer,
+// and a fact condition naming a value set keeps its op and path.
 func readableVersions() []string {
-	return slices.DeleteFunc(artifacts.SupportedVersions(), result.HasCore050Rules)
+	return []string{artifacts.DraftVersion, artifacts.EvaluatorDraftVersion, artifacts.CoreVersion, artifacts.Core050Version}
+}
+
+// readsVersion reports whether the dialect check reads a pack declaring version.
+func readsVersion(version string) bool { return slices.Contains(readableVersions(), version) }
+
+// retainedDraftReadableVersions lists the Core versions the retained-column
+// draft check reads. Its leaf bundles Core 0.3.0 text, so it does not read
+// 0.5.0 and refuses such a pack as before ADR-0082.
+func retainedDraftReadableVersions() []string {
+	return []string{artifacts.DraftVersion, artifacts.EvaluatorDraftVersion, artifacts.CoreVersion}
 }

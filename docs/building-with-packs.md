@@ -289,8 +289,10 @@ What it does not catch: a threshold written at the wrong
 *number*, or a comparison reading the wrong pointer — both are questions about what the policy says,
 not about which input distinguishes two encodings.
 
-Coverage informs and never gates: a missing probe is a fact about what your rows state, not a failed
-row. A covered matrix is one that probes every derivable behavior; whether the rows are *right* is
+By default coverage informs and never gates: a missing probe is a fact about what your rows state,
+not a failed row. A gate that wants more asks for it on `packs test`: `--min-coverage N` fails a pack
+whose rows witness fewer than N percent of its derived probes, and `--require-boundaries` fails one
+with a boundary no row witnesses (ADR-0080). A covered matrix is one that probes every derivable behavior; whether the rows are *right* is
 still yours to judge against the policy text (ADR-0014, ADR-0023).
 
 ### Let the pack suggest the inputs
@@ -692,7 +694,15 @@ jpack packs validate && jpack packs lint && jpack packs test && jpack packs veri
 resolves inside the configuration's directory; the document validates through the semantic layer;
 an `expectedVersion` pin equals the document's `version`; the filename, when it follows the
 convention, agrees with both; every hint key names something the document has; and a declared matrix
-loads as rows. `packs test` then runs every row. Both exit `1` on any failure. Every check is
+loads as rows. Beside a pack whose document validates, `packs validate` also carries, as the entry's
+`advisories`, the advice `spec validate` reports for the same bytes — the non-normative
+`JPS-RULES-OVERLAP` warnings for two rules that can both match with different outcomes, under Core
+`0.3.0` and `0.5.0` — and prints each as an `advice:` line; advice is not a check and moves no exit
+code (ADR-0081). A gate that wants advice to fail the run adds `--fail-on-advisory`: each pack's
+checks then end with an `advisories` check, failed for a pack that draws any advice, a
+`not-excluded` advisory included (unlike `spec test-conformance --strict`, which fails only an exact
+overlap). For rules meant to be disjoint, rewrite the conditions so the exclusion is exact, or gate
+that pack in a separate `--id` run without the option. `packs test` then runs every row. Both exit `1` on any failure. Every check is
 reported with its status — `passed`, `failed`, or `skipped` — so you can tell a check that passed
 from one the configuration never asked for.
 
@@ -701,8 +711,15 @@ row ran at all is reported `skipped` and exits `1` unless a mismatch was found, 
 matrices anywhere cannot get a green gate for a suite that tested nothing. A run where other packs' rows passed still exits `0` beside a
 pack with no matrix. To make the gate fail on such a pack, run `packs test --require-matrix`
 (`require_matrix: true` over MCP): the pack is then reported `mismatch` and the run exits `1`
-(ADR-0042). The coverage report never moves the exit code: a green gate
+(ADR-0042). By default the coverage report never moves the exit code: a green gate
 with missing probes is a passing suite that has not probed everything, and the report says which.
+`packs test --min-coverage N` makes a pack whose rows witness fewer than N percent of its derived
+probes fail the run, and `--require-boundaries` one with a derived boundary probe no row witnesses;
+a pack for which no coverage was derived meets neither. The failing entry is `mismatch`, names the
+requirement in `unmetRequirements` and says why in its `detail`, and the payload carries
+`minCoverage` and `requireBoundaries` as asked. Neither option touches a pack with no matrix
+(ADR-0080). A level near 100 can ask for a row no facts can produce — two rules that exclude each
+other on purpose still derive a `conflict` probe — so choose it against the pack, not as a default.
 
 `packs verify` is there so a pull request that changes a pack and forgets `packs lock` fails the
 gate rather than merging an undeclared amendment. Drop it from the line if the project keeps no
