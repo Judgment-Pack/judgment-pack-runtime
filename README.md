@@ -48,9 +48,10 @@ Pack-aware operations select the evaluator contract from the exact pack's
 `specVersion`: `0.2.0-draft`, `0.3.0` or `0.5.0`, whose packs are evaluated as their evaluation
 form (Core §8.5: annotations removed, value-set references expanded). Every graph command that
 reads node packs (`experimental graph validate`, `explain`, `test` and `evaluate`, and the MCP
-`experimental_test_graphs` tool), the dialect check and the policy check refuse a `0.5.0` pack with
+`experimental_test_graphs` tool) and the policy check refuse a `0.5.0` pack with
 `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, a graph whole; pack-design analysis refuses one with
-`pack-unsupported`, because their companions are written against `0.3.0`.
+`pack-unsupported`, because their companions are written against `0.3.0`. The dialect check reads a
+`0.5.0` pack's fact and evidence inventory, value sets included ([ADR-0082](docs/adr/0082-let-the-dialect-check-read-core-0-5-0-packs.md)).
 Internal legacy entry points and standalone authoring tools retain their `0.2.0-draft` default;
 standalone tools accept explicit `spec_version: "0.3.0"` or `"0.5.0"`. Selection never infers a version from a `routes` member.
 See [ADR-0063](docs/adr/0063-explicit-core-030-contracts.md) for the compatibility decisions.

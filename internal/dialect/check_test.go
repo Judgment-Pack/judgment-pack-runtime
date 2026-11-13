@@ -237,11 +237,41 @@ func TestCoverageOutputLimitStopsRepeatedAncestorOmissions(t *testing.T) {
 	}
 }
 
-// The dialect check does not read Core 0.5.0: the dialect companion is pinned
-// to Core 0.3.0, so a pack declaring 0.5.0 is refused explicitly once it
-// validates, and no mapping coverage is reported for it.
-func TestCore050PackIsRefused(t *testing.T) {
-	pack, err := os.ReadFile("../artifacts/jps/0.5.0/cases/valid/minimal-literal.json")
+// The dialect check reads a Core 0.5.0 pack's inventory (ADR-0082). The
+// bundled pack reads one fact through a declared value set and carries
+// annotations on an outcome and on value-set entries: the one fact pointer is
+// the whole inventory, so neither the value set's entries nor any annotation
+// is reported as a pointer, and the mapping decides the coverage as it does
+// for 0.3.0.
+func TestCore050PackIsChecked(t *testing.T) {
+	pack, err := os.ReadFile("../artifacts/jps/0.5.0/cases/valid/annotations-value-set-entry.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(pack), `"valueSet": "priority-tiers"`) || !strings.Contains(string(pack), `"org.judgmentpack.annotations"`) {
+		t.Fatal("the fixture no longer uses a value set and an annotation")
+	}
+	engine, err := validation.NewEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, code := Check("test", mapping([]string{"/request/tier"}, nil, nil, nil), pack, engine)
+	if code != result.ExitSuccess || len(r.Diagnostics) != 0 || r.Compatibility == nil || r.Compatibility.Status != "complete" ||
+		r.Compatibility.Pack.SpecVersion != "0.5.0" || len(r.Compatibility.Facts) != 1 ||
+		r.Compatibility.Facts[0].Target != "/request/tier" || r.Compatibility.Facts[0].Status != "mapped" {
+		t.Fatalf("0.5.0 pack, mapped: code %d %+v %+v", code, r, r.Compatibility)
+	}
+	r, code = Check("test", mapping([]string{"/request/other"}, nil, nil, nil), pack, engine)
+	if code != result.ExitInvalid || r.Compatibility == nil || r.Compatibility.Status != "incomplete" ||
+		len(r.Compatibility.Facts) != 1 || r.Compatibility.Facts[0].Target != "/request/tier" || r.Compatibility.Facts[0].Status != "missing" {
+		t.Fatalf("0.5.0 pack, unmapped: code %d %+v", code, r.Compatibility)
+	}
+}
+
+// A pack declaring a version pack validation does not admit is still refused
+// before any coverage is reported: 0.6.0 is unsupported, exit 2.
+func TestUnknownSpecVersionPackIsStillRefused(t *testing.T) {
+	raw, err := os.ReadFile("../artifacts/jps/0.5.0/cases/valid/annotations-value-set-entry.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,10 +279,27 @@ func TestCore050PackIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := draftDocument("text")
-	d["case"].(map[string]any)["evidence"] = []any{}
-	r, code := CheckRetainedColumnDraft("test", draftJSON(t, d), pack, engine, RetainedColumnDraftBase())
-	if code != result.ExitUnsupported || len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != "JPS-SURFACE-SPEC-VERSION-UNSUPPORTED" || r.Diagnostics[0].Message != `The dialect check does not read packs declaring specVersion "0.5.0"; it reads Core 0.1.0-draft, 0.2.0-draft and 0.3.0 packs.` || r.Compatibility != nil || r.PackValidation == nil || r.PackValidation.Status != "valid" {
-		t.Fatalf("0.5.0 pack: code %d %+v", code, r)
+	pack := []byte(strings.Replace(string(raw), `"specVersion": "0.5.0"`, `"specVersion": "0.6.0"`, 1))
+	r, code := Check("test", mapping([]string{"/request/tier"}, nil, nil, nil), pack, engine)
+	if code != result.ExitUnsupported || len(r.Diagnostics) != 1 || r.Diagnostics[0].Code != "JPS-DIALECT-PACK-INVALID" || r.Compatibility != nil {
+		t.Fatalf("0.6.0 pack: code %d %+v", code, r)
+	}
+}
+
+// The check reads the Core versions it names and no other: a version
+// validation came to admit later is refused until the list names it.
+func TestDialectCheckReadsNamedVersionsOnly(t *testing.T) {
+	for _, version := range []string{"0.1.0-draft", "0.2.0-draft", "0.3.0", "0.5.0"} {
+		if !readsVersion(version) {
+			t.Fatalf("%s is read", version)
+		}
+	}
+	for _, version := range []string{"0.6.0", "0.4.0", "0.4.0-draft", "", "0.5"} {
+		if readsVersion(version) {
+			t.Fatalf("%q is not read", version)
+		}
+	}
+	if got := result.SurfaceSpecVersionUnsupportedMessage("The dialect check", "0.6.0", readableVersions()); got != `The dialect check does not read packs declaring specVersion "0.6.0"; it reads Core 0.1.0-draft, 0.2.0-draft, 0.3.0 and 0.5.0 packs.` {
+		t.Fatal(got)
 	}
 }

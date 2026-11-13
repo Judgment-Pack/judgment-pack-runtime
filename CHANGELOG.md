@@ -51,6 +51,13 @@ All notable changes to tagged releases are documented here.
   entry is `invalid` and the run exits 1; `passed` for one that draws none; `skipped` when the
   document check did not pass. The payload then carries `failOnAdvisory: true`. Without the option
   the output and the exit code are unchanged.
+- **`dialect check` reads Core `0.5.0` packs** (#390, ADR-0082). The CLI command and the MCP
+  `dialect_check` tool now report coverage for a valid pack declaring `specVersion` `0.5.0`, where
+  they refused it with `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`. A fact condition that names a value
+  set is read like any other; annotations add no pointer. The check still names the Core versions
+  it reads, so a version validation admits later stays refused until it is added, and a pack
+  declaring an unknown version is refused by validation as before (`JPS-DIALECT-PACK-INVALID`,
+  exit 2). The policy check, the graph commands and pack-design analysis still refuse `0.5.0`.
 - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.44.0 - 2026-11-12
