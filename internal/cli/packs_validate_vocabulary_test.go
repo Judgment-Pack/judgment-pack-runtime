@@ -217,6 +217,23 @@ func TestPacksValidateCarriesTheIdentifierAdvisory(t *testing.T) {
 	if agrees := byID["identifier-agrees"]; agrees.Status != "valid" || agrees.Checks[len(agrees.Checks)-1].Status != result.PackCheckPassed {
 		t.Fatalf("a pack with no advice passes the option: %+v", agrees)
 	}
+
+	// A pack whose only Core finding is a required extension this runtime
+	// does not support fails its document check, yet the vocabulary is
+	// applied to it (§6.2 step 4) and its advice is computed: under the
+	// option the advisories check fails on that advice, and is not skipped
+	// as for a pack whose advice was never computed.
+	unsupported := strings.ReplaceAll(strings.Replace(vocabularyPack(t, "unsupported-extension"), `"hihg"`, `"low"`, 1), `"refer"`, `"refer-high"`)
+	config = writeProjectFixture(t, `{"configVersion":"1","packs":{"unsupported-extension":{"path":"packs/unsupported.json"}}}`,
+		map[string]string{"packs/unsupported.json": withoutRule(t, unsupported, "no-receipt")})
+	code, _, byID, stdout = validateVocabulary(t, config, "--fail-on-advisory")
+	entry := byID["unsupported-extension"]
+	last = entry.Checks[len(entry.Checks)-1]
+	if code != result.ExitInvalid || entry.Vocabulary.Result != "pass" || len(entry.Vocabulary.Advisories) != 1 ||
+		entry.Vocabulary.Advisories[0].InstancePath != "/outcomes/2/id" ||
+		last.Name != "advisories" || last.Status != result.PackCheckFailed || last.Detail != "The pack draws 1 advisory, and this run fails on any." {
+		t.Fatalf("the advice on a pack with an unsupported required extension: exit=%d %s", code, stdout)
+	}
 }
 
 // withoutRule is a pack with one rule removed.
