@@ -5,7 +5,9 @@
 // View returned. For a pack under Core 0.5.0, the view carries its value sets
 // and annotations, and FilteredView, which only sdk.Pack.FilteredView builds,
 // is its outcomes and rules filtered by annotation (ADR-0075, ADR-0077).
-// Everything in this package is experimental.
+// Diff and ThreeWayDiff, which only sdk.Diff and sdk.ThreeWayDiff build, are
+// the structural comparison of two packs of one specVersion, or of two with
+// their common base (ADR-0086). Everything in this package is experimental.
 package view
 
 import (

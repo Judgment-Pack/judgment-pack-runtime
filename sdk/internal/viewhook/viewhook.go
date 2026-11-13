@@ -16,3 +16,10 @@ var Build func(root map[string]any, digest string) (view any, fault string)
 // view.FilteredView as any, or the error that refuses the criteria or the
 // pack.
 var Filter func(view any, criteria any) (filtered any, err error)
+
+// Diff is set by package view when it is initialised and called by sdk.Diff
+// and sdk.ThreeWayDiff. It compares two view.PackView values Build returned,
+// older then newer, as a view.Diff, or three, base then first then second,
+// as a view.ThreeWayDiff, each returned as any; or it returns the error that
+// refuses the packs or reports a fault.
+var Diff func(views []any) (diff any, err error)

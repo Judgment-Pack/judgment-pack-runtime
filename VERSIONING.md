@@ -160,6 +160,15 @@ rule `viewVersion` moves by. Its bytes ride in the `packs describe --filter` JSO
 `filteredView` member as a string. It is EXPERIMENTAL, and exists only for Core `0.5.0`, the one
 version that defines annotations.
 
+The structural comparison (`sdk.Diff`, `view.Diff`, and `jpack packs diff`, ADR-0086) carries its
+own `diffVersion`, `"1"`, in its JSON and in its text, and the three-way form (`sdk.ThreeWayDiff`,
+`view.ThreeWayDiff`, and `jpack packs diff --base`) carries `threeWayDiffVersion`, `"1"`, in their
+place. Each moves by the rule `viewVersion` moves by: when the bytes it gives for packs an earlier
+version could compare would change, and not when it learns to compare packs of a newly admitted
+specification version. Their bytes ride in the `packs diff` JSON envelope's `diff` or
+`threeWayDiff` member, and in the `experimental compare --structural` payload's `structural`
+member, as a string. Both are EXPERIMENTAL.
+
 The decision record (`sdk.Pack.EvaluateWithRecord` and package `sdk/record`, ADR-0079) carries its
 own `recordVersion`, `"1.0.0"`, in its JSON. It is not the audit trail record's `recordVersion`,
 `"1"`, and the two move independently. Its major part moves when a member is removed or renamed,

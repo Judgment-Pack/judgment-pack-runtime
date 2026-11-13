@@ -181,3 +181,4 @@ authority, and following it confers no conformance status on anything.
 | [0083](0083-sign-a-pack-file-and-check-the-signature-before-use.md) | Sign a pack file's bytes, and check the signature against an expected key before the pack is used | accepted |
 | [0084](0084-measure-test-strength-with-pack-variants.md) | Measure a matrix's test strength with variants of its pack | accepted |
 | [0085](0085-evaluate-a-batch-of-fact-documents-in-one-run.md) | Evaluate a batch of fact documents in one run | accepted |
+| [0086](0086-compare-two-pack-documents-member-by-member.md) | Compare two pack documents member by member, annotations included, and three-way | accepted |
