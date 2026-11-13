@@ -49,8 +49,9 @@ Pack-aware operations select the evaluator contract from the exact pack's
 form (Core §8.5: annotations removed, value-set references expanded). Every graph command that
 reads node packs (`experimental graph validate`, `explain`, `test` and `evaluate`, and the MCP
 `experimental_test_graphs` tool) and the policy check refuse a `0.5.0` pack with
-`JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, a graph whole; pack-design analysis refuses one with
-`pack-unsupported`, because their companions are written against `0.3.0`. The dialect check reads a
+`JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, a graph whole, because their companions are written
+against `0.3.0`. Pack-design analysis reads a `0.5.0` pack as its evaluation form, as evaluation
+does ([ADR-0089](docs/adr/0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md)). The dialect check reads a
 `0.5.0` pack's fact and evidence inventory, value sets included ([ADR-0082](docs/adr/0082-let-the-dialect-check-read-core-0-5-0-packs.md)).
 Internal legacy entry points and standalone authoring tools retain their `0.2.0-draft` default;
 standalone tools accept explicit `spec_version: "0.3.0"` or `"0.5.0"`. Selection never infers a version from a `routes` member.
@@ -1517,13 +1518,22 @@ convention and adds no Core conformance claim.
 
 The two evaluator-using advisory surfaces outside that version claim are
 `jpack experimental analyze-pack` and `experimental_analyze_pack`. They evaluate
-only Core `0.3.0` base inputs for optional authoring advice. Their inventory is
+only Core `0.3.0` base inputs, and Core `0.5.0` base inputs as their evaluation form, for
+optional authoring advice. Their inventory is
 guarded separately from the eleven surfaces serving inputs under the recorded claim
 and from static fact advice, which does not evaluate conditions.
 
 `jpack experimental analyze-pack pack.json --domain domain.json` returns optional
-Draft RFC 0027 advice for actual Core `0.3.0` base packs. The domain is supplied
-explicitly, for example:
+Draft RFC 0027 advice for actual Core `0.3.0` base packs, and for Core `0.5.0` base packs
+read as their evaluation form (Core §8.5), the one root evaluation reads: each value-set reference
+is analysed as its inline array, and annotations and set descriptions, which are inert, take no
+part. The report's `targetSpecVersion` is the pack's own `specVersion` and `packDigest` binds its
+exact bytes, so two packs that differ only in annotations get reports that differ only in that
+digest. Source pointers name rules, exceptions and the other entities, which sit at the same place
+in both forms. A `0.5.0` pack that evaluation refuses is refused with `pack-unsupported`, and the
+message names the Core class, evaluation's code and Core's first diagnostic code; `spec validate`
+reports the rest ([ADR-0089](docs/adr/0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md)).
+The domain is supplied explicitly, for example:
 
 ```json
 {"kind":"finite-cases","inputs":[{"facts":{"score":"70"},"evidence":{}}]}

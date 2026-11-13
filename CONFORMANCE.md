@@ -74,15 +74,16 @@ implementation's limit is outside the portable claim in the first place.
 
 The two evaluator-using advisory surfaces outside that version claim are
 `experimental analyze-pack` and `experimental_analyze_pack`. Both call the shared
-finite-domain analyzer, which admits and evaluates only Core `0.3.0` base packs.
-They therefore accept no input under the `0.2.0-draft` claim above and are separate
+finite-domain analyzer, which admits and evaluates only Core `0.3.0` base packs and
+Core `0.5.0` base packs, the latter as their evaluation form (Core §8.5), the root the
+evaluator's own admission makes. They therefore accept no input under the `0.2.0-draft` claim above and are separate
 from its eleven-surface enumeration. They run the real evaluator for optional
 Draft RFC 0027 authoring advice; they are not static-only comparability checks.
 Their reports do not change the recorded claim or extend its version scope.
 
 `internal/cli/conformance_enumeration_test.go` inventories these two constructor
-sites separately, holds their direct analyzer wiring and explicit Core `0.3.0`
-selection, and continues to reject unaccounted evaluator constructors. Static
+sites separately, holds their direct analyzer wiring, explicit Core `0.3.0` and `0.5.0`
+selection and the analyzer's single read of the admission's evaluation form, and continues to reject unaccounted evaluator constructors. Static
 fact-advice constructor sites retain their independent admission/comparability
 only guard. Moving or adding a surface, rewiring advice to another evaluation
 path, or widening the analyzer's supported contract requires reviewing both this
@@ -245,8 +246,9 @@ The separately named evaluation corpus contains 103 rows, whose manifest states 
 and seed; all 103 match under the explicit Core `0.5.0` contract, including the row for the
 supported extension set. The corpus runner does not check the manifest's `pairs` and
 `ownEvaluationForm` statements; each row is run on its own. Every graph command that reads node
-packs, the policy check, the dialect check's retained-column draft contract and pack-design analysis refuse a `0.5.0`
-pack, because the documents they implement are written against Core `0.3.0`; the dialect check itself reads one. These results are implementation evidence, not an exhaustive
+packs, the policy check and the dialect check's retained-column draft contract refuse a `0.5.0`
+pack, because the documents they implement are written against Core `0.3.0`; the dialect check itself reads one,
+and pack-design analysis reads one as its evaluation form. These results are implementation evidence, not an exhaustive
 check of the version's requirements.
 
 This section makes no partial or qualified conformance claim. The recorded `0.2.0-draft` claim

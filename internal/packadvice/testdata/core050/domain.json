@@ -1,0 +1,7 @@
+{"kind": "finite-cases", "inputs": [
+  {"facts": {"kind": "intake", "tier": "gold", "region": "eu"}, "evidence": {}},
+  {"facts": {"kind": "renewal", "tier": "silver", "region": "eu"}, "evidence": {}},
+  {"facts": {"kind": "intake", "tier": "bronze", "region": "eu"}, "evidence": {}},
+  {"facts": {"kind": "intake", "tier": "gold", "region": "us"}, "evidence": {}},
+  {"facts": {"kind": "other", "tier": "gold", "region": "eu"}, "evidence": {}}
+]}

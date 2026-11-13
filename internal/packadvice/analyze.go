@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/evaluation"
@@ -37,6 +38,49 @@ type Refusal struct {
 
 func Refuse(code string) *Refusal {
 	return &Refusal{Status: "unavailable", Code: code, Message: "Pack design analysis is unavailable (" + code + "); no report was produced."}
+}
+
+// refusePack refuses a pack the evaluator's admission refuses, with the code
+// Draft RFC 0027 gives an inadmissible pack. A Core 0.5.0 pack's refusal also
+// names the Core §8.4 class, the code evaluation reports for it and, for a
+// pack that is not conformant, the code of Core's first diagnostic -- for a
+// fault in an annotation, a value set or a reference as for any other (§8.5)
+// -- so a pack moved to 0.5.0 is not left with a bare refusal. All three are
+// this runtime's fixed identifiers, never pack text: the diagnostic code is
+// kept only when it is one. A Core 0.3.0 pack's refusal is the message it
+// always had.
+func refusePack(version string, failure *evaluation.Failure) *Refusal {
+	refusal := Refuse("pack-unsupported")
+	if !result.HasCore050Rules(version) || failure.Class == "" {
+		return refusal
+	}
+	refusal.Message += " Evaluation refuses this Core 0.5.0 pack: " + failure.Class + " (" + failure.Code + ")"
+	if code := firstDiagnosticCode(failure.Message); code != "" {
+		refusal.Message += ", first diagnostic " + code
+	}
+	refusal.Message += "; spec validate reports why."
+	return refusal
+}
+
+// firstDiagnosticCode is the diagnostic code the evaluator's pack-not-conformant
+// message names after its "First diagnostic: " marker, or "" when there is none
+// or the token is not shaped like a diagnostic code.
+func firstDiagnosticCode(message string) string {
+	const marker = "First diagnostic: "
+	at := strings.Index(message, marker)
+	if at < 0 {
+		return ""
+	}
+	code, _, _ := strings.Cut(message[at+len(marker):], " ")
+	if len(code) == 0 || len(code) > 64 || !strings.HasPrefix(code, "JPS-") {
+		return ""
+	}
+	for _, c := range code {
+		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' {
+			return ""
+		}
+	}
+	return code
 }
 
 type entity struct {
@@ -301,20 +345,26 @@ func Analyze(engine *evaluation.Engine, packBytes, domainBytes []byte, options O
 	if refusal != nil {
 		return nil, refusal
 	}
+	// Core 0.3.0 and Core 0.5.0, base profile only. A 0.5.0 pack is analysed as
+	// its evaluation form EF(P) (Core §8.5), which holds only Core 0.3.0
+	// constructs: the sets are gone, each reference is its inline array and the
+	// annotations are removed (§11, "Migrating down"). Every entity read below and
+	// every evaluation reads the one form the admission made; there is no second
+	// reading of the pack's bytes. Identity stays P's: packDigest is over the
+	// exact bytes, and targetSpecVersion is the pack's own selector, as Draft RFC
+	// 0027 requires. A later Core version is refused until it is read against
+	// this analyzer (ADR-0089).
 	contract, failure := evaluation.SelectContract(packBytes)
-	if failure != nil || contract.Version() != "0.3.0" {
+	if failure != nil || contract.Version() != "0.3.0" && contract.Version() != "0.5.0" {
 		return nil, Refuse("pack-unsupported")
 	}
+	version := contract.Version()
 	admitted := engine.AdmitPack(packBytes)
-	evalOptions := evaluation.Options{SpecVersion: "0.3.0", Command: "pack-design-analysis", EvidenceSupplied: true}
-	if !admitted.AdmitsWith(evalOptions) {
-		return nil, Refuse("pack-unsupported")
+	evalOptions := evaluation.Options{SpecVersion: version, Command: "pack-design-analysis", EvidenceSupplied: true}
+	root, refused := admitted.EvaluationForm(evalOptions)
+	if refused != nil {
+		return nil, refusePack(version, refused)
 	}
-	parsed, f := carrier.Decode(packBytes, carrier.DefaultLimits())
-	if f != nil {
-		return nil, Refuse("pack-unsupported")
-	}
-	root := parsed.(map[string]any)
 	rules, ok := entities(root, "rules")
 	if !ok {
 		return nil, Refuse("pack-unsupported")
@@ -338,7 +388,7 @@ func Analyze(engine *evaluation.Engine, packBytes, domainBytes []byte, options O
 			}
 		}
 	}
-	a := &analysis{options: options, seen: map[string]bool{}, report: map[string]any{"formatVersion": 1, "targetSpecVersion": "0.3.0", "packDigest": digest(packBytes), "domainDigest": digest(domainBytes), "domain": rootDomain, "fragment": "finite-enumeration", "intentionalFallback": options.IntentionalFallback, "limits": map[string]any{"maxWork": options.MaxWork, "maxFindings": options.MaxFindings}}}
+	a := &analysis{options: options, seen: map[string]bool{}, report: map[string]any{"formatVersion": 1, "targetSpecVersion": version, "packDigest": digest(packBytes), "domainDigest": digest(domainBytes), "domain": rootDomain, "fragment": "finite-enumeration", "intentionalFallback": options.IntentionalFallback, "limits": map[string]any{"maxWork": options.MaxWork, "maxFindings": options.MaxFindings}}}
 	if !reportBounded(a.projection(true)) {
 		return nil, Refuse("analysis-limit")
 	}

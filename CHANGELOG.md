@@ -4,6 +4,16 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **Pack-design analysis reads a Core `0.5.0` pack as its evaluation form** (#401, ADR-0089;
+  EXPERIMENTAL). `jpack experimental analyze-pack` and `experimental_analyze_pack` analyse a
+  base-profile `0.5.0` pack as Core §8.5's evaluation form, the one root evaluation reads: a
+  value-set reference is analysed as its inline array, and annotations and set descriptions take no
+  part. The report keeps Draft RFC 0027 format 1; `targetSpecVersion` is the pack's own
+  `0.5.0`, `packDigest` binds its exact bytes and the findings are those of the pack's inline
+  `0.3.0` twin. A `0.5.0` pack evaluation refuses is still refused with `pack-unsupported`, and
+  the message now names the Core class, evaluation's code and Core's first diagnostic code. A
+  `0.3.0` pack's report and refusals are byte-identical to before. Analysis is outside the version
+  scope that CONFORMANCE.md records, which does not change.
 - **A decision record whose facts and evidence are named by digests the caller keys** (#400,
   ADR-0087; EXPERIMENTAL). `sdk.Pack.EvaluateWithKeyedRecord` takes a `record.KeyedDigests`: the
   label `hmac-sha256`, the one algorithm a record names, a key identifier of 1 to 128 characters
