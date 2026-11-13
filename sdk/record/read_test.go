@@ -340,3 +340,126 @@ func searchForKey(t *testing.T, outputs []string, extra string) {
 		}
 	}
 }
+
+// Read holds the members it does not take from the documents to the shapes
+// this runtime writes, in both forms: the disposition to a JPS Core §8.3
+// disposition of the members, closed vocabularies and presence rules its
+// evaluator contract writes, in canonical form, with no draft value member;
+// the evaluator's specVersion to a contract this reader knows; and the
+// pack's id, version and specVersion to their grammars. What this runtime
+// writes is admitted. No error repeats the bytes.
+func TestReadHoldsTheDispositionPackAndEvaluatorToTheirShapes(t *testing.T) {
+	const disposition = `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"review","reasons":[]}`
+	const id = `"id":"https://example.invalid/judgment-packs/sdk-record"`
+	const version = `"version":"1.0.0"}`
+	for _, form := range []struct{ name, file, spec, after string }{
+		{"plain", "record-1.0.0-plain.json", "0.3.0", "evidenceDigest"},
+		{"keyed", "record-2.0.0-keyed.json", "0.5.0", "keyedDigests"},
+	} {
+		data := golden(t, form.file)
+		evaluator := `"specVersion":"` + form.spec + `"},"` + form.after + `"`
+		evaluatorAs := func(spec string) [2]string {
+			return [2]string{evaluator, `"specVersion":"` + spec + `"},"` + form.after + `"`}
+		}
+		pack := `"specVersion":"` + form.spec + `","version"`
+		packAs := func(spec string) [2]string { return [2]string{pack, `"specVersion":"` + spec + `","version"`} }
+		refused := map[string][2]string{
+			"an empty disposition":                     {disposition, `{}`},
+			"a kind that is a number":                  {disposition, `{"handoff":{"state":"none"},"kind":1,"outcomeId":"review","reasons":[]}`},
+			"a kind outside the vocabulary":            {disposition, `{"handoff":{"state":"none"},"kind":"bogus-kind","outcomeId":"review","reasons":[]}`},
+			"a draft value member":                     {disposition, `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"review","reasons":[],"value":{"amount":"1250"}}`},
+			"a member of no disposition":               {disposition, `{"handoff":{"state":"none"},"kind":"outcome","note":"x","outcomeId":"review","reasons":[]}`},
+			"a member spelled in another case":         {disposition, `{"Kind":"outcome","handoff":{"state":"none"},"outcomeId":"review","reasons":[]}`},
+			"no handoff":                               {disposition, `{"kind":"outcome","outcomeId":"review","reasons":[]}`},
+			"an outcome without its outcomeId":         {disposition, `{"handoff":{"state":"none"},"kind":"outcome","reasons":[]}`},
+			"an empty outcomeId":                       {disposition, `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"","reasons":[]}`},
+			"an outcome with a reason":                 {disposition, `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"review","reasons":["no-match"]}`},
+			"a reason outside the vocabulary":          {disposition, `{"handoff":{"state":"none"},"kind":"unresolved","reasons":["bogus-reason"]}`},
+			"reasons out of order":                     {disposition, `{"handoff":{"state":"none"},"kind":"unresolved","reasons":["unknown","conflict"]}`},
+			"a reason twice":                           {disposition, `{"handoff":{"state":"none"},"kind":"unresolved","reasons":["unknown","unknown"]}`},
+			"a not-applicable result with an outcome":  {disposition, `{"handoff":{"state":"none"},"kind":"not-applicable","outcomeId":"review","reasons":["not-applicable"]}`},
+			"a handoff state outside the vocabulary":   {disposition, `{"handoff":{"state":"bogus-state"},"kind":"outcome","outcomeId":"review","reasons":[]}`},
+			"a requested handoff with no trigger":      {disposition, `{"handoff":{"state":"requested"},"kind":"unresolved","reasons":["unknown"]}`},
+			"an empty triggeredBy":                     {disposition, `{"handoff":{"state":"none","triggeredBy":[]},"kind":"outcome","outcomeId":"review","reasons":[]}`},
+			"a trigger that is not a reason":           {disposition, `{"handoff":{"state":"requested","triggeredBy":["conflict"]},"kind":"unresolved","reasons":["unknown"]}`},
+			"a handoff member of no handoff":           {disposition, `{"handoff":{"state":"none","target":"x"},"kind":"outcome","outcomeId":"review","reasons":[]}`},
+			"a route of a kind outside the vocabulary": {disposition, `{"handoff":{"routes":[{"kind":"bogus-route","name":"desk"}],"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["unknown"]}`},
+			"a route with another member":              {disposition, `{"handoff":{"routes":[{"kind":"queue","name":"desk","note":"x"}],"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["unknown"]}`},
+			"routes that disagree with the state":      {disposition, `{"handoff":{"routes":[],"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["unknown"]}`},
+			"a pack id with a control character":       {id, `"id":"https://example.invalid/\u0001"`},
+			"a pack id that is no absolute URI":        {id, `"id":"sdk-record"`},
+			"a pack id with a space":                   {id, `"id":"https://example.invalid/sdk record"`},
+			"a pack version of two numbers":            {version, `"version":"1.0"}`},
+			"a pack version with a leading zero":       {version, `"version":"01.0.0"}`},
+			"a pack version with a label":              {version, `"version":"1.0.0-draft"}`},
+			"a pack specVersion of no grammar":         packAs("bogus"),
+			"a pack specVersion with an empty label":   packAs("0.3.0-"),
+			"an evaluator specVersion of no grammar":   evaluatorAs("bogus"),
+			"an evaluator contract no reader knows":    evaluatorAs("9.9.9"),
+			"the retired draft selector":               evaluatorAs("0.4.0-draft"),
+		}
+		for row, change := range refused {
+			t.Run(form.name+"/"+row, func(t *testing.T) {
+				edited := edit(t, data, change[0], change[1])
+				read, err := record.Read(edited)
+				if !errors.Is(err, record.ErrRecord) || read.JSON() != nil {
+					t.Fatalf("read %s as %#v, error %v", edited, read, err)
+				}
+				if want := because(row); !strings.Contains(err.Error(), want) {
+					t.Fatalf("error %q does not say %q", err, want)
+				}
+				for _, fragment := range []string{"bogus", "review", "desk", "sdk-record", "1250", "v0.45.0"} {
+					if strings.Contains(err.Error(), fragment) {
+						t.Fatalf("error %q repeats the record", err)
+					}
+				}
+			})
+		}
+		for row, change := range map[string][2]string{
+			"a not-applicable result":              {disposition, `{"handoff":{"state":"none"},"kind":"not-applicable","reasons":["not-applicable"]}`},
+			"a requested handoff":                  {disposition, `{"handoff":{"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["conflict","unknown"]}`},
+			"a routed handoff":                     {disposition, `{"handoff":{"routes":[{"kind":"queue","name":"desk"}],"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["unknown"]}`},
+			"a routed pack that selected no route": {disposition, `{"handoff":{"routes":[],"state":"none"},"kind":"outcome","outcomeId":"review","reasons":[]}`},
+			"a pack id of another scheme":          {id, `"id":"urn:example:sdk-record"`},
+			"a pack specVersion with a label":      packAs("0.2.0-draft"),
+			"the earlier evaluator contract":       evaluatorAs("0.2.0-draft"),
+			"the other later evaluator contract":   evaluatorAs(map[string]string{"0.3.0": "0.5.0", "0.5.0": "0.3.0"}[form.spec]),
+			"an evaluator with no runtime version": {`"evaluator":{"runtimeVersion":"v0.45.0",`, `"evaluator":{`},
+		} {
+			t.Run(form.name+"/admitted/"+row, func(t *testing.T) {
+				edited := edit(t, data, change[0], change[1])
+				if _, err := record.Read(edited); err != nil {
+					t.Fatalf("%s: %v", edited, err)
+				}
+			})
+		}
+		// A routed disposition is refused under the earlier contract, which
+		// writes no routes: the disposition is held to the contract named.
+		routed := edit(t, data, disposition, `{"handoff":{"routes":[{"kind":"queue","name":"desk"}],"state":"requested","triggeredBy":["unknown"]},"kind":"unresolved","reasons":["unknown"]}`)
+		routed = edit(t, routed, evaluatorAs("0.2.0-draft")[0], evaluatorAs("0.2.0-draft")[1])
+		if _, err := record.Read(routed); !errors.Is(err, record.ErrRecord) || !strings.Contains(err.Error(), "its disposition is not") {
+			t.Fatalf("%s: a routed disposition under 0.2.0-draft: %v", form.name, err)
+		}
+		// The draft value member is refused under the earlier contract too,
+		// whose disposition type admits it: package sdk never writes it.
+		valued := edit(t, data, disposition, `{"handoff":{"state":"none"},"kind":"outcome","outcomeId":"review","reasons":[],"value":{"amount":"1250"}}`)
+		valued = edit(t, valued, evaluatorAs("0.2.0-draft")[0], evaluatorAs("0.2.0-draft")[1])
+		if _, err := record.Read(valued); !errors.Is(err, record.ErrRecord) || !strings.Contains(err.Error(), "holds a member this runtime never writes") {
+			t.Fatalf("%s: a value member under 0.2.0-draft: %v", form.name, err)
+		}
+	}
+}
+
+// because is the part of Read's fixed sentence a refused row of
+// TestReadHoldsTheDispositionPackAndEvaluatorToTheirShapes must give.
+func because(row string) string {
+	switch {
+	case row == "a draft value member", row == "a member of no disposition", row == "a member spelled in another case", row == "a handoff member of no handoff":
+		return "its disposition holds a member this runtime never writes"
+	case strings.Contains(row, "evaluator"), row == "the retired draft selector":
+		return "its evaluator is not"
+	case strings.Contains(row, "pack"):
+		return "its pack is not"
+	}
+	return "its disposition is not"
+}

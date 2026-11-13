@@ -10,17 +10,25 @@ All notable changes to tagged releases are documented here.
   from `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_`, `-`, `:` and `/`, and the caller's two 32-byte
   digests, which it computes with its own key; this runtime never receives the key. The record's
   keyed form has `keyedDigests` (`algorithm`, `evidence`, `facts`, `keyId`) and no `factsDigest` or
-  `evidenceDigest`, at `recordVersion` `"2.0.0"`. Malformed keyed digests are refused before
-  anything is evaluated (`record.ErrKeyedDigests`), and a keyed or binding digest that is the plain
-  SHA-256 of either document after it; neither is a `*Refusal`. `EvaluateWithRecord` writes the
-  plain form, `"1.0.0"`, with the bytes it wrote before.
+  `evidenceDigest`, at `recordVersion` `"2.0.0"`, so a reader without the key cannot test candidate
+  documents against the record's document digests; the disposition still says what the pack
+  decided, and anyone holding the pack can test a candidate against it. Malformed keyed digests are
+  refused before anything is evaluated (`record.ErrKeyedDigests`). After it, a keyed or binding
+  digest that is the plain SHA-256 of either document or the digest of the plain record of the same
+  evaluation, and a key identifier that holds one, are refused; none is a `*Refusal`. Those
+  refusals catch one plausible mistake and are not a defence. `EvaluateWithRecord` writes the plain
+  form, `"1.0.0"`, with the bytes it wrote before. The major part of `recordVersion` names the form
+  by a table (1 plain, 2 keyed), and a change a reader would misread takes the next unused major
+  number.
 - **`record.CanonicalFacts` and `record.CanonicalEvidence`** return the canonical text a record's
   document digests are taken over. `docs/decision-records.md` states that form (member order,
   escapes, numbers written as their tokens, the refusals, and where it is and is not RFC 8785), with
   vectors a test reads from the page, and lists every member of each form that follows from the
   facts.
 - **`record.Read` and `DecisionRecord.CheckDocuments`** read a record of either form from its exact
-  bytes, refusing any other member set or version (`record.ErrRecord`), and compare documents with
+  bytes, refusing any other member set or version, a disposition that is not a §8.3 disposition of
+  the evaluator contract the record names, a contract the reader does not know, and a pack id,
+  version or specVersion outside its grammar (`record.ErrRecord`), and compare documents with
   it: `match`, `mismatch`, or, for a keyed record checked without the caller's
   `record.KeyedDigestFunc`, `not-checkable-without-key`. The keyed form evaluates through
   `Pack.Evaluate` as the plain one does, so the conformance claim in CONFORMANCE.md is unchanged.

@@ -138,9 +138,12 @@
 // facts and evidence documents not by their SHA-256 but by digests the caller
 // computes with a key of its own over the texts record.CanonicalFacts and
 // record.CanonicalEvidence return, so that a reader without the key cannot
-// test candidate facts against the record. The record carries the
-// algorithm's label and the caller's key identifier, never the key, which
-// this runtime never receives. record.Read reads a record of either form, and
+// test candidate facts against the record's document digests. The
+// disposition still says what the pack decided, so a reader holding the
+// pack can evaluate a candidate and compare dispositions;
+// docs/decision-records.md lists what in each form follows from the facts.
+// The record carries the algorithm's label and the caller's key identifier,
+// never the key, which this runtime never receives. record.Read reads a record of either form, and
 // DecisionRecord.CheckDocuments compares documents with it, reporting a keyed
 // record checked without the caller's key function as not checkable.
 // docs/decision-records.md states both forms, the canonical text with its
@@ -178,7 +181,8 @@
 // of the shape record.KeyedDigests states, and, after the evaluation and
 // without it, one wrapping record.ErrKeyedDigests or record.ErrBinding for a
 // keyed or binding digest that is the plain SHA-256 of the facts or evidence
-// document; none is a *Refusal.
+// document or the digest of the plain record of the same evaluation, or a
+// key identifier that holds one; none is a *Refusal.
 // Evaluation.OutcomeAnnotations returns a plain error for an Evaluation that
 // Evaluate did not return, and otherwise only Pack.View's errors.
 //

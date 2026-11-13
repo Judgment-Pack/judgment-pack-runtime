@@ -46,7 +46,9 @@
 // recomputed, and neither the evaluation nor the disposition depends on it.
 // The keyed digests are the caller's assertion too: this runtime cannot
 // compute or check them, and a reader holding the key checks them with
-// DecisionRecord.CheckDocuments. The facts and evidence appear by digest
+// DecisionRecord.CheckDocuments. The keyed form removes only the guessable
+// document digests: its disposition still says what the pack decided, and a
+// reader holding the pack can test a candidate against it. The facts and evidence appear by digest
 // only, so a reader who needs them must keep them; the record cannot
 // reproduce them. The runtime version is the program's build information's
 // account of the module, not a check of the code that ran.
@@ -55,12 +57,14 @@ package record
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/internal/canonjson"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/internal/recordhook"
@@ -70,26 +74,32 @@ import (
 // DecisionRecord.JSON for a record that names its documents by plain
 // digests, and the bytes each is written as, which the record carries in
 // band as recordVersion. It is this form's own version and not the audit
-// trail record's. It moves whenever the bytes for inputs an earlier record
-// version could record would change: the major part when a member is removed
-// or renamed or a member's value is taken over other bytes or written in
-// another form, so that a reader of the earlier form would misread it; the
-// minor part when a member is added, which such a reader can pass over; the
+// trail record's.
+//
+// The major part of a record's version names its form, by a table: 1 the
+// plain form, 2 the keyed form. Within a major, the minor part moves when a
+// member is added that a reader of the earlier bytes can pass over, and the
 // patch part when the bytes change in any other way, every member and its
-// meaning kept. It does not move when the runtime learns to record
-// evaluations it refused before, such as those of a newly admitted
-// specification version, or when the runtime version the record carries
-// changes. A record of the keyed form carries KeyedRecordVersion instead.
-// Experimental.
+// meaning kept. A change a reader of the earlier bytes would misread, a
+// member removed or renamed, a member's value taken over other bytes or
+// written in another form, or a value such a reader must refuse, takes the
+// next major number not yet in the table, never the next number of the form
+// it changes, and the table gains a row for it; a change to the canonical
+// text takes one for each form it reaches. A reader decides the form by the
+// table and the members together and refuses a record where they disagree.
+// The version does not move when the runtime learns to record evaluations it
+// refused before, such as those of a newly admitted specification version,
+// or when the runtime version the record carries changes. A record of the
+// keyed form carries KeyedRecordVersion instead. Experimental.
 const RecordVersion = "1.0.0"
 
 // KeyedRecordVersion is the version of the keyed record form (ADR-0087): the
 // plain form's members with factsDigest and evidenceDigest removed and
-// keyedDigests added. Removing a member is a major change by the rule
-// RecordVersion states, so a reader of the plain form refuses a keyed record
-// by its major part rather than reading it as plain. It moves by that same
-// rule, and the major part of a record's version names its form: 1 the
-// plain form, 2 the keyed form. Experimental.
+// keyedDigests added, which a reader of the plain form would misread, so it
+// took the next major number by the table RecordVersion states, and a reader
+// of the plain form refuses a keyed record by its major part rather than
+// reading it as plain. A new keyed-digest algorithm label, which a reader
+// must refuse, would take a major number of its own. Experimental.
 const KeyedRecordVersion = "2.0.0"
 
 // Form is the form a record names its documents in. Experimental.
@@ -115,9 +125,13 @@ const (
 // is no binding. This runtime never reads meaning into a name or a digest
 // and never recomputes one. On a record of the keyed form it refuses a
 // digest that is the plain SHA-256 of the facts or evidence document, as
-// passed or as canonical text, because the binding would then carry beside
-// the keyed digests the plain one they replace; whether a digest is the
-// digest of anything else is for the caller's own reader to find.
+// passed or as canonical text, or the digest of the plain record of the same
+// evaluation, because the binding would then carry beside the keyed digests
+// the plain one they replace. That catches one plausible mistake and is not
+// a defence: a digest of anything else derived from the facts, such as their
+// source data or a prepared input, re-creates the pseudonym undetected, and
+// whether a digest is the digest of anything else is for the caller's own
+// reader to find.
 // Experimental.
 type Binding map[string]string
 
@@ -137,7 +151,7 @@ var (
 	errBindingNames  = fmt.Errorf("%w: it holds more than %d names", ErrBinding, MaxBindingNames)
 	errBindingName   = fmt.Errorf("%w: a name is not 1 to %d characters from a-z, 0-9, dot, underscore, slash and hyphen", ErrBinding, MaxBindingNameLength)
 	errBindingDigest = fmt.Errorf("%w: a digest is not sha256: followed by 64 lower-case hexadecimal digits", ErrBinding)
-	errBindingPlain  = fmt.Errorf("%w: a digest is the plain SHA-256 of the facts or evidence document, which a record with keyed digests must not carry", ErrBinding)
+	errBindingPlain  = fmt.Errorf("%w: a digest is the plain SHA-256 of the facts or evidence document, or the digest of the plain record of the same evaluation, which a record with keyed digests must not carry", ErrBinding)
 )
 
 // DecisionRecord is the record of one evaluation, as typed data and as the
@@ -358,13 +372,20 @@ func build(input recordhook.Input) (DecisionRecord, error) {
 		document["evidenceDigest"] = built.EvidenceDigest
 		document["recordVersion"] = RecordVersion
 	} else {
-		// The plain digests are computed here only to be refused where the
+		// The plain digests, and the digests of the plain records this
+		// evaluation gives, are computed here only to be refused where the
 		// caller would carry one beside the keyed digests; none is kept.
-		plain := plainDigests(input.Facts, input.Evidence, facts, evidence)
+		plain, err := plainDigests(input.Facts, input.Evidence, facts, evidence, document, input.Binding)
+		if err != nil {
+			return DecisionRecord{}, err
+		}
 		for _, keyedDigest := range [][]byte{input.Keyed.Facts, input.Keyed.Evidence} {
 			if slices.Contains(plain, "sha256:"+hex.EncodeToString(keyedDigest)) {
 				return DecisionRecord{}, errKeyedPlain
 			}
+		}
+		if keyIDHolds(input.Keyed.KeyID, plain) {
+			return DecisionRecord{}, errKeyedKeyIDPlain
 		}
 		for _, digest := range input.Binding {
 			if slices.Contains(plain, digest) {
@@ -384,11 +405,7 @@ func build(input recordhook.Input) (DecisionRecord, error) {
 	}
 	if len(input.Binding) > 0 {
 		built.Binding = maps.Clone(Binding(input.Binding))
-		members := make(map[string]any, len(built.Binding))
-		for name, digest := range built.Binding {
-			members[name] = digest
-		}
-		document["binding"] = members
+		document["binding"] = bindingMember(built.Binding)
 	}
 	encoded, err := canonjson.Text(document)
 	if err != nil {
@@ -399,15 +416,65 @@ func build(input recordhook.Input) (DecisionRecord, error) {
 	return built, nil
 }
 
+func bindingMember(binding map[string]string) map[string]any {
+	members := make(map[string]any, len(binding))
+	for name, digest := range binding {
+		members[name] = digest
+	}
+	return members
+}
+
 // plainDigests are the plain SHA-256 digests, in the "sha256:" form, that a
 // record of the keyed form must not carry: of the facts and evidence
-// documents as passed and of their canonical texts.
-func plainDigests(facts, evidence []byte, canonicalFacts, canonicalEvidence string) []string {
+// documents as passed and of their canonical texts, and the Digest of the
+// plain record of the same evaluation, as EvaluateWithRecord writes it with
+// no binding, with the binding given, and with the binding less any one of
+// its names (the record a caller would have written before binding its
+// digest). common holds the members the two forms share.
+func plainDigests(facts, evidence []byte, canonicalFacts, canonicalEvidence string, common map[string]any, binding map[string]string) ([]string, error) {
 	plain := []string{digestOf(facts), digestOf([]byte(canonicalFacts)), digestOf([]byte(canonicalEvidence))}
 	if evidence != nil {
 		plain = append(plain, digestOf(evidence))
 	}
-	return plain
+	bindings := []map[string]string{nil, binding}
+	for name := range binding {
+		less := maps.Clone(binding)
+		delete(less, name)
+		bindings = append(bindings, less)
+	}
+	for _, given := range bindings {
+		document := maps.Clone(common)
+		document["factsDigest"] = digestOf([]byte(canonicalFacts))
+		document["evidenceDigest"] = digestOf([]byte(canonicalEvidence))
+		document["recordVersion"] = RecordVersion
+		if len(given) > 0 {
+			document["binding"] = bindingMember(given)
+		}
+		text, err := canonjson.Text(document)
+		if err != nil {
+			return nil, fmt.Errorf("the plain record does not encode: %w", err)
+		}
+		plain = append(plain, digestOf([]byte(text)))
+	}
+	return plain, nil
+}
+
+// keyIDHolds reports whether a key identifier holds one of the digests, as
+// hexadecimal digits of either case or as unpadded base64 of either
+// alphabet: the forms of a digest the identifier's characters can spell.
+func keyIDHolds(id string, digests []string) bool {
+	lower := strings.ToLower(id)
+	for _, digest := range digests {
+		digits := strings.TrimPrefix(digest, "sha256:")
+		sum, err := hex.DecodeString(digits)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(lower, digits) || strings.Contains(id, base64.RawURLEncoding.EncodeToString(sum)) || strings.Contains(id, base64.RawStdEncoding.EncodeToString(sum)) {
+			return true
+		}
+	}
+	return false
 }
 
 // canonicalDisposition returns the disposition's text when the bytes are one

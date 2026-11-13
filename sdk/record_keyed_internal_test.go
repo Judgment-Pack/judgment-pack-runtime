@@ -380,3 +380,182 @@ func TestTheKeyIsInNoOutput(t *testing.T) {
 		}
 	}
 }
+
+// A key identifier is carried in clear, so one that holds a plain digest a
+// keyed record must not carry, in hexadecimal of either case, with or
+// without its sha256: prefix, or as unpadded base64url, is refused after the
+// evaluation, in a fixed sentence that repeats no identifier; so is one that
+// holds the digest of the plain record of the same evaluation. An opaque
+// identifier, and one holding 64 hexadecimal digits of something else, are
+// admitted.
+func TestAKeyIdentifierHoldingAPlainDigestIsRefused(t *testing.T) {
+	withRuntimeVersion(t, "v0.45.0")
+	pack := loadPack(t, recordPack030)
+	facts, evidence := []byte(`{ "amount" : "1250" }`), []byte(`{"invoice": "present"}`)
+	plainOf := func(text []byte) []byte { sum := sha256.Sum256(text); return sum[:] }
+	_, plain, err := pack.EvaluateWithRecord(context.Background(), facts, evidence, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordDigest := unhex(t, strings.TrimPrefix(plain.Digest(), "sha256:"))
+	mac := bytes.Repeat([]byte{0x33}, 32)
+	for name, id := range map[string]string{
+		"the canonical facts' digest with its prefix": "sha256:" + hex.EncodeToString(plainOf([]byte(`{"amount":"1250"}`))),
+		"the passed facts' digest in upper case":      strings.ToUpper(hex.EncodeToString(plainOf(facts))),
+		"the canonical evidence's digest in a name":   "k-" + hex.EncodeToString(plainOf([]byte(`{"invoice":"present"}`))) + "-1",
+		"the passed evidence's digest":                hex.EncodeToString(plainOf(evidence)),
+		"the canonical facts' digest in base64url":    "k/" + base64.RawURLEncoding.EncodeToString(plainOf([]byte(`{"amount":"1250"}`))),
+		"the plain record's digest":                   "k:" + hex.EncodeToString(recordDigest),
+	} {
+		keyed := record.KeyedDigests{Algorithm: record.HMACSHA256, KeyID: id, Facts: mac, Evidence: mac}
+		evaluated, decided, err := pack.EvaluateWithKeyedRecord(context.Background(), facts, evidence, nil, keyed)
+		if !errors.Is(err, record.ErrKeyedDigests) || errors.Is(err, ErrInternal) || evaluated != nil || decided.JSON() != nil ||
+			!strings.Contains(err.Error(), "the key identifier holds the plain SHA-256") || strings.Contains(strings.ToLower(err.Error()), strings.ToLower(id[2:20])) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	for _, id := range []string{"k-7f3a9c", hex.EncodeToString(mac), "sha256:" + strings.Repeat("0", 64)} {
+		if _, decided, err := pack.EvaluateWithKeyedRecord(context.Background(), facts, evidence, nil,
+			record.KeyedDigests{Algorithm: record.HMACSHA256, KeyID: id, Facts: mac, Evidence: mac}); err != nil || decided.Keyed.KeyID != id {
+			t.Fatalf("key identifier %q: %v", id, err)
+		}
+	}
+}
+
+// A keyed record must not carry the digest of the plain record of the same
+// evaluation either, which is as guessable as the plain digests it is taken
+// over: as a keyed digest, or as a binding digest, whether the plain record
+// was written with no binding or with the rest of the binding given. The
+// same binding on a plain record is admitted as before.
+func TestThePlainRecordsDigestIsRefusedInAKeyedRecord(t *testing.T) {
+	withRuntimeVersion(t, "v0.45.0")
+	pack := loadPack(t, recordPack030)
+	facts, evidence := []byte(`{"amount":"1250"}`), []byte(`{"invoice":"present"}`)
+	settings := record.Binding{"settings": "sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"}
+	_, bare, err := pack.EvaluateWithRecord(context.Background(), facts, evidence, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, bound, err := pack.EvaluateWithRecord(context.Background(), facts, evidence, settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := bytes.Repeat([]byte{0x33}, 32)
+	_, _, err = pack.EvaluateWithKeyedRecord(context.Background(), facts, evidence, nil,
+		record.KeyedDigests{Algorithm: record.HMACSHA256, KeyID: "k", Facts: unhex(t, strings.TrimPrefix(bare.Digest(), "sha256:")), Evidence: mac})
+	if !errors.Is(err, record.ErrKeyedDigests) || !strings.Contains(err.Error(), "a keyed digest is the plain SHA-256") {
+		t.Fatalf("a keyed digest that is the plain record's digest: %v", err)
+	}
+	good := record.KeyedDigests{Algorithm: record.HMACSHA256, KeyID: "k", Facts: mac, Evidence: mac}
+	for name, binding := range map[string]record.Binding{
+		"the plain record with no binding":       {"plain-record": bare.Digest()},
+		"the plain record with no binding, too":  {"plain-record": bare.Digest(), "settings": settings["settings"]},
+		"the plain record with the rest of them": {"plain-record": bound.Digest(), "settings": settings["settings"]},
+	} {
+		evaluated, decided, err := pack.EvaluateWithKeyedRecord(context.Background(), facts, evidence, binding, good)
+		if !errors.Is(err, record.ErrBinding) || errors.Is(err, ErrInternal) || evaluated != nil || decided.JSON() != nil ||
+			strings.Contains(err.Error(), strings.TrimPrefix(binding["plain-record"], "sha256:")[:16]) {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, plain, err := pack.EvaluateWithRecord(context.Background(), facts, evidence, binding); err != nil || plain.Binding["plain-record"] != binding["plain-record"] {
+			t.Fatalf("%s on a plain record: %v", name, err)
+		}
+	}
+	if _, decided, err := pack.EvaluateWithKeyedRecord(context.Background(), facts, evidence, settings, good); err != nil || decided.Form() != record.FormKeyed {
+		t.Fatalf("a binding of something else: %v", err)
+	}
+}
+
+// Read admits every record this runtime writes for the bundled evaluation
+// corpora, in both forms, under every evaluator contract the runtime reads:
+// the reader is no stricter than the writer. The corpora give every
+// disposition kind, requested handoffs and routed packs.
+func TestReadAdmitsEveryRecordOfTheBundledCorpora(t *testing.T) {
+	withRuntimeVersion(t, "v0.45.0")
+	type corpusCase struct {
+		ID                   string          `json:"id"`
+		Pack                 string          `json:"pack"`
+		Facts                json.RawMessage `json:"facts"`
+		EvidenceAvailability json.RawMessage `json:"evidenceAvailability"`
+		SupportedExtensions  []string        `json:"supportedExtensions"`
+	}
+	mac := bytes.Repeat([]byte{0x33}, 32)
+	read, seen := 0, map[string]bool{}
+	for _, version := range []string{"0.2.0-draft", "0.3.0", "0.5.0"} {
+		directory := filepath.Join("..", "internal", "artifacts", "jps", version, "evaluation")
+		data, err := os.ReadFile(filepath.Join(directory, "manifest.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var manifest struct {
+			Cases []corpusCase `json:"cases"`
+		}
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			t.Fatal(err)
+		}
+		packs := map[string]*Pack{}
+		for _, row := range manifest.Cases {
+			if len(row.SupportedExtensions) > 0 {
+				continue
+			}
+			loaded, given := packs[row.Pack]
+			if !given {
+				text, err := os.ReadFile(filepath.Join(directory, row.Pack))
+				if err != nil {
+					t.Fatal(err)
+				}
+				loaded, err = Load(context.Background(), text, LoadOptions{})
+				if err != nil {
+					loaded = nil
+				}
+				packs[row.Pack] = loaded
+			}
+			if loaded == nil {
+				continue
+			}
+			var evidence []byte
+			if len(row.EvidenceAvailability) > 0 {
+				evidence = row.EvidenceAvailability
+			}
+			_, plain, err := loaded.EvaluateWithRecord(context.Background(), row.Facts, evidence, nil)
+			if err != nil {
+				continue
+			}
+			_, keyed, err := loaded.EvaluateWithKeyedRecord(context.Background(), row.Facts, evidence, nil,
+				record.KeyedDigests{Algorithm: record.HMACSHA256, KeyID: "k", Facts: mac, Evidence: mac})
+			if err != nil {
+				t.Fatalf("%s %s: keyed: %v", version, row.ID, err)
+			}
+			for _, built := range []record.DecisionRecord{plain, keyed} {
+				again, err := record.Read(built.JSON())
+				if err != nil || !bytes.Equal(again.JSON(), built.JSON()) || again.Disposition != built.Disposition {
+					t.Fatalf("%s %s: Read(%s) = %v", version, row.ID, built.JSON(), err)
+				}
+				read++
+			}
+			var disposition struct {
+				Kind    string `json:"kind"`
+				Handoff struct {
+					State  string            `json:"state"`
+					Routes []json.RawMessage `json:"routes"`
+				} `json:"handoff"`
+			}
+			if err := json.Unmarshal([]byte(plain.Disposition), &disposition); err != nil {
+				t.Fatal(err)
+			}
+			seen[version+"/"+disposition.Kind] = true
+			seen[disposition.Handoff.State] = true
+			if len(disposition.Handoff.Routes) > 0 {
+				seen["routed"] = true
+			}
+		}
+	}
+	for _, want := range []string{"0.2.0-draft/outcome", "0.3.0/unresolved", "0.5.0/not-applicable", "requested", "routed"} {
+		if !seen[want] {
+			t.Errorf("the corpora gave no record of %s", want)
+		}
+	}
+	if read < 200 {
+		t.Fatalf("read %d records; the corpora give more", read)
+	}
+}

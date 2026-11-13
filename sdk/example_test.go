@@ -138,9 +138,12 @@ func ExamplePack_EvaluateWithRecord() {
 // Take a decision record whose facts and evidence are named by keyed
 // digests the caller computes with its own key, over the canonical texts
 // package sdk/record returns, so that a reader without the key cannot test
-// candidate facts against the record. The record carries the algorithm's
-// label and the key identifier, never the key. A reader holding the key
-// checks the documents; one without it learns that they cannot be checked.
+// candidate facts against the record's document digests. The disposition
+// still says what the pack decided, and a reader holding the pack can test
+// a candidate against it (docs/decision-records.md). The record carries the
+// algorithm's label and the key identifier, never the key. A reader holding
+// the key checks the documents; one without it learns that they cannot be
+// checked.
 // The keyed record is experimental.
 func ExamplePack_EvaluateWithKeyedRecord() {
 	ctx := context.Background()

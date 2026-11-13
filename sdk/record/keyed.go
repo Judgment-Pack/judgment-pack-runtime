@@ -27,18 +27,22 @@ const MaxKeyIDLength = 128
 //
 // The record carries the algorithm's label, the key identifier and the two
 // digests, never the key. This runtime cannot compute or check a keyed
-// digest: it holds them to their shape, refuses one that is the plain
-// SHA-256 of a document it names, and otherwise carries them as given. A
-// reader holding the key checks them with DecisionRecord.CheckDocuments.
+// digest: it holds them to their shape, refuses a digest or key identifier
+// that is or holds the plain SHA-256 of a document the record names or the
+// digest of the plain record of the same evaluation, and otherwise carries
+// them as given. A reader holding the key checks them with
+// DecisionRecord.CheckDocuments.
 type KeyedDigests struct {
 	// Algorithm is the label of the keyed-digest function, HMACSHA256.
 	Algorithm string
 	// KeyID is the caller's identifier for the key: 1 to MaxKeyIDLength
 	// characters from A-Z, a-z, 0-9, dot, underscore, hyphen, colon and
-	// slash. It is data: this runtime never reads meaning into it, never
-	// compares it with anything and never repeats it in an error. The
-	// record carries it in clear, so it should be an opaque identifier,
-	// never derived from the facts, their subject or the key.
+	// slash. It is data: this runtime never reads meaning into it and never
+	// repeats it in an error, and compares it only with the plain digests a
+	// keyed record must not carry, refusing one that holds such a digest in
+	// hexadecimal or base64. The record carries it in clear, so it should be
+	// an opaque identifier, never derived from the facts, their subject or
+	// the key; no other derivation is detected.
 	KeyID string
 	// Facts is the keyed digest of the bytes CanonicalFacts returns for
 	// the facts document evaluated: 32 bytes for HMACSHA256.
@@ -56,11 +60,12 @@ type KeyedDigests struct {
 var ErrKeyedDigests = errors.New("record: malformed keyed digests")
 
 var (
-	errKeyedAlgorithm = fmt.Errorf("%w: the algorithm is not %s, the one keyed-digest algorithm a record names", ErrKeyedDigests, HMACSHA256)
-	errKeyedKeyID     = fmt.Errorf("%w: the key identifier is not 1 to %d characters from A-Z, a-z, 0-9, dot, underscore, hyphen, colon and slash", ErrKeyedDigests, MaxKeyIDLength)
-	errKeyedFacts     = fmt.Errorf("%w: the facts digest is not the size of the algorithm's output", ErrKeyedDigests)
-	errKeyedEvidence  = fmt.Errorf("%w: the evidence digest is not the size of the algorithm's output", ErrKeyedDigests)
-	errKeyedPlain     = fmt.Errorf("%w: a keyed digest is the plain SHA-256 of the facts or evidence document", ErrKeyedDigests)
+	errKeyedAlgorithm  = fmt.Errorf("%w: the algorithm is not %s, the one keyed-digest algorithm a record names", ErrKeyedDigests, HMACSHA256)
+	errKeyedKeyID      = fmt.Errorf("%w: the key identifier is not 1 to %d characters from A-Z, a-z, 0-9, dot, underscore, hyphen, colon and slash", ErrKeyedDigests, MaxKeyIDLength)
+	errKeyedFacts      = fmt.Errorf("%w: the facts digest is not the size of the algorithm's output", ErrKeyedDigests)
+	errKeyedEvidence   = fmt.Errorf("%w: the evidence digest is not the size of the algorithm's output", ErrKeyedDigests)
+	errKeyedPlain      = fmt.Errorf("%w: a keyed digest is the plain SHA-256 of the facts or evidence document, or the digest of the plain record of the same evaluation", ErrKeyedDigests)
+	errKeyedKeyIDPlain = fmt.Errorf("%w: the key identifier holds the plain SHA-256 of the facts or evidence document, or the digest of the plain record of the same evaluation", ErrKeyedDigests)
 )
 
 // digestSize is the output size in bytes of a keyed-digest algorithm, and 0

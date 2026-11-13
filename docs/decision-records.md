@@ -16,7 +16,7 @@ record says about the facts in each form.
 ## The two forms
 
 A record names the facts and evidence documents in one of two forms, and its `recordVersion` says
-which. The major part of the version names the form.
+which: the major part of the version names the form, by the table under [Versions](#versions).
 
 | member | plain form, `recordVersion` `"1.0.0"` | keyed form, `recordVersion` `"2.0.0"` |
 |---|---|---|
@@ -37,9 +37,10 @@ The two forms share no digest member. A keyed record has no `factsDigest` or `ev
 reader that looks for a plain digest finds none rather than finding a keyed one; and a plain record
 has no `keyedDigests`. `record.Read` admits exactly `"1.0.0"` with the plain form's members and
 `"2.0.0"` with the keyed form's, and refuses anything else: a record with both forms' members, a
-member of no form, or a later version, which it never reads as one it knows. A reader written to
-the 1.0.0 form alone refuses a keyed record by its major version, and, if it ignores the version, by
-the missing `factsDigest`.
+member of no form, or a later version, which it never reads as one it knows. A reader decides the
+form by the version's major part and by the members together, and refuses a record where the two
+disagree. A reader written to the 1.0.0 form alone refuses a keyed record by its major version, and,
+if it ignores the version, by the missing `factsDigest`.
 
 ## The canonical text
 
@@ -176,7 +177,16 @@ a guessable pseudonym: anyone holding the record can compute the digest of each 
 and compare. The evidence document is worse placed still: its members are the pack's declared
 evidence requirements and its values `present`, `absent` and `unknown`, so anyone holding the pack
 can try every document and recover it from its plain digest. The keyed form names both documents
-instead by digests the caller computes with a key of its own, which this runtime never receives:
+instead by digests the caller computes with a key of its own, which this runtime never receives, so
+that a reader without the key cannot test candidate documents against the record's document
+digests.
+
+It does not hide what was decided. The record still carries the disposition and names the pack by
+its id and digest, so anyone holding the pack can evaluate a candidate document and compare its
+disposition with the record's: that rules candidates out, and where a rule singles out one value it
+confirms a candidate outright. [What in a record follows from the facts](#what-in-a-record-follows-from-the-facts)
+lists every member and what it says.
+
 
 ```go
 facts, err := record.CanonicalFacts(factsBytes)
@@ -197,20 +207,38 @@ evaluated, decided, err := pack.EvaluateWithKeyedRecord(ctx, factsBytes, evidenc
   256-bit output is not the weak point; HMAC-SHA-256 is in the standard library of every common
   language and is offered by common key-management services; and each further label is
   one more way for two holders of one key to write two records of one evaluation that do not agree.
-  A label is added, if one is ever needed, by a new minor version of the keyed form.
+  A reader must refuse a label it does not know, as `record.Read` does: a reader that passed over
+  one and computed HMAC-SHA-256 would report a mismatch where it cannot check at all. A new label
+  is therefore a change a reader of the earlier bytes cannot pass over, and takes a new major
+  number by the table under [Versions](#versions).
 - **The key identifier** is the caller's name for the key, so that a reader can find the key a
   record was made with: 1 to 128 characters from `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_`, `-`, `:` and
-  `/`. It is data: this runtime never reads meaning into it, never compares it with anything, and
-  never repeats it in an error. The record carries it in clear, so it is as visible as the record.
+  `/`. It is data: this runtime never reads meaning into it and never repeats it in an error, and
+  compares it only with the plain digests below, refusing an identifier that holds one. The record
+  carries it in clear, so it is as visible as the record, and it may itself be sensitive.
   Use an opaque identifier, such as a random string or a version number, never one derived from the
   facts, from whoever or whatever they describe, or from the key itself, and never a name that says
   more than you would say in the record.
 - **What this runtime checks.** The label is in the list, the identifier has its shape, and each
   digest is the algorithm's output size, all before anything is evaluated, with an error wrapping
-  `record.ErrKeyedDigests` (or `record.ErrBinding` for the binding). After the evaluation it refuses
-  a keyed digest that is the plain SHA-256 of either document, as passed or as canonical text, and a
-  binding digest that is one: either would carry beside the keyed digests the plain digest they
-  replace. Neither refusal is a `*Refusal`, and the evaluation is not returned with it.
+  `record.ErrKeyedDigests` (or `record.ErrBinding` for the binding). After the evaluation it takes
+  the plain digests the keyed form replaces: the SHA-256 of either document, as passed and as
+  canonical text, and the `Digest()` of the plain record of the same evaluation, as
+  `EvaluateWithRecord` writes it with no binding, with the binding given, and with the binding less
+  any one of its names. It refuses a keyed digest that is one of them, a key identifier that holds
+  one, as hexadecimal digits of either case or as unpadded base64 of either alphabet, with an error
+  wrapping `record.ErrKeyedDigests`, and a binding digest that is one, with an error wrapping
+  `record.ErrBinding`: each would carry beside the keyed digests the plain digest they replace. No
+  refusal is a `*Refusal`, and the evaluation is not returned with it.
+- **What those refusals do not catch.** They catch one plausible mistake, and are not a defence.
+  Binding, or naming in the key identifier, anything else derived from the facts re-creates the
+  pseudonym the keyed form removes: a digest of the source data the facts were prepared from, of a
+  prepared input, of a plain record made another way, of another spelling of the same document
+  (other white space, member order or number spelling), or a truncated digest. A preparation step
+  that binds a digest of its output, when that output is the facts document, binds exactly the
+  plain digest the keyed form replaces; this runtime refuses it when it is the SHA-256 of the bytes
+  passed or of their canonical text, and cannot detect any other derivation in general. Bind only
+  what does not follow from the facts, or key it as the documents are keyed.
 - **What it cannot check.** Without the key, this runtime cannot tell whether a keyed digest is the
   digest of the documents evaluated, of other documents, or of anything at all: it carries them as
   the caller's assertion, as it carries the binding. Compute them over the bytes
@@ -225,7 +253,14 @@ evaluated, decided, err := pack.EvaluateWithKeyedRecord(ctx, factsBytes, evidenc
 
 ## Checking a record
 
-`record.Read(bytes)` reads a record of either form from its exact bytes, and
+`record.Read(bytes)` reads a record of either form from its exact bytes. It holds every member to
+the shape this runtime writes: the disposition to a JPS Core §8.3 disposition of the members,
+closed vocabularies and presence rules of the evaluator contract the record names, with no draft
+`value` member; the evaluator's `specVersion` to a contract the reader knows; and the pack's `id`
+(an absolute URI), `version` (three numbers) and `specVersion` to their grammars. A record naming an
+evaluator contract the reader does not know is refused, since its disposition cannot be held to
+that contract.
+
 `DecisionRecord.CheckDocuments(facts, evidence, keyed)` compares the documents a caller holds with
 the record's digests, reading the record's bytes, not its exported fields. `keyed` is a
 `record.KeyedDigestFunc`, the caller's function from an algorithm label, a key identifier and a
@@ -235,7 +270,7 @@ nothing else. The result names the form and, for each document, one of:
 | outcome | meaning |
 |---|---|
 | `match` | the digest of the document's canonical text is the one the record carries |
-| `mismatch` | it is not: a different document, or, for a keyed record, a different key |
+| `mismatch` | it is not: a different document, or, for a keyed record, a different key. The same values with a number spelled otherwise are a different document: `1.50` and `1.5`, or `1e2` and `100`, give a mismatch, and a JSON library that decodes a document and encodes it again rewrites its numbers so. Keep the bytes you digested |
 | `not-checkable-without-key` | the record is keyed and no function was given: whether the document is the one the record names is not known; this is neither a match nor a mismatch |
 
 A plain record is checked without a key, and the function is not called. Keyed digests are compared
@@ -253,11 +288,11 @@ record.
 | `evidenceDigest` | from the evidence document, whose few possible values anyone holding the pack can try | present | absent |
 | `keyedDigests.facts`, `keyedDigests.evidence` | yes, under the caller's key: not computable without it | absent | present |
 | `keyedDigests.algorithm` | no | absent | present |
-| `keyedDigests.keyId` | no, unless the caller makes it so; see above | absent | present |
-| `disposition` | yes: it is the decision, a choice among the pack's declared outcomes, reasons and handoff states, so it says what the pack decided (that an amount was at or above a threshold, say) without naming the facts it decided on; no fact value is copied into it through package `sdk`, which does not offer the draft outcome values (ADR-0039) that could copy one | present | present |
-| `binding` | not by this runtime; the caller may bind a digest of anything, and in the keyed form a digest that is the plain SHA-256 of the facts or evidence document, as passed or as canonical text, is refused | as given | as given |
+| `keyedDigests.keyId` | no, unless the caller makes it so; one that holds a plain digest of the record's evaluation is refused, and any other derivation is not detected; see above | absent | present |
+| `disposition` | yes: it is the decision, a choice among the pack's declared outcomes, reasons and handoff states, so it says what the pack decided (that an amount was at or above a threshold, say) without naming the facts it decided on. Its reasons say something of the evidence document too: `missing-required-evidence` that a required item was not present, and `unknown` that something the pack read was unknown. Anyone holding the pack can evaluate a candidate and compare dispositions, which rules candidates out and, where a rule singles out one value, confirms one outright, in either form. No fact value is copied into it through package `sdk`, which does not offer the draft outcome values (ADR-0039) that could copy one, and `record.Read` refuses a disposition that holds them | present | present |
+| `binding` | not by this runtime; the caller may bind a digest of anything, and in the keyed form a digest that is the plain SHA-256 of the facts or evidence document, as passed or as canonical text, or the digest of the plain record of the same evaluation, is refused; a digest of anything else derived from the facts is not detected and re-creates the pseudonym | as given | as given |
 | `evaluator`, `pack`, `recordVersion` | no | present | present |
-| the record's own digest, `Digest()` | yes, through every member above: in the plain form a guessable pseudonym of the facts as well, since anyone holding the pack can evaluate a candidate, write its record and compare; in the keyed form not computable without the key | | |
+| the record's own digest, `Digest()` | yes, through every member above: in the plain form a guessable pseudonym of the facts as well, since anyone holding the pack can evaluate a candidate, write its record and compare; in the keyed form not predictable from candidate facts without the key | | |
 | the typed fields `FactsDigest`, `EvidenceDigest` | as their members | set | empty, so encoding the struct carries no plain digest |
 
 The `Evaluation` returned beside a record, and the audit trail a project keeps (which holds the facts
@@ -265,9 +300,22 @@ document itself), are not the record and are not changed by its form.
 
 ## Versions
 
-`recordVersion` follows the rule in [VERSIONING.md](../VERSIONING.md#go-api): its major part moves
-when a member is removed or renamed, or a member's value is taken over other bytes or written in
-another form; its minor part when a member is added; its patch part for any other change of bytes.
-The keyed form removes `factsDigest` and `evidenceDigest`, so it is major version 2; the plain form
-stays `"1.0.0"`, byte for byte. A later change to either form moves that form's version by the same
-rule, and `record.Read` admits only the versions it knows.
+`recordVersion` follows the rule in [VERSIONING.md](../VERSIONING.md#go-api). Its major part names
+the form, by this table:
+
+| major | form |
+|---|---|
+| 1 | plain: `factsDigest` and `evidenceDigest`, the SHA-256 of the canonical texts |
+| 2 | keyed: `keyedDigests`, with the algorithm label `hmac-sha256` |
+
+Within a major, the minor part moves when a member is added that a reader of the earlier bytes can
+pass over, and the patch part for any other change of bytes, every member and its meaning kept. A
+change a reader of the earlier bytes would misread, a member removed or renamed, a member's value
+taken over other bytes or written in another form, or a value such a reader must refuse, such as a
+new algorithm label, does not move a form to the next major number: it takes the next major number
+not yet in the table, and the table gains a row naming that form. A change to the canonical text
+changes the bytes every document digest is taken over, so each form it reaches takes a new major
+number of its own. The keyed form removes `factsDigest` and `evidenceDigest`, so it took major
+number 2; the plain form stays `"1.0.0"`, byte for byte. A reader decides the form by the table and
+by the members together and refuses a record where they disagree, and `record.Read` admits only the
+versions it knows.

@@ -354,16 +354,19 @@ facts and evidence by digest only. `evaluated.OutcomeAnnotations()` returns the 
 annotations, as the view carries them. Both are experimental, and the record carries its own
 `recordVersion`.
 
-Where a digest of the facts must not be guessable from candidate facts,
-`pack.EvaluateWithKeyedRecord(ctx, facts, evidence, binding, keyed)` writes the record's keyed form
+Where the record's digests of the facts and evidence must not be guessable from candidate
+documents, `pack.EvaluateWithKeyedRecord(ctx, facts, evidence, binding, keyed)` writes the record's
+keyed form
 ([ADR-0087](docs/adr/0087-a-caller-keyed-digest-on-the-decision-record.md)): the caller computes an
 HMAC-SHA-256 with a key of its own over the texts `record.CanonicalFacts` and
 `record.CanonicalEvidence` return, and the record carries those digests, the algorithm's label and
 the caller's key identifier, never the key, at `recordVersion` `"2.0.0"`, with no `factsDigest` or
 `evidenceDigest`. `record.Read` reads either form, and `CheckDocuments` compares documents with a
 record, reporting a keyed record checked without the caller's key function as
-`not-checkable-without-key`. [docs/decision-records.md](docs/decision-records.md) states both forms
-and the canonical text, with vectors.
+`not-checkable-without-key`. The keyed form hides only those digests: the disposition still says
+what the pack decided, so anyone holding the pack can evaluate a candidate and compare
+dispositions. [docs/decision-records.md](docs/decision-records.md) states both forms, the canonical
+text with vectors, and what in each form follows from the facts.
 
 Package `sdk/packsig` refuses a pack before any rule is read unless the key the caller expects
 signed its exact bytes ([Pack signatures](docs/pack-signatures.md),

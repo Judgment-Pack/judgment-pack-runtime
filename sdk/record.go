@@ -56,6 +56,13 @@ func (p *Pack) EvaluateWithRecord(ctx context.Context, facts, evidence []byte, b
 // plain digests. The record carries keyed's algorithm label, key identifier
 // and digests, and no plain digest of either document. Experimental.
 //
+// A reader without the key cannot test candidate facts against the record's
+// document digests. The record still carries the disposition and names the
+// pack, so a reader holding the pack can evaluate a candidate and compare
+// dispositions, which rules candidates out, and singles one out where a rule
+// decides on one value; docs/decision-records.md lists what in each form
+// follows from the facts.
+//
 // This runtime never receives the key and cannot check keyed: a digest the
 // caller computed over other bytes is carried as given, and only a reader
 // holding the key finds it out, with record.DecisionRecord.CheckDocuments.
@@ -66,11 +73,14 @@ func (p *Pack) EvaluateWithRecord(ctx context.Context, facts, evidence []byte, b
 // states, an algorithm outside the closed list included, with one wrapping
 // record.ErrKeyedDigests. After the evaluation, a keyed digest that is the
 // plain SHA-256 of the facts or evidence document, as passed or as canonical
-// text, is refused with an error wrapping record.ErrKeyedDigests, and a
-// binding digest that is one with an error wrapping record.ErrBinding: the
-// record would carry beside the keyed digests the plain one they replace.
-// Neither is a *Refusal, and the evaluation is not returned. Every other
-// error is EvaluateWithRecord's for the same inputs.
+// text, or the Digest of the plain record of the same evaluation, and a key
+// identifier that holds one of those digests, are refused with an error
+// wrapping record.ErrKeyedDigests, and a binding digest that is one with an
+// error wrapping record.ErrBinding: the record would carry beside the keyed
+// digests the plain one they replace. These refusals catch one plausible
+// mistake and are not a defence: a digest of anything else derived from the
+// facts goes undetected. None is a *Refusal, and the evaluation is not
+// returned. Every other error is EvaluateWithRecord's for the same inputs.
 func (p *Pack) EvaluateWithKeyedRecord(ctx context.Context, facts, evidence []byte, binding record.Binding, keyed record.KeyedDigests) (*Evaluation, record.DecisionRecord, error) {
 	return p.evaluateWithRecord(ctx, facts, evidence, binding, &recordhook.Keyed{
 		Algorithm: keyed.Algorithm,
