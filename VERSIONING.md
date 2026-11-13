@@ -74,6 +74,12 @@ earlier commit pin `65c7cf5598a0f0fc532c80a9e2215090951104ce`, unchanged.
 This source provenance does not by itself establish a conformance claim; see
 [CONFORMANCE.md](CONFORMANCE.md).
 
+`jpack packs validate` and `sdk.Pack.CheckVocabulary` apply the Spec's annotation vocabulary
+`1.0.0` (`spec/annotation-vocabulary.md`, ADR-0088) to Core `0.5.0` packs, with its levels written in
+the code and its rows pinned to Spec release `v0.5.2`; each report states the vocabulary version it
+applied. Applying another vocabulary version takes a new CLI release. The vocabulary is not Core:
+`spec validate` does not apply it, and it adds no supported specification version.
+
 Selected retained-column leaf support has a separate exact distribution/source/schema/corpus
 identity. Core `specVersion: "0.3.0"` does not select or imply this support. The explicit CLI/MCP reader selects the installed official `v0.3.0`
 leaf, source `27cb29bf13e4a2d58d69fe19c7ebfeb762b014fc`, with maturity `draft`
@@ -138,7 +144,7 @@ specification fixes; the envelope `Evaluation.JSON` returns is CLI machine outpu
 
 The pack view (`sdk.Pack.View` and package `sdk/view`, and `jpack packs describe`, ADR-0074)
 carries its own `viewVersion`,
-`"1"`, in its JSON and in its Markdown. It moves when the bytes View gives for a pack an earlier view
+`"2"`, in its JSON and in its Markdown. It moves when the bytes View gives for a pack an earlier view
 version could describe would change, in either encoding: a member renamed, reordered or rendered
 differently, a change to the escaping rule, a heading or label reworded. It does not move when the
 view learns to describe packs it refused before, such as those of a newly admitted specification
@@ -149,7 +155,9 @@ which can move a newly assigned format character into that set, does not move `v
 as a string and follow `viewVersion`. Describing the value sets and annotations of Core `0.5.0`
 left `viewVersion` at `"1"`, because no pack an earlier release could describe holds them; the
 same holds for ADR-0078, which writes annotation text that could reorder its line, or join the
-syntax before it, only in ASCII.
+syntax before it, only in ASCII. Listing each outcome's severity in the view of a Core `0.5.0` pack
+(ADR-0088) changed the bytes view version `"1"` gave for such packs, so `viewVersion` moved to
+`"2"`; a view of a pack under another `specVersion` changed in its version line alone.
 Runtime 0.43.0 described packs under the staged selector `0.4.0-draft`; this runtime refuses them
 rather than describing them with other bytes.
 
