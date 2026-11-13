@@ -1,11 +1,11 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
 
-	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/internal/recordhook"
 	"github.com/Judgment-Pack/judgment-pack-runtime/sdk/record"
 )
@@ -21,10 +21,11 @@ const recordFaultCode = "JPS-RECORD-INTERNAL"
 
 // EvaluateWithRecord evaluates facts and evidence exactly as Evaluate does,
 // and returns, beside the Evaluation, the decision record of that evaluation
-// (ADR-0079): the pack's identity, a digest of the facts and of the evidence
-// documents as evaluated, the disposition as CanonicalDisposition returns it,
-// this runtime's version and the evaluator contract applied, and binding, the
-// caller's own named digests, carried as given. Experimental.
+// in the plain form (ADR-0079): the pack's identity, a digest of the facts
+// and of the evidence documents as evaluated, the disposition as
+// CanonicalDisposition returns it, this runtime's version and the evaluator
+// contract applied, and binding, the caller's own named digests, carried as
+// given. Experimental.
 //
 // It writes nothing: no audit trail, file or other output. The record holds
 // no time and no random value, so the same pack bytes, documents and binding
@@ -43,6 +44,53 @@ const recordFaultCode = "JPS-RECORD-INTERNAL"
 // wrapping ErrInternal. The context is checked on entry, as Evaluate checks
 // it.
 func (p *Pack) EvaluateWithRecord(ctx context.Context, facts, evidence []byte, binding record.Binding) (*Evaluation, record.DecisionRecord, error) {
+	return p.evaluateWithRecord(ctx, facts, evidence, binding, nil)
+}
+
+// EvaluateWithKeyedRecord evaluates facts and evidence exactly as Evaluate
+// does, and returns, beside the Evaluation, the decision record of that
+// evaluation in the keyed form (ADR-0087): as EvaluateWithRecord's, with the
+// facts and evidence documents named by keyed, the digests the caller
+// computed with its own key over the bytes record.CanonicalFacts and
+// record.CanonicalEvidence return for the same documents, in place of the
+// plain digests. The record carries keyed's algorithm label, key identifier
+// and digests, and no plain digest of either document. Experimental.
+//
+// A reader without the key cannot test candidate facts against the record's
+// document digests. The record still carries the disposition and names the
+// pack, so a reader holding the pack can evaluate a candidate and compare
+// dispositions, which rules candidates out, and singles one out where a rule
+// decides on one value; docs/decision-records.md lists what in each form
+// follows from the facts.
+//
+// This runtime never receives the key and cannot check keyed: a digest the
+// caller computed over other bytes is carried as given, and only a reader
+// holding the key finds it out, with record.DecisionRecord.CheckDocuments.
+//
+// binding and keyed are checked before anything is evaluated: a binding not
+// of the shape record.Binding states is refused with an error wrapping
+// record.ErrBinding, and keyed digests not of the shape record.KeyedDigests
+// states, an algorithm outside the closed list included, with one wrapping
+// record.ErrKeyedDigests. After the evaluation, a keyed digest that is the
+// plain SHA-256 of the facts or evidence document, as passed or as canonical
+// text, or the Digest of the plain record of the same evaluation, and a key
+// identifier that holds one of those digests, are refused with an error
+// wrapping record.ErrKeyedDigests, and a binding digest that is one with an
+// error wrapping record.ErrBinding: the record would carry beside the keyed
+// digests the plain one they replace. These refusals catch one plausible
+// mistake and are not a defence: a digest of anything else derived from the
+// facts goes undetected. None is a *Refusal, and the evaluation is not
+// returned. Every other error is EvaluateWithRecord's for the same inputs.
+func (p *Pack) EvaluateWithKeyedRecord(ctx context.Context, facts, evidence []byte, binding record.Binding, keyed record.KeyedDigests) (*Evaluation, record.DecisionRecord, error) {
+	return p.evaluateWithRecord(ctx, facts, evidence, binding, &recordhook.Keyed{
+		Algorithm: keyed.Algorithm,
+		KeyID:     keyed.KeyID,
+		Facts:     bytes.Clone(keyed.Facts),
+		Evidence:  bytes.Clone(keyed.Evidence),
+	})
+}
+
+func (p *Pack) evaluateWithRecord(ctx context.Context, facts, evidence []byte, binding record.Binding, keyed *recordhook.Keyed) (*Evaluation, record.DecisionRecord, error) {
 	if ctx == nil {
 		return nil, record.DecisionRecord{}, errNilContext
 	}
@@ -52,43 +100,42 @@ func (p *Pack) EvaluateWithRecord(ctx context.Context, facts, evidence []byte, b
 	if err := ctx.Err(); err != nil {
 		return nil, record.DecisionRecord{}, err
 	}
-	if recordhook.Check == nil || recordhook.Build == nil {
+	if recordhook.Check == nil || recordhook.CheckKeyed == nil || recordhook.Build == nil {
 		return nil, record.DecisionRecord{}, internalFault(recordFaultCode, "The decision record builder is not initialised.")
 	}
 	if err := recordhook.Check(binding); err != nil {
 		return nil, record.DecisionRecord{}, err
 	}
+	if keyed != nil {
+		if err := recordhook.CheckKeyed(*keyed); err != nil {
+			return nil, record.DecisionRecord{}, err
+		}
+	}
 	evaluated, err := p.Evaluate(ctx, facts, evidence)
 	if err != nil {
 		return nil, record.DecisionRecord{}, err
 	}
-	// The documents are read again as the engine read them for the
+	// The record reads the documents again as the engine read them for the
 	// evaluation that has just completed: the same decoder under the same
 	// limits, so the values are the ones evaluated, and a document the
-	// engine admitted cannot fail here. An omitted evidence document is the
+	// engine admitted cannot fail there. An omitted evidence document is the
 	// empty object JPS Core §8.2 evaluates it as.
-	factsValue, failure := carrier.Decode(facts, carrier.DefaultLimits())
-	if failure != nil {
-		return nil, record.DecisionRecord{}, internalFault(recordFaultCode, "The evaluated facts document did not decode again.")
-	}
-	var evidenceValue any = map[string]any{}
-	if evidence != nil {
-		if evidenceValue, failure = carrier.Decode(evidence, carrier.DefaultLimits()); failure != nil {
-			return nil, record.DecisionRecord{}, internalFault(recordFaultCode, "The evaluated evidence document did not decode again.")
-		}
-	}
 	built, err := recordhook.Build(recordhook.Input{
 		PackID:               p.identity.ID,
 		PackVersion:          p.identity.Version,
 		PackSpecVersion:      p.identity.SpecVersion,
 		PackDigest:           p.identity.Digest,
-		Facts:                factsValue,
-		Evidence:             evidenceValue,
+		Facts:                facts,
+		Evidence:             evidence,
 		Disposition:          evaluated.CanonicalDisposition(),
 		RuntimeVersion:       runtimeVersion(),
 		EvaluatorSpecVersion: evaluated.EvaluatorSpecVersion,
 		Binding:              binding,
+		Keyed:                keyed,
 	})
+	if keyed != nil && (errors.Is(err, record.ErrBinding) || errors.Is(err, record.ErrKeyedDigests)) {
+		return nil, record.DecisionRecord{}, err
+	}
 	if err != nil {
 		return nil, record.DecisionRecord{}, internalFault(recordFaultCode, "The decision record could not be built: "+err.Error()+".")
 	}

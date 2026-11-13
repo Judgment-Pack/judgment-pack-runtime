@@ -192,17 +192,17 @@ func TestARecordFaultIsAnInternalFault(t *testing.T) {
 	recordhook.Build = previous
 	if _, err := recordhook.Build(recordhook.Input{
 		PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0",
-		Facts: map[string]any{}, Evidence: map[string]any{}, Disposition: []byte(`{"kind":"not-applicable"}`),
+		Facts: []byte(`{}`), Evidence: nil, Disposition: []byte(`{"kind":"not-applicable"}`),
 		Binding: map[string]string{"Upper": sha("")},
 	}); !errors.Is(err, record.ErrBinding) {
 		t.Fatalf("a malformed binding given to the builder: %v", err)
 	}
 	for name, input := range map[string]recordhook.Input{
-		"an empty identity member": {PackID: "", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: map[string]any{}, Evidence: map[string]any{}, Disposition: []byte(`{"kind":"not-applicable"}`)},
-		"a value outside JSON":     {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: 1.5, Evidence: map[string]any{}, Disposition: []byte(`{"kind":"not-applicable"}`)},
-		"a spaced disposition":     {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: map[string]any{}, Evidence: map[string]any{}, Disposition: []byte(`{"kind": "not-applicable"}`)},
-		"a disposition not JSON":   {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: map[string]any{}, Evidence: map[string]any{}, Disposition: []byte(`{"kind"`)},
-		"a disposition not object": {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: map[string]any{}, Evidence: map[string]any{}, Disposition: []byte(`[]`)},
+		"an empty identity member":  {PackID: "", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: []byte(`{}`), Evidence: nil, Disposition: []byte(`{"kind":"not-applicable"}`)},
+		"facts the carrier refuses": {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: []byte(`{"a":1,"a":2}`), Evidence: nil, Disposition: []byte(`{"kind":"not-applicable"}`)},
+		"a spaced disposition":      {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: []byte(`{}`), Evidence: nil, Disposition: []byte(`{"kind": "not-applicable"}`)},
+		"a disposition not JSON":    {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: []byte(`{}`), Evidence: nil, Disposition: []byte(`{"kind"`)},
+		"a disposition not object":  {PackID: "p", PackVersion: "1", PackSpecVersion: "0.3.0", PackDigest: sha(""), EvaluatorSpecVersion: "0.3.0", Facts: []byte(`{}`), Evidence: nil, Disposition: []byte(`[]`)},
 	} {
 		if built, err := recordhook.Build(input); err == nil {
 			t.Errorf("%s: built %#v", name, built)
