@@ -185,3 +185,4 @@ authority, and following it confers no conformance status on anything.
 | [0087](0087-a-caller-keyed-digest-on-the-decision-record.md) | Name the facts on a decision record by a digest the caller keys, in a second form, and publish the canonical text | proposed |
 | [0088](0088-check-the-outcome-severity-vocabulary.md) | Check each outcome's severity against the Spec's annotation vocabulary in packs validate, and list it in the view | proposed |
 | [0089](0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md) | Analyse a Core 0.5.0 pack as its evaluation form | proposed |
+| [0090](0090-check-published-identities-over-a-repositorys-tags.md) | Check, over a git repository's own tags, that a published pack or dialect identity keeps its bytes | proposed |

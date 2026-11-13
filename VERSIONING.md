@@ -211,6 +211,13 @@ document's form and the message its signature is over. It moves by the rule the 
 change of the message's domain prefix is a major change. The document, the commands and the
 package are EXPERIMENTAL; the pack, its digest and lock files do not change with them.
 
+The report of `jpack experimental check-published` (ADR-0090) carries its own
+`publishedCheckVersion`, `"1"`, beside `outputVersion`, and moves by the rule of an output format:
+an added member does not move it, a removed or renamed one does. Its manifest carries
+`manifestVersion`, `"1"`, and is a closed input: a reader refuses a member it does not know, so an
+added member moves it, and a manifest of another `manifestVersion` is refused as unsupported
+(`JPS-PUBLISHED-MANIFEST-VERSION`). The command, its report and its manifest are EXPERIMENTAL.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:
