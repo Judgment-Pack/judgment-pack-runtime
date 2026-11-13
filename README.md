@@ -48,9 +48,10 @@ Pack-aware operations select the evaluator contract from the exact pack's
 `specVersion`: `0.2.0-draft`, `0.3.0` or `0.5.0`, whose packs are evaluated as their evaluation
 form (Core §8.5: annotations removed, value-set references expanded). Every graph command that
 reads node packs (`experimental graph validate`, `explain`, `test` and `evaluate`, and the MCP
-`experimental_test_graphs` tool), the dialect check and the policy check refuse a `0.5.0` pack with
+`experimental_test_graphs` tool) and the policy check refuse a `0.5.0` pack with
 `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`, a graph whole; pack-design analysis refuses one with
-`pack-unsupported`, because their companions are written against `0.3.0`.
+`pack-unsupported`, because their companions are written against `0.3.0`. The dialect check reads a
+`0.5.0` pack's fact and evidence inventory, value sets included ([ADR-0082](docs/adr/0082-let-the-dialect-check-read-core-0-5-0-packs.md)).
 Internal legacy entry points and standalone authoring tools retain their `0.2.0-draft` default;
 standalone tools accept explicit `spec_version: "0.3.0"` or `"0.5.0"`. Selection never infers a version from a `routes` member.
 See [ADR-0063](docs/adr/0063-explicit-core-030-contracts.md) for the compatibility decisions.
@@ -107,8 +108,8 @@ jpack spec test-conformance [suite] [--strict]
 jpack spec schema <spec-version>
 jpack spec examples [name] [--spec-version V]
 jpack packs list        (jpack.json project convention; ADR-0012, not part of the spec)
-jpack packs validate [--id X]
-jpack packs test [--id X] [--require-matrix]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
+jpack packs validate [--id X] [--fail-on-advisory]
+jpack packs test [--id X] [--require-matrix] [--min-coverage N] [--require-boundaries]   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack packs suggest [--id X] [--base ROW] [--write F|-] [--max N] [--include-hugs]   (candidate row INPUTS, never rows; ADR-0024)
 jpack packs lock        (declare the current documents as the project's reviewed set; ADR-0019)
 jpack packs verify      (check the project against that reviewed set)
@@ -944,7 +945,11 @@ backwards.
 
 `packs validate` reports six named checks per pack — path containment, document validation, the
 `expectedVersion` pin, the filename cross-check, the hint keys, and matrix well-formedness — each as
-`passed`, `failed`, or `skipped`. `packs test` runs each pack's instance matrix through the experimental
+`passed`, `failed`, or `skipped`, plus a seventh, `advisories`, only under `--fail-on-advisory`.
+That option fails a pack on any `JPS-RULES-OVERLAP` advice, a `not-excluded` one included: unlike
+`spec test-conformance --strict`, which fails only an exact overlap, it also fails a pack whose
+analysis could not rule an overlap out within its budget. For rules meant to be disjoint, rewrite the
+conditions so the exclusion is exact, or gate that pack in a separate `--id` run without the option. `packs test` runs each pack's instance matrix through the experimental
 evaluator and compares every row the way the bundled evaluation corpus is compared: the RFC 8785
 canonical §8.3 disposition byte for byte, or the expected §8.4 error class and phase, plus the one
 optional per-row assertion about the escalation target §8.3 keeps *outside* the disposition
@@ -958,7 +963,9 @@ members (`pack`, `origin`, `supportedExtensions`, `focus`, `specSection`), and i
 forbids `expectedHandoffTarget` and `cites`, so lifting a project row means supplying those and
 removing any target assertion and any citations. Both commands exit `1` on any failure, a pack with no
 matrix is reported *skipped* rather than passed by default (with `packs test --require-matrix` it is
-reported *mismatch* instead; ADR-0042), and a `packs test` run in which no row ran at all is reported
+reported *mismatch* instead; ADR-0042), the coverage report moves no exit code unless
+`packs test --min-coverage N` or `--require-boundaries` asks it to (a pack under the level, or with a boundary
+no row witnesses, is then reported *mismatch*; ADR-0080), and a `packs test` run in which no row ran at all is reported
 *skipped* and exits `1` unless a mismatch was found: a green gate over zero rows would say a project
 was tested when nothing was. A new project may start with an empty `packs` object: inventory and structural
 validation accept it, while `packs test` remains skipped with exit `1`. `packs lint` closes the gap neither of them covers: a pack consulting a pointer no

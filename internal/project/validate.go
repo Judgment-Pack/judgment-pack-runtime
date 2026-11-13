@@ -33,6 +33,10 @@ const (
 	// one seed, the expected key when one is named, and the key in force in
 	// the signature sidecar. It is reported only when a key is named.
 	CheckAuditSigningKey = "audit-signing-key"
+	// CheckAdvisories is reported only when the caller asked that advice
+	// fail the run (ValidateOptions.FailOnAdvisory, ADR-0081), after every
+	// other check of the pack.
+	CheckAdvisories = "advisories"
 )
 
 // documentChecks are the checks that read the pack document, in order. They are
@@ -64,19 +68,35 @@ var filenameConvention = regexp.MustCompile(`^([a-z][a-z0-9]*(?:-[a-z0-9]+)*)-((
 // typo in a CI invocation that silently checks nothing is the failure mode this
 // command exists to prevent.
 func (p *Project) Validate(engine *validation.Engine, id, command string) (result.PackValidation, *Failure) {
+	return p.ValidateWith(engine, id, command, ValidateOptions{})
+}
+
+// ValidateOptions are a packs validate run's caller-chosen options.
+type ValidateOptions struct {
+	// FailOnAdvisory makes a pack that draws any advice fail the run: the
+	// advisories check is appended to every selected pack's checks, failed
+	// for a pack with advice, passed for one without and skipped for one
+	// whose document check did not pass (ADR-0081). The default reports
+	// advice and moves no status.
+	FailOnAdvisory bool
+}
+
+// ValidateWith is Validate with options.
+func (p *Project) ValidateWith(engine *validation.Engine, id, command string, options ValidateOptions) (result.PackValidation, *Failure) {
 	selected, failure := p.selection(id)
 	if failure != nil {
 		return result.PackValidation{}, failure
 	}
 	output := result.PackValidation{
-		OutputVersion: result.OutputVersion,
-		Tool:          result.CurrentTool(),
-		Command:       command,
-		Status:        "valid",
-		Kind:          result.ProjectKind,
-		ConfigPath:    p.ConfigPath,
-		ConfigVersion: p.Config.ConfigVersion,
-		Packs:         make([]result.PackValidationEntry, 0, len(selected)),
+		OutputVersion:  result.OutputVersion,
+		Tool:           result.CurrentTool(),
+		Command:        command,
+		Status:         "valid",
+		Kind:           result.ProjectKind,
+		ConfigPath:     p.ConfigPath,
+		ConfigVersion:  p.Config.ConfigVersion,
+		Packs:          make([]result.PackValidationEntry, 0, len(selected)),
+		FailOnAdvisory: options.FailOnAdvisory,
 	}
 	// The configuration's own declared path, checked before any pack is: an
 	// audit directory that leaves the project would otherwise be a report of
@@ -96,7 +116,10 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 		}
 	}
 	for _, packID := range selected {
-		entry := p.validatePack(engine, packID, p.Config.Packs[packID])
+		entry, advised := p.validatePack(engine, packID, p.Config.Packs[packID])
+		if options.FailOnAdvisory {
+			holdToAdvice(&entry, advised)
+		}
 		output.Summary.Total++
 		if entry.Status == "valid" {
 			output.Summary.Passed++
@@ -107,6 +130,38 @@ func (p *Project) Validate(engine *validation.Engine, id, command string) (resul
 		output.Packs = append(output.Packs, entry)
 	}
 	return output, nil
+}
+
+// holdToAdvice appends the advisories check to one entry: failed when the
+// pack draws advice of any certainty, passed when it draws none, and skipped
+// when no advice was computed for it: its document check did not pass, or it
+// declares a Core version the advice is not defined for (advised false).
+func holdToAdvice(entry *result.PackValidationEntry, advised bool) {
+	check := result.PackCheck{Name: CheckAdvisories, Status: result.PackCheckPassed}
+	documentPassed := slices.ContainsFunc(entry.Checks, func(c result.PackCheck) bool {
+		return c.Name == CheckDocument && c.Status == result.PackCheckPassed
+	})
+	switch {
+	case !documentPassed:
+		check.Status = result.PackCheckSkipped
+		check.Detail = "The document check did not pass, so no advice was computed."
+	case len(entry.Advisories) > 0:
+		check.Status = result.PackCheckFailed
+		noun := "advisories"
+		if len(entry.Advisories) == 1 {
+			noun = "advisory"
+		}
+		bound := ""
+		if entry.AdvisoriesTruncated {
+			bound = "at least "
+		}
+		check.Detail = fmt.Sprintf("The pack draws %s%d %s, and this run fails on any.", bound, len(entry.Advisories), noun)
+		entry.Status = "invalid"
+	case !advised:
+		check.Status = result.PackCheckSkipped
+		check.Detail = "Rule-overlap advice is computed for Core 0.3.0 and 0.5.0 packs only, so none was computed for this one."
+	}
+	entry.Checks = append(entry.Checks, check)
 }
 
 // checkAuditDir reports whether the declared audit directory stays inside the
@@ -178,8 +233,11 @@ func (p *Project) checkSigningKey() result.PackCheck {
 // through a symlinked component would otherwise be reported as having passed
 // containment and then failed to be read, which is a named check asserting the
 // opposite of what happened.
-func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack) result.PackValidationEntry {
-	report := result.PackValidationEntry{ID: id, Path: entry.Path, Status: "valid", Checks: []result.PackCheck{}}
+//
+// advised is whether the semantic layer computes rule-overlap advice for the
+// validated document: true only for a valid Core 0.3.0 or 0.5.0 pack.
+func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack) (report result.PackValidationEntry, advised bool) {
+	report = result.PackValidationEntry{ID: id, Path: entry.Path, Status: "valid", Checks: []result.PackCheck{}}
 	add := func(name, status, detail string) {
 		report.Checks = append(report.Checks, result.PackCheck{Name: name, Status: status, Detail: detail})
 		if status == result.PackCheckFailed {
@@ -195,7 +253,7 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 		for _, name := range documentChecks {
 			add(name, result.PackCheckSkipped, "The pack path was refused, so this check had nothing to read.")
 		}
-		return report
+		return report, advised
 	}
 	add(CheckPathInsideRoot, result.PackCheckPassed, "")
 
@@ -206,7 +264,7 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 			add(name, result.PackCheckSkipped, "The pack document could not be read, so this check had nothing to compare against.")
 		}
 		p.checkMatrix(entry, add)
-		return report
+		return report, advised
 	}
 	validated, operational := engine.Validate(data, validation.Options{Through: "semantic", Limits: carrier.DefaultLimits()})
 	switch {
@@ -214,6 +272,14 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 		add(CheckDocument, result.PackCheckFailed, display.Sanitize(operational.Message))
 	case validated.Status == "valid":
 		add(CheckDocument, result.PackCheckPassed, "")
+		advised = result.HasCore030Rules(validated.SpecVersion)
+		// What spec validate reports beside a valid verdict for these bytes
+		// is advice, carried beside the checks and moving no status
+		// (ADR-0081).
+		if len(validated.Diagnostics) > 0 {
+			report.Advisories = validated.Diagnostics
+			report.AdvisoriesTruncated = validated.DiagnosticsTruncated
+		}
 	default:
 		add(CheckDocument, result.PackCheckFailed, documentDetail(validated))
 	}
@@ -227,7 +293,7 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 			add(name, result.PackCheckSkipped, "The pack document did not decode, so its own identity members could not be read.")
 		}
 		p.checkMatrix(entry, add)
-		return report
+		return report, advised
 	}
 
 	switch expectedVersionStatus(entry.ExpectedVersion, found.Version) {
@@ -244,7 +310,7 @@ func (p *Project) validatePack(engine *validation.Engine, id string, entry Pack)
 	p.checkFilename(id, entry, found, add)
 	checkHintKeys(entry, found, add)
 	p.checkMatrix(entry, add)
-	return report
+	return report, advised
 }
 
 // checkHintKeys holds a configuration's hint keys to the pack document.

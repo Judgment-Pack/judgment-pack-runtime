@@ -403,3 +403,19 @@ func TestOutcomeAnnotationsAreTheChosenOutcomes(t *testing.T) {
 		t.Fatalf("the zero Evaluation: %v", err)
 	}
 }
+
+// Only package sdk computes a record's JSON and Digest: a struct literal has
+// none whatever its fields hold, and changing a returned record's field
+// changes neither (the package doc of sdk/record).
+func TestRecordJSONIsOnlyWhatEvaluateWithRecordComputed(t *testing.T) {
+	literal := record.DecisionRecord{Disposition: `{"kind":"outcome"}`, FactsDigest: digestA}
+	if literal.JSON() != nil || literal.Digest() != "" {
+		t.Fatalf("a struct literal has no JSON and no digest: %q %q", literal.JSON(), literal.Digest())
+	}
+	_, decided := evaluateWithRecord(t, load(t, sdk.RecordPack050, sdk.LoadOptions{}), recordFacts, recordEvidence, false, nil)
+	before, digest := decided.JSON(), decided.Digest()
+	decided.FactsDigest = digestB
+	if !bytes.Equal(decided.JSON(), before) || decided.Digest() != digest || bytes.Contains(before, []byte(digestB)) {
+		t.Fatalf("changing a field changes neither JSON nor Digest")
+	}
+}

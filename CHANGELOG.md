@@ -28,8 +28,49 @@ All notable changes to tagged releases are documented here.
 - The documentation of `sdk.Load` now names every specVersion it evaluates: `0.2.0-draft`, and
   `0.3.0` or `0.5.0` with the base profile. It did not name `0.5.0`, which `Load` has accepted
   since 0.44.0.
-- No evaluation, no CLI or MCP output and no audit-trail record changes. The conformance claim in
-  CONFORMANCE.md is unchanged.
+- The decision record changes no evaluation, no CLI or MCP output and no audit-trail record.
+- **`packs test` can require a coverage level and witnessed boundaries** (#388, ADR-0080;
+  EXPERIMENTAL SURFACE). `--min-coverage N` (a whole percentage from 0 to 100) fails a pack whose
+  matrix ran unless at least N percent of its derived probes are witnessed by a row, over the same
+  count the coverage report prints; a pack for which no coverage was derived meets no level.
+  `--require-boundaries` fails a pack whose matrix ran when a derived boundary probe is witnessed by
+  no row. A failing pack is reported `mismatch`, its entry names the requirement in the new member
+  `unmetRequirements` (`min-coverage`, `require-boundaries`) and its `detail` says why, and the run
+  exits 1. The payload carries `minCoverage` and `requireBoundaries` exactly when asked, and the
+  human output a `required:` line per option. Neither option touches a pack with no matrix. A
+  level outside 0 to 100 is refused with `JPS-INVOCATION-MIN-COVERAGE`, exit 3. Without the options
+  the output and the exit code are unchanged.
+- **`packs validate` reports the rule-overlap advice `spec validate` reports** (#389, ADR-0081). A
+  pack entry whose document check passed carries, as the new member `advisories`, the diagnostics
+  `spec validate` reports beside a valid verdict for the same bytes (the `JPS-RULES-OVERLAP`
+  warnings of Core `0.3.0` and `0.5.0`, member for member), and `advisoriesTruncated` when they
+  stopped at the output limit; the human output prints each as an `advice:` line under its pack.
+  Advice moves no status and no exit code. A pack that draws none carries no member.
+- **`packs validate --fail-on-advisory`** (#389, ADR-0081). With the option, every selected pack's
+  checks end with a seventh check, `advisories`: `failed` for a pack that draws any advice, so the
+  entry is `invalid` and the run exits 1; `passed` for one that draws none; `skipped` when no advice
+  was computed (the document check did not pass, or the pack declares a Core version before
+  `0.3.0`). The payload then carries `failOnAdvisory: true`. A `not-excluded` advisory (`certainty: "not-excluded"`), which says the analysis could not rule an overlap out within its budget rather than that one exists, also fails the run, unlike `spec test-conformance --strict`, which fails only an exact overlap (ADR-0066). For a
+  `not-excluded` advisory on rules meant to be disjoint, rewrite the conditions so the exclusion is
+  exact (for example, one shared comparison with complementary bounds), or gate that pack in a
+  separate `--id` run without the option. Without the option the output and the exit code are unchanged.
+- **`dialect check` reads Core `0.5.0` packs** (#390, ADR-0082). The CLI command and the MCP
+  `dialect_check` tool now report coverage for a valid pack declaring `specVersion` `0.5.0`, where
+  they refused it with `JPS-SURFACE-SPEC-VERSION-UNSUPPORTED`. A fact condition that names a value
+  set is read like any other; annotations add no pointer. The check still names the Core versions
+  it reads, so a version validation admits later stays refused until it is added, and a pack
+  declaring an unknown version is refused by validation as before (`JPS-DIALECT-PACK-INVALID`,
+  exit 2). The retained-column draft contract (`--draft-contract`) is unchanged and still refuses a
+  `0.5.0` pack, as do the policy check, the graph commands and pack-design analysis.
+- Documentation: the `RuntimeVersion` docs of `sdk.Description` and `record.Evaluator` now say it
+  is whatever version the build records, which may be a pseudo-version or carry `+dirty`, and is
+  empty only when the build records none; the `sdk/record` package doc now says a struct literal
+  has a nil `JSON` and an empty `Digest`. No behavior changes.
+- The member-name ordering behind the pack view's and the decision record's canonical JSON no
+  longer allocates per comparison. The order, and so every byte written, is unchanged.
+- The conformance claim is unchanged. One descriptive sentence in CONFORMANCE.md, which listed the
+  dialect check among the surfaces that refuse a `0.5.0` pack, was corrected to say the dialect
+  check reads one and its retained-column draft contract still refuses it.
 
 ## 0.44.0 - 2026-11-12
 
