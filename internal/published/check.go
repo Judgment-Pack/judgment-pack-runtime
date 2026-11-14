@@ -152,6 +152,10 @@ type Report struct {
 	// so nothing published was there to check against; the run is then
 	// incomplete, never valid.
 	NothingPublished bool
+	// NothingRead says tags were read but no pack or dialect document was
+	// found at any of them or at HEAD, as when --include selects nothing:
+	// there was nothing to check, and the run is incomplete, never valid.
+	NothingRead bool
 	// Identities is the number of identities a tag published.
 	Identities int
 	// Documents is the number of distinct document blobs read; OtherFiles
@@ -326,10 +330,14 @@ func Check(options Options) (*Report, *Failure) {
 	// With no tag read and no pin given, nothing published was there to
 	// compare HEAD with: a run that checked nothing is not clean.
 	report.NothingPublished = report.TagsRead == 0 && (options.Manifest == nil || len(options.Manifest.Documents) == 0)
+	// With tags read and no document found anywhere, the selection read
+	// nothing a tag could have published: a run that checked nothing is not
+	// clean either.
+	report.NothingRead = report.TagsRead > 0 && report.Documents == 0
 	switch {
 	case report.FindingCount > 0:
 		report.Status = StatusInvalid
-	case report.UnreadableCount > 0 || report.UnreadTagCount > 0 || report.NothingPublished:
+	case report.UnreadableCount > 0 || report.UnreadTagCount > 0 || report.NothingPublished || report.NothingRead:
 		report.Status = StatusIncomplete
 	default:
 		report.Status = StatusValid
@@ -566,9 +574,23 @@ type walker struct {
 	treeBytes int64
 }
 
+// directory is one directory waiting to be read. Its path is its parent's
+// path, held once and shared by every child of that parent waiting with it,
+// and its own name; so a wide tree deep in the repository costs one copy of
+// the path above it, not one per child.
 type directory struct {
-	path string
-	tree string
+	// parent is the parent directory's path, nil for the root tree.
+	parent *string
+	name   string
+	tree   string
+}
+
+// path is the directory's path from the repository's root, "" for the root.
+func (d directory) path() string {
+	if d.parent == nil || *d.parent == "" {
+		return d.name
+	}
+	return *d.parent + "/" + d.name
 }
 
 type treeEntry struct {
@@ -648,12 +670,13 @@ func modeText(mode string) string {
 // selects or reaches below, is reported as unreadable, never skipped.
 func (w *walker) walk(index int) error {
 	stack := []directory{}
-	if err := w.queue(&stack, directory{path: "", tree: w.snapshots[index].tree}); err != nil {
+	if err := w.queue(&stack, directory{tree: w.snapshots[index].tree}); err != nil {
 		return err
 	}
 	for len(stack) > 0 {
 		current := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+		currentPath := current.path()
 		entries, problem, err := w.readTree(current.tree)
 		if err != nil {
 			return err
@@ -662,14 +685,14 @@ func (w *walker) walk(index int) error {
 			return w.overLimit()
 		}
 		if problem != "" {
-			w.unread(index, displayDir(current.path), "", problem)
+			w.unread(index, displayDir(currentPath), "", problem)
 			continue
 		}
 		subdirectories := []directory{}
 		for _, entry := range entries {
 			full := entry.name
-			if current.path != "" {
-				full = current.path + "/" + entry.name
+			if currentPath != "" {
+				full = currentPath + "/" + entry.name
 			}
 			selected := w.selection.selects(full)
 			reached := entry.kind != entryFile && entry.kind != entryLink && w.selection.descends(full)
@@ -692,7 +715,7 @@ func (w *walker) walk(index int) error {
 				if !canonicalModes[entry.mode] {
 					w.unread(index, full, "", "its tree entry mode is written "+modeText(entry.mode)+", which git does not write; it was read as git reads it, as a directory")
 				}
-				subdirectories = append(subdirectories, directory{path: full, tree: entry.id})
+				subdirectories = append(subdirectories, directory{parent: &currentPath, name: entry.name, tree: entry.id})
 			case entryFile:
 				if !canonicalModes[entry.mode] {
 					w.unread(index, full, "", "its tree entry mode is written "+modeText(entry.mode)+", which git does not write; it was read as git reads it, as a regular file")
@@ -719,9 +742,19 @@ func (w *walker) walk(index int) error {
 
 // queue puts a directory on the stack unless it was read, or queued, before
 // at the same path with the same tree id, and counts it against
-// maxDirectories.
+// maxDirectories. The key is the SHA-256 of the path, a NUL and the tree id,
+// hashed from the parent's path and the name without joining them.
 func (w *walker) queue(stack *[]directory, next directory) error {
-	key := sha256.Sum256([]byte(next.path + "\x00" + next.tree))
+	hash := sha256.New()
+	if next.parent != nil && *next.parent != "" {
+		hash.Write([]byte(*next.parent))
+		hash.Write([]byte{'/'})
+	}
+	hash.Write([]byte(next.name))
+	hash.Write([]byte{0})
+	hash.Write([]byte(next.tree))
+	var key [sha256.Size]byte
+	hash.Sum(key[:0])
 	if _, seen := w.visited[key]; seen {
 		return nil
 	}

@@ -82,9 +82,11 @@ tag holding the identity; each other digest is one finding, at the first place f
 selected tag holds; HEAD alone does not answer it), and, under `--strict`, `not-in-manifest`.
 
 **Status and exit.** `valid` exits 0. `invalid` (a finding) and `incomplete` (no finding, and
-something selected unreadable, or no tag read and no manifest pin given) exit 1, so a check that
-could not read everything, or had nothing published to compare HEAD with, never passes: a clone
-fetched without tags, or a `--tags` pattern that matches none, is not a clean result. A usage error
+something selected unreadable, or no tag read and no manifest pin given, or tags read and no
+document read at any of them or at HEAD) exit 1, so a check that could not read everything, or had
+nothing published to compare HEAD with, or read nothing to compare, never passes: a clone fetched
+without tags, a `--tags` pattern that matches none, and an `--include` that selects no document
+are not clean results. A usage error
 exits 3. A repository that cannot be read (no git, not a repository, a shallow clone without a
 manifest, a partial clone, an unreadable HEAD, git failing mid-run, trees that name more than the
 walk's bounds) exits 4 with nothing reported.

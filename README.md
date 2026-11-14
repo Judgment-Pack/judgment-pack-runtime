@@ -1496,9 +1496,10 @@ literals such as `foo://[v1.a]/` are accepted. Both `v` and `V`, IPv6, valid per
 escapes, query/fragment punctuation and generic digit-only ports are preserved.
 Malformed escapes, final LF and scoped IPv6 are refused. This checks generic
 syntax without resolving a URI or granting trust. Exact spelling and stored
-identities are preserved. Update Runtime pins deliberately, after the check that
-[Revalidating before moving a Runtime pin](docs/revalidating-a-runtime-pin.md)
-describes; no IDs, records or jobs migrate automatically. Official Policy uses the
+identities are preserved. Update Runtime pins deliberately and revalidate original
+bytes: [Revalidating before moving a Runtime pin](docs/revalidating-a-runtime-pin.md)
+describes the check of the project's matrix results, and packs without a matrix, records, audit
+trails and graphs are not part of it; no IDs, records or jobs migrate automatically. Official Policy uses the
 shared corrected assertion. Historical prototype Policy `0.0.2`, including its
 retained Core consumers, keeps its old assertion through a scoped compatibility
 path. [ADR-0064](docs/adr/0064-share-uri-component-grammar.md) records the acceptance
@@ -1544,6 +1545,8 @@ digest. Source pointers name rules, exceptions and the other entities, which sit
 in both forms. A `0.5.0` pack that evaluation refuses is refused with `pack-unsupported`, and the
 message names the Core class, evaluation's code and Core's first diagnostic code; `spec validate`
 reports the rest ([ADR-0089](docs/adr/0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md)).
+Bytes the carrier refuses (JSON that does not decode, a duplicate member name, a lone surrogate)
+get the bare refusal, since no selector is read from them.
 The domain is supplied explicitly, for example:
 
 ```json
@@ -1565,6 +1568,9 @@ never treated as false; an unproved condition check marks the report incomplete.
 Outcome redundancy does not authorize deleting a rule. Intentional fallback is a
 caller declaration for this domain only. Pack/domain digests bind the exact input
 bytes and the report echoes the parsed domain with exact JSON numbers.
+Format 1 has no finding for a value set no condition references or for a value
+repeated in a set, so neither is reported, and a report over such a pack can still
+say `complete: true`.
 
 Domains and output have a 1 MiB byte ceiling, depth 32 (root 0), 16384 value
 nodes, 65536 UTF-8 bytes per string/member name and 4096 digits per numeric token.

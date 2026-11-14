@@ -934,16 +934,23 @@ func tagged(repo *gitfixture.Repo, tree string) {
 	repo.Head(commit)
 }
 
+// readWhole says a run over a fixture that holds no document read every
+// tree and tag it selected: nothing unread and no finding, and incomplete
+// only because no document was there to check.
+func readWhole(report *Report) bool {
+	return report.Status == StatusIncomplete && report.NothingRead && report.UnreadableCount == 0 && report.UnreadTagCount == 0 && report.FindingCount == 0
+}
+
 func TestATreeThatNamesMoreDirectoriesThanTheBoundEndsTheRun(t *testing.T) {
 	repo := gitfixture.New(t)
 	// Eleven trees name 2^11 - 1 = 2047 directories, distinct by path; HEAD
 	// is the tag's commit, so it adds none.
 	tagged(repo, doubling(repo, repo.TreeOf(), 10))
-	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid || report.TagsRead != 1 {
+	if report := run(t, defaultOptions(repo.Dir)); !readWhole(report) || report.TagsRead != 1 {
 		t.Fatalf("under the default bounds the run reads it: %#v", report)
 	}
 	lowerBounds(t, 2047, maxTreeBytes)
-	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid {
+	if report := run(t, defaultOptions(repo.Dir)); !readWhole(report) {
 		t.Fatalf("a bound of exactly the directories read is not passed: %#v", report)
 	}
 	lowerBounds(t, 2046, maxTreeBytes)
@@ -955,7 +962,7 @@ func TestATreeThatNamesMoreDirectoriesThanTheBoundEndsTheRun(t *testing.T) {
 	options := defaultOptions(repo.Dir)
 	only, _ := CompileGlob("a/a/a/a/a/a/a/a/a/a/*.json")
 	options.Selection.Include = []Glob{only}
-	if report := run(t, options); report.Status != StatusValid {
+	if report := run(t, options); !readWhole(report) {
 		t.Fatalf("a narrower selection fits the bound: %#v", report)
 	}
 }
@@ -967,7 +974,7 @@ func TestTreeBytesAreBoundedHoweverFewTheEntries(t *testing.T) {
 	leaf := repo.RawTree(gitfixture.Entry{Mode: "100644", Name: strings.Repeat("n", 100_000), ID: repo.Blob("x")})
 	tagged(repo, doubling(repo, leaf, 4))
 	lowerBounds(t, maxDirectories, 2<<20)
-	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid {
+	if report := run(t, defaultOptions(repo.Dir)); !readWhole(report) {
 		t.Fatalf("under the bound the run reads it: %#v", report)
 	}
 	lowerBounds(t, maxDirectories, 1<<20)
@@ -1074,6 +1081,34 @@ func TestARunThatReadNoTagIsIncomplete(t *testing.T) {
 	options.Manifest = &run(t, defaultOptions(tagged.Dir)).Manifest
 	if report := run(t, options); report.Status != StatusInvalid || report.NothingPublished || report.Findings[0].Code != CodeVanished {
 		t.Fatalf("a pin no tag read answers has vanished: %#v", report)
+	}
+}
+
+// A run that read tags and found no document at any of them or at HEAD
+// checked nothing: an --include that selects no document, and a selection
+// that holds only other JSON, are incomplete, never valid. A manifest's pins
+// are then a vanished finding.
+func TestARunThatReadNoDocumentIsIncomplete(t *testing.T) {
+	repo := history(t, []string{"v1", "v2"}, []map[string]string{
+		{"packs/expense.json": packA, "config/settings.json": `{"name":"x"}`},
+		{"packs/expense.json": packA, "config/settings.json": `{"name":"x"}`},
+	}, nil)
+	if report := run(t, defaultOptions(repo.Dir)); report.Status != StatusValid || report.NothingRead || report.Documents != 1 {
+		t.Fatalf("the default selection reads the pack: %#v", report)
+	}
+	options := defaultOptions(repo.Dir)
+	for _, pattern := range []string{"pack/**", "config/**"} {
+		include, _ := CompileGlob(pattern)
+		options.Selection.Include = []Glob{include}
+		report := run(t, options)
+		if report.Status != StatusIncomplete || !report.NothingRead || report.NothingPublished || report.TagsRead != 2 ||
+			report.Documents != 0 || report.UnreadableCount != 0 || report.FindingCount != 0 {
+			t.Fatalf("--include %s selects no document and is incomplete: %#v", pattern, report)
+		}
+	}
+	options.Manifest = &run(t, defaultOptions(repo.Dir)).Manifest
+	if report := run(t, options); report.Status != StatusInvalid || report.Findings[0].Code != CodeVanished {
+		t.Fatalf("a pin the selection does not read has vanished: %#v", report)
 	}
 }
 

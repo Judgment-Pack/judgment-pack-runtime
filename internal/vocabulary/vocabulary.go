@@ -10,6 +10,7 @@
 package vocabulary
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -235,12 +236,17 @@ func refusalMessage(id string, value any) string {
 // quote writes a decoded value as JSON text in printable ASCII: every code
 // point outside it is written as a \u escape, so a look-alike character, a
 // format character or a control cannot pass for the level it resembles in a
-// message, a terminal or a log.
+// message, a terminal or a log. The characters <, > and & are printable and
+// are written as themselves, not as the escapes the JSON encoder's default
+// gives them.
 func quote(value any) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
 		return "(a value that does not encode)"
 	}
+	encoded := bytes.TrimSuffix(buffer.Bytes(), []byte("\n"))
 	var builder strings.Builder
 	for _, character := range string(encoded) {
 		if character >= 0x20 && character < 0x7f {
