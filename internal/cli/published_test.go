@@ -339,6 +339,12 @@ func TestCheckPublishedJSONEscapesANameThatIsNotUTF8(t *testing.T) {
 	if err := repo.Try("update-ref", "refs/tags/v1\xff", first); err != nil {
 		t.Skipf("this filesystem refuses a ref name that is not UTF-8: %v", err)
 	}
+	if runtime.GOOS == "windows" {
+		// The ref is a file under the git directory, and a file name there is
+		// UTF-16: the byte that is not UTF-8 is stored as U+FFFD, so the ref git
+		// then reports is a UTF-8 name and rightly gets no escaped member.
+		t.Skip("a ref name that is not UTF-8 is not kept as written on this platform")
+	}
 	second := repo.Snapshot(map[string]string{odd: publishedPackB, spelled: packD, "kept.json": kept}, first)
 	repo.Tag("v2", second)
 	repo.Head(second)
