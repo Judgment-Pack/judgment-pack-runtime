@@ -553,9 +553,12 @@ type occurrence struct {
 }
 
 // identityRecord keeps, for one identity, the first place each distinct
-// digest of it was found, in the order the snapshots were walked.
+// digest of it was found, in the order the snapshots were walked. seen holds
+// the same digests as a set, so a document found again costs one lookup,
+// not a scan of every digest the identity has.
 type identityRecord struct {
 	digests   []occurrence
+	seen      map[string]struct{}
 	published bool
 }
 
@@ -857,17 +860,16 @@ func (w *walker) document(index int, path, id string) error {
 	}
 	record := w.identities[info.identity]
 	if record == nil {
-		record = &identityRecord{}
+		record = &identityRecord{seen: map[string]struct{}{}}
 		w.identities[info.identity] = record
 	}
 	if w.snapshots[index].tag {
 		record.published = true
 	}
-	for _, seen := range record.digests {
-		if seen.digest == info.digest {
-			return nil
-		}
+	if _, seen := record.seen[info.digest]; seen {
+		return nil
 	}
+	record.seen[info.digest] = struct{}{}
 	record.digests = append(record.digests, occurrence{snapshot: index, path: path, digest: info.digest})
 	return nil
 }

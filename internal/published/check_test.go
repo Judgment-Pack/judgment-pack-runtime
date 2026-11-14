@@ -3,6 +3,7 @@ package published
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -118,6 +119,40 @@ func TestAWhitespaceOnlyChangeIsAFinding(t *testing.T) {
 	finding := onlyFinding(t, run(t, defaultOptions(repo.Dir)))
 	if finding.Code != CodeChanged || finding.Found.Digest != digestOf(packA+"\n") {
 		t.Fatalf("unexpected finding: %#v", finding)
+	}
+}
+
+// TestEachDigestUnderOneIdentityIsKeptOnceInFirstFoundOrder pins the run's
+// output where an identity holds several digests, some found again in later
+// snapshots: one finding per distinct digest, at the first place it was
+// found, in the order the snapshots were walked. Its expected bytes are the
+// output of the run that scanned each identity's digests one by one.
+func TestEachDigestUnderOneIdentityIsKeptOnceInFirstFoundOrder(t *testing.T) {
+	packC := strings.Replace(packB, `"deny"`, `"hold"`, 1)
+	repo := history(t, []string{"v1", "v2", "v3", "v4"}, []map[string]string{
+		{"packs/a.json": packA, "dialects/intake.json": dialectA},
+		{"packs/a.json": packB, "dialects/intake.json": dialectA},
+		{"packs/a.json": packA, "packs/b.json": packB, "dialects/intake.json": dialectA},
+		{"packs/a.json": packC, "dialects/intake.json": dialectA},
+	}, map[string]string{"packs/a.json": packB, "packs/c.json": packC, "packs/next.json": packNext, "dialects/intake.json": dialectA})
+	report := run(t, defaultOptions(repo.Dir))
+	expense := Identity{Kind: KindPack, ID: "expense", Version: "1.0.0"}
+	published := Location{Source: SourceTag, Ref: "refs/tags/v1", Path: "packs/a.json", Digest: digestOf(packA)}
+	want := []Finding{
+		{Code: CodeChanged, Identity: expense, Published: published, Found: &Location{Source: SourceTag, Ref: "refs/tags/v2", Path: "packs/a.json", Digest: digestOf(packB)}},
+		{Code: CodeChanged, Identity: expense, Published: published, Found: &Location{Source: SourceTag, Ref: "refs/tags/v4", Path: "packs/a.json", Digest: digestOf(packC)}},
+	}
+	got, _ := json.Marshal(report.Findings)
+	expected, _ := json.Marshal(want)
+	if string(got) != string(expected) || report.FindingCount != 2 {
+		t.Fatalf("findings:\n got %s\nwant %s", got, expected)
+	}
+	wantManifest := EncodeManifest(Manifest{Documents: []ManifestEntry{{Kind: KindDialect, ID: "intake", Version: "1.0.0", Digest: digestOf(dialectA), FirstTag: "v1"}}})
+	if manifest := EncodeManifest(report.Manifest); string(manifest) != string(wantManifest) {
+		t.Fatalf("manifest:\n got %s\nwant %s", manifest, wantManifest)
+	}
+	if len(report.Withheld) != 1 || report.Withheld[0] != expense || report.Identities != 2 {
+		t.Fatalf("unexpected report: %#v", report)
 	}
 }
 
