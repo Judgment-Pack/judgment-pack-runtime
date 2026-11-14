@@ -65,7 +65,8 @@ func (a *App) checkPublishedCommand() *cobra.Command {
 			"written as a JSON string in printable ASCII (a name that is not UTF-8, as Go quotes it); --format json writes the standard envelope with a publishedCheckVersion " +
 			"member. It exits 0 when every identity keeps its bytes and everything selected was read, 1 when there is a " +
 			"finding (status invalid), or something selected could not be read, or no tag was read and no manifest pin was " +
-			"given, so nothing published was checked (status incomplete), 3 for a usage error, and " +
+			"given, so nothing published was checked, or tags were read and no document was read at any of them or at " +
+			"HEAD (status incomplete), 3 for a usage error, and " +
 			"4 when the repository could not be read, or its trees name more than one run reads (1,000,000 directories, " +
 			"distinct by path and tree, or 1 GiB of tree objects), with nothing reported. The check, its output and this command are " +
 			"EXPERIMENTAL: each may change or be removed without a compatibility promise.",
@@ -130,7 +131,7 @@ func (a *App) checkPublishedCommand() *cobra.Command {
 	command.Flags().StringVar(&repository, "repo", repository, "a directory in the local git repository to read")
 	command.Flags().StringArrayVar(&tagPatterns, "tags", nil, "read only tags whose name, without refs/tags/, matches this glob (repeatable; default every tag)")
 	command.Flags().StringArrayVar(&includePatterns, "include", nil, "read only paths that match this glob (repeatable; default "+published.DefaultInclude+")")
-	command.Flags().StringArrayVar(&excludePatterns, "exclude", nil, "do not read paths that match this glob (repeatable)")
+	command.Flags().StringArrayVar(&excludePatterns, "exclude", nil, "do not read paths that match this glob (repeatable; a pattern matches a whole path, so DIR/** excludes what is below DIR and DIR alone does not)")
 	command.Flags().StringVar(&manifestPath, "manifest", manifestPath, "check against this manifest of published identities, a file path or -")
 	command.Flags().StringVar(&writePath, "write-manifest", writePath, "write this run's manifest to this file, replacing only a manifest")
 	command.Flags().BoolVar(&strict, "strict", strict, "with --manifest, an identity a tag published that the manifest does not pin is a finding")
@@ -346,6 +347,10 @@ func (a *App) renderPublishedCheck(format string, report *published.Report, opti
 	default:
 		if report.NothingPublished {
 			fmt.Fprintf(&out, "incomplete: no tag was read, of %d in the repository, and no manifest pin was given, so nothing published was checked\n", report.TagsTotal)
+			break
+		}
+		if report.NothingRead && report.UnreadableCount == 0 && report.UnreadTagCount == 0 {
+			fmt.Fprintf(&out, "incomplete: %d tag(s) and HEAD were read and no pack or dialect document was read at any of them, so nothing was checked; --include and --exclude select the paths read\n", report.TagsRead)
 			break
 		}
 		fmt.Fprintf(&out, "incomplete: no finding, and %d selected document(s) and %d tag(s) could not be read\n", report.UnreadableCount, report.UnreadTagCount)

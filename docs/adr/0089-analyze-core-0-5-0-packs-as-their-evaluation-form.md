@@ -70,7 +70,12 @@ Chosen option: **A**.
 2. **One form.** The analyzer reads the rules, exceptions, evidence requirements, applicability
    and fallback from `AdmittedPack.EvaluationForm`, the root the evaluator's admission made once
    and every evaluation of the analysis walks. For `0.3.0` that root is the decoded document, as
-   before. The analyzer no longer decodes the pack's bytes itself.
+   before. The analyzer no longer decodes the pack's bytes itself. From the form it reads only
+   each entity's `id`, `outcome` and `targetRule` and the length of each list, which §8.5 never
+   changes; what a condition means it learns by evaluating. So no analysis report tells the form
+   from the document, and a reader that took the document instead would pass every behavioural
+   test. That this read is of the evaluation form is held by the source check
+   (`advisoryContractFault` in `internal/cli/conformance_enumeration_test.go`), not by behaviour.
 3. **What value sets and annotations mean to the analysis.** A value-set reference means its inline
    array: a finding about a condition that names a set is the finding its inline twin gets. An
    annotation, a set's description and an entry's description mean nothing: changing, adding or
@@ -88,9 +93,16 @@ Chosen option: **A**.
    conformant, the code of Core's first diagnostic, for example
    `pack-not-conformant (JPS-EVALUATION-PACK-NOT-CONFORMANT), first diagnostic
    JPS-SEMANTIC-UNRESOLVED-VALUE-SET`. All three are this runtime's fixed identifiers, never pack
-   text. A `0.3.0` pack's refusal keeps the message it had, so its bytes do not change.
+   text. A `0.3.0` pack's refusal keeps the message it had, so its bytes do not change. A pack
+   the carrier refuses (bytes that do not decode, a duplicate member name, an annotation's
+   included, or a lone surrogate) gets the bare refusal whatever it declares: contract selection
+   fails before any selector is read, so the analyzer cannot tell a `0.5.0` pack from another.
+6. **What format 1 does not report.** A value set no condition references, and a value repeated
+   in a set, are not findings of any format 1 family, so neither is reported, and a report over a
+   pack that holds one can still say `complete: true`. That is a limit of the format, not of the
+   analysis (point 3).
 
-6. **Graphs and the policy check keep their refusal.** Neither change is as small or as plainly
+7. **Graphs and the policy check keep their refusal.** Neither change is as small or as plainly
    allowed as the analysis. Draft RFC 0002 names no Core version for a node pack and no
    specification issue proposes reading a `0.5.0` one, so reading one is this runtime's own
    decision across graph validate, explain, test and evaluate, the mixed-contract rule and the

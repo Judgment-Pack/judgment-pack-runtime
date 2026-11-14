@@ -36,7 +36,9 @@ jpack packs test --format json > baseline.json
 ```
 
 `packs test` writes a complete report at exit 0 and at exit 1, when a row or a declared requirement
-was not met, and either is a usable baseline. Any other exit wrote no report. One `packs test`
+was not met. Either is a usable baseline when every declared pack and matrix loaded; a report in
+which a pack or its matrix failed to load holds no rows for that pack, and `--baseline` refuses it
+whole (`JPS-BASELINE-INVALID`, exit 3). Any other exit wrote no report. One `packs test`
 run refuses a project whose packs declare more than one Core version
 (`JPS-MATRIX-MIXED-CONTRACT`); take one report per pack with `--id` instead, and give the
 candidate every report:
@@ -50,7 +52,9 @@ jpack experimental revalidate --baseline intake.json --baseline expense.json
 A `packs test` report records no digest, so the check compares its rows and states, for each pack,
 that the pack and matrix bytes were not compared (`bytes: "not-recorded"`, and a
 `BYTES NOT COMPARED` line). In that case only running both steps from one checkout keeps the bytes
-the same.
+the same. The run's `status` is then `same` when every row is, though no byte was compared, so a
+JSON consumer reads `summary.bytesNotRecorded` beside `status`: a count above zero says how many
+packs' bytes were not compared.
 
 ## What is compared
 
@@ -61,8 +65,10 @@ their id.
 - **A row** is the same when the RFC 8785 canonical JSON of the object
   `{id, status, disposition, errorClass, errorPhase, handoffTarget}` is the same bytes on both
   sides. `disposition` is the row's actual canonical §8.3 disposition text, which holds the outcome,
-  the reasons in order and the handoff; `errorClass` and `errorPhase` are the §8.4 error a refused
-  row produced; `handoffTarget` is the rendering a row that asserts `expectedHandoffTarget` reports;
+  the reasons, sorted as the canonical form sorts them, and the handoff; `errorClass` and
+  `errorPhase` are the §8.4 error a refused row produced, so a refusal is compared by its class and
+  phase and not by its `JPS-*` code, which a row does not record; `handoffTarget` is the
+  rendering a row that asserts `expectedHandoffTarget` reports;
   `status` is `passed` or `mismatch`. A member that is empty is absent. The expectation, the detail
   text and the coverage report are not compared: they are what the project wrote, or prose.
 - **A pack** is compared by its `packId`, `packVersion` and the `specVersion` its declaration
