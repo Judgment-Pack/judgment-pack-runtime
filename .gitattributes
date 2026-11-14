@@ -48,3 +48,7 @@ internal/dialect/retained-column/official/** -text
 # the view writes, and the view fixtures are pack documents whose exact bytes
 # are digested.
 sdk/view/testdata/** -text
+
+# The record fixtures are compared with what the writer composes; the tests
+# trim line endings today, and the files keep their exact bytes regardless.
+sdk/record/testdata/** -text

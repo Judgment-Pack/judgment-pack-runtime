@@ -3,7 +3,10 @@ package published
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -121,6 +124,40 @@ func TestAWhitespaceOnlyChangeIsAFinding(t *testing.T) {
 	}
 }
 
+// TestEachDigestUnderOneIdentityIsKeptOnceInFirstFoundOrder pins the run's
+// output where an identity holds several digests, some found again in later
+// snapshots: one finding per distinct digest, at the first place it was
+// found, in the order the snapshots were walked. Its expected bytes are the
+// output of the run that scanned each identity's digests one by one.
+func TestEachDigestUnderOneIdentityIsKeptOnceInFirstFoundOrder(t *testing.T) {
+	packC := strings.Replace(packB, `"deny"`, `"hold"`, 1)
+	repo := history(t, []string{"v1", "v2", "v3", "v4"}, []map[string]string{
+		{"packs/a.json": packA, "dialects/intake.json": dialectA},
+		{"packs/a.json": packB, "dialects/intake.json": dialectA},
+		{"packs/a.json": packA, "packs/b.json": packB, "dialects/intake.json": dialectA},
+		{"packs/a.json": packC, "dialects/intake.json": dialectA},
+	}, map[string]string{"packs/a.json": packB, "packs/c.json": packC, "packs/next.json": packNext, "dialects/intake.json": dialectA})
+	report := run(t, defaultOptions(repo.Dir))
+	expense := Identity{Kind: KindPack, ID: "expense", Version: "1.0.0"}
+	published := Location{Source: SourceTag, Ref: "refs/tags/v1", Path: "packs/a.json", Digest: digestOf(packA)}
+	want := []Finding{
+		{Code: CodeChanged, Identity: expense, Published: published, Found: &Location{Source: SourceTag, Ref: "refs/tags/v2", Path: "packs/a.json", Digest: digestOf(packB)}},
+		{Code: CodeChanged, Identity: expense, Published: published, Found: &Location{Source: SourceTag, Ref: "refs/tags/v4", Path: "packs/a.json", Digest: digestOf(packC)}},
+	}
+	got, _ := json.Marshal(report.Findings)
+	expected, _ := json.Marshal(want)
+	if string(got) != string(expected) || report.FindingCount != 2 {
+		t.Fatalf("findings:\n got %s\nwant %s", got, expected)
+	}
+	wantManifest := EncodeManifest(Manifest{Documents: []ManifestEntry{{Kind: KindDialect, ID: "intake", Version: "1.0.0", Digest: digestOf(dialectA), FirstTag: "v1"}}})
+	if manifest := EncodeManifest(report.Manifest); string(manifest) != string(wantManifest) {
+		t.Fatalf("manifest:\n got %s\nwant %s", manifest, wantManifest)
+	}
+	if len(report.Withheld) != 1 || report.Withheld[0] != expense || report.Identities != 2 {
+		t.Fatalf("unexpected report: %#v", report)
+	}
+}
+
 func TestAMovedFileWithTheSameBytesPasses(t *testing.T) {
 	repo := history(t, []string{"v1", "v2"}, []map[string]string{
 		{"packs/expense.json": packA},
@@ -208,6 +245,25 @@ func TestAPackWithoutAReadableIdentityIsUnreadable(t *testing.T) {
 	report := run(t, defaultOptions(repo.Dir))
 	if report.Status != StatusIncomplete || report.UnreadableCount != 1 || report.OtherFiles != 1 || !strings.Contains(report.Unreadable[0].Reason, "identity cannot be read") {
 		t.Fatalf("unexpected report: %#v", report)
+	}
+}
+
+func TestAnIdentityLongerThanTheBoundIsUnreadable(t *testing.T) {
+	long := strings.Repeat("x", maxIdentityBytes+1)
+	limit := strings.Repeat("x", maxIdentityBytes)
+	repo := history(t, []string{"v1"}, []map[string]string{{
+		"id.json":      `{"specVersion":"0.5.0","id":"` + long + `","version":"1.0.0"}`,
+		"version.json": `{"formatVersion":"3.0.0","id":"intake","version":"` + long + `","case":{}}`,
+		"limit.json":   `{"specVersion":"0.5.0","id":"` + limit + `","version":"` + limit + `"}`,
+	}}, nil)
+	report := run(t, defaultOptions(repo.Dir))
+	if report.Status != StatusIncomplete || report.UnreadableCount != 2 || report.Identities != 1 {
+		t.Fatalf("an id or version over the bound must be unreadable, one at the bound read: %#v", report)
+	}
+	for _, unreadable := range report.Unreadable {
+		if unreadable.Path == "limit.json" || !strings.Contains(unreadable.Reason, "longer than 4096 bytes") {
+			t.Fatalf("unexpected unreadable entry: %#v", unreadable)
+		}
 	}
 }
 
@@ -604,6 +660,48 @@ func TestEveryPromisorSettingIsRefused(t *testing.T) {
 // still applies, and a promisor setting there, which makes the repository a
 // partial clone to git, is refused like one in the repository. The test
 // writes only into the fixture's own home, which HOME names.
+func TestTheOutputReadWholeIsBounded(t *testing.T) {
+	buffer := limitedBuffer{limit: 4}
+	if n, err := buffer.Write([]byte("abc")); n != 3 || err != nil || buffer.over {
+		t.Fatalf("a write within the limit is kept whole: %d %v", n, err)
+	}
+	if n, err := buffer.Write([]byte("def")); n != 3 || err != nil || !buffer.over || buffer.String() != "abcd" {
+		t.Fatalf("a write past the limit is cut and recorded: %q over=%v", buffer.String(), buffer.over)
+	}
+	// io.Copy is how exec.Cmd fills a writer that is not a file: it must
+	// reach Write, where the bound is.
+	copied := limitedBuffer{limit: 4}
+	if _, err := io.Copy(&copied, strings.NewReader("abcdef")); err != nil || !copied.over || copied.String() != "abcd" {
+		t.Fatalf("a copy past the limit is cut and recorded: %q over=%v", copied.String(), copied.over)
+	}
+	var message boundedBuffer
+	if _, err := io.Copy(&message, strings.NewReader(strings.Repeat("x", 2*maxMessageBytes))); err != nil || message.Len() != maxMessageBytes {
+		t.Fatalf("a message is kept to %d bytes, got %d", maxMessageBytes, message.Len())
+	}
+
+	repo := history(t, []string{"v1"}, []map[string]string{{"expense.json": packA}}, nil)
+	var settings strings.Builder
+	// Each setting git writes back is "remote.rN.promisor false": past the
+	// bound once there are more of them than the bound has 24-byte lines.
+	for index := 0; index <= maxOutputBytes/24; index++ {
+		fmt.Fprintf(&settings, "[remote \"r%d\"]\n\tpromisor = false\n", index)
+	}
+	config, err := os.OpenFile(filepath.Join(repo.GitDir(), "config"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = config.WriteString(settings.String())
+	if closeErr := config.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, failure := Check(defaultOptions(repo.Dir)); failure == nil || failure.Code != FailureRepository || !strings.Contains(failure.Message, "more than") {
+		t.Fatalf("partial-clone settings past the bound must be refused, never read in part: %#v", failure)
+	}
+}
+
 func TestTheUsersGlobalConfigurationIsReadAsGitReadsIt(t *testing.T) {
 	repo := history(t, []string{"v1"}, []map[string]string{{"expense.json": packA}}, nil)
 	if os.Getenv("HOME") != repo.Home {
@@ -822,23 +920,24 @@ func TestTheManifestReaderRefusesWhatItWouldNotWrite(t *testing.T) {
 		t.Fatalf("a well-formed manifest must be read: %v", err)
 	}
 	for name, document := range map[string]string{
-		"unknown member":    `{"manifestVersion": "1", "documents": [], "note": "x"}`,
-		"other case":        `{"ManifestVersion": "1", "documents": []}`,
-		"other version":     `{"manifestVersion": "2", "documents": []}`,
-		"no documents":      `{"manifestVersion": "1"}`,
-		"duplicate member":  `{"manifestVersion": "1", "manifestVersion": "1", "documents": []}`,
-		"unknown kind":      `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"pack"`, `"graph"`, 1) + `]}`,
-		"short digest":      `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), "sha256:abc", 1) + `]}`,
-		"upper-case digest": `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), strings.ToUpper(digestOf(packA)), 1) + `]}`,
-		"empty first tag":   `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"v1"`, `""`, 1) + `]}`,
-		"entry member":      `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `}`, `, "path": "p"}`, 1) + `]}`,
-		"twice":             `{"manifestVersion": "1", "documents": [` + entry + `, ` + entry + `]}`,
+		"unknown member":              `{"manifestVersion": "1", "documents": [], "note": "x"}`,
+		"other case":                  `{"ManifestVersion": "1", "documents": []}`,
+		"other version":               `{"manifestVersion": "2", "documents": []}`,
+		"later version with a member": `{"manifestVersion": "2", "documents": [], "signature": "x"}`,
+		"no documents":                `{"manifestVersion": "1"}`,
+		"duplicate member":            `{"manifestVersion": "1", "manifestVersion": "1", "documents": []}`,
+		"unknown kind":                `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"pack"`, `"graph"`, 1) + `]}`,
+		"short digest":                `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), "sha256:abc", 1) + `]}`,
+		"upper-case digest":           `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), strings.ToUpper(digestOf(packA)), 1) + `]}`,
+		"empty first tag":             `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"v1"`, `""`, 1) + `]}`,
+		"entry member":                `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `}`, `, "path": "p"}`, 1) + `]}`,
+		"twice":                       `{"manifestVersion": "1", "documents": [` + entry + `, ` + entry + `]}`,
 	} {
 		_, err := ReadManifest([]byte(document))
 		if err == nil {
 			t.Errorf("%s: the manifest must be refused", name)
 		}
-		if errors.Is(err, ErrManifestVersion) != (name == "other version") {
+		if errors.Is(err, ErrManifestVersion) != strings.Contains(name, "version") {
 			t.Errorf("%s: only another manifestVersion is a version refusal: %v", name, err)
 		}
 	}
@@ -1030,6 +1129,30 @@ func TestTagsAreOrderedByTheCommitGraphNotByName(t *testing.T) {
 	finding := onlyFinding(t, run(t, defaultOptions(repo.Dir)))
 	if finding.Published.Ref != "refs/tags/z-first" || finding.Found.Ref != "refs/tags/a-second" {
 		t.Fatalf("the ancestor's tag published the identity: %#v found %#v", finding.Published, finding.Found)
+	}
+}
+
+func TestAGraftsFileDoesNotReorderTheTags(t *testing.T) {
+	repo := gitfixture.New(t)
+	first := repo.Snapshot(map[string]string{"expense.json": packA})
+	second := repo.Snapshot(map[string]string{"expense.json": packB}, first)
+	repo.Tag("z-first", first)
+	repo.Tag("a-second", second)
+	repo.Head(second)
+	// The grafts file makes the second commit the first one's parent.
+	grafts := second + "\n" + first + " " + second + "\n"
+	if err := os.MkdirAll(filepath.Join(repo.GitDir(), "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.GitDir(), "info", "grafts"), []byte(grafts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(repo.Git("", "rev-list", first), second) {
+		t.Skip("this git does not honour a grafts file")
+	}
+	finding := onlyFinding(t, run(t, defaultOptions(repo.Dir)))
+	if finding.Published.Ref != "refs/tags/z-first" || finding.Found.Ref != "refs/tags/a-second" {
+		t.Fatalf("the grafts file must not change which tag published first: %#v found %#v", finding.Published, finding.Found)
 	}
 }
 

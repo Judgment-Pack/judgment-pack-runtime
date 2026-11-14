@@ -29,6 +29,11 @@ var gitProgram = "git"
 // --no-replace-objects is what keeps a replace ref from showing other bytes
 // under an object id.
 //
+// A grafts file and a commit-graph file are local files, never cloned, and
+// either can change the ancestry git reports, and so which tag published an
+// identity first: the grafts file is pointed at the null device
+// (childEnvironment) and the commit-graph file is not read.
+//
 // --no-optional-locks keeps git from taking the optional index lock, so a
 // read never writes; --literal-pathspecs makes any pathspec literal, although
 // no path or tag name is ever passed as an argument: tags are named by object
@@ -40,6 +45,7 @@ func safetyOptions() []string {
 		"--no-optional-locks",
 		"--literal-pathspecs",
 		"-c", "core.fsmonitor=false",
+		"-c", "core.commitGraph=false",
 		"-c", "core.hooksPath=" + os.DevNull,
 		"-c", "protocol.allow=never",
 		"-c", "credential.helper=",
@@ -52,7 +58,8 @@ func safetyOptions() []string {
 // with every GIT_* variable removed, so an inherited GIT_DIR, object
 // directory, replace-ref base, configuration parameter or ssh command cannot
 // redirect or extend what is read, and with the variables that refuse a lazy
-// fetch, a transport, a credential prompt and the optional locks added. HOME
+// fetch, a transport, a credential prompt, the optional locks and the grafts
+// file added. HOME
 // and PATH are kept, so the user's own global and system configuration
 // (safe.directory among it, which git reads from no other scope) still
 // applies; a setting there that could start a program is overridden by a
@@ -69,7 +76,7 @@ func safetyOptions() []string {
 // the alias "remote-none" a repository defines for a remote whose vcs is
 // "none".
 func childEnvironment(parent []string) []string {
-	environment := make([]string, 0, len(parent)+5)
+	environment := make([]string, 0, len(parent)+6)
 	for _, entry := range parent {
 		name, _, _ := strings.Cut(entry, "=")
 		if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
@@ -83,6 +90,7 @@ func childEnvironment(parent []string) []string {
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_OPTIONAL_LOCKS=0",
 		"GIT_NO_REPLACE_OBJECTS=1",
+		"GIT_GRAFT_FILE="+os.DevNull,
 	)
 }
 
@@ -142,18 +150,57 @@ func (g *git) command(arguments []string) *exec.Cmd {
 // maxMessageBytes bounds what is kept of a git process's standard error.
 const maxMessageBytes = 4096
 
-type boundedBuffer struct{ bytes.Buffer }
+// boundedBuffer keeps the first maxMessageBytes written to it. It holds its
+// buffer as a field, not embedded: an embedded bytes.Buffer would lend it
+// ReadFrom, which io.Copy (and so exec.Cmd) prefers to Write, and the bound
+// would never apply.
+type boundedBuffer struct{ data bytes.Buffer }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
-	if room := maxMessageBytes - b.Len(); room > 0 {
+	if room := maxMessageBytes - b.data.Len(); room > 0 {
 		if len(p) > room {
-			b.Buffer.Write(p[:room])
+			b.data.Write(p[:room])
 		} else {
-			b.Buffer.Write(p)
+			b.data.Write(p)
 		}
 	}
 	return len(p), nil
 }
+
+func (b *boundedBuffer) Len() int       { return b.data.Len() }
+func (b *boundedBuffer) String() string { return b.data.String() }
+
+// maxOutputBytes bounds what is kept of the standard output of a git
+// process whose output is read whole rather than streamed: a git directory
+// (rev-parse) and the partial-clone settings (config). A process that
+// writes more is a failure, never read in part.
+const maxOutputBytes = 64 * 1024
+
+// limitedBuffer keeps at most limit bytes and records whether more were
+// written; the rest is dropped, so the process is never blocked. Like
+// boundedBuffer, it holds its buffer as a field so that Write is the only
+// way in.
+type limitedBuffer struct {
+	data  bytes.Buffer
+	limit int
+	over  bool
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	room := b.limit - b.data.Len()
+	if len(p) > room {
+		b.over = true
+		if room > 0 {
+			b.data.Write(p[:room])
+		}
+		return len(p), nil
+	}
+	b.data.Write(p)
+	return len(p), nil
+}
+
+func (b *limitedBuffer) Bytes() []byte  { return b.data.Bytes() }
+func (b *limitedBuffer) String() string { return b.data.String() }
 
 // gitError is a git process that failed, with the first line it wrote.
 type gitError struct {
@@ -177,16 +224,19 @@ func newGitError(subcommand string, stderr *boundedBuffer, err error) error {
 }
 
 // run runs one git process to completion and returns its standard output,
-// bounded by limit bytes when limit is positive.
+// which must be at most maxOutputBytes: more is a failure.
 func (g *git) run(arguments []string, stdin io.Reader) ([]byte, error) {
 	command := g.command(arguments)
 	command.Stdin = stdin
-	var stdout bytes.Buffer
+	stdout := limitedBuffer{limit: maxOutputBytes}
 	var stderr boundedBuffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
 		return nil, newGitError(subcommandOf(arguments), &stderr, err)
+	}
+	if stdout.over {
+		return nil, fmt.Errorf("git %s wrote more than %d bytes", subcommandOf(arguments), maxOutputBytes)
 	}
 	return stdout.Bytes(), nil
 }
