@@ -95,15 +95,19 @@ func ReadManifest(data []byte) (*Manifest, error) {
 		return nil, fmt.Errorf("the manifest is not acceptable JSON: %s", failure.Diagnostic.Message)
 	}
 	root, ok := decoded.(map[string]any)
-	if !ok || !exactMembers(root, "manifestVersion", "documents") {
+	if !ok {
 		return nil, fmt.Errorf("the manifest must be an object with exactly the members manifestVersion and documents")
 	}
-	declared, isString := root["manifestVersion"].(string)
-	if !isString {
-		return nil, fmt.Errorf("the manifest's manifestVersion must be a string")
-	}
-	if declared != ManifestVersion {
+	// The version is compared before the member set, as the baseline reader
+	// does: a later format may add members, and is a later format, not damage.
+	if declared, isString := root["manifestVersion"].(string); isString && declared != ManifestVersion {
 		return nil, fmt.Errorf("%w (it reads %q)", ErrManifestVersion, ManifestVersion)
+	}
+	if !exactMembers(root, "manifestVersion", "documents") {
+		return nil, fmt.Errorf("the manifest must be an object with exactly the members manifestVersion and documents")
+	}
+	if _, isString := root["manifestVersion"].(string); !isString {
+		return nil, fmt.Errorf("the manifest's manifestVersion must be a string")
 	}
 	documents, ok := root["documents"].([]any)
 	if !ok {

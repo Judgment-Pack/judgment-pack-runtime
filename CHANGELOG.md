@@ -2,6 +2,23 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **`experimental check-published`: findings of the v0.46.0 release review** (#418). The work for
+  an identity found again no longer grows with the digests it already has: each identity keeps a
+  set of its digests, and the output is the same bytes. A document whose `id` or `version` is
+  longer than 4096 bytes, the bound a path has, is reported as unreadable, so the decoder's string
+  limit no longer sets the run's memory. A manifest that declares another `manifestVersion` gets the
+  version refusal (exit 2) before its members are compared, as a baseline does; before, one that
+  also added a member got the general manifest refusal (exit 1). No grafts file and no commit-graph
+  file is read, so neither can change which tag is named as the one that published first. The git
+  output read whole (the git directory and the partial-clone settings) is bounded to 64 KiB, a
+  process that writes more is a failure, and the 4096-byte bound on a git process's standard error
+  now applies (it never did). No record byte, decision or unchanged pack's verdict changes, and
+  the conformance claim in CONFORMANCE.md is unchanged.
+- **Keyed digests** (#418): `docs/decision-records.md` says that one key gives both keyed digests,
+  what two equal digests show, and to keep that key for these digests alone.
+
 ## 0.46.0 - 2026-11-14
 
 - **Revalidate a project's matrix results before moving a Runtime pin** (#403, ADR-0091;
