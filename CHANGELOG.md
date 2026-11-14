@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.46.0 - 2026-11-14
 
 - **Revalidate a project's matrix results before moving a Runtime pin** (#403, ADR-0091;
   EXPERIMENTAL). `jpack experimental revalidate --write FILE` runs every declared pack that has a
