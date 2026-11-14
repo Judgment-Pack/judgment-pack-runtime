@@ -211,6 +211,25 @@ func TestAPackWithoutAReadableIdentityIsUnreadable(t *testing.T) {
 	}
 }
 
+func TestAnIdentityLongerThanTheBoundIsUnreadable(t *testing.T) {
+	long := strings.Repeat("x", maxIdentityBytes+1)
+	limit := strings.Repeat("x", maxIdentityBytes)
+	repo := history(t, []string{"v1"}, []map[string]string{{
+		"id.json":      `{"specVersion":"0.5.0","id":"` + long + `","version":"1.0.0"}`,
+		"version.json": `{"formatVersion":"3.0.0","id":"intake","version":"` + long + `","case":{}}`,
+		"limit.json":   `{"specVersion":"0.5.0","id":"` + limit + `","version":"` + limit + `"}`,
+	}}, nil)
+	report := run(t, defaultOptions(repo.Dir))
+	if report.Status != StatusIncomplete || report.UnreadableCount != 2 || report.Identities != 1 {
+		t.Fatalf("an id or version over the bound must be unreadable, one at the bound read: %#v", report)
+	}
+	for _, unreadable := range report.Unreadable {
+		if unreadable.Path == "limit.json" || !strings.Contains(unreadable.Reason, "longer than 4096 bytes") {
+			t.Fatalf("unexpected unreadable entry: %#v", unreadable)
+		}
+	}
+}
+
 func TestOptionLikeTagNamesAndOddPathsAreData(t *testing.T) {
 	repo := gitfixture.New(t)
 	first := repo.Commit(repo.TreeOf(
