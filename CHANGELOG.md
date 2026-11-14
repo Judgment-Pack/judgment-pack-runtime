@@ -28,7 +28,9 @@ All notable changes to tagged releases are documented here.
   part. The report keeps Draft RFC 0027 format 1; `targetSpecVersion` is the pack's own
   `0.5.0`, `packDigest` binds its exact bytes and the findings are those of the pack's inline
   `0.3.0` twin. A `0.5.0` pack evaluation refuses is still refused with `pack-unsupported`, and
-  the message now names the Core class, evaluation's code and Core's first diagnostic code. A
+  the message now names the Core class, evaluation's code and Core's first diagnostic code, except
+  for bytes the carrier refuses, from which no selector is read. A value set no condition
+  references, or a value repeated in a set, is not reported, as format 1 has no finding for it. A
   `0.3.0` pack's report and refusals are byte-identical to before. Analysis is outside the version
   scope that CONFORMANCE.md records, which does not change.
 - **The graph commands and the policy check name what reads a Core `0.5.0` pack meanwhile**
@@ -51,7 +53,8 @@ All notable changes to tagged releases are documented here.
   and writes no new entry for an identity whose bytes have a finding, which it reports as
   withheld. A shallow clone is refused without a
   manifest and stated as shallow with one; a partial clone is refused. It exits 0 when valid, 1
-  with a finding, with something unread, or when no tag was read and no manifest pin given, 3 for
+  with a finding, with something unread, when no tag was read and no manifest pin given, or when
+  tags were read and no document was read at any of them or at HEAD, 3 for
   a usage error and 4 when the repository cannot be read, or when its trees name more than one run
   reads, 1,000,000 directories or 1 GiB of tree objects (`JPS-RESOURCE-TREE-WALK-LIMIT`).
   It runs `git` from `PATH` with hooks, pagers, fsmonitor, replace refs, credential helpers and
@@ -143,8 +146,10 @@ All notable changes to tagged releases are documented here.
   outcome's level and the outcomes most severe first, one level in document order, with those
   without a level apart, in document order. An outcome whose severity is not exactly a level shows
   none, and none is supplied. `viewVersion` moves to `"2"` for every view; a view of a Core `0.3.0`
-  or `0.2.0-draft` pack changes in its version line alone. The filtered view and `packs diff` are
-  unchanged, and keep their versions.
+  or `0.2.0-draft` pack changes in its version line alone. A consumer that accepts only
+  `viewVersion` `"1"` therefore refuses every view, those of packs under other selectors included,
+  though their only change is that line. The filtered view and `packs diff` are unchanged, and keep
+  their versions.
 - The Spec's rows for the vocabulary, vendored from Spec release `v0.5.2` with their digests, run
   as tests: 31 of the 32 give the result their row states, `profile-extended` is not run because
   this runtime reads the base profile only, and the packs of the inertness pair decide alike. This

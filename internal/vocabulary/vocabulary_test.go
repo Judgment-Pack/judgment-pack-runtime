@@ -54,6 +54,56 @@ func TestARefusalNamesTheOutcomeAndTheValue(t *testing.T) {
 	}
 }
 
+// The characters <, > and & are printable ASCII and a refusal writes them as
+// themselves, so the value reads as written, not as the JSON encoder's HTML
+// escapes.
+func TestARefusalWritesHTMLCharactersAsThemselves(t *testing.T) {
+	root := decode(t, readPack(t, "packs/unknown-value.json"))
+	outcome := root["outcomes"].([]any)[2].(map[string]any)
+	outcome["id"] = "refer<&>"
+	outcome["extensions"] = map[string]any{vocabulary.AnnotationsName: map[string]any{"severity": "<b>high&</b>"}}
+	got := vocabulary.Admitted(root)
+	if got.Result != vocabulary.ResultRefused || len(got.Findings) != 1 {
+		t.Fatalf("%+v", got)
+	}
+	message := got.Findings[0].Message
+	for _, part := range []string{`Outcome "refer<&>"`, `"<b>high&</b>"`} {
+		if !strings.Contains(message, part) {
+			t.Fatalf("the message %q does not name %s", message, part)
+		}
+	}
+	if strings.Contains(message, `\u00`) {
+		t.Fatalf("the message %q escapes a printable character", message)
+	}
+}
+
+// A pack Core refuses at the semantic layer, here a rule that names an
+// outcome the pack does not define, beside a severity that is not a level,
+// is not checked: the reason is Core's refusal, the layer is semantic, and
+// the vocabulary reports no finding of its own.
+func TestCoreRefusedAtTheSemanticLayerGetsNoVocabularyFinding(t *testing.T) {
+	root := decode(t, readPack(t, "packs/unknown-value.json"))
+	rule := root["rules"].([]any)[2].(map[string]any)
+	rule["outcome"] = "escalate-elsewhere"
+	data := encode(t, root)
+	core := packsValidateCore(newEngine(t), data)
+	if core == nil || core.Status == "valid" {
+		t.Fatalf("Core admits the pack: %+v", core)
+	}
+	got := vocabulary.Check(data, core, carrier.DefaultLimits())
+	if got.Result != vocabulary.ResultNotChecked || got.Reason != vocabulary.ReasonCoreRefused || got.CoreLayer != "semantic" ||
+		len(got.Findings) != 0 || len(got.Advisories) != 0 {
+		t.Fatalf("%+v", got)
+	}
+	// The same pack with its rule restored is refused for the severity, so
+	// the result above is the semantic refusal's.
+	rule["outcome"] = "refer"
+	data = encode(t, root)
+	if got := vocabulary.Check(data, packsValidateCore(newEngine(t), data), carrier.DefaultLimits()); got.Result != vocabulary.ResultRefused {
+		t.Fatalf("restored: %+v", got)
+	}
+}
+
 // The key anywhere but an outcome's annotations is not read, whatever it
 // holds; nor is any other key on an outcome.
 func TestTheKeyElsewhereIsIgnored(t *testing.T) {
