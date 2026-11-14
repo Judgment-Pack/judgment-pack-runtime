@@ -63,7 +63,8 @@ func (a *App) checkPublishedCommand() *cobra.Command {
 			"directory, and no tag name or path is ever one of its arguments. HEAD is the commit HEAD names; uncommitted " +
 			"changes are not read. --format human writes a short text in which every name taken from the repository is " +
 			"written as a JSON string in printable ASCII (a name that is not UTF-8, as Go quotes it); --format json writes the standard envelope with a publishedCheckVersion " +
-			"member. It exits 0 when every identity keeps its bytes and everything selected was read, 1 when there is a " +
+			"member, and beside a path or tag ref that is not UTF-8, which JSON writes with each such byte as U+FFFD, a " +
+			"pathEscaped, refEscaped or firstTagEscaped member holding its escaped form, as the human text writes it. It exits 0 when every identity keeps its bytes and everything selected was read, 1 when there is a " +
 			"finding (status invalid), or something selected could not be read, or no tag was read and no manifest pin was " +
 			"given, so nothing published was checked, or tags were read and no document was read at any of them or at " +
 			"HEAD (status incomplete), 3 for a usage error, and " +
@@ -288,16 +289,24 @@ type publishedTags struct {
 }
 
 type publishedManifest struct {
-	Checked       string                    `json:"checked,omitempty"`
-	Strict        bool                      `json:"strict"`
-	NewCount      int                       `json:"newCount"`
-	New           []published.ManifestEntry `json:"new"`
-	NotHeldCount  int                       `json:"notHeldCount"`
-	NotHeld       []published.ManifestEntry `json:"notHeld"`
-	WithheldCount int                       `json:"withheldCount"`
-	Withheld      []published.Identity      `json:"withheld"`
-	Entries       int                       `json:"entries"`
-	WrittenTo     string                    `json:"writtenTo,omitempty"`
+	Checked       string                   `json:"checked,omitempty"`
+	Strict        bool                     `json:"strict"`
+	NewCount      int                      `json:"newCount"`
+	New           []publishedManifestEntry `json:"new"`
+	NotHeldCount  int                      `json:"notHeldCount"`
+	NotHeld       []publishedManifestEntry `json:"notHeld"`
+	WithheldCount int                      `json:"withheldCount"`
+	Withheld      []published.Identity     `json:"withheld"`
+	Entries       int                      `json:"entries"`
+	WrittenTo     string                   `json:"writtenTo,omitempty"`
+}
+
+// publishedManifestEntry is a manifest entry as the JSON report lists it:
+// the entry's members, and firstTagEscaped beside a first tag that is not
+// UTF-8 (see escapedName). The manifest file itself never carries it.
+type publishedManifestEntry struct {
+	published.ManifestEntry
+	FirstTagEscaped string `json:"firstTagEscaped,omitempty"`
 }
 
 func nonNil[T any](list []T) []T {
@@ -312,8 +321,8 @@ func (a *App) renderPublishedCheck(format string, report *published.Report, opti
 	if options.Manifest != nil || target != nil {
 		manifest = &publishedManifest{
 			Checked: manifestPath, Strict: options.Strict,
-			NewCount: report.NewCount, New: nonNil(report.New),
-			NotHeldCount: report.NotHeldCount, NotHeld: nonNil(report.NotHeld),
+			NewCount: report.NewCount, New: escapedEntries(report.New),
+			NotHeldCount: report.NotHeldCount, NotHeld: escapedEntries(report.NotHeld),
 			WithheldCount: report.WithheldCount, Withheld: nonNil(report.Withheld),
 			Entries: len(report.Manifest.Documents),
 		}
@@ -326,10 +335,10 @@ func (a *App) renderPublishedCheck(format string, report *published.Report, opti
 			OutputVersion: result.OutputVersion, Tool: result.CurrentTool(), Command: checkPublishedCommandName,
 			Status: report.Status, PublishedCheckVersion: published.CheckVersion,
 			Repository: publishedRepository{Head: report.Head, Shallow: report.Shallow},
-			Tags:       publishedTags{Total: report.TagsTotal, Read: report.TagsRead, UnreadCount: report.UnreadTagCount, Unread: nonNil(report.UnreadTags)},
+			Tags:       publishedTags{Total: report.TagsTotal, Read: report.TagsRead, UnreadCount: report.UnreadTagCount, Unread: escapedTags(report.UnreadTags)},
 			Identities: report.Identities, Documents: report.Documents, OtherFiles: report.OtherFiles,
-			FindingCount: report.FindingCount, Findings: nonNil(report.Findings),
-			UnreadableCount: report.UnreadableCount, Unreadable: nonNil(report.Unreadable),
+			FindingCount: report.FindingCount, Findings: escapedFindings(report.Findings),
+			UnreadableCount: report.UnreadableCount, Unreadable: escapedUnreadable(report.Unreadable),
 			Manifest: manifest, ListLimit: published.MaxListed,
 		})
 	}
@@ -450,6 +459,65 @@ func asciiName(name string) string {
 	}
 	builder.WriteByte('"')
 	return builder.String()
+}
+
+// escapedName is what the JSON report writes beside a ref or path that is not
+// UTF-8, whose own member Go's encoder writes with each byte that is not
+// UTF-8 replaced by U+FFFD: the name as the human output writes it (see
+// asciiName), without its quotation marks, so each such byte is \x and two
+// hexadecimal digits. A UTF-8 name gets none, and its output is unchanged.
+func escapedName(name string) string {
+	if utf8.ValidString(name) {
+		return ""
+	}
+	quoted := asciiName(name)
+	return quoted[1 : len(quoted)-1]
+}
+
+func escapedLocation(location published.Location) published.Location {
+	location.RefEscaped, location.PathEscaped = escapedName(location.Ref), escapedName(location.Path)
+	return location
+}
+
+// The escaped* functions copy a report's list with the escaped members set;
+// each returns an empty list, never nil, for none.
+func escapedFindings(findings []published.Finding) []published.Finding {
+	out := make([]published.Finding, len(findings))
+	for index, finding := range findings {
+		finding.Published = escapedLocation(finding.Published)
+		if finding.Found != nil {
+			found := escapedLocation(*finding.Found)
+			finding.Found = &found
+		}
+		out[index] = finding
+	}
+	return out
+}
+
+func escapedUnreadable(list []published.Unreadable) []published.Unreadable {
+	out := make([]published.Unreadable, len(list))
+	for index, unreadable := range list {
+		unreadable.RefEscaped, unreadable.PathEscaped = escapedName(unreadable.Ref), escapedName(unreadable.Path)
+		out[index] = unreadable
+	}
+	return out
+}
+
+func escapedTags(list []published.UnreadTag) []published.UnreadTag {
+	out := make([]published.UnreadTag, len(list))
+	for index, tag := range list {
+		tag.RefEscaped = escapedName(tag.Ref)
+		out[index] = tag
+	}
+	return out
+}
+
+func escapedEntries(list []published.ManifestEntry) []publishedManifestEntry {
+	out := make([]publishedManifestEntry, len(list))
+	for index, entry := range list {
+		out[index] = publishedManifestEntry{ManifestEntry: entry, FirstTagEscaped: escapedName(entry.FirstTag)}
+	}
+	return out
 }
 
 func more(out *strings.Builder, total, listed int, what string) {
