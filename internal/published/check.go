@@ -400,7 +400,7 @@ func (g *git) shallow() (bool, *Failure) {
 // unreadable document by document.
 func (g *git) refusePromisor() *Failure {
 	command := g.command([]string{"config", "--get-regexp", `^(extensions\.partialclone|remote\..+\.(promisor|partialclonefilter))$`})
-	var stdout bytes.Buffer
+	stdout := limitedBuffer{limit: maxOutputBytes}
 	var stderr boundedBuffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -410,6 +410,9 @@ func (g *git) refusePromisor() *Failure {
 			return nil
 		}
 		return fail(FailureRepository, "%s", newGitError("config", &stderr, err).Error())
+	}
+	if stdout.over {
+		return fail(FailureRepository, "git config wrote more than %d bytes of partial-clone settings; nothing was read.", maxOutputBytes)
 	}
 	for _, line := range strings.Split(stdout.String(), "\n") {
 		key, value, _ := strings.Cut(line, " ")

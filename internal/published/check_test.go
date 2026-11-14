@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -658,6 +660,48 @@ func TestEveryPromisorSettingIsRefused(t *testing.T) {
 // still applies, and a promisor setting there, which makes the repository a
 // partial clone to git, is refused like one in the repository. The test
 // writes only into the fixture's own home, which HOME names.
+func TestTheOutputReadWholeIsBounded(t *testing.T) {
+	buffer := limitedBuffer{limit: 4}
+	if n, err := buffer.Write([]byte("abc")); n != 3 || err != nil || buffer.over {
+		t.Fatalf("a write within the limit is kept whole: %d %v", n, err)
+	}
+	if n, err := buffer.Write([]byte("def")); n != 3 || err != nil || !buffer.over || buffer.String() != "abcd" {
+		t.Fatalf("a write past the limit is cut and recorded: %q over=%v", buffer.String(), buffer.over)
+	}
+	// io.Copy is how exec.Cmd fills a writer that is not a file: it must
+	// reach Write, where the bound is.
+	copied := limitedBuffer{limit: 4}
+	if _, err := io.Copy(&copied, strings.NewReader("abcdef")); err != nil || !copied.over || copied.String() != "abcd" {
+		t.Fatalf("a copy past the limit is cut and recorded: %q over=%v", copied.String(), copied.over)
+	}
+	var message boundedBuffer
+	if _, err := io.Copy(&message, strings.NewReader(strings.Repeat("x", 2*maxMessageBytes))); err != nil || message.Len() != maxMessageBytes {
+		t.Fatalf("a message is kept to %d bytes, got %d", maxMessageBytes, message.Len())
+	}
+
+	repo := history(t, []string{"v1"}, []map[string]string{{"expense.json": packA}}, nil)
+	var settings strings.Builder
+	// Each setting git writes back is "remote.rN.promisor false": past the
+	// bound once there are more of them than the bound has 24-byte lines.
+	for index := 0; index <= maxOutputBytes/24; index++ {
+		fmt.Fprintf(&settings, "[remote \"r%d\"]\n\tpromisor = false\n", index)
+	}
+	config, err := os.OpenFile(filepath.Join(repo.GitDir(), "config"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = config.WriteString(settings.String())
+	if closeErr := config.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, failure := Check(defaultOptions(repo.Dir)); failure == nil || failure.Code != FailureRepository || !strings.Contains(failure.Message, "more than") {
+		t.Fatalf("partial-clone settings past the bound must be refused, never read in part: %#v", failure)
+	}
+}
+
 func TestTheUsersGlobalConfigurationIsReadAsGitReadsIt(t *testing.T) {
 	repo := history(t, []string{"v1"}, []map[string]string{{"expense.json": packA}}, nil)
 	if os.Getenv("HOME") != repo.Home {
