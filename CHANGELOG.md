@@ -16,6 +16,14 @@ All notable changes to tagged releases are documented here.
   process that writes more is a failure, and the 4096-byte bound on a git process's standard error
   now applies (it never did). No record byte, decision or unchanged pack's verdict changes, and
   the conformance claim in CONFORMANCE.md is unchanged.
+- **`experimental check-published`: an escaped name beside one that is not UTF-8 in JSON**
+  (#418). `--format json` writes a path or tag ref that is not UTF-8 with each such byte replaced
+  by U+FFFD, as before, and now adds one optional member beside it, `pathEscaped`, `refEscaped` or
+  `firstTagEscaped`, with the name as the human output writes it (each such byte as `\x` and two
+  hexadecimal digits), so two names that differ only in such bytes are told apart. For UTF-8 names
+  the output is the same bytes, and `publishedCheckVersion` stays `"1"`: an added member does not
+  move it. The manifest file is unchanged, and the conformance claim in CONFORMANCE.md is
+  unchanged.
 - **Keyed digests** (#418): `docs/decision-records.md` says that one key gives both keyed digests,
   what two equal digests show, and to keep that key for these digests alone.
 

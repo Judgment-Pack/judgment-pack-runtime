@@ -125,8 +125,13 @@ hexadecimal digits.
 | `manifest` | With `--manifest` or `--write-manifest`: `checked`, `strict`, `newCount` and `new`, `notHeldCount` and `notHeld`, `withheldCount` and `withheld` (each `kind`, `id` and `version`), `entries`, and `writtenTo`. |
 | `listLimit` | Each list holds at most this many items, 1000; every count is exact. |
 
-In JSON, a path that is not UTF-8 is written with each such byte replaced by U+FFFD, as Go's
-encoder writes it.
+In JSON, a path or tag ref that is not UTF-8 is written with each such byte replaced by U+FFFD, as
+Go's encoder writes it, and the object that carries it gains one more member beside it with the
+name as the human output writes it, without its quotation marks, so each such byte is `\x` and two
+hexadecimal digits: `pathEscaped` beside a `path`, `refEscaped` beside a `ref` and
+`firstTagEscaped` beside a `firstTag` of `new` or `notHeld`. A UTF-8 name gets no such member, so
+a UTF-8 path that spells `\x80` is told apart from the byte, and the output for UTF-8 names is
+unchanged. The manifest file never carries these members.
 
 | Status | Exit | When |
 | --- | --- | --- |
