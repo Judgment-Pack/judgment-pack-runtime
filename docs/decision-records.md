@@ -51,6 +51,11 @@ the plain record's `factsDigest` or `evidenceDigest`, and those bytes are what a
 keyed form. An omitted evidence document (`nil`) is the empty object JPS Core §8.2 evaluates it as,
 and its text is `{}`.
 
+One key gives both keyed digests, so, as in the plain form, equal canonical texts get equal digests,
+whether they are a facts and an evidence text or two records' texts: two equal digests under one
+`keyId` show only that the texts were equal. Keep the key for these digests alone, never one used
+for anything else.
+
 ### Reading
 
 The document is read as the evaluation reads it, by the carrier decoder under its default limits,

@@ -76,6 +76,12 @@ const MaxObjectBytes = carrier.HardMaxBytes
 // maxPathBytes bounds one path in a tree.
 const maxPathBytes = 4096
 
+// maxIdentityBytes bounds a document's id and its version, each. The run
+// keeps both for every distinct document it reads, so without a bound the
+// string limit of the decoder would set its memory, not the run's bounds.
+// It is the bound a path has.
+const maxIdentityBytes = maxPathBytes
+
 // The walk's bounds, per run. A directory is read once for each distinct path
 // and tree id, so a tree that holds one subtree under two names doubles the
 // directories to read at each level, and a handful of small objects can name
@@ -394,7 +400,7 @@ func (g *git) shallow() (bool, *Failure) {
 // unreadable document by document.
 func (g *git) refusePromisor() *Failure {
 	command := g.command([]string{"config", "--get-regexp", `^(extensions\.partialclone|remote\..+\.(promisor|partialclonefilter))$`})
-	var stdout bytes.Buffer
+	stdout := limitedBuffer{limit: maxOutputBytes}
 	var stderr boundedBuffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -404,6 +410,9 @@ func (g *git) refusePromisor() *Failure {
 			return nil
 		}
 		return fail(FailureRepository, "%s", newGitError("config", &stderr, err).Error())
+	}
+	if stdout.over {
+		return fail(FailureRepository, "git config wrote more than %d bytes of partial-clone settings; nothing was read.", maxOutputBytes)
 	}
 	for _, line := range strings.Split(stdout.String(), "\n") {
 		key, value, _ := strings.Cut(line, " ")
@@ -547,9 +556,12 @@ type occurrence struct {
 }
 
 // identityRecord keeps, for one identity, the first place each distinct
-// digest of it was found, in the order the snapshots were walked.
+// digest of it was found, in the order the snapshots were walked. seen holds
+// the same digests as a set, so a document found again costs one lookup,
+// not a scan of every digest the identity has.
 type identityRecord struct {
 	digests   []occurrence
+	seen      map[string]struct{}
 	published bool
 }
 
@@ -851,17 +863,16 @@ func (w *walker) document(index int, path, id string) error {
 	}
 	record := w.identities[info.identity]
 	if record == nil {
-		record = &identityRecord{}
+		record = &identityRecord{seen: map[string]struct{}{}}
 		w.identities[info.identity] = record
 	}
 	if w.snapshots[index].tag {
 		record.published = true
 	}
-	for _, seen := range record.digests {
-		if seen.digest == info.digest {
-			return nil
-		}
+	if _, seen := record.seen[info.digest]; seen {
+		return nil
 	}
+	record.seen[info.digest] = struct{}{}
 	record.digests = append(record.digests, occurrence{snapshot: index, path: path, digest: info.digest})
 	return nil
 }
@@ -912,6 +923,10 @@ func (w *walker) classify(id string) (*blobInfo, error) {
 	version, versionOK := root["version"].(string)
 	if !idOK || documentID == "" || !versionOK || version == "" {
 		info.problem = "it is a " + kind + " document whose id or version is not a non-empty string, so its identity cannot be read"
+		return info, nil
+	}
+	if len(documentID) > maxIdentityBytes || len(version) > maxIdentityBytes {
+		info.problem = fmt.Sprintf("it is a %s document whose id or version is longer than %d bytes, so its identity is not read", kind, maxIdentityBytes)
 		return info, nil
 	}
 	info.identity = Identity{Kind: kind, ID: documentID, Version: version}
