@@ -822,23 +822,24 @@ func TestTheManifestReaderRefusesWhatItWouldNotWrite(t *testing.T) {
 		t.Fatalf("a well-formed manifest must be read: %v", err)
 	}
 	for name, document := range map[string]string{
-		"unknown member":    `{"manifestVersion": "1", "documents": [], "note": "x"}`,
-		"other case":        `{"ManifestVersion": "1", "documents": []}`,
-		"other version":     `{"manifestVersion": "2", "documents": []}`,
-		"no documents":      `{"manifestVersion": "1"}`,
-		"duplicate member":  `{"manifestVersion": "1", "manifestVersion": "1", "documents": []}`,
-		"unknown kind":      `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"pack"`, `"graph"`, 1) + `]}`,
-		"short digest":      `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), "sha256:abc", 1) + `]}`,
-		"upper-case digest": `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), strings.ToUpper(digestOf(packA)), 1) + `]}`,
-		"empty first tag":   `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"v1"`, `""`, 1) + `]}`,
-		"entry member":      `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `}`, `, "path": "p"}`, 1) + `]}`,
-		"twice":             `{"manifestVersion": "1", "documents": [` + entry + `, ` + entry + `]}`,
+		"unknown member":              `{"manifestVersion": "1", "documents": [], "note": "x"}`,
+		"other case":                  `{"ManifestVersion": "1", "documents": []}`,
+		"other version":               `{"manifestVersion": "2", "documents": []}`,
+		"later version with a member": `{"manifestVersion": "2", "documents": [], "signature": "x"}`,
+		"no documents":                `{"manifestVersion": "1"}`,
+		"duplicate member":            `{"manifestVersion": "1", "manifestVersion": "1", "documents": []}`,
+		"unknown kind":                `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"pack"`, `"graph"`, 1) + `]}`,
+		"short digest":                `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), "sha256:abc", 1) + `]}`,
+		"upper-case digest":           `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, digestOf(packA), strings.ToUpper(digestOf(packA)), 1) + `]}`,
+		"empty first tag":             `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `"v1"`, `""`, 1) + `]}`,
+		"entry member":                `{"manifestVersion": "1", "documents": [` + strings.Replace(entry, `}`, `, "path": "p"}`, 1) + `]}`,
+		"twice":                       `{"manifestVersion": "1", "documents": [` + entry + `, ` + entry + `]}`,
 	} {
 		_, err := ReadManifest([]byte(document))
 		if err == nil {
 			t.Errorf("%s: the manifest must be refused", name)
 		}
-		if errors.Is(err, ErrManifestVersion) != (name == "other version") {
+		if errors.Is(err, ErrManifestVersion) != strings.Contains(name, "version") {
 			t.Errorf("%s: only another manifestVersion is a version refusal: %v", name, err)
 		}
 	}
