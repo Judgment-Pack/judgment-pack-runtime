@@ -1088,6 +1088,30 @@ func TestTagsAreOrderedByTheCommitGraphNotByName(t *testing.T) {
 	}
 }
 
+func TestAGraftsFileDoesNotReorderTheTags(t *testing.T) {
+	repo := gitfixture.New(t)
+	first := repo.Snapshot(map[string]string{"expense.json": packA})
+	second := repo.Snapshot(map[string]string{"expense.json": packB}, first)
+	repo.Tag("z-first", first)
+	repo.Tag("a-second", second)
+	repo.Head(second)
+	// The grafts file makes the second commit the first one's parent.
+	grafts := second + "\n" + first + " " + second + "\n"
+	if err := os.MkdirAll(filepath.Join(repo.GitDir(), "info"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.GitDir(), "info", "grafts"), []byte(grafts), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(repo.Git("", "rev-list", first), second) {
+		t.Skip("this git does not honour a grafts file")
+	}
+	finding := onlyFinding(t, run(t, defaultOptions(repo.Dir)))
+	if finding.Published.Ref != "refs/tags/z-first" || finding.Found.Ref != "refs/tags/a-second" {
+		t.Fatalf("the grafts file must not change which tag published first: %#v found %#v", finding.Published, finding.Found)
+	}
+}
+
 func TestTagPatternsAndTagsThatNameNoCommit(t *testing.T) {
 	repo := gitfixture.New(t)
 	first := repo.Snapshot(map[string]string{"expense.json": packA})

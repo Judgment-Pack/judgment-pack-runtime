@@ -29,6 +29,11 @@ var gitProgram = "git"
 // --no-replace-objects is what keeps a replace ref from showing other bytes
 // under an object id.
 //
+// A grafts file and a commit-graph file are local files, never cloned, and
+// either can change the ancestry git reports, and so which tag published an
+// identity first: the grafts file is pointed at the null device
+// (childEnvironment) and the commit-graph file is not read.
+//
 // --no-optional-locks keeps git from taking the optional index lock, so a
 // read never writes; --literal-pathspecs makes any pathspec literal, although
 // no path or tag name is ever passed as an argument: tags are named by object
@@ -40,6 +45,7 @@ func safetyOptions() []string {
 		"--no-optional-locks",
 		"--literal-pathspecs",
 		"-c", "core.fsmonitor=false",
+		"-c", "core.commitGraph=false",
 		"-c", "core.hooksPath=" + os.DevNull,
 		"-c", "protocol.allow=never",
 		"-c", "credential.helper=",
@@ -52,7 +58,8 @@ func safetyOptions() []string {
 // with every GIT_* variable removed, so an inherited GIT_DIR, object
 // directory, replace-ref base, configuration parameter or ssh command cannot
 // redirect or extend what is read, and with the variables that refuse a lazy
-// fetch, a transport, a credential prompt and the optional locks added. HOME
+// fetch, a transport, a credential prompt, the optional locks and the grafts
+// file added. HOME
 // and PATH are kept, so the user's own global and system configuration
 // (safe.directory among it, which git reads from no other scope) still
 // applies; a setting there that could start a program is overridden by a
@@ -69,7 +76,7 @@ func safetyOptions() []string {
 // the alias "remote-none" a repository defines for a remote whose vcs is
 // "none".
 func childEnvironment(parent []string) []string {
-	environment := make([]string, 0, len(parent)+5)
+	environment := make([]string, 0, len(parent)+6)
 	for _, entry := range parent {
 		name, _, _ := strings.Cut(entry, "=")
 		if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
@@ -83,6 +90,7 @@ func childEnvironment(parent []string) []string {
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_OPTIONAL_LOCKS=0",
 		"GIT_NO_REPLACE_OBJECTS=1",
+		"GIT_GRAFT_FILE="+os.DevNull,
 	)
 }
 
