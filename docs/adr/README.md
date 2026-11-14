@@ -182,8 +182,8 @@ authority, and following it confers no conformance status on anything.
 | [0084](0084-measure-test-strength-with-pack-variants.md) | Measure a matrix's test strength with variants of its pack | accepted |
 | [0085](0085-evaluate-a-batch-of-fact-documents-in-one-run.md) | Evaluate a batch of fact documents in one run | accepted |
 | [0086](0086-compare-two-pack-documents-member-by-member.md) | Compare two pack documents member by member, annotations included, and three-way | accepted |
-| [0087](0087-a-caller-keyed-digest-on-the-decision-record.md) | Name the facts on a decision record by a digest the caller keys, in a second form, and publish the canonical text | proposed |
-| [0088](0088-check-the-outcome-severity-vocabulary.md) | Check each outcome's severity against the Spec's annotation vocabulary in packs validate, and list it in the view | proposed |
-| [0089](0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md) | Analyse a Core 0.5.0 pack as its evaluation form | proposed |
-| [0090](0090-check-published-identities-over-a-repositorys-tags.md) | Check, over a git repository's own tags, that a published pack or dialect identity keeps its bytes | proposed |
-| [0091](0091-revalidate-matrix-results-before-moving-a-runtime-pin.md) | Revalidate a project's matrix results against a baseline file before moving a Runtime pin | proposed |
+| [0087](0087-a-caller-keyed-digest-on-the-decision-record.md) | Name the facts on a decision record by a digest the caller keys, in a second form, and publish the canonical text | accepted |
+| [0088](0088-check-the-outcome-severity-vocabulary.md) | Check each outcome's severity against the Spec's annotation vocabulary in packs validate, and list it in the view | accepted |
+| [0089](0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md) | Analyse a Core 0.5.0 pack as its evaluation form | accepted |
+| [0090](0090-check-published-identities-over-a-repositorys-tags.md) | Check, over a git repository's own tags, that a published pack or dialect identity keeps its bytes | accepted |
+| [0091](0091-revalidate-matrix-results-before-moving-a-runtime-pin.md) | Revalidate a project's matrix results against a baseline file before moving a Runtime pin | accepted |
