@@ -113,11 +113,18 @@ type Identity struct {
 }
 
 // Location is one place an identity's bytes were found or pinned.
+//
+// RefEscaped and PathEscaped, here and on Unreadable and UnreadTag, are set
+// only by the command's JSON writer, and only for a ref or path that is not
+// UTF-8: JSON writes such a name with each byte that is not UTF-8 replaced by
+// U+FFFD, so the escaped form beside it keeps those bytes.
 type Location struct {
-	Source string `json:"source"`
-	Ref    string `json:"ref"`
-	Path   string `json:"path,omitempty"`
-	Digest string `json:"digest"`
+	Source      string `json:"source"`
+	Ref         string `json:"ref"`
+	RefEscaped  string `json:"refEscaped,omitempty"`
+	Path        string `json:"path,omitempty"`
+	PathEscaped string `json:"pathEscaped,omitempty"`
+	Digest      string `json:"digest"`
 }
 
 // Finding is one identity whose bytes are not the bytes it was published
@@ -131,16 +138,19 @@ type Finding struct {
 
 // Unreadable is one selected file that could not be read as a document.
 type Unreadable struct {
-	Ref    string `json:"ref"`
-	Path   string `json:"path"`
-	Digest string `json:"digest,omitempty"`
-	Reason string `json:"reason"`
+	Ref         string `json:"ref"`
+	RefEscaped  string `json:"refEscaped,omitempty"`
+	Path        string `json:"path"`
+	PathEscaped string `json:"pathEscaped,omitempty"`
+	Digest      string `json:"digest,omitempty"`
+	Reason      string `json:"reason"`
 }
 
 // UnreadTag is one matching tag whose tree could not be read.
 type UnreadTag struct {
-	Ref    string `json:"ref"`
-	Reason string `json:"reason"`
+	Ref        string `json:"ref"`
+	RefEscaped string `json:"refEscaped,omitempty"`
+	Reason     string `json:"reason"`
 }
 
 // Report is one run's result.

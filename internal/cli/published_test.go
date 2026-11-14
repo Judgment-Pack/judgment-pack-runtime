@@ -326,6 +326,72 @@ func TestCheckPublishedNamesNonUTF8PathsByteForByte(t *testing.T) {
 	}
 }
 
+// A path or tag ref that is not UTF-8 gets an escaped member beside it in
+// JSON, and a UTF-8 path that spells that escape gets none, so the two are
+// told apart.
+func TestCheckPublishedJSONEscapesANameThatIsNotUTF8(t *testing.T) {
+	repo := gitfixture.New(t)
+	odd, spelled := "a\x80.json", `a\x80.json`
+	packC := `{"specVersion":"0.5.0","id":"other","version":"1.0.0","outcomes":[{"id":"approve"}]}`
+	packD := `{"specVersion":"0.5.0","id":"other","version":"1.0.0","outcomes":[{"id":"deny"}]}`
+	kept := `{"specVersion":"0.5.0","id":"kept","version":"1.0.0","outcomes":[{"id":"approve"}]}`
+	first := repo.Snapshot(map[string]string{odd: publishedPackA, spelled: packC, "kept.json": kept, "b\xff.json": `{"specVersion":`})
+	if err := repo.Try("update-ref", "refs/tags/v1\xff", first); err != nil {
+		t.Skipf("this filesystem refuses a ref name that is not UTF-8: %v", err)
+	}
+	second := repo.Snapshot(map[string]string{odd: publishedPackB, spelled: packD, "kept.json": kept}, first)
+	repo.Tag("v2", second)
+	repo.Head(second)
+	empty := filepath.Join(t.TempDir(), "published.json")
+	if err := os.WriteFile(empty, []byte(`{"manifestVersion": "1", "documents": []}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := runTest(t, []string{"experimental", "check-published", "--format", "json", "--repo", repo.Dir, "--manifest", empty}, "")
+	if code != 1 {
+		t.Fatalf("exit %d: %s %s", code, stdout, stderr)
+	}
+	var envelope struct {
+		Findings []struct {
+			ID        string         `json:"id"`
+			Published map[string]any `json:"published"`
+			Found     map[string]any `json:"found"`
+		} `json:"findings"`
+		Unreadable []map[string]any `json:"unreadable"`
+		Manifest   struct {
+			New []map[string]any `json:"new"`
+		} `json:"manifest"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatalf("not one JSON value: %v: %q", err, stdout)
+	}
+	byID := map[string]int{}
+	for index, finding := range envelope.Findings {
+		byID[finding.ID] = index
+	}
+	expense, other := envelope.Findings[byID["expense"]], envelope.Findings[byID["other"]]
+	if len(envelope.Findings) != 2 || expense.ID != "expense" || other.ID != "other" {
+		t.Fatalf("want a finding for expense and for other: %s", stdout)
+	}
+	if expense.Published["path"] != "a�.json" || expense.Published["pathEscaped"] != `a\x80.json` ||
+		expense.Published["ref"] != "refs/tags/v1�" || expense.Published["refEscaped"] != `refs/tags/v1\xff` {
+		t.Fatalf("a name that is not UTF-8 keeps its member and gains the escaped one: %#v", expense.Published)
+	}
+	if _, has := expense.Found["refEscaped"]; has || expense.Found["ref"] != "refs/tags/v2" || expense.Found["pathEscaped"] != `a\x80.json` {
+		t.Fatalf("a UTF-8 ref gets no escaped member: %#v", expense.Found)
+	}
+	for _, place := range []map[string]any{other.Published, other.Found} {
+		if _, has := place["pathEscaped"]; has || place["path"] != spelled {
+			t.Fatalf("a UTF-8 path that spells an escape gets no escaped member: %#v", place)
+		}
+	}
+	if len(envelope.Unreadable) != 1 || envelope.Unreadable[0]["pathEscaped"] != `b\xff.json` || envelope.Unreadable[0]["refEscaped"] != `refs/tags/v1\xff` {
+		t.Fatalf("unexpected unreadable: %#v", envelope.Unreadable)
+	}
+	if len(envelope.Manifest.New) != 1 || envelope.Manifest.New[0]["id"] != "kept" || envelope.Manifest.New[0]["firstTagEscaped"] != `v1\xff` {
+		t.Fatalf("unexpected new entries: %#v", envelope.Manifest.New)
+	}
+}
+
 func TestCheckPublishedWritesNoManifestFromAShallowClone(t *testing.T) {
 	source := taggedHistory(t, []string{"v1", "v2"}, map[string]string{"expense.json": publishedPackA}, map[string]string{"expense.json": publishedPackA, "b.json": "{}"})
 	clone := gitfixture.New(t)
