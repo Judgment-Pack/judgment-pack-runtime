@@ -34,6 +34,9 @@ const (
 	DocumentRegistry = "registry"
 	DocumentKind     = "kind"
 	DocumentValue    = "value"
+	// DocumentYAML is a YAML file given to import (RFC 0034 §7). A location
+	// in it is a line and a column, never a pointer.
+	DocumentYAML = "yaml"
 )
 
 // EntryName names one entry.
@@ -45,7 +48,9 @@ type EntryName struct {
 // Location says where a diagnostic applies. Pointer is a JSON Pointer into
 // Document: the registry document, a kind declaration (named by KindDocument,
 // the sha256 of its bytes as supplied, and by Kind once its name is known), or
-// an entry's resolved value in Environment.
+// an entry's resolved value in Environment. Line and Column, counted from 1
+// in Unicode code points, locate a finding in a YAML file given to import;
+// they are absent everywhere else.
 type Location struct {
 	Document     string     `json:"document"`
 	KindDocument string     `json:"kindDocument,omitempty"`
@@ -53,6 +58,8 @@ type Location struct {
 	Entry        *EntryName `json:"entry,omitempty"`
 	Environment  string     `json:"environment,omitempty"`
 	Pointer      string     `json:"pointer"`
+	Line         int        `json:"line,omitempty"`
+	Column       int        `json:"column,omitempty"`
 }
 
 // Diagnostic is one finding. Message is fixed per code and carries no value
@@ -94,6 +101,22 @@ type codeInfo struct {
 // fixed message. A code is never removed and never changes meaning within
 // format 1.x.
 var Codes = map[string]codeInfo{
+	// Import (RFC 0034 §7): the YAML authoring subset, before step 1. The
+	// §7 text names no codes; these are this reader's (ADR-0094). A YAML
+	// file also gets REG-DOC-SIZE, -DEPTH, -DUPLICATE, -STRING, -NUMBER and
+	// -SELECTOR, with the meaning they have for JSON.
+	"REG-YAML-ENCODING":  {SeverityError, "The file is not UTF-8, has a byte-order mark, or holds a character YAML does not allow."},
+	"REG-YAML-DOCUMENTS": {SeverityError, "The file does not hold exactly one YAML document."},
+	"REG-YAML-DIRECTIVE": {SeverityError, "The file has a YAML directive."},
+	"REG-YAML-TAG":       {SeverityError, "A node has a YAML tag."},
+	"REG-YAML-ANCHOR":    {SeverityError, "A node has an anchor, or is an alias."},
+	"REG-YAML-MERGE":     {SeverityError, "A mapping has a merge key."},
+	"REG-YAML-SCALAR":    {SeverityError, "A plain scalar would be read as another value by YAML 1.1, the YAML 1.2 core schema or a common YAML library; quote it to make it a string."},
+	"REG-YAML-EMPTY":     {SeverityError, "A node is empty; write null or an empty quoted string."},
+	"REG-YAML-KEY":       {SeverityError, "A key is not a string on one line: an explicit or complex key, a key spanning lines, or a key that reads as a number, a boolean or null."},
+	"REG-YAML-SYNTAX":    {SeverityError, "The file is not well-formed YAML within the subset."},
+	"REG-YAML-TRUNCATED": {SeverityError, "Reading stopped here after 1000 refusals; the report lists those, and the file may hold more."},
+
 	// Step 1: document admission.
 	"REG-DOC-SIZE":      {SeverityError, "The document exceeds its size bound."},
 	"REG-DOC-DEPTH":     {SeverityError, "The document nests deeper than 32."},
@@ -237,6 +260,8 @@ func compareDiagnostics(a, b Diagnostic) int {
 		cmp.Compare(entryID(a), entryID(b)),
 		cmp.Compare(a.Location.Environment, b.Location.Environment),
 		cmp.Compare(a.Location.Pointer, b.Location.Pointer),
+		cmp.Compare(a.Location.Line, b.Location.Line),
+		cmp.Compare(a.Location.Column, b.Location.Column),
 		cmp.Compare(a.Code, b.Code),
 		cmp.Compare(a.Severity, b.Severity),
 	)
