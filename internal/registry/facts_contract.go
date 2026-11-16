@@ -136,6 +136,11 @@ func scalarShape(t factType, values ...any) *shape {
 type generator struct {
 	work     int
 	exceeded bool
+	// unmapped is a closed-list number with no normal decimal, which an
+	// admitted kind cannot hold: admission keeps every number as a literal
+	// normalDecimal reads. Were one met, the contract is not generated,
+	// rather than generated with the list widened past it.
+	unmapped bool
 	// listed is a lower bound on the encoded size of the facts listed so
 	// far, charged against MaxContractBytes as they are listed.
 	listed int
@@ -408,7 +413,8 @@ func (g *generator) literal(value any) *shape {
 	case json.Number:
 		text, ok := normalDecimal(typed)
 		if !ok {
-			return scalarShape(typeDecimal)
+			g.unmapped = true
+			return nil
 		}
 		return scalarShape(typeDecimal, text)
 	case []any:
@@ -867,6 +873,9 @@ func (r *Result) FactsContract(kindName string) ([]byte, []Diagnostic, error) {
 	for _, name := range sortedKeys(root.members) {
 		m := root.members[name]
 		g.flattenShape(m.shape, "/"+escapeContractToken(name), 1, m.always, &items)
+	}
+	if g.unmapped {
+		return nil, nil, errUnmapped
 	}
 	if g.exceeded {
 		return nil, limit, nil

@@ -561,6 +561,24 @@ func TestAnIncomparableNumberIsOutsideTheRange(t *testing.T) {
 	}
 }
 
+// A number with no normal decimal is an error to the facts mapping and to a
+// contract's closed list, never a value skipped or a list widened. Admission
+// lets no such number through; these are the paths should one arrive.
+func TestANumberWithNoNormalDecimalIsAnError(t *testing.T) {
+	for _, literal := range []string{"1e9999999", "1e-9999999"} {
+		if _, ok := normalDecimal(json.Number(literal)); ok {
+			t.Errorf("%s: a normal decimal", literal)
+		}
+		if _, err := mapNumbers(map[string]any{"a": []any{json.Number(literal)}}); err != errUnmapped {
+			t.Errorf("%s: mapped: %v", literal, err)
+		}
+		g := &generator{}
+		if g.literal(json.Number(literal)) != nil || !g.unmapped {
+			t.Errorf("%s: a contract literal", literal)
+		}
+	}
+}
+
 // M1. Two byte-different documents of one kind are one kind; which one is
 // read, and so the kindDocument its findings are located at, does not depend
 // on the order of --kind.

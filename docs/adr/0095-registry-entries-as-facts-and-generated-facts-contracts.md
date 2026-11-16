@@ -199,6 +199,10 @@ Spec RFC 0037 (accepted 2026-11-16), §1 to §5; §6 waits for RFC 0036's emitte
   then one `REG-REPORT-TRUNCATED` warning located at `{"document":"contract"}`. Before, an 8 MiB
   contract of `-0`s produced millions of diagnostics. The contract is refused when any error was
   found, kept or not. A contract's listed values are checked for repeats in one pass.
+- **A number with no normal decimal is an error.** The facts mapping already refused one. A
+  contract's closed list gave it an open decimal, which widened the list past it. Now the contract
+  is not generated, an internal error. Admission keeps every number as a literal of at most 25
+  bytes (ADR-0093, amendment of #432), so an admitted kind holds no such number.
 - **Not bounded here:** a pack's advisories have no count bound of their own. Each is one fact
   condition of the pack, which the evaluator's admission already bounds (250,000 nodes by
   default), and the check's work bound holds what one check reads.
