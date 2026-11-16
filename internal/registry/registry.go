@@ -398,28 +398,40 @@ func (r *Result) Resolve(environment string) ([]byte, error) {
 // encodeResolved builds one environment's resolved document. Step 8 checks
 // its size and depth, so Resolve never meets one over either bound.
 func (r *Result) encodeResolved(environment string) ([]byte, error) {
+	canonical, err := jcs.EncodeDocument(r.resolvedDocument(environment, nil))
+	if err != nil {
+		return nil, err
+	}
+	return canonical, nil
+}
+
+// resolvedDocument is one environment's resolved document as a value, with
+// the pins and entries of the kinds keep admits (every kind when keep is
+// nil). Its values are the registry's own, not copies.
+func (r *Result) resolvedDocument(environment string, keep func(kind string) bool) map[string]any {
 	kinds := make([]any, 0, len(r.registry.pins))
 	for _, p := range r.registry.pins {
+		if keep != nil && !keep(p.kind) {
+			continue
+		}
 		kinds = append(kinds, map[string]any{"kind": p.kind, "id": p.id, "version": p.version, "digest": p.digest})
 	}
 	entries := make([]any, 0, len(r.resolved[environment]))
 	for _, resolved := range r.resolved[environment] {
+		if keep != nil && !keep(resolved.entry.name.Kind) {
+			continue
+		}
 		entries = append(entries, map[string]any{
 			"kind": resolved.entry.name.Kind, "id": resolved.entry.name.ID, "owner": resolved.entry.owner, "value": resolved.value,
 		})
 	}
-	document := map[string]any{
+	return map[string]any{
 		"resolvedFormatVersion": ResolvedFormatVersion,
 		"registry":              map[string]any{"id": r.registry.identity.ID, "version": r.registry.identity.Version, "digest": r.registry.identity.Digest},
 		"environment":           environment,
 		"kinds":                 kinds,
 		"entries":               entries,
 	}
-	canonical, err := jcs.EncodeDocument(document)
-	if err != nil {
-		return nil, err
-	}
-	return canonical, nil
 }
 
 // Environments returns the registry's environments in order, or nil when the

@@ -72,7 +72,12 @@ func (n *contractNode) child(token patternToken) *contractNode {
 // FactsContractDoc is an admitted, valid facts contract.
 type FactsContractDoc struct {
 	Digest string
-	root   *contractNode
+	// ID and Version are the contract's own; Document is its admitted root,
+	// for a caller that passes the contract on (an emit request, RFC 0036 §2).
+	ID       string
+	Version  string
+	Document map[string]any
+	root     *contractNode
 }
 
 var contractMembers = map[string]bool{"factsContractVersion": true, "id": true, "version": true, "source": true, "facts": true}
@@ -257,7 +262,9 @@ func ReadFactsContract(document Document) (*FactsContractDoc, []Diagnostic) {
 		return nil, []Diagnostic{factsDiagnostic("FACTS-CONTRACT-FORM", Location{Document: DocumentContract})}
 	}
 	markTree(tree)
-	return &FactsContractDoc{Digest: digest, root: tree}, nil
+	id, _ := root["id"].(string)
+	version, _ := root["version"].(string)
+	return &FactsContractDoc{Digest: digest, ID: id, Version: version, Document: root, root: tree}, nil
 }
 
 // markTree marks each node's open and required, without recursion.

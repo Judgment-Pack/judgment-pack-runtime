@@ -25,9 +25,31 @@ const (
 // depth bound, the number rules, and the exact selector. It returns the
 // decoded root object, or nil after recording why not.
 func admit(data []byte, maxBytes int, selectorMember, selector string, location Location, diagnostics *collector) map[string]any {
+	value, admitted := admitValue(data, maxBytes, location, diagnostics)
+	if !admitted {
+		return nil
+	}
+	root, ok := value.(map[string]any)
+	if !ok {
+		diagnostics.add("REG-DOC-SELECTOR", location)
+		return nil
+	}
+	if got, ok := root[selectorMember].(string); !ok || got != selector {
+		at := location
+		at.Pointer = "/" + selectorMember
+		diagnostics.add("REG-DOC-SELECTOR", at)
+		return nil
+	}
+	return root
+}
+
+// admitValue is admit without the selector: the size bound, strict I-JSON
+// within the depth bound, and the number rules. It returns the decoded value
+// and true, or false after recording why not.
+func admitValue(data []byte, maxBytes int, location Location, diagnostics *collector) (any, bool) {
 	if len(data) > maxBytes {
 		diagnostics.add("REG-DOC-SIZE", location)
-		return nil
+		return nil, false
 	}
 	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: maxBytes, MaxStringBytes: maxBytes})
 	if failure != nil {
@@ -49,7 +71,7 @@ func admit(data []byte, maxBytes int, selectorMember, selector string, location 
 			// document within that bound cannot exceed.
 			diagnostics.add("REG-DOC-SIZE", location)
 		}
-		return nil
+		return nil, false
 	}
 	bad := false
 	walk(value, nil, func(path []string, item any) {
@@ -61,20 +83,9 @@ func admit(data []byte, maxBytes int, selectorMember, selector string, location 
 		}
 	})
 	if bad {
-		return nil
+		return nil, false
 	}
-	root, ok := value.(map[string]any)
-	if !ok {
-		diagnostics.add("REG-DOC-SELECTOR", location)
-		return nil
-	}
-	if got, ok := root[selectorMember].(string); !ok || got != selector {
-		at := location
-		at.Pointer = "/" + selectorMember
-		diagnostics.add("REG-DOC-SELECTOR", at)
-		return nil
-	}
-	return root
+	return value, true
 }
 
 // admittedNumber applies RFC 0034 §1: an integer of magnitude at most 2^53-1,
