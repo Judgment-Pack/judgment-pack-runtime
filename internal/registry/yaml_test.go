@@ -469,7 +469,12 @@ func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
 	// costs tens of milliseconds, and a document holds a million numbers.
 	many := 5000
 	finishesWithin(t, 20*time.Second, "JSON many exponents under big.Rat's own cap", func() {
-		result := Validate([]byte(head+"["+strings.Repeat("1e999999,", many/2)+strings.Repeat("1e-999999,", many/2-1)+"1e999999]"+tail), nil)
+		// Every number is counted, so the report bound is lifted: the
+		// time is the same either way, since every check runs.
+		var result *Result
+		withLimit(0, func() {
+			result = Validate([]byte(head+"["+strings.Repeat("1e999999,", many/2)+strings.Repeat("1e-999999,", many/2-1)+"1e999999]"+tail), nil)
+		})
 		if got := numberCodes(result.Report.Diagnostics); got != many {
 			t.Errorf("JSON many exponents: %d REG-DOC-NUMBER, want %d", got, many)
 		}

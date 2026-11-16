@@ -104,3 +104,43 @@ Commands:
 
 Spec RFCs 0034 and 0035 (accepted 2026-11-16). `internal/registry`, `internal/jcs/full.go`,
 `internal/cli/registry.go`.
+
+## Amendment: a bounded report (2026-11-16, #427)
+
+A registry document within its 8 MiB bound can fail on every entry. It can also find thousands of
+warnings, one `REF-SECRET-UNSCOPED` for each secret position of each entry in each environment.
+Without a bound, the report grows with the document and can outgrow it, and the reader's memory
+grows with the report.
+
+`validate` and `resolve` report at most the first 1000 diagnostics in the report's own order
+(location, then code, then message). The collector keeps the 1000 smallest distinct diagnostics in
+a sorted list that it trims as it inserts. A diagnostic that sorts past the 1000th costs no memory.
+So a capped report is exactly the first 1000 diagnostics of the uncapped one, in the same order. It
+does not depend on the order the checks found them in, or on the order the kinds were supplied in.
+When anything was dropped, the report ends with one `REG-REPORT-TRUNCATED`, a warning located at
+`{"document":"registry","pointer":""}`. Like every location, it carries no value. The report has no
+member for counts, and none is added.
+
+- **Every check still runs.** The report's order is not the order the checks run in: entries are
+  ordered by kind and id, `/entries/10` sorts before `/entries/2`, and step 8's registry findings
+  sort before step 7's value findings. Stopping at the 1000th diagnostic found would therefore not
+  report the first 1000. The work is linear in the input, which the 8 MiB admission bound already
+  caps, and `resolve` needs every check's result anyway. So the work does not stop early; only what
+  is kept is bounded.
+- **Validity is judged on every diagnostic found**, counted by severity whether kept or not. A
+  registry with more than 1000 warnings and no error is valid, and `resolve` resolves it. A
+  registry whose only error sorts past the 1000th diagnostic is invalid. The exit code follows
+  validity, as before. This is why `REG-REPORT-TRUNCATED` is a warning: it says the report is
+  partial, not that the registry is invalid.
+- **Ties are broken by code, then by message.** So distinct diagnostics never compare equal, and the
+  kept 1000 and their order are fully determined. One comparison serves both the bounded list and
+  the final sort.
+- **Import's bound differs** (ADR-0094). `import` stops reading at its 1001st refusal and reports
+  `REG-YAML-TRUNCATED` where it stopped. A YAML refusal is located by line and column, which reading
+  reaches in order, so stopping early reports the first refusals. Once a file is refused there is
+  nothing left to judge, and an alias-heavy file could hold millions of refusals. Validation reports
+  in an order its checks do not follow, and it judges validity and resolves on everything found. So
+  it bounds what it keeps instead of stopping.
+
+`REG-REPORT-TRUNCATED` is provisional, like the other `REG-*` codes, until `spec/registry.md` is
+released.

@@ -117,6 +117,11 @@ var Codes = map[string]codeInfo{
 	"REG-YAML-SYNTAX":    {SeverityError, "The file is not well-formed YAML within the subset."},
 	"REG-YAML-TRUNCATED": {SeverityError, "Reading stopped here after 1000 refusals; the report lists those, and the file may hold more."},
 
+	// The validation report's bound (ADR-0093, amendment): validate and
+	// resolve report the first 1000 diagnostics in the report's order. A
+	// warning, since validity is judged on every diagnostic found.
+	"REG-REPORT-TRUNCATED": {SeverityWarning, "The report lists the first 1000 diagnostics in its order, and validation found more; whether the registry is valid is judged on all of them."},
+
 	// Step 1: document admission.
 	"REG-DOC-SIZE":      {SeverityError, "The document exceeds its size bound."},
 	"REG-DOC-DEPTH":     {SeverityError, "The document nests deeper than 32."},
@@ -205,31 +210,76 @@ var Codes = map[string]codeInfo{
 	"REG-BOUND-ENTRY-BYTES": {SeverityError, "The entry's resolved value exceeds its kind's maxEntryBytes bound."},
 }
 
+// collector gathers diagnostics. With limit 0 it keeps every one. With a
+// limit it keeps only the limit smallest distinct diagnostics in the report's
+// order (compareDiagnostics), sorted, so a capped report is exactly the first
+// limit diagnostics of the uncapped one, whatever order they were found in,
+// and its memory is bounded by the limit. Every diagnostic is counted by
+// severity, kept or not.
 type collector struct {
 	diagnostics []Diagnostic
+	limit       int
+	// kept is the bounded report when limit > 0: sorted, distinct, at most
+	// limit long.
+	kept []*Diagnostic
+	// dropped records that a distinct diagnostic was not kept.
+	dropped    bool
+	errorCount int
 }
+
+// maxReportDiagnostics is the most diagnostics a validation report lists
+// (ADR-0093, amendment); a test lowers it.
+var maxReportDiagnostics = 1000
 
 func (c *collector) add(code string, location Location) {
 	info, ok := Codes[code]
 	if !ok {
 		panic("registry: unlisted diagnostic code " + code)
 	}
-	c.diagnostics = append(c.diagnostics, Diagnostic{Code: code, Severity: info.severity, Location: location, Message: info.message})
-}
-
-func (c *collector) errors() int {
-	count := 0
-	for _, diagnostic := range c.diagnostics {
-		if diagnostic.Severity == SeverityError {
-			count++
-		}
+	if info.severity == SeverityError {
+		c.errorCount++
 	}
-	return count
+	diagnostic := Diagnostic{Code: code, Severity: info.severity, Location: location, Message: info.message}
+	if c.limit <= 0 {
+		c.diagnostics = append(c.diagnostics, diagnostic)
+		return
+	}
+	at, found := slices.BinarySearchFunc(c.kept, diagnostic, func(kept *Diagnostic, target Diagnostic) int { return compareDiagnostics(*kept, target) })
+	switch {
+	case found:
+		return
+	case at >= c.limit:
+		c.dropped = true
+		return
+	case len(c.kept) == c.limit:
+		// Trim the largest, which no longer sorts within the limit.
+		c.kept = c.kept[:len(c.kept)-1]
+		c.dropped = true
+	}
+	kept := diagnostic
+	c.kept = slices.Insert(c.kept, at, &kept)
 }
 
-// sorted returns the diagnostics sorted by location, then code, with exact
-// duplicates removed.
+// errors is the number of errors found, kept in the report or not.
+func (c *collector) errors() int {
+	return c.errorCount
+}
+
+// sorted returns the diagnostics sorted by location, then code, then
+// message, with exact duplicates removed. A capped collector that dropped any
+// ends them with one REG-REPORT-TRUNCATED.
 func (c *collector) sorted() []Diagnostic {
+	if c.limit > 0 {
+		out := make([]Diagnostic, 0, len(c.kept)+1)
+		for _, diagnostic := range c.kept {
+			out = append(out, *diagnostic)
+		}
+		if c.dropped {
+			info := Codes["REG-REPORT-TRUNCATED"]
+			out = append(out, Diagnostic{Code: "REG-REPORT-TRUNCATED", Severity: info.severity, Location: Location{Document: DocumentRegistry}, Message: info.message})
+		}
+		return out
+	}
 	out := slices.Clone(c.diagnostics)
 	slices.SortFunc(out, compareDiagnostics)
 	out = slices.CompactFunc(out, func(a, b Diagnostic) bool { return compareDiagnostics(a, b) == 0 })
@@ -239,6 +289,11 @@ func (c *collector) sorted() []Diagnostic {
 	return out
 }
 
+// compareDiagnostics is the report's order, the one comparison both a capped
+// collector and the final sort use. Ties on location are broken by code, then
+// message, so distinct diagnostics never compare equal: a location names an
+// entry only with a well-formed, non-empty id, so a missing entry and an
+// empty one never meet.
 func compareDiagnostics(a, b Diagnostic) int {
 	entryKind := func(d Diagnostic) string {
 		if d.Location.Entry == nil {
@@ -263,6 +318,7 @@ func compareDiagnostics(a, b Diagnostic) int {
 		cmp.Compare(a.Location.Line, b.Location.Line),
 		cmp.Compare(a.Location.Column, b.Location.Column),
 		cmp.Compare(a.Code, b.Code),
+		cmp.Compare(a.Message, b.Message),
 		cmp.Compare(a.Severity, b.Severity),
 	)
 }

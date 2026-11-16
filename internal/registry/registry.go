@@ -89,7 +89,7 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 
 // ValidateDocuments is Validate over documents that may be marked oversize.
 func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Result {
-	diagnostics := &collector{}
+	diagnostics := &collector{limit: maxReportDiagnostics}
 	result := &Result{resolved: map[string][]resolvedEntry{}}
 	finish := func() *Result {
 		result.Report = Report{
