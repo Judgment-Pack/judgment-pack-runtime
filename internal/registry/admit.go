@@ -77,13 +77,11 @@ func admitValue(data []byte, maxBytes, maxNodes int, location Location, diagnost
 		return nil, false
 	}
 	bad := false
-	walk(value, nil, func(path []string, item any) {
-		if number, ok := item.(json.Number); ok && !admittedNumber(number) {
-			at := location
-			at.Pointer = carrier.Pointer(path)
-			diagnostics.add("REG-DOC-NUMBER", at)
-			bad = true
-		}
+	value = admitNumbers(value, nil, func(path []string) {
+		at := location
+		at.Pointer = carrier.Pointer(path)
+		diagnostics.add("REG-DOC-NUMBER", at)
+		bad = true
 	})
 	if bad {
 		return nil, false
@@ -111,9 +109,22 @@ func admitValue(data []byte, maxBytes, maxNodes int, location Location, diagnost
 // What passes is compared exactly, on a reduced literal of the same value:
 // the significant digits and the exponent that places them.
 func admittedNumber(number json.Number) bool {
+	_, ok := admittedLiteral(number)
+	return ok
+}
+
+// admittedLiteral applies admittedNumber's rule and returns the literal
+// admission keeps: an integer as written, which is at most 16 digits, and any
+// other number as the RFC 8785 form of its value, the shortest decimal that
+// reads back as the same double, which the rule makes exactly its value. So
+// trailing fraction zeros, leading zeros the exponent moves past, and an
+// exponent's own leading zeros never outlive admission, and every later step
+// (a range check, an equality, a facts mapping) parses a literal of at most
+// 25 bytes, however long the one in the document was.
+func admittedLiteral(number json.Number) (json.Number, bool) {
 	negative, integer, fraction, exponent, ok := splitJSONNumber(number.String())
 	if !ok {
-		return false
+		return "", false
 	}
 	sign := ""
 	if negative {
@@ -121,24 +132,24 @@ func admittedNumber(number json.Number) bool {
 	}
 	if fraction == "" && exponent == "" {
 		if integer == "0" {
-			return !negative
+			return "0", !negative
 		}
 		if len(integer) > maxSafeIntegerDigits {
-			return false
+			return "", false
 		}
 		magnitude, ok := new(big.Int).SetString(integer, 10)
-		return ok && magnitude.Cmp(big.NewInt(maxSafeInteger)) <= 0
+		return number, ok && magnitude.Cmp(big.NewInt(maxSafeInteger)) <= 0
 	}
 	digits := integer + fraction
 	lead := strings.IndexFunc(digits, func(r rune) bool { return r != '0' })
 	if lead < 0 {
 		// Zero, whatever its exponent.
-		return !negative
+		return "0", !negative
 	}
 	trail := strings.LastIndexFunc(digits, func(r rune) bool { return r != '0' })
 	significant := digits[lead : trail+1]
 	if len(significant) > maxShortestDigits {
-		return false
+		return "", false
 	}
 	// The exponent saturates far past the bound below: a literal within the
 	// size bound moves the point by fewer than 2^40 places.
@@ -150,19 +161,26 @@ func admittedNumber(number json.Number) bool {
 		power = -power
 	}
 	if leading := int64(len(integer)-lead-1) + power; leading < minShortestExponent || leading > maxShortestExponent {
-		return false
+		return "", false
 	}
 	reduced := sign + significant + "e" + strconv.FormatInt(int64(len(integer)-trail-1)+power, 10)
 	exact, ok := new(big.Rat).SetString(reduced)
 	if !ok {
-		return false
+		return "", false
 	}
 	double, err := strconv.ParseFloat(reduced, 64)
 	if err != nil {
-		return false
+		return "", false
 	}
 	shortest, ok := new(big.Rat).SetString(strconv.FormatFloat(double, 'g', -1, 64))
-	return ok && shortest.Cmp(exact) == 0
+	if !ok || shortest.Cmp(exact) != 0 {
+		return "", false
+	}
+	canonical, err := jcs.FormatNumber(double)
+	if err != nil {
+		return "", false
+	}
+	return json.Number(canonical), true
 }
 
 // The bounds admittedNumber checks before big arithmetic.
@@ -217,20 +235,29 @@ func splitJSONNumber(literal string) (negative bool, integer, fraction, exponent
 	return negative, integer, fraction, exponent, true
 }
 
-// walk visits every value in document order, objects' members in sorted
-// order so that diagnostics are produced deterministically.
-func walk(value any, path []string, visit func([]string, any)) {
-	visit(path, value)
+// admitNumbers visits every value in document order, objects' members in
+// sorted order so that diagnostics are produced deterministically. It reports
+// each number admission refuses by its path, and returns the value with each
+// admitted number replaced by the literal admission keeps (admittedLiteral).
+func admitNumbers(value any, path []string, refuse func([]string)) any {
 	switch typed := value.(type) {
+	case json.Number:
+		literal, ok := admittedLiteral(typed)
+		if !ok {
+			refuse(path)
+			return typed
+		}
+		return literal
 	case map[string]any:
 		for _, name := range sortedKeys(typed) {
-			walk(typed[name], appendPath(path, name), visit)
+			typed[name] = admitNumbers(typed[name], appendPath(path, name), refuse)
 		}
 	case []any:
 		for index, item := range typed {
-			walk(item, appendPath(path, strconv.Itoa(index)), visit)
+			typed[index] = admitNumbers(item, appendPath(path, strconv.Itoa(index)), refuse)
 		}
 	}
+	return value
 }
 
 func appendPath(path []string, token string) []string {

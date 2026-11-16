@@ -34,8 +34,22 @@ type contractFact struct {
 	// values is the closed list for a scalar type, or the elements' for an
 	// array; nil when the item lists none.
 	values []any
+	// listed holds the values, each a string or a boolean, so that one is
+	// looked up in one step.
+	listed map[any]bool
 	items  factType
 	secret bool
+}
+
+// lists reports whether value is one of a fact's values. A fact's value is a
+// string or a boolean, which jsonEqual compares as ==, so an operand of any
+// other type is never one.
+func (fact contractFact) lists(value any) bool {
+	switch value.(type) {
+	case string, bool:
+		return fact.listed[value]
+	}
+	return false
 }
 
 // contractNode is one position of a contract's pointer tree.
@@ -137,8 +151,13 @@ func valueOfType(value any, t factType) bool {
 // positions in the contract by fixed member names and indexes only. A
 // document its reader stopped reading at MaxContractBytes is marked
 // Oversize, and refused as REG-DOC-SIZE.
+//
+// The diagnostics are bounded as validate's are (ADR-0095, amendment): the
+// first maxReportDiagnostics in the report's order, then one
+// REG-REPORT-TRUNCATED located at the contract when more were found. An
+// 8 MiB contract holds millions of numbers admission can refuse.
 func ReadFactsContract(document Document) (*FactsContractDoc, []Diagnostic) {
-	collected := &collector{}
+	collected := &collector{limit: maxReportDiagnostics, truncated: DocumentContract}
 	if document.Oversize {
 		collected.add("REG-DOC-SIZE", Location{Document: DocumentContract})
 		return nil, collected.sorted()
@@ -147,9 +166,8 @@ func ReadFactsContract(document Document) (*FactsContractDoc, []Diagnostic) {
 	if root == nil {
 		return nil, collected.sorted()
 	}
-	var diagnostics []Diagnostic
 	fail := func(code string, path ...string) {
-		diagnostics = append(diagnostics, factsDiagnostic(code, Location{Document: DocumentContract, Pointer: pointerOf(path)}))
+		collected.addFacts(code, Location{Document: DocumentContract, Pointer: pointerOf(path)})
 	}
 	for name := range root {
 		if !contractMembers[name] {
@@ -228,16 +246,22 @@ func ReadFactsContract(document Document) (*FactsContractDoc, []Diagnostic) {
 				valueType = fact.items
 			}
 			valid := isArray && len(list) > 0
-			for j, value := range list {
+			// Each value is a string or a boolean once valueOfType holds,
+			// so a set finds a repeat in one step.
+			seen := make(map[any]bool, len(list))
+			for _, value := range list {
 				if !valid {
 					break
 				}
-				valid = valueOfType(value, valueType) && !slices.ContainsFunc(list[:j], func(earlier any) bool { return jsonEqual(earlier, value) })
+				valid = valueOfType(value, valueType) && !seen[value]
+				if valid {
+					seen[value] = true
+				}
 			}
 			if !valid {
 				formAt("values")
 			}
-			fact.values = list
+			fact.values, fact.listed = list, seen
 		}
 		fact.secret = item["secretReference"] == true
 		if bad {
@@ -254,8 +278,8 @@ func ReadFactsContract(document Document) (*FactsContractDoc, []Diagnostic) {
 		}
 		node.facts = append(node.facts, fact)
 	}
-	if len(diagnostics) > 0 {
-		return nil, diagnostics
+	if collected.errors() > 0 {
+		return nil, collected.sorted()
 	}
 	digest, err := Digest(root)
 	if err != nil {
@@ -460,7 +484,7 @@ func (c *checker) reachable(at *pointerLookup, value any) bool {
 
 func (c *checker) admits(fact contractFact, at *pointerLookup, value any) bool {
 	listed := func() bool {
-		return fact.values == nil || slices.ContainsFunc(fact.values, func(w any) bool { return jsonEqual(w, value) })
+		return fact.values == nil || fact.lists(value)
 	}
 	switch typed := value.(type) {
 	case nil:
@@ -481,7 +505,7 @@ func (c *checker) admits(fact contractFact, at *pointerLookup, value any) bool {
 		}
 		for i, item := range typed {
 			if fact.items != 0 {
-				element := contractFact{types: fact.items, values: fact.values}
+				element := contractFact{types: fact.items, values: fact.values, listed: fact.listed}
 				if !c.admits(element, nil, item) {
 					return false
 				}

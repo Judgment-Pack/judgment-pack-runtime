@@ -56,7 +56,7 @@ type SchemaFinding struct {
 // when the schema is outside the subset.
 func CompileSchema(raw any) (*Schema, []SchemaFinding) {
 	collected := &collector{}
-	node := compileSchema(raw, nil, Location{}, collected)
+	node := compileSchema(raw, nil, Location{}, collected, &patternBudget{})
 	if node == nil {
 		var findings []SchemaFinding
 		for _, diagnostic := range collected.sorted() {
@@ -72,10 +72,16 @@ func CompileSchema(raw any) (*Schema, []SchemaFinding) {
 
 // Validate applies the schema to a value admitted by AdmitValue. It returns
 // the error findings (REG-VALUE-*), in a fixed order, and none when the value
-// holds; a deprecated position is a warning and is not returned.
+// holds; a deprecated position is a warning and is not returned. The check
+// has the registry's validation work bound: past it, the one finding is
+// REG-BOUND-VALIDATION-WORK at "".
 func (s *Schema) Validate(value any) []SchemaFinding {
 	var findings []valueFinding
-	s.node.validate(value, nil, &findings)
+	check := &validation{work: maxValidationWork}
+	s.node.validate(check, value, nil, &findings)
+	if check.exceeded {
+		return []SchemaFinding{{Code: "REG-BOUND-VALIDATION-WORK"}}
+	}
 	var out []SchemaFinding
 	for _, finding := range findings {
 		if Codes[finding.code].severity != SeverityError {
