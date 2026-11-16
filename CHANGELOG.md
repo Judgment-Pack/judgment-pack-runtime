@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.47.0 - 2026-11-16
 
 - **A registry reader: `jpack registry validate|resolve`** (ADR-0093). It reads
   a registry of entries of adopter-declared kinds, as accepted in spec RFCs 0034 and 0035: each
