@@ -97,3 +97,16 @@ func TestRegistryOversizeIsAFinding(t *testing.T) {
 		t.Fatalf("want REG-DOC-SIZE and exit 1, got %d %q", code, out)
 	}
 }
+
+// An oversize kind file is one finding, and the rest of the registry is still
+// validated: its pin is reported missing beside it.
+func TestRegistryOversizeKindIsOneFindingAmongOthers(t *testing.T) {
+	registryPath, kindPath := writeRegistryFiles(t, cliRegistry(t, "14"))
+	if err := os.WriteFile(kindPath, []byte(strings.Repeat(" ", registry.MaxKindBytes+1)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := runTest(t, []string{"registry", "validate", registryPath, "--kind", kindPath}, "")
+	if code != 1 || !strings.Contains(out, `"REG-DOC-SIZE"`) || !strings.Contains(out, `"document":"kind"`) || !strings.Contains(out, `"REG-PIN-MISSING"`) {
+		t.Fatalf("want REG-DOC-SIZE and REG-PIN-MISSING with exit 1, got %d %q", code, out)
+	}
+}

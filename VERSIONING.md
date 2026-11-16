@@ -141,9 +141,15 @@ other top-level command. They read three closed formats, each with an exact sele
 declaration (`kindFormatVersion`), a registry (`registryFormatVersion`) and, as output, a resolved
 document (`resolvedFormatVersion`), all `"1.0.0"`. A resolved document is RFC 8785 canonical bytes,
 so any change to its bytes for the same inputs moves `resolvedFormatVersion`. The validation report
-carries `reportFormatVersion`, `"1.0.0"`, and moves by the rule of an output format. Its codes and
-locations are those of spec RFCs 0034 and 0035, accepted. If the companion text, when released,
-changes one of them, the change is a deliberate version move, never a silent one.
+carries `reportFormatVersion`, `"1.0.0"`.
+
+These selectors follow RFC 0034 §8, not the output-format rule above. Within 1.x nothing is removed
+and nothing changes meaning: not a member, a code, a rule or a selector. An addition comes only
+under a new minor selector (`1.1.0`), never under `1.0.0`, and a reader accepts the selectors it
+declares. The RFCs define the `REF-*` codes and `REG-DOC-NUMBER`. Every other `REG-*` code, and the
+location members, are this runtime's own reading of the RFCs' rules. That list is provisional until
+the registry companion (`spec/registry.md`) is released: if the companion's list differs, this
+runtime adopts it under a new selector and says so in its release notes.
 
 ## Go API
 

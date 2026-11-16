@@ -230,9 +230,9 @@ func TestEachRuleReportsItsCode(t *testing.T) {
 		}, code: "REG-OVERLAY-ENTRY-ABSENT", pointer: "/overlays/1/patches/0"},
 		{name: "patch on a member that is not overlayable", registry: func(r map[string]any) {
 			prodSet(r)["/privileges"] = []any{"admin"}
-		}, code: "REG-OVERLAY-NOT-OVERLAYABLE", pointer: "/overlays/1/patches/0/set/~1privileges"},
+		}, code: "REG-OVERLAY-NOT-OVERLAYABLE", pointer: "/overlays/1/patches/0/set"},
 		{name: "patch sets null", registry: func(r map[string]any) { prodSet(r)["/connectionLimit"] = nil }, code: "REG-OVERLAY-NULL", pointer: "/overlays/1/patches/0/set/~1connectionLimit"},
-		{name: "malformed patch pointer", registry: func(r map[string]any) { prodSet(r)["connectionLimit"] = json.Number("3") }, code: "REG-OVERLAY-POINTER", pointer: "/overlays/1/patches/0/set/connectionLimit"},
+		{name: "malformed patch pointer", registry: func(r map[string]any) { prodSet(r)["connectionLimit"] = json.Number("3") }, code: "REG-OVERLAY-POINTER", pointer: "/overlays/1/patches/0/set"},
 		{name: "overlay breaks the schema in one environment", registry: func(r map[string]any) {
 			prodSet(r)["/connectionLimit"] = json.Number("900")
 		}, code: "REG-VALUE-RANGE", pointer: "/connectionLimit", document: DocumentValue, env: "prod"},

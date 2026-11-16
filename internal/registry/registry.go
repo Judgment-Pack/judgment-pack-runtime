@@ -13,6 +13,9 @@ import (
 
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
+// maxResolvedBytes is MaxResolvedBytes; a test lowers it.
+var maxResolvedBytes = MaxResolvedBytes
+
 // Result is the outcome of validating one registry with its kinds.
 type Result struct {
 	Report   Report
@@ -56,6 +59,7 @@ type registryDoc struct {
 	entries      []*entry
 	byName       map[EntryName]*entry
 	overlays     map[string]map[EntryName]*patch
+	failed       map[string]map[EntryName]bool
 	scopes       map[string]map[string][]string
 }
 
@@ -66,7 +70,25 @@ type resolvedEntry struct {
 
 // Validate runs RFC 0034 §6's eight checks, in order, on a registry and the
 // kind declarations supplied with it.
+// Document is one input document. Oversize marks a document its reader
+// stopped reading at the size bound: it is reported as REG-DOC-SIZE, and
+// validation goes on with the other documents.
+type Document struct {
+	Data     []byte
+	Oversize bool
+}
+
+// Validate validates a registry with the kind declarations it pins.
 func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
+	kinds := make([]Document, len(kindDocuments))
+	for i, data := range kindDocuments {
+		kinds[i] = Document{Data: data}
+	}
+	return ValidateDocuments(Document{Data: registryBytes}, kinds)
+}
+
+// ValidateDocuments is Validate over documents that may be marked oversize.
+func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Result {
 	diagnostics := &collector{}
 	result := &Result{resolved: map[string][]resolvedEntry{}}
 	finish := func() *Result {
@@ -76,8 +98,7 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 			Diagnostics:         diagnostics.sorted(),
 		}
 		if result.registry != nil {
-			identity := result.registry.identity
-			result.Report.Registry = &identity
+			result.Report.Registry = &Digested{Digest: result.registry.identity.Digest}
 		}
 		if !result.Report.Valid {
 			result.resolved = nil
@@ -87,7 +108,12 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 
 	// Step 1: admission, of the registry and of each kind declaration.
 	registryLocation := Location{Document: DocumentRegistry}
-	root := admit(registryBytes, MaxRegistryBytes, "registryFormatVersion", RegistryFormatVersion, registryLocation, diagnostics)
+	var root map[string]any
+	if registryDocument.Oversize {
+		diagnostics.add("REG-DOC-SIZE", registryLocation)
+	} else {
+		root = admit(registryDocument.Data, MaxRegistryBytes, "registryFormatVersion", RegistryFormatVersion, registryLocation, diagnostics)
+	}
 	type suppliedKind struct {
 		location Location
 		root     map[string]any
@@ -95,8 +121,13 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 	}
 	var supplied []suppliedKind
 	for _, document := range kindDocuments {
-		location := Location{Document: DocumentKind, KindDocument: rawDigest(document)}
-		kindRoot := admit(document, MaxKindBytes, "kindFormatVersion", KindFormatVersion, location, diagnostics)
+		if document.Oversize {
+			// Its bytes past the bound were not read, so it has no digest.
+			diagnostics.add("REG-DOC-SIZE", Location{Document: DocumentKind})
+			continue
+		}
+		location := Location{Document: DocumentKind, KindDocument: rawDigest(document.Data)}
+		kindRoot := admit(document.Data, MaxKindBytes, "kindFormatVersion", KindFormatVersion, location, diagnostics)
 		if kindRoot == nil {
 			continue
 		}
@@ -183,8 +214,7 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 	seenEntries := map[EntryName]bool{}
 	for _, e := range registry.entries {
 		at := func(member ...string) Location {
-			name := e.name
-			return Location{Document: DocumentRegistry, Entry: &name, Pointer: pointerOf(append([]string{"entries", strconv.Itoa(e.index)}, member...))}
+			return Location{Document: DocumentRegistry, Entry: locatable(e.name), Pointer: pointerOf(append([]string{"entries", strconv.Itoa(e.index)}, member...))}
 		}
 		p, pinned := pinsByKind[e.name.Kind]
 		if !pinned {
@@ -197,7 +227,10 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 		e.kind = p.usable
 		ok := true
 		if !validEntryID(e.name.ID) || !e.kind.entryID.MatchString(e.name.ID) {
-			diagnostics.add("REG-ENTRY-ID", at("id"))
+			// The id is outside its kind's pattern, so it is not named.
+			location := at("id")
+			location.Entry = nil
+			diagnostics.add("REG-ENTRY-ID", location)
 			ok = false
 		}
 		if seenEntries[e.name] {
@@ -234,7 +267,7 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 		var resolved []resolvedEntry
 		values := map[EntryName]any{}
 		for _, e := range registry.entries {
-			if !e.passed || !e.environment[environment] {
+			if !e.passed || !e.environment[environment] || registry.failed[environment][e.name] {
 				continue
 			}
 			value := deepCopy(e.value)
@@ -269,6 +302,13 @@ func Validate(registryBytes []byte, kindDocuments [][]byte) *Result {
 				name := r.entry.name
 				diagnostics.add("REG-BOUND-ENTRY-BYTES", Location{Document: DocumentValue, Entry: &name, Environment: environment, Pointer: ""})
 			}
+		}
+	}
+	// RFC 0034 §1: each environment's resolved document is held to its bound.
+	for _, environment := range registry.environments {
+		canonical, err := result.encodeResolved(environment)
+		if err != nil || len(canonical) > maxResolvedBytes {
+			diagnostics.add("REG-DOC-SIZE", Location{Document: DocumentRegistry, Environment: environment, Pointer: ""})
 		}
 	}
 	return finish()
@@ -334,6 +374,12 @@ func (r *Result) Resolve(environment string) ([]byte, error) {
 	if !slices.Contains(r.registry.environments, environment) {
 		return nil, fmt.Errorf("registry: no environment %q", environment)
 	}
+	return r.encodeResolved(environment)
+}
+
+// encodeResolved builds one environment's resolved document. Step 8 checks
+// its size, so Resolve never meets one over the bound.
+func (r *Result) encodeResolved(environment string) ([]byte, error) {
 	kinds := make([]any, 0, len(r.registry.pins))
 	for _, p := range r.registry.pins {
 		kinds = append(kinds, map[string]any{"kind": p.kind, "id": p.id, "version": p.version, "digest": p.digest})
@@ -354,9 +400,6 @@ func (r *Result) Resolve(environment string) ([]byte, error) {
 	canonical, err := jcs.EncodeDocument(document)
 	if err != nil {
 		return nil, err
-	}
-	if len(canonical) > MaxResolvedBytes {
-		return nil, fmt.Errorf("registry: the resolved registry for %q exceeds %d bytes", environment, MaxResolvedBytes)
 	}
 	return canonical, nil
 }
@@ -406,11 +449,12 @@ func setAt(root any, path []string, value any) any {
 	return root
 }
 
-// TooLarge is the result for a document a caller stopped reading at its size
-// bound (RFC 0034 §1): one REG-DOC-SIZE, located in the registry or in a kind
-// declaration, and nothing resolvable.
-func TooLarge(document string) *Result {
-	diagnostics := &collector{}
-	diagnostics.add("REG-DOC-SIZE", Location{Document: document})
-	return &Result{Report: Report{ReportFormatVersion: ReportFormatVersion, Valid: false, Diagnostics: diagnostics.sorted()}}
+// locatable returns the name for a location, or nil when the kind or the id
+// is not well formed: a report never carries a value, and a malformed id
+// could be one (a secret reference written in the wrong member).
+func locatable(name EntryName) *EntryName {
+	if !kindNamePattern.MatchString(name.Kind) || !validEntryID(name.ID) {
+		return nil
+	}
+	return &name
 }

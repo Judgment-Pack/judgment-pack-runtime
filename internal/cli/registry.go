@@ -71,7 +71,7 @@ func (a *App) registryResolveCommand() *cobra.Command {
 			}
 			resolved, err := validated.Resolve(environment)
 			if err != nil {
-				return a.operational(name, "json", result.ExitInvocation, "JPS-INVOCATION-ENVIRONMENT", "The environment is not one of the registry's environments, or its resolved document exceeds the size bound.")
+				return a.operational(name, "json", result.ExitInvocation, "JPS-INVOCATION-ENVIRONMENT", "The environment is not one of the registry's environments.")
 			}
 			if _, err := a.out.Write(append(resolved, '\n')); err != nil {
 				return &handledExit{code: result.ExitIO}
@@ -99,25 +99,29 @@ func (a *App) validateRegistry(name, registryPath string, kindPaths []string) (*
 	if stdin > 1 {
 		return nil, a.operational(name, "json", result.ExitInvocation, "JPS-INVOCATION-INPUT", "Only one input can read standard input.")
 	}
-	registryBytes, err := a.readInput(registryPath, registry.MaxRegistryBytes, "registry")
-	if errors.Is(err, fssecure.ErrTooLarge) {
-		return registry.TooLarge(registry.DocumentRegistry), nil
-	}
-	if err != nil {
+	registryDocument := registry.Document{}
+	data, err := a.readInput(registryPath, registry.MaxRegistryBytes, "registry")
+	switch {
+	case errors.Is(err, fssecure.ErrTooLarge):
+		registryDocument.Oversize = true
+	case err != nil:
 		return nil, a.operational(name, "json", result.ExitIO, "JPS-INPUT-READ", "The registry could not be read as one bounded regular file or standard input stream.")
+	default:
+		registryDocument.Data = data
 	}
-	documents := make([][]byte, 0, len(kindPaths))
+	documents := make([]registry.Document, 0, len(kindPaths))
 	for _, path := range kindPaths {
-		document, err := a.readInput(path, registry.MaxKindBytes, "kind declaration")
-		if errors.Is(err, fssecure.ErrTooLarge) {
-			return registry.TooLarge(registry.DocumentKind), nil
-		}
-		if err != nil {
+		data, err := a.readInput(path, registry.MaxKindBytes, "kind declaration")
+		switch {
+		case errors.Is(err, fssecure.ErrTooLarge):
+			documents = append(documents, registry.Document{Oversize: true})
+		case err != nil:
 			return nil, a.operational(name, "json", result.ExitIO, "JPS-INPUT-READ", "A kind declaration could not be read as one bounded regular file or standard input stream.")
+		default:
+			documents = append(documents, registry.Document{Data: data})
 		}
-		documents = append(documents, document)
 	}
-	return registry.Validate(registryBytes, documents), nil
+	return registry.ValidateDocuments(registryDocument, documents), nil
 }
 
 func (a *App) registryReport(validated *registry.Result) error {

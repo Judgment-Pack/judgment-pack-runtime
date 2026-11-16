@@ -41,7 +41,7 @@ func readRegistry(root map[string]any, diagnostics *collector) *registryDoc {
 	if stop {
 		return nil
 	}
-	registry := &registryDoc{root: root, owners: map[string]bool{}, byName: map[EntryName]*entry{}, overlays: map[string]map[EntryName]*patch{}}
+	registry := &registryDoc{root: root, owners: map[string]bool{}, byName: map[EntryName]*entry{}, overlays: map[string]map[EntryName]*patch{}, failed: map[string]map[EntryName]bool{}}
 	if id, ok := root["id"].(string); ok && isAbsoluteURI(id) {
 		registry.identity.ID = id
 	} else {
@@ -287,6 +287,9 @@ func readEntry(item any, index int, fail func(string, ...string)) *entry {
 func checkOverlays(registry *registryDoc, diagnostics *collector) {
 	items, _ := registry.root["overlays"].([]any)
 	fail := func(code string, entry *EntryName, path ...string) {
+		if entry != nil {
+			entry = locatable(*entry)
+		}
 		diagnostics.add(code, Location{Document: DocumentRegistry, Entry: entry, Pointer: pointerOf(append([]string{"overlays"}, path...))})
 	}
 	for i, item := range items {
@@ -307,6 +310,7 @@ func checkOverlays(registry *registryDoc, diagnostics *collector) {
 			continue
 		}
 		registry.overlays[environment] = map[EntryName]*patch{}
+		registry.failed[environment] = map[EntryName]bool{}
 		seen := map[EntryName]bool{}
 		for j, patchItem := range patches {
 			patchAt := []string{at, "patches", strconv.Itoa(j)}
@@ -321,6 +325,7 @@ func checkOverlays(registry *registryDoc, diagnostics *collector) {
 			name := EntryName{Kind: kind, ID: id}
 			if seen[name] {
 				fail("REG-OVERLAY-PATCH-DUPLICATE", &name, patchAt...)
+				registry.failed[environment][name] = true
 				continue
 			}
 			seen[name] = true
@@ -340,15 +345,18 @@ func checkOverlays(registry *registryDoc, diagnostics *collector) {
 			ok = true
 			var paths [][]string
 			for _, pointer := range sortedKeys(set) {
-				pointerAt := append(slices.Clone(patchAt), "set", pointer)
+				setAt := append(slices.Clone(patchAt), "set")
+				pointerAt := append(slices.Clone(setAt), pointer)
 				path, err := parsePointer(pointer)
 				switch {
 				case err != nil:
-					fail("REG-OVERLAY-POINTER", &name, pointerAt...)
+					// A key that is not a pointer, or that no overlayable
+					// pattern matches, is not named: it could be a value.
+					fail("REG-OVERLAY-POINTER", &name, setAt...)
 					ok = false
 					continue
 				case !slices.ContainsFunc(target.kind.overlayable, func(pattern pointerPattern) bool { return pattern.matches(path) }):
-					fail("REG-OVERLAY-NOT-OVERLAYABLE", &name, pointerAt...)
+					fail("REG-OVERLAY-NOT-OVERLAYABLE", &name, setAt...)
 					ok = false
 					continue
 				case !reachableTarget(target, path):
@@ -372,6 +380,10 @@ func checkOverlays(registry *registryDoc, diagnostics *collector) {
 			}
 			if ok {
 				registry.overlays[environment][name] = p
+			} else {
+				// RFC 0034 §6: later checks run only on what passed the
+				// earlier ones, so steps 7 and 8 skip this entry here.
+				registry.failed[environment][name] = true
 			}
 		}
 	}

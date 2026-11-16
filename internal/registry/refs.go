@@ -36,7 +36,7 @@ func parseEntryReference(text string) (entryReference, bool) {
 	}
 	reference := entryReference{kind: kind, id: id, hasPointer: hasPointer}
 	if hasPointer {
-		if pointer == "" || len(pointer) > 512 {
+		if len(pointer) > 512 {
 			return entryReference{}, false
 		}
 		tokens, err := parsePointer(pointer)

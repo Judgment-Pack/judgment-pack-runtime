@@ -70,7 +70,14 @@ Choices the RFCs leave to the reader, recorded here so the companion can settle 
   whole value) is refused.
 - **A malformed overlay member** is reported as `REG-REGISTRY-FORM` in step 6.
 - **A document over its size bound** is a validation finding (`REG-DOC-SIZE`, exit 1), not an
-  operational error. The reader stops at the bound and digests nothing it did not read.
+  operational error, and validation goes on with the other documents. The reader stops at the bound
+  and digests nothing it did not read. A resolved document over its bound is a step 8 finding for
+  its environment, so `resolve` never meets one.
+- **Nothing that could be a value is named.** A location names an entry only when its kind and id
+  are well formed, and an overlay `set` key that is not a pointer, or that no overlayable pattern
+  matches, is located at the `set` member. The report names the registry by its digest only.
+- **A failed patch fails its (entry, environment) pair.** Steps 7 and 8 skip the entry in that
+  environment, as RFC 0034 §6 runs each check only on what passed the earlier ones.
 
 Commands:
 
@@ -85,8 +92,11 @@ Commands:
 - Good, because emitters (RFC 0036) and facts contracts (RFC 0037) can be built on one resolved
   form now.
 - Good, because a CI step can gate on `validate`'s exit code without its log showing a secret.
-- Bad, because the codes and the report are the RFCs' and the companion text is not released. If it
-  changes one, the change moves a format version (VERSIONING.md), never silently.
+- Good, because the formats carry RFC 0034 §8's promise: within 1.x nothing is removed or changes
+  meaning, and additions come only under a new minor selector (VERSIONING.md).
+- Bad, because the RFCs define only the `REF-*` codes and `REG-DOC-NUMBER`; every other `REG-*` code
+  and the location members are this runtime's own reading. That list is provisional until
+  `spec/registry.md` is released, and a different list there is adopted under a new selector.
 - Revisit when `spec/registry.md` and its vectors are released: the claim goes into CONFORMANCE.md,
   and YAML authoring (RFC 0034 §7) is read through the same steps.
 

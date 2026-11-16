@@ -68,8 +68,14 @@ type Diagnostic struct {
 type Report struct {
 	ReportFormatVersion string       `json:"reportFormatVersion"`
 	Valid               bool         `json:"valid"`
-	Registry            *Identity    `json:"registry,omitempty"`
+	Registry            *Digested    `json:"registry,omitempty"`
 	Diagnostics         []Diagnostic `json:"diagnostics"`
+}
+
+// Digested names the validated registry in a report by its digest only:
+// its id and version are document values, which a report never carries.
+type Digested struct {
+	Digest string `json:"digest"`
 }
 
 // Identity names a document by id, version and digest.
