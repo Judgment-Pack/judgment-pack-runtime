@@ -118,7 +118,8 @@ response or the diagnostics that refuse it. It works as follows.
 - `command[0]` is resolved first. A name is looked up on the host's `PATH`, in absolute directories
   only, and never in the working directory. A relative path is resolved against the repository
   root, and with its links resolved it must stay inside the root.
-- The emitter's environment is exactly `PATH`, `HOME` (a fresh empty directory, removed afterwards),
+- The emitter's environment is exactly `PATH` (the host's absolute directories only; an empty or
+  relative entry is dropped), `HOME` (a fresh empty directory, removed afterwards),
   `LANG=C.UTF-8` and the manifest's `env` names that are set. An unset name is a warning,
   `EMIT-ENV-UNSET`, which carries the name and never a value.
 - The working directory is the repository root, and the request goes on standard input.

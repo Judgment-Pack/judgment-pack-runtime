@@ -290,6 +290,15 @@ func TestEmitNeverOwnsGitsDirectory(t *testing.T) {
 func TestEmitGivesTheEmitterOnlyItsEnvironment(t *testing.T) {
 	t.Setenv("JPACK_EMIT_TEST_PARENT_ONLY", "parent-value-text")
 	t.Setenv("EMIT_TEST_DECLARED", "declared-value-text")
+	// The emitter's PATH keeps only the absolute directories, in order.
+	var absolute []string
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if dir != "" && filepath.IsAbs(dir) {
+			absolute = append(absolute, dir)
+		}
+	}
+	separator := string(os.PathListSeparator)
+	t.Setenv("PATH", strings.Join(append([]string{".", "", "relative/bin"}, absolute...), separator)+separator)
 	root := testRepo(t)
 	report := host(t, root, []string{"env", "gen/env.txt"}, map[string]any{"environments": "all", "env": []any{"EMIT_TEST_DECLARED", "EMIT_TEST_NEVER_SET"}}, Options{})
 	if report.Outcome != OutcomeWritten || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-ENV-UNSET@/env/1"}) || report.Diagnostics[0].Location.Variable != "EMIT_TEST_NEVER_SET" {
@@ -315,7 +324,7 @@ func TestEmitGivesTheEmitterOnlyItsEnvironment(t *testing.T) {
 	if want := []string{"EMIT_TEST_DECLARED", "HOME", "LANG", "PATH"}; !slices.Equal(names, want) {
 		t.Fatalf("the emitter's environment has %v, want %v", names, want)
 	}
-	if got["EMIT_TEST_DECLARED"] != "declared-value-text" || got["LANG"] != "C.UTF-8" || got["PATH"] != os.Getenv("PATH") {
+	if got["EMIT_TEST_DECLARED"] != "declared-value-text" || got["LANG"] != "C.UTF-8" || got["PATH"] != strings.Join(absolute, separator) {
 		t.Fatalf("environment: %v", got)
 	}
 	if home := got["HOME"]; home == os.Getenv("HOME") || !filepath.IsAbs(home) {

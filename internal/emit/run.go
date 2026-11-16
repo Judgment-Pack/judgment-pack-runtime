@@ -59,7 +59,7 @@ var waitDelay = 2 * time.Second
 
 // Run runs one emitter on one request and validates its response: the run
 // step of `jpack emit`, which the conformance harness reuses. The emitter
-// gets an environment of only PATH, HOME (a fresh empty directory, removed
+// gets an environment of only PATH (its absolute directories), HOME (a fresh empty directory, removed
 // afterwards), LANG=C.UTF-8 and the manifest's env names that are set; the
 // repository root as its working directory; and the request on standard
 // input. It runs in a process group of its own, which is killed when the time
@@ -102,7 +102,16 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	env := map[string]string{"HOME": home, "LANG": "C.UTF-8"}
 	order := []string{"PATH", "HOME", "LANG"}
 	if path, ok := lookup("PATH"); ok {
-		env["PATH"] = path
+		// Only absolute directories, as command[0] is looked up: an empty or
+		// relative entry would have the emitter's own lookups search the
+		// repository.
+		var dirs []string
+		for _, dir := range filepath.SplitList(path) {
+			if dir != "" && filepath.IsAbs(dir) {
+				dirs = append(dirs, dir)
+			}
+		}
+		env["PATH"] = strings.Join(dirs, string(os.PathListSeparator))
 	}
 	for i, name := range m.Env {
 		value, ok := lookup(name)
