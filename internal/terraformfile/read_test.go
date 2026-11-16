@@ -493,6 +493,25 @@ func TestTheValueIsBoundedByItsSource(t *testing.T) {
 	mustRefuse(t, data, planSource("synthetic_db"), CodeValueLimit)
 }
 
+// A file of maximal numbers, `1e63` over and over, is accepted: the normal
+// form grows it about 13.4 times, the most any number can, so the source
+// bound must sit above that. A bound of 13 or less refuses this file.
+func TestMaximalNumbersStayWithinTheSourceBound(t *testing.T) {
+	list := make([]any, 200000)
+	for i := range list {
+		list[i] = json.Number("1e63")
+	}
+	data := plan(t, change{address: "synthetic_db.main", after: object("n", list)})
+	acquisition := mustAccept(t, data, planSource("synthetic_db"))
+	input, size := int64(len(data)), int64(len(acquisition.Value()))
+	if size <= 13*input {
+		t.Fatalf("the value is %d bytes for %d of input, not past 13 times", size, input)
+	}
+	if size > ValueBytesPerInputByte*input {
+		t.Fatalf("the value is %d bytes for %d of input, past the source bound", size, input)
+	}
+}
+
 func TestAfterUnknownSpansCountAgainstTheLimit(t *testing.T) {
 	// 2000 short pointers: their bytes and the value fit a limit that their
 	// 8-byte spans do not.
