@@ -275,6 +275,49 @@ func TestFactsContractStopsAtTheDepthAnEntryCanHold(t *testing.T) {
 	if deepest != maxFactsDepth {
 		t.Fatalf("the deepest fact is %d tokens down, want %d", deepest, maxFactsDepth)
 	}
+	// The contract, whose deepest pointer is at the reader's bound, reads.
+	if read, diagnostics := ReadFactsContract(Document{Data: contract}); read == nil || len(diagnostics) > 0 {
+		t.Fatalf("the generated contract does not read: %+v", diagnostics[:min(len(diagnostics), 3)])
+	}
+}
+
+// contractWithPointer is an authored contract of one string fact at pointer.
+func contractWithPointer(pointer string) []byte {
+	return []byte(`{"factsContractVersion":"1.0.0","id":"https://example.invalid/c","version":"1.0.0","source":{"authored":true},"facts":[{"pointer":"` + pointer + `","present":"optional","type":"string"}]}`)
+}
+
+// A contract pointer deeper than any facts document holds (maxFactsDepth
+// tokens) lists nothing, and is refused as FACTS-CONTRACT-LIMIT after a scan
+// of its bytes, before it is split into tokens: an 8 MB pointer of 4 million
+// tokens would otherwise allocate about 1.8 GB.
+func TestFactsContractPointerDepthIsBoundedBeforeItIsSplit(t *testing.T) {
+	at := strings.Repeat("/a", maxFactsDepth)
+	if contract, diagnostics := ReadFactsContract(Document{Data: contractWithPointer(at)}); contract == nil || len(diagnostics) > 0 {
+		t.Fatalf("a pointer of %d tokens: %+v", maxFactsDepth, diagnostics)
+	}
+	for _, pointer := range []string{at + "/a", at + "/*", strings.Repeat("/", maxFactsDepth+1)} {
+		contract, diagnostics := ReadFactsContract(Document{Data: contractWithPointer(pointer)})
+		if contract != nil || len(diagnostics) != 1 || diagnostics[0].Code != "FACTS-CONTRACT-LIMIT" || diagnostics[0].Location.Pointer != "/facts/0/pointer" {
+			t.Fatalf("a pointer of %d tokens: %+v", strings.Count(pointer, "/"), diagnostics)
+		}
+	}
+	if !strings.Contains(FactsCodes["FACTS-CONTRACT-LIMIT"].message, "a pointer of more than "+strconv.Itoa(maxFactsDepth)+" tokens") {
+		t.Fatalf("the message does not name the pointer bound: %q", FactsCodes["FACTS-CONTRACT-LIMIT"].message)
+	}
+	data := contractWithPointer(strings.Repeat("/a", 4_000_000))
+	if len(data) > MaxContractBytes {
+		t.Fatalf("the contract is %d bytes, over the bound", len(data))
+	}
+	var contract *FactsContractDoc
+	var diagnostics []Diagnostic
+	allocated := allocatedBy(func() { contract, diagnostics = ReadFactsContract(Document{Data: data}) })
+	if contract != nil || len(diagnostics) != 1 || diagnostics[0].Code != "FACTS-CONTRACT-LIMIT" {
+		t.Fatalf("%+v", diagnostics)
+	}
+	t.Logf("reading an 8 MB contract with a 4M-token pointer allocated %d MB", allocated>>20)
+	if allocated > 64<<20 {
+		t.Fatalf("reading the contract allocated %d MB, over the 64 MB budget", allocated>>20)
+	}
 }
 
 // Each listed fact is charged its pointer as it is listed, so a contract over

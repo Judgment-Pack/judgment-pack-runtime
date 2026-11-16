@@ -15,6 +15,16 @@ All notable changes to tagged releases are documented here.
   before any big arithmetic, so a long literal costs no more than reading it. Existing commands
   and their output are unchanged.
 
+- **A bounded `validate`/`resolve` report** (#427, ADR-0093 amendment). The report lists at most
+  the first 1000 diagnostics in its own order (location, then code, then message). When validation
+  found more, the report ends with one `REG-REPORT-TRUNCATED`, a warning that carries no value. A
+  capped report is exactly the first 1000 of the uncapped one, and it does not depend on the order
+  the kinds are supplied in. Every check still runs, and validity and the exit code are judged on
+  every diagnostic found: a registry with more than 1000 warnings and no error is valid and
+  resolves. `REG-REPORT-TRUNCATED` is provisional, like the other `REG-*` codes, until the registry
+  companion is released (VERSIONING.md). Ties in the report's order are now also broken by message.
+  Each code has one fixed message, so no existing report changes.
+
 - **`jpack registry import`: the registry's YAML authoring subset** (ADR-0094). It converts one
   YAML file in RFC 0034 §7's subset to the canonical JSON of the registry or kind declaration it
   holds. That JSON is admitted as `validate` admits JSON, and a registry's kinds and entries are
@@ -41,6 +51,10 @@ All notable changes to tagged releases are documented here.
   contract does not list, an ordered comparison on one that is not decimal, and an operand a
   pointer can never hold; a pointer below an open position of the kind is listed. Its report has
   its own selector, `factsCheckFormatVersion`. The typed builders of RFC 0037 §6 are not built.
+  A contract pointer deeper than 35 tokens, which no facts document holds, is refused as
+  `FACTS-CONTRACT-LIMIT`, and a pack's fact pointer deeper than 128 is reported as
+  `FACTS-CHECK-LIMIT`. Both are counted by a scan before the pointer is split into tokens, so a
+  long pointer costs its bytes, not its tokens (#428).
   Existing commands and their output are unchanged.
 
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
