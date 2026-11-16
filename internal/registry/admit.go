@@ -80,25 +80,127 @@ func admit(data []byte, maxBytes int, selectorMember, selector string, location 
 // admittedNumber applies RFC 0034 §1: an integer of magnitude at most 2^53-1,
 // or a decimal whose exact value equals that of the shortest decimal reading
 // back as the same double; never negative zero.
+//
+// Big arithmetic is quadratic in a literal's digits, and builds 10^N for an
+// exponent N, so a literal is first held to cheap bounds that only refuse
+// what the rule refuses anyway:
+//   - an integer has at most 16 digits, those of 2^53-1 (JSON allows no
+//     leading zero, so every digit counts);
+//   - a decimal has at most 17 significant digits once the significand's
+//     leading and trailing zeros are dropped, because the shortest decimal
+//     that reads back as a double never has more;
+//   - a nonzero decimal's leading digit is at 10^X with -324 <= X <= 308,
+//     because the shortest decimal of a finite nonzero double lies between
+//     that of the smallest subnormal, 5e-324, and that of the largest finite
+//     double, 1.7976931348623157e308.
+//
+// What passes is compared exactly, on a reduced literal of the same value:
+// the significant digits and the exponent that places them.
 func admittedNumber(number json.Number) bool {
-	literal := number.String()
-	exact, ok := new(big.Rat).SetString(literal)
+	negative, integer, fraction, exponent, ok := splitJSONNumber(number.String())
 	if !ok {
 		return false
 	}
-	if exact.Sign() == 0 && strings.HasPrefix(literal, "-") {
+	sign := ""
+	if negative {
+		sign = "-"
+	}
+	if fraction == "" && exponent == "" {
+		if integer == "0" {
+			return !negative
+		}
+		if len(integer) > maxSafeIntegerDigits {
+			return false
+		}
+		magnitude, ok := new(big.Int).SetString(integer, 10)
+		return ok && magnitude.Cmp(big.NewInt(maxSafeInteger)) <= 0
+	}
+	digits := integer + fraction
+	lead := strings.IndexFunc(digits, func(r rune) bool { return r != '0' })
+	if lead < 0 {
+		// Zero, whatever its exponent.
+		return !negative
+	}
+	trail := strings.LastIndexFunc(digits, func(r rune) bool { return r != '0' })
+	significant := digits[lead : trail+1]
+	if len(significant) > maxShortestDigits {
 		return false
 	}
-	if !strings.ContainsAny(literal, ".eE") {
-		limit := big.NewRat(maxSafeInteger, 1)
-		return new(big.Rat).Abs(exact).Cmp(limit) <= 0
+	// The exponent saturates far past the bound below: a literal within the
+	// size bound moves the point by fewer than 2^40 places.
+	var power int64
+	for _, digit := range strings.TrimLeft(exponent, "+-") {
+		power = min(power*10+int64(digit-'0'), 1<<40)
 	}
-	double, err := strconv.ParseFloat(literal, 64)
+	if strings.HasPrefix(exponent, "-") {
+		power = -power
+	}
+	if leading := int64(len(integer)-lead-1) + power; leading < minShortestExponent || leading > maxShortestExponent {
+		return false
+	}
+	reduced := sign + significant + "e" + strconv.FormatInt(int64(len(integer)-trail-1)+power, 10)
+	exact, ok := new(big.Rat).SetString(reduced)
+	if !ok {
+		return false
+	}
+	double, err := strconv.ParseFloat(reduced, 64)
 	if err != nil {
 		return false
 	}
 	shortest, ok := new(big.Rat).SetString(strconv.FormatFloat(double, 'g', -1, 64))
 	return ok && shortest.Cmp(exact) == 0
+}
+
+// The bounds admittedNumber checks before big arithmetic.
+const (
+	maxSafeIntegerDigits = 16   // the digits of 2^53-1
+	maxShortestDigits    = 17   // the most a shortest round-trip decimal of a double has
+	minShortestExponent  = -324 // the leading digit's exponent in 5e-324, the smallest subnormal
+	maxShortestExponent  = 308  // the leading digit's exponent in 1.7976931348623157e308
+)
+
+// splitJSONNumber splits a literal by JSON's number grammar,
+// -?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?, into its sign, integer
+// digits, fraction digits and exponent (its sign and digits), in one scan.
+func splitJSONNumber(literal string) (negative bool, integer, fraction, exponent string, ok bool) {
+	rest := literal
+	if strings.HasPrefix(rest, "-") {
+		negative, rest = true, rest[1:]
+	}
+	digits := func(s string) int {
+		n := 0
+		for n < len(s) && s[n] >= '0' && s[n] <= '9' {
+			n++
+		}
+		return n
+	}
+	n := digits(rest)
+	if n == 0 || n > 1 && rest[0] == '0' {
+		return false, "", "", "", false
+	}
+	integer, rest = rest[:n], rest[n:]
+	if strings.HasPrefix(rest, ".") {
+		n = digits(rest[1:])
+		if n == 0 {
+			return false, "", "", "", false
+		}
+		fraction, rest = rest[1:1+n], rest[1+n:]
+	}
+	if strings.HasPrefix(rest, "e") || strings.HasPrefix(rest, "E") {
+		signed := 1
+		if len(rest) > 1 && (rest[1] == '+' || rest[1] == '-') {
+			signed = 2
+		}
+		n = digits(rest[signed:])
+		if n == 0 {
+			return false, "", "", "", false
+		}
+		exponent, rest = rest[1:signed+n], rest[signed+n:]
+	}
+	if rest != "" {
+		return false, "", "", "", false
+	}
+	return negative, integer, fraction, exponent, true
 }
 
 // walk visits every value in document order, objects' members in sorted

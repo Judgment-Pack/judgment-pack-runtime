@@ -14,10 +14,12 @@ var (
 	yamlDecimal = regexp.MustCompile(`^-?(0|[1-9][0-9]*)\.[0-9]+$`)
 )
 
-// yamlOtherReadings matches every plain scalar that YAML 1.1's types or the
-// YAML 1.2 core schema read as something other than a string (ADR-0094). A
-// scalar that matches and is not one of §7's own forms is refused, because a
-// YAML tool would read it as another value than import does.
+// yamlOtherReadings matches every plain scalar that YAML 1.1's types, the
+// YAML 1.2 core schema or go-yaml v3 read as something other than a string
+// (ADR-0094). A scalar that matches and is not one of §7's own forms is
+// refused, because a YAML tool would read it as another value than import
+// does. go-yaml's numbers, which it reads after dropping every underscore,
+// are yamlLibraryNumber's.
 var yamlOtherReadings = regexp.MustCompile(`^(?:` + strings.Join([]string{
 	// YAML 1.1 booleans, and the 1.2 core schema's capitalized ones.
 	`y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF`,
@@ -34,16 +36,21 @@ var yamlOtherReadings = regexp.MustCompile(`^(?:` + strings.Join([]string{
 	`[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?`,
 	// Infinity and not-a-number in both.
 	`[-+]?\.(?:inf|Inf|INF)`, `\.(?:nan|NaN|NAN)`,
-	// YAML 1.1 timestamps: a date, or a date and a time.
-	`[0-9]{4}-[0-9]{2}-[0-9]{2}`,
-	`[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?`,
+	// Timestamps: a date, or a date and a time. YAML 1.1 writes a date's
+	// month and day with two digits and a time's minute and second with two;
+	// go-yaml v3 also reads one digit in each.
+	`[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}`,
+	`[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?`,
 	// YAML 1.1's merge key and value key.
 	`<<`, `=`,
 }, "|") + `)$`)
 
-// maxSafeDigits is the number of digits of 2^53-1; an integer with more is
-// out of range whatever its digits, which spares big arithmetic on a long one.
-const maxSafeDigits = 16
+// yamlLibraryNumber matches, once every underscore is dropped, the numbers
+// go-yaml v3 reads from a plain scalar that starts with a digit or a sign: an
+// integer in any radix Go's own syntax has, its prefix in either case, and a
+// float. go-yaml drops underscores anywhere in such a scalar, so 1_0e5 and
+// 0o1_7 are numbers to it.
+var yamlLibraryNumber = regexp.MustCompile(`^[-+]?(?:0[bB][01]+|0[oO][0-7]+|0[xX][0-9a-fA-F]+|[0-9]+|(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?)$`)
 
 // resolvePlain reads a plain scalar by RFC 0034 §7: true, false and null; an
 // integer or a decimal held to §1's number rules; any other scalar a string,
@@ -59,7 +66,7 @@ func resolvePlain(text string) (any, string) {
 		return nil, ""
 	}
 	if yamlInteger.MatchString(text) {
-		if len(strings.TrimPrefix(text, "-")) > maxSafeDigits || !admittedNumber(json.Number(text)) {
+		if !admittedNumber(json.Number(text)) {
 			return nil, "REG-DOC-NUMBER"
 		}
 		return json.Number(text), ""
@@ -70,10 +77,20 @@ func resolvePlain(text string) (any, string) {
 		}
 		return json.Number(text), ""
 	}
-	if yamlOtherReadings.MatchString(text) {
+	if yamlOtherReadings.MatchString(text) || readsAsLibraryNumber(text) {
 		return nil, "REG-YAML-SCALAR"
 	}
 	return text, ""
+}
+
+// readsAsLibraryNumber says whether go-yaml v3 reads a plain scalar as a
+// number: one that starts with a digit or a sign and, without its
+// underscores, is a number in yamlLibraryNumber's grammar.
+func readsAsLibraryNumber(text string) bool {
+	if text == "" || !strings.ContainsRune("+-0123456789", rune(text[0])) {
+		return false
+	}
+	return yamlLibraryNumber.MatchString(strings.ReplaceAll(text, "_", ""))
 }
 
 // plainKeyCode is the refusal of a plain scalar used as a key, or "": a key

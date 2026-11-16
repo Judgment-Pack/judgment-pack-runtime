@@ -56,7 +56,8 @@ value-free report and exits 1. `--output` is replaced, by a temporary file and a
 success. A remote path exits 3, and a read or write failure exits 4.
 
 New codes, listed in `diag.go` before step 1: `REG-YAML-ENCODING`, `-DOCUMENTS`, `-DIRECTIVE`,
-`-TAG`, `-ANCHOR` (an anchor or an alias), `-MERGE`, `-SCALAR`, `-EMPTY`, `-KEY` and `-SYNTAX`.
+`-TAG`, `-ANCHOR` (an anchor or an alias), `-MERGE`, `-SCALAR`, `-EMPTY`, `-KEY`, `-SYNTAX` and
+`-TRUNCATED`.
 A YAML file also gets `REG-DOC-SIZE`, `-DEPTH`, `-DUPLICATE`, `-STRING`, `-NUMBER` and
 `-SELECTOR`, with their JSON meaning. A location in a YAML file is `{"document":"yaml","line":L,
 "column":C}`, counted from 1 in code points. `line` and `column` are omitted everywhere else, so
@@ -69,15 +70,42 @@ Choices §7 leaves to the reader, recorded so the companion can settle them:
   pointer. Like the other `REG-*` codes, they are provisional until the companion's list is
   released (VERSIONING.md).
 
-- **"YAML 1.1 reads differently."** The reader refuses a plain scalar that YAML 1.1's types or the
-  YAML 1.2 core schema read as something else:
+- **"YAML 1.1 reads differently."** The reader refuses a plain scalar that YAML 1.1's types, the
+  YAML 1.2 core schema or go-yaml v3 read as something else:
   - booleans, including `y`, `n`, `yes`, `on` and their capitalized forms;
   - null, including `~`;
-  - integers in binary, octal, hex, sexagesimal or with underscores, plus `+5` and `007`;
+  - integers in binary, octal, hex, sexagesimal or with underscores, plus `+5` and `007`, with a
+    radix prefix in either case;
   - floats, including exponents, `.inf` and `.nan`;
-  - timestamps, `<<` and `=`.
+  - a number with an underscore anywhere, which go-yaml reads after dropping every underscore;
+  - timestamps, with one or two digits in a date's month and day and a time's parts;
+  - `<<` and `=`.
 
-  A version such as `1.2.0` stays a string. Quoting gives a string.
+  A version such as `1.2.0` stays a string. Quoting gives a string. The table records how each
+  reader reads a sample, checked against go-yaml v3.0.1 and PyYAML 6.0.1, both its pure loader and
+  its libyaml loader. libyaml is a parser and resolves no scalar, so its column applies only to
+  structure; its plain scalars are read by PyYAML's YAML 1.1 rules.
+
+  | Sample | YAML 1.1 types | YAML 1.2 | go-yaml v3 | libyaml (PyYAML's C loader) | Import |
+  |---|---|---|---|---|---|
+  | `y`, `yes`, `on` | boolean | string | string | `yes`, `on` boolean, `y` string | `REG-YAML-SCALAR` |
+  | `True`, `Null` | boolean, null | boolean, null | boolean, null | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `0x1F`, `0b101`, `017` | integer | integer (`0x1F`, `017`) | integer | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `0X1F`, `0O17`, `0B101` | string | string | integer | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `1_000`, `1_` | integer | string | integer | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `1_0e5`, `0o1_7` | string | string | number | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `+5`, `.5`, `5.` | number | number | number | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `08`, `1e3` | string | number | number | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `2001-12-14` | timestamp | string | timestamp | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `2001-1-2`, `2001-01-02T3:4:5Z` | string | string | timestamp | as YAML 1.1 | `REG-YAML-SCALAR` |
+  | `1.2.0`, `_5`, `0x`, `1,000` | string | string | string | as YAML 1.1 | string |
+  | `{?b: c}`, `[?b]` | n/a | plain `?b` | key `b` | key `b` | `REG-YAML-KEY` |
+  | `[:b]`, `{a: :c}` | n/a | plain `:b` | error | error | `REG-YAML-KEY` |
+  | `{A:[0]}` | n/a | error | error | error (pure loader: `{A: [0]}`) | `REG-YAML-SYNTAX` |
+  | `A: \|` then spaces at the end of the file | n/a | `""` | `""` | `""` | `""` |
+
+  The YAML 1.2 column is the core schema for a scalar and the grammar for structure.
+
 - **Empty nodes are refused** (`REG-YAML-EMPTY`). YAML reads them as null, and §7 lists only
   `null`.
 - **Numbers.** An integer is `-?(0|[1-9][0-9]*)` and a decimal adds `.[0-9]+`. Both are held to
@@ -86,6 +114,9 @@ Choices §7 leaves to the reader, recorded so the companion can settle them:
   `REG-DOC-STRING`.
 - **Keys.** A plain key that reads as anything but a string gives `REG-YAML-KEY`, as does an
   explicit (`?`), flow or multi-line key, or one over YAML's 1024-character implicit-key bound.
+  In a flow collection a scalar may not start with `?` or `:`, which libyaml reads as indicators
+  (`REG-YAML-KEY`), and only a quoted key takes its value right after the `:` (`{A:[0]}` is
+  `REG-YAML-SYNTAX`).
 - **Which document.** The selector member decides: `registryFormatVersion` means a registry and
   `kindFormatVersion` means a kind. Having neither or both gives `REG-DOC-SELECTOR`. Import does
   not guess.
@@ -96,6 +127,16 @@ Choices §7 leaves to the reader, recorded so the companion can settle them:
 - **Fatal and recoverable refusals.** A tag, anchor, alias, merge key, ambiguous scalar, empty node,
   bad key, duplicate or out-of-range number is recorded, and reading goes on. Encoding, document
   structure, depth and syntax errors stop the reading.
+- **A bounded report.** Reading also stops at the 1001st refusal, which is reported as one
+  `REG-YAML-TRUNCATED` where reading stopped, after the first 1000. A file within the size bound
+  could otherwise hold millions of refusals (one per alias in `[*a,*a,…]`), and the report would
+  outgrow the file. 1000 is far more than a hand-written file needs fixed at once. `validate`'s
+  report is not capped: what it reports is bounded by the documents' members and checks.
+- **Numbers past the bounds.** RFC 0034 §1's number rule is applied by a scan before any big
+  arithmetic, which is quadratic in a literal's digits: an integer of more than 16 digits, a
+  decimal of more than 17 significant digits, or one whose leading digit lies outside 10^-324 to
+  10^308, cannot be admitted and is refused at once. What passes is compared exactly. This holds
+  for `validate`'s JSON too, with the same results.
 - **Overlay files** (§ Alternatives, a MAY) are not implemented.
 
 ### Consequences

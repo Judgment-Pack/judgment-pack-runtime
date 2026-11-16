@@ -97,7 +97,16 @@ type yamlParser struct {
 	lineStarts  []int
 	depth       int
 	diagnostics *collector
+	// refusalLimit is the most refusals recorded before reading stops with
+	// REG-YAML-TRUNCATED; 0 is no limit.
+	refusalLimit int
 }
+
+// maxImportRefusals is the most refusals one import reports. A file within
+// the size bound could otherwise hold millions (one per alias in a flow
+// sequence), and the report would be larger than the file. Past it, reading
+// stops and the report ends with one REG-YAML-TRUNCATED where it stopped.
+const maxImportRefusals = 1000
 
 // decodeYAMLText checks the encoding (UTF-8, no byte-order mark, only
 // characters YAML allows) and returns the text with every line break as a
@@ -141,7 +150,7 @@ func yamlPrintable(r rune) bool {
 }
 
 func newYAMLParser(text []rune, diagnostics *collector) *yamlParser {
-	p := &yamlParser{text: text, lineStarts: []int{0}, diagnostics: diagnostics}
+	p := &yamlParser{text: text, lineStarts: []int{0}, diagnostics: diagnostics, refusalLimit: maxImportRefusals}
 	for i, r := range text {
 		if r == '\n' {
 			p.lineStarts = append(p.lineStarts, i+1)
@@ -218,6 +227,10 @@ func (p *yamlParser) location(at int) Location {
 }
 
 func (p *yamlParser) report(code string, at int) {
+	if p.refusalLimit > 0 && len(p.diagnostics.diagnostics) >= p.refusalLimit {
+		p.diagnostics.add("REG-YAML-TRUNCATED", p.location(at))
+		panic(yamlStop{})
+	}
 	p.diagnostics.add(code, p.location(at))
 }
 
@@ -340,6 +353,17 @@ func (p *yamlParser) atMarker(marker string) bool {
 	return isBlank(p.peek(3))
 }
 
+// onlySpacesLeft says whether only spaces are left before the end of the
+// file, without moving.
+func (p *yamlParser) onlySpacesLeft() bool {
+	for _, r := range p.text[p.pos:] {
+		if r != ' ' {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *yamlParser) atAnyMarker() bool { return p.atMarker("---") || p.atMarker("...") }
 
 func (p *yamlParser) enter(kind yamlKind, at int) *yamlNode {
@@ -396,16 +420,17 @@ func (p *yamlParser) keyFollows() bool {
 // node must be indented more. On return the offset is at the first character
 // of the next line with content, or at the end.
 func (p *yamlParser) parseBlockNode(owner int, start blockStart, tabbed bool) *yamlNode {
-	p.skipProperties(false)
-	if p.lineEndsHere() {
-		// Properties alone on their line; the node follows.
+	// Properties alone on their line; the node follows on a later line.
+	// This is a loop, not a recursion: lines of properties do not nest, and
+	// any number of them must not deepen the stack.
+	for p.skipProperties(false); p.lineEndsHere(); p.skipProperties(false) {
 		at := p.pos
 		p.finishLine()
-		if !p.eof() && !p.atAnyMarker() && p.column() > owner {
-			return p.parseBlockNode(owner, startFresh, false)
+		if p.eof() || p.atAnyMarker() || p.column() <= owner {
+			p.report("REG-YAML-EMPTY", at)
+			return &yamlNode{at: at}
 		}
-		p.report("REG-YAML-EMPTY", at)
-		return &yamlNode{at: at}
+		start, tabbed = startFresh, false
 	}
 	at := p.pos
 	c, next := p.peek(0), p.peek(1)
@@ -648,7 +673,10 @@ func (p *yamlParser) parseBlockScalar(owner int) *yamlNode {
 			p.pos++
 			continue
 		}
-		if p.eof() {
+		if p.eof() || spaces < indent && p.onlySpacesLeft() {
+			// The file ends here, or ends after spaces on this line: an
+			// empty last line with no line break, which adds nothing.
+			p.pos = len(p.text)
 			break
 		}
 		if spaces < indent {
@@ -692,7 +720,12 @@ func (p *yamlParser) detectIndentation(owner int) int {
 			q += spaces + 1
 			continue
 		}
-		if q+spaces >= len(p.text) || spaces <= owner {
+		if q+spaces >= len(p.text) {
+			// Spaces up to the end of the file: an empty last line, which
+			// counts toward the indentation as any empty line does.
+			return max(owner+1, widest, spaces)
+		}
+		if spaces <= owner {
 			return max(owner+1, widest)
 		}
 		if widest > spaces {
@@ -1061,9 +1094,12 @@ func (p *yamlParser) parseFlowNode(owner int) flowItem {
 		return flowItem{text: text, at: at, multiline: multiline}
 	case c == '*':
 		return flowItem{node: p.skipAlias(true), at: at}
-	case (c == '?' || c == ':') && isBlankOrFlow(next):
+	case c == '?' || c == ':':
+		// An explicit key, or a value with no key. YAML 1.2 lets a plain
+		// scalar start with "?b" or ":b" here, but libyaml, and so PyYAML
+		// and go-yaml, read the indicator: {?b: c} is {b: c} to them.
 		p.stop("REG-YAML-KEY", at)
-	case isIndicator(c) && !((c == '-' || c == '?' || c == ':') && !isBlankOrFlow(next)):
+	case isIndicator(c) && !(c == '-' && !isBlankOrFlow(next)):
 		p.stop("REG-YAML-SYNTAX", at)
 	}
 	text := p.scanPlainLine(true)
@@ -1083,13 +1119,18 @@ func (p *yamlParser) itemValue(item flowItem) *yamlNode {
 
 // flowColon says whether a key's ":" follows on the same line, and steps
 // past it. After a quoted key it may be followed by the value at once, as in
-// JSON; after a plain key it must be followed by white space or a flow
-// indicator, or it would have been part of the key.
+// JSON; after a plain key it must be followed by white space, or by ",", "]"
+// or "}" for an empty value, or it would have been part of the key. A plain
+// key's ":" right before "[" or "{" is refused: YAML 1.2 gives a value right
+// after the ":" only to a quoted key (or a flow collection, never a key here).
 func (p *yamlParser) flowColon(item flowItem) (int, bool) {
 	save := p.pos
 	p.skipWhite()
 	if p.peek(0) == ':' && (!item.plain || isBlankOrFlow(p.peek(1))) {
 		colon := p.pos
+		if next := p.peek(1); item.plain && (next == '[' || next == '{') {
+			p.stop("REG-YAML-SYNTAX", colon+1)
+		}
 		p.pos++
 		return colon, true
 	}

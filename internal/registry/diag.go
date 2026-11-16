@@ -111,10 +111,11 @@ var Codes = map[string]codeInfo{
 	"REG-YAML-TAG":       {SeverityError, "A node has a YAML tag."},
 	"REG-YAML-ANCHOR":    {SeverityError, "A node has an anchor, or is an alias."},
 	"REG-YAML-MERGE":     {SeverityError, "A mapping has a merge key."},
-	"REG-YAML-SCALAR":    {SeverityError, "A plain scalar would be read as another value by YAML 1.1 or the YAML 1.2 core schema; quote it to make it a string."},
+	"REG-YAML-SCALAR":    {SeverityError, "A plain scalar would be read as another value by YAML 1.1, the YAML 1.2 core schema or a common YAML library; quote it to make it a string."},
 	"REG-YAML-EMPTY":     {SeverityError, "A node is empty; write null or an empty quoted string."},
 	"REG-YAML-KEY":       {SeverityError, "A key is not a string on one line: an explicit or complex key, a key spanning lines, or a key that reads as a number, a boolean or null."},
 	"REG-YAML-SYNTAX":    {SeverityError, "The file is not well-formed YAML within the subset."},
+	"REG-YAML-TRUNCATED": {SeverityError, "Reading stopped here after 1000 refusals; the report lists those, and the file may hold more."},
 
 	// Step 1: document admission.
 	"REG-DOC-SIZE":      {SeverityError, "The document exceeds its size bound."},

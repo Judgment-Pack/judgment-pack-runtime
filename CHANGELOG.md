@@ -11,19 +11,23 @@ All notable changes to tagged releases are documented here.
   never a value from the documents, and exits 0 when the registry is valid, 1 when it is not.
   `resolve ... --environment E` writes one environment's resolved document as RFC 8785 canonical
   JSON. Nothing is fetched: a secret reference is checked for form, version pin and the
-  environment's project scope and left as written. Existing commands and their output are
-  unchanged.
+  environment's project scope and left as written. A number is held to RFC 0034 §1 by a scan
+  before any big arithmetic, so a long literal costs no more than reading it. Existing commands
+  and their output are unchanged.
 
 - **`jpack registry import`: the registry's YAML authoring subset** (ADR-0094). It converts one
   YAML file in RFC 0034 §7's subset to the canonical JSON of the registry or kind declaration it
   holds. That JSON is admitted as `validate` admits JSON, and a registry's kinds and entries are
   written in canonical order. Everything outside the subset is refused, never coerced: a directive,
   tag, anchor, alias, merge key, second document, BOM, empty node, complex, multi-line or
-  non-string key, duplicate key, or a plain scalar YAML 1.1 or the 1.2 core schema would read as
-  another value (`yes`, `on`, `~`, `0x1F`, `1e3`, `007`, a date). The value-free report lists every
-  refusal by line and column. Nothing is written, `--output` is left as it was, and the exit code is
-  1. New `REG-YAML-*` codes are added. `line` and `column` appear only in import's locations, so
-  `validate` output is unchanged. No dependency is added.
+  non-string key, duplicate key, or a plain scalar that YAML 1.1, the 1.2 core schema or go-yaml
+  v3 would read as another value (`yes`, `on`, `~`, `0x1F`, `0X1F`, `1_0e5`, `1e3`, `007`, a date
+  such as `2001-1-2`). The value-free report lists each refusal by line and column, up to 1000,
+  then one `REG-YAML-TRUNCATED`. On a refusal nothing is written, `--output` is left as it was,
+  and the exit code is 1. The new `REG-YAML-*` codes, `REG-YAML-TRUNCATED` among them, are
+  provisional like the other `REG-*` codes until the registry companion is released
+  (VERSIONING.md). `line` and `column` appear only in import's locations, so `validate` output is
+  unchanged. No dependency is added.
 
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
   `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
