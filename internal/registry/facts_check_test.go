@@ -282,6 +282,32 @@ func TestCheckPackWorkIsBoundedOverOneCheck(t *testing.T) {
 	}
 }
 
+// A pack's fact pointer deeper than maxCheckDepth is refused before it is
+// split into tokens, so a pointer of 4 million tokens costs its bytes, not
+// its tokens. A malformed one is unknown, whatever its depth, as before.
+func TestCheckPackBoundsAPointerBeforeItIsSplit(t *testing.T) {
+	contract := roleContract(t)
+	deep := strings.Repeat("/a", 4_000_000)
+	var diagnostics []Diagnostic
+	allocated := allocatedBy(func() { diagnostics = contract.CheckPack(conditions(deep)) })
+	if len(diagnostics) != 1 || diagnostics[0].Code != "FACTS-CHECK-LIMIT" {
+		t.Fatalf("%+v", diagnostics)
+	}
+	t.Logf("checking a 4M-token pointer allocated %d KB", allocated>>10)
+	if allocated > 1<<20 {
+		t.Fatalf("checking the pointer allocated %d KB, over the 1 MB budget", allocated>>10)
+	}
+	for pointer, code := range map[string]string{
+		strings.Repeat("/a", maxCheckDepth+1) + "/~2": "FACTS-POINTER-UNKNOWN",
+		strings.Repeat("/a", maxCheckDepth+1) + "~":   "FACTS-POINTER-UNKNOWN",
+		strings.Repeat("/a", maxCheckDepth+1) + "/~1": "FACTS-CHECK-LIMIT",
+	} {
+		if diagnostics := contract.CheckPack(conditions(pointer)); len(diagnostics) != 1 || diagnostics[0].Code != code {
+			t.Errorf("%d tokens ending %q: want %s, got %+v", strings.Count(pointer, "/"), pointer[len(pointer)-3:], code, diagnostics)
+		}
+	}
+}
+
 // FACTS-VALUE-UNREACHABLE is reported for an in when one item is
 // unreachable, and its message says so.
 func TestFactsValueUnreachableMessageCoversAnInItem(t *testing.T) {

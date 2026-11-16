@@ -131,7 +131,9 @@ Choices §7 leaves to the reader, recorded so the companion can settle them:
   `REG-YAML-TRUNCATED` where reading stopped, after the first 1000. A file within the size bound
   could otherwise hold millions of refusals (one per alias in `[*a,*a,…]`), and the report would
   outgrow the file. 1000 is far more than a hand-written file needs fixed at once. `validate`'s
-  report is not capped: what it reports is bounded by the documents' members and checks.
+  report is not capped: what it reports is bounded by the documents' members and checks. (Since
+  amended: `validate` keeps the first 1000 in its report's order and runs every check, so its bound
+  differs from this one; see ADR-0093's amendment.)
 - **Numbers past the bounds.** RFC 0034 §1's number rule is applied by a scan before any big
   arithmetic, which is quadratic in a literal's digits: an integer of more than 16 digits, a
   decimal of more than 17 significant digits, or one whose leading digit lies outside 10^-324 to
