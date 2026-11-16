@@ -183,3 +183,26 @@ inputs moves `resolvedFormatVersion`.
 
 Spec RFC 0037 (accepted 2026-11-16), §1 to §5; §6 waits for RFC 0036's emitter host.
 `internal/registry/facts.go`, `facts_contract.go`, `facts_check.go`, `internal/cli/registry_facts.go`.
+
+## Amendment: bounds from the v0.47.0 release review (2026-11-16, #432)
+
+- **The generation's work bound covers the reading of the schema.** A contract is generated from
+  every schema that applies at a position. Collecting them follows `$ref` and `allOf`, so a schema
+  whose definitions name each other many times collected each one once per path. Each node is now
+  collected once, however many paths reach it. Each node collected, each closed-list value checked
+  against a schema, and each value merged into a union is charged to the work bound, 2^20, that
+  already held the shapes. Past it the kind gets `FACTS-CONTRACT-LIMIT`. Each value is checked
+  against each schema's own keywords once, rather than validated through every `$ref` path again.
+  The collected schemas hold every node that applies, so the result is the same.
+- **A contract's report is bounded as validate's is** (ADR-0093, amendment of #427). `check-pack`
+  and every reader of a contract report at most the first 1000 diagnostics in the report's order,
+  then one `REG-REPORT-TRUNCATED` warning located at `{"document":"contract"}`. Before, an 8 MiB
+  contract of `-0`s produced millions of diagnostics. The contract is refused when any error was
+  found, kept or not. A contract's listed values are checked for repeats in one pass.
+- **A number with no normal decimal is an error.** The facts mapping already refused one. A
+  contract's closed list gave it an open decimal, which widened the list past it. Now the contract
+  is not generated, an internal error. Admission keeps every number as a literal of at most 25
+  bytes (ADR-0093, amendment of #432), so an admitted kind holds no such number.
+- **Not bounded here:** a pack's advisories have no count bound of their own. Each is one fact
+  condition of the pack, which the evaluator's admission already bounds (250,000 nodes by
+  default), and the check's work bound holds what one check reads.
