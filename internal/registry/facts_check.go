@@ -80,11 +80,20 @@ var contractMembers = map[string]bool{"factsContractVersion": true, "id": true, 
 var contractItemMembers = map[string]bool{"pointer": true, "type": true, "present": true, "values": true, "items": true, "secretReference": true}
 
 // parseContractPointer reads a contract pointer: a pointer pattern of
-// RFC 0034 with no length bound, since a generated contract nests as deep as
-// a kind's schema and its references.
-func parseContractPointer(source string) ([]patternToken, bool) {
+// RFC 0034 with no 512-byte bound, since a generated contract nests as deep
+// as a kind's schema and its references. It returns the tokens, or the code
+// that refuses the pointer: FACTS-CONTRACT-FORM for one that is not a
+// pattern, and FACTS-CONTRACT-LIMIT for one of more than maxFactsDepth
+// tokens, which no facts document can hold. The tokens are counted by a scan
+// that stops past that bound, before any is split out, so a pointer of
+// millions of tokens costs no more than its first maxFactsDepth+1. Its bytes
+// are bounded by the contract's, MaxContractBytes, which admission applies.
+func parseContractPointer(source string) ([]patternToken, string) {
 	if !strings.HasPrefix(source, "/") {
-		return nil, false
+		return nil, "FACTS-CONTRACT-FORM"
+	}
+	if pointerTokenCount(source, maxFactsDepth) > maxFactsDepth {
+		return nil, "FACTS-CONTRACT-LIMIT"
 	}
 	var tokens []patternToken
 	for _, raw := range strings.Split(source[1:], "/") {
@@ -94,11 +103,11 @@ func parseContractPointer(source string) ([]patternToken, bool) {
 		}
 		decoded, err := unescapeToken(raw, true)
 		if err != nil {
-			return nil, false
+			return nil, "FACTS-CONTRACT-FORM"
 		}
 		tokens = append(tokens, patternToken{literal: decoded})
 	}
-	return tokens, true
+	return tokens, ""
 }
 
 // valueOfType reports whether a contract value is one a fact of type t can
@@ -182,9 +191,10 @@ func ReadFactsContract(document Document) (*FactsContractDoc, []Diagnostic) {
 			}
 		}
 		pointer, _ := item["pointer"].(string)
-		tokens, pointerOK := parseContractPointer(pointer)
-		if !pointerOK {
-			formAt("pointer")
+		tokens, pointerCode := parseContractPointer(pointer)
+		if pointerCode != "" {
+			fail(pointerCode, "facts", at, "pointer")
+			bad = true
 		}
 		typeName, _ := item["type"].(string)
 		t := factTypeNamed(typeName)
@@ -250,8 +260,7 @@ func ReadFactsContract(document Document) (*FactsContractDoc, []Diagnostic) {
 	return &FactsContractDoc{Digest: digest, root: tree}, nil
 }
 
-// markTree marks each node's open and required, without recursion, since a
-// contract pointer has no length bound.
+// markTree marks each node's open and required, without recursion.
 func markTree(root *contractNode) {
 	pending := []*contractNode{root}
 	for len(pending) > 0 {
@@ -563,8 +572,12 @@ func (d *FactsContractDoc) CheckPack(form map[string]any) []Diagnostic {
 
 func (c *checker) checkCondition(condition map[string]any) string {
 	pointer, _ := condition["path"].(string)
-	path, err := parsePointer(pointer)
+	path, over, err := parsePointerWithin(pointer, maxCheckDepth)
 	if err != nil {
+		return "FACTS-POINTER-UNKNOWN"
+	}
+	if over {
+		c.exceeded = true
 		return "FACTS-POINTER-UNKNOWN"
 	}
 	at := c.at(path)

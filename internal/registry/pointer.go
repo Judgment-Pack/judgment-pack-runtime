@@ -28,6 +28,37 @@ func parsePointer(pointer string) ([]string, error) {
 	return tokens, nil
 }
 
+// pointerTokenCount is the number of reference tokens in a pointer that
+// begins with /, counted without splitting it and at most limit+1: the scan
+// stops once the count passes limit.
+func pointerTokenCount(pointer string, limit int) int {
+	count := 0
+	for i := 0; i < len(pointer) && count <= limit; i++ {
+		if pointer[i] == '/' {
+			count++
+		}
+	}
+	return count
+}
+
+// parsePointerWithin is parsePointer for a pointer read no deeper than limit
+// tokens. One deeper is reported as over, with no tokens, once its form is
+// checked by a scan of its bytes, and before any token is split out: its
+// cost is its length, not its tokens. A malformed pointer gets
+// parsePointer's error whatever its depth.
+func parsePointerWithin(pointer string, limit int) ([]string, bool, error) {
+	if !strings.HasPrefix(pointer, "/") || pointerTokenCount(pointer, limit) <= limit {
+		tokens, err := parsePointer(pointer)
+		return tokens, false, err
+	}
+	for i := 0; i < len(pointer); i++ {
+		if pointer[i] == '~' && (i+1 >= len(pointer) || pointer[i+1] != '0' && pointer[i+1] != '1') {
+			return nil, false, fmt.Errorf("a ~ must be followed by 0 or 1")
+		}
+	}
+	return nil, true, nil
+}
+
 func unescapeToken(token string, allowStar bool) (string, error) {
 	if !strings.Contains(token, "~") {
 		return token, nil
