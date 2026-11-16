@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -218,6 +220,46 @@ func TestFactsDocumentOverTheLimitIsReportedNotWritten(t *testing.T) {
 	}
 	if encoded := encode(t, diagnostics); strings.Contains(encoded, "aaaa") {
 		t.Error("a diagnostic carries a value")
+	}
+}
+
+const holderKind = `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/kinds/holder","version":"1.0.0","kind":"holder","owner":"team-a",
+"schema":{"type":"object","properties":{"refs":{"type":"array","items":{"type":"string"}}}},
+"references":[{"pointer":"/refs/*","kinds":["blob"]}],"bounds":{"maxEntryBytes":2097152}}`
+
+// allocatedBy is the memory a call allocates, in bytes.
+func allocatedBy(call func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	call()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// A 60 KB entry that refers 3000 times to one 1 MB entry would carry 3 GB of
+// facts. Its size is counted as the document is built, so it is reported
+// before anything that size is made.
+func TestFactsDocumentLimitIsReachedBeforeTheDocumentIsBuilt(t *testing.T) {
+	refs := make([]string, 3000)
+	for i := range refs {
+		refs[i] = `"entry:blob/large"`
+	}
+	registry, kinds := customRegistry(t, `{"kind":"blob","id":"large","owner":"team-a","value":{"data":"`+strings.Repeat("a", 1<<20)+`"}},
+{"kind":"holder","id":"h","owner":"team-a","value":{"refs":[`+strings.Join(refs, ",")+`]}}`, blobKind, holderKind)
+	result := run(registry, kinds)
+	if !result.Report.Valid {
+		t.Fatalf("%+v", result.Report.Diagnostics)
+	}
+	var diagnostics []Diagnostic
+	var err error
+	allocated := allocatedBy(func() {
+		diagnostics, err = result.WriteFacts("holder", []string{"dev"}, false, io.Discard, nil)
+	})
+	if err != nil || len(diagnostics) != 1 || diagnostics[0].Code != "FACTS-DOCUMENT-LIMIT" || *diagnostics[0].Location.Entry != (EntryName{Kind: "holder", ID: "h"}) {
+		t.Fatalf("%v %+v", err, diagnostics)
+	}
+	if allocated > 256<<20 {
+		t.Fatalf("reporting the limit allocated %d MB", allocated>>20)
 	}
 }
 

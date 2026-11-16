@@ -149,6 +149,10 @@ type factsBuilder struct {
 	environment string
 	entries     map[EntryName]resolvedEntry
 	mapped      map[EntryName]any
+	// sizes holds the encoded size of each reference target's value, by
+	// target and pointer, so that a document's size is known before it is
+	// encoded.
+	sizes map[string]int64
 }
 
 func (r *Result) factsBuilder(environment string) *factsBuilder {
@@ -156,7 +160,7 @@ func (r *Result) factsBuilder(environment string) *factsBuilder {
 	for _, resolved := range r.resolved[environment] {
 		entries[resolved.entry.name] = resolved
 	}
-	return &factsBuilder{result: r, environment: environment, entries: entries, mapped: map[EntryName]any{}}
+	return &factsBuilder{result: r, environment: environment, entries: entries, mapped: map[EntryName]any{}, sizes: map[string]int64{}}
 }
 
 // mappedValue is a target's mapped value, made once per environment and
@@ -173,11 +177,46 @@ func (b *factsBuilder) mappedValue(target resolvedEntry) (any, error) {
 	return value, nil
 }
 
-// document returns one entry's facts document in its RFC 8785 form.
+// encodedSize is the size of a reference target's value in its RFC 8785
+// form, encoded once per target and pointer.
+func (b *factsBuilder) encodedSize(name EntryName, reference entryReference, value any) (int64, error) {
+	key := name.Kind + "\x00" + name.ID + "\x00" + pointerOf(reference.pointer)
+	if !reference.hasPointer {
+		key = name.Kind + "\x00" + name.ID
+	}
+	if size, ok := b.sizes[key]; ok {
+		return size, nil
+	}
+	encoded, err := jcs.EncodeDocument(value)
+	if err != nil {
+		return 0, err
+	}
+	size := int64(len(encoded))
+	b.sizes[key] = size
+	return size, nil
+}
+
+// errOverLimit is a facts document known to be over the hard byte limit
+// before it is encoded.
+var errOverLimit = errors.New("registry: the facts document is over the facts-document limit")
+
+// document returns one entry's facts document in its RFC 8785 form, or
+// errOverLimit once the parts it holds already pass the hard byte limit. An
+// RFC 8785 document holds each member value's own RFC 8785 form, so the sum of
+// those sizes is a lower bound on its size: a document reported here is over
+// the limit, and none is encoded whole first.
 func (b *factsBuilder) document(resolved resolvedEntry) ([]byte, error) {
 	value, err := factValue(resolved.entry.kind, resolved.value)
 	if err != nil {
 		return nil, err
+	}
+	encodedValue, err := jcs.EncodeDocument(value)
+	if err != nil {
+		return nil, err
+	}
+	size := int64(len(encodedValue))
+	if size > carrier.HardMaxBytes {
+		return nil, errOverLimit
 	}
 	references := map[string]any{}
 	for _, pattern := range resolved.entry.kind.references {
@@ -202,6 +241,13 @@ func (b *factsBuilder) document(resolved resolvedEntry) ([]byte, error) {
 				if addressed, found = lookup(addressed, reference.pointer); !found {
 					return nil, errUnmapped
 				}
+			}
+			targetSize, err := b.encodedSize(name, reference, addressed)
+			if err != nil {
+				return nil, err
+			}
+			if size += targetSize; size > carrier.HardMaxBytes {
+				return nil, errOverLimit
 			}
 			references[pointerOf(place.path)] = map[string]any{"kind": name.Kind, "id": name.ID, "value": addressed}
 		}
@@ -296,10 +342,10 @@ func (r *Result) WriteFacts(kind string, environments []string, qualified bool, 
 		builder := r.factsBuilder(environment)
 		for _, resolved := range r.factsEntries(kind, environment) {
 			document, err := builder.document(resolved)
-			if err != nil {
+			if err != nil && !errors.Is(err, errOverLimit) {
 				return nil, err
 			}
-			if !withinFactsLimit(document) {
+			if err != nil || !withinFactsLimit(document) {
 				diagnostics = append(diagnostics, factsDiagnostic("FACTS-DOCUMENT-LIMIT", Location{Document: DocumentFacts, Entry: locatable(resolved.entry.name), Environment: environment}))
 			}
 		}
