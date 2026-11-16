@@ -26,7 +26,7 @@ func (a *App) emitCommand() *cobra.Command {
 		Short: "Run a registry emitter and write or check the files it owns (spec RFC 0036)",
 		Long: "Run the emitter an emitter manifest names on a request formed from a registry, its kinds and an options document, and write the files it answers with into the paths the manifest owns. " +
 			"The request holds only the kinds the manifest reads, each pinned version checked against its range, and options checked against the manifest's schema; it is RFC 8785 canonical JSON on the emitter's standard input. " +
-			"The emitter runs from the repository root (--root, default the current directory) with an environment of only PATH, HOME (a fresh empty directory), LANG=C.UTF-8 and the variables the manifest's env names, under a wall-clock limit (--timeout, default 120s), in a process group that is killed at the limit. " +
+			"The emitter runs from the repository root (--root, default the current directory) with an environment of only PATH, HOME (a fresh empty directory), LANG=C.UTF-8 and the variables the manifest's env names, under a wall-clock limit (--timeout, default 120s), in a process group that is killed at the limit and once the emitter exits; a process it starts in a session of its own (setsid) escapes the group. " +
 			"Its standard error is counted and discarded unless --emitter-stderr passes the first 64 KiB through. " +
 			"Its response is validated whole before anything changes: every path relative, safe and owned, unique once case is folded, at most 10000 files of at most 16 MiB, 64 MiB in all. " +
 			"Each file is written through a temporary file and a rename; an owned file the response does not hold is deleted; a symbolic link at or above an owned path refuses the run. " +
@@ -34,7 +34,7 @@ func (a *App) emitCommand() *cobra.Command {
 			"--other-manifest names another emitter manifest of the repository, whose owns globs must not overlap this one's. " +
 			"The report is JSON on standard output (emitReportVersion 1.0.0): paths, codes, digests and counts, never a file's contents or an env value. " +
 			"Exit 0 when the files were written or are identical, 1 when --check found a difference, 2 when nothing was written or checked (an emitter failure, a refused manifest, request or response, or an unreadable path), and 3 for an unusable command line. " +
-			"The emitter is code the repository chose to run; this is not a sandbox. It follows the accepted RFC; the registry companion's normative text and vectors are not released yet.",
+			"The emitter is code the repository chose to run, with the user's rights: it is bounded by its environment, its time limit and its output, and is not sandboxed beyond that. It follows the accepted RFC; the registry companion's normative text and vectors are not released yet.",
 		Example: "jpack emit --manifest tools/emit-db-bootstrap/emitter.json --registry registry.json --kinds kinds/\n" +
 			"jpack emit --manifest tools/emit-db-bootstrap/emitter.json --registry registry.json --kinds kinds/ --check",
 		Args: cobra.NoArgs,

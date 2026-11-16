@@ -63,8 +63,11 @@ var waitDelay = 2 * time.Second
 // afterwards), LANG=C.UTF-8 and the manifest's env names that are set; the
 // repository root as its working directory; and the request on standard
 // input. It runs in a process group of its own, which is killed when the time
-// limit passes or standard output passes MaxResponseBytes. No value of an env
-// variable is reported, only the names of those that were unset.
+// limit passes or standard output passes MaxResponseBytes, and once the
+// emitter has exited. A process the emitter starts in a session of its own
+// (setsid) escapes the group; the emitter is bounded by its environment, its
+// time and its output, and is not sandboxed. No value of an env variable is
+// reported, only the names of those that were unset.
 func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte, opts RunOptions) RunResult {
 	var result RunResult
 	processFailure := func(location Location) RunResult {
@@ -147,11 +150,11 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	ownProcessGroup(cmd)
 	cmd.Cancel = func() error { return killProcessGroup(cmd.Process) }
 	err = cmd.Run()
-	if errors.Is(err, exec.ErrWaitDelay) && cmd.Process != nil {
-		// Something the emitter started still holds its output open; it is
-		// in the emitter's process group, which is ended with it.
-		_ = killProcessGroup(cmd.Process)
-	}
+	// Whatever the emitter started and left running is in its process group,
+	// which is ended once the emitter has exited, whether or not it still
+	// holds the emitter's output open. A child that leaves the group (setsid)
+	// is out of reach.
+	endProcessGroup(cmd.Process)
 	result.StderrBytes = stderr.total
 	if opts.Stderr != nil {
 		_, _ = opts.Stderr.Write(stderr.kept())

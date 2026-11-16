@@ -66,6 +66,8 @@ func Link(dir, name string) error {
 //	flood              write to standard output without end
 //	sleep PIDFILE      write its pid and a child's pid to PIDFILE, then sleep
 //	sleep-child        sleep
+//	orphan PIDFILE     start a child with its stdio on the null device, write
+//	                   the child's pid to PIDFILE, answer and exit
 func Main(args []string) int {
 	if len(args) == 0 {
 		return 64
@@ -155,6 +157,21 @@ func Main(args []string) int {
 		}
 		time.Sleep(time.Hour)
 		return 0
+	case "orphan":
+		self, err := os.Executable()
+		if err != nil {
+			return 70
+		}
+		// Stdin, Stdout and Stderr left nil are the null device: the child
+		// holds nothing of the emitter's open, so the run does not wait on it.
+		child := exec.Command(self, Switch, "sleep-child")
+		if err := child.Start(); err != nil {
+			return 70
+		}
+		if err := os.WriteFile(args[1], []byte(strconv.Itoa(child.Process.Pid)+"\n"), 0o600); err != nil {
+			return 73
+		}
+		return answer()
 	case "sleep-child":
 		time.Sleep(time.Hour)
 		return 0

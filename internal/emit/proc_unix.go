@@ -26,3 +26,10 @@ func killProcessGroup(process *os.Process) error {
 	}
 	return err
 }
+
+// endProcessGroup kills what is left of the emitter's process group after
+// the emitter has exited and been waited for. The group outlives its leader
+// while a member is left, so its id is not reused until then.
+func endProcessGroup(process *os.Process) {
+	_ = killProcessGroup(process)
+}

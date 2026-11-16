@@ -18,3 +18,7 @@ func killProcessGroup(process *os.Process) error {
 	}
 	return process.Kill()
 }
+
+// endProcessGroup does nothing: the emitter has exited, and what it started
+// cannot be found without process groups.
+func endProcessGroup(*os.Process) {}

@@ -110,3 +110,35 @@ func TestEmitLeavesOwnedFilesUntouchedWhenStagingFails(t *testing.T) {
 		}
 	}
 }
+
+func TestEmitEndsWhatTheEmitterLeftRunning(t *testing.T) {
+	root := testRepo(t)
+	start := time.Now()
+	report := host(t, root, []string{"orphan", "pid.txt"}, map[string]any{"environments": "all"}, Options{})
+	data, err := os.ReadFile(filepath.Join(root, "pid.txt"))
+	if err != nil {
+		t.Fatalf("the emitter did not record its child: %v (%s)", err, reportJSON(t, report))
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 1 {
+		t.Fatalf("pid %q", data)
+	}
+	t.Cleanup(func() {
+		if !gone(pid) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
+	if report.Exit() != 0 || len(report.Diagnostics) != 0 {
+		t.Fatalf("report: %s", reportJSON(t, report))
+	}
+	if elapsed := time.Since(start); elapsed > waitDelay+5*time.Second {
+		t.Fatalf("the run took %v: it waited on the child", elapsed)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !gone(pid) {
+		if time.Now().After(deadline) {
+			t.Fatalf("pid %d, started by the emitter, outlived the run", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
