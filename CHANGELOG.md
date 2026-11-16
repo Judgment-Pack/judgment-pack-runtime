@@ -25,6 +25,12 @@ All notable changes to tagged releases are documented here.
   companion is released (VERSIONING.md). Ties in the report's order are now also broken by message.
   Each code has one fixed message, so no existing report changes.
 
+- **A resolved document is held to the depth bound** (ADR-0093 amendment). An overlay can set a
+  value at a deep pointer, so a registry within its depth bound could resolve to a document that
+  nests deeper than 32, which an RFC 0034 §1 reader refuses. Step 8 now reports such an environment
+  as `REG-DOC-DEPTH`, and `resolve` exits 1 with the report, as for a resolved document over its
+  size bound.
+
 - **`jpack registry import`: the registry's YAML authoring subset** (ADR-0094). It converts one
   YAML file in RFC 0034 §7's subset to the canonical JSON of the registry or kind declaration it
   holds. That JSON is admitted as `validate` admits JSON, and a registry's kinds and entries are

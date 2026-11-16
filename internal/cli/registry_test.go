@@ -110,3 +110,39 @@ func TestRegistryOversizeKindIsOneFindingAmongOthers(t *testing.T) {
 		t.Fatalf("want REG-DOC-SIZE and REG-PIN-MISSING with exit 1, got %d %q", code, out)
 	}
 }
+
+// A registry that resolves past the depth bound exits as one that resolves
+// past the size bound: the report, exit 1, and no resolved document. Its
+// overlay sets a value of 26 levels at /a/a/a/a, which fits the registry
+// (levels 7 to 32) and ends at level 33 once resolved.
+func TestRegistryResolvePastTheDepthBoundIsAFinding(t *testing.T) {
+	const kind = `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/kinds/deep","version":"1.0.0","kind":"deep","owner":"platform",
+"schema":{"type":"object"},"overlayable":["/a/a/a/a"]}`
+	var decoded any
+	decoder := json.NewDecoder(strings.NewReader(kind))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := registry.Digest(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registryText := `{"registryFormatVersion":"1.0.0","id":"https://example.invalid/registries/deep","version":"1.0.0",
+"environments":["prod"],"owners":["platform"],
+"kinds":[{"kind":"deep","id":"https://example.invalid/kinds/deep","version":"1.0.0","digest":"` + digest + `"}],
+"entries":[{"kind":"deep","id":"nested","owner":"platform","value":{"a":{"a":{"a":{"a":0}}}}}],
+"overlays":[{"environment":"prod","patches":[{"kind":"deep","id":"nested","set":{"/a/a/a/a":` + strings.Repeat("[", 26) + strings.Repeat("]", 26) + `}}]}]}`
+	dir := t.TempDir()
+	registryPath, kindPath := filepath.Join(dir, "registry.json"), filepath.Join(dir, "deep.json")
+	for path, text := range map[string]string{registryPath: registryText, kindPath: kind} {
+		if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, out, _ := runTest(t, []string{"registry", "resolve", registryPath, "--kind", kindPath, "--environment", "prod"}, "")
+	if code != 1 || !strings.Contains(out, `"valid":false`) || !strings.Contains(out, `"REG-DOC-DEPTH"`) ||
+		!strings.Contains(out, `"document":"registry"`) || !strings.Contains(out, `"environment":"prod"`) || strings.Contains(out, "resolvedFormatVersion") {
+		t.Fatalf("want the REG-DOC-DEPTH report and exit 1, got %d %q", code, out)
+	}
+}
