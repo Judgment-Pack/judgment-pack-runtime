@@ -4,6 +4,14 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A reader for Terraform plan and state JSON** (ADR-0097, proposed). Package
+  `internal/terraformfile` is part 1 of spec RFC 0038's `terraform-file` source. It reads the
+  output of `terraform show -json` in the RFC's order: sha256 and size, strict JSON, a closed
+  `format_version` table, the document's shape, a sensitivity mirror on every resource, and the
+  removal of every value marked sensitive before selection. A refusal carries only its code, the
+  file's sha256, its size and a fixed message. No command calls the reader yet, and existing
+  commands and their output are unchanged.
+
 - **A registry reader: `jpack registry validate|resolve`** (ADR-0093). It reads
   a registry of entries of adopter-declared kinds, as accepted in spec RFCs 0034 and 0035: each
   kind has a closed JSON Schema subset, and environments are overlaid. `validate REGISTRY --kind K...`
