@@ -563,6 +563,9 @@ func (a *App) evaluateCommand() *cobra.Command {
 			code := result.ExitInvocation
 			if changed("require-outcome") {
 				code = gateExitError
+				if changed("gate-summary") {
+					a.refusedGateSummary("experimental evaluate", gateGiven.summaryPath)
+				}
 			}
 			_ = a.operational("experimental evaluate", format, code, gateInvocationCode, invocation)
 			return &handledExit{code: code}

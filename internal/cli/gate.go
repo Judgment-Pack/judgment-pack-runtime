@@ -10,6 +10,7 @@ import (
 	"hash"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/display"
@@ -132,14 +133,8 @@ func newGate(command string, given gateFlags, requireChanged, allowEmptyChanged,
 		return nil, "--allow-empty lets a batch with no item pass the gate and is taken only with --batch."
 	}
 	if summaryChanged {
-		path := given.summaryPath
-		switch {
-		case path == "":
-			return nil, "--gate-summary needs a file path."
-		case path == "-":
-			return nil, "--gate-summary cannot be standard output, which carries the run's results; pass a file path."
-		case strings.Contains(path, "://") || fssecure.IsRemotePath(path):
-			return nil, "URL and remote filesystem paths are not supported for --gate-summary; use a local file."
+		if problem := summaryPathProblem(given.summaryPath); problem != "" {
+			return nil, problem
 		}
 	}
 	g := &gate{command: command, allowed: map[string]bool{}, allowEmpty: given.allowEmpty, summaryPath: given.summaryPath}
@@ -154,6 +149,19 @@ func newGate(command string, given gateFlags, requireChanged, allowEmptyChanged,
 		g.order = append(g.order, id)
 	}
 	return g, ""
+}
+
+// summaryPathProblem is the sentence refusing a --gate-summary path, or "".
+func summaryPathProblem(path string) string {
+	switch {
+	case path == "":
+		return "--gate-summary needs a file path."
+	case path == "-":
+		return "--gate-summary cannot be standard output, which carries the run's results; pass a file path."
+	case strings.Contains(path, "://") || fssecure.IsRemotePath(path):
+		return "URL and remote filesystem paths are not supported for --gate-summary; use a local file."
+	}
+	return ""
 }
 
 // checkPack refuses an allowed outcome the pack does not declare, before any
@@ -179,17 +187,19 @@ func (g *gate) checkPack(pack []byte, oversized bool, packArgument, packID strin
 	if oversized || pack == nil {
 		return ""
 	}
-	var declared struct {
-		Outcomes []struct {
-			ID string `json:"id"`
-		} `json:"outcomes"`
-	}
-	if json.Unmarshal(pack, &declared) != nil {
+	// Members are matched by their exact names, as the engine reads them;
+	// encoding/json's struct decoding would also match "Outcomes" or "ID".
+	var document map[string]json.RawMessage
+	var outcomes []map[string]json.RawMessage
+	if json.Unmarshal(pack, &document) != nil || json.Unmarshal(document["outcomes"], &outcomes) != nil {
 		return ""
 	}
 	known := map[string]bool{}
-	for _, outcome := range declared.Outcomes {
-		known[outcome.ID] = true
+	for _, outcome := range outcomes {
+		var id string
+		if json.Unmarshal(outcome["id"], &id) == nil {
+			known[id] = true
+		}
 	}
 	unknown := []string{}
 	for _, id := range g.order {
@@ -297,36 +307,85 @@ func (a *App) finishGate(g *gate, err error) error {
 		}
 		g.inputs = append(g.inputs, input)
 	}
-	a.reportGate(g, verdict, runCode)
-	if g.summaryPath != "" {
-		failing := g.failing
-		if failing == nil {
-			failing = []gateCase{}
-		}
-		inputs := g.inputs
-		if inputs == nil {
-			inputs = []gateInput{}
-		}
-		summary := gateSummary{
-			Version: gateSummaryVersion, Command: g.command, Verdict: verdict, ExitCode: code, RunExitCode: runCode,
-			AllowedOutcomes: g.order, PackID: g.packID, PackVersion: g.packVersion, Inputs: inputs,
-			Items: g.items, Decisions: g.decisions, Failing: failing,
-		}
-		var encoded bytes.Buffer
-		encoder := json.NewEncoder(&encoded)
-		encoder.SetEscapeHTML(false)
-		if encodeErr := encoder.Encode(summary); encodeErr != nil {
-			return &handledExit{code: gateExitError}
-		}
-		if writeErr := os.WriteFile(g.summaryPath, encoded.Bytes(), 0o644); writeErr != nil {
-			fmt.Fprintln(a.errOut, "error: the gate summary could not be written to", display.Sanitize(g.summaryPath)+"; the gate did not judge.")
-			return &handledExit{code: gateExitError}
-		}
+	// The summary is written before the verdict is said, so a summary that
+	// cannot be written never follows a "pass" on standard error.
+	if !a.writeGateSummary(g, verdict, code, runCode) {
+		return &handledExit{code: gateExitError}
 	}
+	a.reportGate(g, verdict, runCode)
 	if code == gateExitPass {
 		return nil
 	}
 	return &handledExit{code: code}
+}
+
+// writeGateSummary writes --gate-summary, when given, and says whether the
+// file now holds this run's verdict. It replaces the file by a rename from a
+// temporary file beside it, so a reader never sees half a summary, and never
+// writes through a symbolic link.
+func (a *App) writeGateSummary(g *gate, verdict string, code, runCode int) bool {
+	if g.summaryPath == "" {
+		return true
+	}
+	failing, inputs, allowed := g.failing, g.inputs, g.order
+	if failing == nil {
+		failing = []gateCase{}
+	}
+	if inputs == nil {
+		inputs = []gateInput{}
+	}
+	if allowed == nil {
+		allowed = []string{}
+	}
+	summary := gateSummary{
+		Version: gateSummaryVersion, Command: g.command, Verdict: verdict, ExitCode: code, RunExitCode: runCode,
+		AllowedOutcomes: allowed, PackID: g.packID, PackVersion: g.packVersion, Inputs: inputs,
+		Items: g.items, Decisions: g.decisions, Failing: failing,
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(summary); err != nil || replaceFile(g.summaryPath, encoded.Bytes()) != nil {
+		fmt.Fprintln(a.errOut, "error: the gate summary could not be written to", display.Sanitize(g.summaryPath)+"; the gate did not judge.")
+		return false
+	}
+	return true
+}
+
+// replaceFile replaces path with data through a temporary file in the same
+// directory, refusing a path that is a symbolic link.
+func replaceFile(path string, data []byte) error {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("the summary path is a symbolic link")
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".gate-summary-*")
+	if err != nil {
+		return err
+	}
+	name := temporary.Name()
+	defer os.Remove(name)
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Chmod(0o644); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}
+
+// refusedGateSummary writes the summary of a gate whose own arguments were
+// refused, so a summary file left by an earlier run never stands for this
+// one. Nothing was judged: the allowed list is empty and no input is named.
+func (a *App) refusedGateSummary(command, summaryPath string) {
+	if summaryPathProblem(summaryPath) != "" {
+		return
+	}
+	_ = a.writeGateSummary(&gate{command: command, summaryPath: summaryPath}, "error", gateExitError, result.ExitInvocation)
 }
 
 // reportGate writes the verdict to standard error: the run's results keep

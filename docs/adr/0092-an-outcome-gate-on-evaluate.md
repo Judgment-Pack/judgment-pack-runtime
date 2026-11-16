@@ -65,6 +65,12 @@ flag, which adds without breaking.
 because the gate was never read. Under the gate, every exit other than 0 and 1 means the check did
 not judge. A CI step treats 2 and 3 alike, and only 1 as a finding.
 
+Two command lines exit before the gate is read:
+- One with too many positional arguments exits 3, like any other command line that cannot be
+  parsed.
+- `--help` (`-h`) prints the help and exits 0 for every command, the gate's included, because it
+  asks for no evaluation. A CI step does not pass `--help`.
+
 **Declared ids only.** Each id must be an outcome the pack declares. This is checked once the pack
 is read, before any facts are read and before anything is evaluated or recorded. An empty or
 repeated id is refused. A pack whose outcomes cannot be read is left to the engine, which refuses
@@ -86,6 +92,15 @@ standard error and names each item that did not pass by line, the caller's id an
   produced no disposition.
 
 No fact or evidence value appears in either form.
+
+**Writing the summary.**
+- The summary replaces its file through a temporary file in the same directory, so a reader never
+  sees half a summary.
+- A path that is a symbolic link is refused.
+- The file is written before the verdict is said on standard error, so a summary that cannot be
+  written (exit 2) is never preceded by "pass".
+- A run whose gate arguments are refused still writes an `error` summary (exit 2, `runExitCode` 3,
+  an empty allowed list), so a file left by an earlier run never stands for this one.
 
 Members are added to the summary within a major version, never removed or changed in meaning.
 

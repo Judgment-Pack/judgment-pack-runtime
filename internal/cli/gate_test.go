@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/audit"
 )
 
 // gatePack is a synthetic pack whose outcome ids include "refused", an
@@ -202,5 +204,142 @@ func TestGateSummarySingleRun(t *testing.T) {
 	if summary.Verdict != "pass" || len(summary.Inputs) != 2 || summary.Inputs[1].Covers != "facts" || summary.Inputs[1].Path != facts ||
 		summary.Inputs[1].SHA256 == "" || summary.Inputs[1].ReadToEnd != nil || len(summary.Failing) != 0 {
 		t.Fatalf("summary: %s", raw)
+	}
+}
+
+// gateProject is a project that keeps an audit trail and declares the gate
+// fixture as the pack "gate".
+func gateProject(t *testing.T) string {
+	t.Helper()
+	pack, err := os.ReadFile(gatePackFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return writeProjectFixture(t, `{"configVersion":"3","audit":{"dir":"audit"},"packs":{"gate":{"path":"packs/gate-0.1.0.pack.json","expectedVersion":"0.1.0"}}}`,
+		map[string]string{"packs/gate-0.1.0.pack.json": string(pack)})
+}
+
+func trailLines(t *testing.T, configPath string) int {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "audit", audit.FileName))
+	if os.IsNotExist(err) {
+		return 0
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(strings.Split(strings.TrimSpace(string(data)), "\n")) - map[bool]int{true: 1, false: 0}[strings.TrimSpace(string(data)) == ""]
+}
+
+// An undeclared id is refused before anything is recorded; the same run
+// with a declared id records, so the trail is live.
+func TestGateUndeclaredOutcomeRecordsNothing(t *testing.T) {
+	t.Setenv(audit.SigningKeyEnv, "")
+	t.Setenv(audit.SigningPublicKeyEnv, "")
+	configPath := gateProject(t)
+	facts := writeDocument(t, "facts.json", gateFacts("a"))
+	summaryPath := filepath.Join(t.TempDir(), "summary.json")
+	args := []string{"--pack-id", "gate", "--config", configPath, "--facts", facts, "--gate-summary", summaryPath, "--require-outcome"}
+	if code, stdout, stderr := runGate(t, append(args, "aproved")...); code != 2 {
+		t.Fatalf("exit=%d, want 2\n%s\n%s", code, stdout, stderr)
+	}
+	if lines := trailLines(t, configPath); lines != 0 {
+		t.Fatalf("an undeclared id left %d records", lines)
+	}
+	if code, stdout, stderr := runGate(t, append(args, "approved")...); code != 0 {
+		t.Fatalf("exit=%d, want 0\n%s\n%s", code, stdout, stderr)
+	}
+	if lines := trailLines(t, configPath); lines != 1 {
+		t.Fatalf("a recorded run left %d records, want 1", lines)
+	}
+	var summary gateSummary
+	raw, _ := os.ReadFile(summaryPath)
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Inputs[0] != (gateInput{Covers: "pack", PackIDRef: "gate", SHA256: summary.Inputs[0].SHA256}) || summary.Inputs[0].SHA256 == "" {
+		t.Fatalf("a pack named by id: %s", raw)
+	}
+}
+
+func TestGateStandardInputAndRehearsal(t *testing.T) {
+	pack := gatePackFile(t)
+	if code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--facts", "-", "--require-outcome", "approved"}, gateFacts("a")); code != 0 {
+		t.Fatalf("facts on standard input: exit=%d\n%s\n%s", code, stdout, stderr)
+	}
+	batch := batchLines([]testBatchItem{{id: "1", facts: gateFacts("a")}, {id: "2", facts: gateFacts("r")}})
+	if code, stdout, stderr := runTest(t, []string{"experimental", "evaluate", pack, "--format", "json", "--batch", "-", "--require-outcome", "approved"}, batch); code != 1 {
+		t.Fatalf("a batch on standard input: exit=%d\n%s\n%s", code, stdout, stderr)
+	}
+	configPath := gateProject(t)
+	facts := writeDocument(t, "facts.json", gateFacts("r"))
+	if code, stdout, stderr := runGate(t, "--pack-id", "gate", "--config", configPath, "--rehearsal", "--facts", facts, "--require-outcome", "approved"); code != 1 {
+		t.Fatalf("a rehearsal: exit=%d\n%s\n%s", code, stdout, stderr)
+	}
+}
+
+// A summary that cannot be written is "did not judge", and standard error
+// never says "pass" first.
+func TestGateSummaryWriteFailure(t *testing.T) {
+	pack := gatePackFile(t)
+	facts := writeDocument(t, "facts.json", gateFacts("a"))
+	missing := filepath.Join(t.TempDir(), "no-such-directory", "summary.json")
+	code, _, stderr := runGate(t, pack, "--facts", facts, "--require-outcome", "approved", "--gate-summary", missing)
+	if code != 2 || strings.Contains(stderr, "gate: pass") {
+		t.Fatalf("exit=%d, want 2 with no pass; stderr=%s", code, stderr)
+	}
+	directory := t.TempDir()
+	target := filepath.Join(directory, "target.json")
+	link := filepath.Join(directory, "summary.json")
+	if err := os.WriteFile(target, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symbolic links unavailable:", err)
+	}
+	if code, _, _ := runGate(t, pack, "--facts", facts, "--require-outcome", "approved", "--gate-summary", link); code != 2 {
+		t.Fatalf("a summary through a symbolic link: exit=%d, want 2", code)
+	}
+	if data, _ := os.ReadFile(target); string(data) != "{}\n" {
+		t.Fatalf("the link's target was written: %q", data)
+	}
+}
+
+// A run whose gate arguments are refused replaces an earlier run's summary
+// with its own "error" verdict.
+func TestGateRefusedArgumentsReplaceTheSummary(t *testing.T) {
+	pack := gatePackFile(t)
+	facts := writeDocument(t, "facts.json", gateFacts("a"))
+	summaryPath := filepath.Join(t.TempDir(), "summary.json")
+	if code, _, _ := runGate(t, pack, "--facts", facts, "--require-outcome", "approved", "--gate-summary", summaryPath); code != 0 {
+		t.Fatalf("first run: exit=%d", code)
+	}
+	if code, _, _ := runGate(t, pack, "--facts", facts, "--require-outcome", "approved,", "--gate-summary", summaryPath); code != 2 {
+		t.Fatalf("refused run: exit=%d, want 2", code)
+	}
+	var summary gateSummary
+	raw, _ := os.ReadFile(summaryPath)
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Verdict != "error" || summary.ExitCode != 2 || summary.RunExitCode != 3 || len(summary.AllowedOutcomes) != 0 {
+		t.Fatalf("summary after a refused run: %s", raw)
+	}
+}
+
+// The pack's outcome ids are read by their exact member names: a member
+// spelled "ID" declares nothing the gate may allow.
+func TestGateReadsDeclaredOutcomesExactly(t *testing.T) {
+	g, problem := newGate("experimental evaluate", gateFlags{requireOutcome: "approved"}, true, false, false, false)
+	if problem != "" {
+		t.Fatal(problem)
+	}
+	if message := g.checkPack([]byte(`{"outcomes":[{"ID":"approved"}]}`), false, "pack.json", ""); message == "" {
+		t.Fatal("an outcome under the member ID was taken as declared")
+	}
+	// Case-insensitive decoding would let the later "Outcomes" stand for
+	// "outcomes"; the engine reads "outcomes", which declares only "held".
+	if message := g.checkPack([]byte(`{"outcomes":[{"id":"held"}],"Outcomes":[{"id":"approved"}]}`), false, "pack.json", ""); message == "" {
+		t.Fatal("outcomes under the member Outcomes were taken as declared")
 	}
 }
