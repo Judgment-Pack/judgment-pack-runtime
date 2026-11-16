@@ -141,7 +141,7 @@ var Codes = map[string]codeInfo{
 	"REG-KIND-SCHEMA-LIMIT":        {SeverityError, "The schema exceeds a size limit: subschemas, enum values or composition branches."},
 	"REG-KIND-SCHEMA-REF":          {SeverityError, "A $ref is not of the form #/$defs/<name>, names no definition, or is part of a cycle."},
 	"REG-KIND-PATTERN":             {SeverityError, "A pattern is outside the companion's regular-expression subset."},
-	"REG-KIND-PATTERN-LIMIT":       {SeverityError, "A pattern compiles to more than 4096 instructions, or would take the kind's patterns past 65536 in all."},
+	"REG-KIND-PATTERN-LIMIT":       {SeverityError, "A pattern's size is over 4096, or would take the kind's patterns past 65536 in all."},
 	"REG-KIND-POINTER-FORM":        {SeverityError, "A pointer pattern is not a well-formed pattern."},
 	"REG-KIND-POINTER-UNREACHABLE": {SeverityError, "A pointer pattern can match no position the schema allows."},
 	"REG-KIND-POINTER-CONFLICT":    {SeverityError, "A position is matched by both a secrets pattern and a references pattern."},

@@ -174,7 +174,8 @@ bounded where it is read, and each refusal uses a code a kind can already get, e
   `MaxKindPatternInstructions`, 65,536 per kind). RFC 0034 §2.2 admits `{n,m}` up to 1000 in 256
   code points, and RE2 compiles `x{n,m}` as `m` copies of `x`. So `(a…a){1000}` compiles to a
   quarter of a million instructions, about 55 MB, and a 256 KiB kind holds 880 of them. A
-  pattern's size is counted on its parse, as RE2 counts it, before anything is compiled. A pattern
+  pattern's size is counted before anything is compiled (on the pattern as written since the
+  amendment below; it was first counted on its parse, as RE2 counts it). A pattern
   past 4096, or one that would take the kind's admitted patterns past 65,536, is refused with the
   new code `REG-KIND-PATTERN-LIMIT`. `REG-KIND-PATTERN` means a pattern outside the subset, which
   this one is not, so the new code says which bound was passed. A refused pattern is not counted.
@@ -244,3 +245,18 @@ environments took 102 s and 4.7 GB. Now:
 
 Environments are at most 32, so an overlay on a large entry in every environment still costs
 that entry once per environment; every other cost is the registry's own.
+
+## Amendment: a pattern's size is counted as written (2026-11-16)
+
+The registry companion (§3.4, "Program size") fixes how a pattern's size is counted, so that every
+reader refuses the same patterns: on the pattern as written, not on one engine's parse. Each
+literal code point, escape, `.`, class, `^` and `$` counts 1; a group counts its content; `*`
+counts 2 plus its atom and `+` and `?` 1 plus it; `{n}` counts n times its atom, `{n,}` 1 plus n
+times it (`{0,}` as `*`), and `{n,m}` m times it plus m − n; a sequence sums its parts and an
+alternation of k alternatives sums them plus k − 1; every construct counts at least 1. The count
+is made in the subset's lexical reading, saturating just past 4096. RE2's parse factors common
+prefixes, so `(ab|ac){1000}` was counted as `a(b|c)` repeated, 4000, and admitted; as written it
+is 5000 and is now `REG-KIND-PATTERN-LIMIT`. Size is held only for a pattern within the subset:
+the parse still runs, and Go's refusal of a nested repetition past 1000 stays `REG-KIND-PATTERN`
+whatever the size. The kind's total of 65,536 is of the same sizes. The written size is still an
+upper bound on the compiled program, and close to it, as a test holds.

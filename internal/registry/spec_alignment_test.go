@@ -112,3 +112,53 @@ func TestAnIDIsAnRFC3986AbsoluteURI(t *testing.T) {
 		}
 	}
 }
+
+// §3.4 "Program size": a pattern's size is counted on the pattern as
+// written, and only a pattern within the subset is held to it.
+func TestAPatternsSizeIsCountedAsWritten(t *testing.T) {
+	for _, c := range []struct {
+		source string
+		size   int
+	}{
+		{`a`, 1}, {`ab`, 2}, {`\.`, 1}, {`\d`, 1}, {`.`, 1}, {`[a-z]`, 1}, {`^a$`, 3}, {`(a)`, 1}, {`()`, 1},
+		{`a*`, 3}, {`a+`, 2}, {`a?`, 2}, {`a|`, 3}, {`|`, 3}, {`a|b|c`, 5}, {`(ab|ac)`, 5},
+		{`a{3}`, 3}, {`[ab]{2,5}`, 8}, {`(a){0}`, 1}, {`x{0,0}`, 1}, {`x{0,}`, 3}, {`x{2,}`, 3}, {`(ab){2,}`, 5},
+		{`(a*)*`, 5}, {`(a|b)*c+d?`, 9},
+		{`a{1000}a{1000}a{1000}a{1000}a{96}`, 4096}, {`((a{2}){500}){0}`, 1},
+		{`((a{10}){10}){10}`, 1000}, {`(((a{1000}){1}){1}){1}a`, 1001},
+	} {
+		if _, size, err := translateSubset(c.source); err != nil || size != c.size {
+			t.Errorf("%s: size %d, %v; want %d", c.source, size, err, c.size)
+		}
+	}
+	for _, c := range []struct {
+		source, code string
+	}{
+		{`a{1000}a{1000}a{1000}a{1000}a{96}`, ""},
+		{`a{1000}a{1000}a{1000}a{1000}a{97}`, "REG-KIND-PATTERN-LIMIT"},
+		{`(ab|ac){1000}`, "REG-KIND-PATTERN-LIMIT"},
+		{`((a{2}){500}){0}`, ""},
+		{`((a{2}){501}){0}`, "REG-KIND-PATTERN"},
+		{`((a{1000}){1000}){1000}`, "REG-KIND-PATTERN"},
+		{`(a{1000}){5}\w`, "REG-KIND-PATTERN"},
+	} {
+		if _, code := (&patternBudget{}).compile(c.source); code != c.code {
+			t.Errorf("%s: %q, want %q", c.source, code, c.code)
+		}
+	}
+	// Nested counts saturate rather than overflow.
+	nested := strings.Repeat("(", 25) + "a" + strings.Repeat("){1000}", 25)
+	if _, size, err := translateSubset(nested); err != nil || size != MaxPatternInstructions+1 {
+		t.Errorf("25 nested {1000}: size %d, %v", size, err)
+	}
+	// The kind's total is the same size: sixteen patterns of 4096 fill it.
+	budget := &patternBudget{}
+	for i := 0; i < 16; i++ {
+		if _, code := budget.compile(`a{1000}a{1000}a{1000}a{1000}a{96}`); code != "" {
+			t.Fatalf("pattern %d: %s", i, code)
+		}
+	}
+	if _, code := budget.compile(`a`); code != "REG-KIND-PATTERN-LIMIT" || budget.used != MaxKindPatternInstructions {
+		t.Errorf("past the kind's total: %q, used %d", code, budget.used)
+	}
+}

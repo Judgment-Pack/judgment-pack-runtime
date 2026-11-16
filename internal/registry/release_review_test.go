@@ -233,14 +233,14 @@ func TestAPatternsProgramIsBounded(t *testing.T) {
 	}
 }
 
-// patternSize is an upper bound on the program RE2 compiles, less its two
-// fixed instructions, and close to it.
+// A pattern's size, counted on the pattern as written, is an upper bound on
+// the program RE2 compiles, less its two fixed instructions, and close to it.
 func TestPatternSizeBoundsTheCompiledProgram(t *testing.T) {
 	for _, source := range []string{
 		`^[a-z][a-z0-9-]{0,62}$`, `(` + strings.Repeat("a", 248) + `){1000}`, `[a-z]{0,1000}`, `.{0,1000}`,
 		`(ab|cd){1000}`, `^([a-z0-9-]{1,63}\.){1,10}[a-z]{2,63}$`, `a{1000}`, `(a|b)*c+d?`, `(a*)*`, `x{2,}`, `(x{2,5}){3}`, `[^\d]`, `a||b`, `()`,
 	} {
-		translated, err := translateSubset(source)
+		translated, size, err := translateSubset(source)
 		if err != nil {
 			t.Fatalf("%s: %v", source, err)
 		}
@@ -248,7 +248,6 @@ func TestPatternSizeBoundsTheCompiledProgram(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", source, err)
 		}
-		size := patternSize(parsed)
 		program, err := syntax.Compile(parsed.Simplify())
 		if err != nil {
 			t.Fatal(err)
