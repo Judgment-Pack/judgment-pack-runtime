@@ -143,10 +143,11 @@ type generator struct {
 var minFactBytes = len(`{"pointer":"","present":"always","type":"null"}`)
 
 // maxFactsDepth is the deepest position a contract lists, in pointer tokens.
-// An entry's value nests no deeper than the registry document that holds it
-// (MaxDepth), and the deepest a value sits in a facts document is under
-// /references/<pointer>/value, three tokens down, so no facts document holds
-// anything deeper.
+// An entry's resolved value nests no deeper than the resolved document that
+// holds it (MaxDepth, which step 8 holds it to: an overlay can carry a value
+// deeper than the registry holds it), and the deepest a value sits in a facts
+// document is under /references/<pointer>/value, three tokens down, so no
+// facts document holds anything deeper.
 const maxFactsDepth = MaxDepth + 3
 
 func (g *generator) charge() bool {

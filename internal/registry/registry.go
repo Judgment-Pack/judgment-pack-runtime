@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
 
@@ -304,14 +305,31 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 			}
 		}
 	}
-	// RFC 0034 §1: each environment's resolved document is held to its bound.
+	// RFC 0034 §1: each environment's resolved document is held to its
+	// bounds, the size and the depth. An overlay can set a value at a deep
+	// pointer, so a registry within the depth bound can resolve past it.
 	for _, environment := range registry.environments {
+		at := Location{Document: DocumentRegistry, Environment: environment, Pointer: ""}
 		canonical, err := result.encodeResolved(environment)
-		if err != nil || len(canonical) > maxResolvedBytes {
-			diagnostics.add("REG-DOC-SIZE", Location{Document: DocumentRegistry, Environment: environment, Pointer: ""})
+		switch {
+		case err != nil || len(canonical) > maxResolvedBytes:
+			diagnostics.add("REG-DOC-SIZE", at)
+		case !withinResolvedDepth(canonical):
+			diagnostics.add("REG-DOC-DEPTH", at)
 		}
 	}
 	return finish()
+}
+
+// withinResolvedDepth says whether a resolved document, as encoded, nests no
+// deeper than MaxDepth, counted as admission counts it: the root object is
+// one level, and 32 are admitted. It decodes the bytes as step 1 decodes a
+// registry, so what resolve writes is what a reader admits. The node and
+// string limits are the size bound, which the caller has checked; a document
+// that fails for any reason is refused.
+func withinResolvedDepth(canonical []byte) bool {
+	_, failure := carrier.Decode(canonical, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: maxResolvedBytes, MaxStringBytes: maxResolvedBytes})
+	return failure == nil
 }
 
 func checkResolvedEntry(registry *registryDoc, environment string, r resolvedEntry, values map[EntryName]any, diagnostics *collector) {
@@ -378,7 +396,7 @@ func (r *Result) Resolve(environment string) ([]byte, error) {
 }
 
 // encodeResolved builds one environment's resolved document. Step 8 checks
-// its size, so Resolve never meets one over the bound.
+// its size and depth, so Resolve never meets one over either bound.
 func (r *Result) encodeResolved(environment string) ([]byte, error) {
 	kinds := make([]any, 0, len(r.registry.pins))
 	for _, p := range r.registry.pins {
