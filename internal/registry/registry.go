@@ -61,7 +61,7 @@ type registryDoc struct {
 	byName       map[EntryName]*entry
 	overlays     map[string]map[EntryName]*patch
 	failed       map[string]map[EntryName]bool
-	scopes       map[string]map[string][]string
+	scopes       map[string]map[string]map[string]bool
 }
 
 type resolvedEntry struct {
@@ -143,7 +143,13 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 	// Step 2: kind declarations.
 	kindsByDigest := map[string]*Kind{}
 	suppliedDigests := map[string]bool{}
-	slices.SortFunc(supplied, func(a, b suppliedKind) int { return cmp.Compare(a.digest, b.digest) })
+	// Two supplied documents of one canonical digest are one kind, read once.
+	// Ties are broken by the digest of each one's bytes, the kindDocument its
+	// diagnostics are located at, so the one read does not depend on the
+	// order the kinds were supplied in.
+	slices.SortFunc(supplied, func(a, b suppliedKind) int {
+		return cmp.Or(cmp.Compare(a.digest, b.digest), cmp.Compare(a.location.KindDocument, b.location.KindDocument))
+	})
 	for _, document := range supplied {
 		if suppliedDigests[document.digest] {
 			continue
@@ -350,7 +356,7 @@ func checkResolvedEntry(registry *registryDoc, environment string, r resolvedEnt
 				diagnostics.add(code, at(place.path))
 			case registry.scopes == nil:
 				diagnostics.add("REF-SECRET-UNSCOPED", at(place.path))
-			case !slices.Contains(registry.scopes[environment][reference.store], reference.project):
+			case !registry.scopes[environment][reference.store][reference.project]:
 				diagnostics.add("REF-SECRET-SCOPE", at(place.path))
 			}
 		}

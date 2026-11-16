@@ -8,7 +8,9 @@ import (
 	"strings"
 )
 
-// Schema limits (RFC 0034 §2.1).
+// Schema limits (RFC 0034 §2.1). MaxSubschemas bounds a schema twice: as
+// written, and expanded, with each $ref counted as the definition it names
+// (expandedSize, ADR-0093 amendment).
 const (
 	MaxSubschemas = 4096
 	MaxEnumValues = 1024
@@ -71,6 +73,7 @@ type propertyNames struct {
 type schemaCompiler struct {
 	location    Location
 	diagnostics *collector
+	patterns    *patternBudget
 	count       int
 	defs        map[string]*schemaNode
 	refs        []schemaRef
@@ -90,10 +93,11 @@ func (c *schemaCompiler) fail(code string, path []string) {
 	c.failed = true
 }
 
-// compileSchema compiles a kind's schema at path (in the kind document).
-// It returns nil when the schema is invalid.
-func compileSchema(raw any, path []string, location Location, diagnostics *collector) *schemaNode {
-	c := &schemaCompiler{location: location, diagnostics: diagnostics, defs: map[string]*schemaNode{}}
+// compileSchema compiles a kind's schema at path (in the kind document),
+// its patterns within the kind's budget. It returns nil when the schema is
+// invalid.
+func compileSchema(raw any, path []string, location Location, diagnostics *collector, patterns *patternBudget) *schemaNode {
+	c := &schemaCompiler{location: location, diagnostics: diagnostics, patterns: patterns, defs: map[string]*schemaNode{}}
 	if object, ok := raw.(map[string]any); ok {
 		if defs, ok := object["$defs"]; ok {
 			defsObject, ok := defs.(map[string]any)
@@ -108,7 +112,7 @@ func compileSchema(raw any, path []string, location Location, diagnostics *colle
 	}
 	root := c.compile(raw, path, "")
 	c.resolveRefs(root)
-	if c.count > MaxSubschemas {
+	if c.count > MaxSubschemas || !c.failed && expandedSize(root) > MaxSubschemas {
 		c.fail("REG-KIND-SCHEMA-LIMIT", path)
 	}
 	if c.failed {
@@ -260,8 +264,10 @@ func (c *schemaCompiler) types(value any, at []string) []string {
 			return nil
 		}
 		for _, item := range typed {
+			// A type outside the seven is refused before the next is read,
+			// so names stays short and the search through it is cheap.
 			name, ok := item.(string)
-			if !ok || slices.Contains(names, name) {
+			if !ok || !typeNames[name] || slices.Contains(names, name) {
 				c.fail("REG-KIND-SCHEMA-FORM", at)
 				return nil
 			}
@@ -287,12 +293,14 @@ func (c *schemaCompiler) distinctStrings(value any, at []string) []string {
 		return nil
 	}
 	var out []string
+	seen := make(map[string]bool, len(items))
 	for _, item := range items {
 		text, ok := item.(string)
-		if !ok || slices.Contains(out, text) {
+		if !ok || seen[text] {
 			c.fail("REG-KIND-SCHEMA-FORM", at)
 			return nil
 		}
+		seen[text] = true
 		out = append(out, text)
 	}
 	return out
@@ -341,9 +349,9 @@ func (c *schemaCompiler) pattern(value any, at []string) *Pattern {
 		c.fail("REG-KIND-SCHEMA-FORM", at)
 		return nil
 	}
-	compiled, err := CompilePattern(text)
-	if err != nil {
-		c.fail("REG-KIND-PATTERN", at)
+	compiled, code := c.patterns.compile(text)
+	if code != "" {
+		c.fail(code, at)
 		return nil
 	}
 	return compiled
@@ -453,4 +461,54 @@ func (c *schemaCompiler) resolveRefs(root *schemaNode) {
 	for _, name := range sortedKeys(c.defs) {
 		link(c.defs[name])
 	}
+}
+
+// expandedSize is the number of subschemas a value's validation can visit at
+// one position, which bounds every walk of the schema there: validate,
+// reachable, declares, and a facts contract's reading. It counts the schema
+// with each $ref expanded in place, as those walks follow it: every node
+// (each properties member, additionalProperties, items, not, and each anyOf
+// and allOf branch, a boolean schema included), propertyNames as one, and at
+// each $ref the expanded size of the definition it names. A definition's size
+// is computed once and reused at every $ref to it, so the count costs the
+// schema as written, and it saturates just past MaxSubschemas, so a schema of
+// definitions that each name the next sixteen times is refused at once
+// rather than counted to 16^k. A definition no $ref reaches is not counted
+// here; the written count holds it. The schema's references are acyclic
+// (resolveRefs), so the count terminates.
+func expandedSize(root *schemaNode) int {
+	definitions := map[*schemaNode]int{}
+	var size func(node *schemaNode) int
+	size = func(node *schemaNode) int {
+		if node == nil {
+			return 0
+		}
+		total := 1
+		add := func(n int) { total = min(total+n, MaxSubschemas+1) }
+		if node.names != nil {
+			add(1)
+		}
+		for _, child := range node.properties {
+			add(size(child))
+		}
+		add(size(node.additional))
+		add(size(node.items))
+		add(size(node.not))
+		for _, branch := range node.anyOf {
+			add(size(branch))
+		}
+		for _, branch := range node.allOf {
+			add(size(branch))
+		}
+		if node.refNode != nil {
+			n, done := definitions[node.refNode]
+			if !done {
+				n = size(node.refNode)
+				definitions[node.refNode] = n
+			}
+			add(n)
+		}
+		return total
+	}
+	return size(root)
 }

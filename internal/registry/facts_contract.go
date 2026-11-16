@@ -28,7 +28,10 @@ const FactsContractVersion = "1.0.0"
 const (
 	MaxContractBytes = 8 * 1024 * 1024
 	MaxContractFacts = 65536
-	// maxShapeWork bounds the shapes one generation builds.
+	// maxShapeWork bounds one generation's work: the shapes it builds and
+	// the reading of the schema they are built from, each schema node
+	// collected, each closed-list value checked against a schema, and each
+	// value merged (ADR-0095, amendment).
 	maxShapeWork = 1 << 20
 )
 
@@ -151,7 +154,13 @@ var minFactBytes = len(`{"pointer":"","present":"always","type":"null"}`)
 const maxFactsDepth = MaxDepth + 3
 
 func (g *generator) charge() bool {
-	g.work++
+	return g.chargeUnits(1)
+}
+
+// chargeUnits charges work that grows with what it reads, such as the nodes
+// a flatten visits or the atoms an expansion copies, to the same bound.
+func (g *generator) chargeUnits(units int) bool {
+	g.work += units
 	if g.work > maxShapeWork {
 		g.exceeded = true
 	}
@@ -160,46 +169,53 @@ func (g *generator) charge() bool {
 
 // flatten collects the schemas that all apply at a position: each node, what
 // its $ref and allOf name, and the anyOf groups among them. never is a false
-// schema among them.
-func flatten(nodes []*schemaNode) (atoms []*schemaNode, groups [][]*schemaNode, never bool) {
-	for _, node := range nodes {
-		if node == nil {
-			continue
-		}
-		if node.boolean != nil {
-			if !*node.boolean {
-				never = true
+// schema among them. A node reached twice, through two $refs to one
+// definition or two allOf branches naming it, is collected once, since a
+// schema that applies twice applies once. Each node it visits is charged to
+// the generation's work (ADR-0095, amendment), and it stops once the work
+// passes its bound; the generation is then refused, so what it collected is
+// never read.
+func (g *generator) flatten(nodes []*schemaNode) (atoms []*schemaNode, groups [][]*schemaNode, never bool) {
+	seen := map[*schemaNode]bool{}
+	var visit func(nodes []*schemaNode)
+	visit = func(nodes []*schemaNode) {
+		for _, node := range nodes {
+			if node == nil || seen[node] || !g.charge() {
+				continue
 			}
-			continue
-		}
-		atoms = append(atoms, node)
-		var inner []*schemaNode
-		if node.refNode != nil {
-			inner = append(inner, node.refNode)
-		}
-		inner = append(inner, node.allOf...)
-		innerAtoms, innerGroups, innerNever := flatten(inner)
-		atoms = append(atoms, innerAtoms...)
-		groups = append(groups, innerGroups...)
-		never = never || innerNever
-		if node.anyOf != nil {
-			groups = append(groups, node.anyOf)
+			seen[node] = true
+			if node.boolean != nil {
+				if !*node.boolean {
+					never = true
+				}
+				continue
+			}
+			atoms = append(atoms, node)
+			if node.refNode != nil {
+				visit([]*schemaNode{node.refNode})
+			}
+			visit(node.allOf)
+			if node.anyOf != nil {
+				groups = append(groups, node.anyOf)
+			}
 		}
 	}
+	visit(nodes)
 	return atoms, groups, never
 }
 
 // fromSchemas is the shape of a position where every one of nodes applies.
 func (g *generator) fromSchemas(nodes []*schemaNode) *shape {
-	atoms, groups, never := flatten(nodes)
-	if never {
+	atoms, groups, never := g.flatten(nodes)
+	if never || g.exceeded {
 		return nil
 	}
 	return g.expand(atoms, groups)
 }
 
 // expand reads the anyOf groups one at a time: the union, over the first
-// group's branches, of the position read with that branch added.
+// group's branches, of the position read with that branch added. The atoms
+// and groups each branch copies are charged to the work.
 func (g *generator) expand(atoms []*schemaNode, groups [][]*schemaNode) *shape {
 	if !g.charge() {
 		return nil
@@ -209,9 +225,12 @@ func (g *generator) expand(atoms []*schemaNode, groups [][]*schemaNode) *shape {
 	}
 	var out *shape
 	for _, branch := range groups[0] {
-		branchAtoms, branchGroups, never := flatten([]*schemaNode{branch})
+		branchAtoms, branchGroups, never := g.flatten([]*schemaNode{branch})
 		if never {
 			continue
+		}
+		if !g.chargeUnits(len(atoms) + len(branchAtoms) + len(groups) + len(branchGroups)) {
+			return nil
 		}
 		out = g.union(out, g.expand(append(slices.Clone(atoms), branchAtoms...), append(slices.Clone(groups[1:]), branchGroups...)))
 	}
@@ -224,7 +243,9 @@ func (g *generator) base(atoms []*schemaNode) *shape {
 		return openShape
 	}
 	// A closed list of values: the position holds one of them, the ones
-	// every schema here allows, and nothing else.
+	// every schema here allows, and nothing else. Each list is read once,
+	// into a set keyed by its values' RFC 8785 forms (hasDuplicate says why
+	// that is jsonEqual for admitted values).
 	var literals []any
 	closed := false
 	for _, atom := range atoms {
@@ -237,6 +258,9 @@ func (g *generator) base(atoms []*schemaNode) *shape {
 		default:
 			continue
 		}
+		if !g.chargeUnits(len(list) + len(literals)) {
+			return nil
+		}
 		if atom.hasEnum && atom.hasConst {
 			list = slices.DeleteFunc(slices.Clone(list), func(v any) bool { return !jsonEqual(v, atom.constValue) })
 		}
@@ -244,17 +268,33 @@ func (g *generator) base(atoms []*schemaNode) *shape {
 			literals, closed = slices.Clone(list), true
 			continue
 		}
+		keys := map[string]bool{}
+		for _, w := range list {
+			if key, err := jcs.EncodeDocument(w); err == nil {
+				keys[string(key)] = true
+			}
+		}
 		literals = slices.DeleteFunc(literals, func(v any) bool {
-			return !slices.ContainsFunc(list, func(w any) bool { return jsonEqual(v, w) })
+			key, err := jcs.EncodeDocument(v)
+			if err != nil {
+				return !slices.ContainsFunc(list, func(w any) bool { return jsonEqual(v, w) })
+			}
+			return !keys[string(key)]
 		})
 	}
 	if closed {
+		// Every node that applies here is an atom, with one branch of each
+		// anyOf, so each is checked for its own keywords only: a full
+		// validation of each would walk every node under its $refs again.
 		var out *shape
 		for _, literal := range literals {
 			allowed := true
 			for _, atom := range atoms {
+				if !g.charge() {
+					return nil
+				}
 				var findings []valueFinding
-				atom.validate(literal, nil, &findings)
+				atom.validateOwn(literal, nil, &findings)
 				if hasError(findings) {
 					allowed = false
 					break
@@ -418,9 +458,19 @@ func (g *generator) union(a, b *shape) *shape {
 			if !closedA || !closedB {
 				continue
 			}
+			// A shape's values are strings and booleans, which jsonEqual
+			// compares as ==, so a set merges the lists in one pass.
+			if !g.chargeUnits(len(listA) + len(listB)) {
+				return nil
+			}
 			list = slices.Clone(listA)
+			held := make(map[any]bool, len(listA)+len(listB))
+			for _, w := range listA {
+				held[w] = true
+			}
 			for _, v := range listB {
-				if !slices.ContainsFunc(list, func(w any) bool { return jsonEqual(v, w) }) {
+				if !held[v] {
+					held[v] = true
 					list = append(list, v)
 				}
 			}
@@ -654,12 +704,14 @@ func (g *generator) references(r *Result, kind *Kind, value *shape) *shape {
 	}
 	out := &shape{types: typeObject, members: map[string]member{}}
 	var wildcardKinds []string
+	wildcardNamed := map[string]bool{}
 	for _, pattern := range kind.references {
 		if isLiteral(pattern.pattern) {
 			continue
 		}
 		for _, name := range pattern.kinds {
-			if !slices.Contains(wildcardKinds, name) {
+			if !wildcardNamed[name] {
+				wildcardNamed[name] = true
 				wildcardKinds = append(wildcardKinds, name)
 			}
 		}
@@ -669,10 +721,12 @@ func (g *generator) references(r *Result, kind *Kind, value *shape) *shape {
 			continue
 		}
 		var kinds []string
+		named := map[string]bool{}
 		for _, other := range kind.references {
 			if other.pattern.overlaps(pattern.pattern) {
 				for _, name := range other.kinds {
-					if !slices.Contains(kinds, name) {
+					if !named[name] {
+						named[name] = true
 						kinds = append(kinds, name)
 					}
 				}

@@ -117,10 +117,11 @@ var Codes = map[string]codeInfo{
 	"REG-YAML-SYNTAX":    {SeverityError, "The file is not well-formed YAML within the subset."},
 	"REG-YAML-TRUNCATED": {SeverityError, "Reading stopped here after 1000 refusals; the report lists those, and the file may hold more."},
 
-	// The validation report's bound (ADR-0093, amendment): validate and
-	// resolve report the first 1000 diagnostics in the report's order. A
-	// warning, since validity is judged on every diagnostic found.
-	"REG-REPORT-TRUNCATED": {SeverityWarning, "The report lists the first 1000 diagnostics in its order, and validation found more; whether the registry is valid is judged on all of them."},
+	// The report's bound (ADR-0093 and ADR-0095, amendments): validate,
+	// resolve and a facts contract's reading report the first 1000
+	// diagnostics in the report's order. A warning, since validity is judged
+	// on every diagnostic found.
+	"REG-REPORT-TRUNCATED": {SeverityWarning, "The report lists the first 1000 diagnostics in its order, and more were found; whether the document is valid is judged on all of them."},
 
 	// Step 1: document admission.
 	"REG-DOC-SIZE":      {SeverityError, "The document exceeds its size bound."},
@@ -140,6 +141,7 @@ var Codes = map[string]codeInfo{
 	"REG-KIND-SCHEMA-LIMIT":        {SeverityError, "The schema exceeds a size limit: subschemas, enum values or composition branches."},
 	"REG-KIND-SCHEMA-REF":          {SeverityError, "A $ref is not of the form #/$defs/<name>, names no definition, or is part of a cycle."},
 	"REG-KIND-PATTERN":             {SeverityError, "A pattern is outside the companion's regular-expression subset."},
+	"REG-KIND-PATTERN-LIMIT":       {SeverityError, "A pattern compiles to more than 4096 instructions, or would take the kind's patterns past 65536 in all."},
 	"REG-KIND-POINTER-FORM":        {SeverityError, "A pointer pattern is not a well-formed pattern."},
 	"REG-KIND-POINTER-UNREACHABLE": {SeverityError, "A pointer pattern can match no position the schema allows."},
 	"REG-KIND-POINTER-CONFLICT":    {SeverityError, "A position is matched by both a secrets pattern and a references pattern."},
@@ -219,6 +221,9 @@ var Codes = map[string]codeInfo{
 type collector struct {
 	diagnostics []Diagnostic
 	limit       int
+	// truncated is the document the REG-REPORT-TRUNCATED of a capped
+	// report is located at; the registry's when empty.
+	truncated string
 	// kept is the bounded report when limit > 0: sorted, distinct, at most
 	// limit long.
 	kept []*Diagnostic
@@ -236,10 +241,18 @@ func (c *collector) add(code string, location Location) {
 	if !ok {
 		panic("registry: unlisted diagnostic code " + code)
 	}
-	if info.severity == SeverityError {
+	c.insert(Diagnostic{Code: code, Severity: info.severity, Location: location, Message: info.message})
+}
+
+// addFacts adds one of the facts commands' codes (FactsCodes).
+func (c *collector) addFacts(code string, location Location) {
+	c.insert(factsDiagnostic(code, location))
+}
+
+func (c *collector) insert(diagnostic Diagnostic) {
+	if diagnostic.Severity == SeverityError {
 		c.errorCount++
 	}
-	diagnostic := Diagnostic{Code: code, Severity: info.severity, Location: location, Message: info.message}
 	if c.limit <= 0 {
 		c.diagnostics = append(c.diagnostics, diagnostic)
 		return
@@ -276,7 +289,7 @@ func (c *collector) sorted() []Diagnostic {
 		}
 		if c.dropped {
 			info := Codes["REG-REPORT-TRUNCATED"]
-			out = append(out, Diagnostic{Code: "REG-REPORT-TRUNCATED", Severity: info.severity, Location: Location{Document: DocumentRegistry}, Message: info.message})
+			out = append(out, Diagnostic{Code: "REG-REPORT-TRUNCATED", Severity: info.severity, Location: Location{Document: cmp.Or(c.truncated, DocumentRegistry)}, Message: info.message})
 		}
 		return out
 	}

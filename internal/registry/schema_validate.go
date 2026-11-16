@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
 
 // valueFinding is one schema finding at a path in the validated value.
@@ -21,64 +23,8 @@ type valueFinding struct {
 // order they try branches in. Warnings inside a failed anyOf branch are
 // dropped with it.
 func (node *schemaNode) validate(value any, path []string, out *[]valueFinding) {
-	if node == nil {
+	if node == nil || !node.validateOwn(value, path, out) {
 		return
-	}
-	if node.boolean != nil {
-		if !*node.boolean {
-			*out = append(*out, valueFinding{"REG-VALUE-TYPE", path})
-		}
-		return
-	}
-	if node.deprecated {
-		*out = append(*out, valueFinding{"REG-VALUE-DEPRECATED", path})
-	}
-	if node.types != nil && !slices.ContainsFunc(node.types, func(name string) bool { return hasType(value, name) }) {
-		*out = append(*out, valueFinding{"REG-VALUE-TYPE", path})
-	}
-	if node.hasEnum && !slices.ContainsFunc(node.enum, func(item any) bool { return jsonEqual(item, value) }) {
-		*out = append(*out, valueFinding{"REG-VALUE-ENUM", path})
-	}
-	if node.hasConst && !jsonEqual(node.constValue, value) {
-		*out = append(*out, valueFinding{"REG-VALUE-CONST", path})
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		node.validateObject(typed, path, out)
-	case []any:
-		if node.minItems >= 0 && len(typed) < node.minItems || node.maxItems >= 0 && len(typed) > node.maxItems {
-			*out = append(*out, valueFinding{"REG-VALUE-ITEM-COUNT", path})
-		}
-		if node.unique {
-			for i := range typed {
-				if slices.ContainsFunc(typed[:i], func(earlier any) bool { return jsonEqual(earlier, typed[i]) }) {
-					*out = append(*out, valueFinding{"REG-VALUE-UNIQUE", path})
-					break
-				}
-			}
-		}
-		if node.items != nil {
-			for i, item := range typed {
-				node.items.validate(item, appendPath(path, strconv.Itoa(i)), out)
-			}
-		}
-	case string:
-		length := utf8.RuneCountInString(typed)
-		if node.minLength >= 0 && length < node.minLength || node.maxLength >= 0 && length > node.maxLength {
-			*out = append(*out, valueFinding{"REG-VALUE-LENGTH", path})
-		}
-		if node.pattern != nil && !node.pattern.MatchString(typed) {
-			*out = append(*out, valueFinding{"REG-VALUE-PATTERN", path})
-		}
-	case json.Number:
-		if number, ok := new(big.Rat).SetString(typed.String()); ok {
-			if node.minimum != nil && number.Cmp(node.minimum) < 0 ||
-				node.maximum != nil && number.Cmp(node.maximum) > 0 ||
-				node.exMinimum != nil && number.Cmp(node.exMinimum) <= 0 ||
-				node.exMaximum != nil && number.Cmp(node.exMaximum) >= 0 {
-				*out = append(*out, valueFinding{"REG-VALUE-RANGE", path})
-			}
-		}
 	}
 	for _, branch := range node.allOf {
 		branch.validate(value, path, out)
@@ -101,6 +47,75 @@ func (node *schemaNode) validate(value any, path []string, out *[]valueFinding) 
 			*out = append(*out, valueFinding{"REG-VALUE-ANY-OF", path})
 		}
 	}
+	if node.refNode != nil {
+		node.refNode.validate(value, path, out)
+	}
+}
+
+// validateOwn checks the node's own keywords: every one but allOf, anyOf and
+// $ref, which name other nodes that apply at the same position. A facts
+// contract's reading holds every node that applies at a position, with one
+// branch of each anyOf, and checks each this way, so it visits each node once
+// per position rather than once per $ref path to it. It reports false for a
+// boolean schema, which has no other keyword.
+func (node *schemaNode) validateOwn(value any, path []string, out *[]valueFinding) bool {
+	if node.boolean != nil {
+		if !*node.boolean {
+			*out = append(*out, valueFinding{"REG-VALUE-TYPE", path})
+		}
+		return false
+	}
+	if node.deprecated {
+		*out = append(*out, valueFinding{"REG-VALUE-DEPRECATED", path})
+	}
+	if node.types != nil && !slices.ContainsFunc(node.types, func(name string) bool { return hasType(value, name) }) {
+		*out = append(*out, valueFinding{"REG-VALUE-TYPE", path})
+	}
+	if node.hasEnum && !slices.ContainsFunc(node.enum, func(item any) bool { return jsonEqual(item, value) }) {
+		*out = append(*out, valueFinding{"REG-VALUE-ENUM", path})
+	}
+	if node.hasConst && !jsonEqual(node.constValue, value) {
+		*out = append(*out, valueFinding{"REG-VALUE-CONST", path})
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		node.validateObject(typed, path, out)
+	case []any:
+		if node.minItems >= 0 && len(typed) < node.minItems || node.maxItems >= 0 && len(typed) > node.maxItems {
+			*out = append(*out, valueFinding{"REG-VALUE-ITEM-COUNT", path})
+		}
+		if node.unique && hasDuplicate(typed) {
+			*out = append(*out, valueFinding{"REG-VALUE-UNIQUE", path})
+		}
+		if node.items != nil {
+			for i, item := range typed {
+				node.items.validate(item, appendPath(path, strconv.Itoa(i)), out)
+			}
+		}
+	case string:
+		length := utf8.RuneCountInString(typed)
+		if node.minLength >= 0 && length < node.minLength || node.maxLength >= 0 && length > node.maxLength {
+			*out = append(*out, valueFinding{"REG-VALUE-LENGTH", path})
+		}
+		if node.pattern != nil && !node.pattern.MatchString(typed) {
+			*out = append(*out, valueFinding{"REG-VALUE-PATTERN", path})
+		}
+	case json.Number:
+		if node.minimum != nil || node.maximum != nil || node.exMinimum != nil || node.exMaximum != nil {
+			// A number that cannot be compared is outside the range, never
+			// let through: admission keeps every number as a short literal
+			// (admittedLiteral), so this holds only for a value that did not
+			// come through admission.
+			number, ok := new(big.Rat).SetString(typed.String())
+			if !ok ||
+				node.minimum != nil && number.Cmp(node.minimum) < 0 ||
+				node.maximum != nil && number.Cmp(node.maximum) > 0 ||
+				node.exMinimum != nil && number.Cmp(node.exMinimum) <= 0 ||
+				node.exMaximum != nil && number.Cmp(node.exMaximum) >= 0 {
+				*out = append(*out, valueFinding{"REG-VALUE-RANGE", path})
+			}
+		}
+	}
 	if node.not != nil {
 		var trial []valueFinding
 		node.not.validate(value, path, &trial)
@@ -108,9 +123,32 @@ func (node *schemaNode) validate(value any, path []string, out *[]valueFinding) 
 			*out = append(*out, valueFinding{"REG-VALUE-NOT", path})
 		}
 	}
-	if node.refNode != nil {
-		node.refNode.validate(value, path, out)
+	return true
+}
+
+// hasDuplicate reports whether two items of an array are equal as jsonEqual
+// says, in one pass: each item is keyed by its RFC 8785 form, in which an
+// object's members are sorted and a number is written from the double it
+// reads as. For values that came through admission the two agree, since an
+// admitted number is exactly its double's shortest decimal, so two admitted
+// numbers of one double have one value. An item that has no RFC 8785 form,
+// which admission lets no value hold, is compared with every earlier item.
+func hasDuplicate(items []any) bool {
+	seen := make(map[string]bool, len(items))
+	for i, item := range items {
+		key, err := jcs.EncodeDocument(item)
+		if err != nil {
+			if slices.ContainsFunc(items[:i], func(earlier any) bool { return jsonEqual(earlier, item) }) {
+				return true
+			}
+			continue
+		}
+		if seen[string(key)] {
+			return true
+		}
+		seen[string(key)] = true
 	}
+	return false
 }
 
 func (node *schemaNode) validateObject(object map[string]any, path []string, out *[]valueFinding) {
