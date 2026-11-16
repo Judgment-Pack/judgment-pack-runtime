@@ -266,6 +266,28 @@ an added member does not move it, a removed or renamed one does. Its manifest ca
 added member moves it, and a manifest of another `manifestVersion` is refused as unsupported
 (`JPS-PUBLISHED-MANIFEST-VERSION`). The command, its report and its manifest are EXPERIMENTAL.
 
+## The start-up module
+
+The start-up module, `github.com/Judgment-Pack/judgment-pack-runtime/startup` (ADR-0096), is a Go
+module of its own in `startup/`, with its own `go.mod`. It is versioned by its own tags,
+`startup/vX.Y.Z`, independently of the CLI's `vX.Y.Z` tags and of the runtime module. A
+`startup/v*` tag does not start the release workflow: the tag itself is the module's release. The
+Go module proxy keeps a version's bytes once it is fetched, so a tag is never moved or reused.
+
+The module is under the 1.0 promise, while `jpack` and the runtime module stay 0.x. From
+`startup/v1.0.0`, within major version 1:
+- no exported identifier is removed or changes meaning. That includes the sentinel each refusal
+  matches under `errors.Is`, the printed and encoded form `[secret]`, the trailing-newline rule and
+  every refusal;
+- a minor version may add identifiers and readers. A secret-store reader comes as a sub-package
+  of its own;
+- a minor version may add a `resolvedFormatVersion` selector to `ResolvedFormatVersions`
+  (RFC 0034 §8). None is removed before 2.0;
+- no bound is lowered.
+
+A change that breaks any of these is a new major version, under the path `.../startup/v2`. The
+wording of error messages is not promised.
+
 ## Release artifacts
 
 An immutable CLI release contains, at minimum:
