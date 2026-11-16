@@ -138,10 +138,16 @@ func decodeYAMLText(source []byte, diagnostics *collector) ([]rune, bool) {
 }
 
 // yamlPrintable is YAML 1.2's c-printable, less the byte-order mark, which
-// may appear nowhere in the subset.
+// may appear nowhere in the subset, and less U+0085, U+2028 and U+2029. YAML
+// 1.1 and go-yaml v3 read those three as line breaks and YAML 1.2 reads them
+// as content, so a file holding one has two readings (ADR-0094, amendment).
+// Written as the escapes \N, \L and \P in a double-quoted scalar they have
+// one, and are admitted.
 func yamlPrintable(r rune) bool {
 	switch {
-	case r == '\t', r == '\n', r == '\r', r >= 0x20 && r <= 0x7e, r == 0x85, r >= 0xa0 && r <= 0xd7ff, r >= 0x10000 && r <= 0x10ffff:
+	case r == 0x85, r == 0x2028, r == 0x2029:
+		return false
+	case r == '\t', r == '\n', r == '\r', r >= 0x20 && r <= 0x7e, r >= 0xa0 && r <= 0xd7ff, r >= 0x10000 && r <= 0x10ffff:
 		return true
 	case r >= 0xe000 && r <= 0xfffd:
 		return r != 0xfeff

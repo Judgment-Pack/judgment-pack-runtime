@@ -110,6 +110,7 @@ func readNames(root map[string]any, member string, valid func(string) bool, max 
 		return nil, true
 	}
 	var names []string
+	seen := make(map[string]bool, len(items))
 	for i, item := range items {
 		name, ok := item.(string)
 		if !ok || !valid(name) {
@@ -117,11 +118,12 @@ func readNames(root map[string]any, member string, valid func(string) bool, max 
 			stop = true
 			continue
 		}
-		if slices.Contains(names, name) {
+		if seen[name] {
 			fail("REG-REGISTRY-DUPLICATE", member, strconv.Itoa(i))
 			stop = true
 			continue
 		}
+		seen[name] = true
 		names = append(names, name)
 	}
 	return names, stop
@@ -176,7 +178,7 @@ func readScopes(registry *registryDoc, value any, diagnostics *collector) bool {
 		return true
 	}
 	stop := false
-	registry.scopes = map[string]map[string][]string{}
+	registry.scopes = map[string]map[string]map[string]bool{}
 	for _, environment := range registry.environments {
 		if _, ok := object[environment]; !ok {
 			fail("REF-SECRET-SCOPE-FORM")
@@ -191,7 +193,7 @@ func readScopes(registry *registryDoc, value any, diagnostics *collector) bool {
 			stop = true
 			continue
 		}
-		registry.scopes[environment] = map[string][]string{}
+		registry.scopes[environment] = map[string]map[string]bool{}
 		for _, store := range sortedKeys(stores) {
 			projects, ok := stores[store].([]any)
 			if !ok || store != StoreGCPSecretManager {
@@ -199,9 +201,11 @@ func readScopes(registry *registryDoc, value any, diagnostics *collector) bool {
 				stop = true
 				continue
 			}
+			scope := map[string]bool{}
+			registry.scopes[environment][store] = scope
 			for i, item := range projects {
 				project, ok := item.(string)
-				if !ok || !projectIDPattern.MatchString(project) || slices.Contains(registry.scopes[environment][store], project) {
+				if !ok || !projectIDPattern.MatchString(project) || scope[project] {
 					fail("REF-SECRET-SCOPE-FORM", environment, store, strconv.Itoa(i))
 					stop = true
 					continue
@@ -211,7 +215,7 @@ func readScopes(registry *registryDoc, value any, diagnostics *collector) bool {
 					fail("REF-SECRET-SCOPE-SHARED", environment, store, strconv.Itoa(i))
 				}
 				owner[key] = environment
-				registry.scopes[environment][store] = append(registry.scopes[environment][store], project)
+				scope[project] = true
 			}
 		}
 	}
@@ -266,13 +270,15 @@ func readEntry(item any, index int, fail func(string, ...string)) *entry {
 			bad = true
 		}
 		e.envs = []string{}
+		seen := make(map[string]bool, len(items))
 		for i, item := range items {
 			name, ok := item.(string)
-			if !ok || slices.Contains(e.envs, name) {
+			if !ok || seen[name] {
 				fail("REG-REGISTRY-FORM", "entries", at, "environments", strconv.Itoa(i))
 				bad = true
 				continue
 			}
+			seen[name] = true
 			e.envs = append(e.envs, name)
 		}
 	}
@@ -343,7 +349,10 @@ func checkOverlays(registry *registryDoc, diagnostics *collector) {
 			}
 			p := &patch{entry: target}
 			ok = true
-			var paths [][]string
+			// The patch's pointers so far, as a tree of their tokens, so
+			// that a prefix in either direction is found in the length of
+			// the pointer, not in the number of pointers before it.
+			paths := &pathTree{}
 			for _, pointer := range sortedKeys(set) {
 				setAt := append(slices.Clone(patchAt), "set")
 				pointerAt := append(slices.Clone(setAt), pointer)
@@ -369,13 +378,10 @@ func checkOverlays(registry *registryDoc, diagnostics *collector) {
 					ok = false
 					continue
 				}
-				for _, other := range paths {
-					if isPrefix(other, path) || isPrefix(path, other) {
-						fail("REG-OVERLAY-PREFIX", &name, pointerAt...)
-						ok = false
-					}
+				if paths.insertConflicts(path) {
+					fail("REG-OVERLAY-PREFIX", &name, pointerAt...)
+					ok = false
 				}
-				paths = append(paths, path)
 				p.set = append(p.set, setOperation{path: path, value: set[pointer]})
 			}
 			if ok {
@@ -407,4 +413,33 @@ func reachableTarget(e *entry, path []string) bool {
 		return false
 	}
 	return e.kind.schema.declares(path[:len(path)-1], path[len(path)-1])
+}
+
+// pathTree holds pointers as paths of tokens, each marked where one ends.
+type pathTree struct {
+	end  bool
+	next map[string]*pathTree
+}
+
+// insertConflicts adds path and reports whether a path already held is a
+// prefix of it, or it of one: a path equal to one held counts as both. It
+// costs the length of path, whatever the tree holds.
+func (t *pathTree) insertConflicts(path []string) bool {
+	node := t
+	conflict := false
+	for _, token := range path {
+		conflict = conflict || node.end
+		child, ok := node.next[token]
+		if !ok {
+			if node.next == nil {
+				node.next = map[string]*pathTree{}
+			}
+			child = &pathTree{}
+			node.next[token] = child
+		}
+		node = child
+	}
+	conflict = conflict || node.end || len(node.next) > 0
+	node.end = true
+	return conflict
 }

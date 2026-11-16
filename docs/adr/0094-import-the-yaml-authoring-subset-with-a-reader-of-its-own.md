@@ -155,3 +155,12 @@ Choices §7 leaves to the reader, recorded so the companion can settle them:
 ## More information
 
 Spec RFC 0034 §1, §3, §6 and §7. ADR-0093 is the registry reader whose admission import reuses.
+
+## Amendment: NEL, LS and PS (2026-11-16, #432)
+
+YAML 1.2 reads U+0085, U+2028 and U+2029 as content. YAML 1.1 and go-yaml v3 read them as line
+breaks. So `description: allowed` followed by U+2028 and `  denied` is one scalar to one reader
+and two lines to another. Import refuses a file that holds any of the three, as
+`REG-YAML-ENCODING` at the character, the code for a character YAML does not allow. A
+double-quoted scalar can still write each one as an escape (`\N`, `\L`, `\P`), which every reader
+reads one way.

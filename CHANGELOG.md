@@ -12,8 +12,9 @@ All notable changes to tagged releases are documented here.
   `resolve ... --environment E` writes one environment's resolved document as RFC 8785 canonical
   JSON. Nothing is fetched: a secret reference is checked for form, version pin and the
   environment's project scope and left as written. A number is held to RFC 0034 §1 by a scan
-  before any big arithmetic, so a long literal costs no more than reading it. Existing commands
-  and their output are unchanged.
+  before any big arithmetic, and is then kept as a literal of at most 25 bytes, so no later step
+  reads a long literal at its written length (#432). Existing commands and their output are
+  unchanged.
 
 - **A bounded `validate`/`resolve` report** (#427, ADR-0093 amendment). The report lists at most
   the first 1000 diagnostics in its own order (location, then code, then message). When validation
@@ -30,6 +31,34 @@ All notable changes to tagged releases are documented here.
   nests deeper than 32, which an RFC 0034 §1 reader refuses. Step 8 now reports such an environment
   as `REG-DOC-DEPTH`, and `resolve` exits 1 with the report, as for a resolved document over its
   size bound.
+
+- **Registry bounds from the v0.47.0 release review** (#432; ADR-0093, ADR-0094 and ADR-0095
+  amendments). Each was an input within the size bounds whose cost grew far past its size.
+  - A kind's schema is held to 4096 subschemas expanded, each `$ref` counted as the definition it
+    names, as well as written: a 3 KB schema of definitions that name each other sixteen times
+    expanded to 16^8. Past it the kind is `REG-KIND-SCHEMA-LIMIT`.
+  - A pattern is held to 4096 compiled instructions, and a kind's patterns to 65,536 together,
+    counted before anything is compiled: `(a…a){1000}` is within RFC 0034 §2.2 and compiled to a
+    quarter of a million. Past either bound the kind is the new `REG-KIND-PATTERN-LIMIT`,
+    provisional like the other `REG-*` codes (VERSIONING.md).
+  - Every list that must hold distinct items is checked in one pass, `uniqueItems` by each item's
+    RFC 8785 form, and an overlay's pointers for a prefix through a tree of their tokens. 100,000
+    owners took 16 s and 10,000 `uniqueItems` numbers 54 s per environment; each now takes well
+    under a second.
+  - A facts contract's report is capped at 1000 diagnostics with `REG-REPORT-TRUNCATED`, as
+    `validate`'s is, so `check-pack` on a contract of millions of `-0`s reports 1001 lines.
+  - A facts contract's generation charges its reading of the schema, its closed-list checks and
+    its value merges to its work bound, past which the kind is `FACTS-CONTRACT-LIMIT`.
+  - A number that cannot be compared with a range is `REG-VALUE-RANGE`, never let through; before,
+    `1.` and a million zeros passed any `maximum`.
+  - Two byte-different documents of one kind give the same report whatever the order of `--kind`.
+  - Checking resolved values against their schemas shares one work bound over the registry, 2^26
+    node visits, past which the entry is the new `REG-BOUND-VALIDATION-WORK`, provisional
+    (VERSIONING.md). A value of a kind is checked once however many environments hold it. A 3 KB
+    kind over four million items in 32 environments took 43 minutes; it is now refused in about
+    a second.
+  - `import` refuses U+0085, U+2028 and U+2029, which YAML 1.1 and go-yaml read as line breaks
+    and YAML 1.2 as content, as `REG-YAML-ENCODING`. The escapes `\N`, `\L` and `\P` are read.
 
 - **`jpack registry import`: the registry's YAML authoring subset** (ADR-0094). It converts one
   YAML file in RFC 0034 §7's subset to the canonical JSON of the registry or kind declaration it

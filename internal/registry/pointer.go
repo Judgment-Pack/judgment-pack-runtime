@@ -230,15 +230,3 @@ func lookup(value any, path []string) (any, bool) {
 }
 
 func pointerOf(path []string) string { return carrier.Pointer(path) }
-
-func isPrefix(prefix, path []string) bool {
-	if len(prefix) > len(path) {
-		return false
-	}
-	for i := range prefix {
-		if prefix[i] != path[i] {
-			return false
-		}
-	}
-	return true
-}
