@@ -4,6 +4,19 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
+  `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
+  and every disposition is an outcome the list names, 1 when one is an outcome outside it or
+  not-applicable (a finding), and 2 when the gate could not judge: an item unresolved or refused,
+  an input unreadable, a record or a result unwritten, the gate's own arguments refused, or a batch
+  with no item unless `--allow-empty`. Each id must be an outcome the pack declares, checked before
+  anything is evaluated; an outcome whose id is `refused` is an ordinary outcome. A command line
+  that cannot be parsed exits 3, as before. Standard output is unchanged; the verdict goes to
+  standard error and, with `--gate-summary FILE`, to a JSON document (`gateSummaryVersion` `"1"`)
+  with the verdict, the allowed outcomes, the sha256 of each input and what it covers, and the
+  items that did not pass by line, id and outcome id only, never a fact value. Without
+  `--require-outcome` every exit code and byte of output is what it was, and the conformance claim
+  in CONFORMANCE.md is unchanged.
 - **`experimental check-published`: findings of the v0.46.0 release review** (#418). The work for
   an identity found again no longer grows with the digests it already has: each identity keeps a
   set of its digests, and the output is the same bytes. A document whose `id` or `version` is
