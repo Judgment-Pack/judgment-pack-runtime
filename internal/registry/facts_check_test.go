@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -122,5 +123,174 @@ func TestCheckPackAgainstAnAuthoredContract(t *testing.T) {
 		if test.code == "" && len(diagnostics) != 0 || test.code != "" && (len(diagnostics) != 1 || diagnostics[0].Code != test.code) {
 			t.Errorf("%s: want %q, got %+v", name, test.code, diagnostics)
 		}
+	}
+}
+
+// openRoleKind leaves "meta" open, and openKind leaves every member but one
+// open, since it has no additionalProperties.
+const openRoleKind = `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/kinds/role","version":"1.0.0","kind":"role","owner":"team-a",
+"schema":{"type":"object","required":["database"],"additionalProperties":false,"properties":{"database":{"type":"string"},"meta":{}}},
+"references":[{"pointer":"/database","kinds":["database"]}]}`
+
+const openKind = `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/kinds/loose","version":"1.0.0","kind":"loose","owner":"team-a",
+"schema":{"type":"object","properties":{"name":{"type":"string"}}}}`
+
+// A pointer below an open position is listed: the contract has one row of
+// every type under the position, and the check reads every pointer below
+// that row as listed.
+func TestCheckPackListsPointersBelowAnOpenPosition(t *testing.T) {
+	registry, kinds := customRegistry(t, `{"kind":"database","id":"d","owner":"team-a","value":{"engine":"postgres"}},
+{"kind":"role","id":"r","owner":"team-a","value":{"database":"entry:database/d","meta":{"team":"x"}}}`, databaseKind, openKind, openRoleKind)
+	result := run(registry, kinds)
+	if !result.Report.Valid {
+		t.Fatalf("%+v", result.Report.Diagnostics)
+	}
+	read := func(kind string) *FactsContractDoc {
+		generated, diagnostics, err := result.FactsContract(kind)
+		if err != nil || len(diagnostics) > 0 {
+			t.Fatalf("%v %+v", err, diagnostics)
+		}
+		contract, diagnostics := ReadFactsContract(Document{Data: generated})
+		if contract == nil {
+			t.Fatalf("%+v", diagnostics)
+		}
+		return contract
+	}
+	role, loose := read("role"), read("loose")
+	deep := strings.Repeat("/x", maxCheckDepth-3)
+	cases := []struct {
+		name     string
+		contract *FactsContractDoc
+		cond     string
+		code     string
+	}{
+		{"a member under an open member", role, fact("/value/meta/team", "equals", `"x"`), ""},
+		{"a member two levels under an open member", role, fact("/value/meta/team/lead", "not-equals", `"y"`), ""},
+		{"an object under an open member", role, fact("/value/meta/team", "equals", `{"lead":{"name":"y"}}`), ""},
+		{"an ordered comparison under an open member", role, fact("/value/meta/team/size", "greater-than", `"3"`), ""},
+		{"the open member itself", role, fact("/value/meta", "equals", `{"team":"x"}`), ""},
+		{"a member the closed object does not have", role, fact("/value/team", "equals", `"x"`), "FACTS-POINTER-UNKNOWN"},
+		{"under a closed string member", role, fact("/value/database/name", "equals", `"x"`), "FACTS-POINTER-UNKNOWN"},
+		{"a number under an open member", role, fact("/value/meta/team", "equals", `3`), "FACTS-VALUE-UNREACHABLE"},
+		{"a member of an object without additionalProperties", loose, fact("/value/team", "equals", `"x"`), ""},
+		{"deeper under it", loose, fact("/value/team/a/b/c", "in", `["x",true,null]`), ""},
+		{"as deep as a facts document can nest", loose, fact("/value"+deep, "equals", `"x"`), ""},
+	}
+	for _, test := range cases {
+		diagnostics := test.contract.CheckPack(decode(t, `{"applicability":`+test.cond+`}`))
+		if test.code == "" && len(diagnostics) != 0 || test.code != "" && (len(diagnostics) != 1 || diagnostics[0].Code != test.code) {
+			t.Errorf("%s: want %q, got %+v", test.name, test.code, diagnostics)
+		}
+	}
+}
+
+// A member named * is not the wildcard: it does not list the object's other
+// members.
+func TestCheckPackReadsAMemberNamedStar(t *testing.T) {
+	registry, kinds := customRegistry(t, ``, widgetKind)
+	generated, _, err := run(registry, kinds).FactsContract("widget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, diagnostics := ReadFactsContract(Document{Data: generated})
+	if contract == nil {
+		t.Fatalf("%+v", diagnostics)
+	}
+	for condition, code := range map[string]string{
+		fact("/value/*", "equals", `"x"`):     "",
+		fact("/value/*", "equals", `true`):    "FACTS-VALUE-UNREACHABLE",
+		fact("/value/other", "equals", `"x"`): "FACTS-POINTER-UNKNOWN",
+	} {
+		diagnostics := contract.CheckPack(decode(t, `{"applicability":`+condition+`}`))
+		if code == "" && len(diagnostics) != 0 || code != "" && (len(diagnostics) != 1 || diagnostics[0].Code != code) {
+			t.Errorf("%s: want %q, got %+v", condition, code, diagnostics)
+		}
+	}
+}
+
+// starContract is an authored contract listing every pointer of k tokens,
+// each a or *: a fact pointer of k a's matches 2^k of them.
+func starContract(t *testing.T, k int) *FactsContractDoc {
+	t.Helper()
+	var items []string
+	for mask := 0; mask < 1<<k; mask++ {
+		var b strings.Builder
+		for i := k - 1; i >= 0; i-- {
+			if mask&(1<<i) != 0 {
+				b.WriteString("/a")
+			} else {
+				b.WriteString("/*")
+			}
+		}
+		items = append(items, `{"pointer":"`+b.String()+`","present":"optional","type":"string"}`)
+	}
+	contract, diagnostics := ReadFactsContract(Document{Data: []byte(`{"factsContractVersion":"1.0.0","id":"https://example.invalid/c","version":"1.0.0","source":{"authored":true},"facts":[` + strings.Join(items, ",") + `]}`)})
+	if contract == nil {
+		t.Fatalf("%+v", diagnostics[:1])
+	}
+	return contract
+}
+
+func conditions(paths ...string) map[string]any {
+	var list []any
+	for _, path := range paths {
+		list = append(list, map[string]any{"op": "fact", "path": path, "operator": "equals", "value": "x"})
+	}
+	return map[string]any{"rules": []any{map[string]any{"when": map[string]any{"op": "all", "conditions": list}}}}
+}
+
+// Each pointer is looked up once per check, and the check has one work
+// bound: a pack that keeps reading the contract's widest views stops at it.
+func TestCheckPackWorkIsBoundedOverOneCheck(t *testing.T) {
+	contract := starContract(t, 16)
+	path := strings.Repeat("/a", 16)
+	c := contract.checker()
+	first := 0
+	for i := 0; i < 10; i++ {
+		if code := c.checkCondition(map[string]any{"op": "fact", "path": path, "operator": "equals", "value": "x"}); code != "" || c.exceeded {
+			t.Fatalf("%q %v", code, c.exceeded)
+		}
+		if i == 0 {
+			first = c.work
+		}
+	}
+	if first > 1<<17 || c.work-first > 100 {
+		t.Fatalf("the first read cost %d, nine more %d", first, c.work-first)
+	}
+	// Every distinct last token makes a view of 2^15 positions.
+	var paths []string
+	for i := 0; i < 200; i++ {
+		paths = append(paths, strings.Repeat("/a", 15)+"/t"+strconv.Itoa(i))
+	}
+	diagnostics := contract.CheckPack(conditions(paths...))
+	if len(diagnostics) == 0 {
+		t.Fatal("a check over its work bound reports it")
+	}
+	last := diagnostics[len(diagnostics)-1]
+	if last.Code != "FACTS-CHECK-LIMIT" || last.Severity != SeverityError || last.Location.Document != DocumentPack || !strings.HasPrefix(last.Location.Pointer, "/rules/0/when/conditions/") {
+		t.Fatalf("%d diagnostics, last %+v", len(diagnostics), last)
+	}
+	for _, d := range diagnostics[:len(diagnostics)-1] {
+		if d.Code == "FACTS-CHECK-LIMIT" {
+			t.Fatalf("the limit is reported once: %+v", d)
+		}
+	}
+	// A fact pointer deeper than a facts document can nest.
+	diagnostics = contract.CheckPack(conditions(strings.Repeat("/a", maxCheckDepth+1)))
+	if len(diagnostics) != 1 || diagnostics[0].Code != "FACTS-CHECK-LIMIT" {
+		t.Fatalf("%+v", diagnostics)
+	}
+}
+
+// FACTS-VALUE-UNREACHABLE is reported for an in when one item is
+// unreachable, and its message says so.
+func TestFactsValueUnreachableMessageCoversAnInItem(t *testing.T) {
+	contract := roleContract(t)
+	diagnostics := contract.CheckPack(decode(t, `{"applicability":`+fact("/environment", "in", `["prod","qa"]`)+`}`))
+	if len(diagnostics) != 1 || diagnostics[0].Code != "FACTS-VALUE-UNREACHABLE" {
+		t.Fatalf("%+v", diagnostics)
+	}
+	if message := diagnostics[0].Message; strings.Contains(message, "never match") || !strings.Contains(message, "at least one item of an in") {
+		t.Fatalf("%q", message)
 	}
 }

@@ -34,11 +34,12 @@ const (
 var FactsCodes = map[string]codeInfo{
 	"FACTS-POINTER-UNKNOWN":   {SeverityWarning, "The pack reads a fact pointer the facts contract does not list."},
 	"FACTS-TYPE-ORDERED":      {SeverityWarning, "The pack uses an ordered comparison on a fact pointer that the contract does not type decimal."},
-	"FACTS-VALUE-UNREACHABLE": {SeverityWarning, "The pack compares a fact with a value outside the pointer's values in the contract, or of another type, so the comparison can never match."},
+	"FACTS-VALUE-UNREACHABLE": {SeverityWarning, "The pack compares a fact with a value outside the pointer's values in the contract, or of another type: an equals or not-equals operand, or at least one item of an in, that no fact at the pointer can equal."},
 	"FACTS-DOCUMENT-LIMIT":    {SeverityError, "The entry's facts document exceeds the runtime's facts-document limit: 10 MiB, depth 128, 250000 nodes, 1 MiB per string."},
 	"FACTS-CONTRACT-LIMIT":    {SeverityError, "The facts contract exceeds the contract bounds: 8 MiB, 65536 facts, or the generation work limit."},
 	"FACTS-CONTRACT-FORM":     {SeverityError, "A member of the facts contract is missing, not defined by the format, or has the wrong form."},
 	"FACTS-CONTRACT-ORDER":    {SeverityError, "The contract's facts are not in strictly increasing order of pointer, then type."},
+	"FACTS-CHECK-LIMIT":       {SeverityError, "The check exceeds the runtime's check bounds: 4194304 contract positions and facts visited, or a fact pointer deeper than 128. This condition and the ones after it are not checked."},
 }
 
 func factsDiagnostic(code string, location Location) Diagnostic {
