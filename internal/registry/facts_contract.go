@@ -17,7 +17,8 @@ import (
 // branch read with the rest of the schema), and not is ignored, so the
 // contract may list a value no entry holds and never leaves out one an entry
 // can hold. A position the schema leaves open (no type, no additionalProperties
-// or no items) is listed once per type, and nothing under it is listed.
+// or no items) is listed once per type, and once per type at <position>/*, and
+// nothing deeper is listed: a pack's pointer below that * row is listed.
 
 // FactsContractVersion is the facts contract format this runtime writes and
 // reads.
@@ -132,7 +133,21 @@ func scalarShape(t factType, values ...any) *shape {
 type generator struct {
 	work     int
 	exceeded bool
+	// listed is a lower bound on the encoded size of the facts listed so
+	// far, charged against MaxContractBytes as they are listed.
+	listed int
 }
+
+// minFactBytes is the size of the shortest item a contract can hold, less
+// its pointer: what each listed fact adds to the contract at the least.
+var minFactBytes = len(`{"pointer":"","present":"always","type":"null"}`)
+
+// maxFactsDepth is the deepest position a contract lists, in pointer tokens.
+// An entry's value nests no deeper than the registry document that holds it
+// (MaxDepth), and the deepest a value sits in a facts document is under
+// /references/<pointer>/value, three tokens down, so no facts document holds
+// anything deeper.
+const maxFactsDepth = MaxDepth + 3
 
 func (g *generator) charge() bool {
 	g.work++
@@ -689,9 +704,12 @@ func escapeContractToken(name string) string {
 	return strings.NewReplacer("~", "~0", "/", "~1").Replace(name)
 }
 
-// flattenShape lists every position under s, each once per type.
-func (g *generator) flattenShape(s *shape, pointer string, always bool, out *[]contractFactItem) {
-	if s == nil || g.exceeded {
+// flattenShape lists every position under s, each once per type, down to
+// maxFactsDepth. An open position is listed with one row of every type under
+// it, at <pointer>/*, and nothing deeper: a pack's pointer below that row is
+// listed (ADR-0095). depth is the number of tokens in pointer.
+func (g *generator) flattenShape(s *shape, pointer string, depth int, always bool, out *[]contractFactItem) {
+	if s == nil || g.exceeded || depth > maxFactsDepth {
 		return
 	}
 	present := "optional"
@@ -721,15 +739,22 @@ func (g *generator) flattenShape(s *shape, pointer string, always bool, out *[]c
 				}
 			}
 		}
+		if g.listed += len(pointer) + minFactBytes; g.listed > MaxContractBytes {
+			g.exceeded = true
+			return
+		}
 		*out = append(*out, contractFactItem{pointer: pointer, typeOf: t.name, item: item})
 	}
 	if s.open {
+		if s != openRows {
+			g.flattenShape(openRows, pointer+"/*", depth+1, false, out)
+		}
 		return
 	}
 	if s.types&typeObject != 0 {
 		for _, name := range sortedKeys(s.members) {
 			m := s.members[name]
-			g.flattenShape(m.shape, pointer+"/"+escapeContractToken(name), m.always, out)
+			g.flattenShape(m.shape, pointer+"/"+escapeContractToken(name), depth+1, m.always, out)
 		}
 	}
 	var wild *shape
@@ -739,8 +764,12 @@ func (g *generator) flattenShape(s *shape, pointer string, always bool, out *[]c
 	if s.types&typeArray != 0 {
 		wild = g.union(wild, s.element)
 	}
-	g.flattenShape(wild, pointer+"/*", false, out)
+	g.flattenShape(wild, pointer+"/*", depth+1, false, out)
 }
+
+// openRows is the <pointer>/* of an open position: every type, and nothing
+// listed under it.
+var openRows = &shape{types: allTypes, open: true}
 
 // FactsContract generates the facts contract of one pinned kind of a valid
 // registry (RFC 0037 §4), in RFC 8785 form. Its id and version are the
@@ -782,7 +811,7 @@ func (r *Result) FactsContract(kindName string) ([]byte, []Diagnostic, error) {
 	var items []contractFactItem
 	for _, name := range sortedKeys(root.members) {
 		m := root.members[name]
-		g.flattenShape(m.shape, "/"+escapeContractToken(name), m.always, &items)
+		g.flattenShape(m.shape, "/"+escapeContractToken(name), 1, m.always, &items)
 	}
 	if g.exceeded {
 		return nil, limit, nil

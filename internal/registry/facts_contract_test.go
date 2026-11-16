@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -88,7 +89,8 @@ const widgetKind = `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/k
   "tags":{"type":"array","items":{"type":"string"}},
   "limits":{"allOf":[{"type":"object","properties":{"max":{"type":"number"}},"required":["max"]},{"properties":{"min":{"type":"number"}}}]},
   "accounts":{"type":"array","items":{"type":"object","required":["password"],"additionalProperties":false,"properties":{"password":{"type":"string"}}}},
-  "extra":{}
+  "extra":{},
+  "*":{"type":"string"}
  }},
 "secrets":["/accounts/*/password"]}`
 
@@ -120,7 +122,9 @@ func TestFactsContractSchemaKeywords(t *testing.T) {
 		`{"pointer":"/value/accounts/*/password/scope","present":"always","type":"string"}`,
 		`{"pointer":"/value/accounts/*/password/store","present":"always","type":"string","values":["gcp-sm"]}`,
 	}
+	// An open position: once per type, and once per type under it.
 	want = append(want, open("/value/extra")...)
+	want = append(want, open("/value/extra/*")...)
 	want = append(want,
 		// enum with type: the values the types allow, numbers as decimals.
 		`{"pointer":"/value/level","present":"optional","type":"decimal","values":["1"]}`,
@@ -129,6 +133,7 @@ func TestFactsContractSchemaKeywords(t *testing.T) {
 		`{"pointer":"/value/limits","present":"optional","type":"object"}`,
 	)
 	want = append(want, open("/value/limits/*")...)
+	want = append(want, open("/value/limits/*/*")...)
 	want = append(want,
 		`{"pointer":"/value/limits/max","present":"always","type":"decimal"}`,
 		`{"pointer":"/value/limits/min","present":"optional","type":"decimal"}`,
@@ -139,6 +144,8 @@ func TestFactsContractSchemaKeywords(t *testing.T) {
 		`{"pointer":"/value/size","present":"always","type":"string","values":["small","large"]}`,
 		`{"items":"string","pointer":"/value/tags","present":"optional","type":"array"}`,
 		`{"pointer":"/value/tags/*","present":"optional","type":"string"}`,
+		// A member named *, which is not the wildcard.
+		`{"pointer":"/value/~2","present":"optional","type":"string"}`,
 	)
 	if strings.Join(value, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("value facts:\n%s", strings.Join(value, "\n"))
@@ -224,5 +231,64 @@ func TestFactsContractRefusals(t *testing.T) {
 	}
 	if _, diagnostics := ReadFactsContract(Document{Oversize: true}); len(diagnostics) != 1 || diagnostics[0].Code != "REG-DOC-SIZE" {
 		t.Errorf("oversize: %+v", diagnostics)
+	}
+}
+
+// deepKind is a kind whose $defs chain nests depth levels of one member with
+// a long name: each level adds a fact whose pointer is longer than the last.
+func deepKind(depth int) string {
+	name := strings.Repeat("m", (240*1024)/depth-60)
+	var defs []string
+	for i := 0; i < depth; i++ {
+		next := `{"type":"string"}`
+		if i+1 < depth {
+			next = `{"$ref":"#/$defs/d` + strconv.Itoa(i+1) + `"}`
+		}
+		defs = append(defs, `"d`+strconv.Itoa(i)+`":{"type":"object","properties":{"`+name+`":`+next+`}}`)
+	}
+	return `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/kinds/deep","version":"1.0.0","kind":"deep","owner":"team-a",
+"schema":{"$defs":{` + strings.Join(defs, ",") + `},"$ref":"#/$defs/d0"}}`
+}
+
+// A schema may nest deeper than any entry can: the contract lists positions
+// down to the depth a facts document can hold, and no further.
+func TestFactsContractStopsAtTheDepthAnEntryCanHold(t *testing.T) {
+	registry, kinds := customRegistry(t, ``, deepKind(1300))
+	result := run(registry, kinds)
+	if !result.Report.Valid {
+		t.Fatalf("%+v", result.Report.Diagnostics)
+	}
+	var contract []byte
+	var diagnostics []Diagnostic
+	var err error
+	allocated := allocatedBy(func() { contract, diagnostics, err = result.FactsContract("deep") })
+	if err != nil || len(diagnostics) > 0 || contract == nil {
+		t.Fatalf("%v %+v", err, diagnostics)
+	}
+	if allocated > 256<<20 {
+		t.Fatalf("generating the contract allocated %d MB", allocated>>20)
+	}
+	deepest := 0
+	for _, item := range decode(t, string(contract))["facts"].([]any) {
+		deepest = max(deepest, strings.Count(item.(map[string]any)["pointer"].(string), "/"))
+	}
+	if deepest != maxFactsDepth {
+		t.Fatalf("the deepest fact is %d tokens down, want %d", deepest, maxFactsDepth)
+	}
+}
+
+// Each listed fact is charged its pointer as it is listed, so a contract over
+// MaxContractBytes stops being listed when it passes the bound.
+func TestFactsContractChargesPointerBytesAsItLists(t *testing.T) {
+	name := strings.Repeat("m", 300_000)
+	s := scalarShape(typeString)
+	for i := 0; i < 30; i++ {
+		s = &shape{types: typeObject, members: map[string]member{name: {shape: s, always: true}}}
+	}
+	g := &generator{}
+	var items []contractFactItem
+	g.flattenShape(s, "/value", 1, true, &items)
+	if !g.exceeded || len(items) >= 30 {
+		t.Fatalf("exceeded %v after %d facts", g.exceeded, len(items))
 	}
 }
