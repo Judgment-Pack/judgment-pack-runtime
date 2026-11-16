@@ -104,6 +104,11 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// scans, which is where a stray claim about what a tag shows would
 		// hide.
 		{args: []string{"experimental", "check-published", "--help"}},
+		// The registry surface (ADR-0093) evaluates nothing; it is inventoried
+		// for the phrase scans.
+		{args: []string{"registry", "--help"}},
+		{args: []string{"registry", "validate", "--help"}},
+		{args: []string{"registry", "resolve", "--help"}},
 		{args: []string{"mcp", "--help"}, mustReference: true},
 		// The project convention (ADR-0012). Only the two that speak about the
 		// evaluator have to say where the claim is stated.

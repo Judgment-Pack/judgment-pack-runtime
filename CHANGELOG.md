@@ -4,6 +4,16 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A registry reader: `jpack registry validate|resolve`** (ADR-0093). It reads
+  a registry of entries of adopter-declared kinds, as accepted in spec RFCs 0034 and 0035: each
+  kind has a closed JSON Schema subset, and environments are overlaid. `validate REGISTRY --kind K...`
+  runs the RFC's eight steps in order. It writes a report of codes, fixed messages and locations,
+  never a value from the documents, and exits 0 when the registry is valid, 1 when it is not.
+  `resolve ... --environment E` writes one environment's resolved document as RFC 8785 canonical
+  JSON. Nothing is fetched: a secret reference is checked for form, version pin and the
+  environment's project scope and left as written. Existing commands and their output are
+  unchanged.
+
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
   `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
   and every disposition is an outcome the list names, 1 when one is an outcome outside it or
