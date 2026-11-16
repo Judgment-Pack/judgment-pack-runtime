@@ -191,3 +191,4 @@ authority, and following it confers no conformance status on anything.
 | [0093](0093-validate-and-resolve-a-registry-of-adopter-declared-kinds.md) | Validate and resolve a registry of adopter-declared kinds, as a top-level command | accepted |
 | [0094](0094-import-the-yaml-authoring-subset-with-a-reader-of-its-own.md) | Import the registry's YAML authoring subset with a reader of its own, refusing everything outside it | accepted |
 | [0095](0095-registry-entries-as-facts-and-generated-facts-contracts.md) | Write registry entries as facts for the outcome gate, generate a kind's facts contract, and check a pack against one | accepted |
+| [0098](0098-the-emitter-host.md) | Run a registry emitter on a canonical request and write or check only the files its manifest owns, as `jpack emit` | proposed |

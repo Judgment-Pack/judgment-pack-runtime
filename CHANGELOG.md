@@ -4,6 +4,20 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **The registry emitter host: `jpack emit`** (ADR-0098, proposed; spec RFC 0036 §§1–4). It reads
+  an emitter manifest. From a registry and its kinds (or facts contracts) and an options document it
+  forms the request: only the kinds the manifest reads, each pin checked against its range, as
+  RFC 8785 canonical JSON. It runs the emitter on that request from the repository root, with an
+  environment of only `PATH`, a fresh `HOME`, `LANG=C.UTF-8` and the declared `env` names, under a
+  120 s limit that kills the emitter's process group. It validates every response whole before
+  anything is written: owned, safe, case-fold-unique paths; at most 10 000 files of 16 MiB and
+  64 MiB in all. It then writes each file through a temporary file and a rename and deletes stale
+  owned files; a symbolic link at or above an owned path refuses the run. `--check` compares bytes
+  and modes and writes nothing. Exit 0 written or identical, 1 different, 2 not done, 3 for an
+  unusable command line. The report (`emitReportVersion` `1.0.0`) holds paths, codes and digests,
+  never contents or an env value. The `EMIT-*` codes the registry companion does not yet name are
+  provisional. The conformance harness and the reference emitters are not in this change.
+
 - **A registry reader: `jpack registry validate|resolve`** (ADR-0093). It reads
   a registry of entries of adopter-declared kinds, as accepted in spec RFCs 0034 and 0035: each
   kind has a closed JSON Schema subset, and environments are overlaid. `validate REGISTRY --kind K...`
