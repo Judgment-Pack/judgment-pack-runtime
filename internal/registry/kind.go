@@ -63,6 +63,11 @@ var kindRequired = []string{"id", "version", "kind", "owner", "schema"}
 // readKind runs step 2 on one admitted kind declaration.
 func readKind(root map[string]any, location Location, diagnostics *collector) *Kind {
 	before := diagnostics.errors()
+	// Every step-2 diagnostic of a declaration whose kind member is a kind
+	// name carries it (§7.3), so it is read before any other member.
+	if name, ok := root["kind"].(string); ok && location.Kind == "" && kindNamePattern.MatchString(name) {
+		location.Kind = name
+	}
 	fail := func(code string, path ...string) {
 		at := location
 		at.Pointer = pointerOf(path)
@@ -97,9 +102,6 @@ func readKind(root map[string]any, location Location, diagnostics *collector) *K
 	kind.Name = stringMember("kind", kindNamePattern.MatchString)
 	kind.Owner = stringMember("owner", ownerPattern.MatchString)
 	stringMember("description", func(string) bool { return true })
-	if location.Kind == "" && kind.Name != "" {
-		location.Kind = kind.Name
-	}
 	if value, ok := root["deprecated"]; ok {
 		deprecated, isBool := value.(bool)
 		if !isBool {

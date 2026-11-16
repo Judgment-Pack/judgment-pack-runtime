@@ -2,6 +2,14 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Registry diagnostics follow the registry companion's text** (registry companion §3.1, §3.3,
+  §3.4, §6.2 and §7.3).
+  - Every step-2 diagnostic of a kind declaration whose `kind` member is a kind name now carries
+    `kind` in its location (§7.3). Before, an unknown or missing member, and a bad `id` or
+    `version`, were reported without it.
+
 ## 0.47.0 - 2026-11-16
 
 - **A registry reader: `jpack registry validate|resolve`** (ADR-0093). It reads
