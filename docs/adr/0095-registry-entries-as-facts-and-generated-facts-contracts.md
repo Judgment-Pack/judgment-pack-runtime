@@ -113,7 +113,12 @@ So a contract may list a value no entry holds, and never omits one an entry can 
 **Reading a contract.** Admission works as for a registry document: 8 MiB, depth 32, the number
 rules and the exact selector `factsContractVersion` `"1.0.0"`. Then the members are checked against
 §1's list, with items in strictly increasing (pointer, type) order. In a contract pointer, `*` is
-the wildcard and `~2` a literal `*`. A contract pointer has no 512-byte bound.
+the wildcard and `~2` a literal `*`. A contract pointer has no 512-byte bound. Its bytes are
+bounded by the contract's 8 MiB. Its depth is bounded at 35 tokens, the deepest position a facts
+document holds (see **Depth**), so the bound loses no position a contract could list. The tokens
+are counted by a scan that stops past the bound, before the pointer is split, and a pointer deeper
+than 35 tokens is refused as `FACTS-CONTRACT-LIMIT` at its item's `pointer`. Without the scan, an
+8 MB contract whose one pointer had 4 million tokens allocated about 1.8 GB while it was read.
 
 **The check (§5).** The pack's evaluation form is read through the evaluator's own admission. A
 pack it refuses is reported as evaluate reports it. The check visits:
@@ -129,7 +134,9 @@ follows the literal child and the `*`, and a `*` row listed once for every type,
 or `items` and nothing under it, matches every pointer below it. That is an open position. Each
 pointer is looked up once per check. One check has one work bound: 4,194,304 contract positions
 and facts visited, which also bounds the lookups it keeps. A fact pointer, operand included, is
-read no deeper than a facts document can nest (128). A check that passes either bound reports
+read no deeper than a facts document can nest (128); its tokens are counted by a scan before it is
+split, so a deeper pointer costs its bytes, not its tokens. A malformed pointer is still
+`FACTS-POINTER-UNKNOWN`, whatever its depth. A check that passes either bound reports
 `FACTS-CHECK-LIMIT`, an error, at the condition where it stopped, and checks no condition after
 it.
 

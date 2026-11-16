@@ -41,6 +41,10 @@ All notable changes to tagged releases are documented here.
   contract does not list, an ordered comparison on one that is not decimal, and an operand a
   pointer can never hold; a pointer below an open position of the kind is listed. Its report has
   its own selector, `factsCheckFormatVersion`. The typed builders of RFC 0037 §6 are not built.
+  A contract pointer deeper than 35 tokens, which no facts document holds, is refused as
+  `FACTS-CONTRACT-LIMIT`, and a pack's fact pointer deeper than 128 is reported as
+  `FACTS-CHECK-LIMIT`. Both are counted by a scan before the pointer is split into tokens, so a
+  long pointer costs its bytes, not its tokens (#428).
   Existing commands and their output are unchanged.
 
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
