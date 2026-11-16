@@ -128,10 +128,11 @@ following.
 
 1. It walks the owned paths without following a link. A link that an owns glob matches, or below
    which one can match, refuses the run (`EMIT-LINK`), as does one met at or above a response path.
-2. Each file is staged as a temporary file (`.jpack-emit-*`) in its directory, where that exists.
-3. The stale owned files are deleted.
-4. The remaining directories are created and their files staged.
-5. Every staged file is renamed into place.
+2. The directories are created, and every file is staged as a temporary file (`.jpack-emit-*`) in
+   its directory. A file whose directory is held by a stale file is staged beside that file. A
+   failure here leaves every owned file as it was.
+3. The stale owned files are deleted, and the directories they held are created.
+4. Every staged file is renamed into place.
 
 The report lists what was written and deleted. A failure on the way is `EMIT-WRITE`, at the path;
 the staged files are removed, and what was already deleted or renamed is reported. The run is not

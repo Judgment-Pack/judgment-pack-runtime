@@ -74,3 +74,39 @@ func TestEmitKillsTheEmittersProcessGroupAtTheTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestEmitLeavesOwnedFilesUntouchedWhenStagingFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write into a read-only directory")
+	}
+	root := testRepo(t)
+	writeFiles(t, root, map[string]string{"gen/stale.txt": "stale\n", "gen/kept.txt": "old\n"})
+	readOnly := filepath.Join(root, "gen", "ro")
+	if err := os.Mkdir(readOnly, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readOnly, 0o755) })
+	// gen/ro/sub cannot be made, so gen/ro/sub/new.txt cannot be staged.
+	response := responseJSON(t,
+		map[string]any{"path": "gen/kept.txt", "text": "new\n"},
+		map[string]any{"path": "gen/ro/sub/new.txt", "text": "n\n"},
+	)
+	report := echoHost(t, root, response, false, nil)
+	if report.Exit() != ExitNotDone || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-WRITE@gen/ro/sub/new.txt"}) || len(report.Written) != 0 || len(report.Deleted) != 0 {
+		t.Fatalf("report: %s", reportJSON(t, report))
+	}
+	for path, want := range map[string]string{"gen/stale.txt": "stale\n", "gen/kept.txt": "old\n"} {
+		if got, _, ok := onDisk(t, root, path); !ok || got != want {
+			t.Errorf("%s holds %q (present %v), want %q", path, got, ok, want)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "gen"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".jpack-emit-") {
+			t.Errorf("a staged file was left behind: %s", entry.Name())
+		}
+	}
+}

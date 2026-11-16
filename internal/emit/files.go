@@ -240,12 +240,14 @@ func compare(root string, response []File, disk map[string]diskFile, states map[
 }
 
 // write is write mode, after the response has been validated whole and the
-// preflight has passed. It stages every file whose directory already exists
-// as a temporary file there, so that most failures to write are met before
-// anything changes; deletes the stale files; stages the rest, creating their
-// directories; then renames each staged file into place. A failure stops it:
-// it removes what it staged and has not renamed, and reports EMIT-WRITE at the
-// path with what was written and deleted before it.
+// preflight has passed. It first creates the directories and stages every
+// file as a temporary file, so that a failure to write is met before any
+// owned file changes. A file whose directory is now held by a stale file is
+// staged beside that file, in the directory that holds it. Only then does it
+// delete the stale files, create the directories they held, and rename each
+// staged file into place. A failure stops it: it removes what it staged and
+// has not renamed, and reports EMIT-WRITE at the path with what was written
+// and deleted before it.
 func write(root string, response []File, stale []string, states map[string]pathState, parents map[string]string) (written, deleted []string, diagnostics []Diagnostic) {
 	written, deleted = []string{}, []string{}
 	staleSet := map[string]bool{}
@@ -271,42 +273,35 @@ func write(root string, response []File, stale []string, states map[string]pathS
 		cleanup()
 		return written, deleted, []Diagnostic{diagnostic("EMIT-WRITE", Location{Document: DocumentRepository, Path: path})}
 	}
-	stage := func(file File) bool {
-		full := filepath.Join(root, filepath.FromSlash(file.Path))
-		temporary, err := writeTemporary(filepath.Dir(full), file)
-		if err != nil {
-			return false
-		}
-		staged[file.Path] = temporary
-		return true
-	}
+	full := func(path string) string { return filepath.Join(root, filepath.FromSlash(path)) }
 	for _, file := range response {
-		if _, blocked := parents[file.Path]; blocked {
-			continue
-		}
-		dir := filepath.Dir(filepath.Join(root, filepath.FromSlash(file.Path)))
-		if info, err := os.Lstat(dir); err == nil && info.IsDir() && !stage(file) {
+		dir := filepath.Dir(full(file.Path))
+		if blocker, blocked := parents[file.Path]; blocked {
+			dir = filepath.Dir(full(blocker))
+		} else if err := os.MkdirAll(dir, 0o755); err != nil {
 			return failAt(file.Path)
 		}
+		temporary, err := writeTemporary(dir, file)
+		if err != nil {
+			return failAt(file.Path)
+		}
+		staged[file.Path] = temporary
 	}
 	for _, path := range stale {
-		if err := os.Remove(filepath.Join(root, filepath.FromSlash(path))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(full(path)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return failAt(path)
 		}
 		deleted = append(deleted, path)
 	}
 	for _, file := range response {
-		if _, done := staged[file.Path]; done {
-			continue
-		}
-		dir := filepath.Dir(filepath.Join(root, filepath.FromSlash(file.Path)))
-		if err := os.MkdirAll(dir, 0o755); err != nil || !stage(file) {
-			return failAt(file.Path)
+		if _, blocked := parents[file.Path]; blocked {
+			if err := os.MkdirAll(filepath.Dir(full(file.Path)), 0o755); err != nil {
+				return failAt(file.Path)
+			}
 		}
 	}
 	for _, file := range response {
-		temporary := staged[file.Path]
-		if err := os.Rename(temporary, filepath.Join(root, filepath.FromSlash(file.Path))); err != nil {
+		if err := os.Rename(staged[file.Path], full(file.Path)); err != nil {
 			return failAt(file.Path)
 		}
 		delete(staged, file.Path)
