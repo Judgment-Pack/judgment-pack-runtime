@@ -10,6 +10,30 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
 
+// maxValidationWork bounds the schema nodes step 7 visits when it checks
+// resolved values against their kinds' schemas, over the whole registry and
+// every environment: one unit per node visited at one position of a value.
+// Every other bound holds one input; this one holds their product, a value's
+// positions times its schema's expansion times the environments. A value
+// already checked against its kind, in the same bytes, is not checked again.
+const maxValidationWork = 1 << 26
+
+// validation carries the work left for step 7's schema checks.
+type validation struct {
+	work     int
+	exceeded bool
+}
+
+// spend charges one node visit, and reports false once the work is spent.
+func (v *validation) spend() bool {
+	if v.work <= 0 {
+		v.exceeded = true
+		return false
+	}
+	v.work--
+	return true
+}
+
 // valueFinding is one schema finding at a path in the validated value.
 type valueFinding struct {
 	code string
@@ -22,19 +46,19 @@ type valueFinding struct {
 // holds, and none of the branches' findings, so two readers agree whatever
 // order they try branches in. Warnings inside a failed anyOf branch are
 // dropped with it.
-func (node *schemaNode) validate(value any, path []string, out *[]valueFinding) {
-	if node == nil || !node.validateOwn(value, path, out) {
+func (node *schemaNode) validate(v *validation, value any, path []string, out *[]valueFinding) {
+	if node == nil || !v.spend() || !node.validateOwn(v, value, path, out) {
 		return
 	}
 	for _, branch := range node.allOf {
-		branch.validate(value, path, out)
+		branch.validate(v, value, path, out)
 	}
 	if node.anyOf != nil {
 		held := false
 		var kept []valueFinding
 		for _, branch := range node.anyOf {
 			var trial []valueFinding
-			branch.validate(value, path, &trial)
+			branch.validate(v, value, path, &trial)
 			if !hasError(trial) {
 				held = true
 				kept = trial
@@ -48,7 +72,7 @@ func (node *schemaNode) validate(value any, path []string, out *[]valueFinding) 
 		}
 	}
 	if node.refNode != nil {
-		node.refNode.validate(value, path, out)
+		node.refNode.validate(v, value, path, out)
 	}
 }
 
@@ -58,7 +82,7 @@ func (node *schemaNode) validate(value any, path []string, out *[]valueFinding) 
 // branch of each anyOf, and checks each this way, so it visits each node once
 // per position rather than once per $ref path to it. It reports false for a
 // boolean schema, which has no other keyword.
-func (node *schemaNode) validateOwn(value any, path []string, out *[]valueFinding) bool {
+func (node *schemaNode) validateOwn(v *validation, value any, path []string, out *[]valueFinding) bool {
 	if node.boolean != nil {
 		if !*node.boolean {
 			*out = append(*out, valueFinding{"REG-VALUE-TYPE", path})
@@ -79,7 +103,7 @@ func (node *schemaNode) validateOwn(value any, path []string, out *[]valueFindin
 	}
 	switch typed := value.(type) {
 	case map[string]any:
-		node.validateObject(typed, path, out)
+		node.validateObject(v, typed, path, out)
 	case []any:
 		if node.minItems >= 0 && len(typed) < node.minItems || node.maxItems >= 0 && len(typed) > node.maxItems {
 			*out = append(*out, valueFinding{"REG-VALUE-ITEM-COUNT", path})
@@ -89,7 +113,7 @@ func (node *schemaNode) validateOwn(value any, path []string, out *[]valueFindin
 		}
 		if node.items != nil {
 			for i, item := range typed {
-				node.items.validate(item, appendPath(path, strconv.Itoa(i)), out)
+				node.items.validate(v, item, appendPath(path, strconv.Itoa(i)), out)
 			}
 		}
 	case string:
@@ -118,7 +142,7 @@ func (node *schemaNode) validateOwn(value any, path []string, out *[]valueFindin
 	}
 	if node.not != nil {
 		var trial []valueFinding
-		node.not.validate(value, path, &trial)
+		node.not.validate(v, value, path, &trial)
 		if !hasError(trial) {
 			*out = append(*out, valueFinding{"REG-VALUE-NOT", path})
 		}
@@ -151,7 +175,7 @@ func hasDuplicate(items []any) bool {
 	return false
 }
 
-func (node *schemaNode) validateObject(object map[string]any, path []string, out *[]valueFinding) {
+func (node *schemaNode) validateObject(v *validation, object map[string]any, path []string, out *[]valueFinding) {
 	if node.minProps >= 0 && len(object) < node.minProps || node.maxProps >= 0 && len(object) > node.maxProps {
 		*out = append(*out, valueFinding{"REG-VALUE-PROPERTY-COUNT", path})
 	}
@@ -169,7 +193,7 @@ func (node *schemaNode) validateObject(object map[string]any, path []string, out
 			}
 		}
 		if child, ok := node.properties[name]; ok {
-			child.validate(object[name], member, out)
+			child.validate(v, object[name], member, out)
 			continue
 		}
 		if node.additional == nil {
@@ -179,7 +203,7 @@ func (node *schemaNode) validateObject(object map[string]any, path []string, out
 			*out = append(*out, valueFinding{"REG-VALUE-ADDITIONAL", member})
 			continue
 		}
-		node.additional.validate(object[name], member, out)
+		node.additional.validate(v, object[name], member, out)
 	}
 }
 

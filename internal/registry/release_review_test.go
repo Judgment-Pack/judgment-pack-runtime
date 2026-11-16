@@ -550,7 +550,7 @@ func TestAnIncomparableNumberIsOutsideTheRange(t *testing.T) {
 			collected := &collector{}
 			node := compileSchema(decodeAny(t, schema), []string{"schema"}, Location{Document: DocumentKind}, collected, &patternBudget{})
 			var findings []valueFinding
-			node.validate(json.Number(literal), nil, &findings)
+			node.validate(&validation{work: maxValidationWork}, json.Number(literal), nil, &findings)
 			if len(findings) != 1 || findings[0].code != "REG-VALUE-RANGE" {
 				t.Errorf("%s against %s: %+v", literal, schema, findings)
 			}
@@ -620,5 +620,60 @@ func TestImportRefusesTheCharactersYAMLReadsTwoWays(t *testing.T) {
 	document, report := importText(selector + `x: "a\Nb\Lc\Pd"` + "\n")
 	if want := "{\"kindFormatVersion\":\"1.0.0\",\"x\":\"a\u0085b c d\"}"; !report.Valid || string(document) != want {
 		t.Errorf("escapes: %s %+v", document, report.Diagnostics)
+	}
+}
+
+// expandingArrayKind is the H6 review's kind: an array whose items are d0,
+// each definition an allOf of three $refs to the next, six levels deep, so
+// checking one item visits about 2187 schema nodes.
+func expandingArrayKind() string {
+	defs := make([]string, 0, 7)
+	for i := 0; i < 6; i++ {
+		ref := fmt.Sprintf(`{"$ref":"#/$defs/d%d"}`, i+1)
+		defs = append(defs, fmt.Sprintf(`"d%d":{"allOf":[%s,%s,%s]}`, i, ref, ref, ref))
+	}
+	defs = append(defs, `"d6":{}`)
+	return `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/kinds/k","version":"1.0.0","kind":"k","owner":"team-a",` +
+		`"bounds":{"maxEntryBytes":1048576},"schema":{"type":"array","items":{"$ref":"#/$defs/d0"},"$defs":{` + strings.Join(defs, ",") + `}}}`
+}
+
+func zeros(n int) string {
+	return "[" + strings.TrimSuffix(strings.Repeat("0,", n), ",") + "]"
+}
+
+// H6. Step 7's schema checks share one work bound over the registry, so a
+// value whose positions multiply its schema's expansion is refused at the
+// entry where the bound runs out, once, rather than checked for minutes in
+// every environment.
+func TestValidationIsBoundedOverTheRegistry(t *testing.T) {
+	allocatesWithin(t, 64<<20, "40000 items of a 2187-node expansion", func() {
+		registry, kinds := customRegistry(t, reviewEntry(zeros(40000)), expandingArrayKind())
+		result := run(registry, kinds)
+		var got []string
+		for _, d := range result.Report.Diagnostics {
+			entry := ""
+			if d.Location.Entry != nil {
+				entry = d.Location.Entry.ID
+			}
+			got = append(got, d.Code+" "+string(d.Location.Document)+" "+entry+" "+d.Location.Environment+" "+d.Location.Pointer)
+		}
+		if result.Report.Valid || !slices.Equal(got, []string{"REG-BOUND-VALIDATION-WORK value e dev "}) {
+			t.Fatalf("%v", got)
+		}
+	})
+}
+
+// H6. A value is checked against its kind once, however many environments
+// hold it: 20000 items cost over half the bound, so checking them in both
+// environments would spend it.
+func TestAValueIsCheckedOnceAcrossEnvironments(t *testing.T) {
+	registry, kinds := customRegistry(t, reviewEntry(zeros(20000)), expandingArrayKind())
+	if result := run(registry, kinds); !result.Report.Valid {
+		t.Fatalf("%+v", result.Report.Diagnostics)
+	}
+	// A small value of the same kind is checked as before.
+	registry, kinds = customRegistry(t, reviewEntry(`["x"]`), expandingArrayKind())
+	if result := run(registry, kinds); !result.Report.Valid {
+		t.Fatalf("a small value: %+v", result.Report.Diagnostics)
 	}
 }

@@ -2,6 +2,8 @@ package registry
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -270,6 +272,7 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 	checkOverlays(registry, diagnostics)
 
 	// Step 7: per environment, on resolved values.
+	schemas := &schemaChecks{validation: validation{work: maxValidationWork}, seen: map[string][]valueFinding{}}
 	for _, environment := range registry.environments {
 		var resolved []resolvedEntry
 		values := map[EntryName]any{}
@@ -287,7 +290,7 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 			resolved = append(resolved, resolvedEntry{entry: e, value: value})
 		}
 		for _, r := range resolved {
-			checkResolvedEntry(registry, environment, r, values, diagnostics)
+			checkResolvedEntry(registry, environment, r, values, schemas, diagnostics)
 		}
 		result.resolved[environment] = resolved
 	}
@@ -338,13 +341,53 @@ func withinResolvedDepth(canonical []byte) bool {
 	return failure == nil
 }
 
-func checkResolvedEntry(registry *registryDoc, environment string, r resolvedEntry, values map[EntryName]any, diagnostics *collector) {
+// schemaChecks holds step 7's schema checks across every environment: the
+// work bound they share, and the findings of each value already checked.
+type schemaChecks struct {
+	validation validation
+	// seen maps a kind's digest and a value's canonical digest to the
+	// value's findings, which hold no location beyond a path in the value.
+	seen map[string][]valueFinding
+}
+
+// check returns the findings of value against kind's schema. The same value
+// of the same kind, in another environment or another entry, is checked once.
+// It reports false when the work bound is spent: the value, and every value
+// after it, is then not checked against its schema.
+func (s *schemaChecks) check(kind *Kind, value any) ([]valueFinding, bool) {
+	if s.validation.exceeded {
+		return nil, false
+	}
+	key := ""
+	if canonical, err := jcs.EncodeDocument(value); err == nil {
+		sum := sha256.Sum256(canonical)
+		key = kind.Digest + "\x00" + hex.EncodeToString(sum[:])
+		if findings, ok := s.seen[key]; ok {
+			return findings, true
+		}
+	}
+	var findings []valueFinding
+	kind.schema.validate(&s.validation, value, nil, &findings)
+	if s.validation.exceeded {
+		return nil, false
+	}
+	if key != "" {
+		s.seen[key] = findings
+	}
+	return findings, true
+}
+
+func checkResolvedEntry(registry *registryDoc, environment string, r resolvedEntry, values map[EntryName]any, schemas *schemaChecks, diagnostics *collector) {
 	name := r.entry.name
 	at := func(path []string) Location {
 		return Location{Document: DocumentValue, Entry: &name, Environment: environment, Pointer: pointerOf(path)}
 	}
-	var findings []valueFinding
-	r.entry.kind.schema.validate(r.value, nil, &findings)
+	alreadySpent := schemas.validation.exceeded
+	findings, checked := schemas.check(r.entry.kind, r.value)
+	if !checked && !alreadySpent {
+		// Reported once, at the value where the bound ran out.
+		diagnostics.add("REG-BOUND-VALIDATION-WORK", at(nil))
+	}
 	for _, finding := range findings {
 		diagnostics.add(finding.code, at(finding.path))
 	}

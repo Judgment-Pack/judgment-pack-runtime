@@ -208,8 +208,9 @@ var Codes = map[string]codeInfo{
 	"REF-SECRET-UNSCOPED":             {SeverityWarning, "The registry declares no secret scopes, so this secret reference's project is unchecked."},
 
 	// Step 8: bounds.
-	"REG-BOUND-ENTRIES":     {SeverityError, "The kind has more entries than its maxEntries bound."},
-	"REG-BOUND-ENTRY-BYTES": {SeverityError, "The entry's resolved value exceeds its kind's maxEntryBytes bound."},
+	"REG-BOUND-ENTRIES":         {SeverityError, "The kind has more entries than its maxEntries bound."},
+	"REG-BOUND-ENTRY-BYTES":     {SeverityError, "The entry's resolved value exceeds its kind's maxEntryBytes bound."},
+	"REG-BOUND-VALIDATION-WORK": {SeverityError, "Checking the resolved values against their schemas exceeds the runtime's work bound: 67108864 schema nodes visited over the registry. This value and the ones after it are not checked against their schemas."},
 }
 
 // collector gathers diagnostics. With limit 0 it keeps every one. With a

@@ -197,6 +197,19 @@ bounded where it is read, and each refusal uses a code a kind can already get, e
 - **Two documents of one kind** are one kind, read once. When two byte-different documents share
   a canonical digest, the one read is the one whose bytes' digest sorts first, so the
   `kindDocument` its findings name does not depend on the order of `--kind`.
+- **Step 7's schema checks share one work bound** (`maxValidationWork`, 2^26 node visits over the
+  registry, every environment included). The bounds above each hold one input: 4096 nodes per
+  position, a value's size, the environments. Validation costs their product, so a 3 KB kind
+  whose items expand to about 2187 nodes, with an array of four million zeros in each of 32
+  environments, ran for 43 minutes and was found valid. Each node visited at one position of a
+  value is charged once. Where the bound runs out, the entry is reported once, at its value's
+  root, with the new code `REG-BOUND-VALIDATION-WORK`, and no value after it is checked against
+  its schema; the registry is then not valid. The same value of the same kind (its canonical
+  digest and the kind's) is checked once and its findings reused, so an environment that changes
+  nothing costs nothing. 2^26 is about a second of checking; a registry of ten thousand entries
+  of a hundred positions each, against ten nodes at each, in ten environments, uses about a
+  sixth of it. A facts contract's closed-list check charges the same visits to its own work
+  bound.
 
 Not bounded here, because each is a product of two inputs already bounded: a kind's secrets
 against its reference patterns, the overlayable patterns against a patch's pointers, and pointer

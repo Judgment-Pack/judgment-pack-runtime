@@ -299,7 +299,14 @@ func (g *generator) base(atoms []*schemaNode) *shape {
 					return nil
 				}
 				var findings []valueFinding
-				atom.validateOwn(literal, nil, &findings)
+				// The literal's own nodes are checked under what is left of
+				// the generation's work bound, and charged to it.
+				check := &validation{work: maxShapeWork - g.work}
+				atom.validateOwn(check, literal, nil, &findings)
+				if check.exceeded || !g.chargeUnits(maxShapeWork-g.work-check.work) {
+					g.exceeded = true
+					return nil
+				}
 				if hasError(findings) {
 					allowed = false
 					break

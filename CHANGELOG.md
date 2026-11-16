@@ -52,6 +52,11 @@ All notable changes to tagged releases are documented here.
   - A number that cannot be compared with a range is `REG-VALUE-RANGE`, never let through; before,
     `1.` and a million zeros passed any `maximum`.
   - Two byte-different documents of one kind give the same report whatever the order of `--kind`.
+  - Checking resolved values against their schemas shares one work bound over the registry, 2^26
+    node visits, past which the entry is the new `REG-BOUND-VALIDATION-WORK`, provisional
+    (VERSIONING.md). A value of a kind is checked once however many environments hold it. A 3 KB
+    kind over four million items in 32 environments took 43 minutes; it is now refused in about
+    a second.
   - `import` refuses U+0085, U+2028 and U+2029, which YAML 1.1 and go-yaml read as line breaks
     and YAML 1.2 as content, as `REG-YAML-ENCODING`. The escapes `\N`, `\L` and `\P` are read.
 

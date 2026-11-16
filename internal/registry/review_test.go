@@ -188,7 +188,7 @@ func schemaFindings(t *testing.T, schema string, value string) []string {
 		t.Fatalf("schema refused: %+v", collected.sorted())
 	}
 	var findings []valueFinding
-	node.validate(decodeAny(t, value), nil, &findings)
+	node.validate(&validation{work: maxValidationWork}, decodeAny(t, value), nil, &findings)
 	var out []string
 	for _, f := range findings {
 		out = append(out, f.code)
