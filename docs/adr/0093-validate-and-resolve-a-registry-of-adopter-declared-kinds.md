@@ -144,3 +144,11 @@ member for counts, and none is added.
 
 `REG-REPORT-TRUNCATED` is provisional, like the other `REG-*` codes, until `spec/registry.md` is
 released.
+
+## Amendment: the resolved document's depth (2026-11-16)
+
+Step 8 also holds each environment's resolved document to the depth bound, 32 levels with the root
+object counted as admission counts them. An overlay can set a value at a deep pointer, so a registry
+within its own depth bound can resolve past it. Such an environment is a `REG-DOC-DEPTH` finding
+located at `{"document":"registry","environment":E,"pointer":""}`, and the registry is not resolved,
+as for a resolved document over its size bound.
