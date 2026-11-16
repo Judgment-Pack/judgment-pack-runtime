@@ -214,6 +214,39 @@ func TestEmitValidatesEveryResponseBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestEmitRefusesAPathThatIsADirectoryOfAnother(t *testing.T) {
+	for _, owns := range []string{"gen/**", "gen/a/**"} {
+		for _, check := range []bool{false, true} {
+			root := testRepo(t)
+			writeFiles(t, root, map[string]string{"gen/a/stale": "stale\n"})
+			response := responseJSON(t, map[string]any{"path": "gen/a", "text": "a\n"}, map[string]any{"path": "gen/a/b", "text": "b\n"})
+			report := echoHost(t, root, response, check, map[string]any{"owns": []any{owns}})
+			if report.Exit() != ExitNotDone || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-RESPONSE@/files/1/path"}) {
+				t.Fatalf("owns %s, check %v: %s", owns, check, reportJSON(t, report))
+			}
+			if got, _, ok := onDisk(t, root, "gen/a/stale"); !ok || got != "stale\n" {
+				t.Errorf("owns %s, check %v: the stale file was changed", owns, check)
+			}
+			if _, _, ok := onDisk(t, root, "gen/a/b"); ok {
+				t.Errorf("owns %s, check %v: a file of a refused response was written", owns, check)
+			}
+		}
+	}
+	// Each run alone is valid, but one gives a directory of the other's path.
+	root := testRepo(t)
+	writeFiles(t, root, map[string]string{
+		"fixtures/dev.json":  responseJSON(t, map[string]any{"path": "gen/a", "text": "a\n"}),
+		"fixtures/prod.json": responseJSON(t, map[string]any{"path": "gen/a/b", "text": "b\n"}),
+	})
+	report := host(t, root, []string{"echo-env", "fixtures"}, nil, Options{})
+	if report.Exit() != ExitNotDone || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-RESPONSE@/files/0/path"}) || report.Diagnostics[0].Location.Environment != "prod" {
+		t.Fatalf("two runs: %s", reportJSON(t, report))
+	}
+	if _, _, ok := onDisk(t, root, "gen/a"); ok {
+		t.Error("a file of a refused run was written")
+	}
+}
+
 func TestEmitGivesTheEmitterOnlyItsEnvironment(t *testing.T) {
 	t.Setenv("JPACK_EMIT_TEST_PARENT_ONLY", "parent-value-text")
 	t.Setenv("EMIT_TEST_DECLARED", "declared-value-text")

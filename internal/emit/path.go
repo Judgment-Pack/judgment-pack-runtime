@@ -49,3 +49,33 @@ func checkPathForm(path string) error {
 func foldKey(path string) string {
 	return norm.NFD.String(cases.Fold().String(norm.NFD.String(path)))
 }
+
+// pathSet holds the paths of one set of files, to refuse two that cannot
+// both be written: equal once case is folded and normalized (foldKey), or one
+// a directory of the other, which would replace it or fail to be made.
+type pathSet struct {
+	files, directories map[string]bool
+}
+
+func newPathSet() *pathSet {
+	return &pathSet{files: map[string]bool{}, directories: map[string]bool{}}
+}
+
+// add records a path and reports whether it collides with one added before.
+func (s *pathSet) add(path string) bool {
+	key := foldKey(path)
+	collides := s.files[key] || s.directories[key]
+	s.files[key] = true
+	// Folding and normalizing keep "/" and never make one, so the key's
+	// prefixes at "/" are the keys of the path's directories. A directory
+	// already recorded has had those above it recorded with it.
+	for end := strings.LastIndexByte(key, '/'); end > 0; end = strings.LastIndexByte(key[:end], '/') {
+		directory := key[:end]
+		if s.directories[directory] {
+			break
+		}
+		collides = collides || s.files[directory]
+		s.directories[directory] = true
+	}
+	return collides
+}

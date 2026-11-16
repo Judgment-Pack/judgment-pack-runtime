@@ -58,6 +58,8 @@ func TestResponseRefusesUnownedCollidingAndUnsortedPaths(t *testing.T) {
 		"normalization collision": {file("gen/caf\u00e9"), file("gen/cafe\u0301")},
 		"unsorted":                {file("gen/b"), file("gen/a")},
 		"duplicate":               {file("gen/a"), file("gen/a")},
+		"a directory of another":  {file("gen/a"), file("gen/a/b")},
+		"a folded directory":      {file("gen/A"), file("gen/a/b")},
 	}
 	for name, files := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -68,7 +70,11 @@ func TestResponseRefusesUnownedCollidingAndUnsortedPaths(t *testing.T) {
 			}
 		})
 	}
-	if _, findings := ParseResponse([]byte(responseJSON(t, file("gen/A"), file("gen/b"))), "1.0.0", m); findings != nil {
+	// "gen/a-x" sorts between "gen/a" and "gen/a/b".
+	if _, findings := ParseResponse([]byte(responseJSON(t, file("gen/a"), file("gen/a-x"), file("gen/a/b"))), "1.0.0", m); !slices.Equal(codes(findings), []string{"EMIT-RESPONSE@/files/2/path"}) {
+		t.Fatalf("a directory of a path two before: %v", codes(findings))
+	}
+	if _, findings := ParseResponse([]byte(responseJSON(t, file("gen/A"), file("gen/a-x/b"), file("gen/b"))), "1.0.0", m); findings != nil {
 		t.Fatalf("distinct sorted paths: %v", codes(findings))
 	}
 }

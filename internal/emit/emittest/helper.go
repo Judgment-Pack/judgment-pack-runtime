@@ -56,6 +56,7 @@ func Link(dir, name string) error {
 // code. The working directory is the repository root.
 //
 //	echo FILE          write FILE's bytes as the response
+//	echo-env DIR       write DIR/<environment>.json's bytes as the response
 //	request DIR        answer DIR/<environment>/request.json (or DIR/request.json)
 //	                   holding the request as text
 //	env FILE           answer FILE holding the environment, one VAR=value a line, sorted
@@ -87,6 +88,21 @@ func Main(args []string) int {
 	switch args[0] {
 	case "echo":
 		data, err := os.ReadFile(args[1])
+		if err != nil {
+			return 66
+		}
+		os.Stdout.Write(data)
+		return 0
+	case "echo-env":
+		var parsed struct {
+			Resolved []struct {
+				Environment string `json:"environment"`
+			} `json:"resolved"`
+		}
+		if json.Unmarshal(request, &parsed) != nil || len(parsed.Resolved) != 1 {
+			return 65
+		}
+		data, err := os.ReadFile(args[1] + "/" + parsed.Resolved[0].Environment + ".json")
 		if err != nil {
 			return 66
 		}

@@ -62,8 +62,8 @@ var (
 // most MaxFiles files, each a safe owned path with exactly one of text and
 // base64, at most MaxFileBytes, and a mode of 0644 or 0755; paths in strictly
 // increasing code-point order and unique once case is folded and
-// normalized; and diagnostics of their form. An error diagnostic fails it.
-// It returns the response and nothing, or the response's diagnostics (when
+// normalized, none of them a directory of another; and diagnostics of their
+// form. An error diagnostic fails it. It returns the response and nothing, or the response's diagnostics (when
 // they could be read) and the EMIT-RESPONSE findings, each at a pointer into
 // the response and never with a value from it.
 func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagnostic) {
@@ -111,7 +111,7 @@ func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagn
 		fail("files")
 		items = nil
 	}
-	folded := map[string]bool{}
+	paths := newPathSet()
 	previous := ""
 	for i, item := range items {
 		at := strconv.Itoa(i)
@@ -119,15 +119,12 @@ func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagn
 		if !ok {
 			continue
 		}
-		if i > 0 && file.Path <= previous {
-			fail("files", at, "path")
-		}
+		bad := i > 0 && file.Path <= previous
 		previous = file.Path
-		key := foldKey(file.Path)
-		if folded[key] {
+		bad = paths.add(file.Path) || bad
+		if bad {
 			fail("files", at, "path")
 		}
-		folded[key] = true
 		response.Files = append(response.Files, file)
 	}
 

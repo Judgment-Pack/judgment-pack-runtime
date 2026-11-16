@@ -136,7 +136,7 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 	// compared or written.
 	var files []File
 	seen := map[string]bool{}
-	folded := map[string]bool{}
+	paths := newPathSet()
 	failed := false
 	for _, request := range requests {
 		result := Run(ctx, m, request.Version, request.Bytes, RunOptions{Root: opts.Root, Timeout: opts.Timeout, Environ: opts.Environ, Stderr: opts.Stderr})
@@ -165,15 +165,15 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 		record.Files = len(result.Response.Files)
 		report.Runs = append(report.Runs, record)
 		// One request per environment answers into one set of files: a path
-		// two runs both give is refused, as one run's duplicate is.
+		// two runs both give, or one that is a directory of another run's, is
+		// refused, as it is within one run.
 		for i, file := range result.Response.Files {
-			key := foldKey(file.Path)
-			if seen[file.Path] || folded[key] {
+			if paths.add(file.Path) {
 				report.Diagnostics = append(report.Diagnostics, diagnostic("EMIT-RESPONSE", Location{Document: DocumentResponse, Environment: request.Environment, Pointer: "/files/" + strconv.Itoa(i) + "/path"}))
 				failed = true
 				continue
 			}
-			seen[file.Path], folded[key] = true, true
+			seen[file.Path] = true
 			files = append(files, file)
 		}
 	}

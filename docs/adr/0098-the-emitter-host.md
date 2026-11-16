@@ -81,12 +81,13 @@ failure is `EMIT-RESPONSE`, at its pointer.
 - The mode is `0644` or `0755`.
 - Each path is relative and safe. It has no `.`, `..`, empty or `~` segment, no trailing `/`, no
   NUL, backslash or control character, and no drive letter. It is owned.
-- `files` is sorted by path, and no two paths are equal once case is folded and normalized.
+- `files` is sorted by path, and no two paths are equal once case is folded and normalized. No path
+  is a directory of another (`a` and `a/b`), since writing one would replace or block the other.
 - Each emitter diagnostic has an `x-` code, a `warning` or `error` severity, and a §7.3 location.
   An `error` fails the run.
 
-A path two runs of one host both give is refused as well, because the runs answer into one set of
-files.
+A path two runs of one host both give, or one that is a directory of another run's, is refused as
+well, because the runs answer into one set of files.
 
 **Bounds**, as named constants in `internal/emit/codes.go`:
 
