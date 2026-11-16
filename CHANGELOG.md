@@ -57,6 +57,11 @@ All notable changes to tagged releases are documented here.
     (VERSIONING.md). A value of a kind is checked once however many environments hold it. A 3 KB
     kind over four million items in 32 environments took 43 minutes; it is now refused in about
     a second.
+  - Resolution no longer costs the registry times its environments (#434). An environment no
+    overlay changes shares the entry's own value, measured once; an overlay copies only the
+    containers on its pointers' paths; and step 8 measures each environment's document from its
+    values' measures instead of encoding it and decoding it again. An 8 MB entry in 32
+    environments took 102 s and 4.7 GB; it now costs what one environment does.
   - `import` refuses U+0085, U+2028 and U+2029, which YAML 1.1 and go-yaml read as line breaks
     and YAML 1.2 as content, as `REG-YAML-ENCODING`. The escapes `\N`, `\L` and `\P` are read.
 
