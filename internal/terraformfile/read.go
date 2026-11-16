@@ -377,11 +377,13 @@ func (d *document) optionalMember(object uint32, name string) optional {
 }
 
 // stateSection is step 4 for a state. It has neither planned_values nor
-// resource_changes. Its values, when present, are an object whose root_module
-// is a module: an object whose resources, when present, are an array of
-// resource objects with their identity, and whose child_modules, when present,
-// are an array of modules. The section is in the order of a walk that takes a
-// module's resources before its child modules.
+// resource_changes. Its values, when present, are an object; absent values,
+// or values without a root_module, read as a state with no resources (RFC 0038
+// §2 step 4). A root_module, when present, is a module: an object whose
+// resources, when present, are an array of resource objects with their
+// identity, and whose child_modules, when present, are an array of modules.
+// The section is in the order of a walk that takes a module's resources before
+// its child modules.
 func (d *document) stateSection() ([]resource, bool) {
 	if _, ok := d.member(0, "planned_values"); ok {
 		return nil, false
@@ -397,8 +399,11 @@ func (d *document) stateSection() ([]resource, bool) {
 		return nil, true
 	}
 	root, ok := d.objectMember(values.node, "root_module", '{')
-	if !root.ok || !ok {
+	if !ok {
 		return nil, false
+	}
+	if !root.ok {
+		return nil, true
 	}
 	var section []resource
 	if !d.module(root.node, &section) {

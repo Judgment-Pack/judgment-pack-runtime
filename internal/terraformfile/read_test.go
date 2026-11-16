@@ -274,8 +274,9 @@ func TestTheDocumentShape(t *testing.T) {
 		"resource_changes null":   object("format_version", "1.0", "resource_changes", nil),
 		"values a list":           object("format_version", "1.0", "values", []any{}),
 		"values null":             object("format_version", "1.0", "values", nil),
-		"values, no root_module":  object("format_version", "1.0", "values", object("outputs", object())),
 		"root_module a list":      object("format_version", "1.0", "values", object("root_module", []any{})),
+		"root_module a string":    object("format_version", "1.0", "values", object("root_module", "x")),
+		"root_module null":        object("format_version", "1.0", "values", object("root_module", nil)),
 		"resources an object":     object("format_version", "1.0", "values", object("root_module", object("resources", object()))),
 		"a resource a string":     object("format_version", "1.0", "values", object("root_module", object("resources", []any{"x"}))),
 		"child_modules an object": object("format_version", "1.0", "values", object("root_module", object("child_modules", object()))),
@@ -295,6 +296,24 @@ func TestTheDocumentShape(t *testing.T) {
 	emptyPlan := mustAccept(t, []byte(`{"format_version":"1.2","planned_values":{}}`), planSource("synthetic_db"))
 	if string(emptyPlan.Value()) != "[]" {
 		t.Fatalf("empty plan %s", emptyPlan.Value())
+	}
+	// values without a root_module is an empty state too (RFC 0038 §2 step 4),
+	// whatever else values holds; the plan reads resource_changes, so a
+	// planned_values without a root_module does not matter either.
+	for _, doc := range []string{
+		`{"format_version":"1.0","values":{}}`,
+		`{"format_version":"1.0","values":{"outputs":{}}}`,
+	} {
+		emptyValues := mustAccept(t, []byte(doc), stateSource("synthetic_db"))
+		if string(emptyValues.Value()) != "[]" || emptyValues.Selected != 0 || len(emptyValues.Resources) != 0 || emptyValues.RemovedSensitive != 0 {
+			t.Fatalf("%s: value %s, %d selected", doc, emptyValues.Value(), emptyValues.Selected)
+		}
+	}
+	rootless := planWith([]any{change{address: "synthetic_db.main", after: object("size", 1)}.json()})
+	rootless["planned_values"] = object()
+	noRoot := mustAccept(t, encode(t, rootless), planSource("synthetic_db"))
+	if noRoot.Selected != 1 {
+		t.Fatalf("plan without planned_values.root_module: %d selected", noRoot.Selected)
 	}
 }
 

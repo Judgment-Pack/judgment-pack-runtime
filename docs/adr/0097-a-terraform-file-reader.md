@@ -187,10 +187,13 @@ The rest are this runtime's own readings:
 
 7. **`after_unknown`**, when present, must be true, false, or an object or array of those, at
    every position. Otherwise the file is `TF-DOCUMENT`. When it is absent, `afterUnknown` is empty.
-8. **A state's `values`**, when present, must hold a `root_module` object. Terraform always writes
-   one, and a misspelt tree must not read as a state with no resources. A module's `resources` and
-   `child_modules`, when present, are arrays, of resource objects and of modules. A `null` is a
-   member of the wrong type, not an absent one.
+8. **A state's `values` without a `root_module`** reads as a state with no resources, as RFC 0038
+   §2 step 4 says of absent `values`: `{"format_version":"1.0","values":{}}` is accepted, with an
+   empty acquired value. A `root_module` that is present must be an object, so a malformed one is
+   `TF-DOCUMENT`. A module's `resources` and `child_modules`, when present, are arrays, of resource
+   objects and of modules. A `null` is a member of the wrong type, not an absent one. A plan's read
+   section is `resource_changes`, so a plan's `planned_values` need not hold a `root_module`
+   either.
 9. **The read section's order**, for a state, is a depth-first walk that takes each module's
    resources before its child modules. That order decides ties in the sort.
 10. **A value of the read section counts as an object member of its resource.** A mirror of `true`
