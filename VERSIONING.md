@@ -136,6 +136,15 @@ different rules, and conflating them has been a live source of error.
   it, so a member added to the `packs test` report has to be added to that reader in the same
   change.
 
+The registry commands (`jpack registry`, ADR-0093) are held to command compatibility like any
+other top-level command. They read three closed formats, each with an exact selector: a kind
+declaration (`kindFormatVersion`), a registry (`registryFormatVersion`) and, as output, a resolved
+document (`resolvedFormatVersion`), all `"1.0.0"`. A resolved document is RFC 8785 canonical bytes,
+so any change to its bytes for the same inputs moves `resolvedFormatVersion`. The validation report
+carries `reportFormatVersion`, `"1.0.0"`, and moves by the rule of an output format. Its codes and
+locations are those of spec RFCs 0034 and 0035, accepted. If the companion text, when released,
+changes one of them, the change is a deliberate version move, never a silent one.
+
 ## Go API
 
 Package `sdk` is the one importable Go package of this module; every other package is `internal`
