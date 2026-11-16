@@ -134,7 +134,7 @@ func TestRegistryCheckPack(t *testing.T) {
 	}
 	pack := writeDocument(t, "pack.json", queuePack)
 	code, out, stderr := runTest(t, []string{"registry", "check-pack", pack, "--contract", contractPath}, "")
-	if code != 0 || stderr != "" || !strings.HasPrefix(out, `{"reportFormatVersion":"1.0.0","contract":{"digest":"sha256:`) || !strings.Contains(out, `"pack":{"digest":"sha256:`) || !strings.HasSuffix(out, `"diagnostics":[]}`+"\n") {
+	if code != 0 || stderr != "" || !strings.HasPrefix(out, `{"factsCheckFormatVersion":"1.0.0","contract":{"digest":"sha256:`) || !strings.Contains(out, `"pack":{"digest":"sha256:`) || !strings.HasSuffix(out, `"diagnostics":[]}`+"\n") {
 		t.Fatalf("a pack that reads what the contract lists: %d %q %q", code, out, stderr)
 	}
 	drifted := writeDocument(t, "drifted.json", strings.Replace(queuePack, `"/value/retention","operator":"less-than"`, `"/value/retentionDays","operator":"less-than"`, 1))

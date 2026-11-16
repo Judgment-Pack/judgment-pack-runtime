@@ -12,17 +12,19 @@ import (
 // ADR-0095). The check reads the pack's evaluation form and evaluates
 // nothing. Its advisories never change an evaluation.
 
-// FactsCheckFormatVersion is the format of the check report.
+// FactsCheckFormatVersion is the format of the check report, under its own
+// selector, factsCheckFormatVersion: the validation report's
+// reportFormatVersion is RFC 0034's, and this report is not that one.
 const FactsCheckFormatVersion = "1.0.0"
 
 // FactsCheck is the report of one check: the contract and the pack by digest
 // only, and the contract's own diagnostics or the pack's advisories. It
 // carries no value from either document.
 type FactsCheck struct {
-	ReportFormatVersion string       `json:"reportFormatVersion"`
-	Contract            *Digested    `json:"contract,omitempty"`
-	Pack                *Digested    `json:"pack,omitempty"`
-	Diagnostics         []Diagnostic `json:"diagnostics"`
+	FactsCheckFormatVersion string       `json:"factsCheckFormatVersion"`
+	Contract                *Digested    `json:"contract,omitempty"`
+	Pack                    *Digested    `json:"pack,omitempty"`
+	Diagnostics             []Diagnostic `json:"diagnostics"`
 }
 
 // contractFact is one admitted item of a contract's facts.

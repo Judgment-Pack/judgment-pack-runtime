@@ -226,8 +226,8 @@ func (a *App) registryCheckPackCommand() *cobra.Command {
 		Use:   "check-pack PACK --contract CONTRACT",
 		Short: "Check the facts a pack reads against a facts contract, without evaluating (spec RFC 0037)",
 		Long: "Read a facts contract and a pack, and report, for each fact condition of the pack's evaluation form, a pointer the contract does not list (FACTS-POINTER-UNKNOWN), an ordered comparison on a pointer the contract does not type decimal (FACTS-TYPE-ORDERED), " +
-			"and an equals, not-equals or in operand the pointer can never hold (FACTS-VALUE-UNREACHABLE). These are advisories: nothing is evaluated, and an evaluation is never changed by them. " +
-			"The report is JSON on standard output and names the contract and the pack by digest only. Exit 0 when there is no diagnostic, 1 when there is an advisory or the contract is refused, " +
+			"and an equals or not-equals operand, or an item of an in, that the pointer can never hold (FACTS-VALUE-UNREACHABLE). These are advisories: nothing is evaluated, and an evaluation is never changed by them. " +
+			"The report is JSON on standard output (factsCheckFormatVersion 1.0.0) and names the contract and the pack by digest only. Exit 0 when there is no diagnostic, 1 when there is an advisory or the contract is refused, " +
 			"the evaluator's exit code when the pack is refused, 3 for an unusable command line and 4 when an input could not be read.",
 		Example: "jpack registry check-pack db-role-review.json --contract db-role.contract.json",
 		Args:    cobra.ExactArgs(1),
@@ -244,7 +244,7 @@ func (a *App) registryCheckPackCommand() *cobra.Command {
 			if args[0] == "-" && contractPath == "-" {
 				return a.operational(name, "json", result.ExitInvocation, "JPS-INVOCATION-INPUT", "Only one input can read standard input.")
 			}
-			report := registry.FactsCheck{ReportFormatVersion: registry.FactsCheckFormatVersion, Diagnostics: []registry.Diagnostic{}}
+			report := registry.FactsCheck{FactsCheckFormatVersion: registry.FactsCheckFormatVersion, Diagnostics: []registry.Diagnostic{}}
 			finish := func() error {
 				if err := a.writeJSON(report); err != nil {
 					return &handledExit{code: result.ExitIO}
