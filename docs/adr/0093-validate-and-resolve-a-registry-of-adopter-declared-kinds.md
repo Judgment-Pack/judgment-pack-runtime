@@ -244,4 +244,3 @@ environments took 102 s and 4.7 GB. Now:
 
 Environments are at most 32, so an overlay on a large entry in every environment still costs
 that entry once per environment; every other cost is the registry's own.
-
