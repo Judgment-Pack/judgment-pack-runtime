@@ -109,6 +109,8 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		{args: []string{"registry", "--help"}},
 		{args: []string{"registry", "validate", "--help"}},
 		{args: []string{"registry", "resolve", "--help"}},
+		{args: []string{"registry", "facts", "--help"}},
+		{args: []string{"registry", "check-pack", "--help"}},
 		{args: []string{"registry", "import", "--help"}},
 		{args: []string{"mcp", "--help"}, mustReference: true},
 		// The project convention (ADR-0012). Only the two that speak about the

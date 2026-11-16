@@ -154,6 +154,20 @@ location members, are this runtime's own reading of the RFCs' rules. That list i
 the registry companion (`spec/registry.md`) is released: if the companion's list differs, this
 runtime adopts it under a new selector and says so in its release notes.
 
+`jpack registry facts` and `jpack registry check-pack` (ADR-0095) follow the same rule. Their
+formats, each with its selector, all `"1.0.0"`:
+
+- a facts contract: `factsContractVersion`, RFC 0037's;
+- the facts documents and batch lines `facts` writes: `resolvedFormatVersion`. They are RFC 8785
+  canonical bytes mapped from a resolved registry, and RFC 0037 gives them no selector of their
+  own, so any change to their bytes for the same inputs moves `resolvedFormatVersion`;
+- the check report: `factsCheckFormatVersion`, this runtime's. It is not the validation report,
+  and it does not carry `reportFormatVersion`.
+
+RFC 0037 names the three `FACTS-*` advisories. `FACTS-DOCUMENT-LIMIT`, `FACTS-CONTRACT-LIMIT`,
+`FACTS-CONTRACT-FORM`, `FACTS-CONTRACT-ORDER` and `FACTS-CHECK-LIMIT` are this runtime's,
+provisional in the same way.
+
 ## Go API
 
 Package `sdk` is the one importable Go package of this module; every other package is `internal`
