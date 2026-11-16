@@ -12,6 +12,9 @@ All notable changes to tagged releases are documented here.
   - A schema's cycle check covers every `$ref` that names a definition, whatever else the schema
     fails (§3.3). Before, a `$ref` that named no definition, or any other schema error, hid a
     cycle among the definitions.
+  - An entry reference's `#pointer` is held to 512 code points as written (§6.2), not 512 bytes,
+    so a pointer of 300 two-byte code points is read. A pointer pattern (§3.5) is still at most
+    512 bytes.
 
 ## 0.47.0 - 2026-11-16
 

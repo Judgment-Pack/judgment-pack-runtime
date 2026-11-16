@@ -2,6 +2,7 @@ package registry
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -59,5 +60,22 @@ func TestACycleIsReportedBesideOtherSchemaErrors(t *testing.T) {
 		if !slices.Equal(got, c.want) {
 			t.Errorf("%s: got %v, want %v", c.schema, got, c.want)
 		}
+	}
+}
+
+// §6.2: an entry reference's #pointer is at most 512 code points as
+// written; a pointer pattern (§3.5) stays at most 512 bytes.
+func TestAnEntryReferencePointerIsBoundedInCodePoints(t *testing.T) {
+	for _, c := range []struct {
+		codePoints int
+		admitted   bool
+	}{{300, true}, {512, true}, {513, false}} {
+		pointer := "/" + strings.Repeat("é", c.codePoints-1)
+		if _, ok := parseEntryReference("entry:database/billing#" + pointer); ok != c.admitted {
+			t.Errorf("a pointer of %d code points (%d bytes): admitted %v", c.codePoints, len(pointer), ok)
+		}
+	}
+	if _, err := parsePointerPattern("/" + strings.Repeat("é", 299)); err == nil {
+		t.Error("a pointer pattern of 599 bytes was admitted")
 	}
 }
