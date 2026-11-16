@@ -219,3 +219,29 @@ bounded where it is read, and each refusal uses a code a kind can already get, e
 Not bounded here, because each is a product of two inputs already bounded: a kind's secrets
 against its reference patterns, the overlayable patterns against a patch's pointers, and pointer
 reachability, which is a pattern's tokens times the expanded schema.
+
+## Amendment: resolution shared across environments (2026-11-16, #434)
+
+Step 7 held a deep copy of every entry's value for each environment, and step 8 encoded each
+environment's resolved document and decoded it again for the depth check. An 8 MB entry in 32
+environments took 102 s and 4.7 GB. Now:
+
+- **A value is shared, read-only.** Where no overlay changes an entry in an environment, that
+  environment holds the entry's own value. An overlay copies only the containers on its pointers'
+  paths, each once however many of its operations pass through it, and shares the rest; nothing
+  writes into a shared value afterwards (the facts mapping copies, as before).
+- **A value is measured once.** Its canonical length, nesting and digest are computed once for
+  every environment that shares it, and once per environment an overlay changes it in. Step 7's
+  reuse of checked values keys on that digest, and step 8's `REG-BOUND-ENTRY-BYTES` reads that
+  length.
+- **Step 8 measures each environment's document without encoding it.** The document is encoded
+  with every value as `null`, and each value's length takes the place of null's four bytes: RFC
+  8785 writes a container as its members' forms joined, so the sum is the document's exact length.
+  A value sits in the root object, the entries array and its entry, so the document nests three
+  more than its deepest value, counted as carrier admission counts depth (the root object as one,
+  32 admitted). A test holds both to the encoded document and to carrier's reading of it.
+  `Resolve` still encodes the one environment it is asked for.
+
+Environments are at most 32, so an overlay on a large entry in every environment still costs
+that entry once per environment; every other cost is the registry's own.
+
