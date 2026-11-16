@@ -25,7 +25,7 @@ const (
 // depth bound, the number rules, and the exact selector. It returns the
 // decoded root object, or nil after recording why not.
 func admit(data []byte, maxBytes int, selectorMember, selector string, location Location, diagnostics *collector) map[string]any {
-	value, admitted := admitValue(data, maxBytes, location, diagnostics)
+	value, admitted := admitValue(data, maxBytes, maxBytes, location, diagnostics)
 	if !admitted {
 		return nil
 	}
@@ -44,14 +44,15 @@ func admit(data []byte, maxBytes int, selectorMember, selector string, location 
 }
 
 // admitValue is admit without the selector: the size bound, strict I-JSON
-// within the depth bound, and the number rules. It returns the decoded value
-// and true, or false after recording why not.
-func admitValue(data []byte, maxBytes int, location Location, diagnostics *collector) (any, bool) {
+// within the depth bound and at most maxNodes JSON values, and the number
+// rules. It returns the decoded value and true, or false after recording why
+// not.
+func admitValue(data []byte, maxBytes, maxNodes int, location Location, diagnostics *collector) (any, bool) {
 	if len(data) > maxBytes {
 		diagnostics.add("REG-DOC-SIZE", location)
 		return nil, false
 	}
-	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: maxBytes, MaxStringBytes: maxBytes})
+	value, failure := carrier.Decode(data, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: maxNodes, MaxStringBytes: maxBytes})
 	if failure != nil {
 		at := location
 		at.Pointer = failure.Diagnostic.InstancePath
@@ -67,9 +68,11 @@ func admitValue(data []byte, maxBytes int, location Location, diagnostics *colle
 				diagnostics.add("REG-DOC-JSON", location)
 			}
 		default:
-			// The node and string limits are set to the size bound, which a
-			// document within that bound cannot exceed.
-			diagnostics.add("REG-DOC-SIZE", location)
+			// The string limit is the size bound, which a document within
+			// that bound cannot exceed; the node limit is the size bound too,
+			// or a lower one a caller sets, which refuses the document as it
+			// is decoded.
+			diagnostics.add("REG-DOC-SIZE", at)
 		}
 		return nil, false
 	}

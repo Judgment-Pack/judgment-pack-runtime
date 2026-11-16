@@ -97,6 +97,7 @@ well, because the runs answer into one set of files.
 |---|---|---|---|
 | A response | `MaxResponseBytes` | 64 MiB | §11.3 |
 | Files in a response | `MaxFiles` | 10 000 | §11.3 |
+| JSON values in a response | 4 × `MaxFiles` + 80 000 | 120 000 | this runtime's |
 | A file | `MaxFileBytes` | 16 MiB, decoded | §11.3 |
 | A path | `MaxPathBytes` | 512 bytes | §11.3 |
 | Standard error kept | `MaxStderrBytes` | 64 KiB | §11.4 |
@@ -106,7 +107,10 @@ well, because the runs answer into one set of files.
 | Diagnostics reported | `MaxReportedDiagnostics` | 1 000 per list | this runtime's |
 
 Standard output past 64 MiB ends the run at once (`EMIT-RESPONSE`). It does not wait for the time
-limit.
+limit. A response is decoded under the bound on JSON values, so a `files` array past `MaxFiles` is
+refused while it is decoded, not after it is held whole. The bound gives each file four values (the
+object, its path, its contents and its mode) and leaves a fixed 80 000 for the rest, so about 8 000
+diagnostics fit beside 10 000 files.
 
 **Run (§4).** `emit.Run(ctx, manifest, requestVersion, request, RunOptions)` returns the validated
 response or the diagnostics that refuse it. It works as follows.

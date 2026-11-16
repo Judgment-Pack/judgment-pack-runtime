@@ -2,6 +2,8 @@ package emit
 
 import (
 	"encoding/base64"
+	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -168,5 +170,39 @@ func TestResponseBoundsAtTheirLimitAndOnePast(t *testing.T) {
 	maxResponseBytes = len(response) - 1
 	if _, findings := ParseResponse([]byte(response), "1.0.0", m); !slices.Equal(codes(findings), []string{"EMIT-RESPONSE@"}) {
 		t.Fatalf("a response one past: %v", codes(findings))
+	}
+}
+
+// A "files" array of small values past MaxFiles is refused while the
+// response is decoded, in memory that does not grow with the array; a
+// response of MaxFiles full files and many diagnostics still fits the bound.
+func TestEmitResponseRefusesTooManyFilesWhileDecoding(t *testing.T) {
+	m := mustManifest(t, manifestDoc([]string{"exit", "0"}, nil))
+	const zeros = 4 << 20 // 8 MiB of "0,", 4 million values
+	data := []byte(`{"emitResponseVersion":"1.0.0","files":[` + strings.Repeat("0,", zeros-1) + `0],"diagnostics":[]}`)
+	var findings []Diagnostic
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, findings = ParseResponse(data, "1.0.0", m)
+	runtime.ReadMemStats(&after)
+	if len(findings) != 1 || findings[0].Code != "EMIT-RESPONSE" || !strings.HasPrefix(findings[0].Location.Pointer, "/files") {
+		t.Fatalf("findings: %v", codes(findings))
+	}
+	// The decoder allocates some 250 bytes a value: about 30 MiB up to the
+	// bound, and some 1 GiB for the whole array.
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 64<<20 {
+		t.Fatalf("refusing %d values allocated %d MiB", zeros, allocated>>20)
+	}
+
+	var files, diagnostics []string
+	for i := 0; i < MaxFiles; i++ {
+		files = append(files, fmt.Sprintf(`{"path":"gen/%05d","text":"x\n","mode":"0644"}`, i))
+	}
+	for i := 0; i < 7000; i++ {
+		diagnostics = append(diagnostics, `{"severity":"warning","code":"x-a","location":{"document":"value","pointer":"/a"}}`)
+	}
+	full := `{"emitResponseVersion":"1.0.0","files":[` + strings.Join(files, ",") + `],"diagnostics":[` + strings.Join(diagnostics, ",") + `]}`
+	if response, findings := ParseResponse([]byte(full), "1.0.0", m); findings != nil || len(response.Files) != MaxFiles {
+		t.Fatalf("%d full files and 7000 diagnostics: %v", MaxFiles, codes(findings))
 	}
 }

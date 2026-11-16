@@ -57,7 +57,8 @@ var (
 
 // ParseResponse validates an emitter's standard output completely, against
 // the request version it answers and the manifest's owns globs: one I-JSON
-// document within MaxResponseBytes; exactly its members; a response version
+// document within MaxResponseBytes, of at most four JSON values a file and a
+// fixed slack (responseNodes); exactly its members; a response version
 // this host accepts that does not exceed the request's major and minor; at
 // most MaxFiles files, each a safe owned path with exactly one of text and
 // base64, at most MaxFileBytes, and a mode of 0644 or 0755; paths in strictly
@@ -75,7 +76,7 @@ func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagn
 		fail()
 		return nil, findings
 	}
-	value, code, pointer := registry.AdmitValue(data, maxResponseBytes)
+	value, code, pointer := registry.AdmitValueNodes(data, maxResponseBytes, responseNodes())
 	if code != "" {
 		findings = append(findings, diagnostic("EMIT-RESPONSE", Location{Document: DocumentResponse, Pointer: pointer}))
 		return nil, findings
@@ -173,6 +174,17 @@ func ParseResponse(data []byte, request string, m *Manifest) (*Response, []Diagn
 	}
 	return response, nil
 }
+
+// responseNodeSlack is the JSON values a response may hold besides four for
+// each of its files (the object, path, text or base64, and mode): the root
+// and its members, and the diagnostics. It is fixed at what 10 000 files of
+// several members each would hold, so about 8 000 diagnostics fit.
+const responseNodeSlack = 8 * MaxFiles
+
+// responseNodes bounds the JSON values a response is decoded into, so that a
+// response past MaxFiles is refused while it is decoded and not after: a
+// "files" array of 64 MiB of small values would otherwise be held whole.
+func responseNodes() int { return 4*maxFiles + responseNodeSlack }
 
 // readFile reads one item of files.
 func readFile(item any, m *Manifest, fail func(...string)) (File, bool) {

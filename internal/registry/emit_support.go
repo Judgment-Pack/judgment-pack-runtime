@@ -17,8 +17,16 @@ import (
 // number rules. It returns the decoded value, or the REG-DOC-* code and the
 // pointer that refuse it.
 func AdmitValue(data []byte, maxBytes int) (value any, code, pointer string) {
+	return AdmitValueNodes(data, maxBytes, maxBytes)
+}
+
+// AdmitValueNodes is AdmitValue with a bound on the document's JSON values
+// below its size bound: a document of more than maxNodes values is refused
+// (REG-DOC-SIZE, at the value past the bound) while it is decoded, before the
+// rest is held in memory.
+func AdmitValueNodes(data []byte, maxBytes, maxNodes int) (value any, code, pointer string) {
 	collected := &collector{}
-	value, admitted := admitValue(data, maxBytes, Location{}, collected)
+	value, admitted := admitValue(data, maxBytes, maxNodes, Location{}, collected)
 	if !admitted {
 		diagnostics := collected.sorted()
 		if len(diagnostics) == 0 {
