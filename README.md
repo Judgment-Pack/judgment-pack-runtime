@@ -127,6 +127,7 @@ jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
 jpack experimental evaluate <pack-or-> | --pack-id X --batch <file-or-> --format json [--max-items N]   (EXPERIMENTAL; JSON Lines of facts documents, one result line each; ADR-0085)
+jpack experimental evaluate ... --require-outcome a,b [--allow-empty] [--gate-summary F]   (EXPERIMENTAL; outcome gate for CI: exit 0 all allowed, 1 a finding, 2 not judged; ADR-0092)
 jpack experimental evaluate <pack-or-> --rfc0008-quantifiers   (DRAFT-RFC PROTOTYPE; not an input the class defines)
 jpack experimental evaluate <pack-or-> --rfc0016-outcome-values   (DRAFT-RFC PROTOTYPE; a pack that declares values is not an input the class defines)
 jpack experimental evaluate-corpus   (EXPERIMENTAL SURFACE; corpus results, the evidence §3.4.1 requires)
@@ -308,6 +309,20 @@ chunk of up to 256 at a time, and no result is written before its record is sync
 a lower bound: after exit 4 or an interruption the trail may hold up to one more chunk of records
 than the output reported, under the `run` id every line carries; ADR-0085 §8 says how to match
 them to items before running any again.
+
+`--require-outcome` turns a run, single or batch, into a check a CI step can act on
+([ADR-0092](docs/adr/0092-an-outcome-gate-on-evaluate.md)). It names the outcomes the run may end
+in, each one the pack declares; the exit code is 0 when every item produced a disposition and every
+disposition is one of them, 1 when one is an outcome outside the list or not-applicable (a
+finding), and 2 when the gate could not judge (an item unresolved or refused, an input unreadable,
+or a batch with no item unless `--allow-empty`). A command line that cannot be parsed exits 3, as
+for every command; treat 2 and 3 alike, and only 1 as a finding. Standard output is unchanged; the
+verdict goes to standard error and, with `--gate-summary FILE`, to a JSON file that names items by
+line, id and outcome id only, never by a fact value, and gives the sha256 of each input:
+
+```console
+$ jpack experimental evaluate pack.json --batch batch.jsonl --format json --require-outcome approved --gate-summary gate.json
+```
 
 From here, [docs/building-with-packs.md](docs/building-with-packs.md) covers a project of several
 packs, their test matrices, and the audit trail; `jpack spec examples --spec-version 0.2.0-draft`

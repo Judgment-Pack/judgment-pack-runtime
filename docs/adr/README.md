@@ -187,3 +187,4 @@ authority, and following it confers no conformance status on anything.
 | [0089](0089-analyze-core-0-5-0-packs-as-their-evaluation-form.md) | Analyse a Core 0.5.0 pack as its evaluation form | accepted |
 | [0090](0090-check-published-identities-over-a-repositorys-tags.md) | Check, over a git repository's own tags, that a published pack or dialect identity keeps its bytes | accepted |
 | [0091](0091-revalidate-matrix-results-before-moving-a-runtime-pin.md) | Revalidate a project's matrix results against a baseline file before moving a Runtime pin | accepted |
+| [0092](0092-an-outcome-gate-on-evaluate.md) | Gate a run or a batch on an allowed set of outcomes, with an exit code a CI step can act on | accepted |
