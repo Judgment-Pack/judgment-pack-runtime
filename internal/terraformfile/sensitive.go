@@ -241,13 +241,22 @@ func child(index *members, elements []uint32, token []byte) optional {
 	return optional{}
 }
 
-// unknown walks after_unknown, u, over after, a, and adds the pointer of each
-// position u marks true. A position at or below one removed from after is
-// dropped. after may lack a position u marks, since Terraform leaves a value
-// unknown at plan time out of after. It reports false when the pointers pass
-// their budget.
-func (d *document) unknown(u uint32, a optional, out *pointers) bool {
+// unknown walks after_unknown, u, over after, a, and over its sensitivity
+// mirror, m, and adds the pointer of each position u marks true. A position at
+// or below one removed from after is dropped. after may lack a position u
+// marks, since Terraform leaves a value unknown at plan time out of after, so
+// the mirror is consulted too: at a position it marks true, a pointer that
+// would pass through it, or end at it, is cut there and added once, so no
+// member name below that position is carried (ADR-0097 reading 11). It reports
+// false when the pointers pass their budget.
+func (d *document) unknown(u uint32, a, m optional, out *pointers) bool {
 	if a.ok && d.isRemoved(a.node) {
+		return true
+	}
+	if m.ok && d.kind(m.node) == 't' {
+		if d.marksAny(u) {
+			return out.add()
+		}
 		return true
 	}
 	switch d.kind(u) {
@@ -255,10 +264,11 @@ func (d *document) unknown(u uint32, a optional, out *pointers) bool {
 		return out.add()
 	case '{':
 		index, elements := d.children(u, a)
+		mirrorIndex, mirrorElements := d.children(u, m)
 		for name, end := u+1, d.end(u); name < end; name = d.next(name + 1) {
 			token := d.nameOf(name)
 			mark := out.push(token)
-			ok := d.unknown(name+1, child(index, elements, token), out)
+			ok := d.unknown(name+1, child(index, elements, token), child(mirrorIndex, mirrorElements, token), out)
 			out.path = out.path[:mark]
 			if !ok {
 				return false
@@ -266,11 +276,12 @@ func (d *document) unknown(u uint32, a optional, out *pointers) bool {
 		}
 	case '[':
 		index, elements := d.children(u, a)
+		mirrorIndex, mirrorElements := d.children(u, m)
 		var token []byte
 		for element, end, k := u+1, d.end(u), 0; element < end; element, k = d.next(element), k+1 {
 			token = strconv.AppendInt(token[:0], int64(k), 10)
 			mark := out.push(token)
-			ok := d.unknown(element, child(index, elements, token), out)
+			ok := d.unknown(element, child(index, elements, token), child(mirrorIndex, mirrorElements, token), out)
 			out.path = out.path[:mark]
 			if !ok {
 				return false

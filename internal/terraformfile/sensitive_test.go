@@ -148,6 +148,17 @@ func TestAfterUnknownPointers(t *testing.T) {
 		{"an unknown value is absent from after", nil, false, object("id", true, "arn", true), []string{"/arn", "/id"}},
 		{"the whole value unknown", nil, false, true, []string{""}},
 		{"no after_unknown", object("a", 1), false, absent, []string{}},
+		{"cut at a sensitive position after lacks", object(), object("pw", true, "keys", true),
+			object("pw", true, "keys", object("SECRET-NAME", true, "other", object("SECRET-DEEP", true))), []string{"/keys", "/pw"}},
+		{"nothing unknown below a sensitive position", object(), object("keys", true),
+			object("keys", object("SECRET-NAME", false, "l", []any{false})), []string{}},
+		{"cut at a sensitive element", object(), object("l", []any{false, true}),
+			object("l", []any{true, object("SECRET-NAME", true)}), []string{"/l/0", "/l/1"}},
+		{"cut where a mirror member names an element", object(), object("l", object("1", true)),
+			object("l", []any{false, object("SECRET-NAME", true)}), []string{"/l/1"}},
+		{"cut where a mirror element names a member", object(), object("m", []any{true}),
+			object("m", object("0", object("SECRET-NAME", true), "1", true)), []string{"/m/0", "/m/1"}},
+		{"under a whole sensitive null", nil, true, object("SECRET-NAME", true), []string{}},
 		{"string order, not numeric", object(), false, object("l", []any{false, false, true, false, false, false, false, false, false, false, true}), []string{"/l/10", "/l/2"}},
 	}
 	for _, c := range cases {

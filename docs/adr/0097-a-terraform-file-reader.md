@@ -205,6 +205,11 @@ The rest are this runtime's own readings:
     - Pointers are sorted in code-point order of the pointer strings, so `/l/10` sorts before
       `/l/2`.
     - A `true` at the root gives the pointer `""`.
+    - A pointer that passes through, or ends at, a position the sensitivity mirror marks `true` is
+      cut at that position, so no member name below it is carried. The pointers cut at one
+      position give one pointer, and none when `after_unknown` marks nothing there. A position
+      removed from `after` gives none (RFC 0038 §2 step 6); the mirror is consulted as well because
+      an unknown value is absent from `after`.
 12. **`index`** is a number for `count` and a string for `for_each`. A number becomes its normal
     form, as §5 says of every number, so `count.index` 0 and a `for_each` key `"0"` both read `"0"`.
 13. **`TF-NUMBER`** checks only numbers that reach the acquired value. A removed position, an

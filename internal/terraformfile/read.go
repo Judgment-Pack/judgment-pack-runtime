@@ -520,7 +520,7 @@ func (d *document) writeAll(w *writer, selected []resource, document string, unk
 		start := len(w.buf)
 		if document == DocumentPlan && unknowns[i] == nil {
 			list := &pointers{budget: w.limit - w.written}
-			if res.afterUnknown.ok && !d.unknown(res.afterUnknown.node, res.after, list) {
+			if res.afterUnknown.ok && !d.unknown(res.afterUnknown.node, res.after, res.afterSensitive, list) {
 				w.over = true
 				return false
 			}
