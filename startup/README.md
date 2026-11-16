@@ -87,9 +87,22 @@ kept.
 
 `ReadFile` follows symbolic links, as a mounted secret volume uses them, and checks the file they
 lead to. It refuses that file when others may read it, and checks again on the opened file, so the
-bytes read are those of the file checked. A platform that mounts secret files world-readable by
-default needs a mode set, such as `0440` or `0400`. Outside Unix the permission bits Go reports are
-synthesized, so `ReadFile` refuses every file there. Use environment variables instead.
+bytes read are those of the file checked.
+
+The common platforms mount secret files world-readable unless told otherwise:
+
+| Platform | Default mode of a mounted secret file | Set it with |
+|---|---|---|
+| Cloud Run | `0444` | the secret volume's `defaultMode`, or an item's `mode` |
+| Kubernetes | `0644` | the secret volume's `defaultMode`, or an item's `mode` |
+
+Mount with `0440` or `0400`, and the strict default reads the file. Where the mode can't be set,
+`ReadFileWith(path, startup.FileRules{AllowOtherRead: true})`, or `FileRules` on `Bindings`,
+accepts a file others may read. Every other check still applies. Use it only where no other user
+shares the file system, such as a container that runs one process.
+
+Outside Unix the permission bits Go reports are synthesized, so `ReadFile` and `ReadFileWith` refuse
+every file there, whatever the rules. Use environment variables instead.
 
 ## Printing a secret
 

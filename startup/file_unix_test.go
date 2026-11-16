@@ -3,6 +3,7 @@
 package startup
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -120,5 +121,45 @@ func TestReadFileRefusals(t *testing.T) {
 		if _, err := ReadFile(unreadable); !errors.Is(err, os.ErrPermission) {
 			t.Errorf("unreadable: got %v, want a permission error", err)
 		}
+	}
+}
+
+// The platforms' default secret mounts are world-readable: Cloud Run's
+// secret volumes 0444, Kubernetes' 0644. They are refused by default and read
+// under FileRules.AllowOtherRead, through ReadFileWith and through Bindings;
+// the opt-in relaxes the permission check alone.
+func TestReadFileWithAllowOtherReadAcceptsThePlatformDefaults(t *testing.T) {
+	dir := t.TempDir()
+	open := FileRules{AllowOtherRead: true}
+	for _, mode := range []os.FileMode{0o444, 0o644, 0o400, 0o440} {
+		path := filepath.Join(dir, "mounted-"+mode.String())
+		writeFile(t, path, "value\n", mode)
+		secret, err := ReadFileWith(path, open)
+		if err != nil || string(secret.Reveal()) != "value" {
+			t.Errorf("%v under AllowOtherRead: got %v", mode, err)
+		}
+		bindings := Bindings{Files: map[string]string{"secret:ref": path}, FileRules: open}
+		if secret, err := bindings.ReadSecret(context.Background(), "secret:ref"); err != nil || string(secret.Reveal()) != "value" {
+			t.Errorf("%v through Bindings under AllowOtherRead: got %v", mode, err)
+		}
+		if mode&0o004 == 0 {
+			continue
+		}
+		if _, err := ReadFileWith(path, FileRules{}); !errors.Is(err, ErrWorldReadable) {
+			t.Errorf("%v under the zero FileRules: got %v, want ErrWorldReadable", mode, err)
+		}
+		strict := Bindings{Files: map[string]string{"secret:ref": path}}
+		if _, err := strict.ReadSecret(context.Background(), "secret:ref"); !errors.Is(err, ErrWorldReadable) {
+			t.Errorf("%v through Bindings by default: got %v, want ErrWorldReadable", mode, err)
+		}
+	}
+	// The opt-in does not relax the other checks.
+	empty := filepath.Join(dir, "empty")
+	writeFile(t, empty, "\n", 0o444)
+	if _, err := ReadFileWith(empty, open); !errors.Is(err, ErrEmpty) {
+		t.Errorf("an empty file under AllowOtherRead: got %v, want ErrEmpty", err)
+	}
+	if _, err := ReadFileWith(dir, open); !errors.Is(err, ErrNotRegular) {
+		t.Errorf("a directory under AllowOtherRead: got %v, want ErrNotRegular", err)
 	}
 }

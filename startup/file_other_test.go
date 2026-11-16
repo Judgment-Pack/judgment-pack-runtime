@@ -16,4 +16,7 @@ func TestReadFileRefusesEveryFileOutsideUnix(t *testing.T) {
 	if _, err := ReadFile(path); !errors.Is(err, ErrPermissionsUnknown) {
 		t.Errorf("got %v, want ErrPermissionsUnknown", err)
 	}
+	if _, err := ReadFileWith(path, FileRules{AllowOtherRead: true}); !errors.Is(err, ErrPermissionsUnknown) {
+		t.Errorf("under AllowOtherRead: got %v, want ErrPermissionsUnknown", err)
+	}
 }

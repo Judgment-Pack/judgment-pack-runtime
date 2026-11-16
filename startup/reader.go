@@ -52,13 +52,29 @@ type Reader interface {
 //   - Env maps a reference to the name of the environment variable that holds
 //     its value, read by [ReadEnv];
 //   - Files maps a reference to the path of the mounted file that holds its
-//     value, read by [ReadFile].
+//     value, read by [ReadFileWith] under FileRules.
 //
 // A reference in neither map is refused with [ErrNoBinding], and one in both
 // with [ErrTwoBindings]. The reference is a key, never parsed or resolved.
 type Bindings struct {
 	Env   map[string]string
 	Files map[string]string
+	// FileRules applies to every file in Files. Its zero value is the
+	// strict default of [ReadFile].
+	FileRules FileRules
+}
+
+// FileRules relaxes what [ReadFileWith] accepts. The zero value is the strict
+// default, which [ReadFile] applies.
+type FileRules struct {
+	// AllowOtherRead accepts a file that users other than its owner and
+	// group may read. Platforms mount secret files that way unless told
+	// otherwise: Cloud Run's secret volumes default to mode 0444, and
+	// Kubernetes' to 0644. Prefer mounting with mode 0440 or 0400 and
+	// leaving this false. Set it only where the platform cannot be told, and
+	// where no other user shares the process's file system, such as a
+	// container that runs one process.
+	AllowOtherRead bool
 }
 
 // ReadSecret implements [Reader].
@@ -74,7 +90,7 @@ func (b Bindings) ReadSecret(ctx context.Context, reference string) (Secret, err
 	case inEnv:
 		return ReadEnv(name)
 	case inFiles:
-		return ReadFile(path)
+		return ReadFileWith(path, b.FileRules)
 	}
 	return Secret{}, ErrNoBinding
 }
@@ -105,13 +121,21 @@ func ReadEnv(name string) (Secret, error) {
 // trailing "\n" or "\r\n" is trimmed, and an empty value or one over
 // [MaxSecretBytes] is refused.
 func ReadFile(path string) (Secret, error) {
+	return ReadFileWith(path, FileRules{})
+}
+
+// ReadFileWith is [ReadFile] under rules: with rules.AllowOtherRead, a file
+// others may read is accepted rather than refused [ErrWorldReadable]. Every
+// other check stands, and a file whose permission bits cannot be checked is
+// still refused [ErrPermissionsUnknown].
+func ReadFileWith(path string, rules FileRules) (Secret, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return Secret{}, fmt.Errorf("startup: %w", err)
 	}
 	// Checked before the open as well, so that a named pipe at the path is
 	// refused rather than waited on.
-	if err := checkFile(info); err != nil {
+	if err := checkFile(info, rules); err != nil {
 		return Secret{}, fmt.Errorf("%w: %s", err, path)
 	}
 	file, err := os.Open(path)
@@ -123,7 +147,7 @@ func ReadFile(path string) (Secret, error) {
 	if err != nil {
 		return Secret{}, fmt.Errorf("startup: %w", err)
 	}
-	if err := checkFile(info); err != nil {
+	if err := checkFile(info, rules); err != nil {
 		return Secret{}, fmt.Errorf("%w: %s", err, path)
 	}
 	// Two bytes more than the bound for a trimmed "\r\n", and one to tell a
@@ -142,11 +166,11 @@ func ReadFile(path string) (Secret, error) {
 
 // checkFile refuses what is not a regular file, then applies the operating
 // system's permission check.
-func checkFile(info fs.FileInfo) error {
+func checkFile(info fs.FileInfo, rules FileRules) error {
 	if !info.Mode().IsRegular() {
 		return ErrNotRegular
 	}
-	return checkPermissions(info.Mode().Perm())
+	return checkPermissions(info.Mode().Perm(), rules)
 }
 
 // admitValue trims one trailing line feed and holds the rest to the value's

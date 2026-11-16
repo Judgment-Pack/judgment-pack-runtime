@@ -110,6 +110,10 @@ These readings go beyond the decisions:
   - It refuses a path that is not a regular file. It checks before the open, because a named pipe
     would block the open, and again on the opened file.
   - Only the others' read bit (`0o004`) is refused. A group-readable file is read.
+  - The others' read bit is refused by default. `FileRules{AllowOtherRead: true}`, through
+    `ReadFileWith` or `Bindings.FileRules`, accepts it. Cloud Run (`0444`) and Kubernetes (`0644`)
+    mount secret files world-readable unless a mode is set, so an operator either sets `0440` or
+    `0400` (preferred) or opts in. The opt-in relaxes this one check and nothing else.
 - Outside Unix the permission bits Go reports are synthesized, so `ReadFile` refuses every file
   (`ErrPermissionsUnknown`).
 
@@ -145,7 +149,8 @@ format check, vet and tests on every leg.
   encoding path shows a value.
 - Bad:
   - files cannot be read on Windows;
-  - a platform whose secret mounts are world-readable by default needs a mode set;
+  - a platform whose secret mounts are world-readable by default (Cloud Run `0444`, Kubernetes
+    `0644`) needs a mode set, or the explicit `AllowOtherRead` opt-in;
   - an empty secret cannot be delivered.
 - Bad: `jpack registry resolve` holds each resolved document to the size bound, but not yet to the
   depth bound. A valid registry whose overlay sets a nested value at a deep pointer resolves to a
