@@ -125,6 +125,8 @@ jpack packs sign <pack-file> --key <seed-file> [--public-key F] [--output F]   (
 jpack packs verify-signature <pack-file> --public-key F [--signature F]   (EXPERIMENTAL; the signature checked against the key you expect, before the pack is read; ADR-0083)
 jpack registry validate <registry-or-> --kind <file>...   (a registry of adopter-declared kinds, spec RFCs 0034/0035; value-free report; ADR-0093)
 jpack registry resolve <registry-or-> --kind <file>... --environment <env>   (one environment's resolved document, RFC 8785 canonical JSON; ADR-0093)
+jpack registry facts --registry <file-or-> --kinds <file-or-dir>... --kind <name> --environment <env>|--all-environments [--contract <file>]   (a kind's entries as a facts batch for evaluate's outcome gate, spec RFC 0037; ADR-0095)
+jpack registry check-pack <pack-or-> --contract <file-or->   (the facts a pack reads, checked against a facts contract; nothing is evaluated; ADR-0095)
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)

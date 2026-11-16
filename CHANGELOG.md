@@ -14,6 +14,19 @@ All notable changes to tagged releases are documented here.
   environment's project scope and left as written. Existing commands and their output are
   unchanged.
 
+- **Registry entries as facts: `jpack registry facts` and `jpack registry check-pack`** (ADR-0095;
+  spec RFC 0037 §1 to §5). `facts --registry R --kinds DIR --kind K --environment E` writes one
+  batch line per entry of the kind, `{"facts": ..., "id": "K/<entry-id>"}`, which
+  `experimental evaluate --batch ... --require-outcome` reads unchanged. In a facts document
+  numbers are decimal strings in one normal form, a secret reference is only its store and scope,
+  and each entry reference carries its target's kind, id and value, one level deep.
+  `--all-environments` writes every environment's lines. `--contract FILE` also writes the kind's
+  generated facts contract. An invalid registry, or an entry over the facts-document limit, writes
+  nothing and exits 2. `check-pack PACK --contract C` reports, without evaluating, a pointer the
+  contract does not list, an ordered comparison on one that is not decimal, and an operand a
+  pointer can never hold. The typed builders of RFC 0037 §6 are not built. Existing commands and
+  their output are unchanged.
+
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
   `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
   and every disposition is an outcome the list names, 1 when one is an outcome outside it or
