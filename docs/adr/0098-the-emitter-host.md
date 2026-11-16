@@ -81,8 +81,8 @@ failure is `EMIT-RESPONSE`, at its pointer.
   carriage return. Base64 is canonical and unbroken.
 - The mode is `0644` or `0755`.
 - Each path is relative and safe. It has no `.`, `..`, empty or `~` segment, no trailing `/`, no
-  NUL, backslash or control character, and no drive letter. No segment is `.git`, in any case. It
-  is owned.
+  NUL, backslash or control character, and no `:`, so no drive letter. No segment is `.git`, in any
+  case. It is owned.
 - `files` is sorted by path, and no two paths are equal once case is folded and normalized. No path
   is a directory of another (`a` and `a/b`), since writing one would replace or block the other.
 - Each emitter diagnostic has an `x-` code, a `warning` or `error` severity, and a §7.3 location.
@@ -198,7 +198,11 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   silently.
 - Paths are also refused when they collide once normalized (NFD), not only once case is folded. This
   is canonical caseless matching.
-- A path may not begin with a drive letter (`C:`).
+- A path may not begin with a drive letter (`C:`). More widely, a path is refused on every system
+  when Windows would read it as another name, so a manifest behaves the same everywhere: a `:` in
+  any segment (a drive or an NTFS stream), a segment ending in `.` or a space, and a reserved device
+  name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`) in any case, with or without an
+  extension. The same rules hold for owns globs.
 - Git's directory is never owned. A bare `**` owns the whole repository, so stale deletion would
   remove every file the emitter does not answer with; a manifest that gives it is refused. An owns
   glob or response path with a `.git` segment is refused, in any case, since a case-insensitive file

@@ -15,31 +15,56 @@ var errPath = errors.New("emit: the path is outside the path rules")
 // checkPathForm applies RFC 0036 §3's path rules that a path has on its own:
 // at most MaxPathBytes bytes of UTF-8; "/" separators; relative; no ".",
 // ".." or empty segment, and none that begins with "~"; no trailing "/"; no
-// NUL, backslash or control character. It also refuses a first segment that
-// is a drive letter and a colon ("C:"), which a Windows host reads as a
-// drive: the RFC's conformance list names drive letters among the forms a
-// host refuses. A UNC form ("\\host\share") holds a backslash. And it refuses
-// a segment ".git" in any case, so that no owns glob names git's directory
-// and no response writes into it; scanOwned does not enter it either.
+// NUL, backslash or control character. A UNC form ("\\host\share") holds a
+// backslash. It also refuses what a Windows host would read as another name,
+// on every system, so that a manifest and its response mean the same
+// everywhere:
+//   - a ":" in any segment, so no drive letter ("C:"), which the RFC's
+//     conformance list names among the forms a host refuses, and no NTFS
+//     stream ("a:b");
+//   - a segment that ends in "." or a space, which Windows drops;
+//   - a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), in any
+//     case and with or without an extension ("nul.txt").
+//
+// And it refuses a segment ".git" in any case, so that no owns glob names
+// git's directory and no response writes into it; scanOwned does not enter
+// it either.
 func checkPathForm(path string) error {
 	if path == "" || len(path) > MaxPathBytes || !utf8.ValidString(path) {
 		return errPath
 	}
 	for _, r := range path {
-		if r == 0 || r == '\\' || unicode.IsControl(r) {
+		if r == 0 || r == '\\' || r == ':' || unicode.IsControl(r) {
 			return errPath
 		}
 	}
-	segments := strings.Split(path, "/")
-	for _, segment := range segments {
-		if segment == "" || segment == "." || segment == ".." || strings.HasPrefix(segment, "~") || isGitName(segment) {
+	for _, segment := range strings.Split(path, "/") {
+		if segment == "" || segment == "." || segment == ".." || strings.HasPrefix(segment, "~") || isGitName(segment) ||
+			strings.HasSuffix(segment, ".") || strings.HasSuffix(segment, " ") || isDeviceName(segment) {
 			return errPath
 		}
-	}
-	if first := segments[0]; len(first) >= 2 && first[1] == ':' && (first[0]|0x20 >= 'a' && first[0]|0x20 <= 'z') {
-		return errPath
 	}
 	return nil
+}
+
+// isDeviceName says whether Windows reads a segment as a device: its name
+// before the first ".", without trailing spaces, is a reserved one in any
+// case.
+func isDeviceName(segment string) bool {
+	base, _, _ := strings.Cut(segment, ".")
+	base = strings.TrimRight(base, " ")
+	switch len(base) {
+	case 3:
+		for _, name := range []string{"CON", "PRN", "AUX", "NUL"} {
+			if strings.EqualFold(base, name) {
+				return true
+			}
+		}
+	case 4:
+		prefix := base[:3]
+		return (strings.EqualFold(prefix, "COM") || strings.EqualFold(prefix, "LPT")) && base[3] >= '1' && base[3] <= '9'
+	}
+	return false
 }
 
 // isGitName says whether a name is git's directory, ".git", in any case: a

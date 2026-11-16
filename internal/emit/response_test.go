@@ -36,6 +36,14 @@ func TestResponseRefusesEachUnsafePath(t *testing.T) {
 		"git directory":       ".git/config",
 		"git directory below": "gen/.git/hooks/pre-commit",
 		"git in another case": "gen/.GiT",
+		"colon":               "gen/a:b",
+		"trailing dot":        "gen/a.",
+		"trailing space":      "gen/a ",
+		"device":              "gen/CON",
+		"device lower case":   "gen/nul",
+		"device extension":    "gen/Com1.txt",
+		"device spaced":       "gen/lpt9 .sql",
+		"device directory":    "aux/a",
 		"one past the length": strings.Repeat("a/", 256) + "b",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -44,6 +52,11 @@ func TestResponseRefusesEachUnsafePath(t *testing.T) {
 				t.Fatalf("%q: %v", path, got)
 			}
 		})
+	}
+	for _, path := range []string{"gen/console", "gen/com10", "gen/com0", "gen/a.con", "gen/.nul", "gen/a.b", "gen/a b"} {
+		if _, findings := ParseResponse([]byte(responseJSON(t, map[string]any{"path": path, "text": "x\n"})), "1.0.0", m); findings != nil {
+			t.Errorf("%q: %v", path, codes(findings))
+		}
 	}
 	atLimit := strings.Repeat("a/", 255) + "bc"
 	if len(atLimit) != MaxPathBytes {
