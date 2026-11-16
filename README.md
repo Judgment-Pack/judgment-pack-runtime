@@ -127,6 +127,7 @@ jpack registry validate <registry-or-> --kind <file>...   (a registry of adopter
 jpack registry resolve <registry-or-> --kind <file>... --environment <env>   (one environment's resolved document, RFC 8785 canonical JSON; ADR-0093)
 jpack registry facts --registry <file-or-> --kinds <file-or-dir>... --kind <name> --environment <env>|--all-environments [--contract <file>]   (a kind's entries as a facts batch for evaluate's outcome gate, spec RFC 0037; ADR-0095)
 jpack registry check-pack <pack-or-> --contract <file-or->   (the facts a pack reads, checked against a facts contract; nothing is evaluated; ADR-0095)
+jpack registry import <yaml-or-> [--output <file>]   (the YAML authoring subset of RFC 0034 §7 to canonical JSON; refusals by line and column; ADR-0094)
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
