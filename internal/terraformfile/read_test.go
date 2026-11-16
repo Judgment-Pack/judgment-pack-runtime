@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"reflect"
 	"strconv"
 	"strings"
@@ -466,6 +467,12 @@ func TestReadErrorsAreNotRefusals(t *testing.T) {
 	acquisition, refusal, err := Read(failingReader{failure}, planSource("synthetic_db"))
 	if !errors.Is(err, failure) || acquisition != nil || refusal != nil {
 		t.Fatalf("%v %v %v", acquisition, refusal, err)
+	}
+	// A reader's error can carry a path; the message Read returns is fixed.
+	pathError := &fs.PathError{Op: "read", Path: "/synthetic/dir/plan.json", Err: failure}
+	_, _, err = Read(failingReader{pathError}, planSource("synthetic_db"))
+	if !errors.Is(err, ErrRead) || !errors.Is(err, failure) || err.Error() != ErrRead.Error() || strings.Contains(err.Error(), "synthetic") {
+		t.Fatalf("read error %v", err)
 	}
 }
 

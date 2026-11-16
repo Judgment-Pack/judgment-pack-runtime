@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/fs"
 	"slices"
@@ -84,7 +85,7 @@ type resource struct {
 // §2 to §5. Exactly one result is non-nil: the acquisition, the refusal of the
 // first step that failed, or an error. The error is ErrInvalidSource for a
 // source that fails Validate, which makes the dialect invalid and not the file,
-// or the reader's own error.
+// or ErrRead when the reader fails.
 func Read(r io.Reader, src Source) (*Acquisition, *Refusal, error) {
 	return read(r, src, MaxValueBytes)
 }
@@ -180,6 +181,16 @@ func read(r io.Reader, src Source, valueLimit int64) (*Acquisition, *Refusal, er
 	return acquisition, nil, nil
 }
 
+// ErrRead is the error Read returns when its reader fails. Its message is
+// fixed, so a path or other text the reader's error carries never reaches a
+// message; errors.Is still matches the reader's own error through it.
+var ErrRead = errors.New("terraformfile: the input could not be read")
+
+type readError struct{ err error }
+
+func (e readError) Error() string   { return ErrRead.Error() }
+func (e readError) Unwrap() []error { return []error{ErrRead, e.err} }
+
 // readAll reads the whole input, hashing all of it, and keeps it only while
 // it is at most limit bytes. A reader that tells its size (a file, or an
 // in-memory reader) is read into one buffer of that size and one byte more, to
@@ -216,7 +227,7 @@ func readAll(r io.Reader, limit int64) ([]byte, string, int64, error) {
 			break
 		}
 		if err != nil {
-			return nil, "", 0, err
+			return nil, "", 0, readError{err}
 		}
 		chunk = min(max(chunk*2, 64<<10), 8<<20)
 	}
