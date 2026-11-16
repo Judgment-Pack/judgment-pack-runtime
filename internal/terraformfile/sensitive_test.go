@@ -46,7 +46,13 @@ func TestSensitivePositionsAreRemoved(t *testing.T) {
 		{"a mirror member that is no index", object("list", []any{"a", "b"}), object("list", object("01", true, "-", true, "2", true, "x", true)), `{"list":["a","b"]}`, 0},
 		{"a mirror element names a member", object("obj", object("0", "a", "1", "SECRET-O")), object("obj", []any{false, true}), `{"obj":{"0":"a"}}`, 1},
 		{"an escaped mirror name", object("password", "SECRET-P"), json.RawMessage(`{"pass` + uEscape("0077") + `ord":true}`), `{}`, 1},
-		{"a mirror on a scalar", object("name", "db"), object("name", object("x", true)), `{"name":"db"}`, 0},
+		{"an object mirror marking below a scalar", object("pw", "SECRET-Q", "name", "db"), object("pw", object("x", true)), `{"name":"db"}`, 1},
+		{"an array mirror marking below a scalar", object("n", "SECRET-R", "name", "db"), object("n", []any{true}), `{"name":"db"}`, 1},
+		{"a deep mark below a scalar", object("n", json.Number("7"), "name", "db"), object("n", object("a", []any{false, object("b", true)})), `{"name":"db"}`, 1},
+		{"a mark below a null", object("n", nil, "name", "db"), object("n", object("x", true)), `{"name":"db"}`, 1},
+		{"a mark below a list's scalar element", object("list", []any{"a", "SECRET-S"}), object("list", object("1", object("x", true))), `{}`, 1},
+		{"a mark below an object's scalar member", object("obj", object("0", "SECRET-T", "1", "b")), object("obj", []any{[]any{true}}), `{"obj":{"1":"b"}}`, 1},
+		{"a mirror on a scalar that marks nothing", object("name", "db"), object("name", object("x", false, "y", []any{false})), `{"name":"db"}`, 0},
 		{"false and empty mirrors", object("a", []any{1}, "b", object("c", 1)), object("a", []any{false}, "b", object()), `{"a":["1"],"b":{"c":"1"}}`, 0},
 	}
 	for _, c := range cases {
@@ -93,6 +99,22 @@ func TestRemovalCoversTheWholeReadSection(t *testing.T) {
 		t.Fatalf("state value %s", stateAcquisition.Value())
 	}
 	noSecret(t, stateAcquisition.Value(), stateAcquisition.Record())
+}
+
+func TestAStateMirrorMarkingBelowAScalarRemovesIt(t *testing.T) {
+	data := state(t, module{resources: []stateResource{
+		{address: "synthetic_db.a", values: object("pw", "SECRET-STATE-PW", "k", 1), sensitive: object("pw", object("x", true))},
+		{address: "synthetic_db.b", values: object("n", "SECRET-STATE-N", "k", 2), sensitive: object("n", []any{true})},
+	}})
+	acquisition := mustAccept(t, data, stateSource("synthetic_db"))
+	noSecret(t, acquisition.Value(), acquisition.Record())
+	if acquisition.RemovedSensitive != 2 {
+		t.Fatalf("record %s", acquisition.Record())
+	}
+	got := resources(t, acquisition)
+	if string(encode(t, got[0]["values"])) != `{"k":"1"}` || string(encode(t, got[1]["values"])) != `{"k":"2"}` {
+		t.Fatalf("values %v", got)
+	}
 }
 
 func TestASecretAProviderLeftUnmarkedIsRead(t *testing.T) {

@@ -134,7 +134,23 @@ func (d *document) strip(m, v uint32) (int, bool) {
 			return count, false
 		}
 	}
-	return 0, false
+	// A false mirror, or a mirror of an object or array over a string, number,
+	// boolean or null. A mirror that marks a position below such a value
+	// removes the value, since no reading of the shapes can say what the mark
+	// covers (ADR-0097 reading 2).
+	return 0, d.marksAny(m)
+}
+
+// marksAny reports whether mirror m marks any position true, at m or below.
+// Member names are nodes of their own, of kind '"', so a scan of m's subtree
+// meets a 't' only at a mirror position.
+func (d *document) marksAny(m uint32) bool {
+	for i, end := m, d.end(m); i < end; i++ {
+		if d.kind(i) == 't' {
+			return true
+		}
+	}
+	return false
 }
 
 // stripMember applies mirror m to the value of an object member, v. A removed

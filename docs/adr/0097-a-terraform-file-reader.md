@@ -164,7 +164,9 @@ provisional (VERSIONING.md).
    would match them:
    - a mirror member named `"0"` names element 0 of an array value;
    - a mirror array's element 0 names the member `"0"` of an object value;
-   - a token that is not an index (`"01"`, `"-"`) names nothing in an array.
+   - a token that is not an index (`"01"`, `"-"`) names nothing in an array;
+   - an object or array mirror that marks any position `true` over a string, number, boolean or
+     `null` removes that value, since no reading of the shapes says what the mark covers.
 
    This reading removes at least as much as any narrower one. The companion should say which it
    means.
@@ -193,8 +195,9 @@ The rest are this runtime's own readings:
    resources before its child modules. That order decides ties in the sort.
 10. **A value of the read section counts as an object member of its resource.** A mirror of `true`
     over the whole of `before`, `after` or `values`, or a removal that escalates to it, leaves that
-    member out of the object and counts one. A position the mirror marks but the value lacks is
-    ignored. A `null` that the mirror marks is removed.
+    member out of the object and counts one. A position the mirror marks but the value lacks, a
+    member an object lacks or an element an array lacks, is ignored. A `null` that the mirror marks
+    is removed.
 11. **`afterUnknown`**:
     - Pointers are taken from `after_unknown`'s own structure, since an unknown value is absent
       from `after`.
