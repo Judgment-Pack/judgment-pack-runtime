@@ -677,3 +677,35 @@ func TestAValueIsCheckedOnceAcrossEnvironments(t *testing.T) {
 		t.Fatalf("a small value: %+v", result.Report.Diagnostics)
 	}
 }
+
+// H6 (self-check). Work within one visit grows with the value, so it is
+// charged too: 512 uniqueItems nodes at one position, over 20000 distinct
+// numbers, visit about 1200 nodes but key ten million items. Each key is
+// charged, so the bound runs out partway.
+func TestWorkWithinAVisitIsCharged(t *testing.T) {
+	level := func(name, next string) string {
+		ref := `{"$ref":"#/$defs/` + next + `"}`
+		return `"` + name + `":{"allOf":[` + strings.TrimSuffix(strings.Repeat(ref+",", 8), ",") + `]}`
+	}
+	kind := `{"kindFormatVersion":"1.0.0","id":"https://example.invalid/kinds/k","version":"1.0.0","kind":"k","owner":"team-a",` +
+		`"bounds":{"maxEntryBytes":1048576},"schema":{"$ref":"#/$defs/d0","$defs":{` +
+		level("d0", "d1") + "," + level("d1", "d2") + "," + level("d2", "u") + `,"u":{"uniqueItems":true}}}}`
+	items := make([]string, 20000)
+	for i := range items {
+		items[i] = strconv.Itoa(i)
+	}
+	registry, kinds := customRegistry(t, reviewEntry("["+strings.Join(items, ",")+"]"), kind)
+	result := run(registry, kinds)
+	var got []string
+	for _, d := range result.Report.Diagnostics {
+		got = append(got, d.Code)
+	}
+	if result.Report.Valid || !slices.Equal(got, []string{"REG-BOUND-VALIDATION-WORK"}) {
+		t.Fatalf("%v", got)
+	}
+	// The same kind over a short array is checked in full.
+	registry, kinds = customRegistry(t, reviewEntry(`[1,2,3]`), kind)
+	if result := run(registry, kinds); !result.Report.Valid {
+		t.Fatalf("a short array: %+v", result.Report.Diagnostics)
+	}
+}

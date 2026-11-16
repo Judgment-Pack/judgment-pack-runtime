@@ -32,10 +32,13 @@ var typeNames = map[string]bool{"null": true, "boolean": true, "object": true, "
 
 // schemaNode is one compiled subschema.
 type schemaNode struct {
-	boolean    *bool
-	types      []string
-	hasEnum    bool
-	enum       []any
+	boolean *bool
+	types   []string
+	hasEnum bool
+	enum    []any
+	// enumKeys holds each enum value's RFC 8785 form, so a value is looked
+	// up rather than compared with every value; nil when one has no form.
+	enumKeys   map[string]bool
 	hasConst   bool
 	constValue any
 	properties map[string]*schemaNode
@@ -154,6 +157,7 @@ func (c *schemaCompiler) compile(raw any, path []string, def string) *schemaNode
 				c.fail("REG-KIND-SCHEMA-LIMIT", at)
 			default:
 				node.hasEnum, node.enum = true, items
+				node.enumKeys = canonicalKeys(items)
 			}
 		case "const":
 			node.hasConst, node.constValue = true, value

@@ -360,6 +360,11 @@ func (s *schemaChecks) check(kind *Kind, value any) ([]valueFinding, bool) {
 	}
 	key := ""
 	if canonical, err := jcs.EncodeDocument(value); err == nil {
+		// The key costs the value's bytes, in every environment that holds
+		// it, so it is charged like the work it saves.
+		if !s.validation.charge(1 + len(canonical)/16) {
+			return nil, false
+		}
 		sum := sha256.Sum256(canonical)
 		key = kind.Digest + "\x00" + hex.EncodeToString(sum[:])
 		if findings, ok := s.seen[key]; ok {

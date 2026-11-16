@@ -202,7 +202,12 @@ bounded where it is read, and each refusal uses a code a kind can already get, e
   position, a value's size, the environments. Validation costs their product, so a 3 KB kind
   whose items expand to about 2187 nodes, with an array of four million zeros in each of 32
   environments, ran for 43 minutes and was found valid. Each node visited at one position of a
-  value is charged once. Where the bound runs out, the entry is reported once, at its value's
+  value is charged once, and so is the work within a visit that grows with the value: an `enum`
+  lookup and the key it builds, a `const` comparison by the nodes it reads, each `uniqueItems` item
+  (32 units, measured) and its key's bytes, an object's members and `required` names, a pattern
+  match by the input's length times its program, and each finding held, by its path's tokens. The
+  key that finds an already-checked value is charged by its bytes. An `enum` is looked up by each
+  value's RFC 8785 form, so checking a value against 1024 values costs one lookup. Where the bound runs out, the entry is reported once, at its value's
   root, with the new code `REG-BOUND-VALIDATION-WORK`, and no value after it is checked against
   its schema; the registry is then not valid. The same value of the same kind (its canonical
   digest and the kind's) is checked once and its findings reused, so an environment that changes

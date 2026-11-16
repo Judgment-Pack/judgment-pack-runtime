@@ -34,6 +34,8 @@ var errPatternSize = errors.New("the pattern compiles to more than the instructi
 // so it is linear in the input.
 type Pattern struct {
 	re *regexp.Regexp
+	// size is the program's instruction count, as patternSize counts it.
+	size int
 }
 
 // MatchString reports whether the pattern matches anywhere in s.
@@ -54,7 +56,7 @@ func (p *Pattern) MatchString(s string) bool { return p.re.MatchString(s) }
 // A pattern whose program would pass MaxPatternInstructions is refused
 // before it is compiled.
 func CompilePattern(source string) (*Pattern, error) {
-	translated, _, err := translatePattern(source)
+	translated, size, err := translatePattern(source)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +64,7 @@ func CompilePattern(source string) (*Pattern, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Pattern{re: re}, nil
+	return &Pattern{re: re, size: size}, nil
 }
 
 // patternBudget compiles one kind's patterns and holds them together to
@@ -91,7 +93,7 @@ func (b *patternBudget) compile(source string) (*Pattern, string) {
 		return nil, "REG-KIND-PATTERN"
 	}
 	b.used += size
-	return &Pattern{re: re}, ""
+	return &Pattern{re: re, size: size}, ""
 }
 
 // patternSize is the number of instructions RE2 compiles a parsed pattern
