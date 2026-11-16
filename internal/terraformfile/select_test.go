@@ -124,11 +124,15 @@ func TestTheOrderIsByAddressAndStable(t *testing.T) {
 }
 
 func TestTheValueIsCanonical(t *testing.T) {
-	after := json.RawMessage(`{"b":1,"a":{"z":[true,false,null],"y":"x"},"￿":0,"😀":0,"aa":"q\u0001\n\"\\\/ é","é":-0.0}`)
+	after := json.RawMessage(`{"b":1,"a":{"z":[true,false,null],"y":"x"},"` + uEscape("ffff") + `":0,"` +
+		uEscape("d83d") + uEscape("de00") + `":0,"aa":"q` + uEscape("0001") + `\n\"\\\/` + uEscape("2028") + uEscape("00e9") + `","é":-0.0}`)
 	data := plan(t, change{address: "synthetic_db.main", after: after})
 	acquisition := mustAccept(t, data, planSource("synthetic_db"))
 	gotAfter := string(acquisition.Resources[0].JSON)
-	want := `"after":{"a":{"y":"x","z":[true,false,null]},"aa":"q\u0001\n\"\\/` + " é" + `","b":"1","é":"0","` + "\U0001F600" + `":"0","` + "￿" + `":"0"}`
+	// The control character keeps its escape; U+2028 and é are written as
+	// themselves; members are in UTF-16 order, so U+1F600 precedes U+FFFF.
+	want := `"after":{"a":{"y":"x","z":[true,false,null]},"aa":"q` + uEscape("0001") + `\n\"\\/` + "\u2028\u00e9" +
+		`","b":"1","é":"0","` + "\U0001F600" + `":"0","` + "\uffff" + `":"0"}`
 	if !bytes.Contains([]byte(gotAfter), []byte(want)) {
 		t.Fatalf("value %s\nwant it to hold %s", gotAfter, want)
 	}

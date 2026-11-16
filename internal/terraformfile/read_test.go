@@ -181,7 +181,7 @@ func TestStrictJSONRefusals(t *testing.T) {
 		"NaN":                       at("NaN"),
 		"single quotes":             at("'a'"),
 		"duplicate member":          []byte(`{"format_version":"1.2","planned_values":{},"format_version":"1.2"}`),
-		"duplicate after escape":    at(`{"name":1,"name":2}`),
+		"duplicate after escape":    at(`{"name":1,"n` + uEscape("0061") + `me":2}`),
 		"duplicate deep":            at(`[[{"b":1,"a":2,"b":3}]]`),
 		"binary plan (zip archive)": append([]byte("PK\x03\x04\x14\x00\x00\x00\x08\x00"), []byte("tfplan")...),
 		"empty":                     {},
@@ -192,7 +192,7 @@ func TestStrictJSONRefusals(t *testing.T) {
 		t.Run(name, func(t *testing.T) { mustRefuse(t, data, planSource("synthetic_db"), CodeJSON) })
 	}
 	accepted := map[string][]byte{
-		"surrogate pair":          at(`"😀"`),
+		"surrogate pair":          at(`"` + uEscape("d83d") + uEscape("de00") + `"`),
 		"escaped solidus":         at(`"a\/b"`),
 		"BOM inside a string":     at("\"\xef\xbb\xbf\""),
 		"white space around":      []byte(" \t\r\n" + string(at("0")) + " \n"),
@@ -210,7 +210,7 @@ func TestTheFormatTableIsClosed(t *testing.T) {
 		mustAccept(t, []byte(`{"format_version":"`+version+`","planned_values":{}}`), planSource("synthetic_db"))
 	}
 	mustAccept(t, []byte(`{"format_version":"1.0"}`), stateSource("synthetic_db"))
-	mustAccept(t, []byte(`{"format_version":"1.0"}`), stateSource("synthetic_db"))
+	mustAccept(t, []byte(`{"format_version":"1`+uEscape("002e")+`0"}`), stateSource("synthetic_db"))
 	refused := map[string]struct {
 		data string
 		src  Source

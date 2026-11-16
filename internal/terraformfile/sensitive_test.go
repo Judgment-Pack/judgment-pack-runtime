@@ -45,7 +45,7 @@ func TestSensitivePositionsAreRemoved(t *testing.T) {
 		{"a mirror member names an element", object("list", []any{"a", "SECRET-N"}), object("list", object("1", true)), `{}`, 1},
 		{"a mirror member that is no index", object("list", []any{"a", "b"}), object("list", object("01", true, "-", true, "2", true, "x", true)), `{"list":["a","b"]}`, 0},
 		{"a mirror element names a member", object("obj", object("0", "a", "1", "SECRET-O")), object("obj", []any{false, true}), `{"obj":{"0":"a"}}`, 1},
-		{"an escaped mirror name", object("password", "SECRET-P"), json.RawMessage(`{"password":true}`), `{}`, 1},
+		{"an escaped mirror name", object("password", "SECRET-P"), json.RawMessage(`{"pass` + uEscape("0077") + `ord":true}`), `{}`, 1},
 		{"a mirror on a scalar", object("name", "db"), object("name", object("x", true)), `{"name":"db"}`, 0},
 		{"false and empty mirrors", object("a", []any{1}, "b", object("c", 1)), object("a", []any{false}, "b", object()), `{"a":["1"],"b":{"c":"1"}}`, 0},
 	}

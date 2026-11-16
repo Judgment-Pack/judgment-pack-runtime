@@ -15,7 +15,7 @@ import (
 // never accepts what encoding/json refuses.
 func FuzzTerraformJSON(f *testing.F) {
 	f.Add([]byte(`{"format_version":"1.2","planned_values":{},"resource_changes":[{"address":"synthetic_db.main","type":"synthetic_db","name":"main","mode":"managed","provider_name":"p","change":{"actions":["update"],"before":{"a":[1,2]},"after":{"a":[1,"s"],"b":1e3},"after_unknown":{"c":true},"before_sensitive":{},"after_sensitive":{"a":[false,true]}}}]}`))
-	f.Add([]byte(`{"format_version":"1.0","values":{"root_module":{"resources":[{"address":"synthetic_db.x[0]","index":0,"type":"synthetic_db","name":"x","mode":"managed","provider_name":"p","values":{"k":"v","é":-0.0},"sensitive_values":{"k":true}}],"child_modules":[{"resources":[]}]}}}`))
+	f.Add([]byte(`{"format_version":"1.0","values":{"root_module":{"resources":[{"address":"synthetic_db.x[0]","index":0,"type":"synthetic_db","name":"x","mode":"managed","provider_name":"p","values":{"k":"v","` + uEscape("00e9") + `":-0.0},"sensitive_values":{"k":true}}],"child_modules":[{"resources":[]}]}}}`))
 	f.Add([]byte(`{"format_version":"1.2","planned_values":{},"a":1,"a":2}`))
 	f.Add([]byte(`{"format_version":"1.2","planned_values":{},"x":"\ud800"}`))
 	f.Add([]byte("\xef\xbb\xbf{}"))

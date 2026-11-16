@@ -83,7 +83,7 @@ Chosen option: "a package of its own". The other two fail the drivers:
    - It refuses a byte-order mark, invalid UTF-8, a lone or reversed surrogate escape, a raw
      control character, trailing data, and a value deeper than 128. The top-level value is depth
      1. A member name is not a value.
-   - Duplicate member names are compared decoded, so `"a"` and `"a"` are duplicates. Each
+   - Duplicate member names are compared decoded, so `"a"` and `"\u0061"` are duplicates. Each
      object's names are sorted, in O(m log m).
    - Numbers stay as their text.
 3. `TF-FORMAT`: `format_version` is compared decoded against the table below.

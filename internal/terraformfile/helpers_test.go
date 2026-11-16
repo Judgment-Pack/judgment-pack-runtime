@@ -307,3 +307,7 @@ func noSecret(t testing.TB, outputs ...[]byte) {
 }
 
 func ptr(s string) *string { return &s }
+
+// uEscape writes a JSON escape of one UTF-16 code unit, for a literal that
+// must hold the escape rather than the character.
+func uEscape(hex string) string { return `\` + "u" + hex }
