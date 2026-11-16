@@ -152,3 +152,52 @@ object counted as admission counts them. An overlay can set a value at a deep po
 within its own depth bound can resolve past it. Such an environment is a `REG-DOC-DEPTH` finding
 located at `{"document":"registry","environment":E,"pointer":""}`, and the registry is not resolved,
 as for a resolved document over its size bound.
+
+## Amendment: bounds from the v0.47.0 release review (2026-11-16, #432)
+
+The review found inputs within the size bounds whose cost grew far past their size. Each is now
+bounded where it is read, and each refusal uses a code a kind can already get, except one.
+
+- **A schema is counted expanded** (`MaxSubschemas`, 4096). Validation, pointer reachability and a
+  facts contract's reading follow each `$ref` into the definition it names, so they visit the
+  schema expanded, not as written. A definition named sixteen times by each of eight others is
+  about 3 KB written and 16^8 nodes expanded. The written count stays, and the expanded count is
+  held to the same 4096, refused as `REG-KIND-SCHEMA-LIMIT`. The expanded count is every node:
+  each `properties` member, `additionalProperties`, `items`, `not`, each `anyOf` and `allOf`
+  branch, a boolean schema, `propertyNames` as one, and at each `$ref` the expanded count of its
+  definition. A definition's count is computed once and reused at every `$ref` to it, so counting
+  costs the schema as written, and it stops just past the bound. A definition no `$ref` reaches is
+  held only by the written count. 4096 is the bound a schema already had, so a value is checked
+  against at most 4096 nodes at each position, as the written bound meant. A kind is refused only
+  when its expansion passes that; every kind in this repository's tests is admitted as before.
+- **A pattern's program is bounded** (`MaxPatternInstructions`, 4096 per pattern, and
+  `MaxKindPatternInstructions`, 65,536 per kind). RFC 0034 §2.2 admits `{n,m}` up to 1000 in 256
+  code points, and RE2 compiles `x{n,m}` as `m` copies of `x`. So `(a…a){1000}` compiles to a
+  quarter of a million instructions, about 55 MB, and a 256 KiB kind holds 880 of them. A
+  pattern's size is counted on its parse, as RE2 counts it, before anything is compiled. A pattern
+  past 4096, or one that would take the kind's admitted patterns past 65,536, is refused with the
+  new code `REG-KIND-PATTERN-LIMIT`. `REG-KIND-PATTERN` means a pattern outside the subset, which
+  this one is not, so the new code says which bound was passed. A refused pattern is not counted.
+  A typical id pattern is about 130 instructions, so 4096 leaves room for a long one, and 65,536
+  is sixteen patterns at the bound. Matching is RE2's, linear in the input times the program, so
+  the program bound also bounds each match.
+- **A long literal is kept short.** Admission keeps an integer as written, which is at most 16
+  digits, and any other number as the RFC 8785 form of its value. RFC 0034 §1 admits a decimal
+  only when its exact value is that of the shortest decimal of its double, so the two are one
+  value and no reading changes. Every later step reads a literal of at most 25 bytes. Before,
+  `1.` and a million zeros was admitted, and the range check skipped it because big arithmetic
+  refuses an exponent past 10^6. That check now fails closed: a number that cannot be compared
+  with a range is `REG-VALUE-RANGE`, never let through.
+- **Distinct lists are checked in one pass**: owners, environments, an entry's environments, scope
+  projects, `required`, `type`, a kind's pointer patterns, reference kinds and sources, and an
+  overlay's pointers (a prefix in either direction, through a tree of their tokens). `uniqueItems`
+  keys each item by its RFC 8785 form. For admitted values that is the equality JSON Schema uses,
+  since an admitted number is exactly its double's shortest decimal. An item with no RFC 8785 form
+  is compared with the earlier items one by one.
+- **Two documents of one kind** are one kind, read once. When two byte-different documents share
+  a canonical digest, the one read is the one whose bytes' digest sorts first, so the
+  `kindDocument` its findings name does not depend on the order of `--kind`.
+
+Not bounded here, because each is a product of two inputs already bounded: a kind's secrets
+against its reference patterns, the overlayable patterns against a patch's pointers, and pointer
+reachability, which is a pattern's tokens times the expanded schema.
