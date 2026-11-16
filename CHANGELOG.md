@@ -9,6 +9,9 @@ All notable changes to tagged releases are documented here.
   - Every step-2 diagnostic of a kind declaration whose `kind` member is a kind name now carries
     `kind` in its location (§7.3). Before, an unknown or missing member, and a bad `id` or
     `version`, were reported without it.
+  - A schema's cycle check covers every `$ref` that names a definition, whatever else the schema
+    fails (§3.3). Before, a `$ref` that named no definition, or any other schema error, hid a
+    cycle among the definitions.
 
 ## 0.47.0 - 2026-11-16
 

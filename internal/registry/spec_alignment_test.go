@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -30,6 +31,33 @@ func TestEveryKindDiagnosticCarriesTheKind(t *testing.T) {
 	for name, seen := range want {
 		if !seen {
 			t.Errorf("%s not reported", name)
+		}
+	}
+}
+
+// §3.3: the cycle check covers every $ref that names a definition, whatever
+// other diagnostic the schema has: a $ref that names no definition, or an
+// unknown keyword, does not hide a cycle.
+func TestACycleIsReportedBesideOtherSchemaErrors(t *testing.T) {
+	for _, c := range []struct {
+		schema string
+		want   []string
+	}{
+		{`{"$defs":{"a":{"$ref":"#/$defs/none"},"b":{"$ref":"#/$defs/c"},"c":{"$ref":"#/$defs/b"}},"$ref":"#/$defs/b"}`,
+			[]string{"REG-KIND-SCHEMA-REF /schema/$defs/a/$ref", "REG-KIND-SCHEMA-REF /schema/$defs/b/$ref"}},
+		{`{"$defs":{"b":{"$ref":"#/$defs/c"},"c":{"allOf":[{"$ref":"#/$defs/b"}],"bogus":1}}}`,
+			[]string{"REG-KIND-SCHEMA-REF /schema/$defs/b/$ref", "REG-KIND-SCHEMA-KEYWORD /schema/$defs/c/bogus"}},
+	} {
+		collected := &collector{}
+		if node := compileSchema(decodeAny(t, c.schema), []string{"schema"}, Location{Document: DocumentKind}, collected, &patternBudget{}); node != nil {
+			t.Fatalf("%s: admitted", c.schema)
+		}
+		var got []string
+		for _, d := range collected.sorted() {
+			got = append(got, d.Code+" "+d.Location.Pointer)
+		}
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: got %v, want %v", c.schema, got, c.want)
 		}
 	}
 }
