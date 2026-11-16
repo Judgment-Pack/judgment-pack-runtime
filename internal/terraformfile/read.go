@@ -87,10 +87,12 @@ type resource struct {
 // source that fails Validate, which makes the dialect invalid and not the file,
 // or ErrRead when the reader fails.
 func Read(r io.Reader, src Source) (*Acquisition, *Refusal, error) {
-	return read(r, src, MaxValueBytes)
+	return read(r, src, MaxValueBytes, ValueBytesPerInputByte)
 }
 
-func read(r io.Reader, src Source, valueLimit int64) (*Acquisition, *Refusal, error) {
+// read holds the acquired value to valueLimit bytes and to perInputByte times
+// the input's size, whichever is less.
+func read(r io.Reader, src Source, valueLimit, perInputByte int64) (*Acquisition, *Refusal, error) {
 	if err := src.Validate(); err != nil {
 		return nil, nil, err
 	}
@@ -160,7 +162,7 @@ func read(r io.Reader, src Source, valueLimit int64) (*Acquisition, *Refusal, er
 			return refuse(CodeNumber)
 		}
 	}
-	value, spans, ok := doc.writeAcquired(selected, src.Document, valueLimit)
+	value, spans, ok := doc.writeAcquired(selected, src.Document, min(valueLimit, perInputByte*size))
 	if !ok {
 		return refuse(CodeValueLimit)
 	}
@@ -525,8 +527,8 @@ func (d *document) writeAcquired(selected []resource, document string, limit int
 }
 
 // writeAll writes every selected resource. The first pass also collects each
-// plan resource's afterUnknown pointers, within what remains of the limit,
-// and sorts them; the second reuses them.
+// plan resource's afterUnknown pointers, within what remains of the limit, by
+// counting them before building them, and sorts them; the second reuses them.
 func (d *document) writeAll(w *writer, selected []resource, document string, unknowns []*pointers, spans [][2]int) bool {
 	w.byte('[')
 	for i, res := range selected {
@@ -535,10 +537,13 @@ func (d *document) writeAll(w *writer, selected []resource, document string, unk
 		}
 		start := len(w.buf)
 		if document == DocumentPlan && unknowns[i] == nil {
-			list := &pointers{budget: w.limit - w.written}
-			if res.afterUnknown.ok && !d.unknown(res.afterUnknown.node, res.after, res.afterSensitive, list) {
-				w.over = true
-				return false
+			list := &pointers{}
+			if res.afterUnknown.ok {
+				var ok bool
+				if list, ok = d.collect(res.afterUnknown.node, res.after, res.afterSensitive, w.limit-w.written); !ok {
+					w.over = true
+					return false
+				}
 			}
 			slices.SortFunc(list.spans, func(a, b [2]uint32) int {
 				return bytes.Compare(list.data[a[0]:a[1]], list.data[b[0]:b[1]])

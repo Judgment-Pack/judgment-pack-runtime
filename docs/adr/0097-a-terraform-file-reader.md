@@ -133,18 +133,23 @@ computed on the literal's digits alone:
 | `SelectMaxLimit` | 10000 | RFC 0038 §4 |
 | `MaxNumberChars` | 64 | RFC 0038 §5 |
 | `MaxValueBytes` | 268435456 | this runtime |
+| `ValueBytesPerInputByte` | 16 | this runtime |
 
 **Memory.** The arena's worst case is `[0,0,...]`, at one node per two input bytes: 6 bytes of
-arena per input byte. A test measures TotalAlloc, not time, at 4 MiB:
+arena per input byte. A test measures TotalAlloc, not time, at 4 MiB, and the last case at the
+518 KiB that shows it:
 
 | Case | Measured, per input byte | Budget |
 |---|---|---|
 | `[0,0,...]`, read through step 3 (arena, input and removal bits) | 7.07 | 7.5 |
 | One object of about 470,000 members | 5.53 | 7.5 |
 | A selected resource whose value is the whole file (arena, input, and a value twice the input) | 9.07 | 9.5 |
+| `after_unknown` `{"<512 KiB name>":{"k0":true,...,"k479":true}}`, a 240 MiB value, refused `TF-VALUE-LIMIT` (input, and the pointer path) | 3.04 | 3.5 |
 
 So a worst-case file costs about 450 MiB at the 64 MiB default, and about 1.8 GiB at the 256 MiB
-cap; a read whose value is the whole file adds about twice the file. Large key lists grow by
+cap; a read whose value is the whole file adds about twice the file. The value, and the
+`afterUnknown` pointers collected for it, are each held to 16 times the file (reading 14), and the
+pointers are counted before they are built. Large key lists, and the pointer path, grow by
 doubling, not by `append`, which past 256 elements grows by about a quarter at a time and would
 allocate several times a large object's keys.
 
@@ -220,11 +225,21 @@ The rest are this runtime's own readings:
 14. **`TF-VALUE-LIMIT`.** RFC 0038 bounds the file, not the acquired value. Normal forms (`1e63` is
     4 bytes and becomes 66) and `afterUnknown` pointers can make the value longer than the file, and
     pointers that repeat a long prefix can make it quadratic in the file. This runtime holds the
-    canonical value to `MaxValueBytes`, the largest file a source may declare. The pointers are
-    collected within that bound, each charged its bytes and the 8 bytes of its span, so a value
-    with many short pointers is refused up to 5 bytes per pointer below the bound. The walk keeps
-    one path buffer, so a long prefix is never copied once per child. The check comes after
-    `TF-NUMBER`.
+    canonical value to the lesser of `MaxValueBytes`, the largest file a source may declare, and
+    `ValueBytesPerInputByte` (16) times the file.
+    - The multiple is above what numbers can do. An array of `1e63` grows about 13.4 times, 5
+      bytes to 67, the most any number can; string escapes never grow. So an ordinary plan, whose
+      value is a part of the file, passes, and only pointers that repeat a long prefix
+      reach the bound.
+    - The pointers are collected within the bound, each charged its bytes and the 8 bytes of its
+      span, so a value with many short pointers is refused up to 5 bytes per pointer below the
+      bound.
+    - A dry pass counts the pointers first, so a list past the bound is refused before any of it is
+      built, and an accepted one is collected into buffers allocated once at their counted sizes.
+    - The walk keeps one path buffer for both passes, so a long prefix is never copied once per
+      child.
+
+    The check comes after `TF-NUMBER`.
 15. **A `null`** `planned_values`, `resource_changes` or `values` is present and of the wrong type.
 16. **`select.actions`** may repeat a value. The change's `actions` are carried as written.
 17. **Mapping a refusal to a source outcome** (dialect §9.2) is left open by the companion. This

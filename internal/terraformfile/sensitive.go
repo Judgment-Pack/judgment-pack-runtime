@@ -175,18 +175,31 @@ func (d *document) stripRoot(m uint32, v optional) int {
 }
 
 // pointers collects afterUnknown pointers into one buffer, within a budget of
-// bytes that charges each pointer its bytes and the 8 of its span. path is the pointer of the position being walked; it is one buffer
-// for the whole walk, so a long prefix is never copied once per child.
+// bytes that charges each pointer its bytes and the 8 of its span. A dry pass
+// (counting) measures the pointers first and builds nothing, so a list past
+// its budget is refused before any of it is allocated, and an accepted one is
+// collected into buffers of exactly its size. path is the pointer of the
+// position being walked; it is one buffer for both passes, so a long prefix is
+// never copied once per child.
 type pointers struct {
 	data   []byte
 	spans  [][2]uint32
 	budget int64
 	path   []byte
+	// The dry pass's count of pointers and of their bytes.
+	counting bool
+	count    int
+	bytes    int64
 }
 
 func (p *pointers) add() bool {
-	if int64(len(p.data)+len(p.path)+8*(len(p.spans)+1)) > p.budget {
-		return false
+	if p.counting {
+		if p.bytes+int64(len(p.path))+8*int64(p.count+1) > p.budget {
+			return false
+		}
+		p.bytes += int64(len(p.path))
+		p.count++
+		return true
 	}
 	start := len(p.data)
 	p.data = append(p.data, p.path...)
@@ -194,12 +207,38 @@ func (p *pointers) add() bool {
 	return true
 }
 
+// collect walks after_unknown twice: a dry pass that counts the pointers
+// within the budget, then a pass that copies them into buffers allocated once
+// at the counted sizes. It reports false when the pointers pass the budget.
+func (d *document) collect(u uint32, a, m optional, budget int64) (*pointers, bool) {
+	p := &pointers{budget: budget, counting: true}
+	if !d.unknown(u, a, m, p) {
+		return nil, false
+	}
+	p.counting = false
+	p.data = make([]byte, 0, p.bytes)
+	p.spans = make([][2]uint32, 0, p.count)
+	p.path = p.path[:0]
+	if !d.unknown(u, a, m, p) || int64(len(p.data)) != p.bytes || len(p.spans) != p.count {
+		panic("terraformfile: the pointer pass differs from the counting pass")
+	}
+	return p, true
+}
+
 func (p *pointers) at(i int) []byte { return p.data[p.spans[i][0]:p.spans[i][1]] }
 
 // push appends one escaped token to the path, and returns the length to
-// truncate it back to.
+// truncate it back to. A path too short for the token grows once, to twice
+// what it needs: append, a byte at a time, would grow a long name's path by
+// about a quarter at a time.
 func (p *pointers) push(token []byte) int {
 	mark := len(p.path)
+	need := len(p.path) + 1 + len(token) + bytes.Count(token, []byte{'~'}) + bytes.Count(token, []byte{'/'})
+	if need > cap(p.path) {
+		grown := make([]byte, len(p.path), 2*need)
+		copy(grown, p.path)
+		p.path = grown
+	}
 	p.path = append(p.path, '/')
 	for _, c := range token {
 		switch c {

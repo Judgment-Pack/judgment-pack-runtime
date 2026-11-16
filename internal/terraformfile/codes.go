@@ -19,7 +19,8 @@ package terraformfile
 
 import "strconv"
 
-// The bounds of RFC 0038, and the one this runtime adds (MaxValueBytes).
+// The bounds of RFC 0038, and the two this runtime adds (MaxValueBytes and
+// ValueBytesPerInputByte).
 const (
 	// DefaultMaxBytes is maxBytes when the source does not declare it.
 	DefaultMaxBytes int64 = 67108864
@@ -46,6 +47,12 @@ const (
 	// value longer than the file, so this runtime holds it to the largest
 	// file a source can read (ADR-0097).
 	MaxValueBytes int64 = MaxBytesLimit
+	// ValueBytesPerInputByte bounds the acquired value by its source as well:
+	// a value longer than this many times the input is refused. The number
+	// normal form grows an array of `1e63` elements about 13.4 times, the
+	// most any number can; string escapes never grow; so only afterUnknown
+	// pointers that repeat a long prefix pass it (ADR-0097 reading 14).
+	ValueBytesPerInputByte int64 = 16
 )
 
 // FormatTable is the release of the accepted format_version table this reader

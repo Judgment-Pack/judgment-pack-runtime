@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -100,3 +101,28 @@ func TestAFullReadStaysWithinItsAllocationBudget(t *testing.T) {
 type rawJSON []byte
 
 func (r rawJSON) MarshalJSON() ([]byte, error) { return r, nil }
+
+// Pointers that repeat one long name: a 518 KiB plan whose after_unknown is
+// {"<512 KiB name>":{"k0":true,...,"k479":true}} would give 480 pointers of
+// 512 KiB each, a 240 MiB value. The pointers are counted before any is
+// built, and the value is held to ValueBytesPerInputByte times the input, so
+// the read is refused with TF-VALUE-LIMIT having allocated the input (1 byte
+// per input byte) and the pointer path, grown once to twice the long name (2),
+// and little else: about 3.0 times the input, against a budget of 3.5.
+func TestManyLongPointersAreRefusedWithinTheSourceBound(t *testing.T) {
+	long := strings.Repeat("n", 512<<10)
+	unknowns := make(map[string]any, 480)
+	for i := range 480 {
+		unknowns["k"+strconv.Itoa(i)] = true
+	}
+	data := plan(t, change{address: "synthetic_db.main", after: object(), afterUnknown: object(long, unknowns)})
+	total, refusal := allocated(t, data, planSource("synthetic_db"))
+	if refusal == nil || refusal.Code != CodeValueLimit {
+		t.Fatalf("refusal %v, want %s", refusal, CodeValueLimit)
+	}
+	ratio := float64(total) / float64(len(data))
+	t.Logf("%d bytes allocated for %d bytes of input: %.2f per byte", total, len(data), ratio)
+	if ratio > 3.5 {
+		t.Fatalf("allocated %.2f bytes per input byte, over the budget of 3.5", ratio)
+	}
+}
