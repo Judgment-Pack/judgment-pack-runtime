@@ -24,8 +24,9 @@ All notable changes to tagged releases are documented here.
   generated facts contract. An invalid registry, or an entry over the facts-document limit, writes
   nothing and exits 2. `check-pack PACK --contract C` reports, without evaluating, a pointer the
   contract does not list, an ordered comparison on one that is not decimal, and an operand a
-  pointer can never hold. The typed builders of RFC 0037 §6 are not built. Existing commands and
-  their output are unchanged.
+  pointer can never hold; a pointer below an open position of the kind is listed. Its report has
+  its own selector, `factsCheckFormatVersion`. The typed builders of RFC 0037 §6 are not built.
+  Existing commands and their output are unchanged.
 
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
   `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
