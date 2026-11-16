@@ -183,12 +183,12 @@ func TestOverlayPrefixTargetAndDuplicates(t *testing.T) {
 func schemaFindings(t *testing.T, schema string, value string) []string {
 	t.Helper()
 	collected := &collector{}
-	node := compileSchema(decodeAny(t, schema), []string{"schema"}, Location{Document: DocumentKind}, collected)
+	node := compileSchema(decodeAny(t, schema), []string{"schema"}, Location{Document: DocumentKind}, collected, &patternBudget{})
 	if node == nil || collected.errors() > 0 {
 		t.Fatalf("schema refused: %+v", collected.sorted())
 	}
 	var findings []valueFinding
-	node.validate(decodeAny(t, value), nil, &findings)
+	node.validate(&validation{work: maxValidationWork}, decodeAny(t, value), nil, &findings)
 	var out []string
 	for _, f := range findings {
 		out = append(out, f.code)
@@ -199,7 +199,7 @@ func schemaFindings(t *testing.T, schema string, value string) []string {
 func schemaRefusal(t *testing.T, schema string) []string {
 	t.Helper()
 	collected := &collector{}
-	compileSchema(decodeAny(t, schema), []string{"schema"}, Location{Document: DocumentKind}, collected)
+	compileSchema(decodeAny(t, schema), []string{"schema"}, Location{Document: DocumentKind}, collected, &patternBudget{})
 	var out []string
 	for _, d := range collected.sorted() {
 		out = append(out, d.Code)

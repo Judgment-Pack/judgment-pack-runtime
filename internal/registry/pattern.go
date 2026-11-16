@@ -1,8 +1,10 @@
 package registry
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
+	"regexp/syntax"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -11,10 +13,29 @@ import (
 // MaxPatternLength bounds a pattern, in code points (RFC 0034 §2.2).
 const MaxPatternLength = 256
 
+// Program bounds (ADR-0093, amendment). RFC 0034 §2.2 admits {n,m} up to
+// 1000 in a pattern of 256 code points, and RE2 compiles x{n,m} as m copies
+// of x, so one pattern within the subset can compile to a quarter of a
+// million instructions, tens of megabytes. A pattern's size is counted on its
+// parse, before anything is compiled (patternSize), and a kind is refused
+// with REG-KIND-PATTERN-LIMIT at a pattern past MaxPatternInstructions, or at
+// one that would take the kind's patterns together past
+// MaxKindPatternInstructions.
+const (
+	MaxPatternInstructions     = 4096
+	MaxKindPatternInstructions = 65536
+)
+
+// errPatternSize refuses a pattern within the subset whose program would
+// pass MaxPatternInstructions.
+var errPatternSize = errors.New("the pattern compiles to more than the instruction bound")
+
 // Pattern is a compiled pattern of the companion's subset. Matching is RE2's,
 // so it is linear in the input.
 type Pattern struct {
 	re *regexp.Regexp
+	// size is the program's instruction count, as patternSize counts it.
+	size int
 }
 
 // MatchString reports whether the pattern matches anywhere in s.
@@ -31,13 +52,116 @@ func (p *Pattern) MatchString(s string) bool { return p.re.MatchString(s) }
 //   - "$" matches only at the very end of the string, never before a final
 //     line feed as Python's does;
 //   - "\-" is admitted only inside a class, as ECMAScript's u mode requires.
+//
+// A pattern whose program would pass MaxPatternInstructions is refused
+// before it is compiled.
 func CompilePattern(source string) (*Pattern, error) {
+	translated, size, err := translatePattern(source)
+	if err != nil {
+		return nil, err
+	}
+	re, err := regexp.Compile(translated)
+	if err != nil {
+		return nil, err
+	}
+	return &Pattern{re: re, size: size}, nil
+}
+
+// patternBudget compiles one kind's patterns and holds them together to
+// MaxKindPatternInstructions.
+type patternBudget struct {
+	used int
+}
+
+// compile returns the compiled pattern, or nil and the code that refuses it:
+// REG-KIND-PATTERN for one outside the subset, REG-KIND-PATTERN-LIMIT for one
+// past MaxPatternInstructions or one that does not fit in what the kind has
+// left. A refused pattern is not counted, so each later one is judged on the
+// patterns admitted before it, in the order the kind is read.
+func (b *patternBudget) compile(source string) (*Pattern, string) {
+	translated, size, err := translatePattern(source)
+	switch {
+	case errors.Is(err, errPatternSize):
+		return nil, "REG-KIND-PATTERN-LIMIT"
+	case err != nil:
+		return nil, "REG-KIND-PATTERN"
+	case b.used+size > MaxKindPatternInstructions:
+		return nil, "REG-KIND-PATTERN-LIMIT"
+	}
+	re, err := regexp.Compile(translated)
+	if err != nil {
+		return nil, "REG-KIND-PATTERN"
+	}
+	b.used += size
+	return &Pattern{re: re, size: size}, ""
+}
+
+// patternSize is the number of instructions RE2 compiles a parsed pattern
+// to, as Go's regexp/syntax estimates it before compiling (its calcSize):
+// one per literal code point, class and assertion; one more for each ?, +
+// and alternative, two for * and a group; and x{n,m} as m copies of x and
+// m-n more, x{n,} as n copies and one. The compiled program adds its two
+// fixed instructions, and one fewer for a * over a pattern that can match
+// nothing. The parse holds a repetition once, so counting costs the
+// pattern's length, and the count saturates past MaxPatternInstructions.
+func patternSize(re *syntax.Regexp) int {
+	const limit = MaxPatternInstructions + 1
+	size := 0
+	switch re.Op {
+	case syntax.OpLiteral:
+		size = len(re.Rune)
+	case syntax.OpCapture, syntax.OpStar:
+		size = 2 + patternSize(re.Sub[0])
+	case syntax.OpPlus, syntax.OpQuest:
+		size = 1 + patternSize(re.Sub[0])
+	case syntax.OpConcat, syntax.OpAlternate:
+		for _, sub := range re.Sub {
+			size = min(size+patternSize(sub), limit)
+		}
+		if re.Op == syntax.OpAlternate && len(re.Sub) > 1 {
+			size += len(re.Sub) - 1
+		}
+	case syntax.OpRepeat:
+		sub := patternSize(re.Sub[0])
+		switch {
+		case re.Max == -1 && re.Min == 0:
+			size = 2 + sub
+		case re.Max == -1:
+			size = 1 + min(re.Min, limit)*sub
+		default:
+			size = min(re.Max, limit)*sub + re.Max - re.Min
+		}
+	}
+	return min(max(1, size), limit)
+}
+
+// translatePattern checks a pattern against the subset, translates it into
+// RE2 and parses it, and returns the translation and its size. It refuses,
+// with errPatternSize, a pattern whose program would pass
+// MaxPatternInstructions.
+func translatePattern(source string) (string, int, error) {
+	translated, err := translateSubset(source)
+	if err != nil {
+		return "", 0, err
+	}
+	parsed, err := syntax.Parse(translated, syntax.Perl)
+	if err != nil {
+		return "", 0, err
+	}
+	size := patternSize(parsed)
+	if size > MaxPatternInstructions {
+		return "", 0, errPatternSize
+	}
+	return translated, size, nil
+}
+
+func translateSubset(source string) (string, error) {
 	if !utf8.ValidString(source) {
-		return nil, fmt.Errorf("not UTF-8")
+		return "", fmt.Errorf("not UTF-8")
 	}
 	runes := []rune(source)
 	if len(runes) > MaxPatternLength {
-		return nil, fmt.Errorf("longer than %d code points", MaxPatternLength)
+		return "", fmt.Errorf("longer than %d code points", MaxPatternLength)
 	}
 	var out strings.Builder
 	depth := 0
@@ -50,19 +174,19 @@ func CompilePattern(source string) (*Pattern, error) {
 		switch r {
 		case '^':
 			if i != 0 {
-				return nil, fmt.Errorf("^ is allowed only first")
+				return "", fmt.Errorf("^ is allowed only first")
 			}
 			out.WriteString(`^`)
 			canQuantify, quantified = false, false
 		case '$':
 			if i != last {
-				return nil, fmt.Errorf("$ is allowed only last")
+				return "", fmt.Errorf("$ is allowed only last")
 			}
 			out.WriteString(`\z`)
 			canQuantify, quantified = false, false
 		case '\\':
 			if i == last {
-				return nil, fmt.Errorf("trailing backslash")
+				return "", fmt.Errorf("trailing backslash")
 			}
 			i++
 			c := runes[i]
@@ -72,7 +196,7 @@ func CompilePattern(source string) (*Pattern, error) {
 			case strings.ContainsRune(`.\/()[]{}*+?|^$`, c):
 				out.WriteString(regexp.QuoteMeta(string(c)))
 			default:
-				return nil, fmt.Errorf("escape outside the subset")
+				return "", fmt.Errorf("escape outside the subset")
 			}
 			canQuantify, quantified = true, false
 		case '.':
@@ -81,21 +205,21 @@ func CompilePattern(source string) (*Pattern, error) {
 		case '[':
 			end, class, err := readClass(runes, i)
 			if err != nil {
-				return nil, err
+				return "", err
 			}
 			out.WriteString(class)
 			i = end
 			canQuantify, quantified = true, false
 		case '(':
 			if i < last && runes[i+1] == '?' {
-				return nil, fmt.Errorf("group modifiers are outside the subset")
+				return "", fmt.Errorf("group modifiers are outside the subset")
 			}
 			depth++
 			out.WriteString(`(?:`)
 			canQuantify, quantified = false, false
 		case ')':
 			if depth == 0 {
-				return nil, fmt.Errorf("unbalanced )")
+				return "", fmt.Errorf("unbalanced )")
 			}
 			depth--
 			out.WriteString(`)`)
@@ -105,36 +229,32 @@ func CompilePattern(source string) (*Pattern, error) {
 			canQuantify, quantified = false, false
 		case '*', '+', '?':
 			if !canQuantify || quantified {
-				return nil, fmt.Errorf("quantifier without an atom, or lazy or possessive")
+				return "", fmt.Errorf("quantifier without an atom, or lazy or possessive")
 			}
 			out.WriteRune(r)
 			canQuantify, quantified = false, true
 		case '{':
 			end, err := readBraces(runes, i)
 			if err != nil {
-				return nil, err
+				return "", err
 			}
 			if !canQuantify || quantified {
-				return nil, fmt.Errorf("quantifier without an atom")
+				return "", fmt.Errorf("quantifier without an atom")
 			}
 			out.WriteString(string(runes[i : end+1]))
 			i = end
 			canQuantify, quantified = false, true
 		case '}', ']':
-			return nil, fmt.Errorf("unescaped %c", r)
+			return "", fmt.Errorf("unescaped %c", r)
 		default:
 			out.WriteString(regexp.QuoteMeta(string(r)))
 			canQuantify, quantified = true, false
 		}
 	}
 	if depth != 0 {
-		return nil, fmt.Errorf("unbalanced (")
+		return "", fmt.Errorf("unbalanced (")
 	}
-	re, err := regexp.Compile(out.String())
-	if err != nil {
-		return nil, err
-	}
-	return &Pattern{re: re}, nil
+	return out.String(), nil
 }
 
 // readBraces reads {n}, {n,} or {n,m} at start, with n <= m <= 1000.
