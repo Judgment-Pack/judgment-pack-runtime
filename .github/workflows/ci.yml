@@ -42,12 +42,23 @@ jobs:
           cache: true
       - name: Check formatting
         run: go fmt ./...
+      # startup/ is a nested module (ADR-0096): `./...` at the root does not enter it, so it has
+      # steps of its own. Its coverage floor is the check job's startup-test step.
+      - name: Check formatting of the start-up module
+        working-directory: startup
+        run: go fmt ./...
       - name: Verify formatting did not change files
         run: git diff --exit-code
       - name: Vet
         run: go vet ./...
+      - name: Vet the start-up module
+        working-directory: startup
+        run: go vet ./...
       - name: Test
         run: go test ./...
+      - name: Test the start-up module
+        working-directory: startup
+        run: go test -cover ./...
       - name: Run bundled conformance suite
         run: go run ./cmd/jpack spec test-conformance --quiet
       - name: Build
