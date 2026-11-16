@@ -79,3 +79,36 @@ func TestAnEntryReferencePointerIsBoundedInCodePoints(t *testing.T) {
 		t.Error("a pointer pattern of 599 bytes was admitted")
 	}
 }
+
+// §3.1: an id is an RFC 3986 absolute-URI, in ASCII, of at most 2048
+// characters. The same rule holds a registry's id, a pin's id and a facts
+// contract's ids, which share the reader.
+func TestAnIDIsAnRFC3986AbsoluteURI(t *testing.T) {
+	long := "https://example.invalid/" + strings.Repeat("k", 2048-len("https://example.invalid/"))
+	for _, id := range []string{
+		"https://example.invalid/kinds/k", "urn:example:kind", "a:", "s:/a", "s:%41", "a+b-c.d:x",
+		"tag:example.invalid,2026:k", "mailto:team@example.invalid", "file:///kinds/k",
+		"https://user:pw@example.invalid:8443/a?b=c/d?e", "https://example.invalid/%7ek?", "https://example.invalid:/k",
+		"https://[2001:db8::1]:443/k", "https://[::ffff:192.0.2.1]/k", "https://[v1.fe:x]/", "https://192.0.2.1/k",
+		"https://example.invalid/!$&'()*+,;=:@-._~", long,
+	} {
+		if !isAbsoluteURI(id) {
+			t.Errorf("refused %q", id)
+		}
+	}
+	for _, id := range []string{
+		"", ":x", "1a:b", "a_b:x", "//example.invalid/k", "example.invalid/k", long + "k",
+		"https://example.invalid/k#f", "https://example.invalid/k#", "https://exämple.invalid/", "urn:é",
+		"https://example.invalid/<k>", `https://example.invalid/\k`, `https://example.invalid/"k"`,
+		"https://example.invalid/{k}", "https://example.invalid/^k", "https://example.invalid/`k`",
+		"https://example.invalid/a|b", "https://example.invalid/a b", "https://example.invalid/a\tb", "urn:a\n",
+		"https://example.invalid/%4", "https://example.invalid/%zz", "https://example.invalid/%",
+		"https://example.invalid/[k]", "https://example.invalid/k?[q]", "https://[2001:db8::1/k", "https://example.invalid]/",
+		"https://[fe80::1%25eth0]/", "https://[192.0.2.1]/", "https://[2001:db8::1]x/", "https://[v1.]/", "https://[vg.x]/",
+		"https://a@b@example.invalid/", "https://example.invalid:8x/", "https://example.invalid:1:2/",
+	} {
+		if isAbsoluteURI(id) {
+			t.Errorf("admitted %q", id)
+		}
+	}
+}

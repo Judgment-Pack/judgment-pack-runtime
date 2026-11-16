@@ -15,6 +15,11 @@ All notable changes to tagged releases are documented here.
   - An entry reference's `#pointer` is held to 512 code points as written (§6.2), not 512 bytes,
     so a pointer of 300 two-byte code points is read. A pointer pattern (§3.5) is still at most
     512 bytes.
+  - An `id` is read as an RFC 3986 `absolute-URI` (§3.1), by the runtime's one RFC 3986 reader
+    (ADR-0064), not by `net/url`: in ASCII, with a `%` followed by two hex digits, and `[` and `]`
+    only around an IP-literal host. `url.Parse` admitted non-ASCII and characters outside RFC 3986
+    such as `<`, `>`, `\`, `"`, `{`, `^`, `` ` `` and `|`. The rule holds a kind's and a registry's
+    `id`, a pin's `id`, and a facts contract's `id` and `source.kind.id`, as before.
 
 ## 0.47.0 - 2026-11-16
 

@@ -1,11 +1,12 @@
 package registry
 
 import (
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/uriformat"
 )
 
 var (
@@ -269,12 +270,14 @@ func readReferencePatterns(root map[string]any, schema *schemaNode, fail func(st
 	return out
 }
 
+// isAbsoluteURI reports whether text is an RFC 3986 absolute-URI of at most
+// 2048 characters (registry companion §3.1): scheme ":" hier-part
+// [ "?" query ], so no fragment, in ASCII, with no white space. The grammar
+// is the runtime's one RFC 3986 reader (ADR-0064). It is the form of a
+// kind's and a registry's id, of a pin's id, and of a facts contract's id
+// and source kind id.
 func isAbsoluteURI(text string) bool {
-	if text == "" || len(text) > 2048 || strings.ContainsAny(text, " \t\r\n") {
-		return false
-	}
-	parsed, err := url.Parse(text)
-	return err == nil && parsed.IsAbs() && parsed.Fragment == ""
+	return text != "" && len(text) <= 2048 && !strings.Contains(text, "#") && uriformat.Valid(text)
 }
 
 func sortedKeys[V any](object map[string]V) []string {
