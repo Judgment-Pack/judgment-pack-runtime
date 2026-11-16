@@ -156,3 +156,22 @@ func TestRegistryCheckPack(t *testing.T) {
 		t.Fatal("a pack the evaluator refuses is not checked")
 	}
 }
+
+// A contract that admission refuses at many positions is reported as validate
+// reports a registry (#432): the first 1000 diagnostics, then one
+// REG-REPORT-TRUNCATED at the contract, and the pack is not read.
+func TestRegistryCheckPackCapsAContractsReport(t *testing.T) {
+	pack := writeDocument(t, "pack.json", queuePack)
+	contract := writeDocument(t, "numbers.contract.json", `{"factsContractVersion":"1.0.0","facts":[`+strings.TrimSuffix(strings.Repeat("-0,", 5000), ",")+`]}`)
+	code, out, stderr := runTest(t, []string{"registry", "check-pack", pack, "--contract", contract}, "")
+	if code != 1 || stderr != "" || strings.Contains(out, `"pack":`) {
+		t.Fatalf("%d %q %.300q", code, stderr, out)
+	}
+	if got := strings.Count(out, `"code":"REG-DOC-NUMBER"`); got != 1000 {
+		t.Fatalf("%d REG-DOC-NUMBER diagnostics", got)
+	}
+	last := out[strings.LastIndex(out, `{"code":`):]
+	if !strings.HasPrefix(last, `{"code":"REG-REPORT-TRUNCATED","severity":"warning","location":{"document":"contract","pointer":""},"message":"`) || !strings.HasSuffix(last, `"}]}`+"\n") {
+		t.Fatalf("the last diagnostic: %q", last)
+	}
+}

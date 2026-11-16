@@ -3,7 +3,6 @@ package registry
 import (
 	"net/url"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -80,6 +79,7 @@ func readKind(root map[string]any, location Location, diagnostics *collector) *K
 		}
 	}
 	kind := &Kind{Document: root, entryID: defaultEntryID, maxEntries: DefaultMaxEntries, maxBytes: DefaultMaxEntryBytes}
+	patterns := &patternBudget{}
 	stringMember := func(name string, valid func(string) bool) string {
 		value, present := root[name]
 		if !present {
@@ -114,9 +114,9 @@ func readKind(root map[string]any, location Location, diagnostics *collector) *K
 		case !isObject || len(object) != 1 || !isString:
 			fail("REG-KIND-FORM", "entryId")
 		default:
-			pattern, err := CompilePattern(source)
-			if err != nil {
-				fail("REG-KIND-PATTERN", "entryId", "pattern")
+			pattern, code := patterns.compile(source)
+			if code != "" {
+				fail(code, "entryId", "pattern")
 			} else {
 				kind.entryID = pattern
 			}
@@ -126,7 +126,7 @@ func readKind(root map[string]any, location Location, diagnostics *collector) *K
 		kind.readBounds(value, fail)
 	}
 	if value, ok := root["schema"]; ok {
-		kind.schema = compileSchema(value, []string{"schema"}, location, diagnostics)
+		kind.schema = compileSchema(value, []string{"schema"}, location, diagnostics, patterns)
 	}
 	kind.secrets = readPointerPatterns(root, "secrets", kind.schema, fail)
 	kind.overlayable = readPointerPatterns(root, "overlayable", kind.schema, fail)
@@ -179,15 +179,15 @@ func readPointerPatterns(root map[string]any, member string, schema *schemaNode,
 		return nil
 	}
 	var out []pointerPattern
-	var seen []string
+	seen := make(map[string]bool, len(items))
 	for i, item := range items {
 		at := strconv.Itoa(i)
 		text, ok := item.(string)
-		if !ok || slices.Contains(seen, text) {
+		if !ok || seen[text] {
 			fail("REG-KIND-FORM", member, at)
 			continue
 		}
-		seen = append(seen, text)
+		seen[text] = true
 		pattern, err := parsePointerPattern(text)
 		if err != nil {
 			fail("REG-KIND-POINTER-FORM", member, at)
@@ -213,6 +213,7 @@ func readReferencePatterns(root map[string]any, schema *schemaNode, fail func(st
 		return nil
 	}
 	var out []referencePattern
+	sources := make(map[string]bool, len(items))
 	for i, item := range items {
 		at := strconv.Itoa(i)
 		object, ok := item.(map[string]any)
@@ -234,13 +235,15 @@ func readReferencePatterns(root map[string]any, schema *schemaNode, fail func(st
 			continue
 		}
 		var kinds []string
+		named := make(map[string]bool, len(kindsRaw))
 		for _, kindRaw := range kindsRaw {
 			name, ok := kindRaw.(string)
-			if !ok || !kindNamePattern.MatchString(name) || slices.Contains(kinds, name) {
+			if !ok || !kindNamePattern.MatchString(name) || named[name] {
 				fail("REG-KIND-FORM", "references", at, "kinds")
 				bad = true
 				break
 			}
+			named[name] = true
 			kinds = append(kinds, name)
 		}
 		pattern, err := parsePointerPattern(text)
@@ -252,13 +255,12 @@ func readReferencePatterns(root map[string]any, schema *schemaNode, fail func(st
 			fail("REG-KIND-POINTER-UNREACHABLE", "references", at, "pointer")
 			continue
 		}
-		for _, earlier := range out {
-			if earlier.pattern.source == pattern.source {
-				fail("REG-KIND-FORM", "references", at, "pointer")
-				bad = true
-			}
+		if sources[pattern.source] {
+			fail("REG-KIND-FORM", "references", at, "pointer")
+			bad = true
 		}
 		if !bad {
+			sources[pattern.source] = true
 			out = append(out, referencePattern{pattern: pattern, kinds: kinds})
 		}
 	}

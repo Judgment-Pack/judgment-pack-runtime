@@ -2,13 +2,17 @@ package registry
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
+	"unsafe"
 
-	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
 
@@ -61,12 +65,57 @@ type registryDoc struct {
 	byName       map[EntryName]*entry
 	overlays     map[string]map[EntryName]*patch
 	failed       map[string]map[EntryName]bool
-	scopes       map[string]map[string][]string
+	scopes       map[string]map[string]map[string]bool
 }
 
 type resolvedEntry struct {
 	entry *entry
+	// value is read-only. Where no overlay applies it is the entry's own
+	// value, shared by every environment; an overlay copies only the
+	// containers on its pointers' paths.
 	value any
+	// measure is the value's canonical form measured once, shared with every
+	// environment that holds the same value.
+	measure *valueMeasure
+}
+
+// valueMeasure is what step 7 and step 8 need of a value's canonical form:
+// its length, its nesting and its digest. A value with no canonical form has
+// encoded false.
+type valueMeasure struct {
+	encoded bool
+	size    int
+	nesting int
+	digest  string
+}
+
+// measureValue encodes value once and measures it.
+func measureValue(value any) *valueMeasure {
+	canonical, err := jcs.EncodeDocument(value)
+	if err != nil {
+		return &valueMeasure{}
+	}
+	sum := sha256.Sum256(canonical)
+	return &valueMeasure{encoded: true, size: len(canonical), nesting: nesting(value), digest: hex.EncodeToString(sum[:])}
+}
+
+// nesting is the number of containers nested at a value's deepest point, as
+// carrier admission counts depth: 0 for a scalar, 1 for an empty object.
+func nesting(value any) int {
+	deepest := 0
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, item := range typed {
+			deepest = max(deepest, nesting(item))
+		}
+	case []any:
+		for _, item := range typed {
+			deepest = max(deepest, nesting(item))
+		}
+	default:
+		return 0
+	}
+	return deepest + 1
 }
 
 // Validate runs RFC 0034 §6's eight checks, in order, on a registry and the
@@ -143,7 +192,13 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 	// Step 2: kind declarations.
 	kindsByDigest := map[string]*Kind{}
 	suppliedDigests := map[string]bool{}
-	slices.SortFunc(supplied, func(a, b suppliedKind) int { return cmp.Compare(a.digest, b.digest) })
+	// Two supplied documents of one canonical digest are one kind, read once.
+	// Ties are broken by the digest of each one's bytes, the kindDocument its
+	// diagnostics are located at, so the one read does not depend on the
+	// order the kinds were supplied in.
+	slices.SortFunc(supplied, func(a, b suppliedKind) int {
+		return cmp.Or(cmp.Compare(a.digest, b.digest), cmp.Compare(a.location.KindDocument, b.location.KindDocument))
+	})
 	for _, document := range supplied {
 		if suppliedDigests[document.digest] {
 			continue
@@ -264,6 +319,11 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 	checkOverlays(registry, diagnostics)
 
 	// Step 7: per environment, on resolved values.
+	schemas := &schemaChecks{validation: validation{work: maxValidationWork}, seen: map[string][]valueFinding{}}
+	// An entry's own value, measured once, for the environments no overlay
+	// changes it in: resolution then costs the registry, not the registry
+	// times its environments.
+	shared := map[*entry]*valueMeasure{}
 	for _, environment := range registry.environments {
 		var resolved []resolvedEntry
 		values := map[EntryName]any{}
@@ -271,17 +331,22 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 			if !e.passed || !e.environment[environment] || registry.failed[environment][e.name] {
 				continue
 			}
-			value := deepCopy(e.value)
-			if p, ok := registry.overlays[environment][e.name]; ok {
-				for _, operation := range p.set {
-					value = setAt(value, operation.path, deepCopy(operation.value))
+			value := e.value
+			var measure *valueMeasure
+			if p, ok := registry.overlays[environment][e.name]; ok && len(p.set) > 0 {
+				value = overlaid(value, p.set)
+				measure = measureValue(value)
+			} else {
+				if shared[e] == nil {
+					shared[e] = measureValue(value)
 				}
+				measure = shared[e]
 			}
 			values[e.name] = value
-			resolved = append(resolved, resolvedEntry{entry: e, value: value})
+			resolved = append(resolved, resolvedEntry{entry: e, value: value, measure: measure})
 		}
 		for _, r := range resolved {
-			checkResolvedEntry(registry, environment, r, values, diagnostics)
+			checkResolvedEntry(registry, environment, r, values, schemas, diagnostics)
 		}
 		result.resolved[environment] = resolved
 	}
@@ -298,8 +363,7 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 	}
 	for _, environment := range registry.environments {
 		for _, r := range result.resolved[environment] {
-			canonical, err := jcs.EncodeDocument(r.value)
-			if err != nil || len(canonical) > r.entry.kind.maxBytes {
+			if !r.measure.encoded || r.measure.size > r.entry.kind.maxBytes {
 				name := r.entry.name
 				diagnostics.add("REG-BOUND-ENTRY-BYTES", Location{Document: DocumentValue, Entry: &name, Environment: environment, Pointer: ""})
 			}
@@ -310,35 +374,136 @@ func ValidateDocuments(registryDocument Document, kindDocuments []Document) *Res
 	// pointer, so a registry within the depth bound can resolve past it.
 	for _, environment := range registry.environments {
 		at := Location{Document: DocumentRegistry, Environment: environment, Pointer: ""}
-		canonical, err := result.encodeResolved(environment)
+		size, depth, ok := result.measureResolved(environment)
 		switch {
-		case err != nil || len(canonical) > maxResolvedBytes:
+		case !ok || size > maxResolvedBytes:
 			diagnostics.add("REG-DOC-SIZE", at)
-		case !withinResolvedDepth(canonical):
+		case depth > MaxDepth:
 			diagnostics.add("REG-DOC-DEPTH", at)
 		}
 	}
 	return finish()
 }
 
-// withinResolvedDepth says whether a resolved document, as encoded, nests no
-// deeper than MaxDepth, counted as admission counts it: the root object is
-// one level, and 32 are admitted. It decodes the bytes as step 1 decodes a
-// registry, so what resolve writes is what a reader admits. The node and
-// string limits are the size bound, which the caller has checked; a document
-// that fails for any reason is refused.
-func withinResolvedDepth(canonical []byte) bool {
-	_, failure := carrier.Decode(canonical, carrier.Limits{MaxDepth: MaxDepth, MaxNodes: maxResolvedBytes, MaxStringBytes: maxResolvedBytes})
-	return failure == nil
+// measureResolved returns the length and nesting of one environment's
+// resolved document without encoding its values again. The document is
+// encoded with every value as null, and each value's own length takes the
+// place of null's four bytes: RFC 8785 writes a container as its members'
+// forms joined, so the sum is exactly the document's length. A value sits
+// inside the root object, the entries array and its entry, so the document
+// nests three more than its deepest value, and three when no value nests.
+// Depth is counted as carrier admission counts it, the root object as one,
+// and 32 are admitted, so what resolve writes is what a reader admits.
+func (r *Result) measureResolved(environment string) (size, depth int, ok bool) {
+	skeleton, err := r.encodeDocument(environment, func(resolvedEntry) any { return nil })
+	if err != nil {
+		return 0, 0, false
+	}
+	size, depth = len(skeleton), 3
+	for _, resolved := range r.resolved[environment] {
+		if !resolved.measure.encoded {
+			return 0, 0, false
+		}
+		size += resolved.measure.size - len("null")
+		depth = max(depth, 3+resolved.measure.nesting)
+	}
+	return size, depth, true
 }
 
-func checkResolvedEntry(registry *registryDoc, environment string, r resolvedEntry, values map[EntryName]any, diagnostics *collector) {
+// overlaid returns value with each set operation applied. It copies only
+// the containers on each operation's path, once each, and shares everything
+// else with value, which it never changes. Step 6 checked that each path's
+// parent exists.
+func overlaid(value any, set []setOperation) any {
+	owned := map[unsafe.Pointer]bool{}
+	for _, operation := range set {
+		value = setCopying(value, operation.path, operation.value, owned)
+	}
+	return value
+}
+
+func setCopying(node any, path []string, value any, owned map[unsafe.Pointer]bool) any {
+	if len(path) == 0 {
+		return value
+	}
+	switch typed := node.(type) {
+	case map[string]any:
+		if !owned[reflect.ValueOf(typed).UnsafePointer()] {
+			typed = maps.Clone(typed)
+			owned[reflect.ValueOf(typed).UnsafePointer()] = true
+		}
+		if len(path) == 1 {
+			typed[path[0]] = value
+		} else {
+			typed[path[0]] = setCopying(typed[path[0]], path[1:], value, owned)
+		}
+		return typed
+	case []any:
+		index, ok := arrayIndex(path[0], len(typed))
+		if !ok {
+			return typed
+		}
+		if !owned[unsafe.Pointer(unsafe.SliceData(typed))] {
+			typed = slices.Clone(typed)
+			owned[unsafe.Pointer(unsafe.SliceData(typed))] = true
+		}
+		typed[index] = setCopying(typed[index], path[1:], value, owned)
+		return typed
+	}
+	return node
+}
+
+// schemaChecks holds step 7's schema checks across every environment: the
+// work bound they share, and the findings of each value already checked.
+type schemaChecks struct {
+	validation validation
+	// seen maps a kind's digest and a value's canonical digest to the
+	// value's findings, which hold no location beyond a path in the value.
+	seen map[string][]valueFinding
+}
+
+// check returns the findings of value against kind's schema. The same value
+// of the same kind, in another environment or another entry, is checked once.
+// It reports false when the work bound is spent: the value, and every value
+// after it, is then not checked against its schema.
+func (s *schemaChecks) check(kind *Kind, value any, measure *valueMeasure) ([]valueFinding, bool) {
+	if s.validation.exceeded {
+		return nil, false
+	}
+	key := ""
+	if measure.encoded {
+		// The key costs the value's bytes, wherever it was measured, so it
+		// is charged like the work it saves.
+		if !s.validation.charge(1 + measure.size/16) {
+			return nil, false
+		}
+		key = kind.Digest + "\x00" + measure.digest
+		if findings, ok := s.seen[key]; ok {
+			return findings, true
+		}
+	}
+	var findings []valueFinding
+	kind.schema.validate(&s.validation, value, nil, &findings)
+	if s.validation.exceeded {
+		return nil, false
+	}
+	if key != "" {
+		s.seen[key] = findings
+	}
+	return findings, true
+}
+
+func checkResolvedEntry(registry *registryDoc, environment string, r resolvedEntry, values map[EntryName]any, schemas *schemaChecks, diagnostics *collector) {
 	name := r.entry.name
 	at := func(path []string) Location {
 		return Location{Document: DocumentValue, Entry: &name, Environment: environment, Pointer: pointerOf(path)}
 	}
-	var findings []valueFinding
-	r.entry.kind.schema.validate(r.value, nil, &findings)
+	alreadySpent := schemas.validation.exceeded
+	findings, checked := schemas.check(r.entry.kind, r.value, r.measure)
+	if !checked && !alreadySpent {
+		// Reported once, at the value where the bound ran out.
+		diagnostics.add("REG-BOUND-VALIDATION-WORK", at(nil))
+	}
 	for _, finding := range findings {
 		diagnostics.add(finding.code, at(finding.path))
 	}
@@ -350,7 +515,7 @@ func checkResolvedEntry(registry *registryDoc, environment string, r resolvedEnt
 				diagnostics.add(code, at(place.path))
 			case registry.scopes == nil:
 				diagnostics.add("REF-SECRET-UNSCOPED", at(place.path))
-			case !slices.Contains(registry.scopes[environment][reference.store], reference.project):
+			case !registry.scopes[environment][reference.store][reference.project]:
 				diagnostics.add("REF-SECRET-SCOPE", at(place.path))
 			}
 		}
@@ -398,6 +563,12 @@ func (r *Result) Resolve(environment string) ([]byte, error) {
 // encodeResolved builds one environment's resolved document. Step 8 checks
 // its size and depth, so Resolve never meets one over either bound.
 func (r *Result) encodeResolved(environment string) ([]byte, error) {
+	return r.encodeDocument(environment, func(resolved resolvedEntry) any { return resolved.value })
+}
+
+// encodeDocument encodes one environment's resolved document with each
+// entry's value given by value.
+func (r *Result) encodeDocument(environment string, value func(resolvedEntry) any) ([]byte, error) {
 	kinds := make([]any, 0, len(r.registry.pins))
 	for _, p := range r.registry.pins {
 		kinds = append(kinds, map[string]any{"kind": p.kind, "id": p.id, "version": p.version, "digest": p.digest})
@@ -405,7 +576,7 @@ func (r *Result) encodeResolved(environment string) ([]byte, error) {
 	entries := make([]any, 0, len(r.resolved[environment]))
 	for _, resolved := range r.resolved[environment] {
 		entries = append(entries, map[string]any{
-			"kind": resolved.entry.name.Kind, "id": resolved.entry.name.ID, "owner": resolved.entry.owner, "value": resolved.value,
+			"kind": resolved.entry.name.Kind, "id": resolved.entry.name.ID, "owner": resolved.entry.owner, "value": value(resolved),
 		})
 	}
 	document := map[string]any{
@@ -429,24 +600,6 @@ func (r *Result) Environments() []string {
 		return nil
 	}
 	return slices.Clone(r.registry.environments)
-}
-
-func deepCopy(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(typed))
-		for name, item := range typed {
-			out[name] = deepCopy(item)
-		}
-		return out
-	case []any:
-		out := make([]any, len(typed))
-		for i, item := range typed {
-			out[i] = deepCopy(item)
-		}
-		return out
-	}
-	return value
 }
 
 // setAt replaces the value at path, whose parent exists (step 6 checked it).

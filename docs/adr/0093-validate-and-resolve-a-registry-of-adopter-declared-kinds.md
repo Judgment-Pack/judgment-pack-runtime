@@ -152,3 +152,95 @@ object counted as admission counts them. An overlay can set a value at a deep po
 within its own depth bound can resolve past it. Such an environment is a `REG-DOC-DEPTH` finding
 located at `{"document":"registry","environment":E,"pointer":""}`, and the registry is not resolved,
 as for a resolved document over its size bound.
+
+## Amendment: bounds from the v0.47.0 release review (2026-11-16, #432)
+
+The review found inputs within the size bounds whose cost grew far past their size. Each is now
+bounded where it is read, and each refusal uses a code a kind can already get, except one.
+
+- **A schema is counted expanded** (`MaxSubschemas`, 4096). Validation, pointer reachability and a
+  facts contract's reading follow each `$ref` into the definition it names, so they visit the
+  schema expanded, not as written. A definition named sixteen times by each of eight others is
+  about 3 KB written and 16^8 nodes expanded. The written count stays, and the expanded count is
+  held to the same 4096, refused as `REG-KIND-SCHEMA-LIMIT`. The expanded count is every node:
+  each `properties` member, `additionalProperties`, `items`, `not`, each `anyOf` and `allOf`
+  branch, a boolean schema, `propertyNames` as one, and at each `$ref` the expanded count of its
+  definition. A definition's count is computed once and reused at every `$ref` to it, so counting
+  costs the schema as written, and it stops just past the bound. A definition no `$ref` reaches is
+  held only by the written count. 4096 is the bound a schema already had, so a value is checked
+  against at most 4096 nodes at each position, as the written bound meant. A kind is refused only
+  when its expansion passes that; every kind in this repository's tests is admitted as before.
+- **A pattern's program is bounded** (`MaxPatternInstructions`, 4096 per pattern, and
+  `MaxKindPatternInstructions`, 65,536 per kind). RFC 0034 §2.2 admits `{n,m}` up to 1000 in 256
+  code points, and RE2 compiles `x{n,m}` as `m` copies of `x`. So `(a…a){1000}` compiles to a
+  quarter of a million instructions, about 55 MB, and a 256 KiB kind holds 880 of them. A
+  pattern's size is counted on its parse, as RE2 counts it, before anything is compiled. A pattern
+  past 4096, or one that would take the kind's admitted patterns past 65,536, is refused with the
+  new code `REG-KIND-PATTERN-LIMIT`. `REG-KIND-PATTERN` means a pattern outside the subset, which
+  this one is not, so the new code says which bound was passed. A refused pattern is not counted.
+  A typical id pattern is about 130 instructions, so 4096 leaves room for a long one, and 65,536
+  is sixteen patterns at the bound. Matching is RE2's, linear in the input times the program, so
+  the program bound also bounds each match.
+- **A long literal is kept short.** Admission keeps an integer as written, which is at most 16
+  digits, and any other number as the RFC 8785 form of its value. RFC 0034 §1 admits a decimal
+  only when its exact value is that of the shortest decimal of its double, so the two are one
+  value and no reading changes. Every later step reads a literal of at most 25 bytes. Before,
+  `1.` and a million zeros was admitted, and the range check skipped it because big arithmetic
+  refuses an exponent past 10^6. That check now fails closed: a number that cannot be compared
+  with a range is `REG-VALUE-RANGE`, never let through.
+- **Distinct lists are checked in one pass**: owners, environments, an entry's environments, scope
+  projects, `required`, `type`, a kind's pointer patterns, reference kinds and sources, and an
+  overlay's pointers (a prefix in either direction, through a tree of their tokens). `uniqueItems`
+  keys each item by its RFC 8785 form. For admitted values that is the equality JSON Schema uses,
+  since an admitted number is exactly its double's shortest decimal. An item with no RFC 8785 form
+  is compared with the earlier items one by one.
+- **Two documents of one kind** are one kind, read once. When two byte-different documents share
+  a canonical digest, the one read is the one whose bytes' digest sorts first, so the
+  `kindDocument` its findings name does not depend on the order of `--kind`.
+- **Step 7's schema checks share one work bound** (`maxValidationWork`, 2^26 node visits over the
+  registry, every environment included). The bounds above each hold one input: 4096 nodes per
+  position, a value's size, the environments. Validation costs their product, so a 3 KB kind
+  whose items expand to about 2187 nodes, with an array of four million zeros in each of 32
+  environments, ran for 43 minutes and was found valid. Each node visited at one position of a
+  value is charged once, and so is the work within a visit that grows with the value: an `enum`
+  lookup and the key it builds, a `const` comparison by the nodes it reads, each `uniqueItems` item
+  (32 units, measured) and its key's bytes, an object's members and `required` names, a pattern
+  match by the input's length times its program, and each finding held, by its path's tokens. The
+  key that finds an already-checked value is charged by its bytes. An `enum` is looked up by each
+  value's RFC 8785 form, so checking a value against 1024 values costs one lookup. Where the bound runs out, the entry is reported once, at its value's
+  root, with the new code `REG-BOUND-VALIDATION-WORK`, and no value after it is checked against
+  its schema; the registry is then not valid. The same value of the same kind (its canonical
+  digest and the kind's) is checked once and its findings reused, so an environment that changes
+  nothing costs nothing. 2^26 is about a second of checking; a registry of ten thousand entries
+  of a hundred positions each, against ten nodes at each, in ten environments, uses about a
+  sixth of it. A facts contract's closed-list check charges the same visits to its own work
+  bound.
+
+Not bounded here, because each is a product of two inputs already bounded: a kind's secrets
+against its reference patterns, the overlayable patterns against a patch's pointers, and pointer
+reachability, which is a pattern's tokens times the expanded schema.
+
+## Amendment: resolution shared across environments (2026-11-16, #434)
+
+Step 7 held a deep copy of every entry's value for each environment, and step 8 encoded each
+environment's resolved document and decoded it again for the depth check. An 8 MB entry in 32
+environments took 102 s and 4.7 GB. Now:
+
+- **A value is shared, read-only.** Where no overlay changes an entry in an environment, that
+  environment holds the entry's own value. An overlay copies only the containers on its pointers'
+  paths, each once however many of its operations pass through it, and shares the rest; nothing
+  writes into a shared value afterwards (the facts mapping copies, as before).
+- **A value is measured once.** Its canonical length, nesting and digest are computed once for
+  every environment that shares it, and once per environment an overlay changes it in. Step 7's
+  reuse of checked values keys on that digest, and step 8's `REG-BOUND-ENTRY-BYTES` reads that
+  length.
+- **Step 8 measures each environment's document without encoding it.** The document is encoded
+  with every value as `null`, and each value's length takes the place of null's four bytes: RFC
+  8785 writes a container as its members' forms joined, so the sum is the document's exact length.
+  A value sits in the root object, the entries array and its entry, so the document nests three
+  more than its deepest value, counted as carrier admission counts depth (the root object as one,
+  32 admitted). A test holds both to the encoded document and to carrier's reading of it.
+  `Resolve` still encodes the one environment it is asked for.
+
+Environments are at most 32, so an overlay on a large entry in every environment still costs
+that entry once per environment; every other cost is the registry's own.
