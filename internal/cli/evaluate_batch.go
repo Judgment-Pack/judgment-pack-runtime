@@ -203,6 +203,7 @@ func (a *App) runBatch(run batchRun, input io.Reader) error {
 			if err := writeBatchLine(encoder, held.line, held.id, runID, held.exitCode, value); err != nil {
 				return result.ExitIO, true
 			}
+			a.gate.observe(held.line, held.id, held.evaluated, held.exitCode)
 		}
 		if err := out.Flush(); err != nil {
 			return result.ExitIO, true
