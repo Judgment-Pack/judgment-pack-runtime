@@ -14,6 +14,17 @@ All notable changes to tagged releases are documented here.
   environment's project scope and left as written. Existing commands and their output are
   unchanged.
 
+- **`jpack registry import`: the registry's YAML authoring subset** (ADR-0094). It converts one
+  YAML file in RFC 0034 §7's subset to the canonical JSON of the registry or kind declaration it
+  holds. That JSON is admitted as `validate` admits JSON, and a registry's kinds and entries are
+  written in canonical order. Everything outside the subset is refused, never coerced: a directive,
+  tag, anchor, alias, merge key, second document, BOM, empty node, complex, multi-line or
+  non-string key, duplicate key, or a plain scalar YAML 1.1 or the 1.2 core schema would read as
+  another value (`yes`, `on`, `~`, `0x1F`, `1e3`, `007`, a date). The value-free report lists every
+  refusal by line and column. Nothing is written, `--output` is left as it was, and the exit code is
+  1. New `REG-YAML-*` codes are added. `line` and `column` appear only in import's locations, so
+  `validate` output is unchanged. No dependency is added.
+
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
   `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
   and every disposition is an outcome the list names, 1 when one is an outcome outside it or

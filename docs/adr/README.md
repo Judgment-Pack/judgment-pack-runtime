@@ -189,3 +189,4 @@ authority, and following it confers no conformance status on anything.
 | [0091](0091-revalidate-matrix-results-before-moving-a-runtime-pin.md) | Revalidate a project's matrix results against a baseline file before moving a Runtime pin | accepted |
 | [0092](0092-an-outcome-gate-on-evaluate.md) | Gate a run or a batch on an allowed set of outcomes, with an exit code a CI step can act on | accepted |
 | [0093](0093-validate-and-resolve-a-registry-of-adopter-declared-kinds.md) | Validate and resolve a registry of adopter-declared kinds, as a top-level command | accepted |
+| [0094](0094-import-the-yaml-authoring-subset-with-a-reader-of-its-own.md) | Import the registry's YAML authoring subset with a reader of its own, refusing everything outside it | accepted |

@@ -141,7 +141,10 @@ other top-level command. They read three closed formats, each with an exact sele
 declaration (`kindFormatVersion`), a registry (`registryFormatVersion`) and, as output, a resolved
 document (`resolvedFormatVersion`), all `"1.0.0"`. A resolved document is RFC 8785 canonical bytes,
 so any change to its bytes for the same inputs moves `resolvedFormatVersion`. The validation report
-carries `reportFormatVersion`, `"1.0.0"`.
+carries `reportFormatVersion`, `"1.0.0"`. `jpack registry import` (ADR-0094) writes the canonical
+JSON of a kind declaration or registry from RFC 0034 §7's YAML subset, under the selector the file
+names. A refusal is reported in the same format, and its locations carry `line` and `column`
+instead of a pointer.
 
 These selectors follow RFC 0034 §8, not the output-format rule above. Within 1.x nothing is removed
 and nothing changes meaning: not a member, a code, a rule or a selector. An addition comes only
