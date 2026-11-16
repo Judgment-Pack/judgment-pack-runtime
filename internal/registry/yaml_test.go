@@ -6,10 +6,10 @@ import (
 	"math"
 	"math/big"
 	"math/rand/v2"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 )
@@ -410,18 +410,21 @@ func TestImportPropertiesAloneOnTheirLinesDoNotDeepenTheStack(t *testing.T) {
 	}
 }
 
-// finishesWithin runs f and fails the test if it has not returned in time.
-func finishesWithin(t *testing.T, limit time.Duration, name string, f func()) {
+// allocatesWithin runs f and fails the test if it allocated more than budget
+// bytes. Work is bounded by what it allocates, not by the clock, so a loaded
+// machine cannot fail it: big arithmetic on a long literal allocates
+// gigabytes (a million digits took 2.1 GB), a scan allocates a small multiple
+// of the input.
+func allocatesWithin(t *testing.T, budget uint64, name string, f func()) {
 	t.Helper()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		f()
-	}()
-	select {
-	case <-done:
-	case <-time.After(limit):
-		t.Fatalf("%s: still running after %v", name, limit)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	f()
+	runtime.ReadMemStats(&after)
+	allocated := after.TotalAlloc - before.TotalAlloc
+	t.Logf("%s: %d MiB allocated", name, allocated>>20)
+	if allocated > budget {
+		t.Errorf("%s: allocated %d MiB, budget %d MiB", name, allocated>>20, budget>>20)
 	}
 }
 
@@ -432,6 +435,7 @@ func finishesWithin(t *testing.T, limit time.Duration, name string, f func()) {
 // shortest form, such as 1. and zeros, is admitted as before; any other is
 // REG-DOC-NUMBER.
 func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
+	const longNumberBudget = 128 << 20 // the worst case measured 72 MiB
 	head, tail := `{"registryFormatVersion":"1.0.0","a":`, `}`
 	room := MaxRegistryBytes - len(head) - len(tail) - 8
 	numberCodes := func(diagnostics []Diagnostic) int {
@@ -458,7 +462,7 @@ func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
 		{"an exponent past any machine integer", "1e" + strings.Repeat("9", room), false},
 		{"a long significand and a huge exponent", "1." + strings.Repeat("0", room/2) + "e999999999", false},
 	} {
-		finishesWithin(t, 20*time.Second, "JSON "+row.name, func() {
+		allocatesWithin(t, longNumberBudget, "JSON "+row.name, func() {
 			result := Validate([]byte(head+row.number+tail), nil)
 			if got := numberCodes(result.Report.Diagnostics); (got == 0) != row.admitted || got > 1 {
 				t.Errorf("JSON %s: %d REG-DOC-NUMBER, want admitted %v", row.name, got, row.admitted)
@@ -468,7 +472,7 @@ func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
 	// big.Rat refuses an exponent past 10^6 itself, but one just under it
 	// costs tens of milliseconds, and a document holds a million numbers.
 	many := 5000
-	finishesWithin(t, 20*time.Second, "JSON many exponents under big.Rat's own cap", func() {
+	allocatesWithin(t, longNumberBudget, "JSON many exponents under big.Rat's own cap", func() {
 		// Every number is counted, so the report bound is lifted: the
 		// time is the same either way, since every check runs.
 		var result *Result
@@ -489,14 +493,14 @@ func TestAdmissionHoldsALongNumberQuickly(t *testing.T) {
 		{"a huge exponent", "a: 1e999999999\n", "REG-YAML-SCALAR"},
 		{"a huge negative exponent", "a: 1.0e-999999999\n", "REG-YAML-SCALAR"},
 	} {
-		finishesWithin(t, 20*time.Second, "YAML "+row.name, func() {
+		allocatesWithin(t, longNumberBudget, "YAML "+row.name, func() {
 			_, report := importText(selector + row.source)
 			if report.Valid || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != row.code {
 				t.Errorf("YAML %s: got %d diagnostics, want one %s", row.name, len(report.Diagnostics), row.code)
 			}
 		})
 	}
-	finishesWithin(t, 20*time.Second, "YAML a decimal of 8 MiB of zeros", func() {
+	allocatesWithin(t, longNumberBudget, "YAML a decimal of 8 MiB of zeros", func() {
 		document, report := importText(selector + "a: 1." + strings.Repeat("0", yamlRoom) + "\n")
 		if want := `{"a":1,"kindFormatVersion":"1.0.0"}`; !report.Valid || string(document) != want {
 			t.Errorf("YAML 1. and 8 MiB of zeros: got %s %+v, want %s", document, report.Diagnostics, want)
