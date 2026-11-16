@@ -59,6 +59,13 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		filepath.Join("..", "mcp", "fact_advice.go"):      1,
 		filepath.Join("..", "mcp", "matrix_admission.go"): 1,
 	}
+	// registry check-pack admits a pack and reads its evaluation form to check
+	// it against a facts contract (ADR-0095). It decides nothing, so it is
+	// neither a claimed surface nor an advisory one; it is held here so that it
+	// stays that way.
+	admissionSites := map[string]int{
+		"registry_facts.go": 1, // registry check-pack
+	}
 	advisorySites := map[string]string{
 		"pack_advice.go": "a.engine",
 		filepath.Join("..", "mcp", "pack_advice.go"): "s.engine",
@@ -68,6 +75,7 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 		t.Fatal("advisory constructor and surface inventories diverged")
 	}
 	inventoriedAdvisorySites := 0
+	inventoriedAdmissionSites := 0
 	total := 0
 	for _, count := range expectedSites {
 		total += count
@@ -113,6 +121,21 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 				}
 				continue
 			}
+			if expected := admissionSites[path]; expected != 0 {
+				// The constructor stays chained to AdmitPack and its one use is
+				// the evaluation form; a deciding call makes it a surface the
+				// claim would have to name.
+				if sites != expected || strings.Count(string(source), "evaluation.NewEngine(a.engine).AdmitPack(") != expected || strings.Count(string(source), ".EvaluationForm(") != expected {
+					t.Fatalf("%s no longer has exactly %d admission-only sites", path, expected)
+				}
+				for _, deciding := range []string{".Evaluate", ".RunCase", ".RunCorpus"} {
+					if strings.Contains(string(source), deciding) {
+						t.Fatalf("%s adds deciding call %s to an admission-only surface; review the claim scope", path, deciding)
+					}
+				}
+				inventoriedAdmissionSites++
+				continue
+			}
 			if sites != expectedSites[path] {
 				t.Fatalf("%s constructs the evaluator %d times and this test expects %d: a surface reaching the evaluator moved, appeared, or vanished; review CONFORMANCE.md's claimed-version and advisory inventories with this test", path, sites, expectedSites[path])
 			}
@@ -121,6 +144,12 @@ func TestConformanceClaimNamesEverySurfaceReachingTheEvaluator(t *testing.T) {
 
 	if inventoriedAdvisorySites != len(advisorySites) {
 		t.Fatalf("found %d of %d inventoried evaluator-using advisory sites", inventoriedAdvisorySites, len(advisorySites))
+	}
+	if inventoriedAdmissionSites != len(admissionSites) {
+		t.Fatalf("found %d of %d inventoried admission-only sites", inventoriedAdmissionSites, len(admissionSites))
+	}
+	if sentence := "`registry check-pack` constructs the evaluator only to admit a pack and read its evaluation form"; !strings.Contains(flatten(readDocument(t, "CONFORMANCE.md")), sentence) {
+		t.Fatalf("CONFORMANCE.md does not state %q", sentence)
 	}
 	analyzer, err := os.ReadFile(filepath.Join("..", "packadvice", "analyze.go"))
 	if err != nil {
