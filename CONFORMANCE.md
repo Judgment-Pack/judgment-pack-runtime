@@ -90,6 +90,12 @@ only guard. Moving or adding a surface, rewiring advice to another evaluation
 path, or widening the analyzer's supported contract requires reviewing both this
 inventory and those guards.
 
+`registry check-pack` constructs the evaluator only to admit a pack and read its evaluation form,
+which it checks against a facts contract (ADR-0095). It evaluates nothing and decides no outcome,
+so it is neither one of the twelve surfaces nor an advisory surface, and its report does not
+change the recorded claim. The same test holds its constructor chained to that admission and to
+one read of the form, and refuses a deciding call in its file.
+
 ## The limits this class requires (§10)
 
 §10 requires an implementation claiming this class to define and document at least its collection-size
