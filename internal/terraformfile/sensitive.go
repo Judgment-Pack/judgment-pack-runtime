@@ -175,7 +175,7 @@ func (d *document) stripRoot(m uint32, v optional) int {
 }
 
 // pointers collects afterUnknown pointers into one buffer, within a budget of
-// bytes. path is the pointer of the position being walked; it is one buffer
+// bytes that charges each pointer its bytes and the 8 of its span. path is the pointer of the position being walked; it is one buffer
 // for the whole walk, so a long prefix is never copied once per child.
 type pointers struct {
 	data   []byte
@@ -185,7 +185,7 @@ type pointers struct {
 }
 
 func (p *pointers) add() bool {
-	if int64(len(p.data)+len(p.path)) > p.budget {
+	if int64(len(p.data)+len(p.path)+8*(len(p.spans)+1)) > p.budget {
 		return false
 	}
 	start := len(p.data)

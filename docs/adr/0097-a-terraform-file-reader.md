@@ -218,8 +218,10 @@ The rest are this runtime's own readings:
     4 bytes and becomes 66) and `afterUnknown` pointers can make the value longer than the file, and
     pointers that repeat a long prefix can make it quadratic in the file. This runtime holds the
     canonical value to `MaxValueBytes`, the largest file a source may declare. The pointers are
-    collected within that bound, and the walk keeps one path buffer, so a long prefix is never
-    copied once per child. The check comes after `TF-NUMBER`.
+    collected within that bound, each charged its bytes and the 8 bytes of its span, so a value
+    with many short pointers is refused up to 5 bytes per pointer below the bound. The walk keeps
+    one path buffer, so a long prefix is never copied once per child. The check comes after
+    `TF-NUMBER`.
 15. **A `null`** `planned_values`, `resource_changes` or `values` is present and of the wrong type.
 16. **`select.actions`** may repeat a value. The change's `actions` are carried as written.
 17. **Mapping a refusal to a source outcome** (dialect §9.2) is left open by the companion. This

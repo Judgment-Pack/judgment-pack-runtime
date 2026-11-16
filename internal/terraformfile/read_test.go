@@ -426,6 +426,23 @@ func TestTheValueLimitHoldsAtItsBoundary(t *testing.T) {
 	}
 }
 
+func TestAfterUnknownSpansCountAgainstTheLimit(t *testing.T) {
+	// 2000 short pointers: their bytes and the value fit a limit that their
+	// 8-byte spans do not.
+	list := make([]any, 2000)
+	for i := range list {
+		list[i] = true
+	}
+	data := plan(t, change{address: "synthetic_db.main", after: object(), afterUnknown: object("l", list)})
+	size := int64(len(mustAccept(t, data, planSource("synthetic_db")).Value()))
+	if _, refusal, _ := read(bytes.NewReader(data), planSource("synthetic_db"), size); refusal == nil || refusal.Code != CodeValueLimit {
+		t.Fatalf("spans past the limit: %v", refusal)
+	}
+	if _, refusal, _ := read(bytes.NewReader(data), planSource("synthetic_db"), size+8*2000); refusal != nil {
+		t.Fatalf("spans within the limit: %v", refusal.Code)
+	}
+}
+
 func TestDiagnosticsNeverCarryTheFile(t *testing.T) {
 	// A refused file whose member names are themselves secret.
 	secretName := "SECRET-NAME-xyzzy"
