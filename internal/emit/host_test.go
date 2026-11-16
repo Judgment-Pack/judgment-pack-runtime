@@ -247,6 +247,46 @@ func TestEmitRefusesAPathThatIsADirectoryOfAnother(t *testing.T) {
 	}
 }
 
+func TestEmitNeverOwnsGitsDirectory(t *testing.T) {
+	gitFiles := map[string]string{
+		"gen/.git/HEAD": "ref: refs/heads/main\n", "gen/sub/.GIT/config": "[core]\n", "gen/module/.git": "gitdir: ../.git/modules/m\n",
+	}
+	for _, check := range []bool{false, true} {
+		root := testRepo(t)
+		writeFiles(t, root, gitFiles)
+		writeFiles(t, root, map[string]string{"gen/stale": "stale\n", "gen/.gitignore": "*.tmp\n"})
+		response := responseJSON(t, map[string]any{"path": "gen/.github/a", "text": "a\n"}, map[string]any{"path": "gen/.gitignore", "text": "*.tmp\n"})
+		report := echoHost(t, root, response, check, nil)
+		if len(report.Diagnostics) != 0 {
+			t.Fatalf("check %v: %s", check, reportJSON(t, report))
+		}
+		if check {
+			want := []Difference{{"gen/.github/a", DifferenceMissing}, {"gen/stale", DifferenceExtra}}
+			if !slices.Equal(report.Differences, want) {
+				t.Fatalf("differences %v, want %v", report.Differences, want)
+			}
+		} else if !slices.Equal(report.Deleted, []string{"gen/stale"}) {
+			t.Fatalf("deleted %v", report.Deleted)
+		}
+		for path, want := range gitFiles {
+			if got, _, ok := onDisk(t, root, path); !ok || got != want {
+				t.Errorf("check %v: %s was changed", check, path)
+			}
+		}
+	}
+	root := testRepo(t)
+	writeFiles(t, root, gitFiles)
+	for _, path := range []string{"gen/.git/HEAD", "gen/.Git"} {
+		report := echoHost(t, root, responseJSON(t, map[string]any{"path": path, "text": "x\n"}), false, nil)
+		if !slices.Equal(codes(report.Diagnostics), []string{"EMIT-RESPONSE@/files/0/path"}) {
+			t.Fatalf("%s: %s", path, reportJSON(t, report))
+		}
+	}
+	if got, _, _ := onDisk(t, root, "gen/.git/HEAD"); got != gitFiles["gen/.git/HEAD"] {
+		t.Error("a file in git's directory was written")
+	}
+}
+
 func TestEmitGivesTheEmitterOnlyItsEnvironment(t *testing.T) {
 	t.Setenv("JPACK_EMIT_TEST_PARENT_ONLY", "parent-value-text")
 	t.Setenv("EMIT_TEST_DECLARED", "declared-value-text")

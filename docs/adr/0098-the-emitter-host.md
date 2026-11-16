@@ -55,7 +55,8 @@ checks every member at its pointer (`EMIT-MANIFEST`):
 - `options` is compiled with the registry's schema subset.
 - `env` names follow the grammar, are not reserved and are not repeated.
 - `command` and `owns` are relative, with no `..` segment.
-- An owns glob uses `*` within one segment and `**` as a whole segment.
+- An owns glob uses `*` within one segment and `**` as a whole segment. A bare `**` is refused, and
+  so is a glob with a `.git` segment in any case (see below).
 
 `--other-manifest` names the repository's other manifests. Their owns globs must not overlap this
 one's (`EMIT-OWNS-OVERLAP`). Overlap is decided exactly: two globs overlap when one path can match
@@ -80,7 +81,8 @@ failure is `EMIT-RESPONSE`, at its pointer.
   carriage return. Base64 is canonical and unbroken.
 - The mode is `0644` or `0755`.
 - Each path is relative and safe. It has no `.`, `..`, empty or `~` segment, no trailing `/`, no
-  NUL, backslash or control character, and no drive letter. It is owned.
+  NUL, backslash or control character, and no drive letter. No segment is `.git`, in any case. It
+  is owned.
 - `files` is sorted by path, and no two paths are equal once case is folded and normalized. No path
   is a directory of another (`a` and `a/b`), since writing one would replace or block the other.
 - Each emitter diagnostic has an `x-` code, a `warning` or `error` severity, and a §7.3 location.
@@ -128,6 +130,8 @@ following.
 
 1. It walks the owned paths without following a link. A link that an owns glob matches, or below
    which one can match, refuses the run (`EMIT-LINK`), as does one met at or above a response path.
+   The walk passes over anything named `.git`, in any case, so git's directory, or the `.git` file
+   of a worktree or submodule, is never owned and never deleted as stale.
 2. The directories are created, and every file is staged as a temporary file (`.jpack-emit-*`) in
    its directory. A file whose directory is held by a stale file is staged beside that file. A
    failure here leaves every owned file as it was.
@@ -188,6 +192,11 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 - Paths are also refused when they collide once normalized (NFD), not only once case is folded. This
   is canonical caseless matching.
 - A path may not begin with a drive letter (`C:`).
+- Git's directory is never owned. A bare `**` owns the whole repository, so stale deletion would
+  remove every file the emitter does not answer with; a manifest that gives it is refused. An owns
+  glob or response path with a `.git` segment is refused, in any case, since a case-insensitive file
+  system reads `.GIT` as `.git`. A glob such as `*/**` can still match a path below `.git`, so the
+  walk of the owned paths never enters it either. Decided here; the RFC is silent.
 - No argument of `command` may be absolute or hold a `..` segment.
 - Emitter codes follow `^x-[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 bytes.
 - An unreadable input exits 2, where the registry commands exit 4, because RFC 0036 §4 fixes the
@@ -212,9 +221,9 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   (proposed).
 - ADR-0093 (the registry reader), ADR-0095 (facts contracts).
 - Open questions for the spec:
-  1. Should owns globs that can reach `.git`, or a bare `**`, be refused? Stale deletion makes them
-     dangerous.
-  2. Should `**` match zero segments at the end of a glob?
-  3. Is `diagnostics` optional?
-  4. How strict should the normalization rule be?
-  5. What do modes mean on Windows?
+  1. Should `**` match zero segments at the end of a glob?
+  2. Is `diagnostics` optional?
+  3. How strict should the normalization rule be?
+  4. What do modes mean on Windows?
+- Decided here, for the companion to confirm: owns globs that name `.git`, and a bare `**`, are
+  refused, and the walk never enters `.git` (see the readings above).

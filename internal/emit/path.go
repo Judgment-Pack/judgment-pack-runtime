@@ -18,7 +18,9 @@ var errPath = errors.New("emit: the path is outside the path rules")
 // NUL, backslash or control character. It also refuses a first segment that
 // is a drive letter and a colon ("C:"), which a Windows host reads as a
 // drive: the RFC's conformance list names drive letters among the forms a
-// host refuses. A UNC form ("\\host\share") holds a backslash.
+// host refuses. A UNC form ("\\host\share") holds a backslash. And it refuses
+// a segment ".git" in any case, so that no owns glob names git's directory
+// and no response writes into it; scanOwned does not enter it either.
 func checkPathForm(path string) error {
 	if path == "" || len(path) > MaxPathBytes || !utf8.ValidString(path) {
 		return errPath
@@ -30,7 +32,7 @@ func checkPathForm(path string) error {
 	}
 	segments := strings.Split(path, "/")
 	for _, segment := range segments {
-		if segment == "" || segment == "." || segment == ".." || strings.HasPrefix(segment, "~") {
+		if segment == "" || segment == "." || segment == ".." || strings.HasPrefix(segment, "~") || isGitName(segment) {
 			return errPath
 		}
 	}
@@ -39,6 +41,10 @@ func checkPathForm(path string) error {
 	}
 	return nil
 }
+
+// isGitName says whether a name is git's directory, ".git", in any case: a
+// case-insensitive file system reads ".GIT" as the same name.
+func isGitName(name string) bool { return strings.EqualFold(name, ".git") }
 
 // foldKey is the key two paths collide under: Unicode canonical caseless
 // matching (The Unicode Standard §3.13, D145), NFD(fold(NFD(path))). The RFC

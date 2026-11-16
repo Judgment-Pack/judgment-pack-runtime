@@ -9,7 +9,8 @@ import (
 
 // anyOwner owns every path, so that only the path rules decide.
 func anyOwner(t *testing.T) *Manifest {
-	return mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"owns": []any{"**"}}))
+	// A bare "**" is refused; "*/**" owns every path of one or more segments.
+	return mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"owns": []any{"*/**"}}))
 }
 
 func TestResponseRefusesEachUnsafePath(t *testing.T) {
@@ -30,6 +31,9 @@ func TestResponseRefusesEachUnsafePath(t *testing.T) {
 		"delete":              "gen/a\x7f",
 		"drive letter":        "C:/a",
 		"drive relative":      "c:a",
+		"git directory":       ".git/config",
+		"git directory below": "gen/.git/hooks/pre-commit",
+		"git in another case": "gen/.GiT",
 		"one past the length": strings.Repeat("a/", 256) + "b",
 	} {
 		t.Run(name, func(t *testing.T) {

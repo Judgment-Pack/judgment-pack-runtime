@@ -129,7 +129,10 @@ func ReadManifest(data []byte) (*Manifest, []Diagnostic) {
 	m.Command = readCommand(root["command"], fail)
 	for i, source := range readStrings(root, "owns", true, func(string) bool { return true }, fail) {
 		glob, err := parseGlob(source)
-		if err != nil {
+		// A bare "**" owns the whole repository, so every file the emitter
+		// does not answer with would be deleted as stale. A ".git" segment
+		// is refused by the path rules.
+		if err != nil || source == "**" {
 			fail("owns", strconv.Itoa(i))
 			continue
 		}
