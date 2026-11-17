@@ -58,9 +58,9 @@ const (
 )
 
 // FormatTable is the release of the accepted format_version table this reader
-// implements. The companion has not released a table yet (RFC 0038,
-// Unresolved question 2); "proposed-1" is this runtime's provisional first
-// table, recorded in ADR-0097.
+// implements. The dialect text's §4.5 (spec/dialect.md, proposed) takes this
+// table as its first and leaves its release number open; "proposed-1" is this
+// runtime's provisional name for it, recorded in ADR-0097.
 const FormatTable = "proposed-1"
 
 // acceptedFormats is the table FormatTable names, per document. A version not
@@ -76,9 +76,9 @@ func AcceptedFormats(document string) []string {
 	return append([]string(nil), acceptedFormats[document]...)
 }
 
-// The refusal codes. RFC 0038 names every one but CodeValueLimit, which is
-// this runtime's (ADR-0097). All are provisional until the dialect companion
-// releases the kind (VERSIONING.md).
+// The refusal codes. The dialect text's §4.5 (spec/dialect.md, proposed)
+// names every one; RFC 0038 named all but CodeValueLimit (ADR-0097). All are
+// provisional until the dialect companion releases the kind (VERSIONING.md).
 const (
 	CodeSize        = "TF-SIZE"
 	CodeJSON        = "TF-JSON"

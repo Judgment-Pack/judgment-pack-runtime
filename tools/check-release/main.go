@@ -1,4 +1,6 @@
-// Command check-release enforces release-only tag and artifact provenance rules.
+// Command check-release enforces release-only tag and artifact provenance
+// rules, and refuses a release whose text still holds a placeholder marker.
+// It runs from the repository root.
 package main
 
 import (
@@ -17,6 +19,10 @@ func main() {
 		os.Exit(1)
 	}
 	if err := releasecheck.CheckEmbedded(*tag); err != nil {
+		fmt.Fprintln(os.Stderr, "release check failed:", err)
+		os.Exit(1)
+	}
+	if err := releasecheck.CheckPlaceholders(os.DirFS(".")); err != nil {
 		fmt.Fprintln(os.Stderr, "release check failed:", err)
 		os.Exit(1)
 	}
