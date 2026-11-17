@@ -195,7 +195,7 @@ named pointer.
 
 | Hostile | Pointer |
 | --- | --- |
-| path-traversal, absolute-path, drive-letter, backslash, git-directory, tilde-segment, trailing-dot, device-name, path-too-long (513 bytes), outside-owns | `/files/0/path` |
+| path-traversal, absolute-path, drive-letter, backslash, git-directory, git-short-name (`GIT~1`), tilde-segment, trailing-dot, device-name, path-too-long (513 bytes), outside-owns | `/files/0/path` |
 | duplicate-path, case-folded-duplicate, directory-of-a-file, unsorted | `/files/1/path` |
 | unknown-member | `/files/0/size` |
 | text-and-base64 | `/files/0` |
@@ -206,6 +206,7 @@ named pointer.
 | response-too-large (64 MiB + 1), not-utf8 | `""` |
 | response-version-too-new (`1.1.0`) | `/emitResponseVersion` |
 | diagnostics-missing | `/diagnostics` |
+| unresolvable-location (an entry the request does not hold) | `/diagnostics/0/location` |
 
 **Report** (`harnessReportVersion` `"1.0.0"`). The report holds the level applied, the outcome
 (`pass`, `fail` or `not-run`) and the emitter's id and version. It has one row for each vector and

@@ -300,6 +300,24 @@ func TestHostileResponsesAreRefused(t *testing.T) {
 	}
 }
 
+// The controls of two hostiles: the fixed request resolves a location that
+// names its entry, so the unresolvable location is refused for what it
+// names, and a name that is not git's short name is accepted, so GIT~1 is
+// refused as git's directory.
+func TestHostileControls(t *testing.T) {
+	if len(hostiles) != 29 {
+		t.Fatalf("hostiles: %d; the ADR and CHANGELOG give the count", len(hostiles))
+	}
+	for name, data := range map[string][]byte{
+		"a location that resolves": hostileDiagnostic(`{"document":"value","entry":{"id":"orders","kind":"queue"},"environment":"dev","pointer":"/retention"}`)(),
+		"not git's short name":     hostileResponse(hostileFile("gen/GIT~2/config"))(),
+	} {
+		if response, findings := emit.ParseResponse(data, hostileRequestVersion, []byte(hostileRequest), hostileManifest()); response == nil || len(findings) != 0 {
+			t.Errorf("%s: %+v", name, findings)
+		}
+	}
+}
+
 func TestHostileRowFailsWhenTheHostAccepts(t *testing.T) {
 	saved := hostiles
 	defer func() { hostiles = saved }()

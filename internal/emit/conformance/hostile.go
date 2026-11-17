@@ -35,6 +35,13 @@ const hostileRequest = `{"emitRequestVersion":"1.0.0","emitter":{"id":"https://e
 
 const zeros = "0000000000000000000000000000000000000000000000000000000000000000"
 
+// hostileDiagnostic is a response holding one warning at a location.
+func hostileDiagnostic(location string) func() []byte {
+	return func() []byte {
+		return []byte(`{"emitResponseVersion":"1.0.0","files":[],"diagnostics":[{"severity":"warning","code":"x-a","location":` + location + `}]}`)
+	}
+}
+
 var hostileManifest = sync.OnceValue(func() *emit.Manifest {
 	m, diagnostics := emit.ReadManifest([]byte(hostileManifestSource))
 	if m == nil {
@@ -73,6 +80,7 @@ var hostiles = []hostile{
 	{"drive-letter", "/files/0/path", hostileResponse(hostileFile("C:/gen/a"))},
 	{"backslash", "/files/0/path", hostileResponse(hostileFile(`gen\a`))},
 	{"git-directory", "/files/0/path", hostileResponse(hostileFile("gen/.git/config"))},
+	{"git-short-name", "/files/0/path", hostileResponse(hostileFile("gen/GIT~1/config"))},
 	{"tilde-segment", "/files/0/path", hostileResponse(hostileFile("gen/~a"))},
 	{"trailing-dot", "/files/0/path", hostileResponse(hostileFile("gen/a."))},
 	{"device-name", "/files/0/path", hostileResponse(hostileFile("gen/nul.txt"))},
@@ -109,6 +117,8 @@ var hostiles = []hostile{
 		return []byte(`{"emitResponseVersion":"1.1.0","files":[],"diagnostics":[]}`)
 	}},
 	{"diagnostics-missing", "/diagnostics", func() []byte { return []byte(`{"emitResponseVersion":"1.0.0","files":[]}`) }},
+	{"unresolvable-location", "/diagnostics/0/location",
+		hostileDiagnostic(`{"document":"value","entry":{"id":"absent","kind":"queue"},"environment":"dev","pointer":""}`)},
 }
 
 // hostileRows checks each hostile response against the host.
