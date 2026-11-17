@@ -982,10 +982,10 @@ func TestDepthBound(t *testing.T) {
 // uses are common to both languages.
 func TestJSString(t *testing.T) {
 	for _, s := range []string{"", "plain", `a"b`, `a\b`, "a\u2028b", "a\u2029b", "\x00\x01\x1f\x7f", "\b\t\n\f\r",
-		"caf\u00e9", "\U0001F6D2", "\ufeff", "*/ </script> ${x} `", "\u0085", "\ud7ff\ue000\uffff"} {
+		"caf\u00e9", "\U0001F6D2", "\ufeff", "*/ </script> ${x} `", "<!-- x --> <", "\u0085", "\ud7ff\ue000\uffff"} {
 		literal := jsString(s)
 		for i := 0; i < len(literal); i++ {
-			if c := literal[i]; c < 0x20 || c >= 0x7f {
+			if c := literal[i]; c < 0x20 || c >= 0x7f || c == '<' {
 				t.Errorf("%q: byte %#x in %s", s, c, literal)
 			}
 		}
@@ -994,7 +994,8 @@ func TestJSString(t *testing.T) {
 			t.Errorf("%q: %s reads as %q, %v", s, literal, back, err)
 		}
 	}
-	for s, want := range map[string]string{"a\u2028b": `"a\u2028b"`, "\U0001F6D2": `"\ud83d\uded2"`, "\x7f": `"\u007f"`} {
+	for s, want := range map[string]string{"a\u2028b": `"a\u2028b"`, "\U0001F6D2": `"\ud83d\uded2"`, "\x7f": `"\u007f"`,
+		"</script>": `"\u003c/script>"`, "<!-- x": `"\u003c!-- x"`, "a<b>": `"a\u003cb>"`} {
 		if got := jsString(s); got != want {
 			t.Errorf("%q: %s, want %s", s, got, want)
 		}

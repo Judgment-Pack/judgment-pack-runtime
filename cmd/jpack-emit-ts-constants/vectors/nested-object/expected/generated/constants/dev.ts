@@ -40,7 +40,7 @@ const serviceEntries = {
       "control": "tab\there\nnew line",
       "line-separator": "a\u2028b",
       "paragraph-separator": "a\u2029b",
-      "quote": "say \"hi\" \\ */ </script>",
+      "quote": "say \"hi\" \\ */ \u003c/script>",
     },
     "limits": {
       "burst": 1.5,

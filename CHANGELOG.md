@@ -210,8 +210,8 @@ All notable changes to tagged releases are documented here.
   id `__proto__`, a schema property named after another member of `Object.prototype`
   (`constructor`, `toString` and the rest), and a kind whose names are reserved or collide; it
   never renames one. Each refusal is a response of no files and an `x-ts-*` error diagnostic.
-  Strings are written in ASCII with U+2028 and U+2029 escaped, and numbers as the request gives
-  them. Its 12 vectors are in RFC 0036 §5's layout. A test type-checks their output and a consumer
+  Strings are written in ASCII with U+2028, U+2029 and `<` escaped, and numbers as the request
+  gives them. Its 12 vectors are in RFC 0036 §5's layout. A test type-checks their output and a consumer
   of it with `tsc --strict`, and is skipped when `tsc` is not on PATH. No `jpack` command changes.
   The conformance claim in CONFORMANCE.md is unchanged.
 

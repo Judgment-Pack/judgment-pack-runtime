@@ -138,7 +138,8 @@ have a pin.
 **Text.**
 - A string becomes an ASCII double-quoted literal. Every code point outside ASCII, U+2028 and
   U+2029 among them, becomes `\uXXXX` UTF-16 escapes, and each control character becomes a short
-  or `\u00XX` escape. Each literal is also a JSON string literal of the same string.
+  or `\u00XX` escape. `<` becomes `\u003c`, so a module inlined into an HTML `<script>` holds no
+  `</script` or `<!--`. Each literal is also a JSON string literal of the same string.
 - Numbers are written as the request gives them.
 - `__proto__` is refused (`x-ts-member-proto`) wherever an object literal would read it as the
   prototype: as an entry id, as a value member, as a schema property, and inside an `enum` or

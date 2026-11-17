@@ -327,10 +327,12 @@ func appendPath(path []string, token string) []string {
 // jsString writes s as a double-quoted JavaScript string literal of ASCII
 // only: a quotation mark and a reverse solidus escaped, the short escapes for
 // backspace, tab, line feed, form feed and carriage return, \u00XX for every
-// other control character and DEL, and every code point outside ASCII as the
-// \uXXXX escapes of its UTF-16 code units. So a line terminator, U+2028 and
-// U+2029 among them, never stands in the source, and no text can end the
-// literal. The decoder admits only valid UTF-8 with no lone surrogate.
+// other control character and DEL, \u003c for <, and every code point outside
+// ASCII as the \uXXXX escapes of its UTF-16 code units. So a line
+// terminator, U+2028 and U+2029 among them, never stands in the source, no
+// text can end the literal, and a module inlined into an HTML script element
+// holds no </script or <!-- to end it. The decoder admits only valid UTF-8
+// with no lone surrogate.
 func jsString(s string) string {
 	const hex = "0123456789abcdef"
 	b := make([]byte, 0, len(s)+2)
@@ -352,7 +354,7 @@ func jsString(s string) string {
 			b = append(b, '\\', 'f')
 		case r == '\r':
 			b = append(b, '\\', 'r')
-		case r < 0x20 || r == 0x7f:
+		case r < 0x20 || r == 0x7f || r == '<':
 			unit(uint16(r))
 		case r < 0x80:
 			b = append(b, byte(r))
