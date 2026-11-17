@@ -350,8 +350,13 @@ have exited 0, and `EMIT-PROCESS` stays the code of an emitter that could not be
 non-zero or ran out of time. `jpack emit conformance` reports an interrupt with `EMIT-INTERRUPTED`
 at the vector too, where it used `EMIT-HARNESS-BOUND`, so one code names an interrupt in both
 commands; `EMIT-HARNESS-BOUND` keeps the harness's bounds and the determinism `HOME`.
-What ended the emitter decides, not whether jpack was interrupted by the time the outcome is
-read: an emitter that exited non-zero or ran out of time is `EMIT-PROCESS` though an interrupt
-came after, and one that exited 0 with a valid response before the interrupt keeps its response.
+What ended the emitter decides, not whether jpack was interrupted by the time the outcome is read:
+an emitter that exited non-zero or ran out of time is `EMIT-PROCESS` though an interrupt came
+after, and one that exited 0 with a valid response before the interrupt keeps its response. What
+ended it is read from the wait status, which must be the kill's (`SIGKILL` on Unix), with the run's
+first cause the caller's interrupt, not the time limit or the output bound. On Windows the kill
+leaves exit code 1, which an emitter may also give by itself, so an interrupt that arrives at kill
+time may report `EMIT-INTERRUPTED` for an emitter that was already failing with exit code 1, where
+`EMIT-PROCESS` would be its code without the interrupt.
 Of several environments' runs, none starts after the interrupt, and the refusal is reported once.
 `EMIT-INTERRUPTED` is provisional, like the host's other codes (VERSIONING.md).
