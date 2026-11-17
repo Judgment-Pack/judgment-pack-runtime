@@ -224,7 +224,9 @@ emitter made: a creation. Regular files keep their permission bits, links are co
 and any other kind of file is `EMIT-PATH-UNREADABLE`. A link keeps its target, except that an
 absolute target inside `--root` is moved to the same path in the copy, so a write through it
 stays in the copy and is a stray write there. A link that leads out of `--root` is
-`EMIT-HARNESS-BOUND` naming the link, and exit 2, before any emitter runs. Where a link leads is
+`EMIT-HARNESS-BOUND` naming the link, and exit 2, before any emitter runs; by the amendment
+below, one that git does not track and that no path of the run could name is instead left out of
+the copy, with the warning `EMIT-LINK-OMITTED`. Where a link leads is
 found by following it in `--root`, link by link: each `..` is taken from where the parts before it
 led, and a part that does not exist is taken as written. A link that cannot be followed within 40
 links is treated as leading out. The run is refused, rather than check 6 skipped for that link,
@@ -233,7 +235,8 @@ would land in the real directory, possibly the repository itself, while the run 
 author removes the link from the working tree, or makes it relative and inside `--root`. On
 Windows, a reparse point that Go reads as neither a symbolic link nor a regular file, a junction
 for one, is `EMIT-HARNESS-BOUND` naming it, and exit 2, before any emitter runs, by the same walk
-and whether or not the copy falls back. Since Go 1.23 a junction is `ModeIrregular`, not
+and whether or not the copy falls back. By the amendment below, a junction is followed as a link
+is, and one that leads out is held to the same rule as a link. Since Go 1.23 a junction is `ModeIrregular`, not
 `ModeSymlink`, so the link check cannot see where it leads, and under the fallback the emitter
 would run in the repository with a way out of it while check 6 skipped. Reporting check 6 as not
 run there instead was weighed and not chosen: the refusal fails closed, and it holds whether or
@@ -283,13 +286,15 @@ check, and one for each hostile. A row holds the vector, the check number and na
 the reason. It also holds the details its check gives: the expected code, the differing runs, the
 host's and the emitter's error diagnostics, the differences, the references and the stray writes.
 Each list is bounded at 1000. The report's own diagnostics give why it could not run, plus
-`EMIT-DEPRECATED` and `EMIT-ENV-UNSET`, each once.
+`EMIT-DEPRECATED` and `EMIT-ENV-UNSET`, each once, and, by the amendment below,
+`EMIT-LINK-OMITTED` at each link left out of the copy.
 
 **Codes.**
 
 - `EMIT-STRAY-WRITE` is the companion's.
 - `EMIT-VECTOR` (the layout) and `EMIT-HARNESS-BOUND` (a check that could not be completed) are
-  this runtime's, and provisional.
+  this runtime's, and provisional, as is the warning `EMIT-LINK-OMITTED` (a link left out of the
+  copy), by the amendment below.
 - An `--update` that cannot write is `EMIT-WRITE` on the vector, and the run exits 2.
 
 ### Consequences
@@ -346,3 +351,118 @@ These are carried, not fixed. None gives a wrong verdict for an honest emitter o
   inside a complete occurrence of any secret-position string passes.
 - Decided here: check 2 compares raw response bytes; a vector that gives its request whole skips
   checks 4 and 5; the hostile responses go through `emit.ParseResponse`.
+
+## Amendment: links that lead out of the repository (2026-11-17, #467)
+
+A repository often holds a link that leads out of it in a place the run never touches. A Python
+virtual environment inside the repository is the common case: its interpreter is such a link.
+Refusing the whole run for it blocked a common layout. Such a link is now left out of the copy
+when it is not the repository's own content and no path of the run could name it. Every other
+link that leads out is refused, as before.
+
+**The rule.** For each symbolic link of `--root` that leads out of it, found as before, and for
+each Windows junction, followed as a link is (`os.Readlink` reads where it leads), the link is
+left out of the copy only when all three hold:
+
+- **It is not tracked in the index.** Neither the link's path nor any path below it is in the
+  repository's index. What is tracked is read from the index alone, not from ignore rules or the
+  last commit, so "not tracked in the index" covers ignored and untracked paths alike. An index
+  with zero entries, as after every path is removed from it (`git rm -r --cached .`), tracks
+  nothing: every link that leads out is then untracked, and the other two conditions decide.
+- **No owns glob could name it.** No owns glob matches the link's path, or may match a path below
+  it. This is the host's own `EMIT-LINK` rule, so a link the host would refuse is refused here
+  too. Names are also compared loosely (`emit.Manifest.MayOwnAtOrBelow`), by their loose key
+  (`emit.NameKey`). Two names count as one when they match after the code points HFS+ ignores are
+  dropped, Unicode canonical caseless matching is applied, the result is upper-cased, a backslash
+  is read as a separator, and each segment's trailing dots and spaces are dropped, as Windows
+  reads names. A glob segment that holds `~` counts as any name, because Windows can read it as a
+  short name. So a link at `Gen` or `gen.` is refused for `gen/**` on every system, and so is a
+  link at `generated` for `GENERA~1/*.go`. A glob itself never ends a segment in a dot or a
+  space, which the host refuses.
+- **The vectors path is clear of it.** The harness reads the vectors, and `--update` writes them,
+  through the directory given, not through the copy. That directory, cleaned as `filepath.Abs`
+  makes it, is followed part by part and link by link from its volume's root. Each time the walk
+  stands on `--root` (by `os.SameFile`), it counts the parts below it. A link it follows inside the
+  repository is refused. So is a link at, above or below the path where the directory ends in the
+  repository, compared loosely as above, so that `venv./v` names a link at `venv`. A segment
+  whose loose key is empty on either side names every link from there down. A directory that
+  holds the repository names every link,
+  and so does one that cannot be followed: a part that cannot be read, a link that cannot be read,
+  or more than 40 links.
+
+Every other link that leads out is `EMIT-HARNESS-BOUND` at its path, and exit 2, before any
+emitter runs, as before: the first in walk order. A link left out is left out of every copy, and
+the report gives the warning `EMIT-LINK-OMITTED` at its path. That warning lists at most 100
+paths, in sorted order. Past them, one more diagnostic, at the repository alone, gives the count
+of the rest in its message, because the report has no member for counts. A write the emitter
+makes at a left-out link's path lands in the copy and is a stray write there. A junction that
+stays in the repository, or a reparse point `os.Readlink` cannot read, is still refused, since the
+copy does not make one. Where the copy falls back to the repository itself (Windows without the
+privilege to make links), a link left out would be there for the emitter, so the run is refused
+at the first such link, as before.
+
+**Reading the index.** The harness reads `--root/.git/index` itself, read-only, and never runs
+git or any other program (`internal/gitindex`). It reads index versions 2, 3 and 4, with version
+4's compressed path names, and checks the trailing SHA-1 checksum before it reads an entry. It
+fails closed: every link that leads out is refused, as before this amendment, when any of these
+holds.
+
+- `--root` holds no `.git`, or its `.git` is not a directory. A linked worktree's or a
+  submodule's `.git` file is one such case: it names an index elsewhere, which the harness does
+  not follow. Running from the main working tree's root reads its index.
+- The index is missing, is not a regular file, or cannot be read.
+- The index is past a bound: 64 MiB, or 1 048 576 entries.
+- The checksum does not match, so a file cut short or changed is refused. An index of a
+  repository whose object format is not SHA-1 ends in another function's checksum, so it does not
+  match either.
+- The index is not of a form the reader reads: another version, an entry or path that is
+  malformed, a mode that is not a file, a link or a submodule, an extended flag it does not know,
+  or entries out of git's order.
+- The index holds an extension whose signature does not begin with `A` to `Z`. Git requires a
+  reader to understand such an extension, and the reader understands none. Two change the set of
+  paths the entries give: a split index (`link`), whose entries are in another file, and a sparse
+  index (`sdir`), whose entries may be directories. An optional extension, `A` to `Z`, such as
+  `TREE`, `REUC`, `UNTR`, `FSMN`, `EOIE` or `IEOT`, is passed over, as the format allows.
+
+**Comparing paths.** An index path and a link's path are compared byte for byte, as git's slash
+paths. The file system may read two names as one, so they are compared loosely too, by the same
+loose key as above, and either match counts as tracked. Every link below a submodule (a gitlink
+entry) counts as tracked, since its files are in the submodule's own index. So does every link
+in or below a directory that holds an index segment with `~` and a digit, which Windows may read
+as the short name of any name there. A segment made only of dots and spaces has an empty loose
+key: Windows reads it as no name at all, so that `lib/. ./mod.py` is `lib/mod.py` there. A link
+whose path holds such a segment counts as tracked, and so does every link in or below a
+directory that holds one in an index path; one at the index's root makes every link tracked. The
+index must also hold each path at most once at each stage, in git's order. Each of these errs
+toward tracked, and so toward refusing.
+
+**Why this is sound.** A response path is one the host refuses unless an owns glob matches it, so a
+response can write only at or below an owned path. The vectors are read and written only below the
+vectors directory. Both are known before the copy is made, and each comparison errs toward naming a
+link. A link tracked in the index is the repository's own content, which an emitter may rely on, so
+it is never left out: a run without it would not be a run in the repository. The links refused are
+a subset of those refused before, and the copy never holds a link that leads out, so the emitter
+has no new way out of it. Where there is no copy, because the harness would fall back to running in
+the repository itself, a link left out would still be there, so that fallback refuses the run at
+the first such link (see "The rule" above). Omitting every link that leads out was weighed and not
+chosen: it would drop tracked content from the copy, would let an emitter pass while the host
+refuses the same repository for a link at an owned path, and would let `--update` write outside the
+repository through a link the vectors are reached by. Deciding "tracked in the index" from ignore
+rules was weighed and not chosen: it would reimplement git's ignore rules, and an untracked path
+that no rule ignores would still be the repository's content to that reading.
+
+**Known limits.**
+
+- A repository whose `.git` directory names another working tree (`core.worktree`), or whose
+  index git reads from elsewhere (`GIT_INDEX_FILE`), is read as its `.git/index` gives it. The
+  harness does not read git's configuration.
+- An index git wrote without its checksum (`index.skipHash`, which `feature.manyFiles` turns on)
+  ends in zeros, which do not match, so every link that leads out is refused there.
+- A fresh repository has no index file until something is added, so every link that leads out is
+  refused there too.
+- A Windows short name set by hand, without `~`, is not read as an alias.
+- An emitter that reads a file of the repository through a link left out finds nothing there. Its
+  run then differs from a run in the repository. The warning names the link, so the author can
+  remove it, make it relative and inside `--root`, or track what it holds.
+
+`EMIT-LINK-OMITTED` is this runtime's, and provisional (VERSIONING.md).
