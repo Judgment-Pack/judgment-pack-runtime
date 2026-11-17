@@ -30,6 +30,13 @@ func killProcessGroup(process *os.Process) error {
 	return err
 }
 
+// endedByKill says whether the emitter's wait status is that of SIGKILL,
+// what killProcessGroup sends, rather than of its own exit.
+func endedByKill(state *os.ProcessState) bool {
+	status, ok := state.Sys().(syscall.WaitStatus)
+	return ok && status.Signaled() && status.Signal() == syscall.SIGKILL
+}
+
 // endProcessGroup kills what is left of the emitter's process group after
 // the emitter has exited and been waited for. The group outlives its leader
 // while a member is left, so its id is not reused until then. When no member
@@ -69,8 +76,10 @@ func waitProcessGroup(process *os.Process, bound time.Duration) {
 // listed in full, or lists nothing above standard error (a system whose
 // /dev/fd shows only 0-2, whatever is open; reading the directory itself
 // holds a descriptor above 2 where the listing is complete), every number
-// from 3 below the descriptor limit (at most maxInheritedScan) is marked as
-// well; marking a number that is not open does nothing.
+// from 3 below the hard descriptor limit (at most maxInheritedScan) is
+// marked as well: a descriptor opened before the soft limit was lowered can
+// sit above it, never above the hard one. Marking a number that is not open
+// does nothing.
 func closeInherited() {
 	entries, err := os.ReadDir(inheritedDir)
 	above := false
@@ -86,7 +95,7 @@ func closeInherited() {
 	top := uint64(1024)
 	var limit syscall.Rlimit
 	if syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limit) == nil {
-		top = min(uint64(limit.Cur), maxInheritedScan)
+		top = min(uint64(limit.Max), maxInheritedScan)
 	}
 	for fd := uint64(3); fd < top; fd++ {
 		syscall.CloseOnExec(int(fd))

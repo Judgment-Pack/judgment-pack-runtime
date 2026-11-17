@@ -12,7 +12,8 @@ All notable changes to tagged releases are documented here.
 - **An interrupted emitter run has a code of its own** (ADR-0098). `jpack emit` sent an interrupt
   or SIGTERM before its write, or while its emitter runs, is now refused with the new provisional
   code `EMIT-INTERRUPTED`, once, at `/command`, where it gave `EMIT-PROCESS` even when every
-  emitter exited 0; no later environment's emitter is started. What ended the emitter decides:
+  emitter exited 0; no later environment's emitter is started. What ended the emitter decides,
+  read from its wait status and from what first ended the run, not from whether a kill was sent:
   one that exited non-zero or ran out of time is still `EMIT-PROCESS`, and one that exited 0
   before the interrupt keeps its response. `jpack emit conformance` interrupted now reports
   `EMIT-INTERRUPTED`, where v0.49.0 reported `EMIT-HARNESS-BOUND`, so one code names an interrupt
@@ -30,8 +31,9 @@ All notable changes to tagged releases are documented here.
   starts, `jpack` marks every descriptor above standard error close-on-exec. Where `/dev/fd` lists
   nothing above 2, as on a system without a full descriptor file system, it now also marks every
   number from 3 below the descriptor limit (at most 65536), as it already did where the listing
-  could not be read. No release target is affected. The conformance claim in CONFORMANCE.md is
-  unchanged.
+  could not be read. Both scans now go up to the hard limit, not the soft one, which a descriptor
+  opened before the soft limit was lowered can sit above. No release target is affected. The
+  conformance claim in CONFORMANCE.md is unchanged.
 - **The mutation table's check is stricter.** `scripts/check-mutation-table.py` now also fails
   when a row's mutant is not `every A becomes B` with `A` the row's own code (quoted, or a
   constant of the site's package that holds it), found in the body of the row's mutant site
