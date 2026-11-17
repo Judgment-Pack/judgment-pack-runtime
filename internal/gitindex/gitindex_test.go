@@ -289,3 +289,86 @@ func TestReadWorkTree(t *testing.T) {
 		t.Errorf(".git a link: %v", err)
 	}
 }
+
+// ReadWorkTree refuses a repository whose index or working tree git may take
+// from elsewhere: a variable that relocates either, or a config that sets
+// core.worktree or includes a file that could. A config without either, or
+// none at all, is read past.
+func TestReadWorkTreeRefusesARelocatedIndex(t *testing.T) {
+	for _, name := range relocatingEnv {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
+	read := func(config string) error {
+		root := t.TempDir()
+		gitindextest.Write(t, root, "a")
+		if config != "" {
+			if err := os.WriteFile(filepath.Join(root, ".git", "config"), []byte(config), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return ReadWorkTree(root, func(Entry) {})
+	}
+	for _, config := range []string{
+		"",
+		"[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n",
+		"[remote \"origin\"]\n\turl = https://example.invalid/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n",
+	} {
+		if err := read(config); err != nil {
+			t.Errorf("%q: %v", config, err)
+		}
+	}
+	for _, config := range []string{
+		"[core]\n\tworktree = ../elsewhere\n",
+		"[Core]\n  WorkTree=../elsewhere\n",
+		"[core] worktree = ../elsewhere\n",
+		"[core]\r\n\tbare = false\r\n\tworktree\r\n",
+		"[include]\n\tpath = other.config\n",
+		"[includeIf \"gitdir:~/x/\"]\n\tpath = other.config\n",
+		// Several section headers on one line: git reads the last.
+		"[foo] [core] worktree = /x\n",
+		"[x][include]path=inc\n",
+		"[extensions]\n\tworktreeConfig = true\n",
+		// Any mention is refused, whatever it means.
+		"[user]\n\tname = WorkTree\n",
+		"; include\n",
+	} {
+		if err := read(config); !errors.Is(err, ErrRelocated) {
+			t.Errorf("%q: %v", config, err)
+		}
+	}
+	// A per-worktree config is refused while it is there at all, whatever
+	// it holds; one that cannot be checked is refused as unreadable.
+	perWorktree := t.TempDir()
+	gitindextest.Write(t, perWorktree, "a")
+	if err := os.WriteFile(filepath.Join(perWorktree, ".git", "config.worktree"), []byte("[core]\n\tbare = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadWorkTree(perWorktree, func(Entry) {}); !errors.Is(err, ErrRelocated) {
+		t.Errorf("config.worktree present: %v", err)
+	}
+	if err := os.Remove(filepath.Join(perWorktree, ".git", "config.worktree")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("elsewhere", filepath.Join(perWorktree, ".git", "config.worktree")); err == nil {
+		if err := ReadWorkTree(perWorktree, func(Entry) {}); !errors.Is(err, ErrRelocated) {
+			t.Errorf("config.worktree a dangling link: %v", err)
+		}
+	}
+	dirConfig := t.TempDir()
+	gitindextest.Write(t, dirConfig, "a")
+	if err := os.Mkdir(filepath.Join(dirConfig, ".git", "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadWorkTree(dirConfig, func(Entry) {}); !errors.Is(err, ErrUnreadable) {
+		t.Errorf("a config that is a directory: %v", err)
+	}
+	for _, name := range relocatingEnv {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(name, filepath.Join(t.TempDir(), "elsewhere"))
+			if err := read(""); !errors.Is(err, ErrRelocated) {
+				t.Errorf("%s set: %v", name, err)
+			}
+		})
+	}
+}

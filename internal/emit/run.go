@@ -195,9 +195,9 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	stdout := &capture{limit: maxResponseBytes, overflow: cancel}
+	runCtx, overflow, stop := runContext(ctx, timeout)
+	defer stop()
+	stdout := &capture{limit: maxResponseBytes, overflow: overflow}
 	stderr := &capture{limit: maxStderrBytes}
 	cmd := exec.CommandContext(runCtx, program, m.Command[1:]...)
 	cmd.Args[0] = m.Command[0]
@@ -209,18 +209,14 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	cmd.WaitDelay = waitDelay
 	ownProcessGroup(cmd)
 	markInherited()
-	// interruptKill records what ended the emitter, when the run's context
-	// did: the kill reached the group while ctx itself was done, so jpack
-	// was interrupted, not the time limit or the output bound reached. It is
-	// set when the kill is sent, so ctx done later, once the emitter has
-	// ended, does not change why it ended. exec calls Cancel at most once,
-	// and Wait returns only after it has.
-	interruptKill := false
+	// killSent records that the run's context ended and the kill reached
+	// the group. exec calls Cancel at most once, and Wait returns only after
+	// it has. It is not alone what ended the emitter: exec can call Cancel
+	// after the emitter has exited by itself, before Wait has noticed.
+	killSent := false
 	cmd.Cancel = func() error {
 		err := killProcessGroup(cmd.Process)
-		if err == nil && ctx.Err() != nil {
-			interruptKill = true
-		}
+		killSent = err == nil
 		return err
 	}
 	if err = cmd.Start(); err == nil {
@@ -243,14 +239,15 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	// What ended the emitter decides, not whether ctx is done by now: an
 	// interrupt that comes once the emitter has ended changes nothing.
 	exitedZero := cmd.ProcessState != nil && cmd.ProcessState.Success()
+	byInterrupt := killSent && interruptCause(runCtx)
 	switch {
 	case stdout.overflowed():
 		result.Diagnostics = append(result.Diagnostics, diagnostic("EMIT-RESPONSE", Location{Document: DocumentResponse}))
 		return result
-	case exitedZero && (err == nil || interruptKill):
+	case exitedZero && (err == nil || byInterrupt):
 		// The emitter exited 0 by itself; an interrupt that came after
 		// reached only what it left in its group. Its response is read.
-	case interruptKill || !result.Started && ctx.Err() != nil && errors.Is(err, ctx.Err()):
+	case interrupted(killSent, cmd.ProcessState, runCtx) || !result.Started && ctx.Err() != nil && errors.Is(err, ctx.Err()):
 		// jpack was interrupted, and ended the emitter, or never started
 		// it.
 		result.Diagnostics = append(result.Diagnostics, diagnostic("EMIT-INTERRUPTED", Location{Document: DocumentManifest, Pointer: "/command"}))
@@ -272,6 +269,42 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	result.Response = response
 	result.ResponseBytes = data
 	return result
+}
+
+// The causes that end a run's context other than ctx: the time limit and
+// the output bound. Whatever else ends it is ctx's own cause, an interrupt
+// or a cause the caller set.
+var (
+	errTimeLimit   = errors.New("the emitter's time limit was reached")
+	errOutputBound = errors.New("the emitter's output passed its bound")
+)
+
+// runContext is the context one emitter run is killed by: done when ctx is,
+// at the time limit (errTimeLimit), or when overflow is called
+// (errOutputBound), whichever comes first. Its cause is the first one and
+// does not change after.
+func runContext(ctx context.Context, timeout time.Duration) (run context.Context, overflow, stop func()) {
+	limited, stopLimit := context.WithTimeoutCause(ctx, timeout, errTimeLimit)
+	run, cancel := context.WithCancelCause(limited)
+	return run, func() { cancel(errOutputBound) }, func() { cancel(nil); stopLimit() }
+}
+
+// interruptCause says whether runCtx was first ended by ctx, the run's
+// caller, rather than by the time limit or the output bound.
+func interruptCause(runCtx context.Context) bool {
+	if runCtx.Err() == nil {
+		return false
+	}
+	cause := context.Cause(runCtx)
+	return !errors.Is(cause, errTimeLimit) && !errors.Is(cause, errOutputBound)
+}
+
+// interrupted says whether jpack's interrupt ended the emitter: the kill was
+// sent, the wait status is the kill's, not the emitter's own exit (exec can
+// send the kill once the emitter has exited, before Wait has noticed), and
+// the run's context was first ended by the caller.
+func interrupted(killSent bool, state *os.ProcessState, runCtx context.Context) bool {
+	return killSent && state != nil && endedByKill(state) && interruptCause(runCtx)
 }
 
 // removeHome removes the emitter's HOME. An emitter may have taken the
