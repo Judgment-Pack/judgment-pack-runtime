@@ -35,7 +35,7 @@ var FactsCodes = map[string]codeInfo{
 	"FACTS-POINTER-UNKNOWN":   {SeverityWarning, "The pack reads a fact pointer the facts contract does not list."},
 	"FACTS-TYPE-ORDERED":      {SeverityWarning, "The pack uses an ordered comparison on a fact pointer that the contract does not type decimal."},
 	"FACTS-VALUE-UNREACHABLE": {SeverityWarning, "The pack compares a fact with a value outside the pointer's values in the contract, or of another type: an equals or not-equals operand, or at least one item of an in, that no fact at the pointer can equal."},
-	"FACTS-DOCUMENT-LIMIT":    {SeverityError, "The entry's facts document exceeds the runtime's facts-document limit: 10 MiB, depth 128, 250000 nodes, 1 MiB per string."},
+	CodeFactsDocumentLimit:    {SeverityError, "A facts document exceeds the runtime's facts-document limit: 10 MiB, depth 128, 250000 nodes, 1 MiB per string."},
 	"FACTS-CONTRACT-LIMIT":    {SeverityError, "The facts contract exceeds the contract bounds: 8 MiB, 65536 facts, a pointer of more than 35 tokens, or the generation work limit."},
 	"FACTS-CONTRACT-FORM":     {SeverityError, "A member of the facts contract is missing, not defined by the format, or has the wrong form."},
 	"FACTS-CONTRACT-ORDER":    {SeverityError, "The contract's facts are not in strictly increasing order of pointer, then type."},
@@ -270,10 +270,19 @@ func (r *Result) registryMember() map[string]any {
 	return map[string]any{"id": identity.ID, "version": identity.Version, "digest": identity.Digest}
 }
 
-// withinFactsLimit says whether a facts document is one evaluate admits: at
+// CodeFactsDocumentLimit is the code of a facts document over the
+// facts-document limit (WithinFactsLimit).
+const CodeFactsDocumentLimit = "FACTS-DOCUMENT-LIMIT"
+
+// FactsMessage returns the fixed message of a facts code, or "" for a code
+// FactsCodes does not list.
+func FactsMessage(code string) string { return FactsCodes[code].message }
+
+// WithinFactsLimit says whether a facts document is one evaluate admits: at
 // most the hard byte limit, and within the carrier limits it decodes facts
-// under. A document over either is reported, never truncated.
-func withinFactsLimit(document []byte) bool {
+// under. A document over either is reported, never truncated. registry facts
+// and terraform facts both hold every document they write to it.
+func WithinFactsLimit(document []byte) bool {
 	if int64(len(document)) > carrier.HardMaxBytes {
 		return false
 	}
@@ -346,8 +355,8 @@ func (r *Result) WriteFacts(kind string, environments []string, qualified bool, 
 			if err != nil && !errors.Is(err, errOverLimit) {
 				return nil, err
 			}
-			if err != nil || !withinFactsLimit(document) {
-				diagnostics = append(diagnostics, factsDiagnostic("FACTS-DOCUMENT-LIMIT", Location{Document: DocumentFacts, Entry: locatable(resolved.entry.name), Environment: environment}))
+			if err != nil || !WithinFactsLimit(document) {
+				diagnostics = append(diagnostics, factsDiagnostic(CodeFactsDocumentLimit, Location{Document: DocumentFacts, Entry: locatable(resolved.entry.name), Environment: environment}))
 			}
 		}
 	}

@@ -153,7 +153,8 @@ declares. The RFCs define the `REF-*` codes and `REG-DOC-NUMBER`. Every other `R
 location members, are this runtime's own reading of the RFCs' rules. That list is provisional until
 the registry companion (`spec/registry.md`) is released: if the companion's list differs, this
 runtime adopts it under a new selector and says so in its release notes. `REG-KIND-PATTERN-LIMIT`
-(a pattern past its compiled-instruction bound, ADR-0093's amendment of #432) and
+(a pattern past its size bound, ADR-0093's amendment of #432, its size counted as written since
+the later amendment) and
 `REG-BOUND-VALIDATION-WORK` (step 7's schema checks past their work bound, the same amendment) are
 among these provisional codes, as are `REG-REPORT-TRUNCATED` and the `REG-YAML-*` codes.
 
@@ -169,15 +170,37 @@ formats, each with its selector, all `"1.0.0"`:
 
 RFC 0037 names the three `FACTS-*` advisories. `FACTS-DOCUMENT-LIMIT`, `FACTS-CONTRACT-LIMIT`,
 `FACTS-CONTRACT-FORM`, `FACTS-CONTRACT-ORDER` and `FACTS-CHECK-LIMIT` are this runtime's,
-provisional in the same way.
+provisional in the same way. So is `FACTS-ID-LIMIT`, which `jpack terraform facts` reports for a
+resource address over the id limit `evaluate --batch` reads (ADR-0097's amendment).
 
-The `terraform-file` reader (`internal/terraformfile`, ADR-0097) has no command yet. Its refusal
-codes are spec RFC 0038's `TF-SIZE`, `TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`,
+The `terraform-file` reader (`internal/terraformfile`, ADR-0097) is reached through
+`jpack terraform facts`, RFC 0038 §6's batch tool. RFC 0038 calls the batch a product format of
+the reference runtime. Its lines are RFC 8785 canonical bytes with no selector of their own, and
+they are provisional with the reader: a change to their bytes for the same file is named in the
+release notes. The reader's refusal codes are spec RFC 0038's `TF-SIZE`, `TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`,
 `TF-SELECT-BOUND` and `TF-NUMBER`, and this runtime's own `TF-VALUE-LIMIT`. All of them, their fixed
 messages, and the accepted `format_version` table this runtime names `proposed-1` (plan `1.0`,
 `1.1` and `1.2`; state `1.0`) are provisional until the dialect companion releases the kind and its
 table. If the companion's codes or table differ, this runtime adopts them and says so in its
 release notes.
+
+`jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
+
+- An emitter manifest, `emitterManifestVersion`, RFC 0036's.
+- The request it writes, `emitRequestVersion`. Request `1.0.0` carries `resolvedFormatVersion`
+  and `factsContractVersion` `1.0.0`. A request is RFC 8785 canonical bytes, so any change to its
+  bytes for the same inputs moves `emitRequestVersion`.
+- The response it accepts, `emitResponseVersion`. It accepts `1.0.0`.
+- Its report, `emitReportVersion` `"1.0.0"`. This format is this runtime's own.
+
+The registry companion names `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`, `EMIT-PROCESS`,
+`EMIT-RESPONSE` and `EMIT-DEPRECATED`. Ten more codes are this runtime's and provisional in the same
+way: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`, `EMIT-REQUEST`,
+`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, and the warnings `EMIT-ENV-UNSET` and
+`EMIT-REPORT-TRUNCATED`. They are provisional until the companion's first host rows give these
+refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 files, 16 MiB per
+file, 512 bytes per path, 64 KiB of standard error and a 120 s default limit. A tighter bound
+would be a breaking change.
 
 ## Go API
 

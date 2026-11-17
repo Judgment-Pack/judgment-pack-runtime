@@ -193,4 +193,5 @@ authority, and following it confers no conformance status on anything.
 | [0095](0095-registry-entries-as-facts-and-generated-facts-contracts.md) | Write registry entries as facts for the outcome gate, generate a kind's facts contract, and check a pack against one | accepted |
 | [0096](0096-a-start-up-module-that-reads-a-resolved-registry-and-delivered-secrets.md) | Read one environment's resolved registry and the secrets the platform delivered in a start-up module of its own, under a 1.0 promise, never contacting a store | proposed |
 | [0097](0097-a-terraform-file-reader.md) | Read Terraform plan and state JSON for the `terraform-file` source, removing every value marked sensitive before selection | proposed |
+| [0098](0098-the-emitter-host.md) | Run a registry emitter on a canonical request and write or check only the files its manifest owns, as `jpack emit` | proposed |
 | [0100](0100-a-go-typed-facts-builder-emitter.md) | Generate Go typed facts builders from facts contracts in a standalone emitter, refusing a position or a name it cannot render | proposed |
