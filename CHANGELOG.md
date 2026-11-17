@@ -16,6 +16,11 @@ All notable changes to tagged releases are documented here.
   lists nothing above 2, as on a system without a full descriptor file system, it now also marks
   every number from 3 below the descriptor limit (at most 65536), as it already did where the
   listing could not be read. No release target is affected.
+- **The mutation table's check is stricter.** `scripts/check-mutation-table.py` now also fails
+  when a row's mutant is not `every A becomes B` with `A` in the body of the row's mutant site,
+  and when a row's provisional column differs from what the source marks: the section heading of
+  each code in `internal/emit/codes.go`, and the comment of a constant that holds a code.
+  `scripts/check-mutation-table-probe.py` probes both rules in memory.
 
 ## 0.49.0 - 2026-11-17
 

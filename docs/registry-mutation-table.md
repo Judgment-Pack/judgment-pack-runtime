@@ -24,11 +24,14 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
 `scripts/check-mutation-table.py` (the `mutation-table` check in `dev.json`) reads the codes from
 those tables and fails when a code has no row, when a row's code no longer exists, when a row's
 severity is not the one its table states, when a row's mutant site is not a function of a non-test
-Go file, when `go test -list` does not list the row's test in its package, or when no string literal in
+Go file, when a row's mutant is not `every A becomes B` with `A` in that function's body, when a
+row's provisional column is not what the source marks, when `go test -list` does not list the
+row's test in its package, or when no string literal in
 that test names the row's subtest (as `go test` prints it), or when the test does not name the
 row's code, as a literal or a constant holding it. For a subtest, a case that names any code of
 the line must name the row's; `scripts/check-mutation-table-probe.py` holds that rule to a case
-changed to expect another code. The check does not
+changed to expect another code, and holds the mutant and provisional rules to changed mutants,
+headings and comments. The check does not
 run the mutants; a reviewer does.
 
 ## Columns
@@ -47,6 +50,9 @@ run the mutants; a reviewer does.
   `"EMIT-REQUEST-VERSION"`.
 - **provisional**: whether `VERSIONING.md` lists the code as this runtime's own and provisional.
   `n/a` marks an emitter's `x-` code, which `VERSIONING.md` places outside the registry line's promise.
+  The check compares it with the source where the source marks it: the section heading of each
+  code in `internal/emit/codes.go`, and the comment of a constant that holds a code (the `TF-*`
+  codes, `FACTS-ID-LIMIT`). The registry's code tables mark none, so those rows are not compared.
 
 | code | severity | package | test | mutant site | mutant | provisional |
 |---|---|---|---|---|---|---|
