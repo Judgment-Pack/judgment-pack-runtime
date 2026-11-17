@@ -1,0 +1,17 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": { "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-facts", "version": "0.1.0" },
+  "options": { "package": "retryfacts" },
+  "factsContracts": [
+    {
+      "factsContractVersion": "1.0.0",
+      "id": "https://example.invalid/contracts/retry-policy",
+      "version": "1.0.0",
+      "source": { "authored": true },
+      "facts": [
+        { "pointer": "/max-retries", "type": "decimal", "present": "always" },
+        { "pointer": "/max_retries", "type": "decimal", "present": "always" }
+      ]
+    }
+  ]
+}
