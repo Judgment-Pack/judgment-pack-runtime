@@ -210,6 +210,15 @@ jobs:
             throw "Bundled conformance suite failed"
           }
 
+  # The CI workflow on the tagged commit, macOS test leg included: a pull request's CI runs
+  # without that leg, so a release does not wait on main's run to have had it.
+  ci:
+    name: CI
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
   attest-and-draft:
     name: Attest and draft release
     if: github.event_name == 'push'
@@ -217,6 +226,7 @@ jobs:
       - package
       - smoke-unix
       - smoke-windows
+      - ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
