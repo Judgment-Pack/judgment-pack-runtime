@@ -57,13 +57,18 @@ generated code stays free of this runtime.
 - A refusal writes one fixed line to standard error, which never quotes the request, writes nothing
   to standard output, and exits 1. The host reports that exit as `EMIT-PROCESS`.
 - The response has no diagnostics. Its files are sorted by path and held to companion §11.3's
-  bounds and text rules.
+  bounds and text rules. Every path segment (the file name and each directory name) is also at
+  most 255 bytes, the name length of common file systems. A longer one is refused with the bounds
+  refusal, because the host could not write it.
 
 **Options.**
-- `package` is required, matches `^[a-z][a-z0-9]*$`, is at most 64 bytes, and is not a Go keyword.
-- `directory` is a literal relative path whose segments start and end with a letter, a digit or
-  `_`. So no segment is `.`, `..` or `.git`. It defaults to `generated/facts`, which the
-  manifest's `owns` glob names.
+- `package` is required, matches `^[a-z][a-z0-9]*$`, and is at most 64 bytes. It is not a Go
+  keyword, and not `main`, which would make a command that no other package can import.
+- `directory` is a literal relative path whose segments start with a letter or a digit and end
+  with a letter, a digit or `_`. So no segment is `.`, `..` or `.git`. No segment is `testdata` or
+  starts with `_` or `.`: the Go toolchain ignores those directories, so the generated package
+  would never be compiled. It defaults to `generated/facts`, which the manifest's `owns` glob
+  names.
 - The program checks both again, with the same rules as the manifest's schema.
 
 **Files.**

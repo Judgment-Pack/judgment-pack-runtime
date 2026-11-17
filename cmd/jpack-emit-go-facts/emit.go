@@ -40,6 +40,10 @@ const (
 	maxFiles         = 10000
 	maxFileBytes     = 16 << 20
 	maxPathBytes     = 512
+	// maxSegmentBytes bounds each segment of a path, the file name and each
+	// directory: the name length of common file systems, past which the host
+	// could not write the file.
+	maxSegmentBytes  = 255
 	maxContractFacts = 65536
 	maxPointerTokens = 35
 	// maxDepth bounds the request's JSON nesting. A facts-contracts request
@@ -58,10 +62,21 @@ type options struct {
 var (
 	packagePattern = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 	// directoryPattern is a literal relative path: segments of letters,
-	// digits, "_", "." and "-", each beginning and ending with a letter, a
-	// digit or "_", so that no segment is ".", "..", ".git" or ends in ".".
-	directoryPattern = regexp.MustCompile(`^[A-Za-z0-9_]([A-Za-z0-9_.\-]*[A-Za-z0-9_])?(/[A-Za-z0-9_]([A-Za-z0-9_.\-]*[A-Za-z0-9_])?)*$`)
+	// digits, "_", "." and "-", each beginning with a letter or a digit and
+	// ending with a letter, a digit or "_". So no segment is ".", "..",
+	// ".git" or ends in ".", and none begins with "." or "_", which the Go
+	// toolchain ignores, so the generated package would never be compiled.
+	directoryPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_.\-]*[A-Za-z0-9_])?(/[A-Za-z0-9]([A-Za-z0-9_.\-]*[A-Za-z0-9_])?)*$`)
+	// testdataPattern is a directory with a segment testdata, which the Go
+	// toolchain also ignores. The manifest's schema refuses it with the same
+	// pattern under "not".
+	testdataPattern = regexp.MustCompile(`^(.*/)?testdata(/.*)?$`)
 )
+
+// notPackageName says whether the package option refuses name: a Go
+// keyword, which a package clause cannot use, or main, which makes a command
+// that no other package can import.
+func notPackageName(name string) bool { return goKeywords[name] || name == "main" }
 
 // goKeywords are the names a package clause cannot use.
 var goKeywords = map[string]bool{
@@ -129,7 +144,8 @@ type file struct {
 
 // encodeResponse writes the response as RFC 8785 canonical JSON, after
 // holding the files to the response bounds and the text rules of companion
-// §11.3: UTF-8 that ends with a line feed and holds no carriage return.
+// §11.3 (UTF-8 that ends with a line feed and holds no carriage return), and
+// each path segment to maxSegmentBytes.
 func encodeResponse(files []file) ([]byte, error) {
 	if len(files) > maxFiles {
 		return nil, errBounds
@@ -139,6 +155,11 @@ func encodeResponse(files []file) ([]byte, error) {
 	for i, f := range files {
 		if len(f.path) > maxPathBytes || len(f.text) > maxFileBytes {
 			return nil, errBounds
+		}
+		for _, segment := range strings.Split(f.path, "/") {
+			if len(segment) > maxSegmentBytes {
+				return nil, errBounds
+			}
 		}
 		if !utf8.ValidString(f.text) || !strings.HasSuffix(f.text, "\n") || strings.ContainsRune(f.text, '\r') {
 			return nil, errInternal
@@ -173,13 +194,13 @@ func readOptions(value any) (options, error) {
 		}
 	}
 	pkg, ok := m["package"].(string)
-	if !ok || len(pkg) > maxPackageBytes || !packagePattern.MatchString(pkg) || goKeywords[pkg] {
+	if !ok || len(pkg) > maxPackageBytes || !packagePattern.MatchString(pkg) || notPackageName(pkg) {
 		return options{}, errOptions
 	}
 	opts := options{pkg: pkg, directory: defaultDirectory}
 	if raw, present := m["directory"]; present {
 		directory, ok := raw.(string)
-		if !ok || len(directory) > maxDirectoryBytes || !directoryPattern.MatchString(directory) {
+		if !ok || len(directory) > maxDirectoryBytes || !directoryPattern.MatchString(directory) || testdataPattern.MatchString(directory) {
 			return options{}, errOptions
 		}
 		opts.directory = directory

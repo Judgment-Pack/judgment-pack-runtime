@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -314,7 +313,8 @@ func TestManifest(t *testing.T) {
 				Pattern   string `json:"pattern"`
 				Default   string `json:"default"`
 				Not       struct {
-					Enum []string `json:"enum"`
+					Enum    []string `json:"enum"`
+					Pattern string   `json:"pattern"`
 				} `json:"not"`
 			} `json:"properties"`
 		} `json:"options"`
@@ -337,15 +337,21 @@ func TestManifest(t *testing.T) {
 	if pkg.Type != "string" || pkg.Pattern != packagePattern.String() || pkg.MaxLength != maxPackageBytes {
 		t.Errorf("package schema: %+v", pkg)
 	}
-	keywords := make([]string, 0, len(goKeywords))
+	refused := []string{"main"}
 	for k := range goKeywords {
-		keywords = append(keywords, k)
+		refused = append(refused, k)
 	}
-	slices.Sort(keywords)
-	if !slices.Equal(pkg.Not.Enum, keywords) {
-		t.Errorf("package keywords %v, want %v", pkg.Not.Enum, keywords)
+	slices.Sort(refused)
+	if !slices.Equal(pkg.Not.Enum, refused) {
+		t.Errorf("package names refused %v, want %v", pkg.Not.Enum, refused)
 	}
-	if dir.Type != "string" || dir.Pattern != directoryPattern.String() || dir.MaxLength != maxDirectoryBytes || dir.Default != defaultDirectory {
+	for _, name := range refused {
+		if !notPackageName(name) {
+			t.Errorf("the manifest refuses package %q and the program does not", name)
+		}
+	}
+	if dir.Type != "string" || dir.Pattern != directoryPattern.String() || dir.Not.Pattern != testdataPattern.String() ||
+		dir.MaxLength != maxDirectoryBytes || dir.Default != defaultDirectory {
 		t.Errorf("directory schema: %+v", dir)
 	}
 	for _, v := range readVectors(t) {
@@ -459,7 +465,7 @@ func TestRefusals(t *testing.T) {
 		{"two files", strings.Replace(base(``), contractText("https://example.invalid/c/thing", ``),
 			contractText("https://example.invalid/c/thing", ``)+","+contractText("https://example.invalid/d/thing", ``), 1), errCollide},
 
-		{"a path past the bound", strings.Replace(base(``), `/c/thing`, `/c/`+strings.Repeat("a", maxPathBytes), 1), errBounds},
+		{"a file name past the bound", strings.Replace(base(``), `/c/thing`, `/c/`+strings.Repeat("a", maxPathBytes), 1), errBounds},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -559,27 +565,116 @@ func TestManifestPatternsMatchAsTheProgramDoes(t *testing.T) {
 		Options struct {
 			Properties map[string]struct {
 				Pattern string `json:"pattern"`
+				Not     struct {
+					Pattern string `json:"pattern"`
+				} `json:"not"`
 			} `json:"properties"`
 		} `json:"options"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	for name, c := range map[string]struct {
-		program *regexp.Regexp
-		samples []string
-	}{
-		"package":   {packagePattern, []string{"p", "facts2", "", "P", "2p", "p_q", "p-q", "pé", "p\n"}},
-		"directory": {directoryPattern, []string{"generated/facts", "a", "a.b/c-d/_e", "", "/a", "a/", "a//b", ".", "..", "a/..", ".git", "a/.git", "a.", "-a", "a/b.", "a\\b", "a b", "a\n"}},
-	} {
-		compiled, err := registry.CompilePattern(manifest.Options.Properties[name].Pattern)
+	compile := func(source string) *registry.Pattern {
+		t.Helper()
+		compiled, err := registry.CompilePattern(source)
 		if err != nil {
-			t.Fatalf("%s: %v", name, err)
+			t.Fatalf("%q: %v", source, err)
 		}
-		for _, s := range c.samples {
-			if compiled.MatchString(s) != c.program.MatchString(s) {
-				t.Errorf("%s: the manifest and the program differ on %q", name, s)
-			}
+		return compiled
+	}
+	pkg := compile(manifest.Options.Properties["package"].Pattern)
+	for _, s := range []string{"p", "facts2", "", "P", "2p", "p_q", "p-q", "pé", "p\n"} {
+		if pkg.MatchString(s) != packagePattern.MatchString(s) {
+			t.Errorf("package: the manifest and the program differ on %q", s)
+		}
+	}
+	dir := compile(manifest.Options.Properties["directory"].Pattern)
+	notDir := compile(manifest.Options.Properties["directory"].Not.Pattern)
+	for _, s := range []string{"generated/facts", "a", "a.b/c-d/e_", "", "/a", "a/", "a//b", ".", "..", "a/..", ".git", "a/.git",
+		"a.", "-a", "a/b.", "a\\b", "a b", "a\n", "_a", "a/_b", "testdata", "a/testdata", "testdata/a", "a/testdata/b",
+		"testdata2", "a/my_testdata", "testdatax/a", "xtestdata"} {
+		manifest := dir.MatchString(s) && !notDir.MatchString(s)
+		program := directoryPattern.MatchString(s) && !testdataPattern.MatchString(s)
+		if manifest != program {
+			t.Errorf("directory: the manifest and the program differ on %q", s)
+		}
+	}
+}
+
+// TestPackageMainIsRefused: a package named main is a command, which no
+// other package can import, so the generated code could never be used.
+func TestPackageMainIsRefused(t *testing.T) {
+	for _, c := range []struct {
+		pkg  string
+		want error
+	}{
+		{"facts", nil},
+		{"mainfacts", nil},
+		{"main", errOptions},
+		{"type", errOptions},
+		{"Main", errOptions},
+	} {
+		request := strings.Replace(base(`{"pointer":"/a","type":"string","present":"always"}`), `"package":"p"`, `"package":"`+c.pkg+`"`, 1)
+		if _, err := emit([]byte(request)); err != c.want {
+			t.Errorf("package %q: %v, want %v", c.pkg, err, c.want)
+		}
+	}
+}
+
+// TestDirectoryTheToolchainIgnoresIsRefused: the Go toolchain skips a
+// directory whose name begins with "_" or "." and one named testdata, so
+// code generated below one would never be compiled.
+func TestDirectoryTheToolchainIgnoresIsRefused(t *testing.T) {
+	for _, c := range []struct {
+		directory string
+		want      error
+	}{
+		{"generated/facts", nil},
+		{"internal/facts_", nil},
+		{"testdata2", nil},
+		{"a/my_testdata", nil},
+		{"a/testdatax/b", nil},
+		{"_gen", errOptions},
+		{"generated/_facts", errOptions},
+		{".gen", errOptions},
+		{"generated/.facts", errOptions},
+		{"testdata", errOptions},
+		{"testdata/facts", errOptions},
+		{"generated/testdata", errOptions},
+		{"generated/testdata/facts", errOptions},
+	} {
+		request := strings.Replace(base(`{"pointer":"/a","type":"string","present":"always"}`), `{"package":"p"}`,
+			`{"package":"p","directory":"`+c.directory+`"}`, 1)
+		if _, err := emit([]byte(request)); err != c.want {
+			t.Errorf("directory %q: %v, want %v", c.directory, err, c.want)
+		}
+	}
+}
+
+// TestPathSegmentBound: a file name, or a directory name, over 255 bytes is
+// errBounds, although its path is within the 512-byte bound: no common file
+// system could hold it.
+func TestPathSegmentBound(t *testing.T) {
+	stem := len("_facts.go")
+	for _, c := range []struct {
+		name      string
+		segment   int // the contract id's last segment
+		directory int // one directory segment; 0 for the default
+		want      error
+	}{
+		{"a file name of 255 bytes", maxSegmentBytes - stem, 0, nil},
+		{"a file name of 256 bytes", maxSegmentBytes - stem + 1, 0, errBounds},
+		{"a file name of 300 letters and more", 300, 0, errBounds},
+		{"a directory name of 255 bytes", 1, maxSegmentBytes, nil},
+		{"a directory name of 256 bytes", 1, maxSegmentBytes + 1, errBounds},
+	} {
+		request := strings.Replace(base(``), `/c/thing`, `/c/`+strings.Repeat("a", c.segment), 1)
+		if c.directory > 0 {
+			request = strings.Replace(request, `{"package":"p"}`, `{"package":"p","directory":"`+strings.Repeat("d", c.directory)+`"}`, 1)
+		}
+		out, err := emit([]byte(request))
+		if err != c.want || (err == nil) == (out == nil) {
+			t.Errorf("%s: %d bytes, %v; want %v", c.name, len(out), err, c.want)
 		}
 	}
 }

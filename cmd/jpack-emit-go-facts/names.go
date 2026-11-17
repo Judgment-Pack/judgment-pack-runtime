@@ -37,7 +37,8 @@ import (
 // package-level names of the request (types, constructors and constants,
 // over every contract, and the names facts_support.go declares); two fields
 // of one struct; a field named Build on the facts document's struct; a
-// constructor argument named as its own type; and two contracts' files.
+// constructor argument named as its own type; and two contracts' files. A
+// file name over 255 bytes is errBounds (encodeResponse).
 
 // supportNames are the package-level names facts_support.go exports.
 var supportNames = []string{"BuildError", "Decimal", "DecimalFromInt64", "ErrNotDecimal", "MustParseDecimal", "ParseDecimal", "Ptr"}
