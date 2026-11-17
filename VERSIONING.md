@@ -158,8 +158,8 @@ them. The location members are this runtime's own reading of the companion's rul
 provisional until the registry companion is released: if the released list differs, this runtime
 adopts it under a new selector and says so in its release notes.
 
-<!-- TODO(1.0, spec ruling): name the released companion (registry-v1.0.0) and say these
-     codes are its, once the user rules whether "final" means released or stable. -->
+<!-- TODO(1.0, after registry-v1.0.0): name the released companion and say these codes are its
+     (ruled 2026-11-17: released, not stable). -->
 
 `jpack registry facts` and `jpack registry check-pack` (ADR-0095) follow the same rule. Their
 formats, each with its selector, all `"1.0.0"`:
@@ -191,9 +191,8 @@ this runtime names `proposed-1` (plan `1.0`, `1.1` and `1.2`; state `1.0`) are p
 the dialect companion releases the kind and its table. If the companion's codes or table differ,
 this runtime adopts them and says so in its release notes.
 
-<!-- TODO(1.0, spec ruling): settle RFC 0038 UQ1 (version 3 or the next) and UQ2 (the first
-     table), and the rule for the table's vectors against the synthetic-only rule; then this paragraph
-     names the released dialect text, its codes and table. -->
+<!-- TODO(1.0, after the spec tag carrying dialect §4.5): name the released dialect text, its codes
+     and table (proposed: version 3; plan 1.0-1.2, state 1.0; synthetic vectors, ruled 2026-11-17). -->
 
 `jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
 
@@ -215,8 +214,8 @@ these refusals codes. The bounds are the companion's: a response of 64 MiB, 10 0
 file, 512 bytes per path, 64 KiB of standard error and a 120 s default limit. A tighter bound
 would be a breaking change.
 
-<!-- TODO(1.0, spec ruling): option A (the companion's §11/§12 adds these codes) or B (the
-     companion allows host-local codes and this paragraph names them runtime-owned and stable). -->
+<!-- TODO(1.0, after registry-v1.0.0): the companion's §11/§12 adds these codes (ruled
+     2026-11-17, option A); then this paragraph names them the companion's. -->
 
 `jpack emit conformance` (ADR-0099) writes the harness report, `harnessReportVersion` `"1.0.0"`,
 RFC 0036's, and reads the harness level of `vectors/harness.json`; it applies level `"1.0"`, and a
@@ -230,7 +229,7 @@ of 256 MiB and 100 000 entries, a git index of 64 MiB and 1 048 576 entries, and
 of 1 MiB of strings and 2^32 steps a vector, are this runtime's; a tighter bound would be a
 breaking change.
 
-<!-- TODO(1.0, spec ruling): the harness's three codes, as the host's above. -->
+<!-- TODO(1.0, after registry-v1.0.0): the harness's three codes, as the host's above. -->
 
 ## Go API
 
@@ -395,13 +394,16 @@ may be lifted in 1.x. Lifting it accepts contracts it refused, and changes nothi
 a contract it accepts.
 
 It is stable from the release that names it so in its release notes. That release first settles
-everything the sections above call provisional: the codes are the final registry companion's, the
-Terraform dialect's codes and `format_version` table are its companion's, and each paragraph says
-so instead. A format with no selector of its own, such as the `jpack terraform facts` batch lines,
-is then promised as its bytes: a change to them for the same input is a breaking change. The same
-release tags `startup/v1.0.0`, so the start-up module's 1.0 promise and this one start together.
-From then on, while `jpack` and the runtime module are still 0.x, and within major version 1 of
-the line:
+everything the sections above call provisional: the codes are those of the released registry
+companion, the Terraform dialect's codes and `format_version` table are those of the released
+dialect companion, and each paragraph says so instead. Released, not stable: the line follows the
+companion's first release, `registry-v1.0.0`, which is published as released and not yet stable.
+The companion becomes stable later, when a second, independently written reader agrees on its rows
+(its §15), and that changes nothing in this promise. A format with no selector of its own, such as
+the `jpack terraform facts` batch lines, is then promised as its bytes: a change to them for the
+same input is a breaking change. The same release tags `startup/v1.0.0`, so the start-up module's
+1.0 promise and this one start together. From then on, while `jpack` and the runtime module are
+still 0.x, and within major version 1 of the line:
 
 - **Nothing is removed.** A command, flag, exit code, format member, selector, diagnostic code or
   start-up identifier stays. No bound is tightened. No code, member or rule changes meaning. The
