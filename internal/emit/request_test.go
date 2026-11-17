@@ -205,3 +205,50 @@ func TestReadDeclarationsRefusesAnInvalidRegistry(t *testing.T) {
 		t.Fatal("an invalid registry's declarations were read")
 	}
 }
+
+// A request is at most MaxRequestBytes of RFC 8785 bytes: every request of
+// "each", and the one of "all". The options pad each request by one ASCII
+// byte per character, so the largest request is exactly the bound, then one
+// byte over it.
+func TestFormRequestsBoundsTheRequestBytes(t *testing.T) {
+	schema := map[string]any{"type": "object", "properties": map[string]any{"pad": map[string]any{"type": "string"}}}
+	for _, environments := range []string{"each", "all"} {
+		t.Run(environments, func(t *testing.T) {
+			m := mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"options": schema, "environments": environments}))
+			form := func(pad int) ([]Request, []Diagnostic) {
+				return FormRequests(m, Inputs{Registry: testRegistry(t), Options: map[string]any{"pad": strings.Repeat("a", pad)}})
+			}
+			requests, diagnostics := form(0)
+			if diagnostics != nil || len(requests) == 0 {
+				t.Fatalf("requests: %d %v", len(requests), codes(diagnostics))
+			}
+			largest := 0
+			for _, request := range requests {
+				largest = max(largest, len(request.Bytes))
+			}
+			pad := MaxRequestBytes - largest
+
+			requests, diagnostics = form(pad)
+			if diagnostics != nil || len(requests) == 0 {
+				t.Fatalf("at the bound: %d %v", len(requests), codes(diagnostics))
+			}
+			largest = 0
+			for _, request := range requests {
+				largest = max(largest, len(request.Bytes))
+			}
+			if largest != MaxRequestBytes {
+				t.Fatalf("the largest request is %d bytes, want %d", largest, MaxRequestBytes)
+			}
+			requests = nil
+
+			// With "each", prod's request is one byte longer than dev's, so
+			// prod's alone passes the bound and the run is refused.
+			requests, diagnostics = form(pad + 1)
+			want := map[string]string{"each": "prod", "all": ""}[environments]
+			if requests != nil || !slices.Equal(codes(diagnostics), []string{"EMIT-REQUEST@"}) ||
+				diagnostics[0].Location.Document != DocumentRequest || diagnostics[0].Location.Environment != want {
+				t.Fatalf("one byte over the bound: %d %+v", len(requests), diagnostics)
+			}
+		})
+	}
+}

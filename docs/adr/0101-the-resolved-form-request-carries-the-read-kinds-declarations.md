@@ -85,7 +85,9 @@ the facts form, which is unchanged. The tests' emitter reads the request loosely
 - Good: an emitter sees each read kind's schema and secret positions, bound to its pin by digest.
 - Good: check 4 holds the declarations to the same property as the pins, with no new check.
 - Bad: a request grows by its read kinds' declarations, each at most 256 KiB (`MaxKindBytes`). The
-  host already holds them, and no request bound is added.
+  host already holds them. A request is at most 64 MiB of RFC 8785 bytes (`MaxRequestBytes`, the
+  response's bound and the harness's for a given request), and the host refuses a larger one, any
+  request of `"each"` or the one of `"all"`, with `EMIT-REQUEST` before any emitter starts.
 - Neutral: check 3's hostile request has no declarations. The host's response step answers it, and
   no emitter is ever sent it.
 - Revisit when the companion's §11.2 text changes in review, or when a location into a declaration

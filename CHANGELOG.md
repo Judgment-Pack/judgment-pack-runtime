@@ -135,7 +135,9 @@ All notable changes to tagged releases are documented here.
   of request `1.0.0`, which no tagged release has held yet, so `emitRequestVersion` stays `1.0.0`.
   `jpack emit conformance` holds a given resolved-form `request.json` to these five members, and
   check 4 requires `declarations` to be byte-identical with the synthetic kind added. The golden
-  vectors were written again with `--update`. The conformance claim in CONFORMANCE.md is unchanged.
+  vectors were written again with `--update`. A request is at most 64 MiB of RFC 8785 bytes, and
+  the host refuses a larger one, any request of `"each"` or the one of `"all"`, with `EMIT-REQUEST`
+  before any emitter starts. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 

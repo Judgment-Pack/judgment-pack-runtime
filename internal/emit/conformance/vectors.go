@@ -21,8 +21,9 @@ import (
 const (
 	// MaxVectors bounds the vectors of one directory.
 	MaxVectors = 1000
-	// MaxRequestBytes bounds a vector's request.json.
-	MaxRequestBytes = 64 << 20
+	// MaxRequestBytes bounds a vector's request.json, as the host bounds a
+	// request it forms.
+	MaxRequestBytes = emit.MaxRequestBytes
 	// MaxSmallDocumentBytes bounds harness.json and expected-failure.json.
 	MaxSmallDocumentBytes = 4 << 10
 	// MaxKindFiles bounds a vector's kinds/, as `jpack emit --kinds` is

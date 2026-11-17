@@ -44,7 +44,8 @@ func digestOf(data []byte) string {
 // environment for "each", and one otherwise. It refuses before any emitter
 // starts: a registry that is not valid, a pinned kind the manifest reads
 // whose id differs or whose version is outside the range, options that fail
-// the schema, and a request version that cannot be written.
+// the schema, a request version that cannot be written, and a request whose
+// RFC 8785 bytes exceed MaxRequestBytes (EMIT-REQUEST), any one of "each".
 //
 // The kind filter is applied as each document is built, not after: a pin, a
 // declaration or an entry of a kind the manifest does not read is never
@@ -118,7 +119,7 @@ func FormRequests(m *Manifest, in Inputs) ([]Request, []Diagnostic) {
 	}
 	encode := func(environment string, value map[string]any) (Request, bool) {
 		data, err := jcs.EncodeDocument(value)
-		if err != nil {
+		if err != nil || len(data) > MaxRequestBytes {
 			diagnostics = append(diagnostics, diagnostic("EMIT-REQUEST", Location{Document: DocumentRequest, Environment: environment}))
 			return Request{}, false
 		}

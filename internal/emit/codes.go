@@ -39,6 +39,10 @@ var responseVersions = []string{"1.0.0"}
 const (
 	// MaxResponseBytes bounds what the host reads of standard output.
 	MaxResponseBytes = 64 << 20
+	// MaxRequestBytes bounds one request's RFC 8785 bytes, as the response
+	// is bounded: the host refuses to form a larger one (EMIT-REQUEST), and
+	// the harness admits no larger given request.
+	MaxRequestBytes = 64 << 20
 	// MaxFiles bounds a response's files.
 	MaxFiles = 10000
 	// MaxFileBytes bounds one file's bytes, after base64 decoding.
