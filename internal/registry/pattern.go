@@ -16,8 +16,9 @@ const MaxPatternLength = 256
 // Program bounds (ADR-0093, amendment). RFC 0034 §2.2 admits {n,m} up to
 // 1000 in a pattern of 256 code points, and RE2 compiles x{n,m} as m copies
 // of x, so one pattern within the subset can compile to a quarter of a
-// million instructions, tens of megabytes. A pattern's size is counted on its
-// parse, before anything is compiled (patternSize), and a kind is refused
+// million instructions, tens of megabytes. A pattern's size is counted on the
+// pattern as written, by the registry companion's rules (§3.4, "Program
+// size"; patternSizer), before anything is compiled, and a kind is refused
 // with REG-KIND-PATTERN-LIMIT at a pattern past MaxPatternInstructions, or at
 // one that would take the kind's patterns together past
 // MaxKindPatternInstructions.
@@ -26,15 +27,15 @@ const (
 	MaxKindPatternInstructions = 65536
 )
 
-// errPatternSize refuses a pattern within the subset whose program would
-// pass MaxPatternInstructions.
-var errPatternSize = errors.New("the pattern compiles to more than the instruction bound")
+// errPatternSize refuses a pattern within the subset whose size, counted
+// as written, passes MaxPatternInstructions.
+var errPatternSize = errors.New("the pattern's size passes its bound")
 
 // Pattern is a compiled pattern of the companion's subset. Matching is RE2's,
 // so it is linear in the input.
 type Pattern struct {
 	re *regexp.Regexp
-	// size is the program's instruction count, as patternSize counts it.
+	// size is the pattern's size, as patternSizer counts it.
 	size int
 }
 
@@ -96,74 +97,137 @@ func (b *patternBudget) compile(source string) (*Pattern, string) {
 	return &Pattern{re: re, size: size}, ""
 }
 
-// patternSize is the number of instructions RE2 compiles a parsed pattern
-// to, as Go's regexp/syntax estimates it before compiling (its calcSize):
-// one per literal code point, class and assertion; one more for each ?, +
-// and alternative, two for * and a group; and x{n,m} as m copies of x and
-// m-n more, x{n,} as n copies and one. The compiled program adds its two
-// fixed instructions, and one fewer for a * over a pattern that can match
-// nothing. The parse holds a repetition once, so counting costs the
-// pattern's length, and the count saturates past MaxPatternInstructions.
-func patternSize(re *syntax.Regexp) int {
-	const limit = MaxPatternInstructions + 1
-	size := 0
-	switch re.Op {
-	case syntax.OpLiteral:
-		size = len(re.Rune)
-	case syntax.OpCapture, syntax.OpStar:
-		size = 2 + patternSize(re.Sub[0])
-	case syntax.OpPlus, syntax.OpQuest:
-		size = 1 + patternSize(re.Sub[0])
-	case syntax.OpConcat, syntax.OpAlternate:
-		for _, sub := range re.Sub {
-			size = min(size+patternSize(sub), limit)
-		}
-		if re.Op == syntax.OpAlternate && len(re.Sub) > 1 {
-			size += len(re.Sub) - 1
-		}
-	case syntax.OpRepeat:
-		sub := patternSize(re.Sub[0])
-		switch {
-		case re.Max == -1 && re.Min == 0:
-			size = 2 + sub
-		case re.Max == -1:
-			size = 1 + min(re.Min, limit)*sub
-		default:
-			size = min(re.Max, limit)*sub + re.Max - re.Min
-		}
-	}
-	return min(max(1, size), limit)
+// patternSizer counts a pattern's size on the pattern as written, by the
+// registry companion's rules (§3.4, "Program size"): each literal code
+// point, escape, ".", class, "^" and "$" counts 1; a group counts its
+// content; "*" counts 2 plus its atom, "+" and "?" 1 plus it; {n} counts n
+// times its atom, {n,} 1 plus n times it ({0,} as "*"), and {n,m} m times
+// it plus m-n; a sequence counts the sum of its parts, and an alternation
+// of k alternatives the sum of its alternatives plus k-1; every construct
+// counts at least 1, an empty alternative and x{0} included. It is an upper
+// bound, close to it, on the program RE2 compiles. Every count saturates
+// just past MaxPatternInstructions, so nested repetitions cannot overflow.
+type patternSizer struct {
+	frames []sizeFrame
 }
 
+// sizeFrame is the count of the pattern, or of one open group.
+type sizeFrame struct {
+	bars     int // the alternatives closed by "|"
+	closed   int // their sizes, each at least 1
+	sequence int // the current alternative's parts before pending
+	pending  int // the last atom, which a quantifier may follow; 0 when none
+}
+
+const sizeLimit = MaxPatternInstructions + 1
+
+func saturate(n int) int { return min(n, sizeLimit) }
+
+func (z *patternSizer) top() *sizeFrame {
+	if len(z.frames) == 0 {
+		z.frames = append(z.frames, sizeFrame{})
+	}
+	return &z.frames[len(z.frames)-1]
+}
+
+func (f *sizeFrame) flush() {
+	f.sequence = saturate(f.sequence + f.pending)
+	f.pending = 0
+}
+
+func (f *sizeFrame) total() int {
+	f.flush()
+	return max(1, saturate(f.closed+max(1, f.sequence)+f.bars))
+}
+
+// atom counts an atom of size n, which a quantifier may follow.
+func (z *patternSizer) atom(n int) {
+	frame := z.top()
+	frame.flush()
+	frame.pending = n
+}
+
+// anchor counts "^" or "$", which no quantifier follows.
+func (z *patternSizer) anchor() {
+	frame := z.top()
+	frame.flush()
+	frame.sequence = saturate(frame.sequence + 1)
+}
+
+func (z *patternSizer) bar() {
+	frame := z.top()
+	frame.flush()
+	frame.closed = saturate(frame.closed + max(1, frame.sequence))
+	frame.sequence = 0
+	frame.bars++
+}
+
+func (z *patternSizer) open() {
+	z.top().flush()
+	z.frames = append(z.frames, sizeFrame{})
+}
+
+// close ends a group, which is then the atom of its enclosing count.
+func (z *patternSizer) close() {
+	content := z.top().total()
+	z.frames = z.frames[:len(z.frames)-1]
+	z.atom(content)
+}
+
+// quantify applies a quantifier to the last atom: "*", "+" or "?", or "{"
+// with n and m as readBraces returns them (m is -1 for {n,}).
+func (z *patternSizer) quantify(quantifier rune, n, m int) {
+	frame := z.top()
+	atom := frame.pending
+	var size int
+	switch {
+	case quantifier == '*' || quantifier == '{' && m == -1 && n == 0:
+		size = 2 + atom
+	case quantifier == '+' || quantifier == '?':
+		size = 1 + atom
+	case m == -1:
+		size = 1 + n*atom
+	default:
+		size = m*atom + m - n
+	}
+	frame.pending = max(1, saturate(size))
+}
+
+// size is the whole pattern's size, once every group is closed.
+func (z *patternSizer) size() int { return z.top().total() }
+
 // translatePattern checks a pattern against the subset, translates it into
-// RE2 and parses it, and returns the translation and its size. It refuses,
-// with errPatternSize, a pattern whose program would pass
-// MaxPatternInstructions.
+// RE2 and parses it, and returns the translation and its size, counted on
+// the pattern as written. A pattern outside the subset, Go's refusal of a
+// nested repetition past 1000 among it, is refused whatever its size; one
+// within it whose size passes MaxPatternInstructions is refused with
+// errPatternSize.
 func translatePattern(source string) (string, int, error) {
-	translated, err := translateSubset(source)
+	translated, size, err := translateSubset(source)
 	if err != nil {
 		return "", 0, err
 	}
-	parsed, err := syntax.Parse(translated, syntax.Perl)
-	if err != nil {
+	if _, err := syntax.Parse(translated, syntax.Perl); err != nil {
 		return "", 0, err
 	}
-	size := patternSize(parsed)
 	if size > MaxPatternInstructions {
 		return "", 0, errPatternSize
 	}
 	return translated, size, nil
 }
 
-func translateSubset(source string) (string, error) {
+// translateSubset reads a pattern lexically against the subset, and returns
+// its RE2 translation and its size (patternSizer).
+func translateSubset(source string) (string, int, error) {
 	if !utf8.ValidString(source) {
-		return "", fmt.Errorf("not UTF-8")
+		return "", 0, fmt.Errorf("not UTF-8")
 	}
 	runes := []rune(source)
 	if len(runes) > MaxPatternLength {
-		return "", fmt.Errorf("longer than %d code points", MaxPatternLength)
+		return "", 0, fmt.Errorf("longer than %d code points", MaxPatternLength)
 	}
 	var out strings.Builder
+	var sizer patternSizer
 	depth := 0
 	// canQuantify is true right after an atom; quantified is true right after
 	// a quantifier, where another quantifier would be lazy or possessive.
@@ -174,19 +238,21 @@ func translateSubset(source string) (string, error) {
 		switch r {
 		case '^':
 			if i != 0 {
-				return "", fmt.Errorf("^ is allowed only first")
+				return "", 0, fmt.Errorf("^ is allowed only first")
 			}
 			out.WriteString(`^`)
+			sizer.anchor()
 			canQuantify, quantified = false, false
 		case '$':
 			if i != last {
-				return "", fmt.Errorf("$ is allowed only last")
+				return "", 0, fmt.Errorf("$ is allowed only last")
 			}
 			out.WriteString(`\z`)
+			sizer.anchor()
 			canQuantify, quantified = false, false
 		case '\\':
 			if i == last {
-				return "", fmt.Errorf("trailing backslash")
+				return "", 0, fmt.Errorf("trailing backslash")
 			}
 			i++
 			c := runes[i]
@@ -196,69 +262,79 @@ func translateSubset(source string) (string, error) {
 			case strings.ContainsRune(`.\/()[]{}*+?|^$`, c):
 				out.WriteString(regexp.QuoteMeta(string(c)))
 			default:
-				return "", fmt.Errorf("escape outside the subset")
+				return "", 0, fmt.Errorf("escape outside the subset")
 			}
+			sizer.atom(1)
 			canQuantify, quantified = true, false
 		case '.':
 			out.WriteString(`[^\n\r\x{2028}\x{2029}]`)
+			sizer.atom(1)
 			canQuantify, quantified = true, false
 		case '[':
 			end, class, err := readClass(runes, i)
 			if err != nil {
-				return "", err
+				return "", 0, err
 			}
 			out.WriteString(class)
+			sizer.atom(1)
 			i = end
 			canQuantify, quantified = true, false
 		case '(':
 			if i < last && runes[i+1] == '?' {
-				return "", fmt.Errorf("group modifiers are outside the subset")
+				return "", 0, fmt.Errorf("group modifiers are outside the subset")
 			}
 			depth++
 			out.WriteString(`(?:`)
+			sizer.open()
 			canQuantify, quantified = false, false
 		case ')':
 			if depth == 0 {
-				return "", fmt.Errorf("unbalanced )")
+				return "", 0, fmt.Errorf("unbalanced )")
 			}
 			depth--
 			out.WriteString(`)`)
+			sizer.close()
 			canQuantify, quantified = true, false
 		case '|':
 			out.WriteString(`|`)
+			sizer.bar()
 			canQuantify, quantified = false, false
 		case '*', '+', '?':
 			if !canQuantify || quantified {
-				return "", fmt.Errorf("quantifier without an atom, or lazy or possessive")
+				return "", 0, fmt.Errorf("quantifier without an atom, or lazy or possessive")
 			}
 			out.WriteRune(r)
+			sizer.quantify(r, 0, 0)
 			canQuantify, quantified = false, true
 		case '{':
-			end, err := readBraces(runes, i)
+			end, n, m, err := readBraces(runes, i)
 			if err != nil {
-				return "", err
+				return "", 0, err
 			}
 			if !canQuantify || quantified {
-				return "", fmt.Errorf("quantifier without an atom")
+				return "", 0, fmt.Errorf("quantifier without an atom")
 			}
 			out.WriteString(string(runes[i : end+1]))
+			sizer.quantify('{', n, m)
 			i = end
 			canQuantify, quantified = false, true
 		case '}', ']':
-			return "", fmt.Errorf("unescaped %c", r)
+			return "", 0, fmt.Errorf("unescaped %c", r)
 		default:
 			out.WriteString(regexp.QuoteMeta(string(r)))
+			sizer.atom(1)
 			canQuantify, quantified = true, false
 		}
 	}
 	if depth != 0 {
-		return "", fmt.Errorf("unbalanced (")
+		return "", 0, fmt.Errorf("unbalanced (")
 	}
-	return out.String(), nil
+	return out.String(), sizer.size(), nil
 }
 
-// readBraces reads {n}, {n,} or {n,m} at start, with n <= m <= 1000.
-func readBraces(runes []rune, start int) (int, error) {
+// readBraces reads {n}, {n,} or {n,m} at start, with n <= m <= 1000, and
+// returns its end, n and m: m is n for {n} and -1 for {n,}.
+func readBraces(runes []rune, start int) (int, int, int, error) {
 	closing := -1
 	for j := start + 1; j < len(runes); j++ {
 		if runes[j] == '}' {
@@ -267,7 +343,7 @@ func readBraces(runes []rune, start int) (int, error) {
 		}
 	}
 	if closing < 0 {
-		return 0, fmt.Errorf("unterminated {")
+		return 0, 0, 0, fmt.Errorf("unterminated {")
 	}
 	body := string(runes[start+1 : closing])
 	low, high, hasComma := strings.Cut(body, ",")
@@ -283,14 +359,18 @@ func readBraces(runes []rune, start int) (int, error) {
 	}
 	n, ok := parse(low)
 	if !ok {
-		return 0, fmt.Errorf("malformed {n,m}")
+		return 0, 0, 0, fmt.Errorf("malformed {n,m}")
 	}
-	if hasComma && high != "" {
-		if m, ok := parse(high); !ok || m < n {
-			return 0, fmt.Errorf("malformed {n,m}")
+	m := n
+	switch {
+	case hasComma && high == "":
+		m = -1
+	case hasComma:
+		if m, ok = parse(high); !ok || m < n {
+			return 0, 0, 0, fmt.Errorf("malformed {n,m}")
 		}
 	}
-	return closing, nil
+	return closing, n, m, nil
 }
 
 // readClass reads a bracket class at start and returns its RE2 form, with
