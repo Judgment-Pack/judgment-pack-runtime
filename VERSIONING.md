@@ -153,7 +153,8 @@ declares. The RFCs define the `REF-*` codes and `REG-DOC-NUMBER`. Every other `R
 location members, are this runtime's own reading of the RFCs' rules. That list is provisional until
 the registry companion (`spec/registry.md`) is released: if the companion's list differs, this
 runtime adopts it under a new selector and says so in its release notes. `REG-KIND-PATTERN-LIMIT`
-(a pattern past its compiled-instruction bound, ADR-0093's amendment of #432) and
+(a pattern past its size bound, ADR-0093's amendment of #432, its size counted as written since
+the later amendment) and
 `REG-BOUND-VALIDATION-WORK` (step 7's schema checks past their work bound, the same amendment) are
 among these provisional codes, as are `REG-REPORT-TRUNCATED` and the `REG-YAML-*` codes.
 
