@@ -214,7 +214,7 @@ func TestResolvedFor(t *testing.T) {
 		entries[0].(map[string]any)["id"] != "billing-api" || encode(t, roles["registry"]) != encode(t, whole["registry"]) {
 		t.Fatalf("filtered: %s", encode(t, roles))
 	}
-	if _, err := result.ResolvedFor("qa", nil); err == nil || errors.Is(err, ErrInvalid) {
+	if _, err := result.ResolvedFor("qa", nil); err == nil || err.Error() != `registry: no environment "qa"` {
 		t.Fatalf("an undeclared environment: %v", err)
 	}
 	if _, err := run(`{}`, kinds).ResolvedFor("prod", nil); !errors.Is(err, ErrInvalid) {
