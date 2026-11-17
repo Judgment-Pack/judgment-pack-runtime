@@ -2,6 +2,26 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The fuzz workflow takes a fuzzing time on demand** (`.github/workflows/fuzz.yml`). A manual
+  run accepts `fuzztime` (default `30s`; a whole number with `s`, `m` or `h`, at most `340m`), and
+  each target's job limit follows it: the time plus ten minutes, at most 350 minutes. A value of
+  another form, or one over the cap, fails the run before any target starts. The scheduled run
+  still fuzzes each target for 30 seconds, now under an 11-minute job limit (it was 15).
+  The conformance claim in CONFORMANCE.md is unchanged.
+- **The start-up module's refusals and limits are in the mutation table**
+  (docs/registry-mutation-table.md). The module reports no codes, so its rows are named by its
+  exported error values (`ErrLimit`, `ErrWorldReadable`, `ErrDocument` and the others) and its
+  exported limits (`MaxSecretBytes`, `MaxResolvedBytes`, `MaxResolvedDepth`): one row for each
+  function that uses one, 24 in all, each with the test that kills its recorded mutant.
+  `scripts/check-mutation-table.py` derives them from `startup/`'s source and fails on a
+  function with no row, and the `mutation-table` check now runs when `startup/` changes.
+  `TestReadFileRefusals` gains two files holding a value at the bound, a newline and one more
+  byte, which `ReadFile` would admit if it read one or two bytes fewer. No exported identifier,
+  message or behaviour of the module changes. The conformance claim in CONFORMANCE.md is
+  unchanged.
+
 ## 0.51.0 - 2026-11-17
 
 - **`jpack emit conformance` no longer reads an index with an offset table** (ADR-0099). The

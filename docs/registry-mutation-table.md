@@ -200,3 +200,71 @@ run the mutants; a reviewer does.
 | `x-ts-member-proto` | error | `./cmd/jpack-emit-ts-constants` | `TestSchemaRefusals` | `cmd/jpack-emit-ts-constants/schema.go:object` | every `codeMemberProto` becomes `codeSchemaUnsupported` | n/a |
 | `x-ts-bounds` | error | `./cmd/jpack-emit-ts-constants` | `TestSharedTypesAreWrittenWithinTheBound` | `cmd/jpack-emit-ts-constants/write.go:generate` | every `codeBounds` becomes `codePath` | n/a |
 | `x-ts-path` | error | `./cmd/jpack-emit-ts-constants` | `TestDeviceNameEnvironmentIsRefused` | `cmd/jpack-emit-ts-constants/write.go:generate` | every `codePath` becomes `codeBounds` | n/a |
+
+## Start-up module
+
+The start-up module (`startup/`, a nested module, ADR-0096) reports no codes. Its refusals are
+its exported error values and its limits its exported constants, under the module's 1.0 promise,
+so they are the identifiers of this table's rows. Each function of a non-test Go file of
+`startup/` that uses one has one row: the test that holds that refusal or limit there, and a
+recorded mutant of that function. The rows follow from the source:
+
+- every exported variable of `startup/`, each an `errors.New` value (the check refuses to read
+  an exported variable of another form);
+- every exported constant whose value is not a string literal (`Redacted` is one, and is not a
+  limit);
+- for each of them, every function of a non-test Go file that uses it outside its comments and
+  string literals, whatever the file's build constraint.
+
+`scripts/check-mutation-table.py` fails when such a function has no row or two, when a row's
+identifier is not one of them or its function does not use it, when a row's mutant does not
+apply (below), when the row's test does not name the identifier outside its comments, when the
+test is not declared in a test file of the module on `linux`, `darwin` or `windows` (`go list`),
+and when a test in a file the host builds is not listed by `go test -list`. The probe holds these
+rules to rows, sources and mutants changed in memory.
+
+Some of what the module does is not a refusal or a limit with an identifier, and has no row: the
+trim of exactly one trailing `"\n"` or `"\r\n"` (`TestReadEnvTrimsExactlyOneTrailingNewline`,
+`TestReadFileTrimsExactlyOneTrailingNewline`), the open that does not wait on a named pipe
+(`TestReadFileOpensWithoutWaitingOnANamedPipe`), and the errors of the operating system and of
+the context, which the module wraps or returns as they are.
+
+Columns:
+
+- **identifier**: the exported error value or constant.
+- **test**: a test of the module's root package. Run one row with
+  `cd startup && go test -count=1 -run '^TestX$' .`; a row whose test is in a file built only
+  outside Unix runs on the Windows leg of CI.
+- **mutant site**: the file and the function the mutant changes.
+- **mutant**: `every A becomes B`, in that function's body only. For an error value, `B` is
+  another error value of the module, so the package still builds and the error returned is one the
+  test does not accept. For a limit, `B` is `A+1` or `A-1`: the bound moves by one, and the test
+  holds it at its boundary. Where one direction leaves the behaviour unchanged (a read that keeps
+  more bytes than the bound still refuses them), the row records the other.
+
+| identifier | test | mutant site | mutant |
+|---|---|---|---|
+| `ErrNoBinding` | `TestBindingsReadEachReferenceFromItsBinding` | `startup/reader.go:ReadSecret` | every `ErrNoBinding` becomes `ErrNotSet` |
+| `ErrTwoBindings` | `TestBindingsReadEachReferenceFromItsBinding` | `startup/reader.go:ReadSecret` | every `ErrTwoBindings` becomes `ErrNoBinding` |
+| `ErrNotSet` | `TestReadEnvRefusals` | `startup/reader.go:ReadEnv` | every `ErrNotSet` becomes `ErrEmpty` |
+| `ErrEmpty` | `TestReadEnvRefusals` | `startup/reader.go:admitValue` | every `ErrEmpty` becomes `ErrLimit` |
+| `ErrLimit` | `TestAdmitValueHoldsTheBound` | `startup/reader.go:admitValue` | every `ErrLimit` becomes `ErrEmpty` |
+| `MaxSecretBytes` | `TestAdmitValueHoldsTheBound` | `startup/reader.go:admitValue` | every `MaxSecretBytes` becomes `MaxSecretBytes+1` |
+| `MaxSecretBytes` | `TestReadFileRefusals` | `startup/reader.go:ReadFileWith` | every `MaxSecretBytes` becomes `MaxSecretBytes-1` |
+| `ErrNotRegular` | `TestReadFileRefusals` | `startup/reader.go:checkFile` | every `ErrNotRegular` becomes `ErrWorldReadable` |
+| `ErrWorldReadable` | `TestReadFileRefusesAWorldReadableFile` | `startup/permissions_unix.go:checkPermissions` | every `ErrWorldReadable` becomes `ErrWorldWritable` |
+| `ErrWorldWritable` | `TestReadFileRefusesAWorldWritableFile` | `startup/permissions_unix.go:checkPermissions` | every `ErrWorldWritable` becomes `ErrWorldReadable` |
+| `ErrPermissionsUnknown` | `TestReadFileRefusesEveryFileOutsideUnix` | `startup/permissions_other.go:checkPermissions` | every `ErrPermissionsUnknown` becomes `ErrWorldReadable` |
+| `ErrNotDecodable` | `TestSecretRefusesToBeDecoded` | `startup/secret.go:UnmarshalJSON` | every `ErrNotDecodable` becomes `ErrDocument` |
+| `ErrNotDecodable` | `TestSecretRefusesToBeDecoded` | `startup/secret.go:UnmarshalText` | every `ErrNotDecodable` becomes `ErrDocument` |
+| `ErrSelector` | `TestReadResolvedRefusesASelectorItDoesNotRead` | `startup/resolved.go:ReadResolved` | every `ErrSelector` becomes `ErrDocument` |
+| `ErrEnvironment` | `TestReadResolvedRefusesAnotherEnvironment` | `startup/resolved.go:ReadResolved` | every `ErrEnvironment` becomes `ErrSelector` |
+| `ErrLimit` | `TestReadResolvedHoldsTheBounds` | `startup/resolved.go:ReadResolved` | every `ErrLimit` becomes `ErrDocument` |
+| `MaxResolvedBytes` | `TestReadResolvedHoldsTheBounds` | `startup/resolved.go:ReadResolved` | every `MaxResolvedBytes` becomes `MaxResolvedBytes+1` |
+| `ErrNotRegular` | `TestReadResolvedFileRefusesANamedPipe` | `startup/resolved.go:ReadResolvedFile` | every `ErrNotRegular` becomes `ErrDocument` |
+| `MaxResolvedBytes` | `TestReadResolvedFile` | `startup/resolved.go:ReadResolvedFile` | every `MaxResolvedBytes` becomes `MaxResolvedBytes-1` |
+| `ErrDocument` | `TestReadResolvedRefusesAMalformedMember` | `startup/resolved.go:closed` | every `ErrDocument` becomes `ErrSelector` |
+| `ErrDocument` | `TestReadResolvedRefusesAMalformedMember` | `startup/resolved.go:malformed` | every `ErrDocument` becomes `ErrSelector` |
+| `ErrDocument` | `TestReadResolvedRefusesWhatIsNotOneJSONValue` | `startup/resolved.go:scan` | every `ErrDocument` becomes `ErrLimit` |
+| `ErrLimit` | `TestReadResolvedHoldsTheBounds` | `startup/resolved.go:scan` | every `ErrLimit` becomes `ErrDocument` |
+| `MaxResolvedDepth` | `TestReadResolvedHoldsTheBounds` | `startup/resolved.go:scan` | every `MaxResolvedDepth` becomes `MaxResolvedDepth+1` |

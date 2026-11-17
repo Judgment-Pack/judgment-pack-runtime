@@ -18,6 +18,15 @@ marks (see provisional_marks), and a row whose test `go test -list` does not lis
 the parent `TestX` must be listed, and a string literal in its body must name `sub` as `go test`
 prints it, spaces as underscores). Run from the repository root. Standard library only; it runs
 `go test -list`, one package at a time.
+
+The start-up module (startup/) has a table of its own, derived from its source as well (see
+startup_identifiers and startup_sites): one row for each function of a non-test Go file that uses
+one of its exported error values or exported non-string constants, its refusals and limits. It
+fails on such a function with no row or two, a row whose identifier or site is not one, a mutant
+that is not `every A becomes B` with A the row's identifier in the function's body and B another
+error value (for a refusal) or A+1 or A-1 (for a limit), and a test that does not name A or that
+no test file of the module declares on linux, darwin or windows (`go list`); a test this host
+builds must be listed by `go test -list` in startup/.
 """
 import glob
 import os
@@ -251,20 +260,20 @@ def cells(line):
     return [c.strip() for c in line[1:-1].split('|')]
 
 
-def read_table():
+def read_table(header=HEADER):
     rows = []
     lines = open(TABLE, encoding='utf-8').read().split('\n')
-    heads = [i for i, line in enumerate(lines) if cells(line) == HEADER]
+    heads = [i for i, line in enumerate(lines) if cells(line) == header]
     if len(heads) != 1:
-        refuse('%s: no single table headed %s' % (TABLE, ' | '.join(HEADER)))
+        refuse('%s: no single table headed %s' % (TABLE, ' | '.join(header)))
     for number, line in enumerate(lines[heads[0] + 2:], heads[0] + 3):
         row = cells(line)
         if row is None:
             break
-        if len(row) != len(HEADER):
-            problems.append('%s:%d: %d cells, want %d' % (TABLE, number, len(row), len(HEADER)))
+        if len(row) != len(header):
+            problems.append('%s:%d: %d cells, want %d' % (TABLE, number, len(row), len(header)))
             continue
-        rows.append((number, dict(zip(HEADER, (c[1:-1] if len(c) > 1 and c[0] == c[-1] == '`' else c for c in row)))))
+        rows.append((number, dict(zip(header, (c[1:-1] if len(c) > 1 and c[0] == c[-1] == '`' else c for c in row)))))
     return rows
 
 
@@ -395,6 +404,194 @@ def named_codes(text, codes, names):
             found.add(value)
     return found
 
+# The start-up module (startup/, a nested module) reports no codes: its refusals are exported
+# error values and its limits exported constants, under the module's 1.0 promise. Its rows are
+# in a table of their own, one for each function of a non-test Go file of startup/ that uses one.
+STARTUP = 'startup'
+STARTUP_HEADER = ['identifier', 'test', 'mutant site', 'mutant']
+STARTUP_GOOS = ('linux', 'darwin', 'windows')
+FUNC = re.compile(r'^func (?:\([^)]*\) )?([A-Za-z_]\w*)(?:\[[^\]]*\])?\(', re.M)
+
+
+def startup_sources():
+    """{path: text} of the start-up module's non-test Go files, every build constraint's."""
+    return {p: open(p, encoding='utf-8').read() for p in source_files(STARTUP)}
+
+
+def declarations(text, keyword):
+    """[(name, rest)] for each top-level `keyword` (var or const) declaration in text, single or
+    a member of a `keyword ( ... )` block: its name and the rest of its line."""
+    out, block = [], False
+    for line in text.split('\n'):
+        if block:
+            if line == ')':
+                block = False
+            elif re.match(r'^\t[A-Za-z_]', line):
+                m = re.match(r'^\t([A-Za-z_]\w*)(.*)$', line)
+                out.append((m.group(1), m.group(2)))
+            continue
+        if re.match(r'^%s\s*\($' % keyword, line):
+            block = True
+            continue
+        m = re.match(r'^%s\s+([A-Za-z_]\w*)(.*)$' % keyword, line)
+        if m:
+            out.append((m.group(1), m.group(2)))
+    return out
+
+
+def startup_identifiers(texts=None):
+    """{name: 'refusal' or 'limit'}: each exported variable of the start-up module, which must be
+    an errors.New value (a refusal), and each exported constant whose value is not a string
+    literal (a limit). Refuses an exported variable of any other form."""
+    out = {}
+    for path, text in sorted((startup_sources() if texts is None else texts).items()):
+        for name, rest in declarations(text, 'var'):
+            if not name[0].isupper():
+                continue
+            if not re.match(r'^\s*=\s*errors\.New\(', rest):
+                refuse('%s: the exported variable %s is not an errors.New value' % (path, name))
+            out[name] = 'refusal'
+        for name, rest in declarations(text, 'const'):
+            if name[0].isupper() and not re.match(r'^(?:\s+[A-Za-z_]\w*)?\s*=\s*"', rest):
+                out[name] = 'limit'
+    return out
+
+
+def functions(text):
+    """[(name, source)] for each top-level function or method of a Go file's text."""
+    out = []
+    for m in FUNC.finditer(text):
+        line_end = text.find('\n', m.end())
+        line_end = len(text) if line_end < 0 else line_end
+        if text[:line_end].rstrip().endswith('}'):
+            out.append((m.group(1), text[m.start():line_end]))
+            continue
+        end = re.search(r'^}', text[m.end():], re.M)
+        out.append((m.group(1), text[m.start():m.end() + (end.end() if end else len(text) - m.end())]))
+    return out
+
+
+def startup_sites(identifiers, texts=None):
+    """{(name, 'path:function')}: each function of the module that uses an identifier, outside its
+    comments and string literals and as a whole word."""
+    sites = set()
+    for path, text in sorted((startup_sources() if texts is None else texts).items()):
+        for function, body in functions(text):
+            code, _ = go_code(body)
+            for name in identifiers:
+                if re.search(r'(?<![\w.])%s(?!\w)' % re.escape(name), code):
+                    sites.add((name, '%s:%s' % (path, function)))
+    return sites
+
+
+def startup_mutant_problem(body, mutant, name, identifiers):
+    """Why the mutant cannot apply to a function's body as a mutant of the row's identifier, or
+    None. It must be `every A becomes B`, A the row's identifier and in the body outside its
+    comments as a whole word; for a refusal B is another refusal, for a limit `A+1` or `A-1`."""
+    m = MUTANT.fullmatch(mutant)
+    if not m:
+        return 'is not of the form every `A` becomes `B`'
+    old, new = m.group(1), m.group(2)
+    if old != name:
+        return 'changes %s, not the row\'s %s' % (old, name)
+    if identifiers.get(name) == 'refusal' and (new == old or identifiers.get(new) != 'refusal'):
+        return 'changes %s into %s, which is not another refusal of the module' % (old, new)
+    if identifiers.get(name) == 'limit' and new not in (old + '+1', old + '-1'):
+        return 'changes %s into %s, not %s+1 or %s-1' % (old, new, old, old)
+    if re.search(r'(?<![\w.])%s(?!\w)' % re.escape(old), go_code(body)[0]) is None:
+        return 'changes %s, which its function does not hold outside its comments' % old
+    return None
+
+
+def startup_problems(rows, identifiers, sites, texts=None):
+    """The problems of the start-up table's rows, and {test: [where]} for the listing: a row whose
+    identifier is no refusal or limit of the module, whose site does not use it, a second row for
+    one site, a mutant that does not apply, a test the module's test files do not declare or that
+    does not name the identifier, and a site with no row."""
+    texts = startup_sources() if texts is None else texts
+    out, seen, tests = [], {}, {}
+    for number, row in rows:
+        name, site = row['identifier'], row['mutant site']
+        where = '%s:%d: %s' % (TABLE, number, name)
+        if name not in identifiers:
+            out.append('%s: no exported error value or limit of %s/ is named so' % (where, STARTUP))
+            continue
+        if (name, site) not in sites:
+            out.append('%s: mutant site %s is no function of %s/ that uses it' % (where, site, STARTUP))
+            continue
+        if (name, site) in seen:
+            out.append('%s: a second row for %s (the first is line %d)' % (where, site, seen[name, site]))
+            continue
+        seen[name, site] = number
+        path, function = site.rsplit(':', 1)
+        body = dict(functions(texts[path]))[function]
+        why = startup_mutant_problem(body, row['mutant'], name, identifiers)
+        if why:
+            out.append('%s: the mutant %s' % (where, why))
+        parent = row['test'].split('/')[0]
+        if not re.fullmatch(r'Test\w*(?:/\w[^/]*)*', row['test']):
+            out.append('%s: test %s is not of the form TestX or TestX/sub' % (where, row['test']))
+            continue
+        test = test_body(STARTUP, parent)
+        if test is None:
+            out.append('%s: no func %s in the test files of %s/' % (where, parent, STARTUP))
+            continue
+        scope = test
+        for part in row['test'].split('/')[1:]:
+            scope = subtest_case(scope, part)
+            if scope is None:
+                out.append('%s: no string in %s names its subtest %s' % (where, parent, part))
+                break
+        if scope is None:
+            continue
+        if re.search(r'(?<![\w.])%s(?!\w)' % re.escape(name), go_code(test)[0]) is None:
+            out.append('%s: %s does not name %s outside its comments' % (where, parent, name))
+        tests.setdefault(parent, []).append(where)
+    for name, site in sorted(sites - set(seen)):
+        out.append('%s: %s in %s has no row' % (TABLE, name, site))
+    for name in sorted(set(identifiers) - {n for n, _ in sites}):
+        out.append('%s: %s is used in no function of %s/, so no mutant can show a test holds it' % (TABLE, name, STARTUP))
+    return out, tests
+
+
+def startup_listing(tests):
+    """The problems of the start-up rows' tests: each must be declared in a test file of the module
+    on linux, darwin or windows (go list), and one declared in a file this host builds must be
+    listed by go test -list here. A test outside Unix is listed by its file, not run here."""
+    out = []
+    if not tests:
+        return out
+    files = {}
+    for goos in STARTUP_GOOS:
+        listed = subprocess.run(['go', 'list', '-f', '{{join .TestGoFiles "\\n"}}', '.'], cwd=STARTUP, capture_output=True,
+                                text=True, env=dict(os.environ, GOOS=goos))
+        if listed.returncode != 0:
+            out.append('go list (GOOS=%s) in %s/ failed: %s' % (goos, STARTUP, (listed.stderr or listed.stdout).strip()))
+            return out
+        files[goos] = set(listed.stdout.split())
+    host = subprocess.run(['go', 'env', 'GOOS'], cwd=STARTUP, capture_output=True, text=True).stdout.strip()
+    here = []
+    for name, wheres in sorted(tests.items()):
+        declared = [f for f in sorted(os.listdir(STARTUP)) if f.endswith('_test.go') and
+                    re.search(r'^func %s\(t \*testing\.T\) \{' % re.escape(name),
+                              open(os.path.join(STARTUP, f), encoding='utf-8').read(), re.M)]
+        if not declared or not any(declared[0] in files[goos] for goos in STARTUP_GOOS):
+            out.extend('%s: %s is no test of a test file of %s/ on %s' % (w, name, STARTUP, ', '.join(STARTUP_GOOS)) for w in wheres)
+        elif declared[0] in files.get(host, set()):
+            here.append(name)
+    if here:
+        listed = subprocess.run(['go', 'test', '-list', '^(' + '|'.join(here) + ')$', '.'], cwd=STARTUP, capture_output=True,
+                                text=True)
+        if listed.returncode != 0:
+            out.append('go test -list in %s/ failed: %s' % (STARTUP, (listed.stderr or listed.stdout).strip()))
+            return out
+        found = set(listed.stdout.split('\n'))
+        for name in here:
+            if name not in found:
+                out.extend('%s: go test -list does not list %s in %s/' % (w, name, STARTUP) for w in tests[name])
+    return out
+
+
 def main():
     codes = derive()
     marks = provisional_marks()
@@ -470,12 +667,18 @@ def main():
             if name not in found:
                 for where in tests[package][name]:
                     problems.append('%s: go test -list does not list %s in %s' % (where, name, package))
+    identifiers = startup_identifiers()
+    startup_rows = read_table(STARTUP_HEADER)
+    found, startup_tests = startup_problems(startup_rows, identifiers, startup_sites(identifiers))
+    problems.extend(found)
+    problems.extend(startup_listing(startup_tests))
     for p in problems:
         print('mutation table: ' + p, file=sys.stderr)
     if problems:
         print('mutation table: %d problems' % len(problems))
     else:
-        print('mutation table: %d rows, one for each code; every test is listed' % len(rows))
+        print('mutation table: %d rows, one for each code, and %d start-up rows, one for each function that uses a '
+              'refusal or limit; every test is listed' % (len(rows), len(startup_rows)))
     sys.exit(1 if problems else 0)
 
 
