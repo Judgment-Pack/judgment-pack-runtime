@@ -68,3 +68,21 @@ func TestAnUnresolvableRootBelowAReparsePointIsRefused(t *testing.T) {
 		t.Fatalf("an unresolvable root below a reparse point: %v", err)
 	}
 }
+
+// A symbolic link among the ancestors of an unresolvable root is not named
+// as the cause: EvalSymlinks follows links, so the resolution's own error is
+// returned (macOS's temporary directories sit below such a link, /var).
+func TestAnUnresolvableRootBelowASymbolicLinkKeepsItsError(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.Mkdir(filepath.Join(parent, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(parent, "link")
+	if err := os.Symlink(filepath.Join(parent, "a"), link); err != nil {
+		t.Skipf("no symbolic links here: %v", err)
+	}
+	_, err := RealRoot(filepath.Join(link, "missing", "repo"))
+	if err == nil || errors.Is(err, ErrRootReparse) {
+		t.Fatalf("an unresolvable root below a symbolic link: %v", err)
+	}
+}

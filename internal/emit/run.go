@@ -364,8 +364,10 @@ func RealRoot(root string) (string, error) {
 }
 
 // reparseAncestor finds, from the volume root down, the first ancestor of the
-// absolute path that is a link, a junction or another reparse point. It
-// stops at the first ancestor it cannot read.
+// absolute path that is a junction or another reparse point (irregular). A
+// symbolic link is not one: EvalSymlinks follows it, so it is not why the
+// resolution failed (macOS's /var is such a link). It stops at the first
+// ancestor it cannot read.
 func reparseAncestor(absolute string) (string, bool) {
 	var ancestors []string
 	for dir := absolute; filepath.Dir(dir) != dir; {
@@ -377,7 +379,7 @@ func reparseAncestor(absolute string) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		if linkLike(info.Mode()) {
+		if info.Mode()&fs.ModeIrregular != 0 {
 			return ancestors[i], true
 		}
 	}
