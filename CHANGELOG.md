@@ -127,6 +127,21 @@ All notable changes to tagged releases are documented here.
   long pointer costs its bytes, not its tokens (#428).
   Existing commands and their output are unchanged.
 
+- **A start-up module: `github.com/Judgment-Pack/judgment-pack-runtime/startup`** (ADR-0096; spec
+  RFCs 0034 §8 and 0035). A Go module of its own in `startup/`, tagged `startup/vX.Y.Z` and under a
+  1.0 compatibility promise, with no dependency outside the standard library. A service runs it at
+  start. `ReadResolved` and `ReadResolvedFile` read one environment's resolved registry. They
+  refuse a `resolvedFormatVersion` other than exactly `1.0.0`, a document resolved for another
+  environment, one over RFC 0034 §1's bounds, a duplicate member name anywhere, and members missing,
+  unknown or out of canonical order. `Bindings` maps each secret reference to the environment
+  variable or mounted file the platform delivered it as, and reads it through `ReadEnv` or
+  `ReadFile`. Both trim exactly one trailing `\n` or `\r\n`. `ReadFile` refuses a file that is not
+  regular or that others may read, and every file outside Unix. A value is held in `Secret`, which
+  prints `[secret]` under every fmt verb, `%#v` included, and through encoding/json,
+  encoding.TextMarshaler and log/slog. Its bytes come only from `Reveal`. Nothing contacts a secret
+  store. CI runs the module's own format check, vet and tests, with a 90% coverage floor. `jpack`
+  and its output are unchanged.
+
 - **An outcome gate on `experimental evaluate`** (#422, ADR-0092; EXPERIMENTAL). With
   `--require-outcome a,b`, a single run or a batch exits 0 when every item produced a disposition
   and every disposition is an outcome the list names, 1 when one is an outcome outside it or
