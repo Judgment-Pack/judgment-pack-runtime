@@ -127,18 +127,20 @@ A row skips with a fixed reason when its check cannot apply:
 - the run failed (check 5);
 - links cannot be made (check 6).
 
-**Check 4, the decided reading.** The harness adds a synthetic kind that the manifest does not
-read: its declaration, its pin, and one entry, owned by the registry's first owner. Each goes in
-the place the registry's order rules require. With those added, it forms each request again, the
-same way in the facts form. It then restores every `registry.digest` in the changed request to the
-original request's value at the same place. That place is `/resolved/N/registry/digest` and, in
-the facts form, a contract's `source.registry.digest` if a source carries one. Next it asserts
-that the result is byte-identical to the original request. A difference fails the row. The reason
-says whether the request holds the synthetic kind's id. Only then does the harness run the emitter
-on the restored request and assert that the response is unchanged. The digest is restored because
-§4 lets an emitter write the registry digest into a generated file's header, and the synthetic
-entry changes that digest. Without restoring it, a conforming emitter would fail. This reading is
-filed against companion §11.5 as spec #350. A registry that is not valid once the synthetic kind is added
+**Check 4, the decided reading.** The harness adds a synthetic kind that the manifest does not read:
+its declaration, its pin, and one entry, owned by the registry's first owner. Each goes in the place
+the registry's order rules require. With those added, it forms each request again, the same way in
+the facts form. It then restores every `registry.digest` in the changed request to the original
+request's value at the same place. That place is `/resolved/N/registry/digest` and, in the facts
+form, a contract's `source.registry.digest` if a source carries one. Next it asserts that the result
+is byte-identical to the original request. A difference fails the row. The reason says whether the
+request holds the synthetic kind's id. Only then does the harness run the emitter again and assert
+that the response is unchanged. That run is on the original request's bytes: the restored bytes are
+those bytes exactly, or the row has already failed. So the byte comparison is what tests that no
+undeclared kind reaches the emitter, and the run repeats run 1. The digest is restored because §4
+lets an emitter write the registry digest into a generated file's header, and the synthetic entry
+changes that digest. Without restoring it, a conforming emitter would fail. This reading is filed
+against companion §11.5 as spec #350. A registry that is not valid once the synthetic kind is added
 is `EMIT-HARNESS-BOUND`, and the run exits 2. A vector with no registry skips, with that reason.
 
 **Check 5, the decided reading.** For each string R at a secret position of the request and each

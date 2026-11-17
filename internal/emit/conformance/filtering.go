@@ -229,7 +229,9 @@ func (h *harness) kindFiltering(run *vectorRun, row Row) (Row, *emit.Diagnostic)
 		}
 		restored[i] = emit.Request{Environment: request.Environment, Version: request.Version, Bytes: data}
 	}
-	// Only once the request is the original's does the emitter run on it.
+	// Only once the request is the original's does the emitter run on it:
+	// the restored bytes are the original request's bytes exactly, so this
+	// run repeats run 1, and the byte comparison above carries the check.
 	for i, request := range restored {
 		if !sameOutcome(run.results[i], h.execute(request, nil)) {
 			row.Status, row.Reason, row.Environment = StatusFail, reasonFilterResponse, request.Environment
