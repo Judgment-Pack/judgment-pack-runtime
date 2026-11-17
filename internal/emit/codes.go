@@ -99,14 +99,15 @@ type codeInfo struct {
 
 // Codes is the closed list of the host's codes, each with its severity and
 // fixed message. The companion (§12) names EMIT-REQUEST-VERSION,
-// EMIT-KIND-RANGE, EMIT-PROCESS, EMIT-RESPONSE, EMIT-DEPRECATED and the
-// harness's EMIT-STRAY-WRITE. The others are this runtime's, for the host
+// EMIT-KIND-RANGE, EMIT-REQUEST, EMIT-PROCESS, EMIT-RESPONSE, EMIT-DEPRECATED
+// and the harness's EMIT-STRAY-WRITE. The others are this runtime's, for the host
 // refusals the companion leaves without a code (§17), provisional until the
 // companion's host rows name them (VERSIONING.md).
 var Codes = map[string]codeInfo{
 	// The companion's.
 	"EMIT-REQUEST-VERSION": {SeverityError, "The host writes no request version the manifest lists, or none that carries the registry's resolved format."},
 	"EMIT-KIND-RANGE":      {SeverityError, "A pinned kind the manifest reads has a version outside the manifest's range."},
+	"EMIT-REQUEST":         {SeverityError, "The request could not be formed: the registry is not valid, its pins and declarations do not match, a facts contract is refused or exceeds its bounds, two contracts share an id and version, or the request exceeds its size bound."},
 	"EMIT-PROCESS":         {SeverityError, "The emitter could not be started, exited non-zero, or did not finish within the time limit."},
 	"EMIT-RESPONSE":        {SeverityError, "The emitter's output is not one valid response: its form, a path, a bound, or an error diagnostic it reported."},
 	"EMIT-DEPRECATED":      {SeverityWarning, "The emitter's manifest is deprecated."},
@@ -118,7 +119,6 @@ var Codes = map[string]codeInfo{
 	"EMIT-OWNS-OVERLAP":     {SeverityError, "An owns glob of the manifest can match a path an owns glob of another manifest given can match."},
 	"EMIT-KIND-ID":          {SeverityError, "The registry pins a kind of a name the manifest reads with another kind id."},
 	"EMIT-OPTIONS":          {SeverityError, "The options document is not admissible JSON, or does not satisfy the manifest's options schema."},
-	"EMIT-REQUEST":          {SeverityError, "The request could not be formed: the registry is not valid, its pins and declarations do not match, a facts contract is refused or exceeds its bounds, two contracts share an id and version, or the request exceeds its size bound."},
 	"EMIT-ENV-UNSET":        {SeverityWarning, "A variable the manifest's env lists is not set in the host's environment, so the emitter does not receive it."},
 	"EMIT-LINK":             {SeverityError, "A symbolic link is at or above an owned path; the host does not follow it."},
 	"EMIT-PATH-UNREADABLE":  {SeverityError, "A path could not be read: an input, or an owned path that is not a regular file or directory or could not be listed or read."},
