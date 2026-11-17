@@ -143,6 +143,52 @@ func TestEmitEndsWhatTheEmitterLeftRunning(t *testing.T) {
 	}
 }
 
+// TestEmitRemovesHomeOnlyOnceTheGroupIsGone: the emitter leaves a child in
+// its group that writes into HOME without end, after the emitter has exited.
+// When the run returns the group is gone and HOME with it, and nothing makes
+// HOME again afterwards. The report is the run's as it would be without the
+// child.
+func TestEmitRemovesHomeOnlyOnceTheGroupIsGone(t *testing.T) {
+	root := testRepo(t)
+	report := host(t, root, []string{"home-writer", "pids.txt"}, map[string]any{"environments": "all"}, Options{})
+	data, err := os.ReadFile(filepath.Join(root, "pids.txt"))
+	if err != nil {
+		t.Fatalf("the emitter did not record its child: %v (%s)", err, reportJSON(t, report))
+	}
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(lines) != 3 || !strings.Contains(filepath.Base(lines[2]), "jpack-emit-home-") {
+		t.Fatalf("record %q", data)
+	}
+	var pids []int
+	for _, line := range lines[:2] {
+		pid, err := strconv.Atoi(line)
+		if err != nil || pid <= 1 {
+			t.Fatalf("record %q", data)
+		}
+		pids = append(pids, pid)
+	}
+	t.Cleanup(func() {
+		for _, pid := range pids {
+			if !gone(pid) {
+				_ = syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+		_ = os.RemoveAll(lines[2])
+	})
+	if err := syscall.Kill(-pids[0], 0); !errors.Is(err, syscall.ESRCH) {
+		t.Errorf("the emitter's group is still present when the run returns: %v", err)
+	}
+	if report.Exit() != 0 || len(report.Diagnostics) != 0 {
+		t.Fatalf("report: %s", reportJSON(t, report))
+	}
+	for i := 0; i < 5; i++ {
+		if _, err := os.Lstat(lines[2]); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("HOME %s is left after the run (look %d): %v", lines[2], i, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // TestRemoveHomeRemovesDirectoriesTheEmitterLockedItsOwnerOutOf: an emitter
 // that takes the owner's bits from a directory in its HOME does not leave
 // the HOME behind.
