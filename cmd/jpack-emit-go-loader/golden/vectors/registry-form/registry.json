@@ -1,0 +1,46 @@
+{
+  "registryFormatVersion": "1.0.0",
+  "id": "https://example.invalid/registries/probe",
+  "version": "1.0.0",
+  "environments": [
+    "dev"
+  ],
+  "owners": [
+    "platform"
+  ],
+  "secretScopes": {
+    "dev": {
+      "gcp-sm": [
+        "example-dev"
+      ]
+    }
+  },
+  "kinds": [
+    {
+      "kind": "db-role",
+      "id": "https://example.invalid/kinds/db-role",
+      "version": "1.2.0",
+      "digest": "sha256:8856b28562a1b0fc2769b1b61e01dbcf6a91fe203508a8b3d64874619b7c0de0"
+    }
+  ],
+  "entries": [
+    {
+      "kind": "db-role",
+      "id": "billing-app",
+      "owner": "platform",
+      "value": {
+        "database": "billing",
+        "grants": [
+          {
+            "role": "reader",
+            "password": "secret:gcp-sm:projects/example-dev/secrets/billing-reader-password-long-name/versions/3"
+          }
+        ],
+        "replicas": {
+          "east": "secret:gcp-sm:projects/example-dev/secrets/billing-replica-east-password/versions/2"
+        }
+      }
+    }
+  ],
+  "overlays": []
+}

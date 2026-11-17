@@ -8,7 +8,8 @@
     },
     {
       "paths": ["startup/**"],
-      "checks": ["local-paths", "agent-docs", "diff-check", "startup-fmt", "startup-vet", "startup-test"]
+      "checks": ["local-paths", "agent-docs", "diff-check", "startup-fmt", "startup-vet", "startup-test",
+                 "loader-golden-vet", "loader-golden-test"]
     },
     {
       "paths": ["internal/auditformat/*.json"],
@@ -46,6 +47,11 @@
     {
       "paths": ["cmd/jpack-emit-go-facts/**"],
       "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test"]
+    },
+    {
+      "paths": ["cmd/jpack-emit-go-loader/**"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test",
+                 "loader-golden-vet", "loader-golden-test"]
     },
     {
       "paths": ["cmd/jpack-emit-ts-constants/**"],

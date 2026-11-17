@@ -195,6 +195,37 @@ All notable changes to tagged releases are documented here.
     file's source over 16 MiB, or sources over 64 MiB in all, before formatting them. Before, the
     bounds were held only after formatting, and a 59 MB request reached about 5.8 GB.
   - The conformance claim in CONFORMANCE.md is unchanged.
+- **A Go typed loader emitter: `cmd/jpack-emit-go-loader`** (ADR-0102, proposed). This is the
+  reference emitter of spec RFC 0036 §6, item 1 (registry companion §11.6), run under the emitter
+  contract with `"input": "resolved"` and `"environments": "all"`. Its manifest is
+  `cmd/jpack-emit-go-loader/emitter.json`. Before it reads a schema, it checks every pin of every
+  environment against the request's declarations: each declaration's RFC 8785 SHA-256 must be its
+  pin's digest, one to one by kind, id and version. A missing or mismatched declaration, or one
+  with no pin, exits 1 with a fixed line. For each kind it writes a Go file with a type generated
+  from the kind's schema, in which each member at a secret position is a `startup.Secret`, and it
+  adds a shared `loader.go`. `Load` and `LoadFile` read one environment's resolved document through
+  the start-up module, require each kind's pin at its id and major version, and decode every entry
+  of those kinds without reading a secret. `(*Registry).<Kind>(ctx, id)` decodes one entry and reads
+  its secrets through a `startup.Reader`. The generated decoder matches member names exactly,
+  ignores members the type does not have, reads any JSON number of integer value as an `int64`,
+  refuses an absent required member or a value outside an enumeration, and never applies
+  `default`. Its errors name the kind, the entry and the pointer, never a value. The generated
+  code imports the Go standard library and the start-up module only. A declaration with a shape
+  the emitter does not generate (an open object, `anyOf`, `allOf`, `not`, a type array, among
+  others), a secret pattern at a position that is not a string, or names that cannot be formed or
+  would collide, is a response of one error diagnostic at its kind (`x-go-loader-schema`,
+  `x-go-loader-secret`, `x-go-loader-name`, `x-go-loader-collide`) and no file. Every text from a
+  declaration reaches the source only through `strconv.QuoteToASCII`. The vectors, the expected
+  files and a golden package with a decode test live in the nested module
+  `cmd/jpack-emit-go-loader/golden/`, which requires the start-up module through a local
+  `replace`; CI vets and tests it on every platform. The root `go.mod` is unchanged, no `jpack`
+  command changes, and the conformance claim in CONFORMANCE.md is unchanged.
+- **`jpack emit` removes the emitter's `HOME` only once its process group is gone** (ADR-0098).
+  The group was killed and `HOME` removed straight after, while a killed member could still write
+  into it, and so make it again. The run now waits, up to 2 s, for the group to be gone; past it,
+  `HOME` is removed anyway and the report is unchanged. A process that leaves the group, such as
+  the Go toolchain's telemetry process under `go run`, can still leave a stray temporary
+  directory. The conformance claim in CONFORMANCE.md is unchanged.
 - **A TypeScript constants emitter: `cmd/jpack-emit-ts-constants`** (ADR-0103, proposed). This is
   the reference emitter of spec RFC 0036 §6 item 2, run under the emitter contract with `"input":
   "resolved"` and `"environments": "each"`. Its manifest is
