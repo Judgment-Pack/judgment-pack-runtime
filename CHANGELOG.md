@@ -2,6 +2,24 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Fuzzing of the registry's reference readers, run once a day.** Four new fuzz targets, each with
+  a seed corpus drawn from the unit tests: entry references and secret references are accepted
+  exactly when they match the registry companion's grammars (§6.2, §6.3), with each refused secret
+  reference given the one code §6.3's precedence gives it; a kind's `references` patterns are valid
+  exactly when §3.5's grammar and the kind-name rules hold; and the start-up module's `Bindings`
+  read a reference only when it is the bound one byte for byte, trimming exactly one trailing line
+  feed from its value. Each target also reads one input the same way twice, and an accepted
+  reference or pattern written back reads back the same. A new scheduled workflow, also started by
+  hand and not a pull-request check, runs these and the existing YAML-import and Terraform-reader
+  targets for 30 seconds each, and uploads the crasher of a failing run; the pull request that
+  fixes it checks the crasher in as a seed. `go test -cover` now passes for `internal/emit`: a
+  coverage-built test binary run as the emitter no longer writes a warning to standard error at
+  exit, which the tests' standard-error bounds counted. The package is held to a 90% coverage
+  floor. `jpack` and its output are unchanged. The conformance claim in CONFORMANCE.md is
+  unchanged.
+
 ## 0.48.0 - 2026-11-17
 
 - **A start-up module: `github.com/Judgment-Pack/judgment-pack-runtime/startup`** (ADR-0096; spec
