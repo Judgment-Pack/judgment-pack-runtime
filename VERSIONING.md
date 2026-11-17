@@ -350,4 +350,40 @@ not duplicate it in a `VERSION` data file.
 
 Pre-1.0 releases have no compatibility or security service-level guarantee. Maintainers may
 deprecate or remove behavior in a later `0.x` release, but must record the change in release notes.
-A stable release requires a separate support and deprecation policy before publication.
+A stable release requires a separate support and deprecation policy before publication. The
+registry line has one, below; the rest of `jpack` and the runtime module do not yet.
+
+### The registry line
+
+The registry line is the registry companion's surface in this repository:
+
+- the commands `jpack registry` (all of its subcommands), `jpack emit`, `jpack emit conformance`
+  and `jpack terraform facts`, with their flags and exit codes;
+- the formats they read and write, each under the selector named in
+  [Compatibility dimensions](#compatibility-dimensions);
+- their diagnostic codes and bounds;
+- the start-up module (see [The start-up module](#the-start-up-module)).
+
+It is stable from the release that names it so in its release notes, which is the release where
+the registry companion is final and its provisional codes above are settled. From then on, while
+`jpack` and the runtime module are still 0.x, and within major version 1 of the line:
+
+- **Nothing is removed.** A command, flag, exit code, format member, selector, diagnostic code or
+  start-up identifier stays. No bound is lowered. No code, member or rule changes meaning.
+- **Additions are versioned.** A format gains a member only under a new minor selector
+  (`1.1.0`), and a reader keeps accepting every selector it accepted. A new command, flag or code
+  may come in a minor release. A new bound, or any new refusal of input that was accepted before,
+  is not an addition: it is a breaking change.
+- **Deprecation marks, it does not remove.** A deprecated part keeps working for the rest of
+  major version 1. It is named in the release notes and in the command's help. An emitter that its
+  manifest marks `deprecated` still runs, and the host reports `EMIT-DEPRECATED`. Removal waits
+  for major version 2, which comes under new selectors (and, for the start-up module, under
+  `.../startup/v2`).
+- **Not promised:** the wording of messages, the order of diagnostics that share a location, the
+  timing of runs, and anything a provisional section above still calls provisional.
+- **Security fixes.** A fix for a vulnerability may refuse input that was accepted before, in a
+  patch release, when nothing narrower closes it. The release notes name it as a breaking exception,
+  with the refusal code and the input it now refuses.
+- **Support.** Fixes land on the latest minor release of the line; earlier minors get none, and
+  there is no service-level guarantee for either. Security issues are reported as `SECURITY.md`
+  says.
