@@ -62,6 +62,11 @@ type RunResult struct {
 // killed, for standard output and standard error to close.
 var waitDelay = 2 * time.Second
 
+// groupWait bounds how long a run waits, once what is left of the emitter's
+// process group has been killed, for the group to be gone before its HOME is
+// removed.
+var groupWait = 2 * time.Second
+
 // Run runs one emitter on one request and validates its response: the run
 // step of `jpack emit`, which the conformance harness reuses. The emitter
 // gets an environment of only PATH (its absolute directories), HOME (a fresh empty directory, removed
@@ -172,6 +177,9 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	// holds the emitter's output open. A child that leaves the group (setsid)
 	// is out of reach.
 	endProcessGroup(cmd.Process)
+	// HOME is removed (deferred above) only once the group is gone, or the
+	// wait is over, so that nothing of the group writes into it afterwards.
+	waitProcessGroup(cmd.Process, groupWait)
 	result.StderrBytes = stderr.total
 	if opts.Stderr != nil {
 		_, _ = opts.Stderr.Write(stderr.kept())
