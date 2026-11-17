@@ -266,7 +266,7 @@ func (r *Root) sameRegularFile(file *os.File, cleaned string) (os.FileInfo, erro
 		return nil, errors.New("path is not a regular file")
 	}
 	linkInfo, err := r.root.Lstat(cleaned)
-	if err != nil || linkLike(linkInfo) || !os.SameFile(openedInfo, linkInfo) {
+	if err != nil || LinkLike(linkInfo) || !os.SameFile(openedInfo, linkInfo) {
 		return nil, errors.New("path changed or resolves through a final link or junction")
 	}
 	return openedInfo, nil
@@ -426,7 +426,7 @@ func (r *Root) openForAppending(cleaned string, access int, create bool) (*os.Fi
 		info, err := r.root.Lstat(cleaned)
 		switch {
 		case err == nil:
-			if linkLike(info) {
+			if LinkLike(info) {
 				return nil, errors.New("path resolves through a final link or junction")
 			}
 			// It is there, so nothing needs creating: an open without O_CREATE
@@ -855,7 +855,7 @@ func (r *Root) openForWrite(cleaned string) (*os.File, bool, error) {
 		info, err := r.root.Lstat(cleaned)
 		switch {
 		case err == nil:
-			if linkLike(info) {
+			if LinkLike(info) {
 				return nil, false, errors.New("path resolves through a final link or junction")
 			}
 			file, openErr := r.root.OpenFile(cleaned, os.O_WRONLY|nonBlockingOpen, 0)

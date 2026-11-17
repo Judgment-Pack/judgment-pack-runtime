@@ -70,6 +70,18 @@ All notable changes to tagged releases are documented here.
   case) does not name the row's code. VERSIONING.md now says that an
   emitter's own `x-` codes belong to that emitter and are outside the registry line's promise.
   No product behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
+- **The emitter's environment, descriptors and root on Windows and Unix** (ADR-0098). On
+  Windows, `jpack emit` gives the emitter `TEMP` and `TMP` under its fresh home, and
+  `USERPROFILE`, `APPDATA` and `LOCALAPPDATA` at it; none of the parent's values is passed, and a
+  name the manifest's `env` lists wins. On Unix every descriptor above 2 is marked close-on-exec
+  before the first emitter starts, so nothing `jpack` inherited reaches it. A `--root` whose path
+  passes through a junction or other reparse point is refused with its own message, not resolved.
+  The checks that refused only a final symbolic link (the gate summary, a saved continuation, a
+  published manifest, a conformance suite root and each component of a fixture path) now refuse
+  a junction too, through the same check as the file opens. On Windows a conformance suite or
+  fixture path that passes through a directory reparse point, such as a synced folder's
+  placeholder directory, is now refused as well. The conformance claim in CONFORMANCE.md is
+  unchanged.
 - **A document whose canonical form is longer than its text no longer costs many times its
   bound** (#458). Admission checks a number against RFC 0034 §1 by comparing its digits with its
   double's shortest decimal, with no big arithmetic, and does not copy a literal it keeps as
