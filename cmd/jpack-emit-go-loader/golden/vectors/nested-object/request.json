@@ -1,0 +1,124 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-loader",
+    "version": "0.1.0"
+  },
+  "options": {
+    "package": "endpointloader"
+  },
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.invalid/kinds/service-endpoint",
+      "version": "1.0.0",
+      "kind": "service-endpoint",
+      "owner": "platform-data",
+      "schema": {
+        "type": "object",
+        "required": [
+          "host",
+          "port"
+        ],
+        "additionalProperties": false,
+        "$defs": {
+          "tls": {
+            "type": "object",
+            "required": [
+              "certificate",
+              "key"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "certificate": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "strict",
+                  "permissive"
+                ],
+                "default": "strict"
+              }
+            }
+          }
+        },
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "tls": {
+            "$ref": "#/$defs/tls",
+            "description": "Transport security."
+          },
+          "health": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "intervalSeconds": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          }
+        }
+      },
+      "secrets": [
+        "/tls/key"
+      ]
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.invalid/registries/platform",
+        "version": "4.0.0",
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "service-endpoint",
+          "id": "https://example.invalid/kinds/service-endpoint",
+          "version": "1.0.0",
+          "digest": "sha256:ee841251fa38cf92114654cc9c65117e0cd620d1c4dc9284f31d54833da4abdf"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "service-endpoint",
+          "id": "billing-api",
+          "owner": "platform-data",
+          "value": {
+            "host": "billing.dev.example.invalid",
+            "port": 8443,
+            "tls": {
+              "certificate": "-----BEGIN CERTIFICATE-----",
+              "key": "secret:gcp-sm:projects/example-dev/secrets/billing-tls/versions/2"
+            },
+            "health": {
+              "path": "/healthz",
+              "intervalSeconds": 2.5
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -59,6 +59,14 @@ jobs:
       - name: Test the start-up module
         working-directory: startup
         run: go test -cover ./...
+      # cmd/jpack-emit-go-loader/golden/ is a nested module too (ADR-0102): the loader emitter's
+      # expected files import the start-up module, which the root module does not require.
+      - name: Vet the loader emitter's golden module
+        working-directory: cmd/jpack-emit-go-loader/golden
+        run: go vet ./...
+      - name: Test the loader emitter's golden module
+        working-directory: cmd/jpack-emit-go-loader/golden
+        run: go test ./...
       - name: Run bundled conformance suite
         run: go run ./cmd/jpack spec test-conformance --quiet
       - name: Build

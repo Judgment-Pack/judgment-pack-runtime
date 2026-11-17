@@ -61,3 +61,7 @@ sdk/record/testdata/** -text
 # with what the emitter writes.
 cmd/jpack-emit-go-facts/vectors/** -text
 cmd/jpack-emit-go-facts/internal/golden/** -text
+
+# The Go loader emitter's nested golden module (its vectors, expected files and
+# golden package) is compared byte for byte with what the emitter writes.
+cmd/jpack-emit-go-loader/golden/** -text

@@ -1,0 +1,53 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-loader",
+    "version": "0.1.0"
+  },
+  "options": {
+    "package": "p"
+  },
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.invalid/kinds/open-thing",
+      "version": "1.0.0",
+      "kind": "open-thing",
+      "owner": "platform-data",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "settings": {
+            "type": "object",
+            "properties": {
+              "a": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.invalid/registries/platform",
+        "version": "4.0.0",
+        "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "open-thing",
+          "id": "https://example.invalid/kinds/open-thing",
+          "version": "1.0.0",
+          "digest": "sha256:8b210a93966a607254b3817541cbd96e8c23114fd14acad988a5c217da467e26"
+        }
+      ],
+      "entries": []
+    }
+  ]
+}
