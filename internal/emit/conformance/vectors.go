@@ -64,6 +64,18 @@ type Vector struct {
 	Expected map[string]expectedFile
 	// ExpectedFailure is the code expected-failure.json names.
 	ExpectedFailure string
+
+	// The vector's layout, as readVectors found it: its members, the names of
+	// its kinds/*.json, and expected/'s files.
+	present  map[string]bool
+	kinds    []string
+	expected []expectedEntry
+}
+
+// expectedEntry is one file of expected/ as its layout gives it: its path
+// relative to expected/, and its mode.
+type expectedEntry struct {
+	path, mode string
 }
 
 func (v *Vector) hasRegistry() bool { return v.Request == nil }
@@ -114,9 +126,10 @@ func readSmallDocument(path, at string) (any, []emit.Diagnostic) {
 	return value, nil
 }
 
-// readVectors reads every vector directory below dir, in name order. Every
-// vector is read whole, and checked against the layout, before any emitter
-// runs. Under update, a vector may hold neither expected/ nor
+// readVectors lays out every vector directory below dir, in name order:
+// each is checked against the layout, by its entries and their sizes, before
+// any emitter runs, and none of its files is read; load reads a vector just
+// before its run. Under update, a vector may hold neither expected/ nor
 // expected-failure.json: update gives it expected/.
 func readVectors(dir string, update bool) ([]*Vector, []emit.Diagnostic) {
 	entries, err := os.ReadDir(dir)
@@ -138,7 +151,7 @@ func readVectors(dir string, update bool) ([]*Vector, []emit.Diagnostic) {
 		if len(vectors) == MaxVectors {
 			return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", "", "")}
 		}
-		vector, problems := readVector(filepath.Join(dir, name), name, update)
+		vector, problems := layoutVector(filepath.Join(dir, name), name, update)
 		refused = append(refused, problems...)
 		if vector != nil {
 			vectors = append(vectors, vector)
@@ -155,21 +168,27 @@ func readVectors(dir string, update bool) ([]*Vector, []emit.Diagnostic) {
 	return vectors, nil
 }
 
-// readVector reads one vector directory.
-func readVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
-	at := func(file string) string {
-		if file == "" {
-			return name
-		}
-		return name + "/" + file
+// at is the vector-relative path of one of its files, for a diagnostic.
+func (v *Vector) at(file string) string {
+	if file == "" {
+		return v.Name
 	}
+	return v.Name + "/" + file
+}
+
+// layoutVector checks one vector directory against the layout, by its
+// entries and their sizes, reading none of its files.
+func layoutVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
+	v := &Vector{Name: name, Dir: dir, present: map[string]bool{}}
 	var refused []emit.Diagnostic
-	fail := func(code, file, pointer string) { refused = append(refused, vectorDiagnostic(code, at(file), pointer)) }
+	fail := func(code, file, pointer string) {
+		refused = append(refused, vectorDiagnostic(code, v.at(file), pointer))
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-PATH-UNREADABLE", name, "")}
 	}
-	present := map[string]bool{}
+	present := v.present
 	for _, entry := range entries {
 		wantDir, known := vectorMembers[entry.Name()]
 		if !known || entry.Type()&fs.ModeSymlink != 0 || entry.IsDir() != wantDir {
@@ -193,10 +212,45 @@ func readVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 	if len(refused) > 0 {
 		return nil, refused
 	}
-	v := &Vector{Name: name, Dir: dir}
-	unreadable := func(file string) { fail("EMIT-PATH-UNREADABLE", file, "") }
+	if present[dirKinds] {
+		kinds, err := os.ReadDir(filepath.Join(dir, dirKinds))
+		if err != nil {
+			fail("EMIT-PATH-UNREADABLE", dirKinds, "")
+		}
+		// As `jpack emit --kinds DIR` reads a directory: its *.json files, in
+		// name order.
+		for _, kind := range kinds {
+			if !kind.IsDir() && strings.HasSuffix(kind.Name(), ".json") {
+				v.kinds = append(v.kinds, kind.Name())
+			}
+		}
+		slices.Sort(v.kinds)
+		if len(v.kinds) > MaxKindFiles {
+			fail("EMIT-VECTOR", dirKinds, "")
+		}
+	}
+	if present[dirExpected] {
+		expected, problems := layoutExpected(filepath.Join(dir, dirExpected), v.at(dirExpected))
+		refused = append(refused, problems...)
+		v.expected = expected
+	}
+	if len(refused) > 0 {
+		return nil, refused
+	}
+	return v, nil
+}
 
-	if present[fileRequest] {
+// load reads a laid-out vector's files, each under its bound, just before
+// its run. What refuses a vector here refuses the run, as its layout does.
+func (v *Vector) load() []emit.Diagnostic {
+	var refused []emit.Diagnostic
+	fail := func(code, file, pointer string) {
+		refused = append(refused, vectorDiagnostic(code, v.at(file), pointer))
+	}
+	unreadable := func(file string) { fail("EMIT-PATH-UNREADABLE", file, "") }
+	dir := v.Dir
+
+	if v.present[fileRequest] {
 		data, err := fssecure.ReadRegular(filepath.Join(dir, fileRequest), MaxRequestBytes)
 		switch {
 		case errors.Is(err, fssecure.ErrTooLarge):
@@ -209,27 +263,10 @@ func readVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 		}
 	} else {
 		v.Registry = readBounded(filepath.Join(dir, fileRegistry), registry.MaxRegistryBytes, func() { unreadable(fileRegistry) })
-		kinds, err := os.ReadDir(filepath.Join(dir, dirKinds))
-		if err != nil {
-			unreadable(dirKinds)
-		}
-		// As `jpack emit --kinds DIR` reads a directory: its *.json files, in
-		// name order.
-		var names []string
-		for _, kind := range kinds {
-			if !kind.IsDir() && strings.HasSuffix(kind.Name(), ".json") {
-				names = append(names, kind.Name())
-			}
-		}
-		slices.Sort(names)
-		if len(names) > MaxKindFiles {
-			fail("EMIT-VECTOR", dirKinds, "")
-			names = nil
-		}
-		for _, file := range names {
+		for _, file := range v.kinds {
 			v.Kinds = append(v.Kinds, readBounded(filepath.Join(dir, dirKinds, file), registry.MaxKindBytes, func() { unreadable(dirKinds + "/" + file) }))
 		}
-		if present[fileOptions] {
+		if v.present[fileOptions] {
 			data, err := fssecure.ReadRegular(filepath.Join(dir, fileOptions), emit.MaxOptionsBytes)
 			switch {
 			case errors.Is(err, fssecure.ErrTooLarge):
@@ -246,8 +283,8 @@ func readVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 		}
 	}
 
-	if present[fileExpectedFailure] {
-		value, problems := readSmallDocument(filepath.Join(dir, fileExpectedFailure), at(fileExpectedFailure))
+	if v.present[fileExpectedFailure] {
+		value, problems := readSmallDocument(filepath.Join(dir, fileExpectedFailure), v.at(fileExpectedFailure))
 		refused = append(refused, problems...)
 		object, _ := value.(map[string]any)
 		code, _ := object["code"].(string)
@@ -256,15 +293,20 @@ func readVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 		}
 		v.ExpectedFailure = code
 	}
-	if present[dirExpected] {
-		expected, problems := readExpected(filepath.Join(dir, dirExpected), at(dirExpected))
+	if v.present[dirExpected] {
+		expected, problems := readExpected(filepath.Join(dir, dirExpected), v.at(dirExpected), v.expected)
 		refused = append(refused, problems...)
 		v.Expected = expected
 	}
 	if len(refused) > 0 {
-		return nil, refused
+		v.release()
 	}
-	return v, nil
+	return refused
+}
+
+// release drops what load read, once the vector's checks are done.
+func (v *Vector) release() {
+	v.Request, v.Registry, v.Kinds, v.Options, v.Refused, v.Expected = nil, registry.Document{}, nil, nil, nil, nil
 }
 
 func readBounded(path string, limit int, unreadable func()) registry.Document {
@@ -296,14 +338,14 @@ func failureCode(code string) bool {
 	return listed && emit.NewDiagnostic(code, emit.Location{}).Severity == emit.SeverityError
 }
 
-// readExpected reads expected/: every regular file below it, by its path
-// relative to it, with its bytes and its mode. A link, or anything that is not
-// a file or a directory, refuses the vector, and so does a set past the
-// response bounds.
-func readExpected(dir, at string) (map[string]expectedFile, []emit.Diagnostic) {
-	files := map[string]expectedFile{}
+// layoutExpected lays out expected/: every regular file below it, by its
+// path relative to it, with its mode, found by its entries alone. A link, or
+// anything that is not a file or a directory, refuses the vector, and so
+// does a set past the response bounds, by the files' sizes.
+func layoutExpected(dir, at string) ([]expectedEntry, []emit.Diagnostic) {
+	var entries []expectedEntry
 	var refused []emit.Diagnostic
-	total := 0
+	var total int64
 	err := filepath.WalkDir(dir, func(full string, entry fs.DirEntry, err error) error {
 		relative, _ := filepath.Rel(dir, full)
 		path := filepath.ToSlash(relative)
@@ -329,23 +371,40 @@ func readExpected(dir, at string) (map[string]expectedFile, []emit.Diagnostic) {
 			refused = append(refused, vectorDiagnostic("EMIT-PATH-UNREADABLE", where, ""))
 			return nil
 		}
-		total += int(info.Size())
-		if len(files) == emit.MaxFiles || info.Size() > emit.MaxFileBytes || total > emit.MaxResponseBytes {
+		total += info.Size()
+		if len(entries) == emit.MaxFiles || info.Size() > emit.MaxFileBytes || total > emit.MaxResponseBytes {
 			refused = append(refused, vectorDiagnostic("EMIT-VECTOR", where, ""))
 			return fs.SkipAll
 		}
-		data, err := fssecure.ReadRegular(full, emit.MaxFileBytes)
-		if err != nil {
-			refused = append(refused, vectorDiagnostic("EMIT-PATH-UNREADABLE", where, ""))
-			return nil
-		}
-		files[path] = expectedFile{data: data, mode: emit.ModeOf(info)}
+		entries = append(entries, expectedEntry{path: path, mode: emit.ModeOf(info)})
 		return nil
 	})
 	if err != nil && len(refused) == 0 {
 		refused = append(refused, vectorDiagnostic("EMIT-PATH-UNREADABLE", at, ""))
 	}
-	return files, refused
+	return entries, refused
+}
+
+// readExpected reads the files of expected/ that its layout gives, each
+// under the response's bounds, which a file that grew since cannot pass.
+func readExpected(dir, at string, entries []expectedEntry) (map[string]expectedFile, []emit.Diagnostic) {
+	files := map[string]expectedFile{}
+	total := 0
+	for _, entry := range entries {
+		where := at + "/" + entry.path
+		data, err := fssecure.ReadRegular(filepath.Join(dir, filepath.FromSlash(entry.path)), emit.MaxFileBytes)
+		switch {
+		case errors.Is(err, fssecure.ErrTooLarge):
+			return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", where, "")}
+		case err != nil:
+			return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-PATH-UNREADABLE", where, "")}
+		}
+		if total += len(data); total > emit.MaxResponseBytes {
+			return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", where, "")}
+		}
+		files[entry.path] = expectedFile{data: data, mode: entry.mode}
+	}
+	return files, nil
 }
 
 // compareExpected compares a run's files with expected/, as check mode

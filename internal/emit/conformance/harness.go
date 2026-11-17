@@ -100,12 +100,12 @@ type vectorRun struct {
 	files []emit.File
 }
 
-// Run is `jpack emit conformance`: it reads the vectors' level and every
-// vector, makes a copy of the repository, and runs the emitter on each
-// vector's request in it, applying the level's checks; then it adds the rows
-// of the harness's hostile responses. A vector directory that is not of the
-// harness's layout, a level it does not know, or a bound it reaches refuses
-// the run, which is reported as not run.
+// Run is `jpack emit conformance`: it reads the vectors' level and lays out
+// every vector, makes a copy of the repository, and reads each vector and
+// runs the emitter on its request in the copy, applying the level's checks;
+// then it adds the rows of the harness's hostile responses. A vector
+// directory that is not of the harness's layout, a level it does not know,
+// or a bound it reaches refuses the run, which is reported as not run.
 func Run(ctx context.Context, m *emit.Manifest, vectorsDir string, opts Options) *Report {
 	report := NewReport()
 	report.Emitter = &emit.Identity{ID: m.ID, Version: m.Version}
@@ -133,7 +133,14 @@ func Run(ctx context.Context, m *emit.Manifest, vectorsDir string, opts Options)
 	h := &harness{ctx: ctx, m: m, opts: opts, ws: ws, report: report, keep: func(kind string) bool { return reads[kind] }}
 	checks := levels[level]
 	for _, v := range vectors {
-		if failure := h.vector(v, checks); failure != nil {
+		// Each vector is read just before its run and dropped after it, so
+		// that the harness holds one vector's files at a time.
+		if refused := v.load(); len(refused) > 0 {
+			return report.Refuse(refused...)
+		}
+		failure := h.vector(v, checks)
+		v.release()
+		if failure != nil {
 			return report.Refuse(*failure)
 		}
 	}

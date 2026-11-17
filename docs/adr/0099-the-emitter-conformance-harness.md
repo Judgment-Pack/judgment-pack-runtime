@@ -67,7 +67,15 @@ It also holds exactly one of these expectations:
   `x-` code.
 
 Anything else in a vector is `EMIT-VECTOR`: an unknown member, a link, or a vector past a bound.
-Every vector is read before any emitter runs, so a bad layout refuses the run whole. A directory
+Every vector is laid out before any emitter runs, by its entries and their sizes alone (its
+members and their kinds, the names of `kinds/*.json`, and the files, count and sizes of
+`expected/`), so a bad layout refuses the run whole. No vector's bytes are read then. Each vector
+is read just before its own run, under the bounds above, and dropped after its checks, so the
+harness holds one vector at a time and no bound on the whole set is needed. A vector whose bytes
+are refused there (an unreadable file, or an `expected-failure.json` that is not of its form)
+refuses the run at that vector, with `EMIT-VECTOR` or `EMIT-PATH-UNREADABLE` and exit 2; the
+earlier vectors' rows stay in the report, and `--update` may already have written their
+`expected/`. A directory
 that holds no vector, empty or holding only files, is `EMIT-VECTOR` too: the hostile rows alone
 would otherwise pass a run that never ran the emitter. For the same reason, a set whose every
 vector is refused before the emitter runs, so that no request reaches it, is `EMIT-VECTOR` and

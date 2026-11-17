@@ -539,6 +539,44 @@ func TestVectorLayoutRefusals(t *testing.T) {
 	}
 }
 
+// Every vector is laid out before any run, and each is read just before its
+// own: a later vector whose layout is wrong refuses the run before the
+// emitter runs, and one whose bytes are refused does so only after the
+// earlier vector's run, whose rows the report holds and whose expected/
+// --update wrote.
+func TestVectorsAreReadOneAtATime(t *testing.T) {
+	cases := map[string]struct {
+		files map[string]string
+		ran   bool
+		path  string
+	}{
+		"a later vector of a wrong layout": {map[string]string{"b/request.json": "{}", "b/expected-failure.json": `{"code":"EMIT-PROCESS"}`, "b/notes.txt": "x"}, false, "b/notes.txt"},
+		"a later vector read malformed":    {map[string]string{"b/request.json": "{}", "b/expected-failure.json": `{"code":`}, true, "b/expected-failure.json"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			m := f.manifest(requestMode, nil)
+			f.registryVector("a", nil)
+			write(t, f.vectors, c.files)
+			report := f.run(m, true)
+			if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun {
+				t.Fatalf("report: %s", dump(report))
+			}
+			if d := report.Diagnostics[len(report.Diagnostics)-1]; d.Code != "EMIT-VECTOR" || d.Location.Path != c.path {
+				t.Fatalf("diagnostic: %+v", report.Diagnostics)
+			}
+			_, err := os.Lstat(filepath.Join(f.vectors, "a", "expected"))
+			if ran := err == nil; ran != c.ran || (len(report.Rows) == 6) != c.ran {
+				t.Fatalf("vector a ran: %v with %d rows, want %v", ran, len(report.Rows), c.ran)
+			}
+			if c.ran && rowOf(t, report, "a", checkGolden).Reason != reasonUpdated {
+				t.Fatalf("vector a: %s", dump(report))
+			}
+		})
+	}
+}
+
 // A set whose every vector is refused before the emitter runs is refused:
 // its rows, and the hostile rows, would otherwise pass a run that never ran
 // the emitter. The manifest's command does not exist.
