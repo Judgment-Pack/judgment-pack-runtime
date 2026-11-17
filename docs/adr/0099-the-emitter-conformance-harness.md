@@ -79,7 +79,10 @@ Every vector is laid out before any emitter runs, by its entries and their sizes
 members and their kinds, the names of `kinds/*.json`, and the files, count and sizes of
 `expected/`), so a bad layout refuses the run whole. No vector's bytes are read then. Each vector
 is read just before its own run, under the bounds above, and dropped after its checks, so the
-harness holds one vector at a time and no bound on the whole set is needed. A vector whose bytes
+harness holds one vector at a time and no bound on the whole set is needed. At that read, the
+vector directory and every directory between it and each file are checked again to be
+directories and not links, and the file is opened without following one, so a directory swapped
+for a link after the layout is `EMIT-PATH-UNREADABLE` at the file, never read through. A vector whose bytes
 are refused there (an unreadable file, or an `expected-failure.json` that is not of its form)
 refuses the run at that vector, with `EMIT-VECTOR` or `EMIT-PATH-UNREADABLE` and exit 2; the
 earlier vectors' rows stay in the report, and `--update` may already have written their

@@ -155,6 +155,10 @@ All notable changes to tagged releases are documented here.
     before any emitter runs. Go reads a junction as irregular, not as a link, so the link check
     could not follow it, and where the system refuses links the emitter ran in the repository
     with a junction out of it while check 6 skipped.
+  - `jpack emit conformance` checks again, as it reads a vector, that the vector directory and
+    every directory between it and the file are directories and not links. A directory swapped
+    for a link after the layout was read through; it is now `EMIT-PATH-UNREADABLE` at the file.
+    `--update` likewise refuses to write through a vector directory swapped for a link.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
