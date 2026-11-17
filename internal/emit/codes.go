@@ -118,7 +118,7 @@ var Codes = map[string]codeInfo{
 	"EMIT-OWNS-OVERLAP":     {SeverityError, "An owns glob of the manifest can match a path an owns glob of another manifest given can match."},
 	"EMIT-KIND-ID":          {SeverityError, "The registry pins a kind of a name the manifest reads with another kind id."},
 	"EMIT-OPTIONS":          {SeverityError, "The options document is not admissible JSON, or does not satisfy the manifest's options schema."},
-	"EMIT-REQUEST":          {SeverityError, "The request could not be formed: the registry is not valid, a facts contract is refused or exceeds its bounds, or two contracts share an id and version."},
+	"EMIT-REQUEST":          {SeverityError, "The request could not be formed: the registry is not valid, its pins and declarations do not match, a facts contract is refused or exceeds its bounds, two contracts share an id and version, or the request exceeds its size bound."},
 	"EMIT-ENV-UNSET":        {SeverityWarning, "A variable the manifest's env lists is not set in the host's environment, so the emitter does not receive it."},
 	"EMIT-LINK":             {SeverityError, "A symbolic link is at or above an owned path; the host does not follow it."},
 	"EMIT-PATH-UNREADABLE":  {SeverityError, "A path could not be read: an input, or an owned path that is not a regular file or directory or could not be listed or read."},

@@ -252,3 +252,46 @@ func TestFormRequestsBoundsTheRequestBytes(t *testing.T) {
 		})
 	}
 }
+
+// A kind supplied in non-canonical bytes (members out of order, white space,
+// an exponent, trailing zeros, escapes and a surrogate pair) is in the
+// request as admitted, in its RFC 8785 form, and the SHA-256 of that form is
+// its pin's digest.
+func TestEmitRequestHoldsANonCanonicalKindAsAdmitted(t *testing.T) {
+	supplied := `{ "schema" : { "properties" : { "retention" : { "maximum" : 3.0E1 , "minimum" : 1.000 , "type" : "integer" } } ,
+  "additionalProperties" : false , "type" : "object" , "required" : [ "retention" ] } ,
+  "overlayable" : [ "\/retention" ] , "owner" : "platform" , "description" : "Café 😀" ,
+  "kind" : "queue" , "version" : "1.2.0" , "id" : "https:\/\/example.invalid\/kinds\/queue" , "kindFormatVersion" : "1.0.0" }`
+	admitted := `{"description":"Café 😀","id":"https://example.invalid/kinds/queue","kind":"queue",` +
+		`"kindFormatVersion":"1.0.0","overlayable":["/retention"],"owner":"platform",` +
+		`"schema":{"additionalProperties":false,"properties":{"retention":{"maximum":30,"minimum":1,"type":"integer"}},` +
+		`"required":["retention"],"type":"object"},"version":"1.2.0"}`
+	pin := kindDigest(t, supplied)
+	if digestOf([]byte(admitted)) != pin {
+		t.Fatalf("the admitted form's digest is not the pin's %s", pin)
+	}
+	text := `{"registryFormatVersion":"1.0.0","id":"https://example.invalid/registries/r","version":"1.0.0",
+"environments":["dev","prod"],"owners":["platform"],
+"kinds":[{"kind":"queue","id":"https://example.invalid/kinds/queue","version":"1.2.0","digest":"` + pin + `"}],
+"entries":[{"kind":"queue","id":"orders","owner":"platform","value":{"retention":3}}],
+"overlays":[{"environment":"prod","patches":[{"kind":"queue","id":"orders","set":{"/retention":14}}]}]}`
+	result := registry.Validate([]byte(text), [][]byte{[]byte(supplied)})
+	if !result.Report.Valid {
+		t.Fatalf("the registry is not valid: %+v", result.Report.Diagnostics)
+	}
+	for _, environments := range []string{"each", "all"} {
+		m := mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"environments": environments}))
+		requests, diagnostics := FormRequests(m, Inputs{Registry: result})
+		if diagnostics != nil || len(requests) == 0 {
+			t.Fatalf("%s: requests: %d %v", environments, len(requests), codes(diagnostics))
+		}
+		for _, request := range requests {
+			if !bytes.Contains(request.Bytes, []byte(`"declarations":[`+admitted+`]`)) {
+				t.Fatalf("%s: the declaration is not in its admitted form: %s", environments, request.Bytes)
+			}
+			if kinds := declarationsOf(t, request.Bytes); !slices.Equal(kinds, []string{"queue"}) {
+				t.Fatalf("%s: declarations: %v", environments, kinds)
+			}
+		}
+	}
+}

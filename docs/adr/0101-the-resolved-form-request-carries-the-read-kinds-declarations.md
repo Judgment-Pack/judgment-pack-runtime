@@ -26,8 +26,8 @@ Material-decision impact: public-surface.
 
 - The declaration an emitter reads must be the one validation admitted and the pin names, byte for
   byte. A second read of a kind file could differ from it.
-- No kind the manifest does not read may reach the emitter, in `declarations` as in the pins. Check 4
-  must keep testing that.
+- No kind the manifest does not read may reach the emitter, in `declarations` as in the pins.
+  Check 4 must keep testing that.
 - A request whose pins and declarations disagree is never written. The host refuses it, and does
   not leave the emitter to find the problem.
 
