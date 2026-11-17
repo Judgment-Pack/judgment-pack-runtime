@@ -75,11 +75,16 @@ It also holds exactly one of these expectations:
   `x-` code.
 
 Anything else in a vector is `EMIT-VECTOR`: an unknown member, a link, or a vector past a bound.
-Every vector is laid out before any emitter runs, by its entries and their sizes alone (its
+The vectors directory and each `kinds/` are listed by batches, keeping only the
+entries their bound counts (the vector directories and links, and the `*.json` files), so a
+listing past its bound stops there and is never held whole. Every vector is laid out before any emitter runs, by its entries and their sizes alone (its
 members and their kinds, the names of `kinds/*.json`, and the files, count and sizes of
 `expected/`), so a bad layout refuses the run whole. No vector's bytes are read then. Each vector
 is read just before its own run, under the bounds above, and dropped after its checks, so the
-harness holds one vector at a time and no bound on the whole set is needed. A vector whose bytes
+harness holds one vector at a time and no bound on the whole set is needed. At that read, the
+vector directory and every directory between it and each file are checked again to be
+directories and not links, and the file is opened without following one, so a directory swapped
+for a link after the layout is `EMIT-PATH-UNREADABLE` at the file, never read through. A vector whose bytes
 are refused there (an unreadable file, or an `expected-failure.json` that is not of its form)
 refuses the run at that vector, with `EMIT-VECTOR` or `EMIT-PATH-UNREADABLE` and exit 2; the
 earlier vectors' rows stay in the report, and `--update` may already have written their
@@ -104,7 +109,10 @@ unknown level is `EMIT-VECTOR` and exit 2.
 
 **`--update`** rewrites `expected/` of each vector whose run succeeded, from that run. It never
 touches an expected-failure vector. It writes nowhere but `VECTOR/expected/`, which must be a
-directory or absent, and it removes that directory first. A run that gives no files gets the
+directory or absent. The new `expected/` is written whole in a temporary directory in the
+vector, `.expected-update-*`, and renamed into place, and the old one is then removed, so a write
+that fails partway leaves `expected/` as it was. A run stopped between the renames can leave that
+directory, which the layout refuses as an unknown member until it is removed. A run that gives no files gets the
 marker `expected/~empty` alone, and a run that gives files has no marker. The vector directories
 are not links.
 The checks then run against the new `expected/`.
@@ -120,7 +128,11 @@ Two runs that give one path are `EMIT-RESPONSE`, as the host refuses them.
 2. **Determinism.** Runs 2 and 3 each have a fresh `HOME` at a path of another shape. They set
    `TZ` to `Pacific/Kiritimati` and then `America/St_Johns`, `LANG` to `tr_TR.UTF-8` and then
    `de_DE.UTF-8`, and `SOURCE_DATE_EPOCH` to `1` and then `2000000000`. Run 1 has none of these
-   values. The manifest's `env` names are held as the host gives them. Each run must give run 1's
+   values. On Windows, where a program finds its home by `USERPROFILE`, `APPDATA` and
+   `LOCALAPPDATA` rather than `HOME`, runs 2 and 3 set each of them to their `HOME` too; run 1
+   sets none. Go ignores `TZ` on Windows, so there the time zone is not changed for a Go emitter
+   (a known limit, below). The manifest's `env` names are held as the host gives them, these
+   included. Each run must give run 1's
    response bytes exactly (the RFC's "identical bytes", read as the raw bytes, not a canonical
    form of them), or run 1's refusal exactly. The row names the runs that differ. A `HOME` the
    harness cannot make is its own fault, not a difference: `EMIT-HARNESS-BOUND`, and the run
@@ -212,15 +224,27 @@ led, and a part that does not exist is taken as written. A link that cannot be f
 links is treated as leading out. The run is refused, rather than check 6 skipped for that link,
 because skipping would still run the emitter with a way out of the copy: a write through the link
 would land in the real directory, possibly the repository itself, while the run passed. The
-author removes the link from the working tree, or makes it relative and inside `--root`. The copy is bounded at 256 MiB of file bytes
-and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). Past either, the result is
+author removes the link from the working tree, or makes it relative and inside `--root`. On
+Windows, a reparse point that Go reads as neither a symbolic link nor a regular file, a junction
+for one, is `EMIT-HARNESS-BOUND` naming it, and exit 2, before any emitter runs, by the same walk
+and whether or not the copy falls back. Since Go 1.23 a junction is `ModeIrregular`, not
+`ModeSymlink`, so the link check cannot see where it leads, and under the fallback the emitter
+would run in the repository with a way out of it while check 6 skipped. Reporting check 6 as not
+run there instead was weighed and not chosen: the refusal fails closed, and it holds whether or
+not the copy can be made. A regular file stays, as Go reads a deduplicated file, which is a
+reparse point too. The copy is bounded at 256 MiB of file bytes
+and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). The bytes bound counts the bytes copied,
+so a file that grows while it is copied cannot pass it. Past either, the result is
 `EMIT-HARNESS-BOUND` and exit 2. Every link of `--root` is checked to stay in it before the copy is
 made, so a link that leads out is refused whether or not the copy can be made. Only Windows refusing
 a link for want of the privilege (`ERROR_PRIVILEGE_NOT_HELD`) runs the emitter in the repository
 itself, and each check 6 row skips, with that reason. Any other link the copy cannot make, a target
 past the system's length limit once moved into the copy for one, is `EMIT-PATH-UNREADABLE` naming
 the link, and exit 2, before any emitter runs. The copy keeps an honest emitter's mistake out of the repository. It is not a
-sandbox: the emitter runs with the user's rights.
+sandbox: the emitter runs with the user's rights. The copy's root is compared too: a change to
+its permission bits is a stray write at `.`. After a vector that wrote to it, the copy is made again; when it cannot
+be, the run stops with `EMIT-PATH-UNREADABLE` and exit 2, and that vector's failing check 6 row
+stays in the report with the earlier rows.
 
 **Hostile responses.** Each is passed to `emit.ParseResponse` for a fixed manifest of the
 harness's own that owns `gen/**`, with request version `1.0.0` and a fixed request of one
@@ -276,6 +300,30 @@ Each list is bounded at 1000. The report's own diagnostics give why it could not
   has no registry to add a kind to, and no kinds to find its secret positions by. This is decided.
 - Revisit when the companion's §11.5 text or its harness rows land, or when a later level adds
   checks.
+
+### Known limits
+
+These are carried, not fixed. None gives a wrong verdict for an honest emitter on Linux or macOS.
+
+- **Check 2's time zone on Windows.** Go reads the time zone from the system there and ignores
+  `TZ`, so runs 2 and 3 do not change it for a Go emitter. An emitter in another language may
+  still read `TZ`.
+- **Links changed while the copy is made.** Each link is checked against `--root` as it is
+  copied, but the kind of each entry comes from the walk's earlier listing. A writer racing the
+  repository during the copy could flip a link to a directory while another link is checked
+  through it, and back before it is copied, so that the copy holds a link that leads out. It
+  needs a concurrent writer to the repository; the emitter, which runs in the copy, cannot cause
+  it.
+- **A directory link made before its target (Windows).** Go's `os.Symlink` on Windows stats the
+  target to choose a file link or a directory link. A link that sorts before the directory it
+  points to, relative (`a -> b/`) or absolute and moved into the copy (`cache -> C:\repo\real`),
+  is made before that directory exists in the copy, so it becomes a file link, and an honest
+  emitter's write through it fails check 1. Making links in a second pass, after every file and
+  directory, would close it.
+- **Whether Windows resolves `..` in a link target lexically: unverified.** The link check takes
+  each `..` from where the parts before it led. If Windows instead resolves `..` lexically, a
+  target such as `a -> b\..\..\x`, with `b -> deep\deeper`, passes the check but leads out. It
+  needs a run on Windows with the privilege to make links.
 
 ## More information
 

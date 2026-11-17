@@ -4,6 +4,10 @@ package startup
 
 import "io/fs"
 
+// openNoWait adds nothing outside Unix, where every file is refused after
+// the open in any case.
+const openNoWait = 0
+
 // checkPermissions refuses every file. Outside Unix the permission bits Go
 // reports are synthesized (on Windows, from the read-only attribute), so they
 // cannot show that others may not read a file.

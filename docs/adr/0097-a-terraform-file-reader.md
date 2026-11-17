@@ -70,10 +70,16 @@ Chosen option: "a package of its own". The other two fail the drivers:
   - `bytes` is its length;
   - `message` is one fixed text per code.
 
-  Nothing else is carried.
+  Nothing else is carried. The one exception is a stream's `TF-SIZE` (reading 18): it is
+  `{code, message}`, with no `sha256` or `bytes`, and its fixed message says the input was
+  standard input.
+- `ReadStream` is `Read` for a stream that need not end, such as standard input. The caller says
+  which it has; the reader never guesses from the `io.Reader`'s type.
 
 **The steps**, in the RFC's order. The first failure refuses, and later steps do not run.
 1. The whole input is hashed, even past `maxBytes`, and kept only while it is within `maxBytes`.
+   - A stream (`ReadStream`) is read to `maxBytes` and one byte more at most, and no further
+     (reading 18).
    - A reader that tells its size (a file, or an in-memory reader) is read into one buffer.
    - Any other reader is read in chunks that grow to 8 MiB and are joined once.
    - `TF-SIZE` comes before any parse.
@@ -244,6 +250,16 @@ The rest are this runtime's own readings:
 16. **`select.actions`** may repeat a value. The change's `actions` are carried as written.
 17. **Mapping a refusal to a source outcome** (dialect §9.2) is left open by the companion. This
     package returns the refusal, and the caller maps it.
+18. **A stream is read to one byte past `maxBytes`, and no further** (2026-11-16).
+    Standard input need not end, and reading it to its end before refusing it would never return.
+    So a stream longer than `maxBytes` is `TF-SIZE`, the code and exit of an oversized file, but
+    its refusal leaves out both `sha256` and `bytes`: the stream's whole length was never read, so
+    neither its digest nor its size is known, and a digest of its first `maxBytes + 1` bytes would
+    read as the whole input's. Its fixed message says the input was standard input and why the two
+    members are absent. A file is unchanged: its `TF-SIZE` carries the whole file's sha256 and
+    size. A stream within `maxBytes` is read to its end, so every other refusal of it, and its
+    acquisition, carry its digest and size as a file's do. The spec text is unreleased; spec issue
+    #353 proposes the same: the digest present for a file and absent for standard input.
 
 **Not built:** `jpack terraform facts` and the batch of §6 (since built, see the amendment), the
 kind in `jpack dialect validate`,
@@ -256,7 +272,7 @@ outputs (RFC 0038, Unresolved question 4), and OpenTofu (Unresolved question 3).
 - Bad: the reader holds the whole file and its arena, about 7 times a worst-case file, so a 256 MiB
   plan needs about 1.8 GiB. Streaming would need the sensitivity mirror before the value it
   mirrors. Terraform writes `after` before `after_sensitive`, so it is not done.
-- Neutral: readings 2 to 17 are this runtime's. If the companion settles any of them differently,
+- Neutral: readings 2 to 18 are this runtime's. If the companion settles any of them differently,
   this runtime follows it and says so in its release notes. A changed table release is named in
   `formatTable`.
 - Revisit when the companion releases the kind, its table or its vectors, or when part 2 adds the
@@ -288,18 +304,23 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   would select nothing, so each is refused as a mistake rather than read as a source that selects
   nothing.
 - **The file is read by the reader**, from a regular file or standard input (`-`). The reader
-  holds it to `maxBytes` as it reads, and keeps nothing past it.
+  holds it to `maxBytes` as it reads, and keeps nothing past it. The command, not the reader,
+  decides which it has: `-` is read as a stream (`ReadStream`), to one byte past `maxBytes` at
+  most, so a longer standard input is `TF-SIZE` with its code and fixed message alone (reading
+  18).
 - **One line per selected resource**, in the acquired value's order (by address):
   `{"facts":{"resource":<the §5 object>,"terraform":{"document","formatVersion","sha256"}},"id":"<address>"}`.
   This is RFC 8785 canonical, the line shape of `registry facts` (ADR-0095). `sha256` is the
   file's bare lower-case hex, as in the acquisition record.
-- **Nothing is written unless every line can be.** A refusal writes no line on standard output. On
-  standard error it writes the refusal's canonical JSON alone: code, sha256, size and the code's
+- **A refusal writes no line.** Every check runs before the first line is written, so a refused
+  run leaves standard output empty. On standard error it writes the refusal's canonical JSON alone: code, sha256, size and the code's
   fixed message. It never writes a value, a member name, a pointer or the path. The exit code is
   2, the "could not judge" that `registry facts` uses for an invalid registry (ADR-0092). A
   selection that matches nothing is an empty batch and exit 0, since "no database is destroyed"
   is a valid fact (§4). A file that cannot be opened or read, or a batch that cannot be written,
-  exits 4.
+  exits 4. A write that fails partway is not a refusal: the lines written before it, the last
+  perhaps cut short, stay on standard output. A pipeline uses the batch only after exit 0, as the
+  example's `&&` does, or runs under `set -e` or `pipefail`.
 - **Each facts document is held to the facts-document limit** of `registry facts`
   (`FACTS-DOCUMENT-LIMIT`: 10 MiB, depth 128, 250,000 nodes, 1 MiB per string), the limit evaluate
   reads a facts document under. One resource over it refuses the whole run. Its line is not
@@ -321,8 +342,8 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   instance (`...app[0]`). Those need `[*]`, as in `module.*[*].google_sql_user.*[*]`.
 
 ```
-jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl
-jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed
+jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl &&
+  jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed
 ```
 
 The pack reads `/resource/actions`, `/resource/before/...` and `/resource/after/...` for a plan,

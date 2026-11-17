@@ -59,7 +59,11 @@ generated code stays free of this runtime.
 - The response has no diagnostics. Its files are sorted by path and held to companion §11.3's
   bounds and text rules. Every path segment (the file name and each directory name) is also at
   most 255 bytes, the name length of common file systems. A longer one is refused with the bounds
-  refusal, because the host could not write it.
+  refusal, because the host could not write it. The bounds are held before the costly steps too:
+  a request of 10 000 contracts or more, which would need more than 10 000 files, is refused
+  before any contract is read, and each file's source is held to 16 MiB, and the sources' total to
+  64 MiB, before go/format runs. The source has no indentation or alignment, so formatting never
+  shortens it, and a source over a bound would be over it formatted.
 
 **Options.**
 - `package` is required, matches `^[a-z][a-z0-9]*$`, and is at most 64 bytes. It is not a Go
