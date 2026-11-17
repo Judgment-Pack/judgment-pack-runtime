@@ -33,9 +33,11 @@ All notable changes to tagged releases are documented here.
   could not be read. No release target is affected. The conformance claim in CONFORMANCE.md is
   unchanged.
 - **The mutation table's check is stricter.** `scripts/check-mutation-table.py` now also fails
-  when a row's mutant is not `every A becomes B` with `A` in the body of the row's mutant site,
-  and when a row's provisional column differs from what the source marks: the section heading of
-  each code in `internal/emit/codes.go`, and the comment of a constant that holds a code.
+  when a row's mutant is not `every A becomes B` with `A` the row's own code (quoted, or a
+  constant of the site's package that holds it), found in the body of the row's mutant site
+  outside its comments and as a whole token, and `B` neither blank nor `A`; and when a row's
+  provisional column differs from what the source marks: the section heading of each code in
+  `internal/emit/codes.go`, and the comment of a constant that holds a code.
   `scripts/check-mutation-table-probe.py` probes both rules in memory. The conformance claim in
   CONFORMANCE.md is unchanged.
 

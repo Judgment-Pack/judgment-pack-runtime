@@ -24,8 +24,9 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
 `scripts/check-mutation-table.py` (the `mutation-table` check in `dev.json`) reads the codes from
 those tables and fails when a code has no row, when a row's code no longer exists, when a row's
 severity is not the one its table states, when a row's mutant site is not a function of a non-test
-Go file, when a row's mutant is not `every A becomes B` with `A` in that function's body, when a
-row's provisional column is not what the source marks, when `go test -list` does not list the
+Go file, when a row's mutant is not `every A becomes B` with `A` the row's own code and in that
+function's body (see the mutant column) and `B` neither blank nor `A`, when a row's provisional
+column is not what the source marks, when `go test -list` does not list the
 row's test in its package, or when no string literal in
 that test names the row's subtest (as `go test` prints it), or when the test does not name the
 row's code, as a literal or a constant holding it. For a subtest, a case that names any code of
@@ -44,10 +45,11 @@ run the mutants; a reviewer does.
   quoted as a regular expression.
 - **mutant site**: the file and the function the mutant changes.
 - **mutant**: `every A becomes B` means: in that function's body only, every occurrence of `A`
-  (the quoted code, or the identifier that holds it) is replaced with `B`, another code of the
-  same table, so the package still builds and the code reported is one the test does not accept.
-  A quoted code is matched with its closing quote, so `"EMIT-REQUEST"` is not part of
-  `"EMIT-REQUEST-VERSION"`.
+  (the row's code quoted, or a constant of the site's package that holds it) is replaced with
+  `B`, another code of the same table, so the package still builds and the code reported is one
+  the test does not accept. `A` is matched outside comments and as a whole token: a quoted code
+  as a whole string literal, so `"EMIT-REQUEST"` is not part of `"EMIT-REQUEST-VERSION"`, and an
+  identifier as a whole word.
 - **provisional**: whether `VERSIONING.md` lists the code as this runtime's own and provisional.
   `n/a` marks an emitter's `x-` code, which `VERSIONING.md` places outside the registry line's promise.
   The check compares it with the source where the source marks it: the section heading of each

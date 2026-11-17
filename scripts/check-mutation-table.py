@@ -11,8 +11,9 @@ resolved through its package's constants.
 
 Fails on a code with no row or with two, a row whose code no longer exists, a row whose severity
 is not the one its code table states, a row whose mutant site names no function of a non-test Go
-file, a row whose mutant is not `every A becomes B` with A, the quoted code or the identifier
-that holds it, in that function's body, a row whose provisional column is not what the source
+file, a row whose mutant is not `every A becomes B` with A the row's own code, quoted or as a
+constant of the site's package that holds it, in that function's body outside its comments and
+as a whole token, and B neither blank nor A, a row whose provisional column is not what the source
 marks (see provisional_marks), and a row whose test `go test -list` does not list in the row's package (for `TestX/sub`,
 the parent `TestX` must be listed, and a string literal in its body must name `sub` as `go test`
 prints it, spaces as underscores). Run from the repository root. Standard library only; it runs
@@ -275,22 +276,65 @@ def function_body(path, name):
 MUTANT = re.compile(r'every `([^`]+)` becomes `([^`]+)`')
 
 
-def mutant_problem(body, mutant):
-    """Why the mutant `every A becomes B` cannot apply to a function's body, or None: it is not of
-    that form, A and B are the same, or A does not occur in the body, a quoted code with its
-    closing quote, an identifier as a whole word."""
+def go_code(text):
+    """text, a piece of Go source, with its comments removed and every string or rune literal
+    replaced by a blank, and the interpreted string literals it holds, as written."""
+    out, literals, i, n = [], [], 0, len(text)
+    while i < n:
+        if text.startswith('//', i):
+            end = text.find('\n', i)
+            i = n if end < 0 else end
+            out.append(' ')
+        elif text.startswith('/*', i):
+            end = text.find('*/', i + 2)
+            i = n if end < 0 else end + 2
+            out.append(' ')
+        elif text[i] in '"\'':
+            quote, j = text[i], i + 1
+            while j < n and text[j] not in (quote, '\n'):
+                j += 2 if text[j] == '\\' else 1
+            j = min(j + 1, n)
+            if quote == '"':
+                literals.append(text[i:j])
+            out.append(' ')
+            i = j
+        elif text[i] == '`':
+            end = text.find('`', i + 1)
+            i = n if end < 0 else end + 1
+            out.append(' ')
+        else:
+            out.append(text[i])
+            i += 1
+    return ''.join(out), literals
+
+
+def mutant_problem(body, mutant, code, resolve):
+    """Why the mutant `every A becomes B` cannot apply to a function's body as a mutant of code,
+    or None. It is not of that form; A is not the row's own code, quoted ("CODE"), or an
+    identifier that resolve (the site package's constants) maps to it; B is blank or A; or A does
+    not occur in the body outside its comments, the quoted code as a whole string literal, an
+    identifier as a whole word."""
     m = MUTANT.fullmatch(mutant)
     if not m:
         return 'is not of the form every `A` becomes `B`'
     old, new = m.group(1), m.group(2)
+    if not new.strip():
+        return 'changes %s into nothing' % old
     if old == new:
         return 'changes %s into itself' % old
+    source, literals = go_code(body)
     if old.startswith('"'):
-        found = old in body
+        if old != '"%s"' % code:
+            return 'changes %s, not the row\'s code "%s"' % (old, code)
+        found = old in literals
+    elif re.fullmatch(r'[A-Za-z_]\w*', old):
+        if resolve.get(old) != code:
+            return 'changes %s, which is no constant of its package holding %s' % (old, code)
+        found = re.search(r'(?<![\w.])%s(?!\w)' % re.escape(old), source) is not None
     else:
-        found = re.search(r'(?<![\w.])%s(?!\w)' % re.escape(old), body) is not None
+        return 'changes %s, neither the quoted code nor a constant holding it' % old
     if not found:
-        return 'changes %s, which its function does not hold' % old
+        return 'changes %s, which its function does not hold outside its comments' % old
     return None
 
 
@@ -378,7 +422,7 @@ def main():
         if not row['mutant']:
             problems.append('%s: no mutant' % where)
         elif body is not None:
-            why = mutant_problem(body, row['mutant'])
+            why = mutant_problem(body, row['mutant'], code, package_constants(os.path.dirname(site.group(1))))
             if why:
                 problems.append('%s: the mutant %s' % (where, why))
         package = row['package']

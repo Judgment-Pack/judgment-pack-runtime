@@ -43,23 +43,50 @@ if body is not None:
     expect('a renamed subtest is not found', check.subtest_case(body, 'too_deep_gone') is None)
 expect('a missing parent test is not found', check.test_body('./internal/registry', 'TestNoSuchTestHere') is None)
 
-# The mutant must change what its function holds.
+# The mutant must change the row's own code, where its function holds it.
 admit = check.function_body('internal/registry/admit.go', 'admitValue')
 expect('the mutant site\'s body is found', admit is not None and admit.startswith('func admitValue('))
+registry_names = check.package_constants('internal/registry')
 if admit is not None:
-    expect('a mutant of a code its function holds applies',
-           check.mutant_problem(admit, 'every `"REG-DOC-DEPTH"` becomes `"REG-DOC-JSON"`') is None)
+    expect('a mutant of the row\'s code its function holds applies',
+           check.mutant_problem(admit, 'every `"REG-DOC-DEPTH"` becomes `"REG-DOC-JSON"`', 'REG-DOC-DEPTH', registry_names) is None)
+    expect('a mutant of another code than the row\'s is refused',
+           check.mutant_problem(admit, 'every `"REG-DOC-JSON"` becomes `"REG-DOC-SIZE"`', 'REG-DOC-DEPTH', registry_names) is not None)
     expect('a mutant of a code its function does not hold is refused',
-           check.mutant_problem(admit, 'every `"REG-DOC-SELECTOR"` becomes `"REG-DOC-JSON"`') is not None)
+           check.mutant_problem(admit, 'every `"REG-DOC-SELECTOR"` becomes `"REG-DOC-JSON"`', 'REG-DOC-SELECTOR', registry_names) is not None)
     expect('a mutant that changes nothing is refused',
-           check.mutant_problem(admit, 'every `"REG-DOC-DEPTH"` becomes `"REG-DOC-DEPTH"`') is not None)
-    expect('a mutant not of the form is refused', check.mutant_problem(admit, 'REG-DOC-DEPTH becomes REG-DOC-JSON') is not None)
-    expect('a quoted code is matched with its closing quote',
-           check.mutant_problem('x := "EMIT-REQUEST-VERSION"', 'every `"EMIT-REQUEST"` becomes `"EMIT-OPTIONS"`') is not None)
-    expect('an identifier is matched as a whole word',
-           check.mutant_problem('x := CodeSizeLimit', 'every `CodeSize` becomes `CodeJSON`') is not None)
-    expect('a qualified identifier is not the package\'s own',
-           check.mutant_problem('x := other.CodeSize', 'every `CodeSize` becomes `CodeJSON`') is not None)
+           check.mutant_problem(admit, 'every `"REG-DOC-DEPTH"` becomes `"REG-DOC-DEPTH"`', 'REG-DOC-DEPTH', registry_names) is not None)
+    expect('a mutant into blanks is refused',
+           check.mutant_problem(admit, 'every `"REG-DOC-DEPTH"` becomes ` `', 'REG-DOC-DEPTH', registry_names) is not None)
+    expect('a mutant not of the form is refused',
+           check.mutant_problem(admit, 'REG-DOC-DEPTH becomes REG-DOC-JSON', 'REG-DOC-DEPTH', registry_names) is not None)
+    # The same body with the code only in a comment, a URL in a string kept.
+    commented = admit.replace('"REG-DOC-DEPTH"', '"https://example.invalid/x" // was "REG-DOC-DEPTH"')
+    expect('a code only in a comment is refused',
+           check.mutant_problem(commented, 'every `"REG-DOC-DEPTH"` becomes `"REG-DOC-JSON"`', 'REG-DOC-DEPTH', registry_names) is not None)
+    expect('a code in a block comment is refused',
+           check.mutant_problem(admit.replace('"REG-DOC-DEPTH"', '/* "REG-DOC-DEPTH" */ at'),
+                                'every `"REG-DOC-DEPTH"` becomes `"REG-DOC-JSON"`', 'REG-DOC-DEPTH', registry_names) is not None)
+expect('a quoted code is matched as a whole literal',
+       check.mutant_problem('x := "EMIT-REQUEST-VERSION"', 'every `"EMIT-REQUEST"` becomes `"EMIT-OPTIONS"`', 'EMIT-REQUEST', {}) is not None)
+expect('a quoted code inside a longer literal is refused',
+       check.mutant_problem('x := "see \\"EMIT-REQUEST\\""', 'every `"EMIT-REQUEST"` becomes `"EMIT-OPTIONS"`', 'EMIT-REQUEST', {}) is not None)
+read = check.function_body('internal/terraformfile/read.go', 'read')
+tf_names = check.package_constants('internal/terraformfile')
+expect('the identifier site\'s body is found', read is not None)
+if read is not None:
+    expect('a mutant of a constant holding the row\'s code applies',
+           check.mutant_problem(read, 'every `CodeSize` becomes `CodeJSON`', 'TF-SIZE', tf_names) is None)
+    expect('a mutant of a constant holding another code is refused',
+           check.mutant_problem(read, 'every `CodeJSON` becomes `CodeFormat`', 'TF-SIZE', tf_names) is not None)
+    expect('an identifier that is no constant is refused',
+           check.mutant_problem(read, 'every `limit` becomes `CodeJSON`', 'TF-SIZE', tf_names) is not None)
+expect('an identifier is matched as a whole word (a prefix is refused)',
+       check.mutant_problem('x := CodeSizeLimit', 'every `CodeSize` becomes `CodeJSON`', 'TF-SIZE', {'CodeSize': 'TF-SIZE'}) is not None)
+expect('a qualified identifier is not the package\'s own',
+       check.mutant_problem('x := other.CodeSize', 'every `CodeSize` becomes `CodeJSON`', 'TF-SIZE', {'CodeSize': 'TF-SIZE'}) is not None)
+expect('an identifier only in a comment is refused',
+       check.mutant_problem('x := 1 // CodeSize', 'every `CodeSize` becomes `CodeJSON`', 'TF-SIZE', {'CodeSize': 'TF-SIZE'}) is not None)
 
 # The provisional column follows the source's marking.
 marks = check.provisional_marks()
