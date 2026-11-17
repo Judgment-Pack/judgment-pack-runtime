@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.51.0 - 2026-11-17
 
 - **`jpack emit conformance` no longer reads an index with an offset table** (ADR-0099). The
   harness passed over the index's `IEOT` and `EOIE` extensions and read the entries in order, but
@@ -36,8 +36,9 @@ All notable changes to tagged releases are documented here.
   and has each of its rows backed by vectors written by hand. VERSIONING.md called these codes this
   runtime's own; it now pins the registry companion's first release, `registry-v1.0.0`, published
   as released and not yet stable, whose code list names them. The `TF-*` codes stay provisional
-  until a spec release carries dialect §4.5. No code, severity, message or behaviour changes; the thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the
-  mutation table: for the `EMIT-*` codes and `FACTS-ID-LIMIT`, that marking now says who named a
+  until a spec release carries dialect §4.5. No code, severity, message or behaviour changes; the
+  thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the mutation
+  table: for the `EMIT-*` codes and `FACTS-ID-LIMIT`, that marking now says who named a
   code, the companion or this runtime, and not whether its companion is released. VERSIONING.md
   also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed `*` objects is
   first-version scope and may be lifted in 1.x, and SECURITY.md points to the registry line's
@@ -45,6 +46,27 @@ All notable changes to tagged releases are documented here.
   line: no spec release carries dialect §4.5 yet, so the command, its batch lines, the `TF-*`
   codes and the `proposed-1` table stay provisional and outside the line's 1.0 promise. The
   conformance claim in CONFORMANCE.md is unchanged.
+- **Two statements the registry line had made untrue, corrected, and one list completed**
+  (SECURITY.md, VERSIONING.md).
+  - SECURITY.md said the runtime invokes no subprocess. Validating, testing and evaluating still
+    start none; it now names the two places that do, `jpack emit` and `jpack emit conformance`,
+    which run the emitter a manifest names, and `jpack experimental check-published`, which runs
+    `git`.
+  - SECURITY.md said the runtime writes in exactly three ways. It now names the five places it
+    writes: a file the operator names on the command line, the project's audit directory, beside
+    the configuration (`packs lock`), what the registry line generates (the paths an emitter
+    manifest owns, and each vector's `expected/` under `jpack emit conformance --update`), and the
+    system's temporary directory (an emitter's fresh `HOME` and the harness's repository copy).
+  - VERSIONING.md's list of what the registry line is now names the reference emitters
+    `jpack-emit-go-loader`, `jpack-emit-ts-constants` and `jpack-emit-go-facts`, as far as the
+    registry companion's §11.6 promises them: each one's manifest, the kinds it reads and its
+    options, not the bytes it writes.
+  - The help of `jpack registry`, `registry import`, `emit` and `emit conformance` no longer says
+    the registry companion's text and vectors are not released: it names `registry-v1.0.0`. The
+    mutation table no longer marks the released companion's `REG-*` and `FACTS-*` codes
+    provisional, and its check refuses a row that does.
+
+  No code, message or behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.50.0 - 2026-11-17
 

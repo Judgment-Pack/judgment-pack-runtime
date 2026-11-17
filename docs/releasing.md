@@ -277,6 +277,24 @@ not exist yet. Settle the text, then remove the marker.
    rc is the registry's newest version until its final follows. Cut the final promptly, and pin
    a version in registry-aware clients when this matters. The GitHub release and the image
    `latest` tag are unaffected: neither ever moves for a prerelease.
+8. **The start-up module's tag**, only for a release that tags it. A `startup/vX.Y.Z` tag is the
+   start-up module's release ([VERSIONING.md](../VERSIONING.md#the-start-up-module)): it does not
+   start the release workflow, which runs on `v*`, and the Go module proxy keeps its bytes once
+   fetched, so it is never moved or reused. The release whose notes name the registry line stable
+   tags `startup/v1.0.0`, so the module's 1.0 promise and the line's start together
+   ([The registry line](../VERSIONING.md#the-registry-line)). Tag it once that release has
+   published, signed, on the exact commit its CLI tag names, and push only that tag:
+
+   ```bash
+   commit=$(git rev-parse '<cli-tag>^{commit}')
+   git tag -s startup/v1.0.0 "$commit" -m "startup v1.0.0"
+   git push origin startup/v1.0.0
+   git rev-parse 'startup/v1.0.0^{commit}'   # must print $commit
+   ```
+
+   Waiting for the publish means that a CLI release that fails, and is replaced by a new tag on a
+   new commit, never leaves the module tagged on a commit no CLI release carries. As for the CLI
+   tag, if no signing key is configured, stop; do not push an unsigned module tag.
 
 ## Release immutability
 
