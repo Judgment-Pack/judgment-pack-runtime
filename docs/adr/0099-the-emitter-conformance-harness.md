@@ -185,7 +185,16 @@ the entry and the pointer, never the string.
 temporary directory with its links resolved. Nothing named `.git` is copied, in any case, so the
 repository's own is never compared, and a `.git` in the copy after a run, at any depth, is one the
 emitter made: a creation. Regular files keep their permission bits, links are copied as links,
-and any other kind of file is `EMIT-PATH-UNREADABLE`. The copy is bounded at 256 MiB of file bytes
+and any other kind of file is `EMIT-PATH-UNREADABLE`. A link keeps its target, except that an
+absolute target inside `--root` is moved to the same path in the copy, so a write through it
+stays in the copy and is a stray write there. A link that leads out of `--root` is
+`EMIT-HARNESS-BOUND` naming the link, and exit 2, before any emitter runs. Where a link leads is
+found by following it in `--root`, link by link: each `..` is taken from where the parts before it
+led, and a part that does not exist is taken as written. A link that cannot be followed within 40
+links is treated as leading out. The run is refused, rather than check 6 skipped for that link,
+because skipping would still run the emitter with a way out of the copy: a write through the link
+would land in the real directory, possibly the repository itself, while the run passed. The
+author removes the link from the working tree, or makes it relative and inside `--root`. The copy is bounded at 256 MiB of file bytes
 and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). Past either, the result is
 `EMIT-HARNESS-BOUND` and exit 2. A system that cannot make a link the repository holds (Windows
 without the privilege) runs the emitter in the repository itself, and each check 6 row skips, with

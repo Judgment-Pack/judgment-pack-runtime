@@ -311,6 +311,107 @@ func TestCopyPassesOverGit(t *testing.T) {
 	}
 }
 
+// symlinks makes links below dir, by slash path, or skips the test where
+// links cannot be made.
+func symlinks(t *testing.T, dir string, links map[string]string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("making a symbolic link needs a privilege on Windows")
+	}
+	for name, target := range links {
+		full := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, full); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A link whose absolute target is in the repository points into the copy:
+// a write through it is a stray write of the copy, and never reaches the
+// repository itself.
+func TestStrayWriteThroughALinkIntoTheRepository(t *testing.T) {
+	f := newFixture(t)
+	write(t, f.root, map[string]string{"real/a.txt": "a\n"})
+	symlinks(t, f.root, map[string]string{"cache": filepath.Join(f.root, "real")})
+	m := f.manifest([]string{"stray", "create", "cache/written.txt"}, map[string]any{"environments": "all"})
+	f.registryVector("a", nil)
+	report := f.run(m, true)
+	row := rowOf(t, report, "a", checkStrayWrites)
+	if want := []StrayWrite{{"EMIT-STRAY-WRITE", "real", StrayCreated}}; row.Status != StatusFail || !slices.Equal(row.StrayWrites, want) {
+		t.Fatalf("check 6: %+v", row)
+	}
+	if _, err := os.Lstat(filepath.Join(f.root, "real", "written.txt")); !os.IsNotExist(err) {
+		t.Fatalf("the write reached the repository itself: %v", err)
+	}
+}
+
+// A link that leads out of the repository refuses the run, before the
+// emitter runs: a write through it would leave the copy.
+func TestALinkOutOfTheRepositoryIsRefused(t *testing.T) {
+	outside := t.TempDir()
+	cases := map[string]struct {
+		links map[string]string
+		path  string
+	}{
+		"absolute":                     {map[string]string{"out": outside}, "out"},
+		"absolute, by a .. of its own": {map[string]string{"out": "ROOT/docs/../.."}, "out"},
+		"relative":                     {map[string]string{"docs/out": "../.."}, "docs/out"},
+		"through a link to the root":   {map[string]string{"r": ".", "s": "r/../x"}, "s"},
+		"absolute, through a link":     {map[string]string{"r": ".", "s": "ROOT/r/../x"}, "s"},
+		"a loop":                       {map[string]string{"loop": "loop/x"}, "loop"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			write(t, f.root, map[string]string{"docs/a.md": "a\n"})
+			links := map[string]string{}
+			for link, target := range c.links {
+				links[link] = strings.Replace(target, "ROOT", f.root, 1)
+			}
+			symlinks(t, f.root, links)
+			m := f.manifest([]string{"stray", "create", "out/written.txt"}, map[string]any{"environments": "all"})
+			f.registryVector("a", nil)
+			report := f.run(m, true)
+			if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun || len(report.Rows) != 0 || len(report.Diagnostics) != 1 {
+				t.Fatalf("report: %s", dump(report))
+			}
+			if d := report.Diagnostics[0]; d.Code != "EMIT-HARNESS-BOUND" || d.Location.Document != emit.DocumentRepository || d.Location.Path != c.path {
+				t.Fatalf("diagnostic: %+v", d)
+			}
+			if _, err := os.Lstat(filepath.Join(outside, "written.txt")); !os.IsNotExist(err) {
+				t.Fatalf("the emitter wrote outside the copy: %v", err)
+			}
+		})
+	}
+}
+
+// Links that stay in the repository are copied: a relative target as
+// written, an absolute one moved into the copy, a dangling one too.
+func TestCopyKeepsLinksThatStayIn(t *testing.T) {
+	source, target := t.TempDir(), t.TempDir()
+	write(t, source, map[string]string{"real/a.txt": "a\n"})
+	symlinks(t, source, map[string]string{"self": ".", "rel": "real/a.txt", "dangling": "real/missing", "docs/up": "../real",
+		"abs": filepath.Join(source, "real"), "root": source})
+	states, err := copyTree(source, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"self": ".", "rel": "real/a.txt", "dangling": "real/missing", "docs/up": "../real",
+		"abs": filepath.Join(target, "real"), "root": target}
+	for name, link := range want {
+		got, err := os.Readlink(filepath.Join(target, filepath.FromSlash(name)))
+		if err != nil || got != link || states[name].target != link {
+			t.Fatalf("%s: %q (%q) %v, want %q", name, got, states[name].target, err, link)
+		}
+	}
+	if changes := diffTree(target, states); len(changes) != 0 {
+		t.Fatalf("changes: %+v", changes)
+	}
+}
+
 func TestPathSafetyOfAVector(t *testing.T) {
 	f := newFixture(t)
 	write(t, f.root, map[string]string{"answers/outside.json": `{"emitResponseVersion":"1.0.0","files":[{"path":"src/a","text":"x\n"}],"diagnostics":[]}` + "\n"})

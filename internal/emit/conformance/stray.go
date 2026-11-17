@@ -39,6 +39,16 @@ type unreadableError struct{ path string }
 
 func (e unreadableError) Error() string { return "conformance: a path could not be copied" }
 
+// linkOutError names a symbolic link of the repository that leads out of it.
+type linkOutError struct{ path string }
+
+func (e linkOutError) Error() string {
+	return "conformance: a symbolic link leads out of the repository"
+}
+
+// maxLinkHops bounds the links followed to find where one link leads.
+const maxLinkHops = 40
+
 // entryKind is what a path of the repository is.
 type entryKind byte
 
@@ -95,7 +105,12 @@ func (w *workspace) fresh() *emit.Diagnostic {
 	}
 	before, err := copyTree(w.source, root)
 	var unreadable unreadableError
+	var linkOut linkOutError
 	switch {
+	case errors.As(err, &linkOut):
+		removeTree(dir)
+		d := emit.NewDiagnostic("EMIT-HARNESS-BOUND", emit.Location{Document: emit.DocumentRepository, Path: linkOut.path})
+		return &d
 	case errors.Is(err, errCopyLink):
 		removeTree(dir)
 		w.dir, w.root, w.fallback, w.before = "", w.source, true, nil
@@ -146,8 +161,11 @@ func isGitName(name string) bool { return strings.EqualFold(name, ".git") }
 
 // copyTree copies the regular files, directories and symbolic links below
 // source into target, which exists and is empty, keeping permission bits and
-// link targets and never following a link; it passes over anything named
-// ".git" and over target itself. It returns what it copied, by slash path.
+// never following a link; it passes over anything named ".git" and over
+// target itself. A link keeps its target, except that an absolute target
+// below source is moved to the same path below target, so that a write
+// through it stays in the copy; a link that leads out of source is
+// refused (linkOutError). It returns what it copied, by slash path.
 func copyTree(source, target string) (map[string]entryState, error) {
 	states := map[string]entryState{}
 	var total int64
@@ -183,6 +201,16 @@ func copyTree(source, target string) (map[string]entryState, error) {
 			link, err := os.Readlink(full)
 			if err != nil {
 				return unreadableError{path: name}
+			}
+			if leadsOut(source, name, link) {
+				return linkOutError{path: name}
+			}
+			if relative, ok := belowSource(source, link); ok && filepath.IsAbs(link) {
+				// As written, not cleaned: a ".." is the link's to resolve.
+				link = target
+				if relative != "." {
+					link += string(filepath.Separator) + relative
+				}
 			}
 			if err := os.Symlink(link, destination); err != nil {
 				return errCopyLink
@@ -221,6 +249,89 @@ func copyTree(source, target string) (map[string]entryState, error) {
 		}
 	}
 	return states, nil
+}
+
+// leadsOut says whether the link at name, a slash path below source, with
+// the target link, leads out of source when it is followed there, link by
+// link: each ".." is taken from where the parts before it led, and a part
+// that does not exist is taken as written. An absolute target is taken as
+// written too, so one below source only by a link of its own leads out.
+func leadsOut(source, name, link string) bool {
+	rest, ok := linkParts(source, link)
+	if !ok {
+		return true
+	}
+	var at []string
+	if dir := path.Dir(name); !filepath.IsAbs(link) && dir != "." {
+		at = strings.Split(dir, "/")
+	}
+	for hops := 0; len(rest) > 0; {
+		part := rest[0]
+		rest = rest[1:]
+		switch part {
+		case ".":
+			continue
+		case "..":
+			if len(at) == 0 {
+				return true
+			}
+			at = at[:len(at)-1]
+			continue
+		}
+		next := append(slices.Clone(at), part)
+		full := filepath.Join(append([]string{source}, next...)...)
+		info, err := os.Lstat(full)
+		if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+			at = next
+			continue
+		}
+		if hops++; hops > maxLinkHops {
+			return true
+		}
+		target, err := os.Readlink(full)
+		if err != nil {
+			return true
+		}
+		more, ok := linkParts(source, target)
+		if !ok {
+			return true
+		}
+		if filepath.IsAbs(target) {
+			at = nil
+		}
+		rest = append(more, rest...)
+	}
+	return false
+}
+
+// linkParts splits a link's target into its parts, an absolute target
+// relative to source; ok is false for an absolute target that is not below
+// source, and for a target rooted on a drive but not absolute (Windows).
+func linkParts(source, link string) ([]string, bool) {
+	switch {
+	case filepath.IsAbs(link):
+		relative, ok := belowSource(source, link)
+		if !ok {
+			return nil, false
+		}
+		link = relative
+	case filepath.VolumeName(link) != "" || link != "" && os.IsPathSeparator(link[0]):
+		return nil, false
+	}
+	return strings.FieldsFunc(link, func(r rune) bool { return r < 0x80 && os.IsPathSeparator(uint8(r)) }), true
+}
+
+// belowSource is an absolute target's path below source, as written: the
+// target is source itself, or begins with source and a separator.
+func belowSource(source, link string) (string, bool) {
+	if link == source {
+		return ".", true
+	}
+	prefix := source
+	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
+		prefix += string(filepath.Separator)
+	}
+	return strings.CutPrefix(link, prefix)
 }
 
 func copyFile(source, destination string, perm fs.FileMode) (entryState, error) {
