@@ -711,6 +711,50 @@ func TestEmptyMarkerRefusals(t *testing.T) {
 	}
 }
 
+// An expected/ with neither a regular file nor the marker records no run:
+// it refuses the vector, and --update replaces it with the marker, never
+// leaving it empty, after which the vector passes.
+func TestExpectedWithNoFileAndNoMarker(t *testing.T) {
+	cases := map[string][]string{
+		"empty":                     nil,
+		"only empty subdirectories": {"gen/req", "other"},
+	}
+	for name, dirs := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			write(t, f.root, map[string]string{"answers/none.json": `{"emitResponseVersion":"1.0.0","files":[],"diagnostics":[]}` + "\n"})
+			none := f.manifest([]string{"echo", "answers/none.json"}, map[string]any{"environments": "all"})
+			f.registryVector("v", nil)
+			expected := filepath.Join(f.vectors, "v", "expected")
+			if err := os.Mkdir(expected, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, dir := range dirs {
+				if err := os.MkdirAll(filepath.Join(expected, filepath.FromSlash(dir)), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			report := f.run(none, false)
+			if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun || len(report.Rows) != 0 || len(report.Diagnostics) != 1 {
+				t.Fatalf("run: %s", dump(report))
+			}
+			if d := report.Diagnostics[0]; d.Code != "EMIT-VECTOR" || d.Location.Document != DocumentVector || d.Location.Path != "v/expected" {
+				t.Fatalf("diagnostic: %+v", d)
+			}
+			if report := f.run(none, true); report.Outcome != OutcomePass || rowOf(t, report, "v", checkGolden).Reason != reasonUpdated {
+				t.Fatalf("update: %s", dump(report))
+			}
+			entries, err := os.ReadDir(expected)
+			if err != nil || len(entries) != 1 || entries[0].Name() != "~empty" || !entries[0].Type().IsRegular() {
+				t.Fatalf("expected/ after update: %v %v", entries, err)
+			}
+			if report := f.run(none, false); report.Outcome != OutcomePass {
+				t.Fatalf("run after update: %s", dump(report))
+			}
+		})
+	}
+}
+
 // A run that gives no files is recorded as the marker ~empty, which git can
 // track, and read back as no files; a run that gives files replaces it.
 func TestEmptyMarkerFromUpdate(t *testing.T) {

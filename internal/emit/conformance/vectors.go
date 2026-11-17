@@ -234,7 +234,7 @@ func layoutVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 		}
 	}
 	if present[dirExpected] {
-		expected, problems := layoutExpected(filepath.Join(dir, dirExpected), v.at(dirExpected))
+		expected, problems := layoutExpected(filepath.Join(dir, dirExpected), v.at(dirExpected), update)
 		refused = append(refused, problems...)
 		v.expected = expected
 	}
@@ -348,8 +348,10 @@ func failureCode(code string) bool {
 // does a set past the response bounds, by the files' sizes. The marker
 // ~empty, a zero-byte regular file alone at the root of expected/, gives no
 // files; ~empty anywhere else, of another kind or size, or beside anything,
-// refuses the vector.
-func layoutExpected(dir, at string) ([]expectedEntry, []emit.Diagnostic) {
+// refuses the vector. An expected/ with neither a regular file nor the marker
+// (empty, or holding only directories) refuses it too, as no record of a run
+// at all, except under --update, which replaces it.
+func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagnostic) {
 	var entries []expectedEntry
 	var refused []emit.Diagnostic
 	var total int64
@@ -404,8 +406,11 @@ func layoutExpected(dir, at string) ([]expectedEntry, []emit.Diagnostic) {
 	if err != nil && len(refused) == 0 {
 		refused = append(refused, vectorDiagnostic("EMIT-PATH-UNREADABLE", at, ""))
 	}
-	if marker && beside {
+	switch {
+	case marker && beside:
 		refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at+"/"+fileEmpty, ""))
+	case !marker && len(entries) == 0 && len(refused) == 0 && !update:
+		refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at, ""))
 	}
 	return entries, refused
 }

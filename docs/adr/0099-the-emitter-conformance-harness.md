@@ -68,7 +68,9 @@ It also holds exactly one of these expectations:
   vector refused there. No response path can name the marker, because the host refuses a path
   segment that begins with `~`. A `~empty` that is not empty, not a regular file, not at the
   root of `expected/`, or beside any other file or directory is `EMIT-VECTOR`. A missing
-  `expected/` is never read as empty: it is `EMIT-VECTOR`, except under `--update`;
+  `expected/` is never read as empty: it is `EMIT-VECTOR`, except under `--update`. Nor is one
+  that holds neither a regular file nor the marker, empty or holding only directories: it is
+  `EMIT-VECTOR`, except under `--update`, which replaces it with the marker;
 - `expected-failure.json`, `{"code": CODE}`. `CODE` is a listed `EMIT-` error code or an emitter's
   `x-` code.
 
