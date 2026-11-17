@@ -207,7 +207,8 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 - Warnings: `EMIT-ENV-UNSET`, `EMIT-REPORT-TRUNCATED` and, by the amendment below,
   `EMIT-STAGING-LEFTOVER`.
 
-The companion's §12 (proposed) now lists every one of these under its name and severity.
+The companion's §12, released as `registry-v1.0.0`, now lists every one of these under its name and
+severity.
 
 `EMIT-STRAY-WRITE` belongs to the harness.
 

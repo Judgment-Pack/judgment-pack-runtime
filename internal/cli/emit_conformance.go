@@ -30,7 +30,7 @@ func (a *App) emitConformanceCommand() *cobra.Command {
 			"--update rewrites each vector's expected/ from the emitter's run, for the author to review; it never touches an expected-failure vector and writes nowhere else. " +
 			"The report is RFC 8785 canonical JSON on standard output (harnessReportVersion 1.0.0): one row per vector and check, pass, fail, skip with its reason, or info; vector names, codes, paths and pointers, never a file's contents, a request value or an env value. " +
 			"Exit 0 when every row passes, is skipped or is info, 1 when a check fails, 2 when the harness could not run (a refused manifest, vectors not of the layout, an unreadable path, or a bound), and 3 for an unusable command line. " +
-			"The emitter is code the repository chose to run, with the user's rights, and is not sandboxed: the copy keeps an honest emitter's mistakes out of the repository, not a hostile one. It follows the accepted RFC; the registry companion's normative text and vectors are not released yet.",
+			"The emitter is code the repository chose to run, with the user's rights, and is not sandboxed: the copy keeps an honest emitter's mistakes out of the repository, not a hostile one. It follows the accepted RFC and the registry companion released as registry-v1.0.0.",
 		Example: "jpack emit conformance --manifest tools/emit-db-bootstrap/emitter.json --vectors tools/emit-db-bootstrap/vectors/\n" +
 			"jpack emit conformance --manifest tools/emit-db-bootstrap/emitter.json --vectors tools/emit-db-bootstrap/vectors/ --update",
 		Args: cobra.NoArgs,
