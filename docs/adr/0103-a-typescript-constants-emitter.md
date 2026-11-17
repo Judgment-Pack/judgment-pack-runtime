@@ -53,8 +53,8 @@ Chosen option: "each", with `$ref` written out where used and content refusals a
 **The program.** `cmd/jpack-emit-ts-constants`, with its manifest `emitter.json`.
 - It reads request `1.0.0` strictly. The request must have exactly its five members and one
   resolved document. JSON is read with no repeated member name, no invalid UTF-8, no unpaired
-  surrogate escape, and nothing after the value. The depth is at most 35: the resolved document's
-  32 containers (RFC 0034 §1), two levels above it, and a scalar.
+  surrogate escape, and nothing after the value. The depth is at most 34 containers, a scalar
+  counting as no level: the resolved document's 32 (RFC 0034 §1) and two above it.
 - A request it cannot read gets one fixed line on standard error, nothing on standard output, and
   exit 1 (`EMIT-PROCESS`).
 - A request it refuses gets a response with no files and error diagnostics. Each diagnostic is an
