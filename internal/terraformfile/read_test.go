@@ -414,7 +414,7 @@ func TestTheValueLimitHoldsAtItsBoundary(t *testing.T) {
 		limit int64
 		want  string
 	}{{size, ""}, {size - 1, CodeValueLimit}, {1, CodeValueLimit}} {
-		acquisition, refusal, err := read(bytes.NewReader(data), planSource("synthetic_db"), c.limit, ValueBytesPerInputByte)
+		acquisition, refusal, err := read(bytes.NewReader(data), planSource("synthetic_db"), false, c.limit, ValueBytesPerInputByte)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -436,10 +436,10 @@ func TestTheValueLimitHoldsAtItsBoundary(t *testing.T) {
 	// holds the source bound.
 	pointerPlan := longPointerPlan(t)
 	const unbounded = MaxValueBytes
-	if _, refusal, _ := read(bytes.NewReader(pointerPlan), planSource("synthetic_db"), 64*4096, unbounded); refusal == nil || refusal.Code != CodeValueLimit {
+	if _, refusal, _ := read(bytes.NewReader(pointerPlan), planSource("synthetic_db"), false, 64*4096, unbounded); refusal == nil || refusal.Code != CodeValueLimit {
 		t.Fatalf("afterUnknown pointers past the limit: %v", refusal)
 	}
-	if _, refusal, _ := read(bytes.NewReader(pointerPlan), planSource("synthetic_db"), 80*4096, unbounded); refusal != nil {
+	if _, refusal, _ := read(bytes.NewReader(pointerPlan), planSource("synthetic_db"), false, 80*4096, unbounded); refusal != nil {
 		t.Fatalf("afterUnknown pointers within the limit: %v", refusal.Code)
 	}
 }
@@ -463,7 +463,7 @@ func longPointerPlan(t *testing.T) []byte {
 func TestTheValueIsBoundedByItsSource(t *testing.T) {
 	data := longPointerPlan(t)
 	input := int64(len(data))
-	full, refusal, err := read(bytes.NewReader(data), planSource("synthetic_db"), MaxValueBytes, MaxValueBytes)
+	full, refusal, err := read(bytes.NewReader(data), planSource("synthetic_db"), false, MaxValueBytes, MaxValueBytes)
 	if err != nil || refusal != nil {
 		t.Fatalf("unbounded: %v %v", refusal, err)
 	}
@@ -475,8 +475,8 @@ func TestTheValueIsBoundedByItsSource(t *testing.T) {
 		k      int64
 		refuse bool
 	}{{below, true}, {above, false}} {
-		_, byMultiple, _ := read(bytes.NewReader(data), planSource("synthetic_db"), MaxValueBytes, c.k)
-		_, byLimit, _ := read(bytes.NewReader(data), planSource("synthetic_db"), c.k*input, MaxValueBytes)
+		_, byMultiple, _ := read(bytes.NewReader(data), planSource("synthetic_db"), false, MaxValueBytes, c.k)
+		_, byLimit, _ := read(bytes.NewReader(data), planSource("synthetic_db"), false, c.k*input, MaxValueBytes)
 		if (byMultiple != nil) != c.refuse || (byLimit != nil) != c.refuse {
 			t.Fatalf("multiple %d: %v, limit %d: %v, want refused %v", c.k, byMultiple, c.k*input, byLimit, c.refuse)
 		}
@@ -521,10 +521,10 @@ func TestAfterUnknownSpansCountAgainstTheLimit(t *testing.T) {
 	}
 	data := plan(t, change{address: "synthetic_db.main", after: object(), afterUnknown: object("l", list)})
 	size := int64(len(mustAccept(t, data, planSource("synthetic_db")).Value()))
-	if _, refusal, _ := read(bytes.NewReader(data), planSource("synthetic_db"), size, ValueBytesPerInputByte); refusal == nil || refusal.Code != CodeValueLimit {
+	if _, refusal, _ := read(bytes.NewReader(data), planSource("synthetic_db"), false, size, ValueBytesPerInputByte); refusal == nil || refusal.Code != CodeValueLimit {
 		t.Fatalf("spans past the limit: %v", refusal)
 	}
-	if _, refusal, _ := read(bytes.NewReader(data), planSource("synthetic_db"), size+8*2000, ValueBytesPerInputByte); refusal != nil {
+	if _, refusal, _ := read(bytes.NewReader(data), planSource("synthetic_db"), false, size+8*2000, ValueBytesPerInputByte); refusal != nil {
 		t.Fatalf("spans within the limit: %v", refusal.Code)
 	}
 }

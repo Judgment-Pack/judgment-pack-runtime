@@ -111,6 +111,12 @@ All notable changes to tagged releases are documented here.
   - The start-up module's `ReadFile` opens a file without blocking on Unix, so a named pipe put in
     the file's place between its first check and the open is refused rather than waited on. Its
     exported API is unchanged.
+  - `jpack terraform facts` reads standard input (`-`) only to one byte past `--max-bytes`. Before,
+    it hashed the whole stream to its end before refusing it, so a stream that never ends never
+    returned. A longer standard input is still `TF-SIZE`, exit 2, but its refusal is
+    `{"code","message"}` alone: neither `sha256` nor `bytes`, since the stream's whole length is
+    not read, and a fixed message that says the input was standard input (ADR-0097 reading 18). A
+    file's `TF-SIZE` is unchanged, with the whole file's sha256 and size.
 
 ## 0.47.0 - 2026-11-16
 
