@@ -7,13 +7,16 @@ import (
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
 
 // The comparison of check 4, on requests crafted by hand.
 func TestFilteredRequestComparison(t *testing.T) {
 	const id = "https://example.invalid/jpack-harness/kinds/jpack-harness-undeclared"
-	original := `{"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/e","version":"1.0.0"},"options":{},` +
+	const declaration = `{"id":"https://example.invalid/kinds/queue","kind":"queue","kindFormatVersion":"1.0.0","owner":"platform","schema":{},"version":"1.2.0"}`
+	const synthetic = `{"id":"` + id + `","kind":"jpack-harness-undeclared","kindFormatVersion":"1.0.0","owner":"platform","schema":{},"version":"1.0.0"}`
+	original := `{"declarations":[` + declaration + `],"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/e","version":"1.0.0"},"options":{},` +
 		`"resolved":[{"entries":[],"environment":"dev","kinds":[{"digest":"sha256:aa","id":"https://example.invalid/kinds/queue","kind":"queue","version":"1.2.0"}],` +
 		`"registry":{"digest":"sha256:0001","id":"https://example.invalid/r","version":"1.0.0"},"resolvedFormatVersion":"1.0.0"}]}`
 	cases := map[string]struct {
@@ -26,12 +29,16 @@ func TestFilteredRequestComparison(t *testing.T) {
 			`"kinds":[{"digest":"sha256:bb","id":"`+id+`","kind":"jpack-harness-undeclared","version":"1.0.0"},`, 1), reasonFilterHolds},
 		"the synthetic kind's pin, and the digest": {strings.Replace(strings.Replace(original, "sha256:0001", "sha256:0002", 1), `"kinds":[`,
 			`"kinds":[{"digest":"sha256:bb","id":"`+id+`","kind":"jpack-harness-undeclared","version":"1.0.0"},`, 1), reasonFilterHolds},
-		"a kind's digest differs":    {strings.Replace(original, "sha256:aa", "sha256:ab", 1), reasonFilterBytes},
-		"the registry id differs":    {strings.Replace(original, "invalid/r", "invalid/s", 1), reasonFilterBytes},
-		"another member differs":     {strings.Replace(original, `"options":{}`, `"options":{"a":1}`, 1), reasonFilterBytes},
-		"not a request":              {"[]", reasonFilterBytes},
-		"a digest where none was":    {strings.Replace(original, `"registry":{"digest":"sha256:0001",`, `"registry":{`, 1), reasonFilterBytes},
-		"an environment more than 1": {strings.Replace(original, `"resolved":[{`, `"resolved":[{},{`, 1), reasonFilterBytes},
+		// The declarations are compared too, and nothing in them is restored.
+		"the synthetic kind's declaration is in it": {strings.Replace(original, `"declarations":[`, `"declarations":[`+synthetic+`,`, 1), reasonFilterHolds},
+		"a declaration differs":                     {strings.Replace(original, `"schema":{}`, `"schema":{"type":"object"}`, 1), reasonFilterBytes},
+		"a declaration is not there":                {strings.Replace(original, declaration, "", 1), reasonFilterBytes},
+		"a kind's digest differs":                   {strings.Replace(original, "sha256:aa", "sha256:ab", 1), reasonFilterBytes},
+		"the registry id differs":                   {strings.Replace(original, "invalid/r", "invalid/s", 1), reasonFilterBytes},
+		"another member differs":                    {strings.Replace(original, `"options":{}`, `"options":{"a":1}`, 1), reasonFilterBytes},
+		"not a request":                             {"[]", reasonFilterBytes},
+		"a digest where none was":                   {strings.Replace(original, `"registry":{"digest":"sha256:0001",`, `"registry":{`, 1), reasonFilterBytes},
+		"an environment more than 1":                {strings.Replace(original, `"resolved":[{`, `"resolved":[{},{`, 1), reasonFilterBytes},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -90,6 +97,11 @@ func TestWithSyntheticKind(t *testing.T) {
 	for i := range changed {
 		if string(changed[i].Bytes) == string(original[i].Bytes) {
 			t.Fatal("the registry digest did not change; the test does not show its restoration")
+		}
+		// The synthetic kind is pinned and declared, and the declarations
+		// are the original's byte for byte: the queue's alone.
+		if a, b := declarationsBytes(t, original[i].Bytes), declarationsBytes(t, changed[i].Bytes); a != b || !strings.Contains(a, `"kind":"queue"`) || strings.Contains(b, added.id) {
+			t.Fatalf("%s: declarations %s, want %s", changed[i].Environment, b, a)
 		}
 		if _, reason := filteredRequest(original[i].Bytes, changed[i].Bytes, added.id); reason != "" {
 			t.Fatalf("%s: %s", changed[i].Environment, reason)
@@ -204,6 +216,62 @@ func TestReferenceScanBounds(t *testing.T) {
 	defer func() { maxReferenceBytes = saved }()
 	if _, err := newScanner([]target{{value: []byte(strings.Repeat("a", 40))}, {value: []byte(strings.Repeat("b", 40))}}); err != errReferenceBound {
 		t.Fatalf("err: %v", err)
+	}
+}
+
+// declarationsBytes is the RFC 8785 form of a request's declarations member.
+func declarationsBytes(t *testing.T, request []byte) string {
+	t.Helper()
+	value, code, _ := registry.AdmitValue(request, MaxRequestBytes)
+	root, ok := value.(map[string]any)
+	if code != "" || !ok {
+		t.Fatalf("request refused: %s", code)
+	}
+	declarations, ok := root["declarations"].([]any)
+	if !ok {
+		t.Fatalf("no declarations: %s", request)
+	}
+	data, err := jcs.EncodeDocument(declarations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// A given request is held to the envelope the host writes: in the resolved
+// form, the five members with declarations an array; in the facts form, the
+// four, with no declarations.
+func TestGivenRequestEnvelope(t *testing.T) {
+	f := newFixture(t)
+	resolved := f.manifest(requestMode, map[string]any{"environments": "all"})
+	facts := f.manifest(requestMode, map[string]any{"input": "factsContracts", "environments": nil})
+	const envelope = `"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/emitters/test","version":"1.0.0"},"options":{}`
+	cases := map[string]struct {
+		m       *emit.Manifest
+		request string
+		pointer string // "-" for none refused
+	}{
+		"resolved, declared":           {resolved, `{"declarations":[],` + envelope + `,"resolved":[]}`, "-"},
+		"resolved, no declarations":    {resolved, `{` + envelope + `,"resolved":[]}`, ""},
+		"resolved, declarations {}":    {resolved, `{"declarations":{},` + envelope + `,"resolved":[]}`, "/declarations"},
+		"resolved, a member in place":  {resolved, `{"factsContracts":[],` + envelope + `,"resolved":[]}`, "/declarations"},
+		"facts":                        {facts, `{` + envelope + `,"factsContracts":[]}`, "-"},
+		"facts, with declarations":     {facts, `{"declarations":[],` + envelope + `,"factsContracts":[]}`, ""},
+		"resolved, declared, unsorted": {resolved, `{"resolved":[],` + envelope + `,"declarations":[]}`, "-"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			request, refused := givenRequest([]byte(c.request), c.m)
+			if c.pointer == "-" {
+				if len(refused) != 0 || !strings.HasPrefix(string(request.Bytes), `{"declarations":[],`) && c.m == resolved {
+					t.Fatalf("refused %+v, bytes %s", refused, request.Bytes)
+				}
+				return
+			}
+			if len(refused) != 1 || refused[0].Code != "EMIT-REQUEST" || refused[0].Location.Pointer != c.pointer {
+				t.Fatalf("refused: %+v", refused)
+			}
+		})
 	}
 }
 

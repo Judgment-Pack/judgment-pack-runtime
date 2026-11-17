@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -22,8 +23,9 @@ import (
 const (
 	// MaxVectors bounds the vectors of one directory.
 	MaxVectors = 1000
-	// MaxRequestBytes bounds a vector's request.json.
-	MaxRequestBytes = 64 << 20
+	// MaxRequestBytes bounds a vector's request.json, as the host bounds a
+	// request it forms.
+	MaxRequestBytes = emit.MaxRequestBytes
 	// MaxSmallDocumentBytes bounds harness.json and expected-failure.json.
 	MaxSmallDocumentBytes = 4 << 10
 	// MaxKindFiles bounds a vector's kinds/, as `jpack emit --kinds` is
@@ -588,24 +590,38 @@ func writeExpected(dir string, files []emit.File) error {
 	if err != nil {
 		return err
 	}
-	defer removeTree(work)
+	// When the old expected/ cannot be put back, the temporary directory
+	// still holds it, so it is kept and named: the vector is refused until
+	// it is removed, and the old files are not lost.
+	keep := false
+	defer func() {
+		if !keep {
+			removeTree(work)
+		}
+	}()
 	fresh, old := filepath.Join(work, "new"), filepath.Join(work, "old")
 	if err := fillExpected(fresh, files); err != nil {
 		return err
 	}
 	if existed {
-		if err := os.Rename(target, old); err != nil {
+		if err := rename(target, old); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(fresh, target); err != nil {
+	if err := rename(fresh, target); err != nil {
 		if existed {
-			err = errors.Join(err, os.Rename(old, target))
+			if restore := rename(old, target); restore != nil {
+				keep = true
+				return fmt.Errorf("conformance: expected/ could not be replaced or put back; the old one is kept in %s: %w", old, errors.Join(err, restore))
+			}
 		}
 		return err
 	}
 	return nil
 }
+
+// rename is os.Rename, replaced in tests to make a rename fail.
+var rename = os.Rename
 
 // expectedUpdatePrefix names the temporary directory --update writes a new
 // expected/ in, beside it. One left by a run that was stopped is not of the
@@ -656,9 +672,10 @@ func fillExpected(target string, files []emit.File) error {
 // givenRequest forms the request of a vector that gives it whole: it is
 // admitted, held to the envelope the host writes for the manifest (its
 // selector the one the host writes, the manifest's emitter, options valid
-// against its schema, and resolved or factsContracts as its input says), and
-// written in its RFC 8785 canonical form. What it carries inside is the
-// author's.
+// against its schema, and declarations and resolved, or factsContracts, as
+// its input says), and written in its RFC 8785 canonical form. What it
+// carries inside is the author's: a declaration that does not match its pin
+// is a vector an emitter must refuse.
 func givenRequest(data []byte, m *emit.Manifest) (emit.Request, []emit.Diagnostic) {
 	refuse := func(code, document, pointer string) (emit.Request, []emit.Diagnostic) {
 		return emit.Request{}, []emit.Diagnostic{emit.NewDiagnostic(code, emit.Location{Document: document, Pointer: pointer})}
@@ -668,11 +685,13 @@ func givenRequest(data []byte, m *emit.Manifest) (emit.Request, []emit.Diagnosti
 		return refuse("EMIT-REQUEST", emit.DocumentRequest, pointer)
 	}
 	root, ok := value.(map[string]any)
-	member := "resolved"
+	// The resolved form has five members, declarations among them; the
+	// facts-contracts form four.
+	member, members := "resolved", 5
 	if m.Input == emit.InputFactsContracts {
-		member = "factsContracts"
+		member, members = "factsContracts", 4
 	}
-	if !ok || len(root) != 4 {
+	if !ok || len(root) != members {
 		return refuse("EMIT-REQUEST", emit.DocumentRequest, "")
 	}
 	version, writes := emit.RequestVersion(m)
@@ -696,6 +715,11 @@ func givenRequest(data []byte, m *emit.Manifest) (emit.Request, []emit.Diagnosti
 			refused = append(refused, emit.NewDiagnostic("EMIT-OPTIONS", emit.Location{Document: emit.DocumentOptions, Pointer: finding.Pointer}))
 		}
 		return emit.Request{}, refused
+	}
+	if m.Input == emit.InputResolved {
+		if _, ok := root["declarations"].([]any); !ok {
+			return refuse("EMIT-REQUEST", emit.DocumentRequest, "/declarations")
+		}
 	}
 	items, ok := root[member].([]any)
 	if !ok {

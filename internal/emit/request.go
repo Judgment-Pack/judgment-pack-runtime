@@ -44,11 +44,20 @@ func digestOf(data []byte) string {
 // environment for "each", and one otherwise. It refuses before any emitter
 // starts: a registry that is not valid, a pinned kind the manifest reads
 // whose id differs or whose version is outside the range, options that fail
-// the schema, and a request version that cannot be written.
+// the schema, a request version that cannot be written, and a request whose
+// RFC 8785 bytes exceed MaxRequestBytes (EMIT-REQUEST), any one of "each".
 //
-// The kind filter is applied as each document is built, not after: a pin or
-// an entry of a kind the manifest does not read is never copied into a
-// request, and a generated contract is made only for a kind it reads.
+// The kind filter is applied as each document is built, not after: a pin, a
+// declaration or an entry of a kind the manifest does not read is never
+// copied into a request, and a generated contract is made only for a kind it
+// reads.
+//
+// The resolved form is {"emitRequestVersion", "emitter", "options",
+// "declarations", "resolved"} (registry companion §11.2): declarations holds
+// the declaration of each kind whose pins remain, as admitted, sorted by
+// kind, and each SHA-256 of its RFC 8785 form is its pin's digest. A request
+// whose pins and declarations do not match one to one is refused
+// (EMIT-REQUEST). The facts-contracts form has no declarations.
 func FormRequests(m *Manifest, in Inputs) ([]Request, []Diagnostic) {
 	var diagnostics []Diagnostic
 	reads := map[string]Read{}
@@ -110,7 +119,7 @@ func FormRequests(m *Manifest, in Inputs) ([]Request, []Diagnostic) {
 	}
 	encode := func(environment string, value map[string]any) (Request, bool) {
 		data, err := jcs.EncodeDocument(value)
-		if err != nil {
+		if err != nil || len(data) > MaxRequestBytes {
 			diagnostics = append(diagnostics, diagnostic("EMIT-REQUEST", Location{Document: DocumentRequest, Environment: environment}))
 			return Request{}, false
 		}
@@ -126,18 +135,29 @@ func FormRequests(m *Manifest, in Inputs) ([]Request, []Diagnostic) {
 	if requestVersions[version].resolved != registry.ResolvedFormatVersion {
 		return nil, []Diagnostic{diagnostic("EMIT-REQUEST-VERSION", Location{Document: DocumentManifest, Pointer: "/requestVersions"})}
 	}
+	// The read kinds' declarations, by the pins' own filter (registry
+	// companion §11.2): the same in every request of the run.
+	declarations, digests, ok := readDeclarations(in.Registry, keep)
+	if !ok {
+		return nil, []Diagnostic{diagnostic("EMIT-REQUEST", Location{Document: DocumentRegistry})}
+	}
+	resolvedDocument := func(resolved []any) map[string]any {
+		value := document("resolved", resolved)
+		value["declarations"] = declarations
+		return value
+	}
 	var resolved []any
 	var requests []Request
 	for _, environment := range in.Registry.Environments() {
 		value, err := in.Registry.ResolvedFor(environment, keep)
-		if err != nil {
+		if err != nil || !declaresPins(value, digests) {
 			return nil, []Diagnostic{diagnostic("EMIT-REQUEST", Location{Document: DocumentRegistry, Environment: environment})}
 		}
 		if m.Environments == EnvironmentsAll {
 			resolved = append(resolved, value)
 			continue
 		}
-		request, ok := encode(environment, document("resolved", []any{value}))
+		request, ok := encode(environment, resolvedDocument([]any{value}))
 		if !ok {
 			return nil, diagnostics
 		}
@@ -147,13 +167,58 @@ func FormRequests(m *Manifest, in Inputs) ([]Request, []Diagnostic) {
 		if resolved == nil {
 			resolved = []any{}
 		}
-		request, ok := encode("", document("resolved", resolved))
+		request, ok := encode("", resolvedDocument(resolved))
 		if !ok {
 			return nil, diagnostics
 		}
 		requests = append(requests, request)
 	}
 	return requests, nil
+}
+
+// readDeclarations returns the declarations of the kinds keep admits, sorted
+// by kind, as the request's declarations member, and each one's digest by
+// kind name: the SHA-256 of its RFC 8785 form, which is the form the request
+// holds it in, taken here rather than trusted from the reader.
+func readDeclarations(r *registry.Result, keep func(kind string) bool) ([]any, map[string]string, bool) {
+	declarations, err := r.Declarations(keep)
+	if err != nil {
+		return nil, nil, false
+	}
+	values := make([]any, 0, len(declarations))
+	digests := make(map[string]string, len(declarations))
+	for _, declaration := range declarations {
+		digest, err := registry.Digest(declaration.Value)
+		if err != nil {
+			return nil, nil, false
+		}
+		values = append(values, declaration.Value)
+		digests[declaration.Kind] = digest
+	}
+	return values, digests, true
+}
+
+// declaresPins reports whether a resolved document's pins and the
+// declarations are of exactly the same kinds, each pin's digest its
+// declaration's. A request that fails it is never written: an emitter must
+// refuse a pin with no declaration or another's (§11.2), and a declaration
+// with no pin is of a kind the emitter does not read.
+func declaresPins(resolved map[string]any, digests map[string]string) bool {
+	pins, _ := resolved["kinds"].([]any)
+	if len(pins) != len(digests) {
+		return false
+	}
+	seen := make(map[string]bool, len(pins))
+	for _, item := range pins {
+		pin, _ := item.(map[string]any)
+		kind, _ := pin["kind"].(string)
+		digest, _ := pin["digest"].(string)
+		if declared, ok := digests[kind]; !ok || declared != digest || seen[kind] {
+			return false
+		}
+		seen[kind] = true
+	}
+	return true
 }
 
 // pinAt is a pin and its index in the registry's kinds.
