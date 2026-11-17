@@ -124,6 +124,20 @@ All notable changes to tagged releases are documented here.
   standard error. Its vectors are in RFC 0036 §5's layout, and the output of one vector is compiled
   and tested as a package. No `jpack` command changes. The conformance claim in CONFORMANCE.md is
   unchanged.
+- **A resolved-form emit request carries the read kinds' declarations** (ADR-0101, proposed;
+  registry companion §11.2, spec #352). `jpack emit` now writes
+  `{"emitRequestVersion", "emitter", "options", "declarations", "resolved"}` in the resolved form.
+  `declarations` holds the declaration of each kind the manifest reads, exactly as validation
+  admitted it, in RFC 8785 form and sorted by `kind`, once per request with `"all"` as with
+  `"each"`. The SHA-256 of each one is its pin's `digest`. A kind the manifest does not read is not
+  among them. The host refuses a run whose pins and declarations do not match one to one
+  (`EMIT-REQUEST`) before any emitter starts. The facts-contracts form is unchanged. This is part
+  of request `1.0.0`, which no tagged release has held yet, so `emitRequestVersion` stays `1.0.0`.
+  `jpack emit conformance` holds a given resolved-form `request.json` to these five members, and
+  check 4 requires `declarations` to be byte-identical with the synthetic kind added. The golden
+  vectors were written again with `--update`. A request is at most 64 MiB of RFC 8785 bytes, and
+  the host refuses a larger one, any request of `"each"` or the one of `"all"`, with `EMIT-REQUEST`
+  before any emitter starts. The conformance claim in CONFORMANCE.md is unchanged.
 - **Review follow-ups before the release** (the LOW findings of the reviews of this release's
   changes).
   - The Terraform reader orders member names without decoding the bytes two names share. A state
@@ -167,7 +181,9 @@ All notable changes to tagged releases are documented here.
     run, with exit 2; before, the row was dropped.
   - `jpack emit conformance --update` writes a vector's new `expected/` whole in a temporary
     directory beside it and renames it into place, so a write that fails partway leaves
-    `expected/` as it was. Before, it removed `expected/` first and could leave it partial.
+    `expected/` as it was. Before, it removed `expected/` first and could leave it partial. When
+    the new one cannot be renamed in and the old one cannot be put back, the temporary directory
+    holding the old one is kept and named in the error.
   - `jpack emit conformance` lists the vectors directory and each vector's `kinds/` by batches
     and stops once past the bound (1000 vectors, 1024 kind files), rather than listing either
     whole before the bound was checked. The bounds and their codes are unchanged.

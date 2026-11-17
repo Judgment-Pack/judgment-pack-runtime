@@ -230,3 +230,37 @@ func (r *Result) ResolvedFor(environment string, keep func(kind string) bool) (m
 	}
 	return r.resolvedDocument(environment, keep), nil
 }
+
+// Declaration is one pinned kind's declaration as validation admitted it: the
+// kind's name, its pin's digest, and the admitted document, whose RFC 8785
+// form is what the digest is taken over (§2.3, §4). Value is the reader's own
+// and is read-only.
+type Declaration struct {
+	Kind, Digest string
+	Value        map[string]any
+}
+
+// Declarations returns the declaration of each pinned kind keep admits (every
+// kind when keep is nil), sorted by kind name: the filter ResolvedFor applies
+// to the pins, so these are the declarations of the pins its documents hold
+// (registry companion §11.2). Each is the document step 1 admitted and
+// digested, not read again. It requires a valid registry.
+func (r *Result) Declarations(keep func(kind string) bool) ([]Declaration, error) {
+	if !r.Report.Valid || r.registry == nil {
+		return nil, ErrInvalid
+	}
+	out := make([]Declaration, 0, len(r.registry.pins))
+	for _, p := range r.registry.pins {
+		if keep != nil && !keep(p.kind) {
+			continue
+		}
+		// Step 4 makes every pin of a valid registry usable, by the kind
+		// read from the document of its digest.
+		if p.usable == nil || p.usable.Digest != p.digest {
+			return nil, ErrInvalid
+		}
+		out = append(out, Declaration{Kind: p.kind, Digest: p.digest, Value: p.usable.Document})
+	}
+	slices.SortFunc(out, func(a, b Declaration) int { return strings.Compare(a.Kind, b.Kind) })
+	return out, nil
+}
