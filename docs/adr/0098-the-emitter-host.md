@@ -194,12 +194,14 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 3. The determinism list leaves out "randomness". The host does not check determinism; the harness
    will.
 4. The response's three members are all required. The companion lists `diagnostics` without
-   "optional", so a response that leaves it out is refused.
+   "optional", so a response that leaves it out is refused (`EMIT-RESPONSE` at `/diagnostics`); it
+   may be empty.
 
 **Readings this runtime makes** where the text is silent:
 
-- `**` matches any number of segments, zero included, so `gen/**` also owns a file named `gen`.
-  This differs from a gitignore pattern.
+- A trailing `**` matches one or more segments, as in gitignore, so `gen/**` never owns a file
+  named `gen`. A `**` in the middle matches zero or more, so `a/**/b` matches `a/b`. (Answered in
+  review; the companion should say so.)
 - `*` matches within one segment, a leading `.` included.
 - A caret range on `0.x` keeps the leftmost non-zero part, as npm and Cargo do. A pre-release kind
   version is in no range.
@@ -274,8 +276,10 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   (proposed).
 - ADR-0093 (the registry reader), ADR-0095 (facts contracts).
 - Open questions for the spec:
-  1. Should `**` match zero segments at the end of a glob?
-  2. Is `diagnostics` optional?
+  1. Should `**` match zero segments at the end of a glob? Answered: no (one or more, as in
+     gitignore); in the middle, yes.
+  2. Is `diagnostics` optional? Answered: no. It is required and may be empty, as the companion's
+     three-member response has it; the spec should say "required".
   3. How strict should the normalization rule be?
   4. What do modes mean on Windows?
 - Decided here, for the companion to confirm: owns globs that name `.git`, and globs whose first

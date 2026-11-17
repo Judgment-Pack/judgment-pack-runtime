@@ -143,6 +143,22 @@ func TestEmitDeletesOnlyOwnedFilesAndStopsAtAnUnownedBlocker(t *testing.T) {
 	}
 }
 
+// gen/** owns what is below gen, never a file named gen itself: a trailing
+// "**" matches one or more segments.
+func TestEmitDoesNotOwnTheNameBeforeATrailingDoubleStar(t *testing.T) {
+	for _, check := range []bool{false, true} {
+		root := testRepo(t)
+		writeFiles(t, root, map[string]string{"gen": "a file named gen\n"})
+		report := echoHost(t, root, responseJSON(t), check, nil)
+		if report.Exit() != 0 || len(report.Deleted) != 0 || len(report.Differences) != 0 {
+			t.Fatalf("check %v: %s", check, reportJSON(t, report))
+		}
+		if got, _, ok := onDisk(t, root, "gen"); !ok || got != "a file named gen\n" {
+			t.Fatalf("check %v: gen holds %q", check, got)
+		}
+	}
+}
+
 func TestEmitCheckReportsEachDifferenceAndWritesNothing(t *testing.T) {
 	root := testRepo(t)
 	writeFiles(t, root, map[string]string{
@@ -259,12 +275,14 @@ func TestEmitValidatesEveryResponseBeforeWriting(t *testing.T) {
 }
 
 func TestEmitRefusesAPathThatIsADirectoryOfAnother(t *testing.T) {
-	for _, owns := range []string{"gen/**", "gen/a/**"} {
+	// A trailing "**" does not match the name before it, so the second
+	// manifest owns gen/a by a glob of its own.
+	for _, owns := range [][]any{{"gen/**"}, {"gen/a", "gen/a/**"}} {
 		for _, check := range []bool{false, true} {
 			root := testRepo(t)
 			writeFiles(t, root, map[string]string{"gen/a/stale": "stale\n"})
 			response := responseJSON(t, map[string]any{"path": "gen/a", "text": "a\n"}, map[string]any{"path": "gen/a/b", "text": "b\n"})
-			report := echoHost(t, root, response, check, map[string]any{"owns": []any{owns}})
+			report := echoHost(t, root, response, check, map[string]any{"owns": owns})
 			if report.Exit() != ExitNotDone || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-RESPONSE@/files/1/path"}) {
 				t.Fatalf("owns %s, check %v: %s", owns, check, reportJSON(t, report))
 			}

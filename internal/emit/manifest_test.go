@@ -143,9 +143,11 @@ func TestGlobMatchBelowAndOverlap(t *testing.T) {
 		glob, path string
 		want       bool
 	}{
-		// "Any number of segments" counts zero: gen/** owns a file named gen,
-		// unlike a gitignore pattern.
-		{"gen/**", "gen/a", true}, {"gen/**", "gen/a/b/c", true}, {"gen/**", "gen", true}, {"gen/**", "other/a", false},
+		// A trailing "**" matches one or more segments, as in gitignore:
+		// gen/** never owns a file named gen. One in the middle matches zero
+		// or more: a/**/b matches a/b.
+		{"gen/**", "gen/a", true}, {"gen/**", "gen/a/b/c", true}, {"gen/**", "gen", false}, {"gen/**", "other/a", false},
+		{"gen/**", "gen/.hidden", true}, {"a/**/b/**", "a/b", false}, {"a/**/b/**", "a/b/c", true}, {"**", "a", true},
 		{"gen/*.sql", "gen/roles.sql", true}, {"gen/*.sql", "gen/a/roles.sql", false}, {"gen/*.sql", "gen/.sql", true},
 		{"**/x.json", "x.json", true}, {"**/x.json", "a/b/x.json", true}, {"a/**/b", "a/b", true}, {"a/**/b", "a/x/y/b", true},
 		{"gen/a*b*c", "gen/abc", true}, {"gen/a*b*c", "gen/axxbyyc", true}, {"gen/a*b*c", "gen/acb", false},
@@ -173,7 +175,8 @@ func TestGlobMatchBelowAndOverlap(t *testing.T) {
 	}{
 		{"gen/**", "gen/db/*.sql", true}, {"gen/a/**", "gen/b/**", false}, {"**", "x", true}, {"*.go", "*_test.go", true},
 		{"gen/*.sql", "gen/*.json", false}, {"a*", "*b", true}, {"ab*", "ac*", false}, {"**/a", "b/**", true},
-		{"gen/x", "gen/x/**", true}, {"gen/x", "gen/x/*", false}, {"gen/*/a", "gen/b/*", true}, {"gen/**/z", "gen/*/y", false},
+		{"gen/x", "gen/x/**", false}, {"gen/x/a", "gen/x/**", true}, {"gen/x", "gen/x/*", false}, {"gen/**", "gen", false},
+		{"gen/**", "gen/**/a", true}, {"a/**/b", "a/b", true}, {"a/**/b", "a/**", true}, {"gen/*/a", "gen/b/*", true}, {"gen/**/z", "gen/*/y", false},
 	}
 	for _, c := range overlaps {
 		if got := glob(c.a).Overlaps(glob(c.b)); got != c.want {
