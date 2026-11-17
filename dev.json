@@ -22,6 +22,7 @@
     {"name": "loader-golden-vet", "cwd": "cmd/jpack-emit-go-loader/golden", "run": "go vet ./...", "toolchain": "go", "timeout": 600},
     {"name": "loader-golden-test", "cwd": "cmd/jpack-emit-go-loader/golden", "run": "go test ./...", "toolchain": "go",
      "summary": "^(ok|FAIL|---) ", "timeout": 600},
+    {"name": "emitter-conformance", "run": "go run ./tools/emit-conformance", "toolchain": "go", "timeout": 1800},
     {"name": "conformance", "run": "go run ./cmd/jpack spec test-conformance --quiet", "toolchain": "go", "timeout": 1200},
     {"name": "build", "run": "CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/jpack", "toolchain": "go", "timeout": 1200},
     {"name": "audit-formats", "run": "go run ./tools/audit-formats", "toolchain": "go",
