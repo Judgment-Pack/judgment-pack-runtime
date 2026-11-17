@@ -77,6 +77,16 @@ All notable changes to tagged releases are documented here.
   emit conformance` refused a root `$defs` in a manifest's `options` with `EMIT-MANIFEST`. It is now
   read, and `$ref` into it is followed; a `$defs` below the root is still refused. The conformance
   claim in CONFORMANCE.md is unchanged.
+- **A mutation table for the registry line's codes** (docs/registry-mutation-table.md). Each
+  `REG-*`, `REF-*`, `FACTS-*`, `EMIT-*` and `TF-*` code, and each code of the `jpack-emit-*`
+  emitters, has one row: its severity, the test that asserts it, a recorded mutant that test
+  kills, and whether the code is provisional. The new `mutation-table` check reads the codes from
+  their source tables and fails when a code has no row, a row's code no longer exists, a row's
+  severity or mutant site does not match the source, a row's test is not one `go test -list`
+  lists, no string in that test names a row's subtest, or the test (for a subtest, its
+  case) does not name the row's code. VERSIONING.md now says that an
+  emitter's own `x-` codes belong to that emitter and are outside the registry line's promise.
+  No product behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.48.0 - 2026-11-17
 
