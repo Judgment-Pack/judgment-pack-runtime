@@ -281,9 +281,16 @@ func skipped(err error) error {
 // most six known members, so a listing past this bound is refused unread.
 var maxVectorEntries = 64
 
-// maxExpectedEntries bounds the entries of a vector's expected/, files and
-// directories together.
-var maxExpectedEntries = 2 * emit.MaxFiles
+// The bounds on a vector's expected/, which holds a response's files by
+// their paths. Files are bounded as a response's are. Directories are
+// bounded apart from them, by the path bound: a path of at most
+// emit.MaxPathBytes bytes has at most emit.MaxPathBytes/2 segments, so a file
+// lies below at most that many directories less one, and an entry whose path
+// is longer is refused, as no response could name it.
+var (
+	maxExpectedFiles = emit.MaxFiles
+	maxExpectedDirs  = emit.MaxFiles * (emit.MaxPathBytes/2 - 1)
+)
 
 // layoutVector checks one vector directory against the layout, by its
 // entries and their sizes, reading none of its files.
@@ -515,7 +522,8 @@ func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagno
 	var refused []emit.Diagnostic
 	var total int64
 	marker, beside := false, false
-	err := walkBounded(dir, maxExpectedEntries, func(full string, entry fs.DirEntry, err error) error {
+	dirs := 0
+	err := walkBounded(dir, maxExpectedFiles+maxExpectedDirs, func(full string, entry fs.DirEntry, err error) error {
 		relative, _ := filepath.Rel(dir, full)
 		path := filepath.ToSlash(relative)
 		where := at + "/" + path
@@ -543,7 +551,14 @@ func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagno
 		}
 		beside = true
 		switch {
+		case len(path) > emit.MaxPathBytes:
+			refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at, ""))
+			return fs.SkipAll
 		case entry.IsDir():
+			if dirs++; dirs > maxExpectedDirs {
+				refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at, ""))
+				return fs.SkipAll
+			}
 			return nil
 		case !entry.Type().IsRegular():
 			refused = append(refused, vectorDiagnostic("EMIT-VECTOR", where, ""))
@@ -555,7 +570,7 @@ func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagno
 			return nil
 		}
 		total += info.Size()
-		if len(entries) == emit.MaxFiles || info.Size() > emit.MaxFileBytes || total > emit.MaxResponseBytes {
+		if len(entries) == maxExpectedFiles || info.Size() > emit.MaxFileBytes || total > emit.MaxResponseBytes {
 			refused = append(refused, vectorDiagnostic("EMIT-VECTOR", where, ""))
 			return fs.SkipAll
 		}

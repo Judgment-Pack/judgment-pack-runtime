@@ -13,6 +13,8 @@
 package emit
 
 import (
+	"slices"
+	"strconv"
 	"time"
 )
 
@@ -63,6 +65,9 @@ const (
 	// MaxReportedDiagnostics bounds the emitter diagnostics the report lists,
 	// as the validation report is bounded (ADR-0093). The host's.
 	MaxReportedDiagnostics = 1000
+	// MaxListedPaths bounds the paths a warning that lists paths names, one
+	// diagnostic each (ListPaths). The host's.
+	MaxListedPaths = 100
 )
 
 // The bounds as the code applies them; a test lowers them.
@@ -98,7 +103,8 @@ type codeInfo struct {
 }
 
 // Codes is the closed list of the host's codes, each with its severity and
-// fixed message. The companion (§12) names EMIT-REQUEST-VERSION,
+// fixed message (the last diagnostic of a capped listing adds its count to
+// it, ListPaths). The companion (§12) names EMIT-REQUEST-VERSION,
 // EMIT-KIND-RANGE, EMIT-REQUEST, EMIT-PROCESS, EMIT-RESPONSE, EMIT-DEPRECATED
 // and the harness's EMIT-STRAY-WRITE. The others are this runtime's, for the host
 // refusals the companion leaves without a code (§17), provisional until the
@@ -124,6 +130,7 @@ var Codes = map[string]codeInfo{
 	"EMIT-PATH-UNREADABLE":  {SeverityError, "A path could not be read: an input, or an owned path that is not a regular file or directory or could not be listed or read."},
 	"EMIT-WRITE":            {SeverityError, "A file could not be written or deleted, or a path the response names is held by a directory or by a file the manifest does not own."},
 	"EMIT-REPORT-TRUNCATED": {SeverityWarning, "The report lists the first 1000 diagnostics of a list, the host's or the emitter's, and there were more."},
+	"EMIT-STAGING-LEFTOVER": {SeverityWarning, "A staging file (.jpack-emit-*) that an earlier run left in a directory the host writes to is not owned, so the host does not delete it; remove it by hand."},
 
 	// The conformance harness's, provisional (ADR-0099).
 	"EMIT-VECTOR":        {SeverityError, "The vectors are not of the harness's layout: harness.json or its level, a vector's files, no vectors at all, or a vector past a bound."},
@@ -161,6 +168,28 @@ func diagnostic(code string, location Location) Diagnostic {
 		panic("emit: unlisted code " + code)
 	}
 	return Diagnostic{Code: code, Severity: info.severity, Location: location, Message: info.message}
+}
+
+// ListPaths returns the diagnostics of a warning that lists paths of one
+// document (EMIT-STAGING-LEFTOVER): one at each of the
+// first MaxListedPaths paths in sorted order, each with the code's fixed
+// message, and, when there are more, one more of the code at the document
+// alone. That one gives the count of the paths not listed, the one number a
+// message carries: the report has no member for counts, and none is added.
+func ListPaths(code, document string, paths []string) []Diagnostic {
+	sorted := slices.Clone(paths)
+	slices.Sort(sorted)
+	listed := min(len(sorted), MaxListedPaths)
+	out := make([]Diagnostic, 0, listed+1)
+	for _, path := range sorted[:listed] {
+		out = append(out, diagnostic(code, Location{Document: document, Path: path}))
+	}
+	if more := len(sorted) - listed; more > 0 {
+		d := diagnostic(code, Location{Document: document})
+		d.Message += " The report lists the first " + strconv.Itoa(MaxListedPaths) + " by path; " + strconv.Itoa(more) + " more are not listed."
+		out = append(out, d)
+	}
+	return out
 }
 
 // hasError says whether any diagnostic is an error.
