@@ -17,7 +17,9 @@ func TestTheEmitterGetsAFreshWindowsHome(t *testing.T) {
 	defer func() { hostGOOS = saved }()
 	hostGOOS = "windows"
 	for _, name := range []string{"USERPROFILE", "APPDATA", "TEMP", "TMP"} {
-		t.Setenv(name, filepath.Join(t.TempDir(), "host-"+name))
+		// Directories that exist: jpack's own temporary directory is made
+		// under TEMP before the emitter starts.
+		t.Setenv(name, t.TempDir())
 	}
 	t.Setenv("LOCALAPPDATA", "declared-local")
 	root := testRepo(t)

@@ -331,6 +331,12 @@ func RealRoot(root string) (string, error) {
 	}
 	real, err := filepath.EvalSymlinks(absolute)
 	if err != nil {
+		// On Windows a junction among the ancestors can fail EvalSymlinks
+		// itself (Go reads it as irregular, not a directory): the refusal
+		// then names the junction, not the resolution's error.
+		if dir, found := reparseAncestor(absolute); found {
+			return "", fmt.Errorf("%w: %s", ErrRootReparse, dir)
+		}
 		return "", err
 	}
 	info, err := rootLstat(real)
@@ -355,6 +361,27 @@ func RealRoot(root string) (string, error) {
 		}
 	}
 	return real, nil
+}
+
+// reparseAncestor finds, from the volume root down, the first ancestor of the
+// absolute path that is a link, a junction or another reparse point. It
+// stops at the first ancestor it cannot read.
+func reparseAncestor(absolute string) (string, bool) {
+	var ancestors []string
+	for dir := absolute; filepath.Dir(dir) != dir; {
+		dir = filepath.Dir(dir)
+		ancestors = append(ancestors, dir)
+	}
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		info, err := rootLstat(ancestors[i])
+		if err != nil {
+			return "", false
+		}
+		if linkLike(info.Mode()) {
+			return ancestors[i], true
+		}
+	}
+	return "", false
 }
 
 // ErrRootReparse is RealRoot's refusal of a root whose path passes through a

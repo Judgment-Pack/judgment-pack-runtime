@@ -41,3 +41,30 @@ func TestARootBelowAReparsePointIsRefused(t *testing.T) {
 		t.Fatalf("a root below a reparse point: %v", err)
 	}
 }
+
+// When the root cannot be resolved at all, as a root below a Windows junction
+// cannot, an ancestor that reads as a reparse point is still what the refusal
+// names (ErrRootReparse); with none, the resolution's own error is returned.
+func TestAnUnresolvableRootBelowAReparsePointIsRefused(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.Mkdir(filepath.Join(parent, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "a", "missing", "repo")
+	if _, err := RealRoot(root); err == nil || errors.Is(err, ErrRootReparse) {
+		t.Fatalf("an unresolvable plain root: %v", err)
+	}
+	junction := filepath.Join(parent, "a")
+	saved := rootLstat
+	defer func() { rootLstat = saved }()
+	rootLstat = func(name string) (fs.FileInfo, error) {
+		info, err := saved(name)
+		if err == nil && name == junction {
+			return irregularAt{info}, nil
+		}
+		return info, err
+	}
+	if _, err := RealRoot(root); !errors.Is(err, ErrRootReparse) {
+		t.Fatalf("an unresolvable root below a reparse point: %v", err)
+	}
+}

@@ -52,8 +52,10 @@ All notable changes to tagged releases are documented here.
   passes through a junction or other reparse point is refused with its own message, not resolved.
   The checks that refused only a final symbolic link (the gate summary, a saved continuation, a
   published manifest, a conformance suite root and each component of a fixture path) now refuse
-  a junction too, through the same check as the file opens. The conformance claim in
-  CONFORMANCE.md is unchanged.
+  a junction too, through the same check as the file opens. On Windows a conformance suite or
+  fixture path that passes through a directory reparse point, such as a synced folder's
+  placeholder directory, is now refused as well. The conformance claim in CONFORMANCE.md is
+  unchanged.
 
 ## 0.48.0 - 2026-11-17
 
