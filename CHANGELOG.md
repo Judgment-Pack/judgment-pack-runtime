@@ -40,6 +40,24 @@ All notable changes to tagged releases are documented here.
   `internal/emit/codes.go`, and the comment of a constant that holds a code.
   `scripts/check-mutation-table-probe.py` probes both rules in memory. The conformance claim in
   CONFORMANCE.md is unchanged.
+- **`jpack emit conformance` leaves out an untracked link that leads out of the repository**
+  (ADR-0099). A symbolic link, or a Windows junction, that leads out of `--root` refused the whole
+  run with `EMIT-HARNESS-BOUND`, even in a place the run never touches, such as a Python virtual
+  environment inside the repository. Such a link is now left out of the repository copy the emitter
+  runs in, and the new provisional warning `EMIT-LINK-OMITTED` names it, when all three hold: git
+  does not track it (neither its path nor a path below it is in the repository's index), no owns
+  glob matches its path or may match a path below it, and the vectors directory is not reached
+  through it and does not lie at, above or below it. Names are compared in any case and
+  normalization, and as Windows reads them, with a trailing dot or space dropped; a link whose path
+  holds a name made only of dots and spaces counts as tracked. Each comparison errs toward
+  refusing. The harness reads `--root/.git/index` itself, versions 2 to 4, and never runs git.
+  Every other link that leads out is refused as before, and so is every such link when `--root` has
+  no `.git` directory (a linked worktree's `.git` file included), or the index cannot be read,
+  fails its checksum, is past 64 MiB or 1 048 576 entries, or holds a version, entry or required
+  extension the reader does not read (a split or sparse index among them) or a path twice at one
+  stage. A write the emitter makes at a left-out link's path is a stray write of the copy. The
+  listing names at most 100 links; past them, one more diagnostic gives the count of the rest in
+  its message. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.49.0 - 2026-11-17
 
