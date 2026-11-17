@@ -171,6 +171,14 @@ RFC 0037 names the three `FACTS-*` advisories. `FACTS-DOCUMENT-LIMIT`, `FACTS-CO
 `FACTS-CONTRACT-FORM`, `FACTS-CONTRACT-ORDER` and `FACTS-CHECK-LIMIT` are this runtime's,
 provisional in the same way.
 
+The `terraform-file` reader (`internal/terraformfile`, ADR-0097) has no command yet. Its refusal
+codes are spec RFC 0038's `TF-SIZE`, `TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`,
+`TF-SELECT-BOUND` and `TF-NUMBER`, and this runtime's own `TF-VALUE-LIMIT`. All of them, their fixed
+messages, and the accepted `format_version` table this runtime names `proposed-1` (plan `1.0`,
+`1.1` and `1.2`; state `1.0`) are provisional until the dialect companion releases the kind and its
+table. If the companion's codes or table differ, this runtime adopts them and says so in its
+release notes.
+
 `jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
 
 - An emitter manifest, `emitterManifestVersion`, RFC 0036's.

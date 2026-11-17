@@ -4,6 +4,14 @@ All notable changes to tagged releases are documented here.
 
 ## 0.47.0 - 2026-11-16
 
+- **A reader for Terraform plan and state JSON** (ADR-0097, proposed). Package
+  `internal/terraformfile` is part 1 of spec RFC 0038's `terraform-file` source. It reads the
+  output of `terraform show -json` in the RFC's order: sha256 and size, strict JSON, a closed
+  `format_version` table, the document's shape, a sensitivity mirror on every resource, and the
+  removal of every value marked sensitive before selection. A refusal carries only its code, the
+  file's sha256, its size and a fixed message. No command calls the reader yet, and existing
+  commands and their output are unchanged.
+
 - **The registry emitter host: `jpack emit`** (ADR-0098, proposed; spec RFC 0036 §§1–4). It reads
   an emitter manifest. From a registry and its kinds (or facts contracts) and an options document it
   forms the request: only the kinds the manifest reads, each pin checked against its range, as
