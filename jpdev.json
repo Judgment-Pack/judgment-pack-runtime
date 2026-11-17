@@ -67,6 +67,10 @@
       "checks": ["emitter-conformance"]
     },
     {
+      "paths": ["internal/emit/**"],
+      "checks": ["emit-coverage"]
+    },
+    {
       "paths": ["**/*.go"],
       "checks": ["mutation-table"]
     }
