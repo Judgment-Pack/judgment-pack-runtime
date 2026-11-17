@@ -1,0 +1,28 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": { "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-facts", "version": "0.1.0" },
+  "options": { "package": "everyfacts" },
+  "factsContracts": [
+    {
+      "factsContractVersion": "1.0.0",
+      "id": "https://example.invalid/contracts/every-type",
+      "version": "1.0.0",
+      "source": { "authored": true },
+      "facts": [
+        { "pointer": "/array", "type": "array", "present": "always", "items": "boolean" },
+        { "pointer": "/arrayOptional", "type": "array", "present": "optional", "items": "null" },
+        { "pointer": "/boolean", "type": "boolean", "present": "always" },
+        { "pointer": "/booleanOnly", "type": "boolean", "present": "optional", "values": [true] },
+        { "pointer": "/decimal", "type": "decimal", "present": "always" },
+        { "pointer": "/decimalOptional", "type": "decimal", "present": "optional" },
+        { "pointer": "/null", "type": "null", "present": "always" },
+        { "pointer": "/nullOptional", "type": "null", "present": "optional" },
+        { "pointer": "/object", "type": "object", "present": "always" },
+        { "pointer": "/object/name", "type": "string", "present": "always" },
+        { "pointer": "/objectOptional", "type": "object", "present": "optional" },
+        { "pointer": "/string", "type": "string", "present": "always" },
+        { "pointer": "/stringOptional", "type": "string", "present": "optional", "values": ["a", "b"] }
+      ]
+    }
+  ]
+}
