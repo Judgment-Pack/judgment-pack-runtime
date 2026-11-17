@@ -7,7 +7,9 @@
 package emittest
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,6 +70,20 @@ func Link(dir, name string) error {
 //	sleep-child        sleep
 //	orphan PIDFILE     start a child with its stdio on the null device, write
 //	                   the child's pid to PIDFILE, answer and exit
+//
+// For the conformance harness's checks:
+//
+//	tz FILE            answer FILE holding "TZ=" and the TZ variable: a response
+//	                   that depends on the time zone
+//	reference FILE N text|base64
+//	                   answer FILE holding the first N characters of the first
+//	                   secret reference in the request (all of it for N 0 or
+//	                   past its end), as text or as base64; an empty response
+//	                   when the request holds none
+//	stray create|change|remove PATH
+//	                   create PATH (and its directory), append to it, or remove
+//	                   it, relative to the working directory, then answer with
+//	                   no files
 func Main(args []string) int {
 	if len(args) == 0 {
 		return 64
@@ -175,6 +191,59 @@ func Main(args []string) int {
 	case "sleep-child":
 		time.Sleep(time.Hour)
 		return 0
+	case "tz":
+		return answer(map[string]any{"path": args[1], "text": "TZ=" + os.Getenv("TZ") + "\n"})
+	case "reference":
+		n, _ := strconv.Atoi(args[2])
+		reference := firstReference(string(request))
+		if reference == "" {
+			return answer()
+		}
+		if n > 0 && n < len(reference) {
+			reference = reference[:n]
+		}
+		if args[3] == "base64" {
+			return answer(map[string]any{"path": args[1], "base64": base64.StdEncoding.EncodeToString([]byte("<" + reference + ">"))})
+		}
+		return answer(map[string]any{"path": args[1], "text": "ref " + reference + " end\n"})
+	case "stray":
+		path := filepath.FromSlash(args[2])
+		var err error
+		switch args[1] {
+		case "create":
+			if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+				err = os.WriteFile(path, []byte("stray\n"), 0o644)
+			}
+		case "change":
+			var file *os.File
+			if file, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0); err == nil {
+				_, err = file.WriteString("changed\n")
+				err = errors.Join(err, file.Close())
+			}
+		case "remove":
+			err = os.Remove(path)
+		default:
+			return 64
+		}
+		if err != nil {
+			return 73
+		}
+		return answer()
 	}
 	return 64
+}
+
+// firstReference is the first secret reference in a request's text: from
+// "secret:" to the closing quote of the JSON string that holds it.
+func firstReference(request string) string {
+	start := strings.Index(request, `"secret:`)
+	if start < 0 {
+		return ""
+	}
+	rest := request[start+1:]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		return ""
+	}
+	return rest[:end]
 }

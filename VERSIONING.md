@@ -189,6 +189,14 @@ refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 fil
 file, 512 bytes per path, 64 KiB of standard error and a 120 s default limit. A tighter bound
 would be a breaking change.
 
+`jpack emit conformance` (ADR-0099) writes the harness report, `harnessReportVersion` `"1.0.0"`,
+RFC 0036's, and reads the harness level of `vectors/harness.json`; it applies level `"1.0"`, and a
+level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`. Two more
+codes are this runtime's and provisional in the same way: `EMIT-VECTOR` (the vector layout) and
+`EMIT-HARNESS-BOUND` (a check that could not be completed within the harness's bounds). Its own
+bounds, a repository copy of 256 MiB and 100 000 entries and a references scan of 1 MiB of strings
+and 2^32 steps a vector, are this runtime's; a tighter bound would be a breaking change.
+
 ## Go API
 
 Package `sdk` is the one importable Go package of this module; every other package is `internal`

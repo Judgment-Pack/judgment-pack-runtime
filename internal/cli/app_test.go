@@ -115,6 +115,11 @@ func claimSurfaces(t *testing.T) []claimSurface {
 		// The emitter host (ADR-0098) runs an emitter and writes or checks
 		// files; it evaluates nothing and is inventoried for the phrase scans.
 		{args: []string{"emit", "--help"}},
+		// Its conformance harness (ADR-0099) checks an emitter against its
+		// author's vectors; it evaluates nothing and is inventoried for the
+		// phrase scans, which is where a stray claim about what a passing
+		// harness run shows would hide.
+		{args: []string{"emit", "conformance", "--help"}},
 		{args: []string{"mcp", "--help"}, mustReference: true},
 		// The project convention (ADR-0012). Only the two that speak about the
 		// evaluator have to say where the claim is stated.

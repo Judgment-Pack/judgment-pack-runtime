@@ -2,6 +2,24 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **The emitter conformance harness: `jpack emit conformance`** (ADR-0099, proposed; spec RFC 0036
+  §5). It runs an emitter on each of its author's vectors through the host's own request, run and
+  response steps. A vector is `request.json`, or `registry.json` with `kinds/` and an optional
+  `options.json`, with `expected/` or `expected-failure.json`. The harness applies the checks of
+  the level `vectors/harness.json` names (`1.0` when there is none). Level `1.0` has six checks:
+  golden equality; determinism over a changed `HOME`, `TZ`, `LANG` and `SOURCE_DATE_EPOCH`; path
+  safety, with 27 hostile responses the host must refuse, each a row of its own; kind filtering;
+  references; and no stray writes. Kind filtering adds a synthetic undeclared kind, restores the
+  registry digest, and requires the same request bytes and the same response. Stray writes are
+  checked in a fresh copy of the repository, without `.git`, of at most 256 MiB and 100 000
+  entries (`EMIT-STRAY-WRITE`). `--update` rewrites `expected/` and never touches an
+  expected-failure vector. The report (`harnessReportVersion` `1.0.0`) is canonical JSON with one
+  row per vector and check. It exits 0, 1 or 2, as §5 says. `EMIT-VECTOR` and
+  `EMIT-HARNESS-BOUND` are new codes, provisional. The evaluator's claim in CONFORMANCE.md is
+  unchanged.
+
 ## 0.47.0 - 2026-11-16
 
 - **The registry emitter host: `jpack emit`** (ADR-0098, proposed; spec RFC 0036 §§1–4). It reads

@@ -129,6 +129,7 @@ jpack registry facts --registry <file-or-> --kinds <file-or-dir>... --kind <name
 jpack registry check-pack <pack-or-> --contract <file-or->   (the facts a pack reads, checked against a facts contract; nothing is evaluated; ADR-0095)
 jpack registry import <yaml-or-> [--output <file>]   (the YAML authoring subset of RFC 0034 §7 to canonical JSON; refusals by line and column; ADR-0094)
 jpack emit --manifest <file> (--registry <file-or-> --kinds <file-or-dir>... | --facts-contract <file>...) [--options <file>] [--check] [--timeout 120s]   (run a registry emitter and write or check the files it owns, spec RFC 0036; ADR-0098)
+jpack emit conformance --manifest <file> --vectors <dir> [--update] [--timeout 120s]   (check a registry emitter against its vectors: golden, determinism, path safety, kind filtering, references, stray writes; spec RFC 0036 §5; ADR-0099)
 jpack mcp
 jpack experimental evaluate <pack-or->   (EXPERIMENTAL SURFACE; claim: CONFORMANCE.md)
 jpack experimental evaluate --pack-id X   (EXPERIMENTAL SURFACE; resolves one decision id through jpack.json)
