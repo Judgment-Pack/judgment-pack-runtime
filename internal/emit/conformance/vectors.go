@@ -39,6 +39,10 @@ const (
 	dirExpected         = "expected"
 	fileExpectedFailure = "expected-failure.json"
 	fileHarness         = "harness.json"
+	// fileEmpty is expected/'s marker of a run that gives no files, which git
+	// can track where it cannot track an empty directory. No response path
+	// can name it: the host refuses a segment that begins with "~".
+	fileEmpty = "~empty"
 )
 
 var vectorMembers = map[string]bool{fileRequest: false, fileRegistry: false, dirKinds: true, fileOptions: false, dirExpected: true, fileExpectedFailure: false}
@@ -341,11 +345,15 @@ func failureCode(code string) bool {
 // layoutExpected lays out expected/: every regular file below it, by its
 // path relative to it, with its mode, found by its entries alone. A link, or
 // anything that is not a file or a directory, refuses the vector, and so
-// does a set past the response bounds, by the files' sizes.
+// does a set past the response bounds, by the files' sizes. The marker
+// ~empty, a zero-byte regular file alone at the root of expected/, gives no
+// files; ~empty anywhere else, of another kind or size, or beside anything,
+// refuses the vector.
 func layoutExpected(dir, at string) ([]expectedEntry, []emit.Diagnostic) {
 	var entries []expectedEntry
 	var refused []emit.Diagnostic
 	var total int64
+	marker, beside := false, false
 	err := filepath.WalkDir(dir, func(full string, entry fs.DirEntry, err error) error {
 		relative, _ := filepath.Rel(dir, full)
 		path := filepath.ToSlash(relative)
@@ -360,6 +368,20 @@ func layoutExpected(dir, at string) ([]expectedEntry, []emit.Diagnostic) {
 				refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at, ""))
 			}
 			return nil
+		case entry.Name() == fileEmpty:
+			info, err := entry.Info()
+			if path != fileEmpty || !entry.Type().IsRegular() || err != nil || info.Size() != 0 {
+				refused = append(refused, vectorDiagnostic("EMIT-VECTOR", where, ""))
+				if entry.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			marker = true
+			return nil
+		}
+		beside = true
+		switch {
 		case entry.IsDir():
 			return nil
 		case !entry.Type().IsRegular():
@@ -381,6 +403,9 @@ func layoutExpected(dir, at string) ([]expectedEntry, []emit.Diagnostic) {
 	})
 	if err != nil && len(refused) == 0 {
 		refused = append(refused, vectorDiagnostic("EMIT-PATH-UNREADABLE", at, ""))
+	}
+	if marker && beside {
+		refused = append(refused, vectorDiagnostic("EMIT-VECTOR", at+"/"+fileEmpty, ""))
 	}
 	return entries, refused
 }
@@ -435,9 +460,10 @@ func compareExpected(files []emit.File, expected map[string]expectedFile) []emit
 	return out
 }
 
-// writeExpected replaces expected/ with a run's files (--update). It writes
-// only below the vector's expected/, which must be a directory and not a
-// link, or absent; each path is one the host's path rules admitted.
+// writeExpected replaces expected/ with a run's files (--update), or with
+// the marker ~empty alone for a run that gave none. It writes only below the
+// vector's expected/, which must be a directory and not a link, or absent;
+// each path is one the host's path rules admitted.
 func writeExpected(dir string, files []emit.File) error {
 	target := filepath.Join(dir, dirExpected)
 	if info, err := os.Lstat(target); err == nil {
@@ -452,6 +478,13 @@ func writeExpected(dir string, files []emit.File) error {
 	}
 	if err := os.Mkdir(target, 0o755); err != nil {
 		return err
+	}
+	if len(files) == 0 {
+		marker, err := os.OpenFile(filepath.Join(target, fileEmpty), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		return marker.Close()
 	}
 	for _, file := range files {
 		full := filepath.Join(target, filepath.FromSlash(file.Path))

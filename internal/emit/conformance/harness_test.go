@@ -519,6 +519,12 @@ func TestVectorLayoutRefusals(t *testing.T) {
 		"an unknown member":          {map[string]string{"v/request.json": "{}", "v/expected/gen/a": "a\n", "v/notes.txt": "x"}, "", "v/notes.txt"},
 		"a failure code not listed":  {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-NOT-A-CODE"}`}, "/code", "v/expected-failure.json"},
 		"a warning's code":           {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-DEPRECATED"}`}, "/code", "v/expected-failure.json"},
+		// The marker ~empty is a zero-byte regular file alone at the root of
+		// expected/; anything else that involves it refuses the vector.
+		"a marker that is not empty":   {map[string]string{"v/request.json": "{}", "v/expected/~empty": "x"}, "", "v/expected/~empty"},
+		"a marker beside a file":       {map[string]string{"v/request.json": "{}", "v/expected/~empty": "", "v/expected/gen/a": "a\n"}, "", "v/expected/~empty"},
+		"a marker in a subdirectory":   {map[string]string{"v/request.json": "{}", "v/expected/gen/~empty": ""}, "", "v/expected/gen/~empty"},
+		"a marker that is a directory": {map[string]string{"v/request.json": "{}", "v/expected/~empty/a": ""}, "", "v/expected/~empty"},
 		// No vectors: the hostile rows alone must not pass the emitter.
 		"no vectors": {map[string]string{}, "", ""},
 		"only files": {map[string]string{"harness.json": `{"harnessLevel":"1.0"}`, "notes.txt": "x"}, "", ""},
@@ -593,6 +599,84 @@ func TestNoVectorRanTheEmitter(t *testing.T) {
 		if last.Code != "EMIT-VECTOR" || last.Location.Document != DocumentVector || last.Location.Path != "" {
 			t.Fatalf("update %v: %+v", update, report.Diagnostics)
 		}
+	}
+}
+
+// More of the marker ~empty: beside an empty directory, and a link.
+func TestEmptyMarkerRefusals(t *testing.T) {
+	cases := map[string]func(t *testing.T, expected string){
+		"beside an empty directory": func(t *testing.T, expected string) {
+			write(t, expected, map[string]string{"~empty": ""})
+			if err := os.Mkdir(filepath.Join(expected, "gen"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a link": func(t *testing.T, expected string) {
+			target := filepath.Join(t.TempDir(), "empty")
+			write(t, filepath.Dir(target), map[string]string{"empty": ""})
+			symlinks(t, expected, map[string]string{"~empty": target})
+		},
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			write(t, f.vectors, map[string]string{"v/request.json": "{}"})
+			expected := filepath.Join(f.vectors, "v", "expected")
+			if err := os.Mkdir(expected, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			build(t, expected)
+			report := f.run(f.manifest(requestMode, nil), false)
+			if report.Outcome != OutcomeNotRun || len(report.Rows) != 0 {
+				t.Fatalf("outcome: %s", dump(report))
+			}
+			if d := report.Diagnostics[0]; d.Code != "EMIT-VECTOR" || d.Location.Path != "v/expected/~empty" {
+				t.Fatalf("diagnostic: %+v", report.Diagnostics)
+			}
+		})
+	}
+}
+
+// A run that gives no files is recorded as the marker ~empty, which git can
+// track, and read back as no files; a run that gives files replaces it.
+func TestEmptyMarkerFromUpdate(t *testing.T) {
+	f := newFixture(t)
+	write(t, f.root, map[string]string{"answers/none.json": `{"emitResponseVersion":"1.0.0","files":[],"diagnostics":[]}` + "\n"})
+	none := f.manifest([]string{"echo", "answers/none.json"}, map[string]any{"environments": "all"})
+	f.registryVector("none", nil)
+	expected := filepath.Join(f.vectors, "none", "expected")
+	// An empty expected/ from before is replaced by the marker.
+	if err := os.Mkdir(expected, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if report := f.run(none, true); report.Outcome != OutcomePass || rowOf(t, report, "none", checkGolden).Reason != reasonUpdated {
+		t.Fatalf("update: %s", dump(report))
+	}
+	entries, err := os.ReadDir(expected)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "~empty" || !entries[0].Type().IsRegular() {
+		t.Fatalf("expected/: %v %v", entries, err)
+	}
+	if info, err := entries[0].Info(); err != nil || info.Size() != 0 {
+		t.Fatalf("the marker: %v %v", info, err)
+	}
+	report := f.run(none, false)
+	if report.Outcome != OutcomePass {
+		t.Fatalf("run: %s", dump(report))
+	}
+	wantRows(t, report, "none", StatusPass, StatusPass, StatusPass)
+	// The marker is no files: a run that gives files differs from it.
+	writes := f.manifest(requestMode, nil)
+	if row := rowOf(t, f.run(writes, false), "none", checkGolden); row.Status != StatusFail || row.Reason != reasonDifferent || len(row.Differences) != 2 {
+		t.Fatalf("golden against the marker: %+v", row)
+	}
+	if report := f.run(writes, true); report.Outcome != OutcomePass {
+		t.Fatalf("update with files: %s", dump(report))
+	}
+	if _, err := os.Lstat(filepath.Join(expected, "~empty")); !os.IsNotExist(err) {
+		t.Fatalf("the marker was kept beside files: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(expected, "gen", "req", "dev", "request.json")); err != nil {
+		t.Fatal(err)
 	}
 }
 

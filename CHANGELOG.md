@@ -103,7 +103,8 @@ All notable changes to tagged releases are documented here.
   undeclared kind, restores the registry digest, and requires the same request bytes and the same
   response. Stray writes are checked in a fresh copy of the repository, without `.git`, of at most
   256 MiB and 100 000 entries (`EMIT-STRAY-WRITE`). `--update` rewrites `expected/` and never
-  touches an expected-failure vector. The report (`harnessReportVersion` `1.0.0`) is canonical
+  touches an expected-failure vector. A run that gives no files is recorded as the marker
+  `expected/~empty` alone, a zero-byte file that git can track. The report (`harnessReportVersion` `1.0.0`) is canonical
   JSON with one row per vector and check. It exits 0, 1 or 2, as §5 says. `EMIT-VECTOR` and
   `EMIT-HARNESS-BOUND` are new codes, provisional. The evaluator's claim in CONFORMANCE.md is
   unchanged.

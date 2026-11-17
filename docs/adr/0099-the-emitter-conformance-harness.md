@@ -62,7 +62,13 @@ the following inputs:
 
 It also holds exactly one of these expectations:
 
-- `expected/`, which must hold regular files only;
+- `expected/`, which must hold regular files only. For a run that gives no files, it holds the
+  reserved marker `~empty` alone: one zero-byte regular file at its root, read as no files. Git
+  cannot track an empty directory, so an empty `expected/` would be lost on a clone and the
+  vector refused there. No response path can name the marker, because the host refuses a path
+  segment that begins with `~`. A `~empty` that is not empty, not a regular file, not at the
+  root of `expected/`, or beside any other file or directory is `EMIT-VECTOR`. A missing
+  `expected/` is never read as empty: it is `EMIT-VECTOR`, except under `--update`;
 - `expected-failure.json`, `{"code": CODE}`. `CODE` is a listed `EMIT-` error code or an emitter's
   `x-` code.
 
@@ -96,7 +102,9 @@ unknown level is `EMIT-VECTOR` and exit 2.
 
 **`--update`** rewrites `expected/` of each vector whose run succeeded, from that run. It never
 touches an expected-failure vector. It writes nowhere but `VECTOR/expected/`, which must be a
-directory or absent, and it removes that directory first. The vector directories are not links.
+directory or absent, and it removes that directory first. A run that gives no files gets the
+marker `expected/~empty` alone, and a run that gives files has no marker. The vector directories
+are not links.
 The checks then run against the new `expected/`.
 
 **Run 1** is the emitter's run in the repository copy, one per request, as `jpack emit` makes it.
