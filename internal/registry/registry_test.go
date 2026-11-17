@@ -299,6 +299,12 @@ func TestEachRuleReportsItsCode(t *testing.T) {
 		{name: "kind pointer pattern unreachable", role: func(k map[string]any) {
 			k["secrets"] = []any{"/password/inner"}
 		}, code: "REG-KIND-POINTER-UNREACHABLE", pointer: "/secrets/0", document: DocumentKind},
+		{name: "kind secrets pattern not a pointer", role: func(k map[string]any) {
+			k["secrets"] = []any{"password"}
+		}, code: "REG-KIND-POINTER-FORM", pointer: "/secrets/0", document: DocumentKind},
+		{name: "kind reference pattern not a pointer", role: func(k map[string]any) {
+			k["references"] = []any{map[string]any{"pointer": "database", "kinds": []any{"database"}}}
+		}, code: "REG-KIND-POINTER-FORM", pointer: "/references/0/pointer", document: DocumentKind},
 		{name: "kind position both secret and reference", role: func(k map[string]any) {
 			k["secrets"] = []any{"/database"}
 		}, code: "REG-KIND-POINTER-CONFLICT", pointer: "/secrets/0", document: DocumentKind},
