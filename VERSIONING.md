@@ -189,11 +189,11 @@ proposed kind of dialect version 3, and the reader's refusal codes are its: `TF-
 Its first accepted `format_version` table is the one this runtime names `proposed-1` (plan `1.0`,
 `1.1` and `1.2`; state `1.0`), and the table's release number is left open. §4.5 has each
 accepted `format_version` backed by vectors written by hand to the shape that version documents,
-with no Terraform run and no recorded output. The codes, their fixed messages and the table are
-provisional until a spec release (tag not yet created) carries §4.5 and names the table's release.
-If the released codes or table differ, this runtime adopts them and says so in its release notes.
-
-<!-- PLACEHOLDER(1.0): spec tag carrying dialect §4.5 -->
+with no Terraform run and no recorded output. No spec release carries §4.5 yet, so the codes,
+their fixed messages, the table and the batch lines are provisional, and `jpack terraform facts` is
+outside the registry line's 1.0 promise ([The registry line](#the-registry-line)). A later spec
+release carries §4.5 and names the table's release; if its codes or table differ, this runtime
+adopts them and says so in its release notes.
 
 `jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
 
@@ -374,8 +374,8 @@ registry line has one, below; the rest of `jpack` and the runtime module do not 
 
 The registry line is the registry companion's surface in this repository:
 
-- the commands `jpack registry` (all of its subcommands), `jpack emit`, `jpack emit conformance`
-  and `jpack terraform facts`, with their flags and exit codes;
+- the commands `jpack registry` (all of its subcommands), `jpack emit` and `jpack emit
+  conformance`, with their flags and exit codes;
 - the formats they read and write, each under the selector named in
   [Compatibility dimensions](#compatibility-dimensions);
 - their diagnostic codes and bounds;
@@ -390,18 +390,22 @@ objects, `anyOf` and objects that mix named members with a `*` member is first-v
 may be lifted in 1.x. Lifting it accepts contracts it refused, and changes nothing it generates for
 a contract it accepts.
 
+`jpack terraform facts` and the `terraform-file` reader are not part of it. No spec release
+carries dialect §4.5 yet, so the command, its flags, its batch lines, the `TF-*` codes and the
+`proposed-1` table stay provisional, and a later release may change them, naming the change in its
+release notes. `FACTS-ID-LIMIT`, which the command also reports, is the registry companion's.
+
 It is stable from the release that names it so in its release notes. That release first settles
-everything the sections above call provisional: the codes are those of the released registry
-companion, the Terraform dialect's codes and `format_version` table are those of the released
-dialect companion, and each paragraph says so instead. Released, not stable: the line follows the
+everything the sections above call provisional for the line: the codes are those of the released
+registry companion, and each paragraph says so instead. Released, not stable: the line follows the
 companion's first release, `registry-v1.0.0` (tag not yet created), which is published as released
 and not yet stable.
 The companion becomes stable later, when a second, independently written reader agrees on its rows
-(its §15), and that changes nothing in this promise. A format with no selector of its own, such as
-the `jpack terraform facts` batch lines, is then promised as its bytes: a change to them for the
-same input is a breaking change. The same release tags `startup/v1.0.0`, so the start-up module's
-1.0 promise and this one start together. From then on, while `jpack` and the runtime module are
-still 0.x, and within major version 1 of the line:
+(its §15), and that changes nothing in this promise. A format of the line with no selector of its
+own is then promised as its bytes: a change to them for the same input is a breaking change. The
+same release tags `startup/v1.0.0`, so the start-up module's 1.0 promise and this one start
+together. From then on, while `jpack` and the runtime module are still 0.x, and within major
+version 1 of the line:
 
 <!-- PLACEHOLDER(1.0): confirm once tag registry-v1.0.0 exists -->
 

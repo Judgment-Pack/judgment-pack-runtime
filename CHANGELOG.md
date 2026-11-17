@@ -22,7 +22,10 @@ All notable changes to tagged releases are documented here.
   code, the companion or this runtime, and not whether its companion is released. VERSIONING.md
   also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed `*` objects is
   first-version scope and may be lifted in 1.x, and SECURITY.md points to the registry line's
-  support window. The conformance claim in CONFORMANCE.md is unchanged.
+  support window. `jpack terraform facts` and the `terraform-file` reader leave the registry
+  line: no spec release carries dialect §4.5 yet, so the command, its batch lines, the `TF-*`
+  codes and the `proposed-1` table stay provisional and outside the line's 1.0 promise. The
+  conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.50.0 - 2026-11-17
 
