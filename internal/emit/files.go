@@ -138,8 +138,8 @@ const (
 )
 
 // preflight checks every directory above each response path and the path
-// itself, without following a link: a link at or above the path refuses the
-// run (EMIT-LINK); a component that cannot be examined, or a special file at
+// itself, without following a link: a link (or a Windows junction: linkLike)
+// at or above the path refuses the run (EMIT-LINK); a component that cannot be examined, or a special file at
 // the path, cannot be checked (EMIT-PATH-UNREADABLE). It returns the state of
 // each path, and for each blocked parent the path of the regular file that
 // holds it.
@@ -174,7 +174,7 @@ func preflight(root string, response []File) (map[string]pathState, map[string]s
 				at("EMIT-PATH-UNREADABLE", prefix)
 				break
 			}
-			if info.Mode()&fs.ModeSymlink != 0 {
+			if linkLike(info.Mode()) { // a symbolic link, or a junction on Windows
 				at("EMIT-LINK", prefix)
 				break
 			}

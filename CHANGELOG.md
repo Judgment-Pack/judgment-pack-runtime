@@ -261,7 +261,8 @@ All notable changes to tagged releases are documented here.
 - **A repository root that is a Windows junction is no longer scanned as empty** (ADR-0098). Go
   reads a junction as irregular, not as a link, and a walk from one never goes below it, so
   `--check` could miss stale owned files and pass. `emit.RealRoot` now refuses a root that does not
-  read as a directory itself, and the owned-path walk treats a junction as a link (`EMIT-LINK`).
+  read as a directory itself, and both the owned-path walk and the check above each response path
+  treat a junction as a link (`EMIT-LINK`).
 - **The Go typed loader emitter reads a resolved document at the registry's depth bound**
   (ADR-0102). It counted a scalar as a level, so a resolved document 32 containers deep, which
   the registry and the start-up module accept, was refused. The bound of 34 now counts containers

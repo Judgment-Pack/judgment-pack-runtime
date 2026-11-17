@@ -149,7 +149,8 @@ following.
 
 1. It walks the owned paths without following a link. A link that an owns glob matches, or below
    which one can match, refuses the run (`EMIT-LINK`), as does one met at or above a response path.
-   A Windows junction, which Go reads as irregular rather than as a link, counts as a link here.
+   A Windows junction, which Go reads as irregular rather than as a link, counts as a link here
+   and above a response path.
    The root itself, its links resolved, must read as a directory and not as a junction, or the run
    is refused before the emitter starts; a walk from a junction root would see no owned files.
    The walk passes over anything a file system reads as `.git` (below), so git's directory, or the

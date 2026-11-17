@@ -110,3 +110,20 @@ func TestAJunctionBelowTheRootIsALink(t *testing.T) {
 		t.Fatalf("diagnostics: %+v; want one EMIT-LINK at gen/out", diagnostics)
 	}
 }
+
+// A junction at or above a response path refuses the run with EMIT-LINK at
+// it, though Go may read the junction as a directory as well as irregular.
+func TestAJunctionAboveAResponsePathIsALink(t *testing.T) {
+	root, err := RealRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "gen"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	junction(t, filepath.Join(root, "gen", "out"), t.TempDir())
+	_, _, diagnostics := preflight(root, []File{{Path: "gen/out/a.txt", Data: []byte("a\n"), Mode: ModeRegular}})
+	if len(diagnostics) != 1 || diagnostics[0].Code != "EMIT-LINK" || diagnostics[0].Location.Path != "gen/out" {
+		t.Fatalf("diagnostics: %+v; want one EMIT-LINK at gen/out", diagnostics)
+	}
+}
