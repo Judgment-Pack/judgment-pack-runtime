@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -319,10 +320,55 @@ func write(root string, response []File, stale []string, states map[string]pathS
 	return written, deleted, nil
 }
 
+// stagingPrefix begins the name of every file write stages
+// (os.CreateTemp's pattern ".jpack-emit-*").
+const stagingPrefix = ".jpack-emit-"
+
+// stagingLeftovers lists, by path, the staging files an earlier run left in
+// the directories this run stages into: the directory of each response path,
+// or of the stale file that holds it (write). Such a file is left when a run
+// is stopped between staging and renaming. Only the regular files whose names
+// begin with stagingPrefix and that no owns glob matches are listed: an owned
+// one is a stale owned file, which write mode deletes and check mode lists as
+// extra. Nothing is deleted here, since only an owned file is ever deleted.
+// Each directory is listed, not walked, and is one the preflight found with
+// no link at or above it. One that cannot be listed (absent, held by a file,
+// or unreadable) is passed over, since the listing only informs; the write
+// or the comparison reports what fails there. It runs before write stages
+// anything, so this run's own staging files are never listed.
+func stagingLeftovers(root string, owns []Glob, response []File, parents map[string]string) []string {
+	dirs := map[string]bool{}
+	for _, file := range response {
+		dir := path.Dir(file.Path)
+		if blocker, blocked := parents[file.Path]; blocked {
+			dir = path.Dir(blocker)
+		}
+		dirs[dir] = true
+	}
+	var found []string
+	for dir := range dirs {
+		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir)))
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), stagingPrefix) || !entry.Type().IsRegular() {
+				continue
+			}
+			leftover := path.Join(dir, entry.Name())
+			if !owned(owns, leftover) {
+				found = append(found, leftover)
+			}
+		}
+	}
+	slices.Sort(found)
+	return found
+}
+
 // writeTemporary writes a file's bytes and mode to a new temporary file in
 // dir and returns its path.
 func writeTemporary(dir string, file File) (string, error) {
-	temporary, err := os.CreateTemp(dir, ".jpack-emit-*")
+	temporary, err := os.CreateTemp(dir, stagingPrefix+"*")
 	if err != nil {
 		return "", err
 	}

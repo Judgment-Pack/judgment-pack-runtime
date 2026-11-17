@@ -21,6 +21,19 @@ All notable changes to tagged releases are documented here.
   the id, not the address, to the 256-byte batch id bound (`FACTS-ID-LIMIT`). For a file with a
   deposed object, the batch's bytes change: a current object and its deposed objects wrote lines
   of one id, and each now has its own id and, when deposed, its `deposed` member. The conformance claim in CONFORMANCE.md is unchanged.
+- **`jpack emit` reports the staging files a stopped run left** (ADR-0098). The host writes
+  each file to a `.jpack-emit-*` staging file beside it and renames it into place. A run that was
+  killed during its write can leave one behind. Such a file in a directory the host writes to,
+  which no owns glob matches, is now reported in both modes by the new provisional warning
+  `EMIT-STAGING-LEFTOVER` at its path, and is never deleted: the host deletes only what the
+  manifest owns. One that an owns glob matches is a stale owned file, which write mode deletes,
+  as before. The listing names at most 100 paths; past them, one more diagnostic gives the count
+  of the rest in its message. The conformance claim in CONFORMANCE.md is unchanged.
+- **A vector's `expected/` bounds its files and its directories apart** (#450). The bound on its
+  entries counted directories with files, so a valid record of 7000 files at `gen/<n>/x/f`, 21001
+  entries, was refused. Files are now bounded as a response's are, at 10000, and directories by
+  what the 512-byte path bound allows above them; an entry whose path is past that bound is
+  refused, as no response could name it. The conformance claim in CONFORMANCE.md is unchanged.
 - **A support and deprecation policy for the registry line** (VERSIONING.md). It covers
   `jpack registry`, `jpack emit`, `jpack emit conformance`, `jpack terraform facts`, their formats,
   codes and bounds, and the start-up module. Within major version 1 of the line, nothing is
