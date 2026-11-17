@@ -364,6 +364,10 @@ The registry line is the registry companion's surface in this repository:
 - their diagnostic codes and bounds;
 - the start-up module (see [The start-up module](#the-start-up-module)).
 
+An emitter's own `x-` diagnostic codes are not part of it: they belong to that emitter, are
+neither provisional nor stable under this promise, follow the emitter's own version and release
+notes, and a consumer must not branch on them for anything but display.
+
 It is stable from the release that names it so in its release notes. That release first settles
 everything the sections above call provisional: the codes are the final registry companion's, the
 Terraform dialect's codes and `format_version` table are its companion's, and each paragraph says

@@ -653,6 +653,7 @@ func TestDeclarationFormIsRefused(t *testing.T) {
 		"secrets that is not an array":                func(d map[string]any) { d["secrets"] = "/dbPassword" },
 		"a secrets pattern that is not a pointer":     func(d map[string]any) { d["secrets"] = []any{"dbPassword"} },
 		"a secrets pattern with a bad escape":         func(d map[string]any) { d["secrets"] = []any{"/db~3Password"} },
+		"a secrets pattern ending in ~":               func(d map[string]any) { d["secrets"] = []any{"/dbPassword~"} },
 	}
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -707,6 +708,17 @@ func TestSchemaRefusals(t *testing.T) {
 		{"a secret that may be an array item, by index", `{"type":"object"}`, []string{"/list/3"}, codeSecretInArray},
 		{"a property __proto__", `{"type":"object","properties":{"__proto__":{"type":"string"}}}`, nil, codeMemberProto},
 		{"a const holding __proto__", `{"const":{"a":{"__proto__":1}}}`, nil, codeMemberProto},
+		{"a const holding __proto__ in an array", `{"const":[1,{"__proto__":1}]}`, nil, codeMemberProto},
+		{"a type of null", `{"type":null}`, nil, codeSchemaUnsupported},
+		{"a type that is a number", `{"type":1}`, nil, codeSchemaUnsupported},
+		{"a type list holding a number", `{"type":["string",1]}`, nil, codeSchemaUnsupported},
+		{"properties that is not an object", `{"type":"object","properties":[]}`, nil, codeSchemaUnsupported},
+		{"a property schema that is a number", `{"type":"object","properties":{"a":1}}`, nil, codeSchemaUnsupported},
+		{"required that is not an array", `{"type":"object","required":"a"}`, nil, codeSchemaUnsupported},
+		{"a required name that is not a string", `{"type":"object","required":[1]}`, nil, codeSchemaUnsupported},
+		{"additionalProperties that is a string", `{"type":"object","additionalProperties":"no"}`, nil, codeSchemaUnsupported},
+		{"a $ref with a bad escape", `{"$ref":"#/$defs/a~2b","$defs":{"a*b":{"type":"string"}}}`, nil, codeSchemaUnsupported},
+		{"a $ref ending in ~", `{"$ref":"#/$defs/a~","$defs":{"a~":{"type":"string"}}}`, nil, codeSchemaUnsupported},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -922,6 +934,23 @@ func TestUnreadableRequestsAreRefused(t *testing.T) {
 			doc := resolvedDoc(r)
 			doc["entries"] = append(doc["entries"].([]any), doc["entries"].([]any)[0])
 		}, errRequest},
+		{"an emitter that is not an object", func(r map[string]any) { r["emitter"] = "x" }, errRequest},
+		{"an emitter with a member added", func(r map[string]any) { r["emitter"].(map[string]any)["name"] = "x" }, errRequest},
+		{"a registry with no digest", func(r map[string]any) {
+			delete(resolvedDoc(r)["registry"].(map[string]any), "digest")
+		}, errRequest},
+		{"kinds not an array", func(r map[string]any) { resolvedDoc(r)["kinds"] = map[string]any{} }, errRequest},
+		{"a pin with a member added", func(r map[string]any) {
+			resolvedDoc(r)["kinds"].([]any)[0].(map[string]any)["owner"] = "platform"
+		}, errRequest},
+		{"entries not an array", func(r map[string]any) { resolvedDoc(r)["entries"] = map[string]any{} }, errRequest},
+		{"an entry with no owner", func(r map[string]any) {
+			delete(resolvedDoc(r)["entries"].([]any)[0].(map[string]any), "owner")
+		}, errRequest},
+		{"an entry whose owner is not a string", func(r map[string]any) {
+			resolvedDoc(r)["entries"].([]any)[0].(map[string]any)["owner"] = true
+		}, errRequest},
+		{"options not an object", func(r map[string]any) { r["options"] = []any{} }, errOptions},
 		{"an unknown option", func(r map[string]any) { r["options"] = map[string]any{"package": "p"} }, errOptions},
 		{"a directory under node_modules", func(r map[string]any) { r["options"] = map[string]any{"directory": "web/node_modules/c"} }, errOptions},
 		{"a directory under vendor", func(r map[string]any) { r["options"] = map[string]any{"directory": "Vendor/c"} }, errOptions},
@@ -950,12 +979,16 @@ func TestUnreadableRequestsAreRefused(t *testing.T) {
 		})
 	}
 	for name, data := range map[string]string{
-		"not JSON":             `{`,
-		"a repeated member":    `{"a":1,"a":2}`,
-		"a lone surrogate":     `{"a":"\ud800"}`,
-		"invalid UTF-8":        "{\"a\":\"\xff\"}",
-		"a value after it":     `{} {}`,
-		"an array, not object": `[]`,
+		"not JSON":                               `{`,
+		"a repeated member":                      `{"a":1,"a":2}`,
+		"a lone surrogate":                       `{"a":"\ud800"}`,
+		"two high surrogates":                    `{"a":"\ud800\ud800"}`,
+		"a lone low surrogate":                   `{"a":"\udc00"}`,
+		"a high surrogate before another escape": `{"a":"\ud800\u0041"}`,
+		"a member name that is not a string":     `{1:2}`,
+		"invalid UTF-8":                          "{\"a\":\"\xff\"}",
+		"a value after it":                       `{} {}`,
+		"an array, not object":                   `[]`,
 	} {
 		if out, err := emit([]byte(data)); err != errRequest || out != nil {
 			t.Errorf("%s: emit = %v, want %v", name, err, errRequest)
@@ -1106,5 +1139,38 @@ func TestSecretUndeclaredMembersWithoutLiterals(t *testing.T) {
 				t.Errorf("the file:\n%s", text)
 			}
 		})
+	}
+}
+
+// TestLiteralAndIntersectionTypes: a const object or array is written as its
+// literal type on one line, an empty object as one with no member, an allOf
+// as an intersection with a union part in parentheses, a false schema as
+// never, and a $ref and a secrets pattern read their ~0 and ~1 escapes.
+func TestLiteralAndIntersectionTypes(t *testing.T) {
+	m := readManifest(t)
+	d := declaration(t, "rule", `{"type":"object","properties":{
+		"lit":{"const":{"a":[1,"x"],"b":{}}},
+		"both":{"allOf":[{"type":"object","properties":{"a":{"type":"string"}}},
+			{"anyOf":[{"type":"object","properties":{"b":{"type":"number"}}},{"type":"object","properties":{"c":{"type":"boolean"}}}]}]},
+		"never":false,
+		"slash":{"$ref":"#/$defs/a~1b~0c"},
+		"x~y/z":{"type":"string"}},
+		"$defs":{"a/b~c":{"type":"string"}}}`, "/x~0y~1z")
+	text := generated(t, m, fixtureOf(t, []map[string]any{d}, entryOf(t, "rule", "main",
+		`{"lit":{"a":[1,"x"],"b":{}},"both":{"a":"s","b":1},"slash":"q","x~y/z":"secret:gcp-sm:projects/example-dev/secrets/s/versions/1"}`)))
+	for _, want := range []string{
+		`  readonly "lit"?: { readonly "a": readonly [1, "x"]; readonly "b": { readonly [name: string]: never } };` + "\n",
+		"  readonly \"both\"?: {\n    readonly \"a\"?: string;\n    readonly [name: string]: JsonValue | undefined;\n  } & ({\n" +
+			"    readonly \"b\"?: number;\n    readonly [name: string]: JsonValue | undefined;\n  } | {\n" +
+			"    readonly \"c\"?: boolean;\n    readonly [name: string]: JsonValue | undefined;\n  });\n",
+		`  readonly "never"?: never;` + "\n",
+		`  readonly "slash"?: string;` + "\n",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the file does not hold %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "x~y/z") || strings.Contains(text, "secret:") {
+		t.Errorf("the secret member at /x~0y~1z is written:\n%s", text)
 	}
 }

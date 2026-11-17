@@ -44,6 +44,32 @@ All notable changes to tagged releases are documented here.
   `ReadFile` refuses a world-writable file under every rule, and `ReadResolvedFile` refuses a
   file that is not regular without blocking on it. The conformance claim in CONFORMANCE.md is
   unchanged.
+- **Coverage floors for the registry and emitter packages.** A `coverage-floors` check in
+  `dev.json` runs the tests of `internal/registry`, `internal/emit/conformance`,
+  `internal/terraformfile`, `internal/jcs`, `cmd/jpack-emit-go-facts`, `cmd/jpack-emit-go-loader`
+  and `cmd/jpack-emit-ts-constants` with coverage. It prints each package's statement coverage and
+  fails when any is below 90%. `jpdev.json` maps each package's paths to it. New tests bring
+  `internal/registry`, `internal/emit/conformance` and `cmd/jpack-emit-ts-constants` above 91%.
+  They cover the registry's and kind declaration's form refusals, schema keyword forms, patches
+  that add a member the schema declares, the conformance harness's vector reading and request
+  envelope refusals, and the TypeScript emitter's schema and request refusals. Each asserts the
+  diagnostic code and location, the error, or the output bytes. No program's behaviour changes.
+  The conformance claim in CONFORMANCE.md is unchanged.
+- **An emitter's options schema may use `$defs` at its root** (#459). An options schema is a
+  schema in the kind subset, which admits `$defs` at the schema's root, but `jpack emit` and `jpack
+  emit conformance` refused a root `$defs` in a manifest's `options` with `EMIT-MANIFEST`. It is now
+  read, and `$ref` into it is followed; a `$defs` below the root is still refused. The conformance
+  claim in CONFORMANCE.md is unchanged.
+- **A mutation table for the registry line's codes** (docs/registry-mutation-table.md). Each
+  `REG-*`, `REF-*`, `FACTS-*`, `EMIT-*` and `TF-*` code, and each code of the `jpack-emit-*`
+  emitters, has one row: its severity, the test that asserts it, a recorded mutant that test
+  kills, and whether the code is provisional. The new `mutation-table` check reads the codes from
+  their source tables and fails when a code has no row, a row's code no longer exists, a row's
+  severity or mutant site does not match the source, a row's test is not one `go test -list`
+  lists, no string in that test names a row's subtest, or the test (for a subtest, its
+  case) does not name the row's code. VERSIONING.md now says that an
+  emitter's own `x-` codes belong to that emitter and are outside the registry line's promise.
+  No product behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
 - **The emitter's environment, descriptors and root on Windows and Unix** (ADR-0098). On
   Windows, `jpack emit` gives the emitter `TEMP` and `TMP` under its fresh home, and
   `USERPROFILE`, `APPDATA` and `LOCALAPPDATA` at it; none of the parent's values is passed, and a
