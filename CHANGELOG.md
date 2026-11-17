@@ -11,9 +11,12 @@ All notable changes to tagged releases are documented here.
   harness, which could leave out of the repository copy a link git tracks, with
   `EMIT-LINK-OMITTED`. An index holding either extension is now not read, as an index git wrote
   without its checksum is not, so every link that leads out of the repository is refused there
-  with `EMIT-HARNESS-BOUND`, as before v0.50.0. Git writes both only when `index.threads` is set
-  to other than 1, or `index.recordOffsetTable` or `index.recordEndOfIndexEntries` is on. The
-  conformance claim in CONFORMANCE.md is unchanged.
+  with `EMIT-HARNESS-BOUND`, as before v0.50.0. Git finds `EOIE` not in the list of extensions but
+  at a fixed place, the 32 bytes before the checksum, and from it the offset table, a split index
+  or a sparse index, so an index whose bytes there read `EOIE` is not read either, even when they
+  lie inside another extension's data. Git writes both only when `index.threads` is set to other
+  than 1, or `index.recordOffsetTable` or `index.recordEndOfIndexEntries` is on. The conformance
+  claim in CONFORMANCE.md is unchanged.
 - **`jpack emit --check` reports an interrupt that comes after the last emitter** (ADR-0098). An
   interrupt or SIGTERM that came once the last environment's emitter had ended, during the scan of
   the owned paths or the comparison, was not read: the check exited 0 or 1 as if it had not come.

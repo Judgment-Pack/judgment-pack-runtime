@@ -1,5 +1,6 @@
 // Package emit is the registry emitter host of spec RFC 0036 §1–§4, as the
-// draft registry companion (spec/registry.md §11) restates it (ADR-0098): an
+// registry companion (spec/registry.md §11, released as registry-v1.0.0)
+// restates it (ADR-0098): an
 // emitter manifest, the request a host forms from a registry, the response an
 // emitter answers with, and the host that runs an emitter under bounds and
 // either writes the files it answers with into the paths it owns or compares
@@ -22,7 +23,8 @@ import (
 const (
 	ManifestVersion = "1.0.0"
 	// ReportVersion is the selector of the host's own report. The RFC defines
-	// no host report, so it is this runtime's, provisional (VERSIONING.md).
+	// no host report, so it is this runtime's own, a format the registry
+	// line promises (VERSIONING.md).
 	ReportVersion = "1.0.0"
 )
 

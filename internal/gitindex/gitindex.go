@@ -15,7 +15,12 @@
 // Git with several index threads reads the entries in blocks at the table's
 // offsets, each block's first version 4 path from no previous path, so an
 // index whose table disagrees with its entries would give git other paths
-// than this reader reads in order.
+// than this reader reads in order. Git finds an EOIE not in order but at a
+// fixed place, the 32 bytes before the checksum, and from the offset it
+// gives finds the table and reads the extensions, so an index whose bytes
+// there read "EOIE" is refused too, even inside an optional extension's
+// data: one hidden there could give git a table, a split index or a sparse
+// index that a reading in order passes over.
 package gitindex
 
 import (
@@ -192,6 +197,9 @@ const (
 	fixedSize = statSize + hashSize + 2
 	// minEntrySize is the fewest bytes an entry takes in any version.
 	minEntrySize = fixedSize + 2
+	// eoieSize is an end of index entries extension's bytes: its signature,
+	// its size, an offset and a hash.
+	eoieSize = 8 + 4 + hashSize
 
 	flagExtended  = 0x4000
 	flagStageMask = 0x3000
@@ -229,6 +237,17 @@ func Parse(data []byte, visit func(Entry)) (uint32, error) {
 		return 0, ErrBound
 	}
 	if uint64(count)*minEntrySize > uint64(len(body)-headerSize) {
+		return 0, ErrFormat
+	}
+	// Git finds an end of index entries extension (EOIE) by its place, not
+	// by reading the extensions in order: the eoieSize bytes before the
+	// checksum, whatever comes before them (read-cache.c's
+	// read_eoie_extension). With one, git reads the extensions from the
+	// offset it gives, and with several index threads reads the entries at
+	// an offset table found there, so one hidden in an optional extension's
+	// data gives git other entries and extensions than this reader reads.
+	// Bytes there that read "EOIE" are refused, whatever else git checks.
+	if len(body) >= headerSize+eoieSize && string(body[len(body)-eoieSize:][:4]) == "EOIE" {
 		return 0, ErrFormat
 	}
 	r := &reader{data: body, at: headerSize}
@@ -362,7 +381,8 @@ func (r *reader) cstring() (string, bool) {
 // bytes. One whose signature does not begin with 'A' to 'Z' must be
 // understood to read the index, and this reader understands none. The two
 // of threaded reading, which give where git may begin reading entries, are
-// refused too (see the package documentation).
+// refused too (see the package documentation), here where the walk meets
+// them; Parse refuses an EOIE at git's place for one wherever it lies.
 func (r *reader) extensions() error {
 	for r.at < len(r.data) {
 		if len(r.data)-r.at < 8 {

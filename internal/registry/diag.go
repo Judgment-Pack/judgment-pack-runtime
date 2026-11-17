@@ -1,9 +1,9 @@
-// Package registry implements the registry companion proposed by the
-// specification's RFC 0034 (the profile) and RFC 0035 (references), both
-// Drafts: kind declarations an adopter writes, a registry document of entries
-// of those kinds with per-environment overlays, validation in the RFC's fixed
-// order with a value-free report, and resolution to one document per
-// environment.
+// Package registry implements the registry companion of the specification's
+// RFC 0034 (the profile) and RFC 0035 (references), both accepted, released
+// as registry-v1.0.0 (spec/registry.md): kind declarations an adopter
+// writes, a registry document of entries of those kinds with per-environment
+// overlays, validation in the RFC's fixed order with a value-free report, and
+// resolution to one document per environment.
 //
 // Nothing here fetches anything. A secret reference is checked for form, pin
 // and scope and left as written; an entry reference is checked against the
