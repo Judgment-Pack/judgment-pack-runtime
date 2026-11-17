@@ -696,6 +696,9 @@ func TestSchemaRefusals(t *testing.T) {
 		{"a secret undeclared member, a declared member's literal in the index", `{"type":"object","properties":{"mode":{"const":"fast"}},"additionalProperties":{"type":"string"}}`, []string{"/password"}, codeSecretLiteral},
 		{"a secret undeclared member in an anyOf branch", `{"anyOf":[{"type":"object","properties":{"password":{"type":"string"}}},{"type":"object","additionalProperties":{"const":"a"}}]}`, []string{"/password"}, codeSecretLiteral},
 		{"a secret undeclared member in an allOf branch", `{"allOf":[{"type":"object"},{"type":"object","additionalProperties":{"anyOf":[{"type":"string"},{"const":"a"}]}}]}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member, a literal in an index allOf", `{"type":"object","additionalProperties":{"allOf":[{"type":"string"},{"const":"secret:gcp-sm:projects/example-dev/secrets/p/versions/3"}]}}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member, a literal in an index branch's member", `{"type":"object","additionalProperties":{"anyOf":[{"type":"string"},{"type":"object","properties":{"k":{"const":"secret:gcp-sm:projects/example-dev/secrets/p/versions/3"}}}]}}`, []string{"/password"}, codeSecretLiteral},
+		{"a secret undeclared member, a literal in the index's own index", `{"type":"object","additionalProperties":{"type":["string","object"],"additionalProperties":{"const":"secret:gcp-sm:projects/example-dev/secrets/p/versions/3"}}}`, []string{"/password"}, codeSecretLiteral},
 		{"a secret undeclared member of an array item", `{"type":"object","properties":{"list":{"type":"array","items":{"type":"object","additionalProperties":{"enum":["a"]}}}}}`, []string{"/list/*/password"}, codeSecretLiteral},
 		{"a secret undeclared member below an undeclared one", `{"type":"object","additionalProperties":{"type":"object","additionalProperties":{"const":"a"}}}`, []string{"/*/password"}, codeSecretLiteral},
 		{"a secret array item", `{"type":"object","properties":{"keys":{"type":"array","items":{"type":"string"}}}}`, []string{"/keys/*"}, codeSecretInArray},
@@ -832,8 +835,6 @@ func TestProtoIsRefused(t *testing.T) {
 	}
 }
 
-// TestDeviceNameEnvironmentIsRefused: the host refuses a path whose name is
-// a Windows device, so the emitter refuses it first, with a diagnostic.
 // TestPrototypeMemberNamesAreRefused: a schema property named after a member
 // of Object.prototype is refused, optional or required, since an entry
 // without the optional one reads a function from the prototype and the file
@@ -868,6 +869,8 @@ func TestPrototypeMemberNamesAreRefused(t *testing.T) {
 	})
 }
 
+// TestDeviceNameEnvironmentIsRefused: the host refuses a path whose name is
+// a Windows device, so the emitter refuses it first, with a diagnostic.
 func TestDeviceNameEnvironmentIsRefused(t *testing.T) {
 	m := readManifest(t)
 	for _, environment := range []string{"con", "nul", "com1", "lpt9"} {
