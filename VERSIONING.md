@@ -390,6 +390,11 @@ the line:
 - **Security fixes.** A fix for a vulnerability may refuse input that was accepted before, in a
   patch release, when nothing narrower closes it. The release notes name it as a breaking exception,
   with the refusal code and the input it now refuses.
+- **Conformance fixes.** A patch release may also refuse input that the released companion text
+  forbids, when this runtime accepted it by mistake. The release notes name the refusal code, the
+  input and the companion section.
+- **The start-up module's Go floor.** Its `go.mod` `go` directive rises only in a minor release,
+  named in the release notes, and only to a Go version the Go project still supports.
 - **Support.** Fixes land in the latest minor release of `jpack` and the latest `startup/v1` tag;
   earlier releases get none, and there is no service-level guarantee. Security issues are reported
   as `SECURITY.md` says.
