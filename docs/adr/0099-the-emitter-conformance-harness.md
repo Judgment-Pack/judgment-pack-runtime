@@ -346,3 +346,15 @@ These are carried, not fixed. None gives a wrong verdict for an honest emitter o
   inside a complete occurrence of any secret-position string passes.
 - Decided here: check 2 compares raw response bytes; a vector that gives its request whole skips
   checks 4 and 5; the hostile responses go through `emit.ParseResponse`.
+
+## Amendment: `--update` gates its write (2026-11-17, #468)
+
+`--update` replaces each vector's `expected/` between `Options.BeginWrite` and `Options.EndWrite`,
+the gate `jpack emit` puts around its own write (ADR-0098). `BeginWrite` is asked just before the
+replacement, once the run's context is seen not done: an interrupt or `SIGTERM` that came before
+it refuses the run at that vector with `EMIT-INTERRUPTED` and leaves its `expected/` untouched.
+Once the replacement has begun, a second signal waits until it ends, so `expected/` is never left
+missing between its two renames; the run is then refused as interrupted, and the vector's check 1
+row still says `expected/` was written. `EndWrite` ends the gate after each replacement, so a
+signal between two vectors is acted on, and a second one ends `jpack` again. An expected-failure
+vector is still never touched.
