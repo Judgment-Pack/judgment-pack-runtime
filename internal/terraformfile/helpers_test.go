@@ -152,6 +152,7 @@ type stateResource struct {
 	values        any
 	sensitive     any
 	typ           string
+	deposedKey    string
 }
 
 func (r stateResource) json() map[string]any {
@@ -175,8 +176,12 @@ func (r stateResource) json() map[string]any {
 	if values == nil {
 		values = map[string]any{}
 	}
+	deposedKey := any(absent)
+	if r.deposedKey != "" {
+		deposedKey = r.deposedKey
+	}
 	return object("address", r.address, "mode", mode, "type", typ, "name", nameOfAddress(r.address),
-		"index", index, "provider_name", syntheticProvider, "schema_version", 0,
+		"index", index, "provider_name", syntheticProvider, "schema_version", 0, "deposed_key", deposedKey,
 		"values", values, "sensitive_values", sensitive)
 }
 
@@ -292,6 +297,14 @@ func addresses(acquisition *Acquisition) []string {
 	out := make([]string, 0, len(acquisition.Resources))
 	for _, r := range acquisition.Resources {
 		out = append(out, r.Address)
+	}
+	return out
+}
+
+func ids(acquisition *Acquisition) []string {
+	out := make([]string, 0, len(acquisition.Resources))
+	for _, r := range acquisition.Resources {
+		out = append(out, r.ID)
 	}
 	return out
 }
