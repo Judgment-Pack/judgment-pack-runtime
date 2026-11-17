@@ -36,8 +36,9 @@ type diskFile struct {
 // scanOwned lists the regular files on disk that the globs own, walking only
 // where a glob can match and never through a symbolic link. It passes over
 // anything a file system reads as ".git" (isGitName): git's directory, or the
-// file that stands for it in a worktree or submodule, is never owned. A link that a
-// glob matches, or below which one can, refuses the run (EMIT-LINK), and so
+// file that stands for it in a worktree or submodule, is never owned. A link
+// (or a Windows junction, which Go reads as irregular: linkLike) that a glob
+// matches, or below which one can, refuses the run (EMIT-LINK), and so
 // does an owned path that is neither a regular file nor a directory, or a
 // directory that cannot be listed (EMIT-PATH-UNREADABLE).
 func scanOwned(root string, owns []Glob) (map[string]diskFile, []Diagnostic) {
@@ -81,7 +82,7 @@ func scanOwned(root string, owns []Glob) (map[string]diskFile, []Diagnostic) {
 			return nil
 		}
 		switch kind := entry.Type(); {
-		case kind&fs.ModeSymlink != 0:
+		case linkLike(kind): // a symbolic link, or a junction on Windows
 			if matches(path) || below(path) {
 				at("EMIT-LINK", path)
 			}
@@ -137,8 +138,8 @@ const (
 )
 
 // preflight checks every directory above each response path and the path
-// itself, without following a link: a link at or above the path refuses the
-// run (EMIT-LINK); a component that cannot be examined, or a special file at
+// itself, without following a link: a link (or a Windows junction: linkLike)
+// at or above the path refuses the run (EMIT-LINK); a component that cannot be examined, or a special file at
 // the path, cannot be checked (EMIT-PATH-UNREADABLE). It returns the state of
 // each path, and for each blocked parent the path of the regular file that
 // holds it.
@@ -173,7 +174,7 @@ func preflight(root string, response []File) (map[string]pathState, map[string]s
 				at("EMIT-PATH-UNREADABLE", prefix)
 				break
 			}
-			if info.Mode()&fs.ModeSymlink != 0 {
+			if linkLike(info.Mode()) { // a symbolic link, or a junction on Windows
 				at("EMIT-LINK", prefix)
 				break
 			}

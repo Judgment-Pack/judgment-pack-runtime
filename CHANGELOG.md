@@ -253,6 +253,20 @@ All notable changes to tagged releases are documented here.
   the harness a temporary copy of the files git tracks, as the working tree holds them, so an
   ignored directory such as CI's Python venv is not seen. No
   `jpack` command changes, and the conformance claim in CONFORMANCE.md is unchanged.
+- **An interrupt or SIGTERM to `jpack emit` or `jpack emit conformance` ends the emitter first**
+  (ADR-0098). The emitter runs in a process group of its own, which a terminal's interrupt does
+  not reach, so jpack used to exit and leave it running, with its `HOME` (and the harness's
+  repository copy) left behind. The signal now cancels the run as the time limit does: the group
+  is killed and the temporary directories are removed before jpack exits.
+- **A repository root that is a Windows junction is no longer scanned as empty** (ADR-0098). Go
+  reads a junction as irregular, not as a link, and a walk from one never goes below it, so
+  `--check` could miss stale owned files and pass. `emit.RealRoot` now refuses a root that does not
+  read as a directory itself, and both the owned-path walk and the check above each response path
+  treat a junction as a link (`EMIT-LINK`).
+- **The Go typed loader emitter reads a resolved document at the registry's depth bound**
+  (ADR-0102). It counted a scalar as a level, so a resolved document 32 containers deep, which
+  the registry and the start-up module accept, was refused. The bound of 34 now counts containers
+  only. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 
