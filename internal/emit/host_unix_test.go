@@ -142,3 +142,28 @@ func TestEmitEndsWhatTheEmitterLeftRunning(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// TestRemoveHomeRemovesDirectoriesTheEmitterLockedItsOwnerOutOf: an emitter
+// that takes the owner's bits from a directory in its HOME does not leave
+// the HOME behind.
+func TestRemoveHomeRemovesDirectoriesTheEmitterLockedItsOwnerOutOf(t *testing.T) {
+	home, err := os.MkdirTemp(t.TempDir(), "jpack-emit-home-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(home, "cache", "locked")
+	writeFiles(t, home, map[string]string{"cache/locked/file": "x\n", "cache/other": "y\n"})
+	for path, mode := range map[string]os.FileMode{locked: 0, filepath.Dir(locked): 0o500} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(filepath.Dir(locked), 0o700)
+		_ = os.Chmod(locked, 0o700)
+	})
+	removeHome(home)
+	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the emitter's HOME was left behind: %v", err)
+	}
+}

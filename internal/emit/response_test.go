@@ -19,33 +19,38 @@ func anyOwner(t *testing.T) *Manifest {
 func TestResponseRefusesEachUnsafePath(t *testing.T) {
 	m := anyOwner(t)
 	for name, path := range map[string]string{
-		"absolute":            "/etc/a",
-		"parent segment":      "gen/../a",
-		"dot segment":         "gen/./a",
-		"empty segment":       "gen//a",
-		"tilde segment":       "gen/~a",
-		"trailing slash":      "gen/a/",
-		"empty":               "",
-		"NUL":                 "gen/a\x00b",
-		"backslash":           `gen\a`,
-		"UNC":                 `\\host\share\a`,
-		"control":             "gen/a\x07",
-		"C1 control":          "gen/a\u0085",
-		"delete":              "gen/a\x7f",
-		"drive letter":        "C:/a",
-		"drive relative":      "c:a",
-		"git directory":       ".git/config",
-		"git directory below": "gen/.git/hooks/pre-commit",
-		"git in another case": "gen/.GiT",
-		"colon":               "gen/a:b",
-		"trailing dot":        "gen/a.",
-		"trailing space":      "gen/a ",
-		"device":              "gen/CON",
-		"device lower case":   "gen/nul",
-		"device extension":    "gen/Com1.txt",
-		"device spaced":       "gen/lpt9 .sql",
-		"device directory":    "aux/a",
-		"one past the length": strings.Repeat("a/", 256) + "b",
+		"absolute":              "/etc/a",
+		"parent segment":        "gen/../a",
+		"dot segment":           "gen/./a",
+		"empty segment":         "gen//a",
+		"tilde segment":         "gen/~a",
+		"trailing slash":        "gen/a/",
+		"empty":                 "",
+		"NUL":                   "gen/a\x00b",
+		"backslash":             `gen\a`,
+		"UNC":                   `\\host\share\a`,
+		"control":               "gen/a\x07",
+		"C1 control":            "gen/a\u0085",
+		"delete":                "gen/a\x7f",
+		"drive letter":          "C:/a",
+		"drive relative":        "c:a",
+		"git directory":         ".git/config",
+		"git directory below":   "gen/.git/hooks/pre-commit",
+		"git in another case":   "gen/.GiT",
+		"colon":                 "gen/a:b",
+		"trailing dot":          "gen/a.",
+		"trailing space":        "gen/a ",
+		"device":                "gen/CON",
+		"device lower case":     "gen/nul",
+		"device extension":      "gen/Com1.txt",
+		"device spaced":         "gen/lpt9 .sql",
+		"device directory":      "aux/a",
+		"console input":         "gen/CONIN$",
+		"console output":        "gen/conout$.txt",
+		"COM superscript one":   "gen/COM\u00b9",
+		"COM superscript two":   "gen/com\u00b2.txt",
+		"LPT superscript three": "gen/Lpt\u00b3 .sql",
+		"one past the length":   strings.Repeat("a/", 256) + "b",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, findings := ParseResponse([]byte(responseJSON(t, map[string]any{"path": path, "text": "x\n"})), "1.0.0", nil, m)
@@ -57,7 +62,7 @@ func TestResponseRefusesEachUnsafePath(t *testing.T) {
 			}
 		})
 	}
-	for _, path := range []string{"gen/console", "gen/com10", "gen/com0", "gen/a.con", "gen/.nul", "gen/a.b", "gen/a b"} {
+	for _, path := range []string{"gen/console", "gen/com10", "gen/com0", "gen/lpt0", "gen/a.con", "gen/.nul", "gen/a.b", "gen/a b", "gen/conin", "gen/conin$x", "gen/com\u2074", "gen/com\u00b9\u00b9", "gen/co\u00b9"} {
 		if _, findings := ParseResponse([]byte(responseJSON(t, map[string]any{"path": path, "text": "x\n"})), "1.0.0", nil, m); findings != nil {
 			t.Errorf("%q: %v", path, codes(findings))
 		}
@@ -263,6 +268,8 @@ func TestResponseResolvesEachDiagnosticLocationAgainstTheRequest(t *testing.T) {
 		{"an entry of a kind not read", all, `{"document":"value","entry":{"kind":"topic","id":"events"},"environment":"prod","pointer":""}`, false},
 		{"an entry not in the request", all, `{"document":"value","entry":{"kind":"queue","id":"payments"},"environment":"prod","pointer":""}`, false},
 		{"an entry beside a kind not in the request", all, `{"document":"value","kind":"topic",` + entry + `,"environment":"prod","pointer":""}`, false},
+		{"an entry's position in document registry", all, `{"document":"registry",` + entry + `,"environment":"prod","pointer":"/retention"}`, false},
+		{"an entry's whole value in document kind", all, `{"document":"kind",` + entry + `,"environment":"prod","pointer":""}`, false},
 		{"an entry of several environments, none named", all, `{"document":"value",` + entry + `,"pointer":"/retention"}`, false},
 		{"a position past a number", all, `{"document":"value",` + entry + `,"environment":"prod","pointer":"/retention/0"}`, false},
 		{"a member not in the value", all, `{"document":"value",` + entry + `,"environment":"prod","pointer":"/partitions"}`, false},

@@ -95,7 +95,16 @@ All notable changes to tagged releases are documented here.
   changes).
   - The Terraform reader orders member names without decoding the bytes two names share. A state
     of many long keys with a common prefix sorted at about 150 ns a byte; the order is unchanged.
-  - The conformance claim in CONFORMANCE.md is unchanged.
+  - `jpack emit` refuses the device names `CONIN$` and `CONOUT$`, and `COM` and `LPT` followed by
+    a superscript `¹`, `²` or `³`, in a response path or an owns glob, as it refuses `CON` and
+    `COM1`: these are the names `filepath.IsLocal` refuses on Windows.
+  - An emitter diagnostic's location that names an entry must be in document `value` (registry
+    companion §7.3). Before, `{"document":"registry"}` with an entry was resolved into the entry's
+    value.
+  - A symbolic link that both the walk of the owned paths and the check of a response path meet
+    is reported once, not twice.
+  - The emitter's `HOME` is removed even when the emitter took the owner's bits from a directory
+    in it.
 
 ## 0.47.0 - 2026-11-16
 

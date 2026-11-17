@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -97,7 +98,7 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	if err != nil {
 		return processFailure(Location{Document: DocumentManifest, Pointer: "/command"})
 	}
-	defer os.RemoveAll(home)
+	defer removeHome(home)
 
 	env := map[string]string{"HOME": home, "LANG": "C.UTF-8"}
 	order := []string{"PATH", "HOME", "LANG"}
@@ -187,6 +188,24 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 	result.Response = response
 	result.ResponseBytes = data
 	return result
+}
+
+// removeHome removes the emitter's HOME. An emitter may have taken the
+// owner's bits from a directory in it, which RemoveAll then cannot list or
+// empty, so when the first removal fails every directory left is given back
+// the owner's bits and the removal is tried once more. The walk does not
+// follow a symbolic link.
+func removeHome(home string) {
+	if os.RemoveAll(home) == nil {
+		return
+	}
+	_ = filepath.WalkDir(home, func(full string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.IsDir() {
+			_ = os.Chmod(full, 0o700)
+		}
+		return nil
+	})
+	_ = os.RemoveAll(home)
 }
 
 // resolveProgram finds command's first item: a name with no "/" on the host's
