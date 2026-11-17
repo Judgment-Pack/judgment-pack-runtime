@@ -202,6 +202,33 @@ refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 fil
 file, 512 bytes per path, 64 KiB of standard error and a 120 s default limit. A tighter bound
 would be a breaking change.
 
+`jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
+
+- An emitter manifest, `emitterManifestVersion`, RFC 0036's.
+- The request it writes, `emitRequestVersion`. Request `1.0.0` carries `resolvedFormatVersion`
+  and `factsContractVersion` `1.0.0`. A request is RFC 8785 canonical bytes, so any change to its
+  bytes for the same inputs moves `emitRequestVersion`.
+- The response it accepts, `emitResponseVersion`. It accepts `1.0.0`.
+- Its report, `emitReportVersion` `"1.0.0"`. This format is this runtime's own.
+
+The registry companion names `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`, `EMIT-PROCESS`,
+`EMIT-RESPONSE` and `EMIT-DEPRECATED`. Ten more codes are this runtime's and provisional in the same
+way: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`, `EMIT-REQUEST`,
+`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, and the warnings `EMIT-ENV-UNSET` and
+`EMIT-REPORT-TRUNCATED`. They are provisional until the companion's first host rows give these
+refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 files, 16 MiB per
+file, 512 bytes per path, 64 KiB of standard error and a 120 s default limit. A tighter bound
+would be a breaking change.
+
+`jpack emit conformance` (ADR-0099) writes the harness report, `harnessReportVersion` `"1.0.0"`,
+RFC 0036's, and reads the harness level of `vectors/harness.json`; it applies level `"1.0"`, and a
+level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`. Two more
+codes are this runtime's and provisional in the same way: `EMIT-VECTOR` (the vector layout) and
+`EMIT-HARNESS-BOUND` (a check that could not be completed: a harness bound, or a determinism
+run's fresh `HOME` that could not be made). Its own
+bounds, a repository copy of 256 MiB and 100 000 entries and a references scan of 1 MiB of strings
+and 2^32 steps a vector, are this runtime's; a tighter bound would be a breaking change.
+
 ## Go API
 
 Package `sdk` is the one importable Go package of this module; every other package is `internal`
