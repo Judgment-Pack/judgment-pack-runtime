@@ -353,7 +353,7 @@ func (a *App) writeGateSummary(g *gate, verdict string, code, runCode int) bool 
 }
 
 // replaceFile replaces path with data through a temporary file in the same
-// directory, refusing a path that is a symbolic link.
+// directory, refusing a path that is a symbolic link or junction.
 func replaceFile(path string, data []byte) error {
 	if info, err := os.Lstat(path); err == nil && fssecure.LinkLike(info) {
 		return errors.New("the summary path is a symbolic link or junction")

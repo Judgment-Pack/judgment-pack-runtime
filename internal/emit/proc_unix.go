@@ -65,18 +65,36 @@ func waitProcessGroup(process *os.Process, bound time.Duration) {
 // process holds close-on-exec, so that the emitter inherits none of them: Go
 // opens its own descriptors close-on-exec, but one jpack itself inherited
 // without the flag would pass on to the emitter. It runs once per process,
-// before the first emitter starts (markInherited).
+// before the first emitter starts (markInherited). Where /dev/fd cannot be
+// listed in full, every number from 3 below the descriptor limit (at most
+// maxInheritedScan) is marked as well; marking a number that is not open
+// does nothing.
 func closeInherited() {
-	entries, err := os.ReadDir("/dev/fd")
-	if err != nil {
-		return
-	}
+	entries, err := os.ReadDir(inheritedDir)
 	for _, entry := range entries {
 		if fd, err := strconv.Atoi(entry.Name()); err == nil && fd > 2 {
 			syscall.CloseOnExec(fd)
 		}
 	}
+	if err == nil {
+		return
+	}
+	top := uint64(1024)
+	var limit syscall.Rlimit
+	if syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limit) == nil {
+		top = min(uint64(limit.Cur), maxInheritedScan)
+	}
+	for fd := uint64(3); fd < top; fd++ {
+		syscall.CloseOnExec(int(fd))
+	}
 }
+
+// maxInheritedScan bounds the scan closeInherited falls back to.
+const maxInheritedScan = 1 << 16
 
 // markInherited runs closeInherited once; a test replaces it to run it again.
 var markInherited = sync.OnceFunc(closeInherited)
+
+// inheritedDir lists this process's descriptors; a test names one that
+// does not exist to reach the fallback.
+var inheritedDir = "/dev/fd"

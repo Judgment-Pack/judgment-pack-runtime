@@ -55,7 +55,7 @@ func (a *App) emitConformanceCommand() *cobra.Command {
 			}
 			realRoot, err := emit.RealRoot(root)
 			if errors.Is(err, emit.ErrRootReparse) {
-				return invocation("JPS-INVOCATION-INPUT", "--root passes through a junction or other reparse point; name the directory it leads to.")
+				return invocation("JPS-INVOCATION-INPUT", "--root passes through a junction or other reparse point, such as a synced folder's placeholder; name a directory whose path has none.")
 			}
 			if err != nil {
 				return invocation("JPS-INVOCATION-INPUT", "--root must name a directory.")
