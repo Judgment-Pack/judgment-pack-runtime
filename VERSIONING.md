@@ -195,9 +195,10 @@ release notes.
 - Its report, `emitReportVersion` `"1.0.0"`. This format is this runtime's own.
 
 The registry companion names `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`, `EMIT-REQUEST`,
-`EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Ten more codes are this runtime's and
+`EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Eleven more codes are this runtime's and
 provisional in the same way: `EMIT-MANIFEST`, `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`,
-`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, and the warnings `EMIT-ENV-UNSET`,
+`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, `EMIT-INTERRUPTED` (an interrupt or SIGTERM
+that stopped `jpack emit` or `jpack emit conformance`), and the warnings `EMIT-ENV-UNSET`,
 `EMIT-REPORT-TRUNCATED` and `EMIT-STAGING-LEFTOVER` (a staging file an earlier run left, unowned, in
 a directory the host writes to). They are provisional until the companion's first host rows give
 these refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 files, 16 MiB per
@@ -209,9 +210,9 @@ RFC 0036's, and reads the harness level of `vectors/harness.json`; it applies le
 level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`. Two more
 codes are this runtime's and provisional in the same way: `EMIT-VECTOR` (the vector layout) and
 `EMIT-HARNESS-BOUND` (a check that could not be completed: a harness bound, or a determinism
-run's fresh `HOME` that could not be made). Its own
-bounds, a repository copy of 256 MiB and 100 000 entries and a references scan of 1 MiB of strings
-and 2^32 steps a vector, are this runtime's; a tighter bound would be a breaking change.
+run's fresh `HOME` that could not be made; an interrupt is `EMIT-INTERRUPTED`, no longer
+`EMIT-HARNESS-BOUND`). Its own bounds, a repository copy of 256 MiB and 100 000 entries and a
+references scan of 1 MiB of strings and 2^32 steps a vector, are this runtime's; a tighter bound would be a breaking change.
 
 ## Go API
 
@@ -401,6 +402,8 @@ the line:
   input and the companion section.
 - **The start-up module's Go floor.** Its `go.mod` `go` directive rises only in a minor release,
   named in the release notes, and only to a Go version the Go project still supports.
-- **Support.** Fixes land in the latest minor release of `jpack` and the latest `startup/v1` tag;
-  earlier releases get none, and there is no service-level guarantee. Security issues are reported
-  as `SECURITY.md` says.
+- **Support.** Fixes land in the latest minor release of `jpack` and the latest `startup/v1` tag.
+  Security fixes are also backported to the previous minor release of `jpack`, and to the previous
+  `startup/v1` minor, for three months after its successor is released. Other earlier releases get
+  no fixes, and there is no service-level guarantee. Security issues are reported as `SECURITY.md`
+  says.

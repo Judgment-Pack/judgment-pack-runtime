@@ -101,7 +101,7 @@ func TestAnInterruptEndsTheEmitterAndItsTemporaryDirectories(t *testing.T) {
 				// interrupt broke.
 				var exit *exec.ExitError
 				if !errors.As(waitErr, &exit) || exit.ExitCode() != 2 || !strings.Contains(output.String(), `"outcome":"not-run"`) ||
-					!strings.Contains(output.String(), `"code":"EMIT-HARNESS-BOUND"`) || strings.Contains(output.String(), `"status":"fail"`) {
+					!strings.Contains(output.String(), `"code":"EMIT-INTERRUPTED"`) || strings.Contains(output.String(), `"status":"fail"`) {
 					t.Fatalf("the interrupted harness: %v: %s", waitErr, output.String())
 				}
 			}
@@ -136,5 +136,28 @@ func sleepManifest(t *testing.T, path, pidFile string) {
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A signal that comes after a write phase has ended (`jpack emit conformance
+// --update`, between two vectors) is still caught and acted on: the run's
+// context ends, and no later write begins.
+func TestASignalAfterTheWritePhaseIsActedOn(t *testing.T) {
+	in, stop := interruptContext()
+	defer stop()
+	if !in.beginWrite() {
+		t.Fatal("the write was refused with no signal")
+	}
+	in.endWrite()
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-in.ctx.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("the signal after the write phase was not acted on")
+	}
+	if in.beginWrite() {
+		t.Fatal("a write began after the signal")
 	}
 }
