@@ -44,6 +44,17 @@ All notable changes to tagged releases are documented here.
   `ReadFile` refuses a world-writable file under every rule, and `ReadResolvedFile` refuses a
   file that is not regular without blocking on it. The conformance claim in CONFORMANCE.md is
   unchanged.
+- **Coverage floors for the registry and emitter packages.** A `coverage-floors` check in
+  `dev.json` runs the tests of `internal/registry`, `internal/emit/conformance`,
+  `internal/terraformfile`, `internal/jcs`, `cmd/jpack-emit-go-facts`, `cmd/jpack-emit-go-loader`
+  and `cmd/jpack-emit-ts-constants` with coverage. It prints each package's statement coverage and
+  fails when any is below 90%. `jpdev.json` maps each package's paths to it. New tests bring
+  `internal/registry`, `internal/emit/conformance` and `cmd/jpack-emit-ts-constants` above 91%.
+  They cover the registry's and kind declaration's form refusals, schema keyword forms, patches
+  that add a member the schema declares, the conformance harness's vector reading and request
+  envelope refusals, and the TypeScript emitter's schema and request refusals. Each asserts the
+  diagnostic code and location, the error, or the output bytes. No program's behaviour changes.
+  The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.48.0 - 2026-11-17
 
