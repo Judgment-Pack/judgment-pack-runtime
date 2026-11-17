@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 // ownProcessGroup starts the emitter as the leader of a new process group,
@@ -38,4 +39,22 @@ func killProcessGroup(process *os.Process) error {
 // it is left open.
 func endProcessGroup(process *os.Process) {
 	_ = killProcessGroup(process)
+}
+
+// groupPoll is the pause between two looks at whether the group is gone.
+const groupPoll = 10 * time.Millisecond
+
+// waitProcessGroup waits, up to bound, until no process of the emitter's
+// group is left: a SIGKILL is delivered asynchronously, and a killed member
+// is a group member until it is reaped. Signal 0 tells; ESRCH is gone, and
+// any other answer, EPERM included, is still present. When the bound is
+// over the wait ends, and the run goes on as it would have.
+func waitProcessGroup(process *os.Process, bound time.Duration) {
+	if process == nil {
+		return
+	}
+	deadline := time.Now().Add(bound)
+	for !errors.Is(syscall.Kill(-process.Pid, 0), syscall.ESRCH) && time.Now().Before(deadline) {
+		time.Sleep(groupPoll)
+	}
 }

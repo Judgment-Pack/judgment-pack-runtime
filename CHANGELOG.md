@@ -195,6 +195,12 @@ All notable changes to tagged releases are documented here.
     file's source over 16 MiB, or sources over 64 MiB in all, before formatting them. Before, the
     bounds were held only after formatting, and a 59 MB request reached about 5.8 GB.
   - The conformance claim in CONFORMANCE.md is unchanged.
+- **`jpack emit` removes the emitter's `HOME` only once its process group is gone** (ADR-0098).
+  The group was killed and `HOME` removed straight after, while a killed member could still write
+  into it, and so make it again. The run now waits, up to 2 s, for the group to be gone; past it,
+  `HOME` is removed anyway and the report is unchanged. A process that leaves the group, such as
+  the Go toolchain's telemetry process under `go run`, can still leave a stray temporary
+  directory. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 
