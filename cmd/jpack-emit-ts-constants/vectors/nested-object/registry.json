@@ -1,0 +1,77 @@
+{
+  "registryFormatVersion": "1.0.0",
+  "id": "https://example.org/registries/ts-constants",
+  "version": "1.0.0",
+  "environments": [
+    "dev"
+  ],
+  "owners": [
+    "platform"
+  ],
+  "kinds": [
+    {
+      "kind": "service",
+      "id": "https://example.org/kinds/service",
+      "version": "1.0.0",
+      "digest": "sha256:d48499cb07aae040615e6795a261348e338d0f3627573ae6a6604c1c8e1db6ad"
+    }
+  ],
+  "entries": [
+    {
+      "kind": "service",
+      "id": "checkout",
+      "owner": "platform",
+      "value": {
+        "name": "Checkout “front” café 🛒",
+        "tier": "gold",
+        "endpoint": {
+          "host": "checkout.example.org",
+          "port": 8443,
+          "tls": true
+        },
+        "fallback": null,
+        "labels": {
+          "line-separator": "a b",
+          "paragraph-separator": "a b",
+          "quote": "say \"hi\" \\ */ </script>",
+          "control": "tab\there\nnew line"
+        },
+        "limits": {
+          "rps": 100,
+          "burst": 1.5,
+          "ratio": 0.0025,
+          "floor": -40
+        },
+        "notes": "secret:gcp-sm:projects/example-dev/secrets/written-as-a-value/versions/1",
+        "meta": {
+          "owners": [
+            "team-a",
+            "team-b"
+          ],
+          "since": 2024,
+          "flags": {
+            "beta": false
+          }
+        }
+      }
+    },
+    {
+      "kind": "service",
+      "id": "search",
+      "owner": "platform",
+      "value": {
+        "name": "Search",
+        "tier": "bronze",
+        "endpoint": {
+          "host": "search.example.org",
+          "port": 443
+        },
+        "fallback": {
+          "host": "search-b.example.org",
+          "port": 443,
+          "tls": false
+        }
+      }
+    }
+  ]
+}

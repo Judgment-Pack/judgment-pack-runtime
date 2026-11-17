@@ -46,6 +46,10 @@
     {
       "paths": ["cmd/jpack-emit-go-facts/**"],
       "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test"]
+    },
+    {
+      "paths": ["cmd/jpack-emit-ts-constants/**"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test"]
     }
   ]
 }

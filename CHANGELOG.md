@@ -138,6 +138,22 @@ All notable changes to tagged releases are documented here.
   vectors were written again with `--update`. A request is at most 64 MiB of RFC 8785 bytes, and
   the host refuses a larger one, any request of `"each"` or the one of `"all"`, with `EMIT-REQUEST`
   before any emitter starts. The conformance claim in CONFORMANCE.md is unchanged.
+- **A TypeScript constants emitter: `cmd/jpack-emit-ts-constants`** (ADR-0103, proposed). This is
+  the reference emitter of spec RFC 0036 §6 item 2, run under the emitter contract with
+  `"input": "resolved"` and `"environments": "each"`. Its manifest is
+  `cmd/jpack-emit-ts-constants/emitter.json`. For each environment it writes
+  `generated/constants/<environment>.ts`. For each kind read, the file holds a type made from the
+  kind's schema and a read-only constant of its resolved entries, written `as const` with a
+  `Readonly` alias. Every member at a secret position is left out of both the type and the value,
+  its name included. The emitter checks every declaration against its pin: the SHA-256 of its
+  RFC 8785 form must be the pin's digest, and its id and version the pin's. It refuses a missing,
+  mismatched or unpinned declaration. It also refuses a schema it does not generate (`not` among
+  them), a secret position at an array item, a member or entry id `__proto__`, and a kind whose
+  names are reserved or collide; it never renames one. Each refusal is a response of no files and
+  an `x-ts-*` error diagnostic. Strings are written in ASCII with U+2028 and U+2029 escaped, and
+  numbers as the request gives them. Its 11 vectors are in RFC 0036 §5's layout. A test
+  type-checks their output and a consumer of it with `tsc --strict`, and is skipped when `tsc` is
+  not on PATH. No `jpack` command changes. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 

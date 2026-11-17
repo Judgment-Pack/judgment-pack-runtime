@@ -197,3 +197,4 @@ authority, and following it confers no conformance status on anything.
 | [0099](0099-the-emitter-conformance-harness.md) | Check an emitter against its vectors through the host's own run and response steps, as `jpack emit conformance` | proposed |
 | [0100](0100-a-go-typed-facts-builder-emitter.md) | Generate Go typed facts builders from facts contracts in a standalone emitter, refusing a position or a name it cannot render | proposed |
 | [0101](0101-the-resolved-form-request-carries-the-read-kinds-declarations.md) | Carry the read kinds' declarations, as admitted and bound to their pins by digest, in a resolved-form emit request | proposed |
+| [0103](0103-a-typescript-constants-emitter.md) | Generate TypeScript types and read-only constants for each environment from a resolved registry, leaving every secret position out of both | proposed |

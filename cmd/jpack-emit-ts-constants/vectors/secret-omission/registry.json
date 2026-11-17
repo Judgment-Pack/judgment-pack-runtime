@@ -1,0 +1,84 @@
+{
+  "registryFormatVersion": "1.0.0",
+  "id": "https://example.org/registries/ts-constants",
+  "version": "1.0.0",
+  "environments": [
+    "dev",
+    "prod"
+  ],
+  "owners": [
+    "platform"
+  ],
+  "secretScopes": {
+    "dev": {
+      "gcp-sm": [
+        "example-dev"
+      ]
+    },
+    "prod": {
+      "gcp-sm": [
+        "example-prod"
+      ]
+    }
+  },
+  "kinds": [
+    {
+      "kind": "database",
+      "id": "https://example.org/kinds/database",
+      "version": "1.0.0",
+      "digest": "sha256:7488b2c72be3790d79c602b458577d4ba4acaabbf7907db0a706542bcfb52116"
+    }
+  ],
+  "entries": [
+    {
+      "kind": "database",
+      "id": "audit",
+      "owner": "platform",
+      "value": {
+        "host": "audit.dev.example.org",
+        "port": 6432
+      }
+    },
+    {
+      "kind": "database",
+      "id": "orders",
+      "owner": "platform",
+      "value": {
+        "host": "orders.dev.example.org",
+        "port": 5432,
+        "dbPassword": "secret:gcp-sm:projects/example-dev/secrets/orders-db-password/versions/3",
+        "tokens": {
+          "tokenForBilling": "secret:gcp-sm:projects/example-dev/secrets/orders-billing-token/versions/1",
+          "tokenForReports": "secret:gcp-sm:projects/example-dev/secrets/orders-reports-token/versions/2"
+        },
+        "grants": {
+          "analyst": {
+            "role": "read-only",
+            "grantSecret": "secret:gcp-sm:projects/example-dev/secrets/orders-analyst-grant/versions/4"
+          },
+          "writer": {
+            "role": "read-write"
+          }
+        }
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "environment": "prod",
+      "patches": [
+        {
+          "kind": "database",
+          "id": "orders",
+          "set": {
+            "/host": "orders.prod.example.org",
+            "/dbPassword": "secret:gcp-sm:projects/example-prod/secrets/orders-db-password/versions/9",
+            "/tokens/tokenForBilling": "secret:gcp-sm:projects/example-prod/secrets/orders-billing-token/versions/5",
+            "/tokens/tokenForReports": "secret:gcp-sm:projects/example-prod/secrets/orders-reports-token/versions/6",
+            "/grants/analyst/grantSecret": "secret:gcp-sm:projects/example-prod/secrets/orders-analyst-grant/versions/8"
+          }
+        }
+      ]
+    }
+  ]
+}
