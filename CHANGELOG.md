@@ -7,12 +7,21 @@ All notable changes to tagged releases are documented here.
 - **Who owns each registry-line code, as the companions now say** (VERSIONING.md). The registry
   companion's code list names every `REG-*` code this runtime reports, the `REG-YAML-*` codes,
   `REG-REPORT-TRUNCATED`, `REG-KIND-PATTERN-LIMIT` and `REG-BOUND-VALIDATION-WORK` among them, the
-  `FACTS-*` limit, form and order codes, and `EMIT-MANIFEST`; the dialect companion names
-  `TF-VALUE-LIMIT` with the other `TF-*` codes. VERSIONING.md called them this runtime's own. Each
-  is still provisional until its companion is released, and no code, message or behaviour changes.
-  VERSIONING.md also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed
-  `*` objects is first-version scope and may be lifted in 1.x, and SECURITY.md points to the
-  registry line's support window. The conformance claim in CONFORMANCE.md is unchanged.
+  `FACTS-*` limit, form and order codes, `FACTS-ID-LIMIT` and `EMIT-MANIFEST`, and the thirteen
+  host and harness codes this runtime reported as its own, under their names and severities:
+  `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`, `EMIT-LINK`, `EMIT-PATH-UNREADABLE`,
+  `EMIT-WRITE`, `EMIT-INTERRUPTED`, `EMIT-VECTOR`, `EMIT-HARNESS-BOUND` and the warnings
+  `EMIT-ENV-UNSET`, `EMIT-REPORT-TRUNCATED`, `EMIT-STAGING-LEFTOVER` and `EMIT-LINK-OMITTED`. The
+  dialect companion names `TF-VALUE-LIMIT` with the other `TF-*` codes, makes `terraform-file` a
+  proposed kind of dialect version 3, takes the table this runtime names `proposed-1` as its first,
+  and has each of its rows backed by vectors written by hand. VERSIONING.md called these codes this
+  runtime's own; it now names the companion's planned first release, `registry-v1.0.0`. Each code
+  is still provisional until its companion is released, and no code, severity, message or behaviour
+  changes; the thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the
+  mutation table. VERSIONING.md also states that `jpack-emit-go-facts`' refusal of open objects,
+  `anyOf` and mixed `*` objects is first-version scope and may be lifted in 1.x, and SECURITY.md
+  points to the registry line's support window. The conformance claim in CONFORMANCE.md is
+  unchanged.
 
 ## 0.50.0 - 2026-11-17
 

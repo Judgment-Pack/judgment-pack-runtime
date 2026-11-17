@@ -155,11 +155,11 @@ declares. The RFCs define the `REF-*` codes and `REG-DOC-NUMBER`. The registry c
 counted as written since the later amendment), `REG-BOUND-VALIDATION-WORK` (step 7's schema checks
 past their work bound, the same amendment), `REG-REPORT-TRUNCATED` and the `REG-YAML-*` codes among
 them. The location members are this runtime's own reading of the companion's rules. All of them are
-provisional until the registry companion is released: if the released list differs, this runtime
-adopts it under a new selector and says so in its release notes.
+provisional until the companion's first release, `registry-v1.0.0`, which publishes it as released
+and not yet stable ([The registry line](#the-registry-line)): if the released list differs, this
+runtime adopts it under a new selector and says so in its release notes.
 
-<!-- TODO(1.0, after registry-v1.0.0): name the released companion and say these codes are its
-     (ruled 2026-11-17: released, not stable). -->
+<!-- PLACEHOLDER(1.0): confirm once tag registry-v1.0.0 exists -->
 
 `jpack registry facts` and `jpack registry check-pack` (ADR-0095) follow the same rule. Their
 formats, each with its selector, all `"1.0.0"`:
@@ -172,27 +172,28 @@ formats, each with its selector, all `"1.0.0"`:
   and it does not carry `reportFormatVersion`.
 
 RFC 0037 names the three `FACTS-*` advisories. The companion's §12 also names
-`FACTS-DOCUMENT-LIMIT`, `FACTS-CONTRACT-LIMIT`, `FACTS-CONTRACT-FORM`, `FACTS-CONTRACT-ORDER` and
-`FACTS-CHECK-LIMIT`, provisional in the same way. `FACTS-ID-LIMIT`, which `jpack terraform facts`
-reports for a resource id (its address, with a deposed object's key) over the id limit `evaluate
---batch` reads (ADR-0097's amendment), is this runtime's, and provisional.
-
-<!-- TODO(1.0, spec PR): FACTS-ID-LIMIT joins the companion's §12 beside the other FACTS-*-LIMIT
-     codes (maintainer ruling); then this sentence names it the companion's. -->
+`FACTS-DOCUMENT-LIMIT`, `FACTS-ID-LIMIT`, `FACTS-CONTRACT-LIMIT`, `FACTS-CONTRACT-FORM`,
+`FACTS-CONTRACT-ORDER` and `FACTS-CHECK-LIMIT`, provisional in the same way. `jpack terraform facts`
+reports `FACTS-ID-LIMIT` for a resource id (its address, with a deposed object's key) that is not
+1 to 256 bytes, the id `evaluate --batch` reads (ADR-0097's amendment) and the bound the
+companion's §10.2 states for a batch line's id. It was this runtime's own code until the companion
+took it under that name and severity.
 
 The `terraform-file` reader (`internal/terraformfile`, ADR-0097) is reached through `jpack
 terraform facts`, RFC 0038 §6's batch tool. RFC 0038 calls the batch a product format of the
 reference runtime. Its lines are RFC 8785 canonical bytes with no selector of their own, and they
 are provisional with the reader: a change to their bytes for the same file is named in the release
-notes. The reader's refusal codes are the dialect companion's (`spec/dialect.md` §4.5, proposed):
-`TF-SIZE`, `TF-JSON`, `TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`, `TF-SELECT-BOUND`, `TF-NUMBER`
-and `TF-VALUE-LIMIT`. All of them, their fixed messages, and the accepted `format_version` table
-this runtime names `proposed-1` (plan `1.0`, `1.1` and `1.2`; state `1.0`) are provisional until
-the dialect companion releases the kind and its table. If the companion's codes or table differ,
-this runtime adopts them and says so in its release notes.
+notes. The dialect companion's §4.5 (`spec/dialect.md`, proposed) makes `terraform-file` a
+proposed kind of dialect version 3, and the reader's refusal codes are its: `TF-SIZE`, `TF-JSON`,
+`TF-FORMAT`, `TF-DOCUMENT`, `TF-SENSITIVITY`, `TF-SELECT-BOUND`, `TF-NUMBER` and `TF-VALUE-LIMIT`.
+Its first accepted `format_version` table is the one this runtime names `proposed-1` (plan `1.0`,
+`1.1` and `1.2`; state `1.0`), and the table's release number is left open. §4.5 has each
+accepted `format_version` backed by vectors written by hand to the shape that version documents,
+with no Terraform run and no recorded output. The codes, their fixed messages and the table are
+provisional until a released spec text carries §4.5 and names the table's release. If the
+released codes or table differ, this runtime adopts them and says so in its release notes.
 
-<!-- TODO(1.0, after the spec tag carrying dialect §4.5): name the released dialect text, its codes
-     and table (proposed: version 3; plan 1.0-1.2, state 1.0; synthetic vectors, ruled 2026-11-17). -->
+<!-- PLACEHOLDER(1.0): spec tag carrying dialect §4.5 -->
 
 `jpack emit` (ADR-0098) follows the same rule. It reads and writes these formats:
 
@@ -204,23 +205,21 @@ this runtime adopts them and says so in its release notes.
 - Its report, `emitReportVersion` `"1.0.0"`. This format is this runtime's own.
 
 The registry companion names `EMIT-MANIFEST`, `EMIT-REQUEST-VERSION`, `EMIT-KIND-RANGE`,
-`EMIT-REQUEST`, `EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`. Ten more codes are this
-runtime's and provisional in the same way: `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`,
-`EMIT-LINK`, `EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, `EMIT-INTERRUPTED` (an interrupt or SIGTERM
-that stopped `jpack emit` or `jpack emit conformance`), and the warnings `EMIT-ENV-UNSET`,
+`EMIT-REQUEST`, `EMIT-PROCESS`, `EMIT-RESPONSE` and `EMIT-DEPRECATED`, and ten more codes that were
+this runtime's own until the companion took them under their names and severities (its §11.1,
+§11.2 and §11.4): `EMIT-OWNS-OVERLAP`, `EMIT-KIND-ID`, `EMIT-OPTIONS`, `EMIT-LINK`,
+`EMIT-PATH-UNREADABLE`, `EMIT-WRITE`, `EMIT-INTERRUPTED` (an interrupt or SIGTERM that stopped
+`jpack emit` or `jpack emit conformance`), and the warnings `EMIT-ENV-UNSET`,
 `EMIT-REPORT-TRUNCATED` and `EMIT-STAGING-LEFTOVER` (a staging file an earlier run left, unowned, in
-a directory the host writes to). They are provisional until the companion's first host rows give
-these refusals codes. The bounds are the companion's: a response of 64 MiB, 10 000 files, 16 MiB per
-file, 512 bytes per path, 64 KiB of standard error and a 120 s default limit. A tighter bound
-would be a breaking change.
-
-<!-- TODO(1.0, after registry-v1.0.0): the companion's §11/§12 adds these codes (ruled
-     2026-11-17, option A); then this paragraph names them the companion's. -->
+a directory the host writes to). All of them are provisional in the same way. The bounds are the
+companion's: a response of 64 MiB, 10 000 files, 16 MiB per file, 512 bytes per path, 64 KiB of
+standard error and a 120 s default limit. A tighter bound would be a breaking change.
 
 `jpack emit conformance` (ADR-0099) writes the harness report, `harnessReportVersion` `"1.0.0"`,
 RFC 0036's, and reads the harness level of `vectors/harness.json`; it applies level `"1.0"`, and a
-level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`. Three more
-codes are this runtime's and provisional in the same way: `EMIT-VECTOR` (the vector layout),
+level it does not know refuses the run. It reports the companion's `EMIT-STRAY-WRITE`, and three
+more codes that were this runtime's own until the companion took them under their names and
+severities (its §11.5), provisional in the same way: `EMIT-VECTOR` (the vector layout),
 `EMIT-HARNESS-BOUND` (a check that could not be completed: a harness bound, or a determinism
 run's fresh `HOME` that could not be made; an interrupt is `EMIT-INTERRUPTED`, no longer
 `EMIT-HARNESS-BOUND`), and the warning `EMIT-LINK-OMITTED` (a link that leads out of the
@@ -228,8 +227,6 @@ repository and that git does not track, left out of the copy). Its own bounds, a
 of 256 MiB and 100 000 entries, a git index of 64 MiB and 1 048 576 entries, and a references scan
 of 1 MiB of strings and 2^32 steps a vector, are this runtime's; a tighter bound would be a
 breaking change.
-
-<!-- TODO(1.0, after registry-v1.0.0): the harness's three codes, as the host's above. -->
 
 ## Go API
 
@@ -404,6 +401,8 @@ the `jpack terraform facts` batch lines, is then promised as its bytes: a change
 same input is a breaking change. The same release tags `startup/v1.0.0`, so the start-up module's
 1.0 promise and this one start together. From then on, while `jpack` and the runtime module are
 still 0.x, and within major version 1 of the line:
+
+<!-- PLACEHOLDER(1.0): confirm once tag registry-v1.0.0 exists -->
 
 - **Nothing is removed.** A command, flag, exit code, format member, selector, diagnostic code or
   start-up identifier stays. No bound is tightened. No code, member or rule changes meaning. The
