@@ -109,7 +109,11 @@ func TestReadFileRefusals(t *testing.T) {
 	if secret, err := ReadFile(at); err != nil || len(secret.Reveal()) != MaxSecretBytes {
 		t.Errorf("at the bound: got %v", err)
 	}
-	for _, content := range []string{strings.Repeat("v", MaxSecretBytes+1), strings.Repeat("v", MaxSecretBytes+1) + "\r\n", strings.Repeat("v", 4*MaxSecretBytes)} {
+	// The last two are a value at the bound, its newline and one byte more: a
+	// read that kept MaxSecretBytes+2 or +1 bytes, not +3, would end at the
+	// newline of one of them and admit the value.
+	for _, content := range []string{strings.Repeat("v", MaxSecretBytes+1), strings.Repeat("v", MaxSecretBytes+1) + "\r\n", strings.Repeat("v", 4*MaxSecretBytes),
+		strings.Repeat("v", MaxSecretBytes) + "\r\nv", strings.Repeat("v", MaxSecretBytes) + "\nv"} {
 		over := filepath.Join(dir, "over-bound")
 		writeFile(t, over, content, 0o600)
 		if _, err := ReadFile(over); !errors.Is(err, ErrLimit) {

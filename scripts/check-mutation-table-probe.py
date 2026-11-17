@@ -5,7 +5,9 @@ Each probe changes a copy of a real test body, function or code table in
 memory, or a mutant or provisional value, and asserts the rule refuses it.
 Run from the repository root, after the check.
 """
+import contextlib
 import importlib.util
+import io
 import os
 import sys
 
@@ -130,6 +132,78 @@ expect('the probe changes the comment', provisional != facts_cli)
 expect('a constant\'s comment marks it provisional', 'provisional' in check.const_comments('', provisional).get('CodeFactsIDLimit', ''))
 tf = open('internal/terraformfile/codes.go', encoding='utf-8').read()
 expect('a const block\'s comment marks its members', 'provisional' in check.const_comments('', tf).get('CodeValueLimit', ''))
+
+# The start-up module's rows: its refusals and limits, read from its source.
+ids = check.startup_identifiers()
+expect('an exported error value is a refusal', ids.get('ErrWorldReadable') == 'refusal')
+expect('an error value of a file built outside Unix is a refusal', ids.get('ErrPermissionsUnknown') == 'refusal')
+expect('an exported numeric constant is a limit', ids.get('MaxSecretBytes') == 'limit' and ids.get('MaxResolvedDepth') == 'limit')
+expect('a string constant is not a limit', 'Redacted' not in ids)
+expect('an unexported constant is not a limit', 'openNoWait' not in ids)
+texts = check.startup_sources()
+reader = texts['startup/reader.go']
+added = reader.replace('\tErrNoBinding = errors.New(', '\tErrProbe = errors.New("probe")\n\tErrNoBinding = errors.New(', 1)
+expect('the probe adds an error value', added != reader)
+added_ids = check.startup_identifiers(dict(texts, **{'startup/reader.go': added}))
+expect('an added error value is a refusal', added_ids.get('ErrProbe') == 'refusal')
+odd = reader.replace('\tErrNoBinding = errors.New(', '\tErrProbe = fmt.Errorf("probe")\n\tErrNoBinding = errors.New(', 1)
+with contextlib.redirect_stderr(io.StringIO()):
+    try:
+        check.startup_identifiers(dict(texts, **{'startup/reader.go': odd}))
+        refused = False
+    except SystemExit:
+        refused = True
+expect('an exported variable that is not an errors.New value is refused', refused)
+sites = check.startup_sites(ids)
+expect('a refusal is found in each function that uses it',
+       {('ErrLimit', 'startup/reader.go:admitValue'), ('ErrLimit', 'startup/resolved.go:ReadResolved'),
+        ('ErrLimit', 'startup/resolved.go:scan')} <= sites)
+expect('a refusal of a file built outside Unix has its site',
+       ('ErrPermissionsUnknown', 'startup/permissions_other.go:checkPermissions') in sites)
+expect('a method that uses a refusal is a site', ('ErrNotDecodable', 'startup/secret.go:UnmarshalText') in sites)
+commented = reader.replace('return Secret{}, fmt.Errorf("%w: %s", ErrNotSet, name)', 'return Secret{}, nil // ErrNotSet', 1)
+expect('the probe moves a refusal into a comment', commented != reader)
+expect('an identifier only in a comment is no site',
+       ('ErrNotSet', 'startup/reader.go:ReadEnv') not in check.startup_sites(ids, dict(texts, **{'startup/reader.go': commented})))
+rows = check.read_table(check.STARTUP_HEADER)
+found, tests = check.startup_problems(rows, ids, sites)
+expect('the start-up rows have no problem', found == [])
+expect('a row is missing', any('has no row' in p for p in check.startup_problems(rows[1:], ids, sites)[0]))
+expect('a refusal with no site is refused',
+       any('used in no function' in p for p in check.startup_problems(rows, added_ids, sites)[0]))
+
+
+def changed(index, **cells):
+    copy = list(rows)
+    copy[index] = (copy[index][0], dict(copy[index][1], **cells))
+    return check.startup_problems(copy, ids, sites)[0]
+
+
+expect('a row naming no identifier of the module is refused', changed(0, identifier='ErrNoSuchThing') != [])
+expect('a row whose site does not use its identifier is refused',
+       changed(0, **{'mutant site': 'startup/reader.go:ReadEnv'}) != [])
+expect('a second row for one site is refused', check.startup_problems(rows + rows[:1], ids, sites)[0] != [])
+expect('a test that does not name the identifier is refused', changed(0, test='TestReadResolvedFile') != [])
+expect('a test the module does not declare is refused', changed(0, test='TestNoSuchTestHere') != [])
+admit = dict(check.functions(reader))['admitValue']
+expect('a refusal mutant into another refusal applies',
+       check.startup_mutant_problem(admit, 'every `ErrEmpty` becomes `ErrLimit`', 'ErrEmpty', ids) is None)
+expect('a refusal mutant into a limit is refused',
+       check.startup_mutant_problem(admit, 'every `ErrEmpty` becomes `MaxSecretBytes`', 'ErrEmpty', ids) is not None)
+expect('a refusal mutant into itself is refused',
+       check.startup_mutant_problem(admit, 'every `ErrEmpty` becomes `ErrEmpty`', 'ErrEmpty', ids) is not None)
+expect('a mutant of another identifier than the row\'s is refused',
+       check.startup_mutant_problem(admit, 'every `ErrLimit` becomes `ErrEmpty`', 'ErrEmpty', ids) is not None)
+expect('a limit mutant by one applies',
+       check.startup_mutant_problem(admit, 'every `MaxSecretBytes` becomes `MaxSecretBytes-1`', 'MaxSecretBytes', ids) is None)
+expect('a limit mutant by two is refused',
+       check.startup_mutant_problem(admit, 'every `MaxSecretBytes` becomes `MaxSecretBytes+2`', 'MaxSecretBytes', ids) is not None)
+expect('a limit mutant into a refusal is refused',
+       check.startup_mutant_problem(admit, 'every `MaxSecretBytes` becomes `ErrLimit`', 'MaxSecretBytes', ids) is not None)
+expect('a mutant of an identifier its function does not hold is refused',
+       check.startup_mutant_problem(admit, 'every `ErrNotSet` becomes `ErrEmpty`', 'ErrNotSet', ids) is not None)
+expect('a test in a file built only outside Unix is declared', check.startup_listing({'TestReadFileRefusesEveryFileOutsideUnix': ['x']}) == [])
+expect('a test no file declares is refused', check.startup_listing({'TestNoSuchTestHere': ['x']}) != [])
 
 for name in failures:
     print('mutation table probe: failed: ' + name, file=sys.stderr)

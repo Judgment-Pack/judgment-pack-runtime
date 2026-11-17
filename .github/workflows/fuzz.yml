@@ -1,7 +1,8 @@
 name: Fuzz
 
-# Runs the registry line's fuzz targets once a day, 30 seconds each, and on demand. It is not a
-# pull-request check: a pull request runs each target's seed corpus as an ordinary test (`go test`).
+# Runs the registry line's fuzz targets once a day, 30 seconds each, and on demand, for the time
+# the `fuzztime` input names (a whole number of seconds, minutes or hours, at most 340 minutes;
+# each job's limit is that time plus 10 minutes). It is not a pull-request check: a pull request runs each target's seed corpus as an ordinary test (`go test`).
 # A failing run uploads the target's testdata/fuzz directory, which holds the crasher. The pull
 # request that fixes the failure checks the crasher in there as a seed, so that every later
 # `go test` replays it.
@@ -10,15 +11,58 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "Fuzzing time per target: a whole number with s, m or h (at most 340m)"
+        required: false
+        default: 30s
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  # The fuzzing time and each target's job limit. A scheduled run has no input and uses 30s.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      fuzztime: ${{ steps.plan.outputs.fuzztime }}
+      minutes: ${{ steps.plan.outputs.minutes }}
+    steps:
+      - name: Read the fuzzing time
+        id: plan
+        env:
+          FUZZTIME: ${{ inputs.fuzztime || '30s' }}
+        run: |
+          if [[ ! "$FUZZTIME" =~ ^([1-9][0-9]{0,5})([smh])$ ]]; then
+            echo "fuzztime must be a whole number followed by s, m or h, such as 30s or 30m" >&2
+            exit 1
+          fi
+          count=${BASH_REMATCH[1]}
+          case ${BASH_REMATCH[2]} in
+            s) seconds=$count ;;
+            m) seconds=$((count * 60)) ;;
+            h) seconds=$((count * 3600)) ;;
+          esac
+          # The job limit is the fuzzing time, rounded up to a minute, plus 10 minutes for the
+          # checkout, the Go set-up and the seed corpus; GitHub ends a job at 360 minutes, so
+          # the limit stays at 350 or less.
+          minutes=$(( (seconds + 59) / 60 + 10 ))
+          if (( minutes > 350 )); then
+            echo "fuzztime $FUZZTIME is more than the 340 minutes a target may fuzz" >&2
+            exit 1
+          fi
+          echo "fuzztime=$FUZZTIME" >> "$GITHUB_OUTPUT"
+          echo "minutes=$minutes" >> "$GITHUB_OUTPUT"
+          echo "Fuzzing each target for $FUZZTIME, with a job limit of $minutes minutes."
+
   fuzz:
     name: ${{ matrix.target }}
+    needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ fromJSON(needs.plan.outputs.minutes) }}
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +116,8 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           PACKAGE: ${{ matrix.package }}
-        run: go test -run='^$' -fuzz="^${TARGET}\$" -fuzztime=30s "$PACKAGE"
+          FUZZTIME: ${{ needs.plan.outputs.fuzztime }}
+        run: go test -run='^$' -fuzz="^${TARGET}\$" -fuzztime="$FUZZTIME" "$PACKAGE"
       - name: Upload the crasher
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

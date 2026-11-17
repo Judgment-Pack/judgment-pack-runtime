@@ -9,7 +9,7 @@
     {
       "paths": ["startup/**"],
       "checks": ["local-paths", "agent-docs", "diff-check", "startup-fmt", "startup-vet", "startup-test",
-                 "loader-golden-vet", "loader-golden-test"]
+                 "loader-golden-vet", "loader-golden-test", "mutation-table"]
     },
     {
       "paths": ["internal/auditformat/*.json"],
