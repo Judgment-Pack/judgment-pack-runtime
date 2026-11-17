@@ -2,7 +2,7 @@
 
 All notable changes to tagged releases are documented here.
 
-## Unreleased
+## 0.51.0 - 2026-11-17
 
 - **`jpack emit conformance` no longer reads an index with an offset table** (ADR-0099). The
   harness passed over the index's `IEOT` and `EOIE` extensions and read the entries in order, but
@@ -36,8 +36,9 @@ All notable changes to tagged releases are documented here.
   and has each of its rows backed by vectors written by hand. VERSIONING.md called these codes this
   runtime's own; it now pins the registry companion's first release, `registry-v1.0.0`, published
   as released and not yet stable, whose code list names them. The `TF-*` codes stay provisional
-  until a spec release carries dialect §4.5. No code, severity, message or behaviour changes; the thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the
-  mutation table: for the `EMIT-*` codes and `FACTS-ID-LIMIT`, that marking now says who named a
+  until a spec release carries dialect §4.5. No code, severity, message or behaviour changes; the
+  thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the mutation
+  table: for the `EMIT-*` codes and `FACTS-ID-LIMIT`, that marking now says who named a
   code, the companion or this runtime, and not whether its companion is released. VERSIONING.md
   also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed `*` objects is
   first-version scope and may be lifted in 1.x, and SECURITY.md points to the registry line's
@@ -60,6 +61,10 @@ All notable changes to tagged releases are documented here.
     `jpack-emit-go-loader`, `jpack-emit-ts-constants` and `jpack-emit-go-facts`, as far as the
     registry companion's §11.6 promises them: each one's manifest, the kinds it reads and its
     options, not the bytes it writes.
+  - The help of `jpack registry`, `registry import`, `emit` and `emit conformance` no longer says
+    the registry companion's text and vectors are not released: it names `registry-v1.0.0`. The
+    mutation table no longer marks the released companion's `REG-*` and `FACTS-*` codes
+    provisional, and its check refuses a row that does.
 
   No code, message or behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
 

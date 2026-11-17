@@ -306,7 +306,7 @@ severity.
 ## More information
 
 - Spec RFC 0036 (Accepted 2026-11-16) and the registry companion `spec/registry.md` §§11–12
-  (proposed).
+  (released as `registry-v1.0.0`).
 - ADR-0093 (the registry reader), ADR-0095 (facts contracts).
 - Open questions for the spec:
   1. Should `**` match zero segments at the end of a glob? Answered: no (one or more, as in
