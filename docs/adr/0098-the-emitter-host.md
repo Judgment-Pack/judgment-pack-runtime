@@ -215,8 +215,10 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 - A path may not begin with a drive letter (`C:`). More widely, a path is refused on every system
   when Windows would read it as another name, so a manifest behaves the same everywhere: a `:` in
   any segment (a drive or an NTFS stream), a segment ending in `.` or a space, and a reserved device
-  name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`) in any case, with or without an
-  extension. The same rules hold for owns globs.
+  name in any case, with or without an extension. The device names are those `filepath.IsLocal`
+  refuses on Windows: `CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM1`–`COM9` and
+  `LPT1`–`LPT9`, and `COM` and `LPT` followed by a superscript `¹`, `²` or `³`, which Windows reads
+  as that digit. The same rules hold for owns globs.
 - An owns glob's first segment is a literal name, with no `*`. A glob such as `**`, `**/*`,
   `**/**`, `*/**` or `*` owns files across the whole repository, so stale deletion would remove
   every one the emitter does not answer with; a manifest that gives one is refused. Testing the
@@ -247,7 +249,9 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
     when both are given);
   - an `entry` is one of the request's entries, of the location's kind when it names one, in the
     location's environment. A request of several environments (`"all"`) must name it;
-  - the `pointer` names an existing position in that entry's value, or, with no entry, is `""`;
+  - a location that names an entry is in `document` `value`, and its `pointer` names an existing
+    position in that entry's value (companion §7.3: in document `value` the pointer is into the
+    entry's resolved value). With no entry, the pointer is `""`;
   - in the facts-contracts form there is no environment, kind name or entry. A `kindDocument` is
     the digest of a kind a contract was made from, and the pointer names a position in the
     request's `factsContracts` array, its first token the contract's index;

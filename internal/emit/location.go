@@ -105,8 +105,10 @@ func member(value any, path ...string) any {
 //   - an entry is one of the request's entries of that kind, in the
 //     location's environment; a request of several environments ("all")
 //     must say which;
-//   - the pointer names an existing position in the entry's value, or, with
-//     no entry, is "" (the whole document);
+//   - a location that names an entry is in document "value", and its
+//     pointer names an existing position in the entry's value (§7.3: in
+//     document value the pointer is into the entry's resolved value); with
+//     no entry, the pointer is "" (the whole document);
 //   - in the facts-contracts form there is no environment, kind name or
 //     entry: a kindDocument is the digest of a kind a contract was made from,
 //     and the pointer names a position in the request's factsContracts
@@ -151,7 +153,7 @@ func (index *requestIndex) resolves(location registry.Location) bool {
 	if location.Entry == nil {
 		return location.Pointer == ""
 	}
-	if environment == nil || location.Kind != "" && location.Kind != location.Entry.Kind {
+	if location.Document != registry.DocumentValue || environment == nil || location.Kind != "" && location.Kind != location.Entry.Kind {
 		return false
 	}
 	value, ok := environment.entries[*location.Entry]

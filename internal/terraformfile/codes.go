@@ -11,7 +11,9 @@
 // values of the selected resources reach the acquired value. A refusal carries
 // its code, the input's sha256 and its size, and a fixed message per code:
 // never a value, a member name, a pointer or a position from the input, since
-// before removal any of those could be part of a sensitive value.
+// before removal any of those could be part of a sensitive value. ReadStream's
+// TF-SIZE, for a stream read only to one byte past maxBytes, carries its code
+// and a fixed message alone.
 //
 // The package does not depend on the carrier: a carrier diagnostic carries a
 // pointer, and the carrier's node bound would refuse a file the RFC accepts.
@@ -101,6 +103,10 @@ var messages = map[string]string{
 	CodeValueLimit:  "The acquired value's canonical JSON is longer than this runtime's bound of 268435456 bytes.",
 }
 
+// streamSizeMessage is TF-SIZE's fixed message for a stream: ReadStream stops
+// one byte past maxBytes, so the stream's whole length and digest are unknown.
+const streamSizeMessage = "Standard input is longer than the source's maxBytes, and was not parsed. It was read only to one byte past maxBytes, so neither its sha256 nor its size is known."
+
 // Codes returns every refusal code, in a fixed order.
 func Codes() []string {
 	return []string{CodeSize, CodeJSON, CodeFormat, CodeDocument, CodeSensitivity, CodeSelectBound, CodeNumber, CodeValueLimit}
@@ -113,11 +119,16 @@ func Message(code string) string { return messages[code] }
 // Refusal is a refused acquisition: the code of the first step that failed,
 // the sha256 (bare lower-case hex) of the whole input, its length in bytes, and
 // the code's fixed message. It holds nothing else.
+//
+// Stream marks ReadStream's TF-SIZE: a stream read only to one byte past
+// maxBytes. Its SHA256 is "" and its Bytes 0, JSON leaves both members out, and
+// its message is a fixed text that says the input was standard input.
 type Refusal struct {
 	Code    string `json:"code"`
 	SHA256  string `json:"sha256"`
 	Bytes   int64  `json:"bytes"`
 	Message string `json:"message"`
+	Stream  bool   `json:"-"`
 }
 
 func newRefusal(code, digest string, size int64) *Refusal {
@@ -128,12 +139,25 @@ func newRefusal(code, digest string, size int64) *Refusal {
 	return &Refusal{Code: code, SHA256: digest, Bytes: size, Message: message}
 }
 
+// newStreamSizeRefusal is ReadStream's TF-SIZE.
+func newStreamSizeRefusal() *Refusal {
+	return &Refusal{Code: CodeSize, Message: streamSizeMessage, Stream: true}
+}
+
 // Error makes a Refusal usable as an error. It names the code only.
 func (r *Refusal) Error() string { return "terraformfile: refused " + r.Code }
 
 // JSON returns the refusal as RFC 8785 canonical JSON. Every member is fixed
-// text, a hex digest or an integer, so no escaping can arise.
+// text, a hex digest or an integer, so no escaping can arise. A Stream refusal
+// is {"code", "message"}: it has no sha256 or bytes member.
 func (r *Refusal) JSON() []byte {
+	if r.Stream {
+		out := []byte(`{"code":`)
+		out = appendJSONString(out, r.Code)
+		out = append(out, `,"message":`...)
+		out = appendJSONString(out, r.Message)
+		return append(out, '}')
+	}
 	out := []byte(`{"bytes":`)
 	out = strconv.AppendInt(out, r.Bytes, 10)
 	out = append(out, `,"code":`...)
