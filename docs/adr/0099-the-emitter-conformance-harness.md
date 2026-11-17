@@ -308,6 +308,22 @@ These are carried, not fixed. None gives a wrong verdict for an honest emitter o
 - **Check 2's time zone on Windows.** Go reads the time zone from the system there and ignores
   `TZ`, so runs 2 and 3 do not change it for a Go emitter. An emitter in another language may
   still read `TZ`.
+- **Links changed while the copy is made.** Each link is checked against `--root` as it is
+  copied, but the kind of each entry comes from the walk's earlier listing. A writer racing the
+  repository during the copy could flip a link to a directory while another link is checked
+  through it, and back before it is copied, so that the copy holds a link that leads out. It
+  needs a concurrent writer to the repository; the emitter, which runs in the copy, cannot cause
+  it.
+- **A directory link made before its target (Windows).** Go's `os.Symlink` on Windows stats the
+  target to choose a file link or a directory link. A link that sorts before the directory it
+  points to, relative (`a -> b/`) or absolute and moved into the copy (`cache -> C:\repo\real`),
+  is made before that directory exists in the copy, so it becomes a file link, and an honest
+  emitter's write through it fails check 1. Making links in a second pass, after every file and
+  directory, would close it.
+- **Whether Windows resolves `..` in a link target lexically: unverified.** The link check takes
+  each `..` from where the parts before it led. If Windows instead resolves `..` lexically, a
+  target such as `a -> b\..\..\x`, with `b -> deep\deeper`, passes the check but leads out. It
+  needs a run on Windows with the privilege to make links.
 
 ## More information
 
