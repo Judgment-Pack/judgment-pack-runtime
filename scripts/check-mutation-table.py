@@ -160,12 +160,14 @@ def const_comments(path, text=None):
 
 def provisional_marks():
     """{code: 'yes', 'no' or 'n/a'} for each code whose provisional status the source marks: a code
-    of `var Codes` in internal/emit/codes.go by its section's heading; a code held by a constant
-    (Codes() in internal/terraformfile/codes.go names them, and every other FACTS- constant) as
-    provisional when the constant's comment says so, and as not provisional otherwise unless a
-    registry table lists it too; an emitter's x- code is n/a. The source marks no other code, and
-    the registry's tables mark none, so their rows are not compared."""
+    of `var Codes` in internal/emit/codes.go, of `var Codes` in internal/registry/diag.go or of
+    `var FactsCodes` in internal/registry/facts.go by its section's heading; a code held by a
+    constant (Codes() in internal/terraformfile/codes.go names them, and every other FACTS-
+    constant) as provisional when the constant's comment says so, and as not provisional
+    otherwise unless a table marks it; an emitter's x- code is n/a. The source marks every code."""
     marks = section_marks('internal/emit/codes.go', 'Codes')
+    for path, name in (('internal/registry/diag.go', 'Codes'), ('internal/registry/facts.go', 'FactsCodes')):
+        marks.update(section_marks(path, name))
     held = []
     directory = 'internal/terraformfile'
     comments = {}
@@ -183,11 +185,9 @@ def provisional_marks():
                 held.append((value, comments.get(name, '')))
     for code, comment in held:
         if 'provisional' in comment:
-            marks.setdefault(code, 'yes')
-    registry = set(map_table('internal/registry/diag.go', 'Codes')) | set(map_table('internal/registry/facts.go', 'FactsCodes'))
+            marks[code] = 'yes'
     for code, comment in held:
-        if code not in registry:
-            marks.setdefault(code, 'no')
+        marks.setdefault(code, 'no')
     for code in derive():
         if code.startswith('x-'):
             marks[code] = 'n/a'

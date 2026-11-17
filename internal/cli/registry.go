@@ -11,14 +11,14 @@ import (
 )
 
 // registryCommand is the registry companion proposed by RFCs 0034 and 0035
-// (ADR-0093): validation with a value-free report, and resolution to one
+// and released as registry-v1.0.0 (ADR-0093): validation with a value-free report, and resolution to one
 // document per environment; and import from YAML (ADR-0094). It fetches
 // nothing.
 func (a *App) registryCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "registry",
 		Short: "Import, validate and resolve a registry of adopter-declared kinds (spec RFCs 0034, 0035)",
-		Long:  "Registry operations over local files: a registry document and the kind declarations it pins, in JSON, or in the YAML subset import converts to JSON (ADR-0094). Nothing is fetched: a secret reference is checked for form, version pin and environment scope and left as written. Reports never carry a value from the documents. It follows the accepted RFCs; the registry companion's normative text and vectors are not released yet.",
+		Long:  "Registry operations over local files: a registry document and the kind declarations it pins, in JSON, or in the YAML subset import converts to JSON (ADR-0094). Nothing is fetched: a secret reference is checked for form, version pin and environment scope and left as written. Reports never carry a value from the documents. It follows the accepted RFCs and the registry companion released as registry-v1.0.0.",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()

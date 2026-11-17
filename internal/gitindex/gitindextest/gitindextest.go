@@ -129,3 +129,34 @@ func Write(t testing.TB, dir string, paths ...string) {
 		t.Fatal(err)
 	}
 }
+
+// EndOfIndexEntries is an end of index entries extension (EOIE), of an
+// index whose object format is SHA-1, whole: offset, the offset in the
+// index of the first extension git reads with it, then git's hash of the
+// signature and size of each of extensions, those it reads from offset up
+// to the EOIE (read-cache.c's read_eoie_extension).
+func EndOfIndexEntries(offset int, extensions ...[]byte) []byte {
+	hash := sha1.New()
+	for _, extension := range extensions {
+		hash.Write(extension[:8])
+	}
+	return Extension("EOIE", hash.Sum(binary.BigEndian.AppendUint32(nil, uint32(offset))))
+}
+
+// HiddenOffsetTable is b, of SHA-1, with one more extension, an optional
+// one (ZZZZ), whose data is hidden as an entry of b's version, then an
+// index entry offset table (IEOT) that gives it as the one block of
+// entries, then an EOIE that gives the table's offset. The EOIE ends just
+// before the checksum, where git looks for one, so git with several index
+// threads reads hidden in place of b's entries; a reader of the
+// extensions in order passes over all three as the optional one's data.
+func HiddenOffsetTable(b Builder, hidden Entry) Builder {
+	one := Builder{Version: b.Version, Entries: []Entry{hidden}}.Bytes()
+	entry := one[12 : len(one)-sha1.Size]
+	// The hidden entry begins after the optional extension's header.
+	at := len(b.Bytes()) - sha1.Size + 8
+	ieot := Extension("IEOT", binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, 1), uint32(at)), 1))
+	data := slices.Concat(entry, ieot, EndOfIndexEntries(at+len(entry), ieot))
+	b.Extensions = append(slices.Clone(b.Extensions), Extension("ZZZZ", data))
+	return b
+}

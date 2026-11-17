@@ -303,7 +303,8 @@ Each list is bounded at 1000. The report's own diagnostics give why it could not
 - `EMIT-STRAY-WRITE` is the companion's.
 - `EMIT-VECTOR` (the layout) and `EMIT-HARNESS-BOUND` (a check that could not be completed) were
   this runtime's, and provisional, as was the warning `EMIT-LINK-OMITTED` (a link left out of the
-  copy), by the amendment below. The companion's §12 (proposed) now lists all three.
+  copy), by the amendment below. The companion's §12, released as `registry-v1.0.0`, now lists
+  all three.
 - An `--update` that cannot write is `EMIT-WRITE` on the vector, and the run exits 2.
 
 ### Consequences
@@ -447,7 +448,14 @@ holds.
   at the table's offsets, a version 4 block's first path from no previous path, so an index whose
   table disagrees with its entries gives git other paths than a reading in order. Before, both were
   passed over, and a hand-made index, of version 2 or 4, could make the harness leave out a link
-  git tracks.
+  git tracks. Git finds `EOIE` not in the list of extensions but at a fixed place, the 32 bytes
+  before the checksum, and from the offset it gives finds `IEOT` and reads the extensions, so an
+  `EOIE`, `IEOT`, `link` or `sdir` hidden in an optional extension's data is passed over by a
+  reading in order. The index is refused, too, when its bytes at that place read `EOIE`, whatever
+  else git checks of them and wherever they lie, inside another extension's data or an entry. A
+  scan of every extension's data for the four signatures was weighed and not chosen: `TREE` holds
+  directory names, so a directory named `link` would refuse an ordinary index, and without an
+  `EOIE` at its place git reads the extensions in order, as the reader does.
 
 **Comparing paths.** An index path and a link's path are compared byte for byte, as git's slash
 paths. The file system may read two names as one, so they are compared loosely too, by the same
@@ -490,7 +498,7 @@ that no rule ignores would still be the repository's content to that reading.
   run then differs from a run in the repository. The warning names the link, so the author can
   remove it, make it relative and inside `--root`, or track what it holds.
 
-`EMIT-LINK-OMITTED` is the companion's now (§12, proposed), and provisional (VERSIONING.md).
+`EMIT-LINK-OMITTED` is the companion's now (§12, released as `registry-v1.0.0`; VERSIONING.md).
 
 ## Amendment: `--update` gates its write (2026-11-17, #468)
 

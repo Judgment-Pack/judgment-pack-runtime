@@ -1,6 +1,6 @@
 // Package conformance is the emitter conformance harness of spec RFC 0036 §5,
-// as the draft registry companion (spec/registry.md §11.5) restates it
-// (ADR-0099): `jpack emit conformance`. It runs an emitter on its author's
+// as the registry companion (spec/registry.md §11.5, released as
+// registry-v1.0.0) restates it (ADR-0099): `jpack emit conformance`. It runs an emitter on its author's
 // vectors through the host's own run step (emit.Run) and response check
 // (emit.ParseResponse), and applies the checks of the vectors' harness level:
 // golden equality, determinism, path safety and bounds (with the harness's
