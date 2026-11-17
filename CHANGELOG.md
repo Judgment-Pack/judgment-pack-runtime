@@ -13,8 +13,9 @@ All notable changes to tagged releases are documented here.
   runtime module stay 0.x. The conformance claim in CONFORMANCE.md is unchanged.
 - **Interrupts, bounds and start-up file checks** (ADR-0096, ADR-0103). `jpack emit conformance`
   sent an interrupt or SIGTERM is refused with `EMIT-HARNESS-BOUND` and drops the interrupted
-  vector's rows, which would report failures the emitter did not cause. A second signal ends
-  `jpack`. `jpack emit` no longer starts the emitter with SIGPIPE ignored. A given `request.json`
+  vector's rows, which would report failures the emitter did not cause. `jpack emit` interrupted
+  before its write refuses the run with `EMIT-PROCESS` and writes nothing; a write once begun
+  finishes. A second signal ends `jpack` at once, except during that write. `jpack emit` no longer starts the emitter with SIGPIPE ignored. A given `request.json`
   is bounded by its canonical size, not only its size as written. A vector's directory and its
   `expected/` are listed under a bound on their entries, directories included. The TypeScript
   constants emitter counts its depth bound of 34 in containers only. In the start-up module,
