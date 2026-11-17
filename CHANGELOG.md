@@ -22,9 +22,10 @@ All notable changes to tagged releases are documented here.
     `id`, a pin's `id`, and a facts contract's `id` and `source.kind.id`, as before.
   - A pattern's size is counted on the pattern as written (§3.4, "Program size"; ADR-0093
     amendment), not on RE2's parse, so every reader refuses the same patterns. `(ab|ac){1000}` is
-    5000 and is now `REG-KIND-PATTERN-LIMIT`; RE2's parse factored it to 4000 and admitted it.
-    The kind's total of 65,536 counts the same sizes, a pattern outside the subset is still
-    `REG-KIND-PATTERN` alone, and the code's message now says size, not instructions.
+    5000 and is now `REG-KIND-PATTERN-LIMIT`; RE2's parse factored it to `a[bc]`, 2000, and
+    admitted it. The kind's total of 65,536 counts the same sizes, a pattern outside the subset
+    is still `REG-KIND-PATTERN` alone, and the code's message now says size, not instructions.
+  - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 

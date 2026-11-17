@@ -255,7 +255,7 @@ counts 2 plus its atom and `+` and `?` 1 plus it; `{n}` counts n times its atom,
 times it (`{0,}` as `*`), and `{n,m}` m times it plus m − n; a sequence sums its parts and an
 alternation of k alternatives sums them plus k − 1; every construct counts at least 1. The count
 is made in the subset's lexical reading, saturating just past 4096. RE2's parse factors common
-prefixes, so `(ab|ac){1000}` was counted as `a(b|c)` repeated, 4000, and admitted; as written it
+prefixes, so `(ab|ac){1000}` was counted as `a[bc]` repeated, 2000, and admitted; as written it
 is 5000 and is now `REG-KIND-PATTERN-LIMIT`. Size is held only for a pattern within the subset:
 the parse still runs, and Go's refusal of a nested repetition past 1000 stays `REG-KIND-PATTERN`
 whatever the size. The kind's total of 65,536 is of the same sizes. The written size is still an
