@@ -2,6 +2,18 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **Who owns each registry-line code, as the companions now say** (VERSIONING.md). The registry
+  companion's code list names every `REG-*` code this runtime reports, the `REG-YAML-*` codes,
+  `REG-REPORT-TRUNCATED`, `REG-KIND-PATTERN-LIMIT` and `REG-BOUND-VALIDATION-WORK` among them, the
+  `FACTS-*` limit, form and order codes, and `EMIT-MANIFEST`; the dialect companion names
+  `TF-VALUE-LIMIT` with the other `TF-*` codes. VERSIONING.md called them this runtime's own. Each
+  is still provisional until its companion is released, and no code, message or behaviour changes.
+  VERSIONING.md also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed
+  `*` objects is first-version scope and may be lifted in 1.x, and SECURITY.md points to the
+  registry line's support window. The conformance claim in CONFORMANCE.md is unchanged.
+
 ## 0.50.0 - 2026-11-17
 
 - **The registry line's support window** (VERSIONING.md, "The registry line"). Fixes land in the

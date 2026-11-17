@@ -104,13 +104,14 @@ type codeInfo struct {
 
 // Codes is the closed list of the host's codes, each with its severity and
 // fixed message (the last diagnostic of a capped listing adds its count to
-// it, ListPaths). The companion (§12) names EMIT-REQUEST-VERSION,
+// it, ListPaths). The companion (§12) names EMIT-MANIFEST, EMIT-REQUEST-VERSION,
 // EMIT-KIND-RANGE, EMIT-REQUEST, EMIT-PROCESS, EMIT-RESPONSE, EMIT-DEPRECATED
 // and the harness's EMIT-STRAY-WRITE. The others are this runtime's, for the host
 // refusals the companion leaves without a code (§17), provisional until the
 // companion's host rows name them (VERSIONING.md).
 var Codes = map[string]codeInfo{
 	// The companion's.
+	"EMIT-MANIFEST":        {SeverityError, "The emitter manifest is not admissible JSON, or a member is missing, not defined, or not of its form."},
 	"EMIT-REQUEST-VERSION": {SeverityError, "The host writes no request version the manifest lists, or none that carries the registry's resolved format."},
 	"EMIT-KIND-RANGE":      {SeverityError, "A pinned kind the manifest reads has a version outside the manifest's range."},
 	"EMIT-REQUEST":         {SeverityError, "The request could not be formed: the registry is not valid, its pins and declarations do not match, a facts contract is refused or exceeds its bounds, two contracts share an id and version, or the request exceeds its size bound."},
@@ -121,7 +122,6 @@ var Codes = map[string]codeInfo{
 	"EMIT-STRAY-WRITE": {SeverityError, "The emitter created, changed or removed a file of the repository copy itself, outside the response."},
 
 	// This runtime's, provisional.
-	"EMIT-MANIFEST":         {SeverityError, "The emitter manifest is not admissible JSON, or a member is missing, not defined, or not of its form."},
 	"EMIT-OWNS-OVERLAP":     {SeverityError, "An owns glob of the manifest can match a path an owns glob of another manifest given can match."},
 	"EMIT-KIND-ID":          {SeverityError, "The registry pins a kind of a name the manifest reads with another kind id."},
 	"EMIT-OPTIONS":          {SeverityError, "The options document is not admissible JSON, or does not satisfy the manifest's options schema."},

@@ -76,9 +76,9 @@ func AcceptedFormats(document string) []string {
 	return append([]string(nil), acceptedFormats[document]...)
 }
 
-// The refusal codes. RFC 0038 names every one but CodeValueLimit, which is
-// this runtime's (ADR-0097). All are provisional until the dialect companion
-// releases the kind (VERSIONING.md).
+// The refusal codes. The dialect companion (spec/dialect.md §4.5) names
+// every one; RFC 0038 named all but CodeValueLimit (ADR-0097). All are
+// provisional until the dialect companion releases the kind (VERSIONING.md).
 const (
 	CodeSize        = "TF-SIZE"
 	CodeJSON        = "TF-JSON"

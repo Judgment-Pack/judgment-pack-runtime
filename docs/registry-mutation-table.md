@@ -159,7 +159,7 @@ run the mutants; a reviewer does.
 | `EMIT-RESPONSE` | error | `./internal/emit` | `TestResponseRefusesEachMalformedPart` | `internal/emit/response.go:ParseResponse` | every `"EMIT-RESPONSE"` becomes `"EMIT-MANIFEST"` | no |
 | `EMIT-DEPRECATED` | warning | `./internal/emit` | `TestEmitReportsAnInvalidRegistryAndADeprecatedEmitter` | `internal/emit/host.go:Emit` | every `"EMIT-DEPRECATED"` becomes `"EMIT-ENV-UNSET"` | no |
 | `EMIT-STRAY-WRITE` | error | `./internal/emit/conformance` | `TestStrayWrites/change` | `internal/emit/conformance/stray.go:diffTree` | every `"EMIT-STRAY-WRITE"` becomes `"EMIT-VECTOR"` | no |
-| `EMIT-MANIFEST` | error | `./internal/emit` | `TestManifestRefusesEachMalformedMember` | `internal/emit/manifest.go:ReadManifest` | every `"EMIT-MANIFEST"` becomes `"EMIT-OPTIONS"` | yes |
+| `EMIT-MANIFEST` | error | `./internal/emit` | `TestManifestRefusesEachMalformedMember` | `internal/emit/manifest.go:ReadManifest` | every `"EMIT-MANIFEST"` becomes `"EMIT-OPTIONS"` | no |
 | `EMIT-OWNS-OVERLAP` | error | `./internal/emit` | `TestEmitRefusesOwnsThatOverlapAnotherManifests` | `internal/emit/host.go:ownsOverlaps` | every `"EMIT-OWNS-OVERLAP"` becomes `"EMIT-MANIFEST"` | yes |
 | `EMIT-KIND-ID` | error | `./internal/emit` | `TestEmitRefusesAKindPinOutsideTheManifestsReads/another_kind_id` | `internal/emit/request.go:FormRequests` | every `"EMIT-KIND-ID"` becomes `"EMIT-KIND-RANGE"` | yes |
 | `EMIT-OPTIONS` | error | `./internal/emit` | `TestEmitChecksOptionsAndRequestVersions` | `internal/emit/request.go:FormRequests` | every `"EMIT-OPTIONS"` becomes `"EMIT-REQUEST"` | yes |

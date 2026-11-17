@@ -6,6 +6,13 @@ The CLI is pre-1.0 and provides no security, compatibility, or support service-l
 Only versions listed on GitHub Releases are supported artifacts. It must not be used as the sole
 control for consequential production decisions.
 
+The registry line (`jpack registry`, `jpack emit`, `jpack emit conformance`, `jpack terraform
+facts` and the start-up module) has its own support window, in
+[VERSIONING.md](VERSIONING.md#the-registry-line): from the release that names that line stable,
+security fixes land in the latest `jpack` minor and the latest `startup/v1` tag, and are backported
+to the previous `jpack` minor and the previous `startup/v1` minor for three months after its
+successor is released. There is still no service-level guarantee.
+
 ## Reporting a vulnerability
 
 Do not open a public issue for a vulnerability that could expose document content, bypass a
