@@ -330,6 +330,11 @@ These are carried, not fixed. None gives a wrong verdict for an honest emitter o
   each `..` from where the parts before it led. If Windows instead resolves `..` lexically, a
   target such as `a -> b\..\..\x`, with `b -> deep\deeper`, passes the check but leads out. It
   needs a run on Windows with the privilege to make links.
+- **Synced-folder placeholders (Windows).** A file a sync client has not yet downloaded is a
+  reparse point that Go reads as irregular, not as a regular file, so check 6 refuses it and a
+  repository holding one is refused with `EMIT-HARNESS-BOUND` at its path. Downloading the file
+  first lets the run go ahead. The refusal is deliberate: the harness cannot read such a file
+  without making the sync client fetch it.
 
 ## More information
 
