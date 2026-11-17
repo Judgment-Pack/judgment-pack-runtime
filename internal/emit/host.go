@@ -230,6 +230,11 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 		if len(unreadable) > 0 {
 			return report.Refuse(unreadable...)
 		}
+		// An interrupt during the scan or the comparison refuses the run,
+		// as one before the write does in write mode.
+		if ctx.Err() != nil {
+			return report.Refuse(diagnostic("EMIT-INTERRUPTED", Location{Document: DocumentManifest, Pointer: "/command"}))
+		}
 		report.Differences = differences
 		report.finish(true)
 		return report
