@@ -12,6 +12,11 @@ All notable changes to tagged releases are documented here.
   manifest owns. One that an owns glob matches is a stale owned file, which write mode deletes,
   as before. The listing names at most 100 paths; past them, one more diagnostic gives the count
   of the rest in its message. The conformance claim in CONFORMANCE.md is unchanged.
+- **A vector's `expected/` bounds its files and its directories apart** (#450). The bound on its
+  entries counted directories with files, so a valid record of 7000 files at `gen/<n>/x/f`, 21001
+  entries, was refused. Files are now bounded as a response's are, at 10000, and directories by
+  what the 512-byte path bound allows above them; an entry whose path is past that bound is
+  refused, as no response could name it. The conformance claim in CONFORMANCE.md is unchanged.
 - **A support and deprecation policy for the registry line** (VERSIONING.md). It covers
   `jpack registry`, `jpack emit`, `jpack emit conformance`, `jpack terraform facts`, their formats,
   codes and bounds, and the start-up module. Within major version 1 of the line, nothing is
