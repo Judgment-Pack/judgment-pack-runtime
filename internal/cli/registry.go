@@ -11,7 +11,7 @@ import (
 )
 
 // registryCommand is the registry companion proposed by RFCs 0034 and 0035
-// (ADR-0093): validation with a value-free report, and resolution to one
+// and released as registry-v1.0.0 (ADR-0093): validation with a value-free report, and resolution to one
 // document per environment; and import from YAML (ADR-0094). It fetches
 // nothing.
 func (a *App) registryCommand() *cobra.Command {
