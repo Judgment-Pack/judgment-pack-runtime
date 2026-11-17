@@ -42,6 +42,23 @@ All notable changes to tagged releases are documented here.
   line: no spec release carries dialect §4.5 yet, so the command, its batch lines, the `TF-*`
   codes and the `proposed-1` table stay provisional and outside the line's 1.0 promise. The
   conformance claim in CONFORMANCE.md is unchanged.
+- **Two statements the registry line had made untrue, corrected, and one list completed**
+  (SECURITY.md, VERSIONING.md).
+  - SECURITY.md said the runtime invokes no subprocess. Validating, testing and evaluating still
+    start none; it now names the two places that do, `jpack emit` and `jpack emit conformance`,
+    which run the emitter a manifest names, and `jpack experimental check-published`, which runs
+    `git`.
+  - SECURITY.md said the runtime writes in exactly three ways. It now names the five places it
+    writes: a file the operator names on the command line, the project's audit directory, beside
+    the configuration (`packs lock`), what the registry line generates (the paths an emitter
+    manifest owns, and each vector's `expected/` under `jpack emit conformance --update`), and the
+    system's temporary directory (an emitter's fresh `HOME` and the harness's repository copy).
+  - VERSIONING.md's list of what the registry line is now names the reference emitters
+    `jpack-emit-go-loader`, `jpack-emit-ts-constants` and `jpack-emit-go-facts`, as far as the
+    registry companion's §11.6 promises them: each one's manifest, the kinds it reads and its
+    options, not the bytes it writes.
+
+  No code, message or behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.50.0 - 2026-11-17
 

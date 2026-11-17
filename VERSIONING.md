@@ -376,16 +376,20 @@ The registry line is the registry companion's surface in this repository:
 - the formats they read and write, each under the selector named in
   [Compatibility dimensions](#compatibility-dimensions);
 - their diagnostic codes and bounds;
+- the reference emitters `jpack-emit-go-loader`, `jpack-emit-ts-constants` and
+  `jpack-emit-go-facts` (`cmd/jpack-emit-*`), as far as the registry companion's §11.6 promises
+  them: each one's manifest (its `emitter.json`), the kinds it reads and its options, not the bytes
+  it writes;
 - the start-up module (see [The start-up module](#the-start-up-module)).
 
 An emitter's own `x-` diagnostic codes are not part of it: they belong to that emitter, are
 neither provisional nor stable under this promise, follow the emitter's own version and release
 notes, and a consumer must not branch on them for anything but display.
 
-The reference emitters' first-version scope is not promised: `jpack-emit-go-facts`' refusal of open
-objects, `anyOf` and objects that mix named members with a `*` member is first-version scope and
-may be lifted in 1.x. Lifting it accepts contracts it refused, and changes nothing it generates for
-a contract it accepts.
+Of the reference emitters, nothing more is promised: not the code they generate, and not their
+first-version scope. `jpack-emit-go-facts`' refusal of open objects, `anyOf` and objects that mix
+named members with a `*` member is first-version scope and may be lifted in 1.x. Lifting it accepts
+contracts it refused, and changes nothing it generates for a contract it accepts.
 
 `jpack terraform facts` and the `terraform-file` reader are not part of it. No spec release
 carries dialect §4.5 yet, so the command, its flags, its batch lines, the `TF-*` codes and the
