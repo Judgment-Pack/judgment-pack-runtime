@@ -99,6 +99,50 @@ func TestEmitWritesTheResponseAndDeletesStaleOwnedFiles(t *testing.T) {
 	}
 }
 
+// Only what the owns globs match is deleted as stale, and an unowned file
+// that blocks a response path's directory refuses the run before any stale
+// file is deleted.
+func TestEmitDeletesOnlyOwnedFilesAndStopsAtAnUnownedBlocker(t *testing.T) {
+	root := testRepo(t)
+	unowned := map[string]string{"README.md": "readme\n", "gen/keep.txt": "keep\n", "gen/a": "an unowned file\n"}
+	writeFiles(t, root, unowned)
+	writeFiles(t, root, map[string]string{"gen/z.sql": "stale\n"})
+	owns := map[string]any{"owns": []any{"gen/*.sql", "gen/*/b"}}
+	kept := func(paths map[string]string) {
+		t.Helper()
+		for path, want := range paths {
+			if got, _, ok := onDisk(t, root, path); !ok || got != want {
+				t.Errorf("%s holds %q, want %q", path, got, want)
+			}
+		}
+	}
+
+	// gen/a/b is owned, but its directory is held by gen/a, which is not:
+	// nothing is written or deleted.
+	blocked := responseJSON(t, map[string]any{"path": "gen/a/b", "text": "b\n"}, map[string]any{"path": "gen/y.sql", "text": "y\n"})
+	report := echoHost(t, root, blocked, false, owns)
+	if !slices.Equal(codes(report.Diagnostics), []string{"EMIT-WRITE@gen/a/b"}) || len(report.Written) != 0 || len(report.Deleted) != 0 {
+		t.Fatalf("blocked: %s", reportJSON(t, report))
+	}
+	kept(unowned)
+	kept(map[string]string{"gen/z.sql": "stale\n"})
+	if _, _, ok := onDisk(t, root, "gen/y.sql"); ok {
+		t.Error("a blocked run wrote gen/y.sql")
+	}
+
+	// Without the blocker in the response, the stale owned file goes and
+	// every unowned file stays.
+	report = echoHost(t, root, responseJSON(t, map[string]any{"path": "gen/y.sql", "text": "y\n"}), false, owns)
+	if report.Outcome != OutcomeWritten || !slices.Equal(report.Written, []string{"gen/y.sql"}) || !slices.Equal(report.Deleted, []string{"gen/z.sql"}) {
+		t.Fatalf("write: %s", reportJSON(t, report))
+	}
+	kept(unowned)
+	kept(map[string]string{"gen/y.sql": "y\n"})
+	if _, _, ok := onDisk(t, root, "gen/z.sql"); ok {
+		t.Error("the stale gen/z.sql is still there")
+	}
+}
+
 func TestEmitCheckReportsEachDifferenceAndWritesNothing(t *testing.T) {
 	root := testRepo(t)
 	writeFiles(t, root, map[string]string{

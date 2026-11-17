@@ -145,9 +145,14 @@ following.
    `.git` file of a worktree or submodule, is never owned and never deleted as stale.
 2. The directories are created, and every file is staged as a temporary file (`.jpack-emit-*`) in
    its directory. A file whose directory is held by a stale file is staged beside that file. A
-   failure here leaves every owned file as it was.
+   file whose directory is held by a file no owns glob matches refuses the run (`EMIT-WRITE`)
+   before anything is staged or deleted. A failure here leaves every owned file as it was.
 3. The stale owned files are deleted, and the directories they held are created.
 4. Every staged file is renamed into place.
+
+Only a regular file an owns glob matches is ever deleted as stale. The tests hold both guards,
+the walk's owns check and the unowned-blocker check, with a manifest of `gen/*.sql` and
+`gen/*/b` beside unowned files in and above `gen`.
 
 The report lists what was written and deleted. A failure on the way is `EMIT-WRITE`, at the path;
 the staged files are removed, and what was already deleted or renamed is reported. The run is not
