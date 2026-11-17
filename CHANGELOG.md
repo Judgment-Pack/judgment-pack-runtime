@@ -22,7 +22,7 @@ All notable changes to tagged releases are documented here.
   accepting only a `1.0.0` document for the environment named. Each target also reads one input the
   same way twice, and an accepted reference or pattern written back reads back the same. A new
   scheduled workflow, also started by hand and not a pull-request check, runs these and the existing
-  YAML-import and Terraform-reader targets for 30 seconds each, and uploads the crasher of a failing
+  YAML-import, Terraform-reader and dialect targets for 30 seconds each, and uploads the crasher of a failing
   run; the pull request that fixes it checks the crasher in as a seed. `go test -cover` now passes
   for `internal/emit`: a coverage-built test binary run as the emitter no longer writes a warning to
   standard error at exit, which the tests' standard-error bounds counted. The package is held to a

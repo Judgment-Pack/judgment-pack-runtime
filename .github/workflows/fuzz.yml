@@ -41,6 +41,12 @@ jobs:
           - target: FuzzAddressPattern
             directory: .
             package: ./internal/terraformfile
+          - target: FuzzDialectValidation
+            directory: .
+            package: ./internal/dialect
+          - target: FuzzCoverageStringBudget
+            directory: .
+            package: ./internal/dialect
           # startup/ is a nested module (ADR-0096), run from its own directory.
           - target: FuzzReadSecret
             directory: startup
