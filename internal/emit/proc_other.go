@@ -26,3 +26,7 @@ func endProcessGroup(*os.Process) {}
 
 // waitProcessGroup does nothing: there is no group to wait for.
 func waitProcessGroup(*os.Process, time.Duration) {}
+
+// markInherited has nothing to do here: on Windows Go passes the child an
+// explicit list of handles.
+var markInherited = func() {}

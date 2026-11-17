@@ -218,9 +218,9 @@ func (a *App) openManifestTarget(format, target string) (*manifestTarget, error)
 	case err != nil:
 		opened.Close()
 		return nil, refuse("JPS-PUBLISHED-WRITE", result.ExitIO, "could not be examined")
-	case info.Mode()&os.ModeSymlink != 0:
+	case fssecure.LinkLike(info):
 		opened.Close()
-		return nil, refuse("JPS-INVOCATION-OUTPUT", result.ExitInvocation, "is a symbolic link; a manifest is written to a file named by its own path")
+		return nil, refuse("JPS-INVOCATION-OUTPUT", result.ExitInvocation, "is a symbolic link or junction; a manifest is written to a file named by its own path")
 	case !info.Mode().IsRegular():
 		opened.Close()
 		return nil, refuse("JPS-INVOCATION-OUTPUT", result.ExitInvocation, "is not a regular file")
