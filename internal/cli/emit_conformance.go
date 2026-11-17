@@ -90,7 +90,7 @@ func (a *App) emitConformanceCommand() *cobra.Command {
 			}
 			interrupt, stop := interruptContext()
 			defer stop()
-			return finish(conformance.Run(interrupt.ctx, manifest, vectors, conformance.Options{Root: realRoot, Timeout: timeout, Update: update}))
+			return finish(conformance.Run(interrupt.ctx, manifest, vectors, conformance.Options{Root: realRoot, Timeout: timeout, Update: update, BeginWrite: interrupt.beginWrite, EndWrite: interrupt.endWrite}))
 		},
 	}
 	command.Flags().StringVar(&manifestPath, "manifest", "", "The emitter manifest JSON file (or - for standard input)")

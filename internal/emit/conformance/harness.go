@@ -29,6 +29,16 @@ type Options struct {
 	// Update rewrites each vector's expected/ from the emitter's run
 	// (--update). An expected-failure vector is never touched.
 	Update bool
+	// BeginWrite, when set, is called just before each vector's expected/
+	// is replaced (--update), once ctx is seen not done, as
+	// emit.Options.BeginWrite is: false refuses the run as interrupted,
+	// with that expected/ untouched. The caller that sets it holds an
+	// interrupt back until EndWrite, so that a replacement once begun
+	// finishes.
+	BeginWrite func() bool
+	// EndWrite, when set, is called when a replacement BeginWrite allowed
+	// has ended.
+	EndWrite func()
 }
 
 // The fixed reasons a row gives.
@@ -82,6 +92,9 @@ type harness struct {
 	keep   func(kind string) bool
 	// ran says whether any run started the emitter's process.
 	ran bool
+	// interrupted says that an update's write was refused as interrupted
+	// (Options.BeginWrite).
+	interrupted bool
 }
 
 // vectorRun is what one vector's request and run 1 gave.
@@ -142,13 +155,18 @@ func Run(ctx context.Context, m *emit.Manifest, vectorsDir string, opts Options)
 		before := len(report.Rows)
 		failure := h.vector(v, checks)
 		v.release()
-		if h.ctx.Err() != nil {
+		if h.ctx.Err() != nil || h.interrupted {
 			// The run was interrupted (jpack was sent an interrupt or
 			// SIGTERM): this vector's rows would report failures the
 			// emitter did not cause, and the vectors after it would only
-			// add more. The rows already complete are kept.
+			// add more. The rows already complete are kept, and so is
+			// this vector's check 1 row when it says expected/ was
+			// rewritten (--update), which it was.
+			if len(report.Rows) > before && report.Rows[before].Reason == reasonUpdated {
+				before++
+			}
 			report.Rows = report.Rows[:before]
-			return report.Refuse(vectorDiagnostic("EMIT-HARNESS-BOUND", v.Name, ""))
+			return report.Refuse(vectorDiagnostic("EMIT-INTERRUPTED", v.Name, ""))
 		}
 		if failure != nil {
 			return report.Refuse(*failure)
@@ -354,7 +372,19 @@ func (h *harness) golden(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 		return row, nil
 	}
 	if h.opts.Update {
-		if err := writeExpected(run.v.Dir, run.files); err != nil {
+		// An interrupt before this point refuses the run with expected/
+		// untouched; a replacement once begun is not cut short by one
+		// (BeginWrite), so expected/ is never left missing.
+		if !h.beginWrite() {
+			h.interrupted = true
+			d := vectorDiagnostic("EMIT-INTERRUPTED", run.v.Name, "")
+			return row, &d
+		}
+		err := writeExpected(run.v.Dir, run.files)
+		if h.opts.EndWrite != nil {
+			h.opts.EndWrite()
+		}
+		if err != nil {
 			d := vectorDiagnostic("EMIT-WRITE", run.v.Name+"/"+dirExpected, "")
 			return row, &d
 		}
@@ -371,6 +401,15 @@ func (h *harness) golden(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 	}
 	row.Status = StatusPass
 	return row, nil
+}
+
+// beginWrite reports whether an update's write of expected/ may start: only
+// while the run is not interrupted, and then as Options.BeginWrite says.
+func (h *harness) beginWrite() bool {
+	if h.ctx.Err() != nil {
+		return false
+	}
+	return h.opts.BeginWrite == nil || h.opts.BeginWrite()
 }
 
 // determinism is check 2: runs 2 and 3 of every request, each with a HOME of
@@ -501,7 +540,8 @@ func pathSafety(run *vectorRun, row Row) Row {
 		process := false
 		for _, d := range result.Diagnostics {
 			switch {
-			case d.Code == "EMIT-PROCESS":
+			case d.Code == "EMIT-PROCESS" || d.Code == "EMIT-INTERRUPTED":
+				// The run ended without a response to judge.
 				process = true
 			case d.Code == "EMIT-RESPONSE":
 				if isDiagnosticPointer(d.Location.Pointer) {
