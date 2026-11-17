@@ -350,4 +350,51 @@ not duplicate it in a `VERSION` data file.
 
 Pre-1.0 releases have no compatibility or security service-level guarantee. Maintainers may
 deprecate or remove behavior in a later `0.x` release, but must record the change in release notes.
-A stable release requires a separate support and deprecation policy before publication.
+A stable release requires a separate support and deprecation policy before publication. The
+registry line has one, below; the rest of `jpack` and the runtime module do not yet.
+
+### The registry line
+
+The registry line is the registry companion's surface in this repository:
+
+- the commands `jpack registry` (all of its subcommands), `jpack emit`, `jpack emit conformance`
+  and `jpack terraform facts`, with their flags and exit codes;
+- the formats they read and write, each under the selector named in
+  [Compatibility dimensions](#compatibility-dimensions);
+- their diagnostic codes and bounds;
+- the start-up module (see [The start-up module](#the-start-up-module)).
+
+It is stable from the release that names it so in its release notes. That release first settles
+everything the sections above call provisional: the codes are the final registry companion's, the
+Terraform dialect's codes and `format_version` table are its companion's, and each paragraph says
+so instead. A format with no selector of its own, such as the `jpack terraform facts` batch lines,
+is then promised as its bytes: a change to them for the same input is a breaking change. The same
+release tags `startup/v1.0.0`, so the start-up module's 1.0 promise and this one start together.
+From then on, while `jpack` and the runtime module are still 0.x, and within major version 1 of
+the line:
+
+- **Nothing is removed.** A command, flag, exit code, format member, selector, diagnostic code or
+  start-up identifier stays. No bound is tightened. No code, member or rule changes meaning. The
+  host keeps writing each request version it writes to an emitter that declares only that one.
+- **Additions are versioned.** A format gains a member only under a new minor selector
+  (`1.1.0`), and a reader keeps accepting every selector it accepted. A new command, flag or
+  warning code may come in a minor release. A new bound, a new refusal code, or any refusal of
+  input that was accepted before is not an addition: it is a breaking change.
+- **Deprecation marks, it does not remove.** A deprecated part keeps working for the rest of
+  major version 1. It is named in the release notes and in the command's help. An emitter that its
+  manifest marks `deprecated` still runs, and the host reports `EMIT-DEPRECATED`. Removal waits
+  for major version 2, which comes under new selectors (and, for the start-up module, under
+  `.../startup/v2`).
+- **Not promised:** the wording of messages, the order of diagnostics that share a location, and
+  the timing of runs.
+- **Security fixes.** A fix for a vulnerability may refuse input that was accepted before, in a
+  patch release, when nothing narrower closes it. The release notes name it as a breaking exception,
+  with the refusal code and the input it now refuses.
+- **Conformance fixes.** A patch release may also refuse input that the released companion text
+  forbids, when this runtime accepted it by mistake. The release notes name the refusal code, the
+  input and the companion section.
+- **The start-up module's Go floor.** Its `go.mod` `go` directive rises only in a minor release,
+  named in the release notes, and only to a Go version the Go project still supports.
+- **Support.** Fixes land in the latest minor release of `jpack` and the latest `startup/v1` tag;
+  earlier releases get none, and there is no service-level guarantee. Security issues are reported
+  as `SECURITY.md` says.
