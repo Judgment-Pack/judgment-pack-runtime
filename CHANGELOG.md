@@ -13,7 +13,8 @@ All notable changes to tagged releases are documented here.
   RFC 8785 canonical, the line `registry facts` writes. `--mode`, `--address`, `--actions` (plan
   only), `--max` and `--max-bytes` are the source's `select` and `maxBytes` members. A refused file
   writes no line, and writes only its code, sha256, size and fixed message to standard error, then
-  exits 2. An unusable command line exits 3, and an unreadable file exits 4. `jpack dialect
+  exits 2. So does a resource whose facts document is over `registry facts`' facts-document limit
+  (`FACTS-DOCUMENT-LIMIT`): the whole run is refused, and no line is skipped. An unusable command line exits 3, and an unreadable file exits 4. `jpack dialect
   validate` does not admit the `terraform-file` kind yet. Existing commands and their output are
   unchanged, and the conformance claim in CONFORMANCE.md is unchanged.
 - **The Terraform reader writes numbers without building them first** (ADR-0097). Each number's

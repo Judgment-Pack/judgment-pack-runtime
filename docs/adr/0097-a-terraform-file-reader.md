@@ -300,6 +300,13 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   selection that matches nothing is an empty batch and exit 0, since "no database is destroyed"
   is a valid fact (§4). A file that cannot be opened or read, or a batch that cannot be written,
   exits 4.
+- **Each facts document is held to the facts-document limit** of `registry facts`
+  (`FACTS-DOCUMENT-LIMIT`: 10 MiB, depth 128, 250,000 nodes, 1 MiB per string), the limit evaluate
+  reads a facts document under. One resource over it refuses the whole run. Its line is not
+  skipped, because a batch that leaves a resource out would let the gate pass without judging it.
+  Standard output stays empty, standard error carries the same four members as a refusal (the
+  code, the file's sha256 and size, and the code's fixed message), and the exit code is 2, as
+  `registry facts` uses for the same code.
 - **`*` never crosses `.`, `[` or `]`** (§4). So `module.*.google_sql_user.*` matches
   `module.db.google_sql_user.app` but not a counted module (`module.db[0]...`) or a counted
   instance (`...app[0]`). Those need `[*]`, as in `module.*[*].google_sql_user.*[*]`.

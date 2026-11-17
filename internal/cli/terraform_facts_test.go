@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/carrier"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/terraformfile"
 )
 
@@ -475,5 +477,41 @@ func TestTerraformFactsFeedsTheOutcomeGate(t *testing.T) {
 		if code != test.gate || strings.Count(out, "\n") != len(test.users) || strings.Contains(out, `"error"`) {
 			t.Errorf("%s: gate %d, want %d:\n%s\n%s", name, code, test.gate, out, stderr)
 		}
+	}
+}
+
+// A facts document is held to the limit registry facts holds its documents
+// to: one exactly at carrier.HardMaxBytes is written, and one a byte longer
+// refuses the whole run with FACTS-DOCUMENT-LIMIT, writing no line. Ten
+// strings just under the carrier's 1 MiB string bound, and a pad, make the
+// document; the file stays far under the default maxBytes.
+func TestTerraformFactsHoldsTheFactsDocumentLimit(t *testing.T) {
+	const prefix, suffix = `{"facts":`, `,"id":"synthetic_blob.big"}` + "\n"
+	run := func(pad int) ([]byte, int, string, string) {
+		values := map[string]any{"pad": strings.Repeat("p", pad)}
+		for i := 0; i < 10; i++ {
+			values[fmt.Sprintf("s%d", i)] = strings.Repeat("a", 1_000_000)
+		}
+		data := tfState(t, tfModule("", []tfResource{{address: "synthetic_blob.big", typ: "synthetic_blob", name: "big", values: values}}))
+		code, out, stderr := runTest(t, []string{"terraform", "facts", "--state", tfFile(t, "state.json", data), "--type", "synthetic_blob"}, "")
+		return data, code, out, stderr
+	}
+	_, code, out, stderr := run(0)
+	if code != 0 || !strings.HasPrefix(out, prefix) || !strings.HasSuffix(out, suffix) {
+		t.Fatalf("no pad: %d %.200q %q", code, out, stderr)
+	}
+	pad := int(carrier.HardMaxBytes) - (len(out) - len(prefix) - len(suffix))
+	_, code, out, stderr = run(pad)
+	if code != 0 || len(out)-len(prefix)-len(suffix) != int(carrier.HardMaxBytes) {
+		t.Fatalf("at the limit: %d, %d bytes, %q", code, len(out)-len(prefix)-len(suffix), stderr)
+	}
+	data, code, out, stderr := run(pad + 1)
+	if code != 2 || out != "" {
+		t.Fatalf("a byte over the limit: %d %.200q", code, out)
+	}
+	sum := sha256.Sum256(data)
+	want := `{"bytes":` + fmt.Sprint(len(data)) + `,"code":"FACTS-DOCUMENT-LIMIT","message":` + string(mustJCS(t, registry.FactsMessage(registry.CodeFactsDocumentLimit))) + `,"sha256":"` + hex.EncodeToString(sum[:]) + `"}` + "\n"
+	if stderr != want {
+		t.Fatalf("stderr:\n got %q\nwant %q", stderr, want)
 	}
 }

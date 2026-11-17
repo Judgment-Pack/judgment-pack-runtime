@@ -10,6 +10,7 @@ import (
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
+	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/result"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/terraformfile"
 	"github.com/spf13/cobra"
@@ -46,7 +47,7 @@ func (a *App) terraformFactsCommand() *cobra.Command {
 			"Every value marked sensitive is removed, with its member, before anything is selected, and a resource without its sensitivity mirror refuses the file. Numbers are decimal strings in one normal form. " +
 			"--type selects resources of these types (at most 64, repeat it or separate with commas), --mode managed (the default) or data resources, --address resources whose whole address matches the pattern, where * matches any run of characters other than '.', '[' and ']', " +
 			"and --actions, with --plan only, changes whose actions include one of create, update, delete, read and no-op. More selected resources than --max (1 to 10000, default 1000) refuse the file, as does a file longer than --max-bytes (1 to 268435456, default 67108864). " +
-			"Nothing is written unless every line can be: a refused file writes its code, sha256, size and fixed message to standard error, never anything read from the file, and exits 2. " +
+			"Nothing is written unless every line can be: a refused file, or a resource whose facts document exceeds the facts-document limit registry facts uses (FACTS-DOCUMENT-LIMIT), writes its code, the file's sha256 and size, and a fixed message to standard error, never anything read from the file, and exits 2. " +
 			"Exit 0 when the batch was written (an empty one included), 2 when the file was refused, 3 for an unusable command line, and 4 when the file could not be read or the batch written.",
 		Example: "jpack terraform facts --plan plan.json --type google_sql_user --actions delete,update > changes.jsonl\n" +
 			"jpack experimental evaluate --pack-id sql-user-change --batch changes.jsonl --format json --require-outcome allowed",
@@ -85,6 +86,17 @@ func (a *App) terraformFactsCommand() *cobra.Command {
 				return a.operational(name, "text", result.ExitIO, "JPS-INPUT-READ", "The file could not be read as one regular file or standard input stream.")
 			case refusal != nil:
 				if _, err := a.errOut.Write(append(refusal.JSON(), '\n')); err != nil {
+					return &handledExit{code: result.ExitIO}
+				}
+				return &handledExit{code: factsExitNotJudged}
+			}
+			within, err := terraformFactsWithinLimit(acquisition)
+			switch {
+			case err != nil:
+				return a.operational(name, "text", result.ExitInternal, "JPS-INTERNAL", "A facts document could not be built.")
+			case !within:
+				over := terraformfile.Refusal{Code: registry.CodeFactsDocumentLimit, SHA256: acquisition.SHA256, Bytes: acquisition.Bytes, Message: registry.FactsMessage(registry.CodeFactsDocumentLimit)}
+				if _, err := a.errOut.Write(append(over.JSON(), '\n')); err != nil {
 					return &handledExit{code: result.ExitIO}
 				}
 				return &handledExit{code: factsExitNotJudged}
@@ -184,36 +196,72 @@ func (a *App) readTerraformFile(path string, src terraformfile.Source) (*terrafo
 	return terraformfile.Read(file, src)
 }
 
+// terraformFactsTail is the end of every facts document of an acquisition:
+// its terraform member, and the document's close.
+func terraformFactsTail(acquisition *terraformfile.Acquisition) ([]byte, error) {
+	tail := []byte(`,"terraform":{"document":`)
+	for i, value := range []string{acquisition.Document, acquisition.FormatVersion, acquisition.SHA256} {
+		encoded, err := jcs.EncodeDocument(value)
+		if err != nil {
+			return nil, err
+		}
+		switch i {
+		case 1:
+			tail = append(tail, `,"formatVersion":`...)
+		case 2:
+			tail = append(tail, `,"sha256":`...)
+		}
+		tail = append(tail, encoded...)
+	}
+	return append(tail, `}}`...), nil
+}
+
+// terraformFactsDocument writes one resource's facts document,
+// {"resource":…,"terraform":{…}}, over dst.
+func terraformFactsDocument(dst []byte, resource terraformfile.Resource, tail []byte) []byte {
+	dst = append(dst[:0], `{"resource":`...)
+	dst = append(dst, resource.JSON...)
+	return append(dst, tail...)
+}
+
+// terraformFactsWithinLimit reports whether every facts document is within
+// the facts-document limit registry facts holds its documents to. One over it
+// refuses the whole run, rather than leaving its line out of the batch.
+func terraformFactsWithinLimit(acquisition *terraformfile.Acquisition) (bool, error) {
+	tail, err := terraformFactsTail(acquisition)
+	if err != nil {
+		return false, err
+	}
+	var document []byte
+	for _, resource := range acquisition.Resources {
+		document = terraformFactsDocument(document, resource, tail)
+		if !registry.WithinFactsLimit(document) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // writeTerraformFacts writes one batch line per selected resource, in the
 // acquisition's address order: {"facts":{"resource":…,"terraform":{…}},"id":…}.
 // Every member is RFC 8785 canonical, and the members are in code-point
 // order, so the line is canonical.
 func writeTerraformFacts(out io.Writer, acquisition *terraformfile.Acquisition) error {
-	var terraform []byte
-	terraform = append(terraform, `,"terraform":{"document":`...)
-	for i, value := range []string{acquisition.Document, acquisition.FormatVersion, acquisition.SHA256} {
-		encoded, err := jcs.EncodeDocument(value)
-		if err != nil {
-			return err
-		}
-		switch i {
-		case 1:
-			terraform = append(terraform, `,"formatVersion":`...)
-		case 2:
-			terraform = append(terraform, `,"sha256":`...)
-		}
-		terraform = append(terraform, encoded...)
+	tail, err := terraformFactsTail(acquisition)
+	if err != nil {
+		return err
 	}
-	terraform = append(terraform, `}},"id":`...)
 	buffered := bufio.NewWriter(out)
+	var document []byte
 	for _, resource := range acquisition.Resources {
 		id, err := jcs.EncodeDocument(resource.Address)
 		if err != nil {
 			return err
 		}
-		buffered.WriteString(`{"facts":{"resource":`)
-		buffered.Write(resource.JSON)
-		buffered.Write(terraform)
+		document = terraformFactsDocument(document, resource, tail)
+		buffered.WriteString(`{"facts":`)
+		buffered.Write(document)
+		buffered.WriteString(`,"id":`)
 		buffered.Write(id)
 		if _, err := buffered.WriteString("}\n"); err != nil {
 			return err
