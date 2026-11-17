@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	host "github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
@@ -52,7 +53,9 @@ type vector struct {
 }
 
 // readVectors reads golden/vectors in the RFC 0036 §5 layout: request.json,
-// and expected/ or expected-failure.json. A failure is the host's
+// or registry.json with kinds/ and an optional options.json, from which the
+// request is formed in-process as the host forms it; and expected/ or
+// expected-failure.json. A failure is the host's
 // EMIT-PROCESS, for a refusal, or one of the emitter's codes.
 func readVectors(t *testing.T) []vector {
 	t.Helper()
@@ -68,6 +71,9 @@ func readVectors(t *testing.T) []vector {
 		}
 		dir := filepath.Join(vectorsDir, entry.Name())
 		request, err := os.ReadFile(filepath.Join(dir, "request.json"))
+		if errors.Is(err, fs.ErrNotExist) {
+			request, err = formRequest(t, dir)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,6 +112,58 @@ func readVectors(t *testing.T) []vector {
 		t.Fatalf("read %d vectors, want at least 6", len(out))
 	}
 	return out
+}
+
+// formRequest forms a registry-form vector's request as `jpack emit` does:
+// the registry validated against its kinds, the options admitted, and the
+// request formed by the host's own FormRequests under emitter.json. No
+// program is run. The manifest's "environments": "all" gives one request.
+func formRequest(t *testing.T, dir string) ([]byte, error) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "registry.json"))
+	if err != nil {
+		return nil, err
+	}
+	names, err := filepath.Glob(filepath.Join(dir, "kinds", "*.json"))
+	if err != nil || len(names) == 0 {
+		t.Fatalf("%s: no kinds/*.json (%v)", dir, err)
+	}
+	slices.Sort(names)
+	var kinds []registry.Document
+	for _, name := range names {
+		kind, err := os.ReadFile(name)
+		if err != nil {
+			return nil, err
+		}
+		kinds = append(kinds, registry.Document{Data: kind})
+	}
+	result := registry.ValidateDocuments(registry.Document{Data: data}, kinds)
+	if !result.Report.Valid {
+		t.Fatalf("%s: the registry is not valid: %+v", dir, result.Report.Diagnostics)
+	}
+	var options any
+	if raw, err := os.ReadFile(filepath.Join(dir, "options.json")); err == nil {
+		value, code, pointer := registry.AdmitValue(raw, host.MaxOptionsBytes)
+		if code != "" {
+			t.Fatalf("%s: options.json refused: %s at %s", dir, code, pointer)
+		}
+		options = value
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	manifestData, err := os.ReadFile("emitter.json")
+	if err != nil {
+		return nil, err
+	}
+	m, diagnostics := host.ReadManifest(manifestData)
+	if m == nil {
+		t.Fatalf("the manifest is refused: %v", diagnostics)
+	}
+	requests, refused := host.FormRequests(m, host.Inputs{Registry: result, Options: options})
+	if len(refused) > 0 || len(requests) != 1 {
+		t.Fatalf("%s: the host forms %d requests, refusing %v", dir, len(requests), refused)
+	}
+	return requests[0].Bytes, nil
 }
 
 type response struct {
