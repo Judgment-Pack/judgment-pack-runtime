@@ -81,6 +81,9 @@ type schemaCompiler struct {
 	defs        map[string]*schemaNode
 	refs        []schemaRef
 	failed      bool
+	// rootDepth is the length of the root schema's path: 1 for a kind's
+	// /schema, 0 for a schema compiled from its own root.
+	rootDepth int
 }
 
 type schemaRef struct {
@@ -100,7 +103,7 @@ func (c *schemaCompiler) fail(code string, path []string) {
 // its patterns within the kind's budget. It returns nil when the schema is
 // invalid.
 func compileSchema(raw any, path []string, location Location, diagnostics *collector, patterns *patternBudget) *schemaNode {
-	c := &schemaCompiler{location: location, diagnostics: diagnostics, patterns: patterns, defs: map[string]*schemaNode{}}
+	c := &schemaCompiler{location: location, diagnostics: diagnostics, patterns: patterns, defs: map[string]*schemaNode{}, rootDepth: len(path)}
 	if object, ok := raw.(map[string]any); ok {
 		if defs, ok := object["$defs"]; ok {
 			defsObject, ok := defs.(map[string]any)
@@ -218,8 +221,9 @@ func (c *schemaCompiler) compile(raw any, path []string, def string) *schemaNode
 		case "not":
 			node.not = c.compile(value, at, def)
 		case "$defs":
-			// Compiled up front, and admitted only at the schema's root.
-			if len(path) != 1 {
+			// Compiled up front, and admitted only at the schema's root: a
+			// kind's /schema, or an options schema's own root.
+			if len(path) != c.rootDepth {
 				c.fail("REG-KIND-SCHEMA-FORM", at)
 			}
 		case "$ref":
