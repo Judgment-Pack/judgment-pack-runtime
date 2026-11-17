@@ -28,7 +28,9 @@
     {"name": "audit-formats", "run": "go run ./tools/audit-formats", "toolchain": "go",
      "summary": "^audit-formats:", "timeout": 600},
     {"name": "registry-template", "run": "python3 scripts/check-registry-template.py", "toolchain": "python",
-     "summary": "^registry template:", "timeout": 300}
+     "summary": "^registry template:", "timeout": 300},
+    {"name": "mutation-table", "run": "python3 scripts/check-mutation-table.py", "toolchain": "python",
+     "summary": "^mutation table:", "timeout": 900}
   ],
   "handover": {
     "boundary_paths": ["internal/evaluation", "internal/policy", "internal/validation", "internal/mcp"],

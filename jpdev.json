@@ -38,6 +38,10 @@
       "checks": ["local-paths", "agent-docs", "diff-check", "registry-template"]
     },
     {
+      "paths": ["docs/registry-mutation-table.md", "scripts/check-mutation-table.py"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "mutation-table"]
+    },
+    {
       "paths": ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES", ".editorconfig", ".vscode/**", "bin/.gitkeep",
                 ".goreleaser.yml", "build/oci/Dockerfile",
                 ".github/dependabot.yml", ".github/pull_request_template.md",
@@ -61,6 +65,10 @@
     {
       "paths": ["internal/emit/**", "internal/registry/**", "internal/jcs/**", "tools/emit-conformance/**"],
       "checks": ["emitter-conformance"]
+    },
+    {
+      "paths": ["**/*.go"],
+      "checks": ["mutation-table"]
     }
   ]
 }
