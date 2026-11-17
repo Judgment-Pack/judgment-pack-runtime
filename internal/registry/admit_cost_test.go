@@ -2,6 +2,7 @@ package registry
 
 import (
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,52 @@ func TestAdmittedLiteralAllocatesOnlyARewrittenForm(t *testing.T) {
 		if got := testing.AllocsPerRun(100, func() { admittedLiteral(number) }); got != row.allocations {
 			t.Errorf("%s: %v allocations, want %v", row.literal, got, row.allocations)
 		}
+	}
+}
+
+// A YAML kind whose canonical form passes its bound, though its text is well
+// within it, is refused as before, with REG-DOC-SIZE at the root, and its
+// form is never built or read back (#458): past the reading of the YAML,
+// refusing it allocates less than the bound. The escape \a is written as
+// \u0007, three times its text. At the bound exactly, the kind is imported
+// with the same bytes.
+func TestImportRefusesAnExpandingKindWithoutBuildingIt(t *testing.T) {
+	const escapes = 40000
+	head, end := `{"description":"`, `","kindFormatVersion":"1.0.0"}`
+	pad := MaxKindBytes - len(head) - 6*escapes - len(end)
+	source := func(selector string, pad int) string {
+		return selector + ": \"1.0.0\"\ndescription: \"" + strings.Repeat(`\a`, escapes) + strings.Repeat("x", pad) + "\"\n"
+	}
+	want := head + strings.Repeat(`\u0007`, escapes) + strings.Repeat("x", pad) + end
+	if len(want) != MaxKindBytes || len(source("kindFormatVersion", pad)) > MaxKindBytes/2 {
+		t.Fatalf("form %d bytes, text %d", len(want), len(source("kindFormatVersion", pad)))
+	}
+	if document, report := importText(source("kindFormatVersion", pad)); !report.Valid || string(document) != want {
+		t.Fatalf("at the bound: %d bytes, %+v", len(document), report.Diagnostics)
+	}
+	allocated := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	// The same text without a selector is refused before its form is
+	// written: what reading the YAML costs.
+	read := allocated(func() {
+		if _, report := importText(source("neither", pad+1)); len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "REG-DOC-SELECTOR" {
+			t.Fatalf("no selector: %+v", report.Diagnostics)
+		}
+	})
+	refused := allocated(func() {
+		document, report := importText(source("kindFormatVersion", pad+1))
+		if document != nil || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "REG-DOC-SIZE" ||
+			report.Diagnostics[0].Location != (Location{Document: DocumentYAML, Line: 1, Column: 1}) {
+			t.Fatalf("one byte over the bound: %+v", report.Diagnostics)
+		}
+	})
+	t.Logf("reading %d bytes, refusing %d bytes, bound %d", read, refused, MaxKindBytes)
+	if refused > read+MaxKindBytes {
+		t.Fatalf("refusing allocated %d bytes past the %d of reading the YAML, more than the bound of %d", refused-read, read, MaxKindBytes)
 	}
 }
