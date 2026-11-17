@@ -26,6 +26,16 @@ All notable changes to tagged releases are documented here.
   `ReadFile` refuses a world-writable file under every rule, and `ReadResolvedFile` refuses a
   file that is not regular without blocking on it. The conformance claim in CONFORMANCE.md is
   unchanged.
+- **The emitter's environment, descriptors and root on Windows and Unix** (ADR-0098). On
+  Windows, `jpack emit` gives the emitter `TEMP` and `TMP` under its fresh home, and
+  `USERPROFILE`, `APPDATA` and `LOCALAPPDATA` at it; none of the parent's values is passed, and a
+  name the manifest's `env` lists wins. On Unix every descriptor above 2 is marked close-on-exec
+  before the first emitter starts, so nothing `jpack` inherited reaches it. A `--root` whose path
+  passes through a junction or other reparse point is refused with its own message, not resolved.
+  The checks that refused only a final symbolic link (the gate summary, a saved continuation, a
+  published manifest, a conformance suite root and each component of a fixture path) now refuse
+  a junction too, through the same check as the file opens. The conformance claim in
+  CONFORMANCE.md is unchanged.
 
 ## 0.48.0 - 2026-11-17
 
