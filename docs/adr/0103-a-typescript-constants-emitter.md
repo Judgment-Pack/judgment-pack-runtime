@@ -147,7 +147,8 @@ have a pin.
 
 **Bounds and paths.**
 - The file is at most 16 MiB and the response 64 MiB. The writer stops at the bound
-  (`x-ts-bounds`). A response has at most 100 diagnostics.
+  (`x-ts-bounds`), and so does the walk of the types: a member's type is shared with the index
+  signature's union, so a chain of `$ref`s within the visit bound would otherwise walk 2^n types. A response has at most 100 diagnostics.
 - An environment that is a Windows device name is refused (`x-ts-path`), since the host would
   refuse its path.
 - `directory` defaults to `generated/constants`, which `owns` names. It is a literal relative path

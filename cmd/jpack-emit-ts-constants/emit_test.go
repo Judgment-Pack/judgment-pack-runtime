@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	host "github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/jcs"
@@ -711,6 +712,32 @@ func TestSchemaVisitsAreBounded(t *testing.T) {
 	}
 	schema := `{"$ref":"#/$defs/d13","$defs":{` + strings.Join(defs, ",") + `}}`
 	refusedWith(t, m, fixtureOf(t, []map[string]any{declaration(t, "rule", schema)}).request(t), codeSchemaUnsupported)
+}
+
+// TestSharedTypesAreWrittenWithinTheBound: a member's type is shared with
+// the index signature's union, so a chain of $refs within the visit bound
+// writes out to 2^n types. The writer stops at the file bound and the kind
+// is refused with x-ts-bounds, quickly, not after walking the whole tree.
+func TestSharedTypesAreWrittenWithinTheBound(t *testing.T) {
+	m := readManifest(t)
+	const n = 60
+	defs := []string{`"d` + strconv.Itoa(n) + `":{"type":"string"}`}
+	for i := 0; i < n; i++ {
+		ref := `{"$ref":"#/$defs/d` + strconv.Itoa(i+1) + `"}`
+		defs = append(defs, `"d`+strconv.Itoa(i)+`":{"type":"object","properties":{"p":`+ref+`},"additionalProperties":{"type":"string"}}`)
+	}
+	schema := `{"$ref":"#/$defs/d0","$defs":{` + strings.Join(defs, ",") + `}}`
+	request := fixtureOf(t, []map[string]any{declaration(t, "rule", schema)}).request(t)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		refusedWith(t, m, request, codeBounds)
+	}()
+	select {
+	case <-done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the shared types were walked past the file bound")
+	}
 }
 
 // TestNamesAreRefusedNeverRenamed: a kind whose names are reserved, or that

@@ -94,7 +94,14 @@ func (w *writer) s(text string) {
 }
 
 // typ writes a type. indent is the indentation of the line it starts on.
+// A type node can be shared, as a member's type is in the index signature's
+// union, so the walk of a $ref chain can grow exponentially. Once the writer
+// is over its bound the walk stops, and each call that does not stop writes
+// a byte or has two parts, so the walk is bounded by the file's bound.
 func (g *generator) typ(t *typeNode, indent string) {
+	if g.w.over {
+		return
+	}
 	switch t.op {
 	case opKeyword:
 		g.usesJSON = g.usesJSON || t == typeJSON
@@ -161,6 +168,9 @@ func (g *generator) typ(t *typeNode, indent string) {
 
 // literalType writes a JSON value as its literal type, on one line.
 func (g *generator) literalType(value any) {
+	if g.w.over {
+		return
+	}
 	switch v := value.(type) {
 	case map[string]any:
 		if len(v) == 0 {
