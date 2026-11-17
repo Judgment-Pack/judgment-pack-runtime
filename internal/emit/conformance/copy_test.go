@@ -58,3 +58,34 @@ func TestCopyFileBoundsTheBytesCopied(t *testing.T) {
 		t.Fatalf("at the bound: %+v %v", state, err)
 	}
 }
+
+// A stray-write row stays in the report when the copy cannot be made again
+// after it: the run stops, not run, with the fail row and the reason.
+func TestStrayWriteRowStaysWhenTheCopyCannotBeMadeAgain(t *testing.T) {
+	f := newFixture(t)
+	m := f.manifest([]string{"stray", "create", "new.txt"}, map[string]any{"environments": "all"})
+	f.registryVector("a", nil)
+	f.registryVector("b", nil)
+	saved := makeCopyDir
+	defer func() { makeCopyDir = saved }()
+	made := 0
+	makeCopyDir = func(dir, pattern string) (string, error) {
+		if made++; made > 1 {
+			return "", errors.New("no more copies")
+		}
+		return saved(dir, pattern)
+	}
+	report := f.run(m, true)
+	if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "EMIT-PATH-UNREADABLE" {
+		t.Fatalf("report: %s", dump(report))
+	}
+	row := rowOf(t, report, "a", checkStrayWrites)
+	if want := []StrayWrite{{"EMIT-STRAY-WRITE", ".", StrayCreated}}; row.Status != StatusFail || row.Reason != reasonStray || !slices.Equal(row.StrayWrites, want) {
+		t.Fatalf("check 6: %+v", row)
+	}
+	for _, r := range report.Rows {
+		if r.Vector == "b" {
+			t.Fatalf("vector b ran: %s", dump(report))
+		}
+	}
+}

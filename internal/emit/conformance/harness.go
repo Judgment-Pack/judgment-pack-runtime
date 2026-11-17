@@ -181,6 +181,12 @@ func (h *harness) vector(v *Vector, checks []int) *emit.Diagnostic {
 			row, failure = h.strayWrites(run, row)
 		}
 		if failure != nil {
+			// A row its check completed before the harness stopped, check
+			// 6's stray writes when the copy cannot be made again, stays in
+			// the report, as the earlier rows do.
+			if row.Status != "" {
+				h.report.Rows = append(h.report.Rows, row)
+			}
 			return failure
 		}
 		h.report.Rows = append(h.report.Rows, row)
@@ -525,13 +531,11 @@ func (h *harness) strayWrites(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 		return row, nil
 	}
 	changes, failure := h.ws.strayWrites()
-	if failure != nil {
-		return row, failure
-	}
-	if len(changes) > 0 {
+	switch {
+	case len(changes) > 0:
 		row.Status, row.Reason, row.StrayWrites = StatusFail, reasonStray, changes
-		return row, nil
+	case failure == nil:
+		row.Status = StatusPass
 	}
-	row.Status = StatusPass
-	return row, nil
+	return row, failure
 }

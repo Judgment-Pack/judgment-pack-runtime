@@ -162,6 +162,9 @@ All notable changes to tagged releases are documented here.
   - Check 6 of `jpack emit conformance` compares the copy's root too: a change to its permission
     bits is a stray write at `.`. The copy's 256 MiB bound counts the bytes copied rather than the
     sizes read before the copy, so a file that grows while it is copied cannot pass it.
+  - When the repository copy cannot be made again after a vector's stray writes, `jpack emit
+    conformance` keeps that vector's failing check 6 row in the report. The run still stops, not
+    run, with exit 2; before, the row was dropped.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16

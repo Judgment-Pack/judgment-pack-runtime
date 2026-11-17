@@ -198,8 +198,11 @@ func copyFailure(err error) *emit.Diagnostic {
 	return &d
 }
 
+// makeCopyDir makes the directory of a copy; a test makes it fail.
+var makeCopyDir = os.MkdirTemp
+
 func (w *workspace) fresh() *emit.Diagnostic {
-	dir, err := os.MkdirTemp("", "jpack-harness-repo-")
+	dir, err := makeCopyDir("", "jpack-harness-repo-")
 	if err != nil {
 		d := emit.NewDiagnostic("EMIT-PATH-UNREADABLE", emit.Location{Document: emit.DocumentRepository})
 		return &d

@@ -233,7 +233,9 @@ itself, and each check 6 row skips, with that reason. Any other link the copy ca
 past the system's length limit once moved into the copy for one, is `EMIT-PATH-UNREADABLE` naming
 the link, and exit 2, before any emitter runs. The copy keeps an honest emitter's mistake out of the repository. It is not a
 sandbox: the emitter runs with the user's rights. The copy's root is compared too: a change to
-its permission bits is a stray write at `.`.
+its permission bits is a stray write at `.`. After a vector that wrote to it, the copy is made again; when it cannot
+be, the run stops with `EMIT-PATH-UNREADABLE` and exit 2, and that vector's failing check 6 row
+stays in the report with the earlier rows.
 
 **Hostile responses.** Each is passed to `emit.ParseResponse` for a fixed manifest of the
 harness's own that owns `gen/**`, with request version `1.0.0` and a fixed request of one
