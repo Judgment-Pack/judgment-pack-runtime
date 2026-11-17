@@ -95,7 +95,7 @@ func manifestDoc(mode []string, changes map[string]any) map[string]any {
 		"reads":                  []any{map[string]any{"kind": "queue", "id": "https://example.invalid/kinds/queue", "versions": "^1.0.0"}},
 		"requestVersions":        []any{"1.0.0"},
 		"environments":           "each",
-		"command":                append([]any{"bin/emitter", emittest.Switch}, toAny(mode)...),
+		"command":                append([]any{emitterCommand, emittest.Switch}, toAny(mode)...),
 		"owns":                   []any{"gen/**"},
 	}
 	for name, value := range changes {
