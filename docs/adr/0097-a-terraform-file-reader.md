@@ -93,7 +93,9 @@ Chosen option: "a package of its own". The other two fail the drivers:
      object's names are sorted, in O(m log m).
    - Numbers stay as their text.
 3. `TF-FORMAT`: `format_version` is compared decoded against the table below.
-4. `TF-DOCUMENT`: as the RFC writes it, with the readings below.
+4. `TF-DOCUMENT`: as the RFC writes it, with the readings below. Then the read section is sorted
+   by id in code-point order (reading 4), and two resources of one id are `TF-DOCUMENT`. Sorting
+   in place finds a repeated id without a set of them.
 5. `TF-SENSITIVITY`: every resource of the read section carries its mirrors. This is checked
    before selection, so `select` cannot change the outcome.
 6. Removal, by the rules of RFC 0038 §2 step 6. Removed nodes are marked in a bitset, and the
@@ -102,7 +104,8 @@ Chosen option: "a package of its own". The other two fail the drivers:
    - A count taken under a position is dropped when a removal escalates past that position.
 7. Selection, then the acquired value:
    - `TF-SELECT-BOUND` when more resources are selected than `max`.
-   - Then the stable sort by address, in code-point order.
+   - Selection keeps the read section's order, which is by id since step 4, so the value is
+     sorted by id with no tie.
    - Then `TF-NUMBER` over the numbers the value would hold.
    - Then `TF-VALUE-LIMIT`.
 
@@ -183,13 +186,26 @@ provisional (VERSIONING.md).
    means.
 3. **A nested mirror position of another type** (null, a string or a number) is `TF-SENSITIVITY`.
    The RFC says so only for the top level. Refusing it fails closed.
-4. **Deposed objects share their address.** The sort is stable, so they keep the read section's
-   order. The `deposed` member is not carried, since §5 does not list it, so two such objects are
-   told apart only by their position. A spec question should settle this.
+4. **Deposed objects share their address, and are told apart by their key** (2026-11-17, settled by
+   the dialect's §4.5 step 4, spec #348). A deposed object, one an apply replaced but has not yet
+   destroyed, has a deposed key: `deposed` in a plan and `deposed_key` in a state, Terraform's own
+   member names. Each document reads only its own name. A resource's id is its address, or its
+   address, ` deposed ` and the key. A key that is not a non-empty string, or two resources of the
+   read section with one id, selected or not, is `TF-DOCUMENT`. The composed id is not injective
+   (an address may itself hold ` deposed `), so the check is on ids, not on address and key
+   pairs. The acquired object carries the key as `deposed`, present only for a deposed object:
+   after `before` in a plan and after `address` in a state, in canonical order. The value is
+   sorted by id, so no tie is left to the file's order. For the addresses Terraform writes, that is in practice address
+   order with the current object first and its deposed objects after it, by key: a space sorts
+   before `.` and `[`, which extend an address. `Resource.ID` carries the id, and the batch tool
+   writes it as the line's id. Before this, the key was not carried and the sort was stable, so two
+   such objects were told apart only by their position.
 5. **A malformed resource identity** is `TF-DOCUMENT`, at step 4. This covers:
    - a read-section item that is not an object;
    - an `address`, `type`, `name`, `mode` or `provider_name` that is missing or not a string;
    - an `index` that is present but neither a string nor a number;
+   - a deposed key that is present but not a non-empty string, and two resources of one id
+     (reading 4);
    - a plan item whose `change` is not an object, or whose `change.actions` is not an array of
      strings.
 6. **An unknown value that Terraform writes as null in a list** is kept as written.
@@ -206,7 +222,9 @@ The rest are this runtime's own readings:
    section is `resource_changes`, so a plan's `planned_values` need not hold a `root_module`
    either.
 9. **The read section's order**, for a state, is a depth-first walk that takes each module's
-   resources before its child modules. That order decides ties in the sort.
+   resources before its child modules. Since reading 4 settled ids (2026-11-17), no two resources
+   share one, so this order decides nothing: the section is sorted by id at step 4, and the
+   acquired value and the batch follow that sort.
 10. **A value of the read section counts as an object member of its resource.** A mirror of `true`
     over the whole of `before`, `after` or `values`, or a removal that escalates to it, leaves that
     member out of the object and counts one. A position the mirror marks but the value lacks, a
@@ -308,8 +326,10 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   decides which it has: `-` is read as a stream (`ReadStream`), to one byte past `maxBytes` at
   most, so a longer standard input is `TF-SIZE` with its code and fixed message alone (reading
   18).
-- **One line per selected resource**, in the acquired value's order (by address):
-  `{"facts":{"resource":<the §5 object>,"terraform":{"document","formatVersion","sha256"}},"id":"<address>"}`.
+- **One line per selected resource**, in the acquired value's order (by id, reading 4):
+  `{"facts":{"resource":<the §5 object>,"terraform":{"document","formatVersion","sha256"}},"id":"<id>"}`.
+  The id is the resource's address, or, for a deposed object, its address, ` deposed ` and its
+  key.
   This is RFC 8785 canonical, the line shape of `registry facts` (ADR-0095). `sha256` is the
   file's bare lower-case hex, as in the acquisition record.
 - **A refusal writes no line.** Every check runs before the first line is written, so a refused
@@ -328,13 +348,13 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   Standard output stays empty, standard error carries the same four members as a refusal (the
   code, the file's sha256 and size, and the code's fixed message), and the exit code is 2, as
   `registry facts` uses for the same code.
-- **Each address is held to the batch id limit.** A line's id is the resource's address, and
+- **Each id is held to the batch id limit.** A line's id is the resource's id, and
   `evaluate --batch` reads an id of 1 to 256 bytes (`MaxBatchIDBytes`), refusing a longer line
-  with `JPS-INVOCATION-BATCH-ITEM`. A `for_each` key can make an address longer than that. Before
-  anything is written, every selected address is checked, and one outside the bound refuses the
-  whole run with `FACTS-ID-LIMIT`, this runtime's provisional code, ahead of the document check.
-  The output is the same as for `FACTS-DOCUMENT-LIMIT`, with a fixed message, and it never carries
-  the address. `registry facts` does not need the check: its longest id,
+  with `JPS-INVOCATION-BATCH-ITEM`. A `for_each` key can make an address longer than that, and a
+  deposed key makes the id longer than the address. Before anything is written, every selected id
+  is checked, and one outside the bound refuses the whole run with `FACTS-ID-LIMIT`, this
+  runtime's provisional code, ahead of the document check. The output is the same as for
+  `FACTS-DOCUMENT-LIMIT`, with a fixed message, and it never carries the id. `registry facts` does not need the check: its longest id,
   `<environment>:<kind>/<entry-id>`, is 32 + 1 + 63 + 1 + 128 = 225 bytes under the registry reader's name
   bounds.
 - **`*` never crosses `.`, `[` or `]`** (§4). So `module.*.google_sql_user.*` matches

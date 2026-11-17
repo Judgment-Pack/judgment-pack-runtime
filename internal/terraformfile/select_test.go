@@ -90,7 +90,7 @@ func TestTheSelectionMaxIsABound(t *testing.T) {
 	mustRefuse(t, three, Source{Document: DocumentPlan, Select: Select{Types: []string{"synthetic_db"}, Max: 1}}, CodeSelectBound)
 }
 
-func TestTheOrderIsByAddressAndStable(t *testing.T) {
+func TestTheOrderIsByID(t *testing.T) {
 	// Code-point order, which is not UTF-16 order: U+FFFD sorts before
 	// U+1F600 here, and after it among member names.
 	data := plan(t,
@@ -100,20 +100,32 @@ func TestTheOrderIsByAddressAndStable(t *testing.T) {
 		change{address: "synthetic_db.�", after: object("n", 4)},
 		change{address: "synthetic_db.é", after: object("n", 5)},
 		change{address: "synthetic_db.a", after: object("n", 6)},
-		// Deposed objects share their address, and keep the file's order.
-		change{address: "synthetic_db.dup", after: object("n", "first"), deposed: "00000001"},
-		change{address: "synthetic_db.dup", after: object("n", "second")},
-		change{address: "synthetic_db.dup", after: object("n", "third"), deposed: "00000002"},
+		// Deposed objects share their address, and are told apart by their
+		// key: the current object first, then its deposed objects by key,
+		// whatever the file's order, and before any address that extends it.
+		change{address: "synthetic_db.dup", after: object("n", "deposed-2"), deposed: "00000002"},
+		change{address: "synthetic_db.dup", after: object("n", "deposed-1"), deposed: "00000001"},
+		change{address: "synthetic_db.dup[0]", after: object("n", "counted")},
+		change{address: "synthetic_db.dup", after: object("n", "current")},
 	)
 	acquisition := mustAccept(t, data, planSource("synthetic_db"))
-	want := []string{"synthetic_db.A", "synthetic_db.a", "synthetic_db.b", "synthetic_db.dup", "synthetic_db.dup", "synthetic_db.dup", "synthetic_db.é", "synthetic_db.�", "synthetic_db.\U0001F600"}
+	want := []string{"synthetic_db.A", "synthetic_db.a", "synthetic_db.b", "synthetic_db.dup", "synthetic_db.dup", "synthetic_db.dup", "synthetic_db.dup[0]", "synthetic_db.é", "synthetic_db.�", "synthetic_db.\U0001F600"}
 	if got := addresses(acquisition); !reflect.DeepEqual(got, want) {
 		t.Fatalf("order %q", got)
 	}
+	wantIDs := append([]string(nil), want...)
+	wantIDs[4], wantIDs[5] = "synthetic_db.dup deposed 00000001", "synthetic_db.dup deposed 00000002"
+	if got := ids(acquisition); !reflect.DeepEqual(got, wantIDs) {
+		t.Fatalf("ids %q", got)
+	}
 	got := resources(t, acquisition)
-	for i, label := range []string{"first", "second", "third"} {
-		if n := got[3+i]["after"].(map[string]any)["n"]; n != label {
+	for i, c := range []struct{ label, deposed string }{{"current", ""}, {"deposed-1", "00000001"}, {"deposed-2", "00000002"}, {"counted", ""}} {
+		object := got[3+i]
+		if n := object["after"].(map[string]any)["n"]; n != c.label {
 			t.Fatalf("deposed order: %d is %v", i, n)
+		}
+		if key, ok := object["deposed"]; ok != (c.deposed != "") || (ok && key != c.deposed) {
+			t.Fatalf("%s: deposed member %v", c.label, key)
 		}
 	}
 	// The same bytes read twice give the same value.

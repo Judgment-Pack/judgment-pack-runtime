@@ -493,6 +493,23 @@ func TestTheValueIsBoundedByItsSource(t *testing.T) {
 	mustRefuse(t, data, planSource("synthetic_db"), CodeValueLimit)
 }
 
+// TF-VALUE-LIMIT's fixed message names both bounds, since either may be the
+// one that applied, and carries no value.
+func TestTheValueLimitMessageNamesBothBounds(t *testing.T) {
+	message := Message(CodeValueLimit)
+	if ValueBytesPerInputByte != 16 || !strings.Contains(message, "sixteen times the file") {
+		t.Fatalf("the message does not name the source bound of %d times the file: %q", ValueBytesPerInputByte, message)
+	}
+	if !strings.Contains(message, strconv.FormatInt(MaxValueBytes, 10)+" bytes") || !strings.Contains(message, "the lesser of") {
+		t.Fatalf("the message does not name the fixed bound: %q", message)
+	}
+	// The source bound, not the fixed one, refuses this plan, and the
+	// refusal carries the same fixed message.
+	if refusal := mustRefuse(t, longPointerPlan(t), planSource("synthetic_db"), CodeValueLimit); refusal.Message != message {
+		t.Fatalf("message %q", refusal.Message)
+	}
+}
+
 // A file of maximal numbers, `1e63` over and over, is accepted: the normal
 // form grows it about 13.4 times, the most any number can, so the source
 // bound must sit above that. A bound of 13 or less refuses this file.
