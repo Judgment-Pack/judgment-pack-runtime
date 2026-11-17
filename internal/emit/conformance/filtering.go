@@ -116,8 +116,8 @@ func withSyntheticKind(v *Vector, m *emit.Manifest) (*synthetic, error) {
 		}
 	}
 	root["entries"] = insert(entries, at, entry)
-	registryBytes, err := jcs.EncodeDocument(root)
-	if err != nil || len(registryBytes) > registry.MaxRegistryBytes {
+	registryBytes, err := jcs.EncodeDocumentWithin(root, registry.MaxRegistryBytes)
+	if err != nil {
 		return nil, errSynthetic
 	}
 	kinds := append(append([]registry.Document{}, v.Kinds...), registry.Document{Data: declarationBytes})

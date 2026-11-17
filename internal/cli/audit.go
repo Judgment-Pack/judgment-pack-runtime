@@ -1249,8 +1249,8 @@ func (a *App) checkContinuationTarget(target *continuationTarget) *saveRefusal {
 		return nil
 	case err != nil:
 		return refuse("could not be examined")
-	case info.Mode()&os.ModeSymlink != 0:
-		return refuse("is a symbolic link; a continuation is saved to a file named by its own path")
+	case fssecure.LinkLike(info):
+		return refuse("is a symbolic link or junction; a continuation is saved to a file named by its own path")
 	case !info.Mode().IsRegular():
 		return refuse("is not a regular file")
 	}

@@ -1,12 +1,15 @@
 package jcs
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // EncodeDocument returns the RFC 8785 canonical form of a whole JSON document:
@@ -81,58 +84,219 @@ func writeDocument(builder *strings.Builder, value any) error {
 
 // FormatNumber writes a finite double as RFC 8785 §3.2.2.3 requires.
 func FormatNumber(number float64) (string, error) {
-	var builder strings.Builder
-	if err := writeNumber(&builder, number); err != nil {
+	var scratch [maxNumberBytes]byte
+	out, err := AppendNumber(scratch[:0], number)
+	if err != nil {
 		return "", err
 	}
-	return builder.String(), nil
+	return string(out), nil
 }
 
 func writeNumber(builder *strings.Builder, number float64) error {
+	var scratch [maxNumberBytes]byte
+	out, err := AppendNumber(scratch[:0], number)
+	if err != nil {
+		return err
+	}
+	builder.Write(out)
+	return nil
+}
+
+// maxNumberBytes is the longest form AppendNumber writes: a sign, a point
+// and 17 digits after "0." and five zeros (-0.0000033333333333333333 is 25
+// bytes), or a sign, 17 digits, a point and an exponent of "e-324".
+const maxNumberBytes = 32
+
+// AppendNumber appends a finite double as RFC 8785 §3.2.2.3 requires, the
+// form FormatNumber returns, to dst. With room in dst it allocates nothing.
+func AppendNumber(dst []byte, number float64) ([]byte, error) {
 	if math.IsNaN(number) || math.IsInf(number, 0) {
-		return fmt.Errorf("jcs: a number that is not finite has no canonical form")
+		return dst, fmt.Errorf("jcs: a number that is not finite has no canonical form")
 	}
 	if number == 0 {
-		builder.WriteByte('0')
-		return nil
+		return append(dst, '0'), nil
 	}
 	if number < 0 {
-		builder.WriteByte('-')
+		dst = append(dst, '-')
 		number = -number
 	}
 	// Shortest round-trip digits, as "d.ddde±x".
-	scientific := strconv.FormatFloat(number, 'e', -1, 64)
-	mantissa, exponentText, _ := strings.Cut(scientific, "e")
-	digits := strings.Replace(mantissa, ".", "", 1)
-	exponent, err := strconv.Atoi(exponentText)
-	if err != nil {
-		return fmt.Errorf("jcs: unexpected number layout %q", scientific)
+	var scratch [maxNumberBytes]byte
+	scientific := strconv.AppendFloat(scratch[:0], number, 'e', -1, 64)
+	at := bytes.IndexByte(scientific, 'e')
+	if at < 1 || at+2 >= len(scientific) || (scientific[at+1] != '+' && scientific[at+1] != '-') {
+		return dst, fmt.Errorf("jcs: unexpected number layout %q", string(scientific))
+	}
+	var digitScratch [maxNumberBytes]byte
+	digits := append(digitScratch[:0], scientific[0])
+	if at > 1 {
+		digits = append(digits, scientific[2:at]...)
+	}
+	exponent := 0
+	for _, digit := range scientific[at+2:] {
+		exponent = exponent*10 + int(digit-'0')
+	}
+	if scientific[at+1] == '-' {
+		exponent = -exponent
 	}
 	k := len(digits)
 	n := exponent + 1
 	switch {
 	case k <= n && n <= 21:
-		builder.WriteString(digits)
-		builder.WriteString(strings.Repeat("0", n-k))
+		dst = append(dst, digits...)
+		for range n - k {
+			dst = append(dst, '0')
+		}
 	case 0 < n && n <= 21:
-		builder.WriteString(digits[:n])
-		builder.WriteByte('.')
-		builder.WriteString(digits[n:])
+		dst = append(dst, digits[:n]...)
+		dst = append(dst, '.')
+		dst = append(dst, digits[n:]...)
 	case -6 < n && n <= 0:
-		builder.WriteString("0.")
-		builder.WriteString(strings.Repeat("0", -n))
-		builder.WriteString(digits)
+		dst = append(dst, '0', '.')
+		for range -n {
+			dst = append(dst, '0')
+		}
+		dst = append(dst, digits...)
 	default:
-		builder.WriteByte(digits[0])
+		dst = append(dst, digits[0])
 		if k > 1 {
-			builder.WriteByte('.')
-			builder.WriteString(digits[1:])
+			dst = append(dst, '.')
+			dst = append(dst, digits[1:]...)
 		}
-		builder.WriteByte('e')
+		dst = append(dst, 'e')
 		if n-1 >= 0 {
-			builder.WriteByte('+')
+			dst = append(dst, '+')
 		}
-		builder.WriteString(strconv.Itoa(n - 1))
+		dst = strconv.AppendInt(dst, int64(n-1), 10)
 	}
-	return nil
+	return dst, nil
+}
+
+// ErrTooLong is EncodeDocumentWithin's refusal of a value whose canonical
+// form is longer than the bound.
+var ErrTooLong = errors.New("jcs: the canonical form is longer than the bound")
+
+// EncodeDocumentWithin is EncodeDocument held to a bound: a value whose
+// canonical form is longer than maxBytes is refused with ErrTooLong. The
+// length is measured first, without building the form or allocating, so a
+// refusal costs a walk of the value however far its form passes the bound:
+// a number's form can be far longer than its literal (1e20 is written as 21
+// digits). A value EncodeDocument refuses is refused with its error, over the
+// bound or not.
+func EncodeDocumentWithin(value any, maxBytes int) ([]byte, error) {
+	size, err := DocumentSize(value)
+	if err != nil {
+		return nil, err
+	}
+	if size > maxBytes {
+		return nil, ErrTooLong
+	}
+	var builder strings.Builder
+	builder.Grow(size)
+	if err := writeDocument(&builder, value); err != nil {
+		return nil, err
+	}
+	return []byte(builder.String()), nil
+}
+
+// DocumentSize returns the length of EncodeDocument's form of value, or its
+// error, without building the form. It allocates nothing for a value that
+// has a form.
+func DocumentSize(value any) (int, error) {
+	if size, ok := documentSize(value); ok {
+		return size, nil
+	}
+	// The value has no canonical form; the encoder names why, as it would
+	// have without the measure.
+	encoded, err := EncodeDocument(value)
+	if err != nil {
+		return 0, err
+	}
+	return len(encoded), nil
+}
+
+// documentSize measures the form writeDocument writes, member order aside,
+// which does not change its length. It reports false for any value
+// writeDocument refuses.
+func documentSize(value any) (int, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return len("null"), true
+	case json.Number:
+		number, err := strconv.ParseFloat(typed.String(), 64)
+		if err != nil {
+			return 0, false
+		}
+		return numberSize(number)
+	case float64:
+		return numberSize(typed)
+	case string:
+		return stringSize(typed)
+	case bool:
+		if typed {
+			return len("true"), true
+		}
+		return len("false"), true
+	case []string:
+		size := 2 + max(len(typed)-1, 0)
+		for _, item := range typed {
+			itemSize, ok := stringSize(item)
+			if !ok {
+				return 0, false
+			}
+			size += itemSize
+		}
+		return size, true
+	case []any:
+		size := 2 + max(len(typed)-1, 0)
+		for _, item := range typed {
+			itemSize, ok := documentSize(item)
+			if !ok {
+				return 0, false
+			}
+			size += itemSize
+		}
+		return size, true
+	case map[string]any:
+		size := 2 + max(len(typed)-1, 0)
+		for name, item := range typed {
+			nameSize, ok := stringSize(name)
+			if !ok {
+				return 0, false
+			}
+			itemSize, ok := documentSize(item)
+			if !ok {
+				return 0, false
+			}
+			size += nameSize + 1 + itemSize
+		}
+		return size, true
+	default:
+		return 0, false
+	}
+}
+
+func numberSize(number float64) (int, bool) {
+	var scratch [maxNumberBytes]byte
+	out, err := AppendNumber(scratch[:0], number)
+	return len(out), err == nil
+}
+
+// stringSize is the length of writeString's form of value: its bytes and
+// quotes, and one more byte for each two-byte escape and five more for each
+// \u00xx.
+func stringSize(value string) (int, bool) {
+	if !utf8.ValidString(value) {
+		return 0, false
+	}
+	size := len(value) + 2
+	for i := 0; i < len(value); i++ {
+		switch c := value[i]; {
+		case c == '"' || c == '\\' || c == '\b' || c == '\t' || c == '\n' || c == '\f' || c == '\r':
+			size++
+		case c < 0x20:
+			size += 5
+		}
+	}
+	return size, true
 }

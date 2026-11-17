@@ -3,6 +3,7 @@ package conformance
 import (
 	"cmp"
 	"maps"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -336,5 +337,83 @@ func TestGivenRequestIsBoundedAsCanonical(t *testing.T) {
 	request, refused := givenRequest([]byte(long), m)
 	if len(refused) != 1 || refused[0].Code != "EMIT-REQUEST" || refused[0].Location.Document != emit.DocumentRequest {
 		t.Fatalf("a request within the bound as written, over it canonical: %+v, %d bytes", refused, len(request.Bytes))
+	}
+}
+
+// A given request whose canonical form passes the bound is refused as before,
+// and the form is never built (#458): past admission, refusing it allocates
+// less than the bound. Two are refused, at the bound's scale: one whose form
+// is one 1e20 over it, and one whose file is at the bound and whose form is
+// more than four times it, the shape of a 63 MiB file that cost 16.7 GB
+// before. Just under the bound, the request is admitted with the bytes it
+// had.
+func TestGivenRequestRefusesAnExpandingFormWithoutBuildingIt(t *testing.T) {
+	f := newFixture(t)
+	m := f.manifest(requestMode, map[string]any{"environments": "all"})
+	const envelope = `"emitRequestVersion":"1.0.0","emitter":{"id":"https://example.invalid/emitters/test","version":"1.0.0"},"options":{}`
+	text := func(numbers int, number string) string {
+		return `{"declarations":[[` + strings.TrimSuffix(strings.Repeat(number+",", numbers), ",") + `]],` + envelope + `,"resolved":[]}`
+	}
+	const bound = 1 << 20
+	saved := maxGivenRequestBytes
+	defer func() { maxGivenRequestBytes = saved }()
+	maxGivenRequestBytes = bound
+
+	// 1e20 is written as 21 digits, and each number adds 22 bytes to the form.
+	under := (bound - len(text(0, "")) + 1) / 22
+	canonical := text(under, "100000000000000000000")
+	if len(canonical) > bound || len(text(under+1, "100000000000000000000")) <= bound {
+		t.Fatalf("the form of %d numbers is %d bytes", under, len(canonical))
+	}
+	request, refused := givenRequest([]byte(text(under, "1e20")), m)
+	if len(refused) != 0 || string(request.Bytes) != canonical {
+		t.Fatalf("just under the bound: %+v, %d bytes", refused, len(request.Bytes))
+	}
+
+	allocated := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	atBound := (bound - len(text(0, "")) + 1) / 5
+	for name, data := range map[string][]byte{
+		"one number over":     []byte(text(under+1, "1e20")),
+		"a file at the bound": []byte(text(atBound, "1e20")),
+	} {
+		if len(data) > bound {
+			t.Fatalf("%s: the file is %d bytes", name, len(data))
+		}
+		admission := allocated(func() {
+			if _, code, _ := registry.AdmitValue(data, bound); code != "" {
+				t.Fatalf("%s: not admitted: %s", name, code)
+			}
+		})
+		total := allocated(func() {
+			request, refused := givenRequest(data, m)
+			if len(refused) != 1 || refused[0].Code != "EMIT-REQUEST" || refused[0].Location != (emit.Location{Document: emit.DocumentRequest}) {
+				t.Fatalf("%s: %+v, %d bytes", name, refused, len(request.Bytes))
+			}
+		})
+		t.Logf("%s: %d bytes, admission %d, in all %d", name, len(data), admission, total)
+		if total > admission+bound {
+			t.Errorf("%s: refusing allocated %d bytes past the %d of admission, more than the bound of %d", name, total-admission, admission, bound)
+		}
+		// The factor: the decoder every reader shares costs 50 to 130 times
+		// a document's bytes to read one of small values into a tree, the
+		// same whether its numbers expand or not. This request measures
+		// about 75 times the bound; 128 is generous, and the 276 times it
+		// cost before fails it.
+		if total > 128*bound {
+			t.Errorf("%s: %d bytes allocated, more than 128 times the bound", name, total)
+		}
+	}
+
+	// A request refused for its envelope is refused for it as before, its
+	// form over the bound or not.
+	wrong := strings.Replace(text(atBound, "1e20"), `"emitRequestVersion":"1.0.0"`, `"emitRequestVersion":"9.9.9"`, 1)
+	if _, refused := givenRequest([]byte(wrong), m); len(refused) != 1 || refused[0].Code != "EMIT-REQUEST-VERSION" || refused[0].Location.Pointer != "/emitRequestVersion" {
+		t.Fatalf("a request of another version: %+v", refused)
 	}
 }

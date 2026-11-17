@@ -34,7 +34,7 @@ func openRegular(filePath string) (*os.File, error) {
 		return nil, err
 	}
 	pathInfo, err := os.Lstat(filePath)
-	if err != nil || linkLike(pathInfo) || !os.SameFile(openedInfo, pathInfo) {
+	if err != nil || LinkLike(pathInfo) || !os.SameFile(openedInfo, pathInfo) {
 		file.Close()
 		return nil, errors.New("path changed or resolves through a final link or junction")
 	}

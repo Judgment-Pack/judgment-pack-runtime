@@ -388,7 +388,12 @@ func TestEmitGivesTheEmitterOnlyItsEnvironment(t *testing.T) {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	if want := []string{"EMIT_TEST_DECLARED", "HOME", "LANG", "PATH"}; !slices.Equal(names, want) {
+	want := []string{"EMIT_TEST_DECLARED", "HOME", "LANG", "PATH"}
+	if runtime.GOOS == "windows" {
+		want = append(want, "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "USERPROFILE")
+		slices.Sort(want)
+	}
+	if !slices.Equal(names, want) {
 		t.Fatalf("the emitter's environment has %v, want %v", names, want)
 	}
 	if got["EMIT_TEST_DECLARED"] != "declared-value-text" || got["LANG"] != "C.UTF-8" || got["PATH"] != strings.Join(absolute, separator) {

@@ -126,7 +126,7 @@ var Codes = map[string]codeInfo{
 	"EMIT-KIND-ID":          {SeverityError, "The registry pins a kind of a name the manifest reads with another kind id."},
 	"EMIT-OPTIONS":          {SeverityError, "The options document is not admissible JSON, or does not satisfy the manifest's options schema."},
 	"EMIT-ENV-UNSET":        {SeverityWarning, "A variable the manifest's env lists is not set in the host's environment, so the emitter does not receive it."},
-	"EMIT-LINK":             {SeverityError, "A symbolic link is at or above an owned path; the host does not follow it."},
+	"EMIT-LINK":             {SeverityError, "A symbolic link, or another reparse point such as a Windows junction, is at or above an owned path; the host does not follow it."},
 	"EMIT-PATH-UNREADABLE":  {SeverityError, "A path could not be read: an input, or an owned path that is not a regular file or directory or could not be listed or read."},
 	"EMIT-WRITE":            {SeverityError, "A file could not be written or deleted, or a path the response names is held by a directory or by a file the manifest does not own."},
 	"EMIT-REPORT-TRUNCATED": {SeverityWarning, "The report lists the first 1000 diagnostics of a list, the host's or the emitter's, and there were more."},
