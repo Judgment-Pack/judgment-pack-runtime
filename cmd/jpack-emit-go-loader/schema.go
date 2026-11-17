@@ -23,7 +23,8 @@ import (
 //     false does not declare;
 //   - properties, additionalProperties, items or required without a type,
 //     required at a map, and a type of the empty string;
-//   - enum or const at an integer, number or boolean position;
+//   - enum or const at an integer, number, boolean, object or array
+//     position, the root's included;
 //   - enum or const at a string position, or with no type, whose values are
 //     not all strings, and enum beside const there;
 //   - a tuple items (an array of subschemas), and false as a subschema other
@@ -213,9 +214,10 @@ func (b *builder) object(s map[string]any, tokens []token, root bool) (*position
 		typeName = name
 	}
 	switch typeName {
-	case "integer", "number", "boolean":
-		// The decoder does not check enum or const there, so neither is
-		// rendered approximately.
+	case "integer", "number", "boolean", "object", "array":
+		// Only a string's enum or const is generated and checked, so one at
+		// any other position, the root's included, is refused rather than
+		// dropped.
 		_, hasEnum := s["enum"]
 		_, hasConst := s["const"]
 		if hasEnum || hasConst {
@@ -429,10 +431,12 @@ func (b *builder) arrayType(s map[string]any, tokens []token) (*position, error)
 func markSecret(p *position, tokens []patternToken) (bool, error) {
 	if len(tokens) == 0 {
 		switch p.shape {
-		case shapeString, shapeEnum, shapeSecret:
-			p.shape, p.values = shapeSecret, nil
+		case shapeString, shapeSecret:
+			p.shape = shapeSecret
 			return true, nil
 		}
+		// An enumeration too: a secret is not checked against a list, so its
+		// list would be dropped.
 		return false, findSecret
 	}
 	t := tokens[0]

@@ -676,6 +676,11 @@ func TestFindings(t *testing.T) {
 		{"an enum at an integer", thing(`"a":{"type":"integer","enum":[1,2]}`), findSchema},
 		{"a const at a number", thing(`"a":{"type":"number","const":1.5}`), findSchema},
 		{"a const at a boolean", thing(`"a":{"type":"boolean","const":true}`), findSchema},
+		{"a const at an array", thing(`"a":{"type":"array","items":` + str + `,"const":["x"]}`), findSchema},
+		{"an enum at an array", thing(`"a":{"type":"array","items":` + str + `,"enum":[["x"]]}`), findSchema},
+		{"a const at an object", thing(`"a":{"type":"object","additionalProperties":false,"properties":{"b":` + str + `},"const":{"b":"x"}}`), findSchema},
+		{"an enum at a map", thing(`"a":{"type":"object","additionalProperties":` + str + `,"enum":[{}]}`), findSchema},
+		{"an enum at the root", decl("thing", `{"type":"object","additionalProperties":false,"properties":{"a":`+str+`},"enum":[{"a":"x"}]}`, ""), findSchema},
 		{"properties without a type", thing(`"a":{"additionalProperties":false,"properties":{}}`), findSchema},
 		{"items without a type", thing(`"a":{"items":` + str + `}`), findSchema},
 		{"an enum of a number", thing(`"a":{"enum":["x",1]}`), findSchema},
@@ -688,6 +693,8 @@ func TestFindings(t *testing.T) {
 		{"$defs below the root", thing(`"a":{"type":"string","$defs":{}}`), findSchema},
 
 		// Secret positions.
+		{"a secret at an enumeration", decl("thing", closed(`"a":{"type":"string","enum":["x","y"]}`), `,"secrets":["/a"]`), findSecret},
+		{"a secret at an untyped enumeration", decl("thing", closed(`"a":{"enum":["x"]}`), `,"secrets":["/a"]`), findSecret},
 		{"a secret at an integer", decl("thing", closed(`"a":{"type":"integer"}`), `,"secrets":["/a"]`), findSecret},
 		{"a secret at an object", decl("thing", closed(`"a":`+closed(`"b":`+str)), `,"secrets":["/a"]`), findSecret},
 		{"a secret at an array", decl("thing", closed(`"a":{"type":"array","items":`+str+`}`), `,"secrets":["/a"]`), findSecret},
@@ -755,8 +762,7 @@ func TestFindingsAcrossKinds(t *testing.T) {
 
 // TestSecretTyping: each position a secret pattern matches is a
 // startup.Secret, and no other is: a wild token reaches every element of an
-// array and every member of a map, and an enumeration at a secret position is
-// a secret, not an enumeration.
+// array and every member of a map.
 func TestSecretTyping(t *testing.T) {
 	str := `{"type":"string"}`
 	declaration := decl("thing", closed(
@@ -764,9 +770,8 @@ func TestSecretTyping(t *testing.T) {
 			`,"b":`+str+
 			`,"items":{"type":"array","items":`+closed(`"key":`+str+`,"name":`+str)+`}`+
 			`,"tokens":{"type":"object","additionalProperties":`+str+`}`+
-			`,"mode":{"enum":["x","y"]}`+
 			`,"wild":`+closed(`"p":`+str+`,"q":`+str)),
-		`,"secrets":["/a","/items/*/key","/tokens/*","/mode","/wild/*"]`)
+		`,"secrets":["/a","/items/*/key","/tokens/*","/wild/*"]`)
 	out, err := emit([]byte(requestOf(t, declaration)))
 	if err != nil {
 		t.Fatal(err)
@@ -779,7 +784,6 @@ func TestSecretTyping(t *testing.T) {
 		"\tKey *startup.Secret\n",
 		"\tName *string\n",
 		"\tTokens map[string]startup.Secret\n",
-		"\tMode *startup.Secret\n",
 		"\tP *startup.Secret\n",
 		"\tQ *startup.Secret\n",
 		"d.readSecret(at0, raw0)",
@@ -788,7 +792,7 @@ func TestSecretTyping(t *testing.T) {
 			t.Errorf("the source does not hold %q", want)
 		}
 	}
-	if strings.Contains(text, "ThingModeX") || strings.Count(text, "d.readSecret(") != 6 {
+	if strings.Count(text, "d.readSecret(") != 5 {
 		t.Errorf("a secret position is not read as a secret, exactly:\n%s", text)
 	}
 	// A kind with no secret does not import the start-up module.

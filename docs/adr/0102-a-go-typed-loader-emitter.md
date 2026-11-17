@@ -167,15 +167,16 @@ A refusal wraps `ErrValue` and names the kind, the entry's id and the JSON point
 - `properties`, `additionalProperties`, `items` or `required` without a type, a `required` name the
   closed object does not declare, `required` at a map, a `type` of the empty string, a tuple
   `items`, and `false` as a subschema;
-- `enum` or `const` at an integer, number or boolean position, which the decoder would not check;
+- `enum` or `const` at an integer, number, boolean, object or array position, the root's included,
+  which the decoder would not check;
 - `enum` or `const` at a string position whose values are not all strings, and `enum` beside
   `const` there;
 - a keyword outside companion §3.2's subset, and more than 4 096 positions with `$ref` expanded.
 
 **Refused secret patterns** (`x-go-loader-secret`): one that matches a position that is not a string
-(an enumeration at a secret position becomes a plain secret), one that reaches a raw position, one
-that names a single member of a map or a single element of an array (their elements share a type),
-and one that matches nothing.
+(an enumeration included, as a secret is not checked against a list), one that reaches a raw
+position, one that names a single member of a map or a single element of an array (their elements
+share a type), and one that matches nothing.
 
 **The golden module.** The vectors' expected files and the golden package import the start-up
 module, which the root module does not require. They live in a nested module,
