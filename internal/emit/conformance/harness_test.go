@@ -602,6 +602,24 @@ func TestNoVectorRanTheEmitter(t *testing.T) {
 	}
 }
 
+// A command that never starts gives EMIT-PROCESS, as a vector may expect:
+// that vector passes check 1 without the emitter, so the set is refused as
+// one that never ran it.
+func TestAnEmitterThatNeverStartedDidNotRun(t *testing.T) {
+	f := newFixture(t)
+	m := f.manifest(nil, map[string]any{"command": []any{"bin/jpack-harness-test-absent"}})
+	f.registryVector("process", map[string]string{"expected-failure.json": `{"code":"EMIT-PROCESS"}`})
+	for _, update := range []bool{false, true} {
+		report := f.run(m, update)
+		if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun || len(report.Diagnostics) != 1 {
+			t.Fatalf("update %v: %s", update, dump(report))
+		}
+		if d := report.Diagnostics[0]; d.Code != "EMIT-VECTOR" || d.Location.Document != DocumentVector || d.Location.Path != "" {
+			t.Fatalf("update %v: %+v", update, report.Diagnostics)
+		}
+	}
+}
+
 // More of the marker ~empty: beside an empty directory, and a link.
 func TestEmptyMarkerRefusals(t *testing.T) {
 	cases := map[string]func(t *testing.T, expected string){
