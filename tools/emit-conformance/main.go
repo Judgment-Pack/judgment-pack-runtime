@@ -30,6 +30,7 @@ type reference struct {
 var references = []reference{
 	{"cmd/jpack-emit-go-facts/emitter.json", "cmd/jpack-emit-go-facts/vectors", false},
 	{"cmd/jpack-emit-go-loader/emitter.json", "cmd/jpack-emit-go-loader/golden/vectors", true},
+	{"cmd/jpack-emit-ts-constants/emitter.json", "cmd/jpack-emit-ts-constants/vectors", true},
 }
 
 func main() {

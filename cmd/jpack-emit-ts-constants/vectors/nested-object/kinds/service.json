@@ -1,0 +1,83 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.org/kinds/service",
+  "version": "1.0.0",
+  "kind": "service",
+  "owner": "platform",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "name",
+      "tier",
+      "endpoint"
+    ],
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "tier": {
+        "enum": [
+          "gold",
+          "silver",
+          "bronze"
+        ]
+      },
+      "endpoint": {
+        "$ref": "#/$defs/endpoint"
+      },
+      "fallback": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/endpoint"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "labels": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "limits": {
+        "type": "object",
+        "properties": {
+          "rps": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": {
+          "type": "number"
+        }
+      },
+      "notes": {
+        "type": "string"
+      },
+      "meta": true
+    },
+    "$defs": {
+      "endpoint": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "host",
+          "port"
+        ],
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "tls": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

@@ -54,6 +54,11 @@
                  "loader-golden-vet", "loader-golden-test", "emitter-conformance"]
     },
     {
+      "paths": ["cmd/jpack-emit-ts-constants/**"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test",
+                 "emitter-conformance"]
+    },
+    {
       "paths": ["internal/emit/**", "internal/registry/**", "internal/jcs/**", "tools/emit-conformance/**"],
       "checks": ["emitter-conformance"]
     }

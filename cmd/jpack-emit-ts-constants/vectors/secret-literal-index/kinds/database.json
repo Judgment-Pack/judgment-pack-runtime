@@ -1,0 +1,22 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.org/kinds/database",
+  "version": "1.0.0",
+  "kind": "database",
+  "owner": "platform",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "host": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": {
+      "type": "string",
+      "const": "secret:gcp-sm:projects/example-dev/secrets/probe-pw/versions/3"
+    }
+  },
+  "secrets": [
+    "/password"
+  ]
+}

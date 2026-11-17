@@ -1,0 +1,75 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-ts-constants",
+    "version": "0.1.0"
+  },
+  "options": {},
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.org/kinds/db-role",
+      "version": "1.0.0",
+      "kind": "db-role",
+      "owner": "platform",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.org/kinds/db-role-entries",
+      "version": "1.0.0",
+      "kind": "db-role-entries",
+      "owner": "platform",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.org/registries/ts-constants",
+        "version": "1.0.0",
+        "digest": "sha256:9a5150279f29ae5c59b65d9d5e35eac889866c2f5d2636c775bdf9f0e3e4e4b5"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "db-role",
+          "id": "https://example.org/kinds/db-role",
+          "version": "1.0.0",
+          "digest": "sha256:db578f980a10a36197e3b3ee5b7c557d631ac5a57fa3f58181354b3dd216fc90"
+        },
+        {
+          "kind": "db-role-entries",
+          "id": "https://example.org/kinds/db-role-entries",
+          "version": "1.0.0",
+          "digest": "sha256:8dc808e5e1a9306c4f402eeaf496945e7dcdcfe6563ccdc534a1f243ac368bb9"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "db-role",
+          "id": "reader",
+          "owner": "platform",
+          "value": {
+            "name": "reader"
+          }
+        }
+      ]
+    }
+  ]
+}

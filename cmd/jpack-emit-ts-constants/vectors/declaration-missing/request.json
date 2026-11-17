@@ -1,0 +1,38 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-ts-constants",
+    "version": "0.1.0"
+  },
+  "options": {},
+  "declarations": [],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.org/registries/ts-constants",
+        "version": "1.0.0",
+        "digest": "sha256:ec060c27c8cbce6b72c458933f4da88fd09f569a1716e1811318cce6e319ec45"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "database",
+          "id": "https://example.org/kinds/database",
+          "version": "1.0.0",
+          "digest": "sha256:216386720355246f73b3cb0ff9a33a2e12bb5f09875f051c5a49d585e1cc1a41"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "database",
+          "id": "orders",
+          "owner": "platform",
+          "value": {
+            "host": "orders.dev.example.org"
+          }
+        }
+      ]
+    }
+  ]
+}

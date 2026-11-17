@@ -1,0 +1,51 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-ts-constants",
+    "version": "0.1.0"
+  },
+  "options": {},
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.org/kinds/flags",
+      "version": "1.0.0",
+      "kind": "flags",
+      "owner": "platform",
+      "schema": {
+        "type": "object"
+      }
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.org/registries/ts-constants",
+        "version": "1.0.0",
+        "digest": "sha256:c195dac7aaa0b611da35def17491655121002b73df8c8833dfd13e94c3f45d60"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "flags",
+          "id": "https://example.org/kinds/flags",
+          "version": "1.0.0",
+          "digest": "sha256:a6380b15d28cba00e379acaa7ea58f3d507d11e2adefcb4aa8a90eb7dfe154e4"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "flags",
+          "id": "main",
+          "owner": "platform",
+          "value": {
+            "__proto__": {
+              "polluted": true
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

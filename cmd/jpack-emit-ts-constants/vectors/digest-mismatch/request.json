@@ -1,0 +1,58 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-ts-constants",
+    "version": "0.1.0"
+  },
+  "options": {},
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.org/kinds/database",
+      "version": "1.0.0",
+      "kind": "database",
+      "owner": "platform",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "dbPassword": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.org/registries/ts-constants",
+        "version": "1.0.0",
+        "digest": "sha256:48af88629553cd84f7dd20e3b528936f1c572d228895db21c85b16186be9d955"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "database",
+          "id": "https://example.org/kinds/database",
+          "version": "1.0.0",
+          "digest": "sha256:216386720355246f73b3cb0ff9a33a2e12bb5f09875f051c5a49d585e1cc1a41"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "database",
+          "id": "orders",
+          "owner": "platform",
+          "value": {
+            "host": "orders.dev.example.org",
+            "dbPassword": "secret:gcp-sm:projects/example-dev/secrets/orders-db-password/versions/3"
+          }
+        }
+      ]
+    }
+  ]
+}
