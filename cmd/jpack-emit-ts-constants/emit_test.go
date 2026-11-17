@@ -1065,6 +1065,22 @@ func TestSecretsAreLeftOutOfTypeAndValue(t *testing.T) {
 	}
 }
 
+// TestSecretArrayItemInAValueIsRefused: a value that disagrees with its
+// schema, an array where the schema says object, is in no request formed
+// from a valid registry. If one holds a secret at an item, the value's own
+// check refuses it, since the schema's admitted the kind and the item would
+// be written.
+func TestSecretArrayItemInAValueIsRefused(t *testing.T) {
+	m := readManifest(t)
+	for _, pattern := range []string{"/m/*", "/m/0"} {
+		t.Run(pattern, func(t *testing.T) {
+			d := declaration(t, "flags", `{"type":"object","properties":{"m":{"type":"object"}}}`, pattern)
+			e := entryOf(t, "flags", "main", `{"m":["secret:gcp-sm:projects/example-dev/secrets/s/versions/1"]}`)
+			refusedWith(t, m, fixtureOf(t, []map[string]any{d}, e).request(t), codeSecretInArray)
+		})
+	}
+}
+
 // TestSecretUndeclaredMembersWithoutLiterals: a secret at a member the
 // properties do not declare is left out, and the kind is not refused, when
 // no literal can type it: an index signature of a type without one, or of
