@@ -11,11 +11,14 @@ import (
 	"strconv"
 )
 
-// Resource is one selected resource of the acquired value: its address and
-// its object of RFC 0038 §5 as canonical JSON. JSON is a slice of the
-// acquired value's bytes, and must not be modified.
+// Resource is one selected resource of the acquired value: its address, its
+// id, and its object of RFC 0038 §5 as canonical JSON. The id is the address,
+// or, for a deposed object, the address, " deposed " and its deposed key
+// (dialect §4.5 step 4); no two resources of the read section share one. JSON
+// is a slice of the acquired value's bytes, and must not be modified.
 type Resource struct {
 	Address string
+	ID      string
 	JSON    []byte
 }
 
@@ -30,9 +33,9 @@ type Acquisition struct {
 	Bytes            int64
 	RemovedSensitive int
 	Selected         int
-	// Resources are the selected resources, sorted by address in code-point
-	// order; resources that share an address keep the order of the read
-	// section.
+	// Resources are the selected resources, sorted by id in code-point
+	// order: by address, with a current object before its deposed objects,
+	// which follow it by key. No two share an id.
 	Resources []Resource
 	value     []byte
 }
@@ -78,7 +81,11 @@ type resource struct {
 	beforeSensitive, afterSensitive optional
 	// a state's resource
 	values, sensitiveValues optional
-	addressText             string
+	// deposed is the deposed key, `deposed` in a plan and `deposed_key` in
+	// a state, when present.
+	deposed     optional
+	addressText string
+	id          string
 }
 
 // Read reads one file supplied by the caller as src's document, by RFC 0038
@@ -140,7 +147,7 @@ func read(r io.Reader, src Source, stream bool, valueLimit, perInputByte int64) 
 	} else {
 		section, ok = doc.stateSection()
 	}
-	if !ok {
+	if !ok || !distinctIDs(section) {
 		return refuse(CodeDocument)
 	}
 	// Step 5: every resource carries its mirror, selected or not.
@@ -164,14 +171,12 @@ func read(r io.Reader, src Source, stream bool, valueLimit, perInputByte int64) 
 			removed += doc.stripRoot(res.sensitiveValues.node, res.values)
 		}
 	}
-	// Step 7: selection, then the acquired value.
+	// Step 7: selection, then the acquired value. The section is sorted by
+	// id (distinctIDs), and selection keeps its order, so the value is too.
 	selected := doc.selectResources(section, src)
 	if len(selected) > src.Select.max() {
 		return refuse(CodeSelectBound)
 	}
-	slices.SortStableFunc(selected, func(a, b resource) int {
-		return compareCodePoints(a.addressText, b.addressText)
-	})
 	for _, res := range selected {
 		if !doc.resourceNumbers(res) {
 			return refuse(CodeNumber)
@@ -193,7 +198,7 @@ func read(r io.Reader, src Source, stream bool, valueLimit, perInputByte int64) 
 		value:            value,
 	}
 	for i, res := range selected {
-		acquisition.Resources[i] = Resource{Address: res.addressText, JSON: value[spans[i][0]:spans[i][1]:spans[i][1]]}
+		acquisition.Resources[i] = Resource{Address: res.addressText, ID: res.id, JSON: value[spans[i][0]:spans[i][1]:spans[i][1]]}
 	}
 	return acquisition, nil, nil
 }
@@ -280,6 +285,23 @@ func sizeHint(r io.Reader) int64 {
 	return -1
 }
 
+// distinctIDs is the end of step 4: it sorts the read section by id in
+// code-point order, and reports whether no two of its resources share an id.
+// The order of the read section decides nothing in steps 5 and 6, and
+// selection keeps it, so this is also the acquired value's order (step 7).
+// Sorting in place finds a repeated id without a set of them.
+func distinctIDs(section []resource) bool {
+	slices.SortFunc(section, func(a, b resource) int {
+		return compareCodePoints(a.id, b.id)
+	})
+	for i := 1; i < len(section); i++ {
+		if section[i].id == section[i-1].id {
+			return false
+		}
+	}
+	return true
+}
+
 // compareCodePoints orders two UTF-8 strings by code point, which for valid
 // UTF-8 is the order of their bytes.
 func compareCodePoints(a, b string) int {
@@ -318,8 +340,11 @@ func (d *document) objectMember(object uint32, name string, kind byte) (optional
 }
 
 // identity reads the members every resource of the read section names, as
-// strings, and its index, a string or a number when present (ADR-0097).
-func (d *document) identity(object uint32) (resource, bool) {
+// strings, its index, a string or a number when present (ADR-0097), and its
+// deposed key, under the member name deposedName, a non-empty string when
+// present. It sets the resource's id: its address, or its address, " deposed "
+// and its deposed key (dialect §4.5 step 4).
+func (d *document) identity(object uint32, deposedName string) (resource, bool) {
 	var res resource
 	for _, member := range []struct {
 		name string
@@ -338,6 +363,18 @@ func (d *document) identity(object uint32) (resource, bool) {
 		res.index = optional{index, true}
 	}
 	res.addressText = d.stringValue(res.address)
+	res.id = res.addressText
+	if key, ok := d.member(object, deposedName); ok {
+		if d.kind(key) != '"' {
+			return res, false
+		}
+		text := d.stringValue(key)
+		if text == "" {
+			return res, false
+		}
+		res.deposed = optional{key, true}
+		res.id = res.addressText + " deposed " + text
+	}
 	return res, true
 }
 
@@ -362,7 +399,7 @@ func (d *document) planSection() ([]resource, bool) {
 		if d.kind(item) != '{' {
 			return nil, false
 		}
-		res, ok := d.identity(item)
+		res, ok := d.identity(item, "deposed")
 		if !ok {
 			return nil, false
 		}
@@ -444,7 +481,7 @@ func (d *document) module(module uint32, section *[]resource) bool {
 			if d.kind(item) != '{' {
 				return false
 			}
-			res, ok := d.identity(item)
+			res, ok := d.identity(item, "deposed_key")
 			if !ok {
 				return false
 			}
@@ -582,9 +619,10 @@ func (d *document) writeAll(w *writer, selected []resource, document string, unk
 }
 
 // writeResource writes one resource's object, its members in canonical order:
-// for a plan actions, address, after, afterUnknown, before, index, mode, name,
-// providerName and type; for a state address, index, mode, name, providerName,
-// type and values. A value that is absent or removed is not written.
+// for a plan actions, address, after, afterUnknown, before, deposed, index,
+// mode, name, providerName and type; for a state address, deposed, index,
+// mode, name, providerName, type and values. A value that is absent or removed
+// is not written, and deposed only for a deposed object.
 func (d *document) writeResource(w *writer, res resource, document string, unknown *pointers) bool {
 	present := func(value optional) bool { return value.ok && !d.isRemoved(value.node) }
 	member := func(name string, value uint32) {
@@ -617,6 +655,9 @@ func (d *document) writeResource(w *writer, res resource, document string, unkno
 	} else {
 		w.text(`{"address":`)
 		d.writeValue(w, res.address)
+	}
+	if res.deposed.ok {
+		member("deposed", res.deposed.node)
 	}
 	if res.index.ok {
 		member("index", res.index.node)
