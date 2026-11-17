@@ -352,8 +352,8 @@ jpack terraform facts (--plan FILE | --state FILE) --type T[,T...] [--mode manag
   `evaluate --batch` reads an id of 1 to 256 bytes (`MaxBatchIDBytes`), refusing a longer line
   with `JPS-INVOCATION-BATCH-ITEM`. A `for_each` key can make an address longer than that, and a
   deposed key makes the id longer than the address. Before anything is written, every selected id
-  is checked, and one outside the bound refuses the whole run with `FACTS-ID-LIMIT`, this
-  runtime's provisional code, ahead of the document check. The output is the same as for
+  is checked, and one outside the bound refuses the whole run with `FACTS-ID-LIMIT`, now the
+  registry companion's code (§10.2), ahead of the document check. The output is the same as for
   `FACTS-DOCUMENT-LIMIT`, with a fixed message, and it never carries the id. `registry facts` does not need the check: its longest id,
   `<environment>:<kind>/<entry-id>`, is 32 + 1 + 63 + 1 + 128 = 225 bytes under the registry reader's name
   bounds.

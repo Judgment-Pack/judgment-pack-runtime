@@ -228,9 +228,9 @@ func terraformFactsDocument(dst []byte, resource terraformfile.Resource, tail []
 	return append(dst, tail...)
 }
 
-// CodeFactsIDLimit is this runtime's provisional code for a selected
-// resource whose id, the id of its batch line, is not 1 to MaxBatchIDBytes
-// bytes: evaluate --batch would refuse that line.
+// CodeFactsIDLimit is the registry companion's code (§10.2, §12) for a
+// selected resource whose id, the id of its batch line, is not 1 to
+// MaxBatchIDBytes bytes: evaluate --batch would refuse that line.
 const CodeFactsIDLimit = "FACTS-ID-LIMIT"
 
 var factsIDLimitMessage = fmt.Sprintf("A selected resource's id (its address, and a deposed object's key), the id of its batch line, is not 1 to %d bytes long, the id evaluate --batch reads.", MaxBatchIDBytes)
