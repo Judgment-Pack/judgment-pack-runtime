@@ -23,8 +23,9 @@ var errPath = errors.New("emit: the path is outside the path rules")
 //     conformance list names among the forms a host refuses, and no NTFS
 //     stream ("a:b");
 //   - a segment that ends in "." or a space, which Windows drops;
-//   - a reserved device name (CON, PRN, AUX, NUL, COM1-9, LPT1-9), in any
-//     case and with or without an extension ("nul.txt").
+//   - a reserved device name (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM1-9
+//     and LPT1-9, and COM and LPT followed by a superscript one, two or
+//     three), in any case and with or without an extension ("nul.txt").
 //
 // And it refuses a segment that a file system reads as ".git" (isGitName),
 // so that no owns glob names git's directory and no response writes into
@@ -49,22 +50,28 @@ func checkPathForm(path string) error {
 
 // isDeviceName says whether Windows reads a segment as a device: its name
 // before the first ".", without trailing spaces, is a reserved one in any
-// case.
+// case. The list is the one filepath.IsLocal refuses on Windows (Go's
+// internal/filepathlite isReservedName): CONIN$ and CONOUT$ open the console
+// as CON does, and COM and LPT take a digit 1 to 9 or a superscript ¹, ² or
+// ³ (U+00B9, U+00B2, U+00B3), which Windows reads as that digit. COM0 and
+// LPT0 are not devices.
 func isDeviceName(segment string) bool {
 	base, _, _ := strings.Cut(segment, ".")
 	base = strings.TrimRight(base, " ")
-	switch len(base) {
-	case 3:
-		for _, name := range []string{"CON", "PRN", "AUX", "NUL"} {
-			if strings.EqualFold(base, name) {
-				return true
-			}
+	for _, name := range []string{"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} {
+		if strings.EqualFold(base, name) {
+			return true
 		}
-	case 4:
-		prefix := base[:3]
-		return (strings.EqualFold(prefix, "COM") || strings.EqualFold(prefix, "LPT")) && base[3] >= '1' && base[3] <= '9'
 	}
-	return false
+	if len(base) < 4 || !strings.EqualFold(base[:3], "COM") && !strings.EqualFold(base[:3], "LPT") {
+		return false
+	}
+	switch suffix := base[3:]; suffix {
+	case "\u00b9", "\u00b2", "\u00b3":
+		return true
+	default:
+		return len(suffix) == 1 && suffix[0] >= '1' && suffix[0] <= '9'
+	}
 }
 
 // isGitName says whether a path segment, or a name found on disk, is one a

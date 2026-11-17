@@ -134,11 +134,13 @@ func ReadFileWith(path string, rules FileRules) (Secret, error) {
 		return Secret{}, fmt.Errorf("startup: %w", err)
 	}
 	// Checked before the open as well, so that a named pipe at the path is
-	// refused rather than waited on.
+	// refused rather than waited on. One put in the file's place between this
+	// check and the open is not waited on either: the open does not block
+	// (openNoWait), and the check on the opened file refuses it.
 	if err := checkFile(info, rules); err != nil {
 		return Secret{}, fmt.Errorf("%w: %s", err, path)
 	}
-	file, err := os.Open(path)
+	file, err := openFile(path)
 	if err != nil {
 		return Secret{}, fmt.Errorf("startup: %w", err)
 	}
@@ -162,6 +164,11 @@ func ReadFileWith(path string, rules FileRules) (Secret, error) {
 		return Secret{}, fmt.Errorf("%w: %s", err, path)
 	}
 	return secret, nil
+}
+
+// openFile opens path for reading without waiting on a named pipe.
+func openFile(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|openNoWait, 0)
 }
 
 // checkFile refuses what is not a regular file, then applies the operating

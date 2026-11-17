@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 const onUnix = true
@@ -161,5 +162,39 @@ func TestReadFileWithAllowOtherReadAcceptsThePlatformDefaults(t *testing.T) {
 	}
 	if _, err := ReadFileWith(dir, open); !errors.Is(err, ErrNotRegular) {
 		t.Errorf("a directory under AllowOtherRead: got %v, want ErrNotRegular", err)
+	}
+}
+
+// A named pipe swapped in after ReadFile's first check is opened without
+// waiting for a writer, so the check on the opened file can refuse it.
+func TestReadFileOpensWithoutWaitingOnANamedPipe(t *testing.T) {
+	pipe := filepath.Join(t.TempDir(), "pipe")
+	if err := syscall.Mkfifo(pipe, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opened := make(chan error, 1)
+	go func() {
+		file, err := openFile(pipe)
+		if err == nil {
+			var info os.FileInfo
+			if info, err = file.Stat(); err == nil {
+				err = checkFile(info, FileRules{})
+			}
+			file.Close()
+		}
+		opened <- err
+	}()
+	select {
+	case err := <-opened:
+		if !errors.Is(err, ErrNotRegular) {
+			t.Fatalf("got %v, want ErrNotRegular", err)
+		}
+	case <-time.After(10 * time.Second):
+		// Release the open that waits, by opening the pipe's other end.
+		if writer, err := os.OpenFile(pipe, os.O_WRONLY, 0); err == nil {
+			writer.Close()
+		}
+		<-opened
+		t.Fatal("the open waited for a writer on a named pipe")
 	}
 }

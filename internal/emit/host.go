@@ -185,8 +185,21 @@ func Emit(ctx context.Context, m *Manifest, others []*Manifest, in Inputs, opts 
 
 	disk, scanned := scanOwned(opts.Root, m.Owns)
 	states, parents, examined := preflight(opts.Root, files)
-	if refused := append(scanned, examined...); len(refused) > 0 {
-		return report.Refuse(refused...)
+	// Every response path is owned, so the walk and the preflight can both
+	// find one link or one unreadable path; each is reported once.
+	unusable := scanned
+	reported := make(map[Diagnostic]bool, len(scanned))
+	for _, d := range scanned {
+		reported[d] = true
+	}
+	for _, d := range examined {
+		if !reported[d] {
+			reported[d] = true
+			unusable = append(unusable, d)
+		}
+	}
+	if len(unusable) > 0 {
+		return report.Refuse(unusable...)
 	}
 	if opts.Check {
 		differences, unreadable := compare(opts.Root, files, disk, states)

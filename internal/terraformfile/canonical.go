@@ -125,7 +125,26 @@ func appendJSONString(dst []byte, s string) []byte { return appendJSONBytes(dst,
 // compareUTF16 orders two UTF-8 names by their UTF-16 code units, as RFC 8785
 // orders members. Two different code points compare by their first code unit;
 // when those are equal, both are supplementary and the second unit decides.
+//
+// The bytes the two names share are skipped first, without decoding them:
+// equal bytes are equal code points. The skip backs up to the first byte of
+// the code point it stopped in, so decoding starts where a code point does,
+// and only from there on is either name decoded. A long shared prefix then
+// costs one byte comparison per byte rather than a decode of each name.
 func compareUTF16(a, b []byte) int {
+	common := 0
+	for common < len(a) && common < len(b) && a[common] == b[common] {
+		common++
+	}
+	// A byte that is not a continuation byte always starts a decode, so the
+	// names decode from here exactly as they would from their first byte. At
+	// the first difference either name's next byte may continue a code point
+	// begun in the shared bytes; below it the two names' bytes are equal.
+	continues := func(name []byte, i int) bool { return i < len(name) && !utf8.RuneStart(name[i]) }
+	for common > 0 && (continues(a, common) || continues(b, common)) {
+		common--
+	}
+	a, b = a[common:], b[common:]
 	for len(a) > 0 && len(b) > 0 {
 		ra, na := utf8.DecodeRune(a)
 		rb, nb := utf8.DecodeRune(b)
