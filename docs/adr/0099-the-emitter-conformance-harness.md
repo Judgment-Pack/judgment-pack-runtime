@@ -13,9 +13,10 @@ companion (`spec/registry.md` §11.5, proposed) restates it, and it names `EMIT-
 the harness. ADR-0098 built the host (§§1–4) and kept its run step, `emit.Run`, for the harness to
 reuse. This record covers the harness only. The reference emitters (§6) are later work.
 
-Four points are open in the text. Check 4 as written fails an emitter that writes the registry
-digest, which §4 allows. Check 6 names no bounds for its repository copy. Check 3's hostile
-vectors are not listed. And the RFC fixes no vector layout beyond the members it names.
+Five points are open in the text. Check 4 as written fails an emitter that writes the registry
+digest, which §4 allows. Check 5 as written fails a file that holds two whole references of one
+project. Check 6 names no bounds for its repository copy. Check 3's hostile vectors are not
+listed. And the RFC fixes no vector layout beyond the members it names.
 
 Material-decision impact: public-surface.
 
@@ -98,7 +99,8 @@ Two runs that give one path are `EMIT-RESPONSE`, as the host refuses them.
    `TZ` to `Pacific/Kiritimati` and then `America/St_Johns`, `LANG` to `tr_TR.UTF-8` and then
    `de_DE.UTF-8`, and `SOURCE_DATE_EPOCH` to `1` and then `2000000000`. Run 1 has none of these
    values. The manifest's `env` names are held as the host gives them. Each run must give run 1's
-   response bytes exactly (the RFC's "identical bytes"), or run 1's refusal exactly. The row names
+   response bytes exactly (the RFC's "identical bytes", read as the raw bytes, not a canonical
+   form of them), or run 1's refusal exactly. The row names
    the runs that differ.
 3. **Path safety and bounds.** A vector passes when every response passed the host's §3 checks,
    which `emit.Run` applies to the whole response. A response that failed only on the error
@@ -133,27 +135,39 @@ says whether the request holds the synthetic kind's id. Only then does the harne
 on the restored request and assert that the response is unchanged. The digest is restored because
 §4 lets an emitter write the registry digest into a generated file's header, and the synthetic
 entry changes that digest. Without restoring it, a conforming emitter would fail. This reading is
-to be filed against companion §11.5. A registry that is not valid once the synthetic kind is added
+filed against companion §11.5 as spec #350. A registry that is not valid once the synthetic kind is added
 is `EMIT-HARNESS-BOUND`, and the run exits 2. A vector with no registry skips, with that reason.
 
-**Check 5, as written.** Secret positions are found the registry's way: the read kinds' `secrets`
-patterns, applied to each environment's resolved entries (`SecretStrings`). With `each`, a file is
-checked against its own environment's strings. With `all`, it is checked against every
-environment's. A run of all of a string of at most 32 characters is a complete occurrence, so only
-longer strings can fail. A reference at a secret position of a valid registry is ASCII (RFC 0035),
-so a file's text and its bytes read as Latin-1 hold the same runs. The scan therefore reads bytes.
+**Check 5, the decided reading.** For each string R at a secret position of the request and each
+output file, the row fails when the file holds a run of at least 32 consecutive characters of R
+(all of R, if R is shorter) that does not lie inside a complete occurrence of any string at a
+secret position of the request. The text says "a complete occurrence of R". Read that way, a file
+that holds two whole references of one project fails, because they share
+`secret:gcp-sm:projects/<project>/secrets/`, 43 characters. The RFC's rationale, a reference cut
+short or rewritten, needs no such failure. The run must lie inside one occurrence: two overlapping
+occurrences do not together hold a run that neither holds. This reading is to be raised on spec
+#350, with check 4's.
+
+Secret positions are found the registry's way: the read kinds' `secrets` patterns, applied to each
+environment's resolved entries (`SecretStrings`). With `each`, a file is checked against its own
+environment's strings. With `all`, it is checked against every environment's. A run of all of a
+string of at most 32 characters is a complete occurrence, so only longer strings can fail, and
+only strings of 32 or more can hold a run that could. A reference at a secret position of a valid
+registry is ASCII (RFC 0035), so a file's text and its bytes read as Latin-1 hold the same runs.
+The scan therefore reads bytes.
 
 The scan has two stages:
 
 - **Finding regions.** A table of every 32-byte window of every string, with a rolling-hash
   filter, finds where a string's runs can be.
-- **Checking regions.** A suffix automaton of that string reads only those regions. It runs two
-  passes: one for the complete occurrences, and one asking whether an occurrence holds each
-  maximal run of 32 or more.
+- **Checking regions.** A suffix automaton of each string that occurs reads only its regions. A
+  first pass over every such string finds the complete occurrences of all of them. A second pass,
+  for each string longer than 32, asks whether one of those occurrences holds each maximal run of
+  32 or more.
 
 The work is linear in the files' bytes for each string that occurs, and two bounds hold it:
 
-- `MaxReferenceBytes`, 1 MiB of distinct strings longer than 32;
+- `MaxReferenceBytes`, 1 MiB of distinct strings of 32 or more;
 - `MaxReferenceWork`, 2^32 steps a vector.
 
 Past either bound, the result is `EMIT-HARNESS-BOUND` and exit 2. A row that fails names the file,
@@ -170,7 +184,10 @@ that reason. The copy keeps an honest emitter's mistake out of the repository. I
 sandbox: the emitter runs with the user's rights.
 
 **Hostile responses.** Each is passed to `emit.ParseResponse` for a fixed manifest of the
-harness's own that owns `gen/**`, with request version `1.0.0`. Each is a row of its own,
+harness's own that owns `gen/**`, with request version `1.0.0`. They do not go through a hook in
+`emit.RunOptions`: `ParseResponse` is the step `emit.Run` applies to every emitter's standard
+output, so a refusal there is the host's refusal, and no host run needs the hook. This is decided.
+Each is a row of its own,
 `hostile/NAME`. A row passes only when the host refuses the response with `EMIT-RESPONSE` at the
 named pointer.
 
@@ -209,13 +226,12 @@ Each list is bounded at 1000. The report's own diagnostics give why it could not
   host's own, so a fix to the host is a fix to the harness.
 - Good: check 4 tests the property itself, that the emitter never sees an undeclared kind, and it
   does not fail an emitter that writes the registry digest.
-- Bad: check 5 as written fails a file that holds two whole references sharing a run of 32 or more
-  characters. Two references of one project share `secret:gcp-sm:projects/<project>/secrets/`.
-  The harness applies the RFC's text and records this as an open question.
+- Good: check 5 passes a file that holds whole references of one project, which share 43
+  characters, and still fails a reference cut short or rewritten.
 - Bad: every vector copies the repository and runs the emitter four times or more. A large
   repository makes a run slow, within the bounds above.
-- Neutral: a vector that gives its request whole skips checks 4 and 5. It has no registry to add
-  a kind to, and no kinds to find its secret positions by.
+- Neutral: a vector that gives its request whole skips checks 4 and 5, each with its reason. It
+  has no registry to add a kind to, and no kinds to find its secret positions by. This is decided.
 - Revisit when the companion's §11.5 text or its harness rows land, or when a later level adds
   checks.
 
@@ -225,11 +241,7 @@ Each list is bounded at 1000. The report's own diagnostics give why it could not
   (proposed). ADR-0098 covers the host.
 - Code: `internal/emit/conformance`, `internal/cli/emit_conformance.go`, and the golden vectors in
   `internal/emit/testdata/conformance/`.
-- Open questions for the companion:
-  1. Check 4: confirm the reading above, which is to be filed against §11.5.
-  2. Check 5: should a run inside a complete occurrence of any secret-position string pass? The
-     recommendation is yes: it is what the RFC's rationale (a reference cut short or rewritten
-     fails) needs.
-  3. Check 5: does a vector that gives its request whole skip, or should the harness find secret
-     positions in it some other way?
-  4. Check 2: do "identical bytes" mean the raw response bytes (as here) or its canonical form?
+- Raised on spec #350 (companion §11.5): check 4's reading, and check 5's reading that a run
+  inside a complete occurrence of any secret-position string passes.
+- Decided here: check 2 compares raw response bytes; a vector that gives its request whole skips
+  checks 4 and 5; the hostile responses go through `emit.ParseResponse`.

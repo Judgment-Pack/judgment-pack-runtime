@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -146,16 +147,34 @@ func TestReferenceScan(t *testing.T) {
 	}
 }
 
-// RFC 0036 §5 as written: a run of R outside a complete occurrence of R
-// fails, even when it lies inside a complete occurrence of another string at
-// a secret position. Two references of one project share more than 32
-// characters, so a file holding both whole fails. ADR-0099 records this as an
-// open question for the companion; the harness applies the RFC's text.
-func TestReferenceScanSharedPrefixIsTheRFCsRule(t *testing.T) {
+// Check 5 as ADR-0099 decides it: a run of a string passes when it lies
+// inside a complete occurrence of any string at a secret position, not only
+// of its own. Two references of one project share
+// secret:gcp-sm:projects/<p>/secrets/, 43 characters, so under the text's
+// "of R" a file holding both whole would fail.
+func TestReferenceScanAnyString(t *testing.T) {
 	a := "secret:gcp-sm:projects/example-dev/secrets/orders-queue/versions/3"
 	b := "secret:gcp-sm:projects/example-dev/secrets/billing-db/versions/1"
-	if failing := scanFails(t, a+"\n"+b+"\n", a, b); len(failing) != 2 {
-		t.Fatalf("failing: %v", failing)
+	cases := map[string]struct {
+		file    string
+		values  []string
+		failing []int32
+	}{
+		"both whole":                     {a + "\n" + b + "\n", []string{a, b}, nil},
+		"both whole, one line":           {a + b + "\n", []string{a, b}, nil},
+		"one whole, the shared prefix":   {b + " " + a[:43] + "\n", []string{a, b}, []int32{0, 1}},
+		"one whole, the other's middle":  {b + " " + a[20:60] + "\n", []string{a, b}, []int32{0}},
+		"the other's middle, then whole": {a[20:60] + " " + b + "\n", []string{a, b}, []int32{0}},
+		"inside a string of exactly 32":  {"x" + a[:32] + "x", []string{a, a[:32]}, nil},
+		"one past a string of 32":        {"x" + a[:33] + "x", []string{a, a[:32]}, []int32{0}},
+		"spanning two occurrences":       {a[:50] + "\n", []string{a, a[:40], a[10:50]}, []int32{0}},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if failing := scanFails(t, c.file, c.values...); !slices.Equal(failing, c.failing) {
+				t.Fatalf("failing %v, want %v", failing, c.failing)
+			}
+		})
 	}
 }
 

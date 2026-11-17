@@ -11,7 +11,8 @@ All notable changes to tagged releases are documented here.
   the level `vectors/harness.json` names (`1.0` when there is none). Level `1.0` has six checks:
   golden equality; determinism over a changed `HOME`, `TZ`, `LANG` and `SOURCE_DATE_EPOCH`; path
   safety, with 27 hostile responses the host must refuse, each a row of its own; kind filtering;
-  references; and no stray writes. Kind filtering adds a synthetic undeclared kind, restores the
+  references, where a run of 32 or more characters of a secret reference fails unless a whole
+  secret reference in the file holds it; and no stray writes. Kind filtering adds a synthetic undeclared kind, restores the
   registry digest, and requires the same request bytes and the same response. Stray writes are
   checked in a fresh copy of the repository, without `.git`, of at most 256 MiB and 100 000
   entries (`EMIT-STRAY-WRITE`). `--update` rewrites `expected/` and never touches an

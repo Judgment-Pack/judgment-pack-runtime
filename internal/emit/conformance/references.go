@@ -8,13 +8,18 @@ import (
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/registry"
 )
 
-// Check 5 (references), RFC 0036 §5 as written: for each string R at a
-// secret position of the request and each output file, the check fails when
-// the file holds a run of at least 32 consecutive characters of R (all of R,
-// if R is shorter) that does not lie inside a complete occurrence of R.
+// Check 5 (references), RFC 0036 §5 as ADR-0099 decides it: for each string
+// R at a secret position of the request and each output file, the check fails
+// when the file holds a run of at least 32 consecutive characters of R (all
+// of R, if R is shorter) that does not lie inside a complete occurrence of
+// any string at a secret position of the request. The text's "a complete
+// occurrence of R" would fail two whole references of one project, which
+// share secret:gcp-sm:projects/<p>/secrets/; the decided reading is to be
+// raised on spec #350.
 //
 // A run of all of a string of at most 32 characters is a complete occurrence
-// of it, so only strings longer than 32 can fail. A secret position of a
+// of it, so only strings longer than 32 can fail, and only strings of 32 or
+// more can hold a run that could. A secret position of a
 // valid registry holds a secret reference (RFC 0035), which is ASCII, so a
 // file's text and its bytes read as Latin-1 hold the same runs of it: the
 // scan reads every file's bytes.
@@ -22,13 +27,14 @@ import (
 // The scan is linear in the files' bytes for each string that occurs in them:
 // a table of every 32-byte window of every string finds where one starts to
 // occur, and a suffix automaton of that string reads only the regions around
-// those places. Its work is bounded (MaxReferenceWork); past the bound, or
+// those places, once for the string's complete occurrences and once for its
+// runs. Its work is bounded (MaxReferenceWork); past the bound, or
 // past MaxReferenceBytes of strings, the harness stops (EMIT-HARNESS-BOUND).
 
 // The scan's bounds.
 const (
-	// MaxReferenceBytes bounds the distinct strings longer than 32 bytes the
-	// secret positions of one vector hold, together.
+	// MaxReferenceBytes bounds the distinct strings of 32 bytes or more the
+	// secret positions of one request hold, together.
 	MaxReferenceBytes = 1 << 20
 	// MaxReferenceWork bounds the scan's steps for one vector.
 	MaxReferenceWork = 1 << 32
@@ -69,14 +75,14 @@ const (
 	filterBits = 24
 )
 
-// newScanner builds the window table of the strings longer than runLength,
+// newScanner builds the window table of the strings of runLength or more,
 // each once.
 func newScanner(strings []target) (*scanner, error) {
 	s := &scanner{classes: map[[runLength]byte][]int32{}, filter: make([]uint64, 1<<filterBits/64)}
 	seen := map[string]bool{}
 	total := 0
 	for _, t := range strings {
-		if len(t.value) <= runLength || seen[string(t.value)] {
+		if len(t.value) < runLength || seen[string(t.value)] {
 			continue
 		}
 		seen[string(t.value)] = true
@@ -167,15 +173,47 @@ func (s *scanner) scan(data []byte) ([]int32, error) {
 		}
 		h = (h-uint64(data[p])*top)*hashBase + uint64(data[p+runLength])
 	}
-	var failing []int32
+	indices := make([]int32, 0, len(open))
+	regions := map[int32][]region{}
 	for index, r := range open {
-		regions := append(closed[index], *r)
-		automaton, err := s.automaton(s.targets[index].value)
+		indices = append(indices, index)
+		regions[index] = append(closed[index], *r)
+	}
+	slices.Sort(indices)
+	// The first pass finds the complete occurrences of every string the file
+	// holds; a complete occurrence of a string lies inside its regions.
+	var covers []span
+	for _, index := range indices {
+		value := s.targets[index].value
+		automaton, err := s.automaton(value)
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range regions {
-			fails, err := s.failsIn(automaton, data[r.start:r.end])
+		for _, r := range regions[index] {
+			if err := s.spend(r.end - r.start); err != nil {
+				return nil, err
+			}
+			automaton.matches(data[r.start:r.end], func(end, length int) {
+				if length == len(value) {
+					covers = append(covers, span{start: r.start + end - length, end: r.start + end})
+				}
+			})
+		}
+	}
+	c := newCoverage(covers)
+	// The second pass reads each string's runs against those occurrences.
+	var failing []int32
+	for _, index := range indices {
+		value := s.targets[index].value
+		if len(value) <= runLength {
+			continue
+		}
+		automaton, err := s.automaton(value)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range regions[index] {
+			fails, err := s.failsIn(automaton, data, r, c)
 			if err != nil {
 				return nil, err
 			}
@@ -185,8 +223,35 @@ func (s *scanner) scan(data []byte) ([]int32, error) {
 			}
 		}
 	}
-	slices.Sort(failing)
 	return failing, nil
+}
+
+// span is a complete occurrence of a string in a file: [start, end).
+type span struct{ start, end int }
+
+// coverage answers whether a complete occurrence holds a run: the
+// occurrences in order of start, and for each the furthest end of it and
+// those before it.
+type coverage struct {
+	starts   []int
+	furthest []int
+}
+
+func newCoverage(covers []span) coverage {
+	slices.SortFunc(covers, func(a, b span) int { return a.start - b.start })
+	c := coverage{starts: make([]int, len(covers)), furthest: make([]int, len(covers))}
+	reach := 0
+	for i, s := range covers {
+		reach = max(reach, s.end)
+		c.starts[i], c.furthest[i] = s.start, reach
+	}
+	return c
+}
+
+// holds says whether one of the first before occurrences, those that start
+// at or before a run, ends at or after the run's end.
+func (c coverage) holds(before, end int) bool {
+	return before > 0 && c.furthest[before-1] >= end
 }
 
 // automaton is the suffix automaton of one string: it reads a text and, at
@@ -270,34 +335,27 @@ func (a *automaton) matches(text []byte, each func(end, length int)) {
 	}
 }
 
-// failsIn says whether a region holds a run of at least runLength of the
-// string's characters that no complete occurrence of the string holds. The
-// first pass finds the occurrences; the second asks, for each end e whose
-// longest run m is at least runLength, whether an occurrence starts within
-// [e-n, e-m], that is, holds the run.
-func (s *scanner) failsIn(a *automaton, text []byte) (bool, error) {
-	if err := s.spend(2 * len(text)); err != nil {
+// failsIn says whether a region of a file holds a run of at least runLength
+// of the string's characters that no complete occurrence of a string holds.
+// For each end e whose longest run of the string is m >= runLength, it asks
+// whether an occurrence starts at or before e-m and ends at or after e. The
+// longest run ending at e holds every run ending there, and e-m never falls
+// as e rises, so one pointer into the occurrences serves the region.
+func (s *scanner) failsIn(a *automaton, data []byte, r region, c coverage) (bool, error) {
+	if err := s.spend(r.end - r.start); err != nil {
 		return false, err
 	}
-	n := a.length
-	var occurrences []int
-	a.matches(text, func(end, length int) {
-		if length == n {
-			occurrences = append(occurrences, end-n)
-		}
-	})
+	before, _ := slices.BinarySearch(c.starts, r.start)
 	fails := false
-	next := 0
-	a.matches(text, func(end, length int) {
+	a.matches(data[r.start:r.end], func(end, length int) {
 		if fails || length < runLength {
 			return
 		}
-		for next < len(occurrences) && occurrences[next] < end-n {
-			next++
+		runStart, runEnd := r.start+end-length, r.start+end
+		for before < len(c.starts) && c.starts[before] <= runStart {
+			before++
 		}
-		if next == len(occurrences) || occurrences[next] > end-length {
-			fails = true
-		}
+		fails = !c.holds(before, runEnd)
 	})
 	return fails, nil
 }

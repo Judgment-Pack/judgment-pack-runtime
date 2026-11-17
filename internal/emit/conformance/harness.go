@@ -51,7 +51,7 @@ const (
 	reasonFacts          = "a facts-contracts request holds no secret position"
 	reasonGivenRequest   = "the vector gives its request whole, with no kinds to find its secret positions by"
 	reasonNoFiles        = "the run failed, so there are no files"
-	reasonReferences     = "a file holds a run of a secret reference outside a complete occurrence of it"
+	reasonReferences     = "a file holds a run of a secret reference that no complete secret reference in it holds"
 	reasonNoCopy         = "this system cannot make the repository's symbolic links, so the emitter runs in the repository itself and stray writes are not checked"
 	reasonStray          = "the emitter changed the repository copy itself"
 	reasonHostileAccept  = "the host accepted a hostile response"
