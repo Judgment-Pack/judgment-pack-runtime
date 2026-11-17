@@ -447,7 +447,14 @@ holds.
   at the table's offsets, a version 4 block's first path from no previous path, so an index whose
   table disagrees with its entries gives git other paths than a reading in order. Before, both were
   passed over, and a hand-made index, of version 2 or 4, could make the harness leave out a link
-  git tracks.
+  git tracks. Git finds `EOIE` not in the list of extensions but at a fixed place, the 32 bytes
+  before the checksum, and from the offset it gives finds `IEOT` and reads the extensions, so an
+  `EOIE`, `IEOT`, `link` or `sdir` hidden in an optional extension's data is passed over by a
+  reading in order. The index is refused, too, when its bytes at that place read `EOIE`, whatever
+  else git checks of them and wherever they lie, inside another extension's data or an entry. A
+  scan of every extension's data for the four signatures was weighed and not chosen: `TREE` holds
+  directory names, so a directory named `link` would refuse an ordinary index, and without an
+  `EOIE` at its place git reads the extensions in order, as the reader does.
 
 **Comparing paths.** An index path and a link's path are compared byte for byte, as git's slash
 paths. The file system may read two names as one, so they are compared loosely too, by the same
