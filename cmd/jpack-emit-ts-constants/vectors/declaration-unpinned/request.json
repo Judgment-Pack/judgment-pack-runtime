@@ -1,0 +1,143 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-ts-constants",
+    "version": "0.1.0"
+  },
+  "options": {},
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.org/kinds/database",
+      "version": "1.0.0",
+      "kind": "database",
+      "owner": "platform",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string"
+          },
+          "dbPassword": {
+            "type": "string"
+          }
+        }
+      },
+      "secrets": [
+        "/dbPassword"
+      ]
+    },
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.org/kinds/service",
+      "version": "1.0.0",
+      "kind": "service",
+      "owner": "platform",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "tier",
+          "endpoint"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "gold",
+              "silver",
+              "bronze"
+            ]
+          },
+          "endpoint": {
+            "$ref": "#/$defs/endpoint"
+          },
+          "fallback": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/endpoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "rps": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "meta": true
+        },
+        "$defs": {
+          "endpoint": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "host",
+              "port"
+            ],
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              },
+              "tls": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.org/registries/ts-constants",
+        "version": "1.0.0",
+        "digest": "sha256:723bcd61efbeab1db1e1bd2499a55b24d9c75adde27320e036897ff338c76f21"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "database",
+          "id": "https://example.org/kinds/database",
+          "version": "1.0.0",
+          "digest": "sha256:216386720355246f73b3cb0ff9a33a2e12bb5f09875f051c5a49d585e1cc1a41"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "database",
+          "id": "orders",
+          "owner": "platform",
+          "value": {
+            "host": "orders.dev.example.org"
+          }
+        }
+      ]
+    }
+  ]
+}

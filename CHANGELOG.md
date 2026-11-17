@@ -226,6 +226,26 @@ All notable changes to tagged releases are documented here.
   `HOME` is removed anyway and the report is unchanged. A process that leaves the group, such as
   the Go toolchain's telemetry process under `go run`, can still leave a stray temporary
   directory. The conformance claim in CONFORMANCE.md is unchanged.
+- **A TypeScript constants emitter: `cmd/jpack-emit-ts-constants`** (ADR-0103, proposed). This is
+  the reference emitter of spec RFC 0036 §6 item 2, run under the emitter contract with `"input":
+  "resolved"` and `"environments": "each"`. Its manifest is
+  `cmd/jpack-emit-ts-constants/emitter.json`. For each environment it writes
+  `generated/constants/<environment>.ts`. For each kind read, the file holds a type made from the
+  kind's schema and a read-only constant of its resolved entries, written `as const` with a
+  `Readonly` alias. Every member at a secret position is left out of both the type and the value,
+  its name included. The emitter checks every declaration against its pin: the SHA-256 of its RFC
+  8785 form must be the pin's digest, and its id and version the pin's. It refuses a missing,
+  mismatched or unpinned declaration. It also refuses a schema it does not generate (`not` among
+  them), a secret position at an array item, a secret position whose type would hold an `enum` or
+  `const` literal (an undeclared member typed by an index signature among them), a member or entry
+  id `__proto__`, a schema property named after another member of `Object.prototype`
+  (`constructor`, `toString` and the rest), and a kind whose names are reserved or collide; it
+  never renames one. Each refusal is a response of no files and an `x-ts-*` error diagnostic.
+  Strings are written in ASCII with U+2028, U+2029 and `<` escaped, and numbers as the request
+  gives them. Its 12 vectors are in RFC 0036 §5's layout. A test type-checks their output and a
+  consumer of it with `tsc --strict` when `JPACK_TEST_TSC` holds the absolute path of a `tsc`, and
+  is skipped otherwise. No `jpack` command changes. The conformance claim in CONFORMANCE.md is
+  unchanged.
 
 ## 0.47.0 - 2026-11-16
 

@@ -1,0 +1,62 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": {
+    "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-ts-constants",
+    "version": "0.1.0"
+  },
+  "options": {},
+  "declarations": [
+    {
+      "kindFormatVersion": "1.0.0",
+      "id": "https://example.org/kinds/listing",
+      "version": "1.0.0",
+      "kind": "listing",
+      "owner": "platform",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "secrets": [
+        "/keys/*"
+      ]
+    }
+  ],
+  "resolved": [
+    {
+      "resolvedFormatVersion": "1.0.0",
+      "registry": {
+        "id": "https://example.org/registries/ts-constants",
+        "version": "1.0.0",
+        "digest": "sha256:4a64248bdcd987646174508e04c08cac135a9ae9138ed8112a7e05c0d760c4f9"
+      },
+      "environment": "dev",
+      "kinds": [
+        {
+          "kind": "listing",
+          "id": "https://example.org/kinds/listing",
+          "version": "1.0.0",
+          "digest": "sha256:bf38644b4d64633b2b2620a37b77a43c55edcd88e0e1237ba88f2ac267c1b49b"
+        }
+      ],
+      "entries": [
+        {
+          "kind": "listing",
+          "id": "main",
+          "owner": "platform",
+          "value": {
+            "keys": [
+              "secret:gcp-sm:projects/example-dev/secrets/listing-key/versions/1"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

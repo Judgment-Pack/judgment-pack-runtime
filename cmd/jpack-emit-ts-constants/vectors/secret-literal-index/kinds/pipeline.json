@@ -1,0 +1,18 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.org/kinds/pipeline",
+  "version": "1.0.0",
+  "kind": "pipeline",
+  "owner": "platform",
+  "schema": {
+    "type": "object",
+    "additionalProperties": {
+      "enum": [
+        "secret:gcp-sm:projects/example-dev/secrets/probe-pw/versions/4"
+      ]
+    }
+  },
+  "secrets": [
+    "/password"
+  ]
+}
