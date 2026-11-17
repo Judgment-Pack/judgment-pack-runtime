@@ -131,9 +131,10 @@ response or the diagnostics that refuse it. It works as follows.
 - The working directory is the repository root, and the request goes on standard input.
 - The emitter runs in a process group of its own. At the limit the whole group is killed
   (`EMIT-PROCESS`), and once the emitter has exited, what is left of its group is killed too, on
-  unix, so nothing it started outlives the run. A process that calls `setsid` (or `setpgid`) leaves
-  the group and escapes this. Windows has no process groups, so there only the emitter itself is
-  killed.
+  unix, so nothing it started outlives the run. `HOME` is removed only once the group is gone, up
+  to 2 s after that kill; past it, `HOME` is removed anyway and the report is unchanged. A process
+  that calls `setsid` (or `setpgid`) leaves the group and escapes this. Windows has no process
+  groups, so there only the emitter itself is killed.
 - Standard error is counted, and its first 64 KiB are kept. They are passed through only with
   `--emitter-stderr`.
 - `RunOptions.Override` sets variables after the environment is formed, for the harness's
@@ -270,7 +271,10 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
 - Bad: the host is not a sandbox. The emitter runs with the user's rights and can write anywhere
   itself; only the harness's stray-write check notices that. It is bounded by its environment, its
   time limit and its output, and by nothing else: a child that starts a session of its own escapes
-  the process group and can outlive the run. The link checks are made before the
+  the process group and can outlive the run, and it can write into the run's `HOME` after its
+  removal: the Go toolchain's telemetry process, which `go run` starts with `setsid`, does. As
+  `HOME` is fresh for every run, isolation holds; the cost is a stray temporary directory. The
+  link checks are made before the
   writes, so a concurrent change to the tree between check and rename is not guarded against.
 - Bad: write mode is not atomic across files. A failure part way leaves the files renamed so far in
   place, and the report says which.
