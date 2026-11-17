@@ -4,6 +4,13 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **A support and deprecation policy for the registry line** (VERSIONING.md). It covers
+  `jpack registry`, `jpack emit`, `jpack emit conformance`, `jpack terraform facts`, their formats,
+  codes and bounds, and the start-up module. Within major version 1 of the line, nothing is
+  removed, no bound is tightened, additions come under new minor selectors, and a deprecated part
+  keeps working. It takes effect from the release that names the line stable, which settles every
+  provisional code first and tags `startup/v1.0.0`. `jpack` and the
+  runtime module stay 0.x. The conformance claim in CONFORMANCE.md is unchanged.
 - **Fuzzing of the registry's reference readers, run once a day.** New fuzz targets, each with
   a seed corpus drawn from the unit tests: entry references and secret references are accepted
   exactly when they match the registry companion's grammars (§6.2, §6.3), with each refused secret
