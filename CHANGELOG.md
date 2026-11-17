@@ -6,8 +6,9 @@ All notable changes to tagged releases are documented here.
 
 - **The registry line's support window** (VERSIONING.md, "The registry line"). Fixes land in the
   latest `jpack` minor and the latest `startup/v1` tag, as before. Security fixes will also be
-  backported, from the release that names the line stable, to the previous `jpack` minor and the previous `startup/v1` minor for three months
-  after its successor is released. There is still no service-level guarantee.
+  backported, from the release that names the line stable, to the previous `jpack` minor and the
+  previous `startup/v1` minor for three months after its successor is released. There is still no
+  service-level guarantee. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.49.0 - 2026-11-17
 
