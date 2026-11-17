@@ -4,6 +4,22 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **`jpack emit conformance` no longer reads an index with an offset table** (ADR-0099). The
+  harness passed over the index's `IEOT` and `EOIE` extensions and read the entries in order, but
+  git with several index threads reads them in blocks at the offset table's offsets. A hand-made
+  index whose table disagrees with its entries was then read differently by git and by the
+  harness, which could leave out of the repository copy a link git tracks, with
+  `EMIT-LINK-OMITTED`. An index holding either extension is now not read, as an index git wrote
+  without its checksum is not, so every link that leads out of the repository is refused there
+  with `EMIT-HARNESS-BOUND`, as before v0.50.0. Git writes both only when `index.threads` is set
+  to other than 1, or `index.recordOffsetTable` or `index.recordEndOfIndexEntries` is on. The
+  conformance claim in CONFORMANCE.md is unchanged.
+- **`jpack emit --check` reports an interrupt that comes after the last emitter** (ADR-0098). An
+  interrupt or SIGTERM that came once the last environment's emitter had ended, during the scan of
+  the owned paths or the comparison, was not read: the check exited 0 or 1 as if it had not come.
+  It now refuses the run with `EMIT-INTERRUPTED` at `/command`, as `jpack emit` does before its
+  write. ADR-0098 now also states that an interrupt once the write has begun leaves the outcome
+  `written`, exit 0. The conformance claim in CONFORMANCE.md is unchanged.
 - **Who owns each registry-line code, as the companions now say** (VERSIONING.md). The registry
   companion's code list names every `REG-*` code this runtime reports, the `REG-YAML-*` codes,
   `REG-REPORT-TRUNCATED`, `REG-KIND-PATTERN-LIMIT` and `REG-BOUND-VALIDATION-WORK` among them, the

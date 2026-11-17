@@ -441,7 +441,13 @@ holds.
   reader to understand such an extension, and the reader understands none. Two change the set of
   paths the entries give: a split index (`link`), whose entries are in another file, and a sparse
   index (`sdir`), whose entries may be directories. An optional extension, `A` to `Z`, such as
-  `TREE`, `REUC`, `UNTR`, `FSMN`, `EOIE` or `IEOT`, is passed over, as the format allows.
+  `TREE`, `REUC`, `UNTR` or `FSMN`, is passed over, as the format allows, except the two below.
+- The index holds an index entry offset table (`IEOT`) or an end of index entries extension
+  (`EOIE`) (amended 2026-11-17, #475). Git with several index threads reads the entries in blocks
+  at the table's offsets, a version 4 block's first path from no previous path, so an index whose
+  table disagrees with its entries gives git other paths than a reading in order. Before, both were
+  passed over, and a hand-made index, of version 2 or 4, could make the harness leave out a link
+  git tracks.
 
 **Comparing paths.** An index path and a link's path are compared byte for byte, as git's slash
 paths. The file system may read two names as one, so they are compared loosely too, by the same
@@ -476,6 +482,9 @@ that no rule ignores would still be the repository's content to that reading.
   ends in zeros, which do not match, so every link that leads out is refused there.
 - A fresh repository has no index file until something is added, so every link that leads out is
   refused there too.
+- Git writes `IEOT` and `EOIE` when `index.threads` is set to other than 1, or
+  `index.recordOffsetTable` or `index.recordEndOfIndexEntries` is on, so every link that leads out
+  is refused there as well.
 - A Windows short name set by hand, without `~`, is not read as an alias.
 - An emitter that reads a file of the repository through a link left out finds nothing there. Its
   run then differs from a run in the repository. The warning names the link, so the author can

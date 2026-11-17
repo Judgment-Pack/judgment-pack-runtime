@@ -83,3 +83,22 @@ func TestAnInterruptAfterACleanExitKeepsTheResponse(t *testing.T) {
 		t.Fatal("the interrupted run wrote a file")
 	}
 }
+
+// In check mode, an interrupt that comes once the last emitter has exited 0
+// with a valid response, before the scan and the comparison end, refuses the
+// run with EMIT-INTERRUPTED, as the write mode's check before its write does;
+// the comparison is not reported as identical or different (#475).
+func TestACheckInterruptedAfterTheLastRunIsRefused(t *testing.T) {
+	root := testRepo(t)
+	ctx, runs := interruptAfterWait(t, true)
+	m := mustManifest(t, manifestDoc([]string{"env", "gen/env.txt"}, map[string]any{"environments": "all"}))
+	report := Emit(ctx, m, nil, Inputs{Registry: testRegistry(t)}, Options{Root: root, Timeout: time.Minute, Check: true})
+	if *runs != 1 || report.Outcome != OutcomeNotChecked || len(report.Differences) != 0 || !slices.Equal(codes(report.Diagnostics), []string{"EMIT-INTERRUPTED@/command"}) {
+		t.Fatalf("runs %d, report: %s", *runs, reportJSON(t, report))
+	}
+	// The control: not interrupted, the same check reports the difference.
+	report = host(t, root, []string{"env", "gen/env.txt"}, map[string]any{"environments": "all"}, Options{Check: true})
+	if report.Outcome != OutcomeDifferent || len(report.Diagnostics) != 0 {
+		t.Fatalf("not interrupted: %s", reportJSON(t, report))
+	}
+}
