@@ -1,0 +1,70 @@
+name: Fuzz
+
+# Runs the registry line's fuzz targets once a day, 30 seconds each, and on demand. It is not a
+# pull-request check: a pull request runs each target's seed corpus as an ordinary test (`go test`).
+# A failing run uploads the target's testdata/fuzz directory, which holds the crasher. The pull
+# request that fixes the failure checks the crasher in there as a seed, so that every later
+# `go test` replays it.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: FuzzImport
+            directory: .
+            package: ./internal/registry
+          - target: FuzzEntryReference
+            directory: .
+            package: ./internal/registry
+          - target: FuzzSecretReference
+            directory: .
+            package: ./internal/registry
+          - target: FuzzKindReferencePatterns
+            directory: .
+            package: ./internal/registry
+          - target: FuzzTerraformJSON
+            directory: .
+            package: ./internal/terraformfile
+          - target: FuzzAddressPattern
+            directory: .
+            package: ./internal/terraformfile
+          # startup/ is a nested module (ADR-0096), run from its own directory.
+          - target: FuzzReadSecret
+            directory: startup
+            package: .
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: true
+      - name: Fuzz
+        working-directory: ${{ matrix.directory }}
+        env:
+          TARGET: ${{ matrix.target }}
+          PACKAGE: ${{ matrix.package }}
+        run: go test -run='^$' -fuzz="^${TARGET}\$" -fuzztime=30s "$PACKAGE"
+      - name: Upload the crasher
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: crasher-${{ matrix.target }}
+          path: ${{ matrix.directory }}/${{ matrix.package }}/testdata/fuzz/${{ matrix.target }}/
+          if-no-files-found: warn
