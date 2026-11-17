@@ -289,7 +289,7 @@ func TestStrayWritesCopyBound(t *testing.T) {
 func TestCopyPassesOverGit(t *testing.T) {
 	source, target := t.TempDir(), t.TempDir()
 	write(t, source, map[string]string{".git/config": "x\n", "a/.GIT/config": "x\n", "a/b.txt": "b\n"})
-	states, err := copyTree(source, target)
+	states, err := copyTree(source, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,9 @@ func TestStrayWriteThroughALinkIntoTheRepository(t *testing.T) {
 }
 
 // A link that leads out of the repository refuses the run, before the
-// emitter runs: a write through it would leave the copy.
+// emitter runs, when the repository has no .git, so that what git tracks
+// cannot be read: a write through it would leave the copy.
+// TestALinkOutOfTheRepositoryIsLeftOut runs these links with an index.
 func TestALinkOutOfTheRepositoryIsRefused(t *testing.T) {
 	outside := t.TempDir()
 	cases := map[string]struct {
@@ -453,7 +455,7 @@ func TestCopyKeepsLinksThatStayIn(t *testing.T) {
 	write(t, source, map[string]string{"real/a.txt": "a\n"})
 	symlinks(t, source, map[string]string{"self": ".", "rel": "real/a.txt", "dangling": "real/missing", "docs/up": "../real",
 		"abs": filepath.Join(source, "real"), "root": source})
-	states, err := copyTree(source, target)
+	states, err := copyTree(source, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
