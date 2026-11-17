@@ -178,6 +178,25 @@ func TestReferenceScanAnyString(t *testing.T) {
 	}
 }
 
+// A target's automaton is built once for a request: not again for each file
+// or for the second pass, and not at all for a string no file holds.
+func TestReferenceScanBuildsEachAutomatonOnce(t *testing.T) {
+	a := "secret:gcp-sm:projects/example-dev/secrets/orders-queue/versions/3"
+	b := "secret:gcp-sm:projects/example-dev/secrets/billing-db/versions/1"
+	s, err := newScanner([]target{{value: []byte(a)}, {value: []byte(b)}, {value: []byte("secret:gcp-sm:projects/example-prod/secrets/x/versions/9")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{a + "\n" + b + "\n", b + " " + a[20:60] + "\n", a + "\n"} {
+		if _, err := s.scan([]byte(file)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.builds != 2 || len(s.automata) != 2 {
+		t.Fatalf("builds: %d, automata: %d", s.builds, len(s.automata))
+	}
+}
+
 func TestReferenceScanBounds(t *testing.T) {
 	saved := maxReferenceBytes
 	maxReferenceBytes = 64

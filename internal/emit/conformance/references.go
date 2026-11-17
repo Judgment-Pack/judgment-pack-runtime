@@ -68,6 +68,12 @@ type scanner struct {
 	// filter has the bit of each window's rolling hash set.
 	filter []uint64
 	work   int64
+	// automata are the targets' suffix automata, each built once, when a
+	// file first holds its string, and kept for the request's other files
+	// and both passes. Together they are linear in the targets' bytes, which
+	// MaxReferenceBytes bounds. builds counts them, for a test.
+	automata map[int32]*automaton
+	builds   int
 }
 
 const (
@@ -185,7 +191,7 @@ func (s *scanner) scan(data []byte) ([]int32, error) {
 	var covers []span
 	for _, index := range indices {
 		value := s.targets[index].value
-		automaton, err := s.automaton(value)
+		automaton, err := s.automatonOf(index)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +214,7 @@ func (s *scanner) scan(data []byte) ([]int32, error) {
 		if len(value) <= runLength {
 			continue
 		}
-		automaton, err := s.automaton(value)
+		automaton, err := s.automatonOf(index)
 		if err != nil {
 			return nil, err
 		}
@@ -268,6 +274,23 @@ type automaton struct {
 }
 
 func edge(state int32, b byte) uint64 { return uint64(state)<<8 | uint64(b) }
+
+// automatonOf returns a target's automaton, building it the first time.
+func (s *scanner) automatonOf(index int32) (*automaton, error) {
+	if a := s.automata[index]; a != nil {
+		return a, nil
+	}
+	a, err := s.automaton(s.targets[index].value)
+	if err != nil {
+		return nil, err
+	}
+	if s.automata == nil {
+		s.automata = map[int32]*automaton{}
+	}
+	s.automata[index] = a
+	s.builds++
+	return a, nil
+}
 
 func (s *scanner) automaton(value []byte) (*automaton, error) {
 	if err := s.spend(8 * len(value)); err != nil {

@@ -163,7 +163,8 @@ The scan has two stages:
 
 - **Finding regions.** A table of every 32-byte window of every string, with a rolling-hash
   filter, finds where a string's runs can be.
-- **Checking regions.** A suffix automaton of each string that occurs reads only its regions. A
+- **Checking regions.** A suffix automaton of each string that occurs, built once for the request
+  and kept for its files, reads only that string's regions. A
   first pass over every such string finds the complete occurrences of all of them. A second pass,
   for each string longer than 32, asks whether one of those occurrences holds each maximal run of
   32 or more.
