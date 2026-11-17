@@ -29,7 +29,7 @@ The maintainer decided:
 - that 1.0 is a secret reader interface only, with two readers: the environment and mounted files.
   A store reader comes later, in a sub-package;
 - that both readers trim exactly one trailing `\n` or `\r\n`, and keep every other byte;
-- that the file reader refuses a world-readable file;
+- that the file reader refuses a world-readable or world-writable file;
 - that values are held only in a type that prints `[secret]` under every fmt verb, `%#v` included,
   and under encoding/json, encoding/text and log/slog, with the bytes reached only by an explicit
   method;
@@ -64,12 +64,15 @@ client is outside the maintainer's decision.
 `require`. Its tags, `startup/vX.Y.Z`, do not start the release workflow, which runs on `v*`.
 
 **Reading a resolved registry.** `ReadResolved(data, environment)` and
-`ReadResolvedFile(path, environment)` refuse, in this order:
+`ReadResolvedFile(path, environment)` refuse, in this order. `ReadResolvedFile` first refuses a
+path that does not lead to a regular file (`ErrNotRegular`), a named pipe among them: it opens
+without waiting (`O_NONBLOCK`) and checks the opened file.
 
-1. A document over 8 MiB or nesting deeper than 32 (RFC 0034 §1; the root counts as one).
-   `ErrLimit`.
-2. A document that is not exactly one UTF-8 JSON value, or has two members of one name in any
-   object. `ErrDocument`. encoding/json keeps the last of two members, and another reader may keep
+1. A document over 8 MiB (`ErrLimit`), checked before anything is read from it.
+2. In one scan, whichever it meets first: nesting deeper than 32 (RFC 0034 §1; the root counts as
+   one), `ErrLimit`; or a document that is not exactly one UTF-8 JSON value, or has two members of
+   one name in any object, `ErrDocument`. A document both too deep and malformed may give either,
+   by which comes first in its bytes. encoding/json keeps the last of two members, and another reader may keep
    the first, so the same bytes could give two selectors or two environments.
 3. A `resolvedFormatVersion` that is missing or not exactly one of `ResolvedFormatVersions()`, which
    is `1.0.0`. `ErrSelector`. The selector is read before any other member, so a document of a later
@@ -109,7 +112,10 @@ These readings go beyond the decisions:
 - `ReadFile` follows symbolic links, as mounted secret volumes use them, and checks the target.
   - It refuses a path that is not a regular file. It checks before the open, because a named pipe
     would block the open, and again on the opened file.
-  - Only the others' read bit (`0o004`) is refused. A group-readable file is read.
+  - Only the others' read bit (`0o004`) and write bit (`0o002`) are refused. A group-readable
+    file is read. A file others may write is refused under every `FileRules`
+    (`ErrWorldWritable`): whoever can write it can replace the secret, and no platform's default
+    mount is writable by others.
   - The others' read bit is refused by default. `FileRules{AllowOtherRead: true}`, through
     `ReadFileWith` or `Bindings.FileRules`, accepts it. Cloud Run (`0444`) and Kubernetes (`0644`)
     mount secret files world-readable unless a mode is set, so an operator either sets `0440` or

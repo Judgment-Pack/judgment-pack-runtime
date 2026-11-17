@@ -227,6 +227,64 @@ func (v *Vector) at(file string) string {
 	return v.Name + "/" + file
 }
 
+// errTooManyEntries is walkBounded's: more entries than its limit.
+var errTooManyEntries = errors.New("conformance: more directory entries than the bound")
+
+// walkBounded walks root as filepath.WalkDir does, in lexical order and
+// without following a link, but lists each directory with listBounded, and
+// stops with errTooManyEntries once the entries below root pass limit, so no
+// directory is held whole past the bound. fn may return fs.SkipDir for a
+// directory, and fs.SkipAll.
+func walkBounded(root string, limit int, fn fs.WalkDirFunc) error {
+	info, err := os.Lstat(root)
+	if err != nil {
+		return skipped(fn(root, nil, err))
+	}
+	seen := 0
+	var walk func(full string, entry fs.DirEntry) error
+	walk = func(full string, entry fs.DirEntry) error {
+		if err := fn(full, entry, nil); err != nil || !entry.IsDir() {
+			return err
+		}
+		children, over, err := listBounded(full, func(fs.DirEntry) bool { return true }, limit-seen)
+		switch {
+		case over:
+			return errTooManyEntries
+		case err != nil:
+			return fn(full, entry, err)
+		}
+		seen += len(children)
+		for _, child := range children {
+			err := walk(filepath.Join(full, child.Name()), child)
+			if err == fs.SkipDir && child.IsDir() {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return skipped(walk(root, fs.FileInfoToDirEntry(info)))
+}
+
+// skipped is a walk's result with fs.SkipDir and fs.SkipAll ending it
+// without error, as filepath.WalkDir treats them.
+func skipped(err error) error {
+	if err == fs.SkipDir || err == fs.SkipAll {
+		return nil
+	}
+	return err
+}
+
+// maxVectorEntries bounds the entries of one vector's directory: it holds at
+// most six known members, so a listing past this bound is refused unread.
+var maxVectorEntries = 64
+
+// maxExpectedEntries bounds the entries of a vector's expected/, files and
+// directories together.
+var maxExpectedEntries = 2 * emit.MaxFiles
+
 // layoutVector checks one vector directory against the layout, by its
 // entries and their sizes, reading none of its files.
 func layoutVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
@@ -235,8 +293,11 @@ func layoutVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 	fail := func(code, file, pointer string) {
 		refused = append(refused, vectorDiagnostic(code, v.at(file), pointer))
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	entries, over, err := listBounded(dir, func(fs.DirEntry) bool { return true }, maxVectorEntries)
+	switch {
+	case over:
+		return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", name, "")}
+	case err != nil:
 		return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-PATH-UNREADABLE", name, "")}
 	}
 	present := v.present
@@ -454,7 +515,7 @@ func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagno
 	var refused []emit.Diagnostic
 	var total int64
 	marker, beside := false, false
-	err := filepath.WalkDir(dir, func(full string, entry fs.DirEntry, err error) error {
+	err := walkBounded(dir, maxExpectedEntries, func(full string, entry fs.DirEntry, err error) error {
 		relative, _ := filepath.Rel(dir, full)
 		path := filepath.ToSlash(relative)
 		where := at + "/" + path
@@ -501,7 +562,10 @@ func layoutExpected(dir, at string, update bool) ([]expectedEntry, []emit.Diagno
 		entries = append(entries, expectedEntry{path: path, mode: emit.ModeOf(info)})
 		return nil
 	})
-	if err != nil && len(refused) == 0 {
+	switch {
+	case errors.Is(err, errTooManyEntries):
+		return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", at, "")}
+	case err != nil && len(refused) == 0:
 		refused = append(refused, vectorDiagnostic("EMIT-PATH-UNREADABLE", at, ""))
 	}
 	switch {
@@ -680,7 +744,7 @@ func givenRequest(data []byte, m *emit.Manifest) (emit.Request, []emit.Diagnosti
 	refuse := func(code, document, pointer string) (emit.Request, []emit.Diagnostic) {
 		return emit.Request{}, []emit.Diagnostic{emit.NewDiagnostic(code, emit.Location{Document: document, Pointer: pointer})}
 	}
-	value, code, pointer := registry.AdmitValue(data, MaxRequestBytes)
+	value, code, pointer := registry.AdmitValue(data, maxGivenRequestBytes)
 	if code != "" {
 		return refuse("EMIT-REQUEST", emit.DocumentRequest, pointer)
 	}
@@ -735,12 +799,18 @@ func givenRequest(data []byte, m *emit.Manifest) (emit.Request, []emit.Diagnosti
 		request.Environment = environment
 	}
 	canonical, err := jcs.EncodeDocument(root)
-	if err != nil {
+	// The canonical form can be longer than the file (1e20 is written as 21
+	// digits), and it is what the emitter reads, so it is held to the bound.
+	if err != nil || len(canonical) > maxGivenRequestBytes {
 		return refuse("EMIT-REQUEST", emit.DocumentRequest, "")
 	}
 	request.Bytes = canonical
 	return request, nil
 }
+
+// maxGivenRequestBytes is MaxRequestBytes, as a variable so that a test can
+// lower it.
+var maxGivenRequestBytes = MaxRequestBytes
 
 func firstItem(items []any) any {
 	if len(items) == 0 {

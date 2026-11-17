@@ -16,6 +16,45 @@ All notable changes to tagged releases are documented here.
   or another reparse point that is a directory, and their messages say "link or junction". A file
   reparse point, such as a synced folder's placeholder, is read as before. Symbolic links are
   refused as before. The conformance claim in CONFORMANCE.md is unchanged.
+- **Fuzzing of the registry's reference readers, run once a day.** New fuzz targets, each with
+  a seed corpus drawn from the unit tests: entry references and secret references are accepted
+  exactly when they match the registry companion's grammars (§6.2, §6.3), with each refused secret
+  reference given the one code §6.3's precedence gives it; a kind's `references` patterns are valid
+  exactly when §3.5's grammar and the kind-name rules hold; and the start-up module's `Bindings`
+  read a reference only when it is the bound one byte for byte, trimming exactly one trailing line
+  feed from its value. A fifth target holds the start-up module's `ReadResolved` to refusing only
+  with its exported errors, refusing any document over the byte bound as over the bound, and
+  accepting only a `1.0.0` document for the environment named. Each target also reads one input the
+  same way twice, and an accepted reference or pattern written back reads back the same. A new
+  scheduled workflow, also started by hand and not a pull-request check, runs these and the existing
+  YAML-import, Terraform-reader and dialect targets for 30 seconds each, and uploads the crasher of a failing
+  run; the pull request that fixes it checks the crasher in as a seed. `go test -cover` now passes
+  for `internal/emit`: a coverage-built test binary run as the emitter no longer writes a warning to
+  standard error at exit, which the tests' standard-error bounds counted. The package is held to a
+  90% coverage floor. `jpack` and its output are unchanged. The conformance claim in CONFORMANCE.md
+  is unchanged.
+- **Interrupts, bounds and start-up file checks** (ADR-0096, ADR-0103). `jpack emit conformance`
+  sent an interrupt or SIGTERM is refused with `EMIT-HARNESS-BOUND` and drops the interrupted
+  vector's rows, which would report failures the emitter did not cause. `jpack emit` interrupted
+  before its write refuses the run with `EMIT-PROCESS` and writes nothing; a write once begun
+  finishes. A second signal ends `jpack` at once, except during that write. `jpack emit` no longer starts the emitter with SIGPIPE ignored. A given `request.json`
+  is bounded by its canonical size, not only its size as written. A vector's directory and its
+  `expected/` are listed under a bound on their entries, directories included. The TypeScript
+  constants emitter counts its depth bound of 34 in containers only. In the start-up module,
+  `ReadFile` refuses a world-writable file under every rule, and `ReadResolvedFile` refuses a
+  file that is not regular without blocking on it. The conformance claim in CONFORMANCE.md is
+  unchanged.
+- **Coverage floors for the registry and emitter packages.** A `coverage-floors` check in
+  `dev.json` runs the tests of `internal/registry`, `internal/emit/conformance`,
+  `internal/terraformfile`, `internal/jcs`, `cmd/jpack-emit-go-facts`, `cmd/jpack-emit-go-loader`
+  and `cmd/jpack-emit-ts-constants` with coverage. It prints each package's statement coverage and
+  fails when any is below 90%. `jpdev.json` maps each package's paths to it. New tests bring
+  `internal/registry`, `internal/emit/conformance` and `cmd/jpack-emit-ts-constants` above 91%.
+  They cover the registry's and kind declaration's form refusals, schema keyword forms, patches
+  that add a member the schema declares, the conformance harness's vector reading and request
+  envelope refusals, and the TypeScript emitter's schema and request refusals. Each asserts the
+  diagnostic code and location, the error, or the output bytes. No program's behaviour changes.
+  The conformance claim in CONFORMANCE.md is unchanged.
 - **An emitter's options schema may use `$defs` at its root** (#459). An options schema is a
   schema in the kind subset, which admits `$defs` at the schema's root, but `jpack emit` and `jpack
   emit conformance` refused a root `$defs` in a manifest's `options` with `EMIT-MANIFEST`. It is now

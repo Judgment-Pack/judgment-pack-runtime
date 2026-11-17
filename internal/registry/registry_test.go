@@ -305,6 +305,69 @@ func TestEachRuleReportsItsCode(t *testing.T) {
 		{name: "kind entry-id pattern outside the subset", role: func(k map[string]any) {
 			k["entryId"] = map[string]any{"pattern": `^\w+$`}
 		}, code: "REG-KIND-PATTERN", pointer: "/entryId/pattern", document: DocumentKind},
+		{name: "registry id not an absolute URI", registry: func(r map[string]any) { r["id"] = "platform" }, code: "REG-REGISTRY-FORM", pointer: "/id"},
+		{name: "registry version not semver", registry: func(r map[string]any) { r["version"] = "4" }, code: "REG-REGISTRY-FORM", pointer: "/version"},
+		{name: "no environments", registry: func(r map[string]any) { r["environments"] = []any{} }, code: "REG-REGISTRY-FORM", pointer: "/environments"},
+		{name: "kinds not an array", registry: func(r map[string]any) { r["kinds"] = map[string]any{} }, code: "REG-REGISTRY-FORM", pointer: "/kinds"},
+		{name: "pin not an object", registry: func(r map[string]any) { r["kinds"].([]any)[0] = "database" }, code: "REG-REGISTRY-FORM", pointer: "/kinds/0"},
+		{name: "pin with an unknown member", registry: func(r map[string]any) { r["kinds"].([]any)[0].(map[string]any)["extra"] = true }, code: "REG-REGISTRY-UNKNOWN-MEMBER", pointer: "/kinds/0/extra"},
+		{name: "pin digest malformed", registry: func(r map[string]any) { r["kinds"].([]any)[0].(map[string]any)["digest"] = "sha256:00" }, code: "REG-REGISTRY-FORM", pointer: "/kinds/0"},
+		{name: "pins out of order", registry: func(r map[string]any) {
+			pins := r["kinds"].([]any)
+			pins[0], pins[1] = pins[1], pins[0]
+		}, code: "REG-REGISTRY-ORDER", pointer: "/kinds/1"},
+		{name: "entries not an array", registry: func(r map[string]any) { r["entries"] = map[string]any{} }, code: "REG-REGISTRY-FORM", pointer: "/entries"},
+		{name: "overlays not an array", registry: func(r map[string]any) { r["overlays"] = "prod" }, code: "REG-REGISTRY-FORM", pointer: "/overlays"},
+		{name: "secret scopes not an object", registry: func(r map[string]any) { r["secretScopes"] = []any{} }, code: "REF-SECRET-SCOPE-FORM", pointer: "/secretScopes"},
+		{name: "secret scopes of an undeclared environment", registry: func(r map[string]any) {
+			r["secretScopes"].(map[string]any)["qa"] = map[string]any{"gcp-sm": []any{"example-qa"}}
+		}, code: "REF-SECRET-SCOPE-FORM", pointer: "/secretScopes/qa"},
+		{name: "secret scopes of an unknown store", registry: func(r map[string]any) {
+			r["secretScopes"].(map[string]any)["dev"].(map[string]any)["vault"] = []any{"example-dev"}
+		}, code: "REF-SECRET-SCOPE-FORM", pointer: "/secretScopes/dev/vault"},
+		{name: "entry not an object", registry: func(r map[string]any) { r["entries"].([]any)[0] = "billing" }, code: "REG-REGISTRY-FORM", pointer: "/entries/0"},
+		{name: "entry with an unknown member", registry: func(r map[string]any) { r["entries"].([]any)[0].(map[string]any)["extra"] = true }, code: "REG-REGISTRY-UNKNOWN-MEMBER", pointer: "/entries/0/extra"},
+		{name: "entry without an owner", registry: func(r map[string]any) { delete(r["entries"].([]any)[0].(map[string]any), "owner") }, code: "REG-REGISTRY-MISSING-MEMBER", pointer: "/entries/0/owner"},
+		{name: "entry kind not a kind name", registry: func(r map[string]any) { r["entries"].([]any)[0].(map[string]any)["kind"] = "Database" }, code: "REG-REGISTRY-FORM", pointer: "/entries/0/kind"},
+		{name: "entry id not a string", registry: func(r map[string]any) { r["entries"].([]any)[0].(map[string]any)["id"] = true }, code: "REG-REGISTRY-FORM", pointer: "/entries/0/id"},
+		{name: "entry owner malformed", registry: func(r map[string]any) { r["entries"].([]any)[0].(map[string]any)["owner"] = "Team Billing" }, code: "REG-REGISTRY-FORM", pointer: "/entries/0/owner"},
+		{name: "entry environments empty", registry: func(r map[string]any) { r["entries"].([]any)[0].(map[string]any)["environments"] = []any{} }, code: "REG-REGISTRY-FORM", pointer: "/entries/0/environments"},
+		{name: "overlay with an unknown member", registry: func(r map[string]any) { r["overlays"].([]any)[0].(map[string]any)["extra"] = true }, code: "REG-REGISTRY-FORM", pointer: "/overlays/0"},
+		{name: "patch without a set", registry: func(r map[string]any) {
+			delete(r["overlays"].([]any)[1].(map[string]any)["patches"].([]any)[0].(map[string]any), "set")
+		}, code: "REG-REGISTRY-FORM", pointer: "/overlays/1/patches/0"},
+		{name: "kind deprecated not a boolean", role: func(k map[string]any) { k["deprecated"] = "yes" }, code: "REG-KIND-FORM", pointer: "/deprecated", document: DocumentKind},
+		{name: "kind description not a string", role: func(k map[string]any) { k["description"] = true }, code: "REG-KIND-FORM", pointer: "/description", document: DocumentKind},
+		{name: "kind entry id not an object", role: func(k map[string]any) { k["entryId"] = "^[a-z]+$" }, code: "REG-KIND-FORM", pointer: "/entryId", document: DocumentKind},
+		{name: "kind bounds not an object", role: func(k map[string]any) { k["bounds"] = []any{} }, code: "REG-KIND-FORM", pointer: "/bounds", document: DocumentKind},
+		{name: "kind maxEntries below one", role: func(k map[string]any) {
+			k["bounds"].(map[string]any)["maxEntries"] = json.Number("0")
+		}, code: "REG-KIND-FORM", pointer: "/bounds/maxEntries", document: DocumentKind},
+		{name: "kind bounds with an unknown member", role: func(k map[string]any) {
+			k["bounds"].(map[string]any)["maxDepth"] = json.Number("3")
+		}, code: "REG-KIND-UNKNOWN-MEMBER", pointer: "/bounds/maxDepth", document: DocumentKind},
+		{name: "kind secrets not an array", role: func(k map[string]any) { k["secrets"] = "/password" }, code: "REG-KIND-FORM", pointer: "/secrets", document: DocumentKind},
+		{name: "kind secret not a pointer", role: func(k map[string]any) { k["secrets"] = []any{"password"} }, code: "REG-KIND-POINTER-FORM", pointer: "/secrets/0", document: DocumentKind},
+		{name: "kind references not an array", role: func(k map[string]any) { k["references"] = map[string]any{} }, code: "REG-KIND-FORM", pointer: "/references", document: DocumentKind},
+		{name: "kind reference not an object", role: func(k map[string]any) { k["references"] = []any{"/database"} }, code: "REG-KIND-FORM", pointer: "/references/0", document: DocumentKind},
+		{name: "kind reference with an unknown member", role: func(k map[string]any) {
+			k["references"].([]any)[0].(map[string]any)["extra"] = true
+		}, code: "REG-KIND-UNKNOWN-MEMBER", pointer: "/references/0/extra", document: DocumentKind},
+		{name: "kind reference naming no kinds", role: func(k map[string]any) {
+			k["references"].([]any)[0].(map[string]any)["kinds"] = []any{}
+		}, code: "REG-KIND-FORM", pointer: "/references/0", document: DocumentKind},
+		{name: "kind reference naming a kind twice", role: func(k map[string]any) {
+			k["references"].([]any)[0].(map[string]any)["kinds"] = []any{"database", "database"}
+		}, code: "REG-KIND-FORM", pointer: "/references/0/kinds", document: DocumentKind},
+		{name: "kind reference pointer malformed", role: func(k map[string]any) {
+			k["references"].([]any)[0].(map[string]any)["pointer"] = "database"
+		}, code: "REG-KIND-POINTER-FORM", pointer: "/references/0/pointer", document: DocumentKind},
+		{name: "kind reference pointer the schema cannot reach", role: func(k map[string]any) {
+			k["references"].([]any)[0].(map[string]any)["pointer"] = "/nowhere"
+		}, code: "REG-KIND-POINTER-UNREACHABLE", pointer: "/references/0/pointer", document: DocumentKind},
+		{name: "kind reference pointer given twice", role: func(k map[string]any) {
+			k["references"] = append(k["references"].([]any), map[string]any{"pointer": "/database", "kinds": []any{"database"}})
+		}, code: "REG-KIND-FORM", pointer: "/references/1/pointer", document: DocumentKind},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

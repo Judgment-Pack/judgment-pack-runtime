@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -87,14 +86,25 @@ type Entry struct {
 }
 
 // ReadResolvedFile reads the resolved document at path, as [ReadResolved]
-// does. The document holds references, not secrets, so the file is not held to
+// does. It refuses a path that does not lead to a regular file
+// ([ErrNotRegular]), a named pipe among them, without waiting on it. The
+// document holds references, not secrets, so the file is not held to
 // [ReadFile]'s permission rule.
 func ReadResolvedFile(path, environment string) (*Resolved, error) {
-	file, err := os.Open(path)
+	// A named pipe at the path is refused, not waited on: the open does not
+	// block (openNoWait), and the opened file must be regular.
+	file, err := openFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("startup: %w", err)
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("startup: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: %s", ErrNotRegular, path)
+	}
 	data, err := io.ReadAll(io.LimitReader(file, MaxResolvedBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("startup: %w", err)
