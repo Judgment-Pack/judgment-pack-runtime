@@ -17,16 +17,22 @@ import (
 // refusesNone refuses at no link: every link that leads out is left out.
 func refusesNone([]string) (string, bool) { return "", false }
 
-// writeIndex makes dir a repository's working tree whose index holds
-// entries, in git's order.
+// writeIndex makes dir a repository's working tree whose index, of version
+// 2, holds entries, in git's order.
 func writeIndex(t *testing.T, dir string, entries ...gitindextest.Entry) {
+	t.Helper()
+	writeIndexVersion(t, dir, 2, entries...)
+}
+
+// writeIndexVersion is writeIndex with an index of the version given.
+func writeIndexVersion(t *testing.T, dir string, version uint32, entries ...gitindextest.Entry) {
 	t.Helper()
 	sorted := slices.Clone(entries)
 	slices.SortFunc(sorted, func(a, b gitindextest.Entry) int { return strings.Compare(a.Path, b.Path) })
 	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".git", "index"), gitindextest.Builder{Version: 2, Entries: sorted}.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".git", "index"), gitindextest.Builder{Version: version, Entries: sorted}.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -35,7 +41,9 @@ func writeIndex(t *testing.T, dir string, entries ...gitindextest.Entry) {
 // below it, is in the index, compared byte for byte and loosely (case,
 // normalization, HFS+ ignorables, a backslash, trailing dots and spaces);
 // every link below a submodule, or below the directory of an index segment
-// that may be a Windows short name, is tracked too.
+// that may be a Windows short name or that is blank (only dots and spaces),
+// is tracked too, and so is a link whose own path holds a blank segment. An
+// index of no entries tracks nothing.
 func TestTrackedLinks(t *testing.T) {
 	root := t.TempDir()
 	writeIndex(t, root,
@@ -89,6 +97,34 @@ func TestTrackedLinks(t *testing.T) {
 	if tracked, err := trackedLinks(root, []string{"anything/below"}); err != nil || !tracked[0] {
 		t.Errorf("a short name at the root: %v %v", tracked, err)
 	}
+	// A segment made only of dots and spaces is no name to Windows, which
+	// reads "lib/. ./mod.py" as "lib/mod.py": in an index path, every link
+	// in its directory is tracked; in a link's path, the link is.
+	writeIndex(t, root, gitindextest.Entry{Path: "lib/. ./mod.py"})
+	blank := map[string]bool{"...": true, ". .": true, "a/...": true, "lib/mod.py": true, "lib/x/y": true, "lib": true, "venv": false, "a": false}
+	links = links[:0]
+	for link := range blank {
+		links = append(links, link)
+	}
+	if tracked, err = trackedLinks(root, links); err != nil {
+		t.Fatal(err)
+	}
+	for i, link := range links {
+		if tracked[i] != blank[link] {
+			t.Errorf("blank segments, %q: tracked %v, want %v", link, tracked[i], blank[link])
+		}
+	}
+	// One at the root, a link git tracks at "...": every link is tracked.
+	writeIndex(t, root, gitindextest.Entry{Path: "...", Mode: gitindex.ModeLink})
+	if tracked, err := trackedLinks(root, []string{"venv"}); err != nil || !tracked[0] {
+		t.Errorf("a blank name at the root: %v %v", tracked, err)
+	}
+	// An index of no entries, as after every path is removed from it,
+	// tracks nothing: every link is untracked.
+	writeIndex(t, root)
+	if tracked, err := trackedLinks(root, []string{"venv", "a/b"}); err != nil || !slices.Equal(tracked, []bool{false, false}) {
+		t.Errorf("no entries: %v %v", tracked, err)
+	}
 	// An index that cannot be read is an error, never "untracked".
 	if err := os.WriteFile(filepath.Join(root, ".git", "index"), []byte("DIRC"), 0o644); err != nil {
 		t.Fatal(err)
@@ -98,6 +134,33 @@ func TestTrackedLinks(t *testing.T) {
 	}
 	if tracked, err := trackedLinks(t.TempDir(), []string{"elsewhere/x"}); !errors.Is(err, gitindex.ErrNoRepository) || tracked != nil {
 		t.Errorf("no .git: %v %v", tracked, err)
+	}
+}
+
+// trackedLinks reads the index in each version the reader reads, version 4's
+// compressed paths included, to the same answer.
+func TestTrackedLinksReadsEveryIndexVersion(t *testing.T) {
+	entries := []gitindextest.Entry{
+		{Path: "docs/guide.md"},
+		{Path: "docs/guides/x.md", Extended: 0x4000},
+		{Path: "venv/bin/python", Mode: gitindex.ModeLink},
+		{Path: "venv/lib/site.py", Extended: 0x2000},
+	}
+	links := []string{"docs", "docs/guides", "docs/guide", "venv/bin", "venv/lib/x", "ven", "other"}
+	want := []bool{true, true, false, true, false, false, false}
+	for _, version := range []uint32{2, 3, 4} {
+		root := t.TempDir()
+		e := entries
+		if version == 2 {
+			e = make([]gitindextest.Entry, len(entries))
+			for i, entry := range entries {
+				e[i] = gitindextest.Entry{Path: entry.Path, Mode: entry.Mode}
+			}
+		}
+		writeIndexVersion(t, root, version, e...)
+		if tracked, err := trackedLinks(root, links); err != nil || !slices.Equal(tracked, want) {
+			t.Errorf("version %d: %v %v, want %v", version, tracked, err, want)
+		}
 	}
 }
 
@@ -154,7 +217,8 @@ func TestVectorPathsFollowsTheVectorsDirectory(t *testing.T) {
 }
 
 // mayMeet compares a path as given with one found on disk in any case and
-// normalization, a segment with "~" as any name, and at, above or below.
+// normalization, with Windows' trailing dots and spaces dropped, a segment
+// with "~" as any name, and at, above or below.
 func TestMayMeetReadsNamesLoosely(t *testing.T) {
 	cases := []struct {
 		given, name string
@@ -167,9 +231,16 @@ func TestMayMeetReadsNamesLoosely(t *testing.T) {
 		{"VECTOR~1/a", "vectors-of-the-emitter", true},
 		{"café", "café", true},
 		{".", "anything", true},
+		{"venv./x", "venv", true}, // Windows drops a trailing dot
+		{"venv /x", "venv", true}, // and a trailing space
+		{"ext", "ext.", true},     // on either side
+		{`ext\v`, "ext", true},    // a backslash is a separator
+		{"a/.../b", "a/x", true},  // a blank segment is no name
+		{"a/x", "a/. ./y", true},  // on either side
 		{"ext", "other", false},
 		{"ext/v", "ext2", false},
 		{"a/b", "a/c", false},
+		{"venv.x/y", "venv", false},
 	}
 	for _, c := range cases {
 		if got := mayMeet(c.given, c.name); got != c.want {
@@ -342,6 +413,12 @@ func TestALinkTheCopyCannotLeaveOutIsRefused(t *testing.T) {
 		}},
 		"a link below a submodule": {link: "sub/out", index: func(t *testing.T, root string) {
 			writeIndex(t, root, append(tracked, gitindextest.Entry{Path: "sub", Mode: gitindex.ModeGitlink})...)
+		}},
+		"a link git tracks named only by dots": {link: "...", index: func(t *testing.T, root string) {
+			writeIndex(t, root, append(tracked, gitindextest.Entry{Path: "...", Mode: gitindex.ModeLink})...)
+		}},
+		"a file git tracks below one named by dots and a space": {link: ". .", index: func(t *testing.T, root string) {
+			writeIndex(t, root, append(tracked, gitindextest.Entry{Path: ". ./x"})...)
 		}},
 		"at an owned directory":        {owns: []any{"gen/**"}, link: "gen"},
 		"below it":                     {owns: []any{"gen/**"}, link: "gen/py"},

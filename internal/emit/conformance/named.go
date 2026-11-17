@@ -64,24 +64,31 @@ func linkRefusal(m *emit.Manifest, root, vectorsDir string) func(outward []strin
 //
 // A path of the index and a link's path are compared byte for byte, and
 // loosely too, since the file system the repository is on may read two
-// names as one (looseKey). Every link below a submodule is tracked: its
+// names as one (emit.NameKey). Every link below a submodule is tracked: its
 // files are in the submodule's own index. So is every link below the
 // directory that holds a segment of an index path that may be a Windows
-// short name, holding "~" and a digit, which may be any name there. Each
-// errs toward tracked.
+// short name, holding "~" and a digit, which may be any name there. A
+// segment whose key is empty, a name made only of dots and spaces, is no
+// name to Windows, which reads the path without it: a link whose path holds
+// one is tracked, and so is every link below the directory that holds one
+// in an index path. Each errs toward tracked.
 func trackedLinks(root string, links []string) ([]bool, error) {
+	tracked := make([]bool, len(links))
 	byKey := make(map[string][]int, len(links))
 	for i, link := range links {
-		key := looseKey(link)
+		key := emit.NameKey(link)
+		if blankSegment(key) {
+			tracked[i] = true
+			continue
+		}
 		byKey[key] = append(byKey[key], i)
 	}
-	tracked := make([]bool, len(links))
 	// anyBelow holds the keys of the directories every link below which is
 	// tracked: a submodule's, and one that holds a segment of an index path
-	// that may be a short name.
+	// that may be a short name or is blank.
 	anyBelow := map[string]bool{}
 	err := gitindex.ReadWorkTree(root, func(e gitindex.Entry) {
-		key := looseKey(e.Path)
+		key := emit.NameKey(e.Path)
 		// The path itself and each directory above it.
 		for end := len(key); end > 0; end = strings.LastIndexByte(key[:end], '/') {
 			for _, i := range byKey[key[:end]] {
@@ -91,12 +98,12 @@ func trackedLinks(root string, links []string) ([]bool, error) {
 		if e.IsGitlink() {
 			anyBelow[key] = true
 		}
-		if !strings.Contains(key, "~") {
+		if !strings.Contains(key, "~") && !blankSegment(key) {
 			return
 		}
 		segments := strings.Split(key, "/")
 		for i, segment := range segments {
-			if mayBeShortName(segment) {
+			if segment == "" || mayBeShortName(segment) {
 				anyBelow[strings.Join(segments[:i], "/")] = true
 				break
 			}
@@ -110,7 +117,7 @@ func trackedLinks(root string, links []string) ([]bool, error) {
 			continue
 		}
 		// Each directory above the link, the root ("") included.
-		key := looseKey(link)
+		key := emit.NameKey(link)
 		tracked[i] = anyBelow[""]
 		for end := strings.LastIndexByte(key, '/'); end > 0 && !tracked[i]; end = strings.LastIndexByte(key[:end], '/') {
 			tracked[i] = anyBelow[key[:end]]
@@ -119,17 +126,11 @@ func trackedLinks(root string, links []string) ([]bool, error) {
 	return tracked, nil
 }
 
-// looseKey is the key under which a file system that reads names loosely may
-// read two slash paths as one: emit.NameKey (case, Unicode normalization and
-// the code points HFS+ ignores), with a backslash read as a separator and
-// each segment's trailing dots and spaces dropped, as Windows reads them.
-// Two paths no file system reads as one may share a key too.
-func looseKey(path string) string {
-	segments := strings.Split(strings.ReplaceAll(emit.NameKey(path), `\`, "/"), "/")
-	for i, segment := range segments {
-		segments[i] = strings.TrimRight(segment, ". ")
-	}
-	return strings.Join(segments, "/")
+// blankSegment says whether a key of emit.NameKey holds an empty segment:
+// a name made only of dots and spaces (or of code points HFS+ ignores),
+// which Windows reads as no name at all, so that "a/.../b" is "a/b" there.
+func blankSegment(key string) bool {
+	return key == "" || key[0] == '/' || key[len(key)-1] == '/' || strings.Contains(key, "//")
 }
 
 // mayBeShortName says whether a segment may be a Windows short name, which
@@ -145,16 +146,20 @@ func mayBeShortName(segment string) bool {
 
 // mayMeet says whether the slash path name, as found on disk, may be the
 // slash path given, or a path above or below it, on a file system that reads
-// names loosely: each segment the two share in order has one NameKey, or
-// given's holds "~", which Windows can read as the short name of any name.
-// The path "." is the repository root, above every path.
+// names loosely: each segment the two keys (emit.NameKey) share in order is
+// the same, or given's holds "~", which Windows can read as the short name
+// of any name. A blank segment in either, which Windows reads as no name,
+// may meet anything. The path "." is the repository root, above every path.
 func mayMeet(given, name string) bool {
 	if given == "." || name == "." {
 		return true
 	}
-	want, have := strings.Split(given, "/"), strings.Split(name, "/")
+	want, have := strings.Split(emit.NameKey(given), "/"), strings.Split(emit.NameKey(name), "/")
 	for i := range min(len(want), len(have)) {
-		if !strings.Contains(want[i], "~") && emit.NameKey(want[i]) != emit.NameKey(have[i]) {
+		switch {
+		case want[i] == "" || have[i] == "":
+			return true
+		case !strings.Contains(want[i], "~") && want[i] != have[i]:
 			return false
 		}
 	}

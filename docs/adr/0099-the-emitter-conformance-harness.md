@@ -364,22 +364,29 @@ link that leads out is refused, as before.
 each Windows junction, followed as a link is (`os.Readlink` reads where it leads), the link is
 left out of the copy only when all three hold:
 
-- **Git does not track it.** Neither the link's path nor any path below it is in the
-  repository's index. What is tracked is read from the index, not from ignore rules, so "not
-  tracked" covers ignored and untracked paths alike.
+- **It is not tracked in the index.** Neither the link's path nor any path below it is in the
+  repository's index. What is tracked is read from the index alone, not from ignore rules or the
+  last commit, so "not tracked in the index" covers ignored and untracked paths alike. An index
+  with zero entries, as after every path is removed from it (`git rm -r --cached .`), tracks
+  nothing: every link that leads out is then untracked, and the other two conditions decide.
 - **No owns glob could name it.** No owns glob matches the link's path, or may match a path below
   it. This is the host's own `EMIT-LINK` rule, so a link the host would refuse is refused here
-  too. Names are also compared loosely (`emit.Manifest.MayOwnAtOrBelow`). Two names count as one
-  when they match after the code points HFS+ ignores are dropped, Unicode canonical caseless
-  matching is applied, and the result is upper-cased. A glob segment that holds `~` counts as any
-  name, because Windows can read it as a short name. So a link at `Gen` is refused for `gen/**`
-  on every system, and so is a link at `generated` for `GENERA~1/*.go`.
+  too. Names are also compared loosely (`emit.Manifest.MayOwnAtOrBelow`), by their loose key
+  (`emit.NameKey`). Two names count as one when they match after the code points HFS+ ignores are
+  dropped, Unicode canonical caseless matching is applied, the result is upper-cased, a backslash
+  is read as a separator, and each segment's trailing dots and spaces are dropped, as Windows
+  reads names. A glob segment that holds `~` counts as any name, because Windows can read it as a
+  short name. So a link at `Gen` or `gen.` is refused for `gen/**` on every system, and so is a
+  link at `generated` for `GENERA~1/*.go`. A glob itself never ends a segment in a dot or a
+  space, which the host refuses.
 - **The vectors path is clear of it.** The harness reads the vectors, and `--update` writes them,
   through the directory given, not through the copy. That directory, cleaned as `filepath.Abs`
   makes it, is followed part by part and link by link from its volume's root. Each time the walk
   stands on `--root` (by `os.SameFile`), it counts the parts below it. A link it follows inside the
   repository is refused. So is a link at, above or below the path where the directory ends in the
-  repository, compared loosely as above. A directory that holds the repository names every link,
+  repository, compared loosely as above, so that `venv./v` names a link at `venv`. A segment
+  whose loose key is empty on either side names every link from there down. A directory that
+  holds the repository names every link,
   and so does one that cannot be followed: a part that cannot be read, a link that cannot be read,
   or more than 40 links.
 
@@ -418,26 +425,31 @@ holds.
   `TREE`, `REUC`, `UNTR`, `FSMN`, `EOIE` or `IEOT`, is passed over, as the format allows.
 
 **Comparing paths.** An index path and a link's path are compared byte for byte, as git's slash
-paths. The file system may read two names as one, so they are compared loosely too, and either
-match counts as tracked. The loose key is the one above, with a backslash read as a separator and
-each segment's trailing dots and spaces dropped, as Windows reads names. Every link below a
-submodule (a gitlink entry) counts as tracked, since its files are in the submodule's own index.
-So does every link in or below a directory that holds an index segment with `~` and a digit,
-which Windows may read as the short name of any name there. Each of these errs toward tracked,
-and so toward refusing.
+paths. The file system may read two names as one, so they are compared loosely too, by the same
+loose key as above, and either match counts as tracked. Every link below a submodule (a gitlink
+entry) counts as tracked, since its files are in the submodule's own index. So does every link
+in or below a directory that holds an index segment with `~` and a digit, which Windows may read
+as the short name of any name there. A segment made only of dots and spaces has an empty loose
+key: Windows reads it as no name at all, so that `lib/. ./mod.py` is `lib/mod.py` there. A link
+whose path holds such a segment counts as tracked, and so does every link in or below a
+directory that holds one in an index path; one at the index's root makes every link tracked. The
+index must also hold each path at most once at each stage, in git's order. Each of these errs
+toward tracked, and so toward refusing.
 
-**Why this is sound.** A response path is one the host refuses unless an owns glob matches it, so
-a response can write only at or below an owned path. The vectors are read and written only below
-the vectors directory. Both are known before the copy is made, and each comparison errs toward
-naming a link. A tracked link is the repository's own content, which an emitter may rely on, so
-it is never left out: a run without it would not be a run in the repository. The links refused
-are a subset of those refused before, and the copy never holds a link that leads out, so the
-emitter has no new way out of it. Omitting every link that leads out was weighed and not chosen:
-it would drop tracked content from the copy, would let an emitter pass while the host refuses the
-same repository for a link at an owned path, and would let `--update` write outside the
-repository through a link the vectors are reached by. Deciding "tracked" from ignore rules was
-weighed and not chosen: it would reimplement git's ignore rules, and an untracked path that no
-rule ignores would still be the repository's content to that reading.
+**Why this is sound.** A response path is one the host refuses unless an owns glob matches it, so a
+response can write only at or below an owned path. The vectors are read and written only below the
+vectors directory. Both are known before the copy is made, and each comparison errs toward naming a
+link. A link tracked in the index is the repository's own content, which an emitter may rely on, so
+it is never left out: a run without it would not be a run in the repository. The links refused are
+a subset of those refused before, and the copy never holds a link that leads out, so the emitter
+has no new way out of it. Where there is no copy, because the harness would fall back to running in
+the repository itself, a link left out would still be there, so that fallback refuses the run at
+the first such link (see "The rule" above). Omitting every link that leads out was weighed and not
+chosen: it would drop tracked content from the copy, would let an emitter pass while the host
+refuses the same repository for a link at an owned path, and would let `--update` write outside the
+repository through a link the vectors are reached by. Deciding "tracked in the index" from ignore
+rules was weighed and not chosen: it would reimplement git's ignore rules, and an untracked path
+that no rule ignores would still be the repository's content to that reading.
 
 **Known limits.**
 

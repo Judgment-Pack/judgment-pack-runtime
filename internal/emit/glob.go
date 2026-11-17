@@ -220,11 +220,15 @@ func segmentsIntersect(a, b []rune) bool {
 }
 
 // NameKey is the key under which a file system that reads names loosely may
-// read two paths as one name: the code points HFS+ ignores in a name left
+// read two slash paths as one: the code points HFS+ ignores in a name left
 // out (hfsIgnorable), then Unicode canonical caseless matching (foldKey),
-// then upper case, as NTFS compares names, so that "ı" and "i" share a key.
-// It is meant for a comparison that must not miss such a match; two paths no
-// file system reads as one may share a key too.
+// then upper case, as NTFS compares names, so that "ı" and "i" share a key;
+// then, as Windows reads a name, a backslash read as a separator and each
+// segment's trailing dots and spaces dropped, so that "venv." and "venv"
+// share a key. A segment made only of dots, spaces or ignored code points
+// has an empty key, as Windows reads it as no name at all. It is meant for a
+// comparison that must not miss such a match; two paths no file system
+// reads as one may share a key too.
 func NameKey(path string) string {
 	kept := strings.Map(func(r rune) rune {
 		if hfsIgnorable(r) {
@@ -232,7 +236,11 @@ func NameKey(path string) string {
 		}
 		return r
 	}, path)
-	return strings.ToUpper(foldKey(kept))
+	segments := strings.Split(strings.ReplaceAll(strings.ToUpper(foldKey(kept)), `\`, "/"), "/")
+	for i, segment := range segments {
+		segments[i] = strings.TrimRight(segment, ". ")
+	}
+	return strings.Join(segments, "/")
 }
 
 // Loose returns the glob as it may match on a file system that reads names
@@ -240,7 +248,8 @@ func NameKey(path string) string {
 // through NameKey, and a segment holding "~", which Windows can read as the
 // short name of a longer one, as "*". A path such a file system reads as one
 // the glob matches has a NameKey the loose glob matches; a short name set by
-// hand, without "~", is not followed.
+// hand, without "~", is not followed. (No glob segment ends in a dot or a
+// space, or holds a backslash: parseGlob refuses them.)
 func (g Glob) Loose() Glob {
 	loose := Glob{source: g.source, segments: make([]globSegment, len(g.segments))}
 	for i, segment := range g.segments {

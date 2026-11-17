@@ -183,9 +183,9 @@ func Parse(data []byte, visit func(Entry)) (uint32, error) {
 		}
 		if i > 0 {
 			// git's order: by path, byte by byte, then by stage; a path held
-			// at stage 0 is held at no other.
+			// at stage 0 is held at no other, and none twice at one stage.
 			switch c := strings.Compare(previous.Path, e.Path); {
-			case c > 0, c == 0 && (previous.Stage == 0 || previous.Stage > e.Stage):
+			case c > 0, c == 0 && (previous.Stage == 0 || previous.Stage >= e.Stage):
 				return 0, ErrFormat
 			}
 		}

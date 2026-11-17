@@ -180,6 +180,7 @@ func TestParseRefusals(t *testing.T) {
 		"entries out of order":           {with(func(b *builder) { b.Entries[0].Path = "c" }), ErrFormat},
 		"a path twice at stage 0":        {with(func(b *builder) { b.Entries[1].Path = "a" }), ErrFormat},
 		"stages out of order":            {with(func(b *builder) { b.Entries = []entry{{Path: "a", Stage: 2}, {Path: "a", Stage: 1}} }), ErrFormat},
+		"a path twice at one stage":      {with(func(b *builder) { b.Entries = []entry{{Path: "a", Stage: 2}, {Path: "a", Stage: 2}} }), ErrFormat},
 		"an empty path":                  {with(func(b *builder) { b.Entries[0].Path = "" }), ErrFormat},
 		"a .. segment":                   {with(func(b *builder) { b.Entries[0].Path = "../a" }), ErrFormat},
 		"a . segment":                    {with(func(b *builder) { b.Entries[0].Path = "a/./b" }), ErrFormat},
