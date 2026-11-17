@@ -12,6 +12,7 @@
 /build/oci/NOTICE
 /build/oci/THIRD_PARTY_NOTICES
 *.test
+__pycache__/
 *.prof
 .DS_Store
 .idea/
