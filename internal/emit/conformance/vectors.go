@@ -798,10 +798,11 @@ func givenRequest(data []byte, m *emit.Manifest) (emit.Request, []emit.Diagnosti
 		}
 		request.Environment = environment
 	}
-	canonical, err := jcs.EncodeDocument(root)
 	// The canonical form can be longer than the file (1e20 is written as 21
-	// digits), and it is what the emitter reads, so it is held to the bound.
-	if err != nil || len(canonical) > maxGivenRequestBytes {
+	// digits), and it is what the emitter reads, so it is held to the bound,
+	// measured before the form is built.
+	canonical, err := jcs.EncodeDocumentWithin(root, maxGivenRequestBytes)
+	if err != nil {
 		return refuse("EMIT-REQUEST", emit.DocumentRequest, "")
 	}
 	request.Bytes = canonical

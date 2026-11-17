@@ -64,6 +64,7 @@ func TestAdmitValue(t *testing.T) {
 		{"not JSON", `{"a":`, 64, 64, "REG-DOC-JSON", ""},
 		{"a lone surrogate", `{"a":"\ud800"}`, 64, 64, "REG-DOC-STRING", ""},
 		{"negative zero", `{"a":[-0]}`, 64, 64, "REG-DOC-NUMBER", "/a/0"},
+		{"a number refused after its siblings", `{"a":[1,{"b":[2,-0]}],"c":[0.10000000000000001]}`, 64, 64, "REG-DOC-NUMBER", "/a/1/b/1"},
 		{"past the depth bound", deep, 1024, 1024, "REG-DOC-DEPTH", "/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0/0"},
 	}
 	for _, c := range cases {

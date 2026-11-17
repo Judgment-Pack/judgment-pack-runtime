@@ -2,6 +2,7 @@ package registry
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 
@@ -905,12 +906,12 @@ func (r *Result) FactsContract(kindName string) ([]byte, []Diagnostic, error) {
 		"source":               map[string]any{"kind": map[string]any{"id": kind.ID, "version": kind.Version, "digest": kind.Digest}},
 		"facts":                facts,
 	}
-	encoded, err := jcs.EncodeDocument(document)
+	encoded, err := jcs.EncodeDocumentWithin(document, MaxContractBytes)
+	if errors.Is(err, jcs.ErrTooLong) {
+		return nil, limit, nil
+	}
 	if err != nil {
 		return nil, nil, err
-	}
-	if len(encoded) > MaxContractBytes {
-		return nil, limit, nil
 	}
 	return encoded, nil, nil
 }
