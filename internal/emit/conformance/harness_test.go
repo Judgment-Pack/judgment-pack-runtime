@@ -376,6 +376,9 @@ func TestVectorLayoutRefusals(t *testing.T) {
 		"an unknown member":          {map[string]string{"v/request.json": "{}", "v/expected/gen/a": "a\n", "v/notes.txt": "x"}, "", "v/notes.txt"},
 		"a failure code not listed":  {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-NOT-A-CODE"}`}, "/code", "v/expected-failure.json"},
 		"a warning's code":           {map[string]string{"v/request.json": "{}", "v/expected-failure.json": `{"code":"EMIT-DEPRECATED"}`}, "/code", "v/expected-failure.json"},
+		// No vectors: the hostile rows alone must not pass the emitter.
+		"no vectors": {map[string]string{}, "", ""},
+		"only files": {map[string]string{"harness.json": `{"harnessLevel":"1.0"}`, "notes.txt": "x"}, "", ""},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

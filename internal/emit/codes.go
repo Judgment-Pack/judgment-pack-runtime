@@ -122,7 +122,7 @@ var Codes = map[string]codeInfo{
 	"EMIT-REPORT-TRUNCATED": {SeverityWarning, "The report lists the first 1000 diagnostics of a list, the host's or the emitter's, and there were more."},
 
 	// The conformance harness's, provisional (ADR-0099).
-	"EMIT-VECTOR":        {SeverityError, "The vectors are not of the harness's layout: harness.json or its level, a vector's files, or a vector past a bound."},
+	"EMIT-VECTOR":        {SeverityError, "The vectors are not of the harness's layout: harness.json or its level, a vector's files, no vectors at all, or a vector past a bound."},
 	"EMIT-HARNESS-BOUND": {SeverityError, "A check could not be completed within the harness's bounds: the repository copy, the registry with the synthetic kind, or the references scan."},
 }
 

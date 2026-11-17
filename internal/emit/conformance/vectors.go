@@ -147,6 +147,11 @@ func readVectors(dir string, update bool) ([]*Vector, []emit.Diagnostic) {
 	if len(refused) > 0 {
 		return nil, refused
 	}
+	if len(vectors) == 0 {
+		// No vector: the hostile rows alone would pass, which says nothing
+		// about the emitter.
+		return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", "", "")}
+	}
 	return vectors, nil
 }
 
