@@ -27,8 +27,15 @@ include customer packs, credentials, or proprietary data.
 ## Security boundary
 
 Every pack, suite, manifest, path, filename, extension value, and diagnostic input is untrusted.
-The public core must remain offline during validation. It does not fetch locators, execute pack
-content, load plugins, invoke subprocesses, or infer permission to act.
+The public core must remain offline during validation. Validating, testing and evaluating do not
+fetch locators, execute pack content, load plugins, invoke subprocesses, or infer permission to act.
+
+The runtime starts another program in two places only, and only when an operator runs the command.
+`jpack emit` and `jpack emit conformance` run the emitter program an emitter manifest names: code
+the repository chose to run, with the user's rights, bounded by its environment, its time limit and
+its output, and not sandboxed beyond that (ADR-0098, ADR-0099). `jpack experimental
+check-published` runs `git` from `PATH` to read a repository's tags, with hooks, pagers, fsmonitor,
+replace refs, credential helpers and every transport refused (ADR-0090).
 
 Resource-limit failures are operational errors rather than document-invalid results. Passing
 validation establishes only the carrier, structural, and semantic document layers reported in the
@@ -40,16 +47,37 @@ no disposition, never processed partway. Both of that class's §10 limits — th
 collection-size bound — are stated in the README's
 [experimental evaluation section](README.md#the-two-10-limits-of-the-claimed-class).
 
-The runtime writes in exactly three ways, and none happens on its own. An operator can ask for a
-copy of a bundled schema or example with `--write <target>`, which creates that one file at the
-pathname the operator named and refuses to overwrite an existing one. A project can ask to be told
-what its packs decided by declaring an `audit` directory in its `jpack.json`
-([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)); with that member, each completed
-evaluation on the CLI's `experimental evaluate`, `experimental graph evaluate`, and the MCP
-`experimental_evaluate` tool — a declared rehearsal excepted ([ADR-0028](docs/adr/0028-declare-an-evaluation-a-rehearsal.md)) — appends one record to one file in that directory. And an operator can
-run `packs lock` ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), which generates one file beside
-the configuration declaring the digests of the documents the project reviewed. Nothing else is
-created, named, overwritten, or deleted anywhere.
+No write happens on its own: the runtime writes only what a command it was asked to run says it
+writes, and only in five places.
+
+- **A file the operator names on the command line.** A copy of a bundled schema or example with
+  `--write <target>` creates that one file at the pathname the operator named and refuses to
+  overwrite an existing one. The other output files a command's help names, such as
+  `--gate-summary`, `--output`, `--contract`, `--write-manifest`, `--witness-save` or the seed
+  `audit key generate` creates, are written at the path given and nowhere else.
+- **The project's audit directory.** A project can ask to be told what its packs decided by
+  declaring an `audit` directory in its `jpack.json`
+  ([ADR-0018](docs/adr/0018-opt-in-evaluation-audit-trail.md)); with that member, each completed
+  evaluation on the CLI's `experimental evaluate`, `experimental graph evaluate`, and the MCP
+  `experimental_evaluate` tool — a declared rehearsal excepted
+  ([ADR-0028](docs/adr/0028-declare-an-evaluation-a-rehearsal.md)) — appends one record to one
+  file in that directory. The audit commands and the signatures and time stamps described below
+  add to that directory as they say.
+- **Beside the configuration.** An operator can run `packs lock`
+  ([ADR-0019](docs/adr/0019-reviewed-set-lock.md)), which generates one file beside the
+  configuration declaring the digests of the documents the project reviewed.
+- **What the registry line generates.** `jpack emit` writes the files its emitter answers with
+  into the paths the manifest's `owns` globs name under `--root`, each through a temporary
+  `.jpack-emit-*` file beside it and a rename, and deletes an owned file the answer does not hold;
+  with `--check` it writes nothing there. `jpack emit conformance --update` replaces each vector's
+  `expected/`, through a temporary directory beside it, and writes nowhere else in the repository.
+- **The system's temporary directory.** `jpack emit` and `jpack emit conformance` give each
+  emitter run a fresh, empty `HOME` there, and `jpack emit conformance` runs each vector in a copy
+  of `--root` there. They remove each after its run; a `jpack` that a second signal ends at once
+  can leave them behind.
+
+Nothing else is created, named, overwritten, or deleted anywhere by the runtime. What an emitter
+program writes is not the runtime's write: it runs with the user's rights, as above.
 
 By default the reviewed-set lock is evidence, not a control. With one in place the deciding surfaces refuse to
 evaluate declared law whose bytes differ from it — a declared rehearsal excepted (ADR-0028),

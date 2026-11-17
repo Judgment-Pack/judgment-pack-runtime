@@ -354,7 +354,7 @@ These are carried, not fixed. None gives a wrong verdict for an honest emitter o
 ## More information
 
 - Spec RFC 0036 §5 (Accepted 2026-11-16) and the registry companion `spec/registry.md` §11.5
-  (proposed). ADR-0098 covers the host.
+  (released as `registry-v1.0.0`). ADR-0098 covers the host.
 - Code: `internal/emit/conformance`, `internal/cli/emit_conformance.go`, and the golden vectors in
   `internal/emit/testdata/conformance/`.
 - Raised on spec #350 (companion §11.5): check 4's reading, and check 5's reading that a run
