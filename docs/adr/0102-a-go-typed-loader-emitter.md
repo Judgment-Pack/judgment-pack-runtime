@@ -165,7 +165,9 @@ A refusal wraps `ErrValue` and names the kind, the entry's id and the JSON point
 - `$ref` beside a keyword that shapes the type, a `$ref` of another form, to an undefined name or in
   a cycle, and `$defs` below the root;
 - `properties`, `additionalProperties`, `items` or `required` without a type, a `required` name the
-  closed object does not declare, a tuple `items`, and `false` as a subschema;
+  closed object does not declare, `required` at a map, a `type` of the empty string, a tuple
+  `items`, and `false` as a subschema;
+- `enum` or `const` at an integer, number or boolean position, which the decoder would not check;
 - `enum` or `const` at a string position whose values are not all strings, and `enum` beside
   `const` there;
 - a keyword outside companion §3.2's subset, and more than 4 096 positions with `$ref` expanded.

@@ -21,7 +21,9 @@ import (
 //     additionalProperties schema;
 //   - a required member that an object closed with additionalProperties
 //     false does not declare;
-//   - properties, additionalProperties, items or required without a type;
+//   - properties, additionalProperties, items or required without a type,
+//     required at a map, and a type of the empty string;
+//   - enum or const at an integer, number or boolean position;
 //   - enum or const at a string position, or with no type, whose values are
 //     not all strings, and enum beside const there;
 //   - a tuple items (an array of subschemas), and false as a subschema other
@@ -205,10 +207,20 @@ func (b *builder) object(s map[string]any, tokens []token, root bool) (*position
 	typeName := ""
 	if raw, present := s["type"]; present {
 		name, ok := raw.(string)
-		if !ok {
+		if !ok || name == "" {
 			return nil, findSchema
 		}
 		typeName = name
+	}
+	switch typeName {
+	case "integer", "number", "boolean":
+		// The decoder does not check enum or const there, so neither is
+		// rendered approximately.
+		_, hasEnum := s["enum"]
+		_, hasConst := s["const"]
+		if hasEnum || hasConst {
+			return nil, findSchema
+		}
 	}
 	switch typeName {
 	case "object":
@@ -334,6 +346,7 @@ func (b *builder) objectType(s map[string]any, tokens []token) (*position, error
 		properties = object
 	}
 	var required []string
+	requiredSet := map[string]bool{}
 	if raw, present := s["required"]; present {
 		items, ok := raw.([]any)
 		if !ok {
@@ -341,9 +354,10 @@ func (b *builder) objectType(s map[string]any, tokens []token) (*position, error
 		}
 		for _, item := range items {
 			name, ok := item.(string)
-			if !ok || slices.Contains(required, name) {
+			if !ok || requiredSet[name] {
 				return nil, findSchema
 			}
+			requiredSet[name] = true
 			required = append(required, name)
 		}
 	}
@@ -363,7 +377,7 @@ func (b *builder) objectType(s map[string]any, tokens []token) (*position, error
 			if err != nil {
 				return nil, err
 			}
-			p.members = append(p.members, &member{name: name, required: slices.Contains(required, name), at: at})
+			p.members = append(p.members, &member{name: name, required: requiredSet[name], at: at})
 		}
 		for _, name := range required {
 			if _, declared := properties[name]; !declared {
@@ -372,7 +386,9 @@ func (b *builder) objectType(s map[string]any, tokens []token) (*position, error
 		}
 		return p, nil
 	}
-	if len(properties) > 0 {
+	if len(properties) > 0 || len(required) > 0 {
+		// A map's decoder does not check required, so a map with it is
+		// refused rather than rendered without it.
 		return nil, findSchema
 	}
 	element, err := b.build(additional, child(tokens, token{wild: true}), false)
