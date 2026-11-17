@@ -171,6 +171,10 @@ All notable changes to tagged releases are documented here.
   - `jpack emit conformance` lists the vectors directory and each vector's `kinds/` by batches
     and stops once past the bound (1000 vectors, 1024 kind files), rather than listing either
     whole before the bound was checked. The bounds and their codes are unchanged.
+  - On Windows, check 2 of `jpack emit conformance` also sets `USERPROFILE`, `APPDATA` and
+    `LOCALAPPDATA` to each determinism run's `HOME`, unless the manifest's `env` names one, since
+    a program there finds its home by them and not by `HOME`. Go ignores `TZ` on Windows, which
+    ADR-0099 now lists as a known limit.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16

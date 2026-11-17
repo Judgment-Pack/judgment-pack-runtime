@@ -128,7 +128,11 @@ Two runs that give one path are `EMIT-RESPONSE`, as the host refuses them.
 2. **Determinism.** Runs 2 and 3 each have a fresh `HOME` at a path of another shape. They set
    `TZ` to `Pacific/Kiritimati` and then `America/St_Johns`, `LANG` to `tr_TR.UTF-8` and then
    `de_DE.UTF-8`, and `SOURCE_DATE_EPOCH` to `1` and then `2000000000`. Run 1 has none of these
-   values. The manifest's `env` names are held as the host gives them. Each run must give run 1's
+   values. On Windows, where a program finds its home by `USERPROFILE`, `APPDATA` and
+   `LOCALAPPDATA` rather than `HOME`, runs 2 and 3 set each of them to their `HOME` too; run 1
+   sets none. Go ignores `TZ` on Windows, so there the time zone is not changed for a Go emitter
+   (a known limit, below). The manifest's `env` names are held as the host gives them, these
+   included. Each run must give run 1's
    response bytes exactly (the RFC's "identical bytes", read as the raw bytes, not a canonical
    form of them), or run 1's refusal exactly. The row names the runs that differ. A `HOME` the
    harness cannot make is its own fault, not a difference: `EMIT-HARNESS-BOUND`, and the run
@@ -296,6 +300,14 @@ Each list is bounded at 1000. The report's own diagnostics give why it could not
   has no registry to add a kind to, and no kinds to find its secret positions by. This is decided.
 - Revisit when the companion's §11.5 text or its harness rows land, or when a later level adds
   checks.
+
+### Known limits
+
+These are carried, not fixed. None gives a wrong verdict for an honest emitter on Linux or macOS.
+
+- **Check 2's time zone on Windows.** Go reads the time zone from the system there and ignores
+  `TZ`, so runs 2 and 3 do not change it for a Go emitter. An emitter in another language may
+  still read `TZ`.
 
 ## More information
 
