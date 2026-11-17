@@ -2,6 +2,23 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A Go typed facts builder emitter: `cmd/jpack-emit-go-facts`** (ADR-0100, proposed). This is
+  the reference emitter of spec RFC 0037 §6 for Go, run under the RFC 0036 emitter contract with
+  `"input": "factsContracts"`. Its manifest is `cmd/jpack-emit-go-facts/emitter.json`. For each
+  facts contract it writes one Go file, and it adds a shared `facts_support.go`. The generated code
+  holds a struct per object position, a constructor whose arguments are the members the contract
+  always holds, and typed constants for string values. It has a `Decimal` that is never a
+  `float64`, and a `Build` that returns the facts document as RFC 8785 canonical JSON. `Build`
+  refuses a nil required value, a value outside the contract's values, or a string that is not
+  valid UTF-8. The generated code depends on the Go standard library only. The emitter refuses a
+  contract with a position it does not generate (an `anyOf` or an open object, among others), and
+  one whose generated Go names cannot be formed or would collide: it exits 1 with a fixed line on
+  standard error. Its vectors are in RFC 0036 §5's layout, and the output of one vector is compiled
+  and tested as a package. No `jpack` command changes. The conformance claim in CONFORMANCE.md is
+  unchanged.
+
 ## 0.47.0 - 2026-11-16
 
 - **A reader for Terraform plan and state JSON** (ADR-0097, proposed). Package

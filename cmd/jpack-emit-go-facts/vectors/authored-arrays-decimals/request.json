@@ -1,0 +1,29 @@
+{
+  "emitRequestVersion": "1.0.0",
+  "emitter": { "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-facts", "version": "0.1.0" },
+  "options": { "package": "paymentfacts" },
+  "factsContracts": [
+    {
+      "factsContractVersion": "1.0.0",
+      "id": "https://example.invalid/contracts/payment-batch",
+      "version": "1.0.0",
+      "source": { "authored": true },
+      "facts": [
+        { "pointer": "/amount", "type": "decimal", "present": "always" },
+        { "pointer": "/currency", "type": "string", "present": "always", "values": ["EUR", "USD"] },
+        { "pointer": "/fees", "type": "array", "present": "always", "items": "decimal" },
+        { "pointer": "/fees/*", "type": "decimal", "present": "optional" },
+        { "pointer": "/labels", "type": "object", "present": "optional" },
+        { "pointer": "/labels/*", "type": "string", "present": "optional" },
+        { "pointer": "/lines", "type": "array", "present": "always", "items": "object" },
+        { "pointer": "/lines/*", "type": "object", "present": "optional" },
+        { "pointer": "/lines/*/amount", "type": "decimal", "present": "always" },
+        { "pointer": "/lines/*/rate", "type": "decimal", "present": "optional", "values": ["0.5", "1.0", "2"] },
+        { "pointer": "/lines/*/tags", "type": "array", "present": "optional", "items": "string" },
+        { "pointer": "/matrix", "type": "array", "present": "optional", "items": "array" },
+        { "pointer": "/matrix/*", "type": "array", "present": "optional", "items": "decimal" },
+        { "pointer": "/priority", "type": "decimal", "present": "always", "values": ["1", "2", "3"] }
+      ]
+    }
+  ]
+}

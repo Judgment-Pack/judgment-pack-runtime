@@ -1,0 +1,40 @@
+{
+  "emitterManifestVersion": "1.0.0",
+  "id": "https://github.com/Judgment-Pack/judgment-pack-runtime/cmd/jpack-emit-go-facts",
+  "version": "0.1.0",
+  "owner": "Judgment-Pack/judgment-pack-runtime",
+  "description": "The reference Go typed facts builder emitter (spec RFC 0037 section 6): for each facts contract, Go types, constructors and a Build method that returns the facts document as RFC 8785 canonical JSON. An adopting repository lists its own kinds in reads, and sets command, owns and the directory option to its own layout.",
+  "reads": [
+    { "kind": "db-role", "id": "https://example.invalid/kinds/db-role", "versions": "^1.0.0" }
+  ],
+  "input": "factsContracts",
+  "requestVersions": ["1.0.0"],
+  "options": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["package"],
+    "properties": {
+      "package": {
+        "description": "The Go package name of the generated files.",
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9]*$",
+        "not": {
+          "enum": ["break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
+                   "for", "func", "go", "goto", "if", "import", "interface", "map", "package", "range",
+                   "return", "select", "struct", "switch", "type", "var"]
+        }
+      },
+      "directory": {
+        "description": "The directory the files are written to, a literal relative path. It must lie under the owns glob.",
+        "type": "string",
+        "maxLength": 256,
+        "pattern": "^[A-Za-z0-9_]([A-Za-z0-9_.\\-]*[A-Za-z0-9_])?(/[A-Za-z0-9_]([A-Za-z0-9_.\\-]*[A-Za-z0-9_])?)*$",
+        "default": "generated/facts"
+      }
+    }
+  },
+  "command": ["go", "run", "./cmd/jpack-emit-go-facts"],
+  "env": ["GOCACHE", "GOMODCACHE", "GOPATH"],
+  "owns": ["generated/facts/*.go"]
+}
