@@ -5,7 +5,9 @@
 // resolved form has no vector on which checks 4 (kind filtering) and 5
 // (references) both pass, so that those checks cannot fall silent by every
 // vector giving its request whole. Each emitter runs as its manifest says
-// (`go run ./cmd/<emitter>`), in a fresh copy of the repository.
+// (`go run ./cmd/<emitter>`). The harness is given a copy of the files git
+// tracks, as the working tree holds them, so an ignored directory such as an
+// in-tree Python venv, whose interpreter links out of the tree, is never seen.
 package main
 
 import (
@@ -45,6 +47,12 @@ func run(timeout time.Duration) int {
 		fmt.Fprintln(os.Stderr, "emit-conformance: the repository root:", err)
 		return 1
 	}
+	root, cleanup, err := copyTracked(root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "emit-conformance: copying the tracked files:", err)
+		return 1
+	}
+	defer cleanup()
 	failed := false
 	for _, ref := range references {
 		if !check(root, ref, timeout) {
@@ -60,7 +68,7 @@ func run(timeout time.Duration) int {
 // check runs the harness over one emitter's vectors and reports it on one
 // line, with a line for each failed row.
 func check(root string, ref reference, timeout time.Duration) bool {
-	data, err := os.ReadFile(filepath.FromSlash(ref.manifest))
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ref.manifest)))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "emit-conformance: %s: %v\n", ref.manifest, err)
 		return false
@@ -87,7 +95,11 @@ func check(root string, ref reference, timeout time.Duration) bool {
 		}
 	}
 	for _, d := range report.Diagnostics {
-		fmt.Printf("  diagnostic: %s\n", d.Code)
+		where := d.Location.Path
+		if where == "" {
+			where = d.Location.Document
+		}
+		fmt.Printf("  diagnostic: %s at %s\n", d.Code, where)
 	}
 	ok := report.Exit() == 0
 	if ref.registryChecks {

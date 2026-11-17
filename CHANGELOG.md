@@ -249,7 +249,9 @@ All notable changes to tagged releases are documented here.
 - **CI runs `jpack emit conformance` over the reference emitters' vectors** (ADR-0099). The new
   `emitter-conformance` check runs `tools/emit-conformance`, which calls the harness in-process
   over the vectors of each reference emitter in this repository and fails when a check fails or
-  when an emitter of the resolved form has no vector on which checks 4 and 5 both pass. No
+  when an emitter of the resolved form has no vector on which checks 4 and 5 both pass. It gives
+  the harness a temporary copy of the files git tracks, as the working tree holds them, so an
+  ignored directory such as CI's Python venv is not seen. No
   `jpack` command changes, and the conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
