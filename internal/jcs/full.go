@@ -37,7 +37,7 @@ func writeDocument(builder *strings.Builder, value any) error {
 		builder.WriteString("null")
 		return nil
 	case json.Number:
-		number, err := strconv.ParseFloat(typed.String(), 64)
+		number, err := parseFloat(typed.String(), 64)
 		if err != nil {
 			return fmt.Errorf("jcs: number %q is outside the IEEE 754 double range", typed.String())
 		}
@@ -102,10 +102,19 @@ func writeNumber(builder *strings.Builder, number float64) error {
 	return nil
 }
 
-// maxNumberBytes is the longest form AppendNumber writes: a sign, a point
-// and 17 digits after "0." and five zeros (-0.0000033333333333333333 is 25
-// bytes), or a sign, 17 digits, a point and an exponent of "e-324".
+// maxNumberBytes is room for any form AppendNumber writes, and for the
+// shortest digits strconv writes before it lays them out.
 const maxNumberBytes = 32
+
+// maxNumberFormBytes is the longest form AppendNumber writes: a sign, a point
+// and 17 digits after "0." and five zeros (-0.0000033333333333333333 is 25
+// bytes). A sign, 21 digits is 22; a sign, 17 digits, a point and an exponent
+// of "e-324" is 24.
+const maxNumberFormBytes = 25
+
+// parseFloat is strconv.ParseFloat, the one parse of a json.Number's literal;
+// a test counts its calls.
+var parseFloat = strconv.ParseFloat
 
 // AppendNumber appends a finite double as RFC 8785 §3.2.2.3 requires, the
 // form FormatNumber returns, to dst. With room in dst it allocates nothing.
@@ -177,13 +186,28 @@ func AppendNumber(dst []byte, number float64) ([]byte, error) {
 var ErrTooLong = errors.New("jcs: the canonical form is longer than the bound")
 
 // EncodeDocumentWithin is EncodeDocument held to a bound: a value whose
-// canonical form is longer than maxBytes is refused with ErrTooLong. The
-// length is measured first, without building the form or allocating, so a
-// refusal costs a walk of the value however far its form passes the bound:
-// a number's form can be far longer than its literal (1e20 is written as 21
-// digits). A value EncodeDocument refuses is refused with its error, over the
-// bound or not.
+// canonical form is longer than maxBytes is refused with ErrTooLong, and the
+// form is never built past the bound. A value EncodeDocument refuses is
+// refused with its error, over the bound or not.
+//
+// A first walk measures the form with each number at the longest form a
+// number can have, without parsing one. When that fits the bound, the form is
+// built in one pass, and each number is parsed once, as EncodeDocument parses
+// it. Otherwise the exact length is measured first, without building the
+// form or allocating, so a refusal costs a walk of the value however far its
+// form passes the bound: a number's form can be far longer than its literal
+// (1e20 is written as 21 digits). Only a value whose form is within the bound
+// though its longest reading is not has its numbers parsed twice, once to
+// measure and once to build.
 func EncodeDocumentWithin(value any, maxBytes int) ([]byte, error) {
+	if span := (sizeSpan{limit: maxBytes}); span.add(value) {
+		var builder strings.Builder
+		builder.Grow(span.hint)
+		if err := writeDocument(&builder, value); err != nil {
+			return nil, err
+		}
+		return []byte(builder.String()), nil
+	}
 	size, err := DocumentSize(value)
 	if err != nil {
 		return nil, err
@@ -197,6 +221,163 @@ func EncodeDocumentWithin(value any, maxBytes int) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(builder.String()), nil
+}
+
+// sizeSpan measures the form writeDocument writes without parsing a number.
+// most counts each number at maxNumberFormBytes, and every other part at its
+// exact length, as documentSize measures it. hint, the builder's first
+// capacity, counts a json.Number at numberFormHint's guess and a float64 at
+// one byte.
+type sizeSpan struct {
+	hint, most, limit int
+}
+
+// add adds value's form to the span. It reports false, and stops, once most
+// passes limit, or at a part with no form; the exact measure then decides,
+// and names the encoder's refusal.
+func (s *sizeSpan) add(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		s.grow(len("null"))
+	case json.Number:
+		s.hint += numberFormHint(typed.String())
+		s.most += maxNumberFormBytes
+	case float64:
+		s.hint++
+		s.most += maxNumberFormBytes
+	case string:
+		size, ok := stringSize(typed)
+		if !ok {
+			return false
+		}
+		s.grow(size)
+	case bool:
+		if typed {
+			s.grow(len("true"))
+		} else {
+			s.grow(len("false"))
+		}
+	case []string:
+		s.grow(2 + max(len(typed)-1, 0))
+		for _, item := range typed {
+			size, ok := stringSize(item)
+			if !ok {
+				return false
+			}
+			if s.grow(size); s.most > s.limit {
+				return false
+			}
+		}
+	case []any:
+		s.grow(2 + max(len(typed)-1, 0))
+		for _, item := range typed {
+			if !s.add(item) {
+				return false
+			}
+		}
+	case map[string]any:
+		s.grow(2 + max(len(typed)-1, 0))
+		for name, item := range typed {
+			size, ok := stringSize(name)
+			if !ok {
+				return false
+			}
+			if s.grow(size + 1); !s.add(item) {
+				return false
+			}
+		}
+	default:
+		return false
+	}
+	return s.most <= s.limit
+}
+
+func (s *sizeSpan) grow(size int) {
+	s.hint += size
+	s.most += size
+}
+
+// numberFormHint guesses the length of a JSON number literal's form from its
+// significant digits, at most 17, and the place of the first, as AppendNumber
+// lays them out, without parsing it. The guess is exact for a literal that is
+// a shortest round-trip decimal, in any layout, and for one of at most 15
+// significant digits in the normal range; it only sizes a builder, so a wrong
+// guess costs a regrowth and never a byte. A literal it cannot read is
+// guessed at its length.
+func numberFormHint(literal string) int {
+	fallback := min(max(len(literal), 1), maxNumberFormBytes)
+	rest, negative := strings.CutPrefix(literal, "-")
+	mantissa, exponentText, marked := rest, "", false
+	if at := strings.IndexAny(rest, "eE"); at >= 0 {
+		mantissa, exponentText, marked = rest[:at], rest[at+1:], true
+	}
+	integer, fraction, _ := strings.Cut(mantissa, ".")
+	digit := func(i int) byte {
+		if i < len(integer) {
+			return integer[i]
+		}
+		return fraction[i-len(integer)]
+	}
+	total := len(integer) + len(fraction)
+	lead, trail := -1, -1
+	for i := range total {
+		c := digit(i)
+		if c < '0' || c > '9' {
+			return fallback
+		}
+		if c != '0' {
+			if lead < 0 {
+				lead = i
+			}
+			trail = i
+		}
+	}
+	exponent := 0
+	exponentDigits := strings.TrimLeft(exponentText, "+-")
+	if len(exponentText)-len(exponentDigits) > 1 || marked && exponentDigits == "" {
+		return fallback
+	}
+	for _, c := range exponentDigits {
+		if c < '0' || c > '9' {
+			return fallback
+		}
+		exponent = min(exponent*10+int(c-'0'), 1<<20)
+	}
+	if strings.HasPrefix(exponentText, "-") {
+		exponent = -exponent
+	}
+	if total == 0 {
+		return fallback
+	}
+	if lead < 0 {
+		return 1
+	}
+	k := min(trail-lead+1, 17)
+	n := len(integer) - lead + exponent
+	size := 0
+	if negative {
+		size++
+	}
+	switch {
+	case k <= n && n <= 21:
+		size += n
+	case 0 < n && n <= 21:
+		size += k + 1
+	case -6 < n && n <= 0:
+		size += 2 - n + k
+	default:
+		if k > 1 {
+			size += k + 1
+		} else {
+			size++
+		}
+		// "e", the exponent's sign and its digits.
+		size += 3
+		for power := max(n-1, 1-n); power >= 10; power /= 10 {
+			size++
+		}
+	}
+	return min(size, maxNumberFormBytes)
 }
 
 // DocumentSize returns the length of EncodeDocument's form of value, or its
@@ -223,7 +404,7 @@ func documentSize(value any) (int, bool) {
 	case nil:
 		return len("null"), true
 	case json.Number:
-		number, err := strconv.ParseFloat(typed.String(), 64)
+		number, err := parseFloat(typed.String(), 64)
 		if err != nil {
 			return 0, false
 		}

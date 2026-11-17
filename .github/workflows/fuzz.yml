@@ -47,6 +47,9 @@ jobs:
           - target: FuzzCoverageStringBudget
             directory: .
             package: ./internal/dialect
+          - target: FuzzDecodeMatchesReference
+            directory: .
+            package: ./internal/carrier
           # startup/ is a nested module (ADR-0096), run from its own directory.
           - target: FuzzReadSecret
             directory: startup

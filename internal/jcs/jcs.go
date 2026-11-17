@@ -24,11 +24,11 @@
 package jcs
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
-	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -137,7 +137,48 @@ func writeString(builder *strings.Builder, value string) error {
 // compareUTF16 orders two member names as RFC 8785 requires: by their UTF-16
 // code units, which is not the same order as their UTF-8 bytes for a name
 // carrying a supplementary-plane code point.
+//
+// It walks both names in place and allocates nothing. The bytes they share
+// are skipped without decoding: equal bytes are equal code points. The skip
+// backs up to the first byte of the code point it stopped in, so decoding
+// starts where it would have from each name's first byte, a malformed name's
+// included. From there, two different code points compare by their first
+// code unit; when those are equal, both are supplementary and the second unit
+// decides. A name that runs out first is a prefix of the other and sorts
+// first.
 func compareUTF16(left, right string) int {
-	leftUnits, rightUnits := utf16.Encode([]rune(left)), utf16.Encode([]rune(right))
-	return slices.Compare(leftUnits, rightUnits)
+	common := 0
+	for common < len(left) && common < len(right) && left[common] == right[common] {
+		common++
+	}
+	continues := func(name string, i int) bool { return i < len(name) && !utf8.RuneStart(name[i]) }
+	for common > 0 && (continues(left, common) || continues(right, common)) {
+		common--
+	}
+	left, right = left[common:], right[common:]
+	for len(left) > 0 && len(right) > 0 {
+		l, ln := utf8.DecodeRuneInString(left)
+		r, rn := utf8.DecodeRuneInString(right)
+		if l != r {
+			lu, lnext := utf16Units(l)
+			ru, rnext := utf16Units(r)
+			if lu != ru {
+				return cmp.Compare(lu, ru)
+			}
+			return cmp.Compare(lnext, rnext)
+		}
+		left, right = left[ln:], right[rn:]
+	}
+	return cmp.Compare(len(left), len(right))
+}
+
+// utf16Units is a code point's UTF-16 code units: itself and 0 below
+// U+10000, and its surrogate pair above. A decoded name holds no surrogate
+// code point, and none above U+10FFFF.
+func utf16Units(r rune) (uint16, uint16) {
+	if r < 0x10000 {
+		return uint16(r), 0
+	}
+	r -= 0x10000
+	return uint16(0xD800 + r>>10), uint16(0xDC00 + r&0x3FF)
 }
