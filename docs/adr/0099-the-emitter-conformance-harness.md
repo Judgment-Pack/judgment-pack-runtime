@@ -224,14 +224,16 @@ would run in the repository with a way out of it while check 6 skipped. Reportin
 run there instead was weighed and not chosen: the refusal fails closed, and it holds whether or
 not the copy can be made. A regular file stays, as Go reads a deduplicated file, which is a
 reparse point too. The copy is bounded at 256 MiB of file bytes
-and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). Past either, the result is
+and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). The bytes bound counts the bytes copied,
+so a file that grows while it is copied cannot pass it. Past either, the result is
 `EMIT-HARNESS-BOUND` and exit 2. Every link of `--root` is checked to stay in it before the copy is
 made, so a link that leads out is refused whether or not the copy can be made. Only Windows refusing
 a link for want of the privilege (`ERROR_PRIVILEGE_NOT_HELD`) runs the emitter in the repository
 itself, and each check 6 row skips, with that reason. Any other link the copy cannot make, a target
 past the system's length limit once moved into the copy for one, is `EMIT-PATH-UNREADABLE` naming
 the link, and exit 2, before any emitter runs. The copy keeps an honest emitter's mistake out of the repository. It is not a
-sandbox: the emitter runs with the user's rights.
+sandbox: the emitter runs with the user's rights. The copy's root is compared too: a change to
+its permission bits is a stray write at `.`.
 
 **Hostile responses.** Each is passed to `emit.ParseResponse` for a fixed manifest of the
 harness's own that owns `gen/**`, with request version `1.0.0` and a fixed request of one

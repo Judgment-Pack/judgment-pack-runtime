@@ -220,6 +220,14 @@ func (w *workspace) fresh() *emit.Diagnostic {
 		w.dir, w.root, w.fallback, w.before = "", w.source, true, nil
 		return nil
 	}
+	// The copy's root is compared too: its bits are the copy's own.
+	info, err := os.Lstat(root)
+	if err != nil {
+		removeTree(dir)
+		d := emit.NewDiagnostic("EMIT-PATH-UNREADABLE", emit.Location{Document: emit.DocumentRepository})
+		return &d
+	}
+	before["."] = entryState{kind: kindDir, perm: info.Mode().Perm()}
 	w.dir, w.root, w.before = dir, root, before
 	return nil
 }
@@ -324,14 +332,20 @@ func copyTree(source, target string) (map[string]entryState, error) {
 			dirs = append(dirs, destination)
 			states[name] = entryState{kind: kindDir, perm: info.Mode().Perm()}
 		case kind.IsRegular():
-			total += info.Size()
-			if total > maxCopyBytes {
+			// The size before the copy refuses a file already past the bound;
+			// the bytes copied, which a file that grew may add to, are what
+			// count.
+			if total+info.Size() > maxCopyBytes {
 				return errCopyBound
 			}
-			state, err := copyFile(full, destination, info.Mode().Perm())
-			if err != nil {
+			state, err := copyFile(full, destination, info.Mode().Perm(), maxCopyBytes-total)
+			switch {
+			case errors.Is(err, errCopyBound):
+				return errCopyBound
+			case err != nil:
 				return unreadableError{path: name}
 			}
+			total += state.size
 			states[name] = state
 		default:
 			return unreadableError{path: name}
@@ -435,7 +449,9 @@ func belowSource(source, link string) (string, bool) {
 	return strings.CutPrefix(link, prefix)
 }
 
-func copyFile(source, destination string, perm fs.FileMode) (entryState, error) {
+// copyFile copies one regular file, at most limit bytes of it: one longer
+// than limit when it is read, grown since its size was read, is errCopyBound.
+func copyFile(source, destination string, perm fs.FileMode, limit int64) (entryState, error) {
 	in, err := os.Open(source)
 	if err != nil {
 		return entryState{}, err
@@ -446,9 +462,12 @@ func copyFile(source, destination string, perm fs.FileMode) (entryState, error) 
 		return entryState{}, err
 	}
 	hash := sha256.New()
-	size, err := io.Copy(io.MultiWriter(out, hash), io.LimitReader(in, maxCopyBytes+1))
+	size, err := io.Copy(io.MultiWriter(out, hash), io.LimitReader(in, limit+1))
 	if err = errors.Join(err, out.Close()); err != nil {
 		return entryState{}, err
+	}
+	if size > limit {
+		return entryState{}, errCopyBound
 	}
 	if err := os.Chmod(destination, perm); err != nil {
 		return entryState{}, err
@@ -479,12 +498,18 @@ func diffTree(root string, before map[string]entryState) []StrayWrite {
 			return relErr
 		}
 		name := filepath.ToSlash(relative)
-		if name == "." {
-			return nil
-		}
 		if err != nil {
 			if entry != nil && entry.IsDir() {
 				return fs.SkipDir
+			}
+			return nil
+		}
+		if name == "." {
+			// The root is compared when its state was kept (the workspace
+			// keeps it), and is never removed or created.
+			seen[name] = true
+			if was, kept := before[name]; kept && changed(full, entry, was) {
+				add(name, StrayChanged)
 			}
 			return nil
 		}

@@ -159,6 +159,9 @@ All notable changes to tagged releases are documented here.
     every directory between it and the file are directories and not links. A directory swapped
     for a link after the layout was read through; it is now `EMIT-PATH-UNREADABLE` at the file.
     `--update` likewise refuses to write through a vector directory swapped for a link.
+  - Check 6 of `jpack emit conformance` compares the copy's root too: a change to its permission
+    bits is a stray write at `.`. The copy's 256 MiB bound counts the bytes copied rather than the
+    sizes read before the copy, so a file that grows while it is copied cannot pass it.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
