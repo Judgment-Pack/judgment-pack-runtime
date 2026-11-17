@@ -11,6 +11,11 @@ All notable changes to tagged releases are documented here.
   begun, a second signal waits until it ends, so `expected/` is never left missing between its
   two renames; the run is then refused as interrupted, and the vector's check 1 row still says
   `expected/` was written. A signal after the replacement ends `jpack` again.
+- **An emitter inherits no descriptor where `/dev/fd` lists only 0-2.** Before the first emitter
+  starts, `jpack` marks every descriptor above standard error close-on-exec. Where `/dev/fd`
+  lists nothing above 2, as on a system without a full descriptor file system, it now also marks
+  every number from 3 below the descriptor limit (at most 65536), as it already did where the
+  listing could not be read. No release target is affected.
 
 ## 0.49.0 - 2026-11-17
 
