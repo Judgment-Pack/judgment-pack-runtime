@@ -193,7 +193,8 @@ have a pin.
 - Bad, because the constants are read-only only to the compiler. JavaScript that ignores the types
   can still change them at run time.
 - Bad, because no TypeScript compiler runs in CI. `internal/golden` type-checks the output and a
-  consumer of it with `tsc --strict` only where `tsc` is on PATH, and skips otherwise. The syntax
+  consumer of it with `tsc --strict` only when `JPACK_TEST_TSC` holds the absolute path of a
+  `tsc`, and skips otherwise; the tests never look a program up on PATH. The syntax
   targets TypeScript 3.7 or later, and the consumer file needs 3.9 or later.
 - Revisit when CI has a TypeScript toolchain, or when the Go typed loader of RFC 0036 §6 item 1
   and this emitter share one naming rule.

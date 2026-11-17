@@ -41,13 +41,26 @@ func TestConsumerImportsTheVectors(t *testing.T) {
 	}
 }
 
+// tscEnv names the variable that opts into the type check: the absolute
+// path of a tsc to run, for example
+//
+//	JPACK_TEST_TSC=/opt/node/bin/tsc go test ./cmd/jpack-emit-ts-constants/...
+//
+// The tests never look a program up on PATH, install one or fetch one.
+const tscEnv = "JPACK_TEST_TSC"
+
 // TestTypeScriptChecks type-checks the generated files of every vector, and
-// consumer.ts, which reads three of them, with tsc --strict. It is skipped
-// when tsc is not on PATH: the tests never install or fetch a toolchain.
+// consumer.ts, which reads three of them, with tsc --strict. It runs only
+// when JPACK_TEST_TSC holds tsc's absolute path, and is skipped when the
+// variable is unset or empty. A path that is not absolute fails the test, so
+// that a check asked for is never skipped.
 func TestTypeScriptChecks(t *testing.T) {
-	tsc, err := exec.LookPath("tsc")
-	if err != nil {
-		t.Skip("tsc is not on PATH, so the generated TypeScript is not type-checked")
+	tsc := os.Getenv(tscEnv)
+	if tsc == "" {
+		t.Skip(tscEnv + " is not set, so the generated TypeScript is not type-checked")
+	}
+	if !filepath.IsAbs(tsc) {
+		t.Fatalf("%s is %q, not an absolute path", tscEnv, tsc)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

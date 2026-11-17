@@ -211,9 +211,10 @@ All notable changes to tagged releases are documented here.
   (`constructor`, `toString` and the rest), and a kind whose names are reserved or collide; it
   never renames one. Each refusal is a response of no files and an `x-ts-*` error diagnostic.
   Strings are written in ASCII with U+2028, U+2029 and `<` escaped, and numbers as the request
-  gives them. Its 12 vectors are in RFC 0036 §5's layout. A test type-checks their output and a consumer
-  of it with `tsc --strict`, and is skipped when `tsc` is not on PATH. No `jpack` command changes.
-  The conformance claim in CONFORMANCE.md is unchanged.
+  gives them. Its 12 vectors are in RFC 0036 §5's layout. A test type-checks their output and a
+  consumer of it with `tsc --strict` when `JPACK_TEST_TSC` holds the absolute path of a `tsc`, and
+  is skipped otherwise. No `jpack` command changes. The conformance claim in CONFORMANCE.md is
+  unchanged.
 
 ## 0.47.0 - 2026-11-16
 
