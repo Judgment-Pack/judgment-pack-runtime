@@ -62,6 +62,13 @@ def constants(path):
     return out
 
 
+def all_constants(directory):
+    """The string constants of every Go file in directory, tests included."""
+    out = {}
+    for path in sorted(glob.glob(os.path.join(directory, '*.go'))):
+        out.update(constants(path))
+    return out
+
 def package_constants(directory):
     out = {}
     for path in source_files(directory):
@@ -172,15 +179,44 @@ def test_body(package, name):
     return None
 
 
-def subtest_named(body, part):
-    """Whether a string literal in body names subtest part as go test
-    prints it (spaces become underscores)."""
-    for literal in re.findall(r'"((?:[^"\\\n]|\\.)*)"|`([^`]*)`', body):
-        text = literal[0] or literal[1]
-        if text.replace(' ', '_') == part:
-            return True
-    return False
+LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"|`([^`]*)`')
 
+
+def subtest_case(body, part):
+    """The lines of the case in body whose string literal names subtest part
+    as go test prints it (spaces become underscores), or None: from that
+    line to the next line at its indentation that starts another case, or
+    to the first line indented less."""
+    lines = body.split('\n')
+    for i, line in enumerate(lines):
+        if not any((a or b).replace(' ', '_') == part for a, b in LITERAL.findall(line)):
+            continue
+        indent = len(line) - len(line.lstrip())
+        j = i + 1
+        while j < len(lines):
+            text = lines[j]
+            if text.strip():
+                depth = len(text) - len(text.lstrip())
+                if depth < indent or depth == indent and text.lstrip()[0] in '{"`':
+                    break
+            j += 1
+        return '\n'.join(lines[i:j])
+    return None
+
+
+def named_codes(text, codes, names):
+    """The codes text names: as a whole token inside a string literal (a
+    literal may hold more, as "EMIT-OPTIONS@/x" does), or by the name of a Go
+    constant (names maps each to its value) that holds one."""
+    found = set()
+    for a, b in LITERAL.findall(text):
+        for token in re.findall(r'[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+', a or b):
+            if token in codes:
+                found.add(token)
+    for name, value in names.items():
+        if value in codes and re.search(r'\b%s\b' % re.escape(name), text):
+            found.add(value)
+    return found
 
 def main():
     codes = derive()
@@ -214,12 +250,27 @@ def main():
             problems.append('%s: package %s or test %s is not of the form ./dir and TestX or TestX/sub' % (where, package, row['test']))
             continue
         tests.setdefault(package, {}).setdefault(parent, []).append(where)
-        subtests = row['test'].split('/')[1:]
-        if subtests:
-            body = test_body(package, parent)
-            for part in subtests:
-                if body is not None and not subtest_named(body, part):
-                    problems.append('%s: no string in %s names its subtest %s' % (where, parent, part))
+        body = test_body(package, parent)
+        if body is None:
+            problems.append('%s: no func %s in the test files of %s' % (where, parent, package))
+            continue
+        # The row's test must name its code. A subtest's case that names any
+        # code of the line must name this one; a case that names none (its
+        # code is fixed after the table) leaves it to the test's body.
+        names = all_constants(package)
+        scope = body
+        for part in row['test'].split('/')[1:]:
+            scope = subtest_case(scope, part)
+            if scope is None:
+                problems.append('%s: no string in %s names its subtest %s' % (where, parent, part))
+                break
+        if scope is None:
+            continue
+        in_case = named_codes(scope, codes, names)
+        if in_case and code not in in_case:
+            problems.append('%s: the case %s names %s, not this code' % (where, row['test'], ', '.join(sorted(in_case))))
+        elif not in_case and code not in named_codes(body, codes, names):
+            problems.append('%s: %s does not name the code, as a literal or a constant holding it' % (where, parent))
     for code in sorted(set(codes) - set(seen)):
         problems.append('%s: %s has no row' % (TABLE, code))
     for package in sorted(tests):

@@ -50,7 +50,8 @@ All notable changes to tagged releases are documented here.
   kills, and whether the code is provisional. The new `mutation-table` check reads the codes from
   their source tables and fails when a code has no row, a row's code no longer exists, a row's
   severity or mutant site does not match the source, a row's test is not one `go test -list`
-  lists, or no string in that test names a row's subtest. VERSIONING.md now says that an
+  lists, no string in that test names a row's subtest, or the test (for a subtest, its
+  case) does not name the row's code. VERSIONING.md now says that an
   emitter's own `x-` codes belong to that emitter and are outside the registry line's promise.
   No product behaviour changes. The conformance claim in CONFORMANCE.md is unchanged.
 

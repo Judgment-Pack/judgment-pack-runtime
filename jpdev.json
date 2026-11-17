@@ -38,7 +38,7 @@
       "checks": ["local-paths", "agent-docs", "diff-check", "registry-template"]
     },
     {
-      "paths": ["docs/registry-mutation-table.md", "scripts/check-mutation-table.py"],
+      "paths": ["docs/registry-mutation-table.md", "scripts/check-mutation-table.py", "scripts/check-mutation-table-probe.py"],
       "checks": ["local-paths", "agent-docs", "diff-check", "mutation-table"]
     },
     {

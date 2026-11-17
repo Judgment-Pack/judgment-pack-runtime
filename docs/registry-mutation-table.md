@@ -25,7 +25,10 @@ The rows follow from the source; nobody lists the codes by hand. The codes are:
 those tables and fails when a code has no row, when a row's code no longer exists, when a row's
 severity is not the one its table states, when a row's mutant site is not a function of a non-test
 Go file, when `go test -list` does not list the row's test in its package, or when no string literal in
-that test names the row's subtest (as `go test` prints it). The check does not
+that test names the row's subtest (as `go test` prints it), or when the test does not name the
+row's code, as a literal or a constant holding it. For a subtest, a case that names any code of
+the line must name the row's; `scripts/check-mutation-table-probe.py` holds that rule to a case
+changed to expect another code. The check does not
 run the mutants; a reviewer does.
 
 ## Columns
