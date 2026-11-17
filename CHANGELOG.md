@@ -55,6 +55,11 @@ All notable changes to tagged releases are documented here.
   envelope refusals, and the TypeScript emitter's schema and request refusals. Each asserts the
   diagnostic code and location, the error, or the output bytes. No program's behaviour changes.
   The conformance claim in CONFORMANCE.md is unchanged.
+- **An emitter's options schema may use `$defs` at its root** (#459). An options schema is a
+  schema in the kind subset, which admits `$defs` at the schema's root, but `jpack emit` and `jpack
+  emit conformance` refused a root `$defs` in a manifest's `options` with `EMIT-MANIFEST`. It is now
+  read, and `$ref` into it is followed; a `$defs` below the root is still refused. The conformance
+  claim in CONFORMANCE.md is unchanged.
 
 ## 0.48.0 - 2026-11-17
 
