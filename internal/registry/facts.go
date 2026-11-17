@@ -179,7 +179,7 @@ func (b *factsBuilder) mappedValue(target resolvedEntry) (any, error) {
 }
 
 // encodedSize is the size of a reference target's value in its RFC 8785
-// form, encoded once per target and pointer.
+// form, measured once per target and pointer without building the form.
 func (b *factsBuilder) encodedSize(name EntryName, reference entryReference, value any) (int64, error) {
 	key := name.Kind + "\x00" + name.ID + "\x00" + pointerOf(reference.pointer)
 	if !reference.hasPointer {
@@ -188,11 +188,11 @@ func (b *factsBuilder) encodedSize(name EntryName, reference entryReference, val
 	if size, ok := b.sizes[key]; ok {
 		return size, nil
 	}
-	encoded, err := jcs.EncodeDocument(value)
+	measured, err := jcs.DocumentSize(value)
 	if err != nil {
 		return 0, err
 	}
-	size := int64(len(encoded))
+	size := int64(measured)
 	b.sizes[key] = size
 	return size, nil
 }
@@ -211,11 +211,11 @@ func (b *factsBuilder) document(resolved resolvedEntry) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	encodedValue, err := jcs.EncodeDocument(value)
+	measured, err := jcs.DocumentSize(value)
 	if err != nil {
 		return nil, err
 	}
-	size := int64(len(encodedValue))
+	size := int64(measured)
 	if size > carrier.HardMaxBytes {
 		return nil, errOverLimit
 	}

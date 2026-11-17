@@ -1,10 +1,11 @@
 package registry
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"math/big"
+	"math"
 	"strconv"
 	"strings"
 
@@ -77,7 +78,7 @@ func admitValue(data []byte, maxBytes, maxNodes int, location Location, diagnost
 		return nil, false
 	}
 	bad := false
-	value = admitNumbers(value, nil, func(path []string) {
+	value = admitNumbers(value, func(path []string) {
 		at := location
 		at.Pointer = carrier.Pointer(path)
 		diagnostics.add("REG-DOC-NUMBER", at)
@@ -93,9 +94,8 @@ func admitValue(data []byte, maxBytes, maxNodes int, location Location, diagnost
 // or a decimal whose exact value equals that of the shortest decimal reading
 // back as the same double; never negative zero.
 //
-// Big arithmetic is quadratic in a literal's digits, and builds 10^N for an
-// exponent N, so a literal is first held to cheap bounds that only refuse
-// what the rule refuses anyway:
+// A literal is first held to cheap bounds that only refuse what the rule
+// refuses anyway, so that the work on one is bounded whatever its length:
 //   - an integer has at most 16 digits, those of 2^53-1 (JSON allows no
 //     leading zero, so every digit counts);
 //   - a decimal has at most 17 significant digits once the significand's
@@ -106,8 +106,12 @@ func admitValue(data []byte, maxBytes, maxNodes int, location Location, diagnost
 //     that of the smallest subnormal, 5e-324, and that of the largest finite
 //     double, 1.7976931348623157e308.
 //
-// What passes is compared exactly, on a reduced literal of the same value:
-// the significant digits and the exponent that places them.
+// What passes is compared exactly, with no big arithmetic, which costs
+// hundreds of bytes a literal and builds 10^N for an exponent N: the
+// significant digits and the exponent that places the leading one are
+// compared with the double's shortest decimal, digit for digit. Neither has a
+// leading or a trailing zero, so two decimals of one value have the same
+// digits and the same exponent.
 func admittedNumber(number json.Number) bool {
 	_, ok := admittedLiteral(number)
 	return ok
@@ -122,13 +126,10 @@ func admittedNumber(number json.Number) bool {
 // (a range check, an equality, a facts mapping) parses a literal of at most
 // 25 bytes, however long the one in the document was.
 func admittedLiteral(number json.Number) (json.Number, bool) {
-	negative, integer, fraction, exponent, ok := splitJSONNumber(number.String())
+	literal := number.String()
+	negative, integer, fraction, exponent, ok := splitJSONNumber(literal)
 	if !ok {
 		return "", false
-	}
-	sign := ""
-	if negative {
-		sign = "-"
 	}
 	if fraction == "" && exponent == "" {
 		if integer == "0" {
@@ -137,18 +138,30 @@ func admittedLiteral(number json.Number) (json.Number, bool) {
 		if len(integer) > maxSafeIntegerDigits {
 			return "", false
 		}
-		magnitude, ok := new(big.Int).SetString(integer, 10)
-		return number, ok && magnitude.Cmp(big.NewInt(maxSafeInteger)) <= 0
+		magnitude, err := strconv.ParseUint(integer, 10, 64)
+		return number, err == nil && magnitude <= maxSafeInteger
 	}
-	digits := integer + fraction
-	lead := strings.IndexFunc(digits, func(r rune) bool { return r != '0' })
-	if lead < 0 {
+	// The digits of the integer and the fraction, read as one string.
+	digit := func(i int) byte {
+		if i < len(integer) {
+			return integer[i]
+		}
+		return fraction[i-len(integer)]
+	}
+	total := len(integer) + len(fraction)
+	lead := 0
+	for lead < total && digit(lead) == '0' {
+		lead++
+	}
+	if lead == total {
 		// Zero, whatever its exponent.
 		return "0", !negative
 	}
-	trail := strings.LastIndexFunc(digits, func(r rune) bool { return r != '0' })
-	significant := digits[lead : trail+1]
-	if len(significant) > maxShortestDigits {
+	trail := total - 1
+	for digit(trail) == '0' {
+		trail--
+	}
+	if trail-lead+1 > maxShortestDigits {
 		return "", false
 	}
 	// The exponent saturates far past the bound below: a literal within the
@@ -160,30 +173,67 @@ func admittedLiteral(number json.Number) (json.Number, bool) {
 	if strings.HasPrefix(exponent, "-") {
 		power = -power
 	}
-	if leading := int64(len(integer)-lead-1) + power; leading < minShortestExponent || leading > maxShortestExponent {
+	leading := int64(len(integer)-lead-1) + power
+	if leading < minShortestExponent || leading > maxShortestExponent {
 		return "", false
 	}
-	reduced := sign + significant + "e" + strconv.FormatInt(int64(len(integer)-trail-1)+power, 10)
-	exact, ok := new(big.Rat).SetString(reduced)
-	if !ok {
-		return "", false
+	// The reduced literal: the significant digits and the exponent that
+	// places the last one, of at most 25 bytes.
+	var reducedScratch [32]byte
+	reduced := reducedScratch[:0]
+	if negative {
+		reduced = append(reduced, '-')
 	}
-	double, err := strconv.ParseFloat(reduced, 64)
+	for i := lead; i <= trail; i++ {
+		reduced = append(reduced, digit(i))
+	}
+	reduced = append(reduced, 'e')
+	reduced = strconv.AppendInt(reduced, int64(len(integer)-trail-1)+power, 10)
+	double, err := strconv.ParseFloat(string(reduced), 64)
 	if err != nil {
 		return "", false
 	}
-	shortest, ok := new(big.Rat).SetString(strconv.FormatFloat(double, 'g', -1, 64))
-	if !ok || shortest.Cmp(exact) != 0 {
+	// The double's shortest decimal, "d.ddde±x".
+	var shortestScratch [32]byte
+	shortest := strconv.AppendFloat(shortestScratch[:0], math.Abs(double), 'e', -1, 64)
+	at := bytes.IndexByte(shortest, 'e')
+	if at < 1 {
 		return "", false
 	}
-	canonical, err := jcs.FormatNumber(double)
+	shortestExponent, err := strconv.ParseInt(string(shortest[at+1:]), 10, 64)
+	if err != nil || shortestExponent != leading {
+		return "", false
+	}
+	var digitsScratch [32]byte
+	shortestDigits := digitsScratch[:0]
+	for _, c := range shortest[:at] {
+		if c != '.' {
+			shortestDigits = append(shortestDigits, c)
+		}
+	}
+	// Shortest digits have no trailing zero; dropping any keeps the
+	// comparison exact all the same.
+	shortestDigits = bytes.TrimRight(shortestDigits, "0")
+	if len(shortestDigits) != trail-lead+1 {
+		return "", false
+	}
+	for i, want := range shortestDigits {
+		if digit(lead+i) != want {
+			return "", false
+		}
+	}
+	var canonicalScratch [32]byte
+	canonical, err := jcs.AppendNumber(canonicalScratch[:0], double)
 	if err != nil {
 		return "", false
+	}
+	if string(canonical) == literal {
+		return number, true
 	}
 	return json.Number(canonical), true
 }
 
-// The bounds admittedNumber checks before big arithmetic.
+// The bounds admittedNumber checks before it compares digits.
 const (
 	maxSafeIntegerDigits = 16   // the digits of 2^53-1
 	maxShortestDigits    = 17   // the most a shortest round-trip decimal of a double has
@@ -239,25 +289,66 @@ func splitJSONNumber(literal string) (negative bool, integer, fraction, exponent
 // sorted order so that diagnostics are produced deterministically. It reports
 // each number admission refuses by its path, and returns the value with each
 // admitted number replaced by the literal admission keeps (admittedLiteral).
-func admitNumbers(value any, path []string, refuse func([]string)) any {
+// A path is built only for a refusal, and a number whose literal is kept as
+// written is not copied, so an admitted value costs no more than its own
+// numbers' changed literals.
+func admitNumbers(value any, refuse func([]string)) any {
+	walk := &numberWalk{steps: make([]numberStep, 0, MaxDepth+1), refuse: refuse}
+	return walk.visit(value)
+}
+
+// numberWalk is admitNumbers' walk: the steps to the value being visited and
+// where a refusal goes.
+type numberWalk struct {
+	steps  []numberStep
+	refuse func([]string)
+}
+
+// numberStep is one step of a path: a member's name, or an array's index
+// when index is not negative.
+type numberStep struct {
+	name  string
+	index int
+}
+
+func (w *numberWalk) visit(value any) any {
 	switch typed := value.(type) {
 	case json.Number:
 		literal, ok := admittedLiteral(typed)
 		if !ok {
-			refuse(path)
-			return typed
+			w.refuse(w.path())
+			return value
+		}
+		if literal == typed {
+			return value
 		}
 		return literal
 	case map[string]any:
 		for _, name := range sortedKeys(typed) {
-			typed[name] = admitNumbers(typed[name], appendPath(path, name), refuse)
+			w.steps = append(w.steps, numberStep{name: name, index: -1})
+			typed[name] = w.visit(typed[name])
+			w.steps = w.steps[:len(w.steps)-1]
 		}
 	case []any:
 		for index, item := range typed {
-			typed[index] = admitNumbers(item, appendPath(path, strconv.Itoa(index)), refuse)
+			w.steps = append(w.steps, numberStep{index: index})
+			typed[index] = w.visit(item)
+			w.steps = w.steps[:len(w.steps)-1]
 		}
 	}
 	return value
+}
+
+// path is the path of the value being visited, as tokens.
+func (w *numberWalk) path() []string {
+	path := make([]string, len(w.steps))
+	for i, step := range w.steps {
+		path[i] = step.name
+		if step.index >= 0 {
+			path[i] = strconv.Itoa(step.index)
+		}
+	}
+	return path
 }
 
 func appendPath(path []string, token string) []string {

@@ -118,8 +118,8 @@ func FormRequests(m *Manifest, in Inputs) ([]Request, []Diagnostic) {
 		}
 	}
 	encode := func(environment string, value map[string]any) (Request, bool) {
-		data, err := jcs.EncodeDocument(value)
-		if err != nil || len(data) > MaxRequestBytes {
+		data, err := jcs.EncodeDocumentWithin(value, MaxRequestBytes)
+		if err != nil {
 			diagnostics = append(diagnostics, diagnostic("EMIT-REQUEST", Location{Document: DocumentRequest, Environment: environment}))
 			return Request{}, false
 		}
