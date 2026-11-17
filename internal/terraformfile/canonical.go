@@ -49,6 +49,15 @@ func (w *writer) text(s string) {
 	}
 }
 
+// number writes a measured number's normal form. The counting pass takes its
+// length alone, so neither pass builds a string for it.
+func (w *writer) number(form *numberForm) {
+	w.written += form.length
+	if !w.counting {
+		w.buf = form.appendTo(w.buf)
+	}
+}
+
 // string writes s, UTF-8, as an RFC 8785 string.
 func (w *writer) string(s []byte) {
 	if w.counting {
@@ -188,12 +197,12 @@ func (d *document) writeValue(w *writer, v uint32) {
 	case c == 't' || c == 'f' || c == 'n':
 		w.raw(d.raw(v))
 	default:
-		text, ok := normalNumber(d.raw(v))
+		form, ok := measureNumber(d.raw(v))
 		if !ok {
 			panic("terraformfile: a number reached the writer unchecked")
 		}
 		w.byte('"')
-		w.text(text)
+		w.number(&form)
 		w.byte('"')
 	}
 	w.full()
@@ -234,7 +243,7 @@ func (d *document) checkNumbers(v uint32) bool {
 			}
 		}
 	case d.isNumber(v):
-		_, ok := normalNumber(d.raw(v))
+		_, ok := measureNumber(d.raw(v))
 		return ok
 	}
 	return true
