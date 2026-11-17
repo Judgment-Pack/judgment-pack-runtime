@@ -20,17 +20,17 @@
         "maxLength": 64,
         "pattern": "^[a-z][a-z0-9]*$",
         "not": {
-          "enum": ["break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
+          "enum": ["break", "case", "chan", "const", "continue", "default", "defer", "documentation", "else", "fallthrough",
                    "for", "func", "go", "goto", "if", "import", "interface", "main", "map", "package", "range",
                    "return", "select", "struct", "switch", "type", "var"]
         }
       },
       "directory": {
-        "description": "The directory the files are written to, a literal relative path that the Go toolchain compiles: no segment begins with . or _, or is testdata. It must lie under the owns glob.",
+        "description": "The directory the files are written to, a literal relative path that the Go toolchain compiles: no segment begins with . or _, or is testdata or vendor in any case. It must lie under the owns glob.",
         "type": "string",
         "maxLength": 256,
         "pattern": "^[A-Za-z0-9]([A-Za-z0-9_.\\-]*[A-Za-z0-9_])?(/[A-Za-z0-9]([A-Za-z0-9_.\\-]*[A-Za-z0-9_])?)*$",
-        "not": { "pattern": "^(.*/)?testdata(/.*)?$" },
+        "not": { "pattern": "^(.*/)?([Tt][Ee][Ss][Tt][Dd][Aa][Tt][Aa]|[Vv][Ee][Nn][Dd][Oo][Rr])(/.*)?$" },
         "default": "generated/facts"
       }
     }

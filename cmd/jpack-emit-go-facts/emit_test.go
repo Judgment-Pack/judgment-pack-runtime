@@ -337,7 +337,7 @@ func TestManifest(t *testing.T) {
 	if pkg.Type != "string" || pkg.Pattern != packagePattern.String() || pkg.MaxLength != maxPackageBytes {
 		t.Errorf("package schema: %+v", pkg)
 	}
-	refused := []string{"main"}
+	refused := []string{"main", "documentation"}
 	for k := range goKeywords {
 		refused = append(refused, k)
 	}
@@ -592,7 +592,8 @@ func TestManifestPatternsMatchAsTheProgramDoes(t *testing.T) {
 	notDir := compile(manifest.Options.Properties["directory"].Not.Pattern)
 	for _, s := range []string{"generated/facts", "a", "a.b/c-d/e_", "", "/a", "a/", "a//b", ".", "..", "a/..", ".git", "a/.git",
 		"a.", "-a", "a/b.", "a\\b", "a b", "a\n", "_a", "a/_b", "testdata", "a/testdata", "testdata/a", "a/testdata/b",
-		"testdata2", "a/my_testdata", "testdatax/a", "xtestdata"} {
+		"testdata2", "a/my_testdata", "testdatax/a", "xtestdata", "vendor", "a/vendor", "vendor/a", "a/vendor/b", "TestData",
+		"a/Vendor", "VENDOR/a", "vendors", "a/myvendor", "vendorx/a"} {
 		manifest := dir.MatchString(s) && !notDir.MatchString(s)
 		program := directoryPattern.MatchString(s) && !testdataPattern.MatchString(s)
 		if manifest != program {
@@ -611,6 +612,8 @@ func TestPackageMainIsRefused(t *testing.T) {
 		{"facts", nil},
 		{"mainfacts", nil},
 		{"main", errOptions},
+		{"documentation", errOptions},
+		{"documentations", nil},
 		{"type", errOptions},
 		{"Main", errOptions},
 	} {
@@ -642,6 +645,15 @@ func TestDirectoryTheToolchainIgnoresIsRefused(t *testing.T) {
 		{"testdata/facts", errOptions},
 		{"generated/testdata", errOptions},
 		{"generated/testdata/facts", errOptions},
+		{"vendor", errOptions},
+		{"vendor/facts", errOptions},
+		{"generated/vendor", errOptions},
+		{"generated/vendor/facts", errOptions},
+		{"TestData", errOptions},
+		{"generated/Vendor/facts", errOptions},
+		{"VENDOR", errOptions},
+		{"vendors", nil},
+		{"a/myvendor/b", nil},
 	} {
 		request := strings.Replace(base(`{"pointer":"/a","type":"string","present":"always"}`), `{"package":"p"}`,
 			`{"package":"p","directory":"`+c.directory+`"}`, 1)

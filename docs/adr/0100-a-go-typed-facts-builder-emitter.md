@@ -63,11 +63,15 @@ generated code stays free of this runtime.
 
 **Options.**
 - `package` is required, matches `^[a-z][a-z0-9]*$`, and is at most 64 bytes. It is not a Go
-  keyword, and not `main`, which would make a command that no other package can import.
+  keyword, not `main`, which would make a command that no other package can import, and not
+  `documentation`, whose files the Go toolchain ignores.
 - `directory` is a literal relative path whose segments start with a letter or a digit and end
   with a letter, a digit or `_`. So no segment is `.`, `..` or `.git`. No segment is `testdata` or
   starts with `_` or `.`: the Go toolchain ignores those directories, so the generated package
-  would never be compiled. It defaults to `generated/facts`, which the manifest's `owns` glob
+  would never be compiled. No segment is `vendor` either, which the toolchain reads as vendored
+  code. Both names are refused in any case, since a case-insensitive file system reads `TestData`
+  as `testdata`; the schema spells the pattern with letter classes, because a JSON Schema pattern
+  has no case flag. It defaults to `generated/facts`, which the manifest's `owns` glob
   names.
 - The program checks both again, with the same rules as the manifest's schema.
 

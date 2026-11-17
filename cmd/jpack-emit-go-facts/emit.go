@@ -67,16 +67,21 @@ var (
 	// ".git" or ends in ".", and none begins with "." or "_", which the Go
 	// toolchain ignores, so the generated package would never be compiled.
 	directoryPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_.\-]*[A-Za-z0-9_])?(/[A-Za-z0-9]([A-Za-z0-9_.\-]*[A-Za-z0-9_])?)*$`)
-	// testdataPattern is a directory with a segment testdata, which the Go
-	// toolchain also ignores. The manifest's schema refuses it with the same
-	// pattern under "not".
-	testdataPattern = regexp.MustCompile(`^(.*/)?testdata(/.*)?$`)
+	// testdataPattern is a directory with a segment testdata or vendor, in
+	// any case, which the Go toolchain also ignores or treats as vendored
+	// code, and which a case-insensitive file system would read as one. The
+	// manifest's schema refuses it with the same pattern under "not", spelled
+	// with classes since a JSON Schema pattern has no case flag.
+	testdataPattern = regexp.MustCompile(`^(.*/)?([Tt][Ee][Ss][Tt][Dd][Aa][Tt][Aa]|[Vv][Ee][Nn][Dd][Oo][Rr])(/.*)?$`)
 )
 
 // notPackageName says whether the package option refuses name: a Go
-// keyword, which a package clause cannot use, or main, which makes a command
-// that no other package can import.
-func notPackageName(name string) bool { return goKeywords[name] || name == "main" }
+// keyword, which a package clause cannot use; main, which makes a command
+// that no other package can import; or documentation, whose files the Go
+// toolchain ignores.
+func notPackageName(name string) bool {
+	return goKeywords[name] || name == "main" || name == "documentation"
+}
 
 // goKeywords are the names a package clause cannot use.
 var goKeywords = map[string]bool{
