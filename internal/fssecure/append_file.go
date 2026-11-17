@@ -88,7 +88,7 @@ func (f *AppendFile) stillNamed() error {
 	if err != nil {
 		return classify(err)
 	}
-	if linkLike(named.Mode()) || !os.SameFile(opened, named) || hardLinked(opened) {
+	if linkLike(named) || !os.SameFile(opened, named) || hardLinked(opened) {
 		return ErrHeldFileChanged
 	}
 	return nil

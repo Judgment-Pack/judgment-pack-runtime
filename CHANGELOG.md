@@ -12,10 +12,10 @@ All notable changes to tagged releases are documented here.
   provisional code first and tags `startup/v1.0.0`. `jpack` and the
   runtime module stay 0.x. The conformance claim in CONFORMANCE.md is unchanged.
 - **A Windows junction is refused wherever a final symbolic link is.** The checks that open,
-  append to or replace a file without following a final link now also refuse what Go reads as
-  irregular, which on Windows is a junction or another reparse point, and their messages say "link
-  or junction". Symbolic links are refused as before. The conformance claim in CONFORMANCE.md is
-  unchanged.
+  append to or replace a file without following a final link now also refuse a Windows junction,
+  or another reparse point that is a directory, and their messages say "link or junction". A file
+  reparse point, such as a synced folder's placeholder, is read as before. Symbolic links are
+  refused as before. The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.48.0 - 2026-11-17
 

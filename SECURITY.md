@@ -235,8 +235,9 @@ without bound: its retention and whether it belongs in version control are the p
 as for the packs beside it.
 
 Local input files are opened without following a final symlink where the operating system supports
-that primitive, then checked as the same regular file before reading. A Windows junction or other
-reparse point, which Go reads as irregular, is refused as a final component wherever a symbolic link is. Suite descendants are also
+that primitive, then checked as the same regular file before reading. On Windows a junction, or
+another reparse point that is a directory, is refused as a final component wherever a symbolic link
+is; a file reparse point, such as a synced folder's placeholder, is held to the same-file check. Suite descendants are also
 checked for traversal and symlinks. These checks do not make a directory safe against a different
 process that can concurrently rename or replace its ancestors; run untrusted suites from a
 directory whose ownership and write permissions you control.

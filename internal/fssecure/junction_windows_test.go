@@ -69,12 +69,14 @@ func TestAJunctionIsRefusedAsALink(t *testing.T) {
 		t.Fatal(err)
 	}
 	junction(t, filepath.Join(dir, "j"), target)
-	if info, err := os.Lstat(filepath.Join(dir, "j")); err != nil || !linkLike(info.Mode()) {
+	if info, err := os.Lstat(filepath.Join(dir, "j")); err != nil || !linkLike(info) {
 		t.Fatalf("the junction does not read as link-like: %v %v", info, err)
 	}
-	if file, err := OpenRegular(filepath.Join(dir, "j")); err == nil {
-		file.Close()
-		t.Fatal("a final junction was opened")
+	if file, err := OpenRegular(filepath.Join(dir, "j")); err == nil || !strings.Contains(err.Error(), "link or junction") {
+		if file != nil {
+			file.Close()
+		}
+		t.Fatalf("a final junction was opened: %v", err)
 	}
 	root, err := OpenRoot(dir)
 	if err != nil {
