@@ -123,7 +123,7 @@ var Codes = map[string]codeInfo{
 
 	// The conformance harness's, provisional (ADR-0099).
 	"EMIT-VECTOR":        {SeverityError, "The vectors are not of the harness's layout: harness.json or its level, a vector's files, no vectors at all, or a vector past a bound."},
-	"EMIT-HARNESS-BOUND": {SeverityError, "A check could not be completed within the harness's bounds: the repository copy, the registry with the synthetic kind, or the references scan."},
+	"EMIT-HARNESS-BOUND": {SeverityError, "A check could not be completed: a bound of the harness (the repository copy, the registry with the synthetic kind, or the references scan), or a fresh HOME for a determinism run that could not be made."},
 }
 
 // Location says where a host diagnostic applies. Pointer is a JSON Pointer

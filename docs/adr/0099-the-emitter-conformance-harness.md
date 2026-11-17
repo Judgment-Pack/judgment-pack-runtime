@@ -102,8 +102,9 @@ Two runs that give one path are `EMIT-RESPONSE`, as the host refuses them.
    `de_DE.UTF-8`, and `SOURCE_DATE_EPOCH` to `1` and then `2000000000`. Run 1 has none of these
    values. The manifest's `env` names are held as the host gives them. Each run must give run 1's
    response bytes exactly (the RFC's "identical bytes", read as the raw bytes, not a canonical
-   form of them), or run 1's refusal exactly. The row names
-   the runs that differ.
+   form of them), or run 1's refusal exactly. The row names the runs that differ. A `HOME` the
+   harness cannot make is its own fault, not a difference: `EMIT-HARNESS-BOUND`, and the run
+   exits 2.
 3. **Path safety and bounds.** A vector passes when every response passed the host's §3 checks,
    which `emit.Run` applies to the whole response. A response that failed only on the error
    diagnostics the emitter reported is of its form. A vector that expects `EMIT-RESPONSE` passes

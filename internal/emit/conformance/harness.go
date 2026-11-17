@@ -155,7 +155,7 @@ func (h *harness) vector(v *Vector, checks []int) *emit.Diagnostic {
 		case checkGolden:
 			row, failure = h.golden(run, row)
 		case checkDeterminism:
-			row = h.determinism(run, row)
+			row, failure = h.determinism(run, row)
 		case checkPathSafety:
 			row = pathSafety(run, row)
 		case checkKindFiltering:
@@ -341,23 +341,27 @@ func (h *harness) golden(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 // its own and TZ, LANG and SOURCE_DATE_EPOCH changed, the manifest's env
 // names held as the host gives them, must answer as run 1 did: the same
 // response bytes, or the same refusal.
-func (h *harness) determinism(run *vectorRun, row Row) Row {
+func (h *harness) determinism(run *vectorRun, row Row) (Row, *emit.Diagnostic) {
 	if run.refused != nil {
 		row.Status, row.Reason = StatusSkip, reasonRefused
-		return row
+		return row, nil
+	}
+	// A HOME the harness cannot make is the harness's fault, not the
+	// emitter's: it stops the run, and never reads as a difference.
+	fault := func() (Row, *emit.Diagnostic) {
+		d := vectorDiagnostic("EMIT-HARNESS-BOUND", run.v.Name, "")
+		return row, &d
 	}
 	differing := map[int]bool{}
 	for _, d := range determinismRuns {
-		base, err := os.MkdirTemp("", "jpack-harness-home-")
+		base, err := makeTemp("", "jpack-harness-home-")
 		if err != nil {
-			differing[d.run] = true
-			continue
+			return fault()
 		}
 		home := filepath.Join(base, d.home)
 		if err := os.MkdirAll(home, 0o700); err != nil {
 			removeTree(base)
-			differing[d.run] = true
-			continue
+			return fault()
 		}
 		override := map[string]string{"HOME": home, "TZ": d.tz, "LANG": d.lang, "SOURCE_DATE_EPOCH": d.epoch}
 		for i, request := range run.requests {
@@ -369,7 +373,7 @@ func (h *harness) determinism(run *vectorRun, row Row) Row {
 	}
 	if len(differing) == 0 {
 		row.Status = StatusPass
-		return row
+		return row, nil
 	}
 	row.Status, row.Reason = StatusFail, reasonNondeterminism
 	for _, d := range determinismRuns {
@@ -377,8 +381,12 @@ func (h *harness) determinism(run *vectorRun, row Row) Row {
 			row.Runs = append(row.Runs, d.run)
 		}
 	}
-	return row
+	return row, nil
 }
+
+// makeTemp makes the base directory of a determinism run's HOME; a test
+// makes it fail.
+var makeTemp = os.MkdirTemp
 
 // sameOutcome says whether two runs of one request answered alike: both with
 // the same response bytes, or both refused with the same diagnostics.

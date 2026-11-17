@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -127,6 +128,39 @@ func TestDeterminismFailsOnTheTimeZone(t *testing.T) {
 	}
 	if strings.Contains(dump(report), "Kiritimati") {
 		t.Fatal("the report holds an environment value")
+	}
+}
+
+// A HOME the harness cannot make for run 2 or 3 stops the run (exit 2); it
+// never reads as nondeterminism.
+func TestDeterminismHomeFaultIsNotRun(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "a-file")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, temp := range map[string]func(string, string) (string, error){
+		"no temporary directory": func(string, string) (string, error) { return "", errors.New("no space") },
+		"no HOME below it":       func(string, string) (string, error) { return file, nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			saved := makeTemp
+			makeTemp = temp
+			defer func() { makeTemp = saved }()
+			f := newFixture(t)
+			f.registryVector("orders", nil)
+			report := f.run(f.manifest(requestMode, nil), true)
+			if report.Outcome != OutcomeNotRun || report.Exit() != ExitNotRun || len(report.Diagnostics) != 1 {
+				t.Fatalf("outcome: %s", dump(report))
+			}
+			if d := report.Diagnostics[0]; d.Code != "EMIT-HARNESS-BOUND" || d.Location.Path != "orders" {
+				t.Fatalf("diagnostic: %+v", d)
+			}
+			for _, row := range report.Rows {
+				if row.Status == StatusFail {
+					t.Fatalf("a row failed: %+v", row)
+				}
+			}
+		})
 	}
 }
 
