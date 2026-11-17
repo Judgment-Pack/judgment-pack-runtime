@@ -144,6 +144,15 @@ have a pin.
   prototype: as an entry id, as a value member, as a schema property, and inside an `enum` or
   `const`. It is never written as a computed key. A `__proto__` member at a secret position is
   left out, like any other secret member.
+- A schema property named after another member of `Object.prototype` is refused
+  (`x-ts-member-proto`), optional or required. The names are `constructor`, `toString`,
+  `toLocaleString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf`, `propertyIsEnumerable`,
+  `__defineGetter__`, `__defineSetter__`, `__lookupGetter__` and `__lookupSetter__`. An entry
+  without an optional member of one of these names reads it from the prototype, as a function, so
+  the `Readonly` alias does not compile under `--strict`. A required one would compile, but one
+  rule covers both. A value's member or a literal's member of these names is written, since the
+  object holds it and it is never read from the prototype. At a secret position the property is
+  left out, so it is no refusal.
 
 **Names.**
 - A kind's words are its runs between hyphens. Its type is the words with each first letter

@@ -834,6 +834,40 @@ func TestProtoIsRefused(t *testing.T) {
 
 // TestDeviceNameEnvironmentIsRefused: the host refuses a path whose name is
 // a Windows device, so the emitter refuses it first, with a diagnostic.
+// TestPrototypeMemberNamesAreRefused: a schema property named after a member
+// of Object.prototype is refused, optional or required, since an entry
+// without the optional one reads a function from the prototype and the file
+// does not compile. At a secret position the property is left out, so it is
+// no refusal, and a value's or a const's member of such a name is written:
+// the object holds it.
+func TestPrototypeMemberNamesAreRefused(t *testing.T) {
+	m := readManifest(t)
+	names := []string{"constructor", "toString", "toLocaleString", "valueOf", "hasOwnProperty", "isPrototypeOf",
+		"propertyIsEnumerable", "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__"}
+	for _, name := range names {
+		for _, required := range []string{`[]`, `["` + name + `"]`} {
+			t.Run(name+" "+required, func(t *testing.T) {
+				d := declaration(t, "flags", `{"type":"object","properties":{"n":{"type":"string"},"`+name+`":{"type":"number"}},"required":`+required+`}`)
+				refusedWith(t, m, fixtureOf(t, []map[string]any{d}, entryOf(t, "flags", "main", `{"n":"x"}`)).request(t), codeMemberProto)
+			})
+		}
+	}
+	t.Run("at a secret position", func(t *testing.T) {
+		d := declaration(t, "flags", `{"type":"object","properties":{"n":{"type":"string"},"valueOf":{"type":"string"}}}`, "/valueOf")
+		text := generated(t, m, fixtureOf(t, []map[string]any{d}, entryOf(t, "flags", "main", `{"n":"x"}`)))
+		if strings.Contains(text, "valueOf") {
+			t.Errorf("the secret member is written:\n%s", text)
+		}
+	})
+	t.Run("in a value and a const", func(t *testing.T) {
+		d := declaration(t, "flags", `{"type":"object","properties":{"c":{"const":{"toString":1}}}}`)
+		text := generated(t, m, fixtureOf(t, []map[string]any{d}, entryOf(t, "flags", "main", `{"c":{"toString":1},"constructor":2}`)))
+		if strings.Count(text, `"toString": 1`) != 2 || !strings.Contains(text, `"constructor": 2`) {
+			t.Errorf("the members are not written:\n%s", text)
+		}
+	})
+}
+
 func TestDeviceNameEnvironmentIsRefused(t *testing.T) {
 	m := readManifest(t)
 	for _, environment := range []string{"con", "nul", "com1", "lpt9"} {

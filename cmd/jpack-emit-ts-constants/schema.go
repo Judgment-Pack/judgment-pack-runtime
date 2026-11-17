@@ -235,6 +235,19 @@ func (b *builder) literals(values []any, ps patterns) *typeNode {
 	return union(parts)
 }
 
+// prototypeMembers are the names a schema property cannot have: __proto__,
+// which an object literal reads as its prototype, and the other members of
+// Object.prototype. An entry without an optional member of one of those
+// names reads it from Object.prototype, a function its type does not admit,
+// and the file does not compile. A required one would, but the names are
+// refused alike. A value's member or a literal's is written: the object holds
+// it, so it is never read from the prototype.
+var prototypeMembers = map[string]bool{
+	"__proto__": true, "constructor": true, "toString": true, "toLocaleString": true, "valueOf": true,
+	"hasOwnProperty": true, "isPrototypeOf": true, "propertyIsEnumerable": true,
+	"__defineGetter__": true, "__defineSetter__": true, "__lookupGetter__": true, "__lookupSetter__": true,
+}
+
 // holdsProto says whether a value holds a member named __proto__ at any
 // depth.
 func holdsProto(value any) bool {
@@ -345,7 +358,8 @@ func (b *builder) array(v map[string]any, ps patterns) *typeNode {
 }
 
 // object is the object type of properties, required and
-// additionalProperties. A member at a secret position is left out. When a
+// additionalProperties. A member at a secret position is left out, and a
+// property named after a member of Object.prototype is refused. When a
 // pattern "*" ends here every member is a secret, and the type has no index
 // signature.
 func (b *builder) object(v map[string]any, ps patterns) *typeNode {
@@ -378,7 +392,7 @@ func (b *builder) object(v map[string]any, ps patterns) *typeNode {
 		if below.ends() {
 			continue
 		}
-		if name == "__proto__" {
+		if prototypeMembers[name] {
 			return b.refuse(codeMemberProto)
 		}
 		member := typeMember{name: name, optional: !required[name], t: b.schema(properties[name], below, false)}

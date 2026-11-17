@@ -36,7 +36,9 @@ const (
 	// Two kinds give the same name.
 	codeNameCollision = "x-ts-name-collision"
 	// A member name or an entry id the output would hold is __proto__, which
-	// an object literal reads as its prototype.
+	// an object literal reads as its prototype, or a schema property is named
+	// after another member of Object.prototype, which an entry without it
+	// would read from there.
 	codeMemberProto = "x-ts-member-proto"
 	// The file is past the response bounds.
 	codeBounds = "x-ts-bounds"
