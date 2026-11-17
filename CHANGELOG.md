@@ -28,6 +28,32 @@ All notable changes to tagged releases are documented here.
   file's sha256, its size and a fixed message. No command calls the reader yet, and existing
   commands and their output are unchanged.
 
+- **`jpack terraform facts`: a plan's or a state's resources as a facts batch** (ADR-0097
+  amendment). It is spec RFC 0038 §6's batch tool. `jpack terraform facts (--plan FILE | --state
+  FILE) --type T[,T...]` reads the output of `terraform show -json` through the
+  `internal/terraformfile` reader, with every value marked sensitive removed before selection. It
+  writes one line per selected resource, sorted by address:
+  `{"facts":{"resource":<the §5 object>,"terraform":{"document","formatVersion","sha256"}},"id":"<address>"}`,
+  RFC 8785 canonical, the line `registry facts` writes. `--mode`, `--address`, `--actions` (plan
+  only), `--max` and `--max-bytes` are the source's `select` and `maxBytes` members. A refused file
+  writes no line, and writes only its code, sha256, size and fixed message to standard error, then
+  exits 2. So does a selected resource whose address, its line's id, is over the id limit
+  `evaluate --batch` reads (`FACTS-ID-LIMIT`, new and provisional, 256 bytes), and one whose
+  facts document is over `registry facts`' facts-document limit (`FACTS-DOCUMENT-LIMIT`). The
+  whole run is refused, no line is skipped, and the diagnostic never carries the address. An
+  unusable command line exits 3, and an unreadable file exits 4. `jpack dialect validate` does not
+  admit the `terraform-file` kind yet. Existing commands and their output are
+  unchanged, and the conformance claim in CONFORMANCE.md is unchanged.
+- **`FACTS-DOCUMENT-LIMIT`'s message no longer names an entry.** It now begins "A facts
+  document", so that it reads right for a Terraform resource as well as a registry entry. The code
+  and the limit are unchanged.
+- **The Terraform reader writes numbers without building them first** (ADR-0097). Each number's
+  normal form was built as a string three times: when the selection was checked, when the value
+  was counted, and when it was written. It is now measured, and then written straight into the
+  value. The bytes are unchanged. A new test reads a file of `1e63` values, which grow about 13.4
+  times in the normal form, so the value's bound of 16 times its file cannot be lowered past them
+  unnoticed.
+
 - **The registry emitter host: `jpack emit`** (ADR-0098, proposed; spec RFC 0036 §§1–4). It reads
   an emitter manifest. From a registry and its kinds (or facts contracts) and an options document it
   forms the request: only the kinds the manifest reads, each pin checked against its range, as
