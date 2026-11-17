@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -44,6 +45,46 @@ const (
 	// can name it: the host refuses a segment that begins with "~".
 	fileEmpty = "~empty"
 )
+
+// The bounds as the code applies them; a test lowers them.
+var (
+	maxVectors   = MaxVectors
+	maxKindFiles = MaxKindFiles
+)
+
+// listBatch is how many entries a directory is listed by at a time.
+const listBatch = 256
+
+// listBounded lists dir by batches and keeps the entries keep admits, in
+// name order, holding no other: past limit kept, it stops listing and over
+// is true, so a directory past its bound is never held whole.
+func listBounded(dir string, keep func(fs.DirEntry) bool, limit int) (kept []fs.DirEntry, over bool, err error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	for {
+		batch, err := f.ReadDir(listBatch)
+		for _, entry := range batch {
+			if !keep(entry) {
+				continue
+			}
+			if len(kept) == limit {
+				return nil, true, nil
+			}
+			kept = append(kept, entry)
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	slices.SortFunc(kept, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	return kept, false, nil
+}
 
 var vectorMembers = map[string]bool{fileRequest: false, fileRegistry: false, dirKinds: true, fileOptions: false, dirExpected: true, fileExpectedFailure: false}
 
@@ -136,9 +177,16 @@ func readSmallDocument(path, at string) (any, []emit.Diagnostic) {
 // before its run. Under update, a vector may hold neither expected/ nor
 // expected-failure.json: update gives it expected/.
 func readVectors(dir string, update bool) ([]*Vector, []emit.Diagnostic) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
+	// The files beside the vectors are passed over as they are listed; the
+	// directories and links are kept, under the vectors' bound.
+	entries, over, err := listBounded(dir, func(entry fs.DirEntry) bool {
+		return entry.IsDir() || entry.Type()&fs.ModeSymlink != 0
+	}, maxVectors)
+	switch {
+	case err != nil:
 		return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-PATH-UNREADABLE", "", "")}
+	case over:
+		return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", "", "")}
 	}
 	var vectors []*Vector
 	var refused []emit.Diagnostic
@@ -151,9 +199,6 @@ func readVectors(dir string, update bool) ([]*Vector, []emit.Diagnostic) {
 		case !entry.IsDir():
 			// harness.json, or a file of the author's beside the vectors.
 			continue
-		}
-		if len(vectors) == MaxVectors {
-			return nil, []emit.Diagnostic{vectorDiagnostic("EMIT-VECTOR", "", "")}
 		}
 		vector, problems := layoutVector(filepath.Join(dir, name), name, update)
 		refused = append(refused, problems...)
@@ -217,20 +262,19 @@ func layoutVector(dir, name string, update bool) (*Vector, []emit.Diagnostic) {
 		return nil, refused
 	}
 	if present[dirKinds] {
-		kinds, err := os.ReadDir(filepath.Join(dir, dirKinds))
-		if err != nil {
-			fail("EMIT-PATH-UNREADABLE", dirKinds, "")
-		}
 		// As `jpack emit --kinds DIR` reads a directory: its *.json files, in
-		// name order.
-		for _, kind := range kinds {
-			if !kind.IsDir() && strings.HasSuffix(kind.Name(), ".json") {
-				v.kinds = append(v.kinds, kind.Name())
-			}
-		}
-		slices.Sort(v.kinds)
-		if len(v.kinds) > MaxKindFiles {
+		// name order, listed only to one past the bound.
+		kinds, over, err := listBounded(filepath.Join(dir, dirKinds), func(kind fs.DirEntry) bool {
+			return !kind.IsDir() && strings.HasSuffix(kind.Name(), ".json")
+		}, maxKindFiles)
+		switch {
+		case err != nil:
+			fail("EMIT-PATH-UNREADABLE", dirKinds, "")
+		case over:
 			fail("EMIT-VECTOR", dirKinds, "")
+		}
+		for _, kind := range kinds {
+			v.kinds = append(v.kinds, kind.Name())
 		}
 	}
 	if present[dirExpected] {

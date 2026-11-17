@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
@@ -54,5 +55,38 @@ func TestUpdateIsWholeOrNothing(t *testing.T) {
 	}
 	if names := vectorNames(t, dir); !slices.Equal(names, []string{"expected", "request.json"}) {
 		t.Fatalf("the vector after the write: %v", names)
+	}
+}
+
+// The vectors directory and kinds/ are listed under their bounds: past
+// either, the layout refuses, however many other files lie beside them,
+// which are listed by batches and never held.
+func TestListingsAreBounded(t *testing.T) {
+	savedVectors, savedKinds := maxVectors, maxKindFiles
+	defer func() { maxVectors, maxKindFiles = savedVectors, savedKinds }()
+	maxVectors, maxKindFiles = 2, 2
+	f := newFixture(t)
+	f.registryVector("a", map[string]string{"expected/gen/a": "a\n"})
+	f.registryVector("b", map[string]string{"expected/gen/a": "a\n"})
+	beside := map[string]string{}
+	for i := range 3 * listBatch {
+		beside["notes-"+strconv.Itoa(i)+".txt"] = "x"
+	}
+	write(t, f.vectors, beside)
+	vectors, refused := readVectors(f.vectors, false)
+	if len(refused) > 0 || len(vectors) != 2 || vectors[0].Name != "a" || vectors[1].Name != "b" {
+		t.Fatalf("at the bounds: %d vectors, %+v", len(vectors), refused)
+	}
+	if !slices.Equal(vectors[0].kinds, []string{"queue.json", "topic.json"}) {
+		t.Fatalf("kinds: %v", vectors[0].kinds)
+	}
+	f.registryVector("c", map[string]string{"expected/gen/a": "a\n"})
+	if _, refused := readVectors(f.vectors, false); len(refused) != 1 || refused[0].Code != "EMIT-VECTOR" || refused[0].Location.Path != "" {
+		t.Fatalf("past the vectors' bound: %+v", refused)
+	}
+	maxVectors = 3
+	write(t, filepath.Join(f.vectors, "c"), map[string]string{"kinds/extra.json": "{}"})
+	if _, refused := readVectors(f.vectors, false); len(refused) != 1 || refused[0].Code != "EMIT-VECTOR" || refused[0].Location.Path != "c/kinds" {
+		t.Fatalf("past the kinds' bound: %+v", refused)
 	}
 }

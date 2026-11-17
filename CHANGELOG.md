@@ -168,6 +168,9 @@ All notable changes to tagged releases are documented here.
   - `jpack emit conformance --update` writes a vector's new `expected/` whole in a temporary
     directory beside it and renames it into place, so a write that fails partway leaves
     `expected/` as it was. Before, it removed `expected/` first and could leave it partial.
+  - `jpack emit conformance` lists the vectors directory and each vector's `kinds/` by batches
+    and stops once past the bound (1000 vectors, 1024 kind files), rather than listing either
+    whole before the bound was checked. The bounds and their codes are unchanged.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16

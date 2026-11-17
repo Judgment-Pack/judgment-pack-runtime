@@ -75,7 +75,9 @@ It also holds exactly one of these expectations:
   `x-` code.
 
 Anything else in a vector is `EMIT-VECTOR`: an unknown member, a link, or a vector past a bound.
-Every vector is laid out before any emitter runs, by its entries and their sizes alone (its
+The vectors directory and each `kinds/` are listed by batches, keeping only the
+entries their bound counts (the vector directories and links, and the `*.json` files), so a
+listing past its bound stops there and is never held whole. Every vector is laid out before any emitter runs, by its entries and their sizes alone (its
 members and their kinds, the names of `kinds/*.json`, and the files, count and sizes of
 `expected/`), so a bad layout refuses the run whole. No vector's bytes are read then. Each vector
 is read just before its own run, under the bounds above, and dropped after its checks, so the
