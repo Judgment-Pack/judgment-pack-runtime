@@ -54,7 +54,16 @@ var (
 	// ErrFormat is an index this reader does not read: see the package
 	// documentation.
 	ErrFormat = errors.New("gitindex: the index is not of a form this reader reads")
+	// ErrRelocated is a repository whose index or working tree git may take
+	// from elsewhere: GIT_INDEX_FILE, GIT_DIR or GIT_WORK_TREE is set, or
+	// .git/config sets core.worktree or includes another file, which could.
+	// Its .git/index may then not be the index git reads for root.
+	ErrRelocated = errors.New("gitindex: git may read another index or working tree for the root")
 )
+
+// relocatingEnv are the variables with which git reads another index, or
+// another repository or working tree, than root/.git gives.
+var relocatingEnv = []string{"GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"}
 
 // Entry is what the reader gives of one entry of an index.
 type Entry struct {
@@ -96,7 +105,23 @@ func ReadWorkTree(root string, visit func(Entry)) error {
 	case info.Mode().Type() != fs.ModeDir:
 		return ErrNotDirectory
 	}
+	for _, name := range relocatingEnv {
+		if _, set := os.LookupEnv(name); set {
+			return ErrRelocated
+		}
+	}
+	config, err := readFile(filepath.Join(gitDir, "config"))
+	switch {
+	case errors.Is(err, errMissing):
+	case err != nil:
+		return err
+	case relocates(config):
+		return ErrRelocated
+	}
 	data, err := readFile(filepath.Join(gitDir, "index"))
+	if errors.Is(err, errMissing) {
+		err = ErrUnreadable
+	}
 	if err != nil {
 		return err
 	}
@@ -104,9 +129,54 @@ func ReadWorkTree(root string, visit func(Entry)) error {
 	return err
 }
 
+// errMissing is a file readFile found not there; ReadWorkTree reports a
+// missing index as ErrUnreadable, and reads a missing config as empty.
+var errMissing = errors.New("gitindex: no such file")
+
+// relocates says whether a git config file may set where the working tree
+// is: a core.worktree key, or an include or includeIf section, whose file
+// could set one. It reads the file plainly, line by line, and errs toward
+// yes: a section header is read up to its first space, quote or dot, case
+// aside, and a key is read on its own line or after a header's ']'. A line
+// that continues a value may be read as a key, which can only say yes more.
+func relocates(config []byte) bool {
+	section := ""
+	for _, line := range strings.Split(string(config), "\n") {
+		line = strings.TrimLeft(line, " \t\r")
+		if strings.HasPrefix(line, "[") {
+			end := strings.IndexByte(line, ']')
+			if end < 0 {
+				end = len(line) - 1
+			}
+			header := line[1 : end+1]
+			if cut := strings.IndexAny(header, " \t\".]"); cut >= 0 {
+				header = header[:cut]
+			}
+			section = strings.ToLower(header)
+			if section == "include" || section == "includeif" {
+				return true
+			}
+			line = strings.TrimLeft(line[end+1:], " \t")
+		}
+		key := line
+		if cut := strings.IndexFunc(key, func(r rune) bool {
+			return !(r == '-' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z')
+		}); cut >= 0 {
+			key = key[:cut]
+		}
+		if section == "core" && strings.EqualFold(key, "worktree") {
+			return true
+		}
+	}
+	return false
+}
+
 // readFile reads a regular file of at most maxBytes.
 func readFile(name string) ([]byte, error) {
 	file, err := os.Open(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, errMissing
+	}
 	if err != nil {
 		return nil, ErrUnreadable
 	}

@@ -289,3 +289,62 @@ func TestReadWorkTree(t *testing.T) {
 		t.Errorf(".git a link: %v", err)
 	}
 }
+
+// ReadWorkTree refuses a repository whose index or working tree git may take
+// from elsewhere: a variable that relocates either, or a config that sets
+// core.worktree or includes a file that could. A config without either, or
+// none at all, is read past.
+func TestReadWorkTreeRefusesARelocatedIndex(t *testing.T) {
+	for _, name := range relocatingEnv {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
+	read := func(config string) error {
+		root := t.TempDir()
+		gitindextest.Write(t, root, "a")
+		if config != "" {
+			if err := os.WriteFile(filepath.Join(root, ".git", "config"), []byte(config), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return ReadWorkTree(root, func(Entry) {})
+	}
+	for _, config := range []string{
+		"",
+		"[core]\n\trepositoryformatversion = 0\n\tbare = false\n",
+		"[core]\n\tworktreeish = x\n[remote \"worktree\"]\n\tworktree = x\n",
+		"; [core] worktree = x\n[user]\n\tworktree = x\n",
+	} {
+		if err := read(config); err != nil {
+			t.Errorf("%q: %v", config, err)
+		}
+	}
+	for _, config := range []string{
+		"[core]\n\tworktree = ../elsewhere\n",
+		"[Core]\n  WorkTree=../elsewhere\n",
+		"[core] worktree = ../elsewhere\n",
+		"[core]\r\n\tbare = false\r\n\tworktree\r\n",
+		"[include]\n\tpath = other.config\n",
+		"[includeIf \"gitdir:~/x/\"]\n\tpath = other.config\n",
+	} {
+		if err := read(config); !errors.Is(err, ErrRelocated) {
+			t.Errorf("%q: %v", config, err)
+		}
+	}
+	dirConfig := t.TempDir()
+	gitindextest.Write(t, dirConfig, "a")
+	if err := os.Mkdir(filepath.Join(dirConfig, ".git", "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadWorkTree(dirConfig, func(Entry) {}); !errors.Is(err, ErrUnreadable) {
+		t.Errorf("a config that is a directory: %v", err)
+	}
+	for _, name := range relocatingEnv {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(name, filepath.Join(t.TempDir(), "elsewhere"))
+			if err := read(""); !errors.Is(err, ErrRelocated) {
+				t.Errorf("%s set: %v", name, err)
+			}
+		})
+	}
+}

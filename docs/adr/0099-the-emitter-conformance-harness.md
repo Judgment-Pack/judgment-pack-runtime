@@ -418,6 +418,13 @@ holds.
 - The index is not of a form the reader reads: another version, an entry or path that is
   malformed, a mode that is not a file, a link or a submodule, an extended flag it does not know,
   or entries out of git's order.
+- Git may read another index or working tree for `--root`: the environment holds
+  `GIT_INDEX_FILE`, `GIT_DIR` or `GIT_WORK_TREE`, or `.git/config` sets `core.worktree` or has an
+  `include` or `includeIf` section, whose file could set it (amended 2026-11-17, #468). Before,
+  such a repository was read as its `.git/index` gave it, which may omit a tracked link: a stale
+  `.git/index` beside the index git really reads could lack a path git tracks. The config is read
+  plainly, line by line, case aside, and each reading errs toward refusing. A config that is not
+  a regular file or cannot be read is refused too; one that is missing is read as empty.
 - The index holds an extension whose signature does not begin with `A` to `Z`. Git requires a
   reader to understand such an extension, and the reader understands none. Two change the set of
   paths the entries give: a split index (`link`), whose entries are in another file, and a sparse
@@ -453,9 +460,6 @@ that no rule ignores would still be the repository's content to that reading.
 
 **Known limits.**
 
-- A repository whose `.git` directory names another working tree (`core.worktree`), or whose
-  index git reads from elsewhere (`GIT_INDEX_FILE`), is read as its `.git/index` gives it. The
-  harness does not read git's configuration.
 - An index git wrote without its checksum (`index.skipHash`, which `feature.manyFiles` turns on)
   ends in zeros, which do not match, so every link that leads out is refused there.
 - A fresh repository has no index file until something is added, so every link that leads out is

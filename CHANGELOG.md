@@ -54,12 +54,14 @@ All notable changes to tagged releases are documented here.
   holds a name made only of dots and spaces counts as tracked. Each comparison errs toward
   refusing. The harness reads `--root/.git/index` itself, versions 2 to 4, and never runs git.
   Every other link that leads out is refused as before, and so is every such link when `--root` has
-  no `.git` directory (a linked worktree's `.git` file included), or the index cannot be read,
-  fails its checksum, is past 64 MiB or 1 048 576 entries, or holds a version, entry or required
-  extension the reader does not read (a split or sparse index among them) or a path twice at one
-  stage. A write the emitter makes at a left-out link's path is a stray write of the copy. The
-  listing names at most 100 links; past them, one more diagnostic gives the count of the rest in
-  its message. The conformance claim in CONFORMANCE.md is unchanged.
+  no `.git` directory (a linked worktree's `.git` file included), or git may read another index or
+  working tree for it (`GIT_INDEX_FILE`, `GIT_DIR` or `GIT_WORK_TREE` is set, or `.git/config` sets
+  `core.worktree` or includes a file), or the index cannot be read, fails its checksum, is past 64
+  MiB or 1 048 576 entries, or holds a version, entry or required extension the reader does not
+  read (a split or sparse index among them) or a path twice at one stage. A write the emitter makes
+  at a left-out link's path is a stray write of the copy. The listing names at most 100 links; past
+  them, one more diagnostic gives the count of the rest in its message. The conformance claim in
+  CONFORMANCE.md is unchanged.
 
 ## 0.49.0 - 2026-11-17
 
