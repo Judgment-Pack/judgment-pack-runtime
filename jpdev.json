@@ -61,6 +61,10 @@
     {
       "paths": ["internal/emit/**", "internal/registry/**", "internal/jcs/**", "tools/emit-conformance/**"],
       "checks": ["emitter-conformance"]
+    },
+    {
+      "paths": ["internal/emit/**"],
+      "checks": ["emit-coverage"]
     }
   ]
 }
