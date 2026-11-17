@@ -11,6 +11,11 @@ All notable changes to tagged releases are documented here.
   keeps working. It takes effect from the release that names the line stable, which settles every
   provisional code first and tags `startup/v1.0.0`. `jpack` and the
   runtime module stay 0.x. The conformance claim in CONFORMANCE.md is unchanged.
+- **A Windows junction is refused wherever a final symbolic link is.** The checks that open,
+  append to or replace a file without following a final link now also refuse a Windows junction,
+  or another reparse point that is a directory, and their messages say "link or junction". A file
+  reparse point, such as a synced folder's placeholder, is read as before. Symbolic links are
+  refused as before. The conformance claim in CONFORMANCE.md is unchanged.
 - **Interrupts, bounds and start-up file checks** (ADR-0096, ADR-0103). `jpack emit conformance`
   sent an interrupt or SIGTERM is refused with `EMIT-HARNESS-BOUND` and drops the interrupted
   vector's rows, which would report failures the emitter did not cause. `jpack emit` interrupted
