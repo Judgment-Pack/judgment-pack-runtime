@@ -74,15 +74,19 @@ All notable changes to tagged releases are documented here.
   allocation budgets are tightened to match. The conformance claim in CONFORMANCE.md is unchanged.
 - **The walk of a vector's `expected/` is bounded by what it has read** (#464, ADR-0099). Every
   entry of a record holds a file, and every directory lies at most 255 deep above one, so a
-  directory is listed only while its entries, the entries still to walk and the files walked are
-  at most one past the 10000-file bound, and the directories walked are at most 255 for each file
-  read and 256 more. Past either, the vector is `EMIT-VECTOR` at `expected/`, its listing unread.
-  A record within the bounds is read as before, with any few empty directories beside its files,
-  and `--update` and the `~empty` marker work as before; a tree of empty directories is refused
-  after the directories of one path rather than at about 2.55 million entries (3280 of them, 3
-  to each, after 257 listings: 17.8 ms to 1.4 ms; 30000 at the root after one listing: 205 ms to
-  2.3 ms). `--update` now refuses, rather than replaces, an `expected/` of more than 256
-  directories that holds no file. The conformance claim in CONFORMANCE.md is unchanged.
+  directory is listed only while its entries, the entries still to walk and the entries walked that
+  are not directories (links included) are at most one past the 10000-file bound, and the
+  directories walked are at most 255 for each file read and 256 more. A tree of empty directories
+  is refused after the directories of one path rather than at about 2.55 million entries (3280 of
+  them, 3 to each, after 257 listings: 17.8 ms to 1.4 ms; 30000 at the root after one listing: 205
+  ms to 2.3 ms). A record within the bounds is read as before, and the `~empty` marker works as
+  before. Three refusals move: a listing more than one past the file bound is now `EMIT-VECTOR` at
+  `expected/`, its listing unread, where v0.49.0 refused it at the path of file 10001; `--update`
+  now refuses, rather than replaces, an `expected/` of more than 256 directories that holds no
+  file; and because empty directories count toward the listing bound, a record of 9999 or 10000
+  files that also holds empty directories, or one that lists about 257 empty directories before its
+  first file, is now `EMIT-VECTOR` at `expected/`, where v0.49.0 read it. The conformance claim in
+  CONFORMANCE.md is unchanged.
 
 ## 0.49.0 - 2026-11-17
 
