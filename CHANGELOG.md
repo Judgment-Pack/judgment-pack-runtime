@@ -15,9 +15,9 @@ All notable changes to tagged releases are documented here.
   dialect companion names `TF-VALUE-LIMIT` with the other `TF-*` codes, makes `terraform-file` a
   proposed kind of dialect version 3, takes the table this runtime names `proposed-1` as its first,
   and has each of its rows backed by vectors written by hand. VERSIONING.md called these codes this
-  runtime's own; it now names the companion's planned first release, `registry-v1.0.0`. Each code
-  is still provisional until its companion is released, and no code, severity, message or behaviour
-  changes; the thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the
+  runtime's own; it now pins the registry companion's first release, `registry-v1.0.0`, published
+  as released and not yet stable, whose code list names them. The `TF-*` codes stay provisional
+  until a spec release carries dialect §4.5. No code, severity, message or behaviour changes; the thirteen and `FACTS-ID-LIMIT` are no longer marked provisional in the source and the
   mutation table: for the `EMIT-*` codes and `FACTS-ID-LIMIT`, that marking now says who named a
   code, the companion or this runtime, and not whether its companion is released. VERSIONING.md
   also states that `jpack-emit-go-facts`' refusal of open objects, `anyOf` and mixed `*` objects is
