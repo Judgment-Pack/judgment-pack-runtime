@@ -49,10 +49,11 @@ const (
 	// directory: the name length of common file systems, past which the host
 	// could not write the file.
 	maxSegmentBytes = 255
-	// maxDepth bounds the request's JSON nesting. A declaration and a
-	// resolved document each nest at most 32 deep (companion §2.1's bound,
-	// which the start-up module holds a resolved document to as well), and
-	// each sits two below the request's root.
+	// maxDepth bounds the request's JSON nesting, counted in containers
+	// (objects and arrays; a scalar is no level). A declaration and a
+	// resolved document each nest at most 32 containers deep (companion
+	// §2.1's bound, which the start-up module holds a resolved document to as
+	// well), and each sits two below the request's root.
 	maxDepth          = 32 + 2
 	maxPackageBytes   = 64
 	maxDirectoryBytes = 256
@@ -278,15 +279,17 @@ func decodeStrict(data []byte) (any, error) {
 	return value, nil
 }
 
+// decodeValue reads one value whose containers, if it is one, are at depth;
+// the request's root is at depth 1.
 func decodeValue(decoder *json.Decoder, depth int) (any, error) {
-	if depth > maxDepth {
-		return nil, errRequest
-	}
 	token, err := decoder.Token()
 	if err != nil {
 		return nil, errRequest
 	}
 	delim, isDelim := token.(json.Delim)
+	if isDelim && depth > maxDepth {
+		return nil, errRequest
+	}
 	switch {
 	case !isDelim:
 		return token, nil

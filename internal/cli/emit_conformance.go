@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -86,7 +85,9 @@ func (a *App) emitConformanceCommand() *cobra.Command {
 			if manifest == nil {
 				return finish(conformance.NewReport().Refuse(diagnostics...))
 			}
-			return finish(conformance.Run(context.Background(), manifest, vectors, conformance.Options{Root: realRoot, Timeout: timeout, Update: update}))
+			ctx, stop := interruptContext()
+			defer stop()
+			return finish(conformance.Run(ctx, manifest, vectors, conformance.Options{Root: realRoot, Timeout: timeout, Update: update}))
 		},
 	}
 	command.Flags().StringVar(&manifestPath, "manifest", "", "The emitter manifest JSON file (or - for standard input)")

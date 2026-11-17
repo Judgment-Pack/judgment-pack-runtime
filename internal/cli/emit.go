@@ -3,7 +3,10 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/fssecure"
@@ -26,7 +29,7 @@ func (a *App) emitCommand() *cobra.Command {
 		Short: "Run a registry emitter and write or check the files it owns (spec RFC 0036)",
 		Long: "Run the emitter an emitter manifest names on a request formed from a registry, its kinds and an options document, and write the files it answers with into the paths the manifest owns. " +
 			"The request holds only the kinds the manifest reads, each pinned version checked against its range, and options checked against the manifest's schema; it is RFC 8785 canonical JSON on the emitter's standard input. " +
-			"The emitter runs from the repository root (--root, default the current directory) with an environment of only PATH (its absolute directories), HOME (a fresh empty directory), LANG=C.UTF-8 and the variables the manifest's env names, under a wall-clock limit (--timeout, default 120s), in a process group that is killed at the limit and once the emitter exits; a process it starts in a session of its own (setsid) escapes the group. " +
+			"The emitter runs from the repository root (--root, default the current directory) with an environment of only PATH (its absolute directories), HOME (a fresh empty directory), LANG=C.UTF-8 and the variables the manifest's env names, under a wall-clock limit (--timeout, default 120s), in a process group that is killed at the limit, at an interrupt or SIGTERM to jpack, and once the emitter exits; a process it starts in a session of its own (setsid) escapes the group. " +
 			"Its standard error is counted and discarded unless --emitter-stderr passes the first 64 KiB through. " +
 			"Its response is validated whole before anything changes: every path relative, safe and owned, unique once case is folded, at most 10000 files of at most 16 MiB, 64 MiB in all. " +
 			"Each file is written through a temporary file and a rename; an owned file the response does not hold is deleted; a symbolic link at or above an owned path refuses the run. " +
@@ -154,7 +157,9 @@ func (a *App) emitCommand() *cobra.Command {
 			if passStderr {
 				options.Stderr = a.errOut
 			}
-			return finish(emit.Emit(context.Background(), manifest, others, inputs, options))
+			ctx, stop := interruptContext()
+			defer stop()
+			return finish(emit.Emit(ctx, manifest, others, inputs, options))
 		},
 	}
 	command.Flags().StringVar(&manifestPath, "manifest", "", "The emitter manifest JSON file")
@@ -169,6 +174,17 @@ func (a *App) emitCommand() *cobra.Command {
 	command.Flags().StringVar(&root, "root", ".", "The repository root: the emitter's working directory, and what owns globs are relative to")
 	command.AddCommand(a.emitConformanceCommand())
 	return command
+}
+
+// interruptContext is the context of an emitter run: an interrupt or SIGTERM
+// cancels it, so that the run kills the emitter's process group and removes
+// what it made (HOME, the harness's repository copies) before jpack exits.
+// The emitter runs in a process group of its own, which a terminal's
+// interrupt does not reach, so without this it would outlive jpack. The
+// signals stay caught until the command returns; the cleanup is bounded by
+// the run's wait and group-wait limits.
+func interruptContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
 // readManifest reads and checks one emitter manifest; index 0 is the one run.
