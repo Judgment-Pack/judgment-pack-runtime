@@ -160,7 +160,7 @@ func (r *Root) stillAsChecked(name string, expect os.FileInfo) error {
 		return nil
 	case expect == nil || err != nil:
 		return ErrReplacedChanged
-	case info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || !os.SameFile(info, expect):
+	case linkLike(info.Mode()) || !info.Mode().IsRegular() || !os.SameFile(info, expect):
 		return ErrReplacedChanged
 	}
 	return nil

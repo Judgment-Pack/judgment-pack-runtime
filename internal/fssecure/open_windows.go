@@ -30,9 +30,9 @@ func openRegular(filePath string) (*os.File, error) {
 		return nil, err
 	}
 	pathInfo, err := os.Lstat(filePath)
-	if err != nil || pathInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(openedInfo, pathInfo) {
+	if err != nil || linkLike(pathInfo.Mode()) || !os.SameFile(openedInfo, pathInfo) {
 		file.Close()
-		return nil, errors.New("path changed or resolves through a final symlink")
+		return nil, errors.New("path changed or resolves through a final link or junction")
 	}
 	return file, nil
 }
