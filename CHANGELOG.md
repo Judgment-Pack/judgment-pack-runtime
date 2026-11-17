@@ -91,6 +91,12 @@ All notable changes to tagged releases are documented here.
     is still `REG-KIND-PATTERN` alone, and the code's message now says size, not instructions.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
+- **Review follow-ups before the release** (the LOW findings of the reviews of this release's
+  changes).
+  - The Terraform reader orders member names without decoding the bytes two names share. A state
+    of many long keys with a common prefix sorted at about 150 ns a byte; the order is unchanged.
+  - The conformance claim in CONFORMANCE.md is unchanged.
+
 ## 0.47.0 - 2026-11-16
 
 - **A registry reader: `jpack registry validate|resolve`** (ADR-0093). It reads
