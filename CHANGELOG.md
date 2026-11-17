@@ -226,6 +226,11 @@ All notable changes to tagged releases are documented here.
   `HOME` is removed anyway and the report is unchanged. A process that leaves the group, such as
   the Go toolchain's telemetry process under `go run`, can still leave a stray temporary
   directory. The conformance claim in CONFORMANCE.md is unchanged.
+- **CI runs `jpack emit conformance` over the reference emitters' vectors** (ADR-0099). The new
+  `emitter-conformance` check runs `tools/emit-conformance`, which calls the harness in-process
+  over the vectors of each reference emitter in this repository and fails when a check fails or
+  when an emitter of the resolved form has no vector on which checks 4 and 5 both pass. No
+  `jpack` command changes, and the conformance claim in CONFORMANCE.md is unchanged.
 
 ## 0.47.0 - 2026-11-16
 

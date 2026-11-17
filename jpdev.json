@@ -46,12 +46,16 @@
     },
     {
       "paths": ["cmd/jpack-emit-go-facts/**"],
-      "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test"]
+      "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test", "emitter-conformance"]
     },
     {
       "paths": ["cmd/jpack-emit-go-loader/**"],
       "checks": ["local-paths", "agent-docs", "diff-check", "go-fmt", "go-vet", "go-test",
-                 "loader-golden-vet", "loader-golden-test"]
+                 "loader-golden-vet", "loader-golden-test", "emitter-conformance"]
+    },
+    {
+      "paths": ["internal/emit/**", "internal/registry/**", "internal/jcs/**", "tools/emit-conformance/**"],
+      "checks": ["emitter-conformance"]
     }
   ]
 }
