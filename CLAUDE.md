@@ -66,6 +66,8 @@ summary block, and anything you stopped on or chose not to do.
   list (scoped on a pull request, see below). The `test` job is a matrix (one leg per operating
   system and Go version, the Go 1.24 floor included) whose leg names branch protection requires;
   its legs run the Go steps natively and are the one place the list is repeated in the workflow.
+  The macOS leg is not run on a pull request: it runs on a push to `main`, nightly, and in the
+  release workflow before a release is drafted, and branch protection does not require it.
   A Go step added to `dev.json` is added to the matrix as well.
 - A pull request's `check` job runs `scripts/dev/check.sh --all --changed origin/<base>`: only the
   steps that `jpdev.json` maps its changed paths to, and the whole list when a changed path matches
