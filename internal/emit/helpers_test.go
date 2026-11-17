@@ -143,6 +143,25 @@ func writeFiles(t *testing.T, root string, files map[string]string) {
 	}
 }
 
+// testRequest is the request the default manifest's run forms over the test
+// registry, with environments "each" or "all"; for "each", the one for
+// environment.
+func testRequest(t *testing.T, environments, environment string) []byte {
+	t.Helper()
+	m := mustManifest(t, manifestDoc([]string{"exit", "0"}, map[string]any{"environments": environments}))
+	requests, diagnostics := FormRequests(m, Inputs{Registry: testRegistry(t)})
+	if diagnostics != nil {
+		t.Fatalf("requests: %v", codes(diagnostics))
+	}
+	for _, request := range requests {
+		if request.Environment == environment {
+			return request.Bytes
+		}
+	}
+	t.Fatalf("no request for %q", environment)
+	return nil
+}
+
 // responseJSON is a response document holding files.
 func responseJSON(t *testing.T, files ...map[string]any) string {
 	t.Helper()

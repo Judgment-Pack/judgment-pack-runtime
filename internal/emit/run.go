@@ -176,7 +176,7 @@ func Run(ctx context.Context, m *Manifest, requestVersion string, request []byte
 		return processFailure(Location{Document: DocumentManifest, Pointer: "/command"})
 	}
 	data := stdout.kept()
-	response, findings := ParseResponse(data, requestVersion, m)
+	response, findings := ParseResponse(data, requestVersion, request, m)
 	if response != nil {
 		result.EmitterDiagnostics = response.Diagnostics
 	}

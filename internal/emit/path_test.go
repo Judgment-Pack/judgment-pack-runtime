@@ -38,7 +38,7 @@ func TestIsGitNameMakesGitsOwnChecks(t *testing.T) {
 func TestPathRulesRefuseEveryNameOfGitsDirectory(t *testing.T) {
 	m := mustManifest(t, manifestDoc([]string{"exit", "0"}, nil))
 	for _, path := range []string{"gen/vendor/GIT~1/hooks/pre-commit", "gen/vendor/git~1", "gen/.g\u200cit/config", "gen/\ufeff.GIT/HEAD"} {
-		_, findings := ParseResponse([]byte(responseJSON(t, map[string]any{"path": path, "text": "x\n"})), "1.0.0", m)
+		_, findings := ParseResponse([]byte(responseJSON(t, map[string]any{"path": path, "text": "x\n"})), "1.0.0", nil, m)
 		if got := codes(findings); !slices.Equal(got, []string{"EMIT-RESPONSE@/files/0/path"}) {
 			t.Errorf("%q: %v", path, got)
 		}

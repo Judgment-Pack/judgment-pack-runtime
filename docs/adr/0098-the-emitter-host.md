@@ -86,8 +86,10 @@ failure is `EMIT-RESPONSE`, at its pointer.
   or HFS+ reads as `.git`. It is owned.
 - `files` is sorted by path, and no two paths are equal once case is folded and normalized. No path
   is a directory of another (`a` and `a/b`), since writing one would replace or block the other.
-- Each emitter diagnostic has an `x-` code, a `warning` or `error` severity, and a §7.3 location.
-  An `error` fails the run.
+- Each emitter diagnostic has an `x-` code, a `warning` or `error` severity, and a §7.3 location
+  that names only what the request holds (below). An `error` fails the run. A diagnostic whose
+  location does not resolve is `EMIT-RESPONSE` at its location, and it is not copied into the
+  report.
 
 A path two runs of one host both give, or one that is a directory of another run's, is refused as
 well, because the runs answer into one set of files.
@@ -226,6 +228,23 @@ leave host refusals uncoded until "the first host's rows". This runtime adds the
   the RFC is silent.
 - No argument of `command` may be absolute or hold a `..` segment.
 - Emitter codes follow `^x-[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 bytes.
+- An emitter diagnostic's location is resolved against the request it answers, because a
+  location's form alone lets free text through: a 512-byte pointer of any tokens, and an entry id,
+  environment or digest of the right grammar. Each member must name something in the request:
+  - an `environment` is one the request holds; a request of one environment is read as naming it
+    when the location names none;
+  - a `kind` is one the request pins, and a `kindDocument` is the digest of one (of that kind,
+    when both are given);
+  - an `entry` is one of the request's entries, of the location's kind when it names one, in the
+    location's environment. A request of several environments (`"all"`) must name it;
+  - the `pointer` names an existing position in that entry's value, or, with no entry, is `""`;
+  - in the facts-contracts form there is no environment, kind name or entry. A `kindDocument` is
+    the digest of a kind a contract was made from, and the pointer names a position in the
+    request's `factsContracts` array, its first token the contract's index;
+  - nothing in a request is YAML, so a location with a `line` or `column` is refused.
+
+  The request is read once, at the first diagnostic, and each location then costs map lookups
+  and one walk of its pointer, so the check is linear in the request and the diagnostics.
 - An unreadable input exits 2, where the registry commands exit 4, because RFC 0036 §4 fixes the
   host's exit codes.
 
