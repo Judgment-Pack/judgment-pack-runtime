@@ -403,6 +403,8 @@ the line:
   input and the companion section.
 - **The start-up module's Go floor.** Its `go.mod` `go` directive rises only in a minor release,
   named in the release notes, and only to a Go version the Go project still supports.
-- **Support.** Fixes land in the latest minor release of `jpack` and the latest `startup/v1` tag;
-  earlier releases get none, and there is no service-level guarantee. Security issues are reported
-  as `SECURITY.md` says.
+- **Support.** Fixes land in the latest minor release of `jpack` and the latest `startup/v1` tag.
+  Security fixes are also backported to the previous minor release of `jpack`, and to the previous
+  `startup/v1` minor, for three months after its successor is released. Other earlier releases get
+  no fixes, and there is no service-level guarantee. Security issues are reported as `SECURITY.md`
+  says.

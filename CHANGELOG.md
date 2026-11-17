@@ -4,6 +4,11 @@ All notable changes to tagged releases are documented here.
 
 ## Unreleased
 
+- **The registry line's support window** (VERSIONING.md, "The registry line"). Fixes land in the
+  latest `jpack` minor and the latest `startup/v1` tag, as before. Security fixes will also be
+  backported, from the release that names the line stable, to the previous `jpack` minor and the
+  previous `startup/v1` minor for three months after its successor is released. There is still no
+  service-level guarantee. The conformance claim in CONFORMANCE.md is unchanged.
 - **`jpack emit conformance` leaves out an untracked link that leads out of the repository**
   (ADR-0099). A symbolic link, or a Windows junction, that leads out of `--root` refused the whole
   run with `EMIT-HARNESS-BOUND`, even in a place the run never touches, such as a Python virtual
