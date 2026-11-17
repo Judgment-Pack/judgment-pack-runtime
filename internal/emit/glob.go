@@ -2,6 +2,7 @@ package emit
 
 import (
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -213,6 +214,59 @@ func segmentsIntersect(a, b []rune) bool {
 		}
 		if starA || starB || a[s.i] == b[s.j] {
 			queue = append(queue, state{nextA, nextB, true})
+		}
+	}
+	return false
+}
+
+// NameKey is the key under which a file system that reads names loosely may
+// read two paths as one name: the code points HFS+ ignores in a name left
+// out (hfsIgnorable), then Unicode canonical caseless matching (foldKey),
+// then upper case, as NTFS compares names, so that "ı" and "i" share a key.
+// It is meant for a comparison that must not miss such a match; two paths no
+// file system reads as one may share a key too.
+func NameKey(path string) string {
+	kept := strings.Map(func(r rune) rune {
+		if hfsIgnorable(r) {
+			return -1
+		}
+		return r
+	}, path)
+	return strings.ToUpper(foldKey(kept))
+}
+
+// Loose returns the glob as it may match on a file system that reads names
+// loosely, for paths given by their NameKey: each segment's characters
+// through NameKey, and a segment holding "~", which Windows can read as the
+// short name of a longer one, as "*". A path such a file system reads as one
+// the glob matches has a NameKey the loose glob matches; a short name set by
+// hand, without "~", is not followed.
+func (g Glob) Loose() Glob {
+	loose := Glob{source: g.source, segments: make([]globSegment, len(g.segments))}
+	for i, segment := range g.segments {
+		switch {
+		case segment.any:
+			loose.segments[i] = segment
+		case slices.Contains(segment.pattern, '~'):
+			loose.segments[i] = globSegment{pattern: []rune("*")}
+		default:
+			loose.segments[i] = globSegment{pattern: []rune(NameKey(string(segment.pattern)))}
+		}
+	}
+	return loose
+}
+
+// MayOwnAtOrBelow reports whether an owns glob of the manifest may match
+// path, or a path below it: the host's EMIT-LINK rule for a link at path
+// (scanOwned), with names read loosely as well (Glob.Loose), so that a
+// response path a file system reads as path, or as one below it, counts. A
+// response could write at path or through it only when this holds.
+func (m *Manifest) MayOwnAtOrBelow(path string) bool {
+	key := NameKey(path)
+	for _, glob := range m.Owns {
+		loose := glob.Loose()
+		if glob.Match(path) || glob.MatchBelow(path) || loose.Match(key) || loose.MatchBelow(key) {
+			return true
 		}
 	}
 	return false

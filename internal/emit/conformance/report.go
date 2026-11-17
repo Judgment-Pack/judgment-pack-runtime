@@ -88,7 +88,8 @@ type Report struct {
 	Outcome              string         `json:"outcome"`
 	Emitter              *emit.Identity `json:"emitter,omitempty"`
 	Rows                 []Row          `json:"rows"`
-	// Diagnostics are the harness's own: why it could not run, and the host's
+	// Diagnostics are the harness's own: why it could not run, its warning
+	// for links left out of the copy (EMIT-LINK-OMITTED), and the host's
 	// warnings (EMIT-DEPRECATED, EMIT-ENV-UNSET), each once.
 	Diagnostics []emit.Diagnostic `json:"diagnostics"`
 }

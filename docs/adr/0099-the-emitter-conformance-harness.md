@@ -224,7 +224,9 @@ emitter made: a creation. Regular files keep their permission bits, links are co
 and any other kind of file is `EMIT-PATH-UNREADABLE`. A link keeps its target, except that an
 absolute target inside `--root` is moved to the same path in the copy, so a write through it
 stays in the copy and is a stray write there. A link that leads out of `--root` is
-`EMIT-HARNESS-BOUND` naming the link, and exit 2, before any emitter runs. Where a link leads is
+`EMIT-HARNESS-BOUND` naming the link, and exit 2, before any emitter runs; by the amendment
+below, that holds only for one that a path of the run could name, and any other is left out of
+the copy with the warning `EMIT-LINK-OMITTED`. Where a link leads is
 found by following it in `--root`, link by link: each `..` is taken from where the parts before it
 led, and a part that does not exist is taken as written. A link that cannot be followed within 40
 links is treated as leading out. The run is refused, rather than check 6 skipped for that link,
@@ -233,7 +235,8 @@ would land in the real directory, possibly the repository itself, while the run 
 author removes the link from the working tree, or makes it relative and inside `--root`. On
 Windows, a reparse point that Go reads as neither a symbolic link nor a regular file, a junction
 for one, is `EMIT-HARNESS-BOUND` naming it, and exit 2, before any emitter runs, by the same walk
-and whether or not the copy falls back. Since Go 1.23 a junction is `ModeIrregular`, not
+and whether or not the copy falls back. By the amendment below, a junction is followed as a link
+is, and one that leads out is left out of the copy unless a path of the run could name it. Since Go 1.23 a junction is `ModeIrregular`, not
 `ModeSymlink`, so the link check cannot see where it leads, and under the fallback the emitter
 would run in the repository with a way out of it while check 6 skipped. Reporting check 6 as not
 run there instead was weighed and not chosen: the refusal fails closed, and it holds whether or
@@ -283,13 +286,15 @@ check, and one for each hostile. A row holds the vector, the check number and na
 the reason. It also holds the details its check gives: the expected code, the differing runs, the
 host's and the emitter's error diagnostics, the differences, the references and the stray writes.
 Each list is bounded at 1000. The report's own diagnostics give why it could not run, plus
-`EMIT-DEPRECATED` and `EMIT-ENV-UNSET`, each once.
+`EMIT-DEPRECATED` and `EMIT-ENV-UNSET`, each once, and, by the amendment below,
+`EMIT-LINK-OMITTED` at each link left out of the copy.
 
 **Codes.**
 
 - `EMIT-STRAY-WRITE` is the companion's.
 - `EMIT-VECTOR` (the layout) and `EMIT-HARNESS-BOUND` (a check that could not be completed) are
-  this runtime's, and provisional.
+  this runtime's, and provisional, as is the warning `EMIT-LINK-OMITTED` (a link left out of the
+  copy), by the amendment below.
 - An `--update` that cannot write is `EMIT-WRITE` on the vector, and the run exits 2.
 
 ### Consequences
@@ -346,3 +351,59 @@ These are carried, not fixed. None gives a wrong verdict for an honest emitter o
   inside a complete occurrence of any secret-position string passes.
 - Decided here: check 2 compares raw response bytes; a vector that gives its request whole skips
   checks 4 and 5; the hostile responses go through `emit.ParseResponse`.
+
+## Amendment: links that lead out of the repository (2026-11-17, #450)
+
+A repository often holds a link that leads out of it in a place the run never touches. A Python
+virtual environment inside the repository is the common case: its interpreter is such a link.
+Refusing the whole run for it blocked a common layout. A link that leads out is now refused only
+when a path the run writes or reads could name it. Any other is left out of the copy, and the
+emitter runs without it.
+
+**The rule.** For each symbolic link of `--root` that leads out of it, found as before, and for
+each Windows junction, followed as a link is (`os.Readlink` reads where it leads), the harness asks
+whether a path of the run could name it:
+
+- **An owned path.** An owns glob matches the link's path, or may match a path below it. This is
+  the host's own `EMIT-LINK` rule, so a link the host would refuse is refused here too. Names are
+  also compared loosely (`emit.Manifest.MayOwnAtOrBelow`). Two names count as one when they match
+  after the code points HFS+ ignores are dropped, Unicode canonical caseless matching is applied,
+  and the result is upper-cased. A glob segment that holds `~` counts as any name, because
+  Windows can read it as a short name. So a link at `Gen` is refused for `gen/**` on every system,
+  and so is a link at `generated` for `GENERA~1/*.go`.
+- **The vectors.** The harness reads the vectors, and `--update` writes them, through the
+  directory given, not through the copy. That directory, cleaned as `filepath.Abs` makes it, is
+  followed part by part and link by link from its volume's root. Each time the walk stands on
+  `--root` (by `os.SameFile`), it counts the parts below it. A link it follows inside the
+  repository is refused. So is a link at, above or below the path where the directory ends in the
+  repository, compared loosely as above. A directory that holds the repository names every link,
+  and so does one that cannot be followed: a part that cannot be read, a link that cannot be read,
+  or more than 40 links.
+
+A link that a path could name is `EMIT-HARNESS-BOUND` at its path, and exit 2, before any emitter
+runs, as before. Any other is left out of every copy, and the report gives the warning
+`EMIT-LINK-OMITTED` at its path. That warning lists at most 100 paths, in sorted order. Past them,
+one more diagnostic, at the repository alone, gives the count of the rest in its message,
+because the report has no member for counts. A write the emitter makes at a left-out link's path
+lands in the copy and is a stray write there. A junction that stays in the repository, or a
+reparse point `os.Readlink` cannot read, is still refused, since the copy does not make one. Where
+the copy falls back to the repository itself (Windows without the privilege to make links), a link
+left out would be there for the emitter, so the run is refused at the first such link, as before.
+
+**Why this is sound.** A response path is one the host refuses unless an owns glob matches it, so
+a response can write only at or below an owned path. The vectors are read and written only below
+the vectors directory. Both are known before the copy is made, and each comparison errs toward
+naming a link. The links refused are a subset of those refused before, and the copy never holds a
+link that leads out, so the emitter has no new way out of it. Omitting every link that leads out
+was weighed and not chosen: it would let an emitter pass while the host refuses the same
+repository for a link at an owned path, and would let `--update` write outside the repository
+through a link the vectors are reached by.
+
+**Known limits.**
+
+- A Windows short name set by hand, without `~`, is not read as an alias.
+- An emitter that reads a file of the repository through a link left out finds nothing there.
+  Its run then differs from a run in the repository. The warning names the link, so the author
+  can remove it or make it relative and inside `--root`.
+
+`EMIT-LINK-OMITTED` is this runtime's, and provisional (VERSIONING.md).

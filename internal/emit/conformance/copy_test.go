@@ -17,7 +17,7 @@ func TestStrayWriteToTheCopyRoot(t *testing.T) {
 	}
 	source := t.TempDir()
 	write(t, source, map[string]string{"README": "readme\n"})
-	w, failure := newWorkspace(source)
+	w, failure := newWorkspace(source, namesNone)
 	if failure != nil {
 		t.Fatalf("workspace: %+v", failure)
 	}

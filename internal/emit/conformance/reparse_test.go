@@ -11,10 +11,12 @@ import (
 )
 
 // The rule for a Windows reparse point, by an injected mode: a junction
-// (ModeIrregular since Go 1.23, with or without ModeDir) is refused, as is
-// any reparse point Go reads as neither a link nor a regular file; a link is
-// left to the link check, and a regular file, a deduplicated one included,
-// stays. A refusal is EMIT-HARNESS-BOUND at the reparse point's path.
+// (ModeIrregular since Go 1.23, with or without ModeDir) is not copied as
+// one, nor is any reparse point Go reads as neither a link nor a regular
+// file; checkLinks follows a junction os.Readlink reads and refuses the
+// rest. A link is left to the link check, and a regular file, a deduplicated
+// one included, stays. A refusal is EMIT-HARNESS-BOUND at the reparse
+// point's path.
 func TestRefusesReparse(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -74,10 +76,11 @@ func TestTheLinkCheckRefusesAReportedReparsePoint(t *testing.T) {
 			}
 			return real(entry)
 		}
-		if d := copyFailure(checkLinks(source)); d == nil || d.Code != c.code || d.Location.Path != "docs/out" {
+		omitted, err := checkLinks(source, namesNone)
+		if d := copyFailure(err); len(omitted) != 0 || d == nil || d.Code != c.code || d.Location.Path != "docs/out" {
 			t.Errorf("%s: checkLinks: %+v, want %s at docs/out", c.name, d, c.code)
 		}
-		w, d := newWorkspace(source)
+		w, d := newWorkspace(source, namesNone)
 		if w != nil {
 			t.Errorf("%s: a workspace was made", c.name)
 		}
