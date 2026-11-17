@@ -198,3 +198,48 @@ func TestReadFileOpensWithoutWaitingOnANamedPipe(t *testing.T) {
 		t.Fatal("the open waited for a writer on a named pipe")
 	}
 }
+
+// A secret file that others may write, though not read, is refused, under
+// every FileRules: whoever can write it can replace the secret.
+func TestReadFileRefusesAWorldWritableFile(t *testing.T) {
+	dir := t.TempDir()
+	for _, mode := range []os.FileMode{0o602, 0o622, 0o402, 0o642} {
+		path := filepath.Join(dir, "writable-"+mode.String())
+		writeFile(t, path, "value\n", mode)
+		for _, rules := range []FileRules{{}, {AllowOtherRead: true}} {
+			_, err := ReadFileWith(path, rules)
+			if !errors.Is(err, ErrWorldWritable) {
+				t.Errorf("%v under %+v: got %v, want ErrWorldWritable", mode, rules, err)
+			}
+			if err != nil && !strings.Contains(err.Error(), path) {
+				t.Errorf("%v: the refusal does not name the file: %v", mode, err)
+			}
+		}
+	}
+}
+
+// A named pipe where the resolved document should be is refused at once, not
+// waited on for a writer.
+func TestReadResolvedFileRefusesANamedPipe(t *testing.T) {
+	pipe := filepath.Join(t.TempDir(), "resolved.json")
+	if err := syscall.Mkfifo(pipe, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := ReadResolvedFile(pipe, "dev")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrNotRegular) {
+			t.Fatalf("got %v, want ErrNotRegular", err)
+		}
+	case <-time.After(10 * time.Second):
+		// Unblock the reader so the test binary can exit.
+		if writer, err := os.OpenFile(pipe, os.O_WRONLY, 0); err == nil {
+			writer.Close()
+		}
+		t.Fatal("ReadResolvedFile waited on the named pipe")
+	}
+}

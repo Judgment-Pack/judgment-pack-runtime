@@ -43,11 +43,11 @@ const (
 	// the name length of common file systems.
 	maxSegmentBytes   = 255
 	maxDirectoryBytes = 256
-	// maxDepth bounds the request's JSON nesting, each value counting one
-	// level. A resolved document and a declaration each nest at most 32
-	// containers (RFC 0034 §1), two below the request's root, and a scalar
-	// inside the deepest is one more.
-	maxDepth = 35
+	// maxDepth bounds the request's JSON nesting, counted in containers
+	// (objects and arrays; a scalar is no level), as the Go loader counts it.
+	// A resolved document and a declaration each nest at most 32 containers
+	// (RFC 0034 §1), two below the request's root.
+	maxDepth = 32 + 2
 	// maxDiagnostics bounds the diagnostics of one refused response.
 	maxDiagnostics = 100
 )
@@ -339,15 +339,17 @@ func decodeStrict(data []byte) (any, error) {
 	return value, nil
 }
 
+// decodeValue reads one value whose containers, if it is one, are at depth;
+// the request's root is at depth 1.
 func decodeValue(decoder *json.Decoder, depth int) (any, error) {
-	if depth > maxDepth {
-		return nil, errRequest
-	}
 	token, err := decoder.Token()
 	if err != nil {
 		return nil, errRequest
 	}
 	delim, isDelim := token.(json.Delim)
+	if isDelim && depth > maxDepth {
+		return nil, errRequest
+	}
 	switch {
 	case !isDelim:
 		return token, nil

@@ -180,11 +180,19 @@ func (a *App) emitCommand() *cobra.Command {
 // cancels it, so that the run kills the emitter's process group and removes
 // what it made (HOME, the harness's repository copies) before jpack exits.
 // The emitter runs in a process group of its own, which a terminal's
-// interrupt does not reach, so without this it would outlive jpack. The
-// signals stay caught until the command returns; the cleanup is bounded by
-// the run's wait and group-wait limits.
+// interrupt does not reach, so without this it would outlive jpack. A second
+// signal is not caught: it ends jpack at once, and what the first one was
+// cleaning up may be left.
 func interruptContext() (context.Context, context.CancelFunc) {
-	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Once the first signal has cancelled the run, the signals' default
+	// disposition is restored, so that a second interrupt ends jpack at
+	// once, even during a long copy or write.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+	return ctx, stop
 }
 
 // readManifest reads and checks one emitter manifest; index 0 is the one run.
