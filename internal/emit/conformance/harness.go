@@ -139,8 +139,17 @@ func Run(ctx context.Context, m *emit.Manifest, vectorsDir string, opts Options)
 		if refused := v.load(); len(refused) > 0 {
 			return report.Refuse(refused...)
 		}
+		before := len(report.Rows)
 		failure := h.vector(v, checks)
 		v.release()
+		if h.ctx.Err() != nil {
+			// The run was interrupted (jpack was sent an interrupt or
+			// SIGTERM): this vector's rows would report failures the
+			// emitter did not cause, and the vectors after it would only
+			// add more. The rows already complete are kept.
+			report.Rows = report.Rows[:before]
+			return report.Refuse(vectorDiagnostic("EMIT-HARNESS-BOUND", v.Name, ""))
+		}
 		if failure != nil {
 			return report.Refuse(*failure)
 		}
