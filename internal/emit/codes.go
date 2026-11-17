@@ -106,6 +106,8 @@ var Codes = map[string]codeInfo{
 	"EMIT-PROCESS":         {SeverityError, "The emitter could not be started, exited non-zero, or did not finish within the time limit."},
 	"EMIT-RESPONSE":        {SeverityError, "The emitter's output is not one valid response: its form, a path, a bound, or an error diagnostic it reported."},
 	"EMIT-DEPRECATED":      {SeverityWarning, "The emitter's manifest is deprecated."},
+	// The conformance harness's (ADR-0099).
+	"EMIT-STRAY-WRITE": {SeverityError, "The emitter created, changed or removed a file of the repository copy itself, outside the response."},
 
 	// This runtime's, provisional.
 	"EMIT-MANIFEST":         {SeverityError, "The emitter manifest is not admissible JSON, or a member is missing, not defined, or not of its form."},
@@ -118,6 +120,10 @@ var Codes = map[string]codeInfo{
 	"EMIT-PATH-UNREADABLE":  {SeverityError, "A path could not be read: an input, or an owned path that is not a regular file or directory or could not be listed or read."},
 	"EMIT-WRITE":            {SeverityError, "A file could not be written or deleted, or a path the response names is held by a directory or by a file the manifest does not own."},
 	"EMIT-REPORT-TRUNCATED": {SeverityWarning, "The report lists the first 1000 diagnostics of a list, the host's or the emitter's, and there were more."},
+
+	// The conformance harness's, provisional (ADR-0099).
+	"EMIT-VECTOR":        {SeverityError, "The vectors are not of the harness's layout: harness.json or its level, a vector's files, no vectors at all, or a vector past a bound."},
+	"EMIT-HARNESS-BOUND": {SeverityError, "A check could not be completed: a bound of the harness (the repository copy, the registry with the synthetic kind, or the references scan), or a fresh HOME for a determinism run that could not be made."},
 }
 
 // Location says where a host diagnostic applies. Pointer is a JSON Pointer

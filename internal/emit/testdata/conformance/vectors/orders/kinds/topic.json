@@ -1,0 +1,16 @@
+{
+  "kindFormatVersion": "1.0.0",
+  "id": "https://example.invalid/kinds/topic",
+  "version": "2.0.0",
+  "kind": "topic",
+  "owner": "platform",
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "partitions": {
+        "type": "integer"
+      }
+    }
+  }
+}

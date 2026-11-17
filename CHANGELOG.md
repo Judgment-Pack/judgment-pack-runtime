@@ -91,6 +91,25 @@ All notable changes to tagged releases are documented here.
     is still `REG-KIND-PATTERN` alone, and the code's message now says size, not instructions.
   - The conformance claim in CONFORMANCE.md is unchanged.
 
+- **The emitter conformance harness: `jpack emit conformance`** (ADR-0099, proposed; spec RFC 0036
+  §5). It runs an emitter on each of its author's vectors through the host's own request, run and
+  response steps. A vector is `request.json`, or `registry.json` with `kinds/` and an optional
+  `options.json`, with `expected/` or `expected-failure.json`. The harness applies the checks of
+  the level `vectors/harness.json` names (`1.0` when there is none). Level `1.0` has six checks:
+  golden equality; determinism over a changed `HOME`, `TZ`, `LANG` and `SOURCE_DATE_EPOCH`; path
+  safety, with 29 hostile responses the host must refuse, each a row of its own; kind filtering;
+  references, where a run of 32 or more characters of a secret reference fails unless a whole
+  secret reference in the file holds it; and no stray writes. Kind filtering adds a synthetic
+  undeclared kind, restores the registry digest, and requires the same request bytes and the same
+  response. Stray writes are checked in a fresh copy of the repository, without `.git`, of at most
+  256 MiB and 100 000 entries (`EMIT-STRAY-WRITE`). `--update` rewrites `expected/` and never
+  touches an expected-failure vector. A run that gives no files is recorded as the marker
+  `expected/~empty` alone, a zero-byte file that git can track. A symbolic link in the repository
+  whose target lies inside it is pointed into the copy, and one that leads out of it refuses the
+  run (`EMIT-HARNESS-BOUND`) before any emitter runs. The report (`harnessReportVersion` `1.0.0`)
+  is canonical JSON with one row per vector and check. It exits 0, 1 or 2, as §5 says. `EMIT-VECTOR` and
+  `EMIT-HARNESS-BOUND` are new codes, provisional. The evaluator's claim in CONFORMANCE.md is
+  unchanged.
 - **A Go typed facts builder emitter: `cmd/jpack-emit-go-facts`** (ADR-0100, proposed). This is
   the reference emitter of spec RFC 0037 §6 for Go, run under the RFC 0036 emitter contract with
   `"input": "factsContracts"`. Its manifest is `cmd/jpack-emit-go-facts/emitter.json`. For each
