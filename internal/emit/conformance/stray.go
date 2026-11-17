@@ -251,7 +251,9 @@ func copyFile(source, destination string, perm fs.FileMode) (entryState, error) 
 // the nearest directory that existed before, so that no name the emitter
 // chose reaches the report. A file is read only when its size is unchanged.
 // The walk stops once it has seen MaxCopyEntries paths more than before, with
-// a creation reported at the root.
+// a creation reported at the root. The copy holds nothing named ".git"
+// (copyTree passes over the repository's own), so a ".git" in it, at any
+// depth, is one the emitter made, and is a creation like any other.
 func diffTree(root string, before map[string]entryState) []StrayWrite {
 	found := map[StrayWrite]bool{}
 	add := func(path, change string) {
@@ -268,7 +270,7 @@ func diffTree(root string, before map[string]entryState) []StrayWrite {
 		if name == "." {
 			return nil
 		}
-		if err != nil || isGitName(entry.Name()) {
+		if err != nil {
 			if entry != nil && entry.IsDir() {
 				return fs.SkipDir
 			}

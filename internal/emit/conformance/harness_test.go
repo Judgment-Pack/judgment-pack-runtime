@@ -198,6 +198,9 @@ func TestStrayWrites(t *testing.T) {
 		"create in a directory that was": {[]string{"stray", "create", "docs/inner/new.txt"}, []StrayWrite{{"EMIT-STRAY-WRITE", "docs", StrayCreated}}},
 		"change":                         {[]string{"stray", "change", "README"}, []StrayWrite{{"EMIT-STRAY-WRITE", "README", StrayChanged}}},
 		"remove":                         {[]string{"stray", "remove", "README"}, []StrayWrite{{"EMIT-STRAY-WRITE", "README", StrayRemoved}}},
+		// The copy holds no .git, so one the emitter makes is a creation.
+		"create in .git":         {[]string{"stray", "create", ".git/hooks/post-checkout"}, []StrayWrite{{"EMIT-STRAY-WRITE", ".", StrayCreated}}},
+		"create in a .GIT below": {[]string{"stray", "create", "docs/.GIT/x"}, []StrayWrite{{"EMIT-STRAY-WRITE", "docs", StrayCreated}}},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -262,9 +265,14 @@ func TestCopyPassesOverGit(t *testing.T) {
 			t.Fatalf("%s was copied: %v", path, err)
 		}
 	}
-	// A change inside .git is not the emitter's to answer for.
-	write(t, target, map[string]string{".git/new": "x\n"})
+	// The repository's own .git is not in the copy, so the copy holds none
+	// unless the emitter made one, at any depth, and each is a creation.
 	if changes := diffTree(target, states); len(changes) != 0 {
+		t.Fatalf("changes: %+v", changes)
+	}
+	write(t, target, map[string]string{".git/new": "x\n", "a/.Git": "x\n"})
+	want := []StrayWrite{{"EMIT-STRAY-WRITE", ".", StrayCreated}, {"EMIT-STRAY-WRITE", "a", StrayCreated}}
+	if changes := diffTree(target, states); !slices.Equal(changes, want) {
 		t.Fatalf("changes: %+v", changes)
 	}
 }

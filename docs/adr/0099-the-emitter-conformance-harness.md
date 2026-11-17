@@ -176,8 +176,9 @@ Past either bound, the result is `EMIT-HARNESS-BOUND` and exit 2. A row that fai
 the entry and the pointer, never the string.
 
 **Stray writes and their bounds.** The emitter runs in a fresh copy of `--root`, made in a new
-temporary directory with its links resolved. Nothing named `.git` is copied, in any case, and no
-path under it is compared. Regular files keep their permission bits, links are copied as links,
+temporary directory with its links resolved. Nothing named `.git` is copied, in any case, so the
+repository's own is never compared, and a `.git` in the copy after a run, at any depth, is one the
+emitter made: a creation. Regular files keep their permission bits, links are copied as links,
 and any other kind of file is `EMIT-PATH-UNREADABLE`. The copy is bounded at 256 MiB of file bytes
 and 100 000 entries (`MaxCopyBytes`, `MaxCopyEntries`). Past either, the result is
 `EMIT-HARNESS-BOUND` and exit 2. A system that cannot make a link the repository holds (Windows
