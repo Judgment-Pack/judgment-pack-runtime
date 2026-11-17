@@ -77,7 +77,16 @@ It also holds exactly one of these expectations:
 Anything else in a vector is `EMIT-VECTOR`: an unknown member, a link, or a vector past a bound.
 The vectors directory and each `kinds/` are listed by batches, keeping only the
 entries their bound counts (the vector directories and links, and the `*.json` files), so a
-listing past its bound stops there and is never held whole. Every vector is laid out before any emitter runs, by its entries and their sizes alone (its
+listing past its bound stops there and is never held whole. `expected/` is walked the same way,
+under a response's bounds on its files and on their paths, and under bounds on what the walk has
+read so far, which follow from a record's shape: every entry below `expected/` holds at least one
+of its files, and every directory lies above one of them, at most 255 deep. A directory is listed
+only while its entries, the entries still to walk and the entries walked that are not directories
+are at most one past the file bound; the directories walked are at most 255 for each file read and
+256 for the path being walked. Past either, in both modes, the vector is `EMIT-VECTOR` at
+`expected/`, its listing unread. A record within the bounds is read whole, with any few empty
+directories beside its files; a tree of directories that holds no file is refused once it passes
+the directories of one path, not when it passes the bound on a whole record. Every vector is laid out before any emitter runs, by its entries and their sizes alone (its
 members and their kinds, the names of `kinds/*.json`, and the files, count and sizes of
 `expected/`), so a bad layout refuses the run whole. No vector's bytes are read then. Each vector
 is read just before its own run, under the bounds above, and dropped after its checks, so the

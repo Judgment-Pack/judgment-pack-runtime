@@ -13,16 +13,17 @@ import (
 // allocated 223 MiB. Now each 1e20 costs the decoder's work and its
 // 21-digit form alone.
 //
-// The factor: the decoder that every reader shares costs 50 to 130 times a
+// The factor: the decoder that every reader shares costs 10 to 51 times a
 // document's bytes to read one of small values into a tree (`1,` holds a
 // value every two bytes), the same whether its numbers expand or not, and
 // admission adds each changed literal, about 8 times the bytes here. This
-// document measures about 59 times its size; 128 is about twice that, and
-// the 223 times it cost before fails it.
+// document measures about 29 times its size; 48 leaves room, and the 59
+// times it cost while the decoder read every value through the standard
+// decoder's tokens fails it, as do the 223 times before that.
 func TestAdmitValueOfExpandingNumbersCostsAboutItsSize(t *testing.T) {
 	const size = 1 << 20
 	data := []byte("[" + strings.TrimSuffix(strings.Repeat("1e20,", size/5), ",") + "]")
-	allocatesWithin(t, 128*size, "a MiB of 1e20s", func() {
+	allocatesWithin(t, 48*size, "a MiB of 1e20s", func() {
 		value, code, pointer := AdmitValue(data, len(data))
 		items, _ := value.([]any)
 		if code != "" || len(items) != size/5 || items[0] != json.Number("100000000000000000000") {
