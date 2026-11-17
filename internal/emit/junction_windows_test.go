@@ -58,8 +58,6 @@ func junction(t *testing.T, link, target string) {
 	}
 }
 
-// A junction in the repository that leads out refuses the run with
-
 // A repository root that is a junction is never walked as an empty root:
 // RealRoot either refuses it, or resolves it to a real directory whose owned
 // files the scan finds.

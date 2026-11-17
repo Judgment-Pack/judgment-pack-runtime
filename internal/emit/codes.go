@@ -108,7 +108,7 @@ var Codes = map[string]codeInfo{
 	"EMIT-REQUEST-VERSION": {SeverityError, "The host writes no request version the manifest lists, or none that carries the registry's resolved format."},
 	"EMIT-KIND-RANGE":      {SeverityError, "A pinned kind the manifest reads has a version outside the manifest's range."},
 	"EMIT-REQUEST":         {SeverityError, "The request could not be formed: the registry is not valid, its pins and declarations do not match, a facts contract is refused or exceeds its bounds, two contracts share an id and version, or the request exceeds its size bound."},
-	"EMIT-PROCESS":         {SeverityError, "The emitter could not be started, exited non-zero, or did not finish within the time limit."},
+	"EMIT-PROCESS":         {SeverityError, "The emitter could not be started, exited non-zero, or did not finish within the time limit, or the run was interrupted before it wrote anything."},
 	"EMIT-RESPONSE":        {SeverityError, "The emitter's output is not one valid response: its form, a path, a bound, or an error diagnostic it reported."},
 	"EMIT-DEPRECATED":      {SeverityWarning, "The emitter's manifest is deprecated."},
 	// The conformance harness's (ADR-0099).
@@ -127,7 +127,7 @@ var Codes = map[string]codeInfo{
 
 	// The conformance harness's, provisional (ADR-0099).
 	"EMIT-VECTOR":        {SeverityError, "The vectors are not of the harness's layout: harness.json or its level, a vector's files, no vectors at all, or a vector past a bound."},
-	"EMIT-HARNESS-BOUND": {SeverityError, "A check could not be completed: a bound of the harness (the repository copy, the registry with the synthetic kind, or the references scan), or a fresh HOME for a determinism run that could not be made."},
+	"EMIT-HARNESS-BOUND": {SeverityError, "A check could not be completed: a bound of the harness (the repository copy, the registry with the synthetic kind, or the references scan), a fresh HOME for a determinism run that could not be made, or the run was interrupted."},
 }
 
 // Location says where a host diagnostic applies. Pointer is a JSON Pointer

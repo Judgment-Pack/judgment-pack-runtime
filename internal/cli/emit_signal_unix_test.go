@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -88,10 +89,21 @@ func TestAnInterruptEndsTheEmitterAndItsTemporaryDirectories(t *testing.T) {
 			if err := cmd.Process.Signal(tc.signal); err != nil {
 				t.Fatal(err)
 			}
+			var waitErr error
 			select {
-			case <-done:
+			case waitErr = <-done:
 			case <-time.After(60 * time.Second):
 				t.Fatal("jpack did not exit after the signal")
+			}
+			if tc.conf {
+				// The harness stops at the interrupt and says it could not
+				// run, rather than failing the emitter on the rows the
+				// interrupt broke.
+				var exit *exec.ExitError
+				if !errors.As(waitErr, &exit) || exit.ExitCode() != 2 || !strings.Contains(output.String(), `"outcome":"not-run"`) ||
+					!strings.Contains(output.String(), `"code":"EMIT-HARNESS-BOUND"`) || strings.Contains(output.String(), `"status":"fail"`) {
+					t.Fatalf("the interrupted harness: %v: %s", waitErr, output.String())
+				}
 			}
 			if err := syscall.Kill(-group, 0); !errors.Is(err, syscall.ESRCH) {
 				t.Fatalf("the emitter's process group outlived jpack (kill -0: %v)", err)

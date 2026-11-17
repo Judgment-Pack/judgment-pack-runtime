@@ -64,6 +64,8 @@ func Link(dir, name string) error {
 //	                   holding the request as text
 //	env FILE           answer FILE holding the environment, one VAR=value a line, sorted
 //	cwd FILE           answer FILE holding the working directory
+//	sigign FILE        answer FILE holding the SigIgn line of /proc/self/status
+//	                   (Linux only): the signals it started with ignored
 //	exit N             exit N with nothing written
 //	stderr N           write N bytes to standard error, then an empty response
 //	flood              write to standard output without end
@@ -151,6 +153,19 @@ func Main(args []string) int {
 	case "cwd":
 		dir, _ := os.Getwd()
 		return answer(map[string]any{"path": args[1], "text": dir + "\n"})
+	case "sigign":
+		// Linux only: the SigIgn line of /proc/self/status, the signals
+		// this process started with ignored.
+		status, err := os.ReadFile("/proc/self/status")
+		if err != nil {
+			return 70
+		}
+		for _, line := range strings.Split(string(status), "\n") {
+			if strings.HasPrefix(line, "SigIgn:") {
+				return answer(map[string]any{"path": args[1], "text": line + "\n"})
+			}
+		}
+		return 70
 	case "exit":
 		code, _ := strconv.Atoi(args[1])
 		return code

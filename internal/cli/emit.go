@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/Judgment-Pack/judgment-pack-runtime/internal/emit"
@@ -33,6 +34,7 @@ func (a *App) emitCommand() *cobra.Command {
 			"Its standard error is counted and discarded unless --emitter-stderr passes the first 64 KiB through. " +
 			"Its response is validated whole before anything changes: every path relative, safe and owned, unique once case is folded, at most 10000 files of at most 16 MiB, 64 MiB in all. " +
 			"Each file is written through a temporary file and a rename; an owned file the response does not hold is deleted; a symbolic link at or above an owned path refuses the run. " +
+			"An interrupt or SIGTERM before the write refuses the run (EMIT-PROCESS) with nothing written; a second one ends jpack at once, except once the write has begun, which then finishes. " +
 			"--check compares instead, byte for byte and mode for mode, and writes nothing. " +
 			"--other-manifest names another emitter manifest of the repository, whose owns globs must not overlap this one's. " +
 			"The report is JSON on standard output (emitReportVersion 1.0.0): paths, codes, digests and counts, never a file's contents or an env value. " +
@@ -157,9 +159,10 @@ func (a *App) emitCommand() *cobra.Command {
 			if passStderr {
 				options.Stderr = a.errOut
 			}
-			ctx, stop := interruptContext()
+			interrupt, stop := interruptContext()
 			defer stop()
-			return finish(emit.Emit(ctx, manifest, others, inputs, options))
+			options.BeginWrite = interrupt.beginWrite
+			return finish(emit.Emit(interrupt.ctx, manifest, others, inputs, options))
 		},
 	}
 	command.Flags().StringVar(&manifestPath, "manifest", "", "The emitter manifest JSON file")
@@ -176,15 +179,51 @@ func (a *App) emitCommand() *cobra.Command {
 	return command
 }
 
-// interruptContext is the context of an emitter run: an interrupt or SIGTERM
+// interruption is the context of an emitter run: an interrupt or SIGTERM
 // cancels it, so that the run kills the emitter's process group and removes
 // what it made (HOME, the harness's repository copies) before jpack exits.
 // The emitter runs in a process group of its own, which a terminal's
-// interrupt does not reach, so without this it would outlive jpack. The
-// signals stay caught until the command returns; the cleanup is bounded by
-// the run's wait and group-wait limits.
-func interruptContext() (context.Context, context.CancelFunc) {
-	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+// interrupt does not reach, so without this it would outlive jpack.
+//
+// Once the first signal has cancelled the run, a second ends jpack at once,
+// even during a long copy, except while the repository is being written:
+// beginWrite marks that phase, and from then on the signals stay caught, so
+// a write once begun finishes rather than leave staged files and a partly
+// applied response. The write is bounded, so this holds jpack briefly.
+type interruption struct {
+	ctx     context.Context
+	stop    context.CancelFunc
+	mu      sync.Mutex
+	writing bool
+}
+
+// interruptContext starts catching the signals; stop ends it.
+func interruptContext() (*interruption, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	in := &interruption{ctx: ctx, stop: stop}
+	go func() {
+		<-ctx.Done()
+		in.mu.Lock()
+		defer in.mu.Unlock()
+		if !in.writing {
+			// The signals' default disposition is restored, so that a
+			// second one ends jpack.
+			stop()
+		}
+	}()
+	return in, stop
+}
+
+// beginWrite is emit.Options.BeginWrite: the write may start only when no
+// signal has come, and once it has started the signals stay caught.
+func (in *interruption) beginWrite() bool {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	if in.ctx.Err() != nil {
+		return false
+	}
+	in.writing = true
+	return true
 }
 
 // readManifest reads and checks one emitter manifest; index 0 is the one run.
