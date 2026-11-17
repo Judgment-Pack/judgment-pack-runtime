@@ -2,6 +2,16 @@
 
 All notable changes to tagged releases are documented here.
 
+## Unreleased
+
+- **A support and deprecation policy for the registry line** (VERSIONING.md). It covers
+  `jpack registry`, `jpack emit`, `jpack emit conformance`, `jpack terraform facts`, their formats,
+  codes and bounds, and the start-up module. Within major version 1 of the line, nothing is
+  removed, no bound is tightened, additions come under new minor selectors, and a deprecated part
+  keeps working. It takes effect from the release that names the line stable, which settles every
+  provisional code first and tags `startup/v1.0.0`. `jpack` and the
+  runtime module stay 0.x. The conformance claim in CONFORMANCE.md is unchanged.
+
 ## 0.48.0 - 2026-11-17
 
 - **A start-up module: `github.com/Judgment-Pack/judgment-pack-runtime/startup`** (ADR-0096; spec
