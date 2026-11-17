@@ -118,3 +118,6 @@ test "$status" -le 1
 When the pinned release has `experimental revalidate`, take the baseline with
 `"$PINNED" experimental revalidate --write baseline.json` instead, so the bytes are compared too. The
 last command's exit is the job's: 0 lets the pin move, 1 lists what differs.
+
+For a pin of `v0.46.0`, [Moving a CI pin of `jpack` from v0.46.0 to
+v0.51.0](upgrading-from-v0.46.0.md) lists, release by release, what a pinned CLI can notice.
