@@ -3,6 +3,7 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -312,6 +313,128 @@ func TestPatternBoundsAndDot(t *testing.T) {
 	for _, s := range []string{"a", "€", "\U0001F600", "\t"} {
 		if !dot.MatchString(s) {
 			t.Errorf(". did not match %q", s)
+		}
+	}
+}
+
+// schemaRefusalAt is schemaRefusal with each finding's pointer: code@pointer.
+func schemaRefusalAt(t *testing.T, schema string) []string {
+	t.Helper()
+	collected := &collector{}
+	compileSchema(decodeAny(t, schema), []string{"schema"}, Location{Document: DocumentKind}, collected, &patternBudget{})
+	var out []string
+	for _, d := range collected.sorted() {
+		out = append(out, d.Code+"@"+d.Location.Pointer)
+	}
+	return out
+}
+
+// Each keyword of the subset in a form it does not take is refused at the
+// keyword, and nothing else is.
+func TestSchemaKeywordForms(t *testing.T) {
+	for _, c := range []struct{ schema, want string }{
+		{`{"properties":{"a":"x"}}`, "REG-KIND-SCHEMA-FORM@/schema/properties/a"},
+		{`{"$defs":[]}`, "REG-KIND-SCHEMA-FORM@/schema/$defs"},
+		{`{"properties":{"a":{"$defs":{}}}}`, "REG-KIND-SCHEMA-FORM@/schema/properties/a/$defs"},
+		{`{"enum":[]}`, "REG-KIND-SCHEMA-FORM@/schema/enum"},
+		{`{"enum":{}}`, "REG-KIND-SCHEMA-FORM@/schema/enum"},
+		{`{"properties":[]}`, "REG-KIND-SCHEMA-FORM@/schema/properties"},
+		{`{"minProperties":-1}`, "REG-KIND-SCHEMA-FORM@/schema/minProperties"},
+		{`{"maxLength":1.5}`, "REG-KIND-SCHEMA-FORM@/schema/maxLength"},
+		{`{"maxItems":"1"}`, "REG-KIND-SCHEMA-FORM@/schema/maxItems"},
+		{`{"items":[{}]}`, "REG-KIND-SCHEMA-FORM@/schema/items"},
+		{`{"uniqueItems":"yes"}`, "REG-KIND-SCHEMA-FORM@/schema/uniqueItems"},
+		{`{"$ref":"#/properties/a"}`, "REG-KIND-SCHEMA-REF@/schema/$ref"},
+		{`{"$ref":"#/$defs/a~2","$defs":{"a~2":{}}}`, "REG-KIND-SCHEMA-REF@/schema/$ref"},
+		{`{"title":1}`, "REG-KIND-SCHEMA-FORM@/schema/title"},
+		{`{"description":true}`, "REG-KIND-SCHEMA-FORM@/schema/description"},
+		{`{"examples":{}}`, "REG-KIND-SCHEMA-FORM@/schema/examples"},
+		{`{"deprecated":"no"}`, "REG-KIND-SCHEMA-FORM@/schema/deprecated"},
+		{`{"type":[]}`, "REG-KIND-SCHEMA-FORM@/schema/type"},
+		{`{"type":["string","string"]}`, "REG-KIND-SCHEMA-FORM@/schema/type"},
+		{`{"type":["string",1]}`, "REG-KIND-SCHEMA-FORM@/schema/type"},
+		{`{"type":1}`, "REG-KIND-SCHEMA-FORM@/schema/type"},
+		{`{"type":"decimal"}`, "REG-KIND-SCHEMA-FORM@/schema/type"},
+		{`{"required":"a"}`, "REG-KIND-SCHEMA-FORM@/schema/required"},
+		{`{"minimum":"1"}`, "REG-KIND-SCHEMA-FORM@/schema/minimum"},
+		{`{"pattern":1}`, "REG-KIND-SCHEMA-FORM@/schema/pattern"},
+		{`{"propertyNames":true}`, "REG-KIND-SCHEMA-FORM@/schema/propertyNames"},
+		{`{"propertyNames":{"minLength":1}}`, "REG-KIND-SCHEMA-KEYWORD@/schema/propertyNames/minLength"},
+		{`{"propertyNames":{"maxLength":-1}}`, "REG-KIND-SCHEMA-FORM@/schema/propertyNames/maxLength"},
+		{`{"anyOf":[]}`, "REG-KIND-SCHEMA-FORM@/schema/anyOf"},
+		{`{"allOf":{}}`, "REG-KIND-SCHEMA-FORM@/schema/allOf"},
+	} {
+		if got := schemaRefusalAt(t, c.schema); len(got) != 1 || got[0] != c.want {
+			t.Errorf("%s: %v, want [%s]", c.schema, got, c.want)
+		}
+	}
+	// The annotations in their forms are admitted, and change no finding.
+	if got := schemaFindings(t, `{"title":"t","description":"d","examples":[1],"default":1,"deprecated":false,"type":["integer","null"]}`, `null`); len(got) != 0 {
+		t.Fatalf("findings: %v", got)
+	}
+	if got := schemaFindings(t, `{"type":"object","propertyNames":{"maxLength":2}}`, `{"abc":1}`); len(got) != 1 || got[0] != "REG-VALUE-PROPERTY-NAME" {
+		t.Fatalf("a property name past maxLength: %v", got)
+	}
+}
+
+// A patch may add a member the base value lacks when the schema declares it
+// under a parent that exists (RFC 0034 §4), through a property, a $ref, an
+// allOf branch, an array's items or additionalProperties; a member no
+// schema position declares, or one under a parent that is not an object, is
+// REG-OVERLAY-TARGET at the patch pointer.
+func TestAPatchMayAddADeclaredMember(t *testing.T) {
+	shapes := func(k map[string]any) {
+		schema := k["schema"].(map[string]any)
+		schema["$defs"] = map[string]any{"opts": map[string]any{"type": "object", "properties": map[string]any{"pool": map[string]any{"type": "integer"}}}}
+		properties := schema["properties"].(map[string]any)
+		properties["options"] = map[string]any{"$ref": "#/$defs/opts"}
+		properties["tuning"] = map[string]any{"type": "object", "allOf": []any{map[string]any{"properties": map[string]any{"depth": map[string]any{"type": "integer"}}}}}
+		properties["replicas"] = map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"zone": map[string]any{"type": "string"}}}}
+		properties["labels"] = map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "object", "properties": map[string]any{"v": map[string]any{"type": "string"}}}}
+		k["overlayable"] = append(k["overlayable"].([]any), "/options/pool", "/options/other", "/tuning/depth", "/replicas/*/zone", "/labels/*/v", "/privileges/*/x")
+	}
+	base := func(r map[string]any) {
+		value := entryValue(r, 1)
+		delete(value, "connectionLimit")
+		value["options"] = map[string]any{}
+		value["tuning"] = map[string]any{}
+		value["replicas"] = []any{map[string]any{}}
+		value["labels"] = map[string]any{"x": map[string]any{}}
+	}
+	added := mutated(t, shapes, func(r map[string]any) {
+		base(r)
+		set := prodSet(r)
+		set["/options/pool"] = json.Number("3")
+		set["/tuning/depth"] = json.Number("4")
+		set["/replicas/0/zone"] = "a"
+		set["/labels/x/v"] = "b"
+	})
+	if !added.Report.Valid {
+		t.Fatalf("want valid, got %+v", added.Report.Diagnostics)
+	}
+	prod, err := added.Resolve("prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"connectionLimit":120`, `"options":{"pool":3}`, `"tuning":{"depth":4}`, `"replicas":[{"zone":"a"}]`, `"labels":{"x":{"v":"b"}}`} {
+		if !strings.Contains(string(prod), want) {
+			t.Errorf("prod lacks %s:\n%s", want, prod)
+		}
+	}
+	for pointer, at := range map[string]string{
+		"/options/other":  "/overlays/1/patches/0/set/~1options~1other",
+		"/privileges/0/x": "/overlays/1/patches/0/set/~1privileges~10~1x",
+	} {
+		refused := mutated(t, shapes, func(r map[string]any) {
+			base(r)
+			prodSet(r)[pointer] = "c"
+		})
+		var found []string
+		for _, d := range refused.Report.Diagnostics {
+			found = append(found, d.Code+"@"+d.Location.Pointer)
+		}
+		if want := []string{"REG-OVERLAY-TARGET@" + at}; !slices.Equal(found, want) {
+			t.Errorf("%s: want %v, got %v", pointer, want, found)
 		}
 	}
 }

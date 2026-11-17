@@ -21,6 +21,8 @@
      "summary": "^(ok|FAIL|---) |^startup coverage:", "timeout": 1200},
     {"name": "emit-coverage", "run": "profile=$(mktemp) && trap 'rm -f \"$profile\"' EXIT && go test -coverprofile=\"$profile\" ./internal/emit/ && total=$(go tool cover -func=\"$profile\" | awk '$1 == \"total:\" {sub(/%/, \"\", $NF); print $NF}') && echo \"emit coverage: ${total}% of statements (floor 90%)\" && awk -v total=\"$total\" 'BEGIN { exit !(total ~ /^[0-9]+(\\.[0-9]+)?$/ && total + 0 >= 90) }'", "toolchain": "go",
      "summary": "^(ok|FAIL|---) |^emit coverage:", "timeout": 1200},
+    {"name": "coverage-floors", "run": "profile=$(mktemp) && trap 'rm -f \"$profile\"' EXIT && status=0 && for pkg in internal/registry internal/emit/conformance internal/terraformfile internal/jcs cmd/jpack-emit-go-facts cmd/jpack-emit-go-loader cmd/jpack-emit-ts-constants; do go test -coverprofile=\"$profile\" \"./$pkg\" || { status=1; continue; }; total=$(go tool cover -func=\"$profile\" | awk '$1 == \"total:\" {sub(/%/, \"\", $NF); print $NF}'); echo \"$pkg coverage: ${total}% of statements (floor 90%)\"; awk -v total=\"$total\" 'BEGIN { exit !(total ~ /^[0-9]+(\\.[0-9]+)?$/ && total + 0 >= 90) }' || { echo \"$pkg is below the 90% floor\"; status=1; }; done; exit $status", "toolchain": "go",
+     "summary": "^(FAIL|---) |^[^ ]+ (coverage:|is below)", "timeout": 1800},
     {"name": "loader-golden-vet", "cwd": "cmd/jpack-emit-go-loader/golden", "run": "go vet ./...", "toolchain": "go", "timeout": 600},
     {"name": "loader-golden-test", "cwd": "cmd/jpack-emit-go-loader/golden", "run": "go test ./...", "toolchain": "go",
      "summary": "^(ok|FAIL|---) ", "timeout": 600},
